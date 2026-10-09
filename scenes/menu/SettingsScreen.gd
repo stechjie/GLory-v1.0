@@ -26,6 +26,9 @@ var _board_guides_btn: CheckButton
 var _presentation_btns: Dictionary = {}
 # 每个开关的原始标题。刷新时要在它后面拼「开 / 关」，不能拿已经拼过的文本再拼一次。
 var _presentation_labels: Dictionary = {}
+# 10.10 反馈第 4 条：语音音量滑块与它的标签。
+var _voice_label: Label
+var _voice_slider: HSlider
 
 func _ready() -> void:
 	_build()
@@ -224,6 +227,39 @@ func _build() -> void:
 		_presentation_labels[key] = tr(str(spec_dict["label"]))
 		_refresh_presentation_button(key)
 
+	# 10.10 反馈第 4 条：语音音量滑块。
+	#
+	# 为什么不是「跟随系统通话音量」：安卓侧语音已经走通话声道（原生
+	# GloryVoicePlugin.kt 的音频模式），BGM 走媒体声道，两条系统音量天然分开；
+	# 但 **iOS 全 App 只有一个 AVAudioSession、只有一条系统音量**，系统层面分不开 ——
+	# 所以在游戏内再给语音一条独立音量。三条平台都生效（乘在每个远端队员的轨道音量上）。
+	#
+	# 放在演出开关这一列的最后，紧挨「背景音乐」：这两个音量就是玩家要分开调的一对。
+	var voice_row := HBoxContainer.new()
+	voice_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	voice_row.add_theme_constant_override("separation", 12)
+	panel.add_child(voice_row)
+
+	_voice_label = Label.new()
+	_voice_label.custom_minimum_size = Vector2(160, Tokens.TOUCH_MIN)
+	_voice_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	voice_row.add_child(_voice_label)
+
+	_voice_slider = HSlider.new()
+	_voice_slider.min_value = 0.0
+	_voice_slider.max_value = 1.0
+	# 0.05 一档：拖一次最多落盘 20 次（set_voice_volume 值没变会早退），足够跟手又不会写爆磁盘。
+	_voice_slider.step = 0.05
+	# **先设 value 再连信号**：Godot 里给 value 赋值本身就会发一次 value_changed。
+	_voice_slider.value = PlayerProfile.voice_volume
+	_voice_slider.custom_minimum_size = Vector2(180, Tokens.TOUCH_MIN)
+	_voice_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_voice_slider.value_changed.connect(func(value: float):
+		PlayerProfile.set_voice_volume(value)
+		_refresh_voice_label())
+	voice_row.add_child(_voice_slider)
+	_refresh_voice_label()
+
 	var sep2 := HSeparator.new()
 	layout.add_child(sep2)
 	var footer := HBoxContainer.new()
@@ -278,6 +314,15 @@ func _refresh_quality_buttons() -> void:
 			var on := i == current
 			btn.modulate = Color(1.0, 0.85, 0.3) if on else Color(1, 1, 1)
 			btn.text = _mark_selected(btn.text, on)
+
+# 10.10 反馈第 4 条：语音音量滑块旁边那行「语音音量 80%」。
+# 只显示百分比、不显示 0 / 1 —— 玩家要的是「多大」，不是浮点数。
+func _refresh_voice_label() -> void:
+	if _voice_label == null or not is_instance_valid(_voice_label):
+		return
+	var percent := roundi(clampf(float(PlayerProfile.voice_volume), 0.0, 1.0) * 100.0)
+	_voice_label.text = "%s %d%%" % [tr("settings_voice_volume"), percent]
+
 
 func _refresh_presentation_button(key: String) -> void:
 	var btn_value = _presentation_btns.get(key)

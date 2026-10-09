@@ -11,6 +11,8 @@ const CrimsonDrumBadge := preload("res://scenes/battle/CrimsonDrumBadge.gd")
 const CrimsonRuneBadgeScript := preload("res://scenes/battle/CrimsonRuneBadge.gd")
 const CrimsonResonanceOrb := preload("res://effects/vfx3d/modules/CrimsonResonanceOrb3D.gd")
 const CrimsonRedTideOrbits := preload("res://effects/vfx3d/modules/CrimsonRedTideOrbits3D.gd")
+# 10.10 第 10 条：凤凰涅槃复活体的「死灵气息」常驻标识。
+const UNDEAD_NECROSIS_AURA := preload("res://effects/vfx3d/modules/UndeadNecrosisAura3D.gd")
 
 # Per-frame actor lookup and memoized visual positions. The immutable personal
 # slot is stored separately; these frame tables are rebuilt by _refresh_visuals.
@@ -508,6 +510,16 @@ func _sync_3d_model_nodes(living: Array, facing_delta: float, prune := true) -> 
 		_position_3d_model_node(model_node, f, facing_delta)
 		_apply_formation_intro_visibility(id, f)
 		_update_model_animation_state(model_node, f)
+		# 10.10 第 10 条：凤凰涅槃的复活体（`phoenix_used`）罩一层「死灵气息」，
+		# 好让玩家一眼读出「这只是借尸还魂、3 秒后要真死」。
+		#
+		# 只有复活体这一帧才付代价 —— 非复活体不做建节点、也不做子节点查找：
+		# 每帧对全场每个单位查一次 `get_node_or_null` 是白给的 CPU。
+		# 判据取 `phoenix_used`（BattleSimTreasures._queue_phoenix_revive 只写给
+		# 复活体，原体身上没有），而不是 uid 里含 `_phoenix_` —— 回放里 uid 是
+		# 数据，判据要跟着数据走；同时补 `alive` 防止死亡帧仍挂着。
+		if bool(f.get("alive", false)) and bool(f.get("phoenix_used", false)):
+			UNDEAD_NECROSIS_AURA.sync(model_node, true, float(model_node.get_meta("model_height", NOMINAL_UNIT_HEIGHT)))
 		var status_vfx: Node = _status_vfx_by_id.get(id)
 		if status_vfx == null or not is_instance_valid(status_vfx):
 			status_vfx = _ensure_status_vfx_controller(model_node)
@@ -560,6 +572,12 @@ func detach_actor_for_death(uid: String) -> Node3D:
 	var ascension := (node_value as Node3D).get_node_or_null("FourStarAuraV2")
 	if ascension != null:
 		ascension.deactivate()
+	# 10.10 第 10 条：借来的这条命到点了（凤凰涅槃的 3 秒无敌结束后被强制真死）
+	# ⇒「死灵气息」必须跟着收掉，不能骑着正在淡出的尸体继续亮。
+	# 和上面四星光环同一条纪律：只收表现层，不碰任何战斗状态。
+	var necrosis := (node_value as Node3D).get_node_or_null("UndeadNecrosisAura")
+	if necrosis != null:
+		necrosis.call("deactivate")
 	var status_vfx = _status_vfx_by_id.get(uid)
 	if status_vfx != null and is_instance_valid(status_vfx):
 		# V2 P1-05 第 2 条："血条和状态图标同步，不突然消失"。

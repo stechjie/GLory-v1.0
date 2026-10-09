@@ -328,6 +328,76 @@ class PartyHostPetTests(unittest.TestCase):
         self.parties.kick(self.host, guest)
         self.assertNotIn(guest, room.active_pets, "被踢的人不该再留着出战宠物记录")
 
+    # ---- 10.10 bug 第 9 条：队伍房间保留（对局结束能「返回队伍」）---------
+    #
+    # 用户口径：「保留原队伍房间」，且明确指出休闲也要能回到队伍房间
+    # （休闲与排位只差「是否结算积分」，流程完全一样）。
+    # 所以六人确认、对局开始这一刻，**casual 与 ranked 的房间都不能关** ——
+    # 结算面板的「返回队伍」要能回到原队伍。
+    # 其余模式（create() 白名单之外的）保持原样：关房、摘成员。
+    def _two_member_room(self, mode: str):
+        room = self.parties.create(self.host, card(1), mode, [])
+        mate = player(2)
+        room.members.append(mate)
+        room.profiles[mate] = card(2)
+        room.joined_at[mate] = self.clock()
+        self.parties._member_room[mate] = room.id
+        return room, mate
+
+    def test_ranked_room_survives_match_start(self):
+        room, mate = self._two_member_room("ranked")
+        room.queued = True
+        room.ready.add(mate)
+        self.parties.finish_for_match([self.host, mate], "abc123")
+        # 房间还在原地，成员一个不少
+        self.assertIs(self.parties.of(self.host), room)
+        self.assertIs(self.parties.of(mate), room)
+        # 排队闸落下、准备清空、记下这一局的 uid —— 回房就能直接再用
+        self.assertFalse(room.queued, "排队闸必须落下，否则回房后编辑动作全被挡")
+        self.assertEqual(room.ready, set())
+        self.assertEqual(room.in_match, "abc123")
+        self.assertEqual(self.parties.snapshot(room)["in_match"], "abc123")
+
+    def test_ranked_room_is_editable_after_match_start(self):
+        """回来之后邀请 / 改模式照常可用（_require_editable 不再拦）。"""
+        room, _mate = self._two_member_room("ranked")
+        room.queued = True
+        self.parties.finish_for_match([self.host], "abc123")
+        self.parties.mode(self.host, "casual")   # queued 没落下就会抛 in_queue
+        self.assertEqual(room.mode, "casual")
+
+    def test_casual_room_survives_match_start(self):
+        """休闲与排位只差是否结算积分 —— 房间同样保留（10.10 bug 第 9 条）。"""
+        room, mate = self._two_member_room("casual")
+        room.queued = True
+        room.ready.add(mate)
+        self.parties.finish_for_match([self.host, mate], "abc123")
+        self.assertIs(self.parties.of(self.host), room, "休闲房间也要留着，否则结算面板没有「返回队伍」")
+        self.assertIs(self.parties.of(mate), room)
+        self.assertFalse(room.queued)
+        self.assertEqual(room.ready, set())
+        self.assertEqual(room.in_match, "abc123")
+
+    def test_unknown_mode_room_still_closes(self):
+        """防御兜底：create() 白名单外的模式照旧关房（走后端的 else 分支）。
+
+        create() 现在只收 casual / ranked，所以这里绕过它直接改字段，
+        只为把 else 分支钉住 —— 免得以后有人把条件放宽时悄悄少了关房这条路。
+        """
+        room, mate = self._two_member_room("casual")
+        room.mode = "legacy"
+        self.parties.finish_for_match([self.host, mate], "abc123")
+        self.assertIsNone(self.parties.of(self.host))
+        self.assertIsNone(self.parties.of(mate))
+
+    def test_clear_in_match_resets_marker(self):
+        room, _mate = self._two_member_room("ranked")
+        self.parties.finish_for_match([self.host], "abc123")
+        version_before = room.version
+        self.parties.clear_in_match(room)
+        self.assertEqual(room.in_match, "")
+        self.assertEqual(room.version, version_before + 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -4432,3 +4432,40 @@ fighter 不记阵营、结果不带人王结局、分路不传老虎成长率、
 合成意图，校验 uid 与留下的那一枚，再交给真的 `EconomyLedger.apply("merge")` 看升星次数 = 1。
 变异 2 / 2：删掉上报 → `auto_merge_reported`；上报不带留下的那一枚 → `auto_merge_payload`。
 测试里没有真服务器，发意图时会打一条 `RPC ... on yourself is not allowed`（离线 peer），不在 run_check 的引擎错误模式里。
+
+### `tools/undead_necrotic_aura_check` 41 项（10-10：凤凰涅槃「死灵气息」）
+
+联动宝藏「凤凰涅槃」复活后的棋子要和普通活着的棋子**一眼可辨**（用户原话：「没有区分性」），
+但**光环不许遮挡棋子**、**不许和别人的特效/美术抢位置**。这三条全是画面约束 —— 只验「函数存在」
+或「节点挂上了」会让一条半透明面片盖在脸上这种错误静默通过，所以这里落成**结构不变量**：
+
+- **A 生产接线**：走真的 `BattleRenderer._sync_3d_model_nodes`，复活体（`phoenix_used`）必须有光环、普通棋子必须没有
+  （判据取 `phoenix_used`，不是 uid 里含 `_phoenix_` —— 回放里 uid 是数据，判据要跟着数据走）。
+- **B 模块合同**：落点踩在 `FootAnchor`（不是原点/头顶）、整层按实测身高缩放（不是写死世界尺寸）、
+  **每个自生成面片都必须是加色混合**（`BLEND_MODE_ADD`：加法只能提亮 ⇒ 结构上不可能压暗/遮死模型）、
+  魂屑用**环状发射器**（点发射就是从体内往外喷）且环带收在队伍圈以内、
+  **边光 opacity ≤ 0.30**（实测 0.62 会把低面数模型小腿整段染成荧光绿）、
+  四星光环在场时**让位**且消失后可逆恢复、同身高重复 `configure` **幂等**、
+  `deactivate` 要把 `material_overlay` 还给模型、`detach_actor_for_death` 要能收掉整层。
+- **C 身高是入参**：两倍身高的单位光环要等比放大（证明不是写死 Nominal）。
+- **D 资源**：两张贴图运行时生成 + 跨实例静态缓存（不新增美术文件 ⇒ 没有 `.import`/清单漂移）。
+- **E 回放边界（本轮补的，最关键）**：`phoenix_used` 必须经 **roster** 过回放边界 ——
+  帧是 13 列冻结结构（`ReplayDigest.SIMULATION_TOP_FIELDS` 含 `frames`），**加列会改掉玩法身份哈希**，
+  所以只能照 `twin_group_id` 的先例「只在有键时带」。少了这段桥接，光环在**实战里一次都不会出现**
+  （摆拍工具直接手填 `phoenix_used` 能过，实战过不了 —— 第一版就是这么漏的）。
+  含判别力断言：擦掉 roster 键后客户端必须拿不到标记；另有「回放帧仍是 13 列」防冻判据。
+
+变异：排位房头像框几何 4/4 CAUGHT；凤凰涅槃「拆桥」变异脚本已备（用户叫停时未跑，E 段已内含判别力断言）。
+
+### `tools/seat_frame_check` 82 → 93 项（10-10：排位房头像框只露一半）
+
+新增 `_check_party_lobby`：真例化 `PartyLobby.tscn` + `configure_preview("host")` 真跑 `_apply`，
+断言内孔来自 `AvatarCatalog.default_disc_hole_fraction()`、内孔**不大于**头像（否则头像外露背景缝）、
+框绘制尺寸/原点都来自归一化后的 `frame_id`、框在头像**之下**。
+★ 判别力断言 `party_raw_value_yields_zero`：传原始 `preset:` 值时 `frame_drawn_size` 必须返回 `Vector2.ZERO`
+—— 不钉这条，上面几条会因为「静默退回旧尺寸」而恒绿（第一版修复就是这样没生效的）。
+
+### `tools/pet_feature_check` 25 → 27 项（10-10：老虎移动消失）
+
+改成**量渲染结果**：切跑步动画后测 `PetPreview.aabb_of()` 的可见高度比（原来是测配置字段，
+配置全对但 `run_model_scale` 被删 ⇒ 照样全绿）。老虎实测 1.0698、松鼠 1.0000；坏了是 ≈0.0022。

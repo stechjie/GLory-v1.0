@@ -64,6 +64,10 @@ class Room:
     # 断线时刻（单调时钟）。> 0 = 这条 WS 已经断了、正在宽限期内。
     # 重连（任何一次成功动作）会清零；宽限到期仍为 > 0 就真的摘掉（见 on_disconnect）。
     dropped_at: dict[uuid.UUID, float] = field(default_factory=dict)
+    # 排位队伍房间进入对局时记下的 match_uid（10.10 bug 第 9 条）。空 = 没在打。
+    # 房间**不会**因为开了对局而关掉（用户口径：保留原排位队伍房间），
+    # 这个字段只是让客户端知道「这支队伍现在打的是哪一局」。
+    in_match: str = ""
 
 
 class Parties:
@@ -110,6 +114,7 @@ class Parties:
             "pets": room.pets.copy(),
             "host_pet": room.active_pets.get(room.host, ""),
             "queued": room.queued,
+            "in_match": room.in_match,
             "version": room.version, "messages": room.messages.copy(),
             "voice_epoch": room.voice_epoch,
         }
@@ -391,15 +396,48 @@ class Parties:
             raise PartyRejected("not_queued", "队伍当前没有排队")
         return room
 
-    def finish_for_match(self, players: list[uuid.UUID]) -> None:
-        """Close matched pre-match rooms after the six-player accept stage begins."""
+    def finish_for_match(self, players: list[uuid.UUID], match_uid: str = "") -> None:
+        """Close matched pre-match rooms after the six-player accept stage begins.
+
+        10.10 bug 第 9 条（用户口径：**保留原队伍房间**，排位与休闲一视同仁）：
+        排位 / 休闲的房间这里都**不关** —— 对局结束的结算面板要能按「返回队伍」回到
+        原来那支队伍。改成把它推进一个可用的「房间」状态：落下排队闸（否则回房后
+        邀请 / 改模式 / 准备都会被 _require_editable 一直挡着，房间看着卡在「匹配中」）、
+        清准备表、版本 +1（让客户端重新拉快照），成员、座位、展示宠物、语音都留着。
+        玩家回来时只是重新打开 PartyLobby，state_of() 就把快照拉回来了。
+
+        ★ 休闲与排位只差「是否结算积分」，流程完全一样，所以这里不能只放排位 ——
+          只放排位的话休闲打完结算面板连「返回队伍」都没有（只剩「返回主菜单」）。
+
+        其余模式（目前 create() 只收 casual / ranked，这里是防御性兜底）保持原样：
+        关房、摘成员、销毁语音。
+        """
         room_ids = {self._member_room[pid] for pid in players if pid in self._member_room}
         for room_id in room_ids:
-            room = self._rooms.pop(room_id, None)
-            if room is not None:
-                self._close_voice(room)
-                for pid in room.members:
-                    self._member_room.pop(pid, None)
+            room = self._rooms.get(room_id)
+            if room is None:
+                continue
+            if room.mode in ("casual", "ranked"):
+                room.queued = False
+                room.ready.clear()
+                if match_uid:
+                    room.in_match = match_uid
+                room.version += 1
+                continue
+            self._rooms.pop(room_id, None)
+            self._close_voice(room)
+            for pid in room.members:
+                self._member_room.pop(pid, None)
+
+    def clear_in_match(self, room: Room) -> None:
+        """这一局的房间记录用完了（玩家重开一局 / 正常退房前的收尾）。
+
+        保留 in_match 只是给客户端一个「这支队伍正打哪一局」的信息；房间本身
+        在 finish_for_match 之后就一直可用，所以这里只是把它抹掉、发一版新快照。
+        """
+        if room.in_match:
+            room.in_match = ""
+            room.version += 1
 
     def _close_voice(self, room: Room) -> None:
         if room.voice_used:

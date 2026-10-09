@@ -103,10 +103,14 @@ static func party_id_of(message: Dictionary) -> String:
 	return str((payload as Dictionary).get("party_id", ""))
 
 
-# 组队邀请的文案：优先服务端 body，空则退回本地。
+# 组队邀请的文案：**跟随语言切换**（10.10 bug 第 1 条）。
+# 服务端存的 body 是中文定死那句（backend/app/routes/party.py 的 _party_invite_text），
+# 直接拿它渲染 ⇒ 英文界面漏中文。所以以本地化文案为准，body 只做兜底。
 static func party_display_text(message: Dictionary) -> String:
-	var body := str(message.get("body", ""))
-	return body if not body.is_empty() else party_local_text()
+	var localized := party_local_text()
+	if not localized.is_empty():
+		return localized
+	return str(message.get("body", ""))
 
 
 static func party_local_text() -> String:
@@ -127,11 +131,15 @@ static func room_id_of(message: Dictionary) -> int:
 	return int((payload as Dictionary).get("room_id", 0))
 
 
-# 邀请框上显示的文案：优先用服务端存下来的 body（要求 3 的定死那句），
-# body 空（老数据 / 被裁剪）时退回本地文案。
+# 邀请框上显示的文案：**跟随语言切换**（10.10 bug 第 1 条）。
+# 旧口径是「优先用服务端存的 body」—— 而那句 body 是中文定死的（要求 3 的历史行为），
+# 于是英文界面下整条邀请漏中文。现在以本地化文案为准（local_text 恒非空），
+# body 仅在拿不到文案时兜底。
 static func display_text(message: Dictionary) -> String:
-	var body := str(message.get("body", ""))
-	return body if not body.is_empty() else local_text()
+	var localized := local_text()
+	if not localized.is_empty():
+		return localized
+	return str(message.get("body", ""))
 
 
 static func local_text() -> String:

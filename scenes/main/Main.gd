@@ -1943,9 +1943,75 @@ func _on_matched_lobby_changed() -> void:
 	if NetworkService.team_local_slot < 0:
 		return
 	_disconnect_matched_handlers()
-	# 进 3v3 大厅。匹配对局没有「准备」按钮那一步 —— 六个人到齐服务器自己开打
-	# （NetworkService._matched_try_start），玩家在这里只会看到座位一个个填满。
+	# 10.10 bug 第 7 条：匹配成功**不再进自定义房间**（3v3 大厅）。
+	# 原先这里显示 Team3v3Lobby（与自定义房间同款界面，座位一个个填满），
+	# 用户要求「匹配成功后不进入自定义房间直接开始对局」。
+	# 六个人到齐服务器自己会开打（NetworkService._matched_try_start），
+	# 所以这里只挂一张等待界面，收到 team_start_requested 直接开局。
+	_watch_matched_start()
+
+
+# 六人座位等满的上限是 90 秒（服务器侧）。真到点还没开打 —— 要么有人一直没进来、
+# 要么推送丢了 —— 退回原来那张 3v3 房间界面（它照样接 team_start_requested），
+# 总比让玩家盯着一张永远不动的「正在进入对局」好。
+const MATCHED_ENTERING_TIMEOUT_SEC := 90.0
+
+
+func _watch_matched_start() -> void:
+	_show_matched_entering()
+	if not NetworkService.team_start_requested.is_connected(_on_matched_start_requested):
+		NetworkService.team_start_requested.connect(_on_matched_start_requested)
+	var fallback := Timer.new()
+	fallback.one_shot = true
+	fallback.wait_time = MATCHED_ENTERING_TIMEOUT_SEC
+	fallback.timeout.connect(_on_matched_entering_timeout)
+	add_child(fallback)
+	fallback.start()
+
+
+func _on_matched_entering_timeout() -> void:
+	if not NetworkService.team_start_requested.is_connected(_on_matched_start_requested):
+		return
+	NetworkService.team_start_requested.disconnect(_on_matched_start_requested)
 	_show_team3v3_lobby()
+
+
+func _on_matched_start_requested() -> void:
+	if NetworkService.team_start_requested.is_connected(_on_matched_start_requested):
+		NetworkService.team_start_requested.disconnect(_on_matched_start_requested)
+	_on_team3v3_start()
+
+
+# 10.10 bug 第 7 条：匹配成功后等待六人到齐时的界面。
+# 不建场景文件 —— 就一块全屏挡板 + 两行字，避免多一个只在一条路径上用到的 .gd/.tscn。
+func _show_matched_entering() -> void:
+	_clear()
+	_enter_match_flow()
+	_set_chat_sound_suppressed(true)
+	var cover := Control.new()
+	cover.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# STOP：下面的界面已经 _clear() 掉了，这里再挡一层输入，避免误触。
+	cover.mouse_filter = Control.MOUSE_FILTER_STOP
+	var veil := ColorRect.new()
+	veil.color = Color(0.008, 0.016, 0.031, 0.92)
+	veil.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cover.add_child(veil)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	cover.add_child(center)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 14)
+	center.add_child(column)
+	for spec in [[tr("match_entering_title"), 34, Color("e8c46a")],
+			[tr("match_entering_hint"), 18, Color("b8becc")]]:
+		var label := Label.new()
+		label.text = str(spec[0])
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.add_theme_font_size_override("font_size", int(spec[1]))
+		label.add_theme_color_override("font_color", spec[2])
+		column.add_child(label)
+	add_child(cover)
 
 
 func _disconnect_matched_handlers() -> void:
@@ -2046,6 +2112,14 @@ func _show_game_over(local_settlement: Dictionary = {}) -> void:
 	var completed_replay: Dictionary = _battle._replay_own if is_instance_valid(_battle) else NetworkService.team_replay
 	_final_settlement_data["show_details"] = preload("res://scripts/multiplayer/FinalSettlementData.gd").can_show_details(
 		_final_settlement_data, NetworkService.latest_match_state if local_settlement.is_empty() else {}, completed_replay)
+	# 10.10 bug 第 9 条（用户口径：**保留原队伍房间**，休闲与排位一视同仁）：对局结束，
+	# 结算面板要给「返回队伍」，点了回**排队之前那个队伍房间**。房间由后端在「六人确认」
+	# 时保留（party.finish_for_match 的 casual / ranked 分支都不关房），所以这里只按 mode
+	# 落标记 —— 休闲与排位只差「是否结算积分」，这一条同样适用。
+	# 判据只有一处：FinalSettlementData.room_survives_match（与后端同口径）。
+	# 不依赖结算包是谁产出的（本地 host / 服务器 latest_match_state 都覆盖）。
+	_final_settlement_data["can_return_party"] = preload("res://scripts/multiplayer/FinalSettlementData.gd").room_survives_match(
+		str(_final_settlement_data.get("mode", "")))
 	# 对局结束：重连凭证作废，避免下次启动误恢复到已结束的房间
 	SaveManager.clear_reconnect()
 	_clear()
@@ -2066,8 +2140,10 @@ func _show_game_over(local_settlement: Dictionary = {}) -> void:
 	result_screen.body_text = _game_over_body()
 	result_screen.show_details = bool(_final_settlement_data.get("show_details", false))
 	result_screen.can_return_room = bool(_final_settlement_data.get("can_return_room", false))
+	result_screen.can_return_party = bool(_final_settlement_data.get("can_return_party", false))
 	result_screen.details_requested.connect(_show_final_settlement)
 	result_screen.return_room_requested.connect(_return_from_settlement)
+	result_screen.return_party_requested.connect(_return_to_party_room)
 	result_screen.return_menu_requested.connect(_on_return_menu_requested)
 	add_child(result_screen)
 
@@ -2079,7 +2155,23 @@ func _show_final_settlement() -> void:
 	panel.data = _final_settlement_data.duplicate(true)
 	panel.return_menu_requested.connect(_on_return_menu_requested)
 	panel.return_room_requested.connect(_return_from_settlement)
+	# 10.10 bug 第 9 条：排位结算面板的「返回队伍」。
+	panel.return_party_requested.connect(_return_to_party_room)
 	add_child(panel)
+
+
+# 10.10 bug 第 9 条：排位对局结束 → 结算面板「返回队伍」→ 回到排位之前的队伍房间。
+#
+# 这里的房间是**账号服务器上的 HTTP 房间**（PartyLobby），不是自定义对局那种宿主
+# ENet 房间 —— 所以不走 _return_from_settlement / request_settlement_return（那条
+# 是宿主 RPC 的「结算返回」）。后端在六人确认时就**保留**了排位房间
+# （party.finish_for_match 的 ranked 分支：不关房、只落下排队闸），
+# 所以「返回队伍」就是重新打开 PartyLobby：state_of() 会把房间快照整个拉回来，
+# 成员、座位、展示宠物都还在。
+# _show_party_lobby → _clear() 会顺手把对局的静音闩（ChatService.in_match）落下。
+func _return_to_party_room() -> void:
+	var mode := str(_final_settlement_data.get("mode", "ranked"))
+	_show_party_lobby(mode if not mode.is_empty() else "ranked")
 
 func _return_from_settlement() -> void:
 	if not NetworkService.settlement_returned.is_connected(_on_settlement_returned):

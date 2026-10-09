@@ -45,6 +45,8 @@ const MAX_PETS := 5
 # 地面在 y=0 平面，宠物在 X(左右) / Z(远近) 上走动。
 const GROUND_HALF_X := 4.8
 const GROUND_HALF_Z := 1.5
+# 10.10：宠物身位余量（世界单位）。活动半宽 = 可见半宽 − 本值，保证贴边不被裁。
+const GROUND_MARGIN := 0.55
 const CAMERA_POS := Vector3(0.0, 2.6, 4.2)
 const CAMERA_TARGET := Vector3(0.0, 0.5, 0.0)
 const CAMERA_ORTHO_SIZE := 3.6
@@ -83,6 +85,8 @@ var _use_external_pets := false
 var _external_audible_id := ""
 var _area_pos := AREA_POS
 var _area_size := AREA_SIZE
+# 10.10：宠物 3D 走位半宽（世界单位）。随展示区域宽高比自适应 —— 见 _compute_ground_half_x。
+var _ground_half_x := GROUND_HALF_X
 
 func configure_party_display(ids: Array, area_pos: Vector2, area_size: Vector2,
 		audible_id: String = "") -> void:
@@ -93,6 +97,7 @@ func configure_party_display(ids: Array, area_pos: Vector2, area_size: Vector2,
 	_external_audible_id = audible_id
 	_area_pos = area_pos
 	_area_size = area_size
+	_ground_half_x = _compute_ground_half_x(area_size)
 	if is_inside_tree():
 		if changed:
 			_rebuild_pets()
@@ -392,7 +397,7 @@ func _enter_idle(entry: Dictionary) -> void:
 func _enter_walk(entry: Dictionary) -> void:
 	entry.state = "walk"
 	entry.timer = WALK_TIMEOUT
-	entry.target = Vector3(_rng.randf_range(-GROUND_HALF_X, GROUND_HALF_X), 0.0,
+	entry.target = Vector3(_rng.randf_range(-_ground_half_x, _ground_half_x), 0.0,
 		_rng.randf_range(-GROUND_HALF_Z, GROUND_HALF_Z))
 	_play(entry.node as Node3D, "run")
 
@@ -408,8 +413,18 @@ func _apply_facing(entry: Dictionary, delta: float) -> void:
 	node.rotation.y = current + wrapf(wanted - current, -PI, PI) * minf(1.0, TURN_SPEED * delta)
 
 func _clamp_to_ground(node: Node3D) -> void:
-	node.position.x = clampf(node.position.x, -GROUND_HALF_X, GROUND_HALF_X)
+	node.position.x = clampf(node.position.x, -_ground_half_x, _ground_half_x)
 	node.position.z = clampf(node.position.z, -GROUND_HALF_Z, GROUND_HALF_Z)
+
+# 10.10：宠物 3D 走位半宽，按当前展示区域算。
+# 正交相机的水平可见半宽 = CAMERA_ORTHO_SIZE/2 × 区域宽高比。排位房区域比主菜单窄
+# （920×355 vs 1080×360），照搬固定 GROUND_HALF_X=4.8 会让 ±4.8 处的宠物走出视口被裁。
+# 这里按区域反推可见半宽、减去身位余量；上限仍是 GROUND_HALF_X（**只收紧、不放大** ——
+# 主菜单里不放宽，避免宠物贴到两侧的按钮与栏位）。
+func _compute_ground_half_x(area_size: Vector2) -> float:
+	var ratio := area_size.x / maxf(1.0, area_size.y)
+	var visible := CAMERA_ORTHO_SIZE * 0.5 * ratio
+	return minf(GROUND_HALF_X, maxf(1.0, visible - GROUND_MARGIN))
 
 # 靠太近就互相推开，避免两只叠在一起
 func _separate_pets(delta: float) -> void:

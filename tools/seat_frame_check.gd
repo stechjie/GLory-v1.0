@@ -25,6 +25,9 @@ const Harness := preload("res://tools/CheckHarness.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
 const LobbyScript := preload("res://scenes/menu/Team3v3Lobby.gd")
 const MenuScript := preload("res://scenes/menu/MainMenu.gd")
+# 排位房间（10.10：用户第二次反馈「席位头像框只露一半」，本门禁原先**没覆盖它**）。
+const PartyScript := preload("res://scenes/menu/PartyLobby.gd")
+const PartyScene := preload("res://scenes/menu/PartyLobby.tscn")
 
 # 真例化整页：不 stub _build/_refresh/_layout，直接跑生产实现，再读它自己落下的显隐。
 # 与 profile_bug03_check.gd 的 LobbyProbe 同一套写法。
@@ -438,4 +441,92 @@ func _run() -> void:
 	AccountManager.profile = saved_profile
 	NetworkService.team_active = saved_active
 	NetworkService.team_seat_profiles = saved_seats
+
+	await _check_party_lobby(h)
+
 	h.finish(get_tree())
+
+
+# ── 排位房间（PartyLobby）席位 ───────────────────────────────────────────────
+#
+# ★ 10.10 用户**第二次**反馈「排位房间头像框只露一半」。上一版确实改了
+#   `PartyLobby._render_seats`，但**没把 avatar_frame 归一化**：那个字段存的是
+#   `preset:<id>`，而 `frame_drawn_size` / `frame_box_origin` 要的是裸 id。
+#   传原始值时 `frame_source_size()` 读不到素材、`FRAME_HOLE_FRAC` 也查不到，
+#   直接返回 (0,0)，于是静默掉进 else 分支、退回旧的固定 154 盒 —— 框照旧只露一半，
+#   而且**一声不响**（没有任何报错，门禁也没覆盖这里）。
+#
+# 自定义房间（Team3v3Lobby._apply_slot_frame）一直是归一化的；本门禁原先只覆盖了
+# 那边和大厅，所以排位这条路径漏网。这里补齐，并且刻意**真例化整页 + 真跑
+# `_apply`**，读席位节点自己落下的尺寸 —— 不是复刻一遍算式。
+#
+# 最后一条 `party_raw_value_yields_zero` 是**判别力**断言：它证明「归一化」这一步
+# 确实是必需的。哪天 AvatarCatalog 改成也认裸 id 了，这条会先红 ——
+# 那时该做的是删掉这条判据并说明，而不是留着一个永远为真的空断言。
+func _check_party_lobby(h) -> void:
+	var avatar := 100.0   # PartyLobby 席位头像圆直径（mask.size.x）
+	var hole := PartyScript._seat_hole_target()
+	h.expect(hole > 0.0, "party_hole_positive",
+		"排位房目标内孔算成了 %.2f（默认圆盘内孔占比读不到？）" % hole)
+	h.expect(is_equal_approx(hole, PartyScript.SEAT_FRAME_SIZE.x
+			* AvatarCatalog.default_disc_hole_fraction()),
+		"party_hole_from_default_disc",
+		"排位房目标内孔不是「盘盒 × 默认圆盘内孔占比」（实得 %.2f）" % hole)
+	h.expect(hole <= avatar + 0.001, "party_hole_not_larger_than_avatar",
+		"排位房目标内孔 %.1f 大于头像 %.0f —— 头像外面会露出一圈背景缝"
+			% [hole, avatar])
+
+	var frame_value := "preset:avatar_frame_shop_04"
+	var frame_id := AvatarCatalog.id_from_value(frame_value)
+	var party := PartyScene.instantiate()
+	party.call("configure_preview", "host")
+	add_child(party)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	party.call("_apply", {
+		"state": "room", "id": "probe", "mode": "ranked", "host_code": "AAAA0001",
+		"queued": false, "host_pet": "pet_cat",
+		"members": [{"friend_code": "AAAA0001", "player_name": "明", "tier": 3,
+			"host": true, "ready": true, "seat": 0,
+			"avatar": AvatarCatalog.default_avatar(), "avatar_frame": frame_value}],
+		"pets": [], "messages": [],
+	})
+	await get_tree().process_frame
+
+	var mask: Panel = null
+	var frame: TextureRect = null
+	var seat: Control = party.get("_seat_layer").get_child(0)
+	for child in seat.get_children():
+		if child is Panel and absf((child as Control).size.x - avatar) < 0.5:
+			mask = child
+		elif child is TextureRect and (child as TextureRect).texture != null:
+			frame = child
+	if not h.expect(mask != null and frame != null, "party_seat_nodes",
+			"排位房席位没有头像圆(%s) / 头像框(%s) 节点" % [mask != null, frame != null]):
+		party.queue_free()
+		return
+
+	var disc_center := mask.position + mask.size * 0.5
+	var want_drawn := AvatarCatalog.frame_drawn_size(frame_id, hole)
+	h.expect(want_drawn.x > 0.0, "party_want_drawn_positive",
+		"用归一化后的 id「%s」反推不出绘制尺寸（素材路径变了？）" % frame_id)
+	h.expect(frame.size.is_equal_approx(want_drawn), "party_frame_drawn_from_id",
+		"席位框实际尺寸 %s != 由归一化 id 反推的 %s —— 没归一化时会退回旧的 154 盒"
+			% [frame.size, want_drawn])
+	h.expect(frame.position.is_equal_approx(
+			AvatarCatalog.frame_box_origin(frame_id, hole, disc_center)),
+		"party_frame_origin_from_id",
+		"席位框落点 %s != 内孔圆心压在头像圆心的落点 %s"
+			% [frame.position, AvatarCatalog.frame_box_origin(frame_id, hole, disc_center)])
+	h.expect(frame.get_index() < mask.get_index(), "party_frame_below_avatar",
+		"排位房头像框画在头像**上面**了（框 idx=%d ≥ 头像 idx=%d）—— 圆内孔会吃掉头像边缘"
+			% [frame.get_index(), mask.get_index()])
+	# 判别力：原始值（未归一化）必须算不出尺寸 —— 否则上面那条
+	# `party_frame_drawn_from_id` 就算没归一化也会绿，判据等于空的。
+	h.expect(AvatarCatalog.frame_drawn_size(frame_value, hole) == Vector2.ZERO,
+		"party_raw_value_yields_zero",
+		"原始值「%s」竟然能反推出尺寸 —— 归一化那一步已经不是必需的了，本组判据失去判别力"
+			% frame_value)
+
+	party.queue_free()
+	await get_tree().process_frame

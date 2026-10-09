@@ -176,10 +176,17 @@ func _build() -> void:
 	actions.alignment = BoxContainer.ALIGNMENT_CENTER
 	actions.add_theme_constant_override("separation", 16)
 	column.add_child(actions)
+	# 10.10 bug 第 14 条：排位对局结束的结算页**去掉「确认并返回大厅」**，
+	# 只留「查看详细战况」—— actions 是 ALIGNMENT_CENTER，单独一个按钮即居中。
+	#
+	# ⚠ 不能无条件删掉「确认」：没有详细战况时（show_details=false）这张页面
+	#   就一个出口都没有，玩家被卡死在结算页。所以「确认」只在**拿不到详细战况**
+	#   时兜底显示；正常情况下出口是 查看详细战况 → 结算面板的「返回队伍 / 返回主菜单」。
+	var has_details := bool(data.get("show_details", false))
 	_details = ACTION_BUTTON.instantiate()
 	_details.text = _t("查看详细战况", "Match details")
 	_details.custom_minimum_size = Vector2(220, 52)
-	_details.visible = bool(data.get("show_details", false))
+	_details.visible = has_details
 	_details.disabled = true
 	_details.pressed.connect(func() -> void: details_requested.emit())
 	actions.add_child(_details)
@@ -187,6 +194,7 @@ func _build() -> void:
 	_confirm.text = _t("确认并返回大厅", "Confirm and return")
 	_confirm.custom_minimum_size = Vector2(260, 52)
 	_confirm.disabled = true
+	_confirm.visible = not has_details
 	_confirm.pressed.connect(func() -> void: confirmed.emit())
 	actions.add_child(_confirm)
 	_retry = ACTION_BUTTON.instantiate()

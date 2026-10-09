@@ -11,6 +11,8 @@ const REF := Vector2(1672, 941)
 const BG := preload("res://assets/ui/main_menu_live/background.png")
 const PET_STAGE := preload("res://scenes/menu/MainMenuPet.gd")
 const PARTY_VOICE := preload("res://scenes/menu/PartyVoice.gd")
+# 10.10：BGM 压低（开麦时）。排位房的语音是独立 PartyVoice，靠探针接进来。
+const MUSIC_SERVICE := preload("res://ui/services/MusicService.gd")
 const AVATARS := preload("res://scripts/account/AvatarCatalog.gd")
 const RANKS := preload("res://scenes/menu/RankedTiers.gd")
 const PROFILE_DISC := preload("res://assets/ui/main_menu_live/profile_avatar.png")
@@ -64,6 +66,9 @@ const PHRASE_BTN_SIZE := Vector2(162, 40)      # PHRASE_BTN_SIZE，两列
 const PHRASE_BTN_STEP := Vector2(170, 48)      # PHRASE_BTN_STEP
 const PHRASE_BTN_FONT := 15
 const KICK_BTN_SIZE := Vector2(38, 38)         # 座位上的「×」
+# 席位头像框的基准盒（154×154，既有值）。只当「反推内孔」的基准用 —— 框真正画多大
+# 由 `_seat_hole_target()` 反推，见 `_render_seats`。
+const SEAT_FRAME_SIZE := Vector2(154, 154)
 const CHAT_POS := Vector2(37, 724)
 const CHAT_SIZE := Vector2(430, 190)           # 聊天框宽 430（TEX_CHAT）
 const CHAT_EXPANDED_H := 437.0
@@ -79,6 +84,9 @@ var _preview := ""
 var _room: Dictionary = {}
 var _friends: Array = []
 var _friends_busy := false
+# 10.10：好友列表的「内容签名」。数据没变就不重建列表 —— 否则 presence 推送 /
+# 5 秒轮询会把玩家正在拖动的滚动条连同滚动位置一起重置（真机表现为「滚动条消失」）。
+var _friends_sig := ""
 var _local_only := true
 var _load_error := ""
 var _loading_room := false
@@ -159,6 +167,10 @@ func configure_preview(role: String) -> void:
 
 func _ready() -> void:
 	_build()
+	# 10.10 需求：排位房开麦后 BGM 要变小（与自定义房间、对局一致）。
+	# 本页语音走独立的 PartyVoice（自带 mode，不写 VoiceService.mode），所以给
+	# MusicService 注册一个探针补上这条判据；出树时清掉。
+	MUSIC_SERVICE.set_talk_probe(_party_voice_talking)
 	get_viewport().size_changed.connect(_layout)
 	_layout()
 	if not RealtimeService.message_received.is_connected(_on_realtime):
@@ -189,6 +201,7 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	MUSIC_SERVICE.clear_talk_probe()
 	if RealtimeService.message_received.is_connected(_on_realtime):
 		RealtimeService.message_received.disconnect(_on_realtime)
 	if AccountManager.profile_changed.is_connected(_on_local_profile_changed):
@@ -484,6 +497,18 @@ func _apply(next: Dictionary) -> void:
 		_open_voice_panel()
 
 
+# 席位头像框的**目标内孔直径** = 盘盒 × 默认圆盘的内孔占比。
+#
+# ★ 口径与 `MainMenu._profile_hole_target()` / `Team3v3Lobby._slot_hole_target()`
+#   完全一致：内孔取「默认圆盘那一档」，**不是**头像直径本身。
+#   内孔必须 **≤ 头像**（这里 154×0.6271 ≈ 96.6 < 100）：框画在头像**下面**，
+#   内孔一旦大过头像，头像外面就会露出一圈背景缝。这条由门禁
+#   `seat_frame_check` 的 `party_hole_not_larger_than_avatar` 锁住。
+# ★ 不写死数字：素材换图或 FRAME_HOLE_FRAC 被改错时，这里跟着默认圆盘一起走。
+static func _seat_hole_target() -> float:
+	return SEAT_FRAME_SIZE.x * AVATARS.default_disc_hole_fraction()
+
+
 func _render_seats() -> void:
 	_clear_children(_seat_layer)
 	_seat_frames.clear()
@@ -519,8 +544,6 @@ func _render_seats() -> void:
 		frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
 		frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		seat.add_child(frame)
-		frame.position = Vector2(30, 0)
-		frame.size = Vector2(154, 154)
 		var mask := Panel.new()
 		mask.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
 		mask.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -531,6 +554,31 @@ func _render_seats() -> void:
 		seat.add_child(mask)
 		mask.position = Vector2(57, 27)
 		mask.size = Vector2(100, 100)
+		# 10.10：头像框按「内孔对头像圆」定位（与自定义房间同一套 catalog 几何）。
+		# 原来是固定 154×154 + KEEP_ASPECT，框的内孔与头像圆对不齐，真机上看起来
+		# 「框只露出一半」。改为：以头像圆心为锚、按框自身的内孔比例反推绘制尺寸与
+		# 落点（frame_drawn_size / frame_box_origin），孔位对齐后框就完整了。
+		#
+		# ★★ 10.10 返工：上一版**没归一化 id**，等于没生效 —— `avatar_frame` 存的是
+		#    `preset:<id>`，而 `frame_drawn_size` / `frame_box_origin` 要的是裸 id。
+		#    传原始值时 `frame_source_size()` 读不到素材、`FRAME_HOLE_FRAC` 也查不到，
+		#    直接返回 (0,0)，静默掉进下面的 else 分支、退回旧的固定 154 盒 ——
+		#    真机上框依旧只露一半（用户第二次反馈）。必须先 `id_from_value()`。
+		var frame_value := str(member.get("avatar_frame", ""))
+		var frame_id := AVATARS.id_from_value(frame_value)
+		if frame_id.is_empty():
+			# 认不出来的值（空串 / 以后的 upload:）当默认框画 —— 与上面
+			# `frame_texture_for()` 的回退同一个口径，免得「图是默认框、几何是别的」。
+			frame_id = AVATARS.id_from_value(AVATARS.default_frame())
+		var disc_center := mask.position + mask.size * 0.5
+		var hole := _seat_hole_target()
+		var frame_drawn := AVATARS.frame_drawn_size(frame_id, hole)
+		if frame_drawn.x > 0.0:
+			frame.size = frame_drawn
+			frame.position = AVATARS.frame_box_origin(frame_id, hole, disc_center)
+		else:
+			frame.size = SEAT_FRAME_SIZE
+			frame.position = disc_center - frame.size * 0.5
 		var portrait := TextureRect.new()
 		portrait.texture = AVATARS.texture_for(str(member.get("avatar", "")), true)
 		portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -576,20 +624,27 @@ func _render_seats() -> void:
 
 
 func _render_friends() -> void:
+	var room_count := (_room.get("members", []) as Array).size()
+	var online_count := 0
+	for raw in _friends:
+		var friend: Dictionary = raw
+		if bool(friend.get("online", false)):
+			online_count += 1
+	_friends_toggle.text = _text("好友  %d 在线" % online_count, "FRIENDS  %d" % online_count)
+	# ★★ 10.10 修「拖动时滚动条消失」：数据没变就**不重建**。原来 presence 推送与
+	# 5 秒轮询都无条件 _clear_children + 重设尺寸，玩家正往下拖时列表整个被换掉，
+	# 滚动位置被 clamp、滚动条随内容高度瞬时归零 —— 看起来就是「滚动条突然没了」。
+	var sig := _friends_signature(room_count)
+	if sig == _friends_sig and _friend_list.get_child_count() > 0:
+		return
+	_friends_sig = sig
 	_clear_children(_friend_list)
 	_clear_children(_friend_rail)
 	var drawer_height := minf(567.0, maxf(180.0, 103.0 + float(_friends.size()) * 90.0))
 	_friends_drawer.custom_minimum_size.y = drawer_height
 	_friends_drawer.size.y = drawer_height
 	(_friend_list.get_parent() as ScrollContainer).size.y = drawer_height - 101.0
-	var room_count := (_room.get("members", []) as Array).size()
-	var online_count := 0
 	var quick_count := 0
-	for raw in _friends:
-		var friend: Dictionary = raw
-		if bool(friend.get("online", false)):
-			online_count += 1
-	_friends_toggle.text = _text("好友  %d 在线" % online_count, "FRIENDS  %d" % online_count)
 	for online_pass in [true, false]:
 		for raw in _friends:
 			var friend: Dictionary = raw
@@ -626,6 +681,21 @@ func _render_friends() -> void:
 		_label(_friend_list, _text("暂无好友", "No friends yet"), Vector2(18, 16), Vector2(312, 36), 19, Color("657057"))
 	elif online_count == 0:
 		_label(_friend_rail, _text("暂无在线好友", "No one online"), Vector2.ZERO, Vector2(105, 50), 16, CREAM)
+
+
+# 好友列表的内容签名：把参与渲染的字段按顺序拼起来（含房间人数与本地预览开关，
+# 它们决定邀请按钮是否禁用）。签名不变 ⇒ 重建结果完全一致 ⇒ 跳过重建。
+func _friends_signature(room_count: int) -> String:
+	var parts := PackedStringArray()
+	parts.append("room=%d" % room_count)
+	parts.append("preview=%s" % _preview)
+	parts.append("local=%s" % str(_local_only))
+	for raw in _friends:
+		var f: Dictionary = raw
+		parts.append("%s|%s|%s|%s" % [
+			str(f.get("friend_code", "")), str(f.get("online", false)),
+			str(f.get("player_name", "")), str(f.get("avatar", ""))])
+	return ";;".join(parts)
 
 
 func _render_pets() -> void:
@@ -1199,6 +1269,17 @@ func stop_party_voice() -> void:
 		_party_voice.stop()
 
 
+# MusicService 的语音探针（10.10）：排位房此刻是否在通话（开麦 + 桥接已连上）。
+# 与对局/自定义房间那条判据同口径 —— 都是「真的在录音才算通话」，权限没给、
+# 连接失败时 PartyVoice 自己会把 mic_enabled 落回 false，这里自然就返回 false。
+func _party_voice_talking() -> bool:
+	if not is_instance_valid(_party_voice):
+		return false
+	if not bool(_party_voice.get("mic_enabled")):
+		return false
+	return bool(_party_voice.call("connected"))
+
+
 func _my_code() -> String:
 	if _preview != "":
 		return str(_my_member().get("friend_code", ""))
@@ -1768,11 +1849,9 @@ func _clear_children(parent: Node) -> void:
 
 
 func _pet_name(pet_id: String) -> String:
-	match pet_id:
-		"pet_cat": return _text("猫", "Cat")
-		"pet_rabbit": return _text("兔子", "Rabbit")
-		"pet_mushroom": return _text("蘑菇", "Mushroom")
-	return pet_id
+	# 10.10：改走 PetService.display_name（LocaleManager 的 pet_name_* 全家桶），
+	# 不再只硬编码 3 只 —— 之前老虎/松鼠会露出原始 id "pet_tiger"/"pet_squirrel"。
+	return PetService.display_name(pet_id)
 
 
 func _is_en() -> bool:

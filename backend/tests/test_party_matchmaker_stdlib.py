@@ -29,11 +29,19 @@ idled = []
 
 
 class PartyStub:
-    def finish_for_match(self, players):
+    # 10.10 bug 第 6 条：确认弹窗要画两队头像，匹配服务会从组队房读公开身份
+    # （matchmaking._public_profiles → party.Room.profiles）。测试按需塞。
+    profiles_by_player = {}
+
+    # 10.10 bug 第 9 条：排位房间不关，matchmaking 会把这一局的 match_uid 一起传下来。
+    def finish_for_match(self, players, match_uid=""):
         finished.append(players)
 
     def of(self, _player):
-        return None
+        profile = self.profiles_by_player.get(_player)
+        if profile is None:
+            return None
+        return types.SimpleNamespace(profiles={_player: profile})
 
     def mark_idle(self, room):
         idled.append(room)
@@ -92,6 +100,44 @@ class PartyMatchTests(unittest.TestCase):
         asyncio.run(self.maker.tick())
         self.assertEqual(len(self.sent), 6)
         self.sent.clear()
+
+    # ---- 10.10 bug 第 6 条：found 消息带「两队座位 + 公开身份 + 谁确认了」------
+    def test_found_message_carries_public_seat_roster(self):
+        PartyStub.profiles_by_player = {
+            player(1): {"player_name": "阿甲", "friend_code": "AAA00001",
+                        "avatar": "avatar_a", "avatar_frame": "frame_a"},
+            player(4): {"player_name": "阿丁", "friend_code": "AAA00004",
+                        "avatar": "avatar_d", "avatar_frame": "frame_d"},
+        }
+        try:
+            self._match_trio_with_three_solos()
+            # _match_trio_with_three_solos 把 sent 清空了 ⇒ 重新从 state_of 取一份
+            # （推送与 /v1/match/state 走的是同一个 found_for，形状一致）。
+            state = self.maker.state_of(player(1))
+            seats = state["seats"]
+            self.assertEqual(len(seats), 6, "六个座位都要下发")
+            self.assertEqual([s["team"] for s in seats], [0, 0, 0, 1, 1, 1],
+                             "按 team 排序：三红三蓝")
+            me = [s for s in seats if s["me"]]
+            self.assertEqual(len(me), 1, "只有自己那一个是 me")
+            self.assertEqual(me[0]["name"], "阿甲", "自己的公开昵称从组队房带出来")
+            self.assertEqual(me[0]["avatar"], "avatar_a")
+            self.assertFalse(me[0]["accepted"], "还没确认")
+            # 🔴 名片里的 friend_code 绝不能进这条消息（10.04 第 5 条同口径）。
+            for seat in seats:
+                self.assertNotIn("friend_code", seat)
+                self.assertNotIn("player_id", seat)
+                self.assertNotIn("AAA", str(seat))
+            # 组队房里没有名片的人（2/3/5/6）留空，客户端画占位，不是崩。
+            self.assertEqual(next(s for s in seats if s["name"] == "")["avatar"], "")
+            # 确认之后 accepted 翻转，且**每个人看到的都是同一份**。
+            self.maker.accept(player(1))
+            self.maker.accept(player(4))
+            later = {s["name"]: s["accepted"] for s in self.maker.state_of(player(2))["seats"]}
+            self.assertTrue(later["阿甲"], "队友确认后，别人也该看到 √")
+            self.assertTrue(later["阿丁"])
+        finally:
+            PartyStub.profiles_by_player = {}
 
     def test_existing_solo_path(self):
         for i in range(1, 7):

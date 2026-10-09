@@ -319,8 +319,10 @@ func _build_card(pet_id: String, starter_mode: bool) -> Control:
 	card.add_child(content)
 
 	# 操作条在立绘上方；以后增加宠物也不会盖住脸或让按钮上下漂移。
+	# 10.10：口味反转 —— **出战中**才是金框（disabled 也要金框），可点的「设为出战」不再带金框；
+	# 选初始宠物的「选择」仍按主操作给金框。
 	var action := _build_card_button(pet_id, owned, is_active, starter_mode)
-	_style_prep_button(action, not greyed and not is_active)
+	_style_prep_button(action, starter_mode or is_active)
 	content.add_child(action)
 	var art := PetPreview.build_illustration(pet_id, PET_ART_SIZE, false)
 	art.modulate = Color(0.73, 0.73, 0.73) if greyed else Color.WHITE
@@ -368,11 +370,14 @@ func _build_card_button(pet_id: String, owned: bool, is_active: bool, starter_mo
 	return btn
 
 func _style_prep_button(btn: Button, primary: bool = false) -> void:
+	# primary = 金框（「出战中」/选宠主操作）。10.10 起 disabled 也跟随 primary，
+	# 否则「出战中」作为 disabled 会被这条覆盖成无框。
 	var idle := Tokens.PREP_GLASS_RAISED if primary else Tokens.PREP_GLASS
 	btn.add_theme_stylebox_override("normal", Tokens.button_box(idle, Tokens.GOLD_EDGE if primary else Tokens.PREP_EDGE))
 	btn.add_theme_stylebox_override("hover", Tokens.button_box(Tokens.PREP_GLASS_RAISED, Tokens.GOLD_EDGE))
 	btn.add_theme_stylebox_override("pressed", Tokens.button_box(Tokens.PREP_GLASS_RAISED, Tokens.GOLD_EDGE))
-	btn.add_theme_stylebox_override("disabled", Tokens.button_box(Tokens.PREP_GLASS, Tokens.PREP_EDGE))
+	btn.add_theme_stylebox_override("disabled", Tokens.button_box(
+		Tokens.PREP_GLASS, Tokens.GOLD_EDGE if primary else Tokens.PREP_EDGE))
 	for state in ["font_color", "font_hover_color", "font_pressed_color", "font_disabled_color"]:
 		btn.add_theme_color_override(state, Tokens.PREP_TEXT_MUTED if state == "font_disabled_color" else Tokens.PREP_TEXT)
 
@@ -418,7 +423,7 @@ func _build_race_box() -> Control:
 	_race_roster_title.add_theme_color_override("font_color", Tokens.PREP_TEXT)
 	roster_header.add_child(_race_roster_title)
 	var bond_btn := ActionButtonScene.instantiate() as Button
-	bond_btn.text = "查看羁绊"
+	bond_btn.text = tr("race_pick_view_bond")
 	bond_btn.custom_minimum_size = Vector2(120, Tokens.TOUCH_MIN)
 	_style_prep_button(bond_btn)
 	bond_btn.pressed.connect(func() -> void: _show_race_bond(_viewed_race))
@@ -674,6 +679,7 @@ func _show_race_bond(race: String) -> void:
 	DialogService.info({
 		"title": SynergyBond.format_synergy_title(race),
 		"body": body,
+		"confirm_text": tr("codex_bond_gotit"),
 		"owner": self,
 	})
 

@@ -71,6 +71,17 @@ static func build(room: Dictionary, replays: Array, outcome: int, gold_authorita
 		"match_uid": str(room.get("match_uid", "")), "mode": str(room.get("mode", "custom")),
 		"kind": kind, "gold_authoritative": gold_authoritative, "show_details": true}
 
+
+# 10.10 bug 第 9 条：这个 mode 的队伍房间会在「六人确认」那一刻被后端**保留**吗？
+# 保留 ⇒ 结算面板长出「返回队伍」，点了回排队之前那个队伍房间
+# （后端见 party.finish_for_match；两边必须同口径）。
+#
+# 休闲与排位只差「是否结算积分」，流程完全一样 ⇒ 两者都保留。
+# 自定义对局（mode == "custom"）走的是宿主 ENet 房间那条「返回房间」，不走这里。
+static func room_survives_match(mode: String) -> bool:
+	return mode == "casual" or mode == "ranked"
+
+
 static func units(raw: Array) -> Array:
 	var out: Array = []
 	for index in raw.size():

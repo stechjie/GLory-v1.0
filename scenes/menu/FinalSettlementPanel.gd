@@ -2,6 +2,10 @@ extends Control
 
 signal return_room_requested
 signal return_menu_requested
+# 10.10 bug 第 9 条：排位对局结束，回「之前的排位队伍房间」。
+# 与 return_room_requested（自定义房间，走宿主 RPC 结算返回）是两条不同的路：
+# 排位队伍房间是账号服务器上的 HTTP 房间，重进就是重新打开 PartyLobby。
+signal return_party_requested
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Action := preload("res://ui/components/GloryActionButton.tscn")
@@ -20,6 +24,9 @@ var _bubble_label: Label
 # 10.06 反馈第 5 条：面板上、下各有一排同样的按钮，两排都要能被 allow_return_retry 重新启用，
 # 所以用数组收集（原来是单个 _return_button）。
 var _return_buttons: Array = []
+# 10.10 bug 第 9 条：「返回队伍」按钮（排位）。与 _return_buttons 分开收，
+# 因为 allow_return_retry() 复原时要写回各自不同的文案。
+var _party_buttons: Array = []
 
 func _ready() -> void:
 	# Both live settlement and history render these same rows. Derive the total
@@ -89,6 +96,41 @@ func allow_return_retry() -> void:
 		if is_instance_valid(button):
 			button.disabled = false
 			button.text = tr("settle_back_room")
+	for button in _party_buttons:
+		if is_instance_valid(button):
+			button.disabled = false
+			button.text = tr("settle_back_party")
+
+
+# --- 10.10 bug 第 8 条：自身视角的座位要带「（我）」标记 -------------------------
+#
+# 两个入口喂同一张面板，判定方式不同：
+#   ① 打完那一刻：Main._show_game_over 把 FinalSettlementData.build 的结果交给面板，
+#      座位里**没有**标记 —— 用当前会话的 team_local_slot 判（live 时 team_active=true）；
+#   ② 对局历史：MatchHistoryPanel.settlement_view_data 在座位里写 is_local
+#      （历史记录里存的只有 my_slot，本机座位早已不存在）。
+# 显式标记优先，避免历史入口既在数据里带标记、面板又叠一次。
+func _is_local_seat(slot: int, seat: Dictionary) -> bool:
+	if seat.has("is_local"):
+		return bool(seat.get("is_local", false))
+	if not NetworkService.team_active:
+		return false
+	return slot == NetworkService.team_local_slot
+
+
+# 与自定义房间（Team3v3Lobby「（我） / (Me)」）同口径：中文紧贴、英文带前导空格。
+# ⚠ 必须走 tr()（LocaleManager 的 settle_me_mark），不要在面板里写死中文字面量 ——
+#   prep_1008 的 bug1_no_bare_chinese_literals 会把它判红（英文界面下不切换）。
+func _me_mark() -> String:
+	return tr("settle_me_mark")
+
+
+# 座位显示名：空位（name 为空）不加标记，避免出现「（我）」孤零零挂着。
+func _seat_display_name(slot: int, seat: Dictionary) -> String:
+	var base := str(seat.get("name", ""))
+	if base.is_empty():
+		return base
+	return base + _me_mark() if _is_local_seat(slot, seat) else base
 
 
 # 一排操作按钮（返回房间 + 返回主菜单 / 关闭）。上、下两处共用这一份构造，
@@ -107,6 +149,17 @@ func _button_row() -> HBoxContainer:
 				other.text = tr("settle_returning")
 		return_room_requested.emit())
 	_return_buttons.append(return_button)
+	# 10.10 bug 第 9 条：排位对局结束（没有自定义房间）时给的「返回队伍」。
+	# 只有排位队伍房间真的还在（后端保留）才会被置 can_return_party，历史入口恒 false。
+	var party_button := _button(tr("settle_back_party"), buttons)
+	party_button.visible = bool(data.get("can_return_party", false))
+	party_button.pressed.connect(func():
+		for other in _party_buttons:
+			if is_instance_valid(other):
+				other.disabled = true
+				other.text = tr("settle_returning")
+		return_party_requested.emit())
+	_party_buttons.append(party_button)
 	var menu := _button(close_text if not close_text.is_empty() else tr("settle_back_menu"), buttons)
 	menu.add_theme_stylebox_override("normal", Tokens.panel_box(Color("e9aa43"), GOLD, 10))
 	menu.add_theme_color_override("font_color", Color("231a0d"))
@@ -190,7 +243,7 @@ func _team(side: int) -> Control:
 		var row := _row(WIDTHS)
 		row.custom_minimum_size.y = 76
 		column.add_child(_row_panel(row, Color(0.025, 0.055, 0.1, 0.46)))
-		var name_label := _label(str(seat.get("name", "")), GameConstants.team_slot_color(slot), 15)
+		var name_label := _label(_seat_display_name(slot, seat), GameConstants.team_slot_color(slot), 15)
 		name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		row.get_child(0).add_child(name_label)
 		for group in 3:
@@ -243,6 +296,7 @@ func _stats() -> Control:
 		header.get_child(i).add_child(label)
 	column.add_child(_row_panel(header, Color(0.025, 0.055, 0.1, 0.42)))
 	var row_index := 0
+	var seats_row: Array = data.get("seats", [])
 	for entry in data.get("stats", []):
 		var slot := int(entry.get("owner_slot", 0))
 		var color := GameConstants.team_slot_color(slot)
@@ -250,7 +304,11 @@ func _stats() -> Control:
 		row.custom_minimum_size.y = 44
 		var star := 0 if bool(entry.get("is_mercenary", false)) else int(entry.get("star", 1))
 		var stacks := _king_stacks(entry)
-		var values := [_stat_unit_name(entry) + _stars_text(star) + (tr("settle_stacks") % stacks if stacks > 0 else ""), str(data.seats[slot].name), str(entry.get("damage_dealt", 0)), str(entry.get("damage_taken", 0)), str(entry.get("healing_done", 0))]
+		# 10.10 bug 第 8 条：统计表「所属玩家」列也要带自身标记（与上表同口径）。
+		# 旧记录 / 越界 owner_slot 取不到座位时退化为空串，不再直接下标越界。
+		var owner_seat: Dictionary = seats_row[slot] if slot >= 0 and slot < seats_row.size() and typeof(seats_row[slot]) == TYPE_DICTIONARY else {}
+		var owner_name := _seat_display_name(slot, owner_seat)
+		var values := [_stat_unit_name(entry) + _stars_text(star) + (tr("settle_stacks") % stacks if stacks > 0 else ""), owner_name, str(entry.get("damage_dealt", 0)), str(entry.get("damage_taken", 0)), str(entry.get("healing_done", 0))]
 		for i in 5:
 			var label := _label(values[i], color if i < 2 else (GOLD if i == 2 else (Color("62cfa2") if i == 4 else MUTED)), 15)
 			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if i >= 2 else HORIZONTAL_ALIGNMENT_LEFT

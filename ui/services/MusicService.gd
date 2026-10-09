@@ -46,6 +46,11 @@ static var _path := ""
 static var _installed := false
 # 「下一帧再同步一次」是否已经约过（见 _retry_sync_next_frame）。
 static var _retry_queued := false
+# 语音压低 BGM 的**额外判据源**（10.10）。对局 / 自定义房间的语音走 VoiceService
+# （autoload），本服务本来就认；但**排位房**用的是 PartyLobby 自己的 PartyVoice 节点
+# （自带 mode 与开关，从不写 VoiceService.mode）⇒ 排位房开麦时 BGM 一直不降。
+# 由 PartyLobby 在 _ready 注册一个「现在是否在通话」的探针，离开页面时清掉。
+static var _talk_probe: Callable = Callable()
 static var _application_suspended := false
 static var _resume_position := 0.0
 static var _resume_path := ""
@@ -201,14 +206,31 @@ static func _stream_for(path: String) -> AudioStream:
 	return stream
 
 
+# 注册 / 注销「额外语音判据」。探针返回 true 表示当前正在通话（应压低 BGM）。
+# 只允许一个来源注册一次：排位房页面进树时注册、出树时清除。
+static func set_talk_probe(probe: Callable) -> void:
+	_talk_probe = probe
+
+
+static func clear_talk_probe() -> void:
+	_talk_probe = Callable()
+
+
+# 对局 / 自定义房间的语音判据：VoiceService 处于通话态、已连上、麦克风在录。
+static func _voice_service_talking() -> bool:
+	var voice := VoiceService.status()
+	return VoiceService.mode == VoiceService.Mode.TALK \
+		and str(voice.get("state", "")) == "connected" and bool(voice.get("mic_on", false))
+
+
 # Only the music player is attenuated; never the Master bus or remote voices.
 # Native status confirms capture actually started (permission/publish may fail).
 static func _sync_voice_volume() -> void:
 	if _player == null or not is_instance_valid(_player):
 		return
-	var voice := VoiceService.status()
-	var talking := VoiceService.mode == VoiceService.Mode.TALK \
-		and str(voice.get("state", "")) == "connected" and bool(voice.get("mic_on", false))
+	var talking := _voice_service_talking()
+	if not talking and _talk_probe.is_valid():
+		talking = bool(_talk_probe.call())
 	_player.volume_linear = (1.0 / 6.0) if talking else 1.0
 
 

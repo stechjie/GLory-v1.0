@@ -25,6 +25,9 @@ extends Node
 
 signal state_changed(label: String)
 
+# 语音音量的裁决处（同 VoiceService）：设置页那条「语音音量」在这里也生效。
+const Presentation := preload("res://effects/runtime/presentation/PresentationSettings.gd")
+
 enum Mode { OFF, LISTEN, TALK }
 
 # 钥匙 10 分钟有效，留 2 分钟余量（同 VoiceService.TOKEN_REUSE_SEC）。
@@ -281,13 +284,15 @@ func _leave_bridge() -> void:
 	_status = {}
 
 
-# 关扬声器 = 每个人音量 0；屏蔽 = 这个人音量 0（只影响自己）。
+# 关扬声器 = 每个人音量 0；屏蔽 = 这个人音量 0（只影响自己）；
+# 「语音音量」设置（10.10 反馈第 4 条）乘上来 —— 与对局里的 VoiceService 同一个裁决处。
 func _apply_volumes() -> void:
 	if not _connected or not _has_bridge_method("setParticipantVolume"):
 		return
+	var level := Presentation.voice_volume()
 	for identity in status().get("participants", []):
 		var code := str(identity)
-		var volume := 0.0 if not speaker_enabled or VoiceService.is_code_muted(code) else 1.0
+		var volume := 0.0 if not speaker_enabled or VoiceService.is_code_muted(code) else level
 		if float(_applied_volumes.get(code, -1.0)) != volume:
 			_bridge.setParticipantVolume(code, volume)
 			_applied_volumes[code] = volume

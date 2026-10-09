@@ -25,6 +25,8 @@ const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const SfxService := preload("res://ui/services/SfxService.gd")
+# 10.10 bug 第 6 条：确认阶段要画两支队伍的头像（打√表示已确认）。
+const AVATARS := preload("res://scripts/account/AvatarCatalog.gd")
 
 # 拿到对局分配，可以去连战斗服务器了。
 signal match_ready()
@@ -53,6 +55,8 @@ var _title: Label
 var _detail: Label
 var _accept_btn: Button
 var _leave_btn: Button
+# 10.10 bug 第 6 条：确认阶段的两队头像条（两行三列，同对局内左上角的排法）。
+var _roster: VBoxContainer
 
 
 func configure(mode: String, party_queue: bool = false, party_host: bool = false) -> void:
@@ -105,6 +109,12 @@ func _build() -> void:
 	_detail.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
 	column.add_child(_detail)
 
+	# 10.10 bug 第 6 条：两队头像（上=红队三席、下=蓝队三席）。只在 found 状态显示。
+	_roster = VBoxContainer.new()
+	_roster.add_theme_constant_override("separation", 10)
+	_roster.visible = false
+	column.add_child(_roster)
+
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", Tokens.GAP_M)
@@ -147,7 +157,9 @@ func _on_accept() -> void:
 		return
 	_busy = true
 	_accept_btn.disabled = true
-	_set_detail(_text("已确认，等其他人…", "Accepted, waiting for others…"))
+	# 10.10 bug 第 6 条：不再写「已确认，等其他人…」—— 确认后自己那颗头像会打√
+	# （服务端 found 消息带 seats），这里只把提示清掉，避免和头像重复。
+	_set_detail("")
 	var result: Dictionary = await AccountManager.accept_match()
 	_busy = false
 	if not is_inside_tree():
@@ -181,7 +193,8 @@ func _on_realtime_message(payload: Dictionary) -> void:
 func _process(delta: float) -> void:
 	if _state == "found" and _accept_deadline > 0.0:
 		var left := maxi(0, int(ceil(_accept_deadline - Time.get_ticks_msec() / 1000.0)))
-		_title.text = "%s %d" % [_text("找到对局！", "Match found!"), left]
+		# 10.10 bug 第 6 条：标题改成「匹配成功。确认倒计时：N」。
+		_title.text = _text("匹配成功。确认倒计时：%d", "Match found. Confirming in %d") % left
 	if _state in ["idle", "ready"]:
 		return
 	# WS 断着时的兜底。连着的时候也轮询，只是拿到的都是同一个状态 ——
@@ -221,6 +234,7 @@ func _apply(state: Dictionary) -> void:
 				"Queue position %d · %s" % [position, _mode_word()]))
 			_accept_btn.visible = false
 			_accept_btn.disabled = false
+			_roster.visible = false
 			_leave_btn.text = _text("取消排队", "Leave Queue")
 		"found":
 			if previous != "found":
@@ -228,27 +242,28 @@ func _apply(state: Dictionary) -> void:
 			# 倒计时只是显示，真正的时限在服务器（见文件头第 2 条）。
 			_accept_deadline = Time.get_ticks_msec() / 1000.0 + minf(
 				ACCEPT_SEC, float(state.get("accept_sec", ACCEPT_SEC)))
-			_title.text = _text("找到对局！", "Match found!")
-			# 「我按了没」由服务器说（协议里原来没有这一位，所以按完之后这个分支会
-			# 把界面整个重画回「没按」的样子 —— 看起来就像没按到）。
+			_title.text = _text("匹配成功。确认倒计时：%d", "Match found. Confirming in %d") % int(
+				ceil(minf(ACCEPT_SEC, float(state.get("accept_sec", ACCEPT_SEC)))))
+			# 10.10 bug 第 6 条：删掉「已确认 N/6，等其他人…」，换成**两队头像 + √** ——
+			# 谁确认了直接看头像上有没有√，比一行计数更清楚，也不会和轮询重画打架。
+			_render_roster(state.get("seats", []))
+			# 「我按了没」由服务器说（协议里原来没有这一位）。
 			var accepted := bool(state.get("accepted", false))
-			var done := int(state.get("accepted_count", 0))
-			var total := int(state.get("total", 6))
 			if accepted:
-				_set_detail(_text("已确认 %d/%d，等其他人…" % [done, total],
-					"Accepted %d/%d, waiting for others…" % [done, total]))
+				_set_detail("")
 				# 按钮留在原位但禁用：直接隐藏会让布局跳一下，而玩家刚按完正盯着它。
 				_accept_btn.visible = true
 				_accept_btn.disabled = true
 			else:
-				_set_detail(_text("六个人都确认才开始（%d/%d）。不确认会被移出队列。" % [done, total],
-					"All six must accept (%d/%d). Not accepting drops you from the queue." % [done, total]))
+				_set_detail(_text("六个人都确认才开始。不确认会被移出队列。",
+					"All six must confirm to start. Not confirming drops you from the queue."))
 				_accept_btn.visible = true
 				_accept_btn.disabled = false
 			_leave_btn.text = _text("拒绝", "Decline")
 		"ready":
 			_title.text = _text("准备进入对局", "Entering match")
 			_set_detail(_text("正在连接对战服务器…", "Connecting to the battle server…"))
+			_roster.visible = false
 			_accept_btn.visible = false
 			_leave_btn.visible = false
 			# 🔴 **只在刚进入 ready 时发一次。**
@@ -267,6 +282,7 @@ func _apply(state: Dictionary) -> void:
 				_set_detail(_text("你没有确认，已被移出队列。",
 					"You did not accept and were removed from the queue."))
 			_accept_btn.visible = false
+			_roster.visible = false
 			_leave_btn.text = _text("关闭", "Close")
 
 
@@ -275,6 +291,7 @@ func _fail(message: String) -> void:
 	_title.text = _text("排不了队", "Cannot queue")
 	_set_detail(message)
 	_accept_btn.visible = false
+	_roster.visible = false
 	_leave_btn.text = _text("关闭", "Close")
 
 
@@ -291,3 +308,120 @@ func _mode_word() -> String:
 
 func _text(zh: String, en: String) -> String:
 	return en if LocaleManager.get_locale().begins_with("en") else zh
+
+
+# --- 10.10 bug 第 6 条：两队头像（确认的人打√）-----------------------------------
+#
+# 服务端 found 消息带 seats：每项 {team, seat, name, avatar, avatar_frame, accepted, me}
+# （backend/app/matchmaking.py 的 _Pending.seat_roster，白名单只出昵称/头像/头像框）。
+# 排法照对局内左上角：**红队一行、蓝队一行，每行三席**。
+# 老服务端不下发 seats ⇒ 不画这一条，退回原来那句计数提示，不会崩。
+
+# 单格盒边长：要**容得下最大的头像框**。框绘制尺寸 ≈ 内孔 ÷ 内孔占比，商城框最小
+# 占比 0.5581 ⇒ 60 / 0.5581 ≈ 107.5，所以盒取 112。
+const SEAT_CHIP := 112.0
+# 头像圆直径。它**同时是「框内孔的目标直径」**：框按这个值反推绘制尺寸，头像圆正好
+# 盖住内孔、框环露在外面（与自定义房间 / 3v3 大厅同一套 catalog 几何）。
+const SEAT_DISC := 60.0
+# 已确认的记号。不是汉字，不必进 LocaleManager。
+const TICK := "√"
+
+
+# 把 seats 画成「红队一行、蓝队一行」。空 / 老协议（没有 seats）就整条收起来。
+func _render_roster(seats: Variant) -> void:
+	if not (seats is Array) or (seats as Array).is_empty():
+		_roster.visible = false
+		return
+	_roster.visible = true
+	_clear_children(_roster)
+	var rows: Array = [HBoxContainer.new(), HBoxContainer.new()]
+	for row in rows:
+		var line: HBoxContainer = row
+		line.alignment = BoxContainer.ALIGNMENT_CENTER
+		line.add_theme_constant_override("separation", Tokens.GAP_S)
+		_roster.add_child(line)
+	for seat in seats:
+		if not (seat is Dictionary):
+			continue
+		var team := clampi(int((seat as Dictionary).get("team", 0)), 0, 1)
+		(rows[team] as HBoxContainer).add_child(_seat_chip(seat))
+
+
+# 画一格头像。**框在头像下面**，头像做圆裁剪后盖住内孔。
+#
+# ★ 顺序不能反：`frame_default` 的素材中心是**不透明的**金棕圆盘（实测
+#   assets/ui/main_menu_live/profile_avatar.png 中心 alpha=255），框画在头像上面
+#   会把整张头像盖掉；而头像缩略图是**方图、四角不透明**，不裁剪会从圆孔的四角戳出来。
+#   所以必须「框在下 + 头像圆裁剪在上 + 内孔对齐头像圆」—— 与 PartyLobby /
+#   Team3v3Lobby 的席位头像同一套（frame_drawn_size / frame_box_origin）。
+func _seat_chip(seat: Dictionary) -> Control:
+	var accepted := bool(seat.get("accepted", false))
+	var frame_value := str(seat.get("avatar_frame", ""))
+	var frame_id := AVATARS.id_from_value(frame_value)
+	var center := Vector2(SEAT_CHIP, SEAT_CHIP) * 0.5
+
+	var box := Control.new()
+	box.custom_minimum_size = Vector2(SEAT_CHIP, SEAT_CHIP)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	# ① 框（在下面）：内孔圆心压在头像圆心上，尺寸由内孔反推。
+	var frame := TextureRect.new()
+	frame.texture = AVATARS.frame_texture_for(frame_value)
+	frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var drawn := AVATARS.frame_drawn_size(frame_id, SEAT_DISC)
+	if frame.texture != null and drawn.x > 0.0:
+		frame.size = drawn
+		frame.position = AVATARS.frame_box_origin(frame_id, SEAT_DISC, center)
+	else:
+		# 图缺失 / 算不出尺寸：宁可少一个装饰，也不能留一个盖住头像的空框。
+		frame.size = Vector2(SEAT_CHIP, SEAT_CHIP)
+		frame.position = center - frame.size * 0.5
+	box.add_child(frame)
+
+	# ② 头像（在上面）：圆裁剪，直径 == 内孔目标。
+	var mask := Panel.new()
+	mask.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
+	mask.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var circle := StyleBoxFlat.new()
+	circle.bg_color = Color.WHITE
+	circle.set_corner_radius_all(int(SEAT_DISC * 0.5))
+	mask.add_theme_stylebox_override("panel", circle)
+	mask.size = Vector2(SEAT_DISC, SEAT_DISC)
+	mask.position = center - mask.size * 0.5
+	box.add_child(mask)
+	var avatar := str(seat.get("avatar", ""))
+	if avatar.is_empty():
+		avatar = AVATARS.default_avatar()
+	var portrait := TextureRect.new()
+	portrait.texture = AVATARS.texture_for(avatar, true)
+	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	portrait.position = Vector2.ZERO
+	portrait.size = mask.size
+	mask.add_child(portrait)
+
+	if accepted:
+		var tick := Label.new()
+		tick.text = TICK
+		tick.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		tick.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		tick.add_theme_font_size_override("font_size", 30)
+		tick.add_theme_color_override("font_color", Color("7ce6a0"))
+		tick.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+		tick.add_theme_constant_override("outline_size", 8)
+		tick.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		tick.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		box.add_child(tick)
+	else:
+		# 还没确认 → 整格（框 + 头像一起）压暗。一眼看出「谁还没按」，省掉那行计数文案。
+		box.modulate = Color(1, 1, 1, 0.32)
+	return box
+
+
+func _clear_children(node: Node) -> void:
+	for child in node.get_children():
+		node.remove_child(child)
+		child.queue_free()

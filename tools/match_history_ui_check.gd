@@ -268,7 +268,17 @@ func _case_settlement_view_data() -> void:
 	var seats: Array = data.get("seats", [])
 	_eq(seats.size(), 6, "view_seat_count", "永远六个座位")
 	var mine: Dictionary = seats[3]
-	_eq(str(mine.get("name", "")), "玩家3号（我）", "view_my_name", "我那个座位的名字（只昵称）")
+	# 10.10 bug 第 8 条：「（我）」标记改由**结算面板**统一加
+	# （FinalSettlementPanel._seat_display_name 读 is_local）—— 历史数据里只带 is_local、
+	# 名字保持干净。若这里也拼上标记，面板会在已经带标记的名字上再叠一次
+	# 「玩家3号（我）（我）」。渲染端是否真加标记由 final_settlement_check 的行为判据盯。
+	_eq(str(mine.get("name", "")), "玩家3号", "view_my_name",
+		"我那个座位的名字（只昵称；「（我）」由结算面板按 is_local 加）")
+	_eq(bool(mine.get("is_local", false)), true, "view_my_local_flag",
+		"我那个座位要带 is_local=true，面板才知道给我加「（我）」")
+	_eq([bool((seats[0] as Dictionary).get("is_local", false)),
+			bool((seats[5] as Dictionary).get("is_local", false))], [false, false],
+		"view_other_not_local", "别的座位不许带 is_local")
 	# 10.04 第 5 条：历史入口的结算面板**也不许带好友码** —— 这正是那条漏修的路
 	# （截图里的「查看详情 → 详细战况」结算面板）。六个座位逐个查，不只我那一行。
 	_eq(str(mine.get("name", "")).contains("#"), false, "view_my_name_has_code",

@@ -413,7 +413,11 @@ static func settlement_view_data(item: Dictionary) -> Dictionary:
 		var owned: Array = seat.get("treasures", []) if typeof(seat.get("treasures")) == TYPE_ARRAY else []
 		seats.append({
 			"slot": slot,
-			"name": seat_name(seat, slot == my_slot),
+			# 10.10 bug 第 8 条：自身标记改由结算面板统一加（FinalSettlementPanel.
+			# _seat_display_name 读 is_local）—— 这里只把「我」是哪个座位告诉面板。
+			# 若在这里也拼上「（我）」，面板会叠成「明（我）（我）」。
+			"name": seat_name(seat, false),
+			"is_local": slot == my_slot,
 			"board": board,
 			"mercenaries": mercs,
 			"treasures": FinalSettlementData.display_treasures(owned),

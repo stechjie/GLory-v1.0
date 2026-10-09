@@ -4,6 +4,7 @@ const Harness := preload("res://tools/CheckHarness.gd")
 const Data := preload("res://scripts/multiplayer/FinalSettlementData.gd")
 const Ledger := preload("res://scripts/multiplayer/EconomyLedger.gd")
 const SettlementPanel :=  preload("res://scenes/menu/FinalSettlementPanel.gd")
+const GameOver := preload("res://scenes/menu/GameOverScreen.gd")
 var h := Harness.new("final_settlement")
 
 # Exercise the real server state transitions with transport replaced by a sink.
@@ -153,6 +154,7 @@ func _run() -> void:
 	_expect(panel.size.x > 0, "panel_instantiates")
 	_check_alignment(panel)
 	_check_icon_bounds(panel)
+	await _check_self_mark_and_return_party()
 	if OS.get_cmdline_user_args().has("--render"):
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png("res://work/voice_redesign_20260930/panel_top.png")
@@ -250,3 +252,120 @@ func _check_icon_bounds(panel: Control) -> void:
 			okay = okay and icon.get_global_rect().end.y <= ancestor.get_global_rect().end.y + 1
 			checked += 1
 	_expect(okay and checked > 0, "wrapped_icons_stay_inside_their_rows")
+
+
+# 10.10 bug 第 8 条：结算面板里**自身视角**的座位要带「（我）」标记。
+# 10.10 bug 第 9 条：排位对局结束的结算面板要长出「返回队伍」按钮。
+#
+# 两条都靠**真实例化 + 真按下**来判：
+#   · 数据里只落「我」是谁（seat.is_local）与「能不能回队伍」（can_return_party），
+#     标记和按钮都由面板自己长出来 —— 这正是要修的那一段；
+#   · 按下按钮后必须真的发出 return_party_requested（只看「按钮存在」会漏掉没接线的假绿）。
+func _check_self_mark_and_return_party() -> void:
+	var ranked := Data.build({"mode": "ranked", "slot_states": [], "boards": {}, "prep": {}, "owned_treasures": {}}, [], 0, false)
+	for slot in 6:
+		ranked.seats[slot]["name"] = "玩家%d" % slot
+		# 历史入口也是这么喂的：只带 is_local，名字保持干净。
+		ranked.seats[slot]["is_local"] = slot == 1
+	ranked["can_return_party"] = true
+	var panel := SettlementPanel.new()
+	panel.data = ranked
+	var returned := [0]
+	panel.return_party_requested.connect(func() -> void: returned[0] += 1)
+	add_child(panel)
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	var mark := str(tr("settle_me_mark"))
+	h.expect(not mark.is_empty() and mark != "settle_me_mark", "self_mark_text",
+		"「（我）」标记必须有文案（LocaleManager 的 settle_me_mark）")
+	var self_labels := 0
+	var stray := 0
+	for node in panel.find_children("*", "Label", true, false):
+		var text := str((node as Label).text)
+		if not text.ends_with(mark):
+			continue
+		if text == "玩家1" + mark:
+			self_labels += 1
+		else:
+			stray += 1
+	h.expect(self_labels >= 1, "panel_self_mark_on_my_seat",
+		"我那个座位要带「（我）」，实测 %d 处（期望至少 1：座位列表名）" % self_labels)
+	h.expect(stray == 0, "panel_self_mark_not_on_others",
+		"别的座位不许带「（我）」，实测 %d 处" % stray)
+
+	var party_button: Button = _visible_button(panel, str(tr("settle_back_party")))
+	h.expect(party_button != null, "panel_return_party_button",
+		"can_return_party=true 时结算面板要有可见的「返回队伍」按钮")
+	h.expect(_visible_button(panel, str(tr("settle_back_room"))) == null, "panel_no_return_room_for_ranked",
+		"排位（can_return_room=false）不该同时出现「返回房间」")
+	if party_button != null:
+		party_button.pressed.emit()
+		await get_tree().process_frame
+		h.expect(returned[0] == 1, "panel_return_party_emits",
+			"按下「返回队伍」要发一次 return_party_requested，实测 %d 次" % returned[0])
+	panel.queue_free()
+
+	# 默认（历史 / 自定义入口）：数据里没有 can_return_party ⇒ 不许长出这个按钮。
+	var history := Data.build({"mode": "custom", "slot_states": [], "boards": {}, "prep": {}, "owned_treasures": {}}, [], 0, false)
+	var hpanel := SettlementPanel.new()
+	hpanel.data = history
+	add_child(hpanel)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	h.expect(_visible_button(hpanel, str(tr("settle_back_party"))) == null, "panel_return_party_hidden_by_default",
+		"没有 can_return_party 时不该出现「返回队伍」（历史入口 / 非排位）")
+	hpanel.queue_free()
+	await get_tree().process_frame
+
+	# ── 10.10 bug 第 9 条（休闲一视同仁）────────────────────────────────────────
+	#
+	# 用户口径：休闲与排位**只差是否结算积分**，所以「返回队伍」两者都要有。
+	# 判据只有一处：FinalSettlementData.room_survives_match（Main 与后端同口径）。
+	h.expect(Data.room_survives_match("casual"), "return_party_mode_casual",
+		"休闲房间在对局开始时同样被后端保留 ⇒ 结算要有「返回队伍」")
+	h.expect(Data.room_survives_match("ranked"), "return_party_mode_ranked",
+		"排位要给「返回队伍」")
+	h.expect(not Data.room_survives_match("custom") and not Data.room_survives_match("local"),
+		"return_party_mode_others",
+		"自定义对局(ENet)/单机不走「返回队伍」（各自有「返回房间」/不回）")
+
+	# 休闲结算**首屏**是 GameOverScreen（排位才是 RankedRewardScreen）⇒ 按钮必须长在它身上，
+	# 而且得真按一下确认真接线了（只看「按钮在」会漏掉没连信号的假绿）。
+	var over := GameOver.new()
+	over.can_return_party = true
+	var over_returned := [0]
+	over.return_party_requested.connect(func() -> void: over_returned[0] += 1)
+	add_child(over)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var over_btn: Button = _visible_button(over, str(tr("settle_back_party")))
+	h.expect(over_btn != null, "gameover_return_party_button",
+		"can_return_party=true 时结算首屏（GameOverScreen）要有可见的「返回队伍」按钮")
+	if over_btn != null:
+		over_btn.pressed.emit()
+		await get_tree().process_frame
+		h.expect(over_returned[0] == 1, "gameover_return_party_emits",
+			"按下结算首屏的「返回队伍」要发一次 return_party_requested，实测 %d 次" % over_returned[0])
+	over.queue_free()
+	await get_tree().process_frame
+	# 没有 can_return_party ⇒ 不许长出这个按钮（历史 / 自定义入口）。
+	var over_plain := GameOver.new()
+	add_child(over_plain)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	h.expect(_visible_button(over_plain, str(tr("settle_back_party"))) == null, "gameover_return_party_hidden",
+		"没有 can_return_party 时结算首屏不该出现「返回队伍」")
+	over_plain.queue_free()
+	await get_tree().process_frame
+
+
+func _visible_button(root: Node, label: String) -> Button:
+	var stack: Array = [root]
+	while not stack.is_empty():
+		var node: Node = stack.pop_back()
+		if node is Button and (node as Button).visible and (node as Button).text == label:
+			return node as Button
+		for child in node.get_children():
+			stack.append(child)
+	return null

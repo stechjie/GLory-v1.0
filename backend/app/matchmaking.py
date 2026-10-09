@@ -150,7 +150,8 @@ def idle_message(reason: str = "", by_name: str = "") -> dict:
 
 def found_message(match_uid: str, mode: str, accept_sec: float,
                   accepted: bool = False, accepted_count: int = 0,
-                  total: int = MATCH_SIZE) -> dict:
+                  total: int = MATCH_SIZE,
+                  seats: list[dict] | None = None) -> dict:
     """凑齐了，等确认。**这条不带名片** —— 名片等六个人都确认完才发得出去。
 
     🔴 `accepted` / `accepted_count` 是**必需的，不是锦上添花**。
@@ -165,6 +166,10 @@ def found_message(match_uid: str, mode: str, accept_sec: float,
     那会把另外五个人那一桌一起拆掉。
 
     `member.accepted` 服务端一直存着（见 accept），只是从来没下发过。
+
+    10.10 bug 第 6 条：再带上 `seats` —— 六个座位的公开身份 + 谁确认了，
+    客户端据此把「已确认 5/6，等其他人…」换成**两队头像 + √**。
+    老客户端不认识这个键，忽略即可（它只读自己认的那几个字段）。
     """
     return {
         "t": MESSAGE_TYPE, "state": "found", "match_uid": match_uid,
@@ -172,6 +177,7 @@ def found_message(match_uid: str, mode: str, accept_sec: float,
         "accepted": bool(accepted),
         "accepted_count": int(accepted_count),
         "total": int(total),
+        "seats": list(seats or []),
     }
 
 
@@ -213,6 +219,13 @@ class _Member:
     accepted: bool = False
     # 本队里的位置 0~2；-1 = 不指定，由战斗服务器按到达顺序坐第一个空位。
     seat: int = -1
+    # 10.10 bug 第 6 条：确认弹窗要把**两支队伍的头像**排出来（确认的人打√），
+    # 所以这一桌要带上每个人的公开身份。来源是组队房里成员自己的名片
+    # （party.Room.profiles），建房 / 入房时由客户端传上来；拿不到就留空。
+    #
+    # ⚠ 只允许放**公开**字段（昵称 / 头像 / 头像框）—— 见 seat_roster() 的白名单，
+    #   名片里的 friend_code 绝不能进这条消息。
+    profile: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -243,7 +256,29 @@ class _Pending:
             accepted=member is not None and member.accepted,
             accepted_count=sum(1 for m in self.members if m.accepted),
             total=len(self.members),
+            seats=self.seat_roster(player_id),
         )
+
+    def seat_roster(self, me: uuid.UUID) -> list[dict]:
+        """六个人的座位 + 公开身份 + 谁确认了（10.10 bug 第 6 条）。
+
+        客户端拿它画「两支队伍的头像，确认的人打√」。**白名单**：只出
+        nick/avatar/frame —— 名片里的 friend_code / 账号 id 一律不出这条消息。
+        `me` 让客户端知道哪个座位是自己（自己的那颗照对局内左上角那样排）。
+        """
+        out: list[dict] = []
+        for m in sorted(self.members, key=lambda m: (m.team, m.seat, str(m.player_id))):
+            profile = m.profile or {}
+            out.append({
+                "team": int(m.team),
+                "seat": int(m.seat),
+                "name": str(profile.get("player_name", "")),
+                "avatar": str(profile.get("avatar", "")),
+                "avatar_frame": str(profile.get("avatar_frame", "")),
+                "accepted": bool(m.accepted),
+                "me": m.player_id == me,
+            })
+        return out
 
 
 @dataclass
@@ -555,7 +590,8 @@ class Matchmaker:
                     mode: str, now: float) -> list[tuple[uuid.UUID, dict]]:
         match_uid = new_match_uid()
         seats = allocate_seats(players, teams, parties)
-        members = [_Member(pid, team, seat=seat)
+        profiles = self._public_profiles(players)
+        members = [_Member(pid, team, seat=seat, profile=profiles.get(pid, {}))
                    for pid, team, seat in zip(players, teams, seats, strict=True)]
         pending = _Pending(match_uid, mode, members, now + ACCEPT_TIMEOUT_SEC, parties)
         self._pending[match_uid] = pending
@@ -564,6 +600,27 @@ class Matchmaker:
         # 队伍房间**留到六个人都确认**才关（_finalise）：确认阶段有人拒绝时，
         # 队伍还要能整队放回队列、或整队回到房间（_dissolve）。
         return [(pid, found_message(match_uid, mode, ACCEPT_TIMEOUT_SEC)) for pid in players]
+
+    @staticmethod
+    def _public_profiles(players: list[uuid.UUID]) -> dict[uuid.UUID, dict]:
+        """从组队房取每个人的公开身份（10.10 bug 第 6 条：确认弹窗要画两队头像）。
+
+        **纯内存读**，不发请求、不碰库 —— 匹配服务本身是同步的（见类文档），
+        在这里 await 会把「队列状态恒定」那条不变量毁掉。
+        拿不到（没进过房 / 旧数据）就留空，客户端照着画占位。
+        名片里的 friend_code 不在这里过滤 —— seat_roster() 用白名单兜底。
+        """
+        from app import party
+        service = party.current()
+        out: dict[uuid.UUID, dict] = {}
+        for pid in players:
+            room = service.of(pid)
+            if room is None:
+                continue
+            profile = room.profiles.get(pid)
+            if isinstance(profile, dict):
+                out[pid] = dict(profile)
+        return out
 
     def _take_group(self, mode: str, now: float) -> list[uuid.UUID] | None:
         """按先来后到取一桌。**只取还连着的人。**
@@ -589,8 +646,9 @@ class Matchmaker:
 
     def _form(self, players: list[uuid.UUID], mode: str, now: float) -> list[tuple[uuid.UUID, dict]]:
         match_uid = new_match_uid()
+        profiles = self._public_profiles(players)
         members = [
-            _Member(player_id=pid, team=team)
+            _Member(player_id=pid, team=team, profile=profiles.get(pid, {}))
             for pid, team in zip(players, assign_teams(players, {}), strict=True)
         ]
         pending = _Pending(match_uid=match_uid, mode=mode, members=members,
@@ -726,7 +784,9 @@ class Matchmaker:
                 team=member.team, expires_at=expires_at, seat=member.seat)
         if pending.parties:
             from app import party
-            party.current().finish_for_match([m.player_id for m in pending.members])
+            # match_uid 传下去：排位房间要记「这支队伍在打哪一局」（10.10 bug 第 9 条）。
+            party.current().finish_for_match(
+                [m.player_id for m in pending.members], pending.match_uid)
         # 🔴 **这条推送以前不存在，而客户端一直在等它。**
         #
         # `ready_message` 原来只是 accept() / state_of() / join() 的**返回值** ——

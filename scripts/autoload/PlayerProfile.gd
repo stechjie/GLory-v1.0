@@ -90,6 +90,17 @@ var haptics_enabled := true
 # 只想静音效 / 只想静 BGM 的人都得能单独做到。裁决在 PresentationSettings.music_allowed()，
 # 实际掐的是 MusicService 那个常驻播放器（stream_paused，可续播）。
 var music_enabled := true
+# 10.10 反馈第 4 条：语音音量（0 ~ 1，默认 1.0）。
+#
+# 为什么要有它：手机上 BGM 与语音是**两条系统音量**（媒体 / 通话），但 iOS 全 App
+# 只有一个 AVAudioSession、只有一条系统音量 —— 系统音量分不开 BGM 与语音，只能
+# 在游戏内再给语音一条独立的音量。安卓侧原生已经让语音走通话声道（见
+# android_plugins/glory_voice/src/com/glory/voice/GloryVoicePlugin.kt 的音频模式），
+# 这个值在三条平台上都生效：它乘在「每个远端队员的轨道音量」上。
+#
+# 与 speaker_enabled（放不放声音）是两件事：那个是硬开关（0 / 1），这个是连续量。
+# 裁决在 PresentationSettings.voice_volume()，执行在 VoiceService._apply_volumes()。
+var voice_volume := 1.0
 var locale := "zh"
 var language_selected := false
 var onboarding_version := ONBOARDING_VERSION
@@ -142,6 +153,7 @@ func load_profile() -> void:
 	ui_sound_enabled = bool(data.get("ui_sound_enabled", true))
 	haptics_enabled = bool(data.get("haptics_enabled", true))
 	music_enabled = bool(data.get("music_enabled", true))
+	voice_volume = clampf(float(data.get("voice_volume", 1.0)), 0.0, 1.0)
 	locale = str(data.get("locale", "zh"))
 	if not SUPPORTED_LOCALES.has(locale):
 		locale = "zh"
@@ -172,6 +184,7 @@ func save_profile() -> bool:
 		"ui_sound_enabled": ui_sound_enabled,
 		"haptics_enabled": haptics_enabled,
 		"music_enabled": music_enabled,
+		"voice_volume": voice_volume,
 		"locale": locale,
 		"language_selected": language_selected,
 		"onboarding_version": onboarding_version,
@@ -195,6 +208,7 @@ func _reset_defaults() -> void:
 	ui_sound_enabled = true
 	haptics_enabled = true
 	music_enabled = true
+	voice_volume = 1.0
 	locale = "zh"
 	language_selected = false
 	onboarding_version = ONBOARDING_VERSION
@@ -354,6 +368,19 @@ func set_board_readability_enabled(enabled: bool) -> void:
 	if board_readability_enabled == enabled:
 		return
 	board_readability_enabled = enabled
+	save_profile()
+	presentation_settings_changed.emit()
+
+
+# 10.10 反馈第 4 条：语音音量。连续量，走自己的写入路径（不是 set_presentation_toggle 那条 bool 通道）。
+#
+# 与别的演出设置不同，**值没变也要发信号**是不必要的 —— 但「滑块拖动中每帧都落盘」会写坏磁盘，
+# 所以这里仍然判等早退；调用方（设置页滑块）在拖动结束（value_changed 的 drag_ended）才提交。
+func set_voice_volume(value: float) -> void:
+	var clamped := clampf(value, 0.0, 1.0)
+	if is_equal_approx(voice_volume, clamped):
+		return
+	voice_volume = clamped
 	save_profile()
 	presentation_settings_changed.emit()
 

@@ -3,6 +3,7 @@ extends Control
 
 signal details_requested
 signal return_room_requested
+signal return_party_requested
 signal return_menu_requested
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
@@ -15,6 +16,9 @@ var title_text := ""
 var body_text := ""
 var show_details := false
 var can_return_room := false
+# 10.10 bug 第 9 条：休闲 / 排位的账号服务器队伍房间在「六人确认」时被后端保留，
+# 所以结算首屏也要能「返回队伍」（原来这颗只在结算面板里，而休闲首屏走的是本界面）。
+var can_return_party := false
 
 
 func _ready() -> void:
@@ -69,6 +73,14 @@ func _ready() -> void:
 			room.pressed.connect(func() -> void:
 				room.disabled = true
 				return_room_requested.emit())
+		# 10.10 bug 第 9 条：休闲 / 排位对局结束能回到原队伍房间。
+		# ⚠ 文案走 LocaleManager 的 settle_back_party —— 与结算面板那颗是**同一个 key**，
+		#   一处改中英两边都跟着变，别在这里再写一份字面量。
+		if can_return_party:
+			var party := _button(tr("settle_back_party"), actions, accent)
+			party.pressed.connect(func() -> void:
+				party.disabled = true
+				return_party_requested.emit())
 		var menu := _button(_text("返回主菜单", "Main Menu"), actions, accent)
 		menu.pressed.connect(func() -> void: return_menu_requested.emit())
 

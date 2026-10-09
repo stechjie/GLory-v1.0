@@ -74,7 +74,9 @@ def tier_span(tier: int) -> int:
 # --- 一局加减多少 ---------------------------------------------------------------
 
 BASE_DELTA = 25
-# 段位差修正的上下限。实际每局是 10 ~ 40 / −10 ~ −40。
+# 失败的基础扣分：比胜利低 5 分，减少连败挫败感（段位差修正照常叠加）。
+LOSS_BASE = 20
+# 段位差修正的上下限。实际每局是 10 ~ 40（胜）/ −5 ~ −35（败）。
 MAX_CORRECTION = 15
 # 对手队伍平均分每高这么多分，修正 +1。
 CORRECTION_DIVISOR = 20
@@ -96,12 +98,14 @@ def score_delta(won: bool, own_avg: int, rival_avg: int, win_streak: int = 0) ->
     「打了多少局」而不是「多强」。加上修正之后数学上就是 Elo，会自动收敛。
 
     连胜加成只加在**赢**的那一份上 —— 连胜是奖励，不该让输的时候少扣。
+
+    胜负的基础值不同：赢 BASE_DELTA=25、输 LOSS_BASE=20，各自再叠加段位差修正。
     """
     diff = int(rival_avg) - int(own_avg)
     correction = max(-MAX_CORRECTION, min(MAX_CORRECTION, diff // CORRECTION_DIVISOR))
     if not won:
         # 打比自己强的队伍输了少扣，打比自己弱的输了多扣 —— 所以这里是 -diff。
-        return -(BASE_DELTA + max(-MAX_CORRECTION, min(MAX_CORRECTION, -diff // CORRECTION_DIVISOR)))
+        return -(LOSS_BASE + max(-MAX_CORRECTION, min(MAX_CORRECTION, -diff // CORRECTION_DIVISOR)))
     gained = BASE_DELTA + correction
     if win_streak >= STREAK_FROM:
         steps = min(STREAK_MAX_STEPS, int(win_streak) - STREAK_FROM + 1)
@@ -268,7 +272,7 @@ async def _settle_ranked(conn, report: dict, seats: list[dict]) -> None:
             streak = row["win_streak"] + 1 if won else 0
         # 跑路在输的分上再额外扣一份（第四节：输的那一份 × 1.5）。
         if abandoned:
-            delta -= int(round(BASE_DELTA * ABANDON_PENALTY_MULT))
+            delta -= int(round(LOSS_BASE * ABANDON_PENALTY_MULT))
         score_after = apply_delta(row["score"], delta)
         await conn.execute(
             """

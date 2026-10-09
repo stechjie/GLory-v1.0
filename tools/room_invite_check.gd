@@ -83,11 +83,16 @@ func _behavior_payload() -> void:
 		"普通文本取房间号返回 0")
 	_h.expect(RoomInvite.room_id_of({"kind": "room_invite", "payload": "oops"}) == 0,
 		"room_id_of_bad_payload", "payload 不是字典时返回 0 而不是崩")
-	# 显示文案优先用服务端存下来的 body。
-	_h.expect(RoomInvite.display_text({"body": "服务端存的", "kind": "room_invite"}) == "服务端存的",
-		"display_prefers_body", "有 body 就用 body")
+	# 显示文案**跟随语言切换**（10.10 bug 第 1 条）。
+	# 旧口径是「有 body 就用 body」，而服务端存的那句是**中文定死**的
+	# （backend/app/routes/party.py 的 _party_invite_text）⇒ 英文界面下漏中文。
+	_h.expect(RoomInvite.display_text({"body": "服务端存的", "kind": "room_invite"})
+			== RoomInvite.local_text(),
+		"display_follows_locale", "显示文案取本地化文案（跟随语言），不直接吃服务端中文 body")
+	_h.expect(RoomInvite.TEXT_ZH != RoomInvite.TEXT_EN, "text_zh_vs_en",
+		"中英文两句邀请文案必须不同，否则切语言看不出变化")
 	_h.expect(not RoomInvite.display_text({"body": "", "kind": "room_invite"}).is_empty(),
-		"display_fallback", "body 空时退回本地文案，不留空白框")
+		"display_fallback", "body 空时仍然有文案，不留空白框")
 
 
 # --- 行为：失效三判据（要求 5）-------------------------------------------------

@@ -21,7 +21,8 @@ extends Node
 #   leaveRoom()                                   断开，停止录音和播放
 #   setMicrophoneEnabled(enabled) -> String       开 / 关麦；还没连上时先记下，连上再生效。
 #                                                 空串 = 已受理；真正打不开（异步）写在 getStatus 的 mic_error
-#   setParticipantVolume(identity, volume)        某个队友的音量 0 ~ 1，0 = 屏蔽（只影响自己）
+#   setParticipantVolume(identity, volume)        某个队友的音量 0 ~ 1，0 = 屏蔽（只影响自己）；
+#                                                 「语音音量」设置（PresentationSettings.voice_volume）乘在这上面
 #   setAudience(all, identities_json)              发布者麦克风订阅权限；队友范围按身份列表，全部范围开放全房间
 #   getStatus() -> String   JSON：state（disconnected / connecting / connected / reconnecting / failed）、error、
 #                           mic_on、mic_error、self_speaking、speaking（身份列表）、participants（身份列表）、
@@ -55,6 +56,9 @@ enum Mode { OFF, LISTEN, TALK }
 enum Audience { TEAM, ALL }
 
 const SINGLETON := "GloryVoice"
+# 10.10 反馈第 4 条：语音音量的裁决处（见 PresentationSettings.voice_volume）。
+# 与 MusicService 同款：裁决不散到调用点，这里只问它。
+const Presentation := preload("res://effects/runtime/presentation/PresentationSettings.gd")
 # 桥接必须提供的方法（名字 → 参数个数）。三个平台照这张表实现；tools/voice_check 拿它对账。
 const BRIDGE_METHODS := {
 	"hasRecordPermission": 0,
@@ -744,13 +748,17 @@ func _leave() -> void:
 	_status_at_msec = -100000
 
 
-# 屏蔽 = 音量 0。只在变了时才调桥接；新进房的队友下一次状态刷新（≤ 0.25 秒）就会被设上。
+# 屏蔽 = 音量 0；设置页那条「语音音量」按系数乘上来。
+#
+# 只在变了时才调桥接；新进房的队友下一次状态刷新（≤ 0.25 秒）就会被设上。
+# 语音音量变了也会自然触发重设（算出来的值不一样了），不需要额外接设置变更信号。
 func _apply_volumes() -> void:
 	if _bridge == null or not _joined:
 		return
+	var level := Presentation.voice_volume()
 	for identity in status().get("participants", []):
 		var id := str(identity)
-		var volume := 0.0 if not speaker_enabled or _identity_muted(id) else 1.0
+		var volume := 0.0 if not speaker_enabled or _identity_muted(id) else level
 		if float(_applied_volumes.get(id, -1.0)) != volume:
 			_bridge.setParticipantVolume(id, volume)
 			_applied_volumes[id] = volume

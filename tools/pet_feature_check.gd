@@ -91,10 +91,28 @@ func _check_models() -> void:
 		var model := scene.instantiate() as Node3D
 		add_child(model)
 		await get_tree().process_frame
-		_h.expect(Preview.aabb_of(model).size.y > 0.0,
+		var idle_height := Preview.aabb_of(model).size.y
+		_h.expect(idle_height > 0.0,
 			pet_id + "_mesh", "3D model has no visible mesh bounds")
 		_h.expect(model.has_method("play_idle") and model.has_method("play_run"),
 			pet_id + "_motion", "main menu movement hooks missing")
 		if model.has_method("play_run"):
+			# ★ 10.10 用户反馈「老虎一移动就消失、地上还有它的影子」。
+			#   成因：待机 / 跑是**两份导出**，老虎的 walk.glb 比 idle 小约 488 倍，
+			#   靠 `ImportedPetAnimated.run_model_scale` 放大回来。这个 @export 只写
+			#   在 .tscn 里 —— 重存场景 / re-import 时极易被丢掉（同事 8c4cf64 就丢了
+			#   那一行，10.10 回灌带回本地 ⇒ 一跑就缩成看不见，影子是独立节点所以还在）。
+			#
+			#   判据刻意量「跑起来**真的画出来**多高」（Preview.aabb_of 只算当前显示
+			#   的那份子模型），而不是 grep `run_model_scale` 那个字段名 ——
+			#   字段名在、值写错一样是坏的。
 			model.call("play_run")
+			await get_tree().process_frame
+			var run_height := Preview.aabb_of(model).size.y
+			var ratio := run_height / maxf(idle_height, 0.0001)
+			_h.note("%s 跑/待机可见高度比 = %.4f（run=%.4f idle=%.4f）"
+				% [pet_id, ratio, run_height, idle_height])
+			_h.expect(ratio > 0.5 and ratio < 2.0, pet_id + "_run_visible_scale",
+				"跑起来的可见高度只有待机的 %.4f 倍 ⇒ 一移动就看不见（run_model_scale 丢了？）"
+					% ratio)
 		model.queue_free()

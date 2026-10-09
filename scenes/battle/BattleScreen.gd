@@ -890,6 +890,12 @@ func _load_replay_roster(replay: Dictionary) -> void:
 		if r.has("twin_group_id"):
 			f["twin_group_id"] = str(r.get("twin_group_id", ""))
 			f["twin_member_index"] = int(r.get("twin_member_index", -1))
+		# 10.10 #157：与 BattleSimulator._replay_capture_roster 严格对称 —— 凤凰涅槃
+		# 的复活体标记只能经 roster 过回放边界（frames 13 列冻结、不能加列），
+		# 且只在有键时带，普通棋子不会多出这个字段。缺了这一步，回放里
+		# `phoenix_used` 永远是假，「死灵气息」在真实对局里一次都不会出现。
+		if r.has("phoenix_used"):
+			f["phoenix_used"] = bool(r.get("phoenix_used", false))
 		_replay_by_uid[uid] = f
 		if str(r.get("team", "")) == "player":
 			players.append(f)

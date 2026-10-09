@@ -90,6 +90,20 @@ static func music_allowed() -> bool:
 	return _toggle("music")
 
 
+# 10.10 反馈第 4 条：语音音量（0 ~ 1）。
+#
+# 手机上 BGM 与语音应该是**两条系统音量**（媒体 / 通话）：安卓侧原生已让语音走通话声道
+# （GloryVoicePlugin.kt 的音频模式），BGM 仍走媒体声道。但 **iOS 只有一个 AVAudioSession、
+# 只有一条系统音量**，系统层面分不开 —— 所以在游戏内再给语音一条独立音量，三条平台都生效。
+#
+# 缺省 1.0（不是 0）：取不到档案时语音不该变小声 —— 与上面几个 _toggle() 的缺省同款理由。
+# 与 speaker_enabled（VoiceService 里的硬开关，0 / 1）叠加，不互相替代。
+static func voice_volume() -> float:
+	if not is_instance_valid(PlayerProfile):
+		return 1.0
+	return clampf(float(PlayerProfile.voice_volume), 0.0, 1.0)
+
+
 # 触觉只有手持设备有。桌面即使开关是开的也不该假装能震 ——
 # Input.vibrate_handheld() 在桌面是 no-op，但明确挡在这里，
 # 门禁才能断言「桌面不调用」，而不是依赖引擎碰巧不做事。

@@ -40,10 +40,21 @@ import java.util.concurrent.atomic.AtomicInteger
  * scripts/autoload/VoiceService.gd 的 BRIDGE_METHODS 那一套方法。录音、回声消除、编码、网络、播放都是 LiveKit 做的，
  * 这里只管「进哪个房间、开不开麦、谁的音量是多少」和把状态报给 VoiceService。
  *
- * 声音模式只能在建房间时定（LiveKit 的 AudioType）：
- *   只听  MediaAudioType —— 媒体声道，系统不进通话模式，蓝牙耳机保持高音质，游戏声不受影响
- *   开麦  CallAudioType  —— 通话模式，系统回声消除；默认从外放出声（LiveKit 默认顺序：蓝牙 > 有线 > 外放 > 听筒）
- * 所以「只听 ↔ 开麦」要重进一次房间：getCapabilities 报 listen_mode_fixed_at_join = true，由 VoiceService 去重进。
+ * 声音模式：**一律 CallAudioType（通话模式）** —— 10.10 反馈第 4 条要求
+ * 「背景音乐由媒体音量控制，语音由通话音量控制，使用户可以分开调整」。
+ *   · 语音（不管是听队友还是自己开麦）走 STREAM_VOICE_CALL。CallAudioType 实测就是
+ *     AudioManager.MODE_IN_COMMUNICATION + USAGE_VOICE_COMMUNICATION + STREAM_VOICE_CALL
+ *     （javap 反查 livekit-android 2.28.2）。
+ *   · BGM 仍由 Godot 的普通播放器出声（OpenSL ES / SL_ANDROID_STREAM_MEDIA），归媒体音量。
+ *   · **这是安卓上唯一能做到「语音归通话音量」的路**：MODE_NORMAL 下即使把播放轨道标成
+ *     USAGE_VOICE_COMMUNICATION，系统也会把它甩到听筒（setSpeakerphoneOn 只在通话模式下生效，
+ *     而 STRATEGY_PHONE 在非通话模式下强制走听筒），既强制不了外放、音量键也不指向通话流。
+ * 代价（写在这里，别当没发生）：连着蓝牙耳机时语音走 SCO（通话音质），不再走 A2DP 高音质。
+ * 因为两种档位现在是**同一种**声音模式，换档不再需要退房重进：
+ * getCapabilities 报 listen_mode_fixed_at_join = false（与电脑版、苹果版一致）。
+ *
+ * joinRoom 的 listenOnly 参数保留（三个平台的桥接同名同参，见 VoiceService.BRIDGE_METHODS），
+ * 但它**不再影响声音模式**。
  *
  * 线程：Godot 在它自己的线程上调这些方法。LiveKit 的操作全部投到主线程（main 协程作用域）；
  * getStatus 读的是主线程写好的快照（lock 保护）。每次进房 / 离开都换一个 generation，
@@ -64,7 +75,6 @@ class GloryVoicePlugin(godot: Godot) : GodotPlugin(godot) {
     // 只在主线程读写。
     private var room: Room? = null
     private var roomJob: Job? = null
-    private var roomListenOnly = true
     private var wantMic = false
     private var audienceAll = false
     private var audienceIds: List<String> = emptyList()
@@ -111,7 +121,8 @@ class GloryVoicePlugin(godot: Godot) : GodotPlugin(godot) {
             selfSpeaking = false
             speaking = emptyList()
             participants = emptyList()
-            audioMode = if (listenOnly) "media" else "call"
+            // 一律通话模式（见文件头）：语音走通话音量，BGM 走媒体音量。
+            audioMode = "call"
             output = ""
         }
         main.launch {
@@ -121,7 +132,7 @@ class GloryVoicePlugin(godot: Godot) : GodotPlugin(godot) {
             audienceRequested = false
             audienceRevision += 1
             teardown()
-            if (generation.get() == gen) startRoom(gen, ctx, url, token, listenOnly)
+            if (generation.get() == gen) startRoom(gen, ctx, url, token)
         }
         return ""
     }
@@ -255,9 +266,10 @@ class GloryVoicePlugin(godot: Godot) : GodotPlugin(godot) {
         val o = JSONObject()
         o.put("platform", "android")
         o.put("sdk", "livekit-android $LIVEKIT_VERSION")
-        // 开麦时用通话模式：有系统回声消除就用系统的，没有就是 WebRTC 自己的。
+        // 开麦用通话模式（有系统回声消除就用系统的，没有就是 WebRTC 自己的）。
         o.put("aec", if (AcousticEchoCanceler.isAvailable()) "system" else "webrtc")
-        o.put("listen_mode_fixed_at_join", true)
+        // false：只听 / 开麦是同一种声音模式，换档不用退房重进（10.10 反馈第 4 条）。
+        o.put("listen_mode_fixed_at_join", false)
         return o.toString()
     }
 
@@ -288,14 +300,14 @@ class GloryVoicePlugin(godot: Godot) : GodotPlugin(godot) {
 
     // --- 主线程 ------------------------------------------------------------------------
 
-    private fun startRoom(gen: Int, ctx: Context, url: String, token: String, listenOnly: Boolean) {
-        val type: AudioType = if (listenOnly) AudioType.MediaAudioType() else AudioType.CallAudioType()
+    private fun startRoom(gen: Int, ctx: Context, url: String, token: String) {
+        // 只听 / 开麦同一种声音模式：语音归通话音量（见文件头，10.10 反馈第 4 条）。
+        val type: AudioType = AudioType.CallAudioType()
         val r = LiveKit.create(
             appContext = ctx,
             overrides = LiveKitOverrides(audioOptions = AudioOptions(audioOutputType = type)),
         )
         room = r
-        roomListenOnly = listenOnly
         roomJob = main.launch {
             launch { r.events.collect { event -> onRoomEvent(gen, event) } }
             launch {
@@ -395,7 +407,7 @@ class GloryVoicePlugin(godot: Godot) : GodotPlugin(godot) {
     }
 
     private fun outputName(r: Room): String {
-        if (roomListenOnly) return "system"   // 媒体声道：出声设备由系统决定
+        // 一律通话模式，出声设备由 AudioSwitch 选（默认顺序：蓝牙 > 有线 > 外放 > 听筒）。
         return when ((r.audioHandler as? AudioSwitchHandler)?.selectedAudioDevice) {
             is AudioDevice.BluetoothHeadset -> "bluetooth"
             is AudioDevice.WiredHeadset -> "wired"

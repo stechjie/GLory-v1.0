@@ -449,6 +449,16 @@ static func _replay_capture_roster(state: Dictionary, roster: Dictionary) -> voi
 		if f.has("twin_group_id"):
 			roster[uid]["twin_group_id"] = str(f.get("twin_group_id", ""))
 			roster[uid]["twin_member_index"] = int(f.get("twin_member_index", -1))
+		# 10.10 #157：凤凰涅槃的复活体标记。模拟层**只在复活体上**写这个键
+		# （BattleSimTreasures._queue_phoenix_revive 写给 revived，原体身上没有），
+		# 所以照双生的做法只在有键时带过去 —— 没触发凤凰的对局 roster 字节完全不变。
+		#
+		# 为什么走 roster 而不是 frames：frames 是 13 列**冻结**结构，属于
+		# ReplayDigest.SIMULATION_TOP_FIELDS，加列会把玩法身份哈希改掉；roster 只有
+		# SIMULATION_ROSTER_FIELDS 白名单里的字段进 simulation_sha256，加这个键
+		# 不影响玩法身份。表现层（BattleRenderer）靠它给复活体罩「死灵气息」。
+		if f.has("phoenix_used"):
+			roster[uid]["phoenix_used"] = bool(f.get("phoenix_used", false))
 
 
 static func step_state(state: Dictionary) -> void:

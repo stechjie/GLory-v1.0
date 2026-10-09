@@ -813,10 +813,15 @@ func _preview_text(entry: Dictionary) -> String:
 		return _text("还没有消息", "No messages yet")
 	var msg := last as Dictionary
 	var body := str(msg.get("body", ""))
+	# ★★ 10.10 bug 第 1 条：邀请预览也要跟随语言切换 —— 服务端 body 是中文定死那句
+	# （组队邀请见 routes/party.py 的 _party_invite_text），直接显示 ⇒ 英文界面漏中文。
+	if RoomInvite.is_party_invite(msg):
+		body = RoomInvite.party_display_text(msg)
+	elif RoomInvite.is_invite(msg):
+		body = RoomInvite.display_text(msg)
 	# ★★ 10.07h 第 9(2) 条：邀请消息即使 body 为空，列表预览也不能是空白 ——
 	# 空白预览看起来就是「聊天里没有邀请消息」（用户真机反馈的原话）。
-	# 服务端两端都存了文案（组队邀请见 routes/party.py 的 _party_invite_text），
-	# 这里只是兜底：万一某条历史记录的 body 缺失/为空，也要能看出这是一条邀请。
+	# 上面已按语言取好文案；这一段只剩「连本地化文案都拿不到」的极端兜底。
 	if body.strip_edges().is_empty():
 		if RoomInvite.is_party_invite(msg):
 			body = _text("[组队邀请]", "[Team invite]")

@@ -792,10 +792,23 @@ func _case_kotlin_bridge_contract() -> void:
 	_h.item()
 	_h.expect(src.contains("override fun onMainPause()") and src.contains("error = \"paused\""),
 		"voice_kotlin_background", "安卓桥接切后台时要自己断开，并报 failed / paused 让 VoiceService 回来后重连")
-	# 只听 = 媒体声道、开麦 = 通话模式：这是「游戏声 / 蓝牙音质不受只听影响」的来源。
+	# 10.10 反馈第 4 条：BGM 走媒体音量、语音走通话音量，两者可分开调。
+	#
+	# 安卓上只有这一条路：javap 反查 livekit-android 2.28.2 ——
+	#   CallAudioType  = MODE_IN_COMMUNICATION + USAGE_VOICE_COMMUNICATION + STREAM_VOICE_CALL
+	#   MediaAudioType = MODE_NORMAL            + USAGE_MEDIA              + STREAM_MUSIC
+	# MODE_NORMAL 下即使把播放轨道标成 VOICE_COMMUNICATION，系统也会把它甩到听筒
+	# （setSpeakerphoneOn 只在通话模式下生效），既强制不了外放、音量键也不指向通话流。
+	# 所以只听 / 开麦一律 CallAudioType；BGM 仍由 Godot 的 OpenSL ES（STREAM_MEDIA）出声。
 	_h.item()
-	_h.expect(src.contains("if (listenOnly) AudioType.MediaAudioType() else AudioType.CallAudioType()"),
-		"voice_kotlin_audio_type", "安卓桥接：只听要用 MediaAudioType、开麦用 CallAudioType（改之前先看 docs/语音LiveKit方案.md 5.1）")
+	_h.expect(src.contains("val type: AudioType = AudioType.CallAudioType()") and not src.contains("MediaAudioType"),
+		"voice_kotlin_audio_type",
+		"安卓桥接：语音必须一律 CallAudioType（通话模式），不再按只听 / 开麦分档（见 docs/语音LiveKit方案.md 5.1）")
+	# 两种档位现在是同一种声音模式 ⇒ 换档不需要退房重进。
+	# 报 true 会让 VoiceService 每切一次麦就重进一次房间，白白断一两秒声音。
+	_h.item()
+	_h.expect(src.contains("o.put(\"listen_mode_fixed_at_join\", false)"), "voice_kotlin_no_rejoin_on_switch",
+		"安卓桥接：只听 / 开麦同一种声音模式，listen_mode_fixed_at_join 必须是 false（否则每次切麦都白重进一次）")
 
 
 # 电脑版桥接（C++）对账：绑定给 Godot 的方法与 BRIDGE_METHODS 同名同参；VoiceService 读的字段它都给；
