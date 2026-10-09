@@ -8,6 +8,5 @@
 script = ExtResource("1_script")
 idle_model = ExtResource("2_idle")
 run_model = ExtResource("3_run")
-run_model_scale = 488.0
 
 [node name="ModelRoot" type="Node3D" parent="."]

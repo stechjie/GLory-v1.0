@@ -3,11 +3,9 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b7f2r2u1w72vs"
-path.s3tc="res://.godot/imported/pet_tiger_idle_texture_0.png-e714bb3215c08f11411d5f9db3dd78c0.s3tc.ctex"
-path.etc2="res://.godot/imported/pet_tiger_idle_texture_0.png-e714bb3215c08f11411d5f9db3dd78c0.etc2.ctex"
+path="res://.godot/imported/pet_tiger_idle_texture_0.png-e714bb3215c08f11411d5f9db3dd78c0.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc", "etc2_astc"],
-"vram_texture": true
+"vram_texture": false
 }
 generator_parameters={
 "md5": "c99a0e2784b2bb2aee2727d44eadfe4a"
@@ -16,11 +14,11 @@ generator_parameters={
 [deps]
 
 source_file="res://assets/models/pets/pet_tiger/pet_tiger_idle_texture_0.png"
-dest_files=["res://.godot/imported/pet_tiger_idle_texture_0.png-e714bb3215c08f11411d5f9db3dd78c0.s3tc.ctex", "res://.godot/imported/pet_tiger_idle_texture_0.png-e714bb3215c08f11411d5f9db3dd78c0.etc2.ctex"]
+dest_files=["res://.godot/imported/pet_tiger_idle_texture_0.png-e714bb3215c08f11411d5f9db3dd78c0.ctex"]
 
 [params]
 
-compress/mode=2
+compress/mode=0
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -42,4 +40,4 @@ process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
-detect_3d/compress_to=0
+detect_3d/compress_to=1
