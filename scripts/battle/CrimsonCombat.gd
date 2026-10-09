@@ -93,6 +93,7 @@ static func passive_attack(attacker: Dictionary, target: Dictionary, state: Dict
 			if bool(target.get("alive", false)) and RngService.rng.randf() < float(d.get("break_chance", 0.5)):
 				target.crimson_def_break = int(target.get("crimson_def_break", 0)) + int(d.get("break_amount", 2))
 				resonance(attacker, state)
+				_emit_crimson_proc(state, "stacking_def_break", attacker, target, {"stacks": int(target.crimson_def_break)})
 		"team_random_stack":
 			var allies: Array = state.get("player", []) if str(attacker.get("team", "")) == "player" else state.get("enemy", [])
 			var heal_this_hit := RngService.rng.randi_range(0, 2) == 2
@@ -123,6 +124,7 @@ static func passive_attack(attacker: Dictionary, target: Dictionary, state: Dict
 
 static func skill_dancer(caster: Dictionary, allies: Array, d: Dictionary, state: Dictionary) -> void:
 	var pool: Array = []
+	var chosen := PackedStringArray()
 	var self_fallback: Dictionary = {}
 	for ally: Dictionary in allies:
 		if not bool(ally.get("alive", false)) or not can_share_ally_buff(caster, ally, state):
@@ -141,7 +143,10 @@ static func skill_dancer(caster: Dictionary, allies: Array, d: Dictionary, state
 			resonance(caster, state)
 		else:
 			apply_status(caster, ally, "crimson_attack" if effect == 1 else "crimson_speed", float(d.get("buff_duration", 3.0)), {"pct": float(d.get("buff_pct", 0.20))}, state)
-		caster.vfx_skill_target_uid = str(ally.get("uid", ""))
+		# 纯表现列：四星一次选 2 个友军，全部记下（逗号连接，与赤灯使同一写法），
+		# 以前只留最后一个，第一位友军的增益在画面上无从表现。
+		chosen.append(str(ally.get("uid", "")))
+		caster.vfx_skill_target_uid = ",".join(chosen)
 
 
 static func skill_icey(caster: Dictionary, opponents: Array, d: Dictionary, state: Dictionary) -> void:
@@ -197,3 +202,22 @@ static func pierce_targets(attacker: Dictionary, primary: Dictionary, opponents:
 		var db: float = (b.pos - attacker.pos).dot(direction)
 		return da < db if not is_equal_approx(da, db) else str(a.get("uid", "")) < str(b.get("uid", "")))
 	return candidates.slice(0, mini(3, candidates.size()))
+
+
+# 赤律族被动真正生效时补一条纯表现事件（BattleVfx._play_crimson_proc 消费）。
+# 只往 visual_events 里追加，不读写战斗状态、不消耗 RngService，所以模拟结果、
+# 回放帧与终局不变；开场 0 秒与 DamageService._append_presentation_event 同口径不发。
+static func _emit_crimson_proc(state: Dictionary, skill_id: String, source: Dictionary, target: Dictionary, extra: Dictionary = {}) -> void:
+	if float(state.get("elapsed", 0.0)) <= 0.0:
+		return
+	var event := {
+		"type": "unit_skill_proc",
+		"skill_id": skill_id,
+		"source_uid": str(source.get("uid", "")),
+		"target_uid": str(target.get("uid", "")),
+		"time": float(state.get("elapsed", 0.0)),
+	}
+	event.merge(extra, true)
+	var events: Array = state.get("visual_events", [])
+	events.append(event)
+	state["visual_events"] = events

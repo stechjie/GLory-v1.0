@@ -34,6 +34,12 @@ const UNIT_SKILLS := [
 	"counter_slash",
 	# 阵型盟友（data/formation/formation_allies.json）
 	"burn_claw", "soul_chain", "devour_bite", "hell_burst", "eternal_night",
+	# 赤律族（race = crimson）。以前一个都不在表里：主动技落进 Boss composer 的
+	# 兜底灰刀光，普攻被当成人族蓝弹。清单与 CrimsonVFXCatalog 一致。
+	"basic_attack_ranged_crimson", "basic_attack_melee_crimson",
+	"random_ally_buff", "frost_status", "aoe_silence",
+	"block_guard", "team_random_stack", "stacking_def_break",
+	"current_hp_strike", "line_pierce",
 ]
 
 var _composer: BossSkillVFXComposer3D

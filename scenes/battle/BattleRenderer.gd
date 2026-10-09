@@ -436,7 +436,9 @@ func _update_battle_readability_focus() -> void:
 	for segment in 40:
 		var angle := TAU * float(segment) / 40.0
 		range_polygon.append(_battle_focus_screen_point(source_sim + Vector2(cos(angle), sin(angle)) * attack_range))
-	var target_id := str(fighter.get("vfx_skill_target_uid", ""))
+	# 多目标技能（赤灯使、四星赤舞者、神王）把 uid 逗号连接写在同一列里；
+	# 焦点线只指向第一个目标，否则整串当成一个 uid 永远查不到。
+	var target_id := str(fighter.get("vfx_skill_target_uid", "")).get_slice(",", 0)
 	if target_id.is_empty():
 		target_id = str(fighter.get("vfx_attack_target_uid", ""))
 	var target := Vector2.ZERO

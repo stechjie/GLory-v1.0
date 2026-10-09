@@ -24,6 +24,9 @@ const VFX_OGA_PACK_SKILL:=preload("res://effects/vfx3d/modules/VFXPackSkill3D.gd
 const VFX_OGA_BLOOD_LINK:=preload("res://effects/vfx3d/modules/VFXPackBloodLink3D.gd")
 const VFX_ANGEL_GUARD:=preload("res://effects/vfx3d/modules/VFXAngelGuard3D.gd")
 const VFX_GUARDIAN_SANCTUARY:=preload("res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd")
+const VFX_CRIMSON_ATTACK:=preload("res://effects/vfx3d/units/VFXCrimsonAttack3D.gd")
+const VFX_CRIMSON_SKILL:=preload("res://effects/vfx3d/units/VFXCrimsonSkill3D.gd")
+const CRIMSON_CATALOG:=preload("res://effects/vfx3d/units/CrimsonVFXCatalog.gd")
 const PROFILE_ANGEL_GUARD:=preload("res://effects/vfx3d/profiles/examples/angel_guard_example.tres")
 const OGA_CHESS_CATALOG:=preload("res://effects/vfx3d/units/OgaChessVFXCatalog.gd")
 const OGA_SKILL_CATALOG:=preload("res://effects/vfx3d/units/OgaSkillVFXCatalog.gd")
@@ -201,6 +204,15 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 		"basic_attack_melee_dark":_basic_attack(origin,target,"dark","melee",context)
 		"basic_attack_ranged_undead":_basic_attack(origin,target,"undead","ranged",context)
 		"basic_attack_melee_undead":_basic_attack(origin,target,"undead","melee",context)
+		# 赤律族：专属普攻与八个技能都走 VFXCrimsonAttack3D / VFXCrimsonSkill3D，
+		# 独占路由 —— 不再落到人族蓝色通用弹道，也不叠任何旧贴图。
+		"basic_attack_ranged_crimson":_crimson_basic_attack(origin,target,"ranged",context)
+		"basic_attack_melee_crimson":_crimson_basic_attack(origin,target,"melee",context)
+		"random_ally_buff","frost_status","aoe_silence","block_guard","stacking_def_break","current_hp_strike","line_pierce":
+			_crimson_skill(skill_id,origin,target,context)
+		"team_random_stack":
+			# 战鼓使：表现在招牌普攻的音波里，这里刻意不生成节点（见 CrimsonVFXCatalog.ATTACK_SKILLS）。
+			pass
 		"unique_death_execute":
 			# 强制生成：书是玩家必须读到的关键事件，跳过并发上限，不被特效密集回合饿死。
 			_spawn_forced(VFX_MOTHER_EXECUTE,MOTHER_EXECUTE_PROFILE,{"origin":origin,"target":target,"origin_node":context.get("origin_node"),"target_node":context.get("target_node")})
@@ -280,6 +292,29 @@ func _basic_attack(origin:Vector3,target:Vector3,race:String,mode:String,context
 	# 走同一套弹道系统，所以会跟着飞行方向朝向目标（不再横着）。
 	var bolt_tex:=str(PROJECTILE_TEX_BY_UNIT.get(uid,"")) if mode=="ranged" else ""
 	_spawn(VFX_RACE_BASIC_ATTACK,profile,{"origin":origin,"target":target,"target_node":context.get("target_node"),"race":race,"mode":mode,"bolt_kind":_bolt_kind_for(uid),"melee_kind":_melee_kind_for(uid),"bolt_tex":bolt_tex})
+
+func _crimson_basic_attack(origin:Vector3,target:Vector3,mode:String,context:Dictionary)->void:
+	# 非招牌近战（赤卫）与其它玩家近战棋子同一规则：只靠模型动作 + 伤害数字，
+	# 连一个空节点都不生成，免得白占并发预算。
+	if mode=="melee" and CRIMSON_CATALOG.melee_kind_for(str(context.get("source_unit_id",""))).is_empty():
+		return
+	var attack:Node3D=_block(VFX_CRIMSON_ATTACK)
+	if attack==null:
+		return
+	last_spawned=attack
+	var attack_context:=context.duplicate(false)
+	attack_context["mode"]=mode
+	attack.call("play_attack",origin,target,attack_context)
+
+# 赤律族技能：一次性表现走普通并发闸门；赤灯使全体禁言是控制类（与
+# guardian / black_hole 同理）必须读到，走 critical 通道。
+func _crimson_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary)->void:
+	var critical:=skill_id=="aoe_silence"
+	var effect:Node3D=_block_forced(VFX_CRIMSON_SKILL) if critical else _block(VFX_CRIMSON_SKILL)
+	if effect==null:
+		return
+	last_spawned=effect
+	effect.call("play_crimson_skill",skill_id,origin,target,context)
 
 func _oga_formal_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var spec:Dictionary=OGA_CHESS_CATALOG.formal_skill_for(skill_id)

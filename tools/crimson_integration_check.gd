@@ -471,7 +471,8 @@ func _check_combat() -> void:
 	CrimsonCombat.skill_dancer(dancer, [dancer, ally], {"ally_count": 1, "buff_duration": 3.0, "buff_pct": 0.2}, state)
 	_h.expect(str(dancer.get("vfx_skill_target_uid", "")) == str(ally.uid), "dancer_ally_priority", "Dancer chose herself while a teammate was alive")
 	CrimsonCombat.skill_dancer(dancer, [dancer, ally], {"ally_count": 2, "buff_duration": 3.0, "buff_pct": 0.2}, state)
-	_h.expect(int(dancer.get("crimson_resonance_stacks", 0)) == 3 and str(dancer.get("vfx_skill_target_uid", "")) == str(dancer.uid), "dancer_two", "Dancer did not choose teammate before self fallback")
+	# 四星一次选两人：表现列按选择顺序记下全部目标（先队友、再自身兜底）。
+	_h.expect(int(dancer.get("crimson_resonance_stacks", 0)) == 3 and str(dancer.get("vfx_skill_target_uid", "")) == "%s,%s" % [ally.uid, dancer.uid], "dancer_two", "Dancer did not choose teammate before self fallback")
 
 	var breaker := _fighter("armbreaker")
 	breaker.def.skill_id = "stacking_def_break"

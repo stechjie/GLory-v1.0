@@ -5,6 +5,9 @@ const _SkillVFXConfig := preload("res://effects/SkillVFXConfig.gd")
 # 9.19：人王奖励判定要读「还能不能再长」，与战后真正长的那一步（Main →
 # UnitGrowth.grow_king）同一个函数。本仓惯例是 preload 常量而不是裸全局类名。
 const _UnitGrowth := preload("res://scripts/units/UnitGrowth.gd")
+# 赤律族特效查表（弹体速度 / 技能清单）与 Director 起手拍长度，见 _crimson_* 一组函数。
+const _CRIMSON_CATALOG := preload("res://effects/vfx3d/units/CrimsonVFXCatalog.gd")
+const _CRIMSON_ADAPTER := preload("res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd")
 
 var _vfx_prev_units: Dictionary = {}
 var _vfx_seeded: bool = false
@@ -352,6 +355,11 @@ func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
 			u["range_px"] = float(f.get("range_px", 0.0))
 			u["skill_ready"] = float(f.get("skill_ready", 0.0))
 			u["skill_id"] = str(f.get("def", {}).get("skill_id", ""))
+			# 种族只用于挑表现（赤律族的 unit_id 没有 god_/dark_ 这类前缀）。
+			u["race"] = str(f.get("def", {}).get("race", ""))
+			# 数据里的射程格数（1 = 近战）。range_px 在实时模拟与回放里口径不同
+			# （32 vs 72），判近战/远程只能看这个。
+			u["attack_range"] = float(f.get("def", {}).get("range", 1.0))
 			# Replay rosters preserve the resolved def, but omit the opening-only
 			# taunt fields. Taunt lasts while the guardian lives, independent of shield.
 			u["taunt_active"] = bool(f.get("taunt_active", u["skill_id"] == "guardian_shield_taunt"))
@@ -624,6 +632,9 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 			# their own 3D composer presentation only.
 		"shared_hp_link":
 			should_play_texture = false
+		"random_ally_buff", "frost_status", "aoe_silence":
+			# 赤律族主动技由 VFXCrimsonSkill3D 独占（_play_race_unit_skill_procedural）。
+			should_play_texture = false
 		_:
 			pass
 	# 叠加贴图特效（与程序效果同时显示）
@@ -734,6 +745,8 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 		"bubble_dream", "shell_guard", "balance_judge", "gold_charge", "holy_song",
 		"twin_strike", "king_aura", "arrow_rain", "blood_rampage", "steel_order",
 		"time_slow", "death_hunt",
+		# 赤律族三个主动技（赤舞者 / 霜印使 / 赤灯使）。
+		"random_ally_buff", "frost_status", "aoe_silence",
 		# PVE 怪物与阵型盟友的主动技（都带 skill_cd，走 skill_ready 这条路）。
 		# 这批以前不在名单里，所以施法时连 composer 都不会被调用到。
 		"chain_lightning", "dive_backline", "heal_allies", "holy_shield_burst",
@@ -749,7 +762,9 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 		origin=previous.get("world_cast",previous.get("world_foot",origin))
 	var exact:=_exact_skill_target(unit,current)
 	var target:=exact
-	if target.is_empty() and sid not in ["nearby_ally_heal_buff","global_divine_blast","black_hole"]:
+	# 赤舞者/赤灯使的目标是逗号列表，单 uid 解析一定落空；它们下面按记录逐个解析，
+	# 不能退回「最近的敌人」去猜（赤舞者的目标是友军）。
+	if target.is_empty() and sid not in ["nearby_ally_heal_buff","global_divine_blast","black_hole","random_ally_buff","aoe_silence","frost_status"]:
 		target=_nearest_enemy_target(unit,damage_events,current)
 	var target_world:Vector3=target.get("world_hit",target.get("world_foot",unit.get("world_foot",Vector3.ZERO)))
 	var context:=_unit_target_context(unit,target)
@@ -846,6 +861,11 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 	# 逐目标的特效直接不出。origin 保持在施法者脚下，落点仍指向最近的敌人。
 	elif sid in ["soul_chain","devour_bite","hell_burst"]:
 		context["targets"]=_living_enemy_world_positions(unit,current)
+	elif sid in ["random_ally_buff","frost_status","aoe_silence"]:
+		# 霜印的中心必须是模拟器记录的那个目标；解析不到就不画，绝不挪到别人脚下。
+		if sid=="frost_status" and target.is_empty():
+			return
+		target_world=_crimson_active_context(sid,unit,target,current,context)
 	elif sid=="chain_lightning":
 		var struck:Array=[]
 		for event:Dictionary in _enemy_damage_events(unit,damage_events):
@@ -1317,6 +1337,9 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 	var events: Array = state_snapshot.get("visual_events", [])
 	if _vfx_visual_event_index > events.size():
 		_vfx_visual_event_index = events.size()
+	# 赤律族：同一次攻击产生的几条事件先归组，循环结束后各播一次（见 _play_crimson_event_groups）。
+	var crimson_hp_hits: Dictionary = {}
+	var crimson_pierces: Dictionary = {}
 	while _vfx_visual_event_index < events.size():
 		var event = events[_vfx_visual_event_index]
 		_vfx_visual_event_index += 1
@@ -1341,6 +1364,12 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 				var book_target:Vector3=victim.get("world_foot",mother.get("world_foot",Vector3.ZERO)) if has_victim else mother.get("world_foot",Vector3.ZERO)
 				var book_context:Dictionary=_unit_target_context(mother,victim) if has_victim else _unit_target_context(mother,mother)
 				_play_unit_procedural("unique_death_execute",mother.get("world_head",mother.get("world_cast",Vector3.ZERO)),book_target,book_context)
+		elif str(event.get("type", "")) == "unit_skill_proc" and str(event.get("skill_id", "")) in _CRIMSON_CATALOG.PROC_SKILLS:
+			_play_crimson_proc(event, current)
+		elif str(event.get("type", "")) == "impact" and str(event.get("skill_id", "")) == "line_pierce":
+			_collect_crimson_event(crimson_pierces, event, false)
+		elif str(event.get("type", "")) == "hit_number" and str(event.get("skill_id", "")) == "current_hp_strike" and str(event.get("kind", "dmg")) == "dmg":
+			_collect_crimson_event(crimson_hp_hits, event, true)
 		elif str(event.get("type", "")) == "unit_skill_proc":
 			var source := _vfx_unit_by_sim_uid(current, str(event.get("source_uid", "")))
 			var target := _vfx_unit_by_sim_uid(current, str(event.get("target_uid", "")))
@@ -1372,6 +1401,7 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 				_maybe_play_sfx_proc(event)
 		# D6: hit_number is drawn by the Director's adapter, on its timing. The old
 		# branch here would have been a second, untimed copy of the same number.
+	_play_crimson_event_groups(crimson_hp_hits, crimson_pierces, current)
 
 # --- Director cue entry points ------------------------------------------------
 # Every basic attack, damage number and death is drawn through these, driven by
@@ -1423,6 +1453,8 @@ func cue_play_basic_attack(source_uid: String, target_uid: String, ranged: bool)
 			target.get("world_foot", Vector3.ZERO), _boss_target_context(target))
 		return true
 	var race := _visual_race_from_unit_id(unit_id)
+	if str(source.get("race", "")) == _CRIMSON_CATALOG.RACE:
+		race = _CRIMSON_CATALOG.RACE
 	_play_race_basic_attack(attack, target, "ranged" if ranged else "melee", race, _vfx_prev_units)
 	_play_attack_unit_procedural(attack, target, _vfx_prev_units)
 	return true
@@ -1568,6 +1600,9 @@ func cue_ranged_flight_time(source_uid: String, target_uid: String) -> float:
 	var bw: Vector3 = t.get("world_hit", t.get("world_foot", Vector3.ZERO))
 	var dist := Vector2(a.x, a.z).distance_to(Vector2(bw.x, bw.z))
 	var uid := str(s.get("unit_id", ""))
+	# 赤律族弹体与 VFXCrimsonAttack3D 共用 CrimsonVFXCatalog.flight_time()。
+	if str(s.get("race", "")) == _CRIMSON_CATALOG.RACE:
+		return _CRIMSON_CATALOG.flight_time(dist, uid)
 	# 9.24 订正 #2：玩家棋子以 OGA 弹体 spec 的 speed 为准 —— 那才是屏幕上真正在飞的那个弹体。
 	var oga_spec: Dictionary = OGA_CHESS_CATALOG.projectile_for(uid)
 	if not oga_spec.is_empty():
@@ -2146,3 +2181,173 @@ func _unit_anchor_global_position(unit_node: Node, anchor_name: String, fallback
 
 func _opposite_team(team: String) -> String:
 	return "enemy" if team == "player" else "player"
+
+
+# --- 赤律族（race = crimson）特效接线 ---------------------------------------
+#
+# 原则与 docs/CODEX_VFX_WORKFLOW.md 一致：只消费已经发生的权威结果，不为特效
+# 再掷 RngService，不改任何模拟字段。
+#
+#   主动技（skill_ready 上升沿）  → _crimson_active_context() 补齐表现上下文
+#   被动触发（unit_skill_proc）   → _play_crimson_proc()；事件只在格挡/破甲/鼓点
+#                                    真的生效时由模拟器补发（DamageService / CrimsonCombat）
+#   血猎者 / 穿云弩手             → 复用已有的 hit_number / impact 事件（同 skill_id）
+#
+# 命中类表现按「起手拍 + 弹体飞行」延后，落在弹体真正到达的那一刻；
+# 飞行时长与 VFXCrimsonAttack3D 共用 CrimsonVFXCatalog.flight_time()。
+
+func _crimson_active_context(sid: String, unit: Dictionary, target: Dictionary, current: Dictionary, context: Dictionary) -> Vector3:
+	context["origin_foot"] = unit.get("world_foot", Vector3.ZERO)
+	var caster_state := _state_unit_for(str(unit.get("sim_uid", "")))
+	match sid:
+		"random_ally_buff":
+			# 记录是逗号列表（四星选 2 个友军），逐个解析；认不得的 uid 跳过，不猜。
+			context["targets"] = resolve_skill_target_positions(current, str(unit.get("skill_target_uid", "")))
+			# 音符挂在被增益者身上、跟着人走，持续到增益结束（数据 buff_duration，三选一的三种都按它记时）。
+			var nodes: Array = []
+			for tid in _vfx_target_uids(str(unit.get("skill_target_uid", ""))):
+				var ally := _vfx_unit_by_sim_uid(current, tid)
+				if not ally.is_empty():
+					nodes.append(ally.get("model_node"))
+			context["target_nodes"] = nodes
+			context["duration"] = float((caster_state.get("def", {}) as Dictionary).get("buff_duration", 3.0))
+			return unit.get("world_foot", Vector3.ZERO)
+		"frost_status":
+			# 中心 = 模拟器记录的目标；半径 = 该单位数据里的 aoe_radius（四星同值），
+			# 经与光之卫士嘲讽圈相同的 X/Z 映射变成战场椭圆。
+			var radius := float((caster_state.get("def", {}) as Dictionary).get("aoe_radius", 144.0))
+			context["world_radius"] = _guardian_taunt_world_radius(radius)
+			var affected: Array = []
+			if not target.is_empty():
+				var center_sim: Vector2 = target.get("sim_pos", Vector2.ZERO)
+				for id: String in current.keys():
+					var other: Dictionary = current[id]
+					if not bool(other.get("alive", false)) or str(other.get("team", "")) == str(unit.get("team", "")):
+						continue
+					var other_sim: Vector2 = other.get("sim_pos", Vector2.ZERO)
+					if other_sim.distance_to(center_sim) > radius + 0.5:
+						continue
+					var statuses: Dictionary = _state_unit_for(str(other.get("sim_uid", ""))).get("statuses", {})
+					if statuses.has("ice_vulnerable"):
+						affected.append(other.get("world_foot", Vector3.ZERO))
+			context["targets"] = affected
+			return target.get("world_hit", target.get("world_foot", unit.get("world_foot", Vector3.ZERO)))
+		"aoe_silence":
+			# 目标集合 = 施法时锁定的整组 uid；封印只画在这一帧真的带着沉默的目标上
+			# （控制免疫 / Boss 减半不影响「有没有沉默」这一判据）。
+			var positions: Array = []
+			var sealed: Array = []
+			for tid in _vfx_target_uids(str(unit.get("skill_target_uid", ""))):
+				var hit := _vfx_unit_by_sim_uid(current, tid)
+				if hit.is_empty():
+					continue
+				positions.append(hit.get("world_foot", Vector3.ZERO))
+				var statuses: Dictionary = _state_unit_for(tid).get("statuses", {})
+				sealed.append(statuses.has("silence"))
+			context["targets"] = positions
+			context["sealed"] = sealed
+			return unit.get("world_foot", Vector3.ZERO)
+	return target.get("world_hit", unit.get("world_foot", Vector3.ZERO))
+
+
+func _crimson_playback_speed() -> float:
+	var director: Variant = get("_presentation_director")
+	if director is Object and is_instance_valid(director) and (director as Object).has_method("get_playback_speed"):
+		return clampf(float((director as Object).call("get_playback_speed")), 0.25, 4.0)
+	return 1.0
+
+
+# 一次普攻从「本帧事件落地」到「命中那一刻」的表现延时。
+# 近战：VFXCrimsonAttack3D 与通用近战都在起手后约 0.1s 画命中；
+# 远程：Director 起手拍（随播放倍率）+ 弹体飞行。
+# 近战/远程按数据射程判（range_px 在回放里被换算成 range×72，近战也是 72）。
+func _crimson_hit_delay(attacker_uid: String, victim_uid: String) -> float:
+	var attacker := _cue_unit_snapshot(attacker_uid)
+	if attacker.is_empty() or float(attacker.get("attack_range", 1.0)) <= 1.0:
+		return 0.10
+	return _CRIMSON_ADAPTER.WINDUP_SEC / _crimson_playback_speed() + cue_ranged_flight_time(attacker_uid, victim_uid)
+
+
+static func _crimson_event_target(event: Dictionary) -> String:
+	var targets: Variant = event.get("target_uids", [])
+	if targets is Array and not (targets as Array).is_empty():
+		return str((targets as Array)[0])
+	return str(event.get("target_uid", ""))
+
+
+func _play_crimson_proc(event: Dictionary, current: Dictionary) -> void:
+	var skill_id := str(event.get("skill_id", ""))
+	var source_uid := str(event.get("source_uid", ""))
+	var target_uid := _crimson_event_target(event)
+	var source := _vfx_unit_by_sim_uid(current, source_uid)
+	var target := _vfx_unit_by_sim_uid(current, target_uid)
+	match skill_id:
+		"block_guard":
+			# source = 格挡成功的赤卫，target = 被挡下的攻击者。
+			if source.is_empty():
+				return
+			var context := _unit_target_context(source, target if not target.is_empty() else source)
+			context["delay"] = _crimson_hit_delay(target_uid, source_uid) if not target.is_empty() else 0.10
+			var toward: Vector3 = target.get("world_hit", source.get("world_hit", Vector3.ZERO) + Vector3.RIGHT)
+			_play_unit_procedural(skill_id, source.get("world_cast", Vector3.ZERO), toward, context)
+		"stacking_def_break":
+			if target.is_empty():
+				return
+			var context := _unit_target_context(source if not source.is_empty() else target, target)
+			context["stacks"] = int(event.get("stacks", 2))
+			context["delay"] = _crimson_hit_delay(source_uid, target_uid)
+			_play_unit_procedural(skill_id, source.get("world_cast", target.get("world_hit", Vector3.ZERO)), target.get("world_hit", Vector3.ZERO), context)
+
+
+# 同一次攻击的几条事件归成一组：键里带上 tick，避免把相邻两次攻击混成「斩杀」。
+func _collect_crimson_event(groups: Dictionary, event: Dictionary, by_target: bool) -> void:
+	var source_uid := str(event.get("source_uid", ""))
+	var target_uid := _crimson_event_target(event)
+	if source_uid.is_empty() or target_uid.is_empty():
+		return
+	var stamp := str(event.get("tick", event.get("time", "")))
+	var key := "%s|%s|%s" % [source_uid, target_uid if by_target else "", stamp]
+	var group: Dictionary = groups.get(key, {"source": source_uid, "targets": []})
+	(group["targets"] as Array).append(target_uid)
+	groups[key] = group
+
+
+func _play_crimson_event_groups(hp_hits: Dictionary, pierces: Dictionary, current: Dictionary) -> void:
+	# 血猎者：同一击里 current_hp_strike 出现两次 = 四星斩杀那一下也打出来了。
+	for key: String in hp_hits:
+		var group: Dictionary = hp_hits[key]
+		var targets: Array = group["targets"]
+		var source_uid := str(group["source"])
+		var target := _vfx_unit_by_sim_uid(current, str(targets[0]))
+		if target.is_empty():
+			continue
+		var source := _vfx_unit_by_sim_uid(current, source_uid)
+		var context := _unit_target_context(source if not source.is_empty() else target, target)
+		context["execute"] = targets.size() >= 2
+		context["delay"] = _crimson_hit_delay(source_uid, str(targets[0]))
+		_play_unit_procedural("current_hp_strike", source.get("world_cast", target.get("world_hit", Vector3.ZERO)), target.get("world_hit", Vector3.ZERO), context)
+	# 穿云弩手：被贯穿的目标按模拟器顺序（由近到远）连成一条线，从主目标接续。
+	for key: String in pierces:
+		var group: Dictionary = pierces[key]
+		var source_uid := str(group["source"])
+		var source := _vfx_unit_by_sim_uid(current, source_uid)
+		if source.is_empty():
+			continue
+		var positions: Array = []
+		var first: Dictionary = {}
+		for uid_value in group["targets"]:
+			var hit := _vfx_unit_by_sim_uid(current, str(uid_value))
+			if hit.is_empty():
+				continue
+			if first.is_empty():
+				first = hit
+			positions.append(hit.get("world_hit", hit.get("world_foot", Vector3.ZERO)))
+		if positions.is_empty():
+			continue
+		var primary_uid := str(source.get("attack_target_uid", ""))
+		var primary := _vfx_unit_by_sim_uid(current, primary_uid)
+		var start: Vector3 = primary.get("world_hit", positions[0]) if not primary.is_empty() else positions[0]
+		var context := _unit_target_context(source, first)
+		context["targets"] = positions
+		context["delay"] = _crimson_hit_delay(source_uid, primary_uid if not primary.is_empty() else str(first.get("sim_uid", "")))
+		_play_unit_procedural("line_pierce", start, positions[0], context)

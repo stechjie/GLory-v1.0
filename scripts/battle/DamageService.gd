@@ -100,6 +100,27 @@ static func _emit_dodge_miss(target: Dictionary) -> void:
 		"visibility_priority": "important",
 	})
 
+# 赤卫（block_guard）格挡成功：本次伤害整段归零，没有任何数字可以表现它。
+# 补一条纯表现事件给 BattleVfx 画格挡壁；格挡的随机判定在上面已经掷完，
+# 这里不读写战斗状态、不消耗 RngService。source = 格挡者，target = 被挡的攻击者。
+static func _emit_block(target: Dictionary) -> void:
+	if _stat_state.is_empty():
+		return
+	var uid := str(target.get("uid", ""))
+	if uid.is_empty():
+		return
+	var attacker_uids: Array = [] if _stat_source_uid.is_empty() else [_stat_source_uid]
+	_append_presentation_event({
+		"type": "unit_skill_proc",
+		"skill_id": "block_guard",
+		"source_uid": uid,
+		"target_uid": _stat_source_uid,
+		"target_uids": attacker_uids,
+		"amount": 0,
+		"is_crit": false,
+		"is_lethal": false,
+	})
+
 # Heal numbers always surface (they are far rarer than attacks). Called from
 # _heal_unit with the real post-clamp amount.
 static func emit_heal_number(target: Dictionary, amount: int) -> void:
@@ -342,6 +363,7 @@ static func apply_damage(target: Dictionary, amount: int, ignore_defense: bool =
 			return 0
 	if not _dot_damage_active and _hit_kind in ["basic", "skill"] and str(target.get("def", {}).get("skill_id", "")) == "block_guard":
 		if RngService.rng.randf() < float(target.get("def", {}).get("block_chance", 0.10)):
+			_emit_block(target)
 			return 0
 	if not skip_dodge:
 		var dodge_chance := float(target.get("dodge", 0.0))

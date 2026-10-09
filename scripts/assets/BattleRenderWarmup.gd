@@ -8,6 +8,7 @@ extends Node
 const PROCEDURAL := preload("res://effects/BossProceduralVFX3D.gd")
 const CHESS := preload("res://effects/vfx3d/units/OgaChessVFXCatalog.gd")
 const SKILLS := preload("res://effects/vfx3d/units/OgaSkillVFXCatalog.gd")
+const CRIMSON := preload("res://effects/vfx3d/units/CrimsonVFXCatalog.gd")
 const OGA_PROJECTILE := preload("res://effects/vfx3d/modules/VFXFlipbookProjectile3D.gd")
 const OGA_MELEE := preload("res://effects/vfx3d/modules/VFXFlipbookMelee3D.gd")
 const OGA_PACK := preload("res://effects/vfx3d/modules/VFXPackSkill3D.gd")
@@ -47,7 +48,12 @@ static func collect_jobs(replays: Array) -> Array[Dictionary]:
 			var unit_def: Dictionary = entry.get("def", {})
 			var skill := str(unit_def.get("skill_id", ""))
 			var mode := "ranged" if float(unit_def.get("range", 1.0)) > 1.5 else "melee"
-			if unit == "human_king":
+			if str(unit_def.get("race", "")) == CRIMSON.RACE:
+				# 赤律族 unit_id 没有种族前缀；按数据里的 race 走自己的路由。
+				# 非招牌近战（赤卫）在 composer 里不生成任何节点，不必等它。
+				if mode == "ranged" or not CRIMSON.melee_kind_for(unit).is_empty():
+					_append(jobs, seen, unit, "basic_attack_%s_%s" % [mode, CRIMSON.RACE])
+			elif unit == "human_king":
 				_append(jobs, seen, unit, "unique_king_growth")
 			elif skill == "mirror_clone":
 				_append(jobs, seen, unit, "mirror_slash")

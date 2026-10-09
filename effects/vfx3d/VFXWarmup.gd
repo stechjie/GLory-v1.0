@@ -48,6 +48,9 @@ const BASIC_ATTACKS := [
 	"basic_attack_melee_human", "basic_attack_ranged_human",
 	"basic_attack_melee_dark", "basic_attack_ranged_dark",
 	"basic_attack_melee_undead", "basic_attack_ranged_undead",
+	# 赤律族：近战招牌武器与远程弹体共用同两张 shader，热一个远程即覆盖整族管线；
+	# 八个技能由下面的数据表收集自动进入队列。
+	"basic_attack_ranged_crimson",
 ]
 
 # 技能从数据表现场收集，不手写清单 —— 手写的话加一个新单位就漏热一个，
