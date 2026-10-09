@@ -59,6 +59,11 @@ func _ready() -> void:
 	_case_cap_board_bench_merge_uses_bench()
 	_case_cap_board_all_full_refuses()
 
+	# 10.09 bug 文档第 1 条：商店拖「唯一棋子」到棋盘（用户给的三条意图）
+	_case_unique_shop_drag_merges_board()
+	_case_unique_shop_drag_falls_to_bench()
+	_case_unique_shop_drag_refuses_when_all_full()
+
 	_case_counter_visibility()
 	_case_shop_drag_hides_counter()
 	_case_readability_idle_hidden()
@@ -90,6 +95,17 @@ func _def_for(id: String) -> Dictionary:
 		if str((unit as Dictionary).get("id", "")) == id:
 			return unit as Dictionary
 	return {}
+
+
+# 唯一棋子（`unique_on_board`）的 id。10.09 第 1 条的现场就是它（人王）。
+# 与 `_pick_unit_ids` 刻意相反：那边专挑**非唯一**棋子，这边专挑唯一棋子。
+func _unique_unit_id() -> String:
+	var units: Array = DataRegistry.get_table("race_units").get("units", [])
+	for unit in units:
+		var d: Dictionary = unit
+		if bool(d.get("unique_on_board", false)) and not str(d.get("id", "")).is_empty():
+			return str(d.get("id", ""))
+	return ""
 
 
 func _piece(id: String, star: int) -> Dictionary:
@@ -420,6 +436,130 @@ func _case_cap_board_all_full_refuses() -> void:
 		"拒绝时不该动待命区：%d -> %d" % [bench_before, PrepRules.bench_count()])
 	_h.expect(GloryToastScript._last_text == tr("ui_pieces_full"), "cap_refuse_toast",
 		"两边都收不下时应当提示「%s」，实际提示「%s」" % [tr("ui_pieces_full"), GloryToastScript._last_text])
+
+
+# --- 10.09 第 1 条：拖「唯一棋子」到棋盘 ---------------------------------------
+#
+# 用户原话：「当棋盘上人王时，从商店里拖动人王到棋盘上（即便此时棋盘上是一个一星人王，
+# 也不会自动升星），会显示『传奇棋子只能上场一个』，不会进行购买操作。优化为：
+#   （1）棋盘上已上阵的同一唯一棋子此时满足了升星条件 → 进行升星；
+#   （2）不满足升星条件 → 新拖动的唯一棋子进入备战区；
+#   （3）同（2）但不满足升星条件且备战区已满 → 这时才显示『传奇棋子只能上场一个』。」
+#
+# 三条意图与「上阵已满」那条分流**完全同构**，所以改动就是让这一支复用同一个
+# `_auto_dispatch_shop_card()`（原 `_auto_dispatch_shop_when_board_full`，本轮改名）。
+# 改之前这一支只有一句 `show_message(toast_unique_limit)` + `return`：玩家拖过来的
+# 那一枚既没升星、也没进备战区，直接被吞掉（连钱都不扣）。
+#
+# ★ 三个用例都拖到**空格**（`_drop_shop_on_empty_board_cell`）：拖到已有同名棋子上
+#   本来就走 `can_merge_cells` 那一支合成，现场坏掉的是**空格**这条路。
+# ★ 棋盘/待命区的填充一律 MAX_MERGE_STAR，理由同 `_setup` 顶上那段长注释。
+func _setup_unique_board(unique: String, star: int, bench_used: int) -> Dictionary:
+	var fill := _unit_ids[1]
+	var offer := _setup(unique, fill, fill)
+	# 棋盘：只留前 cap 格，第 0 格放那枚唯一棋子（星级由调用方定），cap 之后全空。
+	for i in range(GameState.normal_unit_cap(), BOARD_CELLS):
+		GameState.board_slots[i] = null
+	for i in GameState.bench_slots.size():
+		GameState.bench_slots[i] = _piece(fill, GameState.MAX_MERGE_STAR) if i < bench_used else null
+	GameState.board_slots[0] = _piece(unique, star)
+	# 唯一棋子往往是最贵的那档，500 金可能买不起 —— 买不起会让三条断言全部恒假。
+	GameState.gold = 2000
+	return offer
+
+
+func _case_unique_shop_drag_merges_board() -> void:
+	var unique := _unique_unit_id()
+	if not _h.expect(not unique.is_empty(), "unique_unit_missing",
+			"race_units 表里挑不出一枚 unique_on_board 棋子 —— 这一组用例没有真的跑到"):
+		return
+	# 棋盘那枚是 1 星：商店这枚（1 星）正好是它升 2 星缺的那一枚。
+	# 待命区塞满 ⇒「落到待命区」这条路被堵死，只剩「就地升星」这一条能绿。
+	var offer := _setup_unique_board(unique, 1, GameState.bench_slots.size())
+	if not _expect_cap_board_ready():
+		return
+	if not _h.expect(PrepRules.first_empty_bench_slot() < 0, "setup_bench_full",
+			"用例前置条件不成立：待命区必须是满的（否则自动合成会替我们把断言做绿）"):
+		return
+	var gold_before := GameState.gold
+	var cost := _offer_cost(offer)
+
+	GloryToastScript._last_text = ""
+	_drop_shop_on_empty_board_cell()
+
+	_h.expect(int(GameState.board_slots[0].get("star", 0)) == 2, "unique_merge_star",
+		"棋盘上有同名 1 星唯一棋子时应当就地升到 2 星，实际 %d 星（用户意图(1)）"
+			% int(GameState.board_slots[0].get("star", 0)))
+	_h.expect(GameState.gold == gold_before - cost, "unique_merge_gold",
+		"升星这条路应当买下并扣 %d 金，实际 %d -> %d" % [cost, gold_before, GameState.gold])
+	_h.expect(bool(GameState.shop_sold[0]), "unique_merge_sold", "升星这条路应当把这张卡标记为已售")
+	_h.expect(PrepRules.bench_count() == GameState.bench_slots.size(), "unique_merge_bench_untouched",
+		"棋盘升星不该动待命区，实际 %d 枚" % PrepRules.bench_count())
+	_h.expect(GloryToastScript._last_text != tr("toast_unique_limit"), "unique_merge_no_reject",
+		"能升星时不该再弹「%s」，实际提示「%s」"
+			% [tr("toast_unique_limit"), GloryToastScript._last_text])
+
+
+func _case_unique_shop_drag_falls_to_bench() -> void:
+	var unique := _unique_unit_id()
+	if not _h.expect(not unique.is_empty(), "unique_unit_missing",
+			"race_units 表里挑不出一枚 unique_on_board 棋子 —— 这一组用例没有真的跑到"):
+		return
+	# 棋盘那枚已是 2 星 ⇒ 商店这枚 1 星合不了（can_merge_cells 要求同名同星）。
+	var offer := _setup_unique_board(unique, 2, 5)
+	if not _expect_cap_board_ready():
+		return
+	if not _h.expect(PrepRules.first_empty_bench_slot() >= 0, "setup_bench_room",
+			"用例前置条件不成立：待命区应当还有空位"):
+		return
+	var gold_before := GameState.gold
+	var cost := _offer_cost(offer)
+	var bench_before := PrepRules.bench_count()
+
+	GloryToastScript._last_text = ""
+	_drop_shop_on_empty_board_cell()
+
+	_h.expect(int(GameState.board_slots[0].get("star", 0)) == 2, "unique_bench_board_star_kept",
+		"棋盘那枚（已 2 星）不该被改动，实际 %d 星" % int(GameState.board_slots[0].get("star", 0)))
+	_h.expect(_count_id_in(GameState.bench_slots, unique) == 1, "unique_bench_landed",
+		"升不了星时新拖来的唯一棋子应当进备战区：待命区里 %s 应有 1 枚，实际 %d 枚（用户意图(2)）"
+			% [unique, _count_id_in(GameState.bench_slots, unique)])
+	_h.expect(PrepRules.bench_count() == bench_before + 1, "unique_bench_count",
+		"待命区应当多 1 枚：%d -> %d" % [bench_before, PrepRules.bench_count()])
+	_h.expect(GameState.gold == gold_before - cost, "unique_bench_gold",
+		"落到待命区这条路也应当买下并扣 %d 金，实际 %d -> %d" % [cost, gold_before, GameState.gold])
+	_h.expect(bool(GameState.shop_sold[0]), "unique_bench_sold", "这条路应当把这张卡标记为已售")
+	_h.expect(GloryToastScript._last_text != tr("toast_unique_limit"), "unique_bench_no_reject",
+		"备战区收得下时不该弹「%s」，实际提示「%s」"
+			% [tr("toast_unique_limit"), GloryToastScript._last_text])
+
+
+func _case_unique_shop_drag_refuses_when_all_full() -> void:
+	var unique := _unique_unit_id()
+	if not _h.expect(not unique.is_empty(), "unique_unit_missing",
+			"race_units 表里挑不出一枚 unique_on_board 棋子 —— 这一组用例没有真的跑到"):
+		return
+	# 棋盘 2 星（合不了）+ 待命区全满 ⇒ 真收不下，这时才是用户意图(3) 的那句提示。
+	_setup_unique_board(unique, 2, GameState.bench_slots.size())
+	if not _expect_cap_board_ready():
+		return
+	if not _h.expect(PrepRules.first_empty_bench_slot() < 0, "setup_bench_full",
+			"用例前置条件不成立：待命区应当是满的"):
+		return
+	var gold_before := GameState.gold
+	var bench_before := PrepRules.bench_count()
+
+	GloryToastScript._last_text = ""
+	_drop_shop_on_empty_board_cell()
+
+	_h.expect(GameState.gold == gold_before, "unique_refuse_no_spend",
+		"棋盘与待命区都收不下时不该扣钱：%d -> %d" % [gold_before, GameState.gold])
+	_h.expect(not bool(GameState.shop_sold[0]), "unique_refuse_not_sold", "拒绝时不该把卡标记为已售")
+	_h.expect(PrepRules.bench_count() == bench_before, "unique_refuse_bench_untouched",
+		"拒绝时不该动待命区：%d -> %d" % [bench_before, PrepRules.bench_count()])
+	_h.expect(GloryToastScript._last_text == tr("toast_unique_limit"), "unique_refuse_toast",
+		"两边都收不下时才该提示「%s」，实际提示「%s」（用户意图(3)）"
+			% [tr("toast_unique_limit"), GloryToastScript._last_text])
 
 
 # --- 第 2 条（含 10.05 返工）：贴地计数图案与 16 张站位圆圈互斥 -----------------

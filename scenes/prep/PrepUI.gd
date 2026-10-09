@@ -136,9 +136,22 @@ const READY_TEAM_GAP := 18
 const SEAT_CARD_MODAL_ID := "prep_seat_card"
 const SEAT_CARD_MODAL_PRIORITY := 40
 # 左侧「羁绊 / 宝藏」栏顶端为两行准备头像让出的高度（px）。
-# 两行头像实占 READY_AVATAR_SIZE*2 + READY_AVATAR_GAP = 116，加上顶部 8 与栏间距 8
-# ⇒ 定 132。改成别的头像尺寸时这个数要跟着动（门禁 prep_1008 会量实际 rect 兜住）。
-const SELL_LEFT_PANEL_TOP_RESERVE := 132.0
+#
+# ★ 10.09 bug 文档第 2 条：10.08 把两行头像加高后这里让出了 132px，但**让多了** ——
+#   实测（`work/_qa_1009/probe_layout_1009.gd`，窗口 1266×600 ⇒ 画布 1600×758）：
+#     头像底边 y=124、羁绊栏顶端 y=216 ⇒ **中间空了 92px**。
+#   这一栏的内容（标题 24 + 4 行羁绊 58×4 + 出售提示 24 + 两个金钱宝藏按钮 32×2，
+#   加上 separation 8 共 **400px**）被顶到 y=616，最后两个按钮（y 584~616）直接压在
+#   左下角宝藏 logo 面板（`TreasurePanel`，顶边 y=758-171=587）上 —— 就是用户截图里
+#   「获得的技能排列在了宝藏区域、无法正常使用」。
+#   现在把预留收成「头像底边 124 + 8px 间距」量出的值，整栏上移 84px。
+#
+# 为什么是 48 而不是按头像高度现算：`left_stack` 的 y=0 是 `left_drop` 的顶边，
+# 实测稳定在 84（顶栏是定高，画布高度只随设备比例变、宽度恒 1600）。
+#   reserve = (头像底边 124 + 间距 8) − left_drop.y 84 = 48。
+# 改成别的头像尺寸 / 顶栏高度时这个数要跟着动 —— 判据是
+# `tools/prep_layout_1009_check.gd`：它直接量「金钱宝藏按钮 vs TreasurePanel」有没有重叠。
+const SELL_LEFT_PANEL_TOP_RESERVE := 48.0
 const PrepSeatCard := preload("res://scenes/prep/panels/PrepSeatCard.gd")
 const PVP_WARNING_DWELL_SEC := 2.0
 const PVP_WARNING_FADE_SEC := 0.18
@@ -778,7 +791,9 @@ func _build_rest(root: VBoxContainer) -> void:
 	#   顶上（实测头像 y ∈ [8,124]，而这一栏原来从 y=84 就开始 ⇒ 重叠 40px）。
 	#   用户在反馈里点名「把羁绊/宝藏等文本及图标向下挪动，给上下两行腾位置」。
 	#   这里在最前面插一个定高占位，把整栏内容推到两行头像底下。
-	#   —— 占位高度是实测值：READY_AVATAR_SIZE*2 + READY_AVATAR_GAP + 8(顶部) + 8(间距)。
+	# ★ 10.09 反馈第 2 条：那次让出 132px 是**让多了**（实测头像底边与羁绊栏之间还空 92px），
+	#   腾出来的位置本来要给左下角宝藏 logo 留路，结果两个金钱宝藏按钮反被顶进宝藏区。
+	#   占位高度见 `SELL_LEFT_PANEL_TOP_RESERVE`（现在只留 8px 间距）。
 	var left_stack := VBoxContainer.new()
 	left_stack.add_theme_constant_override("separation", 0)
 	left_drop.add_child(left_stack)

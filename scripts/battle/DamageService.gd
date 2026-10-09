@@ -6,6 +6,19 @@ const BattleFrenzy := preload("res://scripts/battle/BattleFrenzyService.gd")
 
 static var _stat_state: Dictionary = {}
 static var _stat_source_uid := ""
+# 10.09 bug 文档第 4 条（元素伤害没进结算面板）：结算面板的「本回合总造成伤害」是按
+# owner_slot 汇总 `unit_stats[uid].damage_dealt` 得来的。可有些伤害根本没有「棋子身份」——
+# 自爆灵阵亡后的死亡爆炸（连同它挂上的毒）、寄生灵分身打出的伤害。它们既不是这一击的
+# 攻击者、也不在 `unit_stats` 里，谁都认领不到，于是直接从总伤害里消失（实测见
+# work/_qa_1009/probe_attr_paths.gd：爆炸 250 + 毒 850 全没被计入）。
+#
+# `_element_owner_slot >= 0` 时开一条旁路：本次伤害只记进 `state.element_damage_by_slot`，
+# 不写任何棋子的 `damage_dealt`。用户明确要求「把这类伤害计入本回合总造成伤害里，
+# 但不计入棋子的个人伤害里」，这条旁路就是那个口径的落点。
+static var _element_owner_slot := -1
+# 「无归属来源」的 fighter 用这个字段声明自己的输出该记在哪个 owner_slot 名下。
+# 目前只有寄生灵分身带它（见 BattleSimulator._maybe_spawn_parasite_clone）。
+const UNATTRIBUTED_OWNER_KEY := "unattributed_owner_slot"
 # 9.24 神7：StatusEffectService._apply_dot_damage 结算中毒 / 流血 / 灼烧期间置 true。
 # 带 dot_pass 的无敌（神族每 5 秒那 1 秒）只挡普攻与技能，这类持续伤害照样打进来。
 static var _dot_damage_active := false
@@ -191,10 +204,14 @@ static func _append_presentation_event(event: Dictionary) -> void:
 static func begin_stat_context(state: Dictionary, source: Dictionary) -> void:
 	_stat_state = state
 	_stat_source_uid = str(source.get("uid", ""))
+	# 10.09 第 4 条：无归属来源（寄生灵分身等）在 fighter 上带 UNATTRIBUTED_OWNER_KEY，
+	# 它的输出照常按 owner_slot 入账，只是不进任何棋子的 damage_dealt。
+	_element_owner_slot = int(source.get(UNATTRIBUTED_OWNER_KEY, -1))
 
 static func begin_stat_source_uid(state: Dictionary, source_uid: String) -> void:
 	_stat_state = state
 	_stat_source_uid = source_uid
+	_element_owner_slot = -1
 
 static func set_stat_state(state: Dictionary) -> void:
 	_stat_state = state
@@ -204,6 +221,7 @@ static func set_stat_source_uid(source_uid: String) -> void:
 
 static func clear_stat_context() -> void:
 	_stat_source_uid = ""
+	_element_owner_slot = -1
 	# Reset the hit tag too: this is called at every attack/skill/status boundary,
 	# so it doubles as a safety net that keeps a "basic"/"skill" tag from leaking
 	# into later damage (treasure reactions, DoT ticks, etc.).
@@ -214,6 +232,13 @@ static func clear_stat_context() -> void:
 
 static func current_stat_source_uid() -> String:
 	return _stat_source_uid
+
+# 当前是否处在「元素伤害旁路」里；>= 0 表示这份伤害进 state.element_damage_by_slot。
+static func current_element_owner_slot() -> int:
+	return _element_owner_slot
+
+static func set_element_owner_slot(slot: int) -> void:
+	_element_owner_slot = slot
 
 static func record_heal(target: Dictionary, amount: int) -> void:
 	if amount <= 0 or _stat_state.is_empty():
@@ -380,10 +405,14 @@ static func apply_sudden_death_damage(target: Dictionary, amount: int) -> int:
 		return 0
 	var hp_before := int(target.hp)
 	var previous_source_uid := _stat_source_uid
+	var previous_element_slot := _element_owner_slot
 	_stat_source_uid = ""
+	# 环境伤害（65 秒衰减）没有主人，绝不能因为外面恰好开着元素旁路就被记到某个席位上。
+	_element_owner_slot = -1
 	if hp_before - remaining <= 0 and _try_sacrifice_revive(target):
 		_record_damage(target, hp_before)
 		_stat_source_uid = previous_source_uid
+		_element_owner_slot = previous_element_slot
 		return hp_before
 	target.hp = maxi(0, hp_before - remaining)
 	var hp_damage := mini(hp_before, remaining)
@@ -394,6 +423,7 @@ static func apply_sudden_death_damage(target: Dictionary, amount: int) -> int:
 	if not bool(target.get("alive", true)):
 		emit_death(target)
 	_stat_source_uid = previous_source_uid
+	_element_owner_slot = previous_element_slot
 	return hp_damage
 
 static func _record_damage(target: Dictionary, amount: int) -> void:
@@ -401,8 +431,25 @@ static func _record_damage(target: Dictionary, amount: int) -> void:
 		return
 	var target_uid := str(target.get("uid", ""))
 	_add_stat_value(target_uid, "damage_taken", amount)
+	# 10.09 第 4 条：处在元素旁路里时，这份伤害只进 `element_damage_by_slot`，
+	# 不进任何棋子的 damage_dealt（用户口径：算进总伤害、不算进个人伤害）。
+	if _element_owner_slot >= 0:
+		_add_element_damage(_element_owner_slot, amount)
+		return
 	if not _stat_source_uid.is_empty() and _stat_source_uid != target_uid:
 		_add_stat_value(_stat_source_uid, "damage_dealt", amount)
+
+
+# 元素伤害旁路账本：按 owner_slot 累加。结算面板（FinalSettlementData.build）
+# 会把它并进每个席位的「本回合总造成伤害」。
+static func _add_element_damage(owner_slot: int, amount: int) -> void:
+	if owner_slot < 0 or amount <= 0 or _stat_state.is_empty():
+		return
+	var bucket: Variant = _stat_state.get("element_damage_by_slot", {})
+	if typeof(bucket) != TYPE_DICTIONARY:
+		bucket = {}
+	(bucket as Dictionary)[owner_slot] = int((bucket as Dictionary).get(owner_slot, 0)) + amount
+	_stat_state["element_damage_by_slot"] = bucket
 
 static func _add_stat_value(uid: String, key: String, amount: int) -> void:
 	if uid.is_empty() or amount <= 0:

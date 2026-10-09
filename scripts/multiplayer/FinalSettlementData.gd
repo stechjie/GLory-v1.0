@@ -25,6 +25,7 @@ static func build(room: Dictionary, replays: Array, outcome: int, gold_authorita
 			"total_gold": (GameState.START_GOLD + int(prep.get("battle_income_total", 0)) + int(prep.get("prep_income_total", 0) if gold_authoritative else snap.get("prep_income_total", 0))) if occupied else 0,
 		})
 	var stats: Array = []
+	var element_by_slot := {}
 	var allies := ["", ""]
 	for side in replays.size():
 		var replay: Dictionary = replays[side]
@@ -45,7 +46,18 @@ static func build(room: Dictionary, replays: Array, outcome: int, gold_authorita
 			if slot < side * 3 or slot >= side * 3 + 3 or str(entry.get("group", "")) == "boss":
 				continue
 			stats.append(entry.duplicate(true))
-	update_round_damage(seats, stats)
+		# 10.09 bug 文档第 4 条：无归属棋子的元素伤害（自爆灵死亡爆炸及其毒、寄生灵分身）
+		# 用**同一套边选择口径**收进来，再并进席位总伤害。键在 JSON 里会变成字符串，
+		# 所以一律 int() 归一。
+		var raw_element: Variant = (replay.get("result", {}) as Dictionary).get("element_damage_by_slot", {})
+		if typeof(raw_element) == TYPE_DICTIONARY:
+			var element_map: Dictionary = raw_element
+			for key in element_map.keys():
+				var element_slot := int(key)
+				if element_slot < side * 3 or element_slot >= side * 3 + 3:
+					continue
+				element_by_slot[element_slot] = int(element_by_slot.get(element_slot, 0)) + int(element_map[key])
+	update_round_damage(seats, stats, element_by_slot)
 	stats.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		if int(a.get("damage_dealt", 0)) != int(b.get("damage_dealt", 0)):
 			return int(a.get("damage_dealt", 0)) > int(b.get("damage_dealt", 0))
@@ -55,6 +67,7 @@ static func build(room: Dictionary, replays: Array, outcome: int, gold_authorita
 	# ⇒ 任何 kind 都能看详细战况。以前这里是 `kind in ["pvp", "final"]`，正是它把
 	# PVE 回合的「查看详情」按钮吞掉的（面板照建，只是按钮不出现，看着像没结算）。
 	return {"can_return_room": str(room.get("mode", "custom")) == "custom" and not bool(room.get("matched", false)), "outcome": outcome, "seats": seats, "stats": stats, "allies": allies,
+		"element_damage_by_slot": element_by_slot,
 		"match_uid": str(room.get("match_uid", "")), "mode": str(room.get("mode", "custom")),
 		"kind": kind, "gold_authoritative": gold_authoritative, "show_details": true}
 
@@ -66,13 +79,20 @@ static func units(raw: Array) -> Array:
 			out.append({"id": str(cell.id), "star": clampi(int(cell.get("star", 1)), 1, 4), "slot": int(cell.get("slot", index))})
 	return out
 
-static func update_round_damage(seats: Array, stats: Array) -> void:
+# 10.09 bug 文档第 4 条：`element_by_slot` 是「没有棋子身份的元素伤害」账本
+# （自爆灵死亡爆炸及其毒、寄生灵分身），只并进席位总伤害，不进逐棋子的 stats。
+# 默认空表 ⇒ 没有这一项的旧记录/旧调用行为与以前完全一致。
+static func update_round_damage(seats: Array, stats: Array, element_by_slot: Dictionary = {}) -> void:
 	for seat in seats:
 		seat["round_damage"] = 0
 	for entry in stats:
 		var slot := int(entry.get("owner_slot", -1))
 		if slot >= 0 and slot < seats.size():
 			seats[slot].round_damage += int(entry.get("damage_dealt", 0))
+	for key in element_by_slot.keys():
+		var element_slot := int(key)
+		if element_slot >= 0 and element_slot < seats.size():
+			seats[element_slot].round_damage += int(element_by_slot[key])
 
 # Eligibility is a property of the completed battle, never of who won it.
 # Older servers omit show_details; their match_state still contains kind.
