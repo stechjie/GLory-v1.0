@@ -553,6 +553,9 @@ func _refresh_race_card(race: String, forced: bool) -> void:
 	else:
 		btn.text = tr("race_pick_deselect") if picked else tr("race_pick_select")
 		btn.disabled = false
+	# 10.11 第 4 条：选中态（按钮写着「取消选择」）要带金边，一眼看出这一族已选。
+	# 未解锁的不算选中，不给金边。
+	_style_prep_button(btn, picked and complete)
 
 func _select_race_detail(race: String) -> void:
 	_viewed_race = race
@@ -667,6 +670,11 @@ func show_races(race: String = "") -> void:
 	_switch_tab(Tab.RACES)
 	_refresh_race_roster()
 
+# 种族卡片的按钮：**只改选中草稿**，不再顺手弹羁绊窗。
+#
+# ★ 10.11 第 4 条：原来选中和取消两侧都调 `_show_race_bond()`，于是点「取消选择」
+#   也会弹一个「XX族羁绊」窗（用户实拍到的就是这个）。羁绊窗现在只由「查看羁绊」
+#   按钮打开 —— 卡片按钮只管选/取消。
 func _on_race_card_pressed(race: String) -> void:
 	_viewed_race = race
 	_refresh_race_roster()
@@ -676,7 +684,6 @@ func _on_race_card_pressed(race: String) -> void:
 		return
 	_race_notice.visible = false
 	if RacePick.is_forced():
-		_show_race_bond(race)
 		return
 	var need := RacePick.required_count()
 	if _race_draft.has(race):
@@ -691,7 +698,6 @@ func _on_race_card_pressed(race: String) -> void:
 				next.append(known)
 		_race_draft = next
 	_refresh_races()
-	_show_race_bond(race)
 
 func _show_race_bond(race: String) -> void:
 	var body: String = SynergyBond.format_synergy_effects(race)
@@ -862,6 +868,8 @@ func _refresh_skin_card(skin_id: String, is_active: bool) -> void:
 	else:
 		btn.text = tr("skin_to_shop")
 		btn.disabled = false
+	# 10.11 第 4 条：正在使用的那张（按钮写着「使用中」）要带金边。
+	_style_prep_button(btn, is_active)
 
 func _on_skin_card_pressed(skin_id: String) -> void:
 	if not _skin_usable(skin_id):

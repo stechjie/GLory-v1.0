@@ -104,18 +104,23 @@ func allow_new_match() -> bool:
 		return false
 	return await _confirm_exit_for_new_match()
 
-# 上一局还没打完：**对局要退出了才能开新局**（2026-10-06 用户定，原来只能回去重连或干等它打完）。
-# 被拦的这一刻直接给「退出对局」，说清会判负、会不会扣分；确认了就退，这次开新局照常往下走。
-# 不退就回主菜单点「游戏重连」。
+# 上一局还没打完：**现在开不了新局**（10.11 第 7 条改口径，见下）。
+# 被拦的这一刻给「退出对局」，说清退出去只是掉线、这一局没结束前回不来新局；
+# 想回去就点主菜单的「游戏重连」。
 #
-# 弹窗常量从 DialogService 上拿：这个 autoload 战斗服务器也加载，不在这里另外 preload 界面脚本。
+# ★ 2026-10-06 这里是「退出了就放行开新局」，10.11 第 7 条**推翻**它：
+#   退出对局 = 该玩家掉线超过 30 秒，但**这一局还没结束**（房内还有活人，或者
+#   没人活到 30 秒的窗口还没走完），所以他**不可参与新房间**，只能重连。
+#   等这一局自动作废或正常打完，重连凭证被清掉，`check_saved_match()` 回 clear，
+#   那时自然就放行了 —— **不需要在这里额外做解锁**。
 func _confirm_exit_for_new_match() -> bool:
 	var en := LocaleManager.get_locale().begins_with("en")
 	var request_id := DialogService.confirm({
 		"request_id": "active_match_guard",
 		"title": "The last match isn't over" if en else "上一局还没打完",
-		"body": ("Leave it to start a new one, or tap Reconnect on the menu to go back.\n" if en
-			else "要先退出上一局才能开新局；想回去就点主菜单的「游戏重连」。\n")
+		"body": ("This match is still running, so a new one can't start yet.\n"
+				+ "Tap Reconnect on the menu to go back to it.\n" if en
+			else "这一局还没结束，现在开不了新局。\n想回去就点主菜单的「游戏重连」。\n")
 			+ MatchExitPenalty.body(str(SaveManager.load_reconnect().get("mode", "")), en),
 		"intent": DialogService.Dialog.Intent.DANGER,
 		"confirm_text": "Leave the match" if en else "退出对局",
@@ -131,8 +136,10 @@ func _confirm_exit_for_new_match() -> bool:
 			answer = str(resolved[1])
 	if answer != DialogService.Dialog.RESULT_CONFIRMED:
 		return false
+	# 退出对局**不等于**可以开新局：它只是把这一局按掉线处理（座位留着、还能重连）。
+	# 所以这里返回 false —— 这一局结束之前，建房 / 进房 / 匹配入座都会被挡住。
 	abandon_started_match()
-	return true
+	return false
 
 # Check the original server/port without occupying a seat in the old match.
 # Unknown/network failure never clears credentials or unlocks a new match.
@@ -371,6 +378,13 @@ const BOARD_SUBMIT_TIMEOUT_SEC := 30.0
 const RESERVE_GRACE_SEC := 120.0
 const PREP_UNREADY_RESERVE_GRACE_SEC := RESERVE_GRACE_SEC
 const MATCH_DISCONNECT_GRACE_SEC := RESERVE_GRACE_SEC
+# 10.11 第 7 条：对局内**没有任何活人玩家**时，对局自动作废（不结算）。
+# 「活人」＝原先是真人（initial_seats 该格是 "player"）、还没被 AI 顶掉、且掉线没超过
+# 这个秒数的人；AI、空位、掉线超过这个秒数的人、以及手动「退出对局」的人都不算。
+# 用于「所有人都掉线 / 都退了之后，房间别被永远吊在『对局中』」——那正是玩家报的
+# 「退了对局之后创建房间一直提示『正在对局中，请进行游戏重连』」。
+# 判据独立于 RESERVE_GRACE_SEC（120s 是「别人等多久」，这里是「多久没人了就作废」）。
+const NO_LIVE_HUMAN_END_SEC := 30.0
 
 # --- 会话状态（D1 步骤 1.5）---------------------------------------------------
 # 下面这一批曾是门面自己的字段，现已搬到 scripts/multiplayer/SessionContext.gd。
@@ -455,6 +469,23 @@ var team_active: bool:
 		return _session.team_active
 	set(value):
 		_session.team_active = value
+# ★★ 10.11 第 7 条：**离线自测对局**（主菜单 debug 入口 → 本地槽位，没有任何联机会话）。
+#
+# 用户口径：「离线自测里进行测试对局，在设定里也应加入一个『退出对局』，
+# 该退出对局是直接退出，直接结束对局」。而联网对局的「退出对局」要先弹
+# 判负 / 扣分的确认框（有对手、有分数）；本地自测两样都没有，所以行为必须分开。
+#
+# ⚠️ 为什么不用「team_active 为假 + GameState.team_mode 为真」推：
+#    联网对局**掉线**时 team_active 也会变假（正是重连遮罩出现的时候），
+#    那条路径必须照样弹判负确认框。推导式会把「掉线」误判成「本地自测」。
+#
+	# 置真：Main._on_team_offline_requested()（断开联机会话之后、进大厅之前那一刻）。
+	# 置假：任何一次真正的联机会话开始处（team_join / team_host），以及本地自测退出时。
+var offline_selftest := false
+# 现在这局是不是「没有服务器的本地自测」——只有它才允许**直接退出**。
+# 联网对局即使此刻掉线（team_active 为假）也返回 false，因为 offline_selftest 没被置起。
+func is_offline_team_match() -> bool:
+	return offline_selftest and not team_active
 var team_local_slot: int:
 	get:
 		return _session.team_local_slot
@@ -822,6 +853,7 @@ func _process(delta: float) -> void:
 		if _reserve_tick_accum >= 1.0:
 			_reserve_tick_accum = 0.0
 			_tick_reserved_seats()
+			_tick_void_watchdog()
 			_tick_heartbeat_timeouts(proc_now)
 			_reap_zombie_peers()
 			_tick_board_watchdog()
@@ -970,6 +1002,9 @@ func team_host(port: int = DEFAULT_PORT, dedicated: bool = false) -> bool:
 	reset()
 	_dedicated_server = dedicated
 	team_active = true
+	# 10.11 第 7 条：一旦真的起了联机会话，「本地自测」这个身份就不该再留着 ——
+	# 否则从自测切到联网对局后，退出对局会**跳过判负确认框**（静默变味，最难查）。
+	offline_selftest = false
 	remote_port = port
 	# 出战名片的公钥（BattleCard.gd）。**专服拿不到就拒绝启动**，同下面 DTLS 的理由：
 	# 起来了但谁都入不了座，比起不来难查得多。本地房主调试不走名片，不需要它。
@@ -1038,6 +1073,8 @@ func team_host(port: int = DEFAULT_PORT, dedicated: bool = false) -> bool:
 func team_join(address: String = DEFAULT_HOST, port: int = DEFAULT_PORT) -> bool:
 	reset()
 	team_active = true
+	# 10.11 第 7 条：同 team_host —— 联机会话一开始就摘掉「本地自测」身份。
+	offline_selftest = false
 	public_token_id = SaveManager.load_public_token()
 	remote_address = address.strip_edges()
 	remote_port = port
@@ -2772,6 +2809,29 @@ func _log_team_chat(slot: int, phrase_id: int, text: String, team_only: bool) ->
 	room_chat_log.add(team_room_id, RoomChatLog.make_entry(slot, phrase_id, text, team_only,
 		team_local_slot, team_seat_profiles, AccountManager.profile, _chat_log_round(),
 		LocaleManager.get_locale() == "en"))
+
+# 10.11 bug 第 3/9 条：我是不是「正在一局对局里」。
+#
+# 账号服务器的心跳把这个值当 in_match 上报（Main._install_presence_reporting），
+# 好友列表据此显示「对局中」、把邀请按钮变灰、按「可邀请 → 对局中 → 离线」分档。
+#
+# 判据三条，缺一条都会说错：
+#   ① 正连着战斗服务器且阶段是备战 / 战斗 / 结算 —— 以服务器广播的为准；
+#   ② 本地房主模式（调试用）没有阶段广播，退回 team_round_active
+#      （与 _chat_log_round 同一个兜底，那条刻意不改：它算的是聊天分段）；
+#   ③ 已经掉线 / 退出了，但本地还留着「这一局已经开打」的重连凭证 ——
+#      对局没结束前他仍算在这一局里（10.11 第 7 条：掉线与手动退出都只算掉线，
+#      局还开着、还能重连回来，所以也不能被邀请进新房间）。
+#
+# ⚠️ ③ 用 load_resumable_reconnect()：带 pending_leave（已确认离开、拿到服务端回执）
+#    的记录会被它排除，所以「真的退出了」之后这里立刻变 false，不会一直挂着。
+func is_in_match() -> bool:
+	if server_phase in [ROOM_PREP, ROOM_BATTLE, ROOM_RESULT]:
+		return true
+	if server_phase.is_empty() and team_round_active:
+		return true
+	var rc := SaveManager.load_resumable_reconnect()
+	return not rc.is_empty() and bool(rc.get("match_started", false))
 
 # 记录分段用：0 = 还在大厅，否则是对局第几回合（和摆放界面顶上「第 N 回合」同一个数）。
 # 本地房主模式（调试用）没有服务器广播的阶段，退回 team_round_active。
@@ -4596,8 +4656,10 @@ func request_user_leave() -> void:
 	# 运营数据：对局打到一半自己退出（没开局 / 已经打完的它自己不记）。
 	AnalyticsService.match_left("user_leave")
 	# Leaving a started match disconnects the player, but keeps their seat resumable.
+	# 10.11 第 7 条：同时把「我退了」告诉服务端（按掉线算），这样全房没活人时
+	# 对局能自动作废。与 abandon_started_match() 共用同一条收尾。
 	if not is_host and bool(SaveManager.load_reconnect().get("match_started", false)):
-		reset()
+		_notice_manual_exit_then_reset()
 		return
 	if not (team_active and not is_host and multiplayer.multiplayer_peer != null and not session_token.is_empty()):
 		# 本地房主局 / 还没拿到凭证：没有需要服务端确认的东西，直接清场
@@ -4841,28 +4903,63 @@ func cancel_reconnect() -> void:
 		SaveManager.clear_reconnect()
 	reset()
 
-# 玩家确认「退出对局」（2026-10-06）：断线遮罩、摆放界面的设定、开新局被上一局拦住，三个入口都走这里。
+# 玩家确认「退出对局」。
 #
-# 🔴 **只在本机做，不通知战斗服务器**：
-#   · 断线的时候本来就发不出去；
-#   · 连着的时候关掉连接，服务器看到的就是这个座位断线 —— 20 秒后 AI 接管，对局结束时
-#     座位还不在线 = 跑路，账号服务器照现有规则判负、扣分（backend/app/ranked.py 的 settle）；
-#   · 不能拿 _rpc_abandon_seat 去说「我退了」：它会把座位上的账号信息清掉，结算时这个位置
-#     被当成 AI，跑路的人反而一分不扣。
-# 重连凭证一删，allow_new_match() 就读不到上一局，可以开新局了。
+# ★ 10.11 bug 第 7 条**推翻了 2026-10-06 的口径**（原来这里是「删凭证 = 能开新局」）：
 #
-# 🔴 短码也要删（10-06 实测踩到：退出了还是开不了房，提示「正在对局中，请进行游戏重连」）：
-# 短码在战斗服务器上还绑着旧座位，建房 / 进房 / 匹配入座时服务器凭它认出「这人有一局没打完」
-# 就拒（_rpc_team_create_room 等开头那道 ACTIVE_MATCH_HINT）。team_join 每次都从磁盘读短码，
-# 所以内存和磁盘都要清。没有短码是正常状态，玩家要用时在主菜单再生成一个。
-# 不发 public_token_changed：Main 会把它当成「生成短码」的结果。
+#   手动点「退出对局」= 该玩家**掉线超过 30 秒**，但——
+#     · **对局没结束前仍可重连**（主菜单的「游戏重连」一直在）；
+#     · **不可参与新房间**，直到这一局真的结束（房内超过 30 秒没有活人 ⇒ 服务端把
+#       这局自动作废；或者正常打完）。
+#
+# 所以这里**不再** clear_reconnect()/clear_public_token():
+#   · 重连凭证留着 —— 主菜单那颗键靠 load_resumable_reconnect() 判断可见性，
+#     删了玩家就再也回不去这个还没结束的局（本轮要修的就是这个症状）；
+#   · 短码也留着 —— 战斗服务器凭它认出「这人有一局没打完」，建房 / 进房 / 匹配入座
+#     都会被 ACTIVE_MATCH_HINT 挡下，这就是「不可参与新房间」。
+#   · 通知服务端把这个座位按「已掉线」记一笔（座位与 token 都留着，回来还能坐）。
+#     ⚠️ 用 _rpc_manual_exit_seat，**不是** _rpc_abandon_seat：后者会抹掉座位上的
+#     账号信息、把座位转 AI，结算时这个位置被当成 AI，跑路的人反而一分不扣；
+#     它前面还有 _active_match_for_token 那道闸，对**正在打的局**根本不生效。
+#
+# 本地房主局（调试用）与「还没开打」的局没有「对局没结束前可重连」这回事，照旧清场。
 func abandon_started_match() -> void:
 	AnalyticsService.match_left("user_abandon")
-	SaveManager.clear_reconnect()
-	SaveManager.clear_public_token()
-	public_token_id = ""
 	pending_abandon_token = ""
+	if is_host or not bool(SaveManager.load_reconnect().get("match_started", false)):
+		SaveManager.clear_reconnect()
+		SaveManager.clear_public_token()
+		public_token_id = ""
+		reset()
+		return
+	_notice_manual_exit_then_reset()
+
+
+# 退出 / 让出座位时统一走这里：把「我退了、按掉线算」告诉服务端，然后断开。
+#
+# 🔴 **ENet 的包要等下一次 poll() 才真正发出去**，所以发完必须**等两帧**再 reset()——
+# 同一帧里断开连接会把刚排进去的那条包直接丢掉，症状是「服务端根本不知道你退了」，
+# 而客户端看起来完全正常（回了主菜单、重连键也在），查起来只能去量服务端日志。
+#
+# 没连着服务器（断线遮罩那条路、本地房主局、回合间空档）就没什么可通知的：
+# 断开本身就等于掉线，服务端心跳超时后一样判这局没有活人。
+func _notice_manual_exit_then_reset() -> void:
+	if _manual_exit_notice_available():
+		_rpc_manual_exit_seat.rpc_id(1, session_token)
+		await get_tree().process_frame
+		await get_tree().process_frame
 	reset()
+
+
+# 现在能不能立刻把「我退了」发出去（有连接 + 有座位 token）。
+# 判据抽出来是为了让门禁能直接钉「什么时候不该发」——发不出去还硬等两帧，
+# 会让「取消并返回主菜单」这类操作凭空慢两帧。
+func _manual_exit_notice_available() -> bool:
+	if is_host or session_token.is_empty():
+		return false
+	if not (state in [SessionState.JOINING, SessionState.READY]):
+		return false
+	return multiplayer.multiplayer_peer != null
 
 # app 重开后凭本地存的 token 恢复对局（Main 在启动时调用）。
 # port 必须由调用方传进来：座位 token 是**进程内**的，多进程下连错端口 = 凭证失效。
@@ -5627,6 +5724,13 @@ func _rpc_abandon_seat(token: String) -> void:
 	if room.is_empty() or slot < 0 or slot >= TEAM_SLOTS:
 		return
 	_clear_seat_metadata(room, slot)
+	# 10.11 第 7 条：这条闸只放行**非进行中**的座位（上面 _active_match_for_token），
+	# 所以这里主要覆盖「大厅里坐过又去开新局」那种；真正打的局走 _rpc_manual_exit_seat。
+	# 打这个标记 = 立刻不再算活人（_room_live_human_count），否则最后一个人退出之后
+	# 房间会被永远吊在「对局中」。
+	var manual: Dictionary = room.get("manual_exit_slots", {})
+	manual[slot] = true
+	room["manual_exit_slots"] = manual
 	if _room_online_count(room) <= 0:
 		# 房里没别人了：不转 AI，让空房间自然超时回收
 		_net_log("seat abandoned room=%d slot=%d (room empty, will time out)" % [int(room.get("id", 0)), slot])
@@ -5634,6 +5738,47 @@ func _rpc_abandon_seat(token: String) -> void:
 	# 还有其他玩家：座位转 AI 顶上，并推进当前阶段
 	_room_auto_complete_seat(room, slot)
 	_net_log("seat abandoned room=%d slot=%d -> AI takeover" % [int(room.get("id", 0)), slot])
+
+# 10.11 bug 第 7 条：对局中手动点「退出对局」。
+#
+# 与 _rpc_abandon_seat 的四处关键区别（每一条都是这条需求本身要求的）：
+#   ① **刻意不做 _active_match_for_token 那道拦截** —— 那道闸是「只有非进行中的座位
+#      才允许被放弃」，套到正在打的局上等于什么都不做；
+#   ② **座位与 token 都留着**：对局没结束前玩家还能重连回来（用户口径）；
+#   ③ **不调 _clear_seat_metadata()**：那会抹掉座位上的账号信息，结算时这个位置被
+#      当成 AI，主动退出的人反而一分不扣；
+#   ④ 只把这个座位按「已掉线超过 30 秒」记一笔 —— `_room_live_human_count()` 立刻
+#      不把他算成活人，全房没活人时 `_tick_void_watchdog()` 就能把这局自动作废。
+#
+# 顺手补 human_offline_since：客户端发完这条就会断开，正常路径由 _room_reserve_peer
+# 写它；这里先写一份，断开慢一拍也不影响「已掉线」的判定（两处写的语义相同）。
+#
+# ⚠️ **必须校验发送者就是那个座位的主人**：token 是客户端自报的，不校验的话
+# 任何人拿别人的 token 都能把对方标记成「已退出」，直接把他那一局作废。
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_manual_exit_seat(token: String) -> void:
+	if not _dedicated_server:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if not _rate_ok(sender, "manual_exit"):
+		return
+	var seat: Dictionary = _token_seat.get(token, {})
+	if seat.is_empty():
+		return
+	var room: Dictionary = _rooms.get(int(seat.get("room_id", 0)), {})
+	var slot := int(seat.get("slot", -1))
+	if room.is_empty() or slot < 0 or slot >= TEAM_SLOTS:
+		return
+	if int((room.get("peer_slot", {}) as Dictionary).get(sender, -1)) != slot:
+		return
+	var manual: Dictionary = room.get("manual_exit_slots", {})
+	manual[slot] = true
+	room["manual_exit_slots"] = manual
+	var offline: Dictionary = room.get("human_offline_since", {})
+	if not offline.has(slot):
+		offline[slot] = _now()
+		room["human_offline_since"] = offline
+	_net_log("manual exit room=%d slot=%d (seat kept for reconnect)" % [int(room.get("id", 0)), slot])
 
 @rpc("authority", "call_remote", "reliable")
 func _rpc_resume_failed(reason: String) -> void:
@@ -6882,10 +7027,13 @@ func _last_online_human_winner(room: Dictionary) -> int:
 			had_human_opponent = true
 	return survivor if had_human_opponent else -1
 
-func _finish_abandoned_match(room: Dictionary, winner_slot: int) -> void:
+func _finish_abandoned_match(room: Dictionary, winner_slot: int, end_reason: String = "last_human_online") -> void:
 	if bool(room.get("run_over", false)):
 		return
-	var outcome := GameConstants.team_of_slot(winner_slot)
+	# winner_slot < 0 = **作废**（10.11 第 7 条「无活人自动结束」）：没有胜者，
+	# 两队都不算赢（TeamOutcome.DRAW）。给 GameConstants.team_of_slot() 传 -1 会算错队，
+	# 所以这里必须显式分流。
+	var outcome := GameConstants.team_of_slot(winner_slot) if winner_slot >= 0 else TeamOutcome.DRAW
 	room.run_over = true
 	room.reserve_deadline = {}
 	room.replay_pending = false
@@ -6897,7 +7045,7 @@ func _finish_abandoned_match(room: Dictionary, winner_slot: int) -> void:
 	room.battle_id = "%d:%d:%d" % [int(room.id), int(room.round_index), terminal_seq]
 	# No fictional rewards, damage, or simulated round statistics.
 	var final_data: Dictionary = preload("res://scripts/multiplayer/FinalSettlementData.gd").build(room, [], outcome, economy_authoritative())
-	final_data["end_reason"] = "last_human_online"
+	final_data["end_reason"] = end_reason
 	final_data["show_details"] = false
 	room["final_settlement"] = final_data
 	var hp: Array = room.get("team_hp", [GameState.START_FORMATION_HP, GameState.START_FORMATION_HP])
@@ -6910,7 +7058,7 @@ func _finish_abandoned_match(room: Dictionary, winner_slot: int) -> void:
 		ms.merge({"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION,
 			"battle_id": str(room.battle_id), "completed_round": int(room.round_index),
 			"round_index": int(room.round_index), "slot": slot, "kind": "abandonment",
-			"run_over": true, "end_reason": "last_human_online", "run_outcome": outcome,
+			"run_over": true, "end_reason": end_reason, "run_outcome": outcome,
 			"team_run_won": own_team == outcome, "team_hp": int(hp[own_team]),
 			"enemy_team_hp": int(hp[1 - own_team]), "gold": int(prep.get("gold", room.slot_gold[slot])) if economy_authoritative() else int(room.slot_gold[slot]),
 			"carrot_authoritative": false, "pending_treasure": {"active": false}, "final_settlement": final_data}, true)
@@ -6926,6 +7074,70 @@ func _finish_abandoned_match(room: Dictionary, winner_slot: int) -> void:
 			_replay_forget_peer(int(pid))
 			_resend_result_state(int(pid), states[int(room.peer_slot[pid])])
 	_net_log("match abandoned room=%d winner_slot=%d outcome=%d" % [int(room.id), winner_slot, outcome])
+
+# --- 10.11 第 7 条：无活人 -> 对局作废（不结算）-----------------------------------
+#
+# 每秒扫一遍：一个活跃对局里**一个活人都不剩**就自动结束（作废、不算胜负、不发奖励）。
+#
+# 与 _last_online_human_winner() 的分工（两条别混）：
+#   · 那条：还剩**恰好一个**在线真人 -> **他赢**（end_reason=last_human_online）；
+#   · 这条：**一个活人都不剩**     -> **谁都不赢**（end_reason=no_live_human）。
+#
+# 「活人」的判据见 _room_live_human_count()。手动「退出对局」的座位在上面
+# _rpc_abandon_seat() 里打了 manual_exit_slots 标记，立刻不算活人 —— 于是
+# 「最后一个活人手动退出」＝立刻作废，正是需求要的「视为该玩家掉线超过 30 秒」。
+func _tick_void_watchdog() -> void:
+	for room in _rooms.values():
+		if _void_room_eligible(room):
+			_void_abandoned_match(room)
+
+# 这个房间该不该被「无活人」规则作废。
+# 注意**没有真人座位的房间永不触发** —— 纯 AI 房 / 单人练习本来就没有活人，
+# 不加这一条每局一开局就自杀了。
+func _void_room_eligible(room: Dictionary) -> bool:
+	if str(room.get("state", "")) not in [ROOM_PREP, ROOM_BATTLE, ROOM_RESULT]:
+		return false
+	if bool(room.get("run_over", false)):
+		return false
+	# 🔴 **刻意不跳 `suspended`** —— 「全房零在线真人、但仍留着 token 等人回来」正是这条
+	#    规则要解决的那个状态（房间被永远吊在「对局中」）。_last_online_human_winner()
+	#    跳它是为了「人还没全走光之前别急着判胜」，那条的语义与这条相反。
+	var initial: Array = room.get("initial_seats", [])
+	if initial.size() != TEAM_SLOTS:
+		return false
+	var has_human_seat := false
+	for slot in TEAM_SLOTS:
+		if str(initial[slot]) == "player":
+			has_human_seat = true
+			break
+	if not has_human_seat:
+		return false
+	return _room_live_human_count(room) <= 0
+
+# 「活人」＝原先是真人（initial_seats 该格 "player"）、座位还没被 AI 顶掉
+# （slot_states 仍是 "player"）、没有手动退出标记、且掉线时长 < NO_LIVE_HUMAN_END_SEC。
+# 四个「不活」的理由都要显式排掉：漏掉任何一个，房间都会晚 30 秒才结束（或永不结束）。
+func _room_live_human_count(room: Dictionary) -> int:
+	var initial: Array = room.get("initial_seats", [])
+	var states: Array = room.get("slot_states", [])
+	var offline: Dictionary = room.get("human_offline_since", {})
+	var manual: Dictionary = room.get("manual_exit_slots", {})
+	var count := 0
+	for slot in TEAM_SLOTS:
+		if slot >= initial.size() or str(initial[slot]) != "player":
+			continue
+		if slot >= states.size() or str(states[slot]) != "player":
+			continue  # 已被 AI 顶掉（dummy）/ 空位
+		if manual.has(slot):
+			continue  # 手动点过「退出对局」＝视为掉线超过 30 秒
+		if offline.has(slot) and _now() - float(offline[slot]) >= NO_LIVE_HUMAN_END_SEC:
+			continue  # 掉线超过 30 秒
+		count += 1
+	return count
+
+# 无活人 -> 作废：复用掉线结束那套展示（show_details=false），只是没有胜者。
+func _void_abandoned_match(room: Dictionary) -> void:
+	_finish_abandoned_match(room, -1, "no_live_human")
 
 # 方案乙：宽限到期 -> 座位转 AI(dummy)，其他玩家立刻面对真 AI、本回合不再卡。
 # token 仍有效：A 之后按"游戏重连"回来，resume 会把 dummy 变回 player、A 从存档恢复棋盘。

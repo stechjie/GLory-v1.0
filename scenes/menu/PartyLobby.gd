@@ -32,8 +32,11 @@ const VoiceControls := preload("res://ui/components/VoiceControls.gd")
 const ChatPhrases := preload("res://scripts/multiplayer/ChatPhrases.gd")
 const SfxService := preload("res://ui/services/SfxService.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
-# 与自定义房间的静音键同源（Team3v3Lobby 同一个 preload）。
-const Presentation := preload("res://effects/runtime/presentation/PresentationSettings.gd")
+# 10.11 第 2 条：右上角那颗键从「静音 / 已静音」改成「设定」，打开的是与主界面同一页设置
+# （同自定义房间 Team3v3Lobby._open_settings）。房间这一档走 `lobby_mode`，
+# 内容比**对局里**的设定少一行「退出对局」（房间还没开打，谈不上退出）。
+const SettingsScreenScript := preload("res://scenes/menu/SettingsScreen.gd")
+const SETTINGS_SCENE := preload("res://scenes/menu/SettingsScreen.tscn")
 # 「房主更换了休闲/排位模式」这类临时提示在房间里停留多久。
 const NOTICE_SEC := 4.0
 const SPEAKING_REFRESH_SEC := 0.2
@@ -59,7 +62,11 @@ const MAX_DISPLAY_PETS := 5
 const BACK_SIZE := Vector2(143, 83)            # 返回（_build 里 TEX_BACK 那颗）
 const ACTION_SIZE := Vector2(270, 95)          # 开始 / 准备（hit_start）
 const VOICE_BTN_SIZE := Vector2(78, 60)        # 语音按钮（VOICE_BTN_SIZE）
-const TOP_BTN_SIZE := Vector2(140, 62)         # 静音（MUTE_BTN_SIZE）；休闲 / 排位、宠物自定义房间没有，也按它
+const TOP_BTN_SIZE := Vector2(140, 62)         # 右上角「设定」（原静音 MUTE_BTN_SIZE）；休闲 / 排位、宠物也按它
+# 10.11 第 2 条：右上角「设定」推上 ModalStack 的 id。刻意与自定义房间的
+# `"lobby_settings"` 分开 —— 两个房间理论上不会同时在树里，但共用同一个 id 时，
+# 若其中一个被提前释放而 ModalStack 里的条目还在，另一个就会永远打不开设置页。
+const LOBBY_SETTINGS_MODAL_ID := "party_lobby_settings"
 const PHRASE_ENTRY_SIZE := Vector2(196, 40)    # 「＋ 快捷短语」入口（CHAT_ENTRY_SPLIT × 40）
 const PHRASE_PANEL_SIZE := Vector2(360, 304)   # PHRASE_PANEL_SIZE
 const PHRASE_BTN_SIZE := Vector2(162, 40)      # PHRASE_BTN_SIZE，两列
@@ -138,9 +145,10 @@ var _notice_timer: SceneTreeTimer
 var _sticky_notice := ""
 var _party_voice: Node
 var _poll_elapsed := 0.0
-# 10-08 对齐自定义房间补上的：语音出错原因、整局静音、快捷短语、点头像的成员卡、开始键脉动。
+# 10-08 对齐自定义房间补上的：语音出错原因、右上角设定键、快捷短语、点头像的成员卡、开始键脉动。
 var _voice_status: Label
-var _mute_button: Button
+# 10.11 第 2 条：原来是「静音 / 已静音」那颗（_mute_button），改成打开设置页的「设定」。
+var _settings_button: Button
 var _phrase_button: Button
 var _phrase_panel: Panel
 var _voice_backdrop: Button
@@ -243,10 +251,13 @@ func _build() -> void:
 	_pet_toggle = _button(_canvas, _text("宠物", "PETS"), Vector2(1325, 38), TOP_BTN_SIZE)
 	_style_paper_button(_pet_toggle, false)
 	_pet_toggle.pressed.connect(_toggle_pets_drawer)
-	# 10-08：整局静音（同自定义房间右上角那颗，Team3v3Lobby._toggle_mute）。
-	_mute_button = _button(_canvas, _mute_text(), Vector2(1475, 38), TOP_BTN_SIZE)
-	_style_paper_button(_mute_button, false)
-	_mute_button.pressed.connect(_toggle_mute)
+	# 10.11 第 2 条：右上角那颗键从「静音 / 已静音」改成「设定」（同自定义房间
+	# Team3v3Lobby._build_settings_button）。位置 / 尺寸 / 纸纹样式全部照旧，只换文案与动作 ——
+	# 静音没丢：设置页里的「背景音乐」就是同一个开关，还多控了音效与画质。
+	_settings_button = _button(_canvas, _text("设定", "Settings"), Vector2(1475, 38), TOP_BTN_SIZE)
+	_style_paper_button(_settings_button, false)
+	_settings_button.name = "SettingsButton"
+	_settings_button.pressed.connect(_open_settings)
 
 	_chat_panel = _paper_panel(_canvas, CHAT_POS, CHAT_SIZE, 0.91)
 	_label(_chat_panel, _text("队内聊天", "PARTY CHAT"), Vector2(18, 12), Vector2(150, 36), 22, Color("425331"))
@@ -623,6 +634,29 @@ func _render_seats() -> void:
 			kick.pressed.connect(_kick_member.bind(code))
 
 
+# 10.11 第 3 条：好友列表的三档，排序就是 可邀请(0) -> 对局中(1) -> 离线(2)。
+const FRIEND_INVITABLE := 0
+const FRIEND_IN_MATCH := 1
+const FRIEND_OFFLINE := 2
+
+# 只此一份判据：列表分档、按钮文案、快捷栏取谁全走它。
+# 「对局中」是后端随好友列表一起返回的 in_match（database/032 / friends._in_match_visible），
+# 已经替我们排掉了「不在线」和「对方关掉房间可见性」两种，所以这里只看字段本身。
+func _friend_bucket(friend: Dictionary) -> int:
+	if not bool(friend.get("online", false)):
+		return FRIEND_OFFLINE
+	return FRIEND_IN_MATCH if bool(friend.get("in_match", false)) else FRIEND_INVITABLE
+
+func _friend_state_text(bucket: int) -> String:
+	match bucket:
+		FRIEND_IN_MATCH:
+			return _text("对局中", "In match")
+		FRIEND_OFFLINE:
+			return _text("离线", "Offline")
+		_:
+			return _text("在线", "Online")
+
+
 func _render_friends() -> void:
 	var room_count := (_room.get("members", []) as Array).size()
 	var online_count := 0
@@ -645,12 +679,15 @@ func _render_friends() -> void:
 	_friends_drawer.size.y = drawer_height
 	(_friend_list.get_parent() as ScrollContainer).size.y = drawer_height - 101.0
 	var quick_count := 0
-	for online_pass in [true, false]:
+	# 10.11 第 3 条：按「可邀请 → 对局中 → 离线」分档（同一档内保持服务端给的顺序）。
+	# 判据只有一处（_friend_bucket），列表与右下角快捷栏共用 —— 两份一定会分叉。
+	for bucket in [FRIEND_INVITABLE, FRIEND_IN_MATCH, FRIEND_OFFLINE]:
 		for raw in _friends:
 			var friend: Dictionary = raw
-			var online := bool(friend.get("online", false))
-			if online != online_pass:
+			if _friend_bucket(friend) != bucket:
 				continue
+			var in_match: bool = bucket == FRIEND_IN_MATCH
+			var can_invite: bool = bucket == FRIEND_INVITABLE
 			var row := _paper_panel(_friend_list, Vector2.ZERO, Vector2(359, 82), 0.75)
 			row.custom_minimum_size = Vector2(359, 82)
 			var code := str(friend.get("friend_code", ""))
@@ -658,21 +695,24 @@ func _render_friends() -> void:
 			var row_tap := _button(row, "", Vector2.ZERO, Vector2(359, 82))
 			row_tap.flat = true
 			row_tap.focus_mode = Control.FOCUS_NONE
-			row_tap.disabled = _local_only or not online or room_count >= 3
+			row_tap.disabled = _local_only or not can_invite or room_count >= 3
 			row_tap.pressed.connect(func() -> void: _invite(code))
 			var avatar := _friend_avatar(row, friend, Vector2(8, 7), 67)
-			avatar.disabled = _local_only or not online or room_count >= 3
+			avatar.disabled = row_tap.disabled
 			avatar.pressed.connect(func() -> void: _invite(code))
 			var name := _label(row, str(friend.get("player_name", "")), Vector2(85, 13), Vector2(152, 31), 21,
-				Color("31412e") if online else Color("8b8d7b"))
+				Color("31412e") if can_invite or in_match else Color("8b8d7b"))
 			name.clip_text = true
-			_label(row, _text("在线", "Online") if online else _text("离线", "Offline"),
-				Vector2(85, 46), Vector2(140, 24), 16, Color("438663") if online else Color("8b8d7b"))
-			var invite := _button(row, _text("邀请", "Invite"), Vector2(254, 20), Vector2(87, 42))
+			_label(row, _friend_state_text(bucket), Vector2(85, 46), Vector2(140, 24), 16,
+				Color("438663") if can_invite else Color("8b8d7b"))
+			# 对局中的好友按钮直接写「对局中」并禁用（10.11 第 3 条）；
+			# 离线的仍旧是「邀请」但禁用 —— 与原来一致，免得玩家以为离线的人也能拉进来。
+			var invite := _button(row, _text("邀请", "Invite") if can_invite else \
+				(_text("对局中", "In match") if in_match else _text("邀请", "Invite")), Vector2(254, 20), Vector2(87, 42))
 			_style_paper_button(invite, true)
-			invite.disabled = _local_only or not online or room_count >= 3
+			invite.disabled = row_tap.disabled
 			invite.pressed.connect(func() -> void: _invite(code))
-			if online and quick_count < 3:
+			if can_invite and quick_count < 3:
 				var quick := _friend_avatar(_friend_rail, friend, Vector2.ZERO, 72)
 				quick.disabled = _local_only or room_count >= 3
 				quick.pressed.connect(func() -> void: _invite(code))
@@ -692,8 +732,11 @@ func _friends_signature(room_count: int) -> String:
 	parts.append("local=%s" % str(_local_only))
 	for raw in _friends:
 		var f: Dictionary = raw
-		parts.append("%s|%s|%s|%s" % [
+		# in_match 必须进签名（10.11 第 3 条）：它一翻，行要换档、按钮文案要换 ——
+		# 漏了它就会「数据变了但列表不重建」，而 10.10 加的签名去重是**按内容**跳过的。
+		parts.append("%s|%s|%s|%s|%s" % [
 			str(f.get("friend_code", "")), str(f.get("online", false)),
+			str(f.get("in_match", false)),
 			str(f.get("player_name", "")), str(f.get("avatar", ""))])
 	return ";;".join(parts)
 
@@ -1326,27 +1369,26 @@ func _update_start_pulse(active: bool) -> void:
 	_start_tween.tween_property(_action, "modulate", START_DIM, 0.9)
 
 
-# 整局静音：与自定义房间那颗同一个口径（Team3v3Lobby._toggle_mute）—— 静的是游戏声音（Master 总线），
-# 不是队友语音；语音走下面那两个图标。
-func _is_audio_muted() -> bool:
-	var master := AudioServer.get_bus_index("Master")
-	if master >= 0 and AudioServer.is_bus_mute(master):
-		return true
-	return not Presentation.music_allowed()
-
-
-func _mute_text() -> String:
-	return _text("已静音", "Muted") if _is_audio_muted() else _text("静音", "Mute")
-
-
-func _toggle_mute() -> void:
-	var master := AudioServer.get_bus_index("Master")
-	var want_mute := not _is_audio_muted()
-	if master >= 0:
-		AudioServer.set_bus_mute(master, want_mute)
-	if not want_mute:
-		PlayerProfile.set_presentation_toggle("music", true)
-	_mute_button.text = _mute_text()
+# 房间里的设置页（10.11 第 2 条）。原来是 `_is_audio_muted / _mute_text / _toggle_mute`
+# 那套「整局静音」—— 现在整页搬进 SettingsScreen，这里只负责把它推上 ModalStack。
+#
+# `lobby_mode = true` 让页脚只剩「返回」：既没有「重新体验教学」，也没有「退出对局」
+# （用户口径：「内容上要比对局里的设定少个『退出对局』按钮」）。
+# `can_leave_match = false` 是同一件事的兜底 —— 万一 lobby_mode 被谁改回 false，
+# 也不会在房间里冒出一颗点不到的「退出对局」。
+func _open_settings() -> void:
+	if ModalStack.has(LOBBY_SETTINGS_MODAL_ID):
+		return
+	var screen := SETTINGS_SCENE.instantiate() as SettingsScreenScript
+	screen.lobby_mode = true
+	screen.can_leave_match = false
+	screen.back_requested.connect(func() -> void: ModalStack.pop(LOBBY_SETTINGS_MODAL_ID))
+	ModalStack.push(screen, {
+		"id": LOBBY_SETTINGS_MODAL_ID,
+		"owner": self,
+		"priority": 50,
+		"dismiss_on_backdrop": false,
+	})
 
 
 # 快捷短语：列在聊天框上方，点哪句发哪句（同一个队内聊天接口 —— 服务器那边就是一条普通消息）。

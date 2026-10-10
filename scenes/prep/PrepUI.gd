@@ -21,6 +21,8 @@ const SETTINGS_MODAL_PRIORITY := 50
 # 走 preload 常量而不是从 autoload 实例上取，dynamic_call 棘轮才不会长。
 const TutorialModeScript := preload("res://scripts/tutorial/TutorialMode.gd")
 const CarrotCampPanelScript := preload("res://scenes/prep/CarrotCampPanelV3.gd")
+# 10.11 第 8 条：营地入口按钮在有升级石时散发柔和星爆（纯 _draw()，不进 procedural_ui_ratchet）。
+const StarBurstScript := preload("res://ui/components/StarBurst.gd")
 const UNIT_TEAM_RING_SHADER := preload("res://shaders/unit_team_ring.gdshader")
 
 # Keep the selector API used by preparation-screen regression checks while the
@@ -170,6 +172,8 @@ var _carrot_button_label: Label
 var _carrot_counter_label: Label
 # 萝卜数量那块底板。教学里要指着它（收获萝卜那一步），也要跟入口按钮一起显隐。
 var _carrot_counter_panel: PanelContainer
+# 10.11 第 8 条：营地入口按钮上那层星爆（有升级石才亮）。
+var _carrot_button_burst: Control
 var _carrot_dimmer: ColorRect
 var _tutorial_target_provider: TutorialTargetProviderScript
 
@@ -1202,6 +1206,34 @@ func _build_top_actions() -> void:
 	var carrot_btn := PrepWidgets.make_framed_text_button("", CARROT_BTN_PATH,
 		MERC_BTN_SIZE, 16, _toggle_carrot_camp)
 	_carrot_button = carrot_btn
+	# 10.11 第 8 条：星爆先于文字挂上 —— 子节点按树序绘制，所以它落在按钮贴图之上、
+	# 「萝卜营地」文字之下（不挡字；文字反过来也压不住它）。有升级石时由
+	# _refresh_carrot_counter() 打开。
+	var carrot_burst: Control = StarBurstScript.new()
+	carrot_burst.name = "CarrotCampBurst"
+	# ★ 半径系数 1.3：入口按钮 132×132 里那枚 512² 徽章几乎填满整个方框（实测不透明
+	#   像素半径 ≈ 65 / 66px），系数 1.0 时星芒末端正好停在图标边缘 ⇒ 只看到「压在图标
+	#   上」，没射到外面。1.3 ⇒ 末端约 86px，比图标多探出约 20px —— 用户 10.11 口径
+	#   「从图标中心向外散发到图标外面一点」。
+	#   ⚠️ 第三参 `inner` **不传**（默认 0.0）= 星芒从图标中心起画，正是「从图标中心向外」；
+	#   传 > 0 会变成「从图标边缘起画」，那是上一版口径、已被推翻，别再传。
+	# ★ 颜色换冰蓝白（不带黄）：用户 10.11 口径「不要黄色，不够显眼」。徽章本身是暖橙、
+	#   按钮又压在**亮草坪**上，暖黄系两头被吃平；冰蓝白与暖橙正互补，在绿底上最跳 ——
+	#   「显眼」靠色相对比，不是靠堆亮度。
+	# ★ 明暗交替：短芒压到 0.4（长芒 1.0）⇒ 一圈亮一圈暗；芒宽 ×1.5 加粗，10 根芒才
+	#   撑得起星爆形状（半径放大后细芒会显脏）。
+	carrot_burst.setup(Color(0.62, 0.86, 1.0), 1.3)
+	carrot_burst.base_alpha = 1.0
+	carrot_burst.short_ray_alpha = 0.4
+	carrot_burst.ray_width_scale = 1.5
+	carrot_burst.visible = false
+	carrot_btn.add_child(carrot_burst)
+	# ★ 必须显式铺满：**Button 不是 Container**，新挂上去的子 Control 尺寸不会自己跟上来，
+	#   `size` 会停在 (0,0) ⇒ StarBurst._draw() 里 `radius <= 1.0` 直接 return，
+	#   **一个像素都画不出来**（而 `visible` 却是 true —— 门禁只看 visible 就会漏掉这一层）。
+	#   同文件既有写法：PrepWidgets.make_framed_text_button 里的 frame / lbl 都自己设了 anchors。
+	carrot_burst.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_carrot_button_burst = carrot_burst
 	var carrot_lbl := Label.new()
 	_carrot_button_label = carrot_lbl
 	carrot_lbl.text = "Carrot Camp" if LocaleManager.get_locale().begins_with("en") else "萝卜营地"
@@ -1744,8 +1776,10 @@ func _teardown_chat_entry() -> void:
 # 摆放界面一拆，对局就断了。所以同一个 SettingsScreen 用弹层盖上来，摆放界面在底下照常走
 # （倒计时不停）。回合结束切到战斗时摆放界面被释放，弹层跟着 owner 一起关。
 #
-# 「重新体验教学」在对局里换成「退出对局」，而且只有联网对局有（教学、离线自测没有这一行）。
-# 点了走 leave_match_requested → Main.request_exit_match：先弹判负 / 扣分的确认框，确认了才退。
+# 「重新体验教学」在对局里换成「退出对局」。**教学没有这一行**；
+# 联网对局与**离线自测对局**都有（10.11 第 7 条把离线自测加了回来）——
+# 区别只在行为：联网对局先弹判负 / 扣分的确认框，离线自测直接退出、直接结束对局。
+# 点了都走 leave_match_requested → Main.request_exit_match（由它按判据分叉）。
 #
 # 原来静音键管的事，设定页里都有：「背景音乐」「界面音效」两个开关
 # （9.17 反馈第 5 条要的「对局里能把音乐重新打开」照样做得到）。
@@ -1754,7 +1788,13 @@ func _open_settings() -> void:
 		return
 	var settings: SettingsScreenScript = SETTINGS_SCENE.instantiate()
 	settings.in_match = true
-	settings.can_leave_match = NetworkService.team_active and not GameState.tutorial_mode
+	# 10.11 第 7 条：**离线自测的对局**也要有「退出对局」这一行。
+	# 用户口径：「离线自测里进行测试对局，在设定里也应加入一个『退出对局』，
+	# 该退出对局是直接退出，直接结束对局」。
+	# 这里只负责**让按钮出现**；「要不要先弹判负 / 扣分确认框」由 Main.request_exit_match
+	# 用同一个判据（NetworkService.is_offline_team_match()）分叉 —— 判据只有一处。
+	settings.can_leave_match = (NetworkService.team_active or NetworkService.is_offline_team_match()) \
+		and not GameState.tutorial_mode
 	settings.back_requested.connect(_close_settings)
 	settings.leave_match_requested.connect(_on_settings_leave_match)
 	ModalStack.push(settings, {
@@ -1963,6 +2003,13 @@ func _refresh_carrot_counter() -> void:
 	var carrot_visible := _carrot_ui_visible()
 	if _carrot_button != null and is_instance_valid(_carrot_button):
 		_carrot_button.visible = carrot_visible
+	# 10.11 第 8 条：队伍里只要有任意一颗升级石（天 / 地 / 人），入口按钮就亮星爆提醒 ——
+	# 「萝卜营地里存在升级石时，萝卜营地 UI 要散发柔和星爆」。入口不显示时一并关掉。
+	var stone_total := 0
+	for value in GameState.team_upgrade_stones.values():
+		stone_total += int(value)
+	if _carrot_button_burst != null and is_instance_valid(_carrot_button_burst):
+		_carrot_button_burst.visible = carrot_visible and stone_total > 0
 	if _carrot_counter_panel != null and is_instance_valid(_carrot_counter_panel):
 		_carrot_counter_panel.visible = carrot_visible
 	if _carrot_counter_label == null or not is_instance_valid(_carrot_counter_label):

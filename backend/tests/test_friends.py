@@ -155,11 +155,13 @@ def test_hidden_presence_is_offline_to_friends() -> None:
 # 却被显示成离线的好友**根本邀请不了**。
 
 
-def _prev(seconds_ago: float | None, room_id: int | None = None) -> dict:
+def _prev(seconds_ago: float | None, room_id: int | None = None,
+          in_match: bool = False) -> dict:
     """心跳之前那一行的快照。seconds_ago 为 None = 这人第一次心跳（没有这一行）。"""
     return {
         "last_seen_at": None if seconds_ago is None else _ago(seconds_ago),
         "room_id": room_id,
+        "in_match": in_match,
         "friend_code": "ABCD1234",
         "presence_visibility": "friends",
         "room_visibility": "friends",
@@ -192,6 +194,72 @@ def test_room_change_notifies_while_online() -> None:
     assert presence.should_notify(_prev(1, room_id=None), 777) is True
     assert presence.should_notify(_prev(1, room_id=777), None) is True
     assert presence.should_notify(_prev(1, room_id=777), 888) is True
+
+
+# --- 对局中（10.11 bug 第 3/9 条）----------------------------------------------
+#
+# 好友列表要显示「他正在对局中」，邀请按钮变灰、列表按「可邀请 → 对局中 → 离线」分档。
+# 「在大厅等」和「已经开打」在 room_id 上完全一样，所以只能由玩家自己的客户端上报
+# 一个 in_match 标记（database/032），走心跳这条路。
+
+
+def test_in_match_flip_notifies() -> None:
+    """进 / 出对局也要推 —— 好友列表上的「对局中」得跟得上。
+
+    一局里它只翻两次（开打、打完），不是高频事件，所以加进 should_notify 不会把
+    事件系统变成轮询 —— 那正是 should_notify 存在的意义。
+    """
+    assert presence.should_notify(_prev(1, room_id=777, in_match=False), 777, True) is True
+    assert presence.should_notify(_prev(1, room_id=777, in_match=True), 777, False) is True
+    # 没变就不推。
+    assert presence.should_notify(_prev(1, room_id=777, in_match=True), 777, True) is False
+
+
+def test_in_match_visible_rules() -> None:
+    """好友列表的「对局中」判据（friends._in_match_visible）。
+
+    三条各自都能独立把「对局中」判掉，任何一条写漏都会让好友看到一个错的状态。
+    """
+    assert friends._in_match_visible(True, "friends", True) is True
+    assert friends._in_match_visible(True, "friends", False) is False
+    # 不在线：in_match 停在掉线那一刻的值（他是在对局里掉线的），不能照显。
+    assert friends._in_match_visible(False, "friends", True) is False
+    # 对方关掉房间可见性：in_match 与 room_id 同一个开关。
+    assert friends._in_match_visible(True, "nobody", True) is False
+    # 没有 presence 行 = 这一列读回来是 None -> 不算。
+    assert friends._in_match_visible(True, "friends", None) is False
+    # 缺 switch 值时按默认 'friends' 处理（与 _online 同一个口径）。
+    assert friends._in_match_visible(True, None, True) is True
+
+
+def test_heartbeat_persists_in_match() -> None:
+    """心跳必须真的把 in_match 写进库。
+
+    只在路由层收下、忘了写 SQL，是「定义 ≠ 已接线」的典型：接口 204、测试全绿、
+    好友那边永远显示不在对局中。所以这里直接钉住写库那两处。
+    """
+    import inspect
+
+    src = inspect.getsource(presence.heartbeat)
+    assert "insert into player_presence (player_id, last_seen_at, room_id, in_match)" in src
+    assert "in_match = excluded.in_match" in src
+
+
+def test_friend_item_and_summary_expose_in_match() -> None:
+    """接口模型与列表项都要有 in_match —— 少一处，客户端就永远收不到。"""
+    from app.routes.friends import FriendItem
+
+    base = dict(friend_code="ABCD1234", player_name="n", avatar="a", avatar_frame="",
+                online=True, room_id=7)
+    assert FriendItem(**base).in_match is False
+    assert FriendItem(**base, in_match=True).in_match is True
+    assert friends.FriendSummary(**base).in_match is False
+
+    # 默认值是为了**旧客户端**：后端多回一个字段它直接忽略，不会因为多了字段崩。
+    from app.routes.presence import HeartbeatBody
+
+    assert HeartbeatBody.model_validate({"room_id": 1}).in_match is False
+    assert HeartbeatBody.model_validate({"room_id": 1, "in_match": True}).in_match is True
 
 
 def test_push_ttl_comes_from_friends_not_a_second_copy() -> None:
@@ -239,12 +307,13 @@ async def _drain_push() -> None:
         await asyncio.gather(*pending)
 
 
-def _notify(monkeypatch, row: dict, room_id: int | None, watchers: list[uuid.UUID]) -> _FakeHub:
+def _notify(monkeypatch, row: dict, room_id: int | None, watchers: list[uuid.UUID],
+            in_match: bool = False) -> _FakeHub:
     hub = _FakeHub()
     _wire_push(monkeypatch, hub, watchers)
 
     async def _run() -> None:
-        await presence._notify_watchers(None, uuid.UUID(int=1), room_id, row)
+        await presence._notify_watchers(None, uuid.UUID(int=1), room_id, row, in_match)
         await _drain_push()
 
     asyncio.run(_run())
@@ -283,6 +352,25 @@ def test_room_hidden_still_pushes_online_without_the_room(monkeypatch) -> None:
     assert len(hub.sent) == 1
     assert hub.sent[0][1]["online"] is True
     assert hub.sent[0][1]["room_id"] is None
+
+
+def test_push_carries_in_match(monkeypatch) -> None:
+    """推送要带上 in_match，否则只有慢轮询那一拍才会更新「对局中」。"""
+    hub = _notify(monkeypatch, _prev(1), 777, [uuid.UUID(int=2)], in_match=True)
+    assert hub.sent[0][1]["in_match"] is True
+
+
+def test_hidden_room_also_hides_in_match(monkeypatch) -> None:
+    """in_match 与 room_id 同一个隐私开关：对方关掉房间可见性 -> 连「在不在打」都不给。
+
+    拉那条路（friends._in_match_visible）同口径；两边不一致的话，关掉开关的人
+    会从推送里被看见 —— 那等于把开关悄悄作废。
+    """
+    row = _prev(1)
+    row["room_visibility"] = "nobody"
+    hub = _notify(monkeypatch, row, 777, [uuid.UUID(int=2)], in_match=True)
+    assert hub.sent[0][1]["online"] is True
+    assert hub.sent[0][1]["in_match"] is False
 
 
 def test_push_failure_never_breaks_the_heartbeat(monkeypatch) -> None:

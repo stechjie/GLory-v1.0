@@ -43,8 +43,13 @@ class PresenceRejected(RuntimeError):
         self.message = message
 
 
-async def heartbeat(player_id: uuid.UUID, room_id: int | None) -> None:
+async def heartbeat(player_id: uuid.UUID, room_id: int | None, in_match: bool = False) -> None:
     """一次心跳。room_id 为 None = 在线但不在房间（主菜单等）。
+
+    in_match（10.11 bug 第 3/9 条）= 这名玩家**正在一局对局里**，由他自己的客户端上报。
+    好友列表靠它显示「对局中」、把邀请按钮变灰并按「可邀请 → 对局中 → 离线」排序。
+    与 room_id 同一个信任级别（客户端自报、谎报无收益），见 database/032 的长注释。
+    默认 False 是为了**旧客户端**：不带这个字段的心跳仍旧写得进来（整份覆盖成「不在对局中」）。
 
     **upsert 而不是「先查再插」**：心跳是这套系统里唯一的高频写，
     多一次往返就是多一倍成本，而且两段式在并发下还会撞主键。
@@ -68,6 +73,7 @@ async def heartbeat(player_id: uuid.UUID, room_id: int | None) -> None:
         #   presence/room_visibility  推送要照搬拉取那边的隐私规则，见 _notify_watchers。
         #                             心跳的 on conflict 不碰这两列，所以 prev 的值就是现值
         #   friend_code               推送的收件人按好友码认人（客户端列表是按它建的）
+        #   in_match（032）            改**之前**的对局标记 —— should_notify 靠它判「进/出对局了」
         #
         # ⚠️ 最终 select **从 players 出发 left join prev**，不是直接 select prev ——
         # 第一次心跳时 prev 是空集，`select ... from prev` 整行返回 None，
@@ -75,27 +81,29 @@ async def heartbeat(player_id: uuid.UUID, room_id: int | None) -> None:
         row = await conn.fetchrow(
             """
             with prev as (
-                select room_id, last_seen_at, presence_visibility, room_visibility
+                select room_id, last_seen_at, presence_visibility, room_visibility, in_match
                 from player_presence where player_id = $1
             ), upsert as (
-                insert into player_presence (player_id, last_seen_at, room_id)
-                values ($1, now(), $2)
+                insert into player_presence (player_id, last_seen_at, room_id, in_match)
+                values ($1, now(), $2, $3)
                 on conflict (player_id) do update
-                  set last_seen_at = now(), room_id = excluded.room_id
+                  set last_seen_at = now(), room_id = excluded.room_id,
+                      in_match = excluded.in_match
             )
             select p.friend_code, prev.room_id, prev.last_seen_at,
-                   prev.presence_visibility, prev.room_visibility
+                   prev.presence_visibility, prev.room_visibility, prev.in_match
             from players p left join prev on true
             where p.player_id = $1
             """,
             player_id,
             room_id,
+            in_match,
         )
         previous = row["room_id"] if row is not None else None
         if previous != room_id:
             await _record_room_transition(conn, player_id, previous, room_id)
-        if should_notify(row, room_id):
-            await _notify_watchers(conn, player_id, room_id, row)
+        if should_notify(row, room_id, in_match):
+            await _notify_watchers(conn, player_id, room_id, row, in_match)
 
 
 # 在线状态变化的推送事件名。客户端在 RealtimeService 上按这个字段分发。
@@ -111,7 +119,7 @@ def _stale(last_seen: dt.datetime | None) -> bool:
     return dt.datetime.now(dt.timezone.utc) - last_seen >= friends.PRESENCE_TTL
 
 
-def should_notify(row, room_id: int | None) -> bool:
+def should_notify(row, room_id: int | None, in_match: bool = False) -> bool:
     """这一拍要不要推在线状态（docs/交友系统设计.md 第二节「推上线、轮询兜下线」）。
 
     `row` 是心跳**之前**那一行的快照；`last_seen_at` 为 None = 这人第一次心跳。
@@ -120,11 +128,13 @@ def should_notify(row, room_id: int | None) -> bool:
 
     🔴 **只在跳变时推，不是每次心跳都推。** 心跳 10 秒一拍，无条件推等于把一个
     事件系统变成一个**更贵的**轮询（还被扇出放大了一遍）。所以「还在线、房间也
-    没换」这一拍必须返回 False。
+    没换、对局状态也没变」这一拍必须返回 False。
 
-    两种跳变：
+    三种跳变：
       刚上线   上一拍压根没有，或者 last_seen_at 已经超过 TTL（= 上一拍算离线）
       换房间   房间号和上一拍不同
+      进/出对局（032）in_match 和上一拍不同 —— 好友列表上的「对局中」要跟得上，
+                        而它在一局里只翻两次（开打、打完），不是高频事件
 
     ⚠️ **「下线」不在这里，也不可能在这里** —— 它没有事件可挂：进程被杀、网断了，
     客户端不会发「我下线了」。离线是 friends._online 按 TTL 推算的，所以客户端那边
@@ -136,7 +146,9 @@ def should_notify(row, room_id: int | None) -> bool:
         return True
     if _stale(row["last_seen_at"]):
         return True
-    return row["room_id"] != room_id
+    if row["room_id"] != room_id:
+        return True
+    return bool(row["in_match"]) != bool(in_match)
 
 
 def _hub() -> realtime.Hub:
@@ -144,14 +156,19 @@ def _hub() -> realtime.Hub:
     return realtime.hub()
 
 
-async def _notify_watchers(conn, player_id: uuid.UUID, room_id: int | None, row) -> None:
-    """把「我上线了 / 我换房间了」推给在线的好友。
+async def _notify_watchers(conn, player_id: uuid.UUID, room_id: int | None, row,
+                           in_match: bool = False) -> None:
+    """把「我上线了 / 我换房间了 / 我进对局了」推给在线的好友。
 
     🔴 **隐私规则必须和拉取那条路一致**（friends.list_friends 那两行）：
       presence_visibility != 'friends'  -> 一个字都不推。隐身的人不该因为多了一条
                                           推送通道就被看见 —— 那是把开关悄悄作废
-      room_visibility     != 'friends'  -> 推「在线」但不带房间号。「在不在线」和
-                                          「在哪个房间」泄漏的不是一回事
+      room_visibility     != 'friends'  -> 推「在线」但不带房间号，也**不带 in_match**。
+                                          in_match 与 room_id 同属「房间状态」：
+                                          「我在打」和「我在 12345 号房」泄漏的是同一类
+                                          东西（在做什么），所以同一个开关管。
+                                          拉取那条路（friends._in_match_visible）同口径。
+
     推送失败不抛：它是**锦上添花**，客户端那边还有慢轮询兜底。为了一条推没发出去
     让心跳接口返回 500，是拿主路径给旁路赔命。
     """
@@ -167,6 +184,7 @@ async def _notify_watchers(conn, player_id: uuid.UUID, room_id: int | None, row)
         "friend_code": row["friend_code"],
         "online": True,
         "room_id": room_id if room_visible else None,
+        "in_match": bool(in_match) if room_visible else False,
     }
     # 查好友用调用方那条连接（本地、快、没有风险）。**发送绝不在这里 await** ——
     # 理由见 _fan_out 顶部那段 🔴。

@@ -10,16 +10,28 @@ extends CanvasLayer
 # 什么都干不了」，正好相反。所以这里自己做一层，整层 IGNORE，只有两个按钮
 # 吃点击；玩家干别的事时它就在那儿挂着，30 秒自己走。
 #
-# ## 排队语义（第 6 条原话）
+# ## 排队语义（第 6 条原话，2026-10-11 对齐）
 #
-#   - 多个邀请**覆盖**：新来的顶掉当前正在显示的那条。
-#   - 「处理完最新的后显示上一个」：所以被顶掉的不是丢掉，而是退回队列，
-#     当前这条被处理/超时之后再冒出来。
+# 用户原话：「多个好友的邀请会覆盖遮挡，**只有处理完最新的弹窗才能处理旧的弹窗**
+# （目前发现是旧的处理完才能处理新的，**要改成新的覆盖旧的**）」
+#
+#   - 多个邀请**覆盖 / 遮挡**：新来的顶掉当前正在显示的那条。
+#   - 「处理完最新的后显示上一个」：被顶掉的不是丢掉，而是退回队列；
+#     当前这条（最新的那条）被处理/超时之后，上一条再冒出来。
 #   - 每条**最多保留 30 秒、独立计时**：每张卡自己一个倒计时，跟它是不是
 #     正在显示无关 —— 排队等着的那条，时间照样在走。
 #
-# 于是数据结构就是：`_queue`（等待显示的，先进先出）+ `_current`（在显示的）。
-# 每条记录的 `deadline` 是绝对时刻，显示时按剩余时间接着倒。
+# 🔴 于是队列必须是**后进先出**（`_pending.pop_back()`），不是先进先出：
+#    旧实现用 pop_front，表现正是用户报的「旧的处理完才能处理新的」。
+#    数据结构 = `_pending`（等待显示的，栈顶=最新）+ `_entries`（在显示的，最多 MAX_VISIBLE 条）。
+#    每条记录的 `deadline` 是绝对时刻，显示时按剩余时间接着倒。
+#
+# ## 同一房间的弹窗冷却 30 秒（2026-10-11 第 6 条 f）
+#
+# 用户口径：「**弹窗持续时间 30 秒，同一房间可多次弹窗，CD 30 秒**」。
+# 所以「同一个 party_id 处理过就永不再弹」这条**旧口径已被推翻** —— 现在按时间算：
+# `_cooldown[party_id]` 记的是这个房间上一次弹窗的**时刻**，30 秒内不再弹，
+# 过了 30 秒又能弹。判据抽成 static `cooldown_blocks()`，门禁才能直接驱动它。
 #
 # ## 红点
 #
@@ -29,10 +41,6 @@ extends CanvasLayer
 # （主菜单「聊天」按钮 + 聊天界面私聊页签上那个）是 ChatService 的未读表管的。
 # 所以这里多接一条 `on_handled` 回调：**这条邀请被处理（加入/稍后/超时）时**
 # 就调它，由 Main 去清对应好友的红点（ChatService.mark_seen_locally）。
-#
-# 「处理过的邀请不再在聊天 UI 红点提示」= 同一条邀请不再打扰 + 红点当场灭。
-# 同一支队伍的邀请处理过一次（加入/稍后/超时）之后，**同一个 party_id 不再弹第二次**
-# （`_handled`），免得服务器重推或者玩家来回切页面时反复打扰。
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 
@@ -42,6 +50,9 @@ const BUBBLE_LAYER := 1600
 
 # 需求：每条最多保留 30 秒。
 const TTL_SEC := 30.0
+# 需求（2026-10-11 第 6 条 f）：**同一个房间**的弹窗冷却 30 秒 ——
+# 同一个 party_id 30 秒内只弹一次，过了 30 秒又能弹（「同一房间可多次弹窗」）。
+const BUBBLE_CD_SEC := 30.0
 # 一排最多同时摆几张。超出就只留最新的，旧的直接作废（需求说「覆盖」）。
 const MAX_VISIBLE := 1
 
@@ -78,7 +89,11 @@ static var _last_body := ""
 
 var _entries: Array[Dictionary] = []
 var _pending: Array[Dictionary] = []
-var _handled: Dictionary = {}  # party_id -> true，处理过的不再弹
+# party_id -> 这个房间**上一次弹窗的时刻**（秒，`_now()` 的口径）。
+# 30 秒内的重复邀请不再弹（第 6 条 f）；过了 30 秒又能弹 —— 所以它是**时刻表**，
+# 不是「处理过的集合」。旧实现是 `_handled: Dictionary`（处理过就永不再弹），
+# 10.11 第 6 条 f 明确「同一房间可多次弹窗，CD 30 秒」，那条已被推翻。
+var _cooldown: Dictionary = {}
 var _root: Control
 var _list: VBoxContainer
 # 气泡锚点（屏幕坐标 = 聊天按钮右侧中点）。`Vector2.INF` = 还不知道，
@@ -135,13 +150,17 @@ func _process(_delta: float) -> void:
 		_place()
 
 
-# 收到一条邀请。重复 party_id 直接忽略（服务器可能重推）。
+# 收到一条邀请。同一个 party_id 在冷却期内直接忽略（服务器可能重推）。
 #   spec: { party_id, host_name, mode, kind, on_accept: Callable(party_id),
 #           on_handled: Callable(party_id) }   ← on_handled 在「加入/稍后/超时」时都调
 # 返回 true 表示真的排上了。
 func offer(spec: Dictionary) -> bool:
 	var party_id := str(spec.get("party_id", ""))
-	if party_id.is_empty() or _handled.has(party_id):
+	if party_id.is_empty():
+		return false
+	# 第 6 条 f：同一个房间 30 秒内只弹一次（服务器重推、玩家来回切页面都被这一条挡住）。
+	var now := _now()
+	if cooldown_blocks(float(_cooldown.get(party_id, 0.0)), now):
 		return false
 	for entry in _pending:
 		if str(entry.get("party_id", "")) == party_id:
@@ -159,27 +178,51 @@ func offer(spec: Dictionary) -> bool:
 		"kind": kind,
 		"on_accept": spec.get("on_accept", Callable()),
 		"on_handled": spec.get("on_handled", Callable()),
-		"deadline": Time.get_ticks_msec() / 1000.0 + TTL_SEC,
+		"deadline": now + TTL_SEC,
 	}
 	_shown += 1
 	_last_title = _title_for(kind)
 	_last_body = _body_for(kind, host_name)
+	_cooldown[party_id] = now
+	# ★ 第 6 条 h「新的覆盖旧的」：先把**正在显示**的那条摘下来退回队列，
+	#   **再**把新来的压进栈顶 —— 顺序反了的话，栈顶会变成刚被摘下来的旧那条。
+	_evict_current()
 	_pending.append(record)
 	_pump()
 	return true
 
 
+# 「新的覆盖旧的」：把正在显示的那条摘下来、退回等待队列。
+#
+# 🔴 它**不算已处理** —— 不调 `on_handled`、不清红点。它只是被新来的盖住了：
+#    等新的那条被处理掉，它会自己再冒出来（`_pump()` 的后进先出）。
+#    用 `_dismiss()` 代替这里会立刻把它的红点清掉 —— 玩家根本还没看见它。
+func _evict_current() -> void:
+	if _entries.is_empty():
+		return
+	var record: Dictionary = _entries.pop_back()
+	var card: Variant = record.get("card")
+	if card is Node and is_instance_valid(card):
+		(card as Node).queue_free()
+	record.erase("card")
+	record.erase("timer")
+	_pending.append(record)
+	_refresh_visibility()
+
+
 func _pump() -> void:
-	# 正在显示的还没走：只排队，不抢。
+	# 排队期间的 30 秒也在走（`deadline` 是绝对时刻），先清掉已经过期的那几条。
+	_expire_if_stale()
+	# ★ 第 6 条 h：**后进先出** —— 先显示最新那条，它被处理掉之后才轮到上一条。
+	#   旧实现是 pop_front（先进先出），表现就是用户报的「旧的处理完才能处理新的」。
 	while _entries.size() < MAX_VISIBLE and not _pending.is_empty():
-		var record: Dictionary = _pending.pop_front()
-		_expire_if_stale()
-		if float(record.get("deadline", 0.0)) <= Time.get_ticks_msec() / 1000.0:
+		var record: Dictionary = _pending.pop_back()
+		if float(record.get("deadline", 0.0)) <= _now():
 			# 排到它的时候 30 秒已经过了 —— 直接作废，别显示一张过期卡。
-			_handled[str(record.get("party_id", ""))] = true
+			# 不用额外记账：`_cooldown` 在 offer 那一刻就已经写过了，
+			# 所以「作废过的房间」30 秒内本来也不会再弹。
 			continue
 		_show_entry(record)
-	_expire_if_stale()
 	_refresh_visibility()
 
 
@@ -187,7 +230,7 @@ func _show_entry(record: Dictionary) -> void:
 	var card := _make_card(record)
 	_list.add_child(card)
 	record["card"] = card
-	record["remaining"] = maxf(0.0, float(record.get("deadline", 0.0)) - Time.get_ticks_msec() / 1000.0)
+	record["remaining"] = maxf(0.0, float(record.get("deadline", 0.0)) - _now())
 	_entries.append(record)
 	# 每张卡自己的计时器：独立计时，与是否显示无关（deadline 是绝对时刻）。
 	var timer := Timer.new()
@@ -334,7 +377,8 @@ func _dismiss(party_id: String, reason: String) -> void:
 	var card: Variant = record.get("card")
 	if card is Node and is_instance_valid(card):
 		(card as Node).queue_free()
-	_handled[party_id] = true
+	# 第 6 条 f：冷却从**这次处理**重新起算 —— 处理完的房间 30 秒内不再打扰。
+	_cooldown[party_id] = _now()
 	# ★★ 10.07 第 6/10 条返工（用户真机反馈「点击稍后后，红点仍然存在，
 	#    要改成点击稍后表示已读该信息，红点消失」）：
 	#
@@ -350,22 +394,39 @@ func _dismiss(party_id: String, reason: String) -> void:
 	var handler: Variant = record.get("on_handled", Callable())
 	if handler is Callable and (handler as Callable).is_valid():
 		(handler as Callable).call(party_id)
-	# 「处理完最新的后显示上一个」：这一条走了，队列里等的立刻补位。
+	# 「处理完最新的后显示上一个」：这一条走了，队列里等的（上一条）立刻补位。
 	_pump()
 	_refresh_visibility()
 	_silent(reason)
 
 
 # 排队等着的那几条也要在到期时作废，不然会把过期卡顶上来。
+#
+# 🔴 这里**只丢**，不再补记 `_cooldown` —— 冷却在 `offer()` 那一刻就写过了，
+#    给一个从未显示过的过期条目续 30 秒，会把「同房间 30 秒后可以再弹」
+#    推迟成「从作废那刻起再等 30 秒」，凭空多挡一次正常邀请。
 func _expire_if_stale() -> void:
-	var now := Time.get_ticks_msec() / 1000.0
+	var now := _now()
 	var kept: Array[Dictionary] = []
 	for record in _pending:
 		if float(record.get("deadline", 0.0)) <= now:
-			_handled[str(record.get("party_id", ""))] = true
-		else:
-			kept.append(record)
+			continue
+		kept.append(record)
 	_pending = kept
+
+
+# 本文件统一的时间口径（秒，单调）。
+func _now() -> float:
+	return Time.get_ticks_msec() / 1000.0
+
+
+# 第 6 条 f 的唯一判据：同一个房间的两次弹窗之间至少隔 BUBBLE_CD_SEC 秒。
+#
+# 抽成 **static** 是为了让门禁能直接拿合成时间驱动它 —— 30 秒的真实等待没法在
+# 无头门禁里跑完（同 RoomInvite.send_blocked_reason 的做法）。
+# `last_shown_sec <= 0` = 这个房间还没弹过，不存在冷却。
+static func cooldown_blocks(last_shown_sec: float, now_sec: float) -> bool:
+	return last_shown_sec > 0.0 and now_sec - last_shown_sec < BUBBLE_CD_SEC
 
 
 func _refresh_visibility() -> void:

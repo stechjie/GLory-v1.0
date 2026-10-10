@@ -111,6 +111,14 @@ class PartyInviteBehaviorTest(unittest.TestCase):
         self._saved[(party_mod, "_instance")] = party_mod._instance
         party_mod.install(self.parties)
 
+        # ★ 10.11 第 6 条 c：组队邀请的发送冷却改成了 **1 次 / 5 秒**（硬上限，
+        # 原来是 12 次 / 60 秒的滑动窗口）。限流器是 `routes/party.py` 的
+        # **模块级单例**、跨用例共用 —— 上一个用例发过一次邀请之后，下一个用例
+        # 在 5 秒内再发就会被 429（本文件两个用例开始失败就是这个原因）。
+        # 每个用例从零开始：清掉命中表，而不是 sleep 5 秒。
+        # 配置本身由 test_invite_limiter_is_one_per_five_seconds 单独钉。
+        route._invite_limiter._hits.clear()
+
     def tearDown(self) -> None:
         for (obj, name), value in self._saved.items():
             setattr(obj, name, value)
@@ -135,6 +143,18 @@ class PartyInviteBehaviorTest(unittest.TestCase):
         chat.send = impl
 
     # --- 用例 ---------------------------------------------------------------
+
+    def test_invite_limiter_is_one_per_five_seconds(self) -> None:
+        """★ 10.11 第 6 条 c：「该类消息，同一房间只能发送一次，**发送 CD 5 秒**」。
+
+        原来配的是 12 次 / 60 秒 —— 那是「平均 5 秒一次」但**允许突发**
+        （窗口末尾连点 12 下也放行）。现在必须是硬上限 **1 次 / 5 秒**：
+        客户端那 5 秒预判是给玩家看的即时反馈，**本地判据改个内存就能绕**，
+        真正拦住连点的是这里。配置写错了完全不报错，只是「有人能刷屏」。
+        """
+        limiter = route._invite_limiter
+        self.assertEqual(limiter.limit, 1, "组队邀请必须一次一条（硬上限）")
+        self.assertAlmostEqual(limiter.window, 5.0, "窗口必须是 5 秒（第 6 条 c）")
 
     def test_invite_actually_reaches_the_chat_module(self) -> None:
         """★ 遮蔽探针：`invite()` 必须真的调到 `app.chat.send`。

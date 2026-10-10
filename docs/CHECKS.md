@@ -4469,3 +4469,88 @@ fighter 不记阵营、结果不带人王结局、分路不传老虎成长率、
 
 改成**量渲染结果**：切跑步动画后测 `PetPreview.aabb_of()` 的可见高度比（原来是测配置字段，
 配置全对但 `run_model_scale` 被删 ⇒ 照样全绿）。老虎实测 1.0698、松鼠 1.0000；坏了是 ≈0.0022。
+
+## 2026-10-11 两轮修复带来的门禁变更
+
+### `tools/star_burst_check`（**新增**：升级石「萝卜营地」星爆）
+
+32 → 36 → **51 项，PASS 51/0**。三层覆盖：
+
+- **行为层**：真例化 `PrepScreen.tscn` → 开营地 →（石头栏只在 `_current_page == 1` 可见，务必先 `panel.call("_show_page", 1)`）
+  喂 `_apply_carrot_state`（全 0 / 天1地0人2 / 再全 0），断言每格石头与营地入口的 `visible`；
+- **组件层**：呼吸随相位起伏且**不归零**（`BREATH_FLOOR`）、**不可见时不推进相位**（挂着＝零成本）；
+- **结构层**：`_strip_comments()` 之后断言**纯 `_draw()`**、不含 `StyleBoxFlat.new()` / `Button.new()`。
+
+★★ **两条必须记住的加固**：
+1. `_assert_drawable()`：可见时必须 `size.x > 1 and size.y > 1`。
+   这条是补一个**真缺陷**——`PrepWidgets.make_framed_text_button()` 返回的是普通 `Button`（**不是 `Container`**），
+   挂上去的子 `Control` 尺寸不会自动铺满 ⇒ `size == (0,0)` ⇒ `StarBurst._draw()` 在 `radius <= 1.0` 处直接 return，
+   **一个像素都没画**，而 `visible` 一直是真 ⇒ 只验 `visible` 的门禁完全漏掉。修法是补
+   `carrot_burst.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)`，门禁同时钉这一行。
+   ★ 同族老坑：**「存在」≠「被正确赋值」**。
+2. 结构断言**必须先 `_strip_comments()`**：组件说明注释里写了「不得用 `StyleBoxFlat.new()`」，
+   `not src.contains(...)` 会被自己的注释判**假红**（与 `party_lobby_rules` 的同款反向坑）。
+
+### `tools/room_invite_check` 96 → 107 → 115 → **117 项（PASS 117/0）**
+
+- 107：新增 `_structure_in_match_marker()` 8 条正向断言（presence `in_match` 链）；
+  `_structure_no_room_state_in_account_server` 改成「**只禁旧名 / 旧迁移**」（允许新字段，`room_started` / `022` 仍禁）。
+- 115：新增 `chat_party_signal` / `main_party_route` / `chat_party_mode` / `chat_join_clears_unread` /
+  `lobby_same_room_no_message`（用 `_func_body()` 限定在 `_on_invite_friend` 内）/ `lobby_same_room_not_rendered`。
+- 117：新增 `backend_status_invite_dup` / `backend_status_party_dup`（钉 `routes/chat.py` 的状态码登记）。
+
+### `tools/party_invite_bubble_check` 60 → **76 项（PASS 76/0）**
+
+`_case_multiple_overwrites()` 改钉 `newest_is_on_top`（LIFO 覆盖）；`_case_handled_resurfaces_previous()` 加反向
+`older_dismiss_is_noop`；`_case_duplicate_ignored()` 的 `handled_never_again` → `handled_rejected_within_cooldown`；
+**新增** `_case_same_room_cooldown()`（`bubble_cd_is_30` / 29 秒拦 / 30 秒放）；
+`_case_main_wiring()` 补第 6 条 j 六条：`room_popup_helper` / `room_popup_rule` / `room_lobby_flag` /
+`room_popup_both_entries` / `room_lobby_flag_set` / `room_lobby_flag_cleared`。
+
+### `tools/party_lobby_rules_check` 78 → 131 → **135 项（PASS 135/0）**
+
+`_case_friend_buckets()`：三档行为 + 结构两层；同房判定那批（临时把 `NetworkService.team_room_id = 4242`，
+断言 `t3_same_room_hidden` / `t3_other_room_shown` / `t3_null_room_shown` / `t3_missing_room_shown`，跑完还原）。
+
+### `tools/match_exit_check` 69 → 84 → **91 项（PASS 91/0）**
+
+第 7 条口径反转：`_case_abandon_clears_and_unlocks()` → `_case_abandon_keeps_resumable()`（凭证 / 短码 / 服务器拦截**都还在**）；
+`_case_penalty_text()` 新红线（含「游戏重连」+「开不了新局」、**不得含「不能再回来」**）；
+结构断言钉 `_notice_manual_exit_then_reset()`、**不含** `_rpc_abandon_seat` / `mark_pending_leave`、
+两次 `await` 都在 `reset()` 之前、`_rpc_manual_exit_seat` 不含 `_clear_seat_metadata` / `_token_seat.erase`。
+
+### `tools/last_human_online_check` 72 → **106 项（PASS 106/0）**
+
+三阶段 × {掉线 29s 算活人 / 掉线 30s+ 作废 / `end_reason = no_live_human` / 两队都不算赢 / 幂等}
++ 纯 AI 房永不触发 + 手动退出标记 + 大厅不触发 + 4 条结构断言（tick 真调到、阈值 30、`-1` + `no_live_human`、`manual[slot] = true`）。
+
+### 其它
+
+- `tools/comms_layout_check` **115/1**（唯一红 `prep_wheel` —— 把 `members_button` 放回树后它照样红 ⇒ **既有红**）；
+  新增 `lobby_full_room_hidden` / `lobby_mic_speaker_kept`；`buttons()` 先 `filter(b.is_inside_tree())`。
+- `tools/prep_1006_check`：`_case_bug8_room_mute_button` → `_case_bug8_lobby_settings_button`（**PASS 64/0**）。
+- `tools/cold_parse_chain_check` **348/0**（每轮回归都跑）。
+- 后端：`tests/test_friends.py` 60 → **66 passed**；
+  `tests/test_chat.py::test_every_rejection_code_has_a_status` 此前**一直红**（`_STATUS_BY_CODE` 漏 `party_invite_duplicate`）⇒ 已修，**37 passed**。
+
+### ★★ 新踩的坑：模块级限流单例 ⇒ 收紧窗口会「测试自己撞自己」
+
+`backend/app/routes/party.py` 的 `_invite_limiter` 是**模块级单例**，命中表跨用例共用。
+窗口从 60 秒收紧到 5 秒后，同进程内相邻用例互相 429 ⇒ 报出两条**假红**。
+修法：`backend/tests/test_party_invite_behavior.py` 的 `setUp()` 里 `route._invite_limiter._hits.clear()`，
+并另加专用用例钉 `limit == 1` / `window == 5.0`。
+**推广：改任何进程内限流 / 去重窗口前，先问「测试之间会不会互相污染」。**
+
+### 变异验证（改坏 → 门禁必须红 → 还原验 sha256）
+
+| 脚本 | 条数 | 结果 |
+| --- | --- | --- |
+| `mutate_1011b.py` | 4 | 4/4 CAUGHT |
+| `mutate_1011c.py` | 5 | 5/5 CAUGHT |
+| `mutate_1011d.py` | 3 | 3/3 CAUGHT |
+| `mutate_1011e.py` | 5 | 5/5 CAUGHT |
+| `mutate_1011f.py` | 11 | 11/11 CAUGHT |
+| `mutate_1011g.py` | 6 | 6/6 CAUGHT |
+| `mutate_1011h.py` | 7 | 7/7 CAUGHT |
+| `mutate_1011i.py` | 12 | 12/12 CAUGHT |
+

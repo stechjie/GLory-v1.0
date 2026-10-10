@@ -9,6 +9,8 @@ const TEX_STONE_SKY: Texture2D = preload("res://assets/props/carrot_system/stone
 const TEX_STONE_LAND: Texture2D = preload("res://assets/props/carrot_system/stones/stone_land.png")
 const TEX_STONE_REN: Texture2D = preload("res://assets/props/carrot_system/stones/stone_ren.png")
 const TEX_STONE_REVEAL: Texture2D = preload("res://assets/props/carrot_system/vfx/atlas_stone_reveal_4x4.png")
+# 10.11 第 8 条：有存货的升级石要散发柔和星爆（纯 _draw() 组件，不进 procedural_ui_ratchet）。
+const StarBurstScript := preload("res://ui/components/StarBurst.gd")
 
 const PANEL_SIZE := Vector2(760.0, 520.0)
 const GOLD := Color(0.94, 0.72, 0.34)
@@ -50,6 +52,8 @@ var _stone_art: TextureRect
 var _stone_reveal: TextureRect
 var _stone_counts: Dictionary = {}
 var _stone_names: Dictionary = {}
+# 10.11 第 8 条：每格石头一个星爆层（stone_type -> StarBurst）。有存货才 visible。
+var _stone_bursts: Dictionary = {}
 var _stone_rail: PanelContainer
 var _four_star_list: VBoxContainer
 var _last_stones := {"sky": 0, "land": 0, "ren": 0}
@@ -527,6 +531,10 @@ func refresh() -> void:
 		var name_label := _stone_names.get(stone_type) as Label
 		if name_label != null:
 			name_label.text = _stone_display(stone_type)
+		# 10.11 第 8 条：这格石头有存货（count > 0）才让它亮星爆 —— 「存在升级石时」。
+		var burst := _stone_bursts.get(stone_type) as Control
+		if burst != null and is_instance_valid(burst):
+			burst.visible = count > 0
 		if _stones_initialized and count > int(_last_stones.get(stone_type, 0)):
 			changed = stone_type
 		_last_stones[stone_type] = count
@@ -610,6 +618,17 @@ func _add_stone_counter(parent: VBoxContainer, stone_type: String, texture: Text
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_theme_stylebox_override("panel", _flat(Color(0.055,0.10,0.075,0.95),9,Color(0.25,0.32,0.24),1))
 	parent.add_child(box)
+	# 10.11 第 8 条：星爆层放进 box 的**第一个**子节点 —— PanelContainer 先画自己的底板、
+	# 再按顺序画子节点，所以星爆落在底板之上、图标与文字之下（既不被底板盖住，也不挡字）。
+	# 有存货时由 refresh() 打开（下面 _stone_bursts）。
+	var burst: Control = StarBurstScript.new()
+	burst.name = "StoneBurst"
+	# 这里保持第一版参数（半径只到格子内、星芒从圆心起）—— 10.11 用户口径：
+	# 只优化萝卜营地入口按钮，天 / 地 / 人三格石头不动。别往这里加 scale / inner。
+	burst.setup(_stone_burst_color(stone_type))
+	burst.visible = false
+	box.add_child(burst)
+	_stone_bursts[stone_type] = burst
 	var column := VBoxContainer.new()
 	column.alignment = BoxContainer.ALIGNMENT_CENTER
 	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -623,6 +642,15 @@ func _add_stone_counter(parent: VBoxContainer, stone_type: String, texture: Text
 	count.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(count)
 	_stone_counts[stone_type] = count
+
+
+# 10.11 第 8 条：星爆取该石头自己的颜色（天青 / 地绿 / 人红），一眼能对上是哪一格。
+func _stone_burst_color(stone_type: String) -> Color:
+	match stone_type:
+		"sky": return Color(0.55, 0.85, 1.0)
+		"land": return Color(0.58, 1.0, 0.62)
+		"ren": return Color(1.0, 0.52, 0.5)
+		_: return GOLD
 
 func _play_stone_reveal(stone_type: String) -> void:
 	_reveal_serial += 1

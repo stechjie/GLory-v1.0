@@ -509,6 +509,8 @@ var _presence_timer: Timer
 # 账号门面（HTTPS）与战斗门面（ENet）是两条链路，不该互相认识
 # （docs/账号系统RFC.md 第三节）。接线在 Main.gd 一处可见。
 var _room_provider: Callable = Callable()
+# 「我在不在对局中」从哪来（10.11 bug 第 3/9 条）。同上，注入而不是直接引用。
+var _match_provider: Callable = Callable()
 # 上一次心跳还没回来时不叠加：弱网下会堆出一串在途请求，
 # 而它们携带的房间号已经过期了。
 var _presence_busy := false
@@ -1030,8 +1032,10 @@ func delete_read_mail() -> Dictionary:
 
 
 # 接线入口。room_provider 返回当前房间号，0 或负数表示不在房间。
-func configure_presence(room_provider: Callable) -> void:
+# match_provider 返回「在不在对局中」（10.11 第 3/9 条）—— 可选，不传就当不在对局中。
+func configure_presence(room_provider: Callable, match_provider: Callable = Callable()) -> void:
 	_room_provider = room_provider
+	_match_provider = match_provider
 
 
 func start_presence() -> void:
@@ -1061,10 +1065,15 @@ func _send_presence() -> void:
 	var room := 0
 	if _room_provider.is_valid():
 		room = int(_room_provider.call())
+	var in_match := false
+	if _match_provider.is_valid():
+		in_match = bool(_match_provider.call())
 	_presence_busy = true
 	# room_id 传 null 表示「在线但不在房间」。0 / 负数都归到这一档 ——
 	# 后端有 check (room_id is null or room_id > 0)，传 0 会被拒。
-	var payload := {"room_id": room if room > 0 else null}
+	# in_match（10.11 第 3/9 条）与 room_id **一起整份覆盖**：好友列表靠它显示「对局中」、
+	# 决定邀请按钮灰不灰。少发这个字段 = 好友永远显示「不在对局中」。
+	var payload := {"room_id": room if room > 0 else null, "in_match": in_match}
 	await _request(HTTPClient.METHOD_PUT, "/v1/me/presence", payload, true)
 	_presence_busy = false
 

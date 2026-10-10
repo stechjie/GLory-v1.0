@@ -1,19 +1,25 @@
 extends Node
 
-# 门禁：退出对局（2026-10-06 用户要求）。
-#   · 断线了除了重连可以直接退出，退出要显示惩罚、让玩家确认（只说会不会扣，不写扣多少）
-#   · 对局要退出了才能开新局
+# 门禁：退出对局（2026-10-06 用户要求；**2026-10-11 第 7 条改了口径**）。
+#   · 断线了除了重连可以直接退出，退出要让玩家确认（只说会不会扣，不写扣多少）
+#   · ★ 退出对局 = 该玩家**掉线超过 30 秒**：座位与重连凭证**都留着**，
+#     对局没结束前**可以重连**、但**不可参与新房间**（10.11 第 7 条，推翻 10-06 的
+#     「退出即可开新局」）。这一局结束（房内超过 30 秒没有活人 ⇒ 服务端自动作废；
+#     或正常打完）之后凭证才会被清掉，那时才放行新局。
 #   · 摆放界面的静音键改成「设定」（同主界面那一页），对局里「重新体验教学」换成「退出对局」
 #
 # 扣不扣、判不判负的规则在账号服务器，backend/tests/test_ranked.py 钉着（自定房间不碰信誉分、跑路判负）。
 # 这里钉客户端这一半：
-#   1. 确认框文字：四种模式各说各的，不出现数字
+#   1. 确认框文字：四种模式各说各的，不出现数字；且**不能再说「不能再回来」**（现在是能重连的）
 #   2. 重连凭证记下模式，同一个座位再存一次不丢、换座位不串
-#   3. 退出 = 删凭证、不发任何 RPC（发 abandon 会让跑路的人一分不扣）；删完能开新局
-#   4. 开新局被上一局拦住：弹的是「退出对局」，确认了这次照常开；取消不动凭证
+#   3. 退出对局 = 凭证与短码**都留着**（留着才能重连、也才会被服务器拦住开新房），
+#      并给服务端发一条 _rpc_manual_exit_seat（**不是** _rpc_abandon_seat：那条会清座位）
+#   4. 开新局被上一局拦住：弹的是「退出对局」，确认了**仍然开不了**（这一局还没结束）；取消不动凭证
 #   5. 断线遮罩：开打了的局按钮是「退出对局」，点了先弹确认框、后台照样重连；连回去了确认框自动收掉；
-#      确认了才退、才回主菜单。没开打的局照旧「取消并返回主菜单」
-#   6. 摆放界面右上角是「设定」：弹层打开设定页，联网对局里有「退出对局」、没有「重新体验教学」
+#      确认了才退、才回主菜单（凭证仍留着）。没开打的局照旧「取消并返回主菜单」
+#   6. 摆放界面右上角是「设定」：弹层打开设定页，联网对局里有「退出对局」、没有「重新体验教学」；
+#      ★ 10.11 第 7 条：**离线自测对局里也要有**「退出对局」，只是行为不同 ——
+#      联网先弹判负 / 扣分确认框，离线自测走 Main._exit_offline_team_match 直接退出、直接结束。
 #   7. 对局历史：对局结束时我不在线 = 负，队伍赢了也一样
 #
 # 动到 user://glory_reconnect.json：三个变体先逐字快照、跑完还原。另外请用隔离的 APPDATA 跑。
@@ -69,7 +75,7 @@ func _run() -> void:
 
 	_case_penalty_text()
 	_case_saved_mode()
-	await _case_abandon_clears_and_unlocks()
+	await _case_abandon_keeps_resumable()
 	await _case_new_match_guard()
 	await _case_reconnect_overlay()
 	await _case_prep_settings()
@@ -92,8 +98,13 @@ func _case_penalty_text() -> void:
 	var ranked := MatchExitPenalty.body("ranked", false)
 	var unknown := MatchExitPenalty.body("", false)
 	for text in [custom, casual, ranked, unknown]:
-		_h.expect(str(text).contains("判负") and str(text).contains("不能再回来"), "text_missing_forfeit",
-			"确认框要说清判负、退了回不来：%s" % text)
+		# ★ 10.11 第 7 条：退出对局**不再是「回不来」** —— 座位与凭证留着、能重连回来。
+		# 这句话说反了会让玩家以为退出去就永久失去这一局（而其实还能回来）。
+		_h.expect(str(text).contains("游戏重连") and str(text).contains("开不了新局"),
+			"text_missing_resumable",
+			"确认框要说清「还能重连回来、但这一局结束前开不了新局」：%s" % text)
+		_h.expect(not str(text).contains("不能再回来"), "text_still_says_burned",
+			"确认框还写着「不能再回来」—— 与第 7 条（退出后仍可重连）冲突：%s" % text)
 		_h.expect(not _has_digit(str(text)), "text_has_number", "确认框不写扣多少（用户定）：%s" % text)
 	_h.expect(custom.contains("不扣") and not custom.contains("会扣"), "custom_text", "自定房间要说不扣分：%s" % custom)
 	_h.expect(casual.contains("会扣信誉分") and not casual.contains("排位分"), "casual_text", "休闲只扣信誉分：%s" % casual)
@@ -122,17 +133,19 @@ func _case_saved_mode() -> void:
 	SaveManager.clear_reconnect()
 
 
-# --- 3. 退出 = 删凭证、不发 RPC，删完能开新局 ---------------------------------------------
-
-func _case_abandon_clears_and_unlocks() -> void:
+# --- 3. 退出 = 凭证与短码都留着、只发「我按掉线算」；这一局结束前开不了新局 ------------------
+#
+# ★ 10.11 第 7 条把这一整段反过来了。改之前钉的是「退出后凭证必须为空、服务器不再拦建房」，
+#   而 10-06 那套口径正是本轮要修的：玩家一退出就再也回不去还没结束的局。
+func _case_abandon_keeps_resumable() -> void:
 	_started_record("casual")
 	NetworkService.cancel_reconnect()
 	_h.expect(not SaveManager.load_resumable_reconnect().is_empty(), "cancel_now_abandons",
 		"「取消并返回主菜单」不该删开打了的局的凭证（那是「退出对局」的事，要先确认）")
 	_started_record("casual")
 	NetworkService.pending_abandon_token = "gate_should_be_cleared"
-	# 10-06 实测踩到：短码在服务器上还绑着旧座位，建房时服务器凭它拒（ACTIVE_MATCH_HINT）。
-	# 照 _rpc_team_create_room 开头那道闸的写法，用假的服务器表对一遍：退出前会拦、退出后不拦。
+	# 短码在服务器上还绑着旧座位，建房时服务器凭它拒（ACTIVE_MATCH_HINT）。10.11 起这是
+	# **要的行为**：留着它 = 「不可参与新房间」。照 _rpc_team_create_room 开头那道闸对一遍。
 	SaveManager.save_public_token(DUMMY_PUBLIC_ID)
 	SaveManager.save_public_token(DUMMY_PUBLIC_ID)   # 第二次写出 .bak —— 只写空串的话会从 .bak 读回来
 	NetworkService.public_token_id = DUMMY_PUBLIC_ID
@@ -145,22 +158,59 @@ func _case_abandon_clears_and_unlocks() -> void:
 	_h.expect(_server_guard_blocks(SaveManager.load_public_token()), "guard_fixture_broken",
 		"夹具没搭好：退出前服务器就该凭短码拦住建房")
 	NetworkService.abandon_started_match()
-	_h.expect(SaveManager.load_reconnect().is_empty(), "abandon_kept_credentials", "退出对局之后重连凭证还在 —— 开不了新局")
-	_h.expect(SaveManager.load_public_token().is_empty() and NetworkService.public_token_id.is_empty(),
-		"abandon_kept_public_id", "退出对局之后短码还在 —— 服务器凭它认出上一局没打完，建房被拒")
-	_h.expect(not _server_guard_blocks(SaveManager.load_public_token()), "server_still_blocks",
-		"退出对局之后，建房仍会被服务器以「正在对局中」拒掉")
+	_h.expect(not SaveManager.load_reconnect().is_empty(), "abandon_kept_credentials",
+		"退出对局之后重连凭证没了 —— 玩家再也回不去这个还没结束的局（第 7 条明确要求能重连）")
+	_h.expect(not SaveManager.load_resumable_reconnect().is_empty(), "abandon_still_resumable",
+		"退出对局之后凭证虽然还在，但不是「可重连」状态（主菜单那颗键会灰掉）")
+	_h.expect(not SaveManager.load_public_token().is_empty()
+			and NetworkService.public_token_id == DUMMY_PUBLIC_ID,
+		"abandon_kept_public_id",
+		"退出对局之后短码被清了 —— 服务器不再拦建房，于是「不可参与新房间」失效")
+	_h.expect(_server_guard_blocks(SaveManager.load_public_token()), "server_still_blocks",
+		"退出对局之后服务器不再以「正在对局中」拒建房 —— 第 7 条要求这一局结束前开不了新局")
 	NetworkService._rooms = server_before.rooms
 	NetworkService._token_seat = server_before.tokens
 	NetworkService._peer_room = server_before.peers
 	NetworkService._public_token_seat = server_before.public
 	_h.expect(NetworkService.pending_abandon_token.is_empty(), "abandon_kept_pending_token", "退出对局之后还挂着待发的 abandon")
-	var ok: bool = await NetworkService.allow_new_match()
-	_h.expect(ok and not DialogService.is_open("active_match_guard"), "abandon_did_not_unlock", "退出对局之后开新局还被拦")
+	# 结构：退出对局必须是「发一条按掉线算的通知 + 断开」，而且**不能用** _rpc_abandon_seat。
 	var body := _function_body("res://scripts/autoload/NetworkService.gd", "func abandon_started_match")
 	if _h.expect(not body.is_empty(), "abandon_func_missing", "找不到 NetworkService.abandon_started_match"):
-		_h.expect(not body.contains(".rpc") and not body.contains("_rpc_"), "abandon_sends_rpc",
-			"退出对局发了 RPC —— _rpc_abandon_seat 会清掉座位上的账号，结算时当成 AI，跑路的人反而不扣分")
+		_h.expect(body.contains("_notice_manual_exit_then_reset()"), "abandon_no_notice",
+			"开打了的局退出时没走「通知服务端 + 断开」这条路 —— 服务端不知道这人走了，"
+			+ "全房没活人也不会自动作废")
+		_h.expect(not body.contains("_rpc_abandon_seat"), "abandon_sends_abandon_seat",
+			"退出对局发了 _rpc_abandon_seat —— 它会清掉座位上的账号、把座位转 AI，"
+			+ "跑路的人反而一分不扣，而且对**正在打的局**根本不生效")
+		_h.expect(not body.contains("mark_pending_leave"), "abandon_marks_pending_leave",
+			"退出对局打了 pending_leave 标记 —— 那会让主菜单的「游戏重连」消失（第 7 条要求仍在）")
+	# 通知那条路：发的是 _rpc_manual_exit_seat，而且**发完要等两帧**才 reset。
+	var notice := _function_body("res://scripts/autoload/NetworkService.gd", "func _notice_manual_exit_then_reset")
+	if _h.expect(not notice.is_empty(), "notice_func_missing", "找不到 _notice_manual_exit_then_reset"):
+		_h.expect(notice.contains("_rpc_manual_exit_seat.rpc_id(1, session_token)"), "notice_wrong_rpc",
+			"通知必须走 _rpc_manual_exit_seat（座位留着这条才成立）")
+		var first_await := notice.find("await get_tree().process_frame")
+		var reset_at := notice.find("\n\treset()")
+		_h.expect(first_await > 0 and reset_at > first_await, "notice_no_flush_wait",
+			"发完通知没等 flush 就 reset() —— ENet 的包要等下一次 poll，同帧断开会把包直接丢掉")
+	_h.expect(notice.count("await get_tree().process_frame") >= 2, "notice_flush_frames",
+		"至少要等两帧再断开，一帧在弱网下不一定够（丢了包 = 服务端永远不知道这人退了）")
+	# 服务端那条 RPC：必须**不清**座位、**不清** token —— 否则重连不回来。
+	var ns_src := FileAccess.get_file_as_string("res://scripts/autoload/NetworkService.gd")
+	var exit_rpc := _function_body("res://scripts/autoload/NetworkService.gd", "func _rpc_manual_exit_seat")
+	if _h.expect(not exit_rpc.is_empty(), "manual_exit_rpc_missing",
+			"服务端没有 _rpc_manual_exit_seat —— 手动退出这条通知没人收"):
+		_h.expect(not exit_rpc.contains("_clear_seat_metadata") and not exit_rpc.contains("_token_seat.erase"),
+			"manual_exit_rpc_clears_seat",
+			"_rpc_manual_exit_seat 清了座位或 token —— 玩家就重连不回来了")
+		_h.expect(exit_rpc.contains('manual[slot] = true'), "manual_exit_rpc_no_flag",
+			"_rpc_manual_exit_seat 没打 manual_exit_slots —— 服务端仍把他算成活人，"
+			+ "全房没活人的局不会自动结束（第 7 条上半条就废了）")
+		_h.expect(exit_rpc.contains("get_remote_sender_id()") and exit_rpc.contains("!= slot"),
+			"manual_exit_rpc_unauthenticated",
+			"_rpc_manual_exit_seat 不校验发送者就是座位主人 —— 任何人拿别人 token 就能作废对方那局")
+	_h.expect(ns_src.contains("func _tick_void_watchdog()"), "void_watchdog_missing",
+		"没有 _tick_void_watchdog —— 「30 秒无活人自动结束」没有巡检者")
 
 
 # --- 4. 开新局被上一局拦住 --------------------------------------------------------------
@@ -190,8 +240,12 @@ func _case_new_match_guard() -> void:
 			dialog._cancel_btn.pressed.emit()
 		await _settle(3)
 		if answer == "confirm":
-			_h.expect(bool(box.get("ok", false)), "guard_confirm_blocked", "确认退出之后这次开新局还是被拦")
-			_h.expect(SaveManager.load_reconnect().is_empty(), "guard_confirm_kept_credentials", "确认退出之后凭证还在")
+			# ★ 10.11 第 7 条：确认「退出对局」**不等于**可以开新局 ——
+			# 这一局还没结束（房内还有活人，或者 30 秒窗口没走完），所以照旧拦。
+			_h.expect(not bool(box.get("ok", true)), "guard_confirm_unlocked",
+				"确认退出之后就放行开新局了 —— 第 7 条要求这一局结束前开不了新房")
+			_h.expect(not SaveManager.load_reconnect().is_empty(), "guard_confirm_cleared_credentials",
+				"确认退出之后凭证被删了 —— 玩家就回不去这个还没结束的局了")
 		else:
 			_h.expect(box.has("ok") and not bool(box["ok"]), "guard_cancel_allowed", "取消之后不该放行开新局")
 			_h.expect(not SaveManager.load_resumable_reconnect().is_empty(), "guard_cancel_cleared", "取消也把上一局的凭证删了")
@@ -265,7 +319,8 @@ func _case_reconnect_overlay() -> void:
 		dialog._confirm_btn.pressed.emit()
 		await _settle(4)
 		_h.expect(nav.count == 1, "confirm_no_nav", "确认退出之后没回主菜单（导航 %d 次）" % nav.count)
-		_h.expect(SaveManager.load_reconnect().is_empty(), "confirm_kept_credentials", "确认退出之后凭证还在")
+		_h.expect(not SaveManager.load_reconnect().is_empty(), "confirm_cleared_credentials",
+			"确认退出之后凭证被删了 —— 断线遮罩那条路退出后也要求仍能重连（第 7 条）")
 		_h.expect(NetworkService.state != NetworkService.SessionState.RECONNECTING
 				and not ModalStack.has(MainScript.RECONNECT_MODAL_ID), "confirm_still_reconnecting",
 			"确认退出之后还在重连，或者遮罩还在")
@@ -331,6 +386,50 @@ func _case_prep_settings() -> void:
 		await _settle(2)
 		_h.expect(not ModalStack.has(PrepScreenScript.SETTINGS_MODAL_ID), "settings_back_not_closing",
 			"设定页点「返回」没关掉")
+	# ★★ 10.11 第 7 条：**离线自测的对局也要有「退出对局」**，而且它是
+	# 「直接退出、直接结束对局」——不弹判负 / 扣分确认框。
+	#
+	# 判据必须是 NetworkService.is_offline_team_match()（offline_selftest 且非 team_active），
+	# **不能**是「team_active 为假」：联网对局掉线时 team_active 也为假（正是重连遮罩
+	# 出现的时候），那条路径必须照旧弹确认框。
+	NetworkService.team_active = false
+	NetworkService.offline_selftest = true
+	_h.expect(NetworkService.is_offline_team_match(), "offline_flag_on",
+		"offline_selftest 置起且无联机会话时，is_offline_team_match() 必须为真")
+	NetworkService.team_active = true
+	_h.expect(not NetworkService.is_offline_team_match(), "offline_flag_ignored_when_online",
+		"有联机会话时即使 offline_selftest 为真也不能算本地自测"
+		+ "（否则联机对局退出会跳过判负确认框，而这条是 10-06 用户明确要的）")
+	NetworkService.team_active = false
+	settings_btn.pressed.emit()
+	await _settle(2)
+	var offline_page := ModalStack.top().get("content") as SettingsScreenScript
+	var offline_leave: Button = null
+	if offline_page != null:
+		offline_leave = offline_page.find_child("LeaveMatch", true, false) as Button
+	_h.expect(offline_leave != null and offline_leave.text == "退出对局", "offline_selftest_has_leave",
+		"离线自测的对局里必须有「退出对局」（用户口径：直接退出、直接结束对局）")
+	if offline_leave != null:
+		offline_leave.pressed.emit()
+		await _settle(1)
+		_h.expect(leaves[0] == 2, "offline_leave_forwarded",
+			"离线自测点「退出对局」也要交给 Main（leave_match_requested 累计发了 %d 次）" % leaves[0])
+	if offline_page != null:
+		offline_page.back_requested.emit()
+		await _settle(2)
+	NetworkService.offline_selftest = false
+	NetworkService.team_active = false
+	# 结构：分叉真的在 request_exit_match 里（行为断言看不见「谁分叉」——
+	# 把确认框那一支删掉、两边都走直接退出，行为断言照样绿）。
+	var req_body := _function_body("res://scenes/main/Main.gd", "func request_exit_match")
+	if _h.expect(not req_body.is_empty(), "exit_func_missing", "找不到 Main.request_exit_match"):
+		_h.expect(req_body.contains("NetworkService.is_offline_team_match()")
+			and req_body.contains("_exit_offline_team_match()"), "offline_exit_branch",
+			"request_exit_match 必须先判本地自测并走直接退出（第 7 条）")
+	var prep_src := FileAccess.get_file_as_string("res://scenes/prep/PrepUI.gd")
+	_h.expect(prep_src.contains("NetworkService.is_offline_team_match()"),
+		"prep_offline_leave_wired",
+		"PrepUI 开设定页时必须把「本地自测」算进 can_leave_match，否则那颗按钮根本不出现")
 	# 主界面的设定页照旧。
 	var menu_page: SettingsScreenScript = (load("res://scenes/menu/SettingsScreen.tscn") as PackedScene).instantiate()
 	add_child(menu_page)

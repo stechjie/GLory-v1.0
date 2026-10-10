@@ -39,9 +39,15 @@ ENDED_RETENTION_DAYS = 30
 # 与客户端 scripts/multiplayer/RoomInvite.gd 的 KIND 一致（tools/room_invite_check.gd 钉着）——
 # 对不上的症状是「发出去的邀请对方收不到」或「邀请渲染成普通文本」，都不报错。
 ROOM_INVITE_KIND = "room_invite"
-# 同一邀请人换房间时，两条邀请至少隔这么多秒（要求 4）。客户端也有一份同值的本地预判，
-# 但**这里才是权威**：本地那份改个内存就绕过去了。
-ROOM_INVITE_RATE_SEC = 10
+# 同一邀请人**两次邀请之间**至少隔这么多秒（2026-10-11 第 6 条 c：**5 秒**）。
+# 客户端 RoomInvite.RATE_LIMIT_SEC 必须同值同口径，但**这里才是权威**：
+# 本地那份改个内存就绕过去了。
+#
+# ⚠️ 口径改过一次：上一版是「同一邀请人**换房间**的邀请间隔 10 秒」
+# （2026-09-28 反馈第 5 条）。现行口径「该类消息，同一房间只能发送一次，
+# 发送 CD 5 秒」把它换成一条**与房间无关**的发送频率限制 ——
+# 「同一房间只能发送一次」由下面的 (a) 去重负责，不再靠冷却表达。
+ROOM_INVITE_RATE_SEC = 5
 
 # 组队邀请（10.07 bug 文档第 10 条，2026-10-07）。
 #
@@ -261,13 +267,13 @@ async def _check_invite_rules(
     (a)「同一邀请人同一房间只会发送一次邀请消息」
         —— 键是 (邀请人, 房间号, 收件人)。同一个房间邀请第二个好友要放行，
         否则这个功能就只能邀请一个人。
-    (b)「同一邀请人不同房间的邀请间隔 10 秒」—— **只在换房间时才计时**
-        （2026-09-28 反馈第 5 条）：所以扫最近一条邀请时把它的 room_id 也取出来，
-        与本次的 room_id 相同就不触发冷却（同房连邀不同好友随便发）；
-        房间号不同才做 10 秒比较（换房刷屏仍被限）。
+    (b)「该类消息……发送 CD 5 秒」（2026-10-11 第 6 条 c）——
+        **任意两次邀请之间至少隔 ROOM_INVITE_RATE_SEC 秒，与房间号无关**。
 
-        ⚠️ 旧实现只扫 created_at、不看房间号，于是同一房间邀请第二个好友也被拦
-        （客户端同样过宽）—— 玩家报的「10 秒后才能再次邀请」就是它。
+        ⚠️ 上一版把冷却绑在「房间号变了」上（2026-09-28 反馈第 5 条：
+        防「换房后刷屏式群发」，同房连邀不同好友不限）。10.11 的用户口径
+        把「同一房间只能发送一次」交给 (a)，冷却则变成一条纯粹的发送频率限制，
+        所以这里不再比较房间号 —— 只看向上一条邀请过了多久。
         客户端 RoomInvite.send_blocked_reason 用同一口径，两边必须一致。
     """
     dup = await conn.fetchval(
@@ -287,11 +293,10 @@ async def _check_invite_rules(
     if dup:
         raise ChatRejected("invite_duplicate", "同一个房间已经邀请过对方了")
 
-    # (b) 换房才有的 10 秒间隔。把最近一条邀请的 room_id 一起取回来：
-    #     与本次 room_id 相同 → 跳过（同房连邀多个好友）。
+    # (b) 发送冷却：distance 与房间号无关。
     last = await conn.fetchrow(
         """
-        select created_at, payload ->> 'room_id' as room_id from chat_messages
+        select created_at from chat_messages
         where sender_id = $1 and kind = $2
         order by created_at desc
         limit 1
@@ -300,13 +305,9 @@ async def _check_invite_rules(
         ROOM_INVITE_KIND,
     )
     if last is not None:
-        # payload 里的 room_id 是文本；坏数据（空 / 非数字）**一律当「换房」**，
-        # 宁可多限一次，也不因为一条脏数据把防刷整条放过（同 accounts 的取舍）。
-        last_room_id = _room_id_of_payload(last["room_id"])
-        if last_room_id != room_id:
-            elapsed = await conn.fetchval("select now() - $1::timestamptz", last["created_at"])
-            if elapsed is not None and elapsed.total_seconds() < ROOM_INVITE_RATE_SEC:
-                raise ChatRejected("invite_rate_limited", "邀请发得太快了，请稍后再试")
+        elapsed = await conn.fetchval("select now() - $1::timestamptz", last["created_at"])
+        if elapsed is not None and elapsed.total_seconds() < ROOM_INVITE_RATE_SEC:
+            raise ChatRejected("invite_rate_limited", "邀请发得太快了，请稍后再试")
 
 
 async def _check_party_invite_rules(conn, low: uuid.UUID, high: uuid.UUID,
@@ -337,20 +338,6 @@ async def _check_party_invite_rules(conn, low: uuid.UUID, high: uuid.UUID,
         raise ChatRejected("party_invite_duplicate", "已经邀请过对方了")
 
 
-def _room_id_of_payload(raw: str | None) -> int:
-    """从 chat_messages.payload->>'room_id' 的文本还原房间号；拿不到返回 0。
-
-    返回 0 与任何真实 room_id 都不相等（room_id 恒为正），所以在 (b) 的
-    「last_room_id != room_id」判断里 0 天然等价于「算作换房」—— 这正是要的兜底。
-    """
-    if raw is None:
-        return 0
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return 0
-
-
 async def send(
     sender_id: uuid.UUID,
     target_code: str,
@@ -366,7 +353,7 @@ async def send(
          只会拿到「你们不是好友」，静默丢弃那条已定的规则就永远走不到。
       2. 「我拉黑了对方」明说（这是他自己做的，不说他会以为坏了）；
          「对方拉黑了我」静默丢弃 —— 同 friends._blocked_between 的分寸。
-      3. 房间邀请的业务规则（去重 / 10 秒间隔）压在**好友关系之后** ——
+      3. 房间邀请的业务规则（去重 / 5 秒发送冷却）压在**好友关系之后** ——
          陌生人根本发不出消息，那两条就没必要先跑一遍查询。
 
     kind='room_invite' 时 payload 必须是 {"room_id": int}（校验在 routes/chat.py 做，

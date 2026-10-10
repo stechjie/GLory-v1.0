@@ -14,9 +14,11 @@ extends Node
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
 const LOBBY := preload("res://scenes/menu/PartyLobby.gd")
+const TEAM3V3 := preload("res://scenes/menu/Team3v3Lobby.gd")
 
 const CHECK_NAME := "party_lobby_rules"
 const LOBBY_SRC := "res://scenes/menu/PartyLobby.gd"
+const TEAM3V3_SRC := "res://scenes/menu/Team3v3Lobby.gd"
 const QUEUE_PANEL_SRC := "res://scenes/menu/MatchQueuePanel.gd"
 
 var _h: CheckHarness
@@ -32,6 +34,7 @@ func _ready() -> void:
 	_case_mode_notice_to_members()
 	_case_party_invite_reaches_chat()
 	_case_host_pet_forced()
+	_case_friend_buckets()
 	_h.finish(get_tree())
 
 
@@ -154,9 +157,11 @@ func _case_member_can_invite() -> void:
 	_h.expect(custom.contains("const VOICE_BTN_SIZE := Vector2(78, 60)")
 			and src.contains("const VOICE_BTN_SIZE := Vector2(78, 60)"),
 		"voice_btn_size_matches_custom", "组队房语音按钮尺寸要与自定义房间一致（78×60）")
-	_h.expect(custom.contains("const MUTE_BTN_SIZE := Vector2(140, 62)")
+	# 10.11 第 2 条：自定义房那颗键改成了 MENU_BTN_SIZE（原 MUTE_BTN_SIZE）——
+	# 静音键整颗换成「设定」键，尺寸口径没变，仍是 140×62。
+	_h.expect(custom.contains("const MENU_BTN_SIZE := Vector2(140, 62)")
 			and src.contains("const TOP_BTN_SIZE := Vector2(140, 62)"),
-		"top_btn_size_matches_custom", "组队房顶排按键尺寸要与自定义房间的静音键一致（140×62）")
+		"top_btn_size_matches_custom", "组队房顶排按键尺寸要与自定义房间的右上角键一致（140×62）")
 	_h.expect(custom.contains("const PHRASE_BTN_SIZE := Vector2(162, 40)")
 			and src.contains("const PHRASE_BTN_SIZE := Vector2(162, 40)"),
 		"phrase_btn_size_matches_custom", "快捷短语按钮尺寸要与自定义房间一致（162×40）")
@@ -510,3 +515,81 @@ func _case_host_pet_forced() -> void:
 	if _h.expect(not route_src.is_empty(), "be_route_readable_1009", "读不到 backend/app/routes/party.py"):
 		_h.expect(route_src.contains("pets_state.active"),
 			"be_route_passes_active", "建房/入房路由要把玩家的出战宠物交给服务端")
+
+
+# 10.11 bug 第 3 / 9 条：好友列表的分档与过滤。
+#
+# 第 3 条（排位/休闲房间）：「可邀请 → 对局中 → 离线」三档；对局中那位按钮写「对局中」并禁用。
+# 第 9 条（自定义房间）：只显示「在线且不在对局中」的好友。
+#
+# 判据分两层，缺一不可：
+#   ① **行为** —— 直接调两个纯判据函数（_friend_bucket / _can_invite_online_friend），
+#      覆盖「离线压过 in_match」「字段缺失」「脏数据」这些结构断言看不出来的分支；
+#   ② **结构** —— 这两个函数真的被渲染路径用上了。「定义了不接线」在这里完全静默：
+#      列表照旧按老规则渲染，用例全绿。
+func _case_friend_buckets() -> void:
+	var lobby: Control = LOBBY.new()
+	# ① 行为：三档判据。
+	_h.expect(lobby._friend_bucket({"online": false, "in_match": true}) == lobby.FRIEND_OFFLINE,
+		"bucket_offline_wins", "离线必须归离线档 —— 哪怕 in_match 还是掉线那一刻的值")
+	_h.expect(lobby._friend_bucket({"online": true, "in_match": true}) == lobby.FRIEND_IN_MATCH,
+		"bucket_in_match", "在线且对局中 -> 对局中档")
+	_h.expect(lobby._friend_bucket({"online": true, "in_match": false}) == lobby.FRIEND_INVITABLE,
+		"bucket_invitable", "在线且不在对局中 -> 可邀请档")
+	_h.expect(lobby._friend_bucket({}) == lobby.FRIEND_OFFLINE,
+		"bucket_missing_fields", "字段缺失按离线处理 —— 旧后端不返回 in_match 时不能误判成可邀请")
+	_h.expect(lobby.FRIEND_INVITABLE == 0 and lobby.FRIEND_IN_MATCH == 1 and lobby.FRIEND_OFFLINE == 2,
+		"bucket_order", "三档的数值就是排序：可邀请(0) -> 对局中(1) -> 离线(2)")
+	lobby.free()
+
+	# ② 结构：分档真的接进了渲染路径。
+	var src := _read(LOBBY_SRC)
+	_h.expect(src.contains("for bucket in [FRIEND_INVITABLE, FRIEND_IN_MATCH, FRIEND_OFFLINE]"),
+		"friend_rows_bucketed", "好友列表必须按三档依次渲染（不是只按在线/离线两档）")
+	_h.expect(src.contains("str(f.get(\"in_match\", false))"), "friend_signature_includes_in_match",
+		"内容签名必须带 in_match —— 否则数据变了列表不重建（10.10 的签名去重是按内容跳过的）")
+	var row := _slice_func(src, "_render_friends")
+	if _h.expect(not row.is_empty(), "friend_render_found", "切不出 PartyLobby._render_friends"):
+		_h.expect(row.contains("_text(\"对局中\", \"In match\")") and row.contains("not can_invite"),
+			"in_match_button_disabled", "对局中那一档的按钮要写「对局中」且禁用")
+		_h.expect(row.contains("if can_invite and quick_count < 3"),
+			"quick_rail_only_invitable", "右下角快捷栏只收可邀请的好友（对局中/离线的都不该上）")
+
+	# 第 9 条：自定义房间的好友列表。
+	var t3: Node = TEAM3V3.new()
+	_h.expect(t3._can_invite_online_friend({"online": true, "in_match": false}),
+		"t3_online_invitable", "在线且不在对局中 -> 显示")
+	_h.expect(not t3._can_invite_online_friend({"online": true, "in_match": true}),
+		"t3_in_match_hidden", "在线但在对局中 -> 不显示")
+	_h.expect(not t3._can_invite_online_friend({"online": false, "in_match": false}),
+		"t3_offline_hidden", "不在线 -> 不显示")
+	_h.expect(not t3._can_invite_online_friend({"online": false, "in_match": true}),
+		"t3_offline_after_match_hidden", "离开对局但对局未结束（离线 + in_match）-> 不显示")
+	_h.expect(not t3._can_invite_online_friend("nonsense"),
+		"t3_non_dict_hidden", "非字典项直接跳过（后端列表混进脏数据也不能崩）")
+	# ★ 10.11 第 6 条 i：**已经在本房间里**的好友既不显示、也不该被邀请
+	#   （对他在点邀请没有意义 —— 邀请消息指向的就是他已经在的那个房）。
+	#   自定义房间的成员只存在于战斗服务器上，账号服务器不知道 ⇒ 只能客户端判。
+	var saved_room := int(NetworkService.team_room_id)
+	NetworkService.team_room_id = 4242
+	var t3r: Node = TEAM3V3.new()
+	_h.expect(not t3r._can_invite_online_friend(
+			{"online": true, "in_match": false, "room_id": 4242}), "t3_same_room_hidden",
+		"已经在本房间的好友 → 不显示（第 6 条 i：点了既不发消息也不弹窗）")
+	_h.expect(t3r._can_invite_online_friend(
+			{"online": true, "in_match": false, "room_id": 99}), "t3_other_room_shown",
+		"在别的房间的好友 → 照常显示（第 6 条 j：别的房间的邀请要能发出去）")
+	_h.expect(t3r._can_invite_online_friend(
+			{"online": true, "in_match": false, "room_id": null}), "t3_null_room_shown",
+		"room_id 为 null（后端「房间不可见」）时既不能崩、也不能误判成同房间")
+	_h.expect(t3r._can_invite_online_friend({"online": true, "in_match": false}),
+		"t3_missing_room_shown", "没有 room_id 字段（旧后端）→ 照常显示，不能误判")
+	t3r.free()
+	NetworkService.team_room_id = saved_room
+	t3.free()
+
+	var t3_src := _read(TEAM3V3_SRC)
+	var render := _slice_func(t3_src, "_render_online_friends")
+	if _h.expect(not render.is_empty(), "t3_render_found", "切不出 Team3v3Lobby._render_online_friends"):
+		_h.expect(render.contains("_can_invite_online_friend(entry)"),
+			"t3_filter_wired", "渲染必须经过 _can_invite_online_friend —— 定义了不接线等于没做")

@@ -43,6 +43,12 @@ class HeartbeatBody(BaseModel):
     # **不传和传 null 是同一个意思** —— 这里没有「不动」的语义，
     # 心跳本来就是整份覆盖当前位置。
     room_id: int | None = None
+    # 10.11 bug 第 3/9 条：我是不是正在一局对局里（备战 / 战斗 / 结算）。
+    # 同 room_id —— 客户端自报、整份覆盖。**默认 False 是刻意的**：
+    # 旧客户端（不带这个字段）的心跳仍旧写得进来，只是永远显示成「不在对局中」。
+    # 老包多带的 room_started（9.28–9.29 之间出过）在此照旧被忽略，见用例
+    # test_heartbeat_accepts_room_started_from_older_clients。
+    in_match: bool = False
 
 
 class VisibilityBody(BaseModel):
@@ -85,7 +91,7 @@ async def heartbeat(
             status_code=429, detail=str(exc), headers={"Retry-After": str(exc.retry_after)}
         ) from None
     try:
-        await presence.heartbeat(player_id, body.room_id)
+        await presence.heartbeat(player_id, body.room_id, body.in_match)
     except presence.PresenceRejected as exc:
         raise HTTPException(status_code=400, detail=exc.message) from None
 

@@ -72,8 +72,14 @@ _STATUS_BY_CODE = {
     "you_blocked_them": 403,
     "cannot_message_self": 400,
     "send_conflict": 409,
-    # 房间邀请（要求 4）。去重是 409（已经有同一条邀请了），10 秒间隔是 429（稍后再试）。
+    # 房间邀请（要求 4）。去重是 409（已经有同一条邀请了），5 秒间隔是 429（稍后再试）。
+    # ★ 10.11 第 6 条 c 附带修复：组队邀请的去重码是 party_invite_duplicate
+    #   （chat._check_party_invite_rules，10.07 第 10 条），与房间邀请的
+    #   invite_duplicate 是两个不同的 code，都得登记 —— 漏登记会退化成 .get 的 400，
+    #   与「去重 = 409」这条约定不一致（tests/test_chat.py 的
+    #   test_every_rejection_code_has_a_status 就是钉这件事的，之前一直红）。
     "invite_duplicate": 409,
+    "party_invite_duplicate": 409,
     "invite_rate_limited": 429,
 }
 

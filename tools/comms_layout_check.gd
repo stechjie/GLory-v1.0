@@ -14,19 +14,23 @@ func shot(name):
  get_viewport().get_texture().get_image().save_png("res://work/issues_20260930/"+name+".png")
 func buttons(vc, context):
  var list=[vc.voice_button,vc.audience_button,vc.members_button]
- print("GEOMETRY ",context," ",list.map(func(b):return [b.name,b.position,b.size,b.get_minimum_size()]))
- for b in list:
-  h.expect(b.size.is_equal_approx(list[0].size),context+"_equal",str(b.size))
+ # 10.11 第 5 条：自定义房间**不摆放** members_button（「全房间」那颗），它不会进树。
+ # 布局判据只对真正显示出来的按钮成立，所以先把没进树的滤掉；
+ # 调用方拿到的 bs 长度会随语境变化（房间 2 个、备战/战斗 3 个）。
+ var shown=list.filter(func(b): return b!=null and is_instance_valid(b) and b.is_inside_tree())
+ print("GEOMETRY ",context," ",list.map(func(b):return [b.name,b.is_inside_tree(),b.position,b.size,b.get_minimum_size()]))
+ for b in shown:
+  h.expect(b.size.is_equal_approx(shown[0].size),context+"_equal",str(b.size))
   h.expect(b.get_minimum_size().y<=b.size.y,context+"_text_fits",str(b.get_minimum_size()))
  var saved_mode=VoiceService.mode
  for mode in [VoiceService.Mode.OFF,VoiceService.Mode.LISTEN,VoiceService.Mode.TALK]:
   VoiceService.mode=mode
   vc.refresh()
-  for b in list:
-   h.expect(b.size.is_equal_approx(list[0].size) and b.get_minimum_size().y<=b.size.y,context+"_mode_size","voice mode changes keep equal size")
+  for b in shown:
+   h.expect(b.size.is_equal_approx(shown[0].size) and b.get_minimum_size().y<=b.size.y,context+"_mode_size","voice mode changes keep equal size")
  VoiceService.mode=saved_mode
  vc.refresh()
- return list
+ return shown
 func scroll_checks(scroll,emit_message,tag):
  await frames()
  h.expect(not scroll.floating_bar.visible,tag+"_bottom_hidden","bottom hides bar")
@@ -68,6 +72,12 @@ func _ready():
  var lobby=Lobby.instantiate()
  add_child(lobby)
  await frames(35)
+ # 10.11 第 5 条：自定义房间不显示「全房间」那颗键 —— 整颗不进树（不是 visible=false 混过去）。
+ h.expect(not lobby._voice_controls.members_button.is_inside_tree(),"lobby_full_room_hidden",
+  "自定义房间不应把 VoiceControls.members_button（「全房间」）放进树")
+ h.expect(lobby._voice_controls.voice_button.is_inside_tree()
+  and lobby._voice_controls.audience_button.is_inside_tree(),"lobby_mic_speaker_kept",
+  "隐藏的只能是「全房间」那一颗，麦克风 / 扬声器必须还在")
  for width in [1280,1600]:
   get_tree().root.content_scale_size=Vector2i(width,720)
   get_tree().root.size=Vector2i(width,720)

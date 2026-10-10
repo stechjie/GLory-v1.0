@@ -18,8 +18,14 @@ static func title(en: bool) -> String:
 
 
 static func body(mode: String, en: bool) -> String:
-	var lead := ("You lose this match. AI plays your seat to the end and you can't come back."
-		if en else "退出后本局判负，你的位置由 AI 打完，不能再回来。")
+	# ★ 10.11 bug 第 7 条改了这半句的口径（原来是「你的位置由 AI 打完，不能再回来」）：
+	#   现在「退出对局」= 该玩家掉线超过 30 秒 —— 座位与重连凭证都留着，
+	#   所以**还能**从主菜单的「游戏重连」回到这一局；换来的代价是这一局结束前
+	#   开不了新局。原来那句现在是假话，留在界面上会让玩家以为退出去就再也回不来。
+	var lead := ("Leaving treats you as disconnected in this match: you can Reconnect "
+		+ "from the menu, and no new match can start until it ends."
+		if en else "退出后你这一局按掉线处理：能点主菜单的「游戏重连」回来，"
+			+ "这一局结束前开不了新局。")
 	return lead + "\n" + penalty(mode, en)
 
 

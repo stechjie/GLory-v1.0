@@ -8,7 +8,7 @@ extends Node
 #   第 5 条  结算面板上、下各一排同样的按钮；「超过一屏」那句滚动提示已删
 #   第 6 条  房间顶部文案只保留「等待结算中的玩家返回」
 #   第 7 条  商店棋子落点仍在商店里时不触发购买
-#   第 8 条  房间右上角有「静音 / 已静音」键，语义与备战期那颗同源
+#   第 8 条  房间右上角是「设定」键，打开的设置页比对局少一行「退出对局」（10.11 第 2 条改写）
 #
 # **没进这个门禁的两条**（headless 拿不到像素真值 / 真光标，另有出口）：
 #   第 1 条  棋盘计数图案去掉底板/描边/外发光（纯 `_draw`）
@@ -23,6 +23,8 @@ const CheckHarness := preload("res://tools/CheckHarness.gd")
 const LobbyScene := preload("res://scenes/menu/Team3v3Lobby.tscn")
 const SettlementPanel := preload("res://scenes/menu/FinalSettlementPanel.gd")
 const Presentation := preload("res://effects/runtime/presentation/PresentationSettings.gd")
+# 10.11 第 2 条：房间右上角「设定」推上来的就是这一页，按类型断言它带的档位开关。
+const SettingsScreenScript := preload("res://scenes/menu/SettingsScreen.gd")
 
 const CHECK_NAME := "prep_1006"
 const VIEW := Vector2i(1266, 600)
@@ -37,7 +39,7 @@ func _ready() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
 	await _case_bug2_friend_row_nickname_only()
 	await _case_bug6_return_text_trimmed()
-	await _case_bug8_room_mute_button()
+	await _case_bug8_lobby_settings_button()
 	await _case_bug3_shop_refresh_and_voice_ui()
 	await _case_bug5_settlement_button_rows()
 	await _case_bug7_shop_drop_inside_store()
@@ -95,60 +97,81 @@ func _case_bug6_return_text_trimmed() -> void:
 	_restore_network()
 
 
-# ── 第 8 条：房间里也能控制音乐播放 ───────────────────────────────────────────
-
-func _case_bug8_room_mute_button() -> void:
+# ── 第 8 条（10.11 第 2 条改写）：房间右上角是「设定」，打开的是比对局少一行的设置页 ──
+#
+# 10.06 这一条验的是「静音 / 已静音」那颗键（Master 总线 + music 偏好同源）。
+# 10.11 用户改口径：「自定义房间和排位房间的静音 UI 改为设定 UI，内容上要比对局里的
+# 设定少个『退出对局』按钮」⇒ 静音键没了，整页设置搬进房间。旧用例直接读 `_mute_button`
+# 只会拿到 null（假红），所以这里整段改写为**新合同的判据**：
+#   ① 键在、节点名 SettingsButton、文案「设定 / Settings」；
+#   ② 按下去真的把 SettingsScreen 推上 ModalStack（走真实入口 `pressed.emit()`，
+#      与 bug5 那条注释同一个理由：直接 call("_open_settings") 证明不了接线通）；
+#   ③ 那一页 `lobby_mode=true` / `can_leave_match=false` / `in_match=false`
+#      ⇒ 页脚**既没有 LeaveMatch、也没有「重新体验教学」**，这正是用户说的「少个退出对局」；
+#   ④ 「背景音乐」开关仍在页内 —— 静音功能没丢，只是搬了家；
+#   ⑤ 点「返回」能把这一页从 ModalStack 里摘掉。
+func _case_bug8_lobby_settings_button() -> void:
 	NetworkService.team_active = false
-	var master := AudioServer.get_bus_index("Master")
-	var bus_before := master >= 0 and AudioServer.is_bus_mute(master)
 	var music_before: bool = Presentation.music_allowed()
 	var lobby := await _build_lobby()
 	if lobby == null:
-		_h.fail("lobby_unavailable_bug8", "Team3v3Lobby 场景无法实例化，静音键判据无法执行")
+		_h.fail("lobby_unavailable_bug8", "Team3v3Lobby 场景无法实例化，设定键判据无法执行")
 		return
-	var btn := lobby.get("_mute_button") as Button
-	_h.expect(btn != null and is_instance_valid(btn), "bug8_mute_button_missing",
-		"房间界面没有建出静音键（_mute_button 为空）")
+	var btn := lobby.get("_settings_button") as Button
+	_h.expect(btn != null and is_instance_valid(btn), "bug8_settings_button_missing",
+		"房间界面没有建出设定键（_settings_button 为空）")
 	if btn != null:
-		_h.expect(btn.name == "MuteButton", "bug8_mute_name",
-			"静音键的节点名应当是 MuteButton，实际「%s」" % btn.name)
-		# 起点先归一成「未静音」，才谈得上后面那一串翻转。
-		AudioServer.set_bus_mute(master, false) if master >= 0 else null
-		PlayerProfile.set_presentation_toggle("music", true)
-		lobby.call("_refresh")
-		_h.expect(btn.text == _mute_text(false), "bug8_label_idle",
-			"未静音时按键应写「%s」，实际「%s」" % [_mute_text(false), btn.text])
-		lobby.call("_toggle_mute")
-		_h.expect(master >= 0 and AudioServer.is_bus_mute(master), "bug8_toggle_mutes_bus",
-			"按一下静音键应当把 Master 总线静音（引擎级状态，切场景仍生效）")
-		_h.expect(btn.text == _mute_text(true), "bug8_label_muted",
-			"静音后按键应写「%s」，实际「%s」" % [_mute_text(true), btn.text])
-		lobby.call("_toggle_mute")
-		_h.expect(master < 0 or not AudioServer.is_bus_mute(master), "bug8_toggle_unmutes_bus",
-			"再按一下应当解除总线静音")
-		_h.expect(btn.text == _mute_text(false), "bug8_label_restored",
-			"解除后按键应回到「%s」，实际「%s」" % [_mute_text(false), btn.text])
-		# ★ 最容易漏的那个状态：设置页把「背景音乐」关了，房间里的键也必须显示已静音，
-		# 而且在这一态按下去要把声音真正打开（清总线静音 + 打开音乐开关），
-		# 不是把一个本来就没静音的总线翻成静音 —— 按了像没反应。
-		if master >= 0:
-			AudioServer.set_bus_mute(master, false)
-		PlayerProfile.set_presentation_toggle("music", false)
-		lobby.call("_refresh")
-		_h.expect(btn.text == _mute_text(true), "bug8_label_from_music_toggle",
-			"设置页关掉背景音乐时，房间里的键也要显示「%s」，实际「%s」"
-				% [_mute_text(true), btn.text])
-		lobby.call("_toggle_mute")
-		_h.expect(master >= 0 and not AudioServer.is_bus_mute(master) and Presentation.music_allowed(),
-			"bug8_toggle_recovers_from_music_off",
-			"在「设置页关了音乐」这一态按一下，应当把声音真正打开（清总线静音 + 打开音乐开关）")
-		_h.expect(btn.text == _mute_text(false), "bug8_label_after_recover",
-			"恢复后按键应写「%s」，实际「%s」" % [_mute_text(false), btn.text])
-		# 还原现场，别把静音状态留给后面的用例 / 真机。
-		if master >= 0:
-			AudioServer.set_bus_mute(master, bus_before)
-		PlayerProfile.set_presentation_toggle("music", music_before)
-		_teardown_lobby(lobby)
+		_h.expect(btn.name == "SettingsButton", "bug8_settings_button_name",
+			"设定键的节点名应当是 SettingsButton，实际「%s」" % btn.name)
+		_h.expect(btn.text == "设定" or btn.text == "Settings", "bug8_settings_button_label",
+			"设定键文案应当是「设定 / Settings」，实际「%s」" % btn.text)
+		# ★ 最容易漏的那个状态：设置页把「背景音乐」关了，房间里不该因此少掉任何东西 ——
+		# 音乐开关现在是页内的一项，这一态在下面对 ④ 的断言里覆盖。
+		btn.pressed.emit()
+		await get_tree().process_frame
+		var modal_id := str(lobby.LOBBY_SETTINGS_MODAL_ID)
+		_h.expect(ModalStack.has(modal_id), "bug8_settings_modal_not_pushed",
+			"按下设定键后 ModalStack 里应当有 %s 这一层" % modal_id)
+		var top: Dictionary = ModalStack.top()
+		var page := top.get("content") as SettingsScreenScript
+		_h.expect(str(top.get("id", "")) == modal_id and page != null, "bug8_settings_modal_content",
+			"栈顶应当是房间设置页（id=%s），实际 id=「%s」content=%s"
+				% [modal_id, str(top.get("id", "")), str(top.get("content"))])
+		if page != null:
+			# ③ 房间档：三条一起成立才叫「比对局少一行」。
+			_h.expect(page.lobby_mode and not page.can_leave_match and not page.in_match,
+				"bug8_settings_lobby_mode",
+				"房间设置页应当 lobby_mode=true / can_leave_match=false / in_match=false，"
+					+ "实际 lobby_mode=%s can_leave_match=%s in_match=%s"
+						% [str(page.lobby_mode), str(page.can_leave_match), str(page.in_match)])
+			_h.expect(page.find_child("LeaveMatch", true, false) == null, "bug8_no_leave_match",
+				"房间里的设定不该有「退出对局」—— 用户口径：「内容上要比对局里的设定少个『退出对局』按钮」")
+			_h.expect(not _tree_has_button_text(page, tr("settings_replay_tutorial")),
+				"bug8_no_replay_tutorial",
+				"房间里的设定不该有「重新体验教学」（那是主界面才有的那一行）")
+			# ④ 静音功能没丢：页内仍有接在同一份裁决上的「背景音乐」开关。
+			var toggles = page.get("_presentation_btns")
+			var music_btn: Variant = toggles.get("music") if toggles is Dictionary else null
+			_h.expect(music_btn is CheckButton and is_instance_valid(music_btn),
+				"bug8_music_toggle_present",
+				"房间设置页里必须还有「背景音乐」开关 —— 10.11 第 2 条只是把静音键换成设定键，静音能力不能丢")
+			if music_btn is CheckButton:
+				(music_btn as CheckButton).button_pressed = false
+				(music_btn as CheckButton).toggled.emit(false)
+				await get_tree().process_frame
+				_h.expect(not Presentation.music_allowed(), "bug8_music_toggle_wired",
+					"房间设置页里的「背景音乐」开关没接到音乐裁决上（PresentationSettings.music_allowed() 仍为真）")
+			PlayerProfile.set_presentation_toggle("music", music_before)
+			# ⑤ 返回键要把这一页摘掉。
+			page.back_requested.emit()
+			await get_tree().process_frame
+			_h.expect(not ModalStack.has(modal_id), "bug8_settings_back_not_closing",
+				"房间设置页点「返回」没把 %s 从 ModalStack 里摘掉" % modal_id)
+		else:
+			_h.fail("bug8_settings_page_missing", "拿不到推上来的设置页，③④⑤ 三条判据无法执行（已 fail-open 收尾）")
+			ModalStack.pop(modal_id)
+	PlayerProfile.set_presentation_toggle("music", music_before)
+	_teardown_lobby(lobby)
 
 
 # ── 第 3 条：刷新键对齐右侧竖列 + 开商店隐藏语音 UI ───────────────────────────
@@ -349,6 +372,44 @@ func _case_structure_guards() -> void:
 			"计数图案的 _draw 里还在画深色底板（用户点名的「中间填充的黑色底色」）")
 		_h.expect(not draw.contains("draw_polyline"), "bug1_no_border",
 			"计数图案的 _draw 里还在画描边（用户点名的「外部椭圆」）")
+	# 10.11 第 2 条：**两个**房间的右上角都必须是「设定」键（静音键已整颗删掉）。
+	# 行为用例只实例化得了 Team3v3Lobby（排位房），自定义房这条得靠读源码兜住。
+	#
+	# ★★ 断言前必须先剥注释。本仓有两条先例，这次两条都踩到了：
+	#   ① `room.contains("_mute_button")` 会被**注释里提到的旧名字**命中 ⇒ 假红
+	#      （PartyLobby 那句「原来是『静音 / 已静音』那颗（_mute_button）」正好把自己告了）；
+	#   ② 正面的 `contains(...)` 若命中的是注释，就是**假绿** —— 删掉代码也照样过。
+	#   所以下面每一条都拿 `_strip_comments()` 之后的正文来判。
+	for path in ["res://scenes/menu/Team3v3Lobby.gd", "res://scenes/menu/PartyLobby.gd"]:
+		var tag := "custom" if path.contains("Team3v3Lobby") else "party"
+		var room := _strip_comments(FileAccess.get_file_as_string(path))
+		_h.expect(not room.is_empty(), "bug8_source_missing_%s" % tag,
+			"读不到 %s，房间设定键的结构判据无法执行" % path)
+		if room.is_empty():
+			continue
+		_h.expect(room.contains("_settings_button") and room.contains("func _open_settings("),
+			"bug8_settings_button_%s" % tag,
+			"%s 没有「设定」键（缺 _settings_button / _open_settings）" % path.get_file())
+		# 「函数存在」≠「按键真的接到它身上」。两个房间的接线写法不同
+		# （排位房是把回调当参数传给 make_menu_button，自定义房是 pressed.connect），
+		# 所以这里只钉「_open_settings 至少被提到两次」—— 只有一处就是定义完没人用。
+		# 真接线由行为用例（bug8_settings_modal_not_pushed）在排位房那一侧正面验。
+		_h.expect(room.count("_open_settings") >= 2, "bug8_settings_wired_%s" % tag,
+			"%s 里 _open_settings 只出现了 %d 次 —— 定义完没有挂到按键上（出现 1 次＝定义）"
+				% [path.get_file(), room.count("_open_settings")])
+		_h.expect(not room.contains("_mute_button"), "bug8_mute_button_left_%s" % tag,
+			"%s 里还留着 _mute_button —— 10.11 第 2 条要求静音键整颗换成设定键" % path.get_file())
+		_h.expect(room.contains("lobby_mode = true") and room.contains("can_leave_match = false"),
+			"bug8_lobby_mode_%s" % tag,
+			"%s 打开设置页时没带 lobby_mode=true / can_leave_match=false —— 房间里会多出「退出对局」"
+				% path.get_file())
+	# 「少个退出对局」的落点：页脚两个分支都要把房间档排除在外。
+	var settings := _strip_comments(FileAccess.get_file_as_string("res://scenes/menu/SettingsScreen.gd"))
+	_h.expect(settings.contains("if not in_match and not lobby_mode:"), "bug8_footer_replay_gate",
+		"SettingsScreen 的页脚第一支应当是 `if not in_match and not lobby_mode:` —— 房间档不该有「重新体验教学」")
+	_h.expect(settings.contains("elif can_leave_match and not lobby_mode:"), "bug8_footer_leave_gate",
+		"SettingsScreen 的「退出对局」那一支应当是 `elif can_leave_match and not lobby_mode:` —— "
+		+ "只靠调用方传 can_leave_match=false 不算数，房间档必须在结构上就出不来「退出对局」")
 
 
 # 取某个函数体的源码（签名之后、下一个顶层 `func ` 之前）。行尾先归一，否则
@@ -421,9 +482,29 @@ func _locale_en() -> bool:
 	return TranslationServer.get_locale().begins_with("en")
 
 
-# 与 Team3v3Lobby._mute_label_text() 同一口径、但独立写一遍：
-# 期望值按「静音状态 + 当前语言」重新算，不调用生产函数（否则断言成了自证）。
-func _mute_text(muted: bool) -> String:
-	if LocaleManager.get_locale() == "en":
-		return "Muted" if muted else "Mute"
-	return "已静音" if muted else "静音"
+# 剥掉**整行注释**，剩下的正文才拿去做 `contains()` 结构断言。
+#
+# 为什么必须剥：注释里逐字写着旧名字或旧写法时，
+#   · 否定式 `not src.contains("_mute_button")` 会**假红**（10.11 第 8 条自己踩到）；
+#   · 肯定式 `src.contains("if not in_match and not lobby_mode:")` 会**假绿**
+#     —— 代码删了、注释还在，断言照样过。
+# 本仓先例：`party_voice_ui_check.gd` 也是先把整行注释滤掉再验 PartyLobby 正文。
+func _strip_comments(src: String) -> String:
+	var out := PackedStringArray()
+	for line in src.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+		if (line as String).strip_edges().begins_with("#"):
+			continue
+		out.append(line)
+	return "\n".join(out)
+
+
+# 10.11 第 2 条：整棵子树里有没有文案等于 `text` 的按钮。
+# 与 `_buttons_with_text` 同一个口径，只是从任意节点往下钻（设置页的页脚藏在
+# scroll → center → layout 三层里，用名字找太脆）。同 match_exit_check 的同名函数。
+func _tree_has_button_text(root: Node, text: String) -> bool:
+	if root is Button and (root as Button).text == text:
+		return true
+	for child in root.get_children():
+		if _tree_has_button_text(child, text):
+			return true
+	return false

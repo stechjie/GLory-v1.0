@@ -1,5 +1,46 @@
 # Glory Beta 0.04
 
+## 2026-10-11（房间邀请链 / 对局结束 / 好友在线态）：4 条真机反馈
+
+来自 `依然存在问题.docx`（第 3 / 6 / 7 / 9 条）。**只有代码 + 门禁 + 后端改动，没有新增任何运行期美术/音频资源。** 详见 `docs/10.11依然存在问题记录.md`。
+
+- **房间邀请链（本轮主战场）**：发送冷却统一为 **5 秒**（`RoomInvite.RATE_LIMIT_SEC` / `chat.ROOM_INVITE_RATE_SEC` / `routes/party.py._invite_limiter` 三处同值，且**与房间号无关** —— 推翻 2026-09-28 的「换房 10 秒」）；
+  弹窗持续 30 秒、同房间**可再次弹**（`BUBBLE_CD_SEC`，推翻旧的「处理过就永不再弹」）；多个好友的邀请改成**新的覆盖旧的**（LIFO）；
+  好友已在同一房间时**既不发消息也不弹窗**；点聊天里的「加入」原来**全仓没有任何接收者**（点了毫无反应），现在信号带 `mode` 接到 `Main._join_party_by_id`，并在点击时**当场清红点**。
+- **自定义房里收不到邀请弹窗**：根因是 `Main._enter_match_flow()` **只置标记**，自定义房 `_show_team3v3_lobby()` 调了它、排位房 `_show_party_lobby()` **没有调**，而两个消息回调都以 `if _in_match_flow: return` 开头。
+  修法不是补一处赋值（那会把排位房也弄坏），而是把「在房间里」与「在对局流程里」**拆成两个语义**：新增 `_in_room_lobby`，判据收敛为 `_invite_popup_suppressed()`。
+- **离线自测里也能「退出对局」**：`NetworkService` 新增 `offline_selftest` 与 `is_offline_team_match()`（**不能**用「`team_active` 为假」反推 —— 排位大厅也满足它）；离线自测的设定页里点它＝**直接退出、直接结束对局**。
+- **附带修复**：`routes/chat.py` 的 `_STATUS_BY_CODE` 漏登记 `party_invite_duplicate`（表里只有旧名 `invite_duplicate`），该错误会退化成 400 而不是 409。线上其实无害（它在 `routes/party.py` 被 `except ChatRejected` 咽掉），但属邀请链口径不一致且对应一条一直红着的后端测试 ⇒ 补齐为 409 并加门禁断言 + 变异。后端全量 **73 → 72 failed**。
+- **第 3 / 9 / 7 条答复**：客户端代码在上一轮（10.11）就已实现，**症状的根因是服务端那一半还没部署** —— 见下面的 🔴。
+
+★ 已知红（**非本轮引入，都做了改动前基线对照**）：`prep_1008` 6 条（触摸探针坐标系）、`procedural_ui_ratchet` 3（基线过时）、`prep_tree_snapshot` 19、`voice` 8、`dynamic_call` 30、`asset_manifest` 38。
+
+🔴 **部署两步（缺一不可）**：① 在 Supabase SQL Editor 跑 `database/030_chat_party_invite.sql` 与 `database/032_presence_in_match.sql`（都幂等）；② **重启账号后端与战斗专用服务器**。
+只做 ② 不做 ① 的后果：邀请 / 心跳直接 **HTTP 500**，而 032 的心跳 500 表现是**所有人一起显示离线**。
+
+## 2026-10-11（bug 提交及修复）：9 条真机反馈
+
+来自 `10.11bug提交及修复.docx`。**只有代码 + 门禁 + 后端改动，没有新增运行期美术资源。** 详见 `docs/10.11bug提交及修复记录.md`。
+
+- **图鉴**：松鼠 / 老虎没图 —— `CodexService.PET_ART_NAME` 只有小菇 / 小喵 / 小兔三个键，拼出空路径。立绘**本来就在仓里**，改成取不到时**回退数据表的 `icon`**，零新增美术。
+- **大厅按钮**：自定义房 / 排位房的「静音 UI」换成「**设定 UI**」；`SettingsScreen` 新增 `lobby_mode` 房间档，**结构上**保证房间里出不来「退出对局」。
+- **排位房邀请好友**：好友列表按「**可邀请 → 对局中 → 离线**」三档排序，对局中那行按钮写「对局中」并**禁用**（`PartyLobby._friend_bucket()` 是唯一判据）。
+- **种族 / 皮肤**：选中的那颗补**金边框**；**取消选择不再弹羁绊窗**（羁绊窗只由「查看羁绊」按钮打开）。
+- **自定义房**：隐藏「全房间」UI（`members_button` 不进树），**长按扬声器照旧开语音面板**。
+- **同房间邀请**：不再弹气泡，**聊天里的邀请消息 / 红点 / 音效照旧**（`Main._show_invite_bubble()` 是唯一入口，三种推送来源都汇到这里）。
+- **对局内 30 秒无活人 ⇒ 自动结束**（**作废、不结算**，适用于所有联网对局）：新增 `NO_LIVE_HUMAN_END_SEC` 与 `_tick_void_watchdog()`。
+  ★ 两条**反直觉但故意**的判据：`_void_room_eligible()` **刻意不跳 `suspended`**（「全房零在线真人还留着 token 等人回来」正是要收掉的状态）；**必须有真人座位**才判（否则纯 AI 房 / 单人练习一开局就自杀）。
+- **「退出对局」＝该玩家掉线 > 30 秒**：**对局没结束前仍可重连、但不可进入新排位 / 自定义房**。`abandon_started_match()` 不再删重连凭证，改走 `_rpc_manual_exit_seat`
+  （**不是** `_rpc_abandon_seat` —— 后者会抹掉座位账号信息并把座位转 AI，跑路的人反而一分不扣）。
+- **升级石星爆**：新组件 `ui/components/StarBurst.gd`（**纯 `_draw()`**，刻意不用 `StyleBoxFlat` —— 本仓 `procedural_ui_ratchet` 是只降不涨的棘轮）。营地入口按「队伍里有升级石」亮。
+  ★ 顺带抓到并修掉一个真缺陷：**入口按钮上的星爆从来没画出来过** —— `make_framed_text_button()` 返回的是普通 `Button`（不是 `Container`），子 `Control` 的 `size` 停在 `(0,0)`，`_draw()` 直接 return 而 `visible` 一直是真。补 `set_anchors_and_offsets_preset(PRESET_FULL_RECT)` + 门禁加 `_assert_drawable()`。
+- **好友在线态**：账号服务器 presence 新增 `in_match` 字段（迁移 `032`），**推翻 2026-09-29 的口径**；`room_started` / `database/022` 旧名旧迁移**继续禁**。两端接力：客户端上报 + 后端带出 + 两个大厅列表消费。
+
+★ 已知红（**非本轮引入**）：`prep_1008` 6 条、`voice_redesign/lobby_reserve` 1、`ui_feedback/VIBRATE` 1、`prep_tree_snapshot` 19、`procedural_ui_ratchet` 3（基线过时）、`comms_layout` 的 `prep_wheel` 1。
+
+🔴 **部署两步（缺一不可）**：① 跑 `database/032_presence_in_match.sql`；② **重启账号后端与战斗专用服务器**。
+客户端默认连**远程已部署后端**（`scripts/account/AccountConfig.gd` 的 `DEFAULT_BACKEND_URL`），**本地 `backend/` 改了不进真机**。
+
 ## 2026-10-10（排位 / 结算 / 语音 / 战斗）：14 条真机反馈 + 2 条返工
 
 来自 `10.10bug提交及修复.docx`。**只有代码 + 门禁改动，没有新增运行期美术资源**（凤凰涅槃的两张贴图运行时生成）。详见 `docs/10.10bug提交及修复记录.md`。

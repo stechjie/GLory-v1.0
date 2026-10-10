@@ -77,6 +77,9 @@ class FriendSummary:
     avatar_frame: str
     online: bool
     room_id: int | None
+    # 10.11 bug 第 3/9 条：他是不是正在一局对局里。列表靠它显示「对局中」、
+    # 把邀请按钮变灰、并按「可邀请 → 对局中 → 离线」分档。判据见 _in_match_visible。
+    in_match: bool = False
 
 
 @dataclass(frozen=True)
@@ -151,6 +154,25 @@ def _online(last_seen: dt.datetime | None, visibility: str | None) -> bool:
     return dt.datetime.now(dt.timezone.utc) - last_seen < PRESENCE_TTL
 
 
+def _in_match_visible(online: bool, room_visibility: str | None, in_match: bool | None) -> bool:
+    """好友列表里要不要显示「对局中」（10.11 bug 第 3/9 条）。
+
+    纯判据，抽出来让用例直接钉（同 _online）。三条：
+
+      · **不在线不算** —— 掉线的人 in_match 会停在上一拍的值（他是在对局里掉线的），
+        不判 online 就会一直显示「对局中」，而他其实早走了；
+      · **对方关掉房间可见性就不算** —— in_match 和 room_id 泄漏的是同一类东西
+        （我在做什么），归 room_visibility 这个开关管，同 presence._notify_watchers；
+      · 从没有过心跳 / 旧客户端没有这一列时是 None/false -> 不算。
+
+    ⚠️ **刻意和「能不能被邀请」分开**：这里只回答「显不显示对局中」。
+    能不能邀请还要看房间模式与业务规则，不在这一层判。
+    """
+    if not online or not in_match:
+        return False
+    return (room_visibility or "friends") == "friends"
+
+
 async def _resolve_code(conn: asyncpg.Connection, code: str) -> uuid.UUID:
     """好友码 -> player_id。查无此人抛 FriendsRejected。
 
@@ -207,7 +229,7 @@ async def _friend_count(conn: asyncpg.Connection, player_id: uuid.UUID) -> int:
 # inner join 会把他们整个从好友列表里弄丢，而那是**沉默的**数据缺失。
 _LIST_FRIENDS = """
 select p.friend_code, p.player_name, p.avatar, p.avatar_frame,
-       pr.last_seen_at, pr.room_id, pr.presence_visibility, pr.room_visibility
+       pr.last_seen_at, pr.room_id, pr.presence_visibility, pr.room_visibility, pr.in_match
 from player_friendships f
 join players p
   on p.player_id = case when f.low_id = $1 then f.high_id else f.low_id end
@@ -248,6 +270,8 @@ async def list_friends(player_id: uuid.UUID) -> list[FriendSummary]:
         # 房间号有独立开关：「在不在线」和「在哪个房间」泄漏的东西不是一回事。
         # 不在线时一律不给房间号 —— 否则会泄漏「他刚才在哪」。
         room = r["room_id"] if (online and r["room_visibility"] == "friends") else None
+        # 对局中同 room_id 一个开关（见 _in_match_visible）。
+        in_match = _in_match_visible(online, r["room_visibility"], r["in_match"])
         out.append(
             FriendSummary(
                 friend_code=r["friend_code"],
@@ -256,6 +280,7 @@ async def list_friends(player_id: uuid.UUID) -> list[FriendSummary]:
                 avatar_frame=r["avatar_frame"],
                 online=online,
                 room_id=int(room) if room is not None else None,
+                in_match=in_match,
             )
         )
     return out

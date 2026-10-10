@@ -46,9 +46,9 @@ const Tokens := preload("res://ui/theme/GloryTokens.gd")
 # 9.17 第二批：BGM 走常驻 MusicService，音效走 SfxService。
 const MusicService := preload("res://ui/services/MusicService.gd")
 const SfxService := preload("res://ui/services/SfxService.gd")
-# 10.06 反馈第 8 条：房间里的「静音 / 已静音」按键要读「背景音乐」偏好，
-# 与设置页那套（PresentationSettings.music_allowed）同源。
-const Presentation := preload("res://effects/runtime/presentation/PresentationSettings.gd")
+# 右上角「设定」打开的就是主界面那一页（10.11 第 2 条：原来是静音键），见 _open_settings。
+const SettingsScreenScript := preload("res://scenes/menu/SettingsScreen.gd")
+const SETTINGS_SCENE := preload("res://scenes/menu/SettingsScreen.tscn")
 # 房间邀请（bug提交和修复.docx 第 2 条）：文案 / 限流 / 失效判据都在这一份纯逻辑里。
 const RoomInvite := preload("res://scripts/multiplayer/RoomInvite.gd")
 # 「邀请已过时」「已经邀请过了」走全局 toast —— 与教程的「上阵棋子数目少于 N」同一个出口，
@@ -61,11 +61,10 @@ var _friends_loading := false
 # 邀请限流状态（要求 4）。只活在本场房间的内存里（界面每次进房重建，初始值自然从零开始）。
 # 服务端还会再判一次（权威），这里只是本地先拦一道：反馈即时、省一次往返。
 #
-# 🔴 10 秒冷却只在**换房间**时计时（2026-09-28 反馈第 5 条）：所以要同时记
-# 「上次成功发邀请是哪个房间」与「什么时候」。只记时间的话，同一个房间邀第二个好友
-# 会被误拦成「10 秒后才能再次邀请」—— 那正是玩家报的 bug。
+# 🔴 10.11 第 6 条 c：「该类消息，同一房间只能发送一次，**发送 CD 5 秒**」——
+# 冷却**不再区分换不换房**（旧口径是「换房间才计时 10 秒」，2026-09-28 反馈第 5 条），
+# 所以只需要一个时刻，不需要再记「上次是哪个房间」。
 var _invite_last_sec := 0
-var _invite_last_room_id := 0
 # (房间号:好友码) -> true。同一房间对同一位好友只发一次邀请消息。
 var _invited_pairs: Dictionary = {}
 
@@ -93,9 +92,47 @@ func _render_online_friends(friends: Array) -> void:
 		_friends_box.remove_child(child)
 		child.queue_free()
 	for entry in friends:
-		if not entry is Dictionary or not bool(entry.get("online", false)):
+		if not _can_invite_online_friend(entry):
 			continue
 		_friends_box.add_child(_online_friend_row(entry as Dictionary))
+
+
+# 10.11 第 9 条的唯一判据：**只收「在线且不在对局中」的好友**。
+# 不显示的三类：① 不在线；② 在线但在对局里（in_match）；③ 离开了、但对局还没结束
+# —— ③ 在后端同样被标成 in_match（客户端 NetworkService.is_in_match 在还留着
+# 「这一局已开打」的重连凭证时也算在对局中），所以这里一条判据就够。
+#
+# ★ 10.11 第 6 条 i 追加第四类：**已经在本房间里**的好友。对他在点邀请没有意义
+#   （邀请消息指向的就是他已经在的那个房），用户口径是「点击邀请既不发消息也不弹窗」。
+#   后端帮不上忙 —— 自定义房间的成员在战斗服务器上，账号服务器不知道，只能客户端判。
+#
+# 抽成独立函数（无其他依赖）是为了让门禁能**直接调它**验合同，
+# 而不是去 grep _render_online_friends 里那一行 if。
+func _can_invite_online_friend(entry: Variant) -> bool:
+	if not entry is Dictionary:
+		return false
+	var friend: Dictionary = entry
+	if not bool(friend.get("online", false)):
+		return false
+	if bool(friend.get("in_match", false)):
+		return false
+	# 本机不在任何房间（room_id <= 0）时这一条自动放过 —— 「同房间」无从谈起。
+	var mine := int(NetworkService.team_room_id)
+	if mine > 0 and _friend_room_id(friend) == mine:
+		return false
+	return true
+
+
+# 好友此刻所在的房间号；字段缺失 / 不是数字（后端为「不可见」给的是 null）时返回 0。
+#
+# 单独抽出来是因为**判空必须小心**：`Dictionary.get(key, default)` 只在**键不存在**时
+# 才给 default，键存在但值是 `null`（后端 room_id 为 null 就是这个形状）时它照样返回
+# null，`int(null)` 会直接抛错。所以要判类型，不能拿 default 兜。
+func _friend_room_id(entry: Dictionary) -> int:
+	var raw: Variant = entry.get("room_id")
+	if raw is int or raw is float:
+		return int(raw)
+	return 0
 
 
 # 一行在线好友（要求 2）：显示在线好友的昵称（10.06 起不再显示 #好友码），**点一下即邀请**。
@@ -128,21 +165,31 @@ func _online_friend_row(entry: Dictionary) -> Label:
 	# 可点：只有 STOP 才收得到 gui_input（IGNORE/PASS 都会漏给下面的滚动容器）。
 	label.mouse_filter = Control.MOUSE_FILTER_STOP
 	label.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	# 好友此刻的房间号要**在这一帧取好**再进闭包：闭包只捕获值，
+	# 等真点到时 entry 可能已经被下一轮列表刷新换掉了（10.11 第 6 条 i 要用它判同房）。
+	var friend_room := _friend_room_id(entry)
 	label.gui_input.connect(func(event: InputEvent) -> void:
 		var mb := event as InputEventMouseButton
 		if mb != null and mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
-			_on_invite_friend(code, label))
+			_on_invite_friend(code, label, friend_room))
 	return label
 
 
 # 点好友名 → 发一条房间邀请（要求 2/4）。这一下**只发消息**，不改自己的房间状态；
 # 对方收不收得到、点不点「立即参与」都是对方的事。
-func _on_invite_friend(code: String, row: Control) -> void:
+#
+# `friend_room` = 这一行渲染时好友所在的房间号（0 = 不知道 / 不在房间）。用它判第 6 条 i。
+func _on_invite_friend(code: String, row: Control, friend_room: int = 0) -> void:
 	if not _online():
 		GloryToastScript.show_text(_room_text("联机对局中才能邀请", "Invite is available in online rooms"))
 		return
 	var room_id := NetworkService.team_room_id
 	if room_id <= 0:
+		return
+	# ★ 10.11 第 6 条 i：好友**已经在本房间**时，这一下既不发邀请消息、也不弹气泡。
+	#   列表那一步（_can_invite_online_friend）已经拦掉了他，这里是第二道闸 ——
+	#   行是上一帧建的、好友这一帧刚进房时列表还没刷新，点下去仍会走到这里。
+	if friend_room > 0 and friend_room == room_id:
 		return
 	var now := int(Time.get_unix_time_from_system())
 	var key := "%d:%s" % [room_id, code]
@@ -151,15 +198,14 @@ func _on_invite_friend(code: String, row: Control) -> void:
 	# 看起来跟没点到一模一样（这就是实测「点击没有亮一下」的原因）。
 	# 而且这一下不能等网络：弱网下那要好几秒，玩家会以为没点到而连点。
 	_flash_row(row)
-	var blocked := RoomInvite.send_blocked_reason(
-		now, room_id, _invite_last_room_id, _invite_last_sec, _invited_pairs.has(key))
+	var blocked := RoomInvite.send_blocked_reason(now, _invite_last_sec, _invited_pairs.has(key))
 	if blocked == "duplicate":
 		# 同一房间已经邀请过这位好友：**静默返回**。
 		# 不再弹「已经邀请过了」—— 亮一下已经说明「点到了」，再弹一句只会打扰；
 		# 而对方那边多出来的重复，由服务端去重 + 显示层收敛一起兜掉。
 		return
 	if blocked == "rate_limited":
-		# 换房间的 10 秒间隔：这条要说，否则玩家不知道为什么要等。
+		# 5 秒发送冷却（第 6 条 c）：这条要说，否则玩家不知道为什么要等。
 		GloryToastScript.show_text(RoomInvite.send_blocked_text("rate_limited"))
 		return
 	var result: Dictionary = await AccountManager.send_chat_message(
@@ -172,7 +218,6 @@ func _on_invite_friend(code: String, row: Control) -> void:
 		# 成功才记账：失败（网络）时不留痕，玩家可以立刻重试。
 		_invited_pairs[key] = true
 		_invite_last_sec = now
-		_invite_last_room_id = room_id
 	elif status == 409:
 		# 服务端去重兜底（invite_duplicate → 409）：与本地「已经邀请过」同义，也静默。
 		pass
@@ -618,8 +663,9 @@ func _build() -> void:
 	# 旧值 (626, 142, 420x28) 的框底 170 已经落到木牌外面了。
 	_status_lbl = _add_label("", Vector2(599, 118), Vector2(475, 24), 15,
 		Tokens.TEXT_PRIMARY, "", true)
-	# 10.06 反馈第 8 条：右上角「静音 / 已静音」，控制音乐播放。
-	_build_mute_button()
+	# 10.11 第 2 条：右上角那颗键从「静音 / 已静音」改成「设定」，打开设置页
+	# （内容 = 对局里的设定少个「退出对局」）。音乐开关在设置页里，静音没丢。
+	_build_settings_button()
 	_build_debug_layer()
 
 func _build_slot(index: int) -> void:
@@ -781,10 +827,6 @@ func _refresh() -> void:
 	var ready_arr := _ready_arr()
 	var my_slot := _my_slot()
 	var is_host_seat := _is_host_seat()
-	# 10.06 第 8 条：静音键的文案跟「总线静音 + 音乐偏好」走，每次刷新重算，
-	# 免得在设置页关过音乐、回到房间时键上还写着「静音」。
-	if _mute_button != null and is_instance_valid(_mute_button):
-		_mute_button.text = _mute_label_text()
 	for i in 6:
 		var state := str(states[i])
 		var name_lbl: Label = _slot_name_lbls[i]
@@ -1357,6 +1399,8 @@ const VOICE_AUDIENCE_POS := Vector2(266, 636)
 const VOICE_AUDIENCE_SIZE := VOICE_BTN_SIZE
 const VOICE_MEMBERS_POS := Vector2(352, 636)
 const VOICE_MEMBERS_SIZE := VOICE_BTN_SIZE
+# 10.11 第 5 条：VOICE_MEMBERS_POS 目前**没有调用点** —— 自定义房间不再摆放「全房间」那颗键
+# （见 _build_voice_button）。尺寸仍传给 VoiceControls.build()，留着是为了收回去时只改一行。
 const VOICE_BTN_FONT := 15
 var _voice_controls: VoiceControls = null
 
@@ -1366,7 +1410,17 @@ func _build_voice_button() -> void:
 		{"panel_context": "lobby"})
 	_place_voice_button(_voice_controls.voice_button, VOICE_BTN_POS, VOICE_BTN_SIZE)
 	_place_voice_button(_voice_controls.audience_button, VOICE_AUDIENCE_POS, VOICE_AUDIENCE_SIZE)
-	_place_voice_button(_voice_controls.members_button, VOICE_MEMBERS_POS, VOICE_MEMBERS_SIZE)
+	# 10.11 第 5 条：自定义房间**隐藏**「全房间」那颗键（用户原话「隐藏自定义房间『全房间』UI」）。
+	#
+	# 那颗键就是 VoiceControls.members_button —— 在大厅语境里它是「语音范围」的显示位，
+	# `VoiceControls.refresh()` 会因为 `VoiceService.lobby_open_to_room()` 把它写成
+	# 「全房间 / Room」（绿字，见 VoiceControls.gd 那两行）。但自定义房间里**没有可选范围**：
+	# 开局前本来就全房间互通，按下去只会弹一句「开局前房间所有人都能听到」的说明
+	# （VoiceControls._on_audience_pressed 的 lobby 分支）—— 一个点了没有动作的键。
+	#
+	# 做法＝**不调 `_place_voice_button`**：它压根不进树，也就不会被 _track 定位、不占位。
+	# 语音面板没有丢：长按扬声器键（VoiceControls 里那个 700ms 长按）照样打开。
+	_voice_controls.members_button.visible = false
 	# 座位头像上的「正在说话」小麦克风（10-08）。_process 在资源载入完会关掉，所以单独用计时器。
 	var speaking_timer := Timer.new()
 	speaking_timer.wait_time = SPEAKING_REFRESH_SEC
@@ -1388,53 +1442,47 @@ func _place_voice_button(button: Button, pos: Vector2, size: Vector2) -> void:
 	_track(button, pos, size, VOICE_BTN_FONT, "left")
 
 
-# ── 房间里的「静音 / 已静音」按键（10.06 反馈第 8 条）────────────────────────
-# 对局右上角那颗键原来只在备战界面（PrepUI 顶排第三键，10-06 被改成「设定」）。
-# 本反馈要求在**房间界面**也能控制音乐播放，于是把它搬到房间里、摆在同样靠右上的位置：
-# 朋友列表木框（右锚、y 180 起）正上方，edge="right" 跟随安全区右缘。
-const MUTE_BTN_POS := Vector2(1500, 26)
-const MUTE_BTN_SIZE := Vector2(140, 62)
-const MUTE_BTN_FONT := 18
-var _mute_button: Button = null
+# ── 房间里的「设定」按键（10.11 第 2 条）────────────────────────────────────
+# 这颗键**原来**是「静音 / 已静音」（10.06 反馈第 8 条），10.11 改成「设定」。
+#
+# 用户口径：「自定义房间和排位房间的静音UI改为设定UI，内容上要比对局里的设定少个
+# 『退出对局』按钮」。所以位置 / 尺寸 / 字体全部照旧（右上角、140×62），只换文案与动作；
+# 打开的是主界面那一页（同 PrepUI._open_settings），用 `lobby_mode` 关掉
+# 「重新体验教学」与「退出对局」两行（房间还没开打，退出对局无从谈起）。
+#
+# 静音没丢：设置页里的「背景音乐」是同一个开关，而且比原来那颗键多控了音效与画质。
+const MENU_BTN_POS := Vector2(1500, 26)
+const MENU_BTN_SIZE := Vector2(140, 62)
+const MENU_BTN_FONT := 18
+const LOBBY_SETTINGS_MODAL_ID := "lobby_settings"
+var _settings_button: Button = null
 
-func _build_mute_button() -> void:
-	var mute_btn := PrepWidgets.make_menu_button(_mute_label_text(), MUTE_BTN_SIZE, MUTE_BTN_FONT, _toggle_mute)
-	_mute_button = mute_btn
-	mute_btn.name = "MuteButton"
+func _build_settings_button() -> void:
+	var settings_btn := PrepWidgets.make_menu_button(_room_text("设定", "Settings"),
+		MENU_BTN_SIZE, MENU_BTN_FONT, _open_settings)
+	_settings_button = settings_btn
+	settings_btn.name = "SettingsButton"
 	# 同语音键：清掉 make_menu_button 设的最小尺寸，否则窗口缩小时被顶回原尺寸。
-	mute_btn.custom_minimum_size = Vector2.ZERO
-	add_child(mute_btn)
-	_track(mute_btn, MUTE_BTN_POS, MUTE_BTN_SIZE, MUTE_BTN_FONT, "right")
+	settings_btn.custom_minimum_size = Vector2.ZERO
+	add_child(settings_btn)
+	_track(settings_btn, MENU_BTN_POS, MENU_BTN_SIZE, MENU_BTN_FONT, "right")
 
-# 两种情况都算「已静音」（与备战期那颗键同源）：
-#   ① Master 总线被静音 —— 就是本键自己按下去的那一步；
-#   ② 设置页把「背景音乐」关了 —— 进房间时也要显示已静音，两处不各说各话。
-# 只看「背景音乐」、**不看**「界面音效」：后者只掐 SFX，玩家还听得见 BGM。
-func _is_audio_muted() -> bool:
-	var master := AudioServer.get_bus_index("Master")
-	if master >= 0 and AudioServer.is_bus_mute(master):
-		return true
-	return not Presentation.music_allowed()
 
-func _toggle_mute() -> void:
-	# 全局静音：静音 Master 总线（BGM + 音效都停），引擎级状态，切场景仍生效。
-	# 目标状态从 _is_audio_muted() 反推，**不是**直接翻转总线：设置页关过「背景音乐」
-	# 时键上写着「已静音」，这一下必须把声音打开（清总线静音 + 打开音乐开关），
-	# 否则按下去只是把一个本来就没静音的总线翻成静音 —— 按了像没反应。
-	var master := AudioServer.get_bus_index("Master")
-	var want_mute := not _is_audio_muted()
-	if master >= 0:
-		AudioServer.set_bus_mute(master, want_mute)
-	if not want_mute:
-		PlayerProfile.set_presentation_toggle("music", true)
-	if _mute_button != null and is_instance_valid(_mute_button):
-		_mute_button.text = _mute_label_text()
-
-func _mute_label_text() -> String:
-	var muted := _is_audio_muted()
-	if LocaleManager.get_locale() == "en":
-		return "Muted" if muted else "Mute"
-	return "已静音" if muted else "静音"
+# 房间里的设置页。`lobby_mode` 让页脚只剩「返回」—— 既没有「重新体验教学」，
+# 也没有「退出对局」（10.11 第 2 条）。
+func _open_settings() -> void:
+	if ModalStack.has(LOBBY_SETTINGS_MODAL_ID):
+		return
+	var settings := SETTINGS_SCENE.instantiate() as SettingsScreenScript
+	settings.lobby_mode = true
+	settings.can_leave_match = false
+	settings.back_requested.connect(func() -> void: ModalStack.pop(LOBBY_SETTINGS_MODAL_ID))
+	ModalStack.push(settings, {
+		"id": LOBBY_SETTINGS_MODAL_ID,
+		"owner": self,
+		"priority": 50,
+		"dismiss_on_backdrop": false,
+	})
 
 func _build_phrase_panel() -> void:
 	# 面板与按钮**都在 _build 期建好、默认隐藏**，不是点开时才创建。

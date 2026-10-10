@@ -63,6 +63,19 @@ const RoomInviteScript := preload("res://scripts/multiplayer/RoomInvite.gd")
 # 不论在哪个界面、打没打着对局，一律先退出对局（战斗服务器把座位交给 AI，其他五个人照常打完），
 # 再回启动页显示封号原因。见 _watch_account_link。
 var _in_match_flow := false
+# ★★ 10.11 第 6 条 j：**人在房间大厅**（自定义房间 / 排位房间 / 休闲房间）。
+#
+# 用户真机反馈：「好友在另一房间，邀请时会有邀请消息且弹窗会展示在房间里
+# （**排位房间已实现，但自定义房间里未能实现在房间内弹出弹窗**）」。
+#
+# 根因：`_in_match_flow` 挡的是「真正在对局里」（备战/战斗/结算 —— 那时玩家根本看不到
+# 主界面，弹卡片只会挡操作），但它也被 3v3 大厅用着（`_show_team3v3_lobby` 会调
+# `_enter_match_flow`），而排位房 `_show_party_lobby` 没调 —— 于是同一条邀请
+# 在排位房里弹、在自定义房里被 `_on_dm_received` / `_on_party_realtime` 静默吞掉。
+#
+# 所以另开一个「在房间大厅」的标记：它**只放宽邀请气泡这一类提示**，
+# 不动 `_in_match_flow` 现有的两个用途（掉线回启动页保护 / 对局中静音新消息）。
+var _in_room_lobby := false
 # 10.07 第 6 / 10 条：邀请气泡层。常驻一个实例，懒建 —— 没人邀请就不占节点。
 var _invite_bubble: CanvasLayer
 var _account_offline_sec := 0.0
@@ -387,6 +400,18 @@ func _reconnect_match_started() -> bool:
 # 先弹确认框说判负、会不会扣分（MatchExitPenalty），确认了才退；退本身只在本机做，见
 # NetworkService.abandon_started_match 的注释。
 func request_exit_match(cancel_text: String = "") -> void:
+	# ★★ 10.11 第 7 条（用户口径）：「离线自测里进行测试对局，在设定里也应加入一个
+	# 『退出对局』，该退出对局是**直接退出，直接结束对局**」。
+	#
+	# 所以本地自测走到这里就**不进确认框**，也不做任何网络收尾（本来就没有会话）：
+	# 判负 / 扣分那张框是说给联网对局听的（有对手、有分数），对自测没有意义。
+	#
+	# 判据是 NetworkService.is_offline_team_match()（= offline_selftest 且非 team_active），
+	# **不是**「team_active 为假」—— 联网对局掉线时 team_active 也为假，
+	# 而那条路径必须照旧弹确认框（见 NetworkService.offline_selftest 的注释）。
+	if NetworkService.is_offline_team_match():
+		_exit_offline_team_match()
+		return
 	var en := LocaleManager.get_locale().begins_with("en")
 	var mode := str(SaveManager.load_reconnect().get("mode", NetworkService.match_mode))
 	DialogService.confirm({
@@ -409,6 +434,20 @@ func _on_exit_match_result(result: String, _request_id: String) -> void:
 	GameState.team_mode = false
 	_hide_reconnect_overlay()
 	# 同「取消并返回主菜单」那条：门禁在 debug 构建里把回主菜单这一步换成计数。
+	if OS.is_debug_build() and _reconnect_cancel_navigation_check_hook.is_valid():
+		reconnect_cancel_navigation_check_requested.emit()
+		return
+	_show_menu()
+
+
+# 本地自测的「退出对局」（10.11 第 7 条）：直接退出、直接结束对局。
+#
+# 与 _on_exit_match_result 的区别是**不做任何网络收尾**：没有战斗服务器可通知、
+# 没有座位要交给 AI、没有别的玩家会受影响。只清本机状态再回主菜单。
+func _exit_offline_team_match() -> void:
+	NetworkService.offline_selftest = false
+	GameState.team_mode = false
+	_hide_reconnect_overlay()
 	if OS.is_debug_build() and _reconnect_cancel_navigation_check_hook.is_valid():
 		reconnect_cancel_navigation_check_requested.emit()
 		return
@@ -791,6 +830,9 @@ func _clear() -> void:
 	# 同理：下一页是不是对局，由它自己说（_enter_match_flow）。默认不是 ——
 	# 这样新加的菜单界面不用记得做任何事，就自动受「掉线回启动页」保护。
 	_in_match_flow = false
+	# 同理：下一页是不是房间大厅，也由它自己说（第 6 条 j）。默认不是 ——
+	# 漏了这一步的后果是「房间里再也弹不出邀请气泡」，而不报错。
+	_in_room_lobby = false
 	# 回到非对局界面 → 新消息提示音恢复（9.28 反馈第 4 条）。见 _set_chat_sound_suppressed。
 	ChatService.in_match = false
 	# Menu-owned async work must stop before its controls leave the tree. This also
@@ -1264,6 +1306,10 @@ func _on_team_offline_requested() -> void:
 	# 纯离线自测：断开任何联机会话，team_active 保持 false，进大厅走本地槽位。
 	# 开始后 BattleScreen 的 `not team_active` 分支会本地算回放，无需服务器。
 	NetworkService.disconnect_session()
+	# ★★ 10.11 第 7 条：记下「这是本地自测」——只有它允许设定里的「退出对局」
+	# **直接退出、直接结束对局**（联网对局要先弹判负/扣分确认框）。
+	# 必须放在 disconnect_session() **之后**：那一次收尾会走 reset()，先置会被它清掉。
+	NetworkService.offline_selftest = true
 	_show_team3v3_lobby()
 
 func _show_settings() -> void:
@@ -1414,6 +1460,20 @@ func _join_room_by_id(room_id: int) -> void:
 	_start_join_room_action(room_id)
 
 
+# 聊天卡片里点组队邀请的「加入」（10.11 第 6 条 d）。
+#
+# 与 _join_room_by_id 不同：这里**不先回主菜单**——队伍大厅（PartyLobby）本身就是
+# 主菜单体系里的一页，而 `invite_id` 传给它之后，进房时会带上「加入这支队伍」的意图
+# （与气泡上点「加入」走的是同一条路，见 _show_invite_bubble 的 on_accept）。
+#
+# `mode` 从邀请 payload 里来；取不到（老消息 / payload 不全）时兜底 casual ——
+# 至少把玩家带进大厅，而不是点了没反应。
+func _join_party_by_id(party_id: String, mode: String) -> void:
+	if party_id.is_empty():
+		return
+	_show_party_lobby(mode if not mode.is_empty() else "casual", party_id)
+
+
 # 私聊界面（docs/聊天系统设计.md 批次 C）。两个入口：主菜单「聊天」、好友列表每一行的「私聊」。
 # 从好友列表进来的，返回回好友列表 —— 玩家是从那里进来的（同 _show_public_profile）。
 func _show_chat_screen(focus_code: String = "", back_to_friends: bool = false, tab: String = "") -> void:
@@ -1428,6 +1488,10 @@ func _show_chat_screen(focus_code: String = "", back_to_friends: bool = false, t
 	# 房间邀请框里的「立即参与」。复用好友列表那条已经验过的加入路径：
 	# 先回主菜单再连（那里才有「连接中」与失败提示），理由见 _join_room_by_id。
 	screen.join_room_requested.connect(_join_room_by_id)
+	# ★★ 10.11 第 6 条 d：组队邀请的「加入」。这条线原来是**断的** ——
+	# ChatScreen 声明并 emit 了 join_party_requested，全仓却没有任何 connect，
+	# 于是点「加入」什么都不会发生（用户报的「好像未实现，点击无反应」）。
+	screen.join_party_requested.connect(_join_party_by_id)
 	# 世界频道里点别人的名字 →「查看资料」：看完返回回世界频道（不是好友列表 —— 玩家是从那里来的）。
 	# 举报场合记 world：服务器会把他最近的世界频道发言复制进证据。
 	screen.profile_requested.connect(func(code: String) -> void:
@@ -1463,10 +1527,24 @@ func _install_realtime() -> void:
 		ChatService.dm_received.connect(_on_dm_received)
 
 
+# 邀请气泡要不要静默（第 6 条 j）。**只对真正在对局里的阶段静默** ——
+# 那时玩家在看备战/战斗/结算，弹一张卡片只会挡操作；而「房间大厅」是玩家能操作的
+# 界面，邀请必须照常弹（用户真机反馈：自定义房里弹不出来）。
+#
+# 🔴 判据**只有这一处**：`_on_dm_received`（私聊链）与 `_on_party_realtime`（实时推送）
+# 两个入口都走它。写成两处 `if _in_match_flow and not _in_room_lobby:` 的话，
+# 以后改一处必漏一处，而症状是「某个来源的邀请悄悄不弹了」。
+#
+# `_show_invite_bubble` 里的**同房间抑制**（targets_room）是另一条判据，各管各的：
+# 那一条说的是「这个房间我自己就在里面」，这一条说的是「我现在在什么界面」。
+func _invite_popup_suppressed() -> bool:
+	return _in_match_flow and not _in_room_lobby
+
+
 # 收到一条私聊。只有 room_invite 这一种要弹气泡 —— 其余（普通文本、世界消息）
 # 继续走聊天界面那条老路，这里不插手。
 func _on_dm_received(code: String, message: Dictionary) -> void:
-	if _in_match_flow:
+	if _invite_popup_suppressed():
 		return
 	if not RoomInviteScript.is_invite(message):
 		return
@@ -1498,7 +1576,7 @@ func _friend_name_of(code: String) -> String:
 
 
 func _on_party_realtime(payload: Dictionary) -> void:
-	if _in_match_flow:
+	if _invite_popup_suppressed():
 		return
 	var kind := str(payload.get("t", ""))
 	if kind == "party_invite":
@@ -1519,6 +1597,24 @@ func _on_party_realtime(payload: Dictionary) -> void:
 # 三条硬性要求都落在 PartyInviteBubble 里（覆盖 / 30 秒独立计时 / 处理完最新的
 # 显示上一个），这里只负责把 payload 翻译成它要的形状、并接上「加入」的动作。
 func _show_invite_bubble(payload: Dictionary, kind: String) -> void:
+	# ★★ 10.11 第 6 条：**同房间的邀请不再弹气泡**。
+	#
+	# 用户口径（两个房间同一套）：
+	#   · 排位房间：「不再收到同房间的邀请提示（但保留朋友里的邀请消息）」
+	#   · 自定义房间：「改为和排位一样，可以收到除本房间外的邀请提示，同房间的邀请提示
+	#     不再提示（但保留朋友里的邀请消息）」
+	#
+	# 只掐**气泡**。邀请消息照旧进「朋友」：组队邀请是服务端落的一条 kind=party_invite
+	# 私聊，自定义房间邀请是 kind=room_invite 私聊 —— 两条都由 ChatService 收下、
+	# 亮红点、放提示音（`_on_dm_push` 里那条 CUE_CHAT_ALERT，10 秒节流），
+	# 和气泡是两条独立通路。所以这里 return 之后「朋友里的邀请消息」一个字都没少。
+	#
+	# 放这个**统一入口**而不是两个调用点：三种来源（排位组队推送 party_invite、
+	# 自定义房间推送 room_invite、私聊链的 room_invite）最后都汇到这里 ——
+	# 漏一处就会出现「某个入口还在弹」，而且完全静默。
+	var invite_id := str(payload.get("party_id", payload.get("room_id", "")))
+	if RoomInviteScript.targets_room(invite_id, NetworkService.team_room_id):
+		return
 	var bubble := _invite_bubble_instance()
 	if bubble == null:
 		return
@@ -1530,7 +1626,6 @@ func _show_invite_bubble(payload: Dictionary, kind: String) -> void:
 	# 走自己的兜底位置。**这里不判空跳过** —— 玩家在别的页面（`_menu` 已 free）
 	# 收到邀请时，气泡照样得出现，只是锚点用兜底值。
 	bubble.set_anchor(_chat_invite_anchor())
-	var invite_id := str(payload.get("party_id", payload.get("room_id", "")))
 	# ★★ 10.07 第 6/10 条返工（用户真机反馈）：
 	#   「点击稍后后，红点仍然存在，要改成点击稍后表示已读该信息，红点消失」
 	#   气泡一被处理（加入 / 稍后 / 超时）就清掉发件人的**本地**红点。
@@ -1746,16 +1841,26 @@ func _close_announcement_popup() -> void:
 # 是两条链路，不该互相认识（docs/账号系统RFC.md 第三节），所以房间号是通过一个
 # Callable 注入进去的，而这一处是唯一同时知道两边的地方。
 #
-# 上报的只有「我在线」和「我在哪个房间」。房间号是**客户端自报**的 ——
+# 上报的只有「我在线」「我在哪个房间」「我在不在对局中」。房间号是**客户端自报**的 ——
 # 谎报只能让好友进错房间，而房间号本来就是任何人知道号就能进。
 # ⚠️ 这条边界只对「说谎没收益」的数据成立，别拿它承载战绩/奖励。
-# 「房间开没开局」也**不报**（2026-09-29 用户定）：那是战斗服务器内部的状态，
-# 加入时由它判，不抄一份进账号服务器的数据库。
+#
+# ★ 2026-10-11 第 3/9 条**推翻了 2026-09-29 的决定**：那时「房间开没开局」不报，
+#   理由是「加入时由战斗服务器判，不抄一份进账号服务器的数据库」。
+#   那条拦截**至今仍在战斗服务器上**（ACTIVE_MATCH_HINT，没搬走）；这次另加的是
+#   `in_match` 这个**纯展示用**的自报字段：好友列表要显示「对局中」、邀请按钮变灰、
+#   按「可邀请 → 对局中 → 离线」分档，而这个信息只有玩家自己的客户端知道
+#   （房间没开打时好友也在同一个 room_id 上，光看房间号分不出来）。
+#   落库见 database/032_presence_in_match.sql，隐私口径同 room_id（对方关掉房间
+#   可见性就一并隐藏）。
 var _presence_last_room := -1
+var _presence_last_in_match := false
 
 
 func _install_presence_reporting() -> void:
-	AccountManager.configure_presence(func() -> int: return NetworkService.team_room_id)
+	# room_provider 给房间号；match_provider 给「在不在对局中」（10.11 第 3/9 条）。
+	AccountManager.configure_presence(
+		func() -> int: return NetworkService.team_room_id, NetworkService.is_in_match)
 	AccountManager.start_presence()
 	# 登录成功后补一次：_ready 跑在登录之前，第一次心跳会因为还没登录被跳过，
 	# 不补的话好友要等满一个心跳周期才看见我上线。
@@ -1769,16 +1874,24 @@ func _install_presence_reporting() -> void:
 
 
 func _on_presence_login(_player_id: String, _player_name: String) -> void:
+	# 登录这一拍一定会发，先把去重用的基准同步上来，免得紧接着的一次
+	# team_lobby_changed 立刻又发一遍（第一次心跳本来就够用）。
+	_presence_last_room = NetworkService.team_room_id
+	_presence_last_in_match = NetworkService.is_in_match()
 	AccountManager.report_presence_now()
 
 
-# 只在**房间号真的变了**时上报。这两个信号在一局里会发很多次，
+# 只在**房间号或对局状态真的变了**时上报。这两个信号在一局里会发很多次，
 # 无条件上报等于把「慢心跳」变成高频轮询。
 func _on_presence_room_changed() -> void:
 	var room := NetworkService.team_room_id
-	if room == _presence_last_room:
+	# 10.11 第 3/9 条：开打 / 打完（in_match 翻转）也要立刻补一次，
+	# 否则好友列表上的「对局中」最长要等一个慢心跳周期（10 秒）才更新。
+	var in_match := NetworkService.is_in_match()
+	if room == _presence_last_room and in_match == _presence_last_in_match:
 		return
 	_presence_last_room = room
+	_presence_last_in_match = in_match
 	AccountManager.report_presence_now()
 
 
@@ -1855,6 +1968,10 @@ func _show_ranked_queue() -> void:
 func _show_party_lobby(mode: String, invite_id: String = "") -> void:
 	VoiceService.set_mode(VoiceService.Mode.OFF)
 	_clear()
+	# ★ 10.11 第 6 条 j：房间大厅里要能弹邀请气泡（`_clear()` 刚把它清成 false）。
+	# 排位/休闲房本来就能弹（它不进 _match_flow），这一行是为了与自定义房同口径 ——
+	# 判据只有一处（_invite_popup_suppressed），别让两个房间各自记一套。
+	_in_room_lobby = true
 	var lobby := _instantiate_screen("res://scenes/menu/PartyLobby.tscn")
 	if lobby == null:
 		_show_menu()
@@ -2054,6 +2171,11 @@ func _disconnect_matched_handlers() -> void:
 func _show_team3v3_lobby() -> void:
 	_clear()
 	_enter_match_flow()
+	# ★★ 10.11 第 6 条 j：**自定义房间里也要能弹邀请气泡**。
+	# 上面 _enter_match_flow() 会让 _invite_popup_suppressed() 判真（那是给备战/战斗/结算
+	# 用的），这里补上「人在房间大厅」这一半把它打开 —— 用户真机反馈的
+	# 「排位房间已实现，但自定义房间里未能实现在房间内弹出弹窗」就是缺了这一行。
+	_in_room_lobby = true
 	var lobby := _instantiate_screen("res://scenes/menu/Team3v3Lobby.tscn")
 	lobby.start_requested.connect(_on_team3v3_start)
 	lobby.back_requested.connect(_on_lobby_back)
@@ -2099,6 +2221,8 @@ func _on_lobby_back() -> void:
 		DialogService.info({"owner": self, "body": "Please cancel ready first" if LocaleManager.get_locale() == "en" else "请先取消准备"})
 		return
 	NetworkService.disconnect_session()
+	# 10.11 第 7 条：走出房间就不再是「本地自测」了，别把这个身份带去主菜单。
+	NetworkService.offline_selftest = false
 	_show_menu()
 
 func _lobby_exit_requires_cancel() -> bool:

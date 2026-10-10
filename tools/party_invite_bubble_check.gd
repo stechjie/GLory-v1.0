@@ -4,18 +4,20 @@ extends Node
 #
 # 判据分两层：
 #   1. 行为：`PartyInviteBubble` 的排队语义 —— 需求那几条写得很死，逐条钉：
-#        · 多个邀请**覆盖**：同时来两条，只显示一张卡（MAX_VISIBLE=1）；
-#        · 「处理完最新的后显示上一个」：把当前这条处理掉，**被顶掉的那条要回来**；
+#        · 多个邀请**覆盖**：同时来两条，只显示一张卡（MAX_VISIBLE=1），
+#          且显示的是**最新**那条（10.11 第 6 条 h：新的覆盖旧的）；
+#        · 「**处理完最新的**后才能处理旧的」：把当前这条（最新）处理掉，
+#          被顶掉的那条才补位回来；
 #        · 每条**独立计时**、最多 30 秒：排队的也要一起计时，不能永远挂着；
-#        · 处理过的 party_id **不再弹第二次**（服务器可能重推）。
+#        · 同一个房间 **CD 30 秒**（10.11 第 6 条 f）：30 秒内不重复弹，
+#          满 30 秒之后又能弹（「同一房间可多次弹窗」）。
 #   2. 结构：`Main` 里真的接了气泡，且**没有**再对邀请用 DialogService
-#      （那走 ModalStack，栈顶 backdrop 是 STOP —— 与「不处理不影响主界面操作」相反）。
+#      （那走 ModalStack，栈顶 backdrop 是 STOP —— 与「不处理不影响主界面操作」相反）；
+#      房间里也要弹得出来（第 6 条 j：`_in_match_flow` 不能一票否决）。
 #
 # ★ 行为断言走**真 PartyInviteBubble 实例**，不直读源码。
 #   结构断言只补一条「接线在不在」，证明不了排队语义对不对。
-#
-# 运行：
-#   Godot_v4.7.2-stable_win64_console.exe --headless --path . tools/party_invite_bubble_check.tscn
+#   唯一例外是 30 秒冷却：等不起真时间，所以用 static `cooldown_blocks()` 吃合成时间。
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
 const BubbleScript := preload("res://ui/components/PartyInviteBubble.gd")
@@ -34,6 +36,7 @@ func _ready() -> void:
 	await _case_multiple_overwrites()
 	await _case_handled_resurfaces_previous()
 	await _case_duplicate_ignored()
+	_case_same_room_cooldown()
 	await _case_ttl_is_thirty_seconds()
 	_case_on_handled_fires_on_all_paths()
 	_case_main_wiring()
@@ -91,36 +94,67 @@ func _find_label(root: Node, name_text: String) -> Label:
 	return null
 
 
-# 2) 两条邀请 → 只显示一张（覆盖）。
+# 2) 两条邀请 → 只显示一张（覆盖），而且显示的是**最新**那条。
+#
+# ★ 10.11 第 6 条 h（用户原话）：「多个好友的邀请会覆盖遮挡，**只有处理完最新的弹窗
+#   才能处理旧的弹窗**（目前发现是旧的处理完才能处理新的，**要改成新的覆盖旧的**）」。
+#   所以这里除了「只显示一张」，还要正面钉「显示在上的就是后到的那条」，
+#   以及「先到的那条只是被盖住、退回队列而不是被丢弃」。
 func _case_multiple_overwrites() -> void:
 	var bubble := _make()
 	bubble.call("offer", {"party_id": "p1", "host_name": "甲", "kind": "party"})
 	bubble.call("offer", {"party_id": "p2", "host_name": "乙", "kind": "party"})
 	_h.expect(_entry_count(bubble) == 1, "only_one_visible",
 		"同时两条邀请只应显示一张卡（需求：多个邀请会覆盖），实际 %d" % _entry_count(bubble))
-	_h.expect(_pending_count(bubble) == 1, "second_queued",
-		"后一条不该被丢掉，应退回等待队列，实际 pending=%d" % _pending_count(bubble))
+	var entries: Array = bubble.get("_entries")
+	if _entry_count(bubble) == 1:
+		_h.expect(str((entries[0] as Dictionary).get("party_id", "")) == "p2",
+			"newest_is_on_top",
+			"显示在上的必须是**最新**那条(p2)；实际 %s —— 旧实现在这里是 p1（旧的挡着新的）"
+				% str((entries[0] as Dictionary).get("party_id", "")))
+	_h.expect(_pending_count(bubble) == 1, "older_queued",
+		"被顶掉的那条不该被丢掉，应退回等待队列，实际 pending=%d" % _pending_count(bubble))
+	var pending: Array = bubble.get("_pending")
+	if _pending_count(bubble) == 1:
+		_h.expect(str((pending[0] as Dictionary).get("party_id", "")) == "p1",
+			"older_back_in_queue",
+			"退回队列的应当是先来的那条(p1)，实际 %s"
+				% str((pending[0] as Dictionary).get("party_id", "")))
 	bubble.queue_free()
 
 
-# 3) 处理掉当前这条 → 队列里的上一条补位（需求原话：处理完最新的后显示上一个）。
+# 3) 处理掉**最新的**那条 → 队列里的上一条才补位
+#    （需求原话：「只有处理完最新的弹窗才能处理旧的弹窗」）。
 func _case_handled_resurfaces_previous() -> void:
 	var bubble := _make()
 	bubble.call("offer", {"party_id": "p1", "host_name": "甲", "kind": "party"})
 	bubble.call("offer", {"party_id": "p2", "host_name": "乙", "kind": "party"})
-	# 「稍后」= 处理掉当前正在显示的那条（p1）。
+	# 先钉反向：处理**还在排队的旧那条**不该有任何反应 ——
+	# 旧实现（先进先出）恰恰是「旧的处理完才轮到新的」，用户报的就是它。
 	bubble.call("_dismiss", "p1", "later")
+	var shown: Array = bubble.get("_entries")
+	_h.expect(_entry_count(bubble) == 1 and shown.size() == 1
+		and str((shown[0] as Dictionary).get("party_id", "")) == "p2",
+		"older_dismiss_is_noop",
+		"还没轮到的旧邀请被处理时不该换掉当前显示（否则就是旧的抢占新的）")
+	# 处理掉当前正在显示的那条（p2 = 最新）→ 上一条 p1 补位。
+	bubble.call("_dismiss", "p2", "later")
 	_h.expect(_entry_count(bubble) == 1, "previous_resurfaced",
-		"处理掉当前这条后，排队等着的那条必须补位显示，实际 %d" % _entry_count(bubble))
+		"处理掉最新这条后，排队等着的那条必须补位显示，实际 %d" % _entry_count(bubble))
 	var entries: Array = bubble.get("_entries")
 	if _entry_count(bubble) == 1:
-		_h.expect(str((entries[0] as Dictionary).get("party_id", "")) == "p2",
-			"resurfaced_is_the_other",
-			"补位的应当是另一个 party_id(p2)，实际 %s" % str((entries[0] as Dictionary).get("party_id", "")))
+		_h.expect(str((entries[0] as Dictionary).get("party_id", "")) == "p1",
+			"resurfaced_is_the_older",
+			"补位的应当是更早那条(p1)，实际 %s"
+				% str((entries[0] as Dictionary).get("party_id", "")))
 	bubble.queue_free()
 
 
-# 4) 同一个 party_id 重复推 → 不再弹（服务器重推 / 来回切页面）。
+# 4) 同一个 party_id 重复推 → 冷却期内不再弹（服务器重推 / 来回切页面）。
+#
+# ★ 10.11 第 6 条 f 把旧口径「处理过一次就**永不再弹**」换成了「同一房间 CD 30 秒」。
+#   所以最后一条断言的语义从 never_again 变成 with_in_cooldown ——
+#   满 30 秒之后是**可以**再弹的（那正是「同一房间可多次弹窗」），见 _case_same_room_cooldown。
 func _case_duplicate_ignored() -> void:
 	var bubble := _make()
 	_h.expect(bool(bubble.call("offer", {"party_id": "p1", "host_name": "甲", "kind": "party"})),
@@ -129,9 +163,41 @@ func _case_duplicate_ignored() -> void:
 		"dup_rejected_while_showing", "同 party_id 正在显示时不该再排一条")
 	bubble.call("_dismiss", "p1", "later")
 	_h.expect(not bool(bubble.call("offer", {"party_id": "p1", "host_name": "甲", "kind": "party"})),
-		"handled_never_again", "处理过的邀请不该再弹（需求：处理过的邀请不再提示）")
-	_h.expect(_entry_count(bubble) == 0, "nothing_shown_after_handled", "处理过的不该留下卡片")
+		"handled_rejected_within_cooldown",
+		"处理过之后 30 秒内不该再弹（第 6 条 f 的同一房间冷却）")
+	_h.expect(_entry_count(bubble) == 0, "nothing_shown_after_handled", "冷却期内不该留下卡片")
 	bubble.queue_free()
+
+
+# 4.5) ★ 10.11 第 6 条 f：**同一房间可多次弹窗，CD 30 秒**。
+#
+# 30 秒的真实等待在无头门禁里等不起，所以判据抽成了 static 的
+# `cooldown_blocks(last_shown_sec, now_sec)` —— 拿合成时间直接驱动它，边界两侧都判。
+# 再补一条结构断言：`offer()` 真的调了它（定义了不调用 = 冷却根本没生效，全绿）。
+func _case_same_room_cooldown() -> void:
+	_h.expect(is_equal_approx(float(BubbleScript.BUBBLE_CD_SEC), 30.0), "bubble_cd_is_30",
+		"同一房间的弹窗冷却常量必须是需求里的 30 秒，实际 %s" % str(BubbleScript.BUBBLE_CD_SEC))
+	var t := 10_000.0
+	_h.expect(not BubbleScript.cooldown_blocks(0.0, t), "cd_first_allowed",
+		"这个房间还没弹过（last=0）→ 放行")
+	_h.expect(BubbleScript.cooldown_blocks(t - 29.0, t), "cd_29_blocked",
+		"距上次弹窗 29 秒 → 仍在冷却（拦）")
+	_h.expect(not BubbleScript.cooldown_blocks(t - 30.0, t), "cd_30_allowed",
+		"距上次弹窗正好 30 秒 → 放行（边界上，这就是「同一房间可多次弹窗」）")
+	_h.expect(not BubbleScript.cooldown_blocks(t - 3600.0, t), "cd_long_ago_allowed",
+		"一小时前弹过 → 放行")
+	# 反向：不能恒真（恒真 = 同一个房间再也弹不出第二次，正是要改掉的旧行为）。
+	var any_allowed := false
+	for last in [0.0, t - 30.0, t - 100.0]:
+		if not BubbleScript.cooldown_blocks(last, t):
+			any_allowed = true
+	_h.expect(any_allowed, "cd_not_always_blocked",
+		"cooldown_blocks 不能恒真 —— 否则同一个房间的邀请永远弹不出来")
+	# 结构：offer 真的走了这条判据。
+	var src := FileAccess.get_file_as_string("res://ui/components/PartyInviteBubble.gd")
+	var offer_body := _func_body(src, "func offer(")
+	_h.expect(offer_body.contains("cooldown_blocks("), "cd_wired_into_offer",
+		"offer() 必须过 cooldown_blocks —— 定义了不调用等于没做")
 
 
 # 5) 30 秒上限：TTL 常量必须是 30，且排队的条目也带自己的绝对截止时刻。
@@ -228,6 +294,44 @@ func _case_main_wiring() -> void:
 		"both_kinds_wired", "第 6 条（房间）与第 10 条（组队）两种邀请都要接上")
 	_h.expect(src.contains("_invite_bubble"), "bubble_field_present",
 		"Main 里应有 _invite_bubble 字段持住这一层")
+	# ★★ 10.11 第 6 条：同房间的邀请不再弹气泡 —— 且必须掐在**统一入口**。
+	#    `_show_invite_bubble` 是三条来源（排位组队推送 party_invite / 自定义房间推送
+	#    room_invite / 私聊链 room_invite）的唯一汇合点；只堵某一个来源会「某个入口还在弹」，
+	#    而且完全静默。所以这条既钉「抑制在」，也钉「它在那个函数体里」。
+	_h.expect(src.contains("RoomInviteScript.targets_room("), "same_room_suppression_present",
+		"Main 必须按 RoomInvite.targets_room 掐同房间邀请气泡（10.11 第 6 条）")
+	var bubble_body := _func_body(src, "func _show_invite_bubble(")
+	_h.expect(bubble_body.contains("targets_room(") and bubble_body.contains("return"),
+		"same_room_suppression_in_unified_entry",
+		"抑制必须在 _show_invite_bubble 函数体内（三条来源都汇到它，漏一处就静默漏弹）")
+
+	# ★★ 10.11 第 6 条 j：**房间里也要弹得出来**。
+	#
+	# 用户真机反馈：「好友在另一房间，邀请时会有邀请消息且弹窗会展示在房间里
+	# （排位房间已实现，**但自定义房间里未能实现在房间内弹出弹窗**）」。
+	# 根因是 `_in_match_flow` 一票否决：3v3 大厅（自定义房）也走 _enter_match_flow，
+	# 于是两个邀请入口都在第一行 return 了；排位房不进 _match_flow，所以照弹。
+	_h.expect(src.contains("func _invite_popup_suppressed() -> bool:"),
+		"room_popup_helper",
+		"Main 必须有 _invite_popup_suppressed() —— 邀请气泡是否静默的**唯一**判据")
+	_h.expect(src.contains("return _in_match_flow and not _in_room_lobby"), "room_popup_rule",
+		"判据必须是「在对局里**且不在房间大厅**」；少了后半句就是自定义房弹不出来")
+	_h.expect(src.contains("var _in_room_lobby := false"), "room_lobby_flag",
+		"Main 必须有 _in_room_lobby 标记（第 6 条 j）")
+	# 两个入口都要走它：漏一处 = 某一条来源的邀请在房间里静默消失（不报错）。
+	var dm_body := _func_body(src, "func _on_dm_received(")
+	var rt_body := _func_body(src, "func _on_party_realtime(")
+	_h.expect(dm_body.contains("_invite_popup_suppressed()")
+		and rt_body.contains("_invite_popup_suppressed()"),
+		"room_popup_both_entries",
+		"私聊链与实时推送两个入口都必须走 _invite_popup_suppressed（漏一处就静默漏弹）")
+	# 自定义房间这一页必须自己把标记立起来（`_clear()` 刚把它清掉）。
+	_h.expect(_func_body(src, "func _show_team3v3_lobby(").contains("_in_room_lobby = true"),
+		"room_lobby_flag_set",
+		"_show_team3v3_lobby 必须把 _in_room_lobby 置真 —— 这就是自定义房弹不出气泡的根因")
+	# 反向：`_clear()` 必须清掉它，否则真正进了对局之后邀请还会糊在屏幕上。
+	_h.expect(_func_body(src, "func _clear(").contains("_in_room_lobby = false"),
+		"room_lobby_flag_cleared", "_clear() 必须把 _in_room_lobby 清成 false")
 
 
 # ★★ 10.07h 第 6 / 10 条返工：位置 —— 「从『聊天』UI 旁边引出」。
@@ -382,3 +486,21 @@ func _find_button(root: Node, name_text: String) -> Button:
 		if hit != null:
 			return hit
 	return null
+
+
+# 取出某个函数体源码（`func header` → 下一个顶格 `func `/`static func `/`@` 之前）。
+#
+# 用途：把「抑制落在统一入口里」这条断言限定在 _show_invite_bubble 的函数体内。
+# 直接对整份 Main.gd 做 contains("targets_room(") 的话，把调用从统一入口挪到某一个
+# 来源的调用点（只堵住一种来源）、或整行注释掉，断言都照样绿（10.11 第 6 条变异实测）。
+func _func_body(source: String, header: String) -> String:
+	var start := source.find(header)
+	if start < 0:
+		return ""
+	var rest := source.substr(start + header.length())
+	var cut := rest.length()
+	for marker in ["\nfunc ", "\nstatic func ", "\n@"]:
+		var at := rest.find(marker)
+		if at >= 0:
+			cut = mini(cut, at)
+	return rest.substr(0, cut)

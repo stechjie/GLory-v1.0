@@ -72,6 +72,10 @@ class FriendItem(BaseModel):
     # null = 不在房间 / 不在线 / 对方关掉了房间可见性。
     # 三种情况对观众刻意**不可分辨** —— 同 to_public 的处理。
     room_id: int | None = None
+    # 10.11 bug 第 3/9 条：他是不是正在一局对局里。
+    # 与 room_id 同一个可见性开关（friends._in_match_visible）：不在线、或对方
+    # 关掉了房间可见性，这里恒为 false。默认 false 是为了旧客户端能直接忽略这个字段。
+    in_match: bool = False
 
 
 class RequestItem(BaseModel):
@@ -181,6 +185,7 @@ async def my_friends(
             avatar_frame=r.avatar_frame,
             online=r.online,
             room_id=r.room_id,
+            in_match=r.in_match,
         )
         for r in rows
     ])

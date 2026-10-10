@@ -83,6 +83,11 @@ const SET_ART_NAME := {
 }
 
 # Pet art was delivered under nicknames that do not match the data table ids.
+#
+# ★ 10.11 第 1 条：这份「昵称图」只做到了三只，松鼠 / 老虎从没交付过 —— 图鉴里
+#   那两格一直是空白（`PET_ART_NAME.get(id, "")` 落空 ⇒ 路径成了 `.png`）。
+#   缺图时回退到数据表自己的 `icon`（宠物商店 / 背包 / 营地面板同源的那张立绘），
+#   有昵称图的照旧用昵称图 —— 不新增美术文件，也不动已交付那三只的观感。
 const PET_ART_NAME := {
 	"pet_mushroom": "小菇",
 	"pet_cat": "小喵",
@@ -331,11 +336,16 @@ static func _pets() -> Array[Dictionary]:
 		if d == null:
 			continue
 		var id := str(d.get("id", ""))
+		# 缺昵称图（松鼠 / 老虎）时回退到数据表的 icon，图鉴才有图可画。
+		var pet_art := str(PET_ART_NAME.get(id, ""))
+		var pet_portrait := PORTRAIT_DIR + pet_art + ".png"
+		if pet_art.is_empty() or not ResourceLoader.exists(pet_portrait):
+			pet_portrait = str(d.get("icon", ""))
 		out.append({
 			"id": id,
 			"name": str(d.get("name", "")),
 			"name_en": str(d.get("name_en", "")),
-			"portrait": PORTRAIT_DIR + str(PET_ART_NAME.get(id, "")) + ".png",
+			"portrait": pet_portrait,
 			"effect_key": str(d.get("effect", "")),
 			"effect_value": float(d.get("value", 0.0)),
 			"collectible": true,

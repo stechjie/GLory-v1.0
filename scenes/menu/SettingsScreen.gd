@@ -16,8 +16,16 @@ signal leave_match_requested
 # 从摆放界面右上角「设定」打开的（2026-10-06，原来那里是静音键）：和主界面同一页，
 # 只是「重新体验教学」不显示 —— 对局里点它等于把这局扔掉，教学要从主界面进。
 var in_match := false
-# 对局里能不能退：只有联网对局有「退出对局」这一行（教学、离线自测没有）。
+# 对局里能不能退：联网对局与**离线自测对局**都有「退出对局」这一行（10.11 第 7 条）；
+# 教学没有（教学要从主界面重进）。两种对局的区别不在这一页，在 Main.request_exit_match
+# （联网先弹判负 / 扣分确认框，离线自测直接退出）。
 var can_leave_match := false
+# 10.11 第 2 条：从**房间**（自定义房间 / 排位房间）右上角「设定」打开的。
+#
+# 用户口径：「内容上要比对局里的设定少个『退出对局』按钮」。对局里的设定 = `in_match`
+# 为真（没有「重新体验教学」、有「退出对局」）；房间这一档两者都没有 —— 房间还没开打，
+# 谈不上退出对局；也不该从这里重进教学。
+var lobby_mode := false
 
 var _btn_zh: Button
 var _btn_en: Button
@@ -267,14 +275,19 @@ func _build() -> void:
 	footer.add_theme_constant_override("separation", 24)
 	layout.add_child(footer)
 
-	if not in_match:
+	if not in_match and not lobby_mode:
 		var replay_btn := ActionButtonScene.instantiate() as Button
 		replay_btn.text = tr("settings_replay_tutorial")
 		replay_btn.custom_minimum_size = Vector2(280, Tokens.TOUCH_MIN)
 		replay_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		replay_btn.pressed.connect(func(): replay_tutorial_requested.emit())
 		footer.add_child(replay_btn)
-	elif can_leave_match:
+	# ★ `and not lobby_mode` 不是多余的：房间档（lobby_mode）也满足 `not in_match`，
+	#   所以第一个分支会被 `not lobby_mode` 挡下去、直接落到这里 —— 不写这一半的话，
+	#   只要建房的人哪天顺手把 can_leave_match 填成 true，房间里就会冒出一颗点不到的
+	#   「退出对局」。用户口径是「**没有**退出对局这一行」，这里做结构上的兜底，
+	#   不靠调用方记得传 false。10.11 第 2 条。
+	elif can_leave_match and not lobby_mode:
 		var leave_btn := ActionButtonScene.instantiate() as Button
 		leave_btn.name = "LeaveMatch"
 		leave_btn.text = tr("settings_leave_match")

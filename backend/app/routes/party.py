@@ -19,7 +19,11 @@ log = logging.getLogger("glory.party")
 
 router = APIRouter(prefix="/v1/party", tags=["party"])
 _chat_limiter = SlidingWindowLimiter(30, 60.0)
-_invite_limiter = SlidingWindowLimiter(12, 60.0)
+# ★ 10.11 第 6 条 c：「该类消息……发送 CD 5 秒」——组队邀请与房间邀请同一口径。
+# 原来是 12 次 / 60 秒（平均 5 秒一次但允许突发：窗口末尾连点 12 下也放行），
+# 现在直接配成**1 次 / 5 秒**，把「平均」变成「硬上限」。
+# 只改房间邀请那一侧不够：排位房的邀请走的是这条，两边冷热不均玩家会以为是 bug。
+_invite_limiter = SlidingWindowLimiter(1, 5.0)
 _voice_limiter = SlidingWindowLimiter(8, 60.0)
 
 

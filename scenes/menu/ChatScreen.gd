@@ -24,7 +24,16 @@ signal profile_requested(friend_code: String)
 # （先回主菜单再连，见 Main._join_room_by_id 的注释 —— 那里才有「连接中」与失败提示）。
 signal join_room_requested(room_id: int)
 # 10.07 第 10 条：私人消息里的**组队邀请**点了「加入」。Main 开队伍大厅并 join 这支队伍。
-signal join_party_requested(party_id: String)
+#
+# ★★ 10.11 第 6 条 d：这个信号原来**全仓没有任何接收者**（只有这里的声明与一处 emit），
+#   也就是说点「加入」什么都不会发生 —— 正是用户报的「好像未实现，点击无反应」。
+#   现在由 Main._show_chat_screen 接到 `_join_party_by_id`。
+#
+# `mode`（casual / ranked）与 party_id 一起带出去：开大厅要调
+# `PartyLobby.configure(mode, invite_id)`，而 mode 只存在这条邀请的 payload 里
+# （服务端落消息时写进去的，见 backend/app/routes/party.py）。取不到时是空串，
+# 由 Main 兜底成 casual。
+signal join_party_requested(party_id: String, mode: String)
 
 const WorldChatPanel := preload("res://scenes/menu/WorldChatPanel.gd")
 # 房间邀请（bug提交和修复.docx 第 2 条）：失效判据、文案、限流全在那一份纯逻辑里，
@@ -1026,7 +1035,11 @@ func _on_party_invite_join(msg: Dictionary) -> void:
 	if party_id.is_empty():
 		GloryToastScript.show_text(RoomInvite.expired_text())
 		return
-	join_party_requested.emit(party_id)
+	# ★ 10.11 第 6 条 g：点「加入」= 已经处理了这条邀请 → 红点当场消失
+	#   （与气泡那条路径同口径：只清**本地**红点，不动服务端已读游标）。
+	#   放在 emit 之前：emit 会切到队伍大厅，切走之后就没人记得清这一步了。
+	ChatService.mark_seen_locally(_open_code)
+	join_party_requested.emit(party_id, RoomInvite.party_mode_of(msg))
 
 
 # 点「立即参与」。失效则在中上方提示「邀请已过时」（要求 5），否则走已有的加入流程。
@@ -1047,6 +1060,8 @@ func _on_invite_join(msg: Dictionary) -> void:
 	if RoomInvite.is_expired(room_id, created, now, inviter_room):
 		GloryToastScript.show_text(RoomInvite.expired_text())
 		return
+	# ★ 10.11 第 6 条 g：点「立即参与」= 已经处理了这条邀请 → 红点当场消失。
+	ChatService.mark_seen_locally(_open_code)
 	join_room_requested.emit(room_id)
 
 
