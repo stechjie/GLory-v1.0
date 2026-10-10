@@ -1285,12 +1285,13 @@ func _case_tx_idempotency() -> void:
 	var a1 := ns._room_apply_altar(room, slot)
 	ns._tx_record(room, slot, rid_altar, "altar", a1)
 	checks.append(["altar_first_ok", bool(a1.get("ok", false))])
-	checks.append(["altar_hp_minus_one",
-		int((room.get("team_hp", []) as Array)[0]) == hp_before - 1])
+	var altar_cost := TreasureService.golden_altar_hp_cost()
+	checks.append(["altar_hp_cost",
+		int((room.get("team_hp", []) as Array)[0]) == hp_before - altar_cost])
 	checks.append(["altar_replay_hit", not ns._tx_find(room, slot, rid_altar).is_empty()])
 	# 重放不再扣 HP、不再消耗次数
 	checks.append(["altar_no_double_charge",
-		int((room.get("team_hp", []) as Array)[0]) == hp_before - 1
+		int((room.get("team_hp", []) as Array)[0]) == hp_before - altar_cost
 		and int((room.get("altar_uses", {}) as Dictionary).get(slot, 0)) == 1])
 	# 阶段门仍然有效
 	room.state = ns.ROOM_BATTLE

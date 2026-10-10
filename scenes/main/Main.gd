@@ -1285,8 +1285,37 @@ func _show_pet_screen() -> void:
 	pet_screen.back_requested.connect(_show_menu)
 	# 棋盘皮肤页上没买的那张点「去商城」。
 	pet_screen.shop_requested.connect(_show_shop_screen)
+	# 种族页点了没解锁的种族 -> 商城棋子页那一族。
+	pet_screen.unit_shop_requested.connect(_show_shop_units)
 	_page_back_route = _show_menu
 	add_child(pet_screen)
+
+
+# 商城棋子页集齐一族后点「去备战」：打开备战页的种族页签、看那一族。
+func _show_pet_screen_races(race: String) -> void:
+	_show_pet_screen()
+	var screen := _newest_screen_with("show_races")
+	if screen != null:
+		screen.show_races(race)
+
+
+# 备战页点了没解锁的种族：打开商城并直接落在棋子页那一族。
+func _show_shop_units(race: String) -> void:
+	_show_shop_screen()
+	var screen := _newest_screen_with("open_units")
+	if screen != null:
+		screen.open_units(race)
+
+
+# 刚 add_child 的那一页。_clear() 只是 queue_free 旧页，它们这一帧还挂在树上 ——
+# 跳过排队删除的，从后往前找，拿到的一定是新的那一页。
+func _newest_screen_with(method: String) -> Control:
+	var children := get_children()
+	for i in range(children.size() - 1, -1, -1):
+		var child := children[i]
+		if child is Control and not child.is_queued_for_deletion() and child.has_method(method):
+			return child as Control
+	return null
 
 # 图鉴界面。从主菜单「图鉴」按钮进入，返回回主菜单。
 func _show_codex_screen() -> void:
@@ -1315,6 +1344,7 @@ func _show_shop_screen() -> void:
 		_show_menu()
 		return
 	screen.back_requested.connect(_show_menu)
+	screen.prep_races_requested.connect(_show_pet_screen_races)
 	screen.pet_draw_requested.connect(func() -> void:
 		var dialog: Control = (load("res://scenes/menu/PetDrawDialog.gd") as GDScript).new()
 		dialog.draw_finished.connect(screen._reload)

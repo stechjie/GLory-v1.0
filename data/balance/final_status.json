@@ -266,11 +266,11 @@
       "cost": 50,
       "skill_id": "black_hole",
       "skill_name_cn": "黑洞",
-      "skill_cn_1to3": "黑洞（冷却8.0秒）：牵引周围敌人，眩晕1.0秒，并造成自身攻击190%伤害。",
-      "skill_cn_4": "黑洞（冷却8.0秒）：牵引周围敌人，眩晕2.0秒，并造成自身攻击440%伤害。",
-      "skill_en_1to3": "Black Hole (CD 8.0s): Pull surrounding enemies, stun for 1.0s, and deal 190% ATK damage.",
-      "skill_raw_params": "damage_atk_pct = 1.9\npull_sec = 1\nunique_on_board = true",
-      "star4_changes": "damage_atk_pct: 1.9 → 4.4\npull_sec: 1 → 2",
+      "skill_cn_1to3": "黑洞（冷却8.0秒）：牵引周围敌人，眩晕1.0秒，并造成自身攻击160%伤害。",
+      "skill_cn_4": "黑洞（冷却8.0秒）：牵引周围敌人，眩晕2.0秒，并造成自身攻击320%伤害。",
+      "skill_en_1to3": "Black Hole (CD 8.0s): Pull surrounding enemies, stun for 1.0s, and deal 160% ATK damage.",
+      "skill_raw_params": "damage_atk_pct = 1.6\npull_sec = 1\nunique_on_board = true",
+      "star4_changes": "damage_atk_pct: 1.6 → 3.2\npull_sec: 1 → 2",
       "stats": {
         "1": {
           "hp": 1800,
@@ -292,7 +292,9 @@
           "atk": 414,
           "defense": 48
         }
-      }
+      },
+      "skill_damage_multiplier_1to3": 1.6,
+      "skill_damage_multiplier_4": 3.2
     },
     "god_priest": {
       "name_cn": "神侍",
@@ -1739,7 +1741,7 @@
     "money_golden_altar": {
       "name_cn": "黄金祭坛",
       "category_cn": "金钱",
-      "effect_cn": "每次 -2 法阵 HP → +100 金；法阵 HP ≤10 时不可用。持有人本回合未使用：法阵 HP +1；3v3 每位持有人独立判断，最多 +3",
+      "effect_cn": "每次 -1 法阵 HP → +100 金；法阵 HP ≤10 时不可用。持有人本回合未使用：法阵 HP +1；3v3 每位持有人独立判断，最多 +3",
       "hu_pai_text_cn": "胡牌手激活：使用不扣法阵 HP；选到胡牌手立即 +2 法阵 HP（选到当回合也生效）"
     },
     "money_lucky_envelope": {
@@ -1947,8 +1949,89 @@
       "enabled": true,
       "name_cn": "樱晶蝶语",
       "name_en": "Sakura Crystal"
+    },
+    "shop_unit_crimson": {
+      "kind": "unit",
+      "grants": "unit:crimson",
+      "currency": "coin",
+      "price": 100,
+      "enabled": true,
+      "name_cn": "赤卫",
+      "name_en": "Crimson Guard"
+    },
+    "shop_unit_dancer": {
+      "kind": "unit",
+      "grants": "unit:dancer",
+      "currency": "coin",
+      "price": 100,
+      "enabled": true,
+      "name_cn": "赤舞者",
+      "name_en": "Dancer"
+    },
+    "shop_unit_drumer": {
+      "kind": "unit",
+      "grants": "unit:drumer",
+      "currency": "coin",
+      "price": 200,
+      "enabled": true,
+      "name_cn": "战鼓使",
+      "name_en": "Drummer"
+    },
+    "shop_unit_hunter": {
+      "kind": "unit",
+      "grants": "unit:hunter",
+      "currency": "coin",
+      "price": 200,
+      "enabled": true,
+      "name_cn": "血猎者",
+      "name_en": "Hunter"
+    },
+    "shop_unit_armbreaker": {
+      "kind": "unit",
+      "grants": "unit:armbreaker",
+      "currency": "coin",
+      "price": 200,
+      "enabled": true,
+      "name_cn": "破甲者",
+      "name_en": "Armbreaker"
+    },
+    "shop_unit_icey": {
+      "kind": "unit",
+      "grants": "unit:Icey",
+      "currency": "coin",
+      "price": 200,
+      "enabled": true,
+      "name_cn": "霜印使",
+      "name_en": "Icey"
+    },
+    "shop_unit_skypierce": {
+      "kind": "unit",
+      "grants": "unit:skypierce",
+      "currency": "coin",
+      "price": 300,
+      "enabled": true,
+      "name_cn": "穿云弩手",
+      "name_en": "Skypierce"
+    },
+    "shop_unit_lattern": {
+      "kind": "unit",
+      "grants": "unit:lattern",
+      "currency": "coin",
+      "price": 300,
+      "enabled": true,
+      "name_cn": "赤灯使",
+      "name_en": "Lantern"
+    },
+    "race_crimson": {
+      "kind": "race",
+      "grants": "crimson",
+      "currency": "coin",
+      "price": 0,
+      "enabled": false,
+      "name_cn": "赤律族",
+      "name_en": "Crimson"
     }
   },
-  "balance_version": "a6d8531d08e4cedf14794198b71dfa775e81aed1daae18c7f07d258dfa7089e9",
-  "final_workbook_sha256": "91f28a2874dc44ec2c03bce4d498b9accf352f58e9bc1e66ea4ea5ed97680db5"
+  "balance_version": "77ee99f058cc051bb55c950544682c250e9f5fba2be3423d08173d137d0b44b7",
+  "final_workbook_sha256": "ed2f0d107a3a7140cf783cb29f1f7661da4fc53e8f27a375afbd9b1475b28a15"
 }

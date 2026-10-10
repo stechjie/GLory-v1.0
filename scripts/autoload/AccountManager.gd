@@ -851,7 +851,8 @@ func fetch_announcements() -> Dictionary:
 # 编辑器里不能读那个文件：它是出包前现生成、出完就留在项目根目录的（被 git 忽略），
 # 读了等于编辑器冒充上一次出的那个包。
 const CLIENT_HEADER := "X-Glory-Client"
-const CLIENT_KINDS := ["prep_skin"]
+# unit = 商城「棋子」页（集齐一族解锁种族，scripts/account/UnitCollection.gd）。
+const CLIENT_KINDS := ["prep_skin", "unit"]
 var _client_header_line := ""
 
 

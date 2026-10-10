@@ -72,7 +72,11 @@ _STATUS_BY_CODE = {
 # 旧包会把不认识的种类当成头像显示，能买却用不了（ShopScreen._item_category 不认识的一律归头像）。
 # 头像、头像框、宠物从第一版就有，不用声明。
 # 加一种新种类：这里加一个名字，客户端 AccountManager.CLIENT_KINDS 也加同一个。
-DECLARED_KINDS = frozenset({"prep_skin"})
+#
+# unit（棋子）：旧包不认识，会当成头像显示、买了也看不出有什么用；而且旧包的备战页
+# 没有「未解锁」那一态，不发给它就不会出现「买了一半的棋子」。种族那一行（kind=race）
+# 是 enabled=false，本来就不在目录响应里。
+DECLARED_KINDS = frozenset({"prep_skin", "unit"})
 
 
 def visible_to(item: shop.Item, client_kinds: frozenset[str]) -> bool:
@@ -164,6 +168,9 @@ class ReceiptModel(BaseModel):
     # 这次是重放还是真的执行了。客户端可以据此决定要不要放发货动画 ——
     # 重放时玩家早就看过一次了。
     replayed: bool
+    # 这一笔因为集齐而额外解锁的内容 id（买到最后一个棋子 -> 种族 id）。
+    # 加字段向后兼容：旧包按名取，不认识就不看。重放时为空。
+    unlocked: list[str] = []
 
 
 class OrderResponse(BaseModel):
@@ -203,6 +210,7 @@ def _receipt(r: shop.Receipt) -> ReceiptModel:
         diamond=r.wallet.diamond,
         coin=r.wallet.coin,
         replayed=r.replayed,
+        unlocked=list(r.unlocked),
     )
 
 

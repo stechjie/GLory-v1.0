@@ -98,6 +98,61 @@ class FinalRuntimeTest(unittest.TestCase):
         finally:
             book.close()
 
+    def test_golden_altar_excel_cost_updates_only_owned_json_number(self) -> None:
+        book = load_workbook(BOOK, read_only=False, data_only=True)
+        try:
+            cell = book["09_宝藏与套装"]["E23"]
+            old_cost = next(item["hp_cost"] for item in self.tables["data/treasure/treasures.json"]["treasures"]
+                            if item["id"] == "money_golden_altar")
+            new_cost = 2 if old_cost != 2 else 3
+            self.assertIn(f"每次 -{old_cost} 法阵 HP", str(cell.value))
+            cell.value = str(cell.value).replace(f"每次 -{old_cost} 法阵 HP", f"每次 -{new_cost} 法阵 HP")
+            tables = copy.deepcopy(self.tables)
+            changes = overlay_excel_owned(book, tables)
+            self.assertEqual([("money_golden_altar", "hp_cost", old_cost, new_cost)],
+                             [(item["id"], item["field"], item["old"], item["new"]) for item in changes])
+            source = (ROOT / "data/treasure/treasures.json").read_text(encoding="utf-8-sig")
+            patched = patch_json_scalars(source, changes, tables["data/treasure/treasures.json"])
+            self.assertEqual(tables["data/treasure/treasures.json"], json.loads(patched))
+            self.assertEqual(2, len([line for line in difflib.unified_diff(source.splitlines(), patched.splitlines())
+                                     if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))]))
+        finally:
+            book.close()
+
+    def test_black_dragon_excel_percent_updates_both_star_groups(self) -> None:
+        book = load_workbook(BOOK, read_only=False, data_only=True)
+        try:
+            book["02_棋子技能"]["O11"] = 175
+            book["02_棋子技能"]["P11"] = 350
+            tables = copy.deepcopy(self.tables)
+            changes = overlay_excel_owned(book, tables)
+            self.assertEqual(
+                [("damage_atk_pct", 1.6, 1.75), ("star4.damage_atk_pct", 3.2, 3.5)],
+                [(change["field"], change["old"], change["new"]) for change in changes],
+            )
+            dragon = next(unit for unit in tables["data/units/race_units.json"]["units"]
+                          if unit["id"] == "dark_dragon")
+            self.assertEqual(1.75, dragon["damage_atk_pct"])
+            self.assertEqual(3.5, dragon["star4"]["damage_atk_pct"])
+            self.assertEqual(1, dragon["pull_sec"])
+            self.assertEqual(2, dragon["star4"]["pull_sec"])
+            source = (ROOT / "data/units/race_units.json").read_text(encoding="utf-8-sig")
+            patched = patch_json_scalars(source, changes, tables["data/units/race_units.json"])
+            self.assertEqual(tables["data/units/race_units.json"], json.loads(patched))
+            self.assertEqual(4, len([line for line in difflib.unified_diff(source.splitlines(), patched.splitlines())
+                                     if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))]))
+        finally:
+            book.close()
+
+    def test_black_dragon_invalid_percentage_stops_sync(self) -> None:
+        book = load_workbook(BOOK, read_only=False, data_only=True)
+        try:
+            book["02_棋子技能"]["O11"] = 0
+            with self.assertRaisesRegex(ValueError, "O11.*whole percent"):
+                overlay_excel_owned(book, copy.deepcopy(self.tables))
+        finally:
+            book.close()
+
     def test_invalid_excel_input_stops_before_writing(self) -> None:
         book = load_workbook(BOOK, read_only=False, data_only=True)
         try:

@@ -738,6 +738,156 @@ def test_deploy_copies_both_new_data_files() -> None:
     assert 'mkdir -p "$(dirname "$REPO/data/$f")"' in UPDATE_SH
 
 
+# --- 棋子与种族：集齐解锁（2026-10-10 赤律族上商城）--------------------------------
+#
+# 失败模式全都不报错：
+#   - 棋子内容 id 没加前缀 -> 买一个赤卫（id 就叫 crimson）等于解锁整个种族；
+#   - 发最后一个棋子的路径没带上种族 -> 八个全有、种族永远解锁不了；
+#   - 并发两笔各数到 7 -> 同上；
+#   - 种族那一行能直接买 -> 跳过整套棋子；
+#   - 老玩家补发重跑一遍 -> 白送给之后注册的新玩家。
+
+UNIT_TABLE = json.loads((REPO / "data" / "units" / "race_units.json").read_text(encoding="utf-8"))
+SQL_031 = (REPO / "database" / "031_crimson_grandfather.sql").read_text(encoding="utf-8")
+PRICE_BY_TIER = {1: 100, 2: 200, 3: 300}
+
+
+def _unit_item(content_id: str) -> shop.Item:
+    for item in shop.items():
+        if item.kind == "unit" and item.grants == content_id:
+            return item
+    raise AssertionError("目录里没有卖 %s" % content_id)
+
+
+def _entitlement_inserts(conn: FakeConn) -> list[tuple]:
+    return [args for q, args in zip(conn.queries, conn.args) if "into player_entitlements" in q]
+
+
+def test_crimson_is_sold_as_eight_units_priced_by_tier() -> None:
+    units = {str(u["id"]): u for u in UNIT_TABLE["units"]}
+    crimson = sorted(shop.UNIT_PREFIX + str(u["id"]) for u in UNIT_TABLE["units"]
+                     if u["race"] == "crimson")
+    assert len(crimson) == 8
+    sold = [i for i in shop.items() if i.kind == "unit"]
+    assert sorted(i.grants for i in sold) == crimson
+    for item in sold:
+        unit_id = item.grants.removeprefix(shop.UNIT_PREFIX)
+        assert unit_id in units, "%s 不在 race_units.json 里（大小写也要一样）" % item.grants
+        assert item.currency == "coin"
+        assert item.price == PRICE_BY_TIER[int(units[unit_id]["tier"])], item.id
+
+
+def test_unit_content_ids_never_collide_with_race_ids() -> None:
+    """赤卫的棋子 id 就叫 crimson。不加前缀，买一个赤卫 = 拿到整个种族的归属。"""
+    races = {str(u["race"]) for u in UNIT_TABLE["units"]}
+    for item in shop._catalog()["by_item"].values():
+        if item.kind == "unit":
+            assert item.grants.startswith(shop.UNIT_PREFIX)
+            assert item.grants not in races
+
+
+def test_race_requires_every_unit_and_cannot_be_bought(monkeypatch: pytest.MonkeyPatch) -> None:
+    race = shop.item_by_id("race_crimson")
+    assert race.kind == "race" and race.grants == "crimson"
+    assert not race.enabled and race not in shop.items()
+    assert shop.requires_entitlement("crimson"), "种族不在目录里 = 人人免费，商城就白做了"
+    assert sorted(race.requires) == sorted(i.grants for i in shop.items() if i.kind == "unit")
+
+    conn = wire_db(monkeypatch, [("from shop_orders where", None)])
+    with pytest.raises(shop.ShopRejected) as exc:
+        asyncio.run(shop.purchase(PLAYER_A, uuid.uuid4(), race.id))
+    assert exc.value.code == "unknown_item"
+    assert not conn.wrote_money() and not conn.granted()
+
+
+def test_buying_the_last_unit_unlocks_the_race_in_the_same_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    item = _unit_item("unit:lattern")
+    conn = wire_db(monkeypatch, [
+        ("from shop_orders where", None),
+        ("select count(*) from player_entitlements", 8),
+        ("from player_entitlements", None),
+        ("from player_wallets", wallet_row(coin=1000)),
+        ("into shop_orders", WHEN),
+    ])
+    receipt = asyncio.run(shop.purchase(PLAYER_A, uuid.uuid4(), item.id))
+
+    assert receipt.unlocked == ("crimson",)
+    inserts = _entitlement_inserts(conn)
+    assert [a[1] for a in inserts] == ["unit:lattern", "crimson"]
+    # 种族记在同一张订单名下：客服查「种族哪来的」能追到最后那一笔。
+    assert inserts[0][3] == inserts[1][3] == receipt.order_id
+    assert conn.count("into wallet_ledger") == 1, "种族是集齐送的，不能再扣一次钱"
+    # 先锁钱包、再数：并发两笔各数到 7 就谁都不发种族。
+    assert conn.index_of("for update") < conn.index_of("select count(*) from player_entitlements")
+    assert conn.index_of("select count(*)") < conn.index_of("into shop_orders")
+
+
+def test_buying_a_unit_short_of_the_set_unlocks_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    item = _unit_item("unit:crimson")
+    conn = wire_db(monkeypatch, [
+        ("from shop_orders where", None),
+        ("select count(*) from player_entitlements", 3),
+        ("from player_entitlements", None),
+        ("from player_wallets", wallet_row(coin=1000)),
+        ("into shop_orders", WHEN),
+    ])
+    receipt = asyncio.run(shop.purchase(PLAYER_A, uuid.uuid4(), item.id))
+    assert receipt.unlocked == ()
+    assert [a[1] for a in _entitlement_inserts(conn)] == ["unit:crimson"]
+
+
+def test_non_unit_purchases_do_not_count_sets(monkeypatch: pytest.MonkeyPatch) -> None:
+    item = shop.item_by_id("shop_pet_cat")
+    conn = wire_db(monkeypatch, [
+        ("from shop_orders where", None),
+        ("from player_entitlements", None),
+        ("from player_wallets", wallet_row(coin=1000)),
+        ("into shop_orders", WHEN),
+    ])
+    receipt = asyncio.run(shop.purchase(PLAYER_A, uuid.uuid4(), item.id))
+    assert receipt.unlocked == ()
+    assert conn.count("select count(*)") == 0
+
+
+def test_every_path_that_can_finish_a_set_uses_grant_content() -> None:
+    """邮件发的是最后一个棋子时，种族也要到账。直接调 _grant 的路径会漏掉它。"""
+    mail_py = (REPO / "backend" / "app" / "mail.py").read_text(encoding="utf-8")
+    assert "shop.grant_content(" in mail_py
+    assert "shop._grant(" not in mail_py
+    shop_py = (REPO / "backend" / "app" / "shop.py").read_text(encoding="utf-8")
+    purchase_body = shop_py.split("async def purchase(")[1].split("\nasync def ")[0]
+    assert "grant_content(" in purchase_body
+
+
+@pytest.mark.parametrize("bad, reason", [
+    ([shop.Item("u", "unit", "crimson", "coin", 100, "x", "x")], "前缀"),
+    ([shop.Item("u", "unit", "unit:a", "coin", 100, "x", "x"),
+      shop.Item("r", "race", "a", "coin", 0, "x", "x", True, ("unit:a",))], "enabled"),
+    ([shop.Item("r", "race", "a", "coin", 0, "x", "x", False, ("unit:missing",))], "没有卖"),
+    ([shop.Item("r", "race", "a", "coin", 0, "x", "x", False, ())], "requires"),
+    ([shop.Item("p", "pet", "pet_x", "coin", 1, "x", "x", True, ("unit:a",))], "kind=race"),
+])
+def test_catalog_rejects_broken_sets(bad: list, reason: str) -> None:
+    by_item = {i.id: i for i in bad}
+    by_content = {i.grants: i for i in bad}
+    with pytest.raises(ValueError) as exc:
+        shop._index_sets(by_item, by_content)
+    assert reason in str(exc.value)
+
+
+def test_grandfather_migration_grants_the_whole_set_exactly_once() -> None:
+    code = _sql_code(SQL_031)
+    race = shop.item_by_id("race_crimson")
+    for content_id in (race.grants, *race.requires):
+        assert "'%s'" % content_id in code, "031 漏发了 %s" % content_id
+    assert "'grant'" in code and "grant" in shop.SOURCES
+    # 只能生效一次：重跑不能把赤律族送给之后注册的新玩家。
+    assert "insert into one_time_grants" in code and "if not found" in code
+    assert "enable row level security" in code
+
+
 # --- 路由接线 -----------------------------------------------------------------
 
 
@@ -831,3 +981,20 @@ def test_wallet_response_does_not_leak_the_paid_free_split(wired) -> None:
     fields = set(shop_routes.WalletResponse.model_fields)
     assert fields == {"diamond", "coin"}
 
+
+
+def test_receipt_reports_what_the_purchase_unlocked() -> None:
+    """买到最后一个棋子时，客户端靠回执里的 unlocked 弹「去备战」。"""
+    assert "unlocked" in shop_routes.ReceiptModel.model_fields
+    receipt = shop.Receipt(
+        order_id=uuid.uuid4(), item_id="shop_unit_lattern", granted="unit:lattern",
+        currency="coin", price=300, wallet=shop.Wallet(0, 0, 0), replayed=False,
+        created_at=WHEN, unlocked=("crimson",))
+    assert shop_routes._receipt(receipt).unlocked == ["crimson"]
+
+
+def test_old_clients_never_see_units() -> None:
+    """旧包不认识 unit，会当成头像显示、买了也看不出用处。"""
+    unit = _unit_item("unit:crimson")
+    assert not shop_routes.visible_to(unit, frozenset({"prep_skin"}))
+    assert shop_routes.visible_to(unit, frozenset({"prep_skin", "unit"}))

@@ -9,6 +9,10 @@
 
 	"_currency_note": "currency 只能是 diamond 或 coin。coin 是账号游戏币，区别于对局内 gold。enabled=false 的内容仍需归属，但不在商店出售。",
 
+	"_unit_note": "棋子：kind=unit，grants 写「unit:<棋子 id>」（棋子 id 照抄 data/units/race_units.json，大小写也一样）。🔴 必须加前缀：赤卫的棋子 id 就叫 crimson，和种族 id 撞名，归属表按内容 id 存，不加前缀买一个赤卫就等于解锁了整个种族。",
+
+	"_race_note": "种族：kind=race，grants=种族 id，enabled=false（不能直接买，只能集齐），requires 列出要集齐的全部棋子内容 id。买到 / 邮件领到最后一个棋子时，服务端在同一笔事务里把种族发下去（backend/app/shop.py 的 complete_sets）。种族一进这个文件，没有归属的玩家就选不了它 —— 上线前已经在用的老玩家由 database/031_crimson_grandfather.sql 一次性补发，那条迁移必须先于这个文件部署。",
+
 	"items": [
 		{
 			"id": "shop_pet_mushroom",
@@ -130,6 +134,98 @@
 			"price": 600,
 			"name": "樱晶蝶语",
 			"name_en": "Sakura Crystal"
+		},
+		{
+			"id": "shop_unit_crimson",
+			"kind": "unit",
+			"grants": "unit:crimson",
+			"currency": "coin",
+			"price": 100,
+			"name": "赤卫",
+			"name_en": "Crimson Guard"
+		},
+		{
+			"id": "shop_unit_dancer",
+			"kind": "unit",
+			"grants": "unit:dancer",
+			"currency": "coin",
+			"price": 100,
+			"name": "赤舞者",
+			"name_en": "Dancer"
+		},
+		{
+			"id": "shop_unit_drumer",
+			"kind": "unit",
+			"grants": "unit:drumer",
+			"currency": "coin",
+			"price": 200,
+			"name": "战鼓使",
+			"name_en": "Drummer"
+		},
+		{
+			"id": "shop_unit_hunter",
+			"kind": "unit",
+			"grants": "unit:hunter",
+			"currency": "coin",
+			"price": 200,
+			"name": "血猎者",
+			"name_en": "Hunter"
+		},
+		{
+			"id": "shop_unit_armbreaker",
+			"kind": "unit",
+			"grants": "unit:armbreaker",
+			"currency": "coin",
+			"price": 200,
+			"name": "破甲者",
+			"name_en": "Armbreaker"
+		},
+		{
+			"id": "shop_unit_icey",
+			"kind": "unit",
+			"grants": "unit:Icey",
+			"currency": "coin",
+			"price": 200,
+			"name": "霜印使",
+			"name_en": "Icey"
+		},
+		{
+			"id": "shop_unit_skypierce",
+			"kind": "unit",
+			"grants": "unit:skypierce",
+			"currency": "coin",
+			"price": 300,
+			"name": "穿云弩手",
+			"name_en": "Skypierce"
+		},
+		{
+			"id": "shop_unit_lattern",
+			"kind": "unit",
+			"grants": "unit:lattern",
+			"currency": "coin",
+			"price": 300,
+			"name": "赤灯使",
+			"name_en": "Lantern"
+		},
+		{
+			"id": "race_crimson",
+			"kind": "race",
+			"grants": "crimson",
+			"currency": "coin",
+			"price": 0,
+			"enabled": false,
+			"requires": [
+				"unit:crimson",
+				"unit:dancer",
+				"unit:drumer",
+				"unit:hunter",
+				"unit:armbreaker",
+				"unit:Icey",
+				"unit:skypierce",
+				"unit:lattern"
+			],
+			"name": "赤律族",
+			"name_en": "Crimson"
 		}
 	]
 }

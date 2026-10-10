@@ -56,6 +56,19 @@ def percent(value, label):
     return float(result), format((result * 100).normalize(), "f") + "%"
 
 
+def skill_damage_percent(value, label):
+    """Read the whole percent shown in a skill input cell (160 means 160%)."""
+    if isinstance(value, bool) or type(value) not in (int, float):
+        raise ValueError(f"{label}: enter a number such as 160 for 160%")
+    try:
+        amount = Decimal(str(value))
+    except InvalidOperation:
+        raise ValueError(f"{label}: enter a number such as 160 for 160%") from None
+    if not Decimal(10) <= amount <= Decimal(1000):
+        raise ValueError(f"{label}: enter a whole percent from 10 to 1000 (160 means 160%; do not type 160%)")
+    return float(amount / 100)
+
+
 def golden_altar_cost(book):
     rows = [(number, row) for number, row in data_rows(book, "09_宝藏与套装")
             if row[0] == "money_golden_altar"]
@@ -144,6 +157,31 @@ def overlay_excel_owned(book, tables):
     items = index_items(tables, "data/treasure/treasures.json", "treasures")
     update(sheet, "data/treasure/treasures.json", "money_golden_altar",
            items["money_golden_altar"], "hp_cost", golden_altar_cost(book))
+
+    sheet = "02_棋子技能"
+    rows = [(number, row) for number, row in data_rows(book, sheet) if row[0] == "dark_dragon"]
+    if len(rows) != 1 or rows[0][1][3] != "black_hole":
+        raise ValueError(f"{sheet}: expected one dark_dragon / black_hole row")
+    number, row = rows[0]
+    dragon = index_items(tables, "data/units/race_units.json", "units")["dark_dragon"]
+    for column in (15, 16):
+        if "%" in book[sheet].cell(row=number, column=column).number_format:
+            raise ValueError(f"{sheet} {book[sheet].cell(row=number, column=column).coordinate}: "
+                             "use a plain number such as 160, not an Excel percent-formatted value")
+    base = skill_damage_percent(row[14] if len(row) > 14 else None,
+                                f"{sheet} O{number} dark_dragon 1–3★")
+    star4 = skill_damage_percent(row[15] if len(row) > 15 else None,
+                                 f"{sheet} P{number} dark_dragon 4★")
+    update(sheet, "data/units/race_units.json", "dark_dragon", dragon,
+           "damage_atk_pct", base)
+    old_star4 = dragon["star4"]["damage_atk_pct"]
+    if type(old_star4) is not float:
+        raise ValueError("dark_dragon star4.damage_atk_pct must be a float")
+    if old_star4 != star4:
+        changes.append({"sheet": sheet, "file": "data/units/race_units.json",
+                        "id": "dark_dragon", "field": "star4.damage_atk_pct",
+                        "old": old_star4, "new": star4})
+        dragon["star4"]["damage_atk_pct"] = star4
     return changes
 
 
@@ -152,6 +190,32 @@ def patch_json_scalars(source, changes, expected):
     """Replace only owned number tokens, preserving every other JSON byte."""
     updated = source
     for change in changes:
+        if change["id"] == "dark_dragon" and change["field"] in ("damage_atk_pct", "star4.damage_atk_pct"):
+            anchor = list(re.finditer(r'\{\s*"id"\s*:\s*"dark_dragon"', updated))
+            if len(anchor) != 1:
+                raise ValueError("Cannot locate unique dark_dragon runtime object")
+            start = anchor[0].start()
+            dragon, length = json.JSONDecoder().raw_decode(updated[start:])
+            if dragon.get("id") != "dark_dragon":
+                raise ValueError("Cannot parse dark_dragon runtime object")
+            segment = updated[start:start + length]
+            star4_object = re.search(r'"star4"\s*:\s*\{([^{}]*)\}', segment)
+            if star4_object is None:
+                raise ValueError("Cannot locate dark_dragon.star4")
+            if change["field"] == "star4.damage_atk_pct":
+                portion = star4_object.group(1)
+                offset = star4_object.start(1)
+            else:
+                portion = segment[star4_object.end():]
+                offset = star4_object.end()
+            number = r'(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)'
+            hits = list(re.finditer(r'"damage_atk_pct"\s*:\s*' + number, portion))
+            if len(hits) != 1 or json.loads(hits[0].group(1)) != change["old"]:
+                raise ValueError(f"Cannot safely patch dark_dragon.{change['field']}")
+            first = start + offset + hits[0].start(1)
+            last = start + offset + hits[0].end(1)
+            updated = updated[:first] + json.dumps(change["new"]) + updated[last:]
+            continue
         item_id = re.escape(json.dumps(change["id"], ensure_ascii=False)[1:-1])
         field = re.escape(change["field"])
         pattern = re.compile(

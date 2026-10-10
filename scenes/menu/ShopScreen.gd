@@ -21,6 +21,8 @@ extends Control
 signal back_requested
 signal diamond_store_requested
 signal pet_draw_requested
+# 棋子页：集齐一族后点「去备战」。Main 打开备战页的种族页签并高亮这一族。
+signal prep_races_requested(race: String)
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
@@ -46,6 +48,33 @@ const PetPreview := preload("res://scripts/pets/PetPreview.gd")
 const PetService := preload("res://scripts/pets/PetService.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
 const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
+# 棋子页（2026-10-10 赤律族上商城）：内容 id 前缀、哪一族在卖、集齐几个，和备战页共用这一份。
+const UnitCollection := preload("res://scripts/account/UnitCollection.gd")
+# 棋子页背景：每族一张，assets/ui/shop/<种族>_unit_bg.png。缺图就只用底色，不报错 ——
+# 所以用 load 不用 preload（新族没出图时整个商城脚本不能因此加载失败）。
+const UNIT_BG_PATH := "res://assets/ui/shop/%s_unit_bg.png"
+const RACE_LOGO_PATH := "res://assets/ui/race_logos/%s.png"
+const UNIT_PORTRAIT_PATH := "res://assets/ui/unit_portraits/%s.png"
+# 1600x720 下分类栏以下只剩 ~430 高：四张卡 + 间距、中间 logo 都要放得进去，不出滚动条。
+const UNIT_CARD_SIZE := Vector2(300, 64)
+const EMBLEM_SIZE := 210.0
+# 种族 logo 的点亮效果：没买的部分是暗的灰，买一个从下往上亮一截，整体也跟着变亮；
+# 集齐 = 全亮原色。progress = 已集齐 / 总数。
+const RACE_LIGHT_SHADER_CODE := """
+shader_type canvas_item;
+uniform float progress : hint_range(0.0, 1.0) = 0.0;
+void fragment() {
+	vec4 c = texture(TEXTURE, UV) * COLOR;
+	float grey = dot(c.rgb, vec3(0.299, 0.587, 0.114));
+	vec3 dark = vec3(grey) * 0.28;
+	float edge = 1.0 - progress;
+	float lit = smoothstep(edge - 0.04, edge + 0.04, UV.y);
+	if (progress >= 0.999) { lit = 1.0; }
+	if (progress <= 0.001) { lit = 0.0; }
+	vec3 bright = c.rgb * (0.7 + 0.3 * progress);
+	COLOR = vec4(mix(dark, bright, lit), c.a);
+}
+"""
 
 const CARD_SIZE := Vector2(230, 410)
 const PREVIEW_SIZE := Vector2(255, 230)
@@ -60,6 +89,7 @@ const CATEGORY_FRAMES := "frame"
 const CATEGORY_SKINS := "prep_skin"
 const CATEGORY_DIAMONDS := "diamonds"
 const CATEGORY_EVENT := "seven_day"
+const CATEGORY_UNITS := "unit"
 
 var _busy := false
 var _loading := true
@@ -74,6 +104,8 @@ var _selected_item_id := ""
 var _active_pet := ""
 var _login_state: Dictionary = {}
 var _diamond_products: Array = []
+# 棋子页当前看的种族。空 = 第一个在卖的。
+var _unit_race := ""
 
 # 正在进行的那笔购买的幂等键。**重试必须复用它**，见文件头第 2 条。
 var _pending_order_id := ""
@@ -98,6 +130,9 @@ var _special_scroll: ScrollContainer
 var _special_content: VBoxContainer
 var _hero_panel: Control
 var _event_dot: Label
+# 整页背景与底色。棋子页把整页背景换成那一族的图（不是在面板里再叠一张），离开时换回商城图。
+var _page_bg: TextureRect
+var _dim: ColorRect
 
 
 func _ready() -> void:
@@ -122,6 +157,7 @@ func _ready() -> void:
 
 func _build() -> void:
 	var bg := TextureRect.new()
+	_page_bg = bg
 	bg.texture = MENU_BG_TEX
 	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
@@ -130,6 +166,7 @@ func _build() -> void:
 	add_child(bg)
 
 	var dim := ColorRect.new()
+	_dim = dim
 	dim.color = Tokens.SHOP_SCENE_DIM
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -267,6 +304,7 @@ func _category_bar() -> Control:
 	panel.add_child(row)
 	for entry in [
 		{"id": CATEGORY_PETS, "zh": "宠物", "en": "Pets"},
+		{"id": CATEGORY_UNITS, "zh": "棋子", "en": "Units"},
 		{"id": CATEGORY_FRAMES, "zh": "头像框", "en": "Avatar Frames"},
 		{"id": CATEGORY_SKINS, "zh": "外观", "en": "Appearance"},
 		{"id": CATEGORY_EVENT, "zh": "七日登录 · 冰雪", "en": "Seven days · Frost"},
@@ -585,13 +623,16 @@ func _render() -> void:
 			or _category_has_items(str(category)))
 		_style_category_button(category_button, str(category) == _active_category)
 	_event_dot.visible = bool(_login_state.get("claimable_today", false))
-	var special := _active_category in [CATEGORY_SKINS, CATEGORY_EVENT]
+	_apply_page_background()
+	var special := _active_category in [CATEGORY_SKINS, CATEGORY_EVENT, CATEGORY_UNITS]
 	_catalog_shell.visible = not special
 	_special_panel.visible = special
 	if special:
 		_clear_children(_special_content)
 		if _active_category == CATEGORY_EVENT:
 			_render_event()
+		elif _active_category == CATEGORY_UNITS:
+			_render_units()
 		else:
 			_render_appearance()
 		return
@@ -1338,6 +1379,8 @@ func _visible_items() -> Array:
 func _category_has_items(category: String) -> bool:
 	if category in [CATEGORY_DIAMONDS, CATEGORY_FRAMES, CATEGORY_SKINS, CATEGORY_EVENT]:
 		return true
+	if category == CATEGORY_UNITS:
+		return not UnitCollection.races_on_sale(_unit_items()).is_empty()
 	for raw in _items:
 		if _item_category(raw as Dictionary) == category:
 			return true
@@ -1360,6 +1403,8 @@ func _item_category(item: Dictionary) -> String:
 	var kind := str(item.get("kind", "")).to_lower()
 	if kind == CATEGORY_SKINS:
 		return CATEGORY_SKINS
+	if kind == CATEGORY_UNITS:
+		return CATEGORY_UNITS
 	if kind.contains("pet"):
 		return CATEGORY_PETS
 	if kind.contains("frame"):
@@ -1392,6 +1437,393 @@ func _ignore_mouse_tree(node: Node) -> void:
 		(node as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for child in node.get_children():
 		_ignore_mouse_tree(child)
+
+
+# --- 棋子页（2026-10-10 赤律族上商城）-------------------------------------------
+#
+# 中间是种族 logo，左右各一列棋子（按阶位从上到下：T1 / T2 / T2 / T3），
+# 每买一个 logo 从下往上亮一截、外圈点亮一格；集齐由服务端在最后那一笔里发种族，
+# 回执的 unlocked 带回来，这里弹「去备战」。
+#
+# 拥有判断只看服务端拥有列表：棋子看 "unit:<id>"，种族看种族 id 那一行
+# （规则在 scripts/account/UnitCollection.gd，备战页用的是同一份）。
+
+# 卖哪些棋子：同头像框那页的做法 —— 以本地 shop.json 为准排版，服务端目录确认价格；
+# 两边对不上（服务端还没部署这批棋子、或改了价）就标「价格待同步」，不让买。
+func _unit_items() -> Array:
+	var local: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://data/shop.json"))
+	var out: Array = []
+	if not (local is Dictionary):
+		return out
+	for raw in (local as Dictionary).get("items", []):
+		var configured := raw as Dictionary
+		if str(configured.get("kind", "")) != "unit" or not bool(configured.get("enabled", true)):
+			continue
+		var matching: Dictionary = {}
+		for server_raw in _items:
+			var server_item := server_raw as Dictionary
+			if str(server_item.get("id", "")) == str(configured.get("id", "")):
+				matching = server_item
+				break
+		if str(matching.get("grants", "")) == str(configured.get("grants", "")) \
+			and str(matching.get("currency", "")) == str(configured.get("currency", "")) \
+			and int(matching.get("price", -1)) == int(configured.get("price", 0)):
+			out.append(matching)
+		else:
+			var preview := configured.duplicate()
+			preview["_catalog_pending"] = true
+			out.append(preview)
+	return out
+
+
+# 从备战页「去商城」进来时直接落在棋子页、看那一族。
+func open_units(race: String = "") -> void:
+	if not race.is_empty():
+		_unit_race = race
+	_active_category = CATEGORY_UNITS
+	_selected_item_id = ""
+	_render()
+
+
+func _race_title(race: String) -> String:
+	var short: String = UnitDetailFormat.unit_race_name(race)
+	return short if _english() else "%s族" % short
+
+
+# 棋子页：整页背景换成这一族的图（assets/ui/shop/<种族>_unit_bg.png），压暗也调轻，
+# 面板去掉底板，让图完整露出来。其它页：商城原图 + 原来的面板底色。缺图就保持商城原图。
+func _apply_page_background() -> void:
+	if _page_bg == null:
+		return
+	var unit_bg: Texture2D = null
+	if _active_category == CATEGORY_UNITS:
+		var race := _unit_race
+		if race.is_empty():
+			var races := UnitCollection.races_on_sale(_unit_items())
+			if not races.is_empty():
+				race = races[0]
+		var bg_path := UNIT_BG_PATH % race
+		if not race.is_empty() and ResourceLoader.exists(bg_path):
+			unit_bg = load(bg_path) as Texture2D
+	_page_bg.texture = unit_bg if unit_bg != null else MENU_BG_TEX
+	_dim.color = Color(0.04, 0.01, 0.01, 0.30) if unit_bg != null else Tokens.SHOP_SCENE_DIM
+	_special_panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Color(0, 0, 0, 0), Color(0, 0, 0, 0), Tokens.GAP_M) if unit_bg != null
+		else Tokens.panel_box(Tokens.SHOP_SPECIAL, Tokens.SHOP_EDGE, Tokens.GAP_M))
+
+
+func _render_units() -> void:
+	var items := _unit_items()
+	var races := UnitCollection.races_on_sale(items)
+	if races.is_empty():
+		_section_title(_t("棋子", "Units"), _t("这里暂时没有在卖的棋子", "No units on sale yet"))
+		return
+	if not races.has(_unit_race):
+		_unit_race = races[0]
+	var race := _unit_race
+	var sold := UnitCollection.sold_units(items)
+	var units: Array[Dictionary] = []
+	for unit in UnitCollection.units_of(race):
+		if sold.has(str(unit.get("id", ""))):
+			units.append(unit)
+	var total := units.size()
+	var owned_n := 0
+	var missing_price := 0
+	for unit in units:
+		var item: Dictionary = sold[str(unit.get("id", ""))]
+		if _owned.has(str(item.get("grants", ""))):
+			owned_n += 1
+		else:
+			missing_price += int(item.get("price", 0))
+	var unlocked := _owned.has(race)
+
+	# 背景是整页的那张图（_apply_page_background），这里只摆内容，不再叠图。
+	#
+	# 🔴 必须是容器（MarginContainer），不能是普通 Control 再用锚点铺子节点：外面是纵向滚动框，
+	# 它只给子节点「最小高度」那么高，普通 Control 的最小高度是 0 —— 整块被压成 0 高、全部内容裁掉。
+	var margin := MarginContainer.new()
+	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	for side in ["left", "right", "top", "bottom"]:
+		margin.add_theme_constant_override("margin_" + side, Tokens.GAP_S)
+	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_special_content.add_child(margin)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", Tokens.GAP_S)
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	margin.add_child(col)
+
+	var title := Label.new()
+	title.text = _t("%s · 棋子收藏" % _race_title(race), "%s · Unit collection" % _race_title(race))
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
+	title.add_theme_color_override("font_color", Color.WHITE)
+	title.add_theme_color_override("font_outline_color", Tokens.PREP_INK)
+	title.add_theme_constant_override("outline_size", 5)
+	col.add_child(title)
+	var sub := Label.new()
+	sub.text = _t("集齐全部 %d 个棋子，解锁%s出战。" % [total, _race_title(race)],
+		"Collect all %d units to unlock %s for battle." % [total, _race_title(race)])
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	sub.add_theme_color_override("font_color", Tokens.SHOP_TEXT)
+	sub.add_theme_color_override("font_outline_color", Tokens.PREP_INK)
+	sub.add_theme_constant_override("outline_size", 3)
+	col.add_child(sub)
+
+	# 以后不止一族在卖时，顶上多一排种族按钮。只有一族时不显示。
+	if races.size() > 1:
+		var race_row := HBoxContainer.new()
+		race_row.alignment = BoxContainer.ALIGNMENT_CENTER
+		race_row.add_theme_constant_override("separation", Tokens.GAP_S)
+		col.add_child(race_row)
+		for other in races:
+			var race_btn: Button = ACTION_BUTTON.instantiate()
+			race_btn.text = _race_title(other)
+			race_btn.custom_minimum_size = Vector2(120, Tokens.TOUCH_MIN)
+			_style_category_button(race_btn, other == race)
+			race_btn.pressed.connect(func() -> void:
+				_unit_race = other
+				_render())
+			race_row.add_child(race_btn)
+
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	row.add_theme_constant_override("separation", Tokens.GAP_L)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(row)
+	# 左右交替分列：表里是 T1 T1 T2 T2 T2 T2 T3 T3，交替分完两列每一行都是同阶，
+	# 越往下越贵，左右对称。
+	var left := VBoxContainer.new()
+	var right := VBoxContainer.new()
+	for side_col in [left, right]:
+		(side_col as VBoxContainer).alignment = BoxContainer.ALIGNMENT_CENTER
+		(side_col as VBoxContainer).add_theme_constant_override("separation", Tokens.GAP_S)
+		(side_col as VBoxContainer).mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(left)
+	row.add_child(_race_emblem(race, owned_n, total, unlocked, missing_price))
+	row.add_child(right)
+	for i in units.size():
+		var unit: Dictionary = units[i]
+		var card := _unit_card(unit, sold[str(unit.get("id", ""))] as Dictionary)
+		(left if i % 2 == 0 else right).add_child(card)
+
+
+func _race_emblem(race: String, owned_n: int, total: int, unlocked: bool, missing_price: int) -> Control:
+	var box := VBoxContainer.new()
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_theme_constant_override("separation", Tokens.GAP_S)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 集齐但服务端那一行没发（理论上不会；万一出现就别显示「已解锁」，让玩家联系客服）
+	# —— 按种族那一行算亮度，不按棋子数。老玩家补发时两样都有。
+	var progress := 1.0 if unlocked else (float(owned_n) / float(maxi(total, 1)))
+
+	var ring := Control.new()
+	ring.custom_minimum_size = Vector2(EMBLEM_SIZE, EMBLEM_SIZE)
+	ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var lit_segments := total if unlocked else owned_n
+	ring.draw.connect(func() -> void:
+		var center := ring.size * 0.5
+		var radius := minf(ring.size.x, ring.size.y) * 0.5 - 10.0
+		var count := maxi(total, 1)
+		var step := TAU / float(count)
+		var gap := 0.06
+		for i in count:
+			var start := -PI * 0.5 + step * float(i) + gap
+			var color := Color(0.96, 0.32, 0.22) if i < lit_segments else Color(1, 1, 1, 0.2)
+			ring.draw_arc(center, radius, start, start + step - gap * 2.0, 24, color, 10.0, true))
+	box.add_child(ring)
+
+	var logo := TextureRect.new()
+	var logo_path := RACE_LOGO_PATH % race
+	if ResourceLoader.exists(logo_path):
+		logo.texture = load(logo_path) as Texture2D
+	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	logo.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var inset := EMBLEM_SIZE * 0.17
+	logo.offset_left = inset
+	logo.offset_top = inset
+	logo.offset_right = -inset
+	logo.offset_bottom = -inset
+	logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var shader := Shader.new()
+	shader.code = RACE_LIGHT_SHADER_CODE
+	var light := ShaderMaterial.new()
+	light.shader = shader
+	light.set_shader_parameter("progress", progress)
+	logo.material = light
+	ring.add_child(logo)
+
+	var count_label := Label.new()
+	count_label.text = "%d / %d" % [total if unlocked else owned_n, total]
+	count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	count_label.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
+	count_label.add_theme_color_override("font_color", Color.WHITE)
+	count_label.add_theme_color_override("font_outline_color", Tokens.PREP_INK)
+	count_label.add_theme_constant_override("outline_size", 5)
+	box.add_child(count_label)
+
+	var status := Label.new()
+	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	status.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	status.add_theme_color_override("font_outline_color", Tokens.PREP_INK)
+	status.add_theme_constant_override("outline_size", 3)
+	if unlocked:
+		status.text = _t("%s已解锁" % _race_title(race), "%s unlocked" % _race_title(race))
+		status.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+	elif _loading:
+		status.text = ""
+	else:
+		status.text = _t("还差 %s 游戏币" % Currency.comma(missing_price),
+			"%s coins to go" % Currency.comma(missing_price))
+		status.add_theme_color_override("font_color", Tokens.SHOP_TEXT)
+	box.add_child(status)
+
+	if unlocked:
+		var go: Button = ACTION_BUTTON.instantiate()
+		go.text = _t("去备战", "Go to Prep")
+		go.custom_minimum_size = Vector2(200, Tokens.TOUCH_MIN)
+		go.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		go.theme_type_variation = Theming.VARIATION_PRIMARY
+		go.pressed.connect(func() -> void: prep_races_requested.emit(race))
+		box.add_child(go)
+	return box
+
+
+func _unit_card(unit: Dictionary, item: Dictionary) -> Control:
+	var unit_id := str(unit.get("id", ""))
+	var grants := str(item.get("grants", ""))
+	var owned := _owned.has(grants)
+	var price := int(item.get("price", 0))
+	var currency := str(item.get("currency", "coin"))
+	var pending := bool(item.get("_catalog_pending", false))
+	var affordable := _balance_of(currency) >= price
+
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = UNIT_CARD_SIZE
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Color(0.10, 0.03, 0.03, 0.82) if owned else Color(0.04, 0.03, 0.03, 0.78),
+		Tokens.GOLD_EDGE if owned else Tokens.SHOP_EDGE, Tokens.GAP_S))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", Tokens.GAP_S)
+	panel.add_child(row)
+
+	var portrait := TextureRect.new()
+	portrait.custom_minimum_size = Vector2(52, 52)
+	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var portrait_path := UNIT_PORTRAIT_PATH % unit_id
+	var logo_path := RACE_LOGO_PATH % str(unit.get("race", ""))
+	if ResourceLoader.exists(portrait_path):
+		portrait.texture = load(portrait_path) as Texture2D
+	elif ResourceLoader.exists(logo_path):
+		portrait.texture = load(logo_path) as Texture2D
+	# 没买的暗一点：和中间 logo 一个意思 —— 亮的是你已经有的。
+	portrait.modulate = Color.WHITE if owned else Color(0.55, 0.55, 0.55)
+	row.add_child(portrait)
+
+	var info := VBoxContainer.new()
+	info.alignment = BoxContainer.ALIGNMENT_CENTER
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info.add_theme_constant_override("separation", 2)
+	row.add_child(info)
+	var name_label := Label.new()
+	name_label.text = str(unit.get("name_en" if _english() else "name", unit_id))
+	name_label.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
+	name_label.add_theme_color_override("font_color", Color.WHITE)
+	info.add_child(name_label)
+	var tier := int(unit.get("tier", 1))
+	# 阶位和价格并成一行，卡片矮一截。
+	var price_row := HBoxContainer.new()
+	price_row.add_theme_constant_override("separation", 4)
+	info.add_child(price_row)
+	var tier_label := Label.new()
+	tier_label.text = _t("%d 阶 ·" % tier, "Tier %d ·" % tier)
+	tier_label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	tier_label.add_theme_color_override("font_color", Tokens.SHOP_TEXT_MUTED)
+	price_row.add_child(tier_label)
+	if owned:
+		var owned_label := Label.new()
+		owned_label.text = _t("已拥有 ✓", "Owned ✓")
+		owned_label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+		owned_label.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+		price_row.add_child(owned_label)
+	else:
+		var icon := TextureRect.new()
+		icon.texture = Currency.icon(currency)
+		icon.custom_minimum_size = Vector2(18, 18)
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		price_row.add_child(icon)
+		var price_label := Label.new()
+		price_label.text = Currency.comma(price)
+		price_label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+		price_label.add_theme_color_override("font_color",
+			Color.WHITE if affordable or pending else Tokens.DANGER)
+		price_row.add_child(price_label)
+
+	if not owned:
+		var buy: Button = ACTION_BUTTON.instantiate()
+		buy.custom_minimum_size = Vector2(92, Tokens.TOUCH_MIN)
+		buy.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		if pending:
+			buy.text = _t("待同步", "Syncing")
+			buy.disabled = true
+		elif _loading:
+			buy.text = "…"
+			buy.disabled = true
+		elif not affordable:
+			buy.text = _t("余额不足", "Not enough")
+			buy.disabled = true
+		else:
+			buy.text = _t("购买", "Buy")
+			buy.theme_type_variation = Theming.VARIATION_PRIMARY
+			buy.pressed.connect(func() -> void: _confirm_buy(item))
+		row.add_child(buy)
+	return panel
+
+
+# 买完一个棋子：回执的 unlocked 里有这一族 = 这一笔集齐了，弹「去备战」。
+#
+# 重放的回执（上一次其实成功了、回执丢在路上）不带 unlocked。这时按拥有列表数一遍：
+# 棋子都齐了、种族那一行却不在本地缓存里，就再问一次服务端，以服务端那一行为准。
+func _after_unit_purchase(granted: String, receipt: Dictionary) -> void:
+	var race := str(UnitCollection.unit_def(UnitCollection.unit_id_of(granted)).get("race", ""))
+	if race.is_empty():
+		return
+	var just_unlocked := false
+	for raw in receipt.get("unlocked", []):
+		if str(raw) == race:
+			just_unlocked = true
+	if not just_unlocked and not _owned.has(race) \
+		and UnitCollection.owned_count(race, _owned) >= UnitCollection.total_count(race):
+		var fresh: Dictionary = await AccountManager.fetch_entitlements()
+		if not is_inside_tree():
+			return
+		if int(fresh.get("code", 0)) / 100 == 2:
+			for id in ((fresh.get("body", {}) as Dictionary).get("items", []) as Array):
+				_owned[str(id)] = true
+			just_unlocked = _owned.has(race)
+			_render()
+	if just_unlocked:
+		_show_race_unlocked(race)
+
+
+func _show_race_unlocked(race: String) -> void:
+	DialogService.confirm({
+		"owner": self,
+		"title": _t("%s已解锁！" % _race_title(race), "%s unlocked!" % _race_title(race)),
+		"body": _t("全部棋子已集齐。去「备战」把%s换进你的出战种族吧（出战要正好选 4 个种族）。" % _race_title(race),
+			"Every unit is yours. Head to Prep and add %s to your battle races (pick exactly 4)." % _race_title(race)),
+		"confirm_text": _t("去备战", "Go to Prep"),
+		"cancel_text": _t("稍后", "Later"),
+		"on_result": func(answer: String, _id: String) -> void:
+			if answer == ConfirmDialog.RESULT_CONFIRMED:
+				prep_races_requested.emit(race),
+	})
 
 
 # --- 购买 ---------------------------------------------------------------------
@@ -1454,6 +1886,8 @@ func _buy(item: Dictionary) -> void:
 		_diamond = diamond_after
 		_coin = coin_after
 		_owned[str(receipt.get("granted", ""))] = true
+		for raw_unlocked in receipt.get("unlocked", []):
+			_owned[str(raw_unlocked)] = true
 		# replayed = 服务端重放了一张旧回执（上一次其实成功了）。不另说一句的话，
 		# 玩家会以为这次又扣了一笔。
 		# 买的是宠物就把归属缓存刷一遍 —— 备战页与出战宠物都读 PlayerProfile，
@@ -1466,6 +1900,8 @@ func _buy(item: Dictionary) -> void:
 		else:
 			_set_notice(_t("购买成功", "Purchased"), false)
 		_render()
+		if str(item.get("kind", "")) == "unit":
+			await _after_unit_purchase(str(receipt.get("granted", "")), receipt)
 		return
 
 	# 409 / 402 这些是「明确的失败」，服务端一定没扣钱，可以把幂等键丢掉。

@@ -21,10 +21,13 @@ const RACE_LOGO_PATH := "res://assets/ui/race_logos/%s.png"
 const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
 # 点击种族图标查看羁绊效果；选择按钮独立修改出战草稿。
 const SynergyBond := preload("res://scenes/prep/panels/SynergyPanel.gd")
+# 要在商城集齐棋子才能出战的种族（2026-10-10 赤律族）。规则与商城棋子页同一份。
+const UnitCollection := preload("res://scripts/account/UnitCollection.gd")
 
 signal back_requested
 signal starter_picked   # 首次三选一选定后发出（用于「进主菜单前的强制关卡」）
 signal shop_requested   # 棋盘皮肤页点了「去商城」
+signal unit_shop_requested(race: String)   # 种族页点了没解锁的种族 ->「去商城」直接落在棋子页
 
 enum Tab { PETS, RACES, SKINS }
 enum SkinOwnership { NOT_LOADED, LOADING, READY, FAILED }
@@ -66,8 +69,10 @@ var _race_roster_grid: GridContainer
 var _race_roster_scroll: ScrollContainer
 var _race_notice: PanelContainer
 var _race_notice_label: Label
-var _unit_sold: Dictionary = {}
-var _unit_owned: Dictionary = {}
+# 商城目录（GET /v1/shop 的 items）与拥有列表（内容 id -> true）。进这一页时拉一次；
+# 拉不到就都是空的 -> 哪一族都不锁（真正挡人的是服务端，见 UnitCollection.gd 顶部）。
+var _shop_items: Array = []
+var _owned_content: Dictionary = {}
 # 草稿：玩家在页面上点来点去的那一份。只有凑满 RacePick.required_count() 个、按了「保存」
 # 才交给账号服务器 —— 选到一半（3 个）的状态绝不能存，否则存下来的就是一份不合法的选择。
 # 顺序始终跟 RacePick.all_races() 一致，这样才能直接和已保存的那份比较。
@@ -536,10 +541,11 @@ func _refresh_race_card(race: String, forced: bool) -> void:
 		Tokens.PREP_GLASS if complete else Tokens.PREP_GLASS.darkened(0.22),
 		Tokens.GOLD_EDGE if picked and complete else Tokens.PREP_EDGE, 8))
 	var logo: TextureButton = parts["logo"]
-	logo.modulate = Color.WHITE if complete else Color(0.68, 0.68, 0.68)
+	# 没解锁的种族 logo 压暗，一眼能看出来（点它会弹「去商城」）。
+	logo.modulate = Color.WHITE if complete else Color(0.38, 0.38, 0.38)
 	var btn: Button = parts["button"]
 	if not complete:
-		btn.text = "未集齐" if not TranslationServer.get_locale().begins_with("en") else "Incomplete"
+		btn.text = "未解锁" if not TranslationServer.get_locale().begins_with("en") else "Locked"
 		btn.disabled = false
 	elif forced:
 		btn.text = tr("race_pick_locked")
@@ -552,6 +558,8 @@ func _select_race_detail(race: String) -> void:
 	_viewed_race = race
 	_race_notice.visible = false
 	_refresh_race_roster()
+	if not _race_complete(race):
+		_prompt_race_shop(race)
 
 func _refresh_race_roster() -> void:
 	if _race_roster_grid == null or _viewed_race.is_empty():
@@ -571,7 +579,9 @@ func _refresh_race_roster() -> void:
 
 func _build_unit_tile(unit: Dictionary) -> Control:
 	var id := str(unit.get("id", ""))
-	var missing := _race_has_products(str(unit.get("race", ""))) and not _unit_owned.has(id)
+	var race_of_unit := str(unit.get("race", ""))
+	var missing := _race_has_products(race_of_unit) and not _owned_content.has(race_of_unit) \
+		and not _owned_content.has(UnitCollection.content_id(id))
 	var tile := PanelContainer.new()
 	tile.custom_minimum_size = UNIT_TILE_SIZE
 	tile.add_theme_stylebox_override("panel", Tokens.panel_box(
@@ -609,23 +619,12 @@ func _build_unit_tile(unit: Dictionary) -> Control:
 	return tile
 
 func _race_has_products(race: String) -> bool:
-	for raw in DataRegistry.get_table("race_units").get("units", []):
-		if typeof(raw) == TYPE_DICTIONARY:
-			var unit := raw as Dictionary
-			if str(unit.get("race", "")) == race and _unit_sold.has(str(unit.get("id", ""))):
-				return true
-	return false
+	return UnitCollection.race_requires_purchase(race, _shop_items)
 
+# 能不能出战：不在商城卖的族照旧免费；在卖的族要有种族那一行归属
+# （集齐最后一个棋子时服务端发，老玩家由 database/031 补发）。
 func _race_complete(race: String) -> bool:
-	# 棋子尚未进商城的族沿用免费规则；开始上架后必须拥有该族的全部棋子。
-	if not _race_has_products(race):
-		return true
-	for raw in DataRegistry.get_table("race_units").get("units", []):
-		if typeof(raw) == TYPE_DICTIONARY:
-			var unit := raw as Dictionary
-			if str(unit.get("race", "")) == race and not _unit_owned.has(str(unit.get("id", ""))):
-				return false
-	return true
+	return not UnitCollection.is_race_locked(race, _shop_items, _owned_content)
 
 func _load_unit_ownership() -> void:
 	var catalog: Dictionary = await AccountManager.fetch_shop()
@@ -634,24 +633,46 @@ func _load_unit_ownership() -> void:
 		return
 	if int(catalog.get("code", 0)) / 100 != 2 or int(owned.get("code", 0)) / 100 != 2:
 		return
-	_unit_sold.clear()
-	for raw in ((catalog.get("body", {}) as Dictionary).get("items", []) as Array):
-		if typeof(raw) != TYPE_DICTIONARY:
-			continue
-		var item := raw as Dictionary
-		if str(item.get("kind", "")) == "unit":
-			_unit_sold[str(item.get("grants", ""))] = true
-	_unit_owned.clear()
+	_shop_items = ((catalog.get("body", {}) as Dictionary).get("items", []) as Array).duplicate()
+	_owned_content.clear()
 	for id in ((owned.get("body", {}) as Dictionary).get("items", []) as Array):
-		_unit_owned[str(id)] = true
+		_owned_content[str(id)] = true
 	_refresh_races()
+
+# 没解锁的种族：点 logo 或卡片按钮都弹这个，「去商城」直接落在棋子页那一族。
+func _prompt_race_shop(race: String) -> void:
+	var en := TranslationServer.get_locale().begins_with("en")
+	var race_name: String = UnitDetailFormat.unit_race_name(race)
+	var title_name: String = race_name if en else "%s族" % race_name
+	var have := UnitCollection.owned_count(race, _owned_content)
+	var total := UnitCollection.total_count(race)
+	DialogService.confirm({
+		"owner": self,
+		"title": ("%s is locked" % title_name) if en else ("%s未解锁" % title_name),
+		"body": ("Collect all %d %s units in the Shop to unlock it. You have %d / %d." % [total, title_name, have, total]) if en
+			else ("去商城集齐%s的全部 %d 个棋子即可解锁出战。当前已拥有 %d / %d。" % [title_name, total, have, total]),
+		"confirm_text": "Go to Shop" if en else "去商城",
+		"cancel_text": "Later" if en else "稍后",
+		"on_result": func(answer: String, _id: String) -> void:
+			if answer == "confirmed":
+				unit_shop_requested.emit(race),
+	})
+
+# 从商城「去备战」进来：切到种族页、看那一族。
+func show_races(race: String = "") -> void:
+	if PlayerProfile.needs_starter_pick:
+		return
+	if not race.is_empty() and _race_cards.has(race):
+		_viewed_race = race
+	_switch_tab(Tab.RACES)
+	_refresh_race_roster()
 
 func _on_race_card_pressed(race: String) -> void:
 	_viewed_race = race
 	_refresh_race_roster()
 	if not _race_complete(race):
-		_race_notice_label.text = "请前往采购商店，集齐该种族的全部棋子后即可选择。" if not TranslationServer.get_locale().begins_with("en") else "Visit the shop to collect every unit in this race."
-		_race_notice.visible = true
+		_race_notice.visible = false
+		_prompt_race_shop(race)
 		return
 	_race_notice.visible = false
 	if RacePick.is_forced():

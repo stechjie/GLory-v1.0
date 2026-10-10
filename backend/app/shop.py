@@ -18,6 +18,19 @@
 
 好处是存量玩家一行数据都不用发。要卖新头像就出新图、给新 id。
 
+## 棋子与种族：集齐才解锁
+
+种族（kind=race）不能直接买，目录里那一行是 enabled=false，只写着 `requires`：
+要集齐的全部棋子（kind=unit，内容 id 是 `unit:<棋子 id>`）。玩家一个一个买棋子，
+**买到最后一个的那一笔事务里**，服务端把种族也发下去（`grant_content` → `_complete_sets`）。
+出战名片与存种族只认种族那一行归属（loadout.py 不用改）。
+
+为什么不按「每买一个棋子就能刷到那一个」：卡池越浅越容易升星（scripts/units/RacePick.gd 顶上那段），
+只买了一个 T1 的人升星反而最快；而且 ShopRoll.pick_offer 在某一阶没有棋子时会退回整池。
+
+🔴 棋子的内容 id 必须带 `unit:` 前缀：赤卫的棋子 id 就叫 crimson，和种族 id 撞名。
+不带前缀的话，买一个赤卫就等于拿到了整个种族的归属。
+
 ## 扣款顺序固定：先扣赠送，后扣付费
 
 钻石分 `diamond_paid` / `diamond_free` 两列，退款与对账要的是「他还剩多少是花钱买的」。
@@ -89,13 +102,19 @@ class ShopRejected(RuntimeError):
 @dataclasses.dataclass(frozen=True)
 class Item:
     id: str          # 商品 id，只出现在订单里
-    kind: str        # avatar / avatar_frame / pet / prep_skin
+    kind: str        # avatar / avatar_frame / pet / prep_skin / unit / race
     grants: str      # 内容 id，归属表存的是它
     currency: str
     price: int
     name: str
     name_en: str
     enabled: bool = True
+    # 集齐解锁：拥有这里列出的全部内容 id，就自动获得 grants（只用于 kind=race）。
+    requires: tuple[str, ...] = ()
+
+
+# 棋子内容 id 的前缀。见模块开头「棋子与种族」。
+UNIT_PREFIX = "unit:"
 
 
 _shop_cache: tuple[float, dict] | None = None
@@ -147,6 +166,7 @@ def _catalog() -> dict:
             name=str(raw.get("name", raw["id"])),
             name_en=str(raw.get("name_en", raw.get("name", raw["id"]))),
             enabled=bool(raw.get("enabled", True)),
+            requires=tuple(str(x) for x in raw.get("requires", [])),
         )
         if item.currency not in CURRENCIES:
             raise ValueError("shop.json 的 %s 用了未知货币 %s" % (item.id, item.currency))
@@ -159,9 +179,40 @@ def _catalog() -> dict:
         by_item[item.id] = item
         by_content.setdefault(item.grants, item)
 
-    parsed = {"by_item": by_item, "by_content": by_content}
+    parsed = {"by_item": by_item, "by_content": by_content,
+              "sets_by_part": _index_sets(by_item, by_content)}
     _shop_cache = (mtime, parsed)
     return parsed
+
+
+def _index_sets(by_item: dict[str, Item], by_content: dict[str, Item]) -> dict[str, list[Item]]:
+    """集齐解锁的索引：{棋子内容 id: [需要它的种族那一行, ...]}。顺带把目录写错的情况挡在加载时。
+
+    这几条写错都**不会报错**，只会让玩家买齐了却解锁不了（或者没买齐就解锁了），
+    所以宁可整个目录加载失败、接口 500、日志里写清楚是哪一行。
+    """
+    sets_by_part: dict[str, list[Item]] = {}
+    for item in by_item.values():
+        if item.kind == "unit" and not item.grants.startswith(UNIT_PREFIX):
+            raise ValueError("shop.json 的 %s 是棋子，grants 必须带 %s 前缀（棋子 id 会和种族 id 撞名）"
+                             % (item.id, UNIT_PREFIX))
+        if not item.requires:
+            if item.kind == "race":
+                raise ValueError("shop.json 的 %s 是种族，必须写 requires（集齐哪些棋子）" % item.id)
+            continue
+        if item.kind != "race":
+            raise ValueError("shop.json 的 %s 写了 requires，但只有 kind=race 能集齐解锁" % item.id)
+        if item.enabled:
+            # 能直接买的话，玩家花一次钱就跳过了整套棋子。
+            raise ValueError("shop.json 的 %s 是种族，必须 enabled=false（只能集齐，不能直接买）" % item.id)
+        if len(set(item.requires)) != len(item.requires):
+            raise ValueError("shop.json 的 %s 的 requires 有重复" % item.id)
+        for part in item.requires:
+            source = by_content.get(part)
+            if source is None or source.kind != "unit":
+                raise ValueError("shop.json 的 %s 要求 %s，但目录里没有卖这个棋子" % (item.id, part))
+            sets_by_part.setdefault(part, []).append(item)
+    return sets_by_part
 
 
 def _pets() -> dict:
@@ -398,6 +449,48 @@ async def _grant(
     )
 
 
+async def grant_content(
+    conn: asyncpg.Connection,
+    player_id: uuid.UUID,
+    content_id: str,
+    source: str,
+    order_id: uuid.UUID | None,
+) -> list[str]:
+    """发一件内容；它若是某个种族的最后一个棋子，**同一事务里**把种族也发了。
+
+    返回这次因集齐而额外发出的内容 id（绝大多数时候是空列表）。**必须已经在事务里。**
+    会凑成一套的发货路径（购买、邮件附件）都走这里，不直接调 `_grant` ——
+    直接调的那条路发了第 8 个棋子，种族就永远不会来，而且不报错。
+
+    ## 🔴 先锁钱包行，再发货、再数
+
+    两笔并发（同时买最后两个棋子，或一笔购买一笔邮件）各在自己的事务里只看得见自己
+    那一个，各数出来都是 7，于是谁都不发种族 —— 八个全有、种族没有。
+    所以凡是会凑成一套的发货，一律先锁这个人的钱包行（购买路径本来就锁着），
+    把同一个人的这类事务排成队：后到的那笔等前一笔提交，它的计数语句就能看见前一笔的棋子。
+    先锁再发（而不是发完再锁）是为了让所有路径的加锁顺序都是「钱包 → 归属」，不会互相死锁。
+    """
+    sets = _catalog()["sets_by_part"].get(content_id, ())
+    if sets:
+        await _lock_wallet(conn, player_id)
+    await _grant(conn, player_id, content_id, source, order_id)
+    unlocked: list[str] = []
+    for set_item in sets:
+        if await _owns(conn, player_id, set_item.grants):
+            continue
+        have = await conn.fetchval(
+            "select count(*) from player_entitlements"
+            " where player_id = $1 and revoked_at is null and item_id = any($2::text[])",
+            player_id, list(set_item.requires),
+        )
+        if int(have or 0) < len(set_item.requires):
+            continue
+        # 种族那一行记在同一张订单 / 同一封邮件名下：客服查「种族哪来的」能直接追到最后那一笔。
+        await _grant(conn, player_id, set_item.grants, source, order_id)
+        unlocked.append(set_item.grants)
+    return unlocked
+
+
 # --- 购买 ---------------------------------------------------------------------
 
 
@@ -411,6 +504,9 @@ class Receipt:
     wallet: Wallet
     replayed: bool
     created_at: dt.datetime
+    # 这一笔因为集齐而额外解锁的内容（买到第 8 个棋子 -> 种族）。重放时恒为空 ——
+    # 客户端要靠自己数一遍（ShopScreen 买完会按拥有列表重算进度）。
+    unlocked: tuple[str, ...] = ()
 
 
 async def purchase(
@@ -481,7 +577,7 @@ async def purchase(
             # 它走 pick_starter 不走这里，但目录里随时可能出现一件免费商品。
             changes = {col: -n for col, n in split_charge(wallet, item.currency, item.price).items()}
             after = await _apply(conn, player_id, wallet, changes, "shop", order_id)
-            await _grant(conn, player_id, item.grants, "shop", order_id)
+            unlocked = await grant_content(conn, player_id, item.grants, "shop", order_id)
             created_at = await conn.fetchval(
                 "insert into shop_orders"
                 " (order_id, player_id, client_order_id, item_id, currency,"
@@ -500,6 +596,7 @@ async def purchase(
         wallet=after,
         replayed=False,
         created_at=created_at,
+        unlocked=tuple(unlocked),
     )
 
 

@@ -465,7 +465,7 @@
                       "model_in_place_actions": ["idle"],
                       "star4":  {
                           "pull_sec":  2,
-                          "damage_atk_pct":  4.4
+                          "damage_atk_pct":  3.2
                       },
                       "name":  "黑龙",
                       "race":  "dark",
@@ -482,7 +482,7 @@
                       "crit_dmg":  1.8,
                       "skill_id":  "black_hole",
                       "pull_sec":  1,
-                      "damage_atk_pct":  1.9,
+                      "damage_atk_pct":  1.6,
                       "unique_on_board":  true,
                       "model":  "res://assets/models/units/dark_refined/dark_dragon/dark_dragon_refined.tscn",
                       "model_visual_scale":  1,

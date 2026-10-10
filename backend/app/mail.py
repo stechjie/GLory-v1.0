@@ -240,12 +240,18 @@ async def _claim_locked(
     granted: list[str] = []
     skipped: list[str] = []
     for item in mail.items:
+        # 同一封里前面的棋子刚凑齐、把这一项（种族）顺带发了：算到账，不算「已拥有跳过」。
+        if item in granted:
+            continue
         # 已经拥有就跳过，不折算（docs/邮件系统设计.md 拍板）。其余附件照常到账。
         if await shop._owns(conn, player_id, item):
             skipped.append(item)
             continue
-        await shop._grant(conn, player_id, item, "mail", None)
+        # 走 grant_content 而不是 _grant：邮件发的是某个种族的最后一个棋子时，
+        # 种族要跟着到账（同一事务），否则八个棋子全有、种族永远解锁不了。
+        unlocked = await shop.grant_content(conn, player_id, item, "mail", None)
         granted.append(item)
+        granted.extend(u for u in unlocked if u not in granted)
 
     await conn.execute(
         "update mail_states set claimed_at = now(), read_at = coalesce(read_at, now())"

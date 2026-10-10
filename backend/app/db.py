@@ -142,6 +142,8 @@ EXPECTED_TABLES: tuple[str, ...] = (
     # 029（钻石抽宠与账号保底）
     "pet_draw_progress",
     "pet_draws",
+    # 031（一次性补发的执行记录：赤律族老玩家补发）
+    "one_time_grants",
 )
 
 

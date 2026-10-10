@@ -88,6 +88,9 @@ def build():
                 for star in range(1, 5)
             },
         }
+        if unit_id == "dark_dragon":
+            out["units"][unit_id]["skill_damage_multiplier_1to3"] = unit["damage_atk_pct"]
+            out["units"][unit_id]["skill_damage_multiplier_4"] = unit["star4"]["damage_atk_pct"]
     for r in records(wb["03_宠物与商城"]):
         pet_id = text(r[0])
         out["pets"][pet_id] = {
