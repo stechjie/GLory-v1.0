@@ -366,6 +366,8 @@ func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
 			u["taunt_radius"] = float(f.get("taunt_radius", f.get("def", {}).get("taunt_radius", 0.0)))
 			u["skill_every"] = int(f.get("def", {}).get("every", 0))
 			u["unit_id"] = str(f.get("id", ""))
+			# 母灵处决打到 Boss 时是「重击」而不是吸魂（与模拟器 is_boss 判据一致）。
+			u["is_boss"] = bool(f.get("def", {}).get("is_boss", false))
 			u["skill_stacks"] = int(f.get("skill_stacks", 0))
 			u["sim_uid"] = str(f.get("uid", ""))
 			u["killer_uid"] = str(f.get("killer_uid", ""))
@@ -703,7 +705,7 @@ func _sync_persistent_unit_vfx(current:Dictionary)->void:
 func _guardian_taunt_world_radius(sim_radius: float) -> Vector2:
 	# _sim_to_world_pos uses different X/Z scales. A sim-space circle therefore
 	# becomes an ellipse; offsets, board flip and visual clamping do not alter it.
-	return maxf(0.0, sim_radius) * Vector2(BATTLE_PLAYABLE_WIDTH / SIM_W, BATTLE_PLAYABLE_DEPTH / SIM_H) * BATTLE_VISUAL_SPACE_SCALE
+	return maxf(0.0, sim_radius) * Vector2(BATTLE_PLAYABLE_WIDTH / SIM_W, BATTLE_PLAYABLE_DEPTH / _sim_height()) * BATTLE_VISUAL_SPACE_SCALE
 
 func _start_guardian_unit_vfx(unit: Dictionary) -> void:
 	var id := str(unit.get("id", ""))
@@ -807,14 +809,18 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 			if enemy_targets.is_empty():
 				enemy_targets=_living_enemy_world_positions(unit,current)
 		context["targets"]=enemy_targets
+		# 10.10：光弹要跟着目标走（被推开 / 走位），把记录目标的模型节点按同序交过去。
+		var divine_nodes:Array=[]
+		for tid in _vfx_target_uids(recorded):
+			var struck:=_vfx_unit_by_sim_uid(current,tid)
+			if not struck.is_empty():
+				divine_nodes.append(struck.get("model_node"))
+		if divine_nodes.size()==enemy_targets.size():
+			context["target_nodes"]=divine_nodes
+		context["origin_foot"]=unit.get("world_foot",Vector3.ZERO)
 	elif sid=="black_hole":
 		target_world=unit.get("world_foot",Vector3.ZERO)
-		# Each pulled target needs a smear pointing at the centre (bible 8), so
-		# hand the visuals the positions of the enemies actually affected.
-		var pulled_positions:Array=[]
-		for event:Dictionary in _enemy_damage_events(unit,damage_events):
-			pulled_positions.append(event.get("world_foot",Vector3.ZERO))
-		context["targets"]=pulled_positions
+		_black_hole_context(unit,current,context)
 	elif sid=="random_ally_damage_reduction":
 		# The presentation follows the simulator's real remaining status time, so
 		# 1-3 star (6s) and 4-star (8s) guards do not share a fake visual duration.
@@ -874,6 +880,37 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 	var spawned:=_play_unit_procedural(sid,origin,target_world,context)
 	if sid=="shared_hp_link" and spawned!=null:
 		_persistent_unit_vfx[str(unit.get("id",""))]={"node":spawned,"target_uid":str(unit.get("skill_target_uid",""))}
+
+# 10.10 黑龙黑洞：被拉的人以模拟器记录为准（BattleSimSkills._skill_black_hole 的
+# _mark_vfx_targets）。落点取「本帧模拟位置」（模型可能还在往新位置滑），起点取上一帧
+# 模型脚下 —— 两点之间就是拖拽残影。眩晕时长读目标身上真实的 stun 剩余时间。
+# 记录为空 = 这一发没拉到人：只画漩涡，**不**拿本帧别人打出的伤害去猜（同神王的教训）。
+func _black_hole_context(unit:Dictionary,current:Dictionary,context:Dictionary)->void:
+	context["origin_foot"]=unit.get("world_foot",Vector3.ZERO)
+	context["world_radius"]=_guardian_taunt_world_radius(220.0)
+	var recorded:=str(unit.get("skill_target_uid",""))
+	var to_positions:Array=[]
+	var from_positions:Array=[]
+	var stun:=0.0
+	if not recorded.is_empty():
+		for tid in _vfx_target_uids(recorded):
+			var now:=_vfx_unit_by_sim_uid(current,tid)
+			if now.is_empty():
+				continue
+			var foot:Vector3=now.get("world_foot",Vector3.ZERO)
+			var sim_world:=_sim_to_world_pos(now.get("sim_pos",Vector2.ZERO))
+			to_positions.append(Vector3(sim_world.x,foot.y,sim_world.z))
+			var before:=_vfx_unit_by_sim_uid(_vfx_prev_units,tid)
+			from_positions.append(before.get("world_foot",foot) if not before.is_empty() else foot)
+			var statuses:Dictionary=_state_unit_for(tid).get("statuses",{})
+			var stun_status:Variant=statuses.get("stun",{})
+			if stun_status is Dictionary:
+				stun=maxf(stun,float((stun_status as Dictionary).get("remaining",0.0)))
+	context["targets"]=to_positions
+	context["from_positions"]=from_positions
+	var data_pull:=float((_state_unit_for(str(unit.get("sim_uid",""))).get("def",{}) as Dictionary).get("pull_sec",1.0))
+	context["stun_duration"]=stun if stun>0.05 else data_pull
+
 
 func _exact_skill_target(unit:Dictionary,current:Dictionary)->Dictionary:
 	var uid:=str(unit.get("skill_target_uid",""))
@@ -1359,15 +1396,28 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 				var _msim := str(event.get("source_uid", ""))
 				if _is_own_or_ally_unit(_msim) and _is_star4(_msim):
 					SfxService.play(SfxService.star4_cue_for("undead_mother", true))
-				var victim:=_vfx_unit_by_sim_uid(current,str(event.get("target_uid","")))
+				var victim_uid:=str(event.get("target_uid",""))
+				var victim:=_vfx_unit_by_sim_uid(current,victim_uid)
+				# 处决当帧目标已经倒下：本帧快照里可能已没有它，退回上一帧的位置（吸魂从它最后站的地方升起）。
+				if victim.is_empty() and not victim_uid.is_empty():
+					victim=_vfx_unit_by_sim_uid(_vfx_prev_units,victim_uid)
 				var has_victim:=not victim.is_empty()
 				var book_target:Vector3=victim.get("world_foot",mother.get("world_foot",Vector3.ZERO)) if has_victim else mother.get("world_foot",Vector3.ZERO)
 				var book_context:Dictionary=_unit_target_context(mother,victim) if has_victim else _unit_target_context(mother,mother)
+				book_context["has_victim"]=has_victim
+				book_context["heavy"]=has_victim and bool(victim.get("is_boss",false))
+				var head_anchor:Variant=_unit_actor_registry.get_anchor(str(mother.get("id","")),"HeadAnchor")
+				if head_anchor is Node3D:
+					book_context["origin_head_node"]=head_anchor
+				if not has_victim:
+					book_context.erase("target_node")
 				_play_unit_procedural("unique_death_execute",mother.get("world_head",mother.get("world_cast",Vector3.ZERO)),book_target,book_context)
 		elif str(event.get("type", "")) == "unit_skill_proc" and str(event.get("skill_id", "")) in _CRIMSON_CATALOG.PROC_SKILLS:
 			_play_crimson_proc(event, current)
 		elif str(event.get("type", "")) == "impact" and str(event.get("skill_id", "")) == "line_pierce":
 			_collect_crimson_event(crimson_pierces, event, false)
+		elif str(event.get("type", "")) == "hit_number" and str(event.get("skill_id", "")) == "global_divine_blast" and str(event.get("kind", "dmg")) == "dmg":
+			_play_divine_pulse(event, current)
 		elif str(event.get("type", "")) == "hit_number" and str(event.get("skill_id", "")) == "current_hp_strike" and str(event.get("kind", "dmg")) == "dmg":
 			_collect_crimson_event(crimson_hp_hits, event, true)
 		elif str(event.get("type", "")) == "unit_skill_proc":
@@ -1402,6 +1452,22 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 		# D6: hit_number is drawn by the Director's adapter, on its timing. The old
 		# branch here would have been a second, untimed copy of the same number.
 	_play_crimson_event_groups(crimson_hp_hits, crimson_pierces, current)
+
+# 10.10 神王：后续每一跳伤害（hit_number，skill_id = global_divine_blast）在目标身上
+# 补一个小脉冲。第一跳与施法同帧落下，那一下由光弹命中负责：同一次刷新里神王的
+# skill_ready 正在上升（本帧施法）就跳过。纯表现，可被并发上限丢弃。
+func _play_divine_pulse(event: Dictionary, current: Dictionary) -> void:
+	var source_uid := str(event.get("source_uid", ""))
+	var king := _vfx_unit_by_sim_uid(current, source_uid)
+	if not king.is_empty():
+		var before := _vfx_unit_by_sim_uid(_vfx_prev_units, source_uid)
+		if not before.is_empty() and float(king.get("skill_ready", 0.0)) > float(before.get("skill_ready", 0.0)) + 0.1:
+			return
+	var target := _vfx_unit_by_sim_uid(current, str(event.get("target_uid", "")))
+	if target.is_empty() or not bool(target.get("alive", false)):
+		return
+	var context := _unit_target_context(king if not king.is_empty() else target, target)
+	_play_unit_procedural("global_divine_blast_pulse", target.get("world_hit", target.get("world_foot", Vector3.ZERO)), target.get("world_hit", target.get("world_foot", Vector3.ZERO)), context)
 
 # --- Director cue entry points ------------------------------------------------
 # Every basic attack, damage number and death is drawn through these, driven by

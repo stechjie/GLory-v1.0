@@ -153,4 +153,5 @@ static func find_route(f: Dictionary, candidates: Array, bodies: Array) -> Dicti
 	return best
 
 static func _inside(p: Vector2) -> bool:
-	return p.x >= 45.0 and p.x <= ARENA_W - 45.0 and p.y >= 40.0 and p.y <= ARENA_H - 40.0
+	return p.x >= 45.0 and p.x <= ARENA_W - 45.0 \
+		and p.y >= combat_y_margin() and p.y <= combat_arena_height() - combat_y_margin()

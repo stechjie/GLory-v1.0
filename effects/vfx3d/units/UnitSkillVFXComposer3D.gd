@@ -26,6 +26,8 @@ const VFX_ANGEL_GUARD:=preload("res://effects/vfx3d/modules/VFXAngelGuard3D.gd")
 const VFX_GUARDIAN_SANCTUARY:=preload("res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd")
 const VFX_CRIMSON_ATTACK:=preload("res://effects/vfx3d/units/VFXCrimsonAttack3D.gd")
 const VFX_CRIMSON_SKILL:=preload("res://effects/vfx3d/units/VFXCrimsonSkill3D.gd")
+# 黑龙黑洞 / 神王神威 / 母灵亡者之书（10.10 重做，见 VFXHeroSkill3D 文件头）。
+const VFX_HERO_SKILL:=preload("res://effects/vfx3d/units/VFXHeroSkill3D.gd")
 const CRIMSON_CATALOG:=preload("res://effects/vfx3d/units/CrimsonVFXCatalog.gd")
 const PROFILE_ANGEL_GUARD:=preload("res://effects/vfx3d/profiles/examples/angel_guard_example.tres")
 const OGA_CHESS_CATALOG:=preload("res://effects/vfx3d/units/OgaChessVFXCatalog.gd")
@@ -159,12 +161,18 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 		# 全体落雷 —— 与裁决者同一套 VFXLightningArc + 同一配色，逐个技能目标各落一道。
 		# 上一版把「神王」错认成了 human_king（人王）的 unique_king_growth，见文件末的
 		# 订正说明；人王那条已还原，这里才是 docx 指的「神王的全体攻击」。
-		"global_divine_blast":_aoe_thunder(origin,target,context)
+		# 10.10：神王改为「头顶日轮法印 → 每个记录目标一颗带粒子拖尾的能量光弹 → 命中爆闪
+		# + 绕身余能」，不再是竖直落雷（用户口径：要有能量感、有粒子，不要垂直光柱）。
+		# 裁决者（judgement_strike）仍走 _aoe_thunder，不受影响。
+		"global_divine_blast":_hero_skill(skill_id,origin,target,context,true)
+		# 神王后续 4 跳伤害的小脉冲（BattleVfx 按 hit_number 事件触发）。可被并发上限丢弃。
+		"global_divine_blast_pulse":_hero_skill(skill_id,origin,target,context,false)
 		# 9.24 #4：沉默箭改成真正会飞的投射物（发射 → 命中 → 落封印）。
 		"silence_bolt":_oga_silence_bolt(origin,target,context)
 		"fear":_fear_hit(origin,target,context)
 		"stun":_stun_hit(origin,target,context)
-		"black_hole":_oga_pack_skill("black_hole",origin,origin,context)
+		# 10.10：黑龙黑洞改为贴地引力漩涡 + 逐个被拉者的拖拽残影 / 牵引触须 / 眩晕锁环。
+		"black_hole":_hero_skill(skill_id,origin,target,context,true)
 		"blink_low_def_backline":_blink_slash(origin,target,context)
 		# 9.24 #7：末日守卫「血之契约」改用专属血链（VFXDoomBloodLink3D）——暗红/黑紫
 		# 手绘绳体 + 两端结 + 断裂时从中段撕裂；旧路由走的是通用发光缎带
@@ -215,7 +223,9 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 			pass
 		"unique_death_execute":
 			# 强制生成：书是玩家必须读到的关键事件，跳过并发上限，不被特效密集回合饿死。
-			_spawn_forced(VFX_MOTHER_EXECUTE,MOTHER_EXECUTE_PROFILE,{"origin":origin,"target":target,"origin_node":context.get("origin_node"),"target_node":context.get("target_node")})
+			# 10.10：改为立体翻页的亡者之书（VFXHeroSkill3D）；旧的平面书贴图模块保留在
+			# VFXMotherExecute3D 里不再路由。
+			_hero_skill(skill_id,origin,target,context,true)
 		# 人王（human_king）的普攻表现：目标头顶竖直落下的金色天剑。
 		# ⚠️ 9.24 订正：这个 skill_id 属于**人王**（human_king），不是神王。人王没有
 		# skill_cd，它是被动成长技，这个分支实际只服务**人王的普通攻击**
@@ -308,6 +318,13 @@ func _crimson_basic_attack(origin:Vector3,target:Vector3,mode:String,context:Dic
 
 # 赤律族技能：一次性表现走普通并发闸门；赤灯使全体禁言是控制类（与
 # guardian / black_hole 同理）必须读到，走 critical 通道。
+func _hero_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary,critical:bool)->void:
+	var effect:Node3D=_block_forced(VFX_HERO_SKILL) if critical else _block(VFX_HERO_SKILL)
+	if effect==null:
+		return
+	last_spawned=effect
+	effect.call("play_hero_skill",skill_id,origin,target,context)
+
 func _crimson_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var critical:=skill_id=="aoe_silence"
 	var effect:Node3D=_block_forced(VFX_CRIMSON_SKILL) if critical else _block(VFX_CRIMSON_SKILL)

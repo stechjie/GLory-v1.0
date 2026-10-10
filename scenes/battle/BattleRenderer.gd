@@ -9,6 +9,7 @@ const UNIT_TEAM_RING_SHADER := preload("res://shaders/unit_team_ring.gdshader")
 const FOUR_STAR_AURA := preload("res://effects/vfx3d/modules/FourStarAuraV3_3D.gd")
 const CrimsonDrumBadge := preload("res://scenes/battle/CrimsonDrumBadge.gd")
 const CrimsonRuneBadgeScript := preload("res://scenes/battle/CrimsonRuneBadge.gd")
+const MotherSoulBadgeScript := preload("res://scenes/battle/MotherSoulBadge.gd")
 const CrimsonResonanceOrb := preload("res://effects/vfx3d/modules/CrimsonResonanceOrb3D.gd")
 const CrimsonRedTideOrbits := preload("res://effects/vfx3d/modules/CrimsonRedTideOrbits3D.gd")
 # 10.10 第 10 条：凤凰涅槃复活体的「死灵气息」常驻标识。
@@ -108,6 +109,14 @@ func _refresh_visuals() -> void:
 			node.add_child(rune_badge)
 		if rune_badge != null:
 			rune_badge.call("set_stacks", rune_count)
+		# 10.10：母灵击杀计数（亮几盏魂火 / 阈值）。字段只有母灵身上有。
+		var mother_threshold := int(f.get("vfx_mother_threshold", 0))
+		var soul_badge := node.get_node_or_null("MotherSoulBadge") as Control
+		if mother_threshold > 0 and soul_badge == null:
+			soul_badge = MotherSoulBadgeScript.new()
+			node.add_child(soul_badge)
+		if soul_badge != null:
+			soul_badge.call("set_counter", int(f.get("vfx_mother_count", 0)), mother_threshold)
 		var hp_bar: ColorRect = _hp_fill_by_id.get(_visual_id(f))
 		if hp_bar != null and is_instance_valid(hp_bar):
 			hp_bar.scale.x = clampf(float(f.hp) / float(maxi(1, f.max_hp)), 0.0, 1.0)

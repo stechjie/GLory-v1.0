@@ -16,8 +16,9 @@ const OGA_CARD := preload("res://effects/vfx3d/modules/VFXSpriteFlipbook3D.gd")
 # These are the exclusive standard-card routes in UnitSkillVFXComposer3D.
 # A catalogue entry alone is insufficient: e.g. judgement_strike and the angel
 # guards now use procedural geometry and must still run their complete composer.
+# 10.10：black_hole 已改走 VFXHeroSkill3D（完整 composer），不再是标准卡路由。
 const DIRECT_PACK_ROUTES := ["lowest_ally_heal", "nearest_ally_bless", "nearby_ally_heal_buff",
-	"black_hole", "curse_attack", "same_target_damage_stack",
+	"curse_attack", "same_target_damage_stack",
 	"poison_attack", "death_poison_explosion", "poison_reflect_armor_stack"]
 const MAX_JOBS := 256
 const MAX_CACHED_JOBS := 512
@@ -203,8 +204,10 @@ static func composer_warmup_duration(effect: String) -> float:
 			return 0.35 # Fracture appears after 0.16s.
 		"every_fourth_combo":
 			return 0.60 # Arrow's impact appears after 0.42s.
-		"global_divine_blast", "judgement_strike":
+		"judgement_strike":
 			return 0.55 # Lightning's ground residual appears after 0.285s.
+		"global_divine_blast":
+			return 0.75 # 10.10 光弹 0.24s 发射，命中层约 0.6s 出现。
 	return 0.40 if effect.begins_with("basic_attack_") else 0.85
 
 func _cancelled(can_continue: Callable) -> bool:

@@ -263,12 +263,18 @@ static func _skill_stun(caster: Dictionary, opponents: Array, d: Dictionary, sta
 
 static func _skill_black_hole(caster: Dictionary, opponents: Array, d: Dictionary, state: Dictionary) -> void:
 	var dur := _dark_duration(float(d.get("pull_sec", 2.0)), caster, state)
+	# 10.10：表现列记下「这一发真正被拉的人」（纯表现，不参与任何结算）。先清空，
+	# 一个都没拉到时表现层就只画漩涡，不会拿上一发的旧记录去画拖拽。
+	var pulled := []
 	# 9.27（C 层）：候选池先按"可达 lane"过滤 —— 隔断还没释放就不许把别路的人拉过来。
 	for o in _opponents_in_reachable_lanes(caster, opponents, state):
 		if not bool(o.get("alive", false)) or not _can_target(caster, o, opponents) or caster.pos.distance_to(o.pos) > 220.0: continue
 		StatusEffectService.add_status(o, "stun", dur, {})
 		o.pos = o.pos.lerp(caster.pos, 0.45)
+		pulled.append(o)
 		DamageService.apply_damage(o, maxi(1, int(float(caster.atk) * float(d.get("damage_atk_pct", 2.2)))), false)
+	caster.vfx_skill_target_uid = ""
+	_mark_vfx_targets(caster, pulled)
 
 
 static func _skill_blink_low_def_backline(caster: Dictionary, allies: Array, opponents: Array, d: Dictionary, state: Dictionary) -> bool:

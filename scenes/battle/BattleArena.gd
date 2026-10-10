@@ -1020,17 +1020,25 @@ func _sim_to_arena(sim_pos: Vector2) -> Vector2:
 	# Map simulator coordinate space (SIM_W x SIM_H) to actual arena pixel size
 	var arena_size := _arena.size
 	if arena_size.x <= 0 or arena_size.y <= 0:
-		arena_size = Vector2(SIM_W, SIM_H)
+		arena_size = Vector2(SIM_W, _sim_height())
 	return Vector2(
 		sim_pos.x / SIM_W * arena_size.x,
-		sim_pos.y / SIM_H * arena_size.y
+		sim_pos.y / _sim_height() * arena_size.y
 	)
 
+func _sim_height() -> float:
+	return BattleSimShared.combat_arena_height()
+
+
 func _battle_visual_min() -> Vector2:
+	if _battlefield_kind() == "final":
+		return Vector2(BATTLE_VISUAL_MIN.x, BattleSimShared.combat_y_margin())
 	return BATTLE_VISUAL_MIN
 
 
 func _battle_visual_max() -> Vector2:
+	if _battlefield_kind() == "final":
+		return Vector2(BATTLE_VISUAL_MAX.x, _sim_height() - BattleSimShared.combat_y_margin())
 	return BATTLE_VISUAL_MAX
 
 
@@ -1044,7 +1052,7 @@ func _clamp_visual_sim_pos(sim_pos: Vector2) -> Vector2:
 
 func _sim_to_world_pos(sim_pos: Vector2, apply_down_shift: bool = true) -> Vector3:
 	sim_pos = _clamp_visual_sim_pos(sim_pos)
-	var ny := sim_pos.y / SIM_H
+	var ny := sim_pos.y / _sim_height()
 	var nx := sim_pos.x / SIM_W
 	if _arena_flip_y:
 		# 蓝队看 PvP：**只上下翻**（自己到下方），左右不翻（2026-10-06 用户定）。

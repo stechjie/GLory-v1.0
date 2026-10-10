@@ -44,6 +44,7 @@ func _run() -> void:
 	_case_pvp_state()
 	_case_scouting_matches_pvp()
 	_case_final_still_mirrored()
+	_case_final_spacing()
 	_case_view_flip()
 	_restore_state(saved)
 	_h.finish(get_tree())
@@ -126,7 +127,7 @@ func _case_final_still_mirrored() -> void:
 	var state := BattleSim.prepare_team_state(0)
 	var blue: Array = _fighters(state.get("enemy", []), BLUE_FIRST)
 	# 决赛整张转 90°（模拟 x → y）。面对面镜像下，蓝队第 0 列在本路中线的「下边」（y 大）。
-	var center_y := float(Shared.TEAM_LANE_CENTERS[0]) / Shared.ARENA_W * Shared.ARENA_H
+	var center_y := float(Shared.FINAL_LANE_CENTERS_Y[0])
 	var col0 := blue.filter(func(f: Dictionary) -> bool:
 		return f.has("board_cell") and int(f.board_cell) % GameConstants.BOARD_COLUMNS == 0 \
 			and not bool(f.get("is_formation_ally", false)))
@@ -134,6 +135,52 @@ func _case_final_still_mirrored() -> void:
 		return
 	var below := col0.all(func(f: Dictionary) -> bool: return float(f.pos.y) > center_y)
 	_h.expect(below, "final_mirror_changed", "决赛（左右对打）应照旧面对面镜像，这次改动不该碰它")
+
+
+func _case_final_spacing() -> void:
+	_setup(GameState.FINAL_ROUND, false)
+	var player: Array = []
+	var enemy: Array = []
+	for lane in 3:
+		var center := float(Shared.TEAM_LANE_CENTERS[lane])
+		for slot in GameConstants.CELL_COUNT:
+			player.append({"pos": Shared.board_cell_pos(slot, "player", center),
+				"lane": lane, "board_cell": slot, "footprint_cells": 1})
+			enemy.append({"pos": Shared.board_cell_pos(slot, "enemy", center),
+				"lane": lane, "board_cell": slot, "footprint_cells": 1})
+	var player_ally := {"pos": Vector2.ZERO, "is_formation_ally": true, "footprint_cells": 4}
+	var enemy_ally := {"pos": Vector2.ZERO, "is_formation_ally": true, "footprint_cells": 4}
+	player.append(player_ally)
+	enemy.append(enemy_ally)
+	BattleSim._apply_final_round_left_right_layout(player, enemy)
+	for lane in 3:
+		var base := lane * GameConstants.CELL_COUNT
+		var center_y := float(Shared.FINAL_LANE_CENTERS_Y[lane])
+		for col in GameConstants.BOARD_COLUMNS:
+			var p: Dictionary = player[base + col]
+			var e: Dictionary = enemy[base + col]
+			var offset := (float(col) - 1.5) * Shared.BOARD_COL_SPACING
+			_h.expect(is_equal_approx(float(p.pos.y), center_y + offset),
+				"final_player_pitch_%d_%d" % [lane, col], "决赛我方列距未保持 56")
+			_h.expect(is_equal_approx(float(e.pos.y), center_y - offset),
+				"final_enemy_pitch_%d_%d" % [lane, col], "决赛敌方镜像列距未保持 56")
+		_h.expect(is_equal_approx(float(player[base + 2].pos.y - player[base].pos.y), 112.0),
+			"final_empty_cell_gap_%d" % lane, "中间空一格应相隔 112 模拟像素")
+	var arena = ArenaScript.new()
+	for f: Dictionary in player + enemy:
+		_h.expect(arena._clamp_visual_sim_pos(f.pos).is_equal_approx(f.pos),
+			"final_visual_clip", "决赛 56 列距被画面边界压到一起")
+	arena.free()
+	for f: Dictionary in player:
+		if is_same(f, player_ally):
+			continue
+		_h.expect(f.pos.distance_to(player_ally.pos) >= Shared.body_radius(f) + Shared.body_radius(player_ally),
+			"final_player_ally_overlap", "我方法阵友军与棋盘出生点重叠")
+	for f: Dictionary in enemy:
+		if is_same(f, enemy_ally):
+			continue
+		_h.expect(f.pos.distance_to(enemy_ally.pos) >= Shared.body_radius(f) + Shared.body_radius(enemy_ally),
+			"final_enemy_ally_overlap", "敌方法阵友军与棋盘出生点重叠")
 
 
 # --- 5. 画面只上下翻 ----------------------------------------------------------------

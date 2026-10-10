@@ -36,7 +36,8 @@ uniform float reveal = 1.0;        // 0..1 sweep reveal around the ring
 uniform float fill = 0.0;          // soft inner fill under a ring / seal (0..1)
 uniform float seal_rings = 1.0;    // draw the seal's two framing circles
 uniform float stroke = 0.035;      // seal stroke half-width in quad UV units
-// seal (shape 4): 0 frost snowflake, 1 lantern seal, 2 drum ripple, 3 aegis, 4 music note.
+// seal (shape 4): 0 frost snowflake, 1 lantern seal, 2 drum ripple, 3 aegis, 4 music note,
+// 5 divine sun sigil (神王), 6 soul-reaper eye (母灵), 7 gravity vortex arms (黑龙).
 uniform int pattern = 0;
 uniform float seed = 0.0;
 
@@ -158,6 +159,40 @@ void fragment() {
 			float flag_w = mix(0.13, 0.04, fx);
 			float flag = (1.0 - smoothstep(flag_w * 0.6, flag_w, abs(q.y - flag_y))) * step(0.05, q.x) * (1.0 - step(0.48, q.x));
 			glyph = max(head, max(stem, flag));
+		} else if (pattern == 5) {
+			// Divine sun sigil (神王): twelve tapered rays of alternating length,
+			// a broken inner ring and a four-point star core. Rotated by `seed` phase.
+			float sector = 0.5235988;
+			float ra = a + seed * 0.37;
+			float local = mod(ra + sector * 0.5, sector) - sector * 0.5;
+			float idx = floor((ra + sector * 0.5) / sector);
+			float ray_len = mod(idx, 2.0) < 0.5 ? 0.95 : 0.76;
+			vec2 q = vec2(cos(local), sin(local)) * r;
+			float ray_w = mix(w1 * 1.5, w0 * 0.5, clamp((q.x - 0.50) / (ray_len - 0.50), 0.0, 1.0));
+			float ray = (1.0 - smoothstep(ray_w * 0.5, ray_w, abs(q.y))) * step(0.50, q.x) * (1.0 - step(ray_len, q.x));
+			float ring_gap = smoothstep(0.15, 0.55, abs(sin(ra * 6.0)));
+			float ring = (1.0 - smoothstep(w0, w1, abs(r - 0.40))) * ring_gap;
+			vec2 sq = abs(p);
+			float star = 1.0 - smoothstep(0.0, 0.05, sq.x * 1.0 + sq.y * 1.0 - 0.06 - 0.24 * (1.0 - smoothstep(0.0, 0.05, min(sq.x, sq.y))));
+			glyph = max(ray, max(ring, star));
+		} else if (pattern == 6) {
+			// Soul-reaper mark (母灵): an upright almond eye with a slit pupil
+			// and two falling tear strokes underneath.
+			vec2 q = vec2(p.x, -p.y);
+			float eye_out = max(length(q - vec2(0.52, 0.10)), length(q - vec2(-0.52, 0.10))) - 0.86;
+			float rim = 1.0 - smoothstep(w0, w1, abs(eye_out));
+			float pupil = 1.0 - smoothstep(0.85, 1.05, length((q - vec2(0.0, 0.10)) / vec2(0.07, 0.24)));
+			float tear_l = (1.0 - smoothstep(w0, w1, abs(q.x + 0.16 + (q.y + 0.42) * 0.10))) * step(-0.86, q.y) * (1.0 - step(-0.46, q.y));
+			float tear_r = (1.0 - smoothstep(w0, w1, abs(q.x - 0.16 - (q.y + 0.42) * 0.10))) * step(-0.78, q.y) * (1.0 - step(-0.50, q.y));
+			glyph = max(max(rim, pupil), max(tear_l, tear_r) * 0.85);
+		} else if (pattern == 7) {
+			// Gravity vortex (黑龙): three logarithmic spiral arms winding inward,
+			// rotated by `spin` (ground decals do not billboard, so spin is free).
+			float arms = sin((a + spin) * 3.0 + log(max(r, 0.02)) * 7.5);
+			float band = smoothstep(0.25, 0.95, arms);
+			float body_mask = smoothstep(0.98, 0.70, r) * smoothstep(0.06, 0.30, r);
+			float torn_a = mix(1.0, smoothstep(0.1, 0.7, torn(a * 1.3 + r * 4.0)), breakup);
+			glyph = band * body_mask * torn_a;
 		} else {
 			// Aegis: double hexagon with a centre boss.
 			float sector = 1.0471976;

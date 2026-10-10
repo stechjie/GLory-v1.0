@@ -79,6 +79,9 @@ var _replay_red_tide_event_cursor := 0
 var _replay_red_tide_last_frame := -1
 var _replay_rune_event_cursor := 0
 var _replay_rune_last_frame := -1
+# 10.10：母灵魂火计数（undead_mother_count_events）的回放游标，与上面几组同一写法。
+var _replay_mother_event_cursor := 0
+var _replay_mother_last_frame := -1
 var _replay_by_uid: Dictionary = {}
 # 9.24 #7（订正）：末日守卫「血之契约」把被连接目标**永久**变成我方棋子。
 #
@@ -862,6 +865,8 @@ func _load_replay_roster(replay: Dictionary) -> void:
 	_replay_red_tide_last_frame = -1
 	_replay_rune_event_cursor = 0
 	_replay_rune_last_frame = -1
+	_replay_mother_event_cursor = 0
+	_replay_mother_last_frame = -1
 	# 9.24 #7：策反锁存是**每局**的，换局必须清空，否则上一局被策反过的 uid 会带到下一局。
 	_converted_ally_ids = {}
 	var players: Array = []
@@ -1254,6 +1259,7 @@ func _apply_replay_frame(i: int) -> void:
 	_apply_resonance_stack_events(i)
 	_apply_red_tide_stack_events(i)
 	_apply_rune_stack_events(i)
+	_apply_mother_count_events(i)
 	for f in _replay_by_uid.values():
 		f.alive = false
 	if typeof(frames[i]) != TYPE_ARRAY:
@@ -1381,6 +1387,28 @@ func _apply_rune_stack_events(frame_index: int) -> void:
 			(f as Dictionary)["crimson_rune_stacks"] = clampi(int(event[2]), 0, 9)
 		_replay_rune_event_cursor += 1
 	_replay_rune_last_frame = frame_index
+
+# 母灵魂火计数：[tick, uid, count, threshold]。只改展示字段，回退时从头重放。
+func _apply_mother_count_events(frame_index: int) -> void:
+	if frame_index < _replay_mother_last_frame:
+		for f: Dictionary in _replay_by_uid.values():
+			f.erase("vfx_mother_count")
+			f.erase("vfx_mother_threshold")
+		_replay_mother_event_cursor = 0
+	var events: Array = _replay.get("undead_mother_count_events", [])
+	while _replay_mother_event_cursor < events.size():
+		var event: Variant = events[_replay_mother_event_cursor]
+		if not (event is Array) or (event as Array).size() < 4:
+			_replay_mother_event_cursor += 1
+			continue
+		if int(event[0]) > frame_index:
+			break
+		var f: Variant = _replay_by_uid.get(str(event[1]))
+		if f is Dictionary:
+			(f as Dictionary)["vfx_mother_threshold"] = clampi(int(event[3]), 0, 99)
+			(f as Dictionary)["vfx_mother_count"] = clampi(int(event[2]), 0, 99)
+		_replay_mother_event_cursor += 1
+	_replay_mother_last_frame = frame_index
 
 static func reconcile_replay_teams(state: Dictionary, by_uid: Dictionary) -> void:
 	var player: Array = []

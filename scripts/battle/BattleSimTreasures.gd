@@ -403,6 +403,26 @@ static func _apply_defender_reaction(attacker: Dictionary, target: Dictionary, d
 # 归属规则：按"击杀者"归属。组队模式只算母灵自己那位玩家（同 owner_key）的棋子击杀，
 # 队友先不算；1v1 只有一个玩家，己方所有棋子的击杀都算。数满阈值就处决一个目标。
 # 中毒/失血/衰减这类无来源死亡（killer_uid 为空）无法归属，不计数。
+# 10.10：开场给每只母灵写好魂火计数的展示字段（0 / 阈值），否则第一次击杀之前
+# 头顶不知道该画几盏。阈值的算法与 _credit_mother_kill 逐字相同（只读，不建 owner_state）。
+# 纯表现：这两个字段不参与任何结算，也不进回放的 13 列帧。
+static func stamp_mother_counters(state: Dictionary) -> void:
+	var team_mode := state.has("owner_syn_by_key")
+	for side in ["player", "enemy"]:
+		for mother in state.get(side, []):
+			if typeof(mother) != TYPE_DICTIONARY or str((mother as Dictionary).get("def", {}).get("skill_id", "")) != "unique_death_execute":
+				continue
+			var owner_syn: Dictionary
+			if team_mode:
+				owner_syn = _owner_syn(state, _owner_key(mother))
+			else:
+				owner_syn = state.get("player_syn", {}) if side == "player" else state.get("enemy_syn", {})
+			var base_threshold := float((mother.get("def", {}) as Dictionary).get("death_threshold", 5))
+			mother["vfx_mother_threshold"] = maxi(1, int(ceil(base_threshold * SynergyService.safe_factor(owner_syn, "undead_threshold_mul", 1.0, 1.0))))
+			var counters: Dictionary = (state.get("owner_state", {}) as Dictionary).get("mother_%s" % str(mother.get("uid", "")), {})
+			mother["vfx_mother_count"] = int(counters.get("mother_count", 0))
+
+
 static func _credit_mother_kill(state: Dictionary, victim: Dictionary) -> void:
 	var killer_uid := str(victim.get("killer_uid", ""))
 	if killer_uid.is_empty():
@@ -435,9 +455,13 @@ static func _credit_mother_kill(state: Dictionary, victim: Dictionary) -> void:
 		var threshold := maxi(1, int(ceil(base_threshold * SynergyService.safe_factor(owner_syn, "undead_threshold_mul", 1.0, 1.0))))
 		var os := _owner_state(state, "mother_%s" % str(mother.get("uid", "")))
 		os.mother_count = int(os.get("mother_count", 0)) + 1
+		# 10.10：母灵头顶魂火计数（纯表现字段，回放里走 undead_mother_count_events）。
+		mother["vfx_mother_threshold"] = threshold
 		if int(os.mother_count) < threshold:
+			mother["vfx_mother_count"] = int(os.mother_count)
 			continue
 		os.mother_count = 0
+		mother["vfx_mother_count"] = 0
 		if killer_is_player:
 			# 玩家母灵：优先处决自己路上的敌人，没有再退到全场敌人。
 			_mother_execute_target(state, int(mother.get("lane", -1)), mother)

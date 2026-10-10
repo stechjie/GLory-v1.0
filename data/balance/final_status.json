@@ -266,30 +266,30 @@
       "cost": 50,
       "skill_id": "black_hole",
       "skill_name_cn": "黑洞",
-      "skill_cn_1to3": "黑洞（冷却8.0秒）：牵引周围敌人，眩晕1.0秒，并造成自身攻击220%伤害。",
+      "skill_cn_1to3": "黑洞（冷却8.0秒）：牵引周围敌人，眩晕1.0秒，并造成自身攻击190%伤害。",
       "skill_cn_4": "黑洞（冷却8.0秒）：牵引周围敌人，眩晕2.0秒，并造成自身攻击440%伤害。",
-      "skill_en_1to3": "Black Hole (CD 8.0s): Pull surrounding enemies, stun for 1.0s, and deal 220% ATK damage.",
-      "skill_raw_params": "damage_atk_pct = 2.2\npull_sec = 1\nunique_on_board = true",
-      "star4_changes": "damage_atk_pct: 2.2 → 4.4\npull_sec: 1 → 2",
+      "skill_en_1to3": "Black Hole (CD 8.0s): Pull surrounding enemies, stun for 1.0s, and deal 190% ATK damage.",
+      "skill_raw_params": "damage_atk_pct = 1.9\npull_sec = 1\nunique_on_board = true",
+      "star4_changes": "damage_atk_pct: 1.9 → 4.4\npull_sec: 1 → 2",
       "stats": {
         "1": {
           "hp": 1800,
-          "atk": 110,
+          "atk": 120,
           "defense": 14
         },
         "2": {
           "hp": 2700,
-          "atk": 165,
+          "atk": 180,
           "defense": 21
         },
         "3": {
           "hp": 5400,
-          "atk": 330,
+          "atk": 360,
           "defense": 42
         },
         "4": {
           "hp": 6210,
-          "atk": 379,
+          "atk": 414,
           "defense": 48
         }
       }
@@ -1949,6 +1949,6 @@
       "name_en": "Sakura Crystal"
     }
   },
-  "balance_version": "321d34629886a2112527888c2d3f5e430c07fb5f841ab71f67259a8b55728e30",
-  "final_workbook_sha256": "abc83957ddca75cd133bf7ec9364fd2dc25b182d97beb9cbdf3cfec0e9680e16"
+  "balance_version": "a6d8531d08e4cedf14794198b71dfa775e81aed1daae18c7f07d258dfa7089e9",
+  "final_workbook_sha256": "91f28a2874dc44ec2c03bce4d498b9accf352f58e9bc1e66ea4ea5ed97680db5"
 }

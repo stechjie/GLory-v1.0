@@ -49,6 +49,7 @@ static func prepare_tutorial_state(kind: String) -> Dictionary:
 	_apply_opening_unit_skills(player, enemy, battle_log, state)
 	BattleSimTreasures._apply_opening_treasures(player, battle_log)
 	_snapshot_base_stats(player + enemy)
+	BattleSimTreasures.stamp_mother_counters(state)
 	return state
 
 # --- 3v3 team mode (prototype) ---------------------------------------------
@@ -199,6 +200,7 @@ static func _finalize_team_opening(state: Dictionary) -> void:
 	BattleSimTreasures._apply_opening_treasures(player, battle_log)
 	BattleSimTreasures._apply_opening_treasures(enemy, battle_log)
 	_snapshot_base_stats(player + enemy)
+	BattleSimTreasures.stamp_mother_counters(state)
 	constrain_battle_positions(state)
 
 # --- B: host computes the whole battle and records a replay -----------------
@@ -291,6 +293,9 @@ static func _replay_capture_frame(state: Dictionary, frames: Array, frame_events
 	var red_tide_last: Dictionary = state.get("_replay_red_tide_stack_last", {})
 	var rune_events: Array = state.get("_replay_rune_stack_events", [])
 	var rune_last: Dictionary = state.get("_replay_rune_stack_last", {})
+	# 10.10：母灵魂火计数（count / threshold）。只记变化；首帧一定记一条，客户端开场就有阈值。
+	var mother_events: Array = state.get("_replay_mother_count_events", [])
+	var mother_last: Dictionary = state.get("_replay_mother_count_last", {})
 	for f: Dictionary in (state.get("player", []) + state.get("enemy", [])):
 		var uid := str(f.get("uid", ""))
 		var atk_layers: Array = f.get("crimson_drum_atk", [])
@@ -311,6 +316,11 @@ static func _replay_capture_frame(state: Dictionary, frames: Array, frame_events
 		if rune_count != int(rune_last.get(uid, 0)):
 			rune_events.append([tick, uid, rune_count])
 			rune_last[uid] = rune_count
+		if f.has("vfx_mother_threshold"):
+			var mother_key := "%d/%d" % [int(f.get("vfx_mother_count", 0)), int(f.get("vfx_mother_threshold", 0))]
+			if mother_key != str(mother_last.get(uid, "")):
+				mother_events.append([tick, uid, int(f.get("vfx_mother_count", 0)), int(f.get("vfx_mother_threshold", 0))])
+				mother_last[uid] = mother_key
 		var position: Vector2 = f.pos
 		frame.append([
 			uid,
@@ -336,6 +346,8 @@ static func _replay_capture_frame(state: Dictionary, frames: Array, frame_events
 	state["_replay_red_tide_stack_last"] = red_tide_last
 	state["_replay_rune_stack_events"] = rune_events
 	state["_replay_rune_stack_last"] = rune_last
+	state["_replay_mother_count_events"] = mother_events
+	state["_replay_mother_count_last"] = mother_last
 
 static func _team_replay_payload(state: Dictionary, roster: Dictionary, frames: Array, frame_events: Array = []) -> Dictionary:
 	if frames.is_empty() and bool(state.get("finished", false)):
@@ -357,6 +369,9 @@ static func _team_replay_payload(state: Dictionary, roster: Dictionary, frames: 
 	var rune_events: Array = state.get("_replay_rune_stack_events", [])
 	if not rune_events.is_empty():
 		payload["crimson_rune_stack_events"] = rune_events
+	var mother_events: Array = state.get("_replay_mother_count_events", [])
+	if not mother_events.is_empty():
+		payload["undead_mother_count_events"] = mother_events
 	return payload
 
 # (1/2) Compute how much HP each team loses this round and stamp it into BOTH
@@ -920,7 +935,7 @@ static func _move_without_pushing(f: Dictionary, displacement: Vector2, bodies: 
 			remaining = tangent * budget * side
 	f.pos = Vector2(
 		clamp_x_to_lane(clampf(position.x, 45.0, ARENA_W - 45.0), clamp_lane),
-		clampf(position.y, 40.0, ARENA_H - 40.0))
+		clampf(position.y, combat_y_margin(), combat_arena_height() - combat_y_margin()))
 	if not state.is_empty():
 		f.pos = constrain_fighter_position(f, state, f.pos)
 
@@ -993,8 +1008,8 @@ static func _separate_units(player: Array, enemy: Array) -> void:
 				var old_b: Vector2 = positions[j]
 				var ap: Vector2 = old_a - direction * minf(correction * share, remaining[i])
 				var bp: Vector2 = old_b + direction * minf(correction * (1.0 - share), remaining[j])
-				positions[i] = Vector2(clampf(ap.x, 45.0, ARENA_W - 45.0), clampf(ap.y, 40.0, ARENA_H - 40.0))
-				positions[j] = Vector2(clampf(bp.x, 45.0, ARENA_W - 45.0), clampf(bp.y, 40.0, ARENA_H - 40.0))
+				positions[i] = Vector2(clampf(ap.x, 45.0, ARENA_W - 45.0), clampf(ap.y, combat_y_margin(), combat_arena_height() - combat_y_margin()))
+				positions[j] = Vector2(clampf(bp.x, 45.0, ARENA_W - 45.0), clampf(bp.y, combat_y_margin(), combat_arena_height() - combat_y_margin()))
 				var a_travel := old_a.distance_to(positions[i])
 				var b_travel := old_b.distance_to(positions[j])
 				remaining[i] = maxf(0.0, remaining[i] - a_travel)
@@ -1758,28 +1773,35 @@ static func _add_final_formation_allies(player: Array, enemy: Array) -> void:
 		enemy.append(_fighter_from_def(ed, 2, "enemy", enemy.size(), 26, 1, false, true))
 
 
-# Final Round alone changes the real combat axis. Rotating simulation positions
-# keeps movement, targeting, projectiles, attack range and replay visuals aligned.
+# Final Round alone changes the real combat axis. Keep each 4x4 board's
+# 56px column pitch in simulation space so combat range matches the formation.
+# Three boards occupy a taller final-only field; ordinary rounds stay at 520px.
 static func _apply_final_round_left_right_layout(player: Array, enemy: Array) -> void:
 	for fighter in player + enemy:
 		var old_pos := Vector2(fighter.get("pos", Vector2(ARENA_W * 0.5, ARENA_H * 0.5)))
-		# 9.25：纵深方向按 1.25 倍展开（原来是 ARENA_W/ARENA_H≈1.92 倍，
-		# 新的 4×4 站位下双方前排会隔得太远）；横向压进场地高度，重叠交给推开逻辑。
+		var lane := int(fighter.get("lane", -1))
+		var lane_center_x := ARENA_W * 0.5
+		var lane_center_y := FINAL_ARENA_H * 0.5
+		if lane >= 0 and lane < FINAL_LANE_CENTERS_Y.size():
+			lane_center_x = float(TEAM_LANE_CENTERS[lane])
+			lane_center_y = float(FINAL_LANE_CENTERS_Y[lane])
 		var rotated := Vector2(
 			ARENA_W * 0.5 + (ARENA_MID_Y - old_pos.y) * 1.25,
-			old_pos.x / ARENA_W * ARENA_H
+			lane_center_y + old_pos.x - lane_center_x
 		)
 		fighter.pos = Vector2(
 			clampf(rotated.x, 80.0, ARENA_W - 80.0),
-			clampf(rotated.y, 60.0, ARENA_H - 60.0)
+			clampf(rotated.y, combat_y_margin(), FINAL_ARENA_H - combat_y_margin())
 		)
+	# A formation ally can occupy four cells (60px body radius). Keep its
+	# spawn clear of the board rows and preserve the left/right symmetry.
 	for fighter in player:
 		if bool(fighter.get("is_formation_ally", false)):
-			fighter.pos = Vector2(440.0, 195.0)
+			fighter.pos = Vector2(195.0, 240.0)
 			fighter["lane"] = 1
 	for fighter in enemy:
 		if bool(fighter.get("is_formation_ally", false)):
-			fighter.pos = Vector2(560.0, 195.0)
+			fighter.pos = Vector2(805.0, 240.0)
 			fighter["lane"] = 1
 
 

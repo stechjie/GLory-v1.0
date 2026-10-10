@@ -11,6 +11,7 @@ const HARD_TIMEOUT_SEC := 180.0
 const TICK_SEC := 0.1
 const ARENA_W := 1000.0
 const ARENA_H := 520.0
+const FINAL_ARENA_H := 720.0
 # The grass fighting area, shared by wall placement, simulation and rendering.
 const PLAYABLE_MIN := Vector2(95.0, 68.0)
 const PLAYABLE_MAX := Vector2(905.0, 452.0)
@@ -120,6 +121,14 @@ static func free_board_cells(occupied: Dictionary) -> Array[int]:
 static func body_radius(f: Dictionary) -> float:
 	return BODY_RADIUS_PX * float(maxi(1, int(f.get("footprint_cells", 1))))
 const TEAM_LANE_CENTERS := [230.0, 500.0, 770.0]
+const FINAL_LANE_CENTERS_Y := [120.0, 360.0, 600.0]
+
+static func combat_arena_height() -> float:
+	return FINAL_ARENA_H if GameState.round_index == GameState.FINAL_ROUND else ARENA_H
+
+static func combat_y_margin() -> float:
+	return 20.0 if GameState.round_index == GameState.FINAL_ROUND else 40.0
+
 # Both sides spawn pushed back from the centre line by this much, so the opening
 # reads as two armies closing rather than an instant melee. Front rows end up
 # 80 + 2*PUSH apart; minus 72px melee range at ~165px/s that is a 0.75s approach.

@@ -9,7 +9,7 @@ const UNIT_COMPOSER := preload("res://effects/vfx3d/units/UnitSkillVFXComposer3D
 const UNIT_SKILLS := [
 	"lowest_ally_heal", "nearest_ally_bless", "nearby_ally_heal_buff",
 	"random_attribute_bolt", "judgement_strike", "random_ally_damage_reduction",
-	"global_divine_blast", "silence_bolt", "fear", "stun", "black_hole",
+	"global_divine_blast", "global_divine_blast_pulse", "silence_bolt", "fear", "stun", "black_hole",
 	"blink_low_def_backline", "shared_hp_link", "front_cone_stun",
 	"guardian_shield_taunt", "true_damage_attack", "curse_attack",
 	"same_target_damage_stack", "poison_attack", "defense_down_attack",
