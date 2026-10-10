@@ -182,8 +182,15 @@ func _check_profile_overrides() -> void:
 	for id in PROFILE_IDS:
 		var path := "%s%s.tres" % [PROFILE_DIR, id]
 		var profile: BattleCueProfile = load(path)
+		# 断言放在 if **外面**，两个理由：
+		#   ① 原来写在 `if profile == null:` 里面，而 _expect 的判据是 got == want ——
+		#      `_expect(typeof(null), 0, …)` 在「档案加载失败」时恰好相等，于是
+		#      **失败即通过**。想断言的是「能加载」，写出来的是反的。
+		#   ② 放在里面还会让 _checks 跟着档案好坏浮动：全好的时候这条一次都不跑。
+		# （原文还把 typeof 手误写成了 type_of —— GDScript 没有那个函数，
+		#  整个门禁因此解析失败、加载不起来，跑起来直接挂住不退出。）
+		_expect(profile != null, true, "cue_profile_loads_%s" % id)
 		if profile == null:
-			_expect(type_of(profile), 0, "cue_profile_loads_%s" % id)
 			continue
 		var low: Dictionary = profile.resolved_for_tier("LOW")
 		var med: Dictionary = profile.resolved_for_tier("MEDIUM")

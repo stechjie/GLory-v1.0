@@ -1,6 +1,7 @@
 extends Node
 const Harness = preload("res://tools/CheckHarness.gd")
 const Shop = preload("res://scenes/prep/panels/ShopPanel.gd")
+const PrepUIScript = preload("res://scenes/prep/PrepUI.gd")
 const Choice = preload("res://scenes/prep/panels/TreasureChoicePanel.gd")
 var _wait_released := false
 class ReceiptProbe:
@@ -21,6 +22,39 @@ class MainProbe:
 		applied = true
 	func _show_prep() -> void:
 		entered = true
+
+# 🔴 超时 = 结果**未知**，不是失败。2026-10-09 线上实测（room=639735 slot=2）：
+# 服务器三笔全都收到也全都回了（journald 三个 rid 各有 `tx replay`），只是回程丢包；
+# 其中一笔 `shop_refresh delta=-10` **真的扣了钱**，而玩家看到「商店刷新失败」。
+# 同一分钟的影子比对抓到 `client=40 ledger=30 diff=10`，差额正好是那次刷新费。
+func _check_unknown_outcome_not_failure(h, receipt_probe) -> void:
+	h.expect(NetworkService.is_unknown_outcome("timeout"), "timeout_is_unknown",
+		"timeout 没被当成「结果未知」—— 它是客户端自己合成的 reason，服务端不会发")
+	h.expect(not NetworkService.is_unknown_outcome("bad_phase"), "real_reject_not_unknown",
+		"真拒绝被当成了「未知」—— 那会把「钱不够」这类明确失败也说成在同步")
+
+	# 两条文案路径各自验：商店刷新一条，四个萝卜动作一条。
+	var unknown := NetworkService.unknown_outcome_text()
+	h.expect(not unknown.contains("失败") and not unknown.to_lower().contains("fail"),
+		"unknown_text_says_not_failed", "「未知」的文案里还写着失败")
+	h.expect(NetworkService.shop_refresh_error_text("timeout") == unknown,
+		"shop_refresh_timeout_text", "刷新超时仍然显示「商店刷新失败」")
+	h.expect(PrepUIScript.carrot_action_error_text("hire_merc_carrot", "timeout") == unknown,
+		"carrot_timeout_text", "萝卜动作超时仍然显示「失败」")
+	# 真拒绝必须照旧说失败，别把这两档一起抹平。
+	h.expect(PrepUIScript.carrot_action_error_text("hire_merc_carrot", "not_enough_carrots") != unknown,
+		"carrot_real_reject_text", "「萝卜不足」被说成了「结果未知」")
+
+	# 走真实 UI 分支：超时不该弹「失败」。
+	receipt_probe.message = ""
+	receipt_probe._on_carrot_economy_receipt({"action": "shop_refresh", "ok": false, "error": "timeout"})
+	h.expect(receipt_probe.message == unknown, "shop_refresh_timeout_ui",
+		"刷新超时在真实回执分支上还是显示失败")
+
+	# 预算：三次往返在 RTT 1~3 秒的链路上就能吃掉 9 秒，实测回执只迟到不到 1 秒。
+	h.expect(NetworkService.TX_MAX_TRIES * NetworkService.TX_RETRY_SEC >= 15.0,
+		"tx_budget_survives_slow_link", "经济意图的重试预算又被收回 9 秒了")
+
 
 func _release_wait(probe, h) -> void:
 	await get_tree().create_timer(0.05).timeout
@@ -77,6 +111,7 @@ func _ready() -> void:
 	var receipt_probe := ReceiptProbe.new()
 	receipt_probe._on_carrot_economy_receipt({"action": "shop_refresh", "ok": false, "error": "bad_phase"})
 	h.expect(receipt_probe.message == tr("battle_waiting_others"), "actual_receipt", "刷新回执真实UI处理分支显示等待提示")
+	_check_unknown_outcome_not_failure(h, receipt_probe)
 	receipt_probe.free()
 	var probe := MainProbe.new()
 	add_child(probe)

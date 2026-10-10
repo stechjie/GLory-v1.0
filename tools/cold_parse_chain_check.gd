@@ -174,8 +174,10 @@ const TARGETS: Array[Dictionary] = [
 	{"kind": "script", "path": "res://scenes/menu/MainMenu.gd"},
 	{"kind": "script", "path": "res://scenes/menu/RankedRewardScreen.gd"},
 	{"kind": "script", "path": "res://scenes/menu/WorldChatPanel.gd"},
-	{"kind": "script", "path": "res://scenes/prep/CarrotCampPanel.gd"},
-	{"kind": "script", "path": "res://scenes/prep/CarrotCampPanelV2.gd"},
+	# 萝卜营地面板的 V1 / V2 于 2026-10-09 删除，这里两行一并摘掉：活的只有 V3
+	# （PrepUI.gd 的 CarrotCampPanelScript preload 的就是它，已在上面列过），
+	# 而那两份只被本清单拉着解析 —— 唯一的作用是让门禁多解析两份没人用的代码，
+	# 其中 V1 还腐烂到会报解析错误、把真机日志刷花。
 	{"kind": "script", "path": "res://scenes/prep/PrepUI.gd"},
 	# 本轮新写的门禁也得单列（同 10.05 那条：新代码没人「连带」解析）。
 	{"kind": "script", "path": "res://tools/codex_four_star_check.gd"},

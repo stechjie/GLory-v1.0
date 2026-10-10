@@ -2950,9 +2950,33 @@ var team_replay_rival: Dictionary:      # 敌方队伍同回合的 replay（战�
 func server_prep_confirmed(required_round: int) -> bool:
 	return server_phase == ROOM_PREP and server_round_index >= required_round
 
+# 这笔交易的结果是「不知道」，不是「失败」。
+#
+# `timeout` 是**客户端自己合成的** reason（见 _tick_tx_retry 里那份 revision=-1 的
+# 伪回执），服务端永远不会发这个字符串，所以拿它做判据不会和真拒绝撞。
+#
+# 🔴 为什么必须和「失败」分开：2026-10-09 线上实测（room=639735 slot=2）——
+# 服务器三笔**全都收到了、也全都回了**（journald 里三个 rid 各有 `tx replay`），
+# 只是回程丢包；其中一笔 `shop_refresh delta=-10` 服务端**真的扣了钱**，
+# 而玩家看到的是「商店刷新失败」。同一分钟的影子比对就抓到了后果：
+#   shadow economy_gold ... client=40 ledger=30 diff=10
+# 差额正好是那次「失败」的刷新费。代码里本来就写着「结果按**未知**处理，
+# 不是按失败：服务端可能已经成功了」—— 只有文案没跟上。
+static func is_unknown_outcome(reason: String) -> bool:
+	return reason == "timeout"
+
+
+static func unknown_outcome_text() -> String:
+	var en := LocaleManager.get_locale().begins_with("en")
+	return ("Result unknown, syncing with the server…" if en
+		else "结果未知，正在与服务器同步…")
+
+
 func shop_refresh_error_text(reason: String) -> String:
 	if reason == "bad_phase":
 		return tr("battle_waiting_others")
+	if is_unknown_outcome(reason):
+		return unknown_outcome_text()
 	return "商店刷新失败：%s" % reason
 
 func team_begin_round() -> void:
@@ -4452,7 +4476,23 @@ func _make_request_id() -> String:
 #   1. **请求丢了要重发** —— 而且必须重发**同一个** request_id，否则服务端当新单子。
 #   2. **回复重复了要丢掉** —— 慢包和重发的回复都到了，不能加两次金币。
 const TX_RETRY_SEC := 3.0
-const TX_MAX_TRIES := 3
+# 重试次数 3 -> 5（预算 9 秒 -> 15 秒），2026-10-09。
+#
+# 🔴 **这不是"调大一点试试"，是实测出来的。** 线上 room=639735 slot=2：
+#   客户端 22:39:09 发第 3 次、22:39:12 放弃
+#   服务器 14:39:11（= 同一秒级）把回执 `tx replay` 发了出来
+# 回执**还在路上**，预算就到点了 —— 差不到 1 秒。同房另外五个人全程零重试，
+# 所以不是服务器慢（journald 里没有 process freeze、没有 rate limit），
+# 是这一条链路当时 RTT 中位 1105ms / P90 2299ms。
+#
+# 9 秒在那种链路上等于**没给重传留余量**：三次往返本身就能吃掉它。
+# 对照 BOARD_SUBMIT_TIMEOUT_SEC(30) / REPLAY_TIMEOUT_SEC(60)，经济意图是玩家在
+# 备战期连点、最容易撞弱网的一类，9 秒明显偏紧。
+#
+# 代价是弱网下玩家多等 6 秒才看到「结果未知」。这个代价是值得的：超时的后果不是
+# 多等，而是**服务端已经扣了钱而界面说失败**（同一分钟的影子比对抓到
+# `client=40 ledger=30 diff=10`，差额正好是那次刷新费）。
+const TX_MAX_TRIES := 5
 const TX_DONE_CAP := 64
 
 var _tx_pending: Dictionary = {}   # rid -> {kind, args, deadline, tries}

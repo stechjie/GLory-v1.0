@@ -1812,6 +1812,11 @@ func _on_carrot_dimmer_input(event: InputEvent) -> void:
 #   ② 文案按**动作 + 错误码**两个维度查，而不是只看错误码 ——
 #      同一个 `capacity_too_low` 在不同动作下的白话不一样。
 static func carrot_action_error_text(action: String, error: String) -> String:
+	# 超时 = 结果**未知**，不是失败（判据与理由见 NetworkService.is_unknown_outcome）。
+	# 这一条要排在最前面：下面那串 match 走到底会落进「XX失败：原因」的模板，
+	# 而服务端很可能已经扣了萝卜 / 发了佣兵。
+	if NetworkService.is_unknown_outcome(error):
+		return NetworkService.unknown_outcome_text()
 	var en := LocaleManager.get_locale().begins_with("en")
 	var generic := ""
 	match error:
@@ -1901,9 +1906,13 @@ func _on_carrot_economy_receipt(receipt: Dictionary) -> void:
 			show_message("The spirit stone has been used by a teammate. Upgrade failed." if LocaleManager.get_locale() == "en" else "灵石已被队友使用，升星失败")
 			SfxService.play(SfxService.CUE_UI_REJECT)
 			return
-		show_message(carrot_action_error_text(action, str(receipt.get("error", ""))))
+		var error := str(receipt.get("error", ""))
+		show_message(carrot_action_error_text(action, error))
 		# 9.17：服务端拒绝 = 按钮被拒绝，与单机时「钱不够」同一个反馈。
-		SfxService.play(SfxService.CUE_UI_REJECT)
+		# 10-09：但**结果未知时不播拒绝音** —— 服务端很可能已经成功了，
+		# 一声「被拒」的音效会把「不知道」坐实成「没成」，比文案更难纠正。
+		if not NetworkService.is_unknown_outcome(error):
+			SfxService.play(SfxService.CUE_UI_REJECT)
 		return
 	# 9.17：按 action 分流音效。**必须按分支**，不能在这条公共路径上无条件播 ——
 	# 四个动作共用这个函数，无条件播会让抽石头响成佣兵音。

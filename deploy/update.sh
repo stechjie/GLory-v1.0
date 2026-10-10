@@ -64,6 +64,9 @@ sync_party_voice() {
 	if grep -q '^GLORY_PARTY_VOICE_CONFIG_FILE=' "$env_file" 2>/dev/null; then
 		sed -i "s|^GLORY_PARTY_VOICE_CONFIG_FILE=.*|GLORY_PARTY_VOICE_CONFIG_FILE=$target|" "$env_file"
 	else
+		# 先补换行：文件最后一行没有换行时直接追加，会粘到上一个设置后面把它改坏
+		# （例如 GLORY_ENVIRONMENT=prod 变成 prodGLORY_...，生产就被当成开发环境）。
+		[[ -s "$env_file" && -n "$(tail -c1 "$env_file")" ]] && echo >> "$env_file"
 		echo "GLORY_PARTY_VOICE_CONFIG_FILE=$target" >> "$env_file"
 		echo "已写入 $env_file"
 	fi
