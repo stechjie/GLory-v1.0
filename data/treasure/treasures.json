@@ -14,7 +14,7 @@
                           400
                       ],
     "sets":  {
-                 "defense":  "normal units hp+30 def+30 dodge+15",
+                 "defense":  "normal units hp+30% def+30 dodge+15",
                  "control":  "basic-attack last hit refreshes the killer's skill cooldown",
                  "attack":  "basic attack executes non-boss target at or below 10% hp (ignores invulnerable)",
                  "money":  "+10% atk and hp per 1000 gold at battle start, capped at +100%",
