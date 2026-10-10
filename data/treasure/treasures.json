@@ -156,6 +156,7 @@
                       },
                       {
                           "id":  "money_golden_altar",
+                          "hp_cost":  1,
                           "name":  "黄金祭坛",
                           "category":  "money",
                           "name_en":  "Golden Altar"

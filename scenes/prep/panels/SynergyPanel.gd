@@ -74,7 +74,7 @@ func refresh() -> void:
 		var altar := Button.new()
 		# 显示实际到账金额。此前硬编码了 5，而 ALTAR_GOLD = 50 —— 玩家看到的和
 		# 拿到的差了一个数量级。改成读常量，以后调数值不会再漏改这里。
-		altar.text = tr("ui_altar") % [0 if TreasureService.has_linkage("link_hu_pai_master") else 2, NetworkService.ALTAR_GOLD, GameState.golden_altar_uses]
+		altar.text = tr("ui_altar") % [0 if TreasureService.has_linkage("link_hu_pai_master") else TreasureService.golden_altar_hp_cost(), NetworkService.ALTAR_GOLD, GameState.golden_altar_uses]
 		var altar_hp := GameState.team_hp if GameState.team_mode else GameState.player_formation_hp
 		altar.disabled = altar_hp <= NetworkService.ALTAR_MIN_HP or GameState.golden_altar_uses >= NetworkService.ALTAR_MAX_USES_PER_ROUND
 		altar.pressed.connect(func(): altar_requested.emit())

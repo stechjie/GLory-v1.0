@@ -6538,7 +6538,7 @@ func _room_apply_altar(room: Dictionary, slot: int) -> Dictionary:
 	var hp := int(hp_arr[team])
 	if used >= ALTAR_MAX_USES_PER_ROUND or hp <= ALTAR_MIN_HP:
 		return {"ok": false, "team_hp": hp, "uses": used, "reason": "exhausted"}
-	hp -= 0 if TreasureService.has_linkage_in(_room_owned_treasures(room, slot), "link_hu_pai_master") else 2
+	hp -= 0 if TreasureService.has_linkage_in(_room_owned_treasures(room, slot), "link_hu_pai_master") else TreasureService.golden_altar_hp_cost()
 	hp_arr[team] = hp
 	room.team_hp = hp_arr
 	uses_map[slot] = used + 1

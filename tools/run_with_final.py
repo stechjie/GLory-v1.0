@@ -18,10 +18,26 @@ ROOT = Path(__file__).resolve().parents[1]
 EXPORTER = ROOT / "tools/export_final_status.py"
 
 
+def desktop_godot():
+    """Find a portable Godot executable without storing a teammate's local path."""
+    if os.name != "nt":
+        return None
+    roots = {ROOT.parent, Path.home() / "Desktop"}
+    found = set()
+    for base in roots:
+        if not base.is_dir():
+            continue
+        for pattern in ("Godot*console.exe", "Godot*/*console.exe"):
+            found.update(path.resolve() for path in base.glob(pattern) if path.is_file())
+    if len(found) > 1:
+        raise ValueError("Multiple Godot installations found on Desktop. Set GODOT_BIN or pass --godot PATH.")
+    return str(next(iter(found))) if found else None
+
+
 def godot_executable(requested):
-    candidate = requested or os.environ.get("GODOT_BIN") or shutil.which("godot") or shutil.which("godot4")
+    candidate = requested or os.environ.get("GODOT_BIN") or shutil.which("godot") or shutil.which("godot4") or desktop_godot()
     if not candidate:
-        raise ValueError("Godot not found. Pass --godot PATH or set GODOT_BIN.")
+        raise ValueError("Godot not found. Put Godot on PATH/Desktop, set GODOT_BIN, or pass --godot PATH.")
     resolved = shutil.which(candidate) or candidate
     path = Path(resolved)
     if not path.is_file():

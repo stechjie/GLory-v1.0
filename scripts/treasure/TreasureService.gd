@@ -1,4 +1,4 @@
-﻿class_name TreasureService
+class_name TreasureService
 extends RefCounted
 
 const MAX_OWNED := 5
@@ -6,6 +6,18 @@ const REFRESH_COSTS := [50, 100, 200, 400]
 const MONEY_SET_GOLD_STEP := 1000
 const MONEY_SET_BONUS_PER_STEP := 0.10
 const MONEY_SET_MAX_BONUS := 1.00
+
+# Excel-owned scalar stored in treasures.json; both solo and server use it.
+static func golden_altar_hp_cost() -> int:
+	for raw in DataRegistry.get_table("treasures").get("treasures", []):
+		if str(raw.get("id", "")) == "money_golden_altar":
+			var cost := int(raw.get("hp_cost", -1))
+			if cost >= 1:
+				return cost
+			break
+	push_error("Golden Altar hp_cost missing or invalid in treasures.json")
+	return 2
+
 
 static func refresh_cost(index: int, _money_set_active: bool = false) -> int:
 	var i := maxi(index, 0)

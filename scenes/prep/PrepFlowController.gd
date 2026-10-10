@@ -242,7 +242,7 @@ func _on_golden_altar() -> void:
 	# 单机：本地就是权威，直接结算。
 	if GameState.player_formation_hp <= NetworkService.ALTAR_MIN_HP or GameState.golden_altar_uses >= NetworkService.ALTAR_MAX_USES_PER_ROUND:
 		return
-	GameState.player_formation_hp -= 0 if TreasureService.has_linkage("link_hu_pai_master") else 2
+	GameState.player_formation_hp -= 0 if TreasureService.has_linkage("link_hu_pai_master") else TreasureService.golden_altar_hp_cost()
 	GameState.gold += NetworkService.ALTAR_GOLD
 	GameState.prep_income_total += NetworkService.ALTAR_GOLD
 	GameState.golden_altar_uses += 1

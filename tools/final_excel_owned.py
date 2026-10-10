@@ -56,6 +56,21 @@ def percent(value, label):
     return float(result), format((result * 100).normalize(), "f") + "%"
 
 
+def golden_altar_cost(book):
+    rows = [(number, row) for number, row in data_rows(book, "09_宝藏与套装")
+            if row[0] == "money_golden_altar"]
+    if len(rows) != 1:
+        raise ValueError("09_宝藏与套装: expected one money_golden_altar row")
+    number, row = rows[0]
+    match = re.search(r"每次\s*-\s*(\d+)\s*法阵\s*HP", str(row[4]))
+    if not match:
+        raise ValueError(f"09_宝藏与套装 row {number}: write '每次 -N 法阵 HP' in effect column E")
+    value = int(match.group(1))
+    if not 1 <= value <= 10:
+        raise ValueError(f"09_宝藏与套装 row {number}: altar HP cost must be 1–10")
+    return value
+
+
 def index_items(tables, file, collection):
     result = {}
     for item in tables[file][collection]:
@@ -124,6 +139,11 @@ def overlay_excel_owned(book, tables):
         update(sheet, "data/pets/pets.json", item_id, items[item_id], "value", value)
     if seen != set(items):
         raise ValueError(f"{sheet}: missing IDs {sorted(set(items) - seen)}")
+
+    sheet = "09_宝藏与套装"
+    items = index_items(tables, "data/treasure/treasures.json", "treasures")
+    update(sheet, "data/treasure/treasures.json", "money_golden_altar",
+           items["money_golden_altar"], "hp_cost", golden_altar_cost(book))
     return changes
 
 

@@ -597,7 +597,7 @@ func effect_text(tid: String) -> String:
 		"money_compound":       return "战后利息额外 +5% 当前金币；本回合未花金币时再加 +3%。与雷霆加速联动后造成伤害有概率获得金币。"
 		"money_generous_fate":  return "准备阶段每回合可手动参与 1 次赌博：50% 概率胜利使当前金币变为 2.5 倍；50% 概率失败并损失当前金币的 80%。与幻影步伐联动后变为 60% 变为 2.5 倍、40% 损失当前金币 50%。"
 		"money_discount":       return "棋子商店价格 -30%，最低 1 金；与狂怒阵容联动后同队价格 -60%，最低 1 金。"
-		"money_golden_altar":   return "准备阶段黄金祭坛每次 -2 法阵 HP、+100 金，每回合最多 3 次，HP <=10 不可用；本回合不使用则战后法阵 HP +1。"
+		"money_golden_altar":   return "准备阶段黄金祭坛每次 -%d 法阵 HP、+100 金，每回合最多 3 次，HP <=10 不可用；本回合不使用则战后法阵 HP +1。" % TreasureService.golden_altar_hp_cost()
 		"money_lucky_envelope": return "战后随机 +30~50 金；与时空压缩联动后额外随机 +60~80 金，10% 概率额外 +200 金。"
 		"elem_flame_shatter":   return "攻击有 25% 概率额外造成 40% ATK 真实伤害；与吸血纹章联动后提高到 100%。"
 		"elem_frost_blade":     return "攻击有 25% 概率使目标移动 -35%、攻速 -50%，持续 2 秒；与打断锁链联动后目标受伤 +25%、治疗 -75%，持续 4 秒。"
@@ -629,7 +629,7 @@ func effect_text_en(tid: String) -> String:
 		"money_compound":       return "After battle, gain 5% bonus interest; gain another 3% if no gold was spent this round. Synergy with Thunder Haste: 25% chance to gain 10G on damage."
 		"money_generous_fate":  return "Once per prep phase, gamble: 50% chance to raise current gold to 2.5x; 50% chance to lose 80% of current gold. Synergy with Phantom Step: becomes 60%/40% with 50% loss."
 		"money_discount":       return "Piece shop prices -30%, minimum 1 gold. With Fury Roster, all teammates get -60%, minimum 1 gold."
-		"money_golden_altar":   return "Golden Altar costs 2 Formation HP for 100G, up to 3 times per round and unavailable at HP ≤10; if unused, restore 1 Formation HP after battle."
+		"money_golden_altar":   return "Golden Altar costs %d Formation HP for 100G, up to 3 times per round and unavailable at HP ≤10; if unused, restore 1 Formation HP after battle." % TreasureService.golden_altar_hp_cost()
 		"money_lucky_envelope": return "After battle, gain a random 30~50G. Synergy with Time Compress: another 60~80G, with a 10% chance of 200G more."
 		"elem_flame_shatter":   return "25% chance on attack to deal extra 40% ATK true damage. Synergy with Lifesteal Emblem: increases to 100%."
 		"elem_frost_blade":     return "25% chance on attack to reduce target movement by 35% and AS by 50% for 2s. With Interrupt Chain: target takes 25% more damage and receives 75% less healing for 4s."

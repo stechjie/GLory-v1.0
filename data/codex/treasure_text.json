@@ -156,8 +156,8 @@
   "money_golden_altar": {
    "name": "黄金祭坛",
    "name_en": "Golden Altar",
-   "effect": "准备阶段每次使用：法阵 HP -2、金币 +100，每回合最多 3 次，HP <=10 不可用；本回合不使用则战后法阵 HP +1",
-   "effect_en": "Each prep use costs 2 formation HP and grants 100 gold, up to 3 uses per round; unavailable at HP <=10. If unused this round, restore 1 formation HP after battle",
+   "effect": "准备阶段每次使用：法阵 HP -{altar_hp_cost}、金币 +100，每回合最多 3 次，HP <=10 不可用；本回合不使用则战后法阵 HP +1",
+   "effect_en": "Each prep use costs {altar_hp_cost} formation HP and grants 100 gold, up to 3 uses per round; unavailable at HP <=10. If unused this round, restore 1 formation HP after battle",
    "trigger": "手动点击按钮",
    "trigger_en": "Manual button"
   },

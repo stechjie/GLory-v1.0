@@ -340,7 +340,7 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"gold_charge":
 			return "黄金冲锋%s：冲向最近敌人，造成%d点真实伤害并眩晕%.1f秒。" % [cd, int(d.get("skill_damage", 120)), float(d.get("stun_sec", 1.2))]
 		"holy_song":
-			return "圣歌%s：治疗全体友军最大生命%s，并清除控制类负面状态。" % [cd, pct(float(d.get("heal_pct", 0.15)))]
+			return "圣歌%s：治疗全体友军最大生命%s，并从带控制类负面状态的存活友军中随机净化1名。" % [cd, pct(float(d.get("heal_pct", 0.15)))]
 		"twin_strike":
 			return "镜像突袭%s：召唤自身镜像，镜像生命%s、攻击%s。" % [cd, pct(float(d.get("clone_hp_pct", 0.30))), pct(float(d.get("clone_atk_pct", 0.40)))]
 		"king_aura":
@@ -518,7 +518,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"gold_charge":
 			return "Gold Charge%s: Rush the nearest enemy, deal %d true damage and stun for %.1fs." % [cd, int(d.get("skill_damage", 120)), float(d.get("stun_sec", 1.2))]
 		"holy_song":
-			return "Holy Song%s: Heal all allies for %s max HP and cleanse all crowd-control debuffs." % [cd, pct(float(d.get("heal_pct", 0.15)))]
+			return "Holy Song%s: Heal all allies for %s max HP, then cleanse one random living ally with a crowd-control debuff." % [cd, pct(float(d.get("heal_pct", 0.15)))]
 		"twin_strike":
 			return "Mirror Ambush%s: Summon a mirror clone with %s HP and %s ATK." % [cd, pct(float(d.get("clone_hp_pct", 0.30))), pct(float(d.get("clone_atk_pct", 0.40)))]
 		"king_aura":

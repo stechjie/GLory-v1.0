@@ -256,6 +256,9 @@ static func _treasures() -> Array[Dictionary]:
 			continue
 		var id := str(d.get("id", ""))
 		var entry: Dictionary = text.get(id, {})
+		var effect_text := FinalStatusCatalog.treasure_effect_cn(id) if not UnitDetailFormat.is_en() and not FinalStatusCatalog.treasure_effect_cn(id).is_empty() else _localised(entry, "effect")
+		if id == "money_golden_altar":
+			effect_text = effect_text.replace("{altar_hp_cost}", str(TreasureService.golden_altar_hp_cost()))
 		out.append({
 			"id": id,
 			"name": str(d.get("name", "")),
@@ -263,7 +266,7 @@ static func _treasures() -> Array[Dictionary]:
 			"portrait": TREASURE_ICON_DIR + str(d.get("name", "")) + ".png",
 			"icon_art": true,
 			"category": str(d.get("category", "")),
-			"effect": FinalStatusCatalog.treasure_effect_cn(id) if not UnitDetailFormat.is_en() and not FinalStatusCatalog.treasure_effect_cn(id).is_empty() else _localised(entry, "effect"),
+			"effect": effect_text,
 			"trigger": _localised(entry, "trigger"),
 			"collectible": true,
 		})

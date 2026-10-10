@@ -389,14 +389,23 @@ static func _skill_bubble_dream(caster: Dictionary, allies: Array, opponents: Ar
 
 
 static func _skill_holy_song(_caster: Dictionary, allies: Array, d: Dictionary) -> void:
+	var cleanse_keys := ["slow", "attack_down", "silence", "stun", "interrupt", "defense_down", "defense_flat_down", "heal_reduction"]
+	var candidates: Array = []
 	for a in allies:
 		if not bool(a.get("alive", false)):
 			continue
 		_heal_unit(a, maxi(1, int(round(float(a.max_hp) * float(d.get("heal_pct", 0.15))))))
-		if bool(d.get("cleanse_control", true)):
-			for key in ["slow", "attack_down", "silence", "stun", "interrupt", "defense_down", "defense_flat_down", "heal_reduction"]:
-				if a.has("statuses") and typeof(a.statuses) == TYPE_DICTIONARY:
-					a.statuses.erase(key)
+		if not bool(d.get("cleanse_control", true)) or typeof(a.get("statuses", null)) != TYPE_DICTIONARY:
+			continue
+		for key in cleanse_keys:
+			if a.statuses.has(key):
+				candidates.append(a)
+				break
+	if candidates.is_empty():
+		return
+	var chosen: Dictionary = candidates[RngService.rng.randi_range(0, candidates.size() - 1)]
+	for key in cleanse_keys:
+		chosen.statuses.erase(key)
 
 
 static func _skill_twin_strike(caster: Dictionary, state: Dictionary, d: Dictionary) -> void:
