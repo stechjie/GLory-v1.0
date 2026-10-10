@@ -8,13 +8,15 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import re
 from pathlib import Path
 
 from openpyxl import load_workbook
 
 from final_runtime import (FILES, check_business_pages, check_code_rules,
-                           check_runtime_files, parse_code_rules, parse_runtime_sheet)
+                           check_runtime_files, parse_code_rules)
+from final_excel_owned import overlay_excel_owned, patch_json_scalars
 
 ROOT = Path(__file__).resolve().parents[1]
 BOOK = ROOT / "docs/balance/final status.xlsx"
@@ -31,16 +33,24 @@ def text(value):
     return "" if value is None else str(value)
 
 
+def star_stat(base, star, unit, key):
+    multiplier = (1.0, 1.5, 3.0, 3.0 * max(1.0, float(unit.get("star4_multiplier", 1.15))))[star - 1]
+    value = max(0 if key == "def" else 1, math.floor(base * multiplier + 0.5))
+    return 1 if key == "atk" and unit["id"] == "human_death_servant" else value
+
+
 def build():
     wb = load_workbook(BOOK, read_only=True, data_only=True)
-    tables = parse_runtime_sheet(wb)
+    tables = {relative: json.loads((ROOT / relative).read_text(encoding="utf-8-sig"))
+              for relative in FILES}
+    changes = overlay_excel_owned(wb, tables)
     rules = parse_code_rules(wb)
     code_errors = check_code_rules(ROOT, rules)
     if code_errors:
         raise ValueError("final workbook code rules disagree with source:\n" + "\n".join(code_errors))
     page_errors = check_business_pages(wb, tables)
     if page_errors:
-        raise ValueError("final workbook pages disagree with 90_运行配置:\n" + "\n".join(page_errors[:20]))
+        raise ValueError("final workbook pages disagree with runtime JSON:\n" + "\n".join(page_errors[:20]))
     source_cell = text(wb["00_版本与口径"]["C5"].value)
     runtime_cell = text(wb["00_版本与口径"]["B6"].value)
     source_hash = re.search(r"[0-9a-f]{64}", source_cell)
@@ -58,9 +68,11 @@ def build():
         "linkages": {}, "shop_items": {},
     }
     basics = {text(r[0]): r for r in records(wb["01_棋子基础"])}
+    unit_defs = {item["id"]: item for item in tables["data/units/race_units.json"]["units"]}
     for r in records(wb["02_棋子技能"]):
         unit_id = text(r[0])
         b = basics[unit_id]
+        unit = unit_defs[unit_id]
         out["units"][unit_id] = {
             "name_cn": text(r[1]), "race": text(b[2]), "element": text(b[3]),
             "tier": int(b[4]), "cost": int(b[5]), "skill_id": text(r[3]),
@@ -69,8 +81,9 @@ def build():
             "skill_raw_params": text(r[7]), "star4_changes": text(r[8]),
             "stats": {
                 str(star): {
-                    "hp": int(b[5 + star]), "atk": int(b[9 + star]),
-                    "defense": int(b[13 + star]),
+                    "hp": star_stat(int(b[6]), star, unit, "hp"),
+                    "atk": star_stat(int(b[10]), star, unit, "atk"),
+                    "defense": star_stat(int(b[14]), star, unit, "def"),
                 }
                 for star in range(1, 5)
             },
@@ -122,7 +135,7 @@ def build():
                          sort_keys=True, separators=(",", ":")).encode("utf-8")
     out["balance_version"] = hashlib.sha256(payload).hexdigest()
     out["final_workbook_sha256"] = hashlib.sha256(BOOK.read_bytes()).hexdigest()
-    return out, tables
+    return out, tables, changes
 
 
 def main():
@@ -134,7 +147,10 @@ def main():
     args = parser.parse_args()
     if args.check and args.apply_runtime:
         parser.error("--check and --apply-runtime cannot be combined")
-    generated, tables = build()
+    try:
+        generated, tables, changes = build()
+    except (ValueError, KeyError, OSError, json.JSONDecodeError) as exc:
+        parser.exit(2, f"FINAL_STATUS_ERROR: {exc}\n")
     if args.check:
         current = json.loads(OUTPUT.read_text(encoding="utf-8"))
         runtime_errors = check_runtime_files(ROOT, tables)
@@ -145,17 +161,27 @@ def main():
         print("FINAL_STATUS_EXPORT_CHECK_OK")
     else:
         if args.apply_runtime:
+            pending = {}
             for relative in FILES:
-                path = ROOT / relative
-                current = json.loads(path.read_text(encoding="utf-8-sig"))
-                if current != tables[relative]:
-                    path.write_text(json.dumps(tables[relative], ensure_ascii=False, indent=2) + "\n",
-                                    encoding="utf-8", newline="\n")
-                    print(f"Updated runtime {relative}")
+                file_changes = [item for item in changes if item["file"] == relative]
+                if file_changes:
+                    path = ROOT / relative
+                    pending[path] = patch_json_scalars(path.read_text(encoding="utf-8-sig"),
+                                                       file_changes, tables[relative])
+            for change in changes:
+                print(f"Excel -> JSON {change['sheet']} {change['id']}.{change['field']}: "
+                      f"{change['old']} -> {change['new']}")
+            for path, source in pending.items():
+                path.write_text(source, encoding="utf-8", newline="")
+                print(f"Updated runtime {path.relative_to(ROOT)}")
         OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-        OUTPUT.write_text(json.dumps(generated, ensure_ascii=False, indent=2) + "\n",
-                          encoding="utf-8", newline="\n")
-        print(f"Exported {OUTPUT}")
+        current = json.loads(OUTPUT.read_text(encoding="utf-8")) if OUTPUT.exists() else None
+        if current != generated:
+            OUTPUT.write_text(json.dumps(generated, ensure_ascii=False, indent=2) + "\n",
+                              encoding="utf-8", newline="\n")
+            print(f"Exported {OUTPUT}")
+        else:
+            print("Final status catalog already current")
 
 
 if __name__ == "__main__":

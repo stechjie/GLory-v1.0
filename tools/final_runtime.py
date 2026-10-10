@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from final_excel_owned import godot_round, percent
+
 FILES = (
     "data/rounds/round_schedule.json",
     "data/units/race_units.json",
@@ -192,6 +194,9 @@ def check_business_pages(workbook, tables: dict[str, object]) -> list[str]:
             continue
         for col, key in [(1, "name"), (18, "attack_speed"), (23, "skill_id")]:
             expect(f"06_Boss {row[0]} {key}", row[col], item.get(key))
+        for col, key in [(3, "hp"), (4, "atk"), (14, "def")]:
+            expect(f"06_Boss {row[0]} first_spawn_{key}", row[col],
+                   godot_round(item[key] * 1.5))
 
     mercs = index("data/mercenary/mercenaries.json", "mercenaries")
     merc_rows = list(rows("07_佣兵"))
@@ -231,7 +236,7 @@ def check_business_pages(workbook, tables: dict[str, object]) -> list[str]:
             continue
         expect(f"pet {pet_id} name", row[1], item["name"])
         expect(f"pet {pet_id} English", row[2], item["name_en"])
-        expect(f"pet {pet_id} value", float(str(row[4]).rstrip("%")) / 100.0, item["value"])
+        expect(f"pet {pet_id} value", percent(row[4], f"pet {pet_id} value")[0], item["value"])
         expect(f"pet {pet_id} starter", row[7] == "是", pet_id in pets_table["starter_ids"])
         shop_item = shop.get(str(row[9]))
         if shop_item is None:
