@@ -13,6 +13,18 @@ class Tests(unittest.TestCase):
  def run_check(self,log=None,report=None):
   with contextlib.redirect_stdout(io.StringIO()):return b.verify_import_diagnostics(log if log is not None else self.log(),self.stage,self.logs,report if report is not None else self.report)
  def test_pair_accepted_with_report_and_compiled_scene(self):self.assertEqual(self.run_check()['compiled_fbx_scenes'],1)
+ def test_imported_wrapper_discovery_is_deduplicated(self):
+  (self.model/'unit_animated.tscn').write_text('fixture')
+  log=self.logs/'import.log';log.write_text(self.log()+self.log())
+  self.assertEqual(b.imported_model_wrappers(self.stage,log),['assets/models/unit/unit_animated.tscn'])
+ def test_unwrapped_import_remains_uncovered(self):
+  log=self.logs/'import.log';log.write_text(self.log())
+  self.assertEqual(b.imported_model_wrappers(self.stage,log),[])
+ def test_discovery_never_follows_model_symlinks_outside_stage(self):
+  outside=self.root/'outside';outside.mkdir();(outside/'bad_animated.tscn').write_text('fixture')
+  (self.stage/'assets/models/linked').symlink_to(outside,target_is_directory=True)
+  log=self.logs/'import.log';log.write_text(self.log('res://assets/models/linked/old.fbm/image.png'))
+  self.assertEqual(b.imported_model_wrappers(self.stage,log),[])
  def test_unknown_error_is_fatal(self):
   with self.assertRaises(RuntimeError):self.run_check(self.log()+'ERROR: Shader parse error\n')
  def test_script_error_is_fatal(self):

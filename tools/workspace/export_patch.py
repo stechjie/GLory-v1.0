@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -26,12 +27,17 @@ def digest(path):
     return value.hexdigest()
 
 
-def run(engine, stage, args, log):
+def run(engine, stage, args, log, verify=None):
     with log.open("w", encoding="utf-8") as output:
         result = subprocess.run([str(engine), "--headless", "--path", str(stage), *map(str, args)],
                                 stdout=output, stderr=subprocess.STDOUT)
     text = log.read_text(encoding="utf-8", errors="replace")
-    if result.returncode or re.search(r"(?m)^(?:SCRIPT ERROR:|ERROR:)", text):
+    text = re.sub(r"\x1b\[[0-9;]*m", "", text)
+    if result.returncode or re.search(r"(?m)^SCRIPT ERROR:", text):
+        raise RuntimeError(f"Godot export/import failed; inspect {log}")
+    if verify is not None:
+        verify(text)
+    elif re.search(r"(?m)^ERROR:", text):
         raise RuntimeError(f"Godot export/import failed; inspect {log}")
 
 
@@ -71,7 +77,12 @@ def export(stage: Path, engine: Path, preset: str, platform: str, config: Path,
         if any(record.get(k) != v for k, v in identity.items()) or record.get("sha256") != digest(base):
             raise ValueError("Engine, native libraries, preset or original base changed; create a new base build")
     output.mkdir(parents=True)
-    run(engine, stage, ["--editor", "--import"], output / "import.log")
+    def verify_import(text):
+        from glory_build import verify_model_materials, verify_import_diagnostics
+        materials = verify_model_materials(engine, stage, output, dict(os.environ))
+        diagnostics = verify_import_diagnostics(text, stage, output, materials)
+        (output / "import-diagnostics.json").write_text(json.dumps(diagnostics, ensure_ascii=False, indent=2) + "\n")
+    run(engine, stage, ["--editor", "--import"], output / "import.log", verify=verify_import)
     archive = output / ("current.zip" if base else "base.zip")
     # Godot 4.7 parses export-pack and export-debug as independent flags;
     # a single positional destination keeps pack-only output in debug mode.

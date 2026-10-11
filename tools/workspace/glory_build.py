@@ -579,6 +579,30 @@ def logged_process(command, log, env, strict=True):
     return content
 
 
+def imported_model_wrappers(stage, import_log):
+    """Find concrete wrappers for FBXs diagnosed during this import.
+
+    Discovery does not accept any diagnostic: each wrapper still goes through
+    the real material audit and the existing strict import verifier afterwards.
+    """
+    stage = stage.resolve()
+    models = stage / "assets/models"
+    if not import_log.is_file():
+        return []
+    content = import_log.read_text(encoding="utf-8", errors="replace")
+    candidates = set()
+    for path in re.findall(r"Can't open file from path '(res://assets/models/[^']+)'", content):
+        folder = (stage / path.removeprefix("res://")).parent.resolve()
+        while folder.is_relative_to(models):
+            wrappers = [item for item in folder.glob("*_animated.tscn")
+                        if item.is_file() and item.resolve().is_relative_to(models)]
+            if wrappers:
+                candidates.update(item.relative_to(stage).as_posix() for item in wrappers)
+                break
+            folder = folder.parent
+    return sorted(candidates)
+
+
 def verify_model_materials(engine, stage, logdir, env):
     """Reuse the project's runtime material audit, including non-roster wrappers."""
     checker = stage / "tools/model_material_integrity_check.gd"
@@ -595,10 +619,14 @@ def verify_model_materials(engine, stage, logdir, env):
         "assets/models/pets/pet_mushroom/pet_mushroom_animated.tscn",
         "assets/models/pets/pet_rabbit/pet_rabbit_animated.tscn",
     ]
+    extras += imported_model_wrappers(stage, logdir / "import.log")
     extra_code = ""
-    for path in extras:
+    for path in sorted(set(extras)):
         if (stage / path).is_file():
-            extra_code += f'\tawait _audit_model("build_extra", "extra", "res://{path}")\n'
+            literal = json.dumps("res://" + path, ensure_ascii=False)
+            extra_code += (f'\tif not _seen_model_paths.has({literal}):\n'
+                           f'\t\t_seen_model_paths[{literal}] = "build_extra"\n'
+                           f'\t\tawait _audit_model("build_extra", "extra", {literal})\n')
     source = source.replace(hook, extra_code + hook)
     (stage / "tools/_build_material_integrity.gd").write_text(source)
     (stage / "tools/_build_material_integrity.tscn").write_text(
