@@ -1,14 +1,16 @@
 """Public launch manifest and MFA-admin-only patch upload/publication."""
 from contextlib import contextmanager
+import hmac
 from typing import Annotated, Literal
 import zipfile
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from app import patch_service, realtime
 from app.admin_auth import Admin, current_admin, writing_admin
+from app.config import get_settings
 from app.patch_firebase import FirebasePublishError
 from app.patch_store import PatchConflict
 
@@ -16,6 +18,7 @@ router = APIRouter(tags=["patches"])
 Me = Annotated[Admin, Depends(current_admin)]
 Writer = Annotated[Admin, Depends(writing_admin)]
 Platform = Literal["android", "ios", "windows"]
+AutomationPlatform = Literal["android", "ios"]
 
 
 def service():
@@ -23,6 +26,19 @@ def service():
     if value is None:
         raise HTTPException(503, "补丁服务尚未配置")
     return value
+
+
+def patch_automation_writer(authorization: str = Header(default="")) -> None:
+    """Scoped machine auth for draft creation and artifact upload only."""
+    expected = get_settings().patch_automation_token
+    scheme, _, supplied = authorization.partition(" ")
+    if (not expected or scheme.lower() != "bearer" or not supplied
+            or not hmac.compare_digest(supplied, expected)):
+        raise HTTPException(401, "自动补丁上传凭证无效或未配置")
+    return None
+
+
+PatchAutomationWriter = Annotated[None, Depends(patch_automation_writer)]
 
 
 async def push_snapshots():
@@ -71,6 +87,23 @@ def create(body: Draft, admin: Writer):
         return {"release_id": release_id}
 
 
+@router.post("/admin/api/patches/automation/drafts")
+def create_automation_draft(body: Draft, _admin: PatchAutomationWriter):
+    """Machine credential can stage patches, but cannot publish or manage hotfixes."""
+    if body.channel != "internal" or set(body.platforms) != {"android", "ios"}:
+        raise HTTPException(400, "自动补丁任务只允许创建包含 iOS、Android 的 internal 草稿")
+    with failures():
+        existing = next((release for release in service().store.catalogue()["releases"]
+                         if release["channel"] == body.channel and release["title"] == body.title
+                         and release["status"] == "draft"
+                         and sorted(release["platforms"]) == sorted(set(body.platforms))), None)
+        if existing:
+            return {"release_id": existing["release_id"], "existing": True}
+        release_id = service().store.create_release(body.channel, body.title,
+                                                     body.platforms, "automated-patch")
+        return {"release_id": release_id}
+
+
 @router.put("/admin/api/patches/{release_id}/artifacts/{platform}")
 async def upload(release_id: str, platform: Platform, request: Request, admin: Writer,
                  base_id: str = Query(max_length=96)):
@@ -79,6 +112,17 @@ async def upload(release_id: str, platform: Platform, request: Request, admin: W
         if length and int(length) > 2_000_000_000:
             raise HTTPException(413, "单个补丁文件不能超过 2 GB")
         return await service().upload(release_id, platform, base_id, request.stream(), str(admin.auth_uid))
+
+
+@router.put("/admin/api/patches/automation/{release_id}/artifacts/{platform}")
+async def upload_automation(release_id: str, platform: AutomationPlatform, request: Request,
+                            _admin: PatchAutomationWriter,
+                            base_id: str = Query(max_length=96)):
+    with failures():
+        length = request.headers.get("content-length")
+        if length and int(length) > 2_000_000_000:
+            raise HTTPException(413, "单个补丁文件不能超过 2 GB")
+        return await service().upload(release_id, platform, base_id, request.stream(), "automated-patch")
 
 
 class Publish(BaseModel):

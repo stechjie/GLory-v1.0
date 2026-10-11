@@ -10,9 +10,11 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--workers', type=int, choices=range(1, 17), default=12)
     p.add_argument('--git-only', action='store_true')
+    p.add_argument('--project', type=Path, default=b.ROOT / 'GLory-v1.0',
+                   help='Git checkout to fast-forward (default: primary project checkout)')
     args = p.parse_args()
     with b.file_lock(b.ROOT / 'build/.source-update.lock', nonblocking=True):
-        result = b.sync_project(b.ROOT / 'GLory-v1.0')
+        result = b.sync_project(args.project)
         if not args.git_only:
             subprocess.run(['bash', str(Path(__file__).with_name('sync_res.sh')),
                             '--workers', str(args.workers)], check=True)

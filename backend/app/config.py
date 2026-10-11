@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     # Empty site keeps existing deployments unchanged until Firebase is provisioned.
     patch_firebase_site: str = ""
     patch_directory: str = "/var/lib/glory-patches"
+    # Narrow unattended publisher credential; only patch draft creation/uploads use it.
+    patch_automation_token: str = ""
     patch_deployment_id: str = ""
     patch_godot_binary: str = ""
     patch_enforce_versions: bool = False
