@@ -96,3 +96,10 @@ Hotfix 快照包含单调递增 revision、服务器 deployment_id、当前 patc
 - 真 Godot 子进程联调通过：后台发布→Boss 配置变化→应用修订号回执→账号部署变化撤销→过期快照撤销。另有战斗部署变化使全部目标失效的测试。
 - 服务端 ZIP 打包脚本已加入共用运行器；`deploy/glory-server-patches.conf` 提供专服 systemd drop-in，尚未安装到线上。后端须配置 `GLORY_PATCH_BATTLE_DESIRED/STATUS/INSTANCE`，战斗进程通过对应 `GLORY_BATTLE_HOTFIX_*` 读取路径。双方只读对方文件，保持各自目录的写权限。
 - 这部分已经有本地进程间证据，仍不能视为生产部署或现有真实对局验收通过。
+
+## 完整 HTTPS 启动验证
+
+- 新增 `tools/workspace/test_patch_launch_https.py`：运行真实 Godot 启动器和本地 HTTPS 服务，使用测试专用信任证书，不关闭产品 TLS 校验。业务场景只在更新器完成挂载、恢复单例后加载。
+- 4 项实际进程测试通过：首次下载后运行新脚本；再次启动检查版本但不重复下载；基础包已是当前版本时零下载；校验损坏与下载期间发布序号变化均停在更新界面、不启动业务（后两种分别验证）。
+- 测试覆盖本机真实 HTTP/TLS、文件写入、校验、挂载及业务启动，不代表 Firebase 公网或 iOS/Android 真机验收完成。
+- 重新核对外置 Chrome：指定账号的 Google 登录会话因未完成验证已过期，Firebase 项目创建仍未执行。
