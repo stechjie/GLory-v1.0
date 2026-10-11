@@ -3,6 +3,7 @@ extends EditorPlugin
 
 class DeferredExport extends EditorExportPlugin:
 	var saved: Dictionary = {}
+	var autoload_scripts: Array[Resource] = []
 
 	func _get_name() -> String:
 		return "GLoryDeferredBootstrap"
@@ -15,6 +16,13 @@ class DeferredExport extends EditorExportPlugin:
 			saved[key] = ProjectSettings.get_setting(key)
 			ProjectSettings.set_setting(key, "*" + str(entry.path))
 			runtime.set_value("autoload", str(entry.name), "*res://patcher/AutoloadPlaceholder.tscn")
+		# Match the real startup compilation order before the exporter walks
+		# scenes. Otherwise scene -> singleton -> preloaded scene dependencies
+		# can encounter a still-busy script during resource customization.
+		for entry in boot.autoloads:
+			var script := load(str(entry.path))
+			if script != null:
+				autoload_scripts.append(script)
 		add_file("res://override.cfg", runtime.encode_to_text().to_utf8_buffer(), false)
 
 	func _export_file(path: String, _type: String, _features: PackedStringArray) -> void:
@@ -25,6 +33,7 @@ class DeferredExport extends EditorExportPlugin:
 		for key in saved:
 			ProjectSettings.set_setting(key, saved[key])
 		saved.clear()
+		autoload_scripts.clear()
 
 var exporter: DeferredExport
 

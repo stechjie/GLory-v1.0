@@ -168,3 +168,10 @@ Hotfix 快照包含单调递增 revision、服务器 deployment_id、当前 patc
 - 已定位此前缺口：最终材质审计没有枚举 24 个仍参与导入的旧模型包装场景。构建工具现在根据本次 FBX 源纹理诊断定位同目录的 `_animated.tscn`，逐个运行原有材质检查，并继续执行原有严格导入诊断；没有增加忽略错误的白名单。
 - 完整工程实测：112 个模型、393 个表面、423 个纹理引用通过；675 组 FBX 源纹理诊断均获得有效包装场景证据，245 个 FBX 生成了有效导入产物。冷导入诊断已通过，取代前面“未覆盖旧模型”的未完成状态。
 - 单独资源导出工具也接入相同材质和导入校验，脚本错误、无有效场景的纹理错误仍拒绝。新增发现逻辑不跨出资源目录、不重复检查同一场景。构建检查 17 项、真实三平台及 Debug 资源导出 4 项通过。证据在 `delivery/patch-system/full-project-check/logs/import-diagnostics.json` 与 `model-materials.json`。
+
+## 完整 Android 安装包与基线留存验证
+
+- 首次完整 APK 导出暴露了特效场景循环预加载的 `Busy` 解析错误，构建按严格检查停止。导出插件现按启动顺序预加载并持有原 Autoload 脚本，随后再允许导出器遍历场景；运行时仍保留延迟加载机制。
+- 修复后的完整 Debug APK 已导出、通过签名与包信息检查，并自动留存同次构建资源基线。安装包 901,714,826 字节，SHA-256 为 `85553ae3857e395d4a2aa4765cc57aa829067aecac7c1fc3f8c6a36d825d4cd5`；基线 SHA-256 为 `201f3e70c26dc7e0acbb1d273052f1caebe3081da6216204abdc9ea62d600314`。
+- 证据：外层 `delivery/patch-system/native-build-check/build/logs/apk-20261011-151526-82490/result.json`、`export-diagnostics.json` 及安装包旁的 `-patch-base/base.export.json`。此次使用隔离构建根目录，没有覆盖正式构建的 latest 记录。
+- 配置为本机 HTTPS 与测试 Hosting 域名，不能分发给玩家；没有安装到手机、没有 Firebase 公网验收或生产部署。
