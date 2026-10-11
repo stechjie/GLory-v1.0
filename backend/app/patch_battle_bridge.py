@@ -50,4 +50,20 @@ class BattleBridge:
                        "applied_revision": status.get("applied_revision", -1),
                        "required_revision": catalogue["revision"], "error": status.get("error", ""),
                        "heartbeat": status["heartbeat"]}
+        self.write_admission(service)
         return changed
+
+    def write_admission(self, service):
+        catalogue = service.store.catalogue()
+        key = catalogue["active"].get(service.battle_channel)
+        release = next((r for r in catalogue["releases"] if r["release_id"] == key), None)
+        payload = {"protocol": 1, "instance_id": self.instance_id,
+                   "battle_deployment_id": self.latest["deployment_id"] if self.latest else "",
+                   "generated_at": time.time(), "channel": service.battle_channel,
+                   "seq": release["seq"] if release else 0,
+                   "bases": {a["platform"]: a["base_id"] for a in release["artifacts"]} if release else {}}
+        path = Path(str(self.desired) + ".admission")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = Path(str(path) + ".tmp")
+        temporary.write_text(json.dumps(payload), encoding="utf-8")
+        os.replace(temporary, path)

@@ -96,6 +96,18 @@ def test_signed_card_verifies_with_the_public_key(card_key) -> None:
     card_key.verify(sig, body, padding.PKCS1v15(), hashes.SHA256())
 
 
+def test_patch_identity_is_covered_by_card_signature(card_key) -> None:
+    identity = {"channel": "stable", "platform": "android", "base_id": "base-1", "seq": 7}
+    card = loadout.sign(loadout.card_payload(_loadout(), patch_version=identity))
+    body, signature = _split(card)
+    assert json.loads(body)["patch"] == identity
+    card_key.verify(signature, body, padding.PKCS1v15(), hashes.SHA256())
+    tampered = body.replace(b'"seq":7', b'"seq":8')
+    assert tampered != body
+    with pytest.raises(Exception):
+        card_key.verify(signature, tampered, padding.PKCS1v15(), hashes.SHA256())
+
+
 def test_signature_covers_the_exact_bytes_that_are_sent(card_key) -> None:
     """🔴 签的与发的必须是同一串字节。
 

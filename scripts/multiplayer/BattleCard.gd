@@ -225,6 +225,11 @@ static func _clean(raw: Dictionary) -> Dictionary:
 			races.append(str(value).left(MAX_RACE_ID))
 	out["races"] = races
 	out["exp"] = int(raw.get("exp", 0))
+	var patch: Variant = raw.get("patch", {})
+	if patch is Dictionary and not patch.is_empty():
+		out["patch"] = {"channel": str(patch.get("channel", "")).left(96),
+			"platform": str(patch.get("platform", "")).left(16),
+			"base_id": str(patch.get("base_id", "")).left(96), "seq": int(patch.get("seq", -1))}
 	# 队伍号。**-1 = 没有分配**，不是 0 —— 0 是 A 队，写错这个默认值会让所有
 	# 没分配的名片都被当成「A 队的匹配对局」。
 	out["team"] = int(raw.get("team", -1))

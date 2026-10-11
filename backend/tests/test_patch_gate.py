@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from fastapi import HTTPException
 from starlette.websockets import WebSocketDisconnect
 
 from app import patch_gate, patch_service
@@ -53,6 +54,16 @@ class VersionGateTests(unittest.TestCase):
         self.assertEqual(self.client.get("/health").status_code, 200)
         self.assertEqual(self.client.get("/v1/patches/check", params={"channel": "stable",
             "platform": "android", "base_id": "base-1", "installed_seq": 0}).status_code, 200)
+
+    def test_card_identity_rechecks_current_publication(self):
+        self.assertEqual(patch_gate.card_identity(self.headers)["seq"], 0)
+        self.publish()
+        with self.assertRaises(HTTPException) as caught:
+            patch_gate.card_identity(self.headers)
+        self.assertEqual(caught.exception.status_code, 426)
+        self.headers["x-glory-patch-seq"] = "1"
+        self.assertEqual(patch_gate.card_identity(self.headers), {
+            "channel": "stable", "platform": "android", "base_id": "base-1", "seq": 1})
 
     def test_websocket_missing_version_rejected_before_admission(self):
         with self.assertRaises(WebSocketDisconnect) as caught:

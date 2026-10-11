@@ -18,10 +18,10 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from app import db, loadout, matchmaking, players
+from app import db, loadout, matchmaking, players, patch_gate
 from app.jwt_verify import Claims
 from app.rate_limit import RateLimited, SlidingWindowLimiter
 from app.routes.me import current_claims
@@ -129,7 +129,7 @@ async def set_prep_skin(
 
 
 @router.post("/battle/card", response_model=CardResponse)
-async def battle_card(claims: Annotated[Claims, Depends(current_claims)]) -> CardResponse:
+async def battle_card(request: Request, claims: Annotated[Claims, Depends(current_claims)]) -> CardResponse:
     """领一张出战名片。
 
     没配私钥回 **503**，不是 500：那是服务器配置问题，客户端据此提示「稍后再试」。
@@ -153,9 +153,11 @@ async def battle_card(claims: Annotated[Claims, Depends(current_claims)]) -> Car
     team = assignment.team if assignment is not None else -1
     mode = assignment.mode if assignment is not None else ""
     seat = assignment.seat if assignment is not None else -1
+    patch_version = patch_gate.card_identity(request.headers)
+    extra = {"patch_version": patch_version} if patch_version is not None else {}
     try:
         card = await loadout.issue_card(me.player_id, match_uid=match_uid, team=team, mode=mode,
-                                        seat=seat)
+                                        seat=seat, **extra)
     except loadout.CardKeyMissing as exc:
         # 日志里留原因，给玩家的只有一句「稍后再试」—— 路径不外传。
         log.error("发不了出战名片：%s", exc)

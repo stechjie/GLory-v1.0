@@ -5886,6 +5886,11 @@ func _accept_seat_card(sender: int, card_text: String) -> Dictionary:
 		_rpc_team_action_failed.rpc_id(sender, code)
 		return {}
 	var card: Dictionary = verdict.get("card", {})
+	if OS.get_environment("GLORY_BATTLE_PATCH_ENFORCE").to_lower() == "true":
+		var hotfix_agent := get_node_or_null("BattleHotfixAgent")
+		if hotfix_agent == null or not hotfix_agent.call("accepts_card", card):
+			_rpc_team_action_failed.rpc_id(sender, "patch_required")
+			return {}
 	var jti := str(card.get("jti", ""))
 	if _seen_card_jti.has(jti):
 		_net_log("seat card rejected peer=%d reason=card_replayed" % sender)

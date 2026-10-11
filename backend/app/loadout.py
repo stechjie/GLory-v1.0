@@ -255,6 +255,7 @@ def card_payload(
     team: int = -1,
     mode: str = "casual",
     seat: int = -1,
+    patch_version: dict | None = None,
 ) -> dict:
     """名片的 JSON 结构。字段名与 BattleCard.gd 一一对应（test_loadout 钉着）。
 
@@ -297,6 +298,8 @@ def card_payload(
         # 照旧按到达顺序坐第一个空位 —— 加字段向后兼容（见上面 CARD_VERSION 那条）。
         if 0 <= seat <= 2:
             payload["seat"] = int(seat)
+    if patch_version is not None:
+        payload["patch"] = dict(patch_version)
     return payload
 
 
@@ -347,6 +350,6 @@ def sign(payload: dict) -> str:
 
 
 async def issue_card(player_id: uuid.UUID, match_uid: str = "", team: int = -1,
-                     mode: str = "casual", seat: int = -1) -> str:
+                     mode: str = "casual", seat: int = -1, patch_version: dict | None = None) -> str:
     return sign(card_payload(await build_loadout(player_id), match_uid=match_uid,
-                             team=team, mode=mode, seat=seat))
+                             team=team, mode=mode, seat=seat, patch_version=patch_version))

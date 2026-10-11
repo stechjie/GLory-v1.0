@@ -192,14 +192,21 @@ class PatchService:
             if {a["platform"] for a in release["artifacts"]} != set(release["platforms"]):
                 raise PatchConflict("All declared platforms must be uploaded and verified")
             if release and catalogue["active"].get(release["channel"]) == release_id:
+                if self.battle_bridge:
+                    self.battle_bridge.write_admission(self)
                 return self.store.publish(release_id, actor, expected_revision=revision)
             previous = self.store.effective_sources("account_server")
             self.runtime.clear()
             try:
-                return self.store.publish(release_id, actor, expected_revision=revision)
+                changed = self.store.publish(release_id, actor, expected_revision=revision)
             except BaseException:
                 self.runtime.replace(previous)
                 raise
+            # Flush the compact battle admission requirements before returning
+            # publish success; Godot reads this on EVERY seat-card admission.
+            if self.battle_bridge:
+                self.battle_bridge.write_admission(self)
+            return changed
 
     def restore_runtime(self):
         self.runtime.replace(self.store.effective_sources("account_server"))

@@ -1,6 +1,17 @@
 """Authoritative admission check for cooperative clients, not binary attestation."""
 from app.config import get_settings
 from app import patch_service
+from fastapi import HTTPException
+
+
+def card_identity(headers):
+    if not get_settings().patch_enforce_versions:
+        return None
+    failure = problem(headers)
+    if failure:
+        raise HTTPException(failure["status"], failure["detail"])
+    return {"channel": headers["x-glory-patch-channel"], "platform": headers["x-glory-patch-platform"],
+            "base_id": headers["x-glory-patch-base"], "seq": int(headers["x-glory-patch-seq"])}
 
 
 def problem(headers):

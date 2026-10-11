@@ -12,6 +12,33 @@ var _revision := -1
 var _error := ""
 
 
+func accepts_card(card: Dictionary) -> bool:
+	if OS.get_environment("GLORY_BATTLE_PATCH_ENFORCE").to_lower() != "true":
+		return true
+	# Read the compact atomic file at admission time, not the periodic hotfix cache.
+	var file := FileAccess.open(desired_path + ".admission", FileAccess.READ)
+	if file == null or file.get_length() > 32768:
+		return false
+	var rules = JSON.parse_string(file.get_as_text())
+	if not rules is Dictionary:
+		return false
+	if (rules.get("protocol") != 1 or rules.get("instance_id") != instance_id
+		or rules.get("battle_deployment_id") != _deployment
+		or absf(Time.get_unix_time_from_system() - float(rules.get("generated_at", 0))) > 15):
+		return false
+	var patch = card.get("patch", {})
+	if not patch is Dictionary or patch.get("channel") != rules.get("channel"):
+		return false
+	var sequence := int(patch.get("seq", -1))
+	if sequence < 0 or sequence != int(rules.get("seq", -2)):
+		return false
+	if sequence == 0:
+		return true
+	var bases = rules.get("bases", {})
+	return (bases is Dictionary and bases.has(str(patch.get("platform", "")))
+		and bases[str(patch.platform)] == patch.get("base_id"))
+
+
 func _ready() -> void:
 	desired_path = OS.get_environment("GLORY_BATTLE_HOTFIX_DESIRED") if desired_path.is_empty() else desired_path
 	status_path = OS.get_environment("GLORY_BATTLE_HOTFIX_STATUS") if status_path.is_empty() else status_path

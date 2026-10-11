@@ -1605,8 +1605,18 @@ async function patchesView(main) {
   const hotfixTarget = h("select", {}, h("option", { value: "client" }, "客户端界面 · GDScript"),
     h("option", { value: "battle-server" }, "战斗服务器 · GDScript"),
     h("option", { value: "account-server" }, "账号服务器 · Python"));
-  const source = h("textarea", { rows: 10, spellcheck: "false", placeholder: "def apply(ctx):\n    # 通过 ctx.replace_attr / ctx.replace_item 修改函数或配置\n    pass" });
+  const hotfixChannel = h("select", {}, h("option", { value: "internal" }, "内部测试"), h("option", { value: "stable" }, "正式渠道"));
+  const source = h("textarea", { rows: 10, spellcheck: "false" });
   const sourceFile = h("input", { type: "file", accept: ".py,.gd,text/plain" });
+  function updateHotfixHint() {
+    const account = hotfixTarget.value === "account-server";
+    sourceFile.accept = account ? ".py,text/plain" : ".gd,text/plain";
+    source.placeholder = account
+      ? "def apply(ctx):\n    # 通过 ctx.replace_attr / ctx.replace_item 修改函数或配置\n    pass"
+      : "extends RefCounted\nfunc apply(ctx) -> bool:\n    # 通过 ctx 登记可撤销的修改\n    return true";
+  }
+  hotfixTarget.onchange = updateHotfixHint;
+  updateHotfixHint();
   sourceFile.onchange = async () => {
     const selected = sourceFile.files[0];
     if (!selected) return;
@@ -1618,13 +1628,14 @@ async function patchesView(main) {
     if (!source.value.trim()) throw new Error("请上传或填写 Hotfix 代码");
     if (!window.confirm("将向所选范围发布并执行此代码。确认已核对修改对象，并使用可撤销的 ctx 接口？")) return;
     await api("POST", `/admin/api/patches/hotfix/${hotfixTarget.value}`, {
-      channel: channel.value, source: source.value, expected_revision: data.revision });
+      channel: hotfixChannel.value, source: source.value, expected_revision: data.revision });
     await patchesView(main);
   });
   main.append(h("section", { class: "card" }, h("h2", {}, "在线 Hotfix"),
     battleStatus,
-    h("p", { class: "hint" }, "客户端上传 GDScript（extends RefCounted，apply(ctx) 返回 true），账号服务器上传 Python（def apply(ctx)）。通过 ctx 记录可撤销改动。服务器更新或发布强更补丁后自动失效。发布渠道使用页面顶部的选择。"),
-    field("执行范围", hotfixTarget), field("代码文件", sourceFile), field("代码预览", source, true), applyHotfix, hotfixStatus,
+    h("p", { class: "hint" }, "客户端和战斗服务器上传 GDScript（extends RefCounted，apply(ctx) 返回 true），账号服务器上传 Python（def apply(ctx)）。通过 ctx 记录可撤销改动。服务器更新或发布强更补丁后自动失效。"),
+    h("div", { class: "row" }, field("执行范围", hotfixTarget), field("发布渠道", hotfixChannel)),
+    field("代码文件", sourceFile), field("代码预览", source, true), applyHotfix, hotfixStatus,
     table(["范围", "渠道", "绑定补丁", "操作"], data.hotfixes.map((fix) => {
       const revoke = h("button", { class: "btn small" }, "撤销");
       revoke.onclick = action(revoke, hotfixStatus, async () => {
