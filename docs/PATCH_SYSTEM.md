@@ -39,9 +39,9 @@ Hotfix 快照包含单调递增 revision、服务器 deployment_id、当前 patc
 
 ## 当前限制
 
-2026-10-11：已按用户要求通过 Computer Use 连接外置 Chrome。Firebase 当前登录账号与用户指定账号不同，已请求用户选择账号或登录指定账号；尚未创建项目或开通收费服务。本地实现继续。
+2026-10-11：用户已明确改用当前 Chrome 登录账号，并确认创建免费项目。`GLory Patches`（`glory-patches`）已创建，控制台确认 Spark 每月 0 美元。Hosting 已列出 `glory-patches.web.app` 与 `glory-patches.firebaseapp.com`；尚未上传补丁或完成公网读回验证。未绑定账单，创建时关闭 Gemini、Analytics 和开发者计划。
 
-指定账号的 Google 通行密钥验证未完成、会话已过期；等待用户登录或明确更换账号。
+现有 `glory-server-3` 的 Cloud Platform OAuth 访问范围在实例详情中显示已停用。计划中的元数据短期令牌发布方式需要先解决范围与 Hosting IAM 权限；不能仅填写 site ID 就认为上传可用。旧浏览器 SSH 会话认证失败，从实例详情新开的会话已连接并确认用户为 `bytegamesg2025`。尚未更改服务器或权限。
 
 ## 本地构建模块（已接入构建入口，尚未发布基础安装包）
 
