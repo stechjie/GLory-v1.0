@@ -164,6 +164,7 @@ class IOSBuildTests(unittest.TestCase):
         self.assertNotIn("addons/glory_voice/glory_voice.gdextension", text)
         self.assertIn('application/export_method_release=2', text)
         self.assertIn('application/provisioning_profile_specifier_release="' + self.profile["UUID"] + '"', text)
+        self.assertIn('icons/icon_1024x1024="res://app_icon.png"', text)
         self.assertNotIn('provisioning_profile_specifier_release="Fixture"', text)
 
     def test_certificate_extraction_prefix_is_one_option_even_with_spaces(self):

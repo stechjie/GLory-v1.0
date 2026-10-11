@@ -20,7 +20,7 @@ config/features=PackedStringArray("4.7", "Mobile")
 boot_splash/bg_color=Color(0.113725, 0.14902, 0.2, 1)
 boot_splash/stretch_mode=0
 boot_splash/image="res://ui/branding/glory_bootstrap.png"
-config/icon="res://icon.svg"
+config/icon="res://app_icon.png"
 
 [audio]
 

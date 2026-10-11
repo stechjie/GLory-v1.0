@@ -340,6 +340,7 @@ def write_preset(stage, method, profile, cert, version, number):
                "application/code_sign_identity_release": cert["name"],
                "application/provisioning_profile_specifier_release": profile["UUID"],
                "application/short_version": version, "application/version": number,
+               "icons/icon_1024x1024": "res://app_icon.png",
                "privacy/microphone_usage_description": "用于队伍语音聊天，仅在您主动开启麦克风时录音。",
                "application/targeted_device_family": 2, "application/min_ios_version": "15.0"}
     render = lambda values: "\n".join(f"{key}={json.dumps(value, ensure_ascii=False)}" for key, value in values.items())
