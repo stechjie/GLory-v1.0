@@ -41,7 +41,9 @@ Hotfix 快照包含单调递增 revision、服务器 deployment_id、当前 patc
 
 2026-10-11：用户已明确改用当前 Chrome 登录账号，并确认创建免费项目。`GLory Patches`（`glory-patches`）已创建，控制台确认 Spark 每月 0 美元。Hosting 已列出 `glory-patches.web.app` 与 `glory-patches.firebaseapp.com`；尚未上传补丁或完成公网读回验证。未绑定账单，创建时关闭 Gemini、Analytics 和开发者计划。
 
-现有 `glory-server-3` 的 Cloud Platform OAuth 访问范围在实例详情中显示已停用。计划中的元数据短期令牌发布方式需要先解决范围与 Hosting IAM 权限；不能仅填写 site ID 就认为上传可用。旧浏览器 SSH 会话认证失败，从实例详情新开的会话已连接并确认用户为 `bytegamesg2025`。尚未更改服务器或权限。
+用户确认后，已向 `glory-server-3` 现有服务账号授予专用 `glory-patches` 项目的 Firebase Hosting Admin。经用户批准执行一次正常停机维护，保留原服务账号与其他配置，启用 Cloud Platform OAuth 范围后重新启动。四项服务 `glory-backend`、`glory-server`、`caddy`、`livekit` 均恢复 active；公网 `/health` 返回正常。
+
+真实调用首次返回 403，原因是调用方（服务器所属）项目未启用 Firebase Hosting API；启用该 API 后返回 200。使用分支中的实际 `FirebaseHosting` 发布器及 VM 元数据短期令牌，已完成 198 字节测试 ZIP 的上传、发布和 CDN 下载哈希校验，打印 `FIREBASE_UPLOAD_READBACK_PASS`。版本为 `sites/glory-patches/versions/30c6e2f33d2e9c0e`。没有生成长期密钥，没有把测试文件登记为玩家补丁版本。云端仅有验证产物，正式后台代码与玩家门禁尚未部署。
 
 ## 本地构建模块（已接入构建入口，尚未发布基础安装包）
 
