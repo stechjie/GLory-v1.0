@@ -34,6 +34,15 @@ const PetService := preload("res://scripts/pets/PetService.gd")
 const PET_CARD := Vector2(116, 108)
 const PET_PREVIEW := Vector2(88, 62)
 const PET_DETAIL_PREVIEW := Vector2(480, 376)
+# 大图演示台的**地板高度**（10.12 第 1 条）。演示台本体是普通 Control，
+# 高度取「可用空间」与这个地板值的较大者；立绘在它内部按 KEEP_ASPECT 自适应。
+# 地板值必须够矮：矮屏（960×540）下页面总最小高度一旦超过窗口，末尾的宠物栏
+# 就会再次被顶出屏幕（门禁 bag_pet_layout 覆盖三种尺寸）。
+const PET_STAGE_MIN := Vector2(0, 140)
+# 右侧档案面板的地板高度。面板不再随文案变高，长文案在面板内部滚动。
+# 200 = 在 960×540 这种矮屏上也能给顶部页眉 / 页签 / 大图 / 宠物栏留出位置
+# （实测：240 时整页最小高度比 540 高出 28px，宠物栏会被顶出屏幕）。
+const PET_DETAIL_MIN_HEIGHT := 200.0
 const AVATAR_TILE := Vector2(126, 126)
 const DETAIL_WIDTH := 344.0
 const PET_COLUMNS := 3
@@ -65,7 +74,7 @@ var _tab_buttons: Dictionary = {}
 var _pet_page: Control
 var _avatar_page: Control
 var _pet_roster: Control
-var _pet_stage: CenterContainer
+var _pet_stage: Control
 var _pet_grid: GridContainer
 var _pet_detail: VBoxContainer
 var _pet_empty: Label
@@ -158,7 +167,17 @@ func _build_pet_page() -> Control:
 	caption.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
 	caption.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
 	exhibit.add_child(caption)
-	_pet_stage = CenterContainer.new()
+	# ★ 10.12 第 1 条：这里**不能用 CenterContainer**。
+	#
+	# CenterContainer 会把子节点的最小尺寸当成自己的最小尺寸上报，而立绘框的最小尺寸
+	# 是 PET_DETAIL_PREVIEW（480×376）—— 于是「文案越长（松鼠 / 老虎）→ 右侧档案面板
+	# 越高 → content 行越高 → 整页最小高度越大」，最后把排在页面末尾的宠物栏
+	# 顶到屏幕外（用户实拍：点松鼠宠物名字被遮一半、点老虎整个选择栏消失）。
+	# 演示台改成普通 Control + clip_contents：它不参与子节点的最小尺寸计算，
+	# 立绘铺满它并按 KEEP_ASPECT_CENTERED 自适应缩放，永远不会越界盖住别的区域。
+	_pet_stage = Control.new()
+	_pet_stage.custom_minimum_size = PET_STAGE_MIN
+	_pet_stage.clip_contents = true
 	_pet_stage.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_pet_stage.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_pet_stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -169,14 +188,23 @@ func _build_pet_page() -> Control:
 	exhibit.add_child(_pet_empty)
 	var information := PanelContainer.new()
 	information.custom_minimum_size.x = DETAIL_WIDTH
-	information.custom_minimum_size.y = 240
-	information.size_flags_vertical = Control.SIZE_SHRINK_END
+	# ★ 10.12 第 1 条：面板高度**只由这个地板值决定**（原来是 240 + 内容撑高）。
+	# 以前文案一长，PanelContainer 的最小高度就跟着涨，最终把底部宠物栏挤出屏幕。
+	# 现在长文案在面板内部滚动，页面高度不再受文案长度影响。
+	information.custom_minimum_size.y = PET_DETAIL_MIN_HEIGHT
+	information.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	information.add_theme_stylebox_override("panel", Tokens.panel_box(
 		Color(0.035, 0.115, 0.14, 0.78), Color(0.74, 0.56, 0.24, 0.76), Tokens.GAP_L))
 	content.add_child(information)
+	var info_scroll := TouchScrollContainer.new()
+	info_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	info_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	information.add_child(info_scroll)
 	_pet_detail = VBoxContainer.new()
+	_pet_detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_pet_detail.add_theme_constant_override("separation", Tokens.GAP_M)
-	information.add_child(_pet_detail)
+	info_scroll.add_child(_pet_detail)
 	_pet_roster = TouchScrollContainer.new()
 	_pet_roster.custom_minimum_size.y = 120
 	_pet_roster.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -519,6 +547,20 @@ func _render_pet_detail(pet_id: String) -> void:
 	var active := pet_id == _active_pet
 	var artwork := PetPreview.build_illustration(pet_id, PET_DETAIL_PREVIEW, false)
 	_ignore_mouse_tree(artwork)
+	# ★ 10.12 第 1 条：立绘**铺满演示台**，尺寸由演示台说了算。
+	#   · 不清掉 custom_minimum_size 的话，Control 仍会把尺寸夹到 480×376，
+	#     演示台被压小以后立绘照样越界（这正是「图片异常往上覆盖」的来源）；
+	#   · 演示台是普通 Control（不是容器），锚点全铺即可跟着它缩放。
+	artwork.custom_minimum_size = Vector2.ZERO
+	artwork.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# ★ 10.12 第 1 条**返修**（用户复测：「其他宠物的图片在后面对着 / 一直往上重叠」）：
+	#   挂新立绘前必须**先清空演示台**。演示台只有这一个写入点，而
+	#   `_render_pet_detail` 会被 `_refresh_pet_selection()`（点宠物卡片时）反复调用 ——
+	#   那里只清了右侧 `_pet_detail`（文案），**没清演示台**。于是每点一只宠物就往
+	#   演示台**追加**一张立绘：新立绘铺满演示台盖住旧的那张，但旧立绘的帽子 / 尾巴
+	#   会从新立绘四周露出来，正是用户截图里「猫的帽子后面还有蘑菇」的那种重影。
+	#   清空之后，演示台上永远只剩「当前选中的这一只」。
+	_clear_children(_pet_stage)
 	_pet_stage.add_child(artwork)
 	var eyebrow := Label.new()
 	eyebrow.text = _t("伙伴档案", "COMPANION PROFILE")

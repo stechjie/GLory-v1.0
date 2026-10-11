@@ -105,6 +105,15 @@ func _ready() -> void:
 	if GameState.shop_offers.is_empty() or GameState.shop_offers[0].is_empty():
 		_roll_shop()
 	await _build(startup_staged)
+	# 10.12 反馈第 7 条（棋盘皮肤在排位/组队里没生效）：摆放界面的皮肤图是 _build 那一刻
+	# 定死的，而皮肤是登录后异步从账号服务器拉的。冷启动后立刻进一场对局时，界面可能
+	# 在皮肤回来之前就建好了 —— 那一整局都是默认青草地。两道保险：
+	#   ① 本会话还没成功拉到过 → 进对局补拉一次（拿不到就还是默认，不会更差）；
+	#   ② 拉到 / 换皮肤 → reapply_prep_skin 把已经建好的棋盘图换过来。
+	if not PlayerProfile.prep_skin_changed.is_connected(reapply_prep_skin):
+		PlayerProfile.prep_skin_changed.connect(reapply_prep_skin)
+	if AccountManager.is_logged_in() and not PrepSkin.loaded:
+		PlayerProfile.refresh_prep_skin()
 	if not NetworkService.team_treasure_effects_changed.is_connected(_on_team_treasure_effects_changed):
 		NetworkService.team_treasure_effects_changed.connect(_on_team_treasure_effects_changed)
 	if not carrot_harvest_gains.is_empty():
@@ -138,6 +147,20 @@ func _ready() -> void:
 		TutorialMode.attach(tutorial_target_provider())
 	_maybe_show_pvp_warning.call_deferred(PrepRules.next_round_kind())
 	startup_ready.emit()
+	if not GameState.tutorial_mode:
+		NetworkService.prepare_local_bots()
+	# ★ 10.12 第 6 条（用户 10.12 追加口径）：「准备倒计时」**不进离线自测**。
+	#   离线自测 = 主菜单 debug 入口那一局本地测试（NetworkService.offline_selftest，
+	#   断开会话后进大厅走本地槽位、team_active 恒为假）。用户口径是「离线自测还是
+	#   保持原来的无倒计时」—— 调试时不想每回合被 35/50 秒的自动上阵打断。
+	#   判据用 is_offline_team_match()，与设定里「退出对局」同源（只有离线自测为真；
+	#   联网对局即使掉线也不为真）—— 所以「掉线 → AI 托管」那条联网路径不受影响。
+	#   ★ prepare_local_bots() 留在上面那个 if 里：它属第 5 条（AI 真实经济），
+	#     离线自测里的 AI 对手照样要备好，别跟着倒计时一起让开。
+	if not GameState.tutorial_mode and not NetworkService.is_offline_team_match():
+		var countdown := preload("res://scenes/prep/PrepCountdown.gd").new()
+		countdown.name = "PrepCountdown"
+		add_child(countdown)
 	# Start disk/script loading while the player deploys pieces, not on Ready.
 	_prefetch_battle_scene.call_deferred()
 	_warm_deployed_effects.call_deferred()
@@ -173,6 +196,8 @@ func _setup_fps_overlay() -> void:
 	SafeArea.track(_fps_label)
 
 func _exit_tree() -> void:
+	if PlayerProfile.prep_skin_changed.is_connected(reapply_prep_skin):
+		PlayerProfile.prep_skin_changed.disconnect(reapply_prep_skin)
 	if NetworkService.session_changed.is_connected(_on_network_session_changed):
 		NetworkService.session_changed.disconnect(_on_network_session_changed)
 	if NetworkService.team_lobby_changed.is_connected(_on_network_session_changed):
@@ -191,13 +216,45 @@ func _exit_tree() -> void:
 
 func _on_team_round_start() -> void:
 	# All players readied -> launch this round's battle.
+	_auto_deploy_at_deadline()
 	RaceRelationService.finalize_for_battle(GameState.board_slots, GameState.bench_slots)
 	SaveManager.save_run()
 	_emit_battle_request_once()
 
+func _auto_deploy_at_deadline() -> void:
+	if GameState.tutorial_mode:
+		return
+	# ★ 10.12 第 6 条（用户追加口径）：离线自测没有倒计时，也就没有「到点自动上阵」。
+	#   这条守卫在离线自测里本来就走不到（能调它的两条路 —— PrepCountdown 的到期回调、
+	#   team_round_start —— 离线自测都不经过，后者只在房主的联机房间流程里 emit），
+	#   加它是把「碰巧到不了」变成「结构上到不了」，也让门禁可以直接调它验证。
+	if NetworkService.is_offline_team_match():
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([NetworkService.shared_seed, GameState.round_index, NetworkService.team_local_slot, "timeout_cell"])
+	var result := preload("res://scripts/rounds/PrepDeadline.gd").deploy(
+		GameState.board_slots, GameState.bench_slots, GameState.shop_offers, GameState.shop_sold,
+		GameState.gold, GameState.owned_treasures, rng.randi_range(0, GameConstants.CELL_COUNT - 1), GameState.team_clearance_sale_active)
+	if not bool(result.get("changed", false)):
+		return
+	if result.has("shop_index"):
+		GameState.spend_gold(int(result.cost))
+		var cell: Dictionary = GameState.board_slots[int(result.cell_index)]
+		cell["uid"] = GameState.mint_piece_uid()
+		_shadow_report("buy", {"shop_index": int(result.shop_index), "offer_id": GameState.shop_offer_id,
+			"uid": str(cell.uid), "timeout_deploy": true})
+	RaceRelationService.reconcile_board(GameState.board_slots, GameState.bench_slots, false, true)
+	SaveManager.save_run()
+	_refresh_all()
+
 func _process(delta: float) -> void:
 	refresh_four_star_visuals(delta)
 	_overlay.update_release_state()
+	# 10.12 bug 文档第 4 条：详情框关掉后要撤掉棋盘上的「检视高亮 + 射程预览」
+	# （长按查看属性时点亮的）。放这里是因为关闭详情有好多条路（点框外、Escape、
+	# 再点一下），PrepDetailOverlay.hide_detail 没有信号；用「上帧开 / 这帧关」
+	# 这个翻转点来清最省事，也只在翻转那一下才动可读性层。
+	_sync_board_inspect_after_overlay()
 	if GameState.tutorial_mode:
 		# A detail popup is a deliberate reading task. Pause the unrelated tutorial
 		# chrome while it is topmost, then restore from the same semantic target.

@@ -33,6 +33,7 @@ func _ready() -> void:
 	await _capture_shop_event()
 	await _capture_shop_appearance()
 	await _capture_bag_pets()
+	await _capture_bag_pet_switch()
 	await _capture_bag_single_pet()
 	await _capture_bag_avatars()
 	await _capture_mail()
@@ -147,6 +148,33 @@ func _capture_bag_avatars() -> void:
 	bag.set("_selected_avatar", "preset:avatar_005")
 	_show(bag)
 	await _settle_and_shot("bag_avatars_1280")
+	_clear_screen()
+
+
+# ★ 10.12 第 1 条**返修**复现图：走玩家的真实操作路径。
+#   夹具直接设 `_selected_pet` 再进树只会走一次 `_render()`（本来就只画一张），
+#   完全绕开「点宠物卡片 → _refresh_pet_selection → 往演示台追加立绘」这条路径 ——
+#   这正是上一轮截图看起来没问题、玩家却看到「猫帽子后面还有蘑菇」的原因。
+#   这里先以「出战中宠物」进场，再依次点另外几只，最后停在猫身上。
+func _capture_bag_pet_switch() -> void:
+	var bag := BAG.new()
+	bag.set_meta("ui_capture_fixture", true)
+	bag.set("_loading", false)
+	bag.set("_owned_pets", ["pet_mushroom", "pet_cat", "pet_rabbit", "pet_tiger", "pet_squirrel"])
+	bag.set("_active_pet", "pet_mushroom")
+	bag.set("_paid_content", {})
+	bag.set("_sold_content", {})
+	bag.set("_active_tab", "pets")
+	bag.set("_selected_pet", "pet_mushroom")
+	_show(bag)
+	for _i in SETTLE_FRAMES:
+		await get_tree().process_frame
+	for pet_id in ["pet_rabbit", "pet_tiger", "pet_squirrel", "pet_cat"]:
+		bag.set("_selected_pet", pet_id)
+		bag.call("_refresh_pet_selection")
+		for _i in 6:
+			await get_tree().process_frame
+	await _settle_and_shot("bag_pet_switch_1280")
 	_clear_screen()
 
 

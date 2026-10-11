@@ -3376,6 +3376,8 @@ func _on_team_battle_finished(result: Dictionary) -> void:
 	if NetworkService.team_active and not NetworkService.is_host:
 		await _finish_server_authoritative_team_battle(result)
 		return
+	if is_instance_valid(_battle):
+		NetworkService.settle_local_bots(_battle._replay_own, _battle._replay_rival)
 	var completed_round := GameState.round_index
 	var kind := str(result.get("kind", "pve"))
 	# PvP 是规范化棋局（A 队 = "player"）。本地在 B 队时结果要镜像。

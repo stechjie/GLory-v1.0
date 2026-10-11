@@ -1,5 +1,24 @@
 # Glory Beta 0.04
 
+## 2026-10-12（bug 提交及修复）：7 条真机反馈
+
+来自 `10.12bug提交及修复.docx`。**只有代码 + 门禁改动；唯一动过的资源是一张「已在仓里」的贴图**（第 ③ 条重刷霜印使 albedo），没有新增任何素材文件。详见 `docs/10.12bug提交及修复记录.md`。
+
+- **① 图鉴宠物立绘重叠**：点哪只就只显示哪只。根因是演示台 `_pet_stage` 的**唯一写入点** `BagScreen._render_pet_detail()` 只 `add_child`、从不清台，而点卡片走的 `_refresh_pet_selection()` 只清了右侧文案 ⇒ 每点一只就往演示台**追加**一张立绘，新图盖住旧图、旧图四周露出（用户截图：「猫的帽子后面还有蘑菇」）。修法：渲染前 `_clear_children(_pet_stage)`；演示台由 `CenterContainer` 改普通 `Control`、右侧档案面板定高 + 内部滚动，长文案不再把底部宠物栏顶出屏幕（矮屏 960×540 实测）。
+- **② 英文模式结算 / 历史里法阵守护者仍是中文**：战报存的是守护者**中文名**（`formation_allies.json` 的 `name`）。`FinalSettlementPanel` 新增 `_ally_display_name()`，按「id / 中文名 / 英文名」任一命中反查同表换本语言名 —— **不改战报格式**，历史里的旧记录同样能翻；查不到就**原样返回**（宁可不翻，也不显示成空白或一串 id）。
+- **③ 霜印使（Icey）棋子模型头发应为白色**：`tools/model_refinement/crimson_refine.py` 里**只对 Icey 生效**的「整族刷红发」分支已删（推翻 2026-10-05 的决定），重刷 `Icey_m0_albedo.png`（泛白发丝 91.6% / 正红 0.0%）。门禁 `icey_hair_check` 直接**读源 PNG 像素**（不能用 `load()` —— 那读的是导入后的 `.ctex` 缓存，改源图不反映，变异会假绿）。
+- **④ 棋子三态分流（轻点 / 长按 / 拖拽）**：点击棋子**不再变成选中**、长按不动＝**查看属性且不进入可挪动态**、按住滑动拖到落点才挪动。根因是棋盘格 / 待命格的 `pressed` 与 `attach_long_press` 挂在**同一个按钮**上，一次长按既弹属性又把格子设成选中态 ⇒ 关框后残留选中，下一次轻点就误挪。改法：①`pressed` 先 `consume_long_press(btn)` 再转业务；②`_on_board/bench_pressed` 里「点 A 选中 → 点 B 挪过去」整段删除（挪动只剩拖拽一条路）；③射程预览改挂「查看属性」，详情框一关就撤高亮。**保留**「商店卡选中 → 点格子买入」这条链。
+  ★ **返修（用户复测）**：长按弹过属性框后、手指还没松时随手一划过 28px 仍会 `force_drag` 挪走 ⇒ `PrepDragButton` 起拖前加 `if long_press_triggered: return`，本次手势只要弹过详情就只能「看完松手」，挪动必须**重新按下再滑动**。
+- **⑤ AI 佣兵 / 萝卜经济要与真人玩家一致**：`BotPlayer` 新增**有状态**的实时经济（`new_state`/`prepare_round`/`settle_round`/`view`，由 `scripts/economy/LiveBotEconomy.gd` 驱动），不再用「估算胜场 / 击杀 / 未来收入」的历史模拟；`NetworkService.team_bot_states` 取代按 `(seed,slot,round)` 播种子的预览路径；佣兵**打完一场即过期**（与玩家一致）、商店成本走 `EconomyLedger.unit_cost`（含宝藏折扣）、刷新价考虑「金钱套」。**离线自测里照旧生效**（与第 ⑥ 条是两码事）。
+- **⑥ 备战倒计时**：「准备」按钮带「（xx s）」后缀；全员就绪提前开局；到点**自动上阵**（待命区最左优先，否则买商店最左，`PrepDeadline.deploy` 幂等 + 不白送）；PVE 35s / PVP 50s；最后 3 秒屏幕正中大号「3!/2!/1!」（`mouse_filter=IGNORE`，**不挡棋盘**）。
+  ★ **口径：只对「离线自测」不生效**（离线自测保持原样无倒计时，含自动上阵守卫）；**其他房间对局一律生效**。判据统一 `NetworkService.is_offline_team_match()`。
+  ★ **返修（用户复测：自定义房间也没倒计时）**：根因**不是**离线守卫（`team_join`/`team_host` 在置 `team_active=true` 的同刻置 `offline_selftest=false`，两标记不可能同时为真 —— 四态探针实测），而是 `PrepCountdown` 把「服务端已确认 prep」当**前置条件**：**自定义房间的房主在专服上同样是 `is_host == false` 的客机**，服务器旧包不发 `prep_seconds_left` 时**整间房**都看不到。修法：服务端值由**前置条件降级为优先来源**，本地时钟兜底。
+- **⑦ 棋盘皮肤（冰雪）在排位 3v3 没生效**：皮肤图在 `_build` 那一刻定死，而皮肤是登录后**异步**从账号服务器拉的；冷启动后立刻进对局时界面可能先建好。两道保险：`PrepSkin.loaded`（本会话至少拉到过一次）⇒ 进对局补拉一次 + `PlayerProfile.prep_skin_changed` ⇒ `PrepUI.reapply_prep_skin()` 把已建好的棋盘底图 / 河面 / 待命区 / 萝卜 / 萤火虫色 / 河面波光全换过来。
+
+★ 已知红（**非本轮引入，均做了改动前「因果回退」对照**）：`prep_seat_card` 1、`prep_detail_overlay_check` 尾部的 `BattleScreen.gd` 解析错误、`safe_area_check` 4（全在 `pet_draw@iphone`）、`dynamic_call` 41、`prep_tree_snapshot` 19、`prep_text_coverage` 1、`battle_loading_layout` 1，以及既有台账里的 voice / asset_manifest / lobby_identity03 等。
+
+🔴 **部署（缺一不可）**：第 ⑤ / ⑥ 条的**服务端那一半**（AI 经济落账、超时判定、到点开回合、AI 托管、`prep_timed_out` / `timeout_buys` / `bot_states` 持久化）跑在对局专用服务器里 ⇒ **必须重启战斗专用服务器**；后端若已是含 `033` 的版本则本批**不需要新迁移**，重启账号后端即可。客户端倒计时从此**不依赖服务器是否支持**（返修后本地时钟兜底），但服务端不支持时「到点开回合 / AI 托管」不会生效。
+
 ## 2026-10-11（人族八单位模型精修）
 
 民兵、商人、弓箭手、剑士、法师、牧师、死侍、人王完成分角色制作、桌面验证及整族复核后统一接入，运行资源位于 `assets/models/units/human_refined/`。

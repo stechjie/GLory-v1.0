@@ -4554,3 +4554,102 @@ fighter 不记阵营、结果不带人王结局、分路不传老虎成长率、
 | `mutate_1011h.py` | 7 | 7/7 CAUGHT |
 | `mutate_1011i.py` | 12 | 12/12 CAUGHT |
 
+
+## 2026-10-12：10.12 bug 提交及修复（7 条）带来的门禁变更
+
+本轮门禁读数（最终）：`bag_pet_layout` **214/0**、`settlement_ally_name` **158/0**、`icey_hair` **12/0**、
+`prep_piece_interaction` **30/0**、`prep_countdown_ui` **43/0**、`prep_skin_reapply` **16/0**、`bug_1012_356` **151/0**。
+
+### `tools/bag_pet_layout_check` 124 → **214 项（PASS 214/0）**（第 ① 条：立绘重叠）
+
+- **B 段加固**：`stage_single_artwork`（演示台子节点数量**恒为 1**）、`artwork_inside_stage` 改为遍历**全部**子节点、
+  `artwork_matches_selection`（台上贴图 `resource_path` 必须等于选中宠物的 `icon`）。
+- **E 段新增** `interleaved_single_artwork`：复现玩家真实点击序列（mushroom→cat→mushroom→rabbit→cat），每步断言台上仍只有 1 张。
+- ★★ **教训（第一版为什么假绿）**：老 B 段只量 `stage.get_child(0)` —— 立绘**累积**时 child(0) 仍在台内 ⇒ 恒绿。
+  **凡「容器 + 反复渲染」的组合，必须同时钉「数量」与「身份」，只判第一个子节点＝只判存在性。**
+  同理夹具**必须走玩家真实交互路径**（点 / 切），不能靠直接 `set("_selected_pet", …)` 绕过 —— 上一轮的可视化夹具就是这么绕开了点击路径、截图看起来是对的。
+- 变异 M1（删掉清台）→ **42 红**（失败文案直接点名「实际是 `res://assets/ui/pets/pet_mushroom_illustration.png`」，与用户截图那只蘑菇对应）；M2（把清台目标改成 `_pet_detail`）→ **42 红**。
+
+### `tools/settlement_ally_name_check`（**新增**，**PASS 158/0**）（第 ② 条：守护者名字不走 i18n）
+
+- 行为层：真例化 `FinalSettlementPanel` / 历史详情面板，中 / 英两语各跑一遍，断言面板**出现**本语言名、
+  **不出现**另一语言名（`live_shows_locale_name` / `live_hides_other_locale_name` / `history_shows_locale_name`）。
+- 判据取「面板文本里能否找到该名字」，不是「函数存在」 —— 反查表命中与回退都要覆盖。
+- 变异（把 `_ally_display_name` 换回 `str(allies[side])`）→ **32 红**。首跑（修复前）**121/16** 即为红基线。
+
+### `tools/icey_hair_check`（**新增**，**PASS 12/0**）（第 ③ 条：霜印使白发）
+
+- 接线（`.tres` / 材质里的染色参数）+ **源 PNG 像素统计**（泛白发丝占比 ≥ 60%、正红 ≤ 25%）+ 材质守卫。
+- ★★ **读贴图必须 `Image.load_from_file(源 PNG)`，不能用 `load()` / `tex.get_image()`** —— 后者读的是导入后的 `.ctex` 缓存，
+  **改源图根本不反映，变异会假绿**。这条是本轮最容易踩的坑。
+- 变异 A（`.tres` `unify_min_saturation` 0.5 → 0.1）、B（把淡色像素改回正红）均 CAUGHT（B 实测 0.0% / 91.6% ⇒ 两条红）。
+
+### `tools/prep_piece_interaction_check`（**新增**，**PASS 30/0**）（第 ④ 条：三态分流）
+
+- A 段：轻点**不**选中（真发 `pressed`，断言选择态不变）；B 段：长按只弹详情、不产生可挪动态；
+  C/D 段：拖拽落点走 `_drop_data` 真移动；E 段：**保留**「商店卡选中 → 点格子买入」链。
+- **G 段（返修）走真手势**：真 `attach_long_press` 起表 → 真 `await create_timer(0.9)` 等到点 → 再发 `InputEventScreenDrag`，
+  断言不起拖；不是照抄 meta（照抄只能证明「读到 meta 会挡」，证明不了长按真写了那个 meta）。含 `probe_long_press_not_fired` 防空转
+  + **反向对照**（没触发长按的「按住就滑」仍必须能起拖）。
+- ★ **夹具坑（第二次踩类型）**：假宿主必须 `extends Control` —— `PrepDragButton.drag_owner` 是 `Control` 类型，
+  塞 `Node` 进去会被类型检查挡掉（**静默留 null**）⇒ `_on_drag_started` 永不回调，判据退化成只看一个字段。
+- ★ **夹具坑**：`_refresh_all()` 第一步 `_auto_combine_all()` 会把棋盘 + 待命区按 id+star 一起分组，两份同名同星 1 星会在任何一次刷新里融掉 ⇒ 摆棋子**必须每只不同 id**。
+- 变异 M1~M5（拆 consume / 还原轻点即选中 / 还原两条挪动分支 / 拆关框撤高亮 / 长按不点亮）**5/5**；N1/N2（拆守卫 / 反之无条件禁拖）**2/2**。
+
+### `tools/prep_countdown_ui_check`（**新增**，**PASS 43/0**）（第 ⑥ 条：备战倒计时）
+
+- 「3!/2!/1!」提示：**真在屏幕正中**、`mouse_filter = IGNORE`（不挡棋盘）、字号 / 描边、只在 3/2/1 显示且文案 `N!`；
+  准备按钮带「（N s）」后缀且取自 `prep_countdown_seconds` meta；教学局不接管；PVE 35 / PVP 50。
+- **H 段（离线自测口径）**：离线自测里倒计时节点**不存在** + 没写 meta + 按钮无后缀，另配**反向对照**；
+  **H2 源码级**：倒计时守卫必须带 `is_offline_team_match`，而第 ⑤ 条的 `prepare_local_bots` **不得**被关进同一个 `if`
+  （防以后有人把两个 `if` 合成一个）；**H3 行为**：直接调 `_auto_deploy_at_deadline()` 棋盘字节必须不变 + 非离线自测对照组证明非空转。
+- **H4 段（返修：联机客机可见性）**：①客机**无服务端 prep 信息**时倒计时照常可见（meta ≥ 30 + 按钮带后缀）；
+  ②服务端给了 20s 必须以服务端为准（不能被本地 35 盖掉）；③客机到点做本地自动上阵、但**不许**改 `team_ready`。
+- ★★ **`Control.scale` 会挪 `global_position`**（绕 `pivot_offset` 缩放，矩形左上角随之平移）⇒ 判「视觉中心」要
+  `get_global_transform() * (size * 0.5)`，**不能**用 `global_position + size * 0.5`；顺带钉 `pivot_offset == size * 0.5`，
+  否则脉冲每跳一次数字就甩偏（实测偏 `(16, 12.5)px`）。第一版门禁就是这么写错的，被自己门禁抓出来。
+- ★ **顺带修门禁噪音**：待命区夹具 `{"id","star"}` 缺 `def` ⇒ `SynergyService.count_races_from_board()` 每帧抛
+  `Invalid access to property or key 'def'`（实测 12 条 SCRIPT ERROR，门禁照样 PASS）。抽 `_piece()` 补 `def` 后日志 0 SCRIPT ERROR。
+  **门禁不该带 SCRIPT ERROR 噪音 —— 它会淹没真错误。**
+- 变异 N1~N6（挡棋盘 / 不居中 / 只在第 3 秒 / 脉冲 pivot=0 / 字号 20 / 去掉 `!`）**6/6**；
+  M1~M3（拆倒计时守卫 / 把 `prepare_local_bots` 也关进离线自测 / 拆自动上阵守卫）**3/3**；H4 返修 3/3。
+
+### `tools/prep_skin_reapply_check`（**新增**，**PASS 16/0**）（第 ⑦ 条：皮肤晚到）
+
+- 默认皮肤 → `arrive_prep_skin()` 换成冰雪 → 断言棋盘底图 / 河面 / 待命区 / 萝卜 / 萤火虫色 / 河面波光**全部跟着换**；
+  河面流光按皮肤可关（冰雪关掉 `PrepRiverFlowBottom`）；重复 `reapply` 幂等。
+- 变异（不换萤火虫色 / 不关流光）→ **8 红**。首跑（修复前）**16/3** 即为红基线。
+
+### `tools/bug_1012_356_check`（**新增**，**PASS 151/0**）（③/⑤/⑥ 综合）
+
+第 ③/⑤/⑥ 条的综合门禁（由本轮另一位 AI 起草，逐条并入同一批）：覆盖霜印使贴图、AI 实时经济状态、倒计时的服务端半（超时判定 / 到点开回合 / `prep_timed_out` / `timeout_buys`）。
+
+### `tools/codex_unlock_all_check`（**新增**，一键解锁全部图鉴 — 工具，非门禁）
+
+2026-10-11 用户测试请求：遍历 `CodexService` 全 14 分类 collectible id → `mark_seen_many` → 逐条目断言 `is_unlocked` → 校验 `profile.json` 落盘。
+走游戏自己的序列化（不手改 `profile.json`，存档格式漂移风险为零），幂等。★ 跑前必须先关游戏，否则解锁会被游戏进程的下次存档冲掉。
+
+### 变异验证（改坏 → 门禁必须红 → 还原验 sha256）
+
+| 脚本 | 条数 | 结果 |
+| --- | --- | --- |
+| 第 ① 点 `mutate`（删清台 / 清错目标） | 2 | 2/2 CAUGHT（各 42 红） |
+| 第 ② 点 `p2_mut` | 1 | 1/1 CAUGHT（32 红） |
+| 第 ③ 点 `p3_mutA/B` | 2 | 2/2 CAUGHT |
+| 第 ④ 点 `mutate_p4` / `mutate_p4b` | 5 + 2 | 7/7 CAUGHT |
+| 第 ⑤/⑥ 点 `p356` | — | 见 `bug_1012_356_check` |
+| 第 ⑥ 点 `mutate_p6b` / `mutate_p6c` | 3 + 3 | 6/6 CAUGHT |
+| 第 ⑦ 点 `p7_mut` | 1 | 1/1 CAUGHT（8 红） |
+
+### 其它
+
+- 回归全绿：`prep_piece_interaction` 30 / `prep_countdown_ui` 43 / `prep_drag_threshold` 67 / `prep_swap` 30 /
+  `prep_1005` 100 / `prep_long_press` 32 / `prep_shop` 34 / `prep_detail_overlay` 32 / `prep_layout_1009` 15 /
+  `prep_1006` 64 / `bug_1012_356` 151 / `match_exit` 98 / `cold_parse_chain` 348。
+- ★ **新增既存红（不在旧台账，记账待定夺）**：`safe_area_check` 4 条全在 `pet_draw@iphone`（`PetDrawDialog` 越出 iPhone 安全区），
+  用「行为回退」证过与本次改动无关。
+- ★ **既存红复核**：`prep_seat_card` `avatar_not_one_row` 1 —— 把本轮 3 个备战脚本行为**全部回退**、再把倒计时两处接入**中和掉**后照样红 ⇒ 与 10.12 两队改动都无关；
+  `prep_detail_overlay_check` 尾部的 `scenes/battle/BattleScreen.gd` 解析错误（`Could not resolve class BattleResult.gd` + 两个 `summon_formation_*.tres` 预载失败）回退到改前照报，属既存 / 环境；
+  `dynamic_call` 41（10.11 记 30，回退我的改动后仍是 41 ⇒ 漂移非本轮带来）、`prep_tree_snapshot` 19、`prep_text_coverage` 1、`battle_loading_layout` 1 —— 均与既有基线一致。
+- ★ **跑不了（环境限制，不是缺陷）**：`tutorial_arrow_alignment_check` 在本工程根直接跑必 `rc=2`（要 `use_custom_user_dir=true` 的隔离副本，README 有记载）；
+  它只读 `_board_hud._selected_bench` 字段（自己直接赋值），不经过轻点，本点不改变它的行为。

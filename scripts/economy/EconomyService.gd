@@ -150,7 +150,10 @@ static func settle_post_battle_breakdown(ctx: Dictionary) -> Dictionary:
 	income_by_reason["battle_bonus"] = maxi(0, int(ctx.get("bonus_gold", 0)))
 	gold += int(income_by_reason["battle_bonus"])
 	# (7) 宝藏战后金币。随机档位之间相隔 10 金：幸运信封 30/40/50，金钱魔法 60/70/80。
-	var rng := _rng()
+	# Simulation can supply its own independent stream without changing rules.
+	var rng: RandomNumberGenerator = ctx.get("rng", null)
+	if rng == null:
+		rng = _rng()
 	if treasures.has("money_lucky_envelope"):
 		income_by_reason["lucky_envelope"] = 30 + (rng.randi() % 3) * 10
 		gold += int(income_by_reason["lucky_envelope"])

@@ -22,6 +22,7 @@ extends RefCounted
 
 const ShopRoll := preload("res://scripts/economy/ShopRoll.gd")
 const CarrotRules := preload("res://scripts/economy/CarrotEconomy.gd")
+const RaceRules := preload("res://scripts/units/RacePick.gd")
 
 ## 按「跟普通真人差不多」设定：每场五五开。
 const WIN_RATE := 0.5
@@ -48,6 +49,11 @@ static var _cache: Dictionary = {}
 ## 返回 {board: Array(16), mercs: Array, treasures: Array, syn: Dictionary,
 ##       gold: int, main_race: String, stones: Dictionary}
 static func state_for(seed: Variant, slot: int, round_n: int) -> Dictionary:
+	# Real matches carry their own persistent economy; historical simulation is
+	# only a fallback for previews/audits without a running room.
+	var live: Dictionary = NetworkService.team_bot_states.get(slot, {})
+	if int(live.get("round", -1)) == round_n and str(live.get("seed", "")) == str(seed):
+		return view(live)
 	var key := "%s/%d/%d" % [str(seed), slot, round_n]
 	if _cache.has(key):
 		return _cache[key]
@@ -60,6 +66,80 @@ static func state_for(seed: Variant, slot: int, round_n: int) -> Dictionary:
 
 static func clear_cache() -> void:
 	_cache.clear()
+
+
+# Persistent state for live games. No estimated wins, kills or future income.
+static func new_state(seed: Variant, slot: int) -> Dictionary:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(["glory_live_bot_v2", str(seed), slot])
+	var races := _races(DataRegistry.get_table("race_units").get("units", []))
+	while races.size() > RaceRules.required_count():
+		races.remove_at(rng.randi_range(0, races.size() - 1))
+	return {"seed": str(seed), "slot": slot, "round": 0, "settled_round": 0,
+		"races": races,
+		"gold": GameState.START_GOLD, "roster": [], "treasures": [],
+		"stones": CarrotRules.empty_stones(), "stones_gained": CarrotRules.empty_stones(),
+		"carrots": 0, "carrot_spent": 0, "tech": 0, "stone_draws": 0,
+		"loss_streak": 0, "mercs": [], "gold_spent_this_round": false,
+		"main_race": races[rng.randi_range(0, races.size() - 1)] if not races.is_empty() else ""}
+
+
+static func prepare_round(bot: Dictionary, round_index: int) -> void:
+	if int(bot.get("round", 0)) >= round_index:
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(["glory_live_bot_prep_v2", bot.seed, bot.slot, round_index])
+	bot.mercs = []
+	bot.gold_spent_this_round = false
+	var ledger := {"carrots": int(bot.carrots), "merc_carrots_spent_total": int(bot.carrot_spent),
+		"harvest_tech_level": int(bot.tech), "last_harvest_round": int(bot.get("round", 0))}
+	if int(bot.get("skip_harvest_round", -1)) != round_index:
+		EconomyLedger.harvest_for_round(ledger, round_index, float(bot.get("carrot_bonus_rate", 0.0)))
+	bot.carrots = int(ledger.carrots)
+	bot["harvest_gain"] = int(ledger.get("last_harvest_gain", 0))
+	_prep_round(bot, round_index, rng, RaceRules.shop_pool(
+		DataRegistry.get_table("race_units").get("units", []), bot.get("races", RaceRules.default_races())))
+	for unit in bot.roster:
+		if str(unit.get("uid", "")).is_empty():
+			var serial := int(bot.get("next_uid", 0)) + 1
+			bot["next_uid"] = serial
+			unit["uid"] = "bot_%s_%s" % [str(bot.slot), str(serial)]
+	bot.round = round_index
+
+
+static func view(bot: Dictionary) -> Dictionary:
+	var board := _arrange_board(bot)
+	var counts := {}
+	for cell in board:
+		if cell is Dictionary:
+			var race := str(cell.def.get("race", ""))
+			counts[race] = int(counts.get(race, 0)) + 1
+	return {"board": board, "mercs": (bot.mercs as Array).duplicate(true),
+		"treasures": (bot.treasures as Array).duplicate(), "syn": SynergyService.flags_from_counts(counts),
+		"gold": int(bot.gold), "stones": bot.stones.duplicate(), "stones_gained": bot.stones_gained.duplicate(),
+		"main_race": str(bot.main_race), "gold_spent_this_round": bool(bot.get("gold_spent_this_round", false))}
+
+
+static func settle_round(bot: Dictionary, result: Dictionary, context: Dictionary) -> Dictionary:
+	var round_index := int(context.get("round_index", bot.round))
+	if int(bot.get("settled_round", 0)) >= round_index:
+		return {}
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(["glory_live_bot_settle_v2", bot.seed, bot.slot, round_index])
+	bot.loss_streak = 0 if bool(context.get("player_wins", false)) else int(bot.loss_streak) + 1
+	var ctx := context.duplicate()
+	ctx.merge({"gold_before": int(bot.gold), "kill_gold": EconomyService.kill_gold_for_slot(result, int(bot.slot)),
+		"bonus_gold": int(result.get("bonus_gold", 0)), "loss_streak_after": int(bot.loss_streak),
+		"boss_hp_current": int(result.get("enemy_hp_current", 0)), "boss_hp_max": maxi(1, int(result.get("enemy_hp_max", 1))),
+		"merchant_gold": EconomyService.merchant_gold_from_board(_arrange_board(bot)),
+		"treasures": bot.treasures, "gold_spent_this_round": bool(bot.get("gold_spent_this_round", false)),
+		"camp_income": CarrotRules.income_for_spent(int(bot.carrot_spent)), "rng": rng}, true)
+	var settlement := EconomyService.settle_post_battle_breakdown(ctx)
+	bot.gold = int(settlement.gold_after)
+	bot.settled_round = round_index
+	if RoundService.is_treasure_round(round_index):
+		_pick_treasure(bot, rng)
+	return settlement
 
 
 # ---------------------------------------------------------------- 推演主循环
@@ -92,6 +172,8 @@ static func _simulate(seed: Variant, slot: int, round_n: int) -> Dictionary:
 			_settle_battle(bot, r - 1, rng)
 			if draw_rounds.has(r - 1):
 				_pick_treasure(bot, rng)
+		# Hired mercenaries expire after ONE battle, just like player mercenaries.
+		bot.mercs = []
 		_harvest(bot)
 		_prep_round(bot, r, rng, units)
 	var board := _arrange_board(bot)
@@ -212,6 +294,11 @@ static func _reserve(bot: Dictionary, round_index: int) -> int:
 
 
 static func _prep_round(bot: Dictionary, round_index: int, rng: RandomNumberGenerator, units: Array) -> void:
+	if (bot.treasures as Array).has("money_generous_fate") and int(bot.gold) >= 100:
+		var gamble := {"gold": int(bot.gold), "gamble_used": false}
+		EconomyLedger.apply(gamble, "gamble", {}, {"gamble_entitled": true,
+			"gamble_linked": TreasureService.has_linkage_in(bot.treasures, "link_fraud_fate"), "roll": rng.randf()})
+		bot.gold = int(gamble.gold)
 	_try_four_star(bot)
 	_try_tech(bot, round_index)
 	_spend_carrots(bot, round_index, rng)
@@ -222,7 +309,7 @@ static func _prep_round(bot: Dictionary, round_index: int, rng: RandomNumberGene
 			var offer: Dictionary = offers[i]
 			if offer.is_empty():
 				continue
-			var cost := int(offer.get("cost", 1))
+			var cost := EconomyLedger.unit_cost(offer, bot.treasures)
 			if int(bot.gold) - cost < _reserve(bot, round_index):
 				continue
 			if not _wants(bot, offer):
@@ -235,7 +322,8 @@ static func _prep_round(bot: Dictionary, round_index: int, rng: RandomNumberGene
 			_trim_roster(bot)
 		if refreshes >= MAX_REFRESH_PER_ROUND:
 			break
-		var refresh_cost := EconomyService.shop_refresh_cost(refreshes, false)
+		var refresh_cost := EconomyService.shop_refresh_cost(refreshes,
+			TreasureService.has_set_in(bot.treasures, "money"))
 		if int(bot.gold) - _reserve(bot, round_index) < refresh_cost + 60:
 			break
 		bot.gold = int(bot.gold) - refresh_cost
@@ -549,4 +637,5 @@ static func _arrange_board(bot: Dictionary) -> Array:
 
 
 static func _cell(u: Dictionary) -> Dictionary:
-	return {"def": (u.def as Dictionary).duplicate(true), "star": int(u.star), "is_mercenary": false, "id": str(u.id)}
+	return {"def": (u.def as Dictionary).duplicate(true), "star": int(u.star), "is_mercenary": false,
+		"id": str(u.id), "uid": str(u.get("uid", "")), "cost_basis": int(u.get("cost_basis", 0))}

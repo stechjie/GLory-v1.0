@@ -34,6 +34,8 @@ const SNAPSHOT_INTERVAL_SEC := 5.0
 # （每人一份含完整单位 def 的快照，一个房间就能到 MB 级），存它们会让快照
 # 大两个数量级，而丢了最坏也只是看门狗转 AI —— 不值得。
 const PERSISTED_ROOM_FIELDS := [
+	"bot_states",
+	"prep_timed_out", "timeout_buys",
 	"id", "state", "slot_states", "ready",
 	"slot_gold", "team_hp", "pve_completed", "boss_completed", "team_loss_streak",
 	"team_upgrade_stones",

@@ -618,6 +618,9 @@ func set_prep_skin(skin_id: String) -> int:
 # body = {"skin": id | null}，null = 默认。这个包里没有的皮肤也照收 —— PrepSkin 取图时自己退回默认；
 # 在这里改成默认的话，玩家换回有这张图的包时，看到的就不是自己选的那张了。
 func _adopt_prep_skin(body: Dictionary) -> void:
+	# 走到这里 = 服务器对这张皮肤表过态了 ⇒ 记下「本会话至少拉到过一次」，
+	# 摆放界面据此判断冷启动期要不要再补一次拉取（见 PrepSkin.loaded）。
+	PrepSkin.loaded = true
 	var raw: Variant = body.get("skin", null)
 	var next := PrepSkin.DEFAULT_ID
 	if typeof(raw) == TYPE_STRING and not str(raw).is_empty():

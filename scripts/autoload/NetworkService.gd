@@ -296,6 +296,11 @@ func _rpc_match_status_result(request_id: String, state: String) -> void:
 enum SessionState { OFFLINE, JOINING, READY, FAILED, RECONNECTING }
 
 const BattleSim := preload("res://scripts/battle/BattleSimulator.gd")
+const LiveBotEconomy := preload("res://scripts/economy/LiveBotEconomy.gd")
+var team_bot_states: Dictionary = {}
+var _local_bot_stones: Array = []
+const PrepDeadline := preload("res://scripts/rounds/PrepDeadline.gd")
+var _prep_deadline_local := -1.0
 const ShopRoll := preload("res://scripts/economy/ShopRoll.gd")
 const RacePick := preload("res://scripts/units/RacePick.gd")
 const UnitGrowth := preload("res://scripts/units/UnitGrowth.gd")
@@ -852,6 +857,7 @@ func _process(delta: float) -> void:
 			_tick_replay_retry(delta)
 	if _dedicated_server:
 		ServerFlags.poll_reload(proc_now)
+		_tick_prep_deadlines(proc_now)
 		_cleanup_elapsed += delta
 		if _cleanup_elapsed >= CLEANUP_INTERVAL_SEC:
 			_cleanup_elapsed = 0.0
@@ -1391,6 +1397,9 @@ func _room_for_peer(peer_id: int) -> Dictionary:
 func _touch_room(room: Dictionary) -> void:
 	_room_service.touch_room(room)
 func _set_room_state(room: Dictionary, next_state: String) -> void:
+	if next_state == ROOM_PREP and str(room.get("state", "")) != ROOM_PREP:
+		room["prep_timed_out"] = false
+		room["timeout_buys"] = {}
 	_room_service.set_room_state(room, next_state)
 # --- 房间阶段权限矩阵（A11）--------------------------------------------------
 # 任何改变成员或阶段的 RPC 都必须先声明自己允许在哪些阶段执行。
@@ -2308,9 +2317,87 @@ func _room_start_authoritative(room: Dictionary) -> void:
 	_net_log("all players ready room=%d match started" % int(room.get("id", 0)))
 	_broadcast_room_lobby(room)
 
+func prep_seconds_left() -> float:
+	return maxf(0.0, _prep_deadline_local - _now()) if _prep_deadline_local >= 0.0 else -1.0
+
+func _tick_prep_deadlines(now: float) -> void:
+	for room in _rooms.values():
+		if bool(room.get("run_over", false)) or bool(room.get("suspended", false)):
+			continue
+		if PrepDeadline.remaining(room, now) != 0.0:
+			continue
+		room["prep_timed_out"] = true
+		var states: Array = room.get("slot_states", [])
+		var peer_slots: Dictionary = room.get("peer_slot", {})
+		for slot in states.size():
+			if str(states[slot]) == "player":
+				var online := false
+				for pid in peer_slots:
+					if int(peer_slots[pid]) == slot and _peer_connected(int(pid)):
+						online = true
+				if not online:
+					_reconnect_service.apply_ai_takeover(room, slot)
+			room.ready[slot] = true
+		_room_maybe_start_round(room)
+
+func _valid_timeout_buy(room: Dictionary, slot: int, action: String, payload: Dictionary) -> bool:
+	if action != "buy" or not bool(payload.get("timeout_deploy", false)):
+		return false
+	if str(room.get("state", "")) != ROOM_BATTLE or not bool(room.get("prep_timed_out", false)):
+		return false
+	if room.get("boards", {}).has(slot) or room.get("timeout_buys", {}).has(slot):
+		return false
+	var prep := _room_prep(room, slot)
+	if EconomyLedger._unit_count(prep) > 0:
+		return false
+	var shop: Dictionary = prep.get("shop", {})
+	var offers: Array = shop.get("offers", [])
+	var sold: Array = shop.get("sold", [])
+	for i in offers.size():
+		if i < sold.size() and bool(sold[i]):
+			continue
+		if offers[i] is Dictionary and not offers[i].is_empty():
+			return int(payload.get("shop_index", -1)) == i
+	return false
+
+func prepare_local_bots() -> void:
+	if GameState.tutorial_mode or (team_active and not is_host):
+		return
+	if GameState.round_index == 1 and not GameState.battle_history.is_empty():
+		team_bot_states.clear()
+	# A new run has no battle history. A repeated scene rebuild must not harvest twice.
+	if GameState.round_index == 1:
+		for bot in team_bot_states.values():
+			if int(bot.get("settled_round", 0)) > 0:
+				team_bot_states.clear()
+				break
+	if team_bot_states.is_empty():
+		_local_bot_stones = [CarrotEconomy.empty_stones(), CarrotEconomy.empty_stones()]
+	var local_team := GameConstants.team_of_slot(team_local_slot) if team_active else 0
+	_local_bot_stones[local_team] = GameState.team_upgrade_stones
+	var room := {"bot_states": team_bot_states, "round_index": GameState.round_index,
+		"shared_seed": shared_seed, "slot_states": GameState.team_slot_states,
+		"team_upgrade_stones": _local_bot_stones}
+	team_bot_states = LiveBotEconomy.prepare(room)
+
+func settle_local_bots(own: Dictionary, rival: Dictionary) -> void:
+	if team_active and not is_host:
+		return
+	var local_team := GameConstants.team_of_slot(team_local_slot) if team_active else 0
+	for slot in team_bot_states:
+		var replay := own if GameConstants.team_of_slot(int(slot)) == local_team else rival
+		var result: Dictionary = replay.get("result", {})
+		if result.is_empty():
+			continue
+		var kind := str(result.get("kind", replay.get("kind", "pve")))
+		LiveBotEconomy.Bot.settle_round(team_bot_states[slot], result, {
+			"round_index": GameState.round_index, "kind": kind,
+			"player_wins": TeamOutcome.viewer_wins_battle(result, kind, GameConstants.team_of_slot(int(slot)))})
+
 func _room_maybe_start_round(room: Dictionary) -> void:
 	if str(room.get("state", ROOM_LOBBY)) != ROOM_PREP or not _room_all_ready(room):
 		return
+	LiveBotEconomy.prepare(room)
 	_set_room_state(room, ROOM_BATTLE)
 	room.boards = {}
 	_net_log("PVP round started room=%d round=%d" % [int(room.get("id", 0)), int(room.get("round_index", 1))])
@@ -2357,6 +2444,7 @@ func _build_room_state(room: Dictionary, slot: int) -> Dictionary:
 	return {
 		# --- 房间 ---
 		"phase": str(room.get("state", ROOM_LOBBY)),
+		"prep_seconds_left": PrepDeadline.remaining(room, _now()),
 		"round_id": round_id,
 		"battle_id": str(room.get("battle_id", "")),
 		"battle_round": int(room.get("round_index", 1)),
@@ -3840,6 +3928,7 @@ func _enqueue_finalize(room: Dictionary) -> void:
 	room.replay_error = ""
 	# Lock inputs now, before a queued room's reserved seats can expire/resume.
 	# Only compact board inputs are copied here; replay arrays do not exist yet.
+	LiveBotEconomy.prepare(room)
 	_room_expire_treasure_offers(room)
 	var queued_at := Time.get_ticks_usec()
 	var inputs := BattleReplayJob.snapshot_room_inputs(room)
@@ -4191,6 +4280,14 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 			"camp_income": CarrotEconomy.income_for_spent(int(_room_prep(room, slot).get("merc_carrots_spent_total", 0))),
 			"gold_spent_this_round": bool(_room_prep(room, slot).get("gold_spent_this_round", false)) if economy_authoritative() else bool(snap.get("gold_spent_this_round", false)),
 		})
+		var bot: Dictionary = room.get("bot_states", {}).get(slot, {})
+		if not bot.is_empty() and str(room.slot_states[slot]) == "dummy":
+			var bot_settlement := LiveBotEconomy.Bot.settle_round(bot, result, {
+				"kind": kind, "player_wins": bool(team_wins[own_team]), "round_index": completed_round})
+			if not bot_settlement.is_empty():
+				settlement = bot_settlement
+				gold_before = int(settlement.gold_after) - int(settlement.income_total)
+			LiveBotEconomy.mirror(room, slot, bot)
 		var gold_after := int(settlement.gold_after)
 		var income_prep := _room_prep(room, slot)
 		var reasons: Dictionary = income_prep.get("income_by_reason", {})
@@ -5668,6 +5765,8 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 	team_ready = (payload.get("ready", []) as Array).duplicate()
 	server_round_index = int(payload.get("round_id", 0))
 	server_phase = str(payload.get("phase", ""))
+	var prep_remaining := float(payload.get("prep_seconds_left", -1.0))
+	_prep_deadline_local = _now() + prep_remaining if server_phase == ROOM_PREP and prep_remaining >= 0.0 else -1.0
 	if team_effects_changed:
 		team_treasure_effects_changed.emit()
 	if payload.has("battle_id"):
@@ -6423,7 +6522,8 @@ func _room_apply_economy(room: Dictionary, slot: int, action: String, payload: D
 	if not ECONOMY_ACTIONS.has(action):
 		return _economy_reject(room, slot, "unknown_action")
 	# 经济操作只在备战阶段有效。战斗/结算阶段还能买卖，等于让人在结算跑的同时改棋盘。
-	if str(room.get("state", ROOM_LOBBY)) != ROOM_PREP:
+	var timeout_buy := _valid_timeout_buy(room, slot, action, payload)
+	if str(room.get("state", ROOM_LOBBY)) != ROOM_PREP and not timeout_buy:
 		return _economy_reject(room, slot, "bad_phase")
 	if action == "merge" and (payload.get("uids", []) as Array).size() > MAX_MERGE_UIDS:
 		return _economy_reject(room, slot, "bad_request")
@@ -6440,6 +6540,8 @@ func _room_apply_economy(room: Dictionary, slot: int, action: String, payload: D
 			return _economy_reject(room, slot, "gold_desync")
 		prep["gold"] = reported_gold
 	var receipt := EconomyLedger.apply(prep, action, payload, _economy_ctx(room, slot, action))
+	if timeout_buy and bool(receipt.get("ok", false)):
+		room.timeout_buys[slot] = true
 	receipt["action"] = action
 	if bool(receipt.get("ok", false)):
 		# carrot-only rollout still exposes slot_gold in the room snapshot. Keep
