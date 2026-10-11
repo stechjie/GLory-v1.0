@@ -119,3 +119,12 @@ Hotfix 快照包含单调递增 revision、服务器 deployment_id、当前 patc
 - 使用 Computer Use 在外置 Chrome 打开本地预览，加载实际 `admin.js/admin.css`，API 使用明确的测试数据。
 - 已检查三平台上传区域、未上传齐全时发布按钮禁用、空文件/基础包的错误提示、Hotfix 执行范围与独立渠道选择、战斗服执行回执；截图位于外层 `delivery/patch-system/admin-preview.png`。
 - 这是页面渲染与交互检查，未向生产后台或 Firebase 上传。真实鉴权、上传和发布联调仍待云端配置完成。
+
+
+## 完整工程本地验证
+
+- 使用主工程已有本地资源与 `res/assets` 合并，再与开发分支代码形成独立验证副本。有效资源 3,438 个；其中 17 个与旧资源清单指纹不同，已保留实际文件并记录。
+- Godot 4.7 完成完整工程导入，未发现脚本解析错误。使用实际 `UpdateGate._start_business()` 恢复完整工程的 25 个业务 Autoload，真实进程打印 `FULL_PROJECT_AUTOLOADS_PASS count=25`，退出码 0 且没有脚本错误。网络下载部分另由 HTTPS 集成测试覆盖；此处没有连接生产账号或开始真实对局。
+- 修正构建材质检查：它直接启动诊断场景，需通过临时 override 恢复原单例；检查结束恢复 override，正式导出的项目继续保留更新器占位单例。原构建模块的 14 项测试通过。
+- 最终材质检查通过 88 个模型、324 个表面、353 个纹理引用；但导入日志还含其他未被审计覆盖的旧模型 FBX 源纹理缺失，严格导入诊断仍拒绝通过。尚未放行完整基础安装包或掩盖这些错误。
+- 证据位于外层 `delivery/patch-system/full-project-check/logs/`：`bootstrap.log`、`model-materials.json`、`model-materials.log`、`import.log`、`assets-check.json`。测试配置指向本机 HTTPS 与测试 Hosting 域名，不能当成正式发布配置。

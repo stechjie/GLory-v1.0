@@ -607,6 +607,15 @@ def verify_model_materials(engine, stage, logdir, env):
         test_override = test_override.replace("[application]", "[application]\n" + settings, 1)
     else:
         test_override += "\n[application]\n" + settings
+    # This audit launches a diagnostic scene directly, bypassing UpdateGate.
+    # Restore original singletons only in the temporary diagnostic override;
+    # exported players must retain their deferred startup placeholders.
+    boot_file = stage / "patcher/boot.json"
+    if boot_file.is_file():
+        boot = json.loads(boot_file.read_text())
+        autoloads = "\n".join(f'{entry["name"]}="*{entry["path"]}"' for entry in boot["autoloads"])
+        test_override = re.sub(r"(?ms)^\[autoload\]\n.*?(?=^\[|\Z)", "", test_override)
+        test_override += "\n[autoload]\n" + autoloads + "\n"
     override.write_text(test_override)
     try:
         # The audit scene's explicit CHECK_RESULT and JSON report are the
