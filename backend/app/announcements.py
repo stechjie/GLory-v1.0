@@ -111,9 +111,13 @@ _FRIEND_CODE_RE = re.compile(r"[2-9A-HJKMNP-Z]{8}")
 # 管理员在表格里会用各种分隔符，中文逗号尤其常见。
 _CODE_SPLIT_RE = re.compile(r"[\s,，、;；]+")
 
-# 图片文件名。**只有这个形状的名字才会被读写或送出去** —— /media 路由也靠它挡路径穿越。
-MEDIA_NAME_RE = re.compile(r"[0-9a-f]{64}\.(png|jpg|webp)")
-MEDIA_TYPES = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp"}
+# 媒体文件名。**只有这个形状的名字才会被读写或送出去** —— /media 路由也靠它挡路径穿越。
+#
+# ogg 是语音消息（app/voice_clips.py，2026-10-11）：它和公告图片共用同一个目录与
+# 同一条 /media 路由 —— 线上由 Caddy 直接发，这条路由只在没有 Caddy 的本机调试时用到。
+# 名字一律是内容哈希，所以这里放开一种扩展名不会让别的东西变得可读。
+MEDIA_NAME_RE = re.compile(r"[0-9a-f]{64}\.(png|jpg|webp|ogg)")
+MEDIA_TYPES = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp", "ogg": "audio/ogg"}
 
 
 # --- 图片处理 -------------------------------------------------------------------

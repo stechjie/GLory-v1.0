@@ -60,6 +60,15 @@ ROOM_INVITE_RATE_SEC = 5
 # 对不上的症状：邀请气泡照弹，但聊天列表里没有那条记录、红点也不灭。
 PARTY_INVITE_KIND = "party_invite"
 
+# 语音消息（2026-10-11，用户定「凡是能打字的地方都能发语音」）。payload 是
+# {"clip_id": <uuid 文本>, "seconds": <数字>}，音频文件在 app/voice_clips.py。
+#
+# body 由**服务端**写成「[语音 12″]」这类短文本，不采用客户端传的那段：
+#   - 旧版本的包不认识这个 kind，但照样会把 body 显示出来，于是看到的是一句能看懂的话，
+#     而不是一条空白消息（020 给邀请留 body 也是这个道理）
+#   - 不给「语音 + 任意文字」留口子。真要做那是另一次迁移，而不是让 body 变成夹带通道
+VOICE_KIND = "voice"
+
 
 class ChatRejected(RuntimeError):
     """业务规则拒绝。code 是稳定标识，message 给玩家看。"""

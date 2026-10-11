@@ -34,7 +34,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 
-from app import chat, db, players, realtime, text_guard
+from app import chat, db, players, realtime, text_guard, voice_clips
 from app.jwt_verify import Claims
 from app.rate_limit import RateLimited, SlidingWindowLimiter
 from app.routes.friends import _norm
@@ -54,7 +54,9 @@ DM_TYPE = "dm"
 ROOM_INVITE_KIND = chat.ROOM_INVITE_KIND
 # 10.07 第 10 条：排位/休闲的组队邀请也做成一条私聊（见 chat.PARTY_INVITE_KIND）。
 PARTY_INVITE_KIND = chat.PARTY_INVITE_KIND
-_ALLOWED_KINDS = ("text", ROOM_INVITE_KIND, PARTY_INVITE_KIND)
+# 语音消息（2026-10-11）。见 chat.VOICE_KIND 与 app/voice_clips.py。
+VOICE_KIND = chat.VOICE_KIND
+_ALLOWED_KINDS = ("text", ROOM_INVITE_KIND, PARTY_INVITE_KIND, VOICE_KIND)
 
 # 每人每分钟最多发多少条。**只防刷屏**，不负责总量 ——
 # 总量由「每对好友只存最近 200 条」在结构上封顶（见 database/007_chat.sql）。
@@ -210,6 +212,32 @@ def _validated_party_payload(body: SendBody) -> dict:
     return {"party_id": party_value.strip(), "mode": str(mode)}
 
 
+async def _validated_voice_payload(player_id: uuid.UUID, body: SendBody) -> dict:
+    """把语音消息的 payload 收敛成 {"clip_id": str, "seconds": float}（2026-10-11）。
+
+    🔴 秒数以**服务端登记的为准**，不采用客户端报的那个：它决定界面上语音条的长度，
+    客户端随便报一个 1 秒，收的人就会看到一条「1 秒」但实际响 30 秒的语音。
+
+    clip 的归属也在这里核：不核的话，拿到别人的 clip_id 就能用自己的名义发出去
+    （见 voice_clips.require_own_clip）。
+    """
+    payload = body.payload or {}
+    raw = payload.get("clip_id")
+    try:
+        clip_id = uuid.UUID(str(raw))
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(
+            status_code=400, detail="语音消息缺少有效的语音编号",
+            headers={"X-Glory-Reason": "voice_bad_payload"},
+        ) from None
+    try:
+        clip = await voice_clips.require_own_clip(player_id, clip_id, "private")
+    except voice_clips.ClipRejected as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.message,
+                            headers={"X-Glory-Reason": exc.code}) from None
+    return {"clip_id": str(clip.clip_id), "seconds": clip.seconds}
+
+
 # --- 接口 ---------------------------------------------------------------------
 
 
@@ -269,6 +297,8 @@ async def send_message(
         payload = _validated_invite_payload(body)
     elif kind == PARTY_INVITE_KIND:
         payload = _validated_party_payload(body)
+    elif kind == VOICE_KIND:
+        payload = await _validated_voice_payload(me.player_id, body)
     else:
         payload = None
     try:
@@ -279,12 +309,16 @@ async def send_message(
             detail="发得太快了，%d 秒后再试" % exc.retry_after,
             headers={"Retry-After": str(exc.retry_after)},
         ) from None
-    try:
-        text = text_guard.clean_chat_message(body.body)
-    except text_guard.TextRejected as exc:
-        raise HTTPException(
-            status_code=400, detail=exc.message, headers={"X-Glory-Reason": exc.code},
-        ) from None
+    if kind == VOICE_KIND:
+        # 语音的 body 由服务端写，不采用客户端传的那段（见 chat.VOICE_KIND）。
+        text = voice_clips.body_text(float(payload["seconds"]))
+    else:
+        try:
+            text = text_guard.clean_chat_message(body.body)
+        except text_guard.TextRejected as exc:
+            raise HTTPException(
+                status_code=400, detail=exc.message, headers={"X-Glory-Reason": exc.code},
+            ) from None
     try:
         # 🔴 kind/payload 必须**转发**给 chat.send：不传的话它默认 kind="text"，
         # 邀请就变成一条普通文本落库 + 推送，收件人的邀请框永远不出现，且不报错。

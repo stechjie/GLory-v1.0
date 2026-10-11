@@ -25,6 +25,9 @@ config/icon="res://app_icon.png"
 [audio]
 
 general/ios/session_category=3
+driver/enable_input.windows=true
+driver/enable_input.android=true
+driver/enable_input.ios=true
 
 [autoload]
 
