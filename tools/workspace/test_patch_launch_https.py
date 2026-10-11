@@ -35,6 +35,9 @@ class LauncherHTTPSTests(unittest.TestCase):
     def test_base_without_a_new_patch_does_not_download(self):
         self.run_scenario("base_current")
 
+    def test_channel_switch_with_equal_sequence_does_not_reuse_other_channel_pack(self):
+        self.run_scenario("channel_switch")
+
     def run_scenario(self, scenario):
         engine = os.environ.get("GODOT_BIN")
         if not engine:
@@ -58,6 +61,11 @@ class LauncherHTTPSTests(unittest.TestCase):
                 archive.writestr("service.gd", "extends Node\nfunc value() -> int:\n return 42\n")
             pack = stream.getvalue()
             checksum = hashlib.sha256(pack).hexdigest()
+            other = io.BytesIO()
+            with zipfile.ZipFile(other, "w") as archive:
+                archive.writestr("service.gd", "extends Node\nfunc value() -> int:\n return 84\n")
+            stable_pack = other.getvalue()
+            stable_checksum = hashlib.sha256(stable_pack).hexdigest()
             counters = {"downloads": 0, "checks": 0}
             class Handler(BaseHTTPRequestHandler):
                 def log_message(self, *_args):
@@ -67,16 +75,21 @@ class LauncherHTTPSTests(unittest.TestCase):
                     if parsed.path == "/v1/patches/check":
                         counters["checks"] += 1
                         seq = int(parse_qs(parsed.query)["installed_seq"][0])
+                        channel = parse_qs(parsed.query)["channel"][0]
+                        selected, selected_sha = (stable_pack, stable_checksum) if channel == "stable" else (pack, checksum)
                         required = 0 if scenario == "base_current" else (2 if scenario == "publication_changed" and seq == 1 else 1)
-                        artifact = {"sha256": checksum, "size": len(pack), "platform": "windows", "base_id": "test-base",
-                            "url": f"https://localhost:{self.server.server_port}/patches/{checksum}/windows.zip"}
-                        body = json.dumps({"protocol": 1, "channel": "internal", "platform": "windows", "base_id": "test-base",
+                        artifact = {"sha256": selected_sha, "size": len(selected), "platform": "windows", "base_id": "test-base",
+                            "url": f"https://localhost:{self.server.server_port}/patches/{selected_sha}/windows.zip"}
+                        body = json.dumps({"protocol": 1, "channel": channel, "platform": "windows", "base_id": "test-base",
                             "deployment_id": "server-one", "revision": 1, "hotfix_epoch": 1, "required_patch_seq": required,
                             "action": "none" if seq == required else "download", "artifact": None if seq == required else artifact,
                             "hotfixes": []}).encode()
                     elif parsed.path == f"/patches/{checksum}/windows.zip":
                         counters["downloads"] += 1
                         body = bytes([pack[0] ^ 1]) + pack[1:] if scenario == "corrupt" else pack
+                    elif parsed.path == f"/patches/{stable_checksum}/windows.zip":
+                        counters["downloads"] += 1
+                        body = stable_pack
                     else:
                         self.send_error(404)
                         return
@@ -137,8 +150,16 @@ func _ready():
             imported = subprocess.run([engine, "--headless", "--editor", "--path", str(project), "--import"],
                                       capture_output=True, text=True, timeout=30)
             self.assertEqual(imported.returncode, 0, imported.stderr)
-            successful = scenario in ("download", "base_current")
+            successful = scenario in ("download", "base_current", "channel_switch")
             for attempt in range(2 if successful else 1):
+                if scenario == "channel_switch" and attempt == 1:
+                    boot_path = project / "patcher/boot.json"
+                    boot = json.loads(boot_path.read_text())
+                    boot["channel"] = "stable"
+                    boot_path.write_text(json.dumps(boot))
+                    game = project / "game.gd"
+                    game.write_text(game.read_text().replace("value == 42", "value == 84"))
+                    expected_value = 84
                 result = subprocess.run([engine, "--headless", "--path", str(project)],
                                         capture_output=True, text=True, timeout=20)
                 for line in result.stdout.splitlines():
@@ -154,7 +175,8 @@ func _ready():
                     expected = "校验失败" if scenario == "corrupt" else "版本刚刚更新"
                     self.assertIn(expected, result.stdout)
                 self.assertNotIn("SCRIPT ERROR", result.stderr)
-                self.assertEqual(counters["downloads"], 0 if scenario == "base_current" else 1, f"attempt {attempt}")
+                expected_downloads = attempt + 1 if scenario == "channel_switch" else (0 if scenario == "base_current" else 1)
+                self.assertEqual(counters["downloads"], expected_downloads, f"attempt {attempt}")
             if scenario == "download":
                 self.assertGreaterEqual(counters["checks"], 3)
 

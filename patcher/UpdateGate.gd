@@ -155,7 +155,7 @@ func _run() -> void:
 	if not str(_boot.backend_url).begins_with("https://"):
 		_fail("更新服务地址无效。")
 		return
-	_directory = "user://patches/" + str(_boot.platform) + "/" + str(_boot.base_id)
+	_directory = "user://patches/" + str(_boot.channel) + "/" + str(_boot.platform) + "/" + str(_boot.base_id)
 	if DirAccess.make_dir_recursive_absolute(_directory) != OK:
 		_fail("无法创建更新目录，请检查设备存储空间。")
 		return

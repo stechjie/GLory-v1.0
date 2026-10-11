@@ -7,6 +7,7 @@ var _http: HTTPRequest
 var _boot: Dictionary
 var _sequence := 0
 var _revision := -1
+var _seen_revision := -1
 var _deployment := ""
 var _pending := false
 var _busy := false
@@ -75,14 +76,19 @@ func refresh() -> void:
 
 
 func _apply(snapshot: Dictionary) -> void:
+	if _blocked:
+		return
 	if (snapshot.get("protocol") != 1 or snapshot.get("channel") != _boot.channel
 		or snapshot.get("base_id") != _boot.base_id or snapshot.get("platform") != _boot.platform):
 		return
 	var revision := int(snapshot.get("revision", -1))
-	if revision <= _revision:
+	if revision <= _revision or revision < _seen_revision:
 		return
 	if str(snapshot.get("deployment_id", "")).is_empty():
 		return
+	# Fence delayed HTTP replies even when applying this new revision fails.
+	# Equal revisions may retry; lower revisions must never restore an old epoch.
+	_seen_revision = revision
 	var deployment := str(snapshot.deployment_id) + ":" + str(snapshot.get("hotfix_epoch", 0))
 	if deployment != _deployment:
 		_runtime.clear()
@@ -100,6 +106,8 @@ func _apply(snapshot: Dictionary) -> void:
 
 
 func _block_for_patch() -> void:
+	if _blocked:
+		return
 	_blocked = true
 	get_tree().paused = true
 	var layer := CanvasLayer.new()
@@ -113,6 +121,8 @@ func _block_for_patch() -> void:
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	shade.add_child(center)
 	var message := Label.new()
+	if ResourceLoader.exists("res://patcher/LauncherFont.otf"):
+		message.add_theme_font_override("font", load("res://patcher/LauncherFont.otf"))
 	message.text = "新的远征已经准备就绪\n请重新启动游戏，完成更新后继续。"
 	message.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	message.add_theme_font_size_override("font_size", 28)
