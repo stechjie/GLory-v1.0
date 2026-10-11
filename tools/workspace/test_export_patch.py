@@ -7,7 +7,29 @@ import tempfile
 import unittest
 import zipfile
 
-from export_patch import export
+from export_patch import export, verify_pack_export
+
+
+class PackExportDiagnosticTests(unittest.TestCase):
+    leak = "ERROR: 9 RID allocations of type 'N13RendererDummy15MaterialStorage11DummyShaderE' were leaked at exit."
+
+    def test_known_shutdown_leak_after_completed_zip_is_recorded(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            verify_pack_export("[ DONE ] savezip\n" + self.leak, root)
+            record = json.loads((root / "export-diagnostics.json").read_text())
+            self.assertEqual(record["host_shutdown_diagnostics"], [self.leak])
+
+    def test_incomplete_or_early_leak_is_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            for text in (self.leak, self.leak + "\n[ DONE ] savezip"):
+                with self.subTest(text=text), self.assertRaises(RuntimeError):
+                    verify_pack_export(text, Path(folder))
+
+    def test_other_error_after_completion_is_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            with self.assertRaises(RuntimeError):
+                verify_pack_export("[ DONE ] savezip\nERROR: Cannot save resource", Path(folder))
 
 
 class ActualPlatformExportTests(unittest.TestCase):

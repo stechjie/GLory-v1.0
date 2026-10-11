@@ -1,0 +1,275 @@
+{
+  "date": "2026-10-11",
+  "kind": "incremental-resource-update",
+  "source_commit": "dd83f608c5dd04198e6bb65b9107109887da4de0",
+  "base_id": "glory-20261011-dd83f60",
+  "channel": "internal",
+  "compatible_clients": {
+    "android": 32,
+    "ios": 52
+  },
+  "resources": [
+    {
+      "path": "assets/ui/menu_backgrounds/bag.png",
+      "size": 2732721,
+      "sha256": "caedce76afd5c21fdc0403082fb180446165fdaee9f3b29956ca3da0b52b3eee",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/menu_backgrounds/chat.png",
+      "size": 2214745,
+      "sha256": "08008aa233288b5b4f71eab391455907e6c40b9bac29bb11c6f543df0f5ed57f",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/menu_backgrounds/shop.png",
+      "size": 2403977,
+      "sha256": "76f7b6ba0f8e130841d5f1061f505eb2a5fc430d36a1c57d65fa50264bccbca2",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/models/pets/pet_tiger/pet_tiger_animated.tscn",
+      "size": 560,
+      "sha256": "6c8c9eac10a758b133cce33e346bc790cbd1094c625a3611940ca5811ba902a7",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_026.png",
+      "size": 34597,
+      "sha256": "75264ff5719bf0f84210076ddf07826d6730ead26e7e4d3ea7c908336ba2bc1e",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_023.png",
+      "size": 41027,
+      "sha256": "244375b8d2c7de5353e71fa824f6848e1c9ae6c5d271e4a6d7710badf7ccd583",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_025.png",
+      "size": 36349,
+      "sha256": "17f6405176942b7ae7befed532e09e96fe3e92cdc767131967575639de773a1a",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_022.png",
+      "size": 36652,
+      "sha256": "77dcdae180c672ddff750d963a9aab558f22a2fa2418f492c3e56f70a0d14113",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_024.png",
+      "size": 40695,
+      "sha256": "1e560e433c0da11fc4cddc1a0d4507b60119f9d4698e018a35d90cb3a501541b",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_021.png",
+      "size": 38678,
+      "sha256": "fe28c015842bd092ca7e637743cdf947b933c594f9f6fb9a8c969fb762531bce",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_027.png",
+      "size": 37237,
+      "sha256": "ce3ae1d4b097a571ee20f3c31c9d0d334ad885426fd3171c9998f5d6a558f88b",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_028.png",
+      "size": 39040,
+      "sha256": "069fd4989945de76a350347ac963cfce047503bd6b700ce056aa1500da3f9422",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_029.png",
+      "size": 25480,
+      "sha256": "e67874d6fe60b0b8c4addbd9d8d20c1831f44cd4837daab4fc5c5c7cc6054e54",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_032.png",
+      "size": 34443,
+      "sha256": "3d35f5e76b039d24ce8978e1967b48f1b26da9f85131471dbb9fcc394a7a6965",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_030.png",
+      "size": 32278,
+      "sha256": "40881fe998ec992b3522e0cc071103d08a71d127ac2821a2856cb8408fa3572f",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_031.png",
+      "size": 31006,
+      "sha256": "b94fbd2d2cc6230832e2f17e786d4584999760d7402d91e5db2b1e3befa60251",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_033.png",
+      "size": 39160,
+      "sha256": "3e58c54fd060d340fe3a7836ff2b2beae3ac7b8f87235bf781ded570b0794dde",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_035.png",
+      "size": 42728,
+      "sha256": "f81357866f918439c51c221d899400c9e55743451ad42d9423816a5a97176ae4",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_034.png",
+      "size": 42049,
+      "sha256": "7d56d33d7b478a2810acf0e52f73b87d9ed427f73548dbaa46f19539c56bdc28",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_038.png",
+      "size": 45324,
+      "sha256": "40744ef3f7c231c13004311f1f59e394e5e13841cb92905752a4b3f4e8d82598",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_036.png",
+      "size": 35084,
+      "sha256": "7aea5ab8c3317f622fd6f63d2eecef1b82336c2fbae0e97de7458122ca7a4054",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_037.png",
+      "size": 43810,
+      "sha256": "5489954485882b392fd94da2108bcac4b0879e3970d3d8b72754cd45b7042d9c",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_039.png",
+      "size": 45121,
+      "sha256": "970a9c965261467c1ace52766e7501f789f0494abbae5a578a4871e82242e1ed",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_040.png",
+      "size": 46340,
+      "sha256": "c2705d12d3bbb777af570a59f9ca0276a4c0afe49e12ff58b1914226a89a439e",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_041.png",
+      "size": 45636,
+      "sha256": "98996e963b28ba40f76e8db3ec6d341fa29d0e67bd7657efd83e2f35c85fed43",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_044.png",
+      "size": 45708,
+      "sha256": "c6da2a8dd80fe7d981471a119f4b4e1f41c488d24d76188f3066182f787218b5",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_042.png",
+      "size": 47055,
+      "sha256": "055260037fc469814083ff437649877e138b8bb88960479d8aebb1b1aa600bc6",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_043.png",
+      "size": 46122,
+      "sha256": "94dccdc808cdc81f2d2464570f0c9cc650ea313daa2f8e0837de9a9b80914b76",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_045.png",
+      "size": 48082,
+      "sha256": "113fdd315a60fcd60cc7dc010165ed25a2be806bd2dcef9c15512cfecd1cc898",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_046.png",
+      "size": 48781,
+      "sha256": "095ac553892fde928b2754d03a037e52907ed3959c05edf4905037b8f9244bc0",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_049.png",
+      "size": 48789,
+      "sha256": "bbfd4b6b0c86413cf652a6b9ec6ae1bca68d59d217062c4ea1f7ff9d4e6a170c",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_050.png",
+      "size": 49611,
+      "sha256": "7a5de55d2d19114c34a53a6e955e3712b5780039678c35b33ec96b7974f7c3ca",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_048.png",
+      "size": 44399,
+      "sha256": "e57cf18797012fe25caf3ce8b1cbf59f1fe0c170ed97c3109c08ac5b105880df",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_051.png",
+      "size": 46923,
+      "sha256": "4ac74bbae731d264fa5b40f452449e8e2773112658eb5cab11c914441c759986",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_047.png",
+      "size": 47141,
+      "sha256": "0190f9034b32d4364389129aeda934f4252e23ea74cdc901dbee09514fa54bda",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/avatars/thumb/avatar_052.png",
+      "size": 49229,
+      "sha256": "0b6576657b26a845cf86e12c2702d9ccf88c2b5d4a4daaa2b0bb65ed819f82fe",
+      "source": "Google Drive sync"
+    },
+    {
+      "path": "assets/ui/treasure_cards/打断锁链_en.png",
+      "size": 2072808,
+      "sha256": "598012c97f0a537443204352a1f1f77b3b44ebc4e158d7b663253ecdba27a46d",
+      "source": "attached assets.zip",
+      "drive_id": "1_r0AhHnbKcHK4NxLaL6rmZaRmh7LQERr"
+    },
+    {
+      "path": "assets/ui/treasure_cards/打断锁链.png",
+      "size": 2066721,
+      "sha256": "5ce3fe57402a6b1f095f8872ed951289dc08d9a0cadda58a7dd9bb5e31cd843a",
+      "source": "attached assets.zip",
+      "drive_id": "13NEdVihCW_l__yEev6OfH3eKtls8wqMX"
+    },
+    {
+      "path": "assets/ui/treasure_logos/打断锁链.png",
+      "size": 503920,
+      "sha256": "fc0b9cc3170a3b9f308eeab13b91e6407d7b8e253077a05dcf48431e8c19c44c",
+      "source": "attached assets.zip",
+      "drive_id": "1F0IxLYNKQv_ZqLUTIHUZf49efJQP-3ZT"
+    }
+  ],
+  "storage": "Google Drive glory/assets; art binaries remain outside Git per repository policy",
+  "patches": [
+    {
+      "platform": "android",
+      "size": 1949430,
+      "sha256": "4a91edc596bd1dd54f2aaf5071ad7205fa400668729f4c3ca20398eed17e13e2",
+      "files": 3,
+      "backend_validation": true,
+      "godot_mount_and_texture_load": true
+    },
+    {
+      "platform": "ios",
+      "size": 1949430,
+      "sha256": "4a91edc596bd1dd54f2aaf5071ad7205fa400668729f4c3ca20398eed17e13e2",
+      "files": 3,
+      "backend_validation": true,
+      "godot_mount_and_texture_load": true
+    }
+  ],
+  "patch_source_changes": [
+    "assets/ui/treasure_cards/打断锁链_en.png",
+    "assets/ui/treasure_cards/打断锁链.png",
+    "assets/ui/treasure_logos/打断锁链.png"
+  ],
+  "note": "36 downloaded files already match the shipped client snapshots; the patch contains only the three supplied treasure textures."
+}

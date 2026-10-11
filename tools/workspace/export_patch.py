@@ -41,6 +41,22 @@ def run(engine, stage, args, log, verify=None):
         raise RuntimeError(f"Godot export/import failed; inspect {log}")
 
 
+def verify_pack_export(text, output):
+    """Accept only the known dummy-renderer shutdown leak after ZIP completion."""
+    done = text.rfind("[ DONE ] savezip")
+    if done < 0:
+        raise RuntimeError(f"Godot did not confirm ZIP completion; inspect {output / 'export.log'}")
+    accepted = []
+    for match in re.finditer(r"(?m)^ERROR:.*$", text):
+        if match.start() > done and re.fullmatch(
+                r"ERROR: \d+ RID allocations of type 'N13RendererDummy15MaterialStorage11DummyShaderE' were leaked at exit\.", match[0]):
+            accepted.append(match[0])
+        else:
+            raise RuntimeError(f"Godot ZIP export failed: {match[0]}")
+    (output / "export-diagnostics.json").write_text(json.dumps({
+        "export_completed": True, "host_shutdown_diagnostics": accepted}, indent=2) + "\n")
+
+
 def export(stage: Path, engine: Path, preset: str, platform: str, config: Path,
            output: Path, base: Path | None = None, executable: str | None = None, debug: bool = False):
     stage, output = stage.resolve(), output.resolve()
@@ -89,7 +105,8 @@ def export(stage: Path, engine: Path, preset: str, platform: str, config: Path,
     command = ["--export-pack", preset]
     if debug:
         command += ["--export-debug", preset]
-    run(engine, stage, [*command, archive], output / "export.log")
+    run(engine, stage, [*command, archive], output / "export.log",
+        verify=lambda text: verify_pack_export(text, output))
     if not archive.is_file():
         raise RuntimeError("Godot did not produce the resource ZIP")
     identity.update(sha256=digest(archive), size=archive.stat().st_size)
