@@ -48,6 +48,16 @@ class PatchHTTPTests(unittest.TestCase):
         self.client = TestClient(self.app)
         self.addCleanup(self.client.close)
 
+    def test_upload_history_uses_latest_update_not_random_job_id(self):
+        for index in range(32):
+            job_id = f"{32-index:032d}"
+            self.service._job(job_id, {"job_id": job_id, "status": "complete"})
+            os.utime(self.service.jobs / (job_id + ".json"), (index + 1, index + 1))
+        jobs = self.service.catalogue()["uploads"]
+        self.assertEqual(len(jobs), 30)
+        self.assertEqual(jobs[0]["job_id"], f"{1:032d}")
+        self.assertEqual(jobs[-1]["job_id"], f"{30:032d}")
+
     def authorize(self):
         admin = Admin(uuid.uuid4(), "operator")
         self.app.dependency_overrides[current_admin] = lambda: admin

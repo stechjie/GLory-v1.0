@@ -74,6 +74,18 @@ class FirebaseTests(unittest.TestCase):
             self.publish()
         self.assertFalse(any(c.method == "PATCH" or c.url.path.endswith("/releases") for c in self.calls))
 
+    def test_existing_content_needs_no_upload_destination(self):
+        handler = self.handler
+        def cached(request):
+            if request.url.path.endswith(":populateFiles"):
+                self.calls.append(request)
+                return httpx.Response(200, json={})
+            return handler(request)
+        with httpx.Client(transport=httpx.MockTransport(cached)) as client:
+            result = FirebaseHosting("glory-test", client=client).publish_inventory(self.files, "test-token")
+        self.assertEqual(set(result["files"]), set(self.files))
+        self.assertFalse(self.uploads)
+
     def test_wrong_cdn_bytes_never_confirm_verified_artifacts(self):
         self.corrupt = True
         with self.assertRaises(FirebasePublishError):

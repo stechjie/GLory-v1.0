@@ -1526,12 +1526,13 @@ function uploadPatch(path, file, progress) {
   });
 }
 
-async function patchesView(main) {
+async function patchesView(main, feedback = null) {
   main.replaceChildren(h("p", { class: "muted" }, "读取版本记录…"));
   let data;
   try { data = await api("GET", "/admin/api/patches"); }
   catch (e) { main.replaceChildren(notice("error", e.message)); return; }
   main.replaceChildren();
+  if (feedback) main.append(h("div", { role: "status", "aria-live": "polite" }, notice(feedback.kind, feedback.message)));
   const status = h("div", {});
   const title = h("input", { placeholder: "例如：远征大厅优化", maxlength: 200 });
   const channel = h("select", {}, h("option", { value: "internal" }, "内部测试"), h("option", { value: "stable" }, "正式渠道"));
@@ -1555,7 +1556,10 @@ async function patchesView(main) {
       h("h2", {}, `${release.title} · #${release.seq} · ${release.channel} · ${active ? "当前发布" : release.status === "draft" ? "草稿" : "历史版本"}`));
     for (const platform of release.platforms) {
       const artifact = release.artifacts.find((a) => a.platform === platform);
-      card.append(h("p", {}, `${platform}：${artifact ? `已校验 ${(artifact.size / 1000000).toFixed(1)} MB · 基础包 ${artifact.base_id}` : "等待上传"}`));
+      const latestJob = data.uploads.find((job) => job.release_id === release.release_id && job.platform === platform);
+      card.append(h("p", {}, `${platform}：${artifact ? `上传成功，已通过下载校验 · ${(artifact.size / 1000000).toFixed(1)} MB · 基础包 ${artifact.base_id}` : "尚未上传成功"}`));
+      if (latestJob?.status === "failed") card.append(notice("error", `${platform} 最近一次上传失败：${latestJob.message}${artifact ? "；之前成功的文件仍保留" : "；请选择文件重新上传"}`));
+      if (latestJob?.status === "running") card.append(notice("info", `${platform} 正在处理：${latestJob.message}。可稍后刷新确认结果。`));
       if (release.status !== "draft") continue;
       const base = h("input", { placeholder: "打包清单中的 base_id", value: artifact?.base_id || "" });
       const file = h("input", { type: "file", accept: ".zip,application/zip" });
@@ -1565,8 +1569,14 @@ async function patchesView(main) {
         const selected = file.files[0];
         if (!selected || !base.value.trim()) throw new Error("请选择 ZIP 文件并填写基础包标识");
         if (selected.size > 2000000000) throw new Error("单个文件不能超过 2 GB");
-        await uploadPatch(`/admin/api/patches/${release.release_id}/artifacts/${platform}?base_id=${encodeURIComponent(base.value.trim())}`, selected, progress);
-        await patchesView(main);
+        try {
+          const result = await uploadPatch(`/admin/api/patches/${release.release_id}/artifacts/${platform}?base_id=${encodeURIComponent(base.value.trim())}`, selected, progress);
+          if (result.status !== "complete") throw new Error("服务器尚未确认上传成功，请刷新查看上传记录");
+          await patchesView(main, { kind: "ok", message: `${platform} 补丁「${selected.name}」上传成功，已通过 Firebase 下载校验。更新仍为草稿，发布后玩家才会收到更新。` });
+        } catch (error) {
+          progress.textContent = "上传未确认成功。可保留当前文件重试，或刷新查看服务器上传记录。";
+          throw error;
+        }
       });
       card.append(h("div", { class: "row" }, field("基础包", base), field("平台补丁", file, true), upload), progress);
     }
@@ -1576,9 +1586,12 @@ async function patchesView(main) {
       publish.onclick = action(publish, box, async () => {
         if (!window.confirm(`确认将 ${release.channel} 切换到 #${release.seq}「${release.title}」？玩家需要匹配此版本，全部旧 Hotfix 将失效。`)) return;
         await api("POST", `/admin/api/patches/${release.release_id}/publish`, { expected_revision: data.revision });
-        await patchesView(main);
+        await patchesView(main, { kind: "ok", message: `更新 #${release.seq}「${release.title}」已发布到 ${release.channel} 渠道。` });
       });
       card.append(publish);
+      if (release.status === "draft") card.append(h("p", { class: "hint" }, release.artifacts.length === release.platforms.length
+        ? "所有平台上传并校验成功。当前尚未发布，点击“发布此更新”后才会下发给玩家。"
+        : "当前尚未发布。所有勾选平台上传并校验成功后，才能发布此更新。"));
     }
     card.append(box);
     main.append(card);

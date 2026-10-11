@@ -101,10 +101,11 @@ class FirebaseHosting:
                 populated = api("POST", version_name + ":populateFiles", json={"files": {
                     name: file_hashes[name] for name in names[offset:offset + 1000]}})
                 upload_url = populated.get("uploadUrl", "")
+                required_hashes = populated.get("uploadRequiredHashes") or []
                 expected = "https://upload-firebasehosting.googleapis.com/upload/" + version_name + "/files"
-                if upload_url != expected:
+                if required_hashes and upload_url != expected:
                     raise FirebasePublishError("unexpected Firebase upload destination")
-                for checksum in populated.get("uploadRequiredHashes", []):
+                for checksum in required_hashes:
                     if checksum not in compressed:
                         raise FirebasePublishError("Firebase requested an unknown content hash")
                     with compressed[checksum].open("rb") as stream:

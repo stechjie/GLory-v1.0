@@ -113,7 +113,7 @@ class PatchService:
 
     def catalogue(self):
         result = self.store.catalogue()
-        result["uploads"] = [json.loads(file.read_text()) for file in sorted(self.jobs.glob("*.json"))][-30:]
+        result["uploads"] = [json.loads(file.read_text()) for file in sorted(self.jobs.glob("*.json"), key=lambda file: (file.stat().st_mtime_ns, file.name), reverse=True)[:30]]
         result["firebase_host"] = self.store.firebase_host
         result["battle_status"] = self.battle_bridge.latest if self.battle_bridge else None
         return result
