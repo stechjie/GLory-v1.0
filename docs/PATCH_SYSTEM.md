@@ -87,3 +87,12 @@ Hotfix 快照包含单调递增 revision、服务器 deployment_id、当前 patc
 - 真 Godot Windows 资源导出测试通过：基础导出→改动脚本→再次平台导出→生成累计 ZIP→同时挂载基础与补丁，实际执行补丁 `service.gdc` 返回新值。这个用例不等于完整 Windows EXE 已验收。
 - 新增 `BattleHotfixContext.gd`，为可信 GDScript 提供可撤销的 Dictionary 和对象属性替换。真引擎用项目 `bosses.json` 验证运行中更改 Boss 血量并撤销恢复。当前改动作用于配置对象；已经复制配置的战斗实例不会自动回填，修改已有战斗状态需由 Hotfix 明确定位对应状态对象。
 - 战斗进程与后台之间的分发、确认及部署联动尚未接入；该执行器当前只是经过验证的组件，不能视为线上可用。
+
+## 战斗进程分发与回执（后续实现）
+
+- 已接入同机原子文件协议：账号后端拥有 desired 文件，战斗服务拥有 status 文件；路径由服务器配置指定，不接受管理员请求传入路径，也不开放公网执行代码接口。
+- `BattleHotfixAgent.gd` 由专服启动入口在配置存在时加载，每 2 秒检查完整快照并回写修订号/错误。15 秒没有新鲜快照、部署不匹配时清空效果。后台界面每 3 秒刷新执行回执，避免把“下发”显示成“执行成功”。
+- 后台观察战斗部署标识变化后，使 client/account_server/battle_server 全部旧 Hotfix 失效，并提升 `hotfix_epoch`；重复观察相同部署不会再次失效。客户端也按 epoch 先清除旧效果，避免失败回退恢复跨部署的旧代码。
+- 真 Godot 子进程联调通过：后台发布→Boss 配置变化→应用修订号回执→账号部署变化撤销→过期快照撤销。另有战斗部署变化使全部目标失效的测试。
+- 服务端 ZIP 打包脚本已加入共用运行器；`deploy/glory-server-patches.conf` 提供专服 systemd drop-in，尚未安装到线上。后端须配置 `GLORY_PATCH_BATTLE_DESIRED/STATUS/INSTANCE`，战斗进程通过对应 `GLORY_BATTLE_HOTFIX_*` 读取路径。双方只读对方文件，保持各自目录的写权限。
+- 这部分已经有本地进程间证据，仍不能视为生产部署或现有真实对局验收通过。

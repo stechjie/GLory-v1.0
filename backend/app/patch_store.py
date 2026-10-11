@@ -49,6 +49,10 @@ class PatchStore:
                     id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL,
                     deployment_id TEXT NOT NULL);
                 INSERT OR IGNORE INTO patch_meta VALUES(1,0,'');
+                CREATE TABLE IF NOT EXISTS patch_epoch (id INTEGER PRIMARY KEY CHECK(id=1), epoch INTEGER NOT NULL);
+                INSERT OR IGNORE INTO patch_epoch VALUES(1,0);
+                CREATE TABLE IF NOT EXISTS patch_battle_deployment (
+                    instance_id TEXT PRIMARY KEY, deployment_id TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS patch_release (
                     release_id TEXT PRIMARY KEY, channel TEXT NOT NULL,
                     seq INTEGER NOT NULL CHECK(seq>0), title TEXT NOT NULL,
@@ -99,7 +103,20 @@ class PatchStore:
     @classmethod
     def _invalidate(cls, db):
         db.execute("UPDATE patch_hotfix SET status='expired' WHERE status='active'")
+        db.execute("UPDATE patch_epoch SET epoch=epoch+1 WHERE id=1")
         cls._advance(db)
+
+    def observe_battle_deployment(self, instance_id: str, deployment_id: str):
+        token(instance_id)
+        token(deployment_id)
+        with self._transaction() as db:
+            row = db.execute("SELECT deployment_id FROM patch_battle_deployment WHERE instance_id=?", (instance_id,)).fetchone()
+            if row and row[0] == deployment_id:
+                return False
+            db.execute("INSERT OR REPLACE INTO patch_battle_deployment VALUES(?,?)", (instance_id, deployment_id))
+            self._invalidate(db)
+            self._audit(db, "battle_deployment", "battle_deploy", {"instance_id": instance_id, "deployment_id": deployment_id})
+            return True
 
     def activate_deployment(self, deployment_id: str):
         token(deployment_id)
@@ -237,6 +254,7 @@ class PatchStore:
             row = db.execute("SELECT r.*,a.release_id FROM patch_active a JOIN patch_release r "
                              "ON r.release_id=a.release_id WHERE a.channel=?", (channel,)).fetchone()
             result = {"protocol": 1, **meta, "channel": channel, "platform": platform,
+                      "hotfix_epoch": db.execute("SELECT epoch FROM patch_epoch WHERE id=1").fetchone()[0],
                       "base_id": base_id, "required_patch_seq": row["seq"] if row else 0,
                       "action": "none", "artifact": None, "hotfixes": []}
             if row:
@@ -266,6 +284,7 @@ class PatchStore:
                 release["artifacts"] = [dict(a) for a in db.execute(
                     "SELECT * FROM patch_artifact WHERE release_id=?", (release["release_id"],))]
             return {**meta, "releases": releases,
+                    "hotfix_epoch": db.execute("SELECT epoch FROM patch_epoch WHERE id=1").fetchone()[0],
                     "active": dict(db.execute("SELECT channel,release_id FROM patch_active")),
                     "hotfixes": [dict(h) for h in db.execute(
                         "SELECT hotfix_id,channel,deployment_id,patch_seq,target,sha256,created_at "
@@ -293,5 +312,6 @@ class PatchStore:
                     "AND status='active' AND deployment_id=? AND patch_seq=? ORDER BY rowid",
                     (channel, meta["deployment_id"], sequence))]
                 messages.append({"t": "patch_hotfix_snapshot", "protocol": 1, **meta,
+                    "hotfix_epoch": db.execute("SELECT epoch FROM patch_epoch WHERE id=1").fetchone()[0],
                     "channel": channel, "required_patch_seq": sequence, "hotfixes": items})
             return messages

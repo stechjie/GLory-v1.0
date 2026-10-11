@@ -5,6 +5,7 @@ import asyncio
 import hashlib
 import json
 import os
+import logging
 from pathlib import Path, PurePosixPath
 import stat
 import subprocess
@@ -18,6 +19,7 @@ from starlette.concurrency import run_in_threadpool
 from app.patch_firebase import FirebaseHosting, FirebasePublishError
 from app.patch_store import PatchConflict, PatchStore, token
 from app.patch_runtime import PythonHotfixRuntime
+from app.patch_battle_bridge import BattleBridge
 
 
 def deployment_identity(root: Path, release_tag: str = "") -> str:
@@ -95,6 +97,8 @@ class PatchService:
         self.lock = asyncio.Lock()
         self.runtime = PythonHotfixRuntime()
         self.godot_binary = godot_binary
+        self.battle_bridge = None
+        self.battle_channel = "stable"
         # A crash can interrupt cloud deployment. Never infer success on restart.
         for file in self.jobs.glob("*.json"):
             data = json.loads(file.read_text())
@@ -111,7 +115,15 @@ class PatchService:
         result = self.store.catalogue()
         result["uploads"] = [json.loads(file.read_text()) for file in sorted(self.jobs.glob("*.json"))][-30:]
         result["firebase_host"] = self.store.firebase_host
+        result["battle_status"] = self.battle_bridge.latest if self.battle_bridge else None
         return result
+
+    def configure_battle(self, desired, status, instance_id, channel):
+        if bool(desired) != bool(status):
+            raise ValueError("Both battle desired and status paths are required")
+        if desired:
+            self.battle_bridge = BattleBridge(Path(desired), Path(status), instance_id)
+            self.battle_channel = channel
 
     async def upload(self, release_id: str, platform: str, base_id: str, stream, actor: str):
         token(base_id)
@@ -263,6 +275,39 @@ func _initialize():
             except subprocess.TimeoutExpired:
                 raise ValueError("GDScript validation timed out") from None
             return self.store.add_hotfix(channel, "client", source, actor, expected_revision=revision)
+
+    async def add_battle_hotfix(self, channel, source, actor, revision):
+        if self.battle_bridge is None or self.battle_bridge.latest is None:
+            raise PatchConflict("Battle hotfix agent is not connected")
+        if channel != self.battle_channel:
+            raise ValueError("Channel differs from this battle server's gameplay channel")
+        if self.lock.locked():
+            raise PatchConflict("Another update operation is in progress")
+        async with self.lock:
+            if len(self.store.effective_sources("battle_server")) >= 12:
+                raise ValueError("At most 12 battle hotfixes can be active")
+            try:
+                await run_in_threadpool(self.validate_gdscript, source)
+            except subprocess.TimeoutExpired:
+                raise ValueError("GDScript validation timed out") from None
+            return self.store.add_hotfix(channel, "battle_server", source, actor, expected_revision=revision)
+
+
+async def battle_loop(service):
+    from app import realtime
+    log = logging.getLogger("glory.patches")
+    failed = False
+    while True:
+        try:
+            if service.battle_bridge and service.battle_bridge.tick(service):
+                for payload in service.store.client_pushes():
+                    await realtime.hub().broadcast(payload)
+            failed = False
+        except Exception:
+            if not failed:
+                log.warning("Battle hotfix bridge unavailable; check configured file ownership and paths")
+            failed = True
+        await asyncio.sleep(2)
 
 
 _service: PatchService | None = None

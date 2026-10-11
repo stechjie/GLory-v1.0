@@ -113,6 +113,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 Path(cfg.patch_directory), cfg.patch_firebase_site,
                 patch_service.deployment_identity(Path(__file__).resolve().parents[2], cfg.patch_deployment_id),
                 godot_binary=cfg.patch_godot_binary))
+            patch_service.current().configure_battle(cfg.patch_battle_desired, cfg.patch_battle_status,
+                cfg.patch_battle_instance, cfg.patch_gameplay_channel)
         else:
             patch_service.install(None)
     except BaseException:
@@ -157,6 +159,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # 进程内状态，同上；重启那一段在线曲线是空的（不是 0）。
     recorder = analytics.install(analytics.Recorder())
     counter = asyncio.create_task(analytics.loop(recorder))
+    battle_patches = asyncio.create_task(patch_service.battle_loop(patch_service.current())) if patch_service.current() else None
     try:
         if patch_service.current() is not None:
             patch_service.current().restore_runtime()
@@ -167,7 +170,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 patch_service.current().runtime.clear()
             except Exception:
                 log.exception("Hotfix cleanup failed during server shutdown")
-        for task in (sweeper, cleaner, admitter, notices, postman, matcher, seasonal, banhammer, counter):
+        for task in (sweeper, cleaner, admitter, notices, postman, matcher, seasonal, banhammer, counter, battle_patches):
+            if task is None:
+                continue
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task

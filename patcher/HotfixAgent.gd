@@ -81,9 +81,9 @@ func _apply(snapshot: Dictionary) -> void:
 	var revision := int(snapshot.get("revision", -1))
 	if revision <= _revision:
 		return
-	var deployment := str(snapshot.get("deployment_id", ""))
-	if deployment.is_empty():
+	if str(snapshot.get("deployment_id", "")).is_empty():
 		return
+	var deployment := str(snapshot.deployment_id) + ":" + str(snapshot.get("hotfix_epoch", 0))
 	if deployment != _deployment:
 		_runtime.clear()
 		_deployment = deployment

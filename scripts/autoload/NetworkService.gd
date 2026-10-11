@@ -973,6 +973,10 @@ func start_dedicated_server(port: int = DEFAULT_PORT) -> bool:
 	# Server-side entry point for Google Cloud VPS. The server owns room state,
 	# slot validation, ready flow, board collection, and battle replay compute.
 	_dedicated_server = true
+	if not OS.get_environment("GLORY_BATTLE_HOTFIX_DESIRED").is_empty() and not has_node("BattleHotfixAgent"):
+		var hotfix_agent = load("res://scripts/multiplayer/BattleHotfixAgent.gd").new()
+		hotfix_agent.name = "BattleHotfixAgent"
+		add_child(hotfix_agent)
 	# 关键：无画面 Godot 默认不限帧，_process 每秒空转数千次会把一个 CPU 核打满，
 	# 小机型(GCP 突发积分)积分耗尽后被限速到卡死、连 SSH 都进不去、只能 reset。
 	# Keep an explicit cap; bounded simulation now shares frames with networking.

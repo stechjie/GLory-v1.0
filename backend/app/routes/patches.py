@@ -126,3 +126,10 @@ async def client_hotfix(body: AccountHotfix, admin: Writer):
         revision = service().store.catalogue()["revision"]
     await push_snapshots()
     return {"hotfix_id": key}
+
+
+@router.post("/admin/api/patches/hotfix/battle-server")
+async def battle_hotfix(body: AccountHotfix, admin: Writer):
+    with failures():
+        key = await service().add_battle_hotfix(body.channel, body.source, str(admin.auth_uid), body.expected_revision)
+    return {"hotfix_id": key, "state": "pending_battle_ack"}

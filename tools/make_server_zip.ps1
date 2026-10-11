@@ -139,6 +139,11 @@ try {
         if (-not (Test-Path "$src\$d")) { throw "缺少文件夹: $src\$d" }
         Copy-Item -Recurse -Force "$src\$d" "$stage\$d"
     }
+    # Server hotfix runtime shares the reversible executor, not the client launcher.
+    New-Item -ItemType Directory -Force "$stage\patcher" | Out-Null
+    foreach ($f in @("HotfixRuntime.gd", "HotfixContext.gd")) {
+        Copy-Item -Force "$src\patcher\$f" "$stage\patcher\$f"
+    }
     # 工作区发布工具、历史 QA 与桌面测试夹具不属于服务器运行包。
     foreach ($d in @("workspace", "qa_history", "testdata")) {
         $developmentDir = Join-Path "$stage\tools" $d

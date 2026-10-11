@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     patch_godot_binary: str = ""
     patch_enforce_versions: bool = False
     patch_gameplay_channel: str = "stable"
+    patch_battle_desired: str = ""
+    patch_battle_status: str = ""
+    patch_battle_instance: str = "main"
 
     # 限流额度。默认对**账号创建**收得很紧 —— 一个正常玩家一辈子只需要注册一次，
     # 频繁注册只会是脚本或误接线（例如客户端把 refresh 走成了 anonymous）。
