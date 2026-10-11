@@ -1093,6 +1093,18 @@ func _send_presence() -> void:
 #
 # authed=true 时带上内存里的 access token。**token 只出现在请求头里**，
 # 不进日志、不进错误信息 —— 错误串会被 IssueReport 收走并贴进聊天窗口。
+func patch_header_lines() -> PackedStringArray:
+	var snapshot: Dictionary = ProjectSettings.get_meta("glory_patch_snapshot", {})
+	if snapshot.is_empty():
+		return PackedStringArray()
+	return PackedStringArray([
+		"X-Glory-Patch-Channel: %s" % str(snapshot.get("channel", "")),
+		"X-Glory-Patch-Platform: %s" % str(snapshot.get("platform", "")),
+		"X-Glory-Patch-Base: %s" % str(snapshot.get("base_id", "")),
+		"X-Glory-Patch-Seq: %d" % int(snapshot.get("required_patch_seq", 0)),
+	])
+
+
 func _request(
 	method: int,
 	path: String,
@@ -1101,6 +1113,7 @@ func _request(
 	allow_refresh: bool = true,
 ) -> Dictionary:
 	var headers := PackedStringArray(["Content-Type: application/json", client_header_line()])
+	headers.append_array(patch_header_lines())
 	if authed:
 		# 令牌快过期就先续，免得这一趟白跑一次 401（见「令牌续期」那一节）。
 		if allow_refresh and _token_needs_refresh():

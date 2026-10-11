@@ -133,6 +133,7 @@ const TABS = [
   ["requests", "审批"],
   ["mails", "邮件"],
   ["announcements", "公告"],
+  ["patches", "版本更新"],
   ["reports", "举报"],
   ["world", "世界频道"],
   ["audit", "操作记录"],
@@ -168,7 +169,7 @@ function render() {
   const main = h("main", {});
   app.replaceChildren(bar, main);
   const views = { players: playersView, data: dataView, requests: requestsView, mails: mailsView,
-                  announcements: announcementsView, reports: reportsView, world: worldView, audit: auditView };
+                  announcements: announcementsView, patches: patchesView, reports: reportsView, world: worldView, audit: auditView };
   views[state.tab](main);
   refreshPendingCount();
   refreshOpenReports();
@@ -1498,6 +1499,123 @@ async function auditView(main) {
   } catch (e) {
     main.append(notice("error", e.message));
   }
+}
+
+// Patch uploads use XHR only for upload byte progress; auth matches api().
+function uploadPatch(path, file, progress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", path);
+    xhr.timeout = 30 * 60 * 1000;
+    xhr.setRequestHeader("X-Glory-Admin", "1");
+    xhr.setRequestHeader("Content-Type", "application/zip");
+    xhr.upload.onprogress = (event) => {
+      progress.textContent = event.lengthComputable
+        ? `已上传 ${(event.loaded / 1000000).toFixed(1)} / ${(event.total / 1000000).toFixed(1)} MB；随后校验 Firebase 下载`
+        : "正在上传…";
+    };
+    xhr.onerror = () => reject(new Error("上传连接中断，请刷新查看记录后重试"));
+    xhr.ontimeout = () => reject(new Error("上传等待超时，请刷新查看服务器记录"));
+    xhr.onload = () => {
+      let value = {};
+      try { value = JSON.parse(xhr.responseText); } catch (_) { /* proxy error */ }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(value);
+      else reject(new Error(typeof value.detail === "string" ? value.detail : `上传失败（HTTP ${xhr.status}）`));
+    };
+    xhr.send(file);
+  });
+}
+
+async function patchesView(main) {
+  main.replaceChildren(h("p", { class: "muted" }, "读取版本记录…"));
+  let data;
+  try { data = await api("GET", "/admin/api/patches"); }
+  catch (e) { main.replaceChildren(notice("error", e.message)); return; }
+  main.replaceChildren();
+  const status = h("div", {});
+  const title = h("input", { placeholder: "例如：远征大厅优化", maxlength: 200 });
+  const channel = h("select", {}, h("option", { value: "internal" }, "内部测试"), h("option", { value: "stable" }, "正式渠道"));
+  const platforms = ["ios", "android", "windows"].map((name) => ({ name, input: h("input", { type: "checkbox", checked: true }) }));
+  const create = h("button", { class: "btn primary" }, "创建更新草稿");
+  create.onclick = action(create, status, async () => {
+    await api("POST", "/admin/api/patches", { title: title.value.trim(), channel: channel.value,
+      platforms: platforms.filter((p) => p.input.checked).map((p) => p.name) });
+    await patchesView(main);
+  });
+  main.append(h("section", { class: "card" }, h("h2", {}, "发布游戏更新"),
+    h("p", { class: "hint" }, `文件分发：${data.firebase_host} · 配置修订 ${data.revision}`),
+    h("div", { class: "row" }, field("更新名称", title, true), field("发布渠道", channel)),
+    h("div", { class: "row" }, platforms.map((p) => h("label", { class: "check" }, p.input, p.name))),
+    h("p", { class: "hint" }, "每个平台分别上传累计资源补丁。发布后，该渠道玩家必须更新才能进入游戏，全部旧 Hotfix 随之失效。"),
+    create, status));
+  for (const release of data.releases) {
+    const active = data.active[release.channel] === release.release_id;
+    const box = h("div", {});
+    const card = h("section", { class: "card" },
+      h("h2", {}, `${release.title} · #${release.seq} · ${release.channel} · ${active ? "当前发布" : release.status === "draft" ? "草稿" : "历史版本"}`));
+    for (const platform of release.platforms) {
+      const artifact = release.artifacts.find((a) => a.platform === platform);
+      card.append(h("p", {}, `${platform}：${artifact ? `已校验 ${(artifact.size / 1000000).toFixed(1)} MB · 基础包 ${artifact.base_id}` : "等待上传"}`));
+      if (release.status !== "draft") continue;
+      const base = h("input", { placeholder: "打包清单中的 base_id", value: artifact?.base_id || "" });
+      const file = h("input", { type: "file", accept: ".zip,application/zip" });
+      const progress = h("p", { class: "hint", "aria-live": "polite" });
+      const upload = h("button", { class: "btn" }, `上传 ${platform}`);
+      upload.onclick = action(upload, box, async () => {
+        const selected = file.files[0];
+        if (!selected || !base.value.trim()) throw new Error("请选择 ZIP 文件并填写基础包标识");
+        if (selected.size > 2000000000) throw new Error("单个文件不能超过 2 GB");
+        await uploadPatch(`/admin/api/patches/${release.release_id}/artifacts/${platform}?base_id=${encodeURIComponent(base.value.trim())}`, selected, progress);
+        await patchesView(main);
+      });
+      card.append(h("div", { class: "row" }, field("基础包", base), field("平台补丁", file, true), upload), progress);
+    }
+    if (!active) {
+      const publish = h("button", { class: "btn danger", disabled: release.artifacts.length !== release.platforms.length },
+        release.status === "draft" ? "发布此更新" : "回滚到此版本");
+      publish.onclick = action(publish, box, async () => {
+        if (!window.confirm(`确认将 ${release.channel} 切换到 #${release.seq}「${release.title}」？玩家需要匹配此版本，全部旧 Hotfix 将失效。`)) return;
+        await api("POST", `/admin/api/patches/${release.release_id}/publish`, { expected_revision: data.revision });
+        await patchesView(main);
+      });
+      card.append(publish);
+    }
+    card.append(box);
+    main.append(card);
+  }
+  const hotfixStatus = h("div", {});
+  const hotfixTarget = h("select", {}, h("option", { value: "client" }, "客户端界面 · GDScript"),
+    h("option", { value: "account-server" }, "账号服务器 · Python"));
+  const source = h("textarea", { rows: 10, spellcheck: "false", placeholder: "def apply(ctx):\n    # 通过 ctx.replace_attr / ctx.replace_item 修改函数或配置\n    pass" });
+  const sourceFile = h("input", { type: "file", accept: ".py,.gd,text/plain" });
+  sourceFile.onchange = async () => {
+    const selected = sourceFile.files[0];
+    if (!selected) return;
+    if (selected.size > 131072) { hotfixStatus.replaceChildren(notice("error", "Hotfix 不能超过 128 KB")); return; }
+    source.value = await selected.text();
+  };
+  const applyHotfix = h("button", { class: "btn danger" }, "发布 Hotfix");
+  applyHotfix.onclick = action(applyHotfix, hotfixStatus, async () => {
+    if (!source.value.trim()) throw new Error("请上传或填写 Hotfix 代码");
+    if (!window.confirm("将向所选范围发布并执行此代码。确认已核对修改对象，并使用可撤销的 ctx 接口？")) return;
+    await api("POST", `/admin/api/patches/hotfix/${hotfixTarget.value}`, {
+      channel: channel.value, source: source.value, expected_revision: data.revision });
+    await patchesView(main);
+  });
+  main.append(h("section", { class: "card" }, h("h2", {}, "在线 Hotfix"),
+    h("p", { class: "hint" }, "客户端上传 GDScript（extends RefCounted，apply(ctx) 返回 true），账号服务器上传 Python（def apply(ctx)）。通过 ctx 记录可撤销改动。服务器更新或发布强更补丁后自动失效。发布渠道使用页面顶部的选择。"),
+    field("执行范围", hotfixTarget), field("代码文件", sourceFile), field("代码预览", source, true), applyHotfix, hotfixStatus,
+    table(["范围", "渠道", "绑定补丁", "操作"], data.hotfixes.map((fix) => {
+      const revoke = h("button", { class: "btn small" }, "撤销");
+      revoke.onclick = action(revoke, hotfixStatus, async () => {
+        await api("POST", `/admin/api/patches/hotfix/${fix.hotfix_id}/revoke`, {});
+        await patchesView(main);
+      });
+      return h("tr", {}, h("td", {}, fix.target), h("td", {}, fix.channel), h("td", {}, `#${fix.patch_seq}`), h("td", {}, revoke));
+    }))));
+  if (data.uploads.length) main.append(h("section", { class: "card" }, h("h2", {}, "最近上传记录"),
+    table(["平台", "基础包", "状态", "结果"], data.uploads.map((job) => h("tr", {},
+      [job.platform, job.base_id, job.status, job.message].map((value) => h("td", {}, value)))))));
 }
 
 boot();

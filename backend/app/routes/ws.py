@@ -35,6 +35,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 from app import (admission, analytics, bans, db, matchmaking, party, players,
                  realtime)
 from app.config import get_settings
+from app import patch_gate
 from app.jwt_verify import TokenError
 from app.realtime import Connection
 from app.routes.me import get_verifier
@@ -58,6 +59,9 @@ _DEVICE_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 
 @router.websocket("/v1/ws")
 async def realtime_endpoint(websocket: WebSocket) -> None:
+    if patch_gate.problem(websocket.headers):
+        await websocket.close(code=CLOSE_POLICY)
+        return
     settings = get_settings()
     if not settings.supabase_url or not db.is_connected():
         # 配置没齐时 fail closed，且用一个**可区分**的码 ——

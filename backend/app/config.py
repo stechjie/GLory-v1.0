@@ -35,6 +35,14 @@ class Settings(BaseSettings):
 
     environment: str = "dev"
 
+    # Empty site keeps existing deployments unchanged until Firebase is provisioned.
+    patch_firebase_site: str = ""
+    patch_directory: str = "/var/lib/glory-patches"
+    patch_deployment_id: str = ""
+    patch_godot_binary: str = ""
+    patch_enforce_versions: bool = False
+    patch_gameplay_channel: str = "stable"
+
     # 限流额度。默认对**账号创建**收得很紧 —— 一个正常玩家一辈子只需要注册一次，
     # 频繁注册只会是脚本或误接线（例如客户端把 refresh 走成了 anonymous）。
     # 刷新宽松得多：那是每次启动、以及令牌过期时的正常动作。

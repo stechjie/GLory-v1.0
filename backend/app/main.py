@@ -15,6 +15,7 @@
 import asyncio
 import logging
 import sys
+from pathlib import Path
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 
@@ -24,6 +25,8 @@ from fastapi.responses import JSONResponse
 from app import (admin, admission, analytics, announcements, bans, db, mail, maintenance, matchmaking, party,
                  realtime, seasons, single_instance, world_chat)
 from app.config import get_settings
+from app import patch_service, patch_gate
+from app.routes import patches as patch_routes
 from app.routes import admin as admin_routes
 from app.routes import announcements as announcement_routes
 from app.routes import auth as auth_routes
@@ -104,6 +107,18 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     if not cfg.disable_instance_lock:
         lock = single_instance.claim(cfg.instance_lock_port)
 
+    try:
+        if cfg.patch_firebase_site:
+            patch_service.install(patch_service.PatchService(
+                Path(cfg.patch_directory), cfg.patch_firebase_site,
+                patch_service.deployment_identity(Path(__file__).resolve().parents[2], cfg.patch_deployment_id),
+                godot_binary=cfg.patch_godot_binary))
+        else:
+            patch_service.install(None)
+    except BaseException:
+        single_instance.release(lock)
+        raise
+
     # 连接串为空时 connect() 不建池也不抛异常 —— 同样是为了让骨架能单独起来。
     await db.connect(cfg.database_url)
     # 世界频道：从库里补回最近 100 条（app/world_chat.py）。不补的话每次部署完频道都是空的。
@@ -143,8 +158,15 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     recorder = analytics.install(analytics.Recorder())
     counter = asyncio.create_task(analytics.loop(recorder))
     try:
+        if patch_service.current() is not None:
+            patch_service.current().restore_runtime()
         yield
     finally:
+        if patch_service.current() is not None:
+            try:
+                patch_service.current().runtime.clear()
+            except Exception:
+                log.exception("Hotfix cleanup failed during server shutdown")
         for task in (sweeper, cleaner, admitter, notices, postman, matcher, seasonal, banhammer, counter):
             task.cancel()
             with suppress(asyncio.CancelledError):
@@ -179,6 +201,18 @@ app = FastAPI(
     lifespan=lifespan,
     **doc_urls(settings.is_dev),
 )
+
+
+@app.middleware("http")
+async def check_patch_version(request: Request, call_next):
+    # Server-signed battle reports have independent authentication. The launch
+    # manifest must stay reachable before a client has updated.
+    if request.url.path.startswith("/v1/") and request.url.path not in ("/v1/patches/check", "/v1/battle/report"):
+        problem = patch_gate.problem(request.headers)
+        if problem:
+            return JSONResponse(status_code=problem["status"], content={
+                "code": problem["code"], "detail": problem["detail"]}, headers={"Cache-Control": "no-store"})
+    return await call_next(request)
 
 
 @app.exception_handler(bans.AccountBanned)
@@ -223,6 +257,7 @@ app.include_router(matchmaking_routes.me_router)
 app.include_router(ws_routes.router)
 # 网页运营后台（docs/运营后台设计.md）。只认后台自己的会话，不收玩家令牌。
 app.include_router(admin_routes.router)
+app.include_router(patch_routes.router)
 
 # 自检接口只在开发环境挂载。生产上它会把表结构和 RLS 状态说得太清楚，
 # 而且没有任何生产用途 —— 少一个入口就少一个面。

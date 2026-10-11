@@ -32,6 +32,7 @@ def main():
     p.add_argument('--unsigned', action='store_true', help='Build only; defer signing until the password is available')
     p.add_argument('--check', action='store_true', help='Check local dependencies without building or signing')
     p.add_argument('--sync', action='store_true', help='Update GitHub and Drive before building')
+    p.add_argument('--patch-config', type=Path, help='Install the immutable update launcher in the staging copy')
     p.add_argument('--version-code', type=int, help='Override Android versionCode in the isolated build only')
     p.add_argument('--alias', help='Private-key alias in the release keystore')
     p.add_argument('--keystore', type=Path, default=b.ROOT/'build/aab/.signing/glory-release.keystore')
@@ -125,6 +126,9 @@ def main():
             text = re.sub(r'^version/code=\d+', f'version/code={a.version_code}', text, flags=re.M)
         cfg.write_text(text)
         cfg.chmod(0o600)
+        if a.patch_config:
+            from prepare_patch_base import from_config
+            from_config(stage, a.patch_config, 'android')
         commit = b.capture(['git','-C',project,'rev-parse','HEAD'])
         status = b.capture(['git','-C',project,'status','--porcelain'])
         version = re.search(r'^version/name="([^"]+)"',text,re.M)[1]

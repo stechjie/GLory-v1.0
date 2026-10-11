@@ -470,6 +470,7 @@ def arguments(argv=None):
     parser.add_argument("--godot", help="Godot.app 或它的可执行文件")
     parser.add_argument("--templates", help="与 Godot 匹配的 iOS 模板目录")
     parser.add_argument("--keychain", type=Path, default=DEFAULT_KEYCHAIN)
+    parser.add_argument("--patch-config", type=Path, help="更新器基础包配置 JSON")
     return parser.parse_args(argv)
 
 
@@ -528,6 +529,9 @@ def main(argv=None):
             note(f"本次 build number：{number}；快照：{stage}")
             install_profile(profile_path, profile)
             write_preset(stage, args.method, profile, cert, version, number)
+            if args.patch_config:
+                from prepare_patch_base import from_config
+                from_config(stage, args.patch_config, "ios")
             engine = prepare_engine(env, work)
             commit = git_output(args.project, "rev-parse", "HEAD")
             dirty = git_output(args.project, "status", "--porcelain=v1")

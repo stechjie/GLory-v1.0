@@ -37,10 +37,15 @@ Environment=GLORY_BATTLE_CARD_KEY_FILE=/opt/glory/battle_card_key.pem
 Environment=GLORY_BATTLE_REPORT_PUBLIC_KEY_FILE=/opt/glory/battle_report_public.pem
 
 # 公告图片（backend/app/announcements.py）。systemd 建目录 /var/lib/glory-media、属主 glory、
-# 权限 755；下面 ProtectSystem=strict + ReadWritePaths= 空着时，这是本进程**唯一**能写的地方。
+# 权限 755；下面 ProtectSystem=strict + ReadWritePaths= 空着时，只有 StateDirectory 能写。
 # Caddy 直接从这个目录给 /media/*（deploy/Caddyfile），两处路径必须一致（有测试钉着）。
 StateDirectory=glory-media
 Environment=GLORY_MEDIA_DIR=/var/lib/glory-media
+
+# 补丁目录保存 SQLite 发布记录及已校验的原始 ZIP，不能随代码部署清空。
+# 不放进 /media/，避免由 Web 服务器暴露数据库和上传任务记录。
+StateDirectory=glory-patches
+Environment=GLORY_PATCH_DIRECTORY=/var/lib/glory-patches
 
 # ⚠️ **只监听 127.0.0.1，绝不监听 0.0.0.0。**
 #

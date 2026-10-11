@@ -757,6 +757,7 @@ def main():
     parser.add_argument("--android-sdk", help="Android SDK 根目录，也可设置 ANDROID_HOME")
     parser.add_argument("--templates", help="匹配 Godot 版本的导出模板目录")
     parser.add_argument("--preset", help="导出预设名，默认选首个 Android 预设")
+    parser.add_argument("--patch-config", type=Path, help="更新器基础包配置 JSON；只修改隔离构建目录")
     args = parser.parse_args()
     project = args.project.expanduser().resolve()
     if not (project / "project.godot").is_file():
@@ -807,6 +808,9 @@ def main():
                 report = stage_project(project, assets, stage, logdir)
             engine = prepare_engine(env, work)
             preset, package = export_preset(stage, args.preset)
+            if args.patch_config:
+                from prepare_patch_base import from_config
+                from_config(stage, args.patch_config, "android")
             commit = capture(["git", "-C", project, "rev-parse", "HEAD"])
             status = capture(["git", "-C", project, "status", "--porcelain"])
             identity = {"build_id": str(uuid.uuid4()), "git_commit": commit, "git_commit_short": commit[:8],

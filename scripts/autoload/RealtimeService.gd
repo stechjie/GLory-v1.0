@@ -192,12 +192,14 @@ func _open() -> void:
 	# `?token=xxx` 是 WebSocket 认证最常见的写法（因为浏览器的 WebSocket 构造器
 	# 不让设自定义头），但我们不受那个限制。query string 会被写进每一层的
 	# 访问日志 —— 那等于把凭证抄进日志文件。
-	_socket.handshake_headers = PackedStringArray([
+	var handshake_headers := PackedStringArray([
 		"Authorization: Bearer %s" % token,
 		"X-Device-Session: %s" % _device_id,
 		# 名额来意（backend/app/admission.py）。不带这个头的会被服务器当成旧版客户端。
 		"%s: %s" % [ADMISSION_HEADER, _admission_intent()],
 	])
+	handshake_headers.append_array(AccountManager.patch_header_lines())
+	_socket.handshake_headers = handshake_headers
 	var err := _socket.connect_to_url(_ws_url())
 	if err != OK:
 		push_warning("[Realtime] 连接发起失败：%d" % err)
