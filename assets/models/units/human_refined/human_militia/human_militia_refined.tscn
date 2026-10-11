@@ -1,0 +1,5 @@
+[gd_scene load_steps=3 format=3]
+[ext_resource type="PackedScene" path="res://assets/models/units/human_militia_little_knight/human_militia_animated.tscn" id="1"]
+[ext_resource type="Script" path="res://assets/models/units/human_refined/human_militia/Refined.gd" id="2"]
+[node name="HumanMilitiaRefined" instance=ExtResource("1")]
+script=ExtResource("2")

@@ -291,3 +291,7 @@ glory_server_key*.pem
 !/assets/ui/mercenary_portraits/
 /assets/ui/mercenary_portraits/*
 !/assets/ui/mercenary_portraits/*.png
+
+# Human unit refinements: native runtime meshes, materials and atlases.
+!/assets/models/units/human_refined/
+!/assets/models/units/human_refined/**
