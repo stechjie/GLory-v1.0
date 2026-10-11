@@ -53,6 +53,14 @@ renderer/rendering_method="gl_compatibility"
         with self.assertRaisesRegex(ValueError, "checkout"):
             prepare(self.stage, **self.options)
 
+    def test_existing_runtime_override_rejected_without_overwriting_it(self):
+        override = self.stage / "override.cfg"
+        override.write_text('[application]\nrun/main_scene="res://old.tscn"\n')
+        before = override.read_bytes()
+        with self.assertRaisesRegex(ValueError, "override.cfg"):
+            prepare(self.stage, **self.options)
+        self.assertEqual(override.read_bytes(), before)
+
 
 if __name__ == "__main__":
     unittest.main()

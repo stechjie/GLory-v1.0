@@ -20,6 +20,7 @@ class BattleBridgeTests(unittest.TestCase):
             root = Path(folder)
             (root / "scripts/multiplayer").mkdir(parents=True)
             (root / "patcher").mkdir()
+            (root / "data").mkdir()
             source = Path(__file__).resolve().parents[2]
             for name in ("HotfixRuntime.gd", "HotfixContext.gd"):
                 shutil.copy2(source / "patcher" / name, root / "patcher" / name)
@@ -44,6 +45,14 @@ func save_rules(rules):
  file.close()
 func _initialize():
  agent = load("res://scripts/multiplayer/BattleHotfixAgent.gd").new()
+ var original_identity = agent._deployment_identity()
+ check(agent._deployment_identity(), original_identity, "stable deployment identity")
+ var changed_data = FileAccess.open("res://data/bosses.json", FileAccess.WRITE)
+ changed_data.store_string('{"hp":40}')
+ changed_data.close()
+ check(agent._deployment_identity() == original_identity, false, "data-only deployment invalidates identity")
+ DirAccess.remove_absolute(ProjectSettings.globalize_path("res://data/bosses.json"))
+ check(agent._deployment_identity(), original_identity, "identical content keeps identity")
  agent.desired_path = "res://desired.json"
  agent._deployment = "a".repeat(64)
  var card = {"patch":{"channel":"stable","platform":"android","base_id":"base-1","seq":0}}

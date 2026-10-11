@@ -53,7 +53,7 @@ def validate_pack(path: Path):
                     or name in seen or stat.S_ISLNK(item.external_attr >> 16) or item.flag_bits & 1):
                 raise ValueError("ZIP contains unsafe, duplicate, linked or encrypted entries")
             seen.add(name)
-            if (name in {"project.binary", "project.godot", ".godot/global_script_class_cache.cfg"}
+            if (name in {"project.binary", "project.godot", "override.cfg", ".godot/global_script_class_cache.cfg"}
                     or parts[0] in {"patcher", "backend", ".git"}
                     or any(part.startswith(".env") for part in parts)
                     or PurePosixPath(name).suffix.lower() in blocked

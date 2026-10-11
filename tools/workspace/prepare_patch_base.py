@@ -40,6 +40,10 @@ def prepare(stage: Path, *, base_id: str, platform: str, channel: str,
         raise ValueError("Backend must be an HTTPS origin")
     project = stage / "project.godot"
     text = project.read_text(encoding="utf-8-sig")
+    if (stage / "override.cfg").exists():
+        raise ValueError("Existing override.cfg conflicts with immutable runtime bootstrap")
+    if re.search(r'^config/disable_project_settings_override=true$', text, re.M):
+        raise ValueError("Patch bootstrap requires project settings overrides enabled in the base template")
     section = re.search(r"(?ms)^\[autoload\]\s*\n(.*?)(?=^\[|\Z)", text)
     main = re.search(r'^run/main_scene="(res://[^"\n]+)"$', text, re.M)
     if not section or not main:
@@ -68,6 +72,20 @@ def prepare(stage: Path, *, base_id: str, platform: str, channel: str,
     text = re.sub(r'^run/main_scene="[^"\n]+"$', 'run/main_scene="res://patcher/UpdateGate.tscn"', text, flags=re.M)
     patcher = stage / "patcher"
     patcher.mkdir(exist_ok=True)
+    shutil.copytree(source / "patcher/export_plugin", patcher / "export_plugin", dirs_exist_ok=True)
+    plugin = '"res://patcher/export_plugin/plugin.cfg"'
+    editor_section = re.search(r"(?ms)^\[editor_plugins\]\n(.*?)(?=^\[|\Z)", text)
+    if editor_section:
+        body = editor_section[1]
+        enabled = re.search(r'^enabled=PackedStringArray\((.*?)\)$', body, re.M)
+        if enabled:
+            values = enabled[1].strip()
+            body = body[:enabled.start()] + 'enabled=PackedStringArray(' + (values + ', ' if values else '') + plugin + ')' + body[enabled.end():]
+        else:
+            body += '\nenabled=PackedStringArray(' + plugin + ')\n'
+        text = text[:editor_section.start(1)] + body + text[editor_section.end(1):]
+    else:
+        text += '\n[editor_plugins]\nenabled=PackedStringArray(' + plugin + ')\n'
     for name in ("UpdateGate.gd", "UpdateGate.tscn", "AutoloadPlaceholder.tscn",
                  "HotfixContext.gd", "HotfixRuntime.gd", "HotfixAgent.gd"):
         shutil.copy2(source / "patcher" / name, patcher / name)

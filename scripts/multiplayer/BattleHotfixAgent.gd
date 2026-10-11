@@ -48,17 +48,40 @@ func _ready() -> void:
 	_runtime = Runtime.new()
 	_runtime.context_script = Context
 	add_child(_runtime)
-	var identity: String = str(Engine.get_version_info().get("string", "")) + ":"
-	for path in ["res://build_info.txt", "res://scripts/autoload/NetworkService.gd", "res://scripts/multiplayer/BattleHotfixAgent.gd"]:
-		if FileAccess.file_exists(path):
-			identity += FileAccess.get_sha256(path)
-	_deployment = identity.sha256_text()
+	_deployment = _deployment_identity()
 	var timer := Timer.new()
 	timer.wait_time = 2
 	timer.autostart = true
 	timer.timeout.connect(tick)
 	add_child(timer)
 	tick()
+
+
+func _deployment_identity() -> String:
+	# Hash deployed code/data, including direct file deployments without a new
+	# build_info.txt. Timestamps and process restarts alone must not expire fixes.
+	var paths: Array[String] = []
+	for folder in ["res://scripts", "res://data", "res://patcher", "res://ui"]:
+		_identity_files(folder, paths)
+	paths.append_array(["res://build_info.txt", "res://build_info.json", "res://project.godot"])
+	paths.sort()
+	var identity := str(Engine.get_version_info().get("string", ""))
+	for path in paths:
+		if FileAccess.file_exists(path):
+			identity += "\n" + path + ":" + FileAccess.get_sha256(path)
+	return identity.sha256_text()
+
+
+func _identity_files(folder: String, paths: Array[String]) -> void:
+	var directory := DirAccess.open(folder)
+	if directory == null:
+		return
+	for file in directory.get_files():
+		if file.get_extension().to_lower() in ["gd", "gdc", "json", "tscn", "tres", "csv"]:
+			paths.append(folder.path_join(file))
+	for child in directory.get_directories():
+		if not child.begins_with("."):
+			_identity_files(folder.path_join(child), paths)
 
 
 func tick() -> void:

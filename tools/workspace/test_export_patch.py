@@ -28,7 +28,8 @@ ProbeSingleton="*res://service.gd"
 [rendering]
 renderer/rendering_method="gl_compatibility"
 ''')
-            (stage / "main.tscn").write_text('[gd_scene format=3]\n[node name="Main" type="Node"]\n')
+            (stage / "main.tscn").write_text('[gd_scene load_steps=2 format=3]\n[ext_resource type="Script" path="res://consumer.gd" id="1"]\n[node name="Main" type="Node"]\nscript=ExtResource("1")\n')
+            (stage / "consumer.gd").write_text('extends Node\nfunc sample():\n var inferred := ProbeSingleton.value()\n return inferred\n')
             (stage / "service.gd").write_text('extends Node\nfunc value() -> int:\n return 1\n')
             (stage / "ui/fonts").mkdir(parents=True)
             source = Path(__file__).resolve().parents[2]
@@ -49,6 +50,32 @@ binary_format/architecture="x86_64"
                 "backend_url": "https://example.com", "firebase_host": "example.web.app"}))
             options = dict(stage=stage, engine=Path(engine), preset="Windows", platform="windows", config=config)
             export(**options, output=root / "original")
+            with zipfile.ZipFile(root / "original/base.zip") as pack:
+                self.assertIn(b'AutoloadPlaceholder.tscn', pack.read('override.cfg'))
+                pack.extractall(root / "installed")
+            (root / "runtime_probe.gd").write_text('''extends SceneTree
+func _initialize():
+ call_deferred("verify")
+func verify():
+ var singleton = root.get_node("ProbeSingleton")
+ if singleton.get_script() != null:
+  quit(8)
+  return
+ ProjectSettings.set_setting("autoload/ProbeSingleton", "*res://service.gd")
+ singleton.set_script(load("res://service.gd"))
+ var consumer = load("res://main.tscn").instantiate()
+ if consumer.sample() != 1:
+  quit(9)
+  return
+ consumer.free()
+ print("EXPORTED_DEFERRED_AUTOLOAD_PASS")
+ quit()
+''')
+            installed = subprocess.run([engine, "--headless", "--path", str(root / "installed"),
+                "--script", str(root / "runtime_probe.gd")], capture_output=True, text=True, timeout=30)
+            self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
+            self.assertIn("EXPORTED_DEFERRED_AUTOLOAD_PASS", installed.stdout)
+            self.assertNotIn("SCRIPT ERROR", installed.stderr)
             (stage / "service.gd").write_text('extends Node\nfunc value() -> int:\n return 42\n')
             report = export(**options, output=root / "updated", base=root / "original/base.zip")
             self.assertIn("service.gdc", report["files"])

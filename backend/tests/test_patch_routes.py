@@ -124,7 +124,7 @@ class PatchHTTPTests(unittest.TestCase):
     def test_reject_native_and_traversal_before_cloud(self):
         self.authorize()
         release = self.draft()
-        for name in ("../escape", "engine.dll", "patcher/boot.json", "backend/.env"):
+        for name in ("../escape", "engine.dll", "patcher/boot.json", "override.cfg", "backend/.env"):
             with self.subTest(name=name):
                 self.assertEqual(self.upload(release, self.pack(name)).status_code, 400)
         self.assertEqual(self.publisher.calls, [])

@@ -17,7 +17,7 @@ import zipfile
 
 NATIVE_SUFFIXES = {".dll", ".so", ".dylib", ".exe", ".a", ".lib", ".gdextension",
                    ".aar", ".jar", ".dex", ".wasm", ".p12", ".keystore", ".jks"}
-IMMUTABLE_FILES = {"project.binary", "project.godot", ".godot/global_script_class_cache.cfg"}
+IMMUTABLE_FILES = {"project.binary", "project.godot", "override.cfg", ".godot/global_script_class_cache.cfg"}
 PLATFORMS = {"android", "ios", "windows"}
 MAX_UNCOMPRESSED = 8_000_000_000
 

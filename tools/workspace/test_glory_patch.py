@@ -36,7 +36,7 @@ class CumulativePatchTests(unittest.TestCase):
             self.assertNotIn("project.binary", archive.namelist())
 
     def test_native_bootstrap_and_global_class_changes_need_full_build(self):
-        for name in ("plugin.dll", "patcher/UpdateGate.gd", "project.binary",
+        for name in ("plugin.dll", "patcher/UpdateGate.gd", "project.binary", "override.cfg",
                      ".godot/global_script_class_cache.cfg"):
             with self.subTest(name=name):
                 with self.assertRaisesRegex(ValueError, "full build"):

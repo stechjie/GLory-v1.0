@@ -128,3 +128,15 @@ Hotfix 快照包含单调递增 revision、服务器 deployment_id、当前 patc
 - 修正构建材质检查：它直接启动诊断场景，需通过临时 override 恢复原单例；检查结束恢复 override，正式导出的项目继续保留更新器占位单例。原构建模块的 14 项测试通过。
 - 最终材质检查通过 88 个模型、324 个表面、353 个纹理引用；但导入日志还含其他未被审计覆盖的旧模型 FBX 源纹理缺失，严格导入诊断仍拒绝通过。尚未放行完整基础安装包或掩盖这些错误。
 - 证据位于外层 `delivery/patch-system/full-project-check/logs/`：`bootstrap.log`、`model-materials.json`、`model-materials.log`、`import.log`、`assets-check.json`。测试配置指向本机 HTTPS 与测试 Hosting 域名，不能当成正式发布配置。
+
+
+## 导出类型修复与完整资源补丁验证
+
+- 完整工程首次导出发现占位 Autoload 导致业务场景推导不到单例方法返回类型；已新增 `patcher/export_plugin/`。导出过程中临时恢复原单例类型元数据，并向产物内写入不可变 `override.cfg`，运行时在创建 Autoload 前恢复占位节点。导出结束恢复编辑器设置，不修改正常客户端的延迟加载顺序。
+- 模板必须支持 Godot 默认启用的 project settings overrides；已有自定义 `override.cfg` 或明确禁用该功能的配置会在准备阶段拒绝。模板自定义编译时禁用 overrides 尚不支持，必须进行产物启动验收。`override.cfg` 与启动器一起禁止进入资源补丁，后台上传也拒绝该文件。
+- 真引擎测试增加带推导类型的业务场景导出，以及解包产物启动时单例仍为占位节点、恢复后执行真实业务代码的验证。补丁工具测试共 17 项通过；后端补丁集合 37 项通过，另有 17 个子用例。
+- 完整工程第二次 Windows 资源导出成功，资源 ZIP 为 701,121,278 字节。使用隔离副本中的测试脚本改动再次导出，生成仅含 `scripts/autoload/DataRegistry.gdc` 的 3,371 字节补丁。还原验证副本源脚本后，真实 Godot 挂载基础 ZIP 和补丁，完成 25 个单例初始化并执行补丁新增方法返回 42。日志 `delivery/patch-system/full-project-check/logs/full-export-patch-runtime.log` 包含 `FULL_PROJECT_EXPORTED_PATCH_PASS autoloads=25`，没有脚本错误。
+- 已成功导出完整 Windows `Glory.exe`、`Glory.pck` 及语音原生依赖，位于外层 `delivery/patch-system/full-project-check/windows-app/`。它使用本地测试地址，不能发布给玩家；尚未在 Windows/Steam 真环境启动验收。
+- 首次冷导入的旧模型源纹理诊断问题仍保留在前节，不能用第二次增量导出日志替代该项验收。
+- 战斗服部署指纹改为覆盖实际 scripts/data/patcher/ui 下代码、配置和场景内容；直接更新数值文件也会改变部署身份，同内容重启不改变。真实 Godot 测试验证了仅修改数据文件会改变身份。
+- GitHub `codex/patch-system` 分支已核对到 `7d80b94`（本节新增改动提交与推送后，以远端实际 HEAD 为准）；生产未部署。
