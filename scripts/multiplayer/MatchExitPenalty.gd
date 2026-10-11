@@ -18,14 +18,20 @@ static func title(en: bool) -> String:
 
 
 static func body(mode: String, en: bool) -> String:
-	# ★ 10.11 bug 第 7 条改了这半句的口径（原来是「你的位置由 AI 打完，不能再回来」）：
-	#   现在「退出对局」= 该玩家掉线超过 30 秒 —— 座位与重连凭证都留着，
-	#   所以**还能**从主菜单的「游戏重连」回到这一局；换来的代价是这一局结束前
-	#   开不了新局。原来那句现在是假话，留在界面上会让玩家以为退出去就再也回不来。
-	var lead := ("Leaving treats you as disconnected in this match: you can Reconnect "
-		+ "from the menu, and no new match can start until it ends."
-		if en else "退出后你这一局按掉线处理：能点主菜单的「游戏重连」回来，"
-			+ "这一局结束前开不了新局。")
+	# ★ 这半句的口径 2026-10-11 被**改回来**了，前后一共三版，别再翻第四次之前先读完：
+	#
+	#   初版        「你的位置由 AI 打完，**不能再回来**」
+	#   10.11 上午  改成「按掉线处理，**还能**点游戏重连回来，这一局结束前开不了新局」
+	#               —— 当时的规则是退出 = 保留座位，原句成了假话
+	#   10.11 下午  用户改判：主动退出 = **彻底结束**这一局。座位的重连资格当场注销
+	#               （NetworkService._revoke_seat_credentials），回不去，但**能马上开新局**
+	#
+	# 所以现在这句又得说「回不去」。🔴 **规则和文案必须一起翻** —— 这句话正是给
+	# 「网络抖了、盯着断线遮罩、不耐烦想退」的人看的，他最可能照着它做决定；
+	# 说反了就是主动误导。tools/match_exit_check 对着这几句。
+	var lead := ("Leaving ends this match for you: you cannot return to it, "
+		+ "and a new match can start right away."
+		if en else "退出后这一局就结束了：**无法再回到这一局**，可以马上开新局。")
 	return lead + "\n" + penalty(mode, en)
 
 

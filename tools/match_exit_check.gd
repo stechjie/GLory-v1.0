@@ -98,13 +98,20 @@ func _case_penalty_text() -> void:
 	var ranked := MatchExitPenalty.body("ranked", false)
 	var unknown := MatchExitPenalty.body("", false)
 	for text in [custom, casual, ranked, unknown]:
-		# ★ 10.11 第 7 条：退出对局**不再是「回不来」** —— 座位与凭证留着、能重连回来。
-		# 这句话说反了会让玩家以为退出去就永久失去这一局（而其实还能回来）。
-		_h.expect(str(text).contains("游戏重连") and str(text).contains("开不了新局"),
-			"text_missing_resumable",
-			"确认框要说清「还能重连回来、但这一局结束前开不了新局」：%s" % text)
-		_h.expect(not str(text).contains("不能再回来"), "text_still_says_burned",
-			"确认框还写着「不能再回来」—— 与第 7 条（退出后仍可重连）冲突：%s" % text)
+		# ★ 规则 2026-10-11 **下午改判，本条随之翻面**（上午那版要求的恰好相反）：
+		#   上午：退出 = 按掉线算，座位与凭证留着、**能重连回来**，这一局结束前开不了新局
+		#   下午：退出 = **彻底结束**这一局，回不去，但**能马上开新局**
+		# 实现侧对应 NetworkService._revoke_seat_credentials（注销回来的资格，
+		# 但**保留 seat_pid** —— 身份一清，结算时他反而一分不扣）。
+		#
+		# 为什么这句话值得一条门禁：它正是给「网络抖了、盯着断线遮罩、不耐烦想退」
+		# 的人看的，他最可能照着它做决定。规则和文案任何一边单独改，都是主动误导。
+		_h.expect(str(text).contains("无法再回到这一局"), "text_missing_irreversible",
+			"确认框没说清「退出后回不去」—— 玩家会以为还能重连回来：%s" % text)
+		_h.expect(not str(text).contains("游戏重连"), "text_still_promises_reconnect",
+			"确认框还写着能「游戏重连」回来 —— 退出之后凭证已被服务器注销，这是假话：%s" % text)
+		_h.expect(not str(text).contains("开不了新局"), "text_still_blocks_new_match",
+			"确认框还写着「这一局结束前开不了新局」—— 改判之后退完就能开：%s" % text)
 		_h.expect(not _has_digit(str(text)), "text_has_number", "确认框不写扣多少（用户定）：%s" % text)
 	_h.expect(custom.contains("不扣") and not custom.contains("会扣"), "custom_text", "自定房间要说不扣分：%s" % custom)
 	_h.expect(casual.contains("会扣信誉分") and not casual.contains("排位分"), "casual_text", "休闲只扣信誉分：%s" % casual)
@@ -195,14 +202,31 @@ func _case_abandon_keeps_resumable() -> void:
 			"发完通知没等 flush 就 reset() —— ENet 的包要等下一次 poll，同帧断开会把包直接丢掉")
 	_h.expect(notice.count("await get_tree().process_frame") >= 2, "notice_flush_frames",
 		"至少要等两帧再断开，一帧在弱网下不一定够（丢了包 = 服务端永远不知道这人退了）")
-	# 服务端那条 RPC：必须**不清**座位、**不清** token —— 否则重连不回来。
+	# 服务端那条 RPC（规则 2026-10-11 下午改判，本段随之翻面）：
+	#   上午：**不许**动 token —— 退出后还要能重连回来
+	#   下午：**必须**注销回来的资格，但**绝不能**碰 seat_pid
+	#
+	# 🔴 后半句是这条门禁真正的价值。`_clear_seat_metadata()` 会把 seat_pid 一起清掉，
+	# 而扣分的依据链是 seat_pid → 战报 seats[].pid → ranked.settle 按 online_at_end
+	# 判 abandon。身份一清，结算时这个位置被当成 AI，**跑路的人反而一分不扣** ——
+	# 正好和改判的目的相反。所以「注销凭证」和「清座位」必须是两件事。
 	var ns_src := FileAccess.get_file_as_string("res://scripts/autoload/NetworkService.gd")
 	var exit_rpc := _function_body("res://scripts/autoload/NetworkService.gd", "func _rpc_manual_exit_seat")
 	if _h.expect(not exit_rpc.is_empty(), "manual_exit_rpc_missing",
 			"服务端没有 _rpc_manual_exit_seat —— 手动退出这条通知没人收"):
-		_h.expect(not exit_rpc.contains("_clear_seat_metadata") and not exit_rpc.contains("_token_seat.erase"),
-			"manual_exit_rpc_clears_seat",
-			"_rpc_manual_exit_seat 清了座位或 token —— 玩家就重连不回来了")
+		_h.expect(not exit_rpc.contains("_clear_seat_metadata"),
+			"manual_exit_rpc_clears_identity",
+			"_rpc_manual_exit_seat 调了 _clear_seat_metadata —— 它会连 seat_pid 一起清掉，"
+			+ "结算时这个座位被当成 AI，跑路的人反而一分不扣")
+		_h.expect(exit_rpc.contains("_revoke_seat_credentials"),
+			"manual_exit_rpc_keeps_credentials",
+			"_rpc_manual_exit_seat 没注销座位的重连资格 —— 改判后退出就该回不去，"
+			+ "留着 token 的话他照样能重连，而客户端那边已经按「能开新局」放行了")
+		var revoke := _function_body("res://scripts/autoload/NetworkService.gd", "func _revoke_seat_credentials")
+		_h.expect(revoke.contains("_token_seat.erase"), "revoke_keeps_token_index",
+			"_revoke_seat_credentials 没断开 token -> 座位 的索引，resume 还能回来")
+		_h.expect(not revoke.contains("seat_pid"), "revoke_touches_identity",
+			"_revoke_seat_credentials 碰了 seat_pid —— 那是结算认人用的，碰了就扣不到分")
 		_h.expect(exit_rpc.contains('manual[slot] = true'), "manual_exit_rpc_no_flag",
 			"_rpc_manual_exit_seat 没打 manual_exit_slots —— 服务端仍把他算成活人，"
 			+ "全房没活人的局不会自动结束（第 7 条上半条就废了）")
@@ -240,12 +264,18 @@ func _case_new_match_guard() -> void:
 			dialog._cancel_btn.pressed.emit()
 		await _settle(3)
 		if answer == "confirm":
-			# ★ 10.11 第 7 条：确认「退出对局」**不等于**可以开新局 ——
-			# 这一局还没结束（房内还有活人，或者 30 秒窗口没走完），所以照旧拦。
-			_h.expect(not bool(box.get("ok", true)), "guard_confirm_unlocked",
-				"确认退出之后就放行开新局了 —— 第 7 条要求这一局结束前开不了新房")
+			# ★ 规则 2026-10-11 下午改判，本条翻面：确认退出之后**放行**开新局
+			#   （上午那版是「这一局结束前一律拦」）。
+			_h.expect(bool(box.get("ok", false)), "guard_confirm_still_blocked",
+				"确认退出之后还是不放行开新局 —— 改判后退出就是彻底结束，该能马上开新局")
+			# 🔴 这一条**没有**跟着翻：凭证仍然不许客户端自己删。
+			# 它现在扛的是「退出通知丢包」那条路 —— 服务器那边座位还活着，玩家建房会被
+			# ACTIVE_MATCH_HINT 挡下，这时凭证还在才回得去（「游戏重连」可用）。
+			# 删了的话就变成既开不了新局、也回不去，两头走不通。
+			# 凭证的唯一删除点是 check_saved_match 听到服务器回 clear（credential_action_for_status）。
 			_h.expect(not SaveManager.load_reconnect().is_empty(), "guard_confirm_cleared_credentials",
-				"确认退出之后凭证被删了 —— 玩家就回不去这个还没结束的局了")
+				"确认退出之后客户端自己把凭证删了 —— 必须等服务器回 clear 再删，"
+				+ "否则退出通知丢包时玩家既回不去、也开不了新局")
 		else:
 			_h.expect(box.has("ok") and not bool(box["ok"]), "guard_cancel_allowed", "取消之后不该放行开新局")
 			_h.expect(not SaveManager.load_resumable_reconnect().is_empty(), "guard_cancel_cleared", "取消也把上一局的凭证删了")

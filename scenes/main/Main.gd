@@ -14,6 +14,9 @@ signal short_code_resume_result_check_requested(request_id: String, succeeded: b
 signal reconnect_cancel_navigation_check_requested()
 
 const VFX_WARMUP := preload("res://effects/vfx3d/VFXWarmup.gd")
+# 等待挡板上的两颗按钮。用和匹配面板同一个组件，免得这条路径上冒出一套自绘按钮
+# （procedural_ui_ratchet 盯着 Button.new()，也不该有第二套观感）。
+const MATCHED_ENTERING_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const StartupResourceLoader := preload("res://scripts/assets/FrameResourceLoader.gd")
 const PrepStartupAssets := preload("res://scripts/assets/PrepStartupAssets.gd")
 const StartupLoadingOverlay := preload("res://ui/components/GloryLoadingOverlay.gd")
@@ -128,6 +131,11 @@ const RECONNECT_BACKDROP_COLOR := Color(0.0, 0.0, 0.0, 0.72)
 var _menu: Control
 var _prep: Control
 var _battle: Control
+# 匹配成功后那张等待挡板上的三个节点。**只在那条路径上活着** ——
+# 任何一次 _clear() 都会把挡板连同它们一起释放，所以用之前一律 is_instance_valid()。
+var _matched_entering_column: VBoxContainer
+var _matched_entering_title: Label
+var _matched_entering_hint: Label
 var _resume_replay_pending: Dictionary = {}
 var _resume_replay_generation := 0
 var _battle_settlement_generation := 0
@@ -2098,10 +2106,25 @@ func _on_matched_lobby_changed() -> void:
 	_watch_matched_start()
 
 
-# 六人座位等满的上限是 90 秒（服务器侧）。真到点还没开打 —— 要么有人一直没进来、
-# 要么推送丢了 —— 退回原来那张 3v3 房间界面（它照样接 team_start_requested），
-# 总比让玩家盯着一张永远不动的「正在进入对局」好。
+# 六人座位等满的上限是 90 秒（服务器侧 MATCHED_FILL_TIMEOUT_SEC）。
+#
+# 🔴 **这个超时的含义和直觉相反，先读懂再改。**
+#
+# 两个 90 秒不是同一个：服务器从**房间创建**算起，这里从**我入座**算起。我得先连上、
+# 过 DTLS、领名片、入座，所以服务器那个总是先到 —— 而它到点做的是
+# **用 AI 补满并开打**（_cleanup_matched_rooms，注释：「关房等于拿一个人的意外去罚
+# 另外五个」）。所以「有人没连上来」这种情况**走不到这里**：服务器先开打，我收到
+# team_start_requested 就直接进对局了。
+#
+# 真正会走到这里的只剩一种：**六个人都坐齐、对局已经开打，但开局那条推送没到我**。
+# `_rpc_team_start` 是一次性广播，room_state 里的 phase 不会替它补发 —— 唯一能
+# 重新问出「我现在该在哪」的是 resume（它按 phase 路由，见 _on_resume_completed）。
+#
+# 所以到点**不能**把玩家扔回房间界面：那一刻对局正在进行、而他在局里，退出 =
+# 跑路（排位要扣信誉分）。先替他重连回对局，连不回去再把选择交给他。
 const MATCHED_ENTERING_TIMEOUT_SEC := 90.0
+# 重连进对局的等待上限。超过它还没进去就认为真的回不去了，让玩家自己选。
+const MATCHED_REJOIN_TIMEOUT_SEC := 20.0
 
 
 func _watch_matched_start() -> void:
@@ -2120,7 +2143,40 @@ func _on_matched_entering_timeout() -> void:
 	if not NetworkService.team_start_requested.is_connected(_on_matched_start_requested):
 		return
 	NetworkService.team_start_requested.disconnect(_on_matched_start_requested)
-	_show_team3v3_lobby()
+	_retry_matched_entering()
+
+
+# 第一步：替玩家重连回对局。
+#
+# 这条路**不是**新写的 —— 它就是 app 重开后恢复对局那条（begin_resume_from_disk），
+# 结尾落在已经接好的 _on_resume_completed 上，那里按 payload.phase 路由（prep /
+# 回放 / 大厅）。所以我这里什么都不用判「该去哪」，问服务器就有答案。
+#
+# 代价是先断再连：此刻连接其实是好的，只是少了一条开局广播。但座位宽限有 120 秒
+# （MATCH_DISCONNECT_GRACE_SEC），两秒的重连窗口远在里面，不会被 AI 顶掉。
+func _retry_matched_entering() -> void:
+	var rc := SaveManager.load_resumable_reconnect()
+	if rc.is_empty():
+		# 连凭证都没有（入座时那份 room_state 没落地）——重连无从谈起，直接让他选。
+		_show_matched_entering_failed()
+		return
+	_set_matched_entering_text(tr("match_entering_retry_title"), tr("match_entering_retry_hint"))
+	NetworkService.begin_resume_from_disk(str(rc.get("token", "")), str(rc.get("address", "")),
+		int(rc.get("port", NetworkService.DEFAULT_PORT)))
+	var giveup := Timer.new()
+	giveup.one_shot = true
+	giveup.wait_time = MATCHED_REJOIN_TIMEOUT_SEC
+	giveup.timeout.connect(_on_matched_rejoin_timeout)
+	add_child(giveup)
+	giveup.start()
+
+
+# 重连也没把我带进对局。**不自动跳任何地方** —— 退出对局是要扣分的，
+# 这个决定必须是玩家按的，不能由一个超时替他按。
+func _on_matched_rejoin_timeout() -> void:
+	if not is_instance_valid(_matched_entering_column):
+		return   # 已经进对局了（_clear() 把挡板连同这个引用一起清了）
+	_show_matched_entering_failed()
 
 
 func _on_matched_start_requested() -> void:
@@ -2150,15 +2206,54 @@ func _show_matched_entering() -> void:
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 14)
 	center.add_child(column)
-	for spec in [[tr("match_entering_title"), 34, Color("e8c46a")],
-			[tr("match_entering_hint"), 18, Color("b8becc")]]:
-		var label := Label.new()
-		label.text = str(spec[0])
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		label.add_theme_font_size_override("font_size", int(spec[1]))
-		label.add_theme_color_override("font_color", spec[2])
-		column.add_child(label)
+	_matched_entering_title = _matched_entering_label(column, tr("match_entering_title"), 34, Color("e8c46a"))
+	_matched_entering_hint = _matched_entering_label(column, tr("match_entering_hint"), 18, Color("b8becc"))
+	# 两颗按钮只在「进不去了」那一步才出现（_show_matched_entering_failed）。
+	# 正常等待期间不给出口：那几十秒里退出就是跑路，不该有一颗随手能按的键。
+	_matched_entering_column = column
 	add_child(cover)
+
+
+func _matched_entering_label(column: VBoxContainer, text: String, size: int, color: Color) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", size)
+	label.add_theme_color_override("font_color", color)
+	column.add_child(label)
+	return label
+
+
+func _set_matched_entering_text(title: String, hint: String) -> void:
+	if is_instance_valid(_matched_entering_title):
+		_matched_entering_title.text = title
+	if is_instance_valid(_matched_entering_hint):
+		_matched_entering_hint.text = hint
+
+
+# 进不去了：说实话 + 把选择交给玩家。**这一步不自动导航到任何地方。**
+func _show_matched_entering_failed() -> void:
+	if not is_instance_valid(_matched_entering_column):
+		return
+	_set_matched_entering_text(tr("match_entering_failed_title"), tr("match_entering_failed_hint"))
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 16)
+	_matched_entering_column.add_child(row)
+
+	var retry: Button = MATCHED_ENTERING_BUTTON.instantiate()
+	retry.text = tr("match_entering_retry_action")
+	retry.pressed.connect(func() -> void:
+		row.queue_free()
+		_retry_matched_entering())
+	row.add_child(retry)
+
+	# 「退出对局」**走已有的确认框**（request_exit_match）：它会按 mode 说清楚
+	# 扣不扣信誉分。这一刻对局很可能正在进行，不能给一颗没有代价说明的「返回」。
+	var leave: Button = MATCHED_ENTERING_BUTTON.instantiate()
+	leave.text = tr("match_entering_leave_action")
+	leave.pressed.connect(func() -> void: request_exit_match())
+	row.add_child(leave)
 
 
 func _disconnect_matched_handlers() -> void:

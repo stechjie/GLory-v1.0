@@ -136,10 +136,21 @@ func _confirm_exit_for_new_match() -> bool:
 			answer = str(resolved[1])
 	if answer != DialogService.Dialog.RESULT_CONFIRMED:
 		return false
-	# 退出对局**不等于**可以开新局：它只是把这一局按掉线处理（座位留着、还能重连）。
-	# 所以这里返回 false —— 这一局结束之前，建房 / 进房 / 匹配入座都会被挡住。
-	abandon_started_match()
-	return false
+	# 2026-10-11 用户改判：主动退出 = 彻底结束这一局（回不去、照扣分判负），
+	# 所以退完**就放行**。旧规则是「按掉线算、座位留着、这一局结束前一律挡住」。
+	#
+	# **要 await**：abandon 里要等两帧让 ENet 真把退出通知发出去，之后才会 reset()
+	# 断开。不等的话下面那条新连接会先建起来，退出通知反而被丢在旧连接里。
+	#
+	# 🔴 **放行之前不再问一次服务器。** 想过那个方案（确认 token 真注销了才放行），
+	# 但它既慢（多一次往返）又没必要 —— 退出通知万一丢了，这条路自己接得住：
+	#   · 服务器那边座位还活着 → 他建房时被 ACTIVE_MATCH_HINT 挡下，
+	#     而那句提示正好是「正在对局中，请进行游戏重连」，说的就是该怎么办
+	#   · 而他的重连凭证**还在** —— 我们从不主动清它，只有 check_saved_match 听到
+	#     服务器回 clear 才清（credential_action_for_status）。所以「游戏重连」能用
+	# 也就是说丢包的结果是「暂时开不了新局，但回得去」，不是两头走不通。
+	await abandon_started_match()
+	return true
 
 # Check the original server/port without occupying a seat in the old match.
 # Unknown/network failure never clears credentials or unlocks a new match.
@@ -4932,7 +4943,11 @@ func abandon_started_match() -> void:
 		public_token_id = ""
 		reset()
 		return
-	_notice_manual_exit_then_reset()
+	# 要 await：_notice_manual_exit_then_reset 内部等两帧让 ENet 把包真的发出去。
+	# 不等的话，_confirm_exit_for_new_match 紧接着去问服务器「我还在局里吗」时，
+	# 那条退出通知还没离开本机 —— 服务器必然答「还在」，于是永远放行不了新局。
+	# 不关心结果的调用方（Main._on_exit_match_result）照旧不写 await，行为不变。
+	await _notice_manual_exit_then_reset()
 
 
 # 退出 / 让出座位时统一走这里：把「我退了、按掉线算」告诉服务端，然后断开。
@@ -5778,7 +5793,38 @@ func _rpc_manual_exit_seat(token: String) -> void:
 	if not offline.has(slot):
 		offline[slot] = _now()
 		room["human_offline_since"] = offline
-	_net_log("manual exit room=%d slot=%d (seat kept for reconnect)" % [int(room.get("id", 0)), slot])
+	_revoke_seat_credentials(room, slot)
+	_net_log("manual exit room=%d slot=%d (credentials revoked, seat kept for settlement)" % [
+		int(room.get("id", 0)), slot])
+
+
+# 注销这个座位的**回来资格**，但留下**他是谁**。
+#
+# 2026-10-11 用户改判：主动退出 = 彻底结束这一局，不再保留、回不去，照扣信誉分判负，
+# 但**可以马上开新局**。（旧规则是「按掉线算、座位留着还能重连、这一局结束前开不了
+# 新局」，见 MatchExitPenalty 与 tools/match_exit_check 里翻过面的那几条。）
+#
+# 🔴 **绝不能用 _clear_seat_metadata()。** 那个函数会连 `seat_pid` 一起清掉，而扣分
+# 的依据链是 `room.seat_pid[slot]` → 战报 `seats[].pid` → ranked.settle 按
+# `online_at_end=false` 判 abandon。身份一清，结算时这个位置被当成 AI ——
+# **跑路的人反而一分不扣**，正好和这次改判的目的相反。同一个坑在
+# `abandon_started_match` 的注释里也写过一次。
+#
+# 所以这里只动三样「回得来」相关的东西，`seat_pid` / `seat_profiles` / 棋盘进度一概不碰：
+func _revoke_seat_credentials(room: Dictionary, slot: int) -> void:
+	var seat_tokens: Dictionary = room.get("seat_tokens", {})
+	var token := str(seat_tokens.get(slot, ""))
+	# ① 短码绑定要**先**解，它靠 seat_tokens 反查自己那份 token 做 compare-and-delete。
+	#    顺序反了就会留下一条指向死 token 的孤儿短码（短码空间会被这些条目占满）。
+	_release_seat_public_id(room, slot)
+	# ② 全局 token -> 座位 的索引。断了它，resume 回 token_unknown、
+	#    _match_status_for_token 回 clear（于是客户端自己把本地凭证清掉、放行新局）。
+	if not token.is_empty():
+		_token_seat.erase(token)
+	# ③ 座位上记的那份 token。留着会让 room_live_token_count 把他算成「还可能回来」，
+	#    空房就不会按时回收。
+	seat_tokens.erase(slot)
+	room["seat_tokens"] = seat_tokens
 
 @rpc("authority", "call_remote", "reliable")
 func _rpc_resume_failed(reason: String) -> void:
@@ -6003,6 +6049,12 @@ func _release_stale_seats_for_pid(peer_id: int, pid: String) -> bool:
 					break
 			if holder == peer_id:
 				continue   # 就是这条连接自己的座位，交给调用方那段 peer 逻辑处理
+			# 他已经主动「退出对局」过了（2026-10-11 改判：退出 = 彻底结束、能马上开新局）。
+			# 这个座位只剩「结算时认人」的用途（seat_pid 还留着），**不该再挡他开新局** ——
+			# 不加这一条，_revoke_seat_credentials 把 token 杀了也没用：这里是按账号 id
+			# 认人的，而账号 id 是清不掉的（清了他反而一分不扣）。
+			if (room.get("manual_exit_slots", {}) as Dictionary).has(slot):
+				continue
 			if _room_is_active_match(room):
 				# 判连接，同 _assign_peer_to_room 末尾那一处：peer 可能在发出请求和
 				# 这一行之间就掉了，对不存在的 peer 发包会刷错误栈、把真错误淹掉。
