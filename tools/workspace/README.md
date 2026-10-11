@@ -43,7 +43,7 @@ TestFlight 自动上传必须先由账号持有人配置 App Store Connect 团�
 - `./tools/release_google_play.sh --next-code`：查询远端构建号；`--metadata /绝对路径/aab.json` 上传已验证的正式包并发布到 `internal`。只操作内部轨道，遇到已有审核则停下，不取消其他审核。结果存于 `build/play-releases`；同包重跑先核对版本和哈希，上传结果不明时停止，不能删除状态文件后盲目重传。
 - `./tools/release_testflight.sh`：原有 Apple 发布入口，保留并复用。配置外部 API Key 后，自动选择新构建号、上传、等待处理，并加入既有“GLory 内部验证”组。
 - `./tools/release_nightly.sh`：依次同步、APK、正式 AAB、Google Play internal、TestFlight。不同平台预检失败会记录失败；不把本地构建算成已发布。`--local --build-only` 可用本地已准备的内容只打包；加 `--unsigned-aab` 可暂不签 AAB。
-- `./tools/nightly_patch.sh`：每天 20:00 同步 GitHub 和正式 Drive 资源，基于最近 TestFlight/Google Play 客户端的固定基准导出 iOS、Android 累计补丁，并上传为后台草稿。它不会发布补丁。上线前必须更新 `delivery/patch-release-YYYYMMDD/release-record.json`，指向当前两平台客户端的 patch-base、Godot 引擎和 preset；旧 base 不匹配时导出会停止。日志和状态位于 `build/patch-nightly/`。
+- `./tools/nightly_patch.sh`：每天 20:00 同步 GitHub 和正式 Drive 资源，基于最近 TestFlight/Google Play 客户端的固定基准导出 iOS、Android 累计补丁，并在两平台 Firebase 回读校验成功后自动发布至 internal。凭证保存在本机钥匙串，只能操作 Android/iOS 内部补丁；不授予正式渠道或其他管理权限。单独运行 `glory_patch_nightly.py --sync` 仍只上传草稿，增加 `--publish` 才发布。上线前必须更新 `delivery/patch-release-YYYYMMDD/release-record.json`，指向当前两平台客户端的 patch-base、Godot 引擎和 preset；旧 base 不匹配时导出会停止。日志和状态位于 `build/patch-nightly/`。
 - 中断后的每日流程用 `--resume build/nightly/对应时间/state.json`，已完成阶段不重复。源提交变化、上一轮上传状态不明或其他发布介入时停止并核对。日志和固定包元数据留在该次目录，APK 上传 Drive 仍由 Chrome UI 完成，不分片。
 
 首次配置：在 `.glory-tools/venv` 安装 `tools/requirements-release.txt`。Google Play 需已创建同包名应用、完成首次控制台配置，并将具备该应用测试发布权限的 OAuth 或 service-account JSON 保存在仓库外，通过 `GLORY_PLAY_CREDENTIALS` 指定。Google 网站密码不是 API 凭据。Apple 团队 API Key 使用 `./tools/release_testflight.sh --setup`。

@@ -22,6 +22,29 @@ PLATFORMS = {"android", "ios", "windows"}
 MAX_UNCOMPRESSED = 8_000_000_000
 
 
+def equivalent_class_cache(before: bytes, after: bytes) -> bool:
+    """Godot may serialize the same named global classes in a different order.
+
+    Keep the installed cache in that case. Any class/metadata change still needs
+    a new launcher capable of refreshing its startup class registry.
+    """
+    def entries(raw):
+        text = raw.decode("utf-8").strip()
+        if not text.startswith("list="):
+            raise ValueError("Unexpected global class cache")
+        value = json.loads(re.sub(r'&("(?:[^"\\]|\\.)*")', r'\1', text[5:]))
+        if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
+            raise ValueError("Invalid class list")
+        names = [item["class"] for item in value]
+        if any(not isinstance(name, str) for name in names) or len(names) != len(set(names)):
+            raise ValueError("Invalid or duplicate class names")
+        return sorted(value, key=lambda item: item["class"])
+    try:
+        return entries(before) == entries(after)
+    except (ValueError, KeyError, TypeError, UnicodeError):
+        return False
+
+
 def immutable(name: str) -> bool:
     path = PurePosixPath(name)
     return (name in IMMUTABLE_FILES or name.startswith("patcher/")
@@ -75,6 +98,9 @@ def build(base: Path, current: Path, output: Path, *, platform: str, base_id: st
         if deleted:
             raise ValueError(f"Deletion requires a new full base build: {deleted[:8]}")
         changed = sorted(name for name in after if after[name] != before.get(name))
+        cache = ".godot/global_script_class_cache.cfg"
+        if cache in changed and cache in before and equivalent_class_cache(original.read(cache), updated.read(cache)):
+            changed.remove(cache)
         blocked = [name for name in changed if immutable(name)]
         if blocked:
             raise ValueError(f"Engine/native/bootstrap/global-class change requires a full build: {blocked[:8]}")

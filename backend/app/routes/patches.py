@@ -29,7 +29,7 @@ def service():
 
 
 def patch_automation_writer(authorization: str = Header(default="")) -> None:
-    """Scoped machine auth for draft creation and artifact upload only."""
+    """Scoped machine auth for internal Android/iOS patch delivery."""
     expected = get_settings().patch_automation_token
     scheme, _, supplied = authorization.partition(" ")
     if (not expected or scheme.lower() != "bearer" or not supplied
@@ -39,6 +39,23 @@ def patch_automation_writer(authorization: str = Header(default="")) -> None:
 
 
 PatchAutomationWriter = Annotated[None, Depends(patch_automation_writer)]
+
+
+def automation_release(release_id: str):
+    catalogue = service().store.catalogue()
+    release = next((r for r in catalogue["releases"] if r["release_id"] == release_id), None)
+    if release is None:
+        raise HTTPException(404, "补丁草稿不存在")
+    if release["channel"] != "internal" or set(release["platforms"]) != {"android", "ios"}:
+        raise HTTPException(403, "自动发布凭证仅允许 iOS、Android 内部测试补丁")
+    return catalogue, release
+
+
+@router.get("/admin/api/patches/automation/{release_id}")
+def automation_status(release_id: str, _admin: PatchAutomationWriter):
+    catalogue, release = automation_release(release_id)
+    return {"revision": catalogue["revision"], "release": release,
+            "active": catalogue["active"].get("internal") == release_id}
 
 
 async def push_snapshots():
@@ -89,7 +106,7 @@ def create(body: Draft, admin: Writer):
 
 @router.post("/admin/api/patches/automation/drafts")
 def create_automation_draft(body: Draft, _admin: PatchAutomationWriter):
-    """Machine credential can stage patches, but cannot publish or manage hotfixes."""
+    """Machine credential is limited to internal Android/iOS releases."""
     if body.channel != "internal" or set(body.platforms) != {"android", "ios"}:
         raise HTTPException(400, "自动补丁任务只允许创建包含 iOS、Android 的 internal 草稿")
     with failures():
@@ -119,6 +136,7 @@ async def upload_automation(release_id: str, platform: AutomationPlatform, reque
                             _admin: PatchAutomationWriter,
                             base_id: str = Query(max_length=96)):
     with failures():
+        automation_release(release_id)
         length = request.headers.get("content-length")
         if length and int(length) > 2_000_000_000:
             raise HTTPException(413, "单个补丁文件不能超过 2 GB")
@@ -127,6 +145,21 @@ async def upload_automation(release_id: str, platform: AutomationPlatform, reque
 
 class Publish(BaseModel):
     expected_revision: int = Field(ge=0)
+
+
+@router.post("/admin/api/patches/automation/{release_id}/publish")
+async def publish_automation(release_id: str, body: Publish, _admin: PatchAutomationWriter):
+    with failures():
+        catalogue, release = automation_release(release_id)
+        active_id = catalogue["active"].get("internal")
+        active = next((r for r in catalogue["releases"] if r["release_id"] == active_id), None)
+        if active and release["seq"] < active["seq"]:
+            raise HTTPException(409, "自动发布不能回退到旧补丁")
+        changed = await service().publish(release_id, "automated-patch", body.expected_revision)
+        revision = service().store.catalogue()["revision"]
+    if changed:
+        await push_snapshots()
+    return {"changed": changed, "revision": revision}
 
 
 @router.post("/admin/api/patches/{release_id}/publish")

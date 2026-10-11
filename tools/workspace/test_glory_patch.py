@@ -46,6 +46,20 @@ class CumulativePatchTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Deletion"):
             self.run_build({key: value for key, value in self.files.items() if key != "ui.gdc"})
 
+    def test_class_order_only_keeps_installed_registry_and_patches_code(self):
+        key = ".godot/global_script_class_cache.cfg"
+        classes = [{"class": "Alpha", "path": "res://a.gd", "base": "Node"},
+                   {"class": "Beta", "path": "res://b.gd", "base": "Node"}]
+        self.files[key] = "list=" + json.dumps(classes)
+        report = self.run_build({**self.files, key: "list=" + json.dumps(classes[::-1]), "ui.gdc": "new code"})
+        self.assertEqual(report["files"], ["ui.gdc"])
+
+    def test_changed_class_path_is_still_blocked(self):
+        key = ".godot/global_script_class_cache.cfg"
+        self.files[key] = 'list=[{"class": &"Alpha", "path": "res://a.gd"}]'
+        with self.assertRaisesRegex(ValueError, "full build"):
+            self.run_build({**self.files, key: 'list=[{"class": &"Alpha", "path": "res://new.gd"}]'})
+
     def test_wrong_platform_and_no_changes_rejected(self):
         with self.assertRaisesRegex(ValueError, "identity"):
             self.run_build(self.files, platform="ios")
