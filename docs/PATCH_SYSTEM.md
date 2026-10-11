@@ -39,7 +39,7 @@ Hotfix 快照包含单调递增 revision、服务器 deployment_id、当前 patc
 
 ## 当前限制
 
-2026-10-11：用户已明确改用当前 Chrome 登录账号，并确认创建免费项目。`GLory Patches`（`glory-patches`）已创建，控制台确认 Spark 每月 0 美元。Hosting 已列出 `glory-patches.web.app` 与 `glory-patches.firebaseapp.com`；尚未上传补丁或完成公网读回验证。未绑定账单，创建时关闭 Gemini、Analytics 和开发者计划。
+2026-10-11：用户已明确改用当前 Chrome 登录账号，并确认创建免费项目。`GLory Patches`（`glory-patches`）已创建，控制台确认 Spark 每月 0 美元。Hosting 已列出 `glory-patches.web.app` 与 `glory-patches.firebaseapp.com`；已完成小型测试 ZIP 的公网读回验证，尚未发布玩家补丁。未绑定账单，创建时关闭 Gemini、Analytics 和开发者计划。
 
 用户确认后，已向 `glory-server-3` 现有服务账号授予专用 `glory-patches` 项目的 Firebase Hosting Admin。经用户批准执行一次正常停机维护，保留原服务账号与其他配置，启用 Cloud Platform OAuth 范围后重新启动。四项服务 `glory-backend`、`glory-server`、`caddy`、`livekit` 均恢复 active；公网 `/health` 返回正常。
 
