@@ -20,7 +20,10 @@ class ActualPlatformExportTests(unittest.TestCase):
     def test_ios_exported_bytecode_patch(self):
         self.verify_platform("ios", "iOS")
 
-    def verify_platform(self, platform, platform_name):
+    def test_android_debug_base_and_retention(self):
+        self.verify_platform("android", "Android", debug=True)
+
+    def verify_platform(self, platform, platform_name, debug=False):
         engine = os.environ.get("GODOT_BIN")
         if not engine:
             self.skipTest("GODOT_BIN required")
@@ -57,8 +60,19 @@ binary_format/architecture="x86_64"
             config = root / "config.json"
             config.write_text(json.dumps({"base_id": "test-base", "channel": "internal",
                 "backend_url": "https://example.com", "firebase_host": "example.web.app"}))
-            options = dict(stage=stage, engine=Path(engine), preset="PatchFixture", platform=platform, config=config)
-            export(**options, output=root / "original")
+            options = dict(stage=stage, engine=Path(engine), preset="PatchFixture", platform=platform, config=config, debug=debug)
+            if debug:
+                from glory_build import retain_patch_base, digest
+                application = root / "fixture.apk"
+                application.write_bytes(b"native package fixture")
+                retained = retain_patch_base(stage, Path(engine), "PatchFixture", platform, config,
+                    root / "original", application, debug=True)
+                record = json.loads(Path(retained["manifest"]).read_text())
+                self.assertEqual(record["application_sha256"], digest(application))
+                with self.assertRaisesRegex(ValueError, "original base changed"):
+                    export(**{**options, "debug": False}, output=root / "wrong-mode", base=root / "original/base.zip")
+            else:
+                export(**options, output=root / "original")
             with zipfile.ZipFile(root / "original/base.zip") as pack:
                 self.assertIn(b'AutoloadPlaceholder.tscn', pack.read('override.cfg'))
                 pack.extractall(root / "installed")

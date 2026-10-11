@@ -89,6 +89,11 @@ def main():
         subprocess.run([sys.executable, str(Path(__file__).with_name('glory_aab_verify.py')), str(target)], check=True)
         result.update(aab=str(target), signed=True, sha256=b.digest(target), bytes=target.stat().st_size,
                       verification=str(out/'verification'/target.stem/'result.json'))
+        if result.get('patch_base'):
+            manifest = Path(result['patch_base']['manifest'])
+            baseline = json.loads(manifest.read_text())
+            baseline.update(application=str(target), application_sha256=result['sha256'])
+            b.json_write(manifest, baseline)
         b.json_write(out/'latest-release.json', result)
         print('SIGNED AAB:', target, flush=True)
         return
@@ -160,6 +165,9 @@ def main():
             for required in (b'com/glory/voice/GloryVoicePlugin',b'io/livekit/android/room/Room'):
                 if not any(required in data for data in dex):raise RuntimeError('Missing voice dependency')
         result=dict(identity,aab=str(aab),signed=False,sha256=b.digest(aab),bytes=aab.stat().st_size,logs=str(log),device_tested=False,play_uploaded=False)
+        if a.patch_config:
+            result['patch_base'] = b.retain_patch_base(stage, engine, 'Google Play Release', 'android', a.patch_config,
+                out / (aab.stem + '-patch-base'), aab)
         b.json_write(out/'latest-unsigned.json',result)
         print('UNSIGNED AAB:',aab,flush=True)
         if not a.unsigned:

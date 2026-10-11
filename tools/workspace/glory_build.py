@@ -39,6 +39,17 @@ def digest(path):
     return value.hexdigest()
 
 
+def retain_patch_base(stage, engine, preset, platform, config, output, application, *, debug=False):
+    """Retain a resource baseline from the exact stage used for this application."""
+    from export_patch import export
+    record = export(stage=stage, engine=Path(engine), preset=preset, platform=platform,
+                    config=config, output=output, debug=debug)
+    record.update(application=str(application), application_sha256=digest(application))
+    json_write(output / "base.export.json", record)
+    return {"archive": str(output / "base.zip"), "manifest": str(output / "base.export.json"),
+            "sha256": record["sha256"], "base_id": record["base_id"], "debug": debug}
+
+
 def capture(args, **kwargs):
     return subprocess.check_output([str(x) for x in args], text=True, stderr=subprocess.STDOUT, **kwargs).strip()
 
@@ -876,6 +887,9 @@ def main():
                            host_shutdown_diagnostics=export_diagnostics,
                            model_materials=materials["summary"] if materials else None,
                            git_sync=git_sync)
+            if args.patch_config:
+                summary["patch_base"] = retain_patch_base(stage, engine, preset, "android", args.patch_config,
+                    outdir / (apk.stem + "-patch-base"), apk, debug=True)
             json_write(logdir / "result.json", summary)
             json_write(build / "latest-apk.json", summary)
             latest = outdir / "Glory-latest.apk"

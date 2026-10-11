@@ -585,6 +585,9 @@ def main(argv=None):
                            accepted_fbx_source_texture_errors=diagnostics["accepted_fbx_source_texture_errors"],
                            archive=str(archive), source_project=str(args.project), asset_source=str(assets),
                            signed=True, built=True, uploaded=False, device_installed=False)
+            if args.patch_config:
+                summary["patch_base"] = shared.retain_patch_base(stage, engine, PRESET, "ios", args.patch_config,
+                    run_dir / "patch-base", ipas[0])
             publish(ipas[0], ROOT / "build/ipa", summary)
             if args.result_file:
                 atomic_json(args.result_file.expanduser().resolve(), summary)

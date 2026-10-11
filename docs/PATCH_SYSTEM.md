@@ -143,3 +143,13 @@ Hotfix 快照包含单调递增 revision、服务器 deployment_id、当前 patc
 
 - 后续把真实资源导出回归扩展到 Android、iOS、Windows 三个平台：三个用例均通过，每个平台验证带类型推导的场景导出、产物延迟单例启动、累计脚本补丁生成及执行新代码。这仍不是手机真机或 Windows/Steam 系统验收。
 - `88a2fc2` 已成功推送 GitHub 开发分支。尝试建立草稿 PR 时 GitHub 连接器返回 403（integration 无创建权限）；没有创建 PR，也没有合并主分支。
+
+
+## 基础包自动留存与构建模式
+
+- 使用 `--patch-config` 构建 APK、AAB 或 IPA 时，只有在原始平台资源 ZIP 和身份清单成功留存后，才更新对应的 latest 构建记录。结果 JSON 中的 `patch_base` 指向 `base.zip` 与 `base.export.json`，后者记录资源哈希及关联安装包 SHA-256。
+- APK 为 Debug 基础包；AAB、IPA 为 Release。`export_patch.py --debug` 使用 Godot 的 Debug 资源导出标志；清单记录模式，Debug 与 Release 不能交叉制作补丁。旧测试清单没有 debug 字段，需重新生成，不自动猜测模式。
+- APK/AAB 在安装包旁的 `<安装包名>-patch-base/` 保存基准；IPA 在该次 `runs/<时间戳>/patch-base/` 保存。必须与基础安装包一起长期保存，不能作为普通临时导入缓存清理。
+- AAB 签名成功后更新基准清单中的关联安装包路径和哈希；资源基准本身保持不变。后续制作补丁仍通过 `export_patch.py --base <原始base.zip>`，Debug 包须同时带 `--debug`。
+- 留存功能的真实 Godot 测试覆盖 Android Debug 导出、安装包哈希关联及模式不匹配拒绝；连同三平台 Release 导出共 4 项通过。原 APK 构建测试 14 项、IPA 构建测试 19 项通过。完整 APK/AAB/IPA 的这条新留存链路尚未完成真机验收。
+- 再次检查 Firebase 控制台：当前仍是其他账号，指定账号登录尚未完成；没有创建云项目或开通付费服务。

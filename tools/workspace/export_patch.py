@@ -36,7 +36,7 @@ def run(engine, stage, args, log):
 
 
 def export(stage: Path, engine: Path, preset: str, platform: str, config: Path,
-           output: Path, base: Path | None = None, executable: str | None = None):
+           output: Path, base: Path | None = None, executable: str | None = None, debug: bool = False):
     stage, output = stage.resolve(), output.resolve()
     if (stage / ".git").exists() or output.is_relative_to(stage) or stage.is_relative_to(output):
         raise ValueError("Use isolated staging and an output directory outside the stage")
@@ -64,7 +64,7 @@ def export(stage: Path, engine: Path, preset: str, platform: str, config: Path,
     version = subprocess.check_output([str(engine), "--version"], text=True).strip()
     native = {str(path.relative_to(stage)): digest(path) for path in sorted(stage.rglob("*"))
               if path.is_file() and path.suffix.lower() in NATIVE_SUFFIXES}
-    identity = {"engine_version": version, "platform": platform, "base_id": boot["base_id"],
+    identity = {"engine_version": version, "platform": platform, "base_id": boot["base_id"], "debug": debug,
                 "preset_sha256": digest(stage / "export_presets.cfg"), "native_files": native}
     if base:
         record = json.loads(base.with_suffix(".export.json").read_text())
@@ -73,7 +73,12 @@ def export(stage: Path, engine: Path, preset: str, platform: str, config: Path,
     output.mkdir(parents=True)
     run(engine, stage, ["--editor", "--import"], output / "import.log")
     archive = output / ("current.zip" if base else "base.zip")
-    run(engine, stage, ["--export-pack", preset, archive], output / "export.log")
+    # Godot 4.7 parses export-pack and export-debug as independent flags;
+    # a single positional destination keeps pack-only output in debug mode.
+    command = ["--export-pack", preset]
+    if debug:
+        command += ["--export-debug", preset]
+    run(engine, stage, [*command, archive], output / "export.log")
     if not archive.is_file():
         raise RuntimeError("Godot did not produce the resource ZIP")
     identity.update(sha256=digest(archive), size=archive.stat().st_size)
@@ -82,7 +87,7 @@ def export(stage: Path, engine: Path, preset: str, platform: str, config: Path,
         # Filename only: keep all application output inside the new build directory.
         if Path(executable).name != executable:
             raise ValueError("--executable takes a filename, not a path")
-        run(engine, stage, ["--export-release", preset, output / executable], output / "application.log")
+        run(engine, stage, ["--export-debug" if debug else "--export-release", preset, output / executable], output / "application.log")
     if base:
         return build(base, archive, output / f"{platform}.zip", platform=platform, base_id=boot["base_id"])
     return identity
@@ -96,6 +101,7 @@ def main():
     parser.add_argument("--platform", choices=["android", "ios", "windows"], required=True)
     parser.add_argument("--base", type=Path)
     parser.add_argument("--executable", help="Also export full application, e.g. Glory.exe")
+    parser.add_argument("--debug", action="store_true", help="Match a debug base application; cannot mix with release bases")
     args = vars(parser.parse_args())
     args["engine"] = args.pop("godot")
     try:
