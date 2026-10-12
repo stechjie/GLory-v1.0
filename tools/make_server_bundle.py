@@ -103,10 +103,22 @@ def server_project(original: bytes) -> bytes:
 def fresh_class_cache(files: dict[str, bytes]) -> tuple[bytes, int]:
     """Generate cache metadata from current source, never a stale imported checkout.
 
-    This repository's named classes extend an identifier, not a script-path or
-    expression. Fail closed if that grammar changes rather than inventing a base.
+    Resolve identifier and quoted res:// script inheritance. Fail closed on
+    missing scripts, cycles, or unsupported inheritance expressions.
     The actual default-entry Godot smoke then validates the server's parse chain.
     """
+    def declared_base(path, seen=()):
+        if path in seen or path not in files:
+            raise ValueError(f"Missing/cyclic script inheritance: {path}")
+        text = files[path].decode("utf-8-sig")
+        base = re.search(r"(?m)^extends\s+([\w.]+)\s*(?:#.*)?$", text)
+        if base:
+            return base[1]
+        ref = re.search(r'(?m)^extends\s+"res://([^"\n]+)"\s*(?:#.*)?$', text)
+        if ref:
+            return declared_base(ref[1], (*seen, path))
+        raise ValueError(f"Unsupported script inheritance: {path}")
+
     classes = {}
     for path, content in sorted(files.items()):
         if not path.endswith(".gd"):
@@ -116,11 +128,11 @@ def fresh_class_cache(files: dict[str, bytes]) -> tuple[bytes, int]:
         if not found:
             continue
         name = found[1]
-        base = re.search(r"(?m)^extends\s+([\w.]+)\s*(?:#.*)?$", text)
-        if not base or name in classes:
+        base = declared_base(path)
+        if name in classes:
             raise ValueError(f"Unsupported/duplicate named class: {name} in {path}")
         icon = re.search(r'(?m)^@icon\("([^"\n]+)"\)', text)
-        classes[name] = {"base": base[1], "class": name, "icon": icon[1] if icon else "",
+        classes[name] = {"base": base, "class": name, "icon": icon[1] if icon else "",
                          "is_abstract": bool(re.search(r"(?m)^@abstract\b", text)),
                          "is_tool": bool(re.search(r"(?m)^@tool\b", text)),
                          "language": "GDScript", "path": "res://" + path}
