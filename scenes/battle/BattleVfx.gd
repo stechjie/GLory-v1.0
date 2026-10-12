@@ -49,6 +49,10 @@ var _persistent_unit_vfx: Dictionary = {}
 const SEED_ALREADY_CAST_TRACE := {
 	"random_attribute_bolt": "attack_count",
 	"aoe_silence": "skill_target_uid",
+	"bubble_dream": "skill_target_uid",
+	"holy_song": "skill_target_uid",
+	"arrow_rain": "skill_target_uid",
+	"time_slow": "skill_target_uid",
 }
 # 9.19：四星末日守卫（skill_id = shared_hp_link 血契连线）的技能音**只在开始释放时播一次**。
 #
@@ -211,6 +215,11 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 			})
 		var prev_ratio := float(prev.get("hp", 0)) / float(maxi(1, int(prev.get("max_hp", 1))))
 		var now_ratio := float(now.get("hp", 0)) / float(maxi(1, int(now.get("max_hp", 1))))
+		if sid_now == "blood_rampage" and bool(now.get("alive", false)):
+			var old_step := maxi(0, int(floor((1.0 - prev_ratio) / 0.10 + 0.0001)))
+			var new_step := maxi(0, int(floor((1.0 - now_ratio) / 0.10 + 0.0001)))
+			if new_step > old_step:
+				_play_unit_procedural("blood_rampage", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO), _unit_target_context(now, now, {"stacks": new_step}))
 		if sid_now == "blood_rage" and prev_ratio > 0.35 and now_ratio <= 0.35:
 			_play_boss_procedural("blood_rage", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO))
 		if sid_now == "twin_revive" and not bool(prev.get("alive", true)) and bool(now.get("alive", false)):
@@ -744,9 +753,8 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 		"random_attribute_bolt", "judgement_strike", "random_ally_damage_reduction",
 		"global_divine_blast", "silence_bolt", "fear", "stun", "black_hole",
 		"blink_low_def_backline", "shared_hp_link", "front_cone_stun",
-		"bubble_dream", "shell_guard", "balance_judge", "gold_charge", "holy_song",
-		"twin_strike", "king_aura", "arrow_rain", "blood_rampage", "steel_order",
-		"time_slow", "death_hunt",
+		"bubble_dream", "shell_guard", "gold_charge", "holy_song",
+		"twin_strike", "king_aura", "arrow_rain", "steel_order", "time_slow",
 		# 赤律族三个主动技（赤舞者 / 霜印使 / 赤灯使）。
 		"random_ally_buff", "frost_status", "aoe_silence",
 		# PVE 怪物与阵型盟友的主动技（都带 skill_cd，走 skill_ready 这条路）。
@@ -760,13 +768,13 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 	if not sid in ACTIVE_UNIT_SKILLS:
 		return
 	var origin:Vector3=unit.get("world_cast",unit.get("world_foot",Vector3.ZERO))
-	if sid=="blink_low_def_backline":
+	if sid in ["blink_low_def_backline", "gold_charge"]:
 		origin=previous.get("world_cast",previous.get("world_foot",origin))
 	var exact:=_exact_skill_target(unit,current)
 	var target:=exact
 	# 赤舞者/赤灯使的目标是逗号列表，单 uid 解析一定落空；它们下面按记录逐个解析，
 	# 不能退回「最近的敌人」去猜（赤舞者的目标是友军）。
-	if target.is_empty() and sid not in ["nearby_ally_heal_buff","global_divine_blast","black_hole","random_ally_buff","aoe_silence","frost_status"]:
+	if target.is_empty() and sid not in ["nearby_ally_heal_buff","global_divine_blast","black_hole","random_ally_buff","aoe_silence","frost_status","bubble_dream","holy_song","twin_strike","king_aura","arrow_rain","steel_order","time_slow","shell_guard"]:
 		target=_nearest_enemy_target(unit,damage_events,current)
 	var target_world:Vector3=target.get("world_hit",target.get("world_foot",unit.get("world_foot",Vector3.ZERO)))
 	var context:=_unit_target_context(unit,target)
@@ -828,26 +836,29 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 		var reduction:Dictionary=statuses.get("damage_reduction",{})
 		context["status_duration"]=maxf(0.9,float(reduction.get("remaining",6.0)))
 	elif sid=="bubble_dream":
-		var heal_target:=_lowest_living_team_target(unit,current)
-		context["heal_target"]=heal_target.get("world_foot",unit.get("world_foot",Vector3.ZERO))
+		context["has_enemy"]=not exact.is_empty()
 	elif sid=="holy_song":
-		context["targets"]=_living_team_world_positions(unit,current)
+		context["targets"]=resolve_skill_target_positions(current,str(unit.get("skill_target_uid","")))
+		target_world=unit.get("world_foot",Vector3.ZERO)
+	elif sid=="twin_strike":
 		target_world=unit.get("world_foot",Vector3.ZERO)
 	elif sid=="king_aura":
-		context["targets"]=_living_team_world_positions(unit,current)
+		context["targets"]=resolve_skill_target_positions(current,str(unit.get("skill_target_uid","")))
 		target_world=unit.get("world_foot",Vector3.ZERO)
 	elif sid=="arrow_rain":
-		var rain_targets:=_enemy_damage_events(unit,damage_events)
-		var rain_positions:Array=[]
-		for event:Dictionary in rain_targets:rain_positions.append(event.get("world_foot",Vector3.ZERO))
-		context["targets"]=rain_positions
+		context["targets"]=resolve_skill_target_positions(current,str(unit.get("skill_target_uid","")))
 		target_world=unit.get("world_foot",Vector3.ZERO)
 	elif sid=="steel_order":
-		context["targets"]=_nearest_living_team_positions(unit,current,3)
+		context["targets"]=resolve_skill_target_positions(current,str(unit.get("skill_target_uid","")))
 		target_world=unit.get("world_foot",Vector3.ZERO)
 	elif sid=="time_slow":
-		context["targets"]=_living_enemy_world_positions(unit,current)
+		context["targets"]=resolve_skill_target_positions(current,str(unit.get("skill_target_uid","")))
 		target_world=unit.get("world_foot",Vector3.ZERO)
+	elif sid=="shell_guard":
+		target_world=unit.get("world_foot",Vector3.ZERO)
+		context["status_duration"]=float((unit.get("statuses",{}) as Dictionary).get("damage_reduction",{}).get("remaining",5.0))
+	elif sid=="gold_charge":
+		context["status_duration"]=float((target.get("statuses",{}) as Dictionary).get("stun",{}).get("remaining",1.2))
 	# PVE 怪物与阵型盟友里的群体技，目标集合的取法和上面同类技能一致。
 	elif sid in ["heal_allies","nature_heal"]:
 		context["targets"]=_living_team_world_positions(unit,current)
@@ -1384,6 +1395,11 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 			continue
 		if str(event.get("type", "")) == "skill_shake":
 			_screen_shake(float(event.get("strength", 6.5)), float(event.get("duration", 0.2)))
+		elif str(event.get("type", "")) == "buff_apply" and str(event.get("skill_id", "")) in ["bubble_dream_heal", "holy_song_cleanse"]:
+			var merc_source := _vfx_unit_by_sim_uid(current, str(event.get("source_uid", "")))
+			var merc_target := _vfx_unit_by_sim_uid(current, str(event.get("target_uid", "")))
+			if not merc_source.is_empty() and not merc_target.is_empty():
+				_play_unit_procedural(str(event.get("skill_id", "")), merc_source.get("world_cast", Vector3.ZERO), merc_target.get("world_foot", Vector3.ZERO), _unit_target_context(merc_source, merc_target))
 		elif str(event.get("type",""))=="mother_execute":
 			# 书本挂在母灵头上，不依赖目标死活。母灵还能定位就一定放书。
 			# 目标能解析就顺带把吸魂流指向它，解析不到（已死/清光/Boss）就只放书。
@@ -1434,7 +1450,10 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 				if _is_own_or_ally_unit(proc_uid) and _is_star4(proc_uid):
 					SfxService.play(proc_cue)
 			if not skill_id.is_empty() and not source.is_empty() and not target.is_empty():
-				_play_unit_procedural(skill_id, source.get("world_cast", Vector3.ZERO), target.get("world_hit", target.get("world_foot", Vector3.ZERO)), _unit_target_context(source, target))
+				var proc_context := _unit_target_context(source, target)
+				if skill_id == "death_hunt":
+					proc_context["status_duration"] = float((target.get("statuses", {}) as Dictionary).get("defense_flat_down", {}).get("remaining", 4.0))
+				_play_unit_procedural(skill_id, source.get("world_cast", Vector3.ZERO), target.get("world_hit", target.get("world_foot", Vector3.ZERO)), proc_context)
 		elif str(event.get("type", "")) == "sfx_proc":
 			# 9.22：**只出声、不出特效**的普攻触发型技能音。
 			#
@@ -1449,6 +1468,11 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 			# 四星 / 佣兵那两支按 skill_id 再判一遍。
 			if not _maybe_play_boss_skill_proc(event):
 				_maybe_play_sfx_proc(event)
+			if str(event.get("skill_id", "")) == "balance_judge":
+				var judge_source := _vfx_unit_by_sim_uid(current, str(event.get("source_uid", "")))
+				var judge_target := _vfx_unit_by_sim_uid(current, str(event.get("target_uid", "")))
+				if not judge_source.is_empty() and not judge_target.is_empty():
+					_play_unit_procedural("balance_judge", judge_source.get("world_cast", Vector3.ZERO), judge_target.get("world_hit", Vector3.ZERO), _unit_target_context(judge_source, judge_target))
 		# D6: hit_number is drawn by the Director's adapter, on its timing. The old
 		# branch here would have been a second, untimed copy of the same number.
 	_play_crimson_event_groups(crimson_hp_hits, crimson_pierces, current)

@@ -378,22 +378,29 @@ static func _skill_mirror_clone(caster: Dictionary, state: Dictionary, d: Dictio
 	return should_have - have
 
 
-static func _skill_bubble_dream(caster: Dictionary, allies: Array, opponents: Array, d: Dictionary) -> void:
+static func _skill_bubble_dream(caster: Dictionary, allies: Array, opponents: Array, d: Dictionary, state: Dictionary = {}) -> void:
 	var ally := _lowest_hp_ratio(allies)
 	if not ally.is_empty():
+		# The heal target is chosen before healing changes the HP ordering.
+		if state.has("visual_events"):
+			state.visual_events.append({"type": "buff_apply", "skill_id": "bubble_dream_heal", "source_uid": str(caster.get("uid", "")), "target_uid": str(ally.get("uid", ""))})
 		_heal_unit(ally, int(d.get("heal", 160)))
 	var target := _nearest(caster, opponents)
+	caster.vfx_skill_target_uid = ""
 	if not target.is_empty():
+		_mark_vfx_target(caster, target)
 		StatusEffectService.add_status(target, "slow", 3.0, {"move_pct": float(d.get("slow_pct", 0.30)), "attack_speed_pct": float(d.get("slow_pct", 0.30))})
 		DamageService.apply_damage(target, int(d.get("burst_damage", 140)), true)
 
 
-static func _skill_holy_song(_caster: Dictionary, allies: Array, d: Dictionary) -> void:
+static func _skill_holy_song(caster: Dictionary, allies: Array, d: Dictionary, state: Dictionary = {}) -> void:
 	var cleanse_keys := ["slow", "attack_down", "silence", "stun", "interrupt", "defense_down", "defense_flat_down", "heal_reduction"]
 	var candidates: Array = []
+	var healed: Array = []
 	for a in allies:
 		if not bool(a.get("alive", false)):
 			continue
+		healed.append(a)
 		_heal_unit(a, maxi(1, int(round(float(a.max_hp) * float(d.get("heal_pct", 0.15))))))
 		if not bool(d.get("cleanse_control", true)) or typeof(a.get("statuses", null)) != TYPE_DICTIONARY:
 			continue
@@ -401,9 +408,13 @@ static func _skill_holy_song(_caster: Dictionary, allies: Array, d: Dictionary) 
 			if a.statuses.has(key):
 				candidates.append(a)
 				break
+	caster.vfx_skill_target_uid = ""
+	_mark_vfx_targets(caster, healed)
 	if candidates.is_empty():
 		return
 	var chosen: Dictionary = candidates[RngService.rng.randi_range(0, candidates.size() - 1)]
+	if state.has("visual_events"):
+		state.visual_events.append({"type": "buff_apply", "skill_id": "holy_song_cleanse", "source_uid": str(caster.get("uid", "")), "target_uid": str(chosen.get("uid", ""))})
 	for key in cleanse_keys:
 		chosen.statuses.erase(key)
 
@@ -428,12 +439,16 @@ static func _skill_twin_strike(caster: Dictionary, state: Dictionary, d: Diction
 
 static func _skill_arrow_rain(caster: Dictionary, opponents: Array, d: Dictionary) -> void:
 	var targets := _nearest_n(caster, opponents, int(d.get("targets", 5)))
+	caster.vfx_skill_target_uid = ""
+	_mark_vfx_targets(caster, targets)
 	for o in targets:
 		DamageService.apply_damage(o, maxi(1, int(round(float(caster.atk) * 0.85))), false)
 
 
 static func _skill_steel_order(caster: Dictionary, allies: Array, d: Dictionary) -> void:
 	var targets := _nearest_n(caster, allies, int(d.get("buff_targets", 3)))
+	caster.vfx_skill_target_uid = ""
+	_mark_vfx_targets(caster, targets)
 	for a in targets:
 		if not bool(a.get("alive", false)):
 			continue
@@ -444,9 +459,13 @@ static func _skill_steel_order(caster: Dictionary, allies: Array, d: Dictionary)
 
 static func _skill_time_slow(caster: Dictionary, opponents: Array, d: Dictionary) -> void:
 	StatusEffectService.add_status(caster, "dodge_bonus", 1.2, {"pct": 0.50})
+	var affected: Array = []
 	for o in opponents:
 		if bool(o.get("alive", false)) and _can_target(caster, o, opponents):
+			affected.append(o)
 			StatusEffectService.add_status(o, "slow", float(d.get("duration", 5.0)), {"move_pct": float(d.get("slow_pct", 0.35)), "attack_speed_pct": float(d.get("slow_pct", 0.35))})
+	caster.vfx_skill_target_uid = ""
+	_mark_vfx_targets(caster, affected)
 
 
 static func _skill_gold_charge(caster: Dictionary, opponents: Array, d: Dictionary, state: Dictionary) -> void:
@@ -455,6 +474,7 @@ static func _skill_gold_charge(caster: Dictionary, opponents: Array, d: Dictiona
 	# 这里把目标池收窄到"可达 lane"：隔断未释放时选不中别路目标 → 本路也没敌人就不放。
 	var target := _nearest(caster, _opponents_in_reachable_lanes(caster, opponents, state))
 	if target.is_empty(): return
+	_mark_vfx_target(caster, target)
 	caster.pos = target.pos + Vector2(-24, 0) if str(caster.team) == "player" else target.pos + Vector2(24, 0)
 	DamageService.apply_damage(target, int(d.get("skill_damage", 240)), true)
 	StatusEffectService.add_status(target, "stun", float(d.get("stun_sec", 1.2)), {})
@@ -462,10 +482,14 @@ static func _skill_gold_charge(caster: Dictionary, opponents: Array, d: Dictiona
 
 static func _skill_king_aura(caster: Dictionary, allies: Array, d: Dictionary) -> void:
 	var radius := float(d.get("aura_radius", 2)) * ATTACK_RANGE_SCALE
+	var affected: Array = []
 	for a in allies:
 		if bool(a.get("alive", false)) and caster.pos.distance_to(a.pos) <= radius:
+			affected.append(a)
 			StatusEffectService.add_status(a, "speed_bonus", 2.2, {"pct": float(d.get("ally_aspd_bonus", 0.25))})
 			a.crit_bonus = maxf(float(a.get("crit_bonus", 0.0)), float(d.get("ally_crit_bonus", 0.15)))
+	caster.vfx_skill_target_uid = ""
+	_mark_vfx_targets(caster, affected)
 
 
 static func _skill_shell_guard(caster: Dictionary, d: Dictionary) -> void:

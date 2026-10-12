@@ -1,0 +1,40 @@
+[gd_resource type="ShaderMaterial" load_steps=6 format=3]
+
+[ext_resource type="Shader" path="res://shaders/character_toon.gdshader" id="1_toon"]
+[ext_resource type="Shader" path="res://shaders/character_outline.gdshader" id="2_outline"]
+[ext_resource type="Texture2D" path="res://assets/models/allies_refined/ally_eternal_night/ally_eternal_night_body_albedo.png" id="3_albedo"]
+[ext_resource type="Texture2D" path="res://assets/models/allies_refined/ally_eternal_night/ally_eternal_night_body_emission.png" id="4_emission"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_outline"]
+render_priority = -1
+shader = ExtResource("2_outline")
+shader_parameter/outline_color = Color(0.04, 0.012, 0.03, 1)
+shader_parameter/outline_width = 0.018
+shader_parameter/outline_max_pixels = 1.5
+
+[resource]
+resource_name = "ally_eternal_night_body_material"
+next_pass = SubResource("ShaderMaterial_outline")
+shader = ExtResource("1_toon")
+shader_parameter/albedo_color = Color(1, 1, 1, 1)
+shader_parameter/albedo_texture = ExtResource("3_albedo")
+shader_parameter/shadow_tint = Color(0.58, 0.5, 0.66, 1)
+shader_parameter/light_threshold = 0.30
+shader_parameter/band_softness = 0.03
+shader_parameter/light_energy = 1.4
+shader_parameter/light_response = 1.5
+shader_parameter/rim_color = Color(0.75, 0.4, 1, 1)
+shader_parameter/rim_strength = 0.22
+shader_parameter/rim_power = 3.0
+shader_parameter/rim_threshold = 0.5
+shader_parameter/specular_color = Color(1, 0.86, 0.82, 1)
+shader_parameter/specular_amount = 0.35
+shader_parameter/specular_gloss = 0.75
+shader_parameter/specular_threshold = 0.55
+shader_parameter/use_normal_map = false
+shader_parameter/normal_map_depth = 0.0
+shader_parameter/emission_color = Color(0.72, 0.32, 1, 1)
+shader_parameter/emission_energy = 1.6
+shader_parameter/emission_mask = ExtResource("4_emission")
+shader_parameter/uv_scale = Vector2(1, 1)
+shader_parameter/uv_offset = Vector2(0, 0)

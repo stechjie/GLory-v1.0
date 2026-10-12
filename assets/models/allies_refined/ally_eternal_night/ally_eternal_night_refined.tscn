@@ -1,0 +1,43 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://assets/models/allies_refined/FormationAllyRefined.gd" id="1_script"]
+[ext_resource type="Material" path="res://assets/models/allies_refined/ally_eternal_night/ally_eternal_night_flame_material.tres" id="3_flame"]
+
+[sub_resource type="Animation" id="Animation_idle"]
+resource_name = "idle"
+length = 1.0
+loop_mode = 1
+
+[sub_resource type="Animation" id="Animation_attack"]
+resource_name = "attack"
+length = 1.0
+
+[sub_resource type="Animation" id="Animation_run"]
+resource_name = "run"
+length = 1.0
+loop_mode = 1
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_proxy"]
+_data = {
+&"attack": SubResource("Animation_attack"),
+&"idle": SubResource("Animation_idle"),
+&"run": SubResource("Animation_run")
+}
+
+[node name="AllyEternalNightRefined" type="Node3D"]
+script = ExtResource("1_script")
+idle_scene_path = "res://assets/models/allies/formation_ally_5_animated/idle.fbx"
+attack_scene_path = "res://assets/models/allies/formation_ally_5_animated/attack.fbx"
+run_scene_path = "res://assets/models/allies/formation_ally_5_animated/run.fbx"
+body_material_path = "res://assets/models/allies_refined/ally_eternal_night/ally_eternal_night_body_material.tres"
+display_name = "Eternal Night"
+action_scales = {}
+action_yaw_degrees = {}
+action_lift = {}
+flame_points = [{"bones": ["hand04.l"], "size": 0.42, "amount": 12, "lifetime": 0.6, "rise": 1.8, "radius": 0.06, "lift": 0.05}, {"bones": ["hand04.r"], "size": 0.42, "amount": 12, "lifetime": 0.6, "rise": 1.8, "radius": 0.06, "lift": 0.05}, {"bones": ["Bone.004"], "size": 0.42, "amount": 12, "lifetime": 0.6, "rise": 1.8, "radius": 0.1, "lift": 0.12}, {"bones": ["hand02.l"], "size": 0.4, "amount": 10, "lifetime": 0.6, "rise": 1.8, "radius": 0.08, "lift": 0.1}, {"bones": ["hand02.r"], "size": 0.4, "amount": 10, "lifetime": 0.6, "rise": 1.8, "radius": 0.08, "lift": 0.1}, {"bones": ["pifeng03.l"], "size": 0.36, "amount": 9, "lifetime": 0.6, "rise": 1.8, "radius": 0.06, "lift": 0.03}, {"bones": ["pifeng03.r"], "size": 0.36, "amount": 9, "lifetime": 0.6, "rise": 1.8, "radius": 0.06, "lift": 0.03}]
+flame_material = ExtResource("3_flame")
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+libraries/ = SubResource("AnimationLibrary_proxy")
+
+[node name="ModelRoot" type="Node3D" parent="."]

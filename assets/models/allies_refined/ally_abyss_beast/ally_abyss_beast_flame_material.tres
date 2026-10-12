@@ -1,0 +1,12 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://assets/models/allies_refined/shared/ally_flame.gdshader" id="1_flame"]
+
+[resource]
+resource_name = "ally_abyss_beast_flame_material"
+render_priority = 1
+shader = ExtResource("1_flame")
+shader_parameter/core_color = Color(0.7, 1, 0.4, 1)
+shader_parameter/mid_color = Color(0.35, 0.95, 0.05, 1)
+shader_parameter/edge_color = Color(0.02, 0.3, 0.02, 1)
+shader_parameter/intensity = 1.4

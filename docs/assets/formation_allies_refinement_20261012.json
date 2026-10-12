@@ -1,0 +1,270 @@
+{
+ "date": "2026-10-12",
+ "scope": "formation allies (data/formation/formation_allies.json)",
+ "changed_fields": "model only",
+ "rollback": {
+  "ally_flame_claw": "res://assets/models/allies/formation_ally_1_animated/formation_ally_1_animated.tscn",
+  "ally_soul_chain": "res://assets/models/allies/formation_ally_2_animated/formation_ally_2_animated.tscn",
+  "ally_abyss_beast": "res://assets/models/allies/formation_ally_3_animated/formation_ally_3_animated.tscn",
+  "ally_hell_inferno": "res://assets/models/allies/formation_ally_4_animated/formation_ally_4_animated.tscn",
+  "ally_eternal_night": "res://assets/models/allies/formation_ally_5_animated/formation_ally_5_animated.tscn"
+ },
+ "new": {
+  "ally_flame_claw": "res://assets/models/allies_refined/ally_flame_claw/ally_flame_claw_refined.tscn",
+  "ally_soul_chain": "res://assets/models/allies_refined/ally_soul_chain/ally_soul_chain_refined.tscn",
+  "ally_abyss_beast": "res://assets/models/allies_refined/ally_abyss_beast/ally_abyss_beast_refined.tscn",
+  "ally_hell_inferno": "res://assets/models/allies_refined/ally_hell_inferno/ally_hell_inferno_refined.tscn",
+  "ally_eternal_night": "res://assets/models/allies_refined/ally_eternal_night/ally_eternal_night_refined.tscn"
+ },
+ "original_files_untouched_sha256": {
+  "assets/models/allies/FormationAllyAnimated.gd": "cf0b4aefbe0fafd86ea5420b5bcd699acb7521deba8b4315abc9ffab76bac307",
+  "assets/models/allies/formation_ally_2_animated/attack.fbx": "4937451c9b521007d6ce0cc71102589cfe335fae141332d84fb8bd9eccd52faf",
+  "assets/models/allies/formation_ally_2_animated/body_material.tres": "71b9a0b5ec96ba776670c87393503acc2f6e2727a70a10acd87bb935ba255549",
+  "assets/models/allies/formation_ally_2_animated/formation_ally_2_animated.tscn": "9fa8c1011b767248bb2ca773ddcddb1fcb8a3c5bb0cf7dc6a3257a3392928e26",
+  "assets/models/allies/formation_ally_2_animated/idle.fbx": "ccf0ba233a402b70ae5d2d512abc7ea77d92ba33fe37752ece4719ec7db1b6c2",
+  "assets/models/allies/formation_ally_2_animated/normal.png": "d9d5ed3abd005219e44929c6a4c508db7ba3a22ae3faa8ad6317988fd77ea6d7",
+  "assets/models/allies/formation_ally_2_animated/run.fbx": "2567e01ef4b406417cc2d2dfc66c158c7861731ed3165c24aa7543c79e337f36",
+  "assets/models/allies/formation_ally_2_animated/run_0.png": "904c636363d032ef48d0a69c35c31812d0b24e1017f2ab020e2eed599f7963a6",
+  "assets/models/allies/formation_ally_2_animated/texture.png": "5ae22434edb00b7d2b83ee01bd7350b86dc83360f0202ff145ed766dba7e1341",
+  "assets/models/allies/formation_ally_3_animated/attack.fbx": "4bae00ba71057aa0cc837b72d0bf06fd03b57e147c742c00b3eb2aa96a392f26",
+  "assets/models/allies/formation_ally_3_animated/body_material.tres": "55d72639edd671e32148514016aa55ecc3ab48919a98b6f307af90dac70044e6",
+  "assets/models/allies/formation_ally_3_animated/formation_ally_3_animated.tscn": "91b862acddb82c52c4c04f0840bac08f5690deeb76358389300a2086d801a94f",
+  "assets/models/allies/formation_ally_3_animated/idle.fbx": "e17e30389dc093506729f47da5cd8ae2e42c423da0d4d6c326d2c4a933fcfe81",
+  "assets/models/allies/formation_ally_3_animated/normal.png": "78a8899d9cd5cf3dac156ba8612eabbd19e5016a436a456942cc4f2803449b02",
+  "assets/models/allies/formation_ally_3_animated/run.fbx": "f51be0d646afbb025c7e86d5c15949aec7049e3fbcbdfb2b8a607d968db8f325",
+  "assets/models/allies/formation_ally_3_animated/texture.png": "8f88b2da4c65e67100b7935873c247279f809cd944951a6763d282b01ae1ef04",
+  "assets/models/allies/abyss_beast_animated/AbyssBeastAnimated.gd": "671914d30b106174009a8db221928509d7fcd7130e860565ca54bcc676f69dea",
+  "assets/models/allies/abyss_beast_animated/abyss_beast_animated.tscn": "f01d7812e8bd6c841d2d3bd79326d11edaf3de903ded0dec7e12974211f5d479",
+  "assets/models/allies/abyss_beast_animated/abyss_beast_body_material.tres": "145b8ee0523796a7230c8eaf575a47c31e94dc5f081e3aa2f2197cc1c013ae53",
+  "assets/models/allies/formation_ally_5_animated/attack.fbx": "a49ff2f4e5fc4c7cd2d08e8ac66e776f675a086093541e1ea4fae84b0bb1c9a5",
+  "assets/models/allies/formation_ally_5_animated/body_material.tres": "3681526cb1d2fdfdb7dbe907ddc20a4fabf3f6aab66a5b1ed0d21f5306662e44",
+  "assets/models/allies/formation_ally_5_animated/emission.png": "22a032ac8c85be7b62d400d900a3677e59985d21ee9fadab30bb01291dc03fd9",
+  "assets/models/allies/formation_ally_5_animated/formation_ally_5_animated.tscn": "95c753dbdc05cd46e0f4451a3ca1df293d7770629454def0f4dff3fbc727dca6",
+  "assets/models/allies/formation_ally_5_animated/idle.fbx": "c8fcbb80c07a73f50ea8919041bde24dd47c182905b90fb2de5ac9ea5cf7e2b5",
+  "assets/models/allies/formation_ally_5_animated/run.fbx": "4e4579f2323b81108fae966c1e96c0054c3b647990820d398f0a8349633846a2",
+  "assets/models/allies/formation_ally_5_animated/texture.png": "d0224aa57f6b040ad48bf77624d0006f4ab1fd4cca2470760a17fd39d7ce6b45",
+  "assets/models/allies/formation_ally_4_animated/attack.fbx": "020828c5aec6bbe46fad318453af68e422962ad97958f94232235bc361e23a62",
+  "assets/models/allies/formation_ally_4_animated/body_material.tres": "f02c84cf4a3253457007c98d6b51d045019e5e85d2305f37a3722c33c6a34009",
+  "assets/models/allies/formation_ally_4_animated/emission.png": "280a00bfddc20a8d1b019c95e73bd02d95f154b4a52f25c0e7937e54be8a0221",
+  "assets/models/allies/formation_ally_4_animated/formation_ally_4_animated.tscn": "5bdeda7d1296a82a578c645c2fa567d420008e2579297e2f9f5fd064268d43dd",
+  "assets/models/allies/formation_ally_4_animated/idle.fbx": "26303a824b3fd7b9b76c8b26e41c8f4c594198ead38001153d5fdbd8f31942bd",
+  "assets/models/allies/formation_ally_4_animated/run.fbx": "27ae35c0630f38c44ca1f00e39605d4ca970958ea95603a442f9c9d17a47e01f",
+  "assets/models/allies/formation_ally_4_animated/run_0.png": "9e9a439478f4e027a9551aa6c8e9a4651b192c803765474ec31f4fccbd292c4f",
+  "assets/models/allies/formation_ally_4_animated/texture.png": "82680856192ab03387afc8ae669f42e948c70b45847ffe2dc577c974f01f7347",
+  "assets/models/allies/formation_ally_1_animated/attack.fbx": "a6449b1db704367bc2aed95c0f225f0f961cc9a957598005dd04473f1e2655cf",
+  "assets/models/allies/formation_ally_1_animated/flame_claw_albedo.png": "b178c81762032307336a0f21bba9cfc895876b7f8948994a375aaa1d2887e659",
+  "assets/models/allies/formation_ally_1_animated/flame_claw_body_material.tres": "5e2fcaff15f4a42b9398b974b61ccbde785b43dc6b13219e73c85fbf1b05d15c",
+  "assets/models/allies/formation_ally_1_animated/flame_claw_emission.png": "71587e633518c24c51d98bdbfed2def5c851d57ac05d7ecdb65b656addf566a6",
+  "assets/models/allies/formation_ally_1_animated/flame_claw_normal.png": "3051693e66228705bb0b693ae67c7b8b9c1061a435ff1125819bdc8c2d0c62ac",
+  "assets/models/allies/formation_ally_1_animated/formation_ally_1_animated.tscn": "17900355f0dbbab36ad5c5ba0c5a37b5074a51f58004188d647cbaf211fba622",
+  "assets/models/allies/formation_ally_1_animated/idle.fbx": "a6449b1db704367bc2aed95c0f225f0f961cc9a957598005dd04473f1e2655cf",
+  "assets/models/allies/formation_ally_1_animated/run.fbx": "a6449b1db704367bc2aed95c0f225f0f961cc9a957598005dd04473f1e2655cf"
+ },
+ "texture_report": {
+  "ally_flame_claw:body": {
+   "src": "formation_ally_1_animated/flame_claw_albedo.png",
+   "src_sha": "b178c81762032307",
+   "src_size": [
+    1024,
+    1024
+   ],
+   "used_by": [
+    "idle",
+    "attack",
+    "run"
+   ],
+   "black_under_uv": {
+    "idle": 0.0289,
+    "attack": 0.0289,
+    "run": 0.0289
+   },
+   "out_albedo": "ally_flame_claw/ally_flame_claw_body_albedo.png",
+   "out_emission": "ally_flame_claw/ally_flame_claw_body_emission.png",
+   "out_size": [
+    1024,
+    1024
+   ],
+   "uv_coverage": 0.6742,
+   "hot_fraction_of_coverage": 0.0225,
+   "nearblack_before": 0.1881,
+   "nearblack_after": 0.011,
+   "recolor": {
+    "hot_h": 34,
+    "body_h": null,
+    "body_pull": 0.0,
+    "tint_s": 0.0,
+    "body_s_mul": 1.0
+   },
+   "covered_hole_pixels_repainted": 18339,
+   "hole_blobs": 23,
+   "albedo_sha": "0652698153742605",
+   "emission_sha": "d3acfa23b359f3bc"
+  },
+  "ally_soul_chain:body": {
+   "src": "formation_ally_2_animated/texture.png",
+   "src_sha": "5ae22434edb00b7d",
+   "src_size": [
+    2048,
+    2048
+   ],
+   "used_by": [
+    "idle",
+    "attack",
+    "run"
+   ],
+   "black_under_uv": {
+    "idle": 0.0386,
+    "attack": 0.0386,
+    "run": 0.0386
+   },
+   "out_albedo": "ally_soul_chain/ally_soul_chain_body_albedo.png",
+   "out_emission": "ally_soul_chain/ally_soul_chain_body_emission.png",
+   "out_size": [
+    2048,
+    2048
+   ],
+   "uv_coverage": 0.601,
+   "hot_fraction_of_coverage": 0.1042,
+   "nearblack_before": 0.2011,
+   "nearblack_after": 0.0043,
+   "recolor": {
+    "hot_h": 188,
+    "body_h": 205,
+    "body_pull": 1.0,
+    "tint_s": 0.16,
+    "body_s_mul": 0.8
+   },
+   "covered_hole_pixels_repainted": 90904,
+   "hole_blobs": 23,
+   "albedo_sha": "204a5c92d9f5a07d",
+   "emission_sha": "3dc4a691578aa896"
+  },
+  "ally_abyss_beast:body": {
+   "src": "formation_ally_3_animated/texture.png",
+   "src_sha": "8f88b2da4c65e671",
+   "src_size": [
+    2048,
+    2048
+   ],
+   "used_by": [
+    "idle",
+    "attack",
+    "run"
+   ],
+   "black_under_uv": {
+    "idle": 0.0374,
+    "attack": 0.0374,
+    "run": 0.0374
+   },
+   "out_albedo": "ally_abyss_beast/ally_abyss_beast_body_albedo.png",
+   "out_emission": "ally_abyss_beast/ally_abyss_beast_body_emission.png",
+   "out_size": [
+    2048,
+    2048
+   ],
+   "uv_coverage": 0.6207,
+   "hot_fraction_of_coverage": 0.1018,
+   "nearblack_before": 0.1797,
+   "nearblack_after": 0.0044,
+   "recolor": {
+    "hot_h": 92,
+    "body_h": 105,
+    "body_pull": 1.0,
+    "tint_s": 0.14,
+    "body_s_mul": 0.55
+   },
+   "covered_hole_pixels_repainted": 88176,
+   "hole_blobs": 27,
+   "albedo_sha": "1b2d716ff41b2030",
+   "emission_sha": "d7a89a1e80fb7e93"
+  },
+  "ally_hell_inferno:body": {
+   "src": "formation_ally_4_animated/texture.png",
+   "src_sha": "82680856192ab033",
+   "src_size": [
+    4096,
+    4096
+   ],
+   "used_by": [
+    "idle",
+    "attack",
+    "run"
+   ],
+   "black_under_uv": {
+    "idle": 0.0041,
+    "attack": 0.0041,
+    "run": 0.0038
+   },
+   "out_albedo": "ally_hell_inferno/ally_hell_inferno_body_albedo.png",
+   "out_emission": "ally_hell_inferno/ally_hell_inferno_body_emission.png",
+   "out_size": [
+    2048,
+    2048
+   ],
+   "uv_coverage": 0.8561,
+   "hot_fraction_of_coverage": 0.0323,
+   "nearblack_before": 0.0443,
+   "nearblack_after": 0.0424,
+   "recolor": {
+    "hot_h": 10,
+    "body_h": null,
+    "body_pull": 0.0,
+    "tint_s": 0.0,
+    "body_s_mul": 1.0
+   },
+   "covered_hole_pixels_repainted": 1485,
+   "hole_blobs": 2,
+   "albedo_sha": "9cb10f4c42fd9c6a",
+   "emission_sha": "5bdae9dee6c9e5d6"
+  },
+  "ally_eternal_night:body": {
+   "src": "formation_ally_5_animated/texture.png",
+   "src_sha": "d0224aa57f6b040a",
+   "src_size": [
+    4096,
+    4096
+   ],
+   "used_by": [
+    "idle",
+    "attack",
+    "run"
+   ],
+   "black_under_uv": {
+    "idle": 0.0093,
+    "attack": 0.0093,
+    "run": 0.0093
+   },
+   "out_albedo": "ally_eternal_night/ally_eternal_night_body_albedo.png",
+   "out_emission": "ally_eternal_night/ally_eternal_night_body_emission.png",
+   "out_size": [
+    2048,
+    2048
+   ],
+   "uv_coverage": 0.5834,
+   "hot_fraction_of_coverage": 0.0578,
+   "nearblack_before": 0.0658,
+   "nearblack_after": 0.0615,
+   "recolor": {
+    "hot_h": 282,
+    "body_h": 272,
+    "body_pull": 1.0,
+    "tint_s": 0.14,
+    "body_s_mul": 0.95
+   },
+   "covered_hole_pixels_repainted": 4489,
+   "hole_blobs": 4,
+   "albedo_sha": "6bd188dfe900fc77",
+   "emission_sha": "9883aa97a7fb1357"
+  }
+ },
+ "round2": {
+  "signature_colours": {
+   "ally_flame_claw": "amber",
+   "ally_soul_chain": "cyan soul-fire",
+   "ally_abyss_beast": "acid green",
+   "ally_hell_inferno": "crimson hellfire",
+   "ally_eternal_night": "violet night-fire"
+  },
+  "body_fire": "FormationAllyRefined.flame_points -> BoneAttachment3D + CPUParticles3D, shared/ally_flame.gdshader"
+ }
+}

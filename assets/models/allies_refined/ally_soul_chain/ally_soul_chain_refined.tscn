@@ -1,0 +1,43 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://assets/models/allies_refined/FormationAllyRefined.gd" id="1_script"]
+[ext_resource type="Material" path="res://assets/models/allies_refined/ally_soul_chain/ally_soul_chain_flame_material.tres" id="3_flame"]
+
+[sub_resource type="Animation" id="Animation_idle"]
+resource_name = "idle"
+length = 1.0
+loop_mode = 1
+
+[sub_resource type="Animation" id="Animation_attack"]
+resource_name = "attack"
+length = 1.0
+
+[sub_resource type="Animation" id="Animation_run"]
+resource_name = "run"
+length = 1.0
+loop_mode = 1
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_proxy"]
+_data = {
+&"attack": SubResource("Animation_attack"),
+&"idle": SubResource("Animation_idle"),
+&"run": SubResource("Animation_run")
+}
+
+[node name="AllySoulChainRefined" type="Node3D"]
+script = ExtResource("1_script")
+idle_scene_path = "res://assets/models/allies/formation_ally_2_animated/idle.fbx"
+attack_scene_path = "res://assets/models/allies/formation_ally_2_animated/attack.fbx"
+run_scene_path = "res://assets/models/allies/formation_ally_2_animated/run.fbx"
+body_material_path = "res://assets/models/allies_refined/ally_soul_chain/ally_soul_chain_body_material.tres"
+display_name = "Soulchain Warden"
+action_scales = {"run": 580.0}
+action_yaw_degrees = {"run": 30.0}
+action_lift = {"run": 0.2}
+flame_points = [{"bones": ["Bone.010", "head"], "size": 0.42, "amount": 12, "lifetime": 0.6, "rise": 1.8, "radius": 0.12, "lift": 0.25}, {"bones": ["Bone.004", "chest"], "size": 0.56, "amount": 16, "lifetime": 0.6, "rise": 1.8, "radius": 0.2, "lift": 0.35}, {"bones": ["Bone.022", "tail3"], "size": 0.4, "amount": 10, "lifetime": 0.6, "rise": 1.8, "radius": 0.06, "lift": 0.05}, {"bones": ["front_paw.01.L", "frontleg2"], "size": 0.3, "amount": 8, "lifetime": 0.6, "rise": 1.8, "radius": 0.06, "lift": 0.05}, {"bones": ["front_paw.01.R", "R_frontleg2"], "size": 0.3, "amount": 8, "lifetime": 0.6, "rise": 1.8, "radius": 0.06, "lift": 0.05}]
+flame_material = ExtResource("3_flame")
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+libraries/ = SubResource("AnimationLibrary_proxy")
+
+[node name="ModelRoot" type="Node3D" parent="."]
