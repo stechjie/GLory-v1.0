@@ -13,7 +13,7 @@ from final_runtime import (
     parse_code_rules,
 )
 from final_excel_owned import overlay_excel_owned, patch_json_scalars
-from export_final_status import star_stat
+from export_final_status import build, star_stat
 
 ROOT = Path(__file__).resolve().parents[1]
 BOOK = ROOT / "docs/balance/final status.xlsx"
@@ -40,24 +40,20 @@ class FinalRuntimeTest(unittest.TestCase):
 
     def test_runtime_drift_is_detected(self) -> None:
         changed = copy.deepcopy(self.tables)
-        changed["data/shop.json"]["items"][0]["price"] += 1
-        self.assertTrue(any("data/shop.json" in e for e in check_runtime_files(ROOT, changed)))
+        changed["data/pets/pets.json"]["pets"][0]["value"] += 0.01
+        self.assertTrue(any("data/pets/pets.json" in e for e in check_runtime_files(ROOT, changed)))
 
     def test_human_page_drift_is_detected(self) -> None:
         changed = copy.deepcopy(self.tables)
         changed["data/units/race_units.json"]["units"][0]["hp"] += 1
         self.assertTrue(any("01_棋子基础" in e for e in check_business_pages(self.book, changed)))
 
-    def test_shop_page_drift_is_detected(self) -> None:
-        changed = copy.deepcopy(self.tables)
-        changed["data/shop.json"]["items"][-1]["price"] += 1
-        self.assertTrue(any("93_商城目录" in e for e in check_business_pages(self.book, changed)))
-
-    def test_avatar_frame_name_drift_is_detected(self) -> None:
-        changed = copy.deepcopy(self.tables)
-        changed["data/avatars.json"]["frames"][-1]["name"] = "different"
-        self.assertTrue(any("shop_frame_pink_sakura frame name" in e
-                            for e in check_business_pages(self.book, changed)))
+    def test_shop_is_independent_of_final_workbook(self) -> None:
+        self.assertNotIn("data/shop.json", FILES)
+        self.assertNotIn("data/avatars.json", FILES)
+        catalog, _, _ = build()
+        self.assertNotIn("shop_items", catalog)
+        self.assertNotIn("shop_item_id", catalog["pets"]["pet_mushroom"])
 
     def test_cached_star_columns_match_game_scaling(self) -> None:
         units = {item["id"]: item for item in self.tables["data/units/race_units.json"]["units"]}
@@ -167,10 +163,10 @@ class FinalRuntimeTest(unittest.TestCase):
         try:
             boss = book["06_Boss"]
             boss["D4"] = 3450  # 2300 base HP after the 1.5 battle multiplier
-            pet = book["03_宠物与商城"]
+            pet = book["03_宠物技能"]
             pet["E4"] = "12%"
             pet["F4"] = str(pet["F4"].value).replace("10%", "12%")
-            pet["N4"] = str(pet["N4"].value).replace("10%", "12%")
+            pet["J4"] = str(pet["J4"].value).replace("10%", "12%")
             tables = copy.deepcopy(self.tables)
             changes = overlay_excel_owned(book, tables)
             self.assertEqual(2300, tables["data/boss/bosses.json"]["bosses"][0]["hp"])
@@ -182,8 +178,8 @@ class FinalRuntimeTest(unittest.TestCase):
 
     def test_code_rule_drift_is_detected(self) -> None:
         changed = copy.deepcopy(self.rules)
-        changed["pet_draw.price"]["value"] += 1
-        self.assertTrue(any("pet_draw.price" in e for e in check_code_rules(ROOT, changed)))
+        changed["treasure.phoenix_revive_hp_rate"]["value"] += 0.1
+        self.assertTrue(any("treasure.phoenix_revive_hp_rate" in e for e in check_code_rules(ROOT, changed)))
 
 
 if __name__ == "__main__":
