@@ -1,5 +1,19 @@
 # Glory Beta 0.04
 
+## 2026-10-12（世界频道语音红字）：1 个必现故障 + 1 个 UI 调整
+
+用户真机反馈「世界频道用语音必定弹红字 `session_replaced`，语音发不出去」。**只改客户端 3 个文件，不动服务端、不需要新迁移。**
+
+- **🔴 红字根因：语音上传这条链路漏发登录会话号。** 单端登录（10-12 那条）给 HTTP 加了 `X-Glory-Session` 校验，`AccountManager._request()` 与 `RealtimeService` 的 WS 握手都带上了这一行，**唯独 `VoiceClipService._upload()` 自己另拼请求头时漏了它**。服务端 `current_claims`（`backend/app/routes/me.py:56`）拿不到会话号 → `login_sessions.require` 收到空串 → `uuid.UUID("")` 直接抛 → **一律回 409 `detail="session_replaced"`**；客户端又对非 2xx **无条件回显 `body.detail`**，于是英文内部标记被当玩家文案画成红字。症状因此是**必现、只出现在语音、与「是否真的在别处登录过」完全无关**（文字聊天走 `_request()`，带了会话头，所以一条都不报）。修法：`VoiceClipService._upload()` 补 `X-Glory-Session`（空串不加）与 `patch_header_lines()`，与另外两处对齐。
+- **纵深防御（同一个 409 的第二道）**：即使在 `AccountManager` 侧，本地伪造的 409 分支（`await refresh_session()` 期间被顶号导致代次变化）原本也会把 `session_replaced` 这个内部标记交给调用方 —— 现改为恒返回 `code=0`（调用方对它的既有语义是「保留输入、静默重试」），真「被顶号」统一走 `RealtimeService` 的 kicked 通道。另在 `VoiceClipService` 的非 2xx 分支识别 `409 + session_replaced`，改出中文「你的账号在其他设备登录」并调 `_mark_kicked()`，**任何情况下都不再把内部英文标记透给玩家**。
+- **UI：世界频道「按住说话」按钮改为麦克风图标**（用户要求"图标更好识别"）。`ui/components/VoiceRecordButton.gd` 是私聊 / 世界频道 / 对局内**三个渠道共用的同一颗按钮**，只改它、调用方零改动（`voice_clip_check` 的 `record_button_not_shared` 正是钉这个共用性）。图标复用仓里已有的 `assets/ui/voice/mic_on.svg`（未新增素材），`tooltip` 保留「按住说话 / Hold to talk」；`ResourceLoader.exists()` 守卫，素材丢失回退文字（避免打包缺贴图时留下一颗认不出的空按钮）；运行时 `load()` 而非 `preload()`（服务器包不带导入贴图）。
+
+验证：`--import` 零语法错误；门禁 `voice_clip` PASS 72/0、`cold_parse_chain` PASS 348/0；8 项静态检查（含「`_request` / `RealtimeService` 都带会话头」的对照）全通过。`AccountManager` / `VoiceRecordButton` / `VoiceClipService` 三文件指纹分别为 `b78d94f7…` / `11b70636…` / `9d62fe16…`。
+
+🔴 **部署：不需要更新或重启服务端**（纯客户端漏发请求头；服务端行为一直是对的）。同事若在用同一个后端也需打这个客户端补丁。
+
+★ 已知红（**非本轮引入**）：`chat_check` 的 `admission_flag_reset` 1 条 —— `_admitted = false` 出现在 `RealtimeService.gd` 的 `_mark_kicked` 里，而门禁只允许它在 `_mark_banned`；`git log -S` 追到提交 `e0d0a27`（「1012单端登录功能」，bytegamein，2026-10-12），属用户自己单端登录那批带来的既有红灯。**已按用户要求同步到本地 `GLory-v1.0`，未提交、未推送。**
+
 ## 2026-10-12（单端登录，本地待验收）
 
 新登录使旧端整局下线，旧端回启动入口并等待主动重新登录；HTTP/WS 校验持久化会话编号，后台续期不抢登，房间按已验签账号防重复入座。保留匿名账号凭证和对局恢复记录。需要迁移 `database/034_login_sessions.sql`，并配套更新账号后端、战斗服务器和客户端；已按用户要求同步到本地 GLory-v1.0 仓库，未提交、未推送、未部署。测试步骤和兼容边界见 [单端登录说明](docs/2026-10-12单端登录.md)。
