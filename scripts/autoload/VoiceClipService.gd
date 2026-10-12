@@ -226,6 +226,16 @@ func _upload(scope: String, wav: PackedByteArray) -> Dictionary:
 		"Authorization: Bearer %s" % token,
 		AccountManager.client_header_line(),
 	])
+	# 🔴 **必须带登录会话号。** 服务端 current_claims 会拿它比对 login_sessions
+	# （backend/app/routes/me.py:56 → login_sessions.require）：缺了它，服务端
+	# 收到的就是空串，uuid.UUID("") 直接抛 → 一律回 409 "session_replaced"，
+	# 而这个英文串会被下面当 detail 原样透出去 —— 表现是「一发语音就红字
+	# session_replaced」，而且**必现**（跟你在几台设备上登过没关系）。
+	# _request() 与 RealtimeService 的握手都带了这一行，唯独这里漏了。
+	# 空串就不加：没登录的请求本来就该被 401 挡掉，别送个头进去。
+	if not AccountManager.login_session_id().is_empty():
+		headers.append("X-Glory-Session: %s" % AccountManager.login_session_id())
+	headers.append_array(AccountManager.patch_header_lines())
 	var url := AccountConfig.endpoint("/v1/voice/clips?scope=%s" % scope)
 	var err := http.request_raw(url, headers, HTTPClient.METHOD_POST, wav)
 	if err != OK:
@@ -242,6 +252,12 @@ func _upload(scope: String, wav: PackedByteArray) -> Dictionary:
 	if json.parse(raw) == OK and json.data is Dictionary:
 		body = json.data
 	if code < 200 or code >= 300:
+		# 会话被顶：服务端的 detail 是内部标记 "session_replaced"，**不是给玩家看的文案**。
+		# 绝不能原样透出去（就是它变成了聊天里那行英文红字）。这里自己出中文，
+		# 并让 RealtimeService 去走正常的「被顶号」流程（回启动页提示重新登录）。
+		if code == 409 and str(body.get("detail", "")) == "session_replaced":
+			RealtimeService._mark_kicked()
+			return {"ok": false, "error": _text("你的账号在其他设备登录", "Signed in on another device")}
 		# 服务端的 detail 是给玩家看的中文（配额、太短、太长、没装 ffmpeg…），直接用。
 		return {"ok": false, "error": str(body.get("detail", _text("语音发送失败", "Voice message failed")))}
 	return {

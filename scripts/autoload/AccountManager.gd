@@ -1144,7 +1144,11 @@ func _request(
 	allow_refresh: bool = true,
 ) -> Dictionary:
 	var headers := PackedStringArray(["Content-Type: application/json", client_header_line()])
-	var request_generation := _session_generation
+	# ⚠️ 快照**不能**取在这里：下面 authed 分支里可能 await refresh_session()
+	# （一次真实 HTTP），那段时间代次若变化（登出 / 顶号），本请求会被误判成
+	# 「上一代的残留」而作废 —— 用户看到的就是聊天里一条 session_replaced 红字。
+	# 真正该判定的是「发出去之后、拿到响应之前有没有换代」，所以快照挪到
+	# 下面真正 request() 之前再取。
 	if not _login_session_id.is_empty():
 		headers.append("X-Glory-Session: %s" % _login_session_id)
 	headers.append_array(patch_header_lines())
@@ -1164,6 +1168,9 @@ func _request(
 
 	var url := AccountConfig.endpoint(path)
 	var body_text := "" if payload == null else JSON.stringify(payload)
+	# 快照取在**真正发出去**的这一刻（见上面 headers 那段注释）：
+	# 代次在此之前变化（例如续期期间被顶号）不该作废这次请求。
+	var request_generation := _session_generation
 	var err := http.request(url, headers, method, body_text)
 	if err != OK:
 		http.queue_free()
@@ -1171,8 +1178,15 @@ func _request(
 
 	var result: Array = await http.request_completed
 	if request_generation != _session_generation:
+		# 登录会话已换代（登出 / 顶号）：这次响应按约定作废。
+		# 🔴 **绝不把 "session_replaced" 这个内部标记交给调用方当玩家文案** ——
+		# 调用方（ChatScreen / WorldChatPanel / ChatService）会把它原样画成红字
+		# （「语音/聊天弹 session_replaced」那个 bug 就是这里泄漏出去的）。
+		# 恒返回 code=0（=「这次请求没有结论」）：调用方对 code=0 的既有处理是
+		# 保留输入、静默重试，而不是弹错误。真正的「被顶号」由 RealtimeService
+		# 的 kicked 通道负责（会走启动页，见 _mark_kicked）。
 		http.queue_free()
-		return {"code": 409, "error": "session_replaced"}
+		return {"code": 0, "error": ""}
 	http.queue_free()
 	var outcome := int(result[0])
 	var code := int(result[1])
