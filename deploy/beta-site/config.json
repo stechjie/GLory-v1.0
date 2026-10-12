@@ -4,9 +4,11 @@
     "url": "https://testflight.apple.com/join/W2p1ukJp"
   },
   "android": {
-    "ready": false,
-    "mode": "group",
-    "url": "https://play.google.com/apps/internaltest/4701302260400909295",
-    "group_url": ""
+    "ready": true,
+    "mode": "apk",
+    "url": "https://drive.google.com/file/d/19qnP6WQXTYhl43G5BFHFY7gpRPaPbJAk/view?usp=drivesdk",
+    "version": "0.0.21 (32)",
+    "size_label": "约 477 MiB",
+    "size_bytes": 500634760
   }
 }
