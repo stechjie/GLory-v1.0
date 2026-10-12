@@ -29,11 +29,11 @@ import json
 import logging
 import re
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from app import (admission, analytics, bans, db, matchmaking, party, players,
-                 realtime)
+                 realtime, login_sessions)
 from app.config import get_settings
 from app import patch_gate
 from app.jwt_verify import TokenError
@@ -110,7 +110,14 @@ async def realtime_endpoint(websocket: WebSocket) -> None:
     hub = realtime.hub()
     # register 会踢掉同账号的旧连接，所以必须在 accept 之后 ——
     # 同设备重连时被踢的那条可能就是上一次的自己。
-    await hub.register(conn)
+    async with login_sessions.ownership_lock:
+        try:
+            await login_sessions.require(claims.auth_uid, websocket.headers.get(login_sessions.HEADER))
+        except HTTPException:
+            await websocket.send_json({"t": "kicked", "reason": "another_device"})
+            await websocket.close(code=realtime.CLOSE_KICKED)
+            return
+        await hub.register(conn)
     # 运营数据：「今天来过」、在线时长从这一刻起算。只动内存，不碰数据库（app/analytics.py）。
     analytics.current().on_connect(player.player_id)
     await hub.send(conn, {
@@ -145,12 +152,14 @@ async def realtime_endpoint(websocket: WebSocket) -> None:
         # 排队中的人进掉线宽限（不立刻踢出队列，手机切后台是常态）；
         # 待确认阶段断线则当场解散那一桌 —— 让另外五个人早点回队列，
         # 比陪着一个已经不在的人干等 30 秒强（app/matchmaking.py）。
-        matchmaking.current().on_disconnect(conn.player_id)
+        if not hub.is_online(conn.player_id):
+            matchmaking.current().on_disconnect(conn.player_id)
         # 组队房间同样要给掉线的人记账（10.08 第 8 条「ghost 成员」）：
         # 没有这一句，断线玩家的房间成员项会永久残留 —— 别人看到他在房间里，
         # 他自己却回不来，也永远不会被剔除。真正摘人由宽限到期后的
         # prune_disconnected() 做（见 app/party.py）。
-        party.current().on_disconnect(conn.player_id)
+        if not hub.is_online(conn.player_id):
+            party.current().on_disconnect(conn.player_id)
         log.info("WS 断开 player=%s 在线连接=%d", conn.player_id, hub.connection_count())
 
 

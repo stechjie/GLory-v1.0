@@ -67,6 +67,19 @@ var ban_info: Dictionary = {}
 # 它一小时就过期，存它没有任何收益，却多一处会泄漏的地方（日志、崩溃报告、
 # 玩家发来的截图）。落盘的只有 refresh token，在 SaveManager.ACCOUNT_PATH。
 var _access_token := ""
+var _login_session_id := ""
+var _session_generation := 0
+
+func login_session_id() -> String:
+	return _login_session_id
+
+func invalidate_login_session() -> void:
+	_session_generation += 1
+	_access_token = ""
+	_login_session_id = ""
+	_token_expires_at = 0.0
+	_refresh_dead = true
+	state = State.IDLE
 
 # access token 的到期时刻（本机墙钟，unix 秒）。0 = 不知道 / 没登录。
 #
@@ -179,6 +192,10 @@ func login() -> void:
 
 
 func logout() -> void:
+	if not _access_token.is_empty() and not _login_session_id.is_empty():
+		_request(HTTPClient.METHOD_POST, "/v1/auth/logout", {}, true, false)
+	_login_session_id = ""
+	_session_generation += 1
 	SaveManager.clear_account_credentials()
 	_access_token = ""
 	_token_expires_at = 0.0
@@ -194,6 +211,7 @@ func logout() -> void:
 
 
 func _finish_success(body: Dictionary) -> void:
+	_login_session_id = str(body.get("session_id", ""))
 	player_id = str(body.get("player_id", ""))
 	player_name = str(body.get("player_name", ""))
 	_access_token = str(body.get("access_token", ""))
@@ -285,7 +303,7 @@ func refresh_session() -> bool:
 		return false
 
 	_refreshing = true
-	var result := await _post("/v1/auth/refresh", {"refresh_token": refresh_token})
+	var result := await _post("/v1/auth/refresh", {"refresh_token": refresh_token, "session_id": _login_session_id})
 	var code := int(result.get("code", 0))
 	var ok := false
 	if code == 200:
@@ -308,6 +326,9 @@ func refresh_session() -> bool:
 # 只换令牌，**不发 login_succeeded**：那个信号的订阅者（资料同步、在线状态补报、
 # 聊天连线）都是「刚登录」时才该做的事，续期时再跑一遍只会平白多几轮请求。
 func _apply_refreshed_session(body: Dictionary) -> bool:
+	if RealtimeService.is_kicked():
+		return false
+	_login_session_id = str(body.get("session_id", ""))
 	# 续期换回来的必须还是同一个玩家。对不上说明凭证串了（比如存档被换过），
 	# 这时绝不能在游戏开着的情况下悄悄换号。
 	if str(body.get("player_id", "")) != player_id:
@@ -1113,6 +1134,9 @@ func _request(
 	allow_refresh: bool = true,
 ) -> Dictionary:
 	var headers := PackedStringArray(["Content-Type: application/json", client_header_line()])
+	var request_generation := _session_generation
+	if not _login_session_id.is_empty():
+		headers.append("X-Glory-Session: %s" % _login_session_id)
 	headers.append_array(patch_header_lines())
 	if authed:
 		# 令牌快过期就先续，免得这一趟白跑一次 401（见「令牌续期」那一节）。
@@ -1136,6 +1160,9 @@ func _request(
 		return {"code": 0, "error": "请求发不出去（%s）" % error_string(err)}
 
 	var result: Array = await http.request_completed
+	if request_generation != _session_generation:
+		http.queue_free()
+		return {"code": 409, "error": "session_replaced"}
 	http.queue_free()
 	var outcome := int(result[0])
 	var code := int(result[1])
@@ -1171,6 +1198,9 @@ func _request(
 	if code >= 200 and code < 300:
 		return {"code": code, "body": body}
 
+	if code == 409 and str(body.get("detail", "")) == "session_replaced":
+		RealtimeService._mark_kicked()
+		return {"code": 409, "error": "你的账号在其他设备登录"}
 	# 401 且这一趟还没重试过：令牌被提前吊销、或者本机时钟不准。续一次、重试一次。
 	# 服务端的 401 出在令牌校验那一步，业务逻辑还没跑 —— 所以连 POST 重试也是安全的。
 	if code == 401 and authed and allow_refresh:

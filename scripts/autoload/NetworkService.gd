@@ -6157,6 +6157,10 @@ func _release_stale_seats_for_pid(peer_id: int, pid: String) -> bool:
 					break
 			if holder == peer_id:
 				continue   # 就是这条连接自己的座位，交给调用方那段 peer 逻辑处理
+			if holder > 0 and _peer_connected(holder):
+				if _peer_connected(peer_id):
+					_rpc_team_action_failed.rpc_id(peer_id, "该账号已在本局房间内")
+				return false
 			# 他已经主动「退出对局」过了（2026-10-11 改判：退出 = 彻底结束、能马上开新局）。
 			# 这个座位只剩「结算时认人」的用途（seat_pid 还留着），**不该再挡他开新局** ——
 			# 不加这一条，_revoke_seat_credentials 把 token 杀了也没用：这里是按账号 id
@@ -6194,6 +6198,11 @@ func _assign_peer_to_room(peer_id: int, room: Dictionary = {}, public_id: String
 		card: Dictionary = {}, forced_slot: int = -1) -> void:
 	if room.is_empty():
 		room = _find_or_create_room()
+	var account_pid := str(card.get("pid", ""))
+	if not account_pid.is_empty() and account_pid in (room.get("seat_pid", {}) as Dictionary).values():
+		if _peer_connected(peer_id):
+			_rpc_team_action_failed.rpc_id(peer_id, "该账号已在本局房间内")
+		return
 	# 显式写类型：_room_next_free_slot 转发给注入的服务，返回值是 Variant，
 	# 三元里推不出类型（GDScript 会直接报解析错误）。
 	var slot: int = forced_slot if forced_slot >= 0 else int(_room_next_free_slot(room))

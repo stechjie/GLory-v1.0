@@ -1708,12 +1708,9 @@ func _on_realtime_logout() -> void:
 	_kicked_notice_pending = false
 
 
-# 🔴 被顶号：**只在主菜单上弹**，对局中先挂着（设计文档第五节）。
-# 弹窗会直接打断操作；而战斗连接本来就不受这套机制影响，回主菜单再说清楚不迟。
+# 顶号立即终止游戏流程；启动页保留原因，只有玩家主动确认才能重新登录。
 func _on_realtime_kicked() -> void:
-	_kicked_notice_pending = true
-	if _menu != null and is_instance_valid(_menu) and _menu.is_inside_tree():
-		_show_kicked_notice_if_pending()
+	_return_to_login.call_deferred("你的账号在其他设备登录")
 
 
 func _show_kicked_notice_if_pending() -> void:
@@ -1725,9 +1722,9 @@ func _show_kicked_notice_if_pending() -> void:
 	# 而不是「连接已断开」「登录已失效」这类什么都没说的话。
 	# 今天没有登录界面可回（匿名账号），所以确认之后停在原地：聊天保持断开，
 	# 在聊天界面里点「在本设备重新连接」才会再连。
-	var body := "你的账号在另一台设备上登录了，这里的聊天已断开。可以在聊天界面里重新连接。"
+	var body := "你的账号在其他设备登录。请回到启动页重新登录。"
 	if en:
-		body = "Your account signed in on another device, so chat here was disconnected. You can reconnect from the Chat screen."
+		body = "Your account signed in on another device. Sign in again from the entry screen."
 	DialogService.info({
 		"request_id": "realtime_kicked",
 		"owner": self,

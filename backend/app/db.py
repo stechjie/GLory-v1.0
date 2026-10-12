@@ -82,6 +82,7 @@ def is_connected() -> bool:
 # 账号层当前应当存在的表。新增迁移文件时同步更新这里 ——
 # 它是 /v1/debug/schema 的判据，漏了就等于那张表没人检查。
 EXPECTED_TABLES: tuple[str, ...] = (
+    "login_sessions",
     "players",
     "player_bio",
     "player_identities",

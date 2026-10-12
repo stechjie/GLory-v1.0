@@ -99,7 +99,10 @@ class Hub:
         **必须在 websocket.accept() 之后调用** —— 踢旧连接会往它上面写数据，
         而这里可能就包含新连接自己（同设备重连时）。
         """
-        devices = self._by_player.setdefault(conn.player_id, {})
+        # Publish ownership before the first await: concurrent registrations and
+        # old socket finally blocks must see the newest connection immediately.
+        devices = self._by_player.get(conn.player_id, {}).copy()
+        self._by_player[conn.player_id] = {conn.device_session_id: conn}
 
         same_device = devices.pop(conn.device_session_id, None)
         if same_device is not None:
@@ -114,7 +117,6 @@ class Hub:
             devices.pop(other.device_session_id, None)
             await self._close(other, CLOSE_KICKED, notify_kicked=True)
 
-        devices[conn.device_session_id] = conn
 
     def unregister(self, conn: Connection) -> None:
         """连接断开后清表。**幂等** —— 正常关闭与异常关闭都会走到这里。"""
@@ -133,11 +135,11 @@ class Hub:
         if notify_kicked:
             # 先说明原因再关。客户端要靠这条消息把「被顶号」与「掉线」分开 ——
             # 只给一个关闭码的话，弱网下客户端多半来不及读就当成断线重连了。
-            await self.send(conn, {"t": "kicked", "reason": "another_device"})
+            await self._send_bounded(conn, {"t": "kicked", "reason": "another_device"})
         try:
             if conn.websocket.client_state is WebSocketState.CONNECTED:
-                await conn.websocket.close(code=code)
-        except (RuntimeError, OSError):
+                await asyncio.wait_for(conn.websocket.close(code=code), BROADCAST_SEND_TIMEOUT_SEC)
+        except (RuntimeError, OSError, asyncio.TimeoutError):
             # 对端已经没了。关一条死连接不该让新连接的登记流程失败。
             log.debug("关闭连接时对端已断开 player=%s", conn.player_id, exc_info=True)
 
@@ -207,8 +209,8 @@ class Hub:
             await self._send_bounded(conn, payload)
             try:
                 if conn.websocket.client_state is WebSocketState.CONNECTED:
-                    await conn.websocket.close(code=code)
-            except (RuntimeError, OSError):
+                    await asyncio.wait_for(conn.websocket.close(code=code), BROADCAST_SEND_TIMEOUT_SEC)
+            except (RuntimeError, OSError, asyncio.TimeoutError):
                 log.debug("关闭连接时对端已断开 player=%s", player_id, exc_info=True)
         return len(conns)
 

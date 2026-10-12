@@ -221,6 +221,8 @@ func _after_first_frame() -> void:
 #
 # 开关见 AccountConfig.AUTO_LOGIN_DEFAULT（默认开）。
 func _kick_off_account_login() -> void:
+	if RealtimeService.is_kicked():
+		return
 	if not AccountConfig.auto_login_enabled():
 		return
 	if AccountManager.is_logged_in():
@@ -339,6 +341,8 @@ func _tick_entry(delta: float, force := false) -> void:
 
 # 这一步要主动做的事：登录没发就发、失败了按退避重试、登录上了就连 WebSocket。
 func _drive_entry() -> void:
+	if RealtimeService.is_kicked():
+		return
 	if not AccountManager.is_logged_in():
 		match AccountManager.state:
 			AccountManager.State.IDLE:
@@ -434,6 +438,8 @@ func _entry_facts() -> Dictionary:
 # 这一步显示什么、放不放行。**纯函数** —— tools/bootstrap_check 直接喂事实表测它，
 # 不用真的去连账号后端。state 是稳定标识，文案在 _show_entry 里按它拼。
 static func entry_view(facts: Dictionary) -> Dictionary:
+	if bool(facts.get("kicked", false)):
+		return {"state": "kicked", "actions": true}
 	# 被封压过一切，包括「放行过」—— 游戏中被封回到这里时，名额那一侧还记着放行过。
 	if bool(facts.get("banned", false)):
 		return {"state": "banned", "actions": true}

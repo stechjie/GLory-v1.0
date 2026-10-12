@@ -199,6 +199,7 @@ func _open() -> void:
 		"%s: %s" % [ADMISSION_HEADER, _admission_intent()],
 	])
 	handshake_headers.append_array(AccountManager.patch_header_lines())
+	handshake_headers.append("X-Glory-Session: %s" % AccountManager.login_session_id())
 	_socket.handshake_headers = handshake_headers
 	var err := _socket.connect_to_url(_ws_url())
 	if err != OK:
@@ -359,14 +360,19 @@ func _mark_kicked() -> void:
 	if _kicked:
 		return
 	_kicked = true
+	_admitted = false
+	queue_position = 0
+	AccountManager.invalidate_login_session()
 	_want_connection = false
 	_close_socket(1000)
 	state = State.OFFLINE
 	set_process(false)
-	# 🔴 只发信号，**不在这里弹对话框、更不自己跳回登录界面**。
-	# 已定：被顶号必须由玩家手动确认之后才回登录页 —— 画面自己跳走
-	# 在玩家眼里就是崩溃或掉线，他会去截图报 bug，而不会想到"号被别人登了"。
-	# 谁弹、什么时候弹由界面层决定（对局中先挂提示，回主界面再弹）。
+	# Stop gameplay immediately; the entry screen explains the reason and waits
+	# for an explicit sign-in. Keep anonymous-account credentials on disk.
+	# This is a connection loss, not a voluntary match abandonment. reset()
+	# closes immediately and stops reconnect timers while retaining disk recovery.
+	NetworkService.reset()
+	VoiceService._leave()
 	kicked_by_other_device.emit()
 
 

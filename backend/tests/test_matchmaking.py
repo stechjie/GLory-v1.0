@@ -571,6 +571,10 @@ class _GatePool:
 
 @pytest.fixture
 def wired(monkeypatch: pytest.MonkeyPatch):
+    from app import login_sessions
+    async def valid_session(*args):
+        return None
+    monkeypatch.setattr(login_sessions, "require", valid_session)
     monkeypatch.setenv("GLORY_DISABLE_INSTANCE_LOCK", "true")
     monkeypatch.setenv("GLORY_SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setenv("GLORY_DATABASE_URL", "")

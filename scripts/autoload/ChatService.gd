@@ -180,7 +180,9 @@ func mark_seen_locally(code: String) -> void:
 # 所以必须是玩家亲手点的，**绝不能自动**（否则两台设备无限互踢）。
 func reconnect_here() -> void:
 	_set_kicked(false)
-	RealtimeService.start()
+	await AccountManager.login()
+	if AccountManager.is_logged_in():
+		RealtimeService.start()
 
 
 # 登出时由 Main 调。上一个账号的红点不该留给下一个人。
