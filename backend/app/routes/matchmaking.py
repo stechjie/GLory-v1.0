@@ -80,6 +80,8 @@ _GATE_TEXT = {
     ranked.GATE_WINDOW_CLOSED: "排位每天 19:00 - 23:00 开放",
     ranked.GATE_BANNED: "你被暂时禁止排队，稍后再试",
     ranked.GATE_CREDIT_TOO_LOW: "信誉分过低，暂时不能排这个模式",
+    # 人工禁排位（app/sanctions.py）。和 credit_banned 分开 —— 两者原因不同、解除方式也不同。
+    ranked.GATE_SANCTIONED: "你的排位资格已被暂停",
     # 全局开关（app/service_control.py）。三个码分开，客户端要显示的话不一样。
     "service_maintenance": "服务器正在维护，暂时不能开始新对局",
     "matchmaking_disabled": "排位功能暂时关闭",

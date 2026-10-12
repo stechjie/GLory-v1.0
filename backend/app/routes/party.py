@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app import (chat, db, friends, matchmaking, party, party_voice, players, profile, ranked,
-                 realtime, service_control, shop, text_guard)
+                 realtime, sanctions, service_control, shop, text_guard)
 from app.config import get_settings
 from app.jwt_verify import Claims
 from app.rate_limit import RateLimited, SlidingWindowLimiter
@@ -147,9 +147,16 @@ async def voice_token(claims: Annotated[Claims, Depends(current_claims)]) -> Voi
         raise HTTPException(status_code=503, detail=str(exc)) from None
     card = room.profiles[me.player_id]
     room.voice_used = True
+    # 禁语音（app/sanctions.py）：令牌照发、房照进、照样听得到，只是不能说
+    # （2026-10-12 用户拍板「禁说不禁听」）。
+    #
+    # 🔴 这只挡**新签的**令牌。对局中途被罚的人手上那张旧的还能再用 10 分钟
+    # （LiveKit 只在首次进房查令牌）—— 那一半要靠 UpdateParticipant，还没做。
+    async with db.pool().acquire() as conn:
+        muted = await sanctions.is_sanctioned(conn, me.player_id, sanctions.SCOPE_VOICE)
     return VoiceResponse(**party_voice.issue(
         config, room.id, room.voice_epoch,
-        card["friend_code"], card["player_name"]))
+        card["friend_code"], card["player_name"], can_publish=not muted))
 
 
 @router.post("", response_model=StateResponse)

@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import logging
 
-from app import db, friends, presence, service_control
+from app import db, friends, presence, sanctions, service_control
 
 log = logging.getLogger("glory.schema")
 
@@ -56,6 +56,9 @@ _PREPARED: list[tuple[str, str]] = [
     ("service_control._READ_STATE", service_control._READ_STATE),
     # 入场名册（035）。这条挂了维护会把正在打的人也踢掉。
     ("service_control._CLEAR_MATCH", service_control._CLEAR_MATCH),
+    # 人工处罚（036）。这条 prepare 得过不代表能用 —— 它只校验列名，
+    # 而 036 真正改的是 check 约束（见下面的探针）。
+    ("sanctions._LIVE_SANCTION", sanctions._LIVE_SANCTION),
 ]
 
 # 第二类：prepare 看不见的东西。只收「不是加列」的迁移，一条迁移一行。
@@ -67,6 +70,20 @@ _PROBES: list[tuple[str, str, str]] = [
         " where conname = 'chat_message_kind_allowed'"
         "   and pg_get_constraintdef(oid) like '%party_invite%'",
         "组队/排位房点「邀请好友」会 HTTP 500（10-07 踩过一次）",
+    ),
+    (
+        "036 player_mutes.scope 放行 voice / ranked",
+        "select 1 from pg_constraint"
+        " where conname = 'mute_scope'"
+        "   and pg_get_constraintdef(oid) like '%voice%'"
+        "   and pg_get_constraintdef(oid) like '%ranked%'",
+        "后台下「禁语音」「禁排位」会失败；和 030 同一个形状 —— 语句完全合法，"
+        "要到真 insert 那一刻才被约束拒，prepare 看不见",
+    ),
+    (
+        "036 unmute_player 带 scope 参数",
+        "select 1 from pg_proc where proname = 'unmute_player' and pronargs = 4",
+        "🔴 解除世界频道禁言会**连带解除禁语音和禁排位**（旧版函数不分 scope 全撤）",
     ),
     (
         "031 one_time_grants 表",

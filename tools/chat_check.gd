@@ -83,6 +83,7 @@ func _ready() -> void:
 	_case_rpc_count_pinned()
 	_case_ws_constants_match_backend()
 	_case_admission_contract_matches_backend()
+	_case_service_control_contract_matches_backend()
 	_case_chat_constants_match_backend()
 	_case_token_refresh_wired()
 	_case_chat_entry_wired()
@@ -201,6 +202,91 @@ func _case_admission_contract_matches_backend() -> void:
 
 
 # --- 8. 🔴 私聊（批次 C）的跨语言常量 --------------------------------------------
+
+# 全局维护 / 关闭匹配（backend/app/service_control.py，OPS-05）。
+#
+# 同 admission 那条的理由：一个约定写在两种语言里，分开改没有任何症状。
+#   关闭码 4004 —— 对不上的话客户端把「服务器在维护」当成普通掉线，一直重连
+#   消息类型 service —— 对不上的话开关变了客户端收不到，维护遮罩永远不弹
+func _case_service_control_contract_matches_backend() -> void:
+	var py := FileAccess.get_file_as_string("res://backend/app/service_control.py")
+	var gd := FileAccess.get_file_as_string("res://scripts/autoload/RealtimeService.gd")
+	_h.item()
+	if py.is_empty() or gd.is_empty():
+		_h.fail("service_control_source_unreadable", "读不到 service_control.py 或 RealtimeService.gd")
+		return
+	_h.expect(true, "", "")
+
+	_h.item()
+	_h.expect(py.contains("CLOSE_MAINTENANCE = 4004") and gd.contains("const CLOSE_MAINTENANCE := 4004"),
+		"service_close_code_drift",
+		"service_control.CLOSE_MAINTENANCE 与 RealtimeService.CLOSE_MAINTENANCE 不再都是 4004 —— "
+		+ "客户端会把维护当成普通掉线，一直重连，玩家只看到「连接断开」。")
+
+	_h.item()
+	_h.expect(py.contains("MESSAGE_TYPE = \"service\"") and gd.contains("const SERVICE_PUSH_TYPE := \"service\""),
+		"service_message_type_drift",
+		"service_control.MESSAGE_TYPE 与 RealtimeService.SERVICE_PUSH_TYPE 不再都是 \"service\" —— "
+		+ "开关变了客户端收不到，维护遮罩永远不弹。")
+
+	# 🔴 关闭码兜底不许删：Godot 收到关闭帧之后就不再给读剩下的包
+	# （见 RealtimeService 里 CLOSE_BANNED 那段注释），所以「先发消息再关」的那条消息
+	# 多半读不到，关闭码是唯一可靠的信号。
+	_h.item()
+	_h.expect(gd.contains("if code == CLOSE_MAINTENANCE:"),
+		"service_close_code_not_handled",
+		"RealtimeService 没有按关闭码兜底处理维护 —— 握手被挡下时那条说明消息读不到，"
+		+ "玩家会停在一个什么都不说的「连接断开」上。")
+
+	# 遮罩必须是不可穿透的：点外面不关、返回键也不关（任务书 OPS-05 原始要求 A）。
+	var main := FileAccess.get_file_as_string("res://scenes/main/Main.gd")
+	_h.item()
+	_h.expect(main.contains("\"request_id\": \"service_maintenance\"")
+			and main.contains("\"dismiss_on_backdrop\": false")
+			and main.contains("\"persistent\": true"),
+		"maintenance_modal_not_blocking",
+		"维护遮罩不是不可穿透的：少了 dismiss_on_backdrop=false 或 persistent=true，"
+		+ "玩家点外面 / 按返回键就能绕过去继续玩。")
+
+	# 「关闭匹配」的提示文案由服务端给（backend/app/routes/matchmaking.py 的 _GATE_TEXT），
+	# 客户端只负责把它显示出来。这条盯着那根线没被掐断 ——
+	# 掐断了玩家会看到一句什么也没说的「进不了队列」，而闸本身照常工作，没有任何报错。
+	var panel := FileAccess.get_file_as_string("res://scenes/menu/MatchQueuePanel.gd")
+	_h.item()
+	_h.expect(panel.contains("_fail(str(result.get(\"error\""),
+		"queue_reason_not_surfaced",
+		"MatchQueuePanel 不再显示服务器给的失败原因了 —— 「排位功能暂时关闭」"
+		+ "这类提示会变成一句笼统的错误。")
+
+	# 对局名册（OPS-05 第三轮）：战斗服务器写、账号服务器读，同机文件。
+	# 协议号和新鲜度口径两边各写一份，分开改没有任何症状 ——
+	# 症状要到「维护时踢错人」那一刻才显形，而那时已经踢了。
+	var dss := FileAccess.get_file_as_string("res://scripts/multiplayer/DedicatedServerService.gd")
+	var sc := FileAccess.get_file_as_string("res://backend/app/service_control.py")
+	_h.item()
+	_h.expect(dss.contains("const MATCH_ROSTER_PROTOCOL := 1")
+			and sc.contains("int(data.get(\"protocol\", 0)) != 1"),
+		"match_roster_protocol_drift",
+		"对局名册的协议号两边对不上了 —— 账号服务器会把每一份名册都判成不认识，"
+		+ "悄悄退回 45 分钟的粗判，维护时该踢的不踢。")
+	# 🔴 战斗服务器写得比账号服务器的过期线勤，否则名册会周期性「过期」。
+	_h.item()
+	var interval := dss.contains("const MATCH_ROSTER_INTERVAL_SEC := 5.0")
+	var max_age := sc.contains("ROSTER_MAX_AGE_SEC = 30.0")
+	_h.expect(interval and max_age,
+		"match_roster_cadence_drift",
+		"名册的写入间隔（战斗服务器 5 秒）或过期线（账号服务器 30 秒）变了。"
+		+ "写得比过期线慢的话，名册会周期性被判成陈旧，这套东西就白做了 —— "
+		+ "改之前先确认过期线仍留着好几次写入的余量。")
+
+	# ModalStack 真的要认 persistent，否则上面那个参数只是摆设。
+	var stack := FileAccess.get_file_as_string("res://ui/services/ModalStack.gd")
+	_h.item()
+	_h.expect(stack.contains("\"persistent\": bool(opts.get(\"persistent\", false))")
+			and _chat_fn_body(stack, "func handle_back_request() -> bool:").contains("persistent"),
+		"modal_persistent_not_honoured",
+		"ModalStack 没有真正实现 persistent（返回键照样关得掉），维护遮罩形同虚设。")
+
 
 func _case_chat_constants_match_backend() -> void:
 	# 同上一条：同一个约定写在三种地方（Python / SQL / GDScript），分开改不会有任何症状。

@@ -43,6 +43,7 @@ import secrets
 import uuid
 
 from app import shop
+from app import sanctions
 
 log = logging.getLogger("glory.ranked")
 
@@ -482,22 +483,34 @@ GATE_OK = ""
 GATE_WINDOW_CLOSED = "ranked_window_closed"
 GATE_CREDIT_TOO_LOW = "credit_too_low"
 GATE_BANNED = "credit_banned"
+# 🔴 人工禁排位（app/sanctions.py）。和上面那条**必须是两个码**：
+# 一个是系统按跑路行为自动算的、有自己的到期时间，一个是运营手动下的。
+# 合成一个码的话，玩家看到的原因会说错，后台也分不清该撤哪一个。
+GATE_SANCTIONED = "ranked_sanction"
 
 
 async def queue_gate(conn, player_id: uuid.UUID, mode: str,
                      now_utc: dt.datetime | None = None) -> str:
     """能不能排这个模式。返回空串 = 能，否则是原因码。
 
-    三道闸，顺序有讲究：
+    四道闸，顺序有讲究：
       1. **时间窗口**（只管排位）—— 最常见、最好解释，先说
-      2. 禁赛到期时间
-      3. 信誉分阈值
+      2. **人工禁排位**（只管排位）—— 运营明确下的，优先于系统算出来的
+      3. 信誉分禁赛的到期时间
+      4. 信誉分阈值
+
+    ⚠️ 人工禁排位（sanctions）与信誉分自动禁赛也是两件事，各判各的 ——
+    撤销人工处罚不能顺带把自动禁赛清掉（任务书 §一）。
 
     ⚠️ 禁赛与信誉分是**两件事**，不能合并：禁赛有到期时间，信誉分低没有。
     合并的话禁赛一到期，信誉分那条限制会跟着被解除（014 里那一列的注释同此）。
     """
     if mode == "ranked" and not accepting_now(now_utc):
         return GATE_WINDOW_CLOSED
+    # 人工禁排位。只管排位，休闲照常（任务书 §四.2「默认不限制休闲」）。
+    # 放在信誉分前面：它是运营明确下的，比系统算出来的更该优先解释给玩家听。
+    if mode == "ranked" and await sanctions.is_sanctioned(conn, player_id, sanctions.SCOPE_RANKED):
+        return GATE_SANCTIONED
     row = await conn.fetchrow(
         "select score, banned_until from player_credit where player_id = $1", player_id)
     if row is None:

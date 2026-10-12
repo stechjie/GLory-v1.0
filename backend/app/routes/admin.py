@@ -157,20 +157,28 @@ async def unban(player_id: uuid.UUID, body: NoteBody, who: Writer) -> dict:
     return await admin.unban(who, player_id, body.note)
 
 
+class ScopedNoteBody(BaseModel):
+    note: str = Field(default="", max_length=500)
+    # 解除哪一个范围。不填 = world —— 老的后台页面只会解世界频道禁言，行为不变。
+    scope: str = "world"
+
+
 class MuteBody(BaseModel):
     hours: int | None = None     # 不填 = 永久
     reason: str = Field(max_length=200)
     note: str = Field(default="", max_length=500)
+    # world / voice / ranked（database/036）。不填 = world，老的后台页面照常能用。
+    scope: str = "world"
 
 
 @router.post("/admin/api/players/{player_id}/mute")
 async def mute(player_id: uuid.UUID, body: MuteBody, who: Writer) -> dict:
-    return await admin.mute(who, player_id, body.hours, body.reason, body.note)
+    return await admin.mute(who, player_id, body.hours, body.reason, body.note, body.scope)
 
 
 @router.post("/admin/api/players/{player_id}/unmute")
-async def unmute(player_id: uuid.UUID, body: NoteBody, who: Writer) -> dict:
-    return await admin.unmute(who, player_id, body.note)
+async def unmute(player_id: uuid.UUID, body: ScopedNoteBody, who: Writer) -> dict:
+    return await admin.unmute(who, player_id, body.note, body.scope)
 
 
 class GrantBody(BaseModel):

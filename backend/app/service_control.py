@@ -32,7 +32,9 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import json
 import logging
+import pathlib
 import time
 import uuid
 
@@ -257,6 +259,20 @@ def maintenance_message(state: State) -> dict:
             "expected_back_at": state.expected_back_at.isoformat() if state.expected_back_at else None}
 
 
+def push_message(state: State) -> dict:
+    """开关变了，主动推给所有在线玩家的那条消息。
+
+    内容就是 `public_view` 那几个公开字段，外加一个 `t` 让客户端认得出来。
+    **不含** actor / change_reason —— 那是内部信息。
+
+    客户端拿到它就能立刻弹维护提示，不用等轮询（任务书 §七.3.5）。
+    🔴 发它必须用 `hub.broadcast`（内部 gather + 每条超时），
+    绝不能自己 for 循环 await `hub.send` —— 那正是 2026-10-11 把账号服务器
+    搞卡的写法：一个卡死的 socket 就能拖住全部。
+    """
+    return {"t": MESSAGE_TYPE, "state": "switches", **public_view(state)}
+
+
 def public_view(state: State) -> dict:
     """发给客户端的公开字段。**不含** actor / change_reason —— 那是内部信息。"""
     return {
@@ -307,20 +323,86 @@ async def clear_player(player_id: uuid.UUID) -> None:
         log.warning("清理入场登记失败 player=%s", player_id, exc_info=True)
 
 
-async def players_in_match() -> set[uuid.UUID] | None:
-    """当前名册上的所有人。返回 None = 读不出来（调用方必须按「谁都别踢」处理）。
+# 战斗服务器那份名册多久没刷新就算陈旧。它每 5 秒写一次，给 6 次的余量。
+ROSTER_MAX_AGE_SEC = 30.0
+
+# 名册新鲜时，入场登记只再多算这么久 —— 覆盖「刚领到名片、还在连战斗服务器」
+# 的那一小撮人：他们还没进任何房间，所以不在名册上，但确实不该被踢。
+# 名片本身只活 60 秒，加上加载时间，两分钟足够。
+CONNECTING_GRACE_SEC = 120.0
+
+
+def _read_battle_roster(path: str, now: float | None = None) -> set[uuid.UUID] | None:
+    """读战斗服务器写的那份名册。返回 None = 没配 / 读不到 / 太旧 / 形状不对。
+
+    **自己不抛异常**，任何问题都返回 None 让调用方退回启发式 ——
+    这个文件是来提高精度的，不该成为新的故障源。
+    """
+    if not path:
+        return None
+    try:
+        raw = pathlib.Path(path).read_text(encoding="utf-8")
+        data = json.loads(raw)
+        if not isinstance(data, dict) or int(data.get("protocol", 0)) != 1:
+            return None
+        age = (time.time() if now is None else now) - float(data.get("generated_at", 0.0))
+        if age > ROSTER_MAX_AGE_SEC or age < -ROSTER_MAX_AGE_SEC:
+            # 太旧 = 战斗服务器多半挂了或没配；太「新」= 两台机器的钟对不上，
+            # 两种都不能信。退回启发式，宁可少踢几个人。
+            log.warning("对局名册不新鲜（差 %.1f 秒），这一次退回入场登记", age)
+            return None
+        out: set[uuid.UUID] = set()
+        for item in data.get("pids", []):
+            try:
+                out.add(uuid.UUID(str(item)))
+            except (ValueError, AttributeError, TypeError):
+                continue   # 一个坏值不该让整份名册作废
+        return out
+    except FileNotFoundError:
+        return None
+    except Exception:  # noqa: BLE001
+        log.warning("读对局名册失败，这一次退回入场登记：%s", path, exc_info=True)
+        return None
+
+
+def _configured_roster_path() -> str:
+    """名册文件路径。读配置而不是让每个调用点自己传 —— 漏传一处就是
+    「那条路上悄悄退回了粗判」，而且不会报错。"""
+    try:
+        from app.config import get_settings
+
+        return get_settings().battle_match_roster_file.strip()
+    except Exception:  # noqa: BLE001 - 配置读不出来不该让维护判断整个失效
+        return ""
+
+
+async def players_in_match(roster_path: str | None = None) -> set[uuid.UUID] | None:
+    """此刻不该被维护踢掉的人。返回 None = 读不出来（调用方必须按「谁都别踢」处理）。
 
     🔴 返回 None 和返回空集合是两回事，别让调用方把它们混在一起：
     空集合 = 确实没人在打，可以全踢；None = 不知道，一个都不能踢。
+
+    两个来源，精度不同：
+
+      1. **战斗服务器的名册**（权威）—— 它知道哪些房间真的在打。
+         新鲜时用它，再并上「最近 2 分钟领过名片」的人（那些人还在连，
+         还没进房间，所以不在名册上，但同样不该被踢）。
+      2. **入场登记**（启发式）—— 名册读不到时的退路：「45 分钟内领过名片」。
+         粗，但方向是安全的那一边（宁可多留几个人，也不踢掉正在打的）。
     """
     if not db.is_connected():
         return None
+    roster = _read_battle_roster(
+        _configured_roster_path() if roster_path is None else roster_path)
+    window = CONNECTING_GRACE_SEC if roster is not None else float(MATCH_ENTRY_MAX_AGE_SEC)
     try:
-        rows = await db.pool().fetch(_PLAYERS_IN_MATCH, float(MATCH_ENTRY_MAX_AGE_SEC))
+        rows = await db.pool().fetch(_PLAYERS_IN_MATCH, window)
     except Exception:  # noqa: BLE001
-        log.warning("读入场名册失败，按「谁都别踢」处理", exc_info=True)
-        return None
-    return {r["player_id"] for r in rows}
+        log.warning("读入场登记失败，按「谁都别踢」处理", exc_info=True)
+        # 名册读到了就还能用它顶，只是少了正在连的那一小撮。
+        return roster
+    entries = {r["player_id"] for r in rows}
+    return entries if roster is None else (roster | entries)
 
 
 async def kick_lobby_players() -> dict:

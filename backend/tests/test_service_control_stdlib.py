@@ -10,7 +10,11 @@
 """
 
 import asyncio
+import json
+import pathlib
+import shutil
 import sys
+import tempfile
 import time
 import unittest
 import uuid
@@ -284,6 +288,144 @@ class MatchEntryTests(unittest.TestCase):
         """入场登记必须活得比匹配分配（300 秒）久得多，否则就白做了 ——
         用那份分配判「在不在打」正是本模块要取代的做法。"""
         self.assertGreater(sc.MATCH_ENTRY_MAX_AGE_SEC, 300 * 4)
+
+
+class PushTests(unittest.TestCase):
+    def test_push_carries_the_same_verdict_as_the_public_view(self):
+        st = sc.State(maintenance=True, matchmaking=True, source="db")
+        msg, view = sc.push_message(st), sc.public_view(st)
+        for key in view:
+            self.assertEqual(view[key], msg[key], "推送和查询对 %s 说法不一致" % key)
+
+    def test_push_is_tagged_so_the_client_can_route_it(self):
+        msg = sc.push_message(sc.State(source="db"))
+        self.assertEqual(sc.MESSAGE_TYPE, msg["t"])
+        self.assertEqual("switches", msg["state"])
+
+    def test_push_never_leaks_internal_fields(self):
+        msg = sc.push_message(sc.State(source="db", actor="admin@x", change_reason="内部讨论"))
+        blob = repr(msg)
+        self.assertNotIn("admin@x", blob)
+        self.assertNotIn("内部讨论", blob)
+
+
+class BattleRosterTests(unittest.TestCase):
+    """战斗服务器那份名册（OPS-05 第三轮）。
+
+    它存在的意义是把「谁在对局中」从 45 分钟的粗判换成真相。所以这里盯两头：
+    新鲜时窗口要真的收窄；任何一点不对劲都必须安全地退回粗判，
+    绝不能因为这个文件有问题就去踢正在打的人。
+    """
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.path = str(pathlib.Path(self.dir) / "roster.json")
+        self.a, self.b = uuid.uuid4(), uuid.uuid4()
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def _write(self, **over):
+        body = {"protocol": 1, "generated_at": time.time(), "pids": [str(self.a)]}
+        body.update(over)
+        pathlib.Path(self.path).write_text(json.dumps(body), encoding="utf-8")
+
+    def test_fresh_roster_is_read(self):
+        self._write()
+        self.assertEqual({self.a}, sc._read_battle_roster(self.path))
+
+    def test_unconfigured_path_is_none(self):
+        self.assertIsNone(sc._read_battle_roster(""))
+
+    def test_missing_file_is_none(self):
+        self.assertIsNone(sc._read_battle_roster(self.path + ".nope"))
+
+    def test_stale_roster_is_rejected(self):
+        self._write(generated_at=time.time() - sc.ROSTER_MAX_AGE_SEC - 1)
+        self.assertIsNone(sc._read_battle_roster(self.path),
+                          "拿着过期名单去踢人 = 踢掉正在打的人")
+
+    def test_clock_skew_into_the_future_is_rejected(self):
+        # 两台机器的钟对不上时，「未来」的时间戳和过期一样不可信。
+        self._write(generated_at=time.time() + sc.ROSTER_MAX_AGE_SEC + 60)
+        self.assertIsNone(sc._read_battle_roster(self.path))
+
+    def test_wrong_protocol_is_rejected(self):
+        self._write(protocol=2)
+        self.assertIsNone(sc._read_battle_roster(self.path))
+
+    def test_garbage_file_is_rejected(self):
+        pathlib.Path(self.path).write_text("not json at all", encoding="utf-8")
+        self.assertIsNone(sc._read_battle_roster(self.path))
+
+    def test_one_bad_pid_does_not_void_the_roster(self):
+        self._write(pids=[str(self.a), "not-a-uuid", str(self.b)])
+        self.assertEqual({self.a, self.b}, sc._read_battle_roster(self.path))
+
+    def test_fresh_roster_shrinks_the_entry_window(self):
+        """🔴 这条就是做名册的全部意义：名册在，就不该再按 45 分钟放行。"""
+        pool = _install(_FakePool(rows=[]))
+        self._write()
+        asyncio.run(sc.players_in_match(self.path))
+        self.assertEqual((sc.CONNECTING_GRACE_SEC,), pool.calls[-1][2])
+
+    def test_without_roster_the_long_window_is_used(self):
+        pool = _install(_FakePool(rows=[]))
+        asyncio.run(sc.players_in_match(""))
+        self.assertEqual((float(sc.MATCH_ENTRY_MAX_AGE_SEC),), pool.calls[-1][2])
+
+    def test_roster_is_unioned_with_connecting_players(self):
+        # 名册上的人 + 刚领名片正在连的人，两边都不能踢。
+        _install(_FakePool(rows=[{"player_id": self.b}]))
+        self._write(pids=[str(self.a)])
+        self.assertEqual({self.a, self.b}, asyncio.run(sc.players_in_match(self.path)))
+
+    def test_db_failure_still_honours_a_fresh_roster(self):
+        # 数据库挂了但名册是新的：至少别把名册上的人踢了。
+        _install(_FakePool(error=RuntimeError("db down")))
+        self._write()
+        self.assertEqual({self.a}, asyncio.run(sc.players_in_match(self.path)))
+
+    def test_db_failure_without_roster_is_none(self):
+        _install(_FakePool(error=RuntimeError("db down")))
+        self.assertIsNone(asyncio.run(sc.players_in_match("")))
+
+    def test_connecting_grace_is_much_shorter_than_the_heuristic(self):
+        """名册在的时候窗口必须明显收窄，否则这一整套白做。"""
+        self.assertLess(sc.CONNECTING_GRACE_SEC, sc.MATCH_ENTRY_MAX_AGE_SEC / 10)
+
+
+class BroadcastDisciplineTests(unittest.TestCase):
+    """🔴 2026-10-11 的事故：握着数据库连接、串行 await 无超时的 Hub.send 推给多个人，
+    一个卡死的 socket 就耗干连接池，整个账号服务器停止响应。
+
+    这几条盯着源码，因为这个错误**不会**在功能测试里显形 —— 它只在生产的
+    弱网玩家身上发作。描述见 app/realtime.py 的 broadcast / _send_bounded。
+    """
+
+    def _admin_source(self):
+        return (pathlib.Path(__file__).resolve().parents[1] / "app" / "admin.py").read_text(encoding="utf-8")
+
+    def test_switch_change_uses_broadcast(self):
+        src = self._admin_source()
+        self.assertIn("broadcast(service_control.push_message", src,
+                      "改开关之后没有用 broadcast 推送")
+
+    def test_switch_change_never_loops_send(self):
+        src = self._admin_source()
+        body = src.split("async def set_service_control")[1]
+        self.assertNotIn("hub().send", body, "用了不带超时的 Hub.send 往多人发")
+        self.assertNotIn("send_to_player", body, "用了不带超时的 send_to_player 往多人发")
+
+    def test_push_happens_outside_the_db_connection(self):
+        """推送必须在 `async with db.pool().acquire()` 块**之后**。
+        在块里发 = 握着连接 await 网络，正是那次事故的形状。"""
+        body = self._admin_source().split("async def set_service_control")[1]
+        acquire_at = body.index("db.pool().acquire()")
+        invalidate_at = body.index("service_control.invalidate()")
+        push_at = body.index("broadcast(service_control.push_message")
+        self.assertLess(acquire_at, invalidate_at)
+        self.assertLess(invalidate_at, push_at, "推送跑到了放掉连接之前")
 
 
 if __name__ == "__main__":

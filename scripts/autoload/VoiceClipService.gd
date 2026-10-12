@@ -214,28 +214,27 @@ static func build_wav(samples: PackedFloat32Array, rate: int) -> PackedByteArray
 
 # --- 上传 / 下载 ---------------------------------------------------------------
 
+# 🔴 这是客户端里**唯一**不走 AccountManager._request() 的带身份请求 ——
+# 它发的是裸字节（WAV），不是 JSON。正因为这样，它必须从 auth_header_lines()
+# 取那份头清单，不能自己拼：2026-10-12 就是自己拼、漏了 X-Glory-Session，
+# 一发语音服务器就回 409 session_replaced（看着像被顶号，其实只是少一个头）。
 func _upload(scope: String, wav: PackedByteArray) -> Dictionary:
+	# 令牌快过期就先续掉（_request() 对自己的请求也是这么做的），免得白跑一趟 401。
+	# 用的是 AccountManager 里早就有的那个（RealtimeService 建连前也调它）。
+	var ready: bool = await AccountManager.ensure_fresh_token()
 	var token := AccountManager.access_token()
-	if token.is_empty():
+	if not ready or token.is_empty():
 		return {"ok": false, "error": _text("还没登录", "Not signed in")}
 	var http := HTTPRequest.new()
 	http.timeout = AccountConfig.REQUEST_TIMEOUT_SEC
 	add_child(http)
-	var headers := PackedStringArray([
-		"Content-Type: audio/wav",
-		"Authorization: Bearer %s" % token,
-		AccountManager.client_header_line(),
-	])
-	# 🔴 **必须带登录会话号。** 服务端 current_claims 会拿它比对 login_sessions
-	# （backend/app/routes/me.py:56 → login_sessions.require）：缺了它，服务端
-	# 收到的就是空串，uuid.UUID("") 直接抛 → 一律回 409 "session_replaced"，
-	# 而这个英文串会被下面当 detail 原样透出去 —— 表现是「一发语音就红字
-	# session_replaced」，而且**必现**（跟你在几台设备上登过没关系）。
-	# _request() 与 RealtimeService 的握手都带了这一行，唯独这里漏了。
-	# 空串就不加：没登录的请求本来就该被 401 挡掉，别送个头进去。
-	if not AccountManager.login_session_id().is_empty():
-		headers.append("X-Glory-Session: %s" % AccountManager.login_session_id())
-	headers.append_array(AccountManager.patch_header_lines())
+	# 头只从 AccountManager.auth_header_lines() 取，**不在这里再拼一份**。
+	# 2026-10-12 的事故就是这条路自己拼、漏了 X-Glory-Session：服务端 current_claims
+	# 拿空串去 uuid.UUID() 直接抛，一律回 409 session_replaced，表现是「一发语音就红字」
+	# 而且必现。那个函数的注释写了为什么不许有第二份清单。
+	# 这是裸字节请求（不是 JSON），所以 content_type 要自己给，Authorization 也自己补。
+	var headers := AccountManager.auth_header_lines("audio/wav")
+	headers.append("Authorization: Bearer %s" % token)
 	var url := AccountConfig.endpoint("/v1/voice/clips?scope=%s" % scope)
 	var err := http.request_raw(url, headers, HTTPClient.METHOD_POST, wav)
 	if err != OK:
@@ -251,6 +250,12 @@ func _upload(scope: String, wav: PackedByteArray) -> Dictionary:
 	var body: Dictionary = {}
 	if json.parse(raw) == OK and json.data is Dictionary:
 		body = json.data
+	if code == 409 and str(body.get("detail", "")) == "session_replaced":
+		# 真的被顶号了。和 _request() 里同一条路：标记下来，并且说人话 ——
+		# 直接把 "session_replaced" 这串字扔给玩家看，是 2026-10-12 真机上的样子。
+		RealtimeService._mark_kicked()
+		return {"ok": false,
+			"error": _text("你的账号在其他设备登录", "Signed in on another device")}
 	if code < 200 or code >= 300:
 		# 会话被顶：服务端的 detail 是内部标记 "session_replaced"，**不是给玩家看的文案**。
 		# 绝不能原样透出去（就是它变成了聊天里那行英文红字）。这里自己出中文，

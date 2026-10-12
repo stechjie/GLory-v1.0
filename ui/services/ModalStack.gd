@@ -104,6 +104,10 @@ func push(content: Control, opts: Dictionary = {}) -> String:
 		"backdrop": backdrop,
 		"content": content,
 		"dismiss_on_backdrop": bool(opts.get("dismiss_on_backdrop", false)),
+		# 返回键关不掉。给「服务器正在维护」这种**必须看到并按确定**的提示用：
+		# 玩家按返回只会被吃掉，不会退回去继续玩。pop() 仍然关得掉 ——
+		# 不然业务层点了确定也收不了场。
+		"persistent": bool(opts.get("persistent", false)),
 	}
 	_entries.append(entry)
 	_entries.sort_custom(_by_priority_then_serial)
@@ -177,6 +181,13 @@ func close_all(reason: String = REASON_CLOSED_ALL) -> int:
 # Android 返回键 / ui_cancel 的接入点（V3 P0-09 会调它）。
 # 返回 true 表示「这一下被模态消费了」，调用方不应再继续退页面。
 func handle_back_request() -> bool:
+	if _entries.is_empty():
+		return false
+	# persistent 的框按返回键**吃掉但不关**。返回 true 很要紧：
+	# 返回 false 的话调用方会以为没人管这一下，接着去退页面 ——
+	# 那维护遮罩就形同虚设（玩家按返回照样能退回大厅操作）。
+	if bool(_entries[_entries.size() - 1].get("persistent", false)):
+		return true
 	return close_top(REASON_BACK)
 
 
