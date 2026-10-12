@@ -13,6 +13,7 @@ var _vfx_prev_units: Dictionary = {}
 var _vfx_seeded: bool = false
 var _vfx_visual_event_index := 0
 var _persistent_unit_vfx: Dictionary = {}
+var _blood_rework_vfx: Dictionary = {}
 # 9.24 #7（订正）：**取消了「血条染契约色」的做法。**
 #
 # 上一版把被连接双方的血条染成暗红（Color(0.74,0.17,0.40)），并把颜色绑在
@@ -215,11 +216,8 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 			})
 		var prev_ratio := float(prev.get("hp", 0)) / float(maxi(1, int(prev.get("max_hp", 1))))
 		var now_ratio := float(now.get("hp", 0)) / float(maxi(1, int(now.get("max_hp", 1))))
-		if sid_now == "blood_rampage" and bool(now.get("alive", false)):
-			var old_step := maxi(0, int(floor((1.0 - prev_ratio) / 0.10 + 0.0001)))
-			var new_step := maxi(0, int(floor((1.0 - now_ratio) / 0.10 + 0.0001)))
-			if new_step > old_step:
-				_play_unit_procedural("blood_rampage", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO), _unit_target_context(now, now, {"stacks": new_step}))
+		# The new blood-rage visual is synchronized every presentation frame below;
+		# crossing a health step updates that one persistent instance and its pulse.
 		if sid_now == "blood_rage" and prev_ratio > 0.35 and now_ratio <= 0.35:
 			_play_boss_procedural("blood_rage", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO))
 		if sid_now == "twin_revive" and not bool(prev.get("alive", true)) and bool(now.get("alive", false)):
@@ -672,6 +670,8 @@ func _play_unit_procedural(effect_id:String,origin:Vector3,target:Vector3,contex
 	return _play_boss_procedural(effect_id,origin,target,context)
 
 func _sync_persistent_unit_vfx(current:Dictionary)->void:
+	_sync_blood_rework_vfx(current)
+	_sync_mercenary_rework_statuses(current)
 	for id:String in _persistent_unit_vfx.keys().duplicate():
 		var unit:Dictionary=current.get(id,{})
 		var record:Dictionary=_persistent_unit_vfx.get(id,{})
@@ -710,6 +710,49 @@ func _sync_persistent_unit_vfx(current:Dictionary)->void:
 			var unit: Dictionary = current[id]
 			if str(unit.get("skill_id", "")) == "guardian_shield_taunt" and bool(unit.get("alive", false)) and not _persistent_unit_vfx.has(id):
 				_start_guardian_unit_vfx(unit)
+
+func _sync_blood_rework_vfx(current: Dictionary) -> void:
+	var seen: Dictionary = {}
+	for id: String in current:
+		var unit: Dictionary = current[id]
+		if str(unit.get("skill_id", "")) != "blood_rampage":
+			continue
+		var sim_uid := str(unit.get("sim_uid", id))
+		seen[sim_uid] = true
+		var node: Variant = _blood_rework_vfx.get(sim_uid)
+		var hp_ratio := float(unit.get("hp", 0)) / float(maxi(1, int(unit.get("max_hp", 1))))
+		var steps := clampi(int(floor((1.0 - hp_ratio) / 0.10 + 0.0001)), 0, 9)
+		if not bool(unit.get("alive", false)) or steps == 0:
+			if is_instance_valid(node):
+				node.queue_free()
+			_blood_rework_vfx.erase(sim_uid)
+			continue
+		if not is_instance_valid(node):
+			var world: Vector3 = unit.get("world_foot", Vector3.ZERO)
+			node = _play_unit_procedural("blood_rampage", world, world, _unit_target_context(unit, unit, {"stacks": steps}))
+			_blood_rework_vfx[sim_uid] = node
+		elif node.has_method("set_stacks"):
+			node.call("set_stacks", steps)
+	for sim_uid: String in _blood_rework_vfx.keys().duplicate():
+		if seen.has(sim_uid):
+			continue
+		var stale: Variant = _blood_rework_vfx[sim_uid]
+		if is_instance_valid(stale):
+			stale.queue_free()
+		_blood_rework_vfx.erase(sim_uid)
+
+func _sync_mercenary_rework_statuses(current: Dictionary) -> void:
+	if not is_instance_valid(_battle_3d_vfx_root) or not _battle_3d_vfx_root.has_method("mercenary_rework_active_target_uids"):
+		return
+	var status_by_uid: Dictionary = {}
+	for value in _battle_3d_vfx_root.call("mercenary_rework_active_target_uids"):
+		var uid := str(value)
+		var unit := _vfx_unit_by_sim_uid(current, uid)
+		if unit.is_empty():
+			status_by_uid[uid] = {"alive": false, "statuses": {}}
+			continue
+		status_by_uid[uid] = {"alive": bool(unit.get("alive", false)), "statuses": _state_unit_for(uid).get("statuses", {})}
+	_battle_3d_vfx_root.call("sync_mercenary_rework_statuses", status_by_uid)
 
 func _guardian_taunt_world_radius(sim_radius: float) -> Vector2:
 	# _sim_to_world_pos uses different X/Z scales. A sim-space circle therefore
@@ -771,6 +814,10 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 	if sid in ["blink_low_def_backline", "gold_charge"]:
 		origin=previous.get("world_cast",previous.get("world_foot",origin))
 	var exact:=_exact_skill_target(unit,current)
+	if sid == "gold_charge" and exact.is_empty():
+		# A departed recorded target must not turn a charge into a visual hit on
+		# whichever enemy happens to be nearest in this presentation frame.
+		return
 	var target:=exact
 	# 赤舞者/赤灯使的目标是逗号列表，单 uid 解析一定落空；它们下面按记录逐个解析，
 	# 不能退回「最近的敌人」去猜（赤舞者的目标是友军）。
@@ -839,17 +886,22 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 		context["has_enemy"]=not exact.is_empty()
 	elif sid=="holy_song":
 		context["targets"]=resolve_skill_target_positions(current,str(unit.get("skill_target_uid","")))
+		context["target_nodes"]=_mercenary_target_nodes(current,str(unit.get("skill_target_uid","")))
 		target_world=unit.get("world_foot",Vector3.ZERO)
 	elif sid=="twin_strike":
 		target_world=unit.get("world_foot",Vector3.ZERO)
 	elif sid=="king_aura":
 		context["targets"]=resolve_skill_target_positions(current,str(unit.get("skill_target_uid","")))
+		context["target_nodes"]=_mercenary_target_nodes(current,str(unit.get("skill_target_uid","")))
+		context["target_sim_uids"]=_mercenary_target_sim_uids(current,str(unit.get("skill_target_uid","")))
 		target_world=unit.get("world_foot",Vector3.ZERO)
 	elif sid=="arrow_rain":
 		context["targets"]=resolve_skill_target_positions(current,str(unit.get("skill_target_uid","")))
 		target_world=unit.get("world_foot",Vector3.ZERO)
 	elif sid=="steel_order":
 		context["targets"]=resolve_skill_target_positions(current,str(unit.get("skill_target_uid","")))
+		context["target_nodes"]=_mercenary_target_nodes(current,str(unit.get("skill_target_uid","")))
+		context["target_sim_uids"]=_mercenary_target_sim_uids(current,str(unit.get("skill_target_uid","")))
 		target_world=unit.get("world_foot",Vector3.ZERO)
 	elif sid=="time_slow":
 		context["targets"]=resolve_skill_target_positions(current,str(unit.get("skill_target_uid","")))
@@ -891,6 +943,22 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 	var spawned:=_play_unit_procedural(sid,origin,target_world,context)
 	if sid=="shared_hp_link" and spawned!=null:
 		_persistent_unit_vfx[str(unit.get("id",""))]={"node":spawned,"target_uid":str(unit.get("skill_target_uid",""))}
+
+func _mercenary_target_nodes(current: Dictionary, raw: String) -> Array:
+	var nodes: Array = []
+	for tid in _vfx_target_uids(raw):
+		var target := _vfx_unit_by_sim_uid(current, tid)
+		if target.is_empty():
+			continue
+		nodes.append(target.get("model_node"))
+	return nodes
+
+func _mercenary_target_sim_uids(current: Dictionary, raw: String) -> Array:
+	var ids: Array = []
+	for tid in _vfx_target_uids(raw):
+		if not _vfx_unit_by_sim_uid(current, tid).is_empty():
+			ids.append(tid)
+	return ids
 
 # 10.10 黑龙黑洞：被拉的人以模拟器记录为准（BattleSimSkills._skill_black_hole 的
 # _mark_vfx_targets）。落点取「本帧模拟位置」（模型可能还在往新位置滑），起点取上一帧
@@ -969,6 +1037,8 @@ func _unit_target_context(source:Dictionary,target:Dictionary,extra:Dictionary={
 	var context:=extra.duplicate(false)
 	context["source_unit_id"] = str(source.get("unit_id", source.get("id", "")))
 	context["target_unit_id"] = str(target.get("unit_id", target.get("id", "")))
+	context["source_sim_uid"] = str(source.get("sim_uid", ""))
+	context["target_sim_uid"] = str(target.get("sim_uid", ""))
 	context["target_foot"] = target.get("world_foot", target.get("world_hit", Vector3.ZERO))
 	if source.has("stun_sec"):
 		context["status_duration"] = float(source.get("stun_sec",1.18))
@@ -1440,6 +1510,10 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 			var source := _vfx_unit_by_sim_uid(current, str(event.get("source_uid", "")))
 			var target := _vfx_unit_by_sim_uid(current, str(event.get("target_uid", "")))
 			var skill_id := str(event.get("skill_id", ""))
+			if target.is_empty() and skill_id in ["death_hunt", "death_hunt_kill"]:
+				# The killed target may have left this frame's actor map. Use the
+				# same recorded uid from the preceding frame, never a nearby enemy.
+				target = _vfx_unit_by_sim_uid(_vfx_prev_units, str(event.get("target_uid", "")))
 			# 9.21：四星民兵（「概率触发型」技能音）。`attack_interrupt` 是
 			# `randf() < interrupt_chance` 触发的，模拟器只在**真的打断成功**时
 			# 才补这条 unit_skill_proc 事件 —— 所以挂在这里就等于「响了 = 打成了」，

@@ -3659,7 +3659,7 @@ func _show_pvp_warning_overlay() -> void:
 	glow.texture = tex
 	glow.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	glow.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	glow.modulate = Color(1.0, 0.05, 0.02, 0.28)
+	glow.modulate = Color(1.0, 1.0, 1.0, 0.18)
 	glow.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var glow_mat := CanvasItemMaterial.new()
 	glow_mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
@@ -3676,16 +3676,20 @@ func _show_pvp_warning_overlay() -> void:
 
 	var title := Label.new()
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	title.text = "Showdown Time!" if LocaleManager.get_locale() == "en" else "敌袭快准备！"
+	title.text = "let's fight" if LocaleManager.get_locale() == "en" else "开战啦"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	title.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	title.offset_top = 90
 	title.offset_bottom = -70
 	title.add_theme_font_size_override("font_size", 72)
-	title.add_theme_color_override("font_color", Color(1.0, 0.05, 0.02))
-	title.add_theme_color_override("font_outline_color", Color(0.10, 0.0, 0.0, 0.95))
-	title.add_theme_constant_override("outline_size", 6)
+	var title_base_font: Font = null
+	if LocaleManager.get_locale() != "en":
+		title_base_font = UIFontFallback.chinese_font()
+	title.add_theme_font_override("font", UIFontFallback.bold_font(title_base_font, 1.2))
+	title.add_theme_color_override("font_color", Color(0.29, 0.13, 0.06))
+	title.add_theme_color_override("font_outline_color", Color(1.0, 0.84, 0.56, 0.95))
+	title.add_theme_constant_override("outline_size", 5)
 	center.add_child(title)
 
 	# 停留计时器挂在 content 上，**不是** get_tree().create_timer()。
