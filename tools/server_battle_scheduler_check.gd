@@ -111,12 +111,15 @@ func _check_interleaved(rooms: Array, expected: Array, check_cold_bots: bool = f
 	DamageService._dot_damage_active = true
 	DamageService.set_hit_context("sentinel", true, "sentinel-race", "sentinel-skill")
 	var context_ok := true
+	var early_manifests := {}
 	var frame_work: Array = []
 	var deadline := Time.get_ticks_msec() + 20000
 	while not _all_jobs_completed(jobs) and Time.get_ticks_msec() < deadline:
 		var frame_started := Time.get_ticks_usec()
 		for job in jobs:
 			job.advance(2000)
+			if not job.asset_prefetch_roster.is_empty() and not job.is_packing() and not job.completed:
+				early_manifests[job.room_id] = true
 			context_ok = context_ok and GameState.round_index == 777 and NetworkService.shared_seed == 888 \
 				and RngService.rng == sentinel_rng and sentinel_rng.state == sentinel_rng_state \
 				and DamageService._stat_state == sentinel_state and DamageService._stat_source_uid == "sentinel-source" \
@@ -131,6 +134,14 @@ func _check_interleaved(rooms: Array, expected: Array, check_cold_bots: bool = f
 		if not _h.expect(job.completed, "job_timeout", "Interleaved job did not complete"):
 			job.cancel()
 			continue
+		_h.expect(early_manifests.has(job.room_id), "manifest_arrived_after_computation", "Visual manifest must be ready while simulation is still running")
+		_h.expect(not job.asset_prefetch_roster.is_empty(), "visual_manifest_missing", "Locked battle must publish visual definitions before replay playback")
+		for entry in job.asset_prefetch_roster.values():
+			_h.expect(entry.keys().size() == 2 and entry.has("id") and entry.has("def"),
+				"manifest_contains_state", "Visual manifest must not contain positions, battle results or seed")
+			for field in entry.def:
+				_h.expect(field in ["model", "model_idle_animation", "model_by_element", "range", "race", "skill_id"],
+					"manifest_contains_stats", "Visual manifest excludes combat/economy fields")
 		for team in 2:
 			var packed: PackedByteArray = job.result.packed_a if team == 0 else job.result.packed_b
 			var replay: Dictionary = NetworkService._unpack_replay(packed)

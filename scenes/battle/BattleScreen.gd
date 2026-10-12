@@ -102,6 +102,8 @@ const BATTLE_PREPARE_TIMEOUT_MSEC := 30000
 var _battle_prepare_deadline_msec := 0
 var _playback_deadline_msec := 0
 var battle_preparation_report: Dictionary = {}
+var _assets_ready_on_entry := false
+var _skip_cached_prepare_bar := false
 var _battle_prepare_started_msec := 0
 var _final_round_intro_active := false
 var _final_round_intro_started := false
@@ -509,19 +511,21 @@ func _prepare_replay_assets() -> bool:
 	var deadline := _mono_msec + 15000
 	var total := model_paths.size() + texture_paths.size()
 	var bar: ProgressBar = null
+	_assets_ready_on_entry = false
+	_skip_cached_prepare_bar = false
 	while is_inside_tree() and not _finished:
 		BattleAssetService.harvest()
 		var done := BattleAssetService.ready_count(model_paths) + VFXManager.ready_texture_count(texture_paths)
 		if done == total:
-			if is_instance_valid(bar):
-				bar.queue_free()
+			_assets_ready_on_entry = bar == null
+			_set_prepare_progress(bar, 30.0)
 			battle_preparation_report["assets"] = {"models": model_paths.size(), "textures": texture_paths.size(), "elapsed_ms": Time.get_ticks_msec() - started}
 			print("[BATTLE_ASSET_READY] models=%d textures=%d elapsed_ms=%d" % [
 				model_paths.size(), texture_paths.size(), Time.get_ticks_msec() - started])
 			return true
 		if bar == null:
 			bar = _make_battle_prepare_bar()
-		_set_prepare_progress(bar, 100.0 * float(done) / float(maxi(1, total)))
+		_set_prepare_progress(bar, 30.0 * float(done) / float(maxi(1, total)))
 		var failed: Array[String] = []
 		for path in model_paths + texture_paths:
 			if BattleAssetService.ready_count([path]) + VFXManager.ready_texture_count([path]) > 0:
@@ -594,6 +598,8 @@ func _prepare_battle_models() -> void:
 	var total := living.size()
 	if _battle_3d_root != null:
 		_battle_3d_root.visible = false
+	_skip_cached_prepare_bar = _assets_ready_on_entry and RenderWarmup.pending_job_count([_replay_own, _replay_rival], _battle_3d_viewport) == 0
+	battle_preparation_report["prefetched_on_entry"] = _skip_cached_prepare_bar
 	var bar := _make_battle_prepare_bar()
 	var done := 0
 	for f in living:
@@ -605,7 +611,7 @@ func _prepare_battle_models() -> void:
 		done += 1
 		if done % MODELS_PER_FRAME == 0:
 			if bar != null:
-				_set_prepare_progress(bar, 40.0 * float(done) / float(maxi(1, total)))
+				_set_prepare_progress(bar, 30.0 + 15.0 * float(done) / float(maxi(1, total)))
 			await get_tree().process_frame
 			if not is_inside_tree() or _finished or _prepare_deadline_expired():
 				# 中途退出也要把根恢复可见，否则这个节点被复用时棋盘是空的。
@@ -615,6 +621,10 @@ func _prepare_battle_models() -> void:
 					bar.queue_free()
 				return
 	battle_preparation_report["models"] = {"count": total, "elapsed_ms": Time.get_ticks_msec() - models_started}
+	var effect_replays := [_replay_own, _replay_rival]
+	var effect_total := RenderWarmup.collect_jobs(effect_replays).size()
+	var effect_cached := effect_total - RenderWarmup.pending_job_count(effect_replays, _battle_3d_viewport)
+	_set_prepare_progress(bar, 45.0 + 45.0 * float(effect_cached) / float(maxi(1, effect_total)))
 	var warmup := RenderWarmup.new()
 	add_child(warmup)
 	# ★ 跨模块**边界换算**（10.08c 真机回归修的就是这一行）：
@@ -627,9 +637,9 @@ func _prepare_battle_models() -> void:
 	var prepare_budget_left_msec := maxi(0, _battle_prepare_deadline_msec - _mono_msec)
 	var warmup_wall_cutoff_msec := warmup_cutoff_msec(prepare_budget_left_msec, Time.get_ticks_msec())
 	var render_report: Dictionary = await warmup.prepare_replays([_replay_own, _replay_rival], _battle_3d_viewport,
-		func(ready: int, count: int):
+		func(_ready_count: int, count: int):
 			if is_instance_valid(bar):
-				_set_prepare_progress(bar, 40.0 + 50.0 * float(ready) / float(maxi(1, count))),
+				_set_prepare_progress(bar, 45.0 + 45.0 * float(count - RenderWarmup.pending_job_count(effect_replays, _battle_3d_viewport)) / float(maxi(1, count))),
 		func() -> bool: return is_inside_tree() and not _finished and not _return_emitted,
 		warmup_wall_cutoff_msec)
 	battle_preparation_report["effects"] = render_report.duplicate(true)
@@ -758,7 +768,13 @@ static func warmup_cutoff_msec(budget_left_msec: int, wall_now_msec: int) -> int
 # ★ 进度只能通过 `_set_prepare_progress()` 推进：宠物位置是跟着 value 算出来的，
 # 别处直接写 bar.value 会让「条走了、宠物没走」。
 func _make_battle_prepare_bar() -> ProgressBar:
+	var existing := get_node_or_null("BattlePrepareBar") as ProgressBar
+	if is_instance_valid(existing) and not existing.is_queued_for_deletion():
+		return existing
 	var bar := ProgressBar.new()
+	# Cached resources still need a few frames to attach actors and draw them.
+	# Avoid flashing a loading screen on this already-prepared fast path.
+	bar.visible = false
 	bar.name = "BattlePrepareBar"
 	bar.show_percentage = false
 	bar.min_value = 0.0
@@ -778,13 +794,20 @@ func _make_battle_prepare_bar() -> ProgressBar:
 	bar.add_theme_stylebox_override("background", bg)
 	bar.add_theme_stylebox_override("fill", fill)
 	add_child(bar)
-	_attach_prepare_pet(bar)
 	_set_prepare_progress(bar, 0.0)
+	_reveal_pending_prepare_bar(bar)
 	return bar
 
 
-# 进度条上的宠物。模型取玩家当前出战的宠物（`PlayerProfile.get_active()`）；
-# 没选宠物、模型缺失时 `build_runner` 返回 null —— 那就只留进度条，不给玩家看「?」占位。
+func _reveal_pending_prepare_bar(bar: ProgressBar) -> void:
+	await get_tree().create_timer(0.2).timeout
+	if is_inside_tree() and is_instance_valid(bar) and not bar.is_queued_for_deletion() and not _battle_setup_ready and not _finished and not _skip_cached_prepare_bar:
+		_attach_prepare_pet(bar)
+		_set_prepare_progress(bar, bar.value)
+		bar.visible = true
+
+
+# 进度条上的宠物。没有出战宠物时只显示进度条。
 func _attach_prepare_pet(bar: ProgressBar) -> void:
 	var pet := PetPreview.build_runner(PlayerProfile.get_active(), BATTLE_PREPARE_PET_SIZE)
 	if pet == null:
@@ -797,11 +820,11 @@ func _attach_prepare_pet(bar: ProgressBar) -> void:
 func _set_prepare_progress(bar: ProgressBar, value: float) -> void:
 	if bar == null or not is_instance_valid(bar):
 		return
-	bar.value = value
+	bar.value = maxf(bar.value, value)
 	var pet := bar.get_node_or_null("PreparePet") as Control
 	if pet == null:
 		return
-	var ratio := clampf(value / maxf(1.0, bar.max_value), 0.0, 1.0)
+	var ratio := clampf(bar.value / maxf(1.0, bar.max_value), 0.0, 1.0)
 	# 横向：宠物中心贴在进度条填充的右端；纵向：脚踩在条上（底边略低于条中线）。
 	pet.position = Vector2(
 		BATTLE_PREPARE_BAR_WIDTH * ratio - pet.size.x * 0.5,

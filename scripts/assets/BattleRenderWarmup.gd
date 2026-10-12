@@ -96,6 +96,20 @@ static func _visual_race(unit: String) -> String:
 			return "god"
 	return "human"
 
+static func _format_key(template: SubViewport) -> String:
+	return "oga-direct-omni-v3|%s|%d|%d|%s|" % [RenderingServer.get_current_rendering_method(), template.msaa_3d, VFXManager.get_quality_tier(), str(template.transparent_bg)]
+
+static func pending_job_count(replays: Array, template: SubViewport) -> int:
+	var jobs := collect_jobs(replays)
+	if template == null:
+		return jobs.size()
+	var prefix := _format_key(template)
+	var pending := 0
+	for job in jobs:
+		if not _ready_jobs.has(prefix + str(job.key)):
+			pending += 1
+	return pending
+
 func prepare_replays(replays: Array, template: SubViewport, progress: Callable = Callable(), can_continue: Callable = Callable(), deadline_msec := 0) -> Dictionary:
 	var jobs := collect_jobs(replays)
 	if _cancelled(can_continue):
@@ -104,6 +118,8 @@ func prepare_replays(replays: Array, template: SubViewport, progress: Callable =
 		return {"ok": true, "headless": true, "jobs": jobs.size(), "rendered": 0}
 	if template == null or jobs.size() > MAX_JOBS:
 		return {"ok": false, "error": "render_warmup_invalid_viewport_or_capacity", "jobs": jobs.size()}
+	if pending_job_count(replays, template) == 0:
+		return {"ok": true, "jobs": jobs.size(), "rendered": 0, "cached": true}
 	var started := Time.get_ticks_msec()
 	var deadline := started + MAX_TOTAL_MSEC
 	if deadline_msec > 0:
@@ -118,7 +134,7 @@ func prepare_replays(replays: Array, template: SubViewport, progress: Callable =
 	var rendered := 0
 	var max_draw_frame_ms := 0
 	var costs: Array[Dictionary] = []
-	var format_key := "oga-direct-omni-v3|%s|%d|%d|%s|" % [RenderingServer.get_current_rendering_method(), template.msaa_3d, VFXManager.get_quality_tier(), str(template.transparent_bg)]
+	var format_key := _format_key(template)
 	for index in jobs.size():
 		if _cancelled(can_continue) or Time.get_ticks_msec() > deadline:
 			viewport.queue_free()

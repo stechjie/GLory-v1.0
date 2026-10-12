@@ -66,6 +66,10 @@ class PatchStore:
                 CREATE TABLE IF NOT EXISTS patch_active (
                     channel TEXT PRIMARY KEY,
                     release_id TEXT NOT NULL REFERENCES patch_release(release_id));
+                CREATE TABLE IF NOT EXISTS patch_client_base (
+                    channel TEXT NOT NULL, platform TEXT NOT NULL, base_id TEXT NOT NULL,
+                    includes_seq INTEGER NOT NULL CHECK(includes_seq>=0),
+                    PRIMARY KEY(channel,platform,base_id));
                 CREATE TABLE IF NOT EXISTS patch_hotfix (
                     hotfix_id TEXT PRIMARY KEY, channel TEXT NOT NULL,
                     deployment_id TEXT NOT NULL, patch_seq INTEGER NOT NULL,
@@ -244,6 +248,27 @@ class PatchStore:
                          "ON r.release_id=a.release_id WHERE a.channel=?", (channel,)).fetchone()
         return row[0] if row else 0
 
+    def register_client_base(self, channel: str, platform: str, base_id: str,
+                             includes_seq: int, actor: str):
+        """Explicitly admit a verified full client containing existing patch content.
+
+        Admission is capped at the incorporated sequence, so future releases
+        cannot be silently skipped. This method is not a public client API.
+        """
+        token(channel)
+        token(base_id)
+        if platform not in PLATFORMS or type(includes_seq) is not int or includes_seq < 0:
+            raise ValueError("invalid client baseline")
+        with self._transaction() as db:
+            if includes_seq != self._active_seq(db, channel):
+                raise PatchConflict("active patch changed before baseline registration")
+            db.execute("INSERT OR REPLACE INTO patch_client_base VALUES(?,?,?,?)",
+                       (channel, platform, base_id, includes_seq))
+            db.execute("UPDATE patch_meta SET revision=revision+1 WHERE id=1")
+            self._audit(db, actor, "register_client_base", {
+                "channel": channel, "platform": platform, "base_id": base_id,
+                "includes_seq": includes_seq})
+
     def snapshot(self, channel: str, platform: str, base_id: str, installed_seq: int):
         token(channel)
         token(base_id)
@@ -262,6 +287,14 @@ class PatchStore:
                                       "WHERE release_id=? AND platform=?", (row["release_id"], platform)).fetchone()
                 if artifact is None or artifact["base_id"] != base_id:
                     result["action"] = "store_update"
+                    incorporated = db.execute(
+                        "SELECT includes_seq FROM patch_client_base WHERE channel=? AND platform=? AND base_id=?",
+                        (channel, platform, base_id)).fetchone()
+                    if incorporated and row["seq"] <= incorporated["includes_seq"]:
+                        result["required_patch_seq"] = 0
+                        result["action"] = "none" if installed_seq == 0 else "reset_to_base"
+                        # Existing-baseline hotfix code is not applicable to this full client.
+                        return result
                 elif installed_seq != row["seq"]:
                     result["action"] = "download"
                     result["artifact"] = dict(artifact)

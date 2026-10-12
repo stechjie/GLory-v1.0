@@ -27,6 +27,19 @@ def digest(path):
     return value.hexdigest()
 
 
+def native_inventory(stage: Path) -> dict[str, str]:
+    """Hash shipped native inputs, excluding Godot's transient Android build tree.
+
+    Retained Android export stages include Gradle dex/merged-library intermediates
+    produced while building the APK. Fresh patch stages intentionally do not; those
+    intermediates are not patchable client inputs and are reproducibly regenerated
+    from the checked-in plugins/templates during a full application build.
+    """
+    return {str(path.relative_to(stage)): digest(path) for path in sorted(stage.rglob("*"))
+            if path.is_file() and path.suffix.lower() in NATIVE_SUFFIXES
+            and not path.relative_to(stage).as_posix().startswith("android/build/")}
+
+
 def run(engine, stage, args, log, verify=None):
     with log.open("w", encoding="utf-8") as output:
         result = subprocess.run([str(engine), "--headless", "--path", str(stage), *map(str, args)],
@@ -84,13 +97,18 @@ def export(stage: Path, engine: Path, preset: str, platform: str, config: Path,
     else:
         boot = from_config(stage, config, platform)
     version = subprocess.check_output([str(engine), "--version"], text=True).strip()
-    native = {str(path.relative_to(stage)): digest(path) for path in sorted(stage.rglob("*"))
-              if path.is_file() and path.suffix.lower() in NATIVE_SUFFIXES}
+    native = native_inventory(stage)
     identity = {"engine_version": version, "platform": platform, "base_id": boot["base_id"], "debug": debug,
                 "preset_sha256": digest(stage / "export_presets.cfg"), "native_files": native}
     if base:
         record = json.loads(base.with_suffix(".export.json").read_text())
-        if any(record.get(k) != v for k, v in identity.items()) or record.get("sha256") != digest(base):
+        recorded = dict(record)
+        # Older retained manifests were captured after Android application export,
+        # so they include generated android/build intermediates. Normalize them to
+        # the same shipped-input inventory used for current stages.
+        recorded["native_files"] = {name: value for name, value in record.get("native_files", {}).items()
+                                    if not name.startswith("android/build/")}
+        if any(recorded.get(k) != v for k, v in identity.items()) or record.get("sha256") != digest(base):
             raise ValueError("Engine, native libraries, preset or original base changed; create a new base build")
     output.mkdir(parents=True)
     def verify_import(text):

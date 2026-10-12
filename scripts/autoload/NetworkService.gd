@@ -2360,6 +2360,7 @@ func _build_room_state(room: Dictionary, slot: int) -> Dictionary:
 		"round_id": round_id,
 		"battle_id": str(room.get("battle_id", "")),
 		"battle_round": int(room.get("round_index", 1)),
+		"asset_prefetch": room.get("asset_prefetch", {}) if bool(room.get("replay_pending", false)) else {},
 		"replay_pending": str(room.get("state", "")) == ROOM_BATTLE or bool(room.get("replay_pending", false)),
 		"replay_available": replay_available,
 		"replay_error": str(room.get("replay_error", "")),
@@ -3001,6 +3002,7 @@ signal team_replay_failed(battle_id: String, reason: String)
 var current_battle_id := ""
 var team_replay_battle_id := ""
 
+var team_asset_prefetch: Dictionary = {}
 var team_boards: Dictionary = {}          # slot(int) -> snapshot Dictionary (after broadcast)
 var _team_boards_collecting: Dictionary = {}
 
@@ -3055,6 +3057,7 @@ func shop_refresh_error_text(reason: String) -> String:
 	return "商店刷新失败：%s" % reason
 
 func team_begin_round() -> void:
+	team_asset_prefetch = {}
 	team_boards = {}
 	_team_boards_collecting = {}
 	_set_current_replay_battle("")
@@ -3837,6 +3840,7 @@ func _enqueue_finalize(room: Dictionary) -> void:
 	room.last_match_state = {}
 	room.replay_packed = {}
 	room.replay_pending = true
+	room.asset_prefetch = {}
 	room.replay_error = ""
 	# Lock inputs now, before a queued room's reserved seats can expire/resume.
 	# Only compact board inputs are copied here; replay arrays do not exist yet.
@@ -3904,6 +3908,12 @@ func _drain_finalize_queue() -> void:
 			continue
 		idle_jobs = 0
 		job.advance(mini(_simulation_slice_usec, deadline - Time.get_ticks_usec()))
+		var room: Dictionary = _rooms.get(job.room_id, {})
+		if not job.asset_prefetch_roster.is_empty() and (room.get("asset_prefetch", {}) as Dictionary).is_empty() \
+				and _simulation_is_current(job.room_id, job.battle_id):
+			room.asset_prefetch = {"battle_id": job.battle_id, "round": job.round_index,
+				"roster": job.asset_prefetch_roster.duplicate(true)}
+			_broadcast_room_lobby(room)
 	_simulation_last_frame_usec = Time.get_ticks_usec() - started
 	_simulation_max_frame_usec = maxi(_simulation_max_frame_usec, _simulation_last_frame_usec)
 	if _simulation_last_frame_usec > maxi(50000, _simulation_budget_usec * 3):
@@ -5676,6 +5686,9 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 		# Old protocol-32 snapshots omit battle_id. RESULT broadcasts must not
 		# erase identity already learned from match_state or presentation events.
 		_set_current_replay_battle("")
+	team_asset_prefetch = (payload.get("asset_prefetch", {}) as Dictionary).duplicate(true)
+	if str(team_asset_prefetch.get("battle_id", "")) != current_battle_id:
+		team_asset_prefetch = {}
 	var replay_error := str(payload.get("replay_error", ""))
 	if not replay_error.is_empty():
 		_replay_receive_error(current_battle_id, replay_error)

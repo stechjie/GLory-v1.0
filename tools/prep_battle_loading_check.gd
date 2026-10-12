@@ -9,6 +9,19 @@ const PrepScreenScript := preload("res://scenes/prep/PrepScreen.gd")
 
 const CHECK_NAME := "prep_battle_loading"
 
+class BattleBarProbe:
+	extends "res://scenes/battle/BattleScreen.gd"
+	var pet_build_count := 0
+	func _ready() -> void:
+		pass
+	func _process(_delta: float) -> void:
+		pass
+	func _exit_tree() -> void:
+		pass
+	func _attach_prepare_pet(_bar: ProgressBar) -> void:
+		pet_build_count += 1
+
+
 
 class BattlePrepareProbe:
 	extends RefCounted
@@ -49,6 +62,7 @@ var _h: CheckHarness
 func _ready() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
 	_check_effect_prefetch_roster()
+	await _check_remaining_progress()
 	var baseline: Array = ModalStack.find_invisible_stop_controls()
 	await _check_overlay_contract()
 	await _check_failure_recovery_paths()
@@ -65,6 +79,41 @@ func _ready() -> void:
 		"关闭加载层后残留不可见 STOP 控件：%s" % ", ".join(leaked))
 	_check_prep_source_contract()
 	_h.finish(get_tree())
+
+
+func _check_remaining_progress() -> void:
+	var battle := BattleBarProbe.new()
+	add_child(battle)
+	var bar := battle._make_battle_prepare_bar()
+	_h.expect(not bar.visible, "cached_path_flashes_bar", "已预加载路径不应立刻闪现进度条")
+	_h.expect(battle.pet_build_count == 0, "fast_path_loads_pet", "快速路径不应加载读条宠物")
+	var pet := Control.new()
+	pet.name = "PreparePet"
+	bar.add_child(pet)
+	battle._set_prepare_progress(bar, 72.0)
+	var pet_position := pet.position
+	battle._set_prepare_progress(bar, 30.0)
+	_h.expect(pet.position == pet_position, "progress_pet_regressed", "进度条宠物不能跨阶段后退")
+	_h.expect(bar.value == 72.0, "progress_regressed", "预加载进度跨阶段不能倒退")
+	_h.expect(battle._make_battle_prepare_bar() == bar, "progress_restarted", "资源与模型阶段复用同一个进度条")
+	await get_tree().create_timer(0.25).timeout
+	_h.expect(bar.visible, "unfinished_progress_hidden", "仍未加载完成时应显示进度条")
+	_h.expect(battle.pet_build_count == 1, "remaining_progress_missing_pet", "实际读条时才创建宠物")
+	bar.free()
+	var fast_bar := battle._make_battle_prepare_bar()
+	battle._battle_setup_ready = true
+	await get_tree().create_timer(0.25).timeout
+	_h.expect(not fast_bar.visible, "finished_progress_shown", "已就绪时不再显示加载进度条")
+	_h.expect(battle.pet_build_count == 1, "finished_path_loads_pet", "已就绪的路径不能额外加载宠物")
+	fast_bar.free()
+	battle._battle_setup_ready = false
+	battle._skip_cached_prepare_bar = true
+	var cached_bar := battle._make_battle_prepare_bar()
+	await get_tree().create_timer(0.25).timeout
+	_h.expect(not cached_bar.visible, "cached_resources_show_bar", "资源提前完成时，模型装配期间也不重复显示资源进度条")
+	_h.expect(battle.pet_build_count == 1, "cached_resources_load_pet", "完整预加载路径不创建读条宠物")
+	battle.queue_free()
+	await get_tree().process_frame
 
 
 func _check_effect_prefetch_roster() -> void:
@@ -90,6 +139,25 @@ func _check_effect_prefetch_roster() -> void:
 			if kind == "boss":
 				var boss := BattleSimShared._round_boss_template(round_number)
 				_h.expect(roster.has(str(boss.id)), "boss_not_prefetched", "Boss 回合必须提前预热 Boss")
+	var old_manifest := NetworkService.team_asset_prefetch
+	var old_active := NetworkService.team_active
+	var old_battle_id := NetworkService.current_battle_id
+	NetworkService.team_active = true
+	NetworkService.current_battle_id = "prefetch-test"
+	NetworkService.team_asset_prefetch = {"battle_id": "prefetch-test", "round": GameState.round_index,
+		"roster": {"remote_unit": {"id": "remote_unit", "def": {"skill_id": "black_hole"}}}}
+	_h.expect(prep._effect_prefetch_replay().roster.has("remote_unit"),
+		"server_manifest_missing", "服务端计算期间应预热权威资源名单中的远端单位")
+	NetworkService.team_asset_prefetch.round = GameState.round_index - 1
+	_h.expect(not prep._effect_prefetch_replay().roster.has("remote_unit"),
+		"stale_manifest_loaded", "旧回合资源名单不能混进本轮准备")
+	NetworkService.team_asset_prefetch.round = GameState.round_index
+	NetworkService.team_asset_prefetch.battle_id = "another-battle"
+	_h.expect(not prep._effect_prefetch_replay().roster.has("remote_unit"),
+		"wrong_battle_manifest_loaded", "其他战斗的资源名单必须忽略")
+	NetworkService.team_asset_prefetch = old_manifest
+	NetworkService.team_active = old_active
+	NetworkService.current_battle_id = old_battle_id
 	prep.free()
 	GameState.board_slots = board
 	GameState.mercenary_slots = mercenaries

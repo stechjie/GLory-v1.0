@@ -25,9 +25,6 @@ static var _cached_battle_scene: PackedScene
 # 战斗准备退回备战，而服务器随后才补交/转 AI —— 迟到的结算会跳过单位阵亡与成长，
 # 造成客户端与服务器分叉。最终修法是 board ACK/服务端进度驱动，见文档 1B-1。
 const TEAM_BATTLE_PREP_TIMEOUT_SEC := 60.0
-# 战斗资源预加载的上限。到点还没齐就照旧进战斗（退回按需加载），
-# 宁可卡一下，也不要读条停在那里让玩家以为死机。
-const ASSET_PRELOAD_TIMEOUT_MSEC := 15000
 const BATTLE_ACTION := "start_battle"
 const BATTLE_ACTION_TIMEOUT_MSEC := 90000
 const BATTLE_LOADING_MODAL_PRIORITY := 80
@@ -46,7 +43,6 @@ var _battle_loading_modal_id := ""
 var _battle_failure_code := ""
 var _battle_failure_message := ""
 var _battle_failure_retryable := true
-var _battle_asset_fallback_used := false
 # Debug-only seams for deterministic failure injection. They are inert in normal
 # play and setters reject Release builds; no production branch reads test data.
 var _battle_prepare_check_hook := Callable()
@@ -98,6 +94,8 @@ func _ready() -> void:
 		NetworkService.session_changed.connect(_on_network_session_changed)
 	if not NetworkService.team_lobby_changed.is_connected(_on_network_session_changed):
 		NetworkService.team_lobby_changed.connect(_on_network_session_changed)
+	if not NetworkService.team_lobby_changed.is_connected(_queue_server_preparation_assets):
+		NetworkService.team_lobby_changed.connect(_queue_server_preparation_assets)
 	if not NetworkService.team_round_start.is_connected(_on_team_round_start):
 		NetworkService.team_round_start.connect(_on_team_round_start)
 	if not AsyncActionController.action_state_changed.is_connected(_on_async_action_state_changed):
@@ -177,6 +175,8 @@ func _exit_tree() -> void:
 		NetworkService.session_changed.disconnect(_on_network_session_changed)
 	if NetworkService.team_lobby_changed.is_connected(_on_network_session_changed):
 		NetworkService.team_lobby_changed.disconnect(_on_network_session_changed)
+	if NetworkService.team_lobby_changed.is_connected(_queue_server_preparation_assets):
+		NetworkService.team_lobby_changed.disconnect(_queue_server_preparation_assets)
 	if NetworkService.team_treasure_effects_changed.is_connected(_on_team_treasure_effects_changed):
 		NetworkService.team_treasure_effects_changed.disconnect(_on_team_treasure_effects_changed)
 	if NetworkService.team_round_start.is_connected(_on_team_round_start):
@@ -387,7 +387,6 @@ func _emit_battle_request_once() -> void:
 	_battle_failure_code = ""
 	_battle_failure_message = ""
 	_battle_failure_retryable = true
-	_battle_asset_fallback_used = false
 	RaceRelationService.finalize_for_battle(GameState.board_slots, GameState.bench_slots)
 	_battle_launch_emitted = true
 	_battle_transition_running = true
@@ -415,9 +414,8 @@ func _emit_battle_request_once() -> void:
 		return
 	if not _battle_request_is_active(request_id):
 		return
-	# 单位模型/贴图必须在这里等完，不能等进了战斗再同步加载 —— 那正是实测里
-	# 首回合 14.8 秒、后续每回合 2.3–5.1 秒主线程冻结的来源。
-	await _preload_battle_assets(request_id)
+	# The battle page shows only the unfinished part of background preparation.
+	_preload_battle_assets(request_id)
 	if not _battle_request_is_active(request_id):
 		return
 	_set_battle_stage("enter_battle", tr("battle_load_enter"), "", 1.0)
@@ -429,73 +427,26 @@ func _emit_battle_request_once() -> void:
 	_battle_transition_running = false
 	battle_requested.emit()
 
-# 本场会用到的模型/待机动画/技能贴图，全部等到就绪再进战斗。
-# 清单直接来自 replay 的 roster（uid -> def），不是按阵容猜 —— 服务器已经把整场
-# 算完发过来了，谁会出场是确定的。
-func _preload_battle_assets(request_id: String) -> void:
-	# 兜底，不是主力。资源本该在大厅（seed 无关的公共资源 + 本局怪物名单）和
-	# 备战期（增量）就绪；这里只补还没齐的部分 —— 玩家手速极快、第一回合、
-	# 或 PVP 对手 replay 刚到的情况。
-	#
-	# 清单来自 replay 的 roster：服务器已经把整场算完发过来了，出场名单是确定的。
-	var model_paths: Array[String] = []
-	var texture_paths: Array[String] = []
+# Queue the authoritative list without holding the prep modal after the server
+# finishes. BattleScreen owns the remaining wait and reuses these exact caches.
+func _preload_battle_assets(_request_id: String) -> void:
 	for replay in [NetworkService.team_replay, NetworkService.team_replay_rival]:
-		for p in BattleAssetManifest.replay_paths(replay):
-			if not model_paths.has(p):
-				model_paths.append(p)
-		for raw_texture in BattleAssetManifest.replay_texture_paths(replay):
-			var texture_path := str(raw_texture)
-			if not texture_path.is_empty() and not texture_paths.has(texture_path):
-				texture_paths.append(texture_path)
-	VFXManager.preload_textures(texture_paths)
-	BattleAssetService.acquire_many(model_paths, BattleAssetService.OWNER_BATTLE)
-	# 本回合真打到了：把大厅/备战期为这一轮预取的 owner 转成 battle/current，
-	# 资源全程不落地。
+		_queue_preparation_assets(replay)
 	BattleAssetService.promote_future_to_battle(GameState.round_index)
+	BattleAssetService.harvest()
+	_set_battle_stage("load_battle_assets", tr("battle_load_assets"))
 
-	var model_total := model_paths.size()
-	var texture_total := texture_paths.size()
-	var item_total := model_total + texture_total
-	var model_done := BattleAssetService.ready_count(model_paths)
-	var texture_done := VFXManager.ready_texture_count(texture_paths)
-	var initial_asset_ratio := 1.0 if item_total == 0 else float(model_done + texture_done) / float(item_total)
-	_set_battle_stage("load_battle_assets", tr("battle_load_assets"), "",
-		0.70 + initial_asset_ratio * 0.28,
-		tr("battle_load_asset_counts") % [model_done, model_total, texture_done, texture_total])
-	if item_total == 0 or model_done + texture_done == item_total:
-		return
-	# 逐帧等待。绝不调用阻塞版 load_threaded_get() —— 那会让进度条自己卡住不动，
-	# 玩家看到的是"假死"，比原来的卡顿更糟。
-	var deadline := Time.get_ticks_msec() + ASSET_PRELOAD_TIMEOUT_MSEC
-	while Time.get_ticks_msec() < deadline:
-		BattleAssetService.harvest()
-		model_done = BattleAssetService.ready_count(model_paths)
-		texture_done = VFXManager.ready_texture_count(texture_paths)
-		var done := model_done + texture_done
-		_set_battle_stage("load_battle_assets", tr("battle_load_assets"), "",
-			0.70 + float(done) / float(item_total) * 0.28,
-			tr("battle_load_asset_counts") % [model_done, model_total, texture_done, texture_total])
-		if done == item_total:
-			return
-		if not _battle_request_is_active(request_id):
-			return
-		await get_tree().process_frame
-		if not is_inside_tree():
-			return
-	# 超时兜底：不无限等。没就绪的退回战斗中按需加载（即旧行为）。
-	push_warning("战斗资源预加载超时，剩余项退回战斗内加载")
-	_battle_asset_fallback_used = true
-	AsyncActionController.annotate(_battle_action_request_id, "asset_timeout", {
-		"stage": "load_battle_assets",
-		"error_code": "ASSET_PRELOAD_FALLBACK",
-	})
-	if _battle_loading_overlay != null and is_instance_valid(_battle_loading_overlay):
-		_battle_loading_overlay.set_stage("asset_fallback", tr("battle_load_assets"),
-			tr("battle_load_asset_fallback"), -1.0,
-			tr("battle_load_asset_counts") % [model_done, model_total, texture_done, texture_total])
-	# 只在真的触发 15 秒兜底时留出短时间让提示可见；正常路径不增加延迟。
-	await get_tree().create_timer(0.65).timeout
+func _queue_server_preparation_assets() -> void:
+	var manifest: Dictionary = NetworkService.team_asset_prefetch
+	if _can_background_prepare() and NetworkService.team_active \
+			and int(manifest.get("round", -1)) == GameState.round_index \
+			and str(manifest.get("battle_id", "")) == NetworkService.current_battle_id:
+		_queue_preparation_assets(manifest)
+
+func _queue_preparation_assets(replay: Dictionary) -> void:
+	BattleAssetService.acquire_many(BattleAssetManifest.replay_paths(replay),
+		BattleAssetService.owner_future(GameState.round_index))
+	VFXManager.preload_textures(BattleAssetManifest.replay_texture_paths(replay))
 
 # True from the moment this round commits to launching its battle until the
 # battle scene is actually created — i.e. the async replay-packaging window.
@@ -513,35 +464,35 @@ func _prefetch_battle_scene() -> void:
 			return
 		await get_tree().process_frame
 
-# Incremental render preparation uses only already-visible pieces and the next
-# deterministic PvE roster. The real replay remains authoritative; unexpected
-# opponents/summons are prepared by BattleScreen's existing fallback.
+# Prepare visible pieces first, then the server's locked visual manifest while
+# it computes replay frames. The final replay remains authoritative; newly
+# summoned units are prepared by BattleScreen's remaining-work path.
 func _warm_deployed_effects() -> void:
-	if DisplayServer.get_name() == "headless" or _prep_river_viewport == null:
-		return
 	var warmup := PrepRenderWarmup.new()
 	add_child(warmup)
-	var warmed_signature := -1
 	while _can_background_prepare():
-		await get_tree().create_timer(1.0).timeout
+		var replay := _effect_prefetch_replay()
+		_queue_preparation_assets(replay)
+		BattleAssetService.harvest()
+		# A slow texture for one unit must not block every other unit's warmup.
+		# Completed jobs stay cached across scene handoff; an interrupted job is
+		# deliberately left unfinished for BattleScreen to resume safely.
+		if DisplayServer.get_name() != "headless" and _prep_river_viewport != null:
+			for key in replay.roster:
+				if not _can_background_prepare():
+					break
+				var unit_replay := {"roster": {key: replay.roster[key]}}
+				var paths := BattleAssetManifest.replay_texture_paths(unit_replay)
+				if VFXManager.ready_texture_count(paths) != paths.size():
+					continue
+				if PrepRenderWarmup.pending_job_count([unit_replay], _prep_river_viewport) == 0:
+					continue
+				await warmup.prepare_replays([unit_replay], _prep_river_viewport,
+					Callable(), _can_background_prepare)
 		if not _can_background_prepare():
 			break
-		var replay := _effect_prefetch_replay()
-		var signature := hash([replay, VFXManager.get_quality_tier()])
-		if signature == warmed_signature:
-			continue
-		BattleAssetService.acquire_many(BattleAssetManifest.replay_paths(replay),
-			BattleAssetService.owner_future(GameState.round_index))
-		BattleAssetService.harvest()
-		var paths := BattleAssetManifest.replay_texture_paths(replay)
-		VFXManager.preload_textures(paths)
-		# Never synchronously read a texture from an effect constructor in prep.
-		if VFXManager.ready_texture_count(paths) != paths.size():
-			continue
-		var report: Dictionary = await warmup.prepare_replays([replay], _prep_river_viewport, Callable(),
-			_can_background_prepare)
-		if bool(report.get("ok", false)):
-			warmed_signature = signature
+		# Poll during server computation too. Resource requests are deduplicated.
+		await get_tree().create_timer(0.1 if _battle_transition_running else 1.0).timeout
 	if is_instance_valid(warmup):
 		warmup.queue_free()
 
@@ -558,6 +509,17 @@ func _effect_prefetch_replay() -> Dictionary:
 			var unit_id := str(cell.get("id", definition.get("id", "")))
 			if not unit_id.is_empty():
 				roster[unit_id] = {"id":unit_id, "def":definition}
+	# Local-host board broadcasts may arrive while simulation is running. Never
+	# reuse a previous round's boards or guess a remote player's current lineup.
+	for snapshot in NetworkService.team_boards.values():
+		if not snapshot is Dictionary or int(snapshot.get("round", -1)) != GameState.round_index:
+			continue
+		for cell in NetProtocol.extract_board(snapshot) + NetProtocol.extract_mercenaries(snapshot):
+			if cell is Dictionary:
+				var definition: Dictionary = cell.get("def", {})
+				var unit_id := str(cell.get("id", definition.get("id", "")))
+				if not unit_id.is_empty():
+					roster[unit_id] = {"id": unit_id, "def": definition}
 	# In prep, round_index already names the battle about to start.
 	var pending_round := GameState.round_index
 	var kind := RoundService.schedule_kind_for_round(pending_round)
@@ -569,6 +531,12 @@ func _effect_prefetch_replay() -> Dictionary:
 			var unit_id := str(definition.get("id", ""))
 			if not unit_id.is_empty():
 				roster[unit_id] = {"id":unit_id, "def":definition}
+	# Dedicated servers publish a compact visual manifest before computing frames.
+	# It overrides speculative PvE definitions and includes teammates and AI.
+	var manifest: Dictionary = NetworkService.team_asset_prefetch
+	if NetworkService.team_active and int(manifest.get("round", -1)) == GameState.round_index \
+			and str(manifest.get("battle_id", "")) == NetworkService.current_battle_id:
+		roster.merge(manifest.get("roster", {}), true)
 	return {"roster":roster}
 
 var _battle_thread_type_invalid := false

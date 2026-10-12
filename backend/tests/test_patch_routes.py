@@ -48,6 +48,36 @@ class PatchHTTPTests(unittest.TestCase):
         self.client = TestClient(self.app)
         self.addCleanup(self.client.close)
 
+    def test_automation_scope_and_publication(self):
+        with patch("app.routes.patches.get_settings", return_value=types.SimpleNamespace(patch_automation_token="fixture")):
+            root = "/admin/api/patches/automation"
+            body = {"channel": "internal", "title": "Auto", "platforms": ["android", "ios"]}
+            self.assertEqual(self.client.post(root + "/drafts", json=body).status_code, 401)
+            headers = {"Authorization": "Bearer fixture"}
+            self.assertEqual(self.client.post(root + "/drafts", headers={"Authorization": "Bearer wrong"}, json=body).status_code, 401)
+            release = self.client.post(root + "/drafts", headers=headers, json=body).json()["release_id"]
+            def publish(rev=None):
+                return self.client.post(root + f"/{release}/publish", headers=headers, json={"expected_revision": self.service.catalogue()["revision"] if rev is None else rev})
+            self.assertEqual(publish().status_code, 409)
+            for platform in ("android", "ios"):
+                response = self.client.put(root + f"/{release}/artifacts/{platform}?base_id=base-1", headers=headers, content=self.pack())
+                self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(publish(0).status_code, 409)
+            self.assertEqual(publish().status_code, 200)
+            self.assertFalse(publish().json()["changed"])
+            self.assertTrue(self.client.get(root + f"/{release}", headers=headers).json()["active"])
+            self.assertEqual(self.client.get("/admin/api/patches", headers=headers).status_code, 401)
+            for channel, platforms in (("stable", ["android", "ios"]), ("internal", ["windows"])):
+                other = self.service.store.create_release(channel, "Forbidden", platforms, "test")
+                self.assertEqual(self.client.get(root + f"/{other}", headers=headers).status_code, 403)
+                self.assertEqual(self.client.post(root + f"/{other}/publish", headers=headers, json={"expected_revision": self.service.catalogue()["revision"]}).status_code, 403)
+                self.assertEqual(self.client.put(root + f"/{other}/artifacts/android?base_id=base-1", headers=headers, content=self.pack()).status_code, 403)
+            newer = self.service.store.create_release("internal", "Newer", ["android", "ios"], "test")
+            for platform in ("android", "ios"):
+                self.assertEqual(self.client.put(root + f"/{newer}/artifacts/{platform}?base_id=base-1", headers=headers, content=self.pack()).status_code, 200)
+            self.assertEqual(self.client.post(root + f"/{newer}/publish", headers=headers, json={"expected_revision": self.service.catalogue()["revision"]}).status_code, 200)
+            self.assertEqual(publish().status_code, 409)
+
     def test_upload_history_uses_latest_update_not_random_job_id(self):
         for index in range(32):
             job_id = f"{32-index:032d}"

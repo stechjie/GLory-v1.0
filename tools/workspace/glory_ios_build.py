@@ -243,7 +243,7 @@ def environment(args):
     if not Path(sdk).is_dir():
         raise RuntimeError("Xcode 缺少 iPhoneOS SDK。")
     godot = shared.find_executable([args.godot, os.environ.get("GODOT_BIN"),
-        "/Volumes/repository/glory-ios-dev/tools/godot/Godot.app", ROOT / "tools/godot/Godot.app",
+        ROOT / "glory-ios-dev/tools/godot/Godot.app", ROOT / "tools/godot/Godot.app",
         "/Applications/Godot.app", "godot", "godot4"])
     if not godot:
         raise RuntimeError("找不到匹配项目的 Godot；可用 --godot 指定 .app 或二进制。")
@@ -548,6 +548,9 @@ def main(argv=None):
                                              logdir / "import.log", env["child"], strict=False)
             materials = shared.verify_model_materials(engine, stage, logdir, env["child"])
             diagnostics = shared.verify_import_diagnostics(imported, stage, logdir, materials)
+            import glory_slim
+            slim = glory_slim.apply(stage, engine, logdir)
+            note(f"依赖扫描完成：排除 {len(slim['removed_source_paths'])} 个无引用资源，保留原始画质。")
             run_dir = work / "runs" / stamp
             xcode_dir = run_dir / "xcode"
             xcode_dir.mkdir(parents=True)
@@ -577,10 +580,12 @@ def main(argv=None):
             ipas = list(output.glob("*.ipa"))
             if len(ipas) != 1:
                 raise RuntimeError("Xcode 未生成唯一 IPA。")
+            from glory_package import compact_ipa
+            compression = compact_ipa(ipas[0])
             note("验证 ZIP、实际签名、描述文件、版本号、arm64 和包内构建身份…")
             checks = verify_ipa(ipas[0], run_dir / "verify", args.method, profile, cert, version, number, identity, env["child"])
             summary = dict(identity, method=args.method, timestamp=stamp, logs=str(logdir), profile=str(profile_path),
-                           profile_uuid=profile["UUID"], signing_certificate_sha1=cert["sha1"], validation=checks,
+                           profile_uuid=profile["UUID"], signing_certificate_sha1=cert["sha1"], validation=checks, slim=slim, compression=compression,
                            model_materials=materials["summary"] if materials else None,
                            accepted_fbx_source_texture_errors=diagnostics["accepted_fbx_source_texture_errors"],
                            archive=str(archive), source_project=str(args.project), asset_source=str(assets),
@@ -588,6 +593,9 @@ def main(argv=None):
             if args.patch_config:
                 summary["patch_base"] = shared.retain_patch_base(stage, engine, PRESET, "ios", args.patch_config,
                     run_dir / "patch-base", ipas[0])
+                from glory_package import verify_baseline
+                summary["patch_base"]["payload_verification"] = verify_baseline(
+                    ipas[0], Path(summary["patch_base"]["archive"]), "ios")
             publish(ipas[0], ROOT / "build/ipa", summary)
             if args.result_file:
                 atomic_json(args.result_file.expanduser().resolve(), summary)
