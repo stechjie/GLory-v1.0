@@ -221,6 +221,25 @@ func check_saved_match() -> String:
 #
 # 从 _active_match_for_token 抽出来的：现在有两个调用方（token 一条、账号 id 一条），
 # 判据只能有一份 —— 两份一定会分叉。
+# 此刻真的在对局里的那些人（出战名片里的 pid = 账号服务器的 player_id）。
+#
+# 给 DedicatedServerService.tick_match_roster 用，最终落到账号服务器的维护判断上：
+# 名册上的人维护时不会被踢。所以这里**宁可多报也不能少报** ——
+# 少报一个就是把一个正在打的人踢出对局（OPS-05 的 P0 明令禁止），
+# 多报一个只是维护晚一点对他生效。`_room_is_active_match` 本身已经是这个口径。
+func _active_match_pids() -> Array:
+	var seen: Dictionary = {}
+	for room in _rooms.values():
+		if not _room_is_active_match(room):
+			continue
+		var pids: Dictionary = room.get("seat_pid", {})
+		for pid in pids.values():
+			var text := str(pid).strip_edges()
+			if not text.is_empty():
+				seen[text] = true
+	return seen.keys()
+
+
 func _room_is_active_match(room: Dictionary) -> bool:
 	if room.is_empty() or str(room.get("state", ROOM_LOBBY)) in [ROOM_LOBBY, ROOM_CLOSED] \
 			or bool(room.get("run_over", false)):
@@ -867,6 +886,8 @@ func _process(delta: float) -> void:
 		# 无脑每帧写就是给自己造一个新的冻结源（和 B4 同一类问题）。
 		# 落盘节奏（只在有变更时写、且限速）已搬到 DedicatedServerService.tick_snapshot()。
 		_server_service.tick_snapshot(delta)
+		# 对局名册给账号服务器（维护时判断谁不能踢）。限速在服务里。
+		_server_service.tick_match_roster(delta, _active_match_pids())
 		_reserve_tick_accum += delta
 		if _reserve_tick_accum >= 1.0:
 			_reserve_tick_accum = 0.0

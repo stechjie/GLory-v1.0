@@ -33,7 +33,7 @@ import asyncpg
 import httpx
 
 from app import (analytics, announcements, bans, db, mail, ranked, realtime,
-                 service_control, shop, world_chat)
+                 sanctions, service_control, shop, world_chat)
 from app.admin_auth import Admin
 from app.config import get_settings
 
@@ -245,39 +245,69 @@ async def unban(admin: Admin, player_id: uuid.UUID, note: str) -> dict:
 # --- 禁言（世界频道，不用批；database/019）--------------------------------------------------
 
 
-async def mute(admin: Admin, player_id: uuid.UUID, hours: int | None, reason: str, note: str) -> dict:
-    """禁言：被禁的人照常能玩、能私聊，只是不能在世界频道说话（app/world_chat.py）。"""
+_SCOPE_LABEL = {sanctions.SCOPE_WORLD: "世界频道禁言",
+                sanctions.SCOPE_VOICE: "禁语音",
+                sanctions.SCOPE_RANKED: "禁排位"}
+
+
+async def mute(admin: Admin, player_id: uuid.UUID, hours: int | None, reason: str, note: str,
+               scope: str = sanctions.SCOPE_WORLD) -> dict:
+    """下处罚（database/036 的三个范围之一）。
+
+      world  —— 照常能玩、能私聊，只是不能在世界频道说话（app/world_chat.py）
+      voice  —— 组队 / 局内不能说话，**仍然听得到**（2026-10-12 用户拍板）
+      ranked —— 人工禁止排位准入，休闲不受影响（app/ranked.py 的 queue_gate）
+
+    🔴 三者独立：撤销一个不解除另外两个（靠 036 的 unmute_player 带 scope）。
+    """
+    try:
+        scope = sanctions.clean_scope(scope)
+    except ValueError as exc:
+        raise AdminRejected(str(exc)) from None
     reason = _require_text(reason, "给玩家看的原因", 200)
     note = (note or "").strip()[:500] or None
     if hours is not None and not 1 <= hours <= 24 * 3650:
-        raise AdminRejected("禁言时长要在 1 小时到 10 年之间；永久禁言不填时长")
+        raise AdminRejected("处罚时长要在 1 小时到 10 年之间；永久不填时长")
     async with db.pool().acquire() as conn:
         async with conn.transaction():
             code = await _live_friend_code(conn, player_id)
             try:
                 mute_id = await conn.fetchval(
-                    "select mute_player($1, $2::interval, $3, $4, $5)",
-                    code, None if hours is None else dt.timedelta(hours=hours), reason, admin.name, note)
+                    "select mute_player($1, $2::interval, $3, $4, $5, $6)",
+                    code, None if hours is None else dt.timedelta(hours=hours),
+                    reason, admin.name, note, scope)
             except asyncpg.UndefinedFunctionError:
-                raise AdminRejected("数据库还没跑 019_world_chat.sql，禁言用不了", 503) from None
+                raise AdminRejected(
+                    "数据库还没跑 database/036_sanction_scopes.sql，按范围下处罚用不了", 503) from None
             await _audit(conn, admin, "mute", player_id,
-                         {"mute_id": mute_id, "hours": hours, "reason": reason, "note": note})
-    return {"mute_id": mute_id}
+                         {"mute_id": mute_id, "scope": scope, "hours": hours,
+                          "reason": reason, "note": note})
+    return {"mute_id": mute_id, "scope": scope}
 
 
-async def unmute(admin: Admin, player_id: uuid.UUID, note: str) -> dict:
+async def unmute(admin: Admin, player_id: uuid.UUID, note: str,
+                 scope: str = sanctions.SCOPE_WORLD) -> dict:
+    """解除某一个范围的处罚。**只解这一个**，不碰其它范围（任务书 §四.3）。"""
+    try:
+        scope = sanctions.clean_scope(scope)
+    except ValueError as exc:
+        raise AdminRejected(str(exc)) from None
     note = (note or "").strip()[:500] or None
     async with db.pool().acquire() as conn:
         async with conn.transaction():
             code = await _live_friend_code(conn, player_id)
             try:
-                count = await conn.fetchval("select unmute_player($1, $2, $3)", code, admin.name, note)
+                count = await conn.fetchval(
+                    "select unmute_player($1, $2, $3, $4)", code, admin.name, note, scope)
             except asyncpg.RaiseError:
-                raise AdminRejected("这个玩家现在没有被禁言") from None
+                raise AdminRejected(
+                    "这个玩家现在没有生效中的「%s」" % _SCOPE_LABEL.get(scope, scope)) from None
             except asyncpg.UndefinedFunctionError:
-                raise AdminRejected("数据库还没跑 019_world_chat.sql，禁言用不了", 503) from None
-            await _audit(conn, admin, "unmute", player_id, {"revoked": count, "note": note})
-    return {"revoked": count}
+                raise AdminRejected(
+                    "数据库还没跑 database/036_sanction_scopes.sql，按范围解除用不了", 503) from None
+            await _audit(conn, admin, "unmute", player_id,
+                         {"revoked": count, "scope": scope, "note": note})
+    return {"revoked": count, "scope": scope}
 
 
 # --- 内部账号（运营数据排除；database/025，app/analytics.py）-----------------------------------
@@ -901,8 +931,13 @@ async def set_service_control(admin: Admin, *, version: int, maintenance: bool, 
     # 这一下就是全局生效 —— 新准入「即时」按权威状态拒绝靠的是这条路，不是等 TTL。
     service_control.invalidate()
 
+    # 主动推给所有在线玩家，让他们立刻知道（任务书 §七.3.5「健康在线时 5 秒内通知」）。
+    # 在 acquire 块**外面**发：绝不握着数据库连接 await 发送。
+    # broadcast 内部是 gather + 每条超时，一个卡死的 socket 拖不住其余的。
+    pushed = await realtime.hub().broadcast(service_control.push_message(await service_control.read()))
+
     kick = {"kicked": 0, "skipped": 0, "aborted": False}
     if maintenance and not was_maintenance:
         # 维护**刚打开**才踢。重复保存同一个开着的状态不该把人再踢一遍。
         kick = await service_control.kick_lobby_players()
-    return {"version": new_version, **kick}
+    return {"version": new_version, "pushed": pushed, **kick}

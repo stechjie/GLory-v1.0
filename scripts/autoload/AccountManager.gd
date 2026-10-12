@@ -1136,6 +1136,23 @@ func patch_header_lines() -> PackedStringArray:
 	])
 
 
+# 🔴 每个打账号服务器的请求都必须带的头，**只有这一份清单**。
+#
+# 2026-10-12 的事故就是漏了其中一条：语音上传发的是裸字节（不是 JSON），
+# 所以它不走 _request()，自己拼了一份头 —— 少了 X-Glory-Session。
+# 单端登录那边 `uuid.UUID(session_id or "")` 对空串直接抛 ValueError，
+# 于是**一发语音就回 409 session_replaced**，玩家以为自己被顶号了。
+#
+# 漏一个头不会报错，只会在某一条路上坏掉（而且是别人加功能时才暴露），
+# 所以不许再有第二份清单：要发不是 JSON 的请求，从这里取头、再自己补 Authorization。
+func auth_header_lines(content_type: String = "application/json") -> PackedStringArray:
+	var headers := PackedStringArray(["Content-Type: " + content_type, client_header_line()])
+	if not _login_session_id.is_empty():
+		headers.append("X-Glory-Session: %s" % _login_session_id)
+	headers.append_array(patch_header_lines())
+	return headers
+
+
 func _request(
 	method: int,
 	path: String,
@@ -1143,15 +1160,14 @@ func _request(
 	authed: bool = false,
 	allow_refresh: bool = true,
 ) -> Dictionary:
-	var headers := PackedStringArray(["Content-Type: application/json", client_header_line()])
-	# ⚠️ 快照**不能**取在这里：下面 authed 分支里可能 await refresh_session()
+	# 头只从 auth_header_lines() 取，**不在这里再拼一份** ——
+	# 2026-10-12 的事故就是某条路自己拼、漏了 X-Glory-Session（见那个函数的注释）。
+	var headers := auth_header_lines()
+	# ⚠️ 代次快照**不能**取在这里：下面 authed 分支里可能 await refresh_session()
 	# （一次真实 HTTP），那段时间代次若变化（登出 / 顶号），本请求会被误判成
 	# 「上一代的残留」而作废 —— 用户看到的就是聊天里一条 session_replaced 红字。
 	# 真正该判定的是「发出去之后、拿到响应之前有没有换代」，所以快照挪到
 	# 下面真正 request() 之前再取。
-	if not _login_session_id.is_empty():
-		headers.append("X-Glory-Session: %s" % _login_session_id)
-	headers.append_array(patch_header_lines())
 	if authed:
 		# 令牌快过期就先续，免得这一趟白跑一次 401（见「令牌续期」那一节）。
 		if allow_refresh and _token_needs_refresh():

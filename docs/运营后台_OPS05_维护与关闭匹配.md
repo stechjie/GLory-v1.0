@@ -160,6 +160,141 @@ journalctl -u glory-backend | grep SCHEMA | tail -5
 
 ---
 
+## 六之二 第二轮（2026-10-12 同日）：主动推送 + 游戏内遮罩
+
+### 做了什么
+
+| 任务书要求 | 本轮 |
+|---|---|
+| WebSocket 主动推送状态变更 | ✅ 改完开关 `hub.broadcast` 推给所有在线玩家 |
+| 游戏内不可穿透的维护弹窗 | ✅ 点外面不关、返回键也关不掉 |
+| 确认后退出客户端 | ✅ `get_tree().quit()`（iOS 待实机，见下） |
+| 同一状态只显示一份（验收 M07） | ✅ `_maintenance_notified` 挡重复 |
+
+**改动**
+
+| 文件 | 改了什么 |
+|---|---|
+| `backend/app/service_control.py` | `push_message()`、`CLOSE_MAINTENANCE = 4004`、`MESSAGE_TYPE = "service"` |
+| `backend/app/admin.py` | 改完开关后 broadcast；返回里带 `pushed` |
+| `scripts/autoload/RealtimeService.gd` | `service_state` + `service_state_changed` 信号；消息分发加 `"service"`；**关闭码 4004 兜底** |
+| `scenes/main/Main.gd` | `_on_service_state` / `_show_maintenance_block`，遮罩 + 退出 |
+| `ui/services/ModalStack.gd` | 新增 `persistent`：返回键吃掉但不关 |
+| `ui/services/DialogService.gd` | spec 可覆盖 `dismiss_on_backdrop`，并透传 `persistent` |
+| `tools/chat_check.gd` | 新增 `_case_service_control_contract_matches_backend()`，6 项 |
+
+### 🔴 为什么非要关闭码兜底不可
+
+服务端是「先发原因、紧接着关连接」。但 **Godot 的 WebSocketPeer 收到关闭帧之后就不再给读剩下的包**
+（`RealtimeService` 里 `CLOSE_BANNED` 那段注释写着 2026-09-28 查过引擎源码 `wsl_peer.cpp`）。
+
+所以握手被维护挡下时，那条 `"service"` 消息**多半读不到**，关闭码 **4004** 是唯一可靠的信号。
+少了这个兜底，玩家只会看到一个什么都不说的「连接断开」，然后客户端一直重连。
+
+代价是这条路上拿不到运营写的提示文案（遮罩用自己的兜底话）。要补的话可以在收到 4004 后
+去问一次 `GET /v1/service-status`（它不要登录，维护中也读得到）—— 本轮没做。
+
+### 遮罩为什么要改两个地方
+
+`DialogService.info()` 原来是 INFO intent → `dismiss_on_backdrop = true`，**点外面就能关**。
+而维护要的是「只有一个按钮、而且必须按它」。所以：
+
+- `DialogService`：让 spec 能覆盖 `dismiss_on_backdrop`（不再只由 intent 推）
+- `ModalStack`：新增 `persistent`，`handle_back_request()` 遇到它**返回 true 但不关**
+  —— 返回 false 的话调用方会以为没人管这一下，接着去退页面，遮罩就形同虚设
+
+### 本轮的测试
+
+| 项 | 结果 |
+|---|---|
+| `test_service_control_stdlib` | **35 passed**（29 + 新增 6） |
+| `tools/chat_check.tscn` | **306 项检查**，新增 6 项全过 |
+| 其余后端文件 | ranked 56 / matchmaking 46 / loadout 38 / ws 22 / admission 24 全绿 |
+
+变异验证（改坏 → 转红 → 还原转绿）：
+
+- `service_control.CLOSE_MAINTENANCE` 4004→4005 → `service_close_code_drift` 红
+- `Main.gd` 的 `persistent: true`→`false` → `maintenance_modal_not_blocking` 红
+- 把 broadcast 换成串行 `send_to_player` → 3 红
+- 把推送挪进 `db.pool().acquire()` 块里 → 1 红
+
+⚠️ `chat_check` 还有 **1 条既有的红**：`admission_flag_reset`
+（`_admitted = false` 出现在 `_mark_kicked` 里，门禁只允许 `_mark_banned`）。
+HEAD 版本就是这样，**不是本轮造成的** —— 它来自单端登录那批改动，要么是有意的、门禁该更新，
+要么是真 bug。**没人确认过，建议找做单端登录的人对一下。**
+
+### 还是没做
+
+- 战斗服务器侧
+- 统一开局边界
+- 「关闭匹配」的游戏内提示（现在只有服务端 409 + `X-Glory-Reason`，客户端没就地弹）
+- iOS 上 `get_tree().quit()` 的实机验收
+
+## 六之三 第三轮（2026-10-12 同日）：统一开局边界
+
+### 解决的问题
+
+前两轮里「谁在对局中」用的是启发式：**45 分钟内领过名片**。它方向安全（宁可多留不误踢），
+但很粗 —— 领了名片没进去的人会被当成在打，维护时踢不掉他。
+
+真相只有战斗服务器知道。这一轮把真相递过去。
+
+### 做法：同机文件，战斗服务器写、账号服务器读
+
+两个服务跑在**同一台机器**上（`glorytd-api` 与 `glorytd-battle` 都解析到 `34.124.141.90`），
+补丁服务的 desired/status 桥已经是这个形状，照着来：不引入新端口、不引入新鉴权。
+
+| 端 | 做什么 |
+|---|---|
+| 战斗服务器 | 每 **5 秒**把「此刻真的在打的人」原子写成一个 JSON（`DedicatedServerService.write_match_roster`），内容是 `{protocol, shard, server_epoch, generated_at, pids}` |
+| 账号服务器 | `players_in_match()` 先读它。新鲜（**30 秒**内）就当权威 |
+
+名册里的 `pids` 就是出战名片里的 `pid`，而 `loadout.card_payload` 放进去的是 `player_id` —— 两边同一个东西，不用映射。
+
+### 🔴 不是简单替换，是「名册 ∪ 正在连的人」
+
+只用名册的话，**刚领到名片、还在连战斗服务器**的人不在任何房间里，会被踢。
+所以名册新鲜时，入场登记的窗口从 45 分钟收窄到 **2 分钟**（名片只活 60 秒 + 加载时间），
+两者取并集。名册读不到时，整个退回 45 分钟的老口径。
+
+降级路径（任何一条不对劲都退回启发式，绝不拿一份可疑的名单去踢人）：
+
+- 没配路径 / 文件不存在 → 退回
+- `protocol` 不是 1 → 退回
+- `generated_at` 比 30 秒旧 → 退回
+- `generated_at` 在未来 30 秒以上（两台机器钟对不上）→ 退回
+- 文件不是 JSON / 形状不对 → 退回
+- 单个 pid 不是合法 uuid → **只跳过那一个**，不作废整份名册
+
+还有一条：数据库读失败但名册是新的 → **仍然用名册**（至少别把名册上的人踢了）。
+
+### 🔴 部署：两边都要设环境变量，指向同一个路径
+
+| 端 | 环境变量 |
+|---|---|
+| 账号服务器 | `GLORY_BATTLE_MATCH_ROSTER_FILE` |
+| 战斗服务器 | `GLORY_BATTLE_MATCH_ROSTER` |
+
+建议 `/var/lib/glory-battle-hotfix/match-roster.json`（战斗服务器已有的 StateDirectory）。
+目录要战斗服务器可写、账号服务器可读。
+
+**两边都不设 = 一切照旧**，退回 45 分钟的启发式，不会坏任何东西。
+所以这一项可以和代码分开上，先部署代码、确认没问题再配路径。
+
+### 本轮的测试
+
+| 项 | 结果 |
+|---|---|
+| `test_service_control_stdlib` | **49 passed**（35 + 新增 14） |
+| `tools/chat_check.tscn` | **310 项检查**（306 + 新增 4） |
+
+变异验证：
+
+- 去掉新鲜度检查（陈旧名册照用）→ 2 红
+- 名册新鲜时仍用 45 分钟窗口（等于白做）→ 1 红
+- 坏文件返回空集合而不是 `None` → 1 红
+- 写入间隔 5 秒改成 60 秒（比 30 秒的过期线还慢）→ 门禁 1 红
+
 ## 七 还没做的手工验收
 
 任务书第十一节 M01–M08 里，本轮能覆盖的只有服务端部分，下面这些**必须等客户端那一轮**，现在不能当作通过：

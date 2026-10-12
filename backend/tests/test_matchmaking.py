@@ -759,6 +759,27 @@ def test_matchmaking_switch_off_blocks_the_queue(wired, monkeypatch) -> None:
     assert r.headers["X-Glory-Reason"] == "matchmaking_disabled"
 
 
+def test_block_detail_is_the_text_the_player_sees(wired, monkeypatch) -> None:
+    """🔴 detail 不是给日志看的，**它就是玩家看到的那句话**。
+
+    scenes/menu/MatchQueuePanel.gd 的 _fail() 直接把 result.error 显示出来，
+    而 AccountManager._request 把 body["detail"] 原样放进 error。
+    所以改这里的文案 = 改玩家看到的提示；写成「HTTP 409」之类的话，
+    玩家会看到一句什么也没说的错误。
+    """
+    _switch(monkeypatch, matchmaking_on=False)
+    with TestClient(app) as client:
+        r = client.post("/v1/match/queue", json={"mode": "casual"},
+                        headers={"Authorization": "Bearer token-a"})
+    assert r.json()["detail"] == "排位功能暂时关闭"
+
+    _switch(monkeypatch, maintenance=True)
+    with TestClient(app) as client:
+        r = client.post("/v1/match/queue", json={"mode": "casual"},
+                        headers={"Authorization": "Bearer token-a"})
+    assert r.json()["detail"] == "服务器正在维护，暂时不能开始新对局"
+
+
 def test_matchmaking_switch_off_also_blocks_casual(wired, monkeypatch) -> None:
     """排位与休闲**一起**关（2026-10-12 用户拍板）。上面那条用的就是 casual，
     这里再明写一遍意图：别有人以为这个开关只管 ranked。"""

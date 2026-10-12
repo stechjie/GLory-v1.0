@@ -61,14 +61,27 @@ def room_name(room_id: str, epoch: str) -> str:
 
 
 def issue(config: dict, room_id: str, epoch: str, code: str, name: str,
-          now: int | None = None) -> dict:
+          now: int | None = None, can_publish: bool = True) -> dict:
+    """签一张组队语音的入场令牌。
+
+    `can_publish=False` = **禁语音**：能进房、能听，但不能说
+    （2026-10-12 用户拍板「禁说不禁听」，见 app/sanctions.py）。
+    `canSubscribe` 永远是 True —— 被罚的人照样该听得到队友，
+    把他整个踢出语音房是另一回事，不是这里做的。
+
+    🔴 令牌有效期 600 秒，而 LiveKit **只在首次进房时**检查它。
+    所以光靠这里签不出发言权是不够的：对局中途被罚的人手上那张旧令牌
+    还能再用 10 分钟。那一半要靠 LiveKit 的 UpdateParticipant
+    （战斗服务器 scripts/voice/LiveKitAdmin.gd，本轮**还没做**）。
+    """
     stamp = int(time.time()) if now is None else now
     room = room_name(room_id, epoch)
     claims = {
         "iss": config["api_key"], "sub": code, "name": name,
         "nbf": stamp, "exp": stamp + 600,
         "video": {"roomJoin": True, "room": room, "canSubscribe": True,
-                  "canPublish": True, "canPublishSources": ["microphone"],
+                  "canPublish": bool(can_publish),
+                  "canPublishSources": ["microphone"],
                   "canPublishData": False},
     }
     return {"url": config["client_url"], "room": room,

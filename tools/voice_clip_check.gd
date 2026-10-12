@@ -70,6 +70,7 @@ func _ready() -> void:
 	_case_entry_carries_clip()
 	_case_report_path_passes_clip()
 	_case_no_recording_during_call()
+	_case_upload_carries_session_header()
 	_h.finish(get_tree())
 
 
@@ -329,6 +330,45 @@ func _case_no_recording_during_call() -> void:
 		"start_recording 里没判「是不是正在通话」—— 麦克风只有一个，抢起来录出来是空的")
 	_h.expect(src.contains("input_enabled"), "no_input_guard",
 		"没判麦克风输入有没有开（project.godot 的 driver/enable_input）")
+
+
+# --- 11. 上传请求必须带全那份头 -----------------------------------------------
+#
+# 🔴 2026-10-12 真机上的事故。语音上传发的是裸字节（WAV）不是 JSON，所以它是客户端里
+# **唯一**不走 `AccountManager._request()` 的带身份请求 —— 当时它自己拼了一份头，
+# 漏了 `X-Glory-Session`。同事当天上线的单端登录在服务端做 `uuid.UUID(session_id or "")`，
+# 空串直接抛 ValueError → 409 `session_replaced`。
+#
+# 症状有多骗人：世界频道能打开、能发字、右上角还显示「● 实时」，
+# **只有一发语音**就蹦出一行 `session_replaced` —— 看着像账号被顶了，
+# 其实只是少了一个头。而且这条路是别人加功能时才被引爆的，写语音的时候它还不存在。
+#
+# 所以这里钉两件事：那份头清单只有一处，而且上传确实是从那一处取的。
+func _case_upload_carries_session_header() -> void:
+	var src := _read(CLIP_SERVICE)
+	_h.expect(src.contains("AccountManager.auth_header_lines"), "upload_hand_rolls_headers",
+		"语音上传没用 AccountManager.auth_header_lines() 取头，而是自己拼了一份。"
+		+ "少任何一条（X-Glory-Session / 补丁头 / 客户端版本）都不会报错，"
+		+ "只会在某一条路上坏掉 —— 2026-10-12 漏的就是 X-Glory-Session，一发语音就 409。")
+	_h.expect(src.contains("ensure_fresh_token"), "upload_skips_token_refresh",
+		"语音上传没先续令牌：录完 30 秒正好撞上令牌过期，就白传一次（_request() 自己会续）")
+	_h.expect(src.contains("session_replaced"), "upload_shows_raw_error",
+		"上传没单独处理 409：玩家会直接看到 \"session_replaced\" 这串字")
+
+	# 行为判据（不只是看源码里有没有那个名字）：清单里真的有那条头。
+	var before := AccountManager.login_session_id()
+	AccountManager._login_session_id = "11111111-2222-3333-4444-555555555555"
+	var lines := AccountManager.auth_header_lines("audio/wav")
+	AccountManager._login_session_id = before
+	var joined := "
+".join(lines)
+	_h.expect(joined.contains("X-Glory-Session: 11111111-2222-3333-4444-555555555555"),
+		"session_header_missing",
+		"auth_header_lines() 没带 X-Glory-Session —— 所有带身份的请求都会被单端登录判成换了设备")
+	_h.expect(joined.contains("Content-Type: audio/wav"), "content_type_ignored",
+		"auth_header_lines() 没采用传进去的 Content-Type：上传会被当成 JSON")
+	_h.expect(not joined.contains("Authorization"), "auth_header_leaks_token",
+		"auth_header_lines() 自己塞了 Authorization —— 不带身份的请求会平白带上令牌")
 
 
 # --- 小工具 -------------------------------------------------------------------
