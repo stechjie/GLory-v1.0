@@ -1,5 +1,19 @@
 # Glory Beta 0.04
 
+## 2026-10-13（同事 `037de27 excel update`：final status 数值源去 shop_items，已同步本地）
+
+同事在远端提交 `037de27 "excel update"`（作者 lenoliew-Glory，2026-10-13 01:17），与我的 `e7bc202`（10.13bug 修复）在远端**无冲突合并**为 `1564f14`。本地拉取后已按三目录规则同步落地。
+
+- **改了什么**：`data/balance/final_status.json` 移除顶层 `shop_items` 块（`03_宠物与商城` → `03_宠物技能`，宠物导出同步去掉 `shop_item_id/shop_currency/shop_price/shop_enabled` 与 `summary_cn` 列号位移）；`tools/export_final_status.py` 不再产出 `shop_items`、不再读 `data/shop.json`；`tools/final_runtime.py` 大幅精简（-175 行）；`docs/balance/README_final_status.md`、`docs/balance/final status.xlsx` 随之更新。文件体量 2037 → 1817 行。
+- **`balance_version` 变更**：`0e125524…` → **`1527bbdc34552914b84cdf45606e1a905277b450d058a08cbe156c311382ac7b`**（`final_workbook_sha256` `ed2f0d10…` → `b7cc1b67…`）。⚠ 见下「服务端提醒」。
+- **不影响客户端**：`scripts/ui/FinalStatusCatalog.gd` 只读 `units/pets/synergies/treasures/linkages`；`ShopScreen.gd` 只读 `balance_version`；商城条目来自服务端 `GET /v1/shop`（`AccountManager.fetch_shop()`）与 `data/shop.json`，两处都不依赖 `final_status.json` 的 `shop_items`。移除是安全清理。
+- **`data/shop.json` 未变**（仓/本地 sha256 一致 `f1e245b6…`）。
+- **本轮只读排查 + 同步，未改任何游戏代码**；`GLory-v1.0` 工作树干净、HEAD = `1564f14`，本地与远端一致。
+
+- **服务端提醒**（承前「商城数值版本红字」）：`balance_version` 又变了（现 `1527bbdc…`）。服务器必须重跑 `deploy/update.sh`（内含 rsync `balance/final_status.json` + `systemctl restart glory-backend`），否则新客户端进商城仍会弹红字、联机握手仍会被拒。
+
+- **同步落点**：包体文件 `data/balance/final_status.json` → `GLory-codex`（客户端运行时读 `res://data/balance/final_status.json`）；非包体 6 个文件（`docs/balance/*`、`tools/export_final_status.py`、`final_excel_owned.py`、`final_runtime.py`、`test_final_runtime.py`）→ `E:/Users/WINDOWS/Desktop/其他/GLory-codex瘦身归档_20261012/非游戏文件/`。7 个文件逐字节 sha256 全一致（PASS=7 FAIL=0）。
+
 ## 2026-10-13（PVP 开场流程与离线自测佣兵错模，已同步仓库）
 
 按 `10.13bug提交及修复.docx` 的两项反馈修复，并按本轮补充要求确定以下行为。改动先在本地 `GLory-codex` 完成、经用户实测通过，随后同步到 `GLory-v1.0`（本轮 7 个文件逐字节一致，CRLF 纪律 0 裸 LF）；版本控制提交与推送由用户执行。
