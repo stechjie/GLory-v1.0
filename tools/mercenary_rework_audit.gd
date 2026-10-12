@@ -9,6 +9,7 @@ const SKILLS := ["balance_judge", "gold_charge", "holy_song", "king_aura", "bloo
 var _out := ""
 var _screen: Control
 var _capture_skills: Array[String] = ["balance_judge", "gold_charge", "holy_song", "king_aura", "blood_rampage", "steel_order", "death_hunt"]
+var _metrics_only := false
 
 func _initialize() -> void:
 	call_deferred("_run")
@@ -22,6 +23,8 @@ func _run() -> void:
 			_out = str(args[i + 1])
 		elif str(args[i]) == "--focus":
 			focus = str(args[i + 1])
+		elif str(args[i]) == "--metrics-only":
+			_metrics_only = true
 	var selected_ids: Array = IDS
 	match focus:
 		"judge":
@@ -95,12 +98,18 @@ func _capture_formal(replay: Dictionary, report: Dictionary) -> void:
 	var captures := {}
 	var peak_live := 0
 	var last_frame := -1
+	var frame_ms: Array[float] = []
+	var last_wall_usec := 0
 	var deadline := Time.get_ticks_msec() + 90000
 	while is_instance_valid(_screen) and Time.get_ticks_msec() < deadline:
 		await process_frame
+		var wall_usec := Time.get_ticks_usec()
 		await RenderingServer.frame_post_draw
 		if not bool(_screen.get("_battle_setup_ready")):
 			continue
+		if last_wall_usec > 0 and _metrics_only:
+			frame_ms.append(float(wall_usec - last_wall_usec) / 1000.0)
+		last_wall_usec = wall_usec
 		var replay_frame := int(_screen.get("_replay_frame"))
 		if replay_frame == last_frame:
 			continue
@@ -109,6 +118,8 @@ func _capture_formal(replay: Dictionary, report: Dictionary) -> void:
 		_collect_effects(_screen, active)
 		peak_live = maxi(peak_live, active.size())
 		for skill_id in _capture_skills:
+			if _metrics_only:
+				break
 			if not active.has(skill_id) or captures.has(skill_id):
 				continue
 			var effect: Node3D = active[skill_id]
@@ -119,11 +130,20 @@ func _capture_formal(replay: Dictionary, report: Dictionary) -> void:
 		if replay_frame >= (replay.get("frames", []) as Array).size():
 			break
 	report["formal_capture"] = {"captures": captures, "peak_live_effect_nodes": peak_live, "last_replay_frame": last_frame, "missing": _capture_skills.filter(func(skill_id: String) -> bool: return not captures.has(skill_id))}
+	if _metrics_only:
+		frame_ms.sort()
+		var over_100 := 0
+		for value in frame_ms:
+			if value > 100.0:
+				over_100 += 1
+		report["performance"] = {"samples": frame_ms.size(), "median_ms": _percentile(frame_ms, 0.5), "p95_ms": _percentile(frame_ms, 0.95), "over_100ms": over_100, "route_sha256": FileAccess.get_sha256("res://effects/BossProceduralVFX3D.gd"), "battle_vfx_sha256": FileAccess.get_sha256("res://scenes/battle/BattleVfx.gd")}
 	var file := FileAccess.open(_out.path_join("formal_evidence.json"), FileAccess.WRITE)
 	if file != null:
 		file.store_string(JSON.stringify(report, "  "))
 		file.close()
 	print("MERC_REWORK_FORMAL_RESULT " + JSON.stringify(report.formal_capture))
+	if _metrics_only:
+		print("MERC_REWORK_PERFORMANCE " + JSON.stringify(report.performance))
 	if is_instance_valid(_screen):
 		_screen.queue_free()
 		await process_frame
@@ -135,3 +155,8 @@ func _collect_effects(node: Node, out: Dictionary) -> void:
 			out[skill_id] = node
 	for child in node.get_children():
 		_collect_effects(child, out)
+
+func _percentile(values: Array[float], fraction: float) -> float:
+	if values.is_empty():
+		return 0.0
+	return values[clampi(int(round(float(values.size() - 1) * fraction)), 0, values.size() - 1)]
