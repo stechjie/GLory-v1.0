@@ -405,6 +405,9 @@ func _start_replay(replay: Dictionary) -> void:
 	reset_battle_camera_framing()
 	_begin_presentation_replay(replay)
 	_load_replay_roster(replay)
+	_pvp_combat_waiting = _effective_kind() in ["pvp", "final"]
+	if _pvp_combat_waiting:
+		_clear_unit_visuals()
 	# 9.20：换了一局就必须把 VFX 差分缓存**重新播种**（下面的方法里写清了理由）。
 	_reseat_vfx_diff_for_new_battle()
 	_prefetch_battle_assets()
@@ -428,7 +431,10 @@ func _start_replay(replay: Dictionary) -> void:
 	# 见 BattleUI._color_flip 的注释与 BattleRenderer._display_team。
 	_color_flip = str(replay.get("kind", "")) == "pvp" and my_team == 1
 	if not replay.get("frames", []).is_empty():
-		_apply_replay_frame(0)
+		if _pvp_combat_waiting:
+			_stage_pvp_opening_frame()
+		else:
+			_apply_replay_frame(0)
 		# Round 21 shows formation allies before combat starts. Stage only the
 		# Lantern opening cast so its silence and cast VFX wait for frame 0 playback.
 		if GameState.round_index == GameState.FINAL_ROUND and _has_live_formation_ally():
@@ -446,6 +452,23 @@ func _start_replay(replay: Dictionary) -> void:
 		#   elapsed playback」——而墙钟在后台会跳，跳完立刻判定「播太久了」直接判负。
 		_playback_deadline_msec = _mono_msec + int((playback_seconds + 20.0) * 1000.0)
 		_presentation_director.set_playback_speed(PLAYBACK_SPEED * _readable_speed)
+
+
+func _stage_pvp_opening_frame() -> void:
+	# 回放第 0 帧已经含开场技能结果。读条/Ready/Go 只借用站位，不能提前
+	# 消费技能事件、伤害、护盾或冷却；完整第 0 帧在字幕撤下后才应用。
+	var frames: Array = _replay.get("frames", [])
+	if frames.is_empty():
+		return
+	for entry in frames[0]:
+		if not entry is Array or entry.size() < 5:
+			continue
+		var fighter: Dictionary = _replay_by_uid.get(str(entry[0]), {})
+		if fighter.is_empty():
+			continue
+		fighter.pos = Vector2(float(entry[1]), float(entry[2]))
+		fighter.alive = bool(entry[4])
+		fighter.hp = int(fighter.max_hp) if fighter.alive else 0
 
 
 func _has_live_formation_ally() -> bool:
@@ -578,6 +601,7 @@ const BATTLE_PREPARE_PET_SIZE := Vector2(64.0, 64.0)
 #
 # 必须「建完才开打」——否则 _apply_replay_frame 会去定位还不存在的单位。
 func _prepare_battle_models() -> void:
+	_pvp_combat_waiting = _effective_kind() in ["pvp", "final"]
 	var models_started := Time.get_ticks_msec()
 	# ★ _battle_prepare_started_msec 记的是**单调表**上的起点（见 _start_replay）。
 	#   绝不能用 models_started（墙钟）覆盖：battle_preparation_report.total_ms 与
@@ -695,32 +719,29 @@ func _prepare_battle_models() -> void:
 	# **同一时刻**发生（9.17 第三轮反馈），拆在两个地方迟早漂移。
 	if _effective_kind() == "boss":
 		_begin_boss_intro()
-	# 9.21 用户口径第 3 条：最终回合 pvp 战斗场景开局音。
-	#
-	# 位置与 boss 登场音并列，理由相同（见上一段）：这里是「模型全建完、战斗马上
-	# 开打」，不是进场景那一刻。演出顺序是「响开局音 → 播完 → 起 pvp 战斗 BGM」，
-	# 由本函数末尾的 _resolve_pending_battle_music() 收口。
-	#
-	# ★ 判据是 `_effective_kind() == "final"`，**不是** _try_start_final_round_intro()
-	#   的成功与否：后者只在「场上真有阵型盟友」时才演出召唤，而开局音是场景级的
-	#   开场（用户要的是「最终回合时开局播放」）。挂在那个返回值上会让没有阵型
-	#   盟友的最终回合整场没有开场音。
-	if _effective_kind() == "final":
+	# 10.13：所有 PVP 都在模型就绪后开始 Ready/Go；不依赖最终回合是否有法阵盟友。
+	if _effective_kind() in ["pvp", "final"]:
 		_begin_final_round_intro()
 	_try_start_final_round_intro()
-	# 9.17 反馈第 4 条：登场音播完之后才起 pve 战斗 BGM。
-	# 放在本函数**最末尾**：这是「模型全建完、战斗马上开打」的那一刻，
-	# 也是本函数里唯一保证会走到的收口点（前面几个早退分支都在建模型循环里）。
-	# Audio ordering is independent of combat readiness: some Boss intro clips
-	# last 15s. Their generation-guarded coroutine starts BGM when audio ends;
-	# neither replay frames nor the Director wait for that sound track.
-	_resolve_pending_battle_music()
+	if _effective_kind() in ["pvp", "final"]:
+		# PVP 的音效和 Ready/Go 属于开战流程；模型已就绪，但两条战斗时间线仍冻结。
+		await _resolve_pending_battle_music()
+	else:
+		# Boss 保留原有行为：较长的登场音不阻塞战斗。
+		_resolve_pending_battle_music()
 	# The actual final-round summon animation still gates both timelines.
 	while _final_round_intro_active:
 		await get_tree().process_frame
 		if not is_inside_tree() or _finished or _prepare_deadline_expired():
 			return
 	if is_inside_tree() and not _finished:
+		var release_pvp := _pvp_combat_waiting
+		_pvp_combat_waiting = false
+		if release_pvp:
+			if _replay_mode:
+				_apply_replay_frame(0)
+			# 不丢弃开场技能：仅延迟至音效结束、Go 撤下后，再播种其表现。
+			_refresh_visuals()
 		battle_preparation_report["total_ms"] = _mono_msec - _battle_prepare_started_msec
 		battle_preparation_report["ready"] = true
 		_battle_setup_ready = true

@@ -1,5 +1,42 @@
 # Glory Beta 0.04
 
+## 2026-10-13（PVP 开场流程与离线自测佣兵错模，已同步仓库）
+
+按 `10.13bug提交及修复.docx` 的两项反馈修复，并按本轮补充要求确定以下行为。改动先在本地 `GLory-codex` 完成、经用户实测通过，随后同步到 `GLory-v1.0`（本轮 7 个文件逐字节一致，CRLF 纪律 0 裸 LF）；版本控制提交与推送由用户执行。
+
+- **仅 PVP 改开场流程**：普通 PVP 与最终 PVP 均先停备战音乐，播放原“最终回合pvp战斗场景开局播放”音效；同刻显示 `Ready`，1.5 秒后切为 `Go`。按素材实际时长（当前约 2.352 秒）等待，音效结束立即撤下 `Go`、开始循环 PVP BGM，然后才放行战斗。PVE 与 Boss 保留原有音乐、登场及开战时序。
+- **文字外观**：只保留居中的金色 `Ready` / `Go` 文字和轻微缩放动效，无背景横幅、装饰、描边或阴影；不拦截输入，按屏幕尺寸缩放。
+- **移动、普攻、技能统一等待**：PVP 建模与 Ready/Go 期间只展示待机站位；冻结回放和技能演出调度。回放第 0 帧已包含开场技能结果，因此先仅提取站位，在 Go 撤下后才应用完整第 0 帧、伤害/状态和技能事件。建模阶段的视觉刷新也禁止提前触发开场技能、技能音效及特效，保留事件游标，开战后仍正常播放首轮技能。复用模型不会因重新布阵提前进入跑步/攻击动作。
+- **离线自测佣兵模型错误**：佣兵使用按槽位和序号生成的 uid；换人或删除前面的佣兵时，旧模型被误复用，属性却已经更新。编辑摆放与返回编辑态时统一清理模型、血条、动画及相关缓存，再按当前配置重建。已覆盖同格泡沫术士换甲壳守卫、增删导致佣兵序号变化及演示结束后返回编辑。
+- **素材**：用户指定的两份 MP3 与工程现有开场音、PVP BGM 的 SHA-256 完全一致，复用现有资源，没有重复导入音频。PVP BGM 继续由原 MusicService 循环播放。
+
+本次涉及 `scenes/battle/BattleUI.gd`、`BattleScreen.gd`、`BattleRenderer.gd`、`BattleVfx.gd`、新增 `PvpIntroOverlay.gd`（含 uid），以及 `officetest/OfficeTestScreen.gd`。
+
+验证：Godot 4.7.2 导入检查通过；桌面 Compatibility 实际场景回归 **116 项通过、0 失败**，覆盖普通/最终 PVP、Ready/Go 时间段的待机与位置不变、技能事件不提前消费且开战后释放、取消后不恢复音乐、PVE/Boss 分类及音乐行为、佣兵模型与资源路径一致性。已查看实际 Ready/Go 截图。旧版自测脚本对照可复现 **6 项模型身份/路径断言失败**，修复后通过。测试脚本、日志、截图及修改前备份外置在 `E:/Users/WINDOWS/Desktop/其他/10.13修复验证/`，不混入发布包。
+
+用户验收：普通 PVP 和第 21 回合观察“Ready → Go → 音效结束且 Go 消失 → 开战”，重点确认开场技能在 Go 消失后才出现；检查 PVE/Boss 无 Ready/Go；在自测同格反复切换泡沫术士/甲壳守卫，并增删前面的佣兵，核对模型和属性。安卓/iOS 真机及真实多人联机尚待用户测试。本次无数据库迁移、无服务端协议或模拟规则变更，不要求更新或重启服务端。
+
+同步核验（2026-10-13 同步到仓时补记）：`GLory-codex` → `GLory-v1.0` 的 7 个文件 sha256 逐个一致（PASS=7 FAIL=0），行尾 0 裸 LF；`git status` 恰好为 5 改 + 2 新增（`PvpIntroOverlay.gd` 及其 `.uid`），两新文件均未被 `.gitignore` 命中。本轮**未触及任何资源文件**（`assets/` 下无内容改动，仅 Godot 重新生成的 `.import` 侧车），故按「能进仓库的只进仓库」规则无需在桌面另建资源镜像夹。仓侧门禁：`boss_battle_bgm` 与 `cold_parse_chain` 因 `GLory-v1.0` 不含音频资源（本项目音频只在 `GLory-codex` 包体树）而无法在仓内通过，改动前后跑同一门禁失败项**完全一致**（`boss_battle_bgm` 5 项、`cold_parse_chain` 由环境导入缓存引起的 17~19 项），可判定与本次改动无关；`--import` 语法扫描零脚本错误。
+
+## 2026-10-13（商城数值版本红字）：线上服务端未部署新数值版本，**不是代码 bug**
+
+用户真机反馈：进「荣耀商店」顶部红字 `商城数值版本与当前游戏不同，请更新游戏`。**排查结论：客户端与仓内文件都是最新的，落后的是线上账号后端 —— 不用改代码，重跑部署脚本 + 重启服务即可。**
+
+- **红字判据**：`scenes/menu/ShopScreen.gd:576-581` 拿 `AccountManager.fetch_shop()`（服务端 `GET /v1/shop`）返回的 `balance_version` 与本地 `DataRegistry.get_table("final_status").balance_version` 比对，不等就提示。
+- **两端各读哪一份**：服务端读**部署根**下的 `$REPO/data/balance/final_status.json`（`backend/app/balance_version.py:8` 的 `parents[2]/data/balance/final_status.json`，返回处 `backend/app/routes/shop.py:241`）；客户端读**打包进包体**的 `res://data/balance/final_status.json`（`scripts/autoload/DataRegistry.gd:28`）。两份文件、两个独立部署物，必须同步发布。
+- **实测值**：仓 / 客户端包内 / `GLory-codex` 三处均已是 **`0e125524…`**（10-12 22:02 提交 `81dc7aa "data change"` 带来的新值，与仓 HEAD 逐字节一致）；线上服务端**仍是旧值 `77ee99f0…`**（10-10 `2f1132c "shop update"` 那版）。⇒ 服务端没重跑 `deploy/update.sh`。
+- **版本值变更史**（`git log -p -- data/balance/final_status.json`）：`a704994` → `a6d8531d…`；`2f1132c`(10-10 21:47) → `77ee99f0…`；`81dc7aa`(10-12 22:02) → `0e125524…`。注意 `81dc7aa` 对该文件的 diff **只有 `balance_version` 一行**（正文未变，`final_workbook_sha256` 仍 `ed2f0d10…`）—— 属于发布流程按 `tools/export_final_status.py:139`（display+runtime+code_rules 的规范 JSON 取 sha256，`sort_keys=True`）重算刷新版本戳，**不代表数值真的改了**。
+- **修法（运维侧，不改代码）**：
+  1. 在服务器上重跑 `sudo bash <仓>/deploy/update.sh` —— 该脚本第 128 行的数据清单明确含 `balance/final_status.json`（注释 120 行：「与客户端、专服核对的数值版本」），会把 `$SRC/data/balance/final_status.json` rsync 进运行目录；
+  2. ⚠ **必须重启账号后端**：`balance_version.py:11` 带 `@lru_cache(maxsize=1)`，进程启动时读一次就永久缓存，只 rsync 不重启则旧值仍在内存；
+  3. 按 `docs/balance/README_final_status.md` 第 45 行要求，发布后用线上实测**核对三端版本**。
+
+- **影响面**：红字**只是提示、不阻断购买**（581 行之后无 `return`，`_items` 照常 filter）。同一版本不一致还会让客户端与专服联机握手被拒（`NetworkTransport.gd:120` 比 `balance_version`），是同一根因的第二个症状面。
+- **无需动的**：`android/build/**/assets/data/balance/final_status.json` 仍是旧值 `77ee99f0…`，但 `android/` 被 `.gitignore` 忽略（导出构建产物），出包时会重新生成。
+
+本轮**只读排查，未改任何工程文件**；仓侧零写入、HEAD 仍 `81dc7aa`；未做任何 git 操作。
+
+
 ## 2026-10-12（世界频道语音红字）：1 个必现故障 + 1 个 UI 调整
 
 用户真机反馈「世界频道用语音必定弹红字 `session_replaced`，语音发不出去」。**只改客户端 3 个文件，不动服务端、不需要新迁移。**
