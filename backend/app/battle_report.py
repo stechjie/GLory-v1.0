@@ -44,7 +44,7 @@ import pathlib
 import re
 import uuid
 
-from app import db, ranked
+from app import db, ranked, service_control
 
 log = logging.getLogger("glory.battle_report")
 
@@ -441,6 +441,11 @@ async def record(report: dict) -> bool:
         # `on conflict do nothing`，根本到不了这里。别在 ranked.py 里再加一套去重，
         # 两套幂等机制意味着两处会分叉。
         await ranked.settle(conn, report)
+    # 这一局打完了，把它那几个人从入场名册里划掉（app/service_control.py）。
+    #
+    # **在事务外**：名册只服务于维护开关，划不掉最坏是这几个人在维护时多留一会儿，
+    # 不值得为它增加一条让结算回滚的路径。划漏的由定时清理兜底。
+    await service_control.clear_match(report["match_uid"])
     return True
 
 

@@ -30,6 +30,7 @@ from __future__ import annotations
 import collections
 import dataclasses
 import datetime as dt
+import json
 import logging
 import uuid
 
@@ -98,6 +99,11 @@ class WorldMessage:
     avatar_frame: str
     body: str
     created_at: dt.datetime
+    # 2026-10-11 起世界频道也能发语音（database/033_voice_clips.sql）。
+    # text 的 payload 是 None；voice 的 body 是服务端写的「[语音 12″]」、
+    # payload 是 {"clip_id": ..., "seconds": ...}。
+    kind: str = "text"
+    payload: dict | None = None
 
     def to_client(self) -> dict:
         # 「是不是我发的」由客户端拿 from_code 和自己的好友码比：推送是同一份发给所有人的。
@@ -109,12 +115,14 @@ class WorldMessage:
             "avatar_frame": self.avatar_frame,
             "body": self.body,
             "created_at": self.created_at.astimezone(dt.UTC).isoformat(),
+            "kind": self.kind,
+            "payload": self.payload,
         }
 
 
 _COLUMNS = """
 select w.message_id, w.sender_id, p.friend_code, w.sender_name, w.sender_avatar, w.sender_frame,
-       w.body, w.created_at
+       w.body, w.created_at, w.kind, w.payload
   from world_messages w join players p on p.player_id = w.sender_id
 """
 
@@ -138,14 +146,15 @@ select reason, ends_at from player_mutes
 _SENDER = "select player_name, avatar, avatar_frame, friend_code from players where player_id = $1"
 
 _INSERT = """
-insert into world_messages (sender_id, client_msg_id, body, sender_name, sender_avatar, sender_frame)
-values ($1, $2, $3, $4, $5, $6)
+insert into world_messages (sender_id, client_msg_id, body, sender_name, sender_avatar, sender_frame,
+                            kind, payload)
+values ($1, $2, $3, $4, $5, $6, $7, $8)
 on conflict (sender_id, client_msg_id) do nothing
 returning message_id, created_at
 """
 
 _EXISTING = """
-select message_id, created_at, body, sender_name, sender_avatar, sender_frame
+select message_id, created_at, body, sender_name, sender_avatar, sender_frame, kind, payload
   from world_messages where sender_id = $1 and client_msg_id = $2
 """
 
@@ -155,7 +164,19 @@ _PURGE = "delete from world_messages where created_at < now() - ($1 * interval '
 def _row_to_message(row: asyncpg.Record) -> WorldMessage:
     return WorldMessage(int(row["message_id"]), row["sender_id"], str(row["friend_code"]),
                         str(row["sender_name"]), str(row["sender_avatar"]), str(row["sender_frame"]),
-                        str(row["body"]), row["created_at"])
+                        str(row["body"]), row["created_at"],
+                        str(row["kind"] or "text"), _decode_payload(row["payload"]))
+
+
+def _decode_payload(raw) -> dict | None:
+    """payload 列是 jsonb。asyncpg 不带 codec 时给的是字符串，带了给的是 dict ——
+    两种都可能（看连接池怎么建的），所以这里都认。同 chat._decode_payload。"""
+    if raw is None or isinstance(raw, dict):
+        return raw
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 # --- 进程内的最近 RING_SIZE 条 ------------------------------------------------------
@@ -272,10 +293,14 @@ async def older(before_id: int, limit: int) -> list[WorldMessage]:
 # --- 写 ---------------------------------------------------------------------------
 
 
-async def post(player: Player, body: str, client_msg_id: uuid.UUID) -> tuple[WorldMessage, bool]:
+async def post(player: Player, body: str, client_msg_id: uuid.UUID,
+               kind: str = "text", payload: dict | None = None) -> tuple[WorldMessage, bool]:
     """禁言 → 写库（按 client_msg_id 去重）→ 进最近 N 条 → 推送。返回 (消息, 这次是否新建)。
 
     文字必须已经过 text_guard.clean_world_message，频率限制已经在路由层判过。
+
+    kind='voice'（2026-10-11）时 body 是服务端写的「[语音 12″]」、payload 是
+    {"clip_id": ..., "seconds": ...}，校验在 routes/world.py 做完了才进来。
     """
     if not db.is_connected():
         raise WorldUnavailable("数据库未配置")
@@ -289,18 +314,21 @@ async def post(player: Player, body: str, client_msg_id: uuid.UUID) -> tuple[Wor
                 raise WorldUnavailable("没有这个玩家")
             row = await conn.fetchrow(_INSERT, player.player_id, client_msg_id, body,
                                       str(sender["player_name"]), str(sender["avatar"] or ""),
-                                      str(sender["avatar_frame"] or ""))
+                                      str(sender["avatar_frame"] or ""),
+                                      kind, json.dumps(payload) if payload is not None else None)
             created = row is not None
             if not created:
                 # 同一条的重试（第一次其实成功了）：回第一次那条，不再推一次。
                 row = await conn.fetchrow(_EXISTING, player.player_id, client_msg_id)
                 message = WorldMessage(int(row["message_id"]), player.player_id, str(sender["friend_code"]),
                                        str(row["sender_name"]), str(row["sender_avatar"]),
-                                       str(row["sender_frame"]), str(row["body"]), row["created_at"])
+                                       str(row["sender_frame"]), str(row["body"]), row["created_at"],
+                                       str(row["kind"] or "text"), _decode_payload(row["payload"]))
             else:
                 message = WorldMessage(int(row["message_id"]), player.player_id, str(sender["friend_code"]),
                                        str(sender["player_name"]), str(sender["avatar"] or ""),
-                                       str(sender["avatar_frame"] or ""), body, row["created_at"])
+                                       str(sender["avatar_frame"] or ""), body, row["created_at"],
+                                       kind, payload)
     except asyncpg.UndefinedTableError:
         log.error("world_messages / player_mutes 表不存在：先在 Supabase 跑 database/019_world_chat.sql")
         raise WorldUnavailable("019 没跑") from None

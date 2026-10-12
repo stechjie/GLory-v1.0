@@ -1458,11 +1458,7 @@
       "detail_cn": "己方棋子最大生命 +10%。",
       "scope_cn": "己方普通棋子；战斗开场",
       "starter": true,
-      "summary_cn": "己方棋子生命 +10%",
-      "shop_item_id": "shop_pet_mushroom",
-      "shop_currency": "coin",
-      "shop_price": 500,
-      "shop_enabled": true
+      "summary_cn": "己方棋子生命 +10%"
     },
     "pet_cat": {
       "name_cn": "猫",
@@ -1472,11 +1468,7 @@
       "detail_cn": "金币利息率额外 +5%，与基础及复利宝藏分别计算。",
       "scope_cn": "持有者；战后利息",
       "starter": true,
-      "summary_cn": "金币利息 +5%",
-      "shop_item_id": "shop_pet_cat",
-      "shop_currency": "coin",
-      "shop_price": 500,
-      "shop_enabled": true
+      "summary_cn": "金币利息 +5%"
     },
     "pet_rabbit": {
       "name_cn": "兔子",
@@ -1486,11 +1478,7 @@
       "detail_cn": "己方棋子攻击 +10%。",
       "scope_cn": "己方普通棋子；战斗开场",
       "starter": true,
-      "summary_cn": "己方棋子攻击 +10%",
-      "shop_item_id": "shop_pet_rabbit",
-      "shop_currency": "coin",
-      "shop_price": 500,
-      "shop_enabled": true
+      "summary_cn": "己方棋子攻击 +10%"
     },
     "pet_squirrel": {
       "name_cn": "松鼠",
@@ -1500,11 +1488,7 @@
       "detail_cn": "每次萝卜收获额外 +20%，增量向下取整且至少 +1；己方营地萝卜容量 +20%，增量向下取整。",
       "scope_cn": "己方采集和营地容量",
       "starter": false,
-      "summary_cn": "萝卜采集与营地容量 +20%（采集至少多 1）",
-      "shop_item_id": "draw_pet_squirrel",
-      "shop_currency": "diamond",
-      "shop_price": 75,
-      "shop_enabled": false
+      "summary_cn": "萝卜采集与营地容量 +20%（采集至少多 1）"
     },
     "pet_tiger": {
       "name_cn": "老虎",
@@ -1514,11 +1498,7 @@
       "detail_cn": "每次自己的棋子升星永久 +1 层，棋盘和备战区、1–3 阶升星均计；每层使自己所有 1 阶棋子的生命、攻击、防御 +5%，无限累计。后来上场也继承；卖掉棋子不清层数。2–3 阶、队友和敌方不加成。",
       "scope_cn": "自己的一阶棋子；升星永久叠层",
       "starter": false,
-      "summary_cn": "每次升星：一阶棋子生命、攻击、防御 +5%（无限累计）",
-      "shop_item_id": "draw_pet_tiger",
-      "shop_currency": "diamond",
-      "shop_price": 75,
-      "shop_enabled": false
+      "summary_cn": "每次升星：一阶棋子生命、攻击、防御 +5%（无限累计）"
     }
   },
   "synergies": {
@@ -1832,206 +1812,6 @@
       "effect_cn": "需要：生命丰碑 + 黄金祭坛 + 震荡余波 + 血契之刃 + 狂怒阵容。生命丰碑 ×1.20→×1.40；震荡余波眩晕 1→2 秒；血契之刃 ×1.25→×1.50；狂怒阵容上限 8→9。黄金祭坛使用不扣法阵 HP；选到胡牌手立即回复法阵 HP +2（上限 50）。\n表内字段：positive_effect_multiplier = 2"
     }
   },
-  "shop_items": {
-    "shop_pet_mushroom": {
-      "kind": "pet",
-      "grants": "pet_mushroom",
-      "currency": "coin",
-      "price": 500,
-      "enabled": true,
-      "name_cn": "蘑菇",
-      "name_en": "Mushroom"
-    },
-    "shop_pet_cat": {
-      "kind": "pet",
-      "grants": "pet_cat",
-      "currency": "coin",
-      "price": 500,
-      "enabled": true,
-      "name_cn": "猫",
-      "name_en": "Cat"
-    },
-    "shop_pet_rabbit": {
-      "kind": "pet",
-      "grants": "pet_rabbit",
-      "currency": "coin",
-      "price": 500,
-      "enabled": true,
-      "name_cn": "兔子",
-      "name_en": "Rabbit"
-    },
-    "shop_prep_skin_ice": {
-      "kind": "prep_skin",
-      "grants": "prep_skin_ice",
-      "currency": "diamond",
-      "price": 0,
-      "enabled": false,
-      "name_cn": "冰雪棋盘",
-      "name_en": "Frost Board"
-    },
-    "event_frame_7day_ice": {
-      "kind": "avatar_frame",
-      "grants": "preset:avatar_frame_7day_01",
-      "currency": "diamond",
-      "price": 0,
-      "enabled": false,
-      "name_cn": "冰雪七日头像框",
-      "name_en": "Frost Seven-Day Frame"
-    },
-    "shop_frame_emerald": {
-      "kind": "avatar_frame",
-      "grants": "preset:avatar_frame_shop_01",
-      "currency": "coin",
-      "price": 600,
-      "enabled": true,
-      "name_cn": "翡翠森境",
-      "name_en": "Emerald Grove"
-    },
-    "shop_frame_frost": {
-      "kind": "avatar_frame",
-      "grants": "preset:avatar_frame_shop_02",
-      "currency": "coin",
-      "price": 600,
-      "enabled": true,
-      "name_cn": "霜晶王冠",
-      "name_en": "Frost Crown"
-    },
-    "shop_frame_dragon": {
-      "kind": "avatar_frame",
-      "grants": "preset:avatar_frame_shop_03",
-      "currency": "coin",
-      "price": 600,
-      "enabled": true,
-      "name_cn": "鎏金龙鳞",
-      "name_en": "Gilded Dragon"
-    },
-    "shop_frame_astral": {
-      "kind": "avatar_frame",
-      "grants": "preset:avatar_frame_shop_04",
-      "currency": "coin",
-      "price": 600,
-      "enabled": true,
-      "name_cn": "星穹秘环",
-      "name_en": "Astral Halo"
-    },
-    "shop_frame_inferno": {
-      "kind": "avatar_frame",
-      "grants": "preset:avatar_frame_shop_05",
-      "currency": "coin",
-      "price": 600,
-      "enabled": true,
-      "name_cn": "炽焰之心",
-      "name_en": "Inferno Heart"
-    },
-    "draw_pet_squirrel": {
-      "kind": "pet",
-      "grants": "pet_squirrel",
-      "currency": "diamond",
-      "price": 75,
-      "enabled": false,
-      "name_cn": "松鼠",
-      "name_en": "Squirrel"
-    },
-    "draw_pet_tiger": {
-      "kind": "pet",
-      "grants": "pet_tiger",
-      "currency": "diamond",
-      "price": 75,
-      "enabled": false,
-      "name_cn": "老虎",
-      "name_en": "Tiger"
-    },
-    "shop_frame_pink_sakura": {
-      "kind": "avatar_frame",
-      "grants": "preset:avatar_frame_shop_06",
-      "currency": "coin",
-      "price": 600,
-      "enabled": true,
-      "name_cn": "樱晶蝶语",
-      "name_en": "Sakura Crystal"
-    },
-    "shop_unit_crimson": {
-      "kind": "unit",
-      "grants": "unit:crimson",
-      "currency": "coin",
-      "price": 100,
-      "enabled": true,
-      "name_cn": "赤卫",
-      "name_en": "Crimson Guard"
-    },
-    "shop_unit_dancer": {
-      "kind": "unit",
-      "grants": "unit:dancer",
-      "currency": "coin",
-      "price": 100,
-      "enabled": true,
-      "name_cn": "赤舞者",
-      "name_en": "Dancer"
-    },
-    "shop_unit_drumer": {
-      "kind": "unit",
-      "grants": "unit:drumer",
-      "currency": "coin",
-      "price": 200,
-      "enabled": true,
-      "name_cn": "战鼓使",
-      "name_en": "Drummer"
-    },
-    "shop_unit_hunter": {
-      "kind": "unit",
-      "grants": "unit:hunter",
-      "currency": "coin",
-      "price": 200,
-      "enabled": true,
-      "name_cn": "血猎者",
-      "name_en": "Hunter"
-    },
-    "shop_unit_armbreaker": {
-      "kind": "unit",
-      "grants": "unit:armbreaker",
-      "currency": "coin",
-      "price": 200,
-      "enabled": true,
-      "name_cn": "破甲者",
-      "name_en": "Armbreaker"
-    },
-    "shop_unit_icey": {
-      "kind": "unit",
-      "grants": "unit:Icey",
-      "currency": "coin",
-      "price": 200,
-      "enabled": true,
-      "name_cn": "霜印使",
-      "name_en": "Icey"
-    },
-    "shop_unit_skypierce": {
-      "kind": "unit",
-      "grants": "unit:skypierce",
-      "currency": "coin",
-      "price": 300,
-      "enabled": true,
-      "name_cn": "穿云弩手",
-      "name_en": "Skypierce"
-    },
-    "shop_unit_lattern": {
-      "kind": "unit",
-      "grants": "unit:lattern",
-      "currency": "coin",
-      "price": 300,
-      "enabled": true,
-      "name_cn": "赤灯使",
-      "name_en": "Lantern"
-    },
-    "race_crimson": {
-      "kind": "race",
-      "grants": "crimson",
-      "currency": "coin",
-      "price": 0,
-      "enabled": false,
-      "name_cn": "赤律族",
-      "name_en": "Crimson"
-    }
-  },
-  "balance_version": "77ee99f058cc051bb55c950544682c250e9f5fba2be3423d08173d137d0b44b7",
-  "final_workbook_sha256": "ed2f0d107a3a7140cf783cb29f1f7661da4fc53e8f27a375afbd9b1475b28a15"
+  "balance_version": "1527bbdc34552914b84cdf45606e1a905277b450d058a08cbe156c311382ac7b",
+  "final_workbook_sha256": "b7cc1b673de2d857237a8834debd493118089d7edcdaa98ce71e529d0d16c894"
 }

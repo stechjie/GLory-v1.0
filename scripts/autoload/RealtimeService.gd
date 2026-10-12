@@ -25,6 +25,10 @@ signal kicked_by_other_device
 # 名额变了：被放行，或者排队位次变了（backend/app/admission.py）。启动画面靠它判断放不放人进门。
 signal admission_changed
 
+# 服务端的全局开关变了（维护 / 关闭匹配），或者握手时就被维护挡下。
+# 带的就是服务端 public_view 那几个公开字段。
+signal service_state_changed(payload: Dictionary)
+
 const AccountConfig := preload("res://scripts/account/AccountConfig.gd")
 
 enum State { OFFLINE, CONNECTING, ONLINE }
@@ -36,6 +40,14 @@ const CLOSE_IDLE := 4002
 # 账号被封（backend/app/bans.py）。服务端先发一条 BANNED_PUSH_TYPE 说明原因，再用这个码关。
 const CLOSE_BANNED := 4003
 const BANNED_PUSH_TYPE := "banned"
+
+# 维护 / 关闭匹配（backend/app/service_control.py，OPS-05）。
+# 4004 是服务端拒绝新准入时用的关闭码；"service" 是开关变化时的主动推送。
+#
+# 🔴 它**不是**认证失败：认证失败会让客户端清凭证重来，而维护是暂时的 ——
+# 清了凭证的人维护完还得重新注册一个号。同服务端 403 不是 401 的道理。
+const CLOSE_MAINTENANCE := 4004
+const SERVICE_PUSH_TYPE := "service"
 # 服务端在 ready 里下发真实值，这个只是它还没到之前的兜底。
 const DEFAULT_PING_INTERVAL_SEC := 30.0
 
@@ -88,6 +100,9 @@ var _opening := false
 # 连续握手失败的次数（从没收到过 ready 就断了）。服务端在 accept 之前拒绝时，
 # 客户端这边只看得到「握手失败」，分不出是令牌被拒还是网络不通 ——
 # 失败够次数就强制续一次令牌，而不是拿着同一张过期票永远重试。
+# 最近一次从服务端拿到的全局开关状态。空 = 还没收到过。
+var service_state: Dictionary = {}
+
 var _failed_handshakes := 0
 # 这个进程里服务器有没有放行过。🔴 **一旦为 true 就不再变回 false**（stop() 也不清）：
 # 放进来之后的每一次重连都带 resume，服务器保证不会把已经在游戏里的人踢回队列。
@@ -199,6 +214,7 @@ func _open() -> void:
 		"%s: %s" % [ADMISSION_HEADER, _admission_intent()],
 	])
 	handshake_headers.append_array(AccountManager.patch_header_lines())
+	handshake_headers.append("X-Glory-Session: %s" % AccountManager.login_session_id())
 	_socket.handshake_headers = handshake_headers
 	var err := _socket.connect_to_url(_ws_url())
 	if err != OK:
@@ -297,6 +313,15 @@ func _on_closed() -> void:
 		# 再登录一次、从 403 的响应里拿（Bootstrap._kick_off_account_login）。
 		_mark_banned({})
 		return
+	if code == CLOSE_MAINTENANCE:
+		# 同 CLOSE_BANNED：服务端「先发原因、紧接着关」，而 Godot 收到关闭帧之后
+		# 就不再给读剩下的包，所以那条 SERVICE_PUSH_TYPE **多半读不到**。
+		# 关闭码是唯一可靠的信号，这里据它直接进维护态。
+		#
+		# 文案字段留空，由 UI 用自己的兜底话 —— 宁可少一句「预计恢复时间」，
+		# 也不要因为读不到消息就把玩家晾在一个「连接断开」的白屏上。
+		_apply_service_state({"maintenance": true, "matchmaking": false})
+		return
 	_schedule_reconnect()
 
 
@@ -335,8 +360,23 @@ func _handle(payload: Dictionary) -> void:
 			_mark_banned(ban if ban is Dictionary else {})
 		ADMISSION_TYPE:
 			_apply_admission(payload)
+		SERVICE_PUSH_TYPE:
+			_apply_service_state(payload)
 		_:
 			message_received.emit(payload)
+
+
+# 服务端推来的开关状态，或者握手被维护拒绝时发的那一条。
+#
+# 这里**只记下并转发**，不自己弹窗也不自己退出 —— 弹窗归 UI（scenes/main/Main.gd），
+# 自动机里混 UI 会让「断线重连」这条本来就绕的路更难改。
+func _apply_service_state(payload: Dictionary) -> void:
+	service_state = payload.duplicate(true)
+	if bool(payload.get("maintenance", false)):
+		# 维护中就别再重连了：重连也会被同一道闸挡回来，只是白白刷日志。
+		# 玩家按完「确定」会退出；真要留着，解除维护后重开游戏即可。
+		_want_connection = false
+	service_state_changed.emit(service_state)
 
 
 func _apply_admission(payload: Dictionary) -> void:
@@ -359,14 +399,19 @@ func _mark_kicked() -> void:
 	if _kicked:
 		return
 	_kicked = true
+	_admitted = false
+	queue_position = 0
+	AccountManager.invalidate_login_session()
 	_want_connection = false
 	_close_socket(1000)
 	state = State.OFFLINE
 	set_process(false)
-	# 🔴 只发信号，**不在这里弹对话框、更不自己跳回登录界面**。
-	# 已定：被顶号必须由玩家手动确认之后才回登录页 —— 画面自己跳走
-	# 在玩家眼里就是崩溃或掉线，他会去截图报 bug，而不会想到"号被别人登了"。
-	# 谁弹、什么时候弹由界面层决定（对局中先挂提示，回主界面再弹）。
+	# Stop gameplay immediately; the entry screen explains the reason and waits
+	# for an explicit sign-in. Keep anonymous-account credentials on disk.
+	# This is a connection loss, not a voluntary match abandonment. reset()
+	# closes immediately and stops reconnect timers while retaining disk recovery.
+	NetworkService.reset()
+	VoiceService._leave()
 	kicked_by_other_device.emit()
 
 

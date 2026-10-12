@@ -221,6 +221,25 @@ func check_saved_match() -> String:
 #
 # 从 _active_match_for_token 抽出来的：现在有两个调用方（token 一条、账号 id 一条），
 # 判据只能有一份 —— 两份一定会分叉。
+# 此刻真的在对局里的那些人（出战名片里的 pid = 账号服务器的 player_id）。
+#
+# 给 DedicatedServerService.tick_match_roster 用，最终落到账号服务器的维护判断上：
+# 名册上的人维护时不会被踢。所以这里**宁可多报也不能少报** ——
+# 少报一个就是把一个正在打的人踢出对局（OPS-05 的 P0 明令禁止），
+# 多报一个只是维护晚一点对他生效。`_room_is_active_match` 本身已经是这个口径。
+func _active_match_pids() -> Array:
+	var seen: Dictionary = {}
+	for room in _rooms.values():
+		if not _room_is_active_match(room):
+			continue
+		var pids: Dictionary = room.get("seat_pid", {})
+		for pid in pids.values():
+			var text := str(pid).strip_edges()
+			if not text.is_empty():
+				seen[text] = true
+	return seen.keys()
+
+
 func _room_is_active_match(room: Dictionary) -> bool:
 	if room.is_empty() or str(room.get("state", ROOM_LOBBY)) in [ROOM_LOBBY, ROOM_CLOSED] \
 			or bool(room.get("run_over", false)):
@@ -296,6 +315,11 @@ func _rpc_match_status_result(request_id: String, state: String) -> void:
 enum SessionState { OFFLINE, JOINING, READY, FAILED, RECONNECTING }
 
 const BattleSim := preload("res://scripts/battle/BattleSimulator.gd")
+const LiveBotEconomy := preload("res://scripts/economy/LiveBotEconomy.gd")
+var team_bot_states: Dictionary = {}
+var _local_bot_stones: Array = []
+const PrepDeadline := preload("res://scripts/rounds/PrepDeadline.gd")
+var _prep_deadline_local := -1.0
 const ShopRoll := preload("res://scripts/economy/ShopRoll.gd")
 const RacePick := preload("res://scripts/units/RacePick.gd")
 const UnitGrowth := preload("res://scripts/units/UnitGrowth.gd")
@@ -689,6 +713,7 @@ func _ready() -> void:
 	})
 	team_chat_received.connect(_log_team_phrase)
 	team_chat_text_received.connect(_log_team_text)
+	team_chat_voice_received.connect(_log_team_voice)
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
@@ -852,6 +877,7 @@ func _process(delta: float) -> void:
 			_tick_replay_retry(delta)
 	if _dedicated_server:
 		ServerFlags.poll_reload(proc_now)
+		_tick_prep_deadlines(proc_now)
 		_cleanup_elapsed += delta
 		if _cleanup_elapsed >= CLEANUP_INTERVAL_SEC:
 			_cleanup_elapsed = 0.0
@@ -860,6 +886,8 @@ func _process(delta: float) -> void:
 		# 无脑每帧写就是给自己造一个新的冻结源（和 B4 同一类问题）。
 		# 落盘节奏（只在有变更时写、且限速）已搬到 DedicatedServerService.tick_snapshot()。
 		_server_service.tick_snapshot(delta)
+		# 对局名册给账号服务器（维护时判断谁不能踢）。限速在服务里。
+		_server_service.tick_match_roster(delta, _active_match_pids())
 		_reserve_tick_accum += delta
 		if _reserve_tick_accum >= 1.0:
 			_reserve_tick_accum = 0.0
@@ -1391,6 +1419,9 @@ func _room_for_peer(peer_id: int) -> Dictionary:
 func _touch_room(room: Dictionary) -> void:
 	_room_service.touch_room(room)
 func _set_room_state(room: Dictionary, next_state: String) -> void:
+	if next_state == ROOM_PREP and str(room.get("state", "")) != ROOM_PREP:
+		room["prep_timed_out"] = false
+		room["timeout_buys"] = {}
 	_room_service.set_room_state(room, next_state)
 # --- 房间阶段权限矩阵（A11）--------------------------------------------------
 # 任何改变成员或阶段的 RPC 都必须先声明自己允许在哪些阶段执行。
@@ -2308,9 +2339,87 @@ func _room_start_authoritative(room: Dictionary) -> void:
 	_net_log("all players ready room=%d match started" % int(room.get("id", 0)))
 	_broadcast_room_lobby(room)
 
+func prep_seconds_left() -> float:
+	return maxf(0.0, _prep_deadline_local - _now()) if _prep_deadline_local >= 0.0 else -1.0
+
+func _tick_prep_deadlines(now: float) -> void:
+	for room in _rooms.values():
+		if bool(room.get("run_over", false)) or bool(room.get("suspended", false)):
+			continue
+		if PrepDeadline.remaining(room, now) != 0.0:
+			continue
+		room["prep_timed_out"] = true
+		var states: Array = room.get("slot_states", [])
+		var peer_slots: Dictionary = room.get("peer_slot", {})
+		for slot in states.size():
+			if str(states[slot]) == "player":
+				var online := false
+				for pid in peer_slots:
+					if int(peer_slots[pid]) == slot and _peer_connected(int(pid)):
+						online = true
+				if not online:
+					_reconnect_service.apply_ai_takeover(room, slot)
+			room.ready[slot] = true
+		_room_maybe_start_round(room)
+
+func _valid_timeout_buy(room: Dictionary, slot: int, action: String, payload: Dictionary) -> bool:
+	if action != "buy" or not bool(payload.get("timeout_deploy", false)):
+		return false
+	if str(room.get("state", "")) != ROOM_BATTLE or not bool(room.get("prep_timed_out", false)):
+		return false
+	if room.get("boards", {}).has(slot) or room.get("timeout_buys", {}).has(slot):
+		return false
+	var prep := _room_prep(room, slot)
+	if EconomyLedger._unit_count(prep) > 0:
+		return false
+	var shop: Dictionary = prep.get("shop", {})
+	var offers: Array = shop.get("offers", [])
+	var sold: Array = shop.get("sold", [])
+	for i in offers.size():
+		if i < sold.size() and bool(sold[i]):
+			continue
+		if offers[i] is Dictionary and not offers[i].is_empty():
+			return int(payload.get("shop_index", -1)) == i
+	return false
+
+func prepare_local_bots() -> void:
+	if GameState.tutorial_mode or (team_active and not is_host):
+		return
+	if GameState.round_index == 1 and not GameState.battle_history.is_empty():
+		team_bot_states.clear()
+	# A new run has no battle history. A repeated scene rebuild must not harvest twice.
+	if GameState.round_index == 1:
+		for bot in team_bot_states.values():
+			if int(bot.get("settled_round", 0)) > 0:
+				team_bot_states.clear()
+				break
+	if team_bot_states.is_empty():
+		_local_bot_stones = [CarrotEconomy.empty_stones(), CarrotEconomy.empty_stones()]
+	var local_team := GameConstants.team_of_slot(team_local_slot) if team_active else 0
+	_local_bot_stones[local_team] = GameState.team_upgrade_stones
+	var room := {"bot_states": team_bot_states, "round_index": GameState.round_index,
+		"shared_seed": shared_seed, "slot_states": GameState.team_slot_states,
+		"team_upgrade_stones": _local_bot_stones}
+	team_bot_states = LiveBotEconomy.prepare(room)
+
+func settle_local_bots(own: Dictionary, rival: Dictionary) -> void:
+	if team_active and not is_host:
+		return
+	var local_team := GameConstants.team_of_slot(team_local_slot) if team_active else 0
+	for slot in team_bot_states:
+		var replay := own if GameConstants.team_of_slot(int(slot)) == local_team else rival
+		var result: Dictionary = replay.get("result", {})
+		if result.is_empty():
+			continue
+		var kind := str(result.get("kind", replay.get("kind", "pve")))
+		LiveBotEconomy.Bot.settle_round(team_bot_states[slot], result, {
+			"round_index": GameState.round_index, "kind": kind,
+			"player_wins": TeamOutcome.viewer_wins_battle(result, kind, GameConstants.team_of_slot(int(slot)))})
+
 func _room_maybe_start_round(room: Dictionary) -> void:
 	if str(room.get("state", ROOM_LOBBY)) != ROOM_PREP or not _room_all_ready(room):
 		return
+	LiveBotEconomy.prepare(room)
 	_set_room_state(room, ROOM_BATTLE)
 	room.boards = {}
 	_net_log("PVP round started room=%d round=%d" % [int(room.get("id", 0)), int(room.get("round_index", 1))])
@@ -2357,6 +2466,7 @@ func _build_room_state(room: Dictionary, slot: int) -> Dictionary:
 	return {
 		# --- 房间 ---
 		"phase": str(room.get("state", ROOM_LOBBY)),
+		"prep_seconds_left": PrepDeadline.remaining(room, _now()),
 		"round_id": round_id,
 		"battle_id": str(room.get("battle_id", "")),
 		"battle_round": int(room.get("round_index", 1)),
@@ -2806,6 +2916,136 @@ func _host_send_text(slot: int, text: String, team_only: bool) -> void:
 	if chat_reaches(slot, team_local_slot, team_only):
 		team_chat_text_received.emit(slot, text, team_only)
 
+
+# --- 房间 / 局内语音留言（docs/聊天系统设计.md「语音消息」，2026-10-11）--------------
+#
+# 形状与上面的自由文字一样（客户端只交内容和范围，座位号由服务端反查，服务端定序转发）。
+# 不一样的是**音频根本不走这条线**：文件先传到账号服务器（VoiceClipService.finish_and_upload），
+# 这里转的只有一个编号 + 文件名 + 秒数，收到的人拿文件名去 /media 下载。三个理由：
+#   1. ENet 这条线是对局用的，塞一条 30 秒音频（约 90 KB）会和战斗指令抢带宽；
+#   2. 战斗服务器没有数据库、没有存储，音频存不住，也查不出是谁传的；
+#   3. 举报要留证据 —— 证据挂在账号服务器的 voice_clips 表上（见 database/033 顶部那段），
+#      所以对局里的语音不落库也照样举报得到。
+#
+# 🔴 **media 的形状必须在服务端卡死。** 收到的人会去 /media/<media> 下载，
+# 一个改包的客户端把 "../../../etc/passwd" 塞过来，就是让别人的手机去抓媒体服务器上的任意路径。
+# 两头都按 <64 位十六进制>.ogg 校验（与 backend/app/announcements.py 的 MEDIA_NAME_RE 同一个形状）：
+# 服务端这道是权威的，客户端那道是给本地房主模式兜底的。
+#
+# 🔴 **秒数不能信客户端。** 显示用它算语音条宽度、也用它决定 UI 上的时长：
+# 传一个 99999 过来就能把别人的语音条拉爆。所以这里夹到 [0, VoiceClipService.MAX_SECONDS]。
+# 真实秒数以账号服务器登记的为准（它解析过 WAV 头），这里只是防显示被玩坏。
+
+signal team_chat_voice_received(slot: int, clip: Dictionary, team_only: bool)
+
+# 客户端自己的节流，同 TEXT_SEND_MIN_INTERVAL_SEC 的那套算法：
+# 服务端额度是 10 秒 2 条（RateLimitService 的 chat_voice）、超了**静默丢弃**，
+# 所以必须满足 间隔 × 额度 ≥ 窗口（6 × 2 ≥ 10），玩家才看得到「发太快了」而不是凭空消失。
+const VOICE_SEND_MIN_INTERVAL_SEC := 6.0
+# 文件名形状。写死在这里而不是引 VoiceClipService：这个文件在战斗服务器上也跑，
+# 那边没有客户端的 autoload（见 docs 里「战斗服务器包不带导入资源」那条）。
+# 点用 [.] 而不是反斜杠转义：GDScript 的字符串会先吃掉一层反斜杠，
+# 写 "\.ogg" 在这里是非法转义序列。
+const VOICE_MEDIA_PATTERN := "^[0-9a-f]{64}[.]ogg$"
+const VOICE_MAX_SECONDS := 30.0
+
+var _last_voice_sent_at := -1000.0
+static var _voice_media_re: RegEx = null
+
+
+# 纯函数（不碰网络、不碰 autoload），tools/voice_clip_check 直接调。
+static func voice_media_ok(media: String) -> bool:
+	if _voice_media_re == null:
+		_voice_media_re = RegEx.new()
+		_voice_media_re.compile(VOICE_MEDIA_PATTERN)
+	return _voice_media_re.search(media) != null
+
+
+# 把收到的那三个字段收敛成能显示的样子；形状不对返回空字典（调用方丢掉这条）。
+static func sanitize_voice(clip_id: String, media: String, seconds: float) -> Dictionary:
+	if not voice_media_ok(media):
+		return {}
+	# clip_id 只用来「现在在放哪条」和举报，长度卡一下就够（uuid 是 36 位）。
+	var id := clip_id.strip_edges()
+	if id.is_empty() or id.length() > 40:
+		return {}
+	return {"clip_id": id, "media": media, "seconds": clampf(seconds, 0.0, VOICE_MAX_SECONDS)}
+
+
+# 返回空串表示已发出；否则是给玩家看的原因。clip 是 VoiceClipService 上传成功后给的那个字典。
+func team_send_voice(clip: Dictionary, team_only: bool = false) -> String:
+	if not team_active or team_local_slot < 0:
+		return "联机对局中才能发送"
+	var safe := sanitize_voice(
+		str(clip.get("clip_id", "")), str(clip.get("media", "")), float(clip.get("seconds", 0.0)))
+	if safe.is_empty():
+		return "语音发送失败"
+	var now := Time.get_ticks_msec() / 1000.0
+	var wait := VOICE_SEND_MIN_INTERVAL_SEC - (now - _last_voice_sent_at)
+	if wait > 0.0:
+		return "发得太快了，%d 秒后再发" % ceili(wait)
+	_last_voice_sent_at = now
+	if is_host:
+		# 本地房主模式：自己就是权威（同 team_send_text）。
+		_host_send_voice(team_local_slot, safe, team_only)
+	else:
+		_rpc_team_chat_voice_submit.rpc_id(1,
+			str(safe["clip_id"]), str(safe["media"]), float(safe["seconds"]), team_only)
+	return ""
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_team_chat_voice_submit(clip_id: String, media: String, seconds: float,
+		team_only: bool) -> void:
+	if _dedicated_server:
+		var sender := multiplayer.get_remote_sender_id()
+		# 软限，不计 strike：刷语音是烦人，不是攻击（理由同 chat_text）。
+		if not _rate_ok(sender, "chat_voice", false):
+			return
+		var room := _room_for_peer(sender)
+		if room.is_empty():
+			return
+		var slot := int((room.get("peer_slot", {}) as Dictionary).get(sender, -1))
+		if slot < 0 or slot >= TEAM_SLOTS:
+			return
+		# 权威的那一道（客户端发之前也过了一遍，但改包的客户端可以不过）。
+		var safe := sanitize_voice(clip_id, media, seconds)
+		if safe.is_empty():
+			_net_log("voice clip rejected peer=%d (bad media shape)" % sender)
+			return
+		for peer_id in chat_recipients(room, slot, team_only):
+			if _peer_connected(peer_id):
+				_rpc_team_chat_voice.rpc_id(peer_id, slot,
+					str(safe["clip_id"]), str(safe["media"]), float(safe["seconds"]), team_only)
+		return
+	if not is_host:
+		return
+	var host_slot := int(_team_peer_slot.get(multiplayer.get_remote_sender_id(), -1))
+	var cleaned := sanitize_voice(clip_id, media, seconds)
+	if host_slot < 0 or host_slot >= TEAM_SLOTS or cleaned.is_empty():
+		return
+	_host_send_voice(host_slot, cleaned, team_only)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_team_chat_voice(slot: int, clip_id: String, media: String, seconds: float,
+		team_only: bool) -> void:
+	# 收到的一样要校验：本地房主模式下这里就是唯一的那道门（同 _rpc_team_chat_text）。
+	if slot < 0 or slot >= TEAM_SLOTS:
+		return
+	var safe := sanitize_voice(clip_id, media, seconds)
+	if safe.is_empty():
+		return
+	team_chat_voice_received.emit(slot, safe, team_only)
+
+
+func _host_send_voice(slot: int, clip: Dictionary, team_only: bool) -> void:
+	for peer_id in _host_chat_peers(slot, team_only):
+		_rpc_team_chat_voice.rpc_id(peer_id, slot,
+			str(clip["clip_id"]), str(clip["media"]), float(clip["seconds"]), team_only)
+	if chat_reaches(slot, team_local_slot, team_only):
+		team_chat_voice_received.emit(slot, clip, team_only)
+
 # --- 房间 / 对局聊天记录（2026-09-27）-------------------------------------------------
 #
 # 上面两个信号每收到一条就记进 room_chat_log（见 RoomChatLog.gd 顶部）。界面**只听记录的
@@ -2821,10 +3061,14 @@ func _log_team_phrase(slot: int, phrase_id: int, team_only: bool) -> void:
 func _log_team_text(slot: int, text: String, team_only: bool) -> void:
 	_log_team_chat(slot, 0, text, team_only)
 
-func _log_team_chat(slot: int, phrase_id: int, text: String, team_only: bool) -> void:
+func _log_team_voice(slot: int, clip: Dictionary, team_only: bool) -> void:
+	_log_team_chat(slot, 0, "", team_only, clip)
+
+func _log_team_chat(slot: int, phrase_id: int, text: String, team_only: bool,
+		voice: Dictionary = {}) -> void:
 	room_chat_log.add(team_room_id, RoomChatLog.make_entry(slot, phrase_id, text, team_only,
 		team_local_slot, team_seat_profiles, AccountManager.profile, _chat_log_round(),
-		LocaleManager.get_locale() == "en"))
+		LocaleManager.get_locale() == "en", voice))
 
 # 10.11 bug 第 3/9 条：我是不是「正在一局对局里」。
 #
@@ -3844,6 +4088,7 @@ func _enqueue_finalize(room: Dictionary) -> void:
 	room.replay_error = ""
 	# Lock inputs now, before a queued room's reserved seats can expire/resume.
 	# Only compact board inputs are copied here; replay arrays do not exist yet.
+	LiveBotEconomy.prepare(room)
 	_room_expire_treasure_offers(room)
 	var queued_at := Time.get_ticks_usec()
 	var inputs := BattleReplayJob.snapshot_room_inputs(room)
@@ -4201,6 +4446,14 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 			"camp_income": CarrotEconomy.income_for_spent(int(_room_prep(room, slot).get("merc_carrots_spent_total", 0))),
 			"gold_spent_this_round": bool(_room_prep(room, slot).get("gold_spent_this_round", false)) if economy_authoritative() else bool(snap.get("gold_spent_this_round", false)),
 		})
+		var bot: Dictionary = room.get("bot_states", {}).get(slot, {})
+		if not bot.is_empty() and str(room.slot_states[slot]) == "dummy":
+			var bot_settlement := LiveBotEconomy.Bot.settle_round(bot, result, {
+				"kind": kind, "player_wins": bool(team_wins[own_team]), "round_index": completed_round})
+			if not bot_settlement.is_empty():
+				settlement = bot_settlement
+				gold_before = int(settlement.gold_after) - int(settlement.income_total)
+			LiveBotEconomy.mirror(room, slot, bot)
 		var gold_after := int(settlement.gold_after)
 		var income_prep := _room_prep(room, slot)
 		var reasons: Dictionary = income_prep.get("income_by_reason", {})
@@ -5678,6 +5931,8 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 	team_ready = (payload.get("ready", []) as Array).duplicate()
 	server_round_index = int(payload.get("round_id", 0))
 	server_phase = str(payload.get("phase", ""))
+	var prep_remaining := float(payload.get("prep_seconds_left", -1.0))
+	_prep_deadline_local = _now() + prep_remaining if server_phase == ROOM_PREP and prep_remaining >= 0.0 else -1.0
 	if team_effects_changed:
 		team_treasure_effects_changed.emit()
 	if payload.has("battle_id"):
@@ -6071,6 +6326,10 @@ func _release_stale_seats_for_pid(peer_id: int, pid: String) -> bool:
 					break
 			if holder == peer_id:
 				continue   # 就是这条连接自己的座位，交给调用方那段 peer 逻辑处理
+			if holder > 0 and _peer_connected(holder):
+				if _peer_connected(peer_id):
+					_rpc_team_action_failed.rpc_id(peer_id, "该账号已在本局房间内")
+				return false
 			# 他已经主动「退出对局」过了（2026-10-11 改判：退出 = 彻底结束、能马上开新局）。
 			# 这个座位只剩「结算时认人」的用途（seat_pid 还留着），**不该再挡他开新局** ——
 			# 不加这一条，_revoke_seat_credentials 把 token 杀了也没用：这里是按账号 id
@@ -6108,6 +6367,11 @@ func _assign_peer_to_room(peer_id: int, room: Dictionary = {}, public_id: String
 		card: Dictionary = {}, forced_slot: int = -1) -> void:
 	if room.is_empty():
 		room = _find_or_create_room()
+	var account_pid := str(card.get("pid", ""))
+	if not account_pid.is_empty() and account_pid in (room.get("seat_pid", {}) as Dictionary).values():
+		if _peer_connected(peer_id):
+			_rpc_team_action_failed.rpc_id(peer_id, "该账号已在本局房间内")
+		return
 	# 显式写类型：_room_next_free_slot 转发给注入的服务，返回值是 Variant，
 	# 三元里推不出类型（GDScript 会直接报解析错误）。
 	var slot: int = forced_slot if forced_slot >= 0 else int(_room_next_free_slot(room))
@@ -6436,7 +6700,8 @@ func _room_apply_economy(room: Dictionary, slot: int, action: String, payload: D
 	if not ECONOMY_ACTIONS.has(action):
 		return _economy_reject(room, slot, "unknown_action")
 	# 经济操作只在备战阶段有效。战斗/结算阶段还能买卖，等于让人在结算跑的同时改棋盘。
-	if str(room.get("state", ROOM_LOBBY)) != ROOM_PREP:
+	var timeout_buy := _valid_timeout_buy(room, slot, action, payload)
+	if str(room.get("state", ROOM_LOBBY)) != ROOM_PREP and not timeout_buy:
 		return _economy_reject(room, slot, "bad_phase")
 	if action == "merge" and (payload.get("uids", []) as Array).size() > MAX_MERGE_UIDS:
 		return _economy_reject(room, slot, "bad_request")
@@ -6453,6 +6718,8 @@ func _room_apply_economy(room: Dictionary, slot: int, action: String, payload: D
 			return _economy_reject(room, slot, "gold_desync")
 		prep["gold"] = reported_gold
 	var receipt := EconomyLedger.apply(prep, action, payload, _economy_ctx(room, slot, action))
+	if timeout_buy and bool(receipt.get("ok", false)):
+		room.timeout_buys[slot] = true
 	receipt["action"] = action
 	if bool(receipt.get("ok", false)):
 		# carrot-only rollout still exposes slot_gold in the room snapshot. Keep

@@ -1,0 +1,23 @@
+{
+ "_why": "客户端 VoiceClipService.build_wav 与服务端 voice_clips.parse_wav 的对账夹具（2026-10-11）。两边读同一份字节：Godot 门禁 tools/voice_clip_check.gd 按它判客户端写的那 44 字节头和采样编码，pytest tests/test_voice_clips_stdlib.py 按它判服务端解得开、秒数算得对。改了 WAV 头或采样编码就要重算这个文件 —— 不重算的后果是两边各自绿，真机上「录完发不出去」。",
+ "_header_fields": "RIFF / 文件长-8 / WAVE / fmt (16,PCM=1,单声道,采样率,字节率,帧长2,位深16) / data / 数据长",
+ "rate": 16000,
+ "sample_count": 12000,
+ "seconds": 0.8,
+ "silence_header_hex": "52494646e45d000057415645666d74201000000001000100803e0000007d00000200100064617461c05d0000",
+ "_probe_why": "采样编码的边界：0、正负半幅、正负满幅、超幅（必须夹住不是绕回）、四舍五入、极小值。",
+ "probe_inputs": [
+  0.0,
+  0.5,
+  -0.5,
+  1.0,
+  -1.0,
+  2.0,
+  -2.0,
+  0.123456,
+  -0.999969,
+  1e-05
+ ],
+ "probe_hex": "0000004000c0ff7f0180ff7f0080cd0f02800000",
+ "_rounding": "采样取整按 Godot roundi 的规矩（半数远离零），不是 Python round 的「半数取偶」。两者只在 .5 上分叉，一个采样点就能让这份夹具白对账。"
+}

@@ -1,0 +1,12 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://assets/models/allies_refined/shared/ally_flame.gdshader" id="1_flame"]
+
+[resource]
+resource_name = "ally_soul_chain_flame_material"
+render_priority = 1
+shader = ExtResource("1_flame")
+shader_parameter/core_color = Color(0.7, 1, 1, 1)
+shader_parameter/mid_color = Color(0.1, 0.7, 1, 1)
+shader_parameter/edge_color = Color(0, 0.15, 0.55, 1)
+shader_parameter/intensity = 1.4

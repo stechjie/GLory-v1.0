@@ -1311,6 +1311,7 @@ func _track(node: Control, pos: Vector2, size: Vector2, font_size: int = 0, edge
 const ChatPhrases := preload("res://scripts/multiplayer/ChatPhrases.gd")
 # 自由文字（批次 D）：输入条贴在屏幕顶部，理由见 ChatInputBar.gd 顶部（手机键盘）。
 const ChatInputBar := preload("res://ui/components/ChatInputBar.gd")
+const VoiceClipRow := preload("res://ui/components/VoiceClipRow.gd")
 
 # 短语面板的样式与控件**直接复用备战期那套**（PrepWidgets），不是照着抄一份参数。
 # 它是「全静态、不持任何界面状态」的工具箱，且 make_menu_button 的注释写着
@@ -1576,8 +1577,11 @@ func _open_text_input() -> void:
 			"body": _room_text("联机对局中才能发送", "Available in online matches only")})
 		return
 	_set_phrase_panel_visible(false)
+	# 大厅只发全部（队伍还没定），所以不给范围按钮；语音同理，走同一个范围。
 	ChatInputBar.new().present(self, func(text: String) -> String:
-		return NetworkService.team_send_text(text))
+			return NetworkService.team_send_text(text),
+		{"on_voice": func(clip: Dictionary) -> String:
+			return NetworkService.team_send_voice(clip)})
 
 
 # 消息标签的字号（_build_chat_box 建标签用的也是它）。
@@ -1657,8 +1661,13 @@ func _append_record_row(entry: Dictionary) -> void:
 		_record_list.add_child(_record_label("—— %s ——" % RoomChatLog.round_label(entry_round, en),
 			Tokens.PARCHMENT_EDGE, HORIZONTAL_ALIGNMENT_CENTER))
 		_record_round = entry_round
-	_record_list.add_child(_record_label(RoomChatLog.line_text(entry, en), Tokens.CHAT_INK,
-		HORIZONTAL_ALIGNMENT_LEFT))
+	var line := _record_label(RoomChatLog.line_text(entry, en), Tokens.CHAT_INK,
+		HORIZONTAL_ALIGNMENT_LEFT)
+	if RoomChatLog.is_voice_entry(entry):
+		# 语音：那行字前面多一颗播放键（点了才响，不自动播）。
+		_record_list.add_child(VoiceClipRow.wrap(entry, line))
+	else:
+		_record_list.add_child(line)
 
 
 func _record_label(text: String, color: Color, align: HorizontalAlignment) -> Label:

@@ -77,6 +77,11 @@ const WORLD_TYPE := "world"
 const WORLD_HIDE_TYPE := "world_hide"
 # 与 backend/app/text_guard.py 的 WORLD_MAX 一致。
 const WORLD_MAX_CHARS := 100
+
+# 语音消息的类型名。🔴 与 backend/app/chat.py 的 VOICE_KIND、database/033 的 check 约束
+# 一致（tools/voice_clip_check 钉着）—— 对不上的症状是语音照样发得出去，
+# 但收的人渲染成一条「[语音 12″]」的文本，点不动。
+const VOICE_KIND := "voice"
 # 与 backend/app/world_chat.py 的 COOLDOWN_SEC 一致：发出去之后按钮倒数这么久，
 # 免得玩家点了才被服务器回一句「发得太快了」。
 const WORLD_COOLDOWN_SEC := 8.0
@@ -180,7 +185,9 @@ func mark_seen_locally(code: String) -> void:
 # 所以必须是玩家亲手点的，**绝不能自动**（否则两台设备无限互踢）。
 func reconnect_here() -> void:
 	_set_kicked(false)
-	RealtimeService.start()
+	await AccountManager.login()
+	if AccountManager.is_logged_in():
+		RealtimeService.start()
 
 
 # 登出时由 Main 调。上一个账号的红点不该留给下一个人。
@@ -310,6 +317,39 @@ func send_world(text: String) -> String:
 	if code == 0:
 		_world_retry = {"text": body, "id": client_msg_id}
 	return str(result.get("error", _text("发送失败", "Failed to send")))
+
+
+# 发一条语音到世界频道（2026-10-11）。clip 是 VoiceClipService.finish_and_upload 的返回。
+# 与 send_world 共用同一份冷却与重试状态 —— 语音和文字在世界频道里是同一个「发言」，
+# 分两套冷却的话，交替发就能绕过 8 秒。
+func send_world_voice(clip: Dictionary) -> String:
+	var clip_id := str(clip.get("clip_id", ""))
+	if clip_id.is_empty():
+		return _text("语音发送失败", "Voice message failed")
+	var left := world_cooldown_left()
+	if left > 0.0:
+		return _text("发得太快了，%d 秒后再发" % ceili(left), "Too fast. Try again in %d s" % ceili(left))
+	var result: Dictionary = await AccountManager.send_world_message(
+		"", new_client_msg_id(), VOICE_KIND, {"clip_id": clip_id})
+	var code := int(result.get("code", 0))
+	if code / 100 == 2:
+		_world_cooldown_until_msec = Time.get_ticks_msec() + int(WORLD_COOLDOWN_SEC * 1000.0)
+		var sent: Variant = (result.get("body", {}) as Dictionary).get("message")
+		if sent is Dictionary:
+			for added in _merge_world([sent]):
+				world_message_added.emit(added)
+		return ""
+	return str(result.get("error", _text("发送失败", "Failed to send")))
+
+
+# 一条消息是不是语音（私聊与世界频道同一个判据）。payload 里带着 clip_id、media、seconds。
+static func is_voice(message: Dictionary) -> bool:
+	return str(message.get("kind", "text")) == VOICE_KIND
+
+
+static func voice_payload(message: Dictionary) -> Dictionary:
+	var payload: Variant = message.get("payload")
+	return payload if payload is Dictionary else {}
 
 
 func world_cooldown_left() -> float:

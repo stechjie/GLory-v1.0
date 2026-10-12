@@ -93,8 +93,10 @@ func _get_drag_data(_at_position: Vector2) -> Variant:
 # 手势识别：按下记起点；位移到 DRAG_START_DISTANCE 才由自己发起拖拽。
 #
 # 手感口径（一次手势最多起一次拖）：
-#   0 ~ 16px  松手 = 点击（`pressed` 照常发）
-#   ≥ 16px    起拖，松手走拖放（`pressed` 不发）
+#   0 ~ 28px         松手 = 点击（`pressed` 照常发）
+#   ≥ 28px           起拖，松手走拖放（`pressed` 不发）
+#   已弹过详情框      本次手势一律不起拖（10.12 第 4 条返修，见 _maybe_launch_drag：
+#                    长按看属性与拖拽挪动必须互斥，长按赢下的手势不许再挪动）
 #
 # 两类事件都收：桌面与触摸模拟走 MouseButton + MouseMotion，
 # 真触摸走 ScreenTouch + ScreenDrag（两条路径的 position 都是按钮局部坐标）。
@@ -147,6 +149,24 @@ func _maybe_launch_drag(local_pos: Vector2) -> void:
 	if not _gesture_pressed or _gesture_drag_launched:
 		return
 	if disabled or not drag_enabled or drag_payload.is_empty():
+		return
+	# ★ 10.12 第 4 条**返修**（用户口径）：「触发长按弹窗了不再有挪动了，只有按住进行
+	#   滑动才可挪动。」
+	#
+	#   长按（0.7s，PrepDetailOverlay）与拖拽（位移 ≥ 28px，本脚本）是挂在**同一个
+	#   按钮**上的两种手势。此前只做了**单向**解耦：`_launch_drag()` 会停长按表、
+	#   置 long_press_cancelled（拖拽赢）；但反过来 —— 长按已经弹过属性框之后 —— 
+	#   没有任何东西挡拖拽。于是玩家长按看完属性、手指**还没松**，随手一划超过
+	#   28px，照样 force_drag 把棋子挪走（用户实拍：弹窗消失后棋子还是被挪了）。
+	#
+	#   修法：本次手势只要已经弹过详情（long_press_triggered），后半程就只有
+	#   「看完松手」一个结局，位移再大也不起拖。挪动一律要求**重新按下再滑动** ——
+	#   `button_down` 与触摸按下都会把 long_press_triggered 清回 false。
+	#
+	#   ⚠ 判据用 `long_press_triggered` 而不是 `long_press_consumed`：后者会在
+	#     松手那一下被 `PrepDetailOverlay.consume_long_press()` 消费掉，而那时
+	#     手指还没动完。
+	if bool(get_meta("long_press_triggered", false)):
 		return
 	if local_pos.distance_to(_gesture_press_local) < DRAG_START_DISTANCE:
 		return

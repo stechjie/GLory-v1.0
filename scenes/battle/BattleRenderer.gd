@@ -519,6 +519,8 @@ func _sync_3d_model_nodes(living: Array, facing_delta: float, prune := true) -> 
 		_position_3d_model_node(model_node, f, facing_delta)
 		_apply_formation_intro_visibility(id, f)
 		_update_model_animation_state(model_node, f)
+		if _pvp_combat_waiting:
+			continue
 		# 10.10 第 10 条：凤凰涅槃的复活体（`phoenix_used`）罩一层「死灵气息」，
 		# 好让玩家一眼读出「这只是借尸还魂、3 秒后要真死」。
 		#
@@ -1192,6 +1194,16 @@ func _update_model_animation_state(model_node: Node3D, f: Dictionary) -> void:
 	var idle_name := str(model_node.get_meta("idle_animation", ""))
 	var attack_name := str(model_node.get_meta("attack_animation", ""))
 	var run_name := str(model_node.get_meta("run_animation", ""))
+	# PVP 开场只允许待机。尤其自测复用 actor 时，重新布阵会被误判为跑动。
+	# Go 随音效结束撤下后才由 BattleScreen 放行；普通 PVE/Boss 不走此分支。
+	if _pvp_combat_waiting:
+		model_node.set_meta("last_animation_raw_pos", Vector2(f.pos))
+		model_node.set_meta("last_attack_count", 0)
+		model_node.set_meta("attack_lock_until", 0.0)
+		model_node.set_meta("run_lock_until", 0.0)
+		if not _play_model_action_method(model_node, "idle") and player != null and not idle_name.is_empty():
+			_play_animation_if_needed(player, idle_name)
+		return
 	var visual_now := float(Time.get_ticks_msec()) * 0.001
 	# The fixed display slot never moves relative to the simulator, so only the
 	# authoritative combat position may start or sustain the run animation.

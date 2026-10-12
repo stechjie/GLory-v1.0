@@ -16,7 +16,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app import text_guard, world_chat
+from app import chat, text_guard, voice_clips, world_chat
 from app.jwt_verify import Claims
 from app.rate_limit import RateLimited, SlidingWindowLimiter
 from app.routes.chat import _me
@@ -42,6 +42,10 @@ class WorldItem(BaseModel):
     avatar_frame: str
     body: str
     created_at: str
+    # 2026-10-11：世界频道也能发语音。text 的 payload 是 null；
+    # voice 的 body 是服务端写的「[语音 12″]」，payload 带 clip_id 与 seconds。
+    kind: str = "text"
+    payload: dict | None = None
 
 
 class WorldPage(BaseModel):
@@ -51,11 +55,37 @@ class WorldPage(BaseModel):
     has_more: bool
 
 
+# 语音消息（2026-10-11）。名字与私聊共用一个常量：两边叫法不一致的话，
+# 客户端得按渠道记两套，而那种不一致只会在某一个渠道上静默渲染不出来。
+VOICE_KIND = chat.VOICE_KIND
+
+
 class WorldSendBody(BaseModel):
     # 请求体的粗上界。真正的 100 字判在 text_guard —— 规范化之后才数得准。
-    body: str = Field(min_length=1, max_length=1000)
+    # 语音消息不带文字，所以下界是 0；kind='text' 时 text_guard 仍然会拒空串。
+    body: str = Field(default="", max_length=1000)
     # 客户端给每条消息生成的 uuid。网络重试同一条时靠它去重（同私聊）。
     client_msg_id: uuid.UUID
+    kind: str = "text"
+    # 只有 voice 用（{"clip_id": <uuid 文本>}）。其余 kind 一律忽略。
+    payload: dict | None = None
+
+
+async def _validated_voice_payload(player_id: uuid.UUID, body: WorldSendBody) -> dict:
+    """收敛成 {"clip_id": str, "seconds": float}。秒数以服务端登记的为准，
+    归属也在这里核 —— 理由同 routes/chat.py 的同名函数。"""
+    raw = (body.payload or {}).get("clip_id")
+    try:
+        clip_id = uuid.UUID(str(raw))
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(status_code=400, detail="语音消息缺少有效的语音编号",
+                            headers={"X-Glory-Reason": "voice_bad_payload"}) from None
+    try:
+        clip = await voice_clips.require_own_clip(player_id, clip_id, "world")
+    except voice_clips.ClipRejected as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.message,
+                            headers={"X-Glory-Reason": exc.code}) from None
+    return {"clip_id": str(clip.clip_id), "media": clip.media_name, "seconds": clip.seconds}
 
 
 class WorldSendResponse(BaseModel):
@@ -107,12 +137,22 @@ async def send_world_message(
     if not world_chat.can_speak_in_world(me):
         raise HTTPException(status_code=403, detail="暂时还不能在世界频道发言",
                             headers={"X-Glory-Reason": "not_allowed"})
-    # 文字先判、CD 后判：一条被拦下来的话（留了电话号码）改一改马上能重发，不用干等 8 秒。
-    try:
-        text = text_guard.clean_world_message(body.body)
-    except text_guard.TextRejected as exc:
-        raise HTTPException(status_code=400, detail=exc.message,
-                            headers={"X-Glory-Reason": exc.code}) from None
+    kind = body.kind or "text"
+    if kind not in ("text", VOICE_KIND):
+        raise HTTPException(status_code=400, detail="不支持的消息类型",
+                            headers={"X-Glory-Reason": "world_kind_invalid"})
+    payload: dict | None = None
+    if kind == VOICE_KIND:
+        payload = await _validated_voice_payload(me.player_id, body)
+        # 语音的 body 由服务端写，不采用客户端传的那段（同私聊，见 chat.VOICE_KIND）。
+        text = voice_clips.body_text(float(payload["seconds"]))
+    else:
+        # 文字先判、CD 后判：一条被拦下来的话（留了电话号码）改一改马上能重发，不用干等 8 秒。
+        try:
+            text = text_guard.clean_world_message(body.body)
+        except text_guard.TextRejected as exc:
+            raise HTTPException(status_code=400, detail=exc.message,
+                                headers={"X-Glory-Reason": exc.code}) from None
     try:
         _cooldown.check(str(me.player_id))
     except RateLimited as exc:
@@ -122,7 +162,7 @@ async def send_world_message(
     except RateLimited as exc:
         raise _limited(exc, "世界频道现在太挤了，%d 秒后再试", "busy") from None
     try:
-        message, _created = await world_chat.post(me, text, body.client_msg_id)
+        message, _created = await world_chat.post(me, text, body.client_msg_id, kind, payload)
     except world_chat.Muted as exc:
         raise HTTPException(status_code=403, detail=exc.mute.message(),
                             headers={"X-Glory-Reason": "muted"}) from None

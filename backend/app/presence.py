@@ -35,6 +35,26 @@ VISIBILITIES = frozenset({"friends", "nobody"})
 # 真正的门是「房间号本来就公开可进」。
 MAX_ROOM_ID = 1_000_000_000
 
+# 心跳那条 upsert。**提成模块常量是为了能被启动自检拿去 prepare**
+# （app/schema_check.py）—— 漏跑迁移时，这条 SQL 是全服「所有人一起显示离线」的
+# 那一条，必须在部署时就被发现，而不是等玩家先踩到。语句本身一个字没改。
+_HEARTBEAT = """
+with prev as (
+    select room_id, last_seen_at, presence_visibility, room_visibility, in_match
+    from player_presence where player_id = $1
+), upsert as (
+    insert into player_presence (player_id, last_seen_at, room_id, in_match)
+    values ($1, now(), $2, $3)
+    on conflict (player_id) do update
+      set last_seen_at = now(), room_id = excluded.room_id,
+          in_match = excluded.in_match
+)
+select p.friend_code, prev.room_id, prev.last_seen_at,
+       prev.presence_visibility, prev.room_visibility, prev.in_match
+from players p left join prev on true
+where p.player_id = $1
+"""
+
 
 class PresenceRejected(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
@@ -78,27 +98,7 @@ async def heartbeat(player_id: uuid.UUID, room_id: int | None, in_match: bool = 
         # ⚠️ 最终 select **从 players 出发 left join prev**，不是直接 select prev ——
         # 第一次心跳时 prev 是空集，`select ... from prev` 整行返回 None，
         # 那恰好就是「刚上线」这个最该推的时刻，friend_code 却拿不到了。
-        row = await conn.fetchrow(
-            """
-            with prev as (
-                select room_id, last_seen_at, presence_visibility, room_visibility, in_match
-                from player_presence where player_id = $1
-            ), upsert as (
-                insert into player_presence (player_id, last_seen_at, room_id, in_match)
-                values ($1, now(), $2, $3)
-                on conflict (player_id) do update
-                  set last_seen_at = now(), room_id = excluded.room_id,
-                      in_match = excluded.in_match
-            )
-            select p.friend_code, prev.room_id, prev.last_seen_at,
-                   prev.presence_visibility, prev.room_visibility, prev.in_match
-            from players p left join prev on true
-            where p.player_id = $1
-            """,
-            player_id,
-            room_id,
-            in_match,
-        )
+        row = await conn.fetchrow(_HEARTBEAT, player_id, room_id, in_match)
         previous = row["room_id"] if row is not None else None
         if previous != room_id:
             await _record_room_transition(conn, player_id, previous, room_id)

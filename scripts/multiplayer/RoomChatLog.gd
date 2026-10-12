@@ -142,17 +142,30 @@ func unseen_count(current_room_id: int) -> int:
 	return count
 
 
+# 语音记录在界面上的兜底文字。翻记录的地方按 entry.voice 画语音条，
+# 但「最后一条说了什么」那类只吃一行字的地方（大厅聊天框的单行、通知）照样有东西显示。
+# 与账号服务器 voice_clips.body_text 同一个格式（那边给旧客户端用）。
+const VOICE_PLACEHOLDER := "[语音 %d″]"
+const VOICE_PLACEHOLDER_EN := "[Voice %ds]"
+
+
 # 把一条收到的聊天做成记录。纯函数（不碰任何 autoload），tools/chat_check 直接调。
 #   phrase_id > 0 是快捷短语，否则是 text；短语 id 不合法时返回空字典（不记）。
 #   match_round：0 = 还在大厅（开局前），≥ 1 = 对局第几回合。
+#   voice：非空就是一条语音（{clip_id, media, seconds}），这时 phrase_id / text 都不看。
+#     形状已经由 NetworkService.sanitize_voice 卡过（media 必须是 <64 位十六进制>.ogg）——
+#     这里再判一次非空，是因为门禁和本地房主模式会直接调这个函数。
 static func make_entry(slot: int, phrase_id: int, text: String, team_only: bool, local_slot: int,
-		profiles: Dictionary, self_profile: Dictionary, match_round: int, en: bool) -> Dictionary:
-	if phrase_id > 0 and ChatPhrases.text(phrase_id).is_empty():
-		# ChatPhrases.text() 对非法 id 刻意返回空串（见那边的注释），这里同样不记。
-		return {}
-	if phrase_id <= 0 and text.is_empty():
-		return {}
-	return {
+		profiles: Dictionary, self_profile: Dictionary, match_round: int, en: bool,
+		voice: Dictionary = {}) -> Dictionary:
+	var is_voice := not str(voice.get("media", "")).is_empty()
+	if not is_voice:
+		if phrase_id > 0 and ChatPhrases.text(phrase_id).is_empty():
+			# ChatPhrases.text() 对非法 id 刻意返回空串（见那边的注释），这里同样不记。
+			return {}
+		if phrase_id <= 0 and text.is_empty():
+			return {}
+	var entry := {
 		"slot": slot,
 		# 屏蔽留言按这个认人（收到那一刻记下，之后换座位也认得出）。自己说的是空串 —— 屏蔽不到自己。
 		"who": "" if slot == local_slot else person_key(slot, profiles),
@@ -161,10 +174,41 @@ static func make_entry(slot: int, phrase_id: int, text: String, team_only: bool,
 		"enemy": local_slot >= 0 and slot >= 0
 			and GameConstants.team_of_slot(slot) != GameConstants.team_of_slot(local_slot),
 		"team_only": team_only,
-		"phrase_id": maxi(phrase_id, 0),
-		"text": text if phrase_id <= 0 else "",
+		"phrase_id": 0 if is_voice else maxi(phrase_id, 0),
+		"text": "" if is_voice or phrase_id > 0 else text,
 		"round": maxi(match_round, 0),
 	}
+	if is_voice:
+		# 举报这条语音要用 clip_id（证据挂在账号服务器的 voice_clips 上，见 database/033）。
+		entry["voice"] = {
+			"clip_id": str(voice.get("clip_id", "")),
+			"media": str(voice.get("media", "")),
+			"seconds": float(voice.get("seconds", 0.0)),
+		}
+	return entry
+
+
+static func is_voice_entry(entry: Dictionary) -> bool:
+	return not str((entry.get("voice", {}) as Dictionary).get("media", "")).is_empty()
+
+
+# 这个人在这一局里最后发的那段语音的编号（没有就是空串）。
+#
+# 举报用：房间 / 对局里的语音**不落库**，账号服务器那边翻不出「他发过什么」——
+# 只有这台手机收过。举报时把编号带上去，后台才查得到是谁传的、才点得开听
+# （证据挂在 voice_clips 上，见 database/033 顶部）。
+# 取最后一条：举报多半是刚被那句话惹到，而举报面板本身只认一段。
+func latest_voice_clip(slot: int, profiles: Dictionary) -> String:
+	var key := person_key(slot, profiles)
+	for i in range(_entries.size() - 1, -1, -1):
+		var entry: Dictionary = _entries[i]
+		if not is_voice_entry(entry):
+			continue
+		# who 是收到那一刻记下的（换座位也认得出）；自己的那条 who 是空串，不会撞上。
+		var who := str(entry.get("who", ""))
+		if who == key or who == "slot:%d" % slot:
+			return str((entry.get("voice", {}) as Dictionary).get("clip_id", ""))
+	return ""
 
 
 static func speaker_name(slot: int, local_slot: int, profiles: Dictionary, self_profile: Dictionary,
@@ -189,6 +233,9 @@ static func line_text(entry: Dictionary, en: bool) -> String:
 	var phrase_id := int(entry.get("phrase_id", 0))
 	if phrase_id > 0:
 		body = ChatPhrases.text(phrase_id)
+	elif is_voice_entry(entry):
+		var seconds := int(round(float((entry.get("voice", {}) as Dictionary).get("seconds", 0.0))))
+		body = (VOICE_PLACEHOLDER_EN if en else VOICE_PLACEHOLDER) % maxi(seconds, 1)
 	var tag := ""
 	# 大厅（round 0）只有「全部」一个范围、队伍也没定，不标。
 	if int(entry.get("round", 0)) > 0 and not bool(entry.get("team_only", false)):

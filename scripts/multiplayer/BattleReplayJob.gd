@@ -12,8 +12,8 @@ const GAME_FIELDS := [
 	"final_round_played", "team_hp", "enemy_team_hp", "player_formation_hp",
 	"enemy_formation_hp", "owned_treasures", "board_slots", "mercenary_slots",
 ]
-const NET_FIELDS := ["team_active", "team_local_slot", "team_slot_states", "team_ready", "team_boards", "shared_seed"]
-const ROOM_INPUT_FIELDS := ["id", "battle_id", "round_index", "slot_states", "ready", "boards", "shared_seed", "team_hp", "pve_completed", "boss_completed", "run_over"]
+const NET_FIELDS := ["team_active", "team_local_slot", "team_slot_states", "team_ready", "team_boards", "shared_seed", "team_bot_states"]
+const ROOM_INPUT_FIELDS := ["id", "battle_id", "round_index", "slot_states", "ready", "boards", "shared_seed", "team_hp", "pve_completed", "boss_completed", "run_over", "bot_states"]
 
 var room_id := 0
 var battle_id := ""
@@ -82,6 +82,7 @@ func _init(room: Dictionary, queued_at: int = 0) -> void:
 		"team_ready": (room.get("ready", []) as Array).duplicate(),
 		"team_boards": (room.get("boards", {}) as Dictionary).duplicate(true),
 		"shared_seed": int(room.get("shared_seed", 0)),
+		"team_bot_states": room.get("bot_states", {}).duplicate(true),
 	}
 	# prepare_team_state reads owner context for BOTH sides in every round kind.
 	# Only explicit dummy seats use BotPlayer; a missing human board stays empty.
@@ -194,6 +195,8 @@ func _warm_one_missing_bot() -> bool:
 	# all keys present, prepare runs synchronously without another job intervening.
 	# Keep BotPlayer.state_for's cache policy, inputs and independent RNG intact.
 	for slot in _bot_slots:
+		if _net.team_bot_states.has(slot):
+			continue
 		var key := "%s/%d/%d" % [str(_net.shared_seed), slot, round_index]
 		if Bot._cache.has(key):
 			continue

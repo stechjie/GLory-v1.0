@@ -9,7 +9,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app import chat, db, friends, matchmaking, party, party_voice, players, profile, ranked, realtime, shop, text_guard
+from app import (chat, db, friends, matchmaking, party, party_voice, players, profile, ranked,
+                 realtime, sanctions, service_control, shop, text_guard)
 from app.config import get_settings
 from app.jwt_verify import Claims
 from app.rate_limit import RateLimited, SlidingWindowLimiter
@@ -146,9 +147,16 @@ async def voice_token(claims: Annotated[Claims, Depends(current_claims)]) -> Voi
         raise HTTPException(status_code=503, detail=str(exc)) from None
     card = room.profiles[me.player_id]
     room.voice_used = True
+    # 禁语音（app/sanctions.py）：令牌照发、房照进、照样听得到，只是不能说
+    # （2026-10-12 用户拍板「禁说不禁听」）。
+    #
+    # 🔴 这只挡**新签的**令牌。对局中途被罚的人手上那张旧的还能再用 10 分钟
+    # （LiveKit 只在首次进房查令牌）—— 那一半要靠 UpdateParticipant，还没做。
+    async with db.pool().acquire() as conn:
+        muted = await sanctions.is_sanctioned(conn, me.player_id, sanctions.SCOPE_VOICE)
     return VoiceResponse(**party_voice.issue(
         config, room.id, room.voice_epoch,
-        card["friend_code"], card["player_name"]))
+        card["friend_code"], card["player_name"], can_publish=not muted))
 
 
 @router.post("", response_model=StateResponse)
@@ -462,6 +470,16 @@ async def start(claims: Annotated[Claims, Depends(current_claims)]) -> StateResp
     except party.PartyRejected as exc:
         raise _reject(exc) from None
     version = room.version
+    # 全局「关闭排位与休闲匹配」。组队房开局和单人排队是同一件事，必须同一道闸，
+    # 否则关了匹配还能靠组队绕过去（任务书 §七.3.3 要求每个实际入口都检查）。
+    reason = service_control.matchmaking_block_reason(await service_control.read())
+    if reason:
+        raise HTTPException(
+            status_code=409,
+            detail=("服务器正在维护，暂时不能开始新对局" if reason == "service_maintenance"
+                    else "排位功能暂时关闭" if reason == "matchmaking_disabled"
+                    else "服务状态暂时确认不了，请稍后再试"),
+            headers={"X-Glory-Reason": reason})
     if room.mode not in matchmaking.OPEN_MODES:
         raise HTTPException(status_code=409, detail="这个模式还未开放")
     if len(members) not in matchmaking.PARTY_SIZES:

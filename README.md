@@ -1,5 +1,93 @@
 # Glory Beta 0.04
 
+## 2026-10-13（同事 `037de27 excel update`：final status 数值源去 shop_items，已同步本地）
+
+同事在远端提交 `037de27 "excel update"`（作者 lenoliew-Glory，2026-10-13 01:17），与我的 `e7bc202`（10.13bug 修复）在远端**无冲突合并**为 `1564f14`。本地拉取后已按三目录规则同步落地。
+
+- **改了什么**：`data/balance/final_status.json` 移除顶层 `shop_items` 块（`03_宠物与商城` → `03_宠物技能`，宠物导出同步去掉 `shop_item_id/shop_currency/shop_price/shop_enabled` 与 `summary_cn` 列号位移）；`tools/export_final_status.py` 不再产出 `shop_items`、不再读 `data/shop.json`；`tools/final_runtime.py` 大幅精简（-175 行）；`docs/balance/README_final_status.md`、`docs/balance/final status.xlsx` 随之更新。文件体量 2037 → 1817 行。
+- **`balance_version` 变更**：`0e125524…` → **`1527bbdc34552914b84cdf45606e1a905277b450d058a08cbe156c311382ac7b`**（`final_workbook_sha256` `ed2f0d10…` → `b7cc1b67…`）。⚠ 见下「服务端提醒」。
+- **不影响客户端**：`scripts/ui/FinalStatusCatalog.gd` 只读 `units/pets/synergies/treasures/linkages`；`ShopScreen.gd` 只读 `balance_version`；商城条目来自服务端 `GET /v1/shop`（`AccountManager.fetch_shop()`）与 `data/shop.json`，两处都不依赖 `final_status.json` 的 `shop_items`。移除是安全清理。
+- **`data/shop.json` 未变**（仓/本地 sha256 一致 `f1e245b6…`）。
+- **本轮只读排查 + 同步，未改任何游戏代码**；`GLory-v1.0` 工作树干净、HEAD = `1564f14`，本地与远端一致。
+
+- **服务端提醒**（承前「商城数值版本红字」）：`balance_version` 又变了（现 `1527bbdc…`）。服务器必须重跑 `deploy/update.sh`（内含 rsync `balance/final_status.json` + `systemctl restart glory-backend`），否则新客户端进商城仍会弹红字、联机握手仍会被拒。
+
+- **同步落点**：包体文件 `data/balance/final_status.json` → `GLory-codex`（客户端运行时读 `res://data/balance/final_status.json`）；非包体 6 个文件（`docs/balance/*`、`tools/export_final_status.py`、`final_excel_owned.py`、`final_runtime.py`、`test_final_runtime.py`）→ `E:/Users/WINDOWS/Desktop/其他/GLory-codex瘦身归档_20261012/非游戏文件/`。7 个文件逐字节 sha256 全一致（PASS=7 FAIL=0）。
+
+## 2026-10-13（PVP 开场流程与离线自测佣兵错模，已同步仓库）
+
+按 `10.13bug提交及修复.docx` 的两项反馈修复，并按本轮补充要求确定以下行为。改动先在本地 `GLory-codex` 完成、经用户实测通过，随后同步到 `GLory-v1.0`（本轮 7 个文件逐字节一致，CRLF 纪律 0 裸 LF）；版本控制提交与推送由用户执行。
+
+- **仅 PVP 改开场流程**：普通 PVP 与最终 PVP 均先停备战音乐，播放原“最终回合pvp战斗场景开局播放”音效；同刻显示 `Ready`，1.5 秒后切为 `Go`。按素材实际时长（当前约 2.352 秒）等待，音效结束立即撤下 `Go`、开始循环 PVP BGM，然后才放行战斗。PVE 与 Boss 保留原有音乐、登场及开战时序。
+- **文字外观**：只保留居中的金色 `Ready` / `Go` 文字和轻微缩放动效，无背景横幅、装饰、描边或阴影；不拦截输入，按屏幕尺寸缩放。
+- **移动、普攻、技能统一等待**：PVP 建模与 Ready/Go 期间只展示待机站位；冻结回放和技能演出调度。回放第 0 帧已包含开场技能结果，因此先仅提取站位，在 Go 撤下后才应用完整第 0 帧、伤害/状态和技能事件。建模阶段的视觉刷新也禁止提前触发开场技能、技能音效及特效，保留事件游标，开战后仍正常播放首轮技能。复用模型不会因重新布阵提前进入跑步/攻击动作。
+- **离线自测佣兵模型错误**：佣兵使用按槽位和序号生成的 uid；换人或删除前面的佣兵时，旧模型被误复用，属性却已经更新。编辑摆放与返回编辑态时统一清理模型、血条、动画及相关缓存，再按当前配置重建。已覆盖同格泡沫术士换甲壳守卫、增删导致佣兵序号变化及演示结束后返回编辑。
+- **素材**：用户指定的两份 MP3 与工程现有开场音、PVP BGM 的 SHA-256 完全一致，复用现有资源，没有重复导入音频。PVP BGM 继续由原 MusicService 循环播放。
+
+本次涉及 `scenes/battle/BattleUI.gd`、`BattleScreen.gd`、`BattleRenderer.gd`、`BattleVfx.gd`、新增 `PvpIntroOverlay.gd`（含 uid），以及 `officetest/OfficeTestScreen.gd`。
+
+验证：Godot 4.7.2 导入检查通过；桌面 Compatibility 实际场景回归 **116 项通过、0 失败**，覆盖普通/最终 PVP、Ready/Go 时间段的待机与位置不变、技能事件不提前消费且开战后释放、取消后不恢复音乐、PVE/Boss 分类及音乐行为、佣兵模型与资源路径一致性。已查看实际 Ready/Go 截图。旧版自测脚本对照可复现 **6 项模型身份/路径断言失败**，修复后通过。测试脚本、日志、截图及修改前备份外置在 `E:/Users/WINDOWS/Desktop/其他/10.13修复验证/`，不混入发布包。
+
+用户验收：普通 PVP 和第 21 回合观察“Ready → Go → 音效结束且 Go 消失 → 开战”，重点确认开场技能在 Go 消失后才出现；检查 PVE/Boss 无 Ready/Go；在自测同格反复切换泡沫术士/甲壳守卫，并增删前面的佣兵，核对模型和属性。安卓/iOS 真机及真实多人联机尚待用户测试。本次无数据库迁移、无服务端协议或模拟规则变更，不要求更新或重启服务端。
+
+同步核验（2026-10-13 同步到仓时补记）：`GLory-codex` → `GLory-v1.0` 的 7 个文件 sha256 逐个一致（PASS=7 FAIL=0），行尾 0 裸 LF；`git status` 恰好为 5 改 + 2 新增（`PvpIntroOverlay.gd` 及其 `.uid`），两新文件均未被 `.gitignore` 命中。本轮**未触及任何资源文件**（`assets/` 下无内容改动，仅 Godot 重新生成的 `.import` 侧车），故按「能进仓库的只进仓库」规则无需在桌面另建资源镜像夹。仓侧门禁：`boss_battle_bgm` 与 `cold_parse_chain` 因 `GLory-v1.0` 不含音频资源（本项目音频只在 `GLory-codex` 包体树）而无法在仓内通过，改动前后跑同一门禁失败项**完全一致**（`boss_battle_bgm` 5 项、`cold_parse_chain` 由环境导入缓存引起的 17~19 项），可判定与本次改动无关；`--import` 语法扫描零脚本错误。
+
+## 2026-10-13（商城数值版本红字）：线上服务端未部署新数值版本，**不是代码 bug**
+
+用户真机反馈：进「荣耀商店」顶部红字 `商城数值版本与当前游戏不同，请更新游戏`。**排查结论：客户端与仓内文件都是最新的，落后的是线上账号后端 —— 不用改代码，重跑部署脚本 + 重启服务即可。**
+
+- **红字判据**：`scenes/menu/ShopScreen.gd:576-581` 拿 `AccountManager.fetch_shop()`（服务端 `GET /v1/shop`）返回的 `balance_version` 与本地 `DataRegistry.get_table("final_status").balance_version` 比对，不等就提示。
+- **两端各读哪一份**：服务端读**部署根**下的 `$REPO/data/balance/final_status.json`（`backend/app/balance_version.py:8` 的 `parents[2]/data/balance/final_status.json`，返回处 `backend/app/routes/shop.py:241`）；客户端读**打包进包体**的 `res://data/balance/final_status.json`（`scripts/autoload/DataRegistry.gd:28`）。两份文件、两个独立部署物，必须同步发布。
+- **实测值**：仓 / 客户端包内 / `GLory-codex` 三处均已是 **`0e125524…`**（10-12 22:02 提交 `81dc7aa "data change"` 带来的新值，与仓 HEAD 逐字节一致）；线上服务端**仍是旧值 `77ee99f0…`**（10-10 `2f1132c "shop update"` 那版）。⇒ 服务端没重跑 `deploy/update.sh`。
+- **版本值变更史**（`git log -p -- data/balance/final_status.json`）：`a704994` → `a6d8531d…`；`2f1132c`(10-10 21:47) → `77ee99f0…`；`81dc7aa`(10-12 22:02) → `0e125524…`。注意 `81dc7aa` 对该文件的 diff **只有 `balance_version` 一行**（正文未变，`final_workbook_sha256` 仍 `ed2f0d10…`）—— 属于发布流程按 `tools/export_final_status.py:139`（display+runtime+code_rules 的规范 JSON 取 sha256，`sort_keys=True`）重算刷新版本戳，**不代表数值真的改了**。
+- **修法（运维侧，不改代码）**：
+  1. 在服务器上重跑 `sudo bash <仓>/deploy/update.sh` —— 该脚本第 128 行的数据清单明确含 `balance/final_status.json`（注释 120 行：「与客户端、专服核对的数值版本」），会把 `$SRC/data/balance/final_status.json` rsync 进运行目录；
+  2. ⚠ **必须重启账号后端**：`balance_version.py:11` 带 `@lru_cache(maxsize=1)`，进程启动时读一次就永久缓存，只 rsync 不重启则旧值仍在内存；
+  3. 按 `docs/balance/README_final_status.md` 第 45 行要求，发布后用线上实测**核对三端版本**。
+
+- **影响面**：红字**只是提示、不阻断购买**（581 行之后无 `return`，`_items` 照常 filter）。同一版本不一致还会让客户端与专服联机握手被拒（`NetworkTransport.gd:120` 比 `balance_version`），是同一根因的第二个症状面。
+- **无需动的**：`android/build/**/assets/data/balance/final_status.json` 仍是旧值 `77ee99f0…`，但 `android/` 被 `.gitignore` 忽略（导出构建产物），出包时会重新生成。
+
+本轮**只读排查，未改任何工程文件**；仓侧零写入、HEAD 仍 `81dc7aa`；未做任何 git 操作。
+
+
+## 2026-10-12（世界频道语音红字）：1 个必现故障 + 1 个 UI 调整
+
+用户真机反馈「世界频道用语音必定弹红字 `session_replaced`，语音发不出去」。**只改客户端 3 个文件，不动服务端、不需要新迁移。**
+
+- **🔴 红字根因：语音上传这条链路漏发登录会话号。** 单端登录（10-12 那条）给 HTTP 加了 `X-Glory-Session` 校验，`AccountManager._request()` 与 `RealtimeService` 的 WS 握手都带上了这一行，**唯独 `VoiceClipService._upload()` 自己另拼请求头时漏了它**。服务端 `current_claims`（`backend/app/routes/me.py:56`）拿不到会话号 → `login_sessions.require` 收到空串 → `uuid.UUID("")` 直接抛 → **一律回 409 `detail="session_replaced"`**；客户端又对非 2xx **无条件回显 `body.detail`**，于是英文内部标记被当玩家文案画成红字。症状因此是**必现、只出现在语音、与「是否真的在别处登录过」完全无关**（文字聊天走 `_request()`，带了会话头，所以一条都不报）。修法：`VoiceClipService._upload()` 补 `X-Glory-Session`（空串不加）与 `patch_header_lines()`，与另外两处对齐。
+- **纵深防御（同一个 409 的第二道）**：即使在 `AccountManager` 侧，本地伪造的 409 分支（`await refresh_session()` 期间被顶号导致代次变化）原本也会把 `session_replaced` 这个内部标记交给调用方 —— 现改为恒返回 `code=0`（调用方对它的既有语义是「保留输入、静默重试」），真「被顶号」统一走 `RealtimeService` 的 kicked 通道。另在 `VoiceClipService` 的非 2xx 分支识别 `409 + session_replaced`，改出中文「你的账号在其他设备登录」并调 `_mark_kicked()`，**任何情况下都不再把内部英文标记透给玩家**。
+- **UI：世界频道「按住说话」按钮改为麦克风图标**（用户要求"图标更好识别"）。`ui/components/VoiceRecordButton.gd` 是私聊 / 世界频道 / 对局内**三个渠道共用的同一颗按钮**，只改它、调用方零改动（`voice_clip_check` 的 `record_button_not_shared` 正是钉这个共用性）。图标复用仓里已有的 `assets/ui/voice/mic_on.svg`（未新增素材），`tooltip` 保留「按住说话 / Hold to talk」；`ResourceLoader.exists()` 守卫，素材丢失回退文字（避免打包缺贴图时留下一颗认不出的空按钮）；运行时 `load()` 而非 `preload()`（服务器包不带导入贴图）。
+
+验证：`--import` 零语法错误；门禁 `voice_clip` PASS 72/0、`cold_parse_chain` PASS 348/0；8 项静态检查（含「`_request` / `RealtimeService` 都带会话头」的对照）全通过。`AccountManager` / `VoiceRecordButton` / `VoiceClipService` 三文件指纹分别为 `b78d94f7…` / `11b70636…` / `9d62fe16…`。
+
+🔴 **部署：不需要更新或重启服务端**（纯客户端漏发请求头；服务端行为一直是对的）。同事若在用同一个后端也需打这个客户端补丁。
+
+★ 已知红（**非本轮引入**）：`chat_check` 的 `admission_flag_reset` 1 条 —— `_admitted = false` 出现在 `RealtimeService.gd` 的 `_mark_kicked` 里，而门禁只允许它在 `_mark_banned`；`git log -S` 追到提交 `e0d0a27`（「1012单端登录功能」，bytegamein，2026-10-12），属用户自己单端登录那批带来的既有红灯。**已按用户要求同步到本地 `GLory-v1.0`，未提交、未推送。**
+
+## 2026-10-12（单端登录，本地待验收）
+
+新登录使旧端整局下线，旧端回启动入口并等待主动重新登录；HTTP/WS 校验持久化会话编号，后台续期不抢登，房间按已验签账号防重复入座。保留匿名账号凭证和对局恢复记录。需要迁移 `database/034_login_sessions.sql`，并配套更新账号后端、战斗服务器和客户端；已按用户要求同步到本地 GLory-v1.0 仓库，未提交、未推送、未部署。测试步骤和兼容边界见 [单端登录说明](docs/2026-10-12单端登录.md)。
+
+## 2026-10-12（bug 提交及修复）：7 条真机反馈
+
+来自 `10.12bug提交及修复.docx`。**只有代码 + 门禁改动；唯一动过的资源是一张「已在仓里」的贴图**（第 ③ 条重刷霜印使 albedo），没有新增任何素材文件。详见 `docs/10.12bug提交及修复记录.md`。
+
+- **① 图鉴宠物立绘重叠**：点哪只就只显示哪只。根因是演示台 `_pet_stage` 的**唯一写入点** `BagScreen._render_pet_detail()` 只 `add_child`、从不清台，而点卡片走的 `_refresh_pet_selection()` 只清了右侧文案 ⇒ 每点一只就往演示台**追加**一张立绘，新图盖住旧图、旧图四周露出（用户截图：「猫的帽子后面还有蘑菇」）。修法：渲染前 `_clear_children(_pet_stage)`；演示台由 `CenterContainer` 改普通 `Control`、右侧档案面板定高 + 内部滚动，长文案不再把底部宠物栏顶出屏幕（矮屏 960×540 实测）。
+- **② 英文模式结算 / 历史里法阵守护者仍是中文**：战报存的是守护者**中文名**（`formation_allies.json` 的 `name`）。`FinalSettlementPanel` 新增 `_ally_display_name()`，按「id / 中文名 / 英文名」任一命中反查同表换本语言名 —— **不改战报格式**，历史里的旧记录同样能翻；查不到就**原样返回**（宁可不翻，也不显示成空白或一串 id）。
+- **③ 霜印使（Icey）棋子模型头发应为白色**：`tools/model_refinement/crimson_refine.py` 里**只对 Icey 生效**的「整族刷红发」分支已删（推翻 2026-10-05 的决定），重刷 `Icey_m0_albedo.png`（泛白发丝 91.6% / 正红 0.0%）。门禁 `icey_hair_check` 直接**读源 PNG 像素**（不能用 `load()` —— 那读的是导入后的 `.ctex` 缓存，改源图不反映，变异会假绿）。
+- **④ 棋子三态分流（轻点 / 长按 / 拖拽）**：点击棋子**不再变成选中**、长按不动＝**查看属性且不进入可挪动态**、按住滑动拖到落点才挪动。根因是棋盘格 / 待命格的 `pressed` 与 `attach_long_press` 挂在**同一个按钮**上，一次长按既弹属性又把格子设成选中态 ⇒ 关框后残留选中，下一次轻点就误挪。改法：①`pressed` 先 `consume_long_press(btn)` 再转业务；②`_on_board/bench_pressed` 里「点 A 选中 → 点 B 挪过去」整段删除（挪动只剩拖拽一条路）；③射程预览改挂「查看属性」，详情框一关就撤高亮。**保留**「商店卡选中 → 点格子买入」这条链。
+  ★ **返修（用户复测）**：长按弹过属性框后、手指还没松时随手一划过 28px 仍会 `force_drag` 挪走 ⇒ `PrepDragButton` 起拖前加 `if long_press_triggered: return`，本次手势只要弹过详情就只能「看完松手」，挪动必须**重新按下再滑动**。
+- **⑤ AI 佣兵 / 萝卜经济要与真人玩家一致**：`BotPlayer` 新增**有状态**的实时经济（`new_state`/`prepare_round`/`settle_round`/`view`，由 `scripts/economy/LiveBotEconomy.gd` 驱动），不再用「估算胜场 / 击杀 / 未来收入」的历史模拟；`NetworkService.team_bot_states` 取代按 `(seed,slot,round)` 播种子的预览路径；佣兵**打完一场即过期**（与玩家一致）、商店成本走 `EconomyLedger.unit_cost`（含宝藏折扣）、刷新价考虑「金钱套」。**离线自测里照旧生效**（与第 ⑥ 条是两码事）。
+- **⑥ 备战倒计时**：「准备」按钮带「（xx s）」后缀；全员就绪提前开局；到点**自动上阵**（待命区最左优先，否则买商店最左，`PrepDeadline.deploy` 幂等 + 不白送）；PVE 35s / PVP 50s；最后 3 秒屏幕正中大号「3!/2!/1!」（`mouse_filter=IGNORE`，**不挡棋盘**）。
+  ★ **口径：只对「离线自测」不生效**（离线自测保持原样无倒计时，含自动上阵守卫）；**其他房间对局一律生效**。判据统一 `NetworkService.is_offline_team_match()`。
+  ★ **返修（用户复测：自定义房间也没倒计时）**：根因**不是**离线守卫（`team_join`/`team_host` 在置 `team_active=true` 的同刻置 `offline_selftest=false`，两标记不可能同时为真 —— 四态探针实测），而是 `PrepCountdown` 把「服务端已确认 prep」当**前置条件**：**自定义房间的房主在专服上同样是 `is_host == false` 的客机**，服务器旧包不发 `prep_seconds_left` 时**整间房**都看不到。修法：服务端值由**前置条件降级为优先来源**，本地时钟兜底。
+- **⑦ 棋盘皮肤（冰雪）在排位 3v3 没生效**：皮肤图在 `_build` 那一刻定死，而皮肤是登录后**异步**从账号服务器拉的；冷启动后立刻进对局时界面可能先建好。两道保险：`PrepSkin.loaded`（本会话至少拉到过一次）⇒ 进对局补拉一次 + `PlayerProfile.prep_skin_changed` ⇒ `PrepUI.reapply_prep_skin()` 把已建好的棋盘底图 / 河面 / 待命区 / 萝卜 / 萤火虫色 / 河面波光全换过来。
+
+★ 已知红（**非本轮引入，均做了改动前「因果回退」对照**）：`prep_seat_card` 1、`prep_detail_overlay_check` 尾部的 `BattleScreen.gd` 解析错误、`safe_area_check` 4（全在 `pet_draw@iphone`）、`dynamic_call` 41、`prep_tree_snapshot` 19、`prep_text_coverage` 1、`battle_loading_layout` 1，以及既有台账里的 voice / asset_manifest / lobby_identity03 等。
+
+🔴 **部署（缺一不可）**：第 ⑤ / ⑥ 条的**服务端那一半**（AI 经济落账、超时判定、到点开回合、AI 托管、`prep_timed_out` / `timeout_buys` / `bot_states` 持久化）跑在对局专用服务器里 ⇒ **必须重启战斗专用服务器**；后端若已是含 `033` 的版本则本批**不需要新迁移**，重启账号后端即可。客户端倒计时从此**不依赖服务器是否支持**（返修后本地时钟兜底），但服务端不支持时「到点开回合 / AI 托管」不会生效。
+
 ## 2026-10-11（人族八单位模型精修）
 
 民兵、商人、弓箭手、剑士、法师、牧师、死侍、人王完成分角色制作、桌面验证及整族复核后统一接入，运行资源位于 `assets/models/units/human_refined/`。

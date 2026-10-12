@@ -31,6 +31,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import db, loadout, matchmaking, players
+from app import service_control
 from app.config import get_settings
 from app.jwt_verify import Claims, TokenError
 from app.main import app
@@ -558,6 +559,25 @@ class _GateConn:
 
 
 class _GatePool:
+    # 排队 / 确认现在还要过全局开关这道闸（app/service_control.py）。
+    # 它**直接在池上** fetchrow，不走 acquire，所以替身要单独答这一问。
+    # 这里扮演「数据库在、035 跑过、两个开关都是出厂值（不维护、匹配开着）」。
+    #
+    # 🔴 不答这一问的话 service_control 会判成「状态读不出来」而拒绝新开局
+    # —— 那是它设计好的 fail-closed 行为，不是 bug（见 service_control 模块头）。
+    async def fetchrow(self, _sql, *_args):
+        return {"version": 1, "maintenance_enabled": False, "matchmaking_enabled": True,
+                "maintenance_notice_zh": "", "maintenance_notice_en": "",
+                "matchmaking_notice_zh": "", "matchmaking_notice_en": "",
+                "expected_back_at": None, "change_reason": "", "actor": "", "changed_at": None}
+
+    # 领名片那条路会查入场名册。空 = 没人在对局中。
+    async def fetch(self, _sql, *_args):
+        return []
+
+    async def execute(self, _sql, *_args):
+        return "INSERT 0 1"
+
     def acquire(self):
         class _A:
             async def __aenter__(self):
@@ -571,6 +591,10 @@ class _GatePool:
 
 @pytest.fixture
 def wired(monkeypatch: pytest.MonkeyPatch):
+    from app import login_sessions
+    async def valid_session(*args):
+        return None
+    monkeypatch.setattr(login_sessions, "require", valid_session)
     monkeypatch.setenv("GLORY_DISABLE_INSTANCE_LOCK", "true")
     monkeypatch.setenv("GLORY_SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setenv("GLORY_DATABASE_URL", "")
@@ -583,6 +607,8 @@ def wired(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(players, "get_by_auth_uid", _lookup)
     monkeypatch.setattr(db, "pool", _GatePool)
+    # service_control 有 3 秒缓存：不清的话上一个用例读到的状态会漏到下一个用例。
+    service_control.reset()
     # 每个用例一个干净的匹配器，别让上一个用例的队列漏过来。
     matchmaking.install(matchmaking.Matchmaker(_Recorder()))
     loadout_routes._card_limiter.reset()
@@ -593,6 +619,7 @@ def wired(monkeypatch: pytest.MonkeyPatch):
     loadout_routes._card_limiter.reset()
     match_routes._queue_limiter.reset()
     match_routes._state_limiter.reset()
+    service_control.reset()
     get_settings.cache_clear()
 
 
@@ -696,3 +723,154 @@ def test_card_without_assignment_asks_for_no_match(wired, monkeypatch) -> None:
     with TestClient(app) as client:
         client.post("/v1/battle/card", headers={"Authorization": "Bearer token-a"})
     assert captured == {"match_uid": "", "team": -1, "mode": "", "seat": -1}
+
+
+# --- 全局开关（OPS-05，app/service_control.py）----------------------------------
+#
+# 这几条盯的是**判错方向代价最大**的地方，尤其是那条 P0：
+# 维护不能打断已经在打的人 —— 他们断线重连要重新领名片（名片只活 60 秒），
+# 把他们一起挡住就等于把人踢出对局。
+
+
+def _switch(monkeypatch, *, maintenance=False, matchmaking_on=True, in_match=()):
+    """把替身池换成「开关是这样、名册上有这些人」。"""
+    async def _fetchrow(_self, _sql, *_a):
+        return {"version": 3, "maintenance_enabled": maintenance,
+                "matchmaking_enabled": matchmaking_on,
+                "maintenance_notice_zh": "服务器维护中", "maintenance_notice_en": "Maintenance",
+                "matchmaking_notice_zh": "", "matchmaking_notice_en": "",
+                "expected_back_at": None, "change_reason": "", "actor": "", "changed_at": None}
+
+    async def _fetch(_self, _sql, *_a):
+        return [{"player_id": pid} for pid in in_match]
+
+    monkeypatch.setattr(_GatePool, "fetchrow", _fetchrow, raising=False)
+    monkeypatch.setattr(_GatePool, "fetch", _fetch, raising=False)
+    service_control.reset()
+
+
+def test_matchmaking_switch_off_blocks_the_queue(wired, monkeypatch) -> None:
+    _switch(monkeypatch, matchmaking_on=False)
+    with TestClient(app) as client:
+        r = client.post("/v1/match/queue", json={"mode": "casual"},
+                        headers={"Authorization": "Bearer token-a"})
+    assert r.status_code == 409
+    # 原因码要能让客户端说对话。关匹配 ≠ 维护。
+    assert r.headers["X-Glory-Reason"] == "matchmaking_disabled"
+
+
+def test_block_detail_is_the_text_the_player_sees(wired, monkeypatch) -> None:
+    """🔴 detail 不是给日志看的，**它就是玩家看到的那句话**。
+
+    scenes/menu/MatchQueuePanel.gd 的 _fail() 直接把 result.error 显示出来，
+    而 AccountManager._request 把 body["detail"] 原样放进 error。
+    所以改这里的文案 = 改玩家看到的提示；写成「HTTP 409」之类的话，
+    玩家会看到一句什么也没说的错误。
+    """
+    _switch(monkeypatch, matchmaking_on=False)
+    with TestClient(app) as client:
+        r = client.post("/v1/match/queue", json={"mode": "casual"},
+                        headers={"Authorization": "Bearer token-a"})
+    assert r.json()["detail"] == "排位功能暂时关闭"
+
+    _switch(monkeypatch, maintenance=True)
+    with TestClient(app) as client:
+        r = client.post("/v1/match/queue", json={"mode": "casual"},
+                        headers={"Authorization": "Bearer token-a"})
+    assert r.json()["detail"] == "服务器正在维护，暂时不能开始新对局"
+
+
+def test_matchmaking_switch_off_also_blocks_casual(wired, monkeypatch) -> None:
+    """排位与休闲**一起**关（2026-10-12 用户拍板）。上面那条用的就是 casual，
+    这里再明写一遍意图：别有人以为这个开关只管 ranked。"""
+    _switch(monkeypatch, matchmaking_on=False)
+    with TestClient(app) as client:
+        r = client.post("/v1/match/queue", json={"mode": "casual"},
+                        headers={"Authorization": "Bearer token-a"})
+    assert r.status_code == 409 and r.headers["X-Glory-Reason"] == "matchmaking_disabled"
+
+
+def test_maintenance_blocks_the_queue_with_its_own_reason(wired, monkeypatch) -> None:
+    """维护优先级高于关匹配：matchmaking 还开着，但维护把它压下去了，
+    而且原因码要报 service_maintenance 而不是 matchmaking_disabled。"""
+    _switch(monkeypatch, maintenance=True, matchmaking_on=True)
+    with TestClient(app) as client:
+        r = client.post("/v1/match/queue", json={"mode": "casual"},
+                        headers={"Authorization": "Bearer token-a"})
+    assert r.status_code == 409
+    assert r.headers["X-Glory-Reason"] == "service_maintenance"
+
+
+def test_accept_is_gated_too(wired, monkeypatch) -> None:
+    """开关可能在「匹配成功」和「玩家点确认」之间被拨下来。
+    只在开始排队时检查会留下竞态（任务书 §七.3.4）。"""
+    _switch(monkeypatch, matchmaking_on=False)
+    with TestClient(app) as client:
+        r = client.post("/v1/match/accept", headers={"Authorization": "Bearer token-a"})
+    assert r.status_code == 409 and r.headers["X-Glory-Reason"] == "matchmaking_disabled"
+
+
+def test_maintenance_refuses_a_card_to_someone_not_in_a_match(wired, monkeypatch) -> None:
+    _switch(monkeypatch, maintenance=True, in_match=())
+    with TestClient(app) as client:
+        r = client.post("/v1/battle/card", headers={"Authorization": "Bearer token-a"})
+    # 503 而不是 403：服务器暂时不可用，不是这个玩家没资格。
+    assert r.status_code == 503
+    assert r.headers["X-Glory-Reason"] == "service_maintenance"
+
+
+def test_maintenance_still_gives_a_card_to_someone_already_in_a_match(wired, monkeypatch) -> None:
+    """🔴 这条是 P0。断线重连要重新领名片；挡住他 = 把他踢出正在打的那一局。"""
+    async def _card(pid, match_uid="", team=-1, mode="", seat=-1, **kw):
+        return "Ym9keQ==.c2ln"
+
+    monkeypatch.setattr(loadout, "issue_card", _card)
+    _switch(monkeypatch, maintenance=True, in_match=(PLAYER_A,))
+    with TestClient(app) as client:
+        r = client.post("/v1/battle/card", headers={"Authorization": "Bearer token-a"})
+    assert r.status_code == 200, "维护把正在对局的人挡在外面了"
+
+
+def test_unreadable_roster_does_not_lock_players_out(wired, monkeypatch) -> None:
+    """名册读不出来时宁可放行 —— 判错成「他在大厅」会把正在打的人踢掉，
+    判错成「他在打」只是维护慢一点生效。两种代价不对称。"""
+    async def _card(pid, match_uid="", team=-1, mode="", seat=-1, **kw):
+        return "Ym9keQ==.c2ln"
+
+    async def _boom(_self, _sql, *_a):
+        raise RuntimeError("roster unavailable")
+
+    monkeypatch.setattr(loadout, "issue_card", _card)
+    _switch(monkeypatch, maintenance=True)
+    monkeypatch.setattr(_GatePool, "fetch", _boom, raising=False)
+    with TestClient(app) as client:
+        r = client.post("/v1/battle/card", headers={"Authorization": "Bearer token-a"})
+    assert r.status_code == 200
+
+
+def test_issuing_a_card_records_the_entry(wired, monkeypatch) -> None:
+    """名册是靠发名片攒出来的。不记的话维护时所有人都会被当成在大厅。"""
+    seen: list = []
+
+    async def _card(pid, match_uid="", team=-1, mode="", seat=-1, **kw):
+        return "Ym9keQ==.c2ln"
+
+    async def _record(pid, match_uid=""):
+        seen.append((pid, match_uid))
+
+    monkeypatch.setattr(loadout, "issue_card", _card)
+    monkeypatch.setattr(service_control, "record_entry", _record)
+    _switch(monkeypatch)
+    with TestClient(app) as client:
+        client.post("/v1/battle/card", headers={"Authorization": "Bearer token-a"})
+    assert seen == [(PLAYER_A, "")]
+
+
+def test_switches_open_change_nothing(wired, monkeypatch) -> None:
+    """两个开关都正常时，这几道闸必须完全不挡路 —— 否则上面那些断言
+    可能只是因为路由本来就不通才绿的。"""
+    _switch(monkeypatch)
+    with TestClient(app) as client:
+        r = client.post("/v1/match/queue", json={"mode": "casual"},
+                        headers={"Authorization": "Bearer token-a"})
+    assert r.status_code == 200

@@ -32,7 +32,8 @@ from typing import Any
 import asyncpg
 import httpx
 
-from app import analytics, announcements, bans, db, mail, ranked, realtime, shop, world_chat
+from app import (analytics, announcements, bans, db, mail, ranked, realtime,
+                 sanctions, service_control, shop, world_chat)
 from app.admin_auth import Admin
 from app.config import get_settings
 
@@ -244,39 +245,69 @@ async def unban(admin: Admin, player_id: uuid.UUID, note: str) -> dict:
 # --- 禁言（世界频道，不用批；database/019）--------------------------------------------------
 
 
-async def mute(admin: Admin, player_id: uuid.UUID, hours: int | None, reason: str, note: str) -> dict:
-    """禁言：被禁的人照常能玩、能私聊，只是不能在世界频道说话（app/world_chat.py）。"""
+_SCOPE_LABEL = {sanctions.SCOPE_WORLD: "世界频道禁言",
+                sanctions.SCOPE_VOICE: "禁语音",
+                sanctions.SCOPE_RANKED: "禁排位"}
+
+
+async def mute(admin: Admin, player_id: uuid.UUID, hours: int | None, reason: str, note: str,
+               scope: str = sanctions.SCOPE_WORLD) -> dict:
+    """下处罚（database/036 的三个范围之一）。
+
+      world  —— 照常能玩、能私聊，只是不能在世界频道说话（app/world_chat.py）
+      voice  —— 组队 / 局内不能说话，**仍然听得到**（2026-10-12 用户拍板）
+      ranked —— 人工禁止排位准入，休闲不受影响（app/ranked.py 的 queue_gate）
+
+    🔴 三者独立：撤销一个不解除另外两个（靠 036 的 unmute_player 带 scope）。
+    """
+    try:
+        scope = sanctions.clean_scope(scope)
+    except ValueError as exc:
+        raise AdminRejected(str(exc)) from None
     reason = _require_text(reason, "给玩家看的原因", 200)
     note = (note or "").strip()[:500] or None
     if hours is not None and not 1 <= hours <= 24 * 3650:
-        raise AdminRejected("禁言时长要在 1 小时到 10 年之间；永久禁言不填时长")
+        raise AdminRejected("处罚时长要在 1 小时到 10 年之间；永久不填时长")
     async with db.pool().acquire() as conn:
         async with conn.transaction():
             code = await _live_friend_code(conn, player_id)
             try:
                 mute_id = await conn.fetchval(
-                    "select mute_player($1, $2::interval, $3, $4, $5)",
-                    code, None if hours is None else dt.timedelta(hours=hours), reason, admin.name, note)
+                    "select mute_player($1, $2::interval, $3, $4, $5, $6)",
+                    code, None if hours is None else dt.timedelta(hours=hours),
+                    reason, admin.name, note, scope)
             except asyncpg.UndefinedFunctionError:
-                raise AdminRejected("数据库还没跑 019_world_chat.sql，禁言用不了", 503) from None
+                raise AdminRejected(
+                    "数据库还没跑 database/036_sanction_scopes.sql，按范围下处罚用不了", 503) from None
             await _audit(conn, admin, "mute", player_id,
-                         {"mute_id": mute_id, "hours": hours, "reason": reason, "note": note})
-    return {"mute_id": mute_id}
+                         {"mute_id": mute_id, "scope": scope, "hours": hours,
+                          "reason": reason, "note": note})
+    return {"mute_id": mute_id, "scope": scope}
 
 
-async def unmute(admin: Admin, player_id: uuid.UUID, note: str) -> dict:
+async def unmute(admin: Admin, player_id: uuid.UUID, note: str,
+                 scope: str = sanctions.SCOPE_WORLD) -> dict:
+    """解除某一个范围的处罚。**只解这一个**，不碰其它范围（任务书 §四.3）。"""
+    try:
+        scope = sanctions.clean_scope(scope)
+    except ValueError as exc:
+        raise AdminRejected(str(exc)) from None
     note = (note or "").strip()[:500] or None
     async with db.pool().acquire() as conn:
         async with conn.transaction():
             code = await _live_friend_code(conn, player_id)
             try:
-                count = await conn.fetchval("select unmute_player($1, $2, $3)", code, admin.name, note)
+                count = await conn.fetchval(
+                    "select unmute_player($1, $2, $3, $4)", code, admin.name, note, scope)
             except asyncpg.RaiseError:
-                raise AdminRejected("这个玩家现在没有被禁言") from None
+                raise AdminRejected(
+                    "这个玩家现在没有生效中的「%s」" % _SCOPE_LABEL.get(scope, scope)) from None
             except asyncpg.UndefinedFunctionError:
-                raise AdminRejected("数据库还没跑 019_world_chat.sql，禁言用不了", 503) from None
-            await _audit(conn, admin, "unmute", player_id, {"revoked": count, "note": note})
-    return {"revoked": count}
+                raise AdminRejected(
+                    "数据库还没跑 database/036_sanction_scopes.sql，按范围解除用不了", 503) from None
+            await _audit(conn, admin, "unmute", player_id,
+                         {"revoked": count, "scope": scope, "note": note})
+    return {"revoked": count, "scope": scope}
 
 
 # --- 内部账号（运营数据排除；database/025，app/analytics.py）-----------------------------------
@@ -813,3 +844,100 @@ async def recent_audit() -> list[dict]:
             " from admin_audit a left join players p on p.player_id = a.player_id"
             " order by a.audit_id desc limit 200")
     return [_row(r) for r in rows]
+
+
+# --- 服务控制：维护 / 关闭排位与休闲匹配（OPS-05）--------------------------------
+#
+# 两个开关**分别存**（database/035_service_control.sql）。
+# 解除维护绝不能顺带把之前单独关掉的匹配打开 —— 这条在 035 和
+# service_control.allows_matchmaking 里各写了一遍，测试也盯着。
+
+_SERVICE_NOTICE_MAX = 500
+
+
+async def service_control_state() -> dict:
+    """后台读当前状态。**带内部字段**（谁改的、为什么）—— 这是后台页面，不是客户端接口。"""
+    state = await service_control.read()
+    return {
+        "maintenance_enabled": state.maintenance,
+        "matchmaking_enabled": state.matchmaking,
+        "maintenance_notice_zh": state.maintenance_notice_zh,
+        "maintenance_notice_en": state.maintenance_notice_en,
+        "matchmaking_notice_zh": state.matchmaking_notice_zh,
+        "matchmaking_notice_en": state.matchmaking_notice_en,
+        "expected_back_at": state.expected_back_at,
+        "change_reason": state.change_reason,
+        "actor": state.actor,
+        "changed_at": state.changed_at,
+        "version": state.version,
+        # 让后台能分辨「035 还没跑」和「数据库读不出来」—— 两者的现场完全不同。
+        "source": state.source,
+        # 现在有多少人在对局里（维护时这些人不会被踢）。None = 名册读不出来。
+        "in_match_count": len(await service_control.players_in_match() or ()),
+        "online_count": realtime.hub().player_count(),
+    }
+
+
+async def set_service_control(admin: Admin, *, version: int, maintenance: bool, matchmaking: bool,
+                              maintenance_notice_zh: str = "", maintenance_notice_en: str = "",
+                              matchmaking_notice_zh: str = "", matchmaking_notice_en: str = "",
+                              expected_back_at: dt.datetime | None = None,
+                              reason: str = "") -> dict:
+    """改开关。`version` 是后台读到的那一版，对不上回 409 让它刷新再改。
+
+    乐观并发而不是「禁用按钮」：任务书 §二.4 明确不接受用前端禁用代替服务端并发控制。
+    两个管理员同时改时，后到的那个必须看到前一个的改动再决定。
+    """
+    reason = _require_text(reason, "变更原因", 500)
+    notices = {
+        "maintenance_notice_zh": (maintenance_notice_zh or "").strip()[:_SERVICE_NOTICE_MAX],
+        "maintenance_notice_en": (maintenance_notice_en or "").strip()[:_SERVICE_NOTICE_MAX],
+        "matchmaking_notice_zh": (matchmaking_notice_zh or "").strip()[:_SERVICE_NOTICE_MAX],
+        "matchmaking_notice_en": (matchmaking_notice_en or "").strip()[:_SERVICE_NOTICE_MAX],
+    }
+    if expected_back_at is not None and expected_back_at.tzinfo is None:
+        # 不猜时区。后台一律发带时区的时间（任务书 §二.6）。
+        raise AdminRejected("预计恢复时间要带时区")
+
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                "select version, maintenance_enabled from service_control where only_row for update")
+            if row is None:
+                raise AdminRejected("服务控制还没初始化，请先跑 database/035_service_control.sql", 503)
+            if int(row["version"]) != int(version):
+                raise AdminRejected(
+                    "这份配置已经被另一个管理员改过（当前第 %d 版，你看到的是第 %d 版），"
+                    "请刷新后再改" % (int(row["version"]), int(version)), 409)
+            was_maintenance = bool(row["maintenance_enabled"])
+            new_version = int(row["version"]) + 1
+            await conn.execute(
+                "update service_control set version = $1,"
+                " maintenance_enabled = $2, matchmaking_enabled = $3,"
+                " maintenance_notice_zh = $4, maintenance_notice_en = $5,"
+                " matchmaking_notice_zh = $6, matchmaking_notice_en = $7,"
+                " expected_back_at = $8, change_reason = $9, actor = $10, changed_at = now()"
+                " where only_row",
+                new_version, maintenance, matchmaking,
+                notices["maintenance_notice_zh"], notices["maintenance_notice_en"],
+                notices["matchmaking_notice_zh"], notices["matchmaking_notice_en"],
+                expected_back_at, reason, admin.name)
+            # 开、关、失败都记审计（任务书 §七.2 末尾）。
+            await _audit(conn, admin, "service_control", None, {
+                "version": new_version, "maintenance": maintenance, "matchmaking": matchmaking,
+                "reason": reason, "expected_back_at": expected_back_at, **notices})
+
+    # 🔴 写完立刻作废本进程缓存。单进程单实例（app/single_instance.py）保证了
+    # 这一下就是全局生效 —— 新准入「即时」按权威状态拒绝靠的是这条路，不是等 TTL。
+    service_control.invalidate()
+
+    # 主动推给所有在线玩家，让他们立刻知道（任务书 §七.3.5「健康在线时 5 秒内通知」）。
+    # 在 acquire 块**外面**发：绝不握着数据库连接 await 发送。
+    # broadcast 内部是 gather + 每条超时，一个卡死的 socket 拖不住其余的。
+    pushed = await realtime.hub().broadcast(service_control.push_message(await service_control.read()))
+
+    kick = {"kicked": 0, "skipped": 0, "aborted": False}
+    if maintenance and not was_maintenance:
+        # 维护**刚打开**才踢。重复保存同一个开着的状态不该把人再踢一遍。
+        kick = await service_control.kick_lobby_players()
+    return {"version": new_version, "pushed": pushed, **kick}

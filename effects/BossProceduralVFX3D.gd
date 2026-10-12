@@ -5,6 +5,7 @@ const VFXLightningArc := preload("res://effects/vfx3d/VFXLightningArc.gd")
 const VFXLightningBall := preload("res://effects/vfx3d/VFXLightningBall.gd")
 const BOSS_COMPOSER := preload("res://effects/vfx3d/boss/BossSkillVFXComposer3D.gd")
 const UNIT_COMPOSER := preload("res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd")
+const MERCENARY_REWORK := preload("res://effects/vfx3d/mercenary_rework/MercenaryReworkVFX3D.gd")
 
 const UNIT_SKILLS := [
 	"lowest_ally_heal", "nearest_ally_bless", "nearby_ally_heal_buff",
@@ -24,9 +25,9 @@ const UNIT_SKILLS := [
 	# 佣兵（data/mercenary/mercenaries.json）。UnitSkillVFXComposer3D 里
 	# 一直有这 12 个技能的实现，但它们没写进这张路由表，于是全都被派给了
 	# BossSkillVFXComposer3D —— 那边没有对应分支，结果是静默无表现。
-	"bubble_dream", "shell_guard", "balance_judge", "gold_charge", "holy_song",
+	"bubble_dream", "bubble_dream_heal", "shell_guard", "balance_judge", "gold_charge", "holy_song", "holy_song_cleanse",
 	"twin_strike", "king_aura", "arrow_rain", "blood_rampage", "steel_order",
-	"time_slow", "death_hunt",
+	"time_slow", "death_hunt", "death_hunt_kill",
 	# PVE 怪物（data/pve/pve_monsters.json）
 	"chain_lightning", "dive_backline", "heal_allies", "holy_shield_burst",
 	"wind_bleed", "slow_aura", "stun_impact", "entangle", "burrow_ambush",
@@ -44,6 +45,7 @@ const UNIT_SKILLS := [
 
 var _composer: BossSkillVFXComposer3D
 var _unit_composer: UnitSkillVFXComposer3D
+var _mercenary_rework: Node3D
 
 func _ready() -> void:
 	_composer = BOSS_COMPOSER.new()
@@ -52,8 +54,13 @@ func _ready() -> void:
 	_unit_composer = UNIT_COMPOSER.new()
 	_unit_composer.name = "UnitSkillVFXComposer3D"
 	add_child(_unit_composer)
+	_mercenary_rework = MERCENARY_REWORK.new()
+	_mercenary_rework.name = "MercenaryReworkVFX3D"
+	add_child(_mercenary_rework)
 
 func play(skill_id: String, origin: Vector3, target: Vector3, context: Dictionary = {}) -> Node3D:
+	if skill_id in MERCENARY_REWORK.SKILLS:
+		return _mercenary_rework.call("play_skill", skill_id, origin, target, context) as Node3D
 	if skill_id in UNIT_SKILLS:
 		return _unit_composer.play_skill(skill_id, origin, target, context)
 	match skill_id:
@@ -72,3 +79,10 @@ func play(skill_id: String, origin: Vector3, target: Vector3, context: Dictionar
 		_:
 			_composer.play_skill(skill_id, origin, target, context)
 	return null
+
+func mercenary_rework_active_target_uids() -> Array:
+	return _mercenary_rework.call("active_target_uids") if is_instance_valid(_mercenary_rework) else []
+
+func sync_mercenary_rework_statuses(status_by_uid: Dictionary) -> void:
+	if is_instance_valid(_mercenary_rework):
+		_mercenary_rework.call("sync_statuses", status_by_uid)

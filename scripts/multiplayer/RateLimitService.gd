@@ -67,6 +67,11 @@ const LIMITS := {
 	# 正常聊天碰不到；而一条自由文字能占掉大厅聊天框一半的行数，刷屏的代价更大。
 	# 同样**不计 strike**（调用处传 count_strike=false），理由同 chat_phrase。
 	"chat_text": 3,
+	# 语音留言（2026-10-11）：10 秒窗口 2 条。一条最长 30 秒，刷屏的代价比文字大得多 ——
+	# 别人要么被迫听，要么满屏都是语音条。客户端那边 VOICE_SEND_MIN_INTERVAL_SEC 是 6 秒，
+	# 同样要满足 间隔 × 额度 ≥ 窗口（6 × 2 ≥ 10），否则诚实客户端会被服务端静默丢包。
+	# **不计 strike**（调用处传 count_strike=false），理由同 chat_text。
+	"chat_voice": 2,
 	# 语音钥匙（docs/语音LiveKit方案.md）：正常一局只要几次（开语音、换队、断线重连）；
 	# 客户端连不上时按 2 / 4 / 8 / 15 / 30 秒退避重试，10 秒 5 次足够。
 	# **不计 strike**（调用处传 count_strike=false）：重试是网络不好，不是攻击。

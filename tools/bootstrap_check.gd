@@ -26,7 +26,7 @@ func _ready() -> void:
 
 func _check_project_and_dependency_contract() -> void:
 	var project := FileAccess.get_file_as_string("res://project.godot")
-	var source := FileAccess.get_file_as_string("res://scenes/bootstrap/Bootstrap.gd")
+	var source := FileAccess.get_file_as_string("res://scenes/bootstrap/Bootstrap.gd").replace("\r\n", "\n")
 	var scene_text := FileAccess.get_file_as_string("res://scenes/bootstrap/Bootstrap.tscn")
 	var export_template := FileAccess.get_file_as_string("res://export_presets.template.cfg")
 	_h.expect(project.contains('run/main_scene="res://scenes/bootstrap/Bootstrap.tscn"'),
@@ -127,7 +127,7 @@ func _wait_for_phase(bootstrap: BootstrapScript, wanted: String) -> bool:
 # 真正的选项是把 PlayerProfile 改成惰性、由 Bootstrap 显式驱动并显示真实阶段，
 # 但那会改变启动时序并影响所有调用点，属于需要用户批准的改动，本批不做。
 func _check_phase_honesty_and_ownership() -> void:
-	var source := FileAccess.get_file_as_string("res://scenes/bootstrap/Bootstrap.gd")
+	var source := FileAccess.get_file_as_string("res://scenes/bootstrap/Bootstrap.gd").replace("\r\n", "\n")
 	if not _h.expect(not source.is_empty(), "bootstrap_unreadable", "读不到 Bootstrap.gd"):
 		return
 
@@ -436,7 +436,7 @@ func _check_entry_gate_view() -> void:
 		var stale: Dictionary = BootstrapScript.entry_view(stale_facts)
 		_h.expect(not bool(stale.get("pass", false)), "entry_stale_admission_passes",
 			"还没登录上（%s），却因为以前「放行过」被放进了主界面 —— 封号死循环的入口" % str(stale_facts))
-	var boot_source := FileAccess.get_file_as_string("res://scenes/bootstrap/Bootstrap.gd")
+	var boot_source := FileAccess.get_file_as_string("res://scenes/bootstrap/Bootstrap.gd").replace("\r\n", "\n")
 	_h.expect(boot_source.contains("if AccountManager.is_banned() and not AccountManager.ban_info.is_empty():\n\t\treturn\n\tAccountManager.login()"),
 		"entry_relogin_loop_on_ban",
 		"启动页对「已经知道被封了」的人仍然自动重新登录 —— 封号死循环的另一半")
@@ -460,7 +460,7 @@ func _check_entry_gate_view() -> void:
 		"ban_not_forced_offline",
 		"被封时 Main 没有在「对局中不送回」之前处理，或者没有先退出对局 —— 被封的人会接着打完这一局")
 
-	var source := FileAccess.get_file_as_string("res://scenes/bootstrap/Bootstrap.gd")
+	var source := FileAccess.get_file_as_string("res://scenes/bootstrap/Bootstrap.gd").replace("\r\n", "\n")
 	_h.expect(source.contains("if _entry_gate_required():\n\t\t_begin_entry()"),
 		"entry_gate_bypassed", "主界面载完之后没有经过进门这一步就直接 READY 了")
 	_h.expect(source.contains("if not RealtimeService.is_kicked():\n\t\tRealtimeService.start()"),

@@ -238,11 +238,16 @@ def test_heartbeat_persists_in_match() -> None:
     只在路由层收下、忘了写 SQL，是「定义 ≠ 已接线」的典型：接口 204、测试全绿、
     好友那边永远显示不在对局中。所以这里直接钉住写库那两处。
     """
-    import inspect
-
-    src = inspect.getsource(presence.heartbeat)
+    # 语句 2026-10-11 从函数体提成了模块常量 `_HEARTBEAT`，好让启动自检能拿去
+    # prepare（app/schema_check.py）。断言跟着指到常量上 —— 判据没变，还是「写没写库」。
+    src = presence._HEARTBEAT
     assert "insert into player_presence (player_id, last_seen_at, room_id, in_match)" in src
     assert "in_match = excluded.in_match" in src
+    # 顺带钉住「heartbeat 用的就是这一条」—— 否则有人另写一条 SQL 塞回函数体里，
+    # 上面两句照样绿，而自检 prepare 的是一条**没人用的**语句（假绿）。
+    import inspect
+
+    assert "_HEARTBEAT" in inspect.getsource(presence.heartbeat)
 
 
 def test_friend_item_and_summary_expose_in_match() -> None:
@@ -831,3 +836,69 @@ def test_relation_values_match_between_backend_and_response_model() -> None:
 def test_friend_code_is_case_and_space_insensitive(raw: str) -> None:
     """玩家会照着截图手抄，不该因为按了大写锁或多打一个空格失败。库里一律大写（004）。"""
     assert _norm(raw) == "7K2M9Q4B"
+
+
+# --- 启动自检（app/schema_check.py）-------------------------------------------
+#
+# 它存在的理由：漏跑迁移在这个项目里已经发生三次（10-07 的 030、10-11 的 032，
+# 031 可能也没跑），每次都是「玩家先踩到 HTTP 500，再回头查」。
+# 自检把代价挪到部署那一刻。但自检本身也得有人验 —— 否则它只是另一处假绿。
+
+
+def test_schema_check_prepares_the_statements_actually_in_use() -> None:
+    """🔴 自检必须 prepare「模块真正在用的那条 SQL」，不能自己抄一份。
+
+    抄一份的话，业务 SQL 加了新列而自检那份没跟着改 —— 自检照样绿，
+    而线上照样 500。这正是它要防的那类事故，不能在它自己身上重演。
+    """
+    from app import schema_check
+
+    registry = dict(schema_check._PREPARED)
+    assert registry["friends._LIST_FRIENDS"] is friends._LIST_FRIENDS
+    assert registry["presence._HEARTBEAT"] is presence._HEARTBEAT
+
+
+def test_schema_check_covers_the_column_that_broke_production() -> None:
+    """10-11 那次 500 的那一列必须在自检覆盖范围内。"""
+    from app import schema_check
+
+    covered = " ".join(sql for _, sql in schema_check._PREPARED)
+    assert "in_match" in covered, "032 加的那一列没被任何一条自检语句引用"
+
+
+def test_schema_check_probes_what_prepare_cannot_see() -> None:
+    """prepare 只校验名字解析，看不见 check 约束有没有放宽（030 就是这种）。
+
+    所以第二类探针必须覆盖 030 —— 它是 10-07 那次 500 的根因，
+    症状和 10-11 这次**完全一样**，但 prepare 抓不到。
+    """
+    from app import schema_check
+
+    labels = " ".join(label for label, _, _ in schema_check._PROBES)
+    assert "030" in labels
+
+
+def test_schema_check_never_blocks_startup(monkeypatch) -> None:
+    """自检自己出错不许把服务拖垮 —— 它在启动路径上。
+
+    结构不对时拒绝启动没有收益：受影响的接口照样不可用，却把登录 / 聊天 / 匹配
+    一起拖下水（同 main.py 那条「配置没填也让它起来」）。
+    """
+    from app import db as _db
+    from app import schema_check
+
+    monkeypatch.setattr(_db, "is_connected", lambda: True)
+
+    def _boom():
+        raise RuntimeError("pool exploded")
+
+    monkeypatch.setattr(_db, "pool", _boom)
+    # 不抛就算过；返回空表示「没能核对」，不是「一切正常」。
+    assert asyncio.run(schema_check.verify()) == []
+
+
+def test_schema_check_is_quiet_without_a_database() -> None:
+    """没连库（骨架模式）时不该报一堆缺失 —— 那不是结构问题。"""
+    from app import schema_check
+
+    assert asyncio.run(schema_check.verify()) == []

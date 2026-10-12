@@ -73,6 +73,11 @@ def wired(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(db, "is_connected", lambda: True)
     monkeypatch.setattr(ws_routes, "get_verifier", _FakeVerifier)
+    # Session ownership has its own integration tests; these fixtures exercise
+    # socket lifecycle after authentication with synthetic non-UUID identities.
+    async def valid_session(*args):
+        return None
+    monkeypatch.setattr(ws_routes.login_sessions, "require", valid_session)
 
     known = {
         "auth-uid-1": _FakePlayer(uuid.UUID("11111111-1111-1111-1111-111111111111")),

@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -34,6 +35,10 @@ class ReportBody(BaseModel):
     reason: str = Field(max_length=16)
     # 世界频道里举报某一条时带上它（服务器会核对是不是这个人发的）。
     message_id: int | None = Field(default=None, ge=1)
+    # 举报某一段语音时带上它（2026-10-11）。**房间 / 对局内只有这条路**：
+    # 那条消息不落库，证据只能靠这个编号从 voice_clips 里查（见 database/033 顶部）。
+    # 同样会核对是不是这个人传的，不是就当没给。
+    clip_id: str | None = Field(default=None, max_length=36)
     detail: str | None = Field(default=None, max_length=1000)
 
 
@@ -57,9 +62,17 @@ async def report_player(
     except text_guard.TextRejected as exc:
         raise HTTPException(status_code=400, detail=exc.message,
                             headers={"X-Glory-Reason": exc.code}) from None
+    clip_id: uuid.UUID | None = None
+    if body.clip_id:
+        try:
+            clip_id = uuid.UUID(body.clip_id)
+        except ValueError:
+            # 编号不成形就当没给：举报本身照样提交（证据少一条，总比整条被拒掉好）。
+            clip_id = None
     try:
         report_id, _duplicate = await reports.create(
-            me, _norm(body.target_code), body.context, body.reason, body.message_id, detail)
+            me, _norm(body.target_code), body.context, body.reason, body.message_id, detail,
+            clip_id)
     except reports.ReportRejected as exc:
         raise HTTPException(status_code=exc.status, detail=exc.message,
                             headers={"X-Glory-Reason": exc.code}) from None

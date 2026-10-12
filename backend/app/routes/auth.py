@@ -12,18 +12,33 @@ from __future__ import annotations
 
 import logging
 import uuid
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends, Header
 from pydantic import BaseModel, Field
 
-from app import bans, db, players
+from app import bans, db, players, login_sessions, realtime
 from app.config import get_settings
 from app.rate_limit import RateLimited, SlidingWindowLimiter
 from app.supabase_auth import AuthError, Session, SupabaseAuth
+from app.routes.me import current_claims
+from app.jwt_verify import Claims
 
 log = logging.getLogger("glory.auth")
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
+
+
+@router.post("/logout")
+async def logout(claims: Annotated[Claims, Depends(current_claims)],
+                 x_glory_session: Annotated[str, Header()]) -> dict:
+    async with login_sessions.ownership_lock:
+        await login_sessions.require(claims.auth_uid, x_glory_session)
+        await login_sessions.release(claims.auth_uid, x_glory_session)
+        player = await players.get_by_auth_uid(claims.auth_uid)
+        if player is not None:
+            await realtime.hub().disconnect_player(player.player_id, 1000, {"t": "signed_out"})
+    return {"ok": True}
 
 # 进程内共用。限流状态是内存里的，每请求新建一个等于没限流。
 _settings = get_settings()
@@ -103,6 +118,7 @@ class AnonymousRequest(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str = Field(min_length=1, max_length=4096)
+    session_id: uuid.UUID | None = None
 
 
 class SessionResponse(BaseModel):
@@ -112,6 +128,7 @@ class SessionResponse(BaseModel):
     access_token: str
     refresh_token: str
     expires_in: int
+    session_id: str
 
 
 def _auth_client() -> SupabaseAuth:
@@ -133,7 +150,7 @@ def _require_db() -> None:
         )
 
 
-async def _respond(session: Session, proposed: uuid.UUID | None) -> SessionResponse:
+async def _respond(session: Session, proposed: uuid.UUID | None, existing: uuid.UUID | None = None) -> SessionResponse:
     try:
         player = await players.resolve_or_create(session.auth_uid, proposed)
     except players.PlayerIdConflict:
@@ -152,6 +169,14 @@ async def _respond(session: Session, proposed: uuid.UUID | None) -> SessionRespo
         player.player_id,
         player.created,
     )
+    async with login_sessions.ownership_lock:
+        if existing is not None:
+            await login_sessions.require(session.auth_uid, str(existing))
+            sid = str(existing)
+        else:
+            sid = await login_sessions.issue(session.auth_uid)
+            await realtime.hub().disconnect_player(player.player_id, realtime.CLOSE_KICKED,
+                                                   {"t": "kicked", "reason": "another_device"})
     return SessionResponse(
         player_id=player.player_id,
         player_name=player.player_name,
@@ -159,6 +184,7 @@ async def _respond(session: Session, proposed: uuid.UUID | None) -> SessionRespo
         access_token=session.access_token,
         refresh_token=session.refresh_token,
         expires_in=session.expires_in,
+        session_id=sid,
     )
 
 
@@ -191,6 +217,8 @@ async def refresh(body: RefreshRequest, request: Request) -> SessionResponse:
     """
     _enforce(_refresh_limiter, request)
     _require_db()
+    if body.session_id is not None:
+        await login_sessions.require_refresh(body.session_id)
     client = _auth_client()
     # 🔴 被封期间换出来的新凭证寄存在这里（database/016 的 ban_refresh_handoff，为什么见那里）。
     # 还封着就直接 403，**不碰 Supabase** —— 拿旧凭证再去续会被当成重放，整条会话作废。
@@ -206,7 +234,7 @@ async def refresh(body: RefreshRequest, request: Request) -> SessionResponse:
         status = 401 if exc.status in (400, 401, 403) else 502
         raise HTTPException(status_code=status, detail=str(exc)) from None
     try:
-        response = await _respond(session, None)
+        response = await _respond(session, None, body.session_id)
     except bans.AccountBanned as exc:
         # Supabase 已经把玩家手上那张换掉了，新的这张不能丢（见上）。
         await bans.hold_handoff(body.refresh_token, exc.ban.player_id, session.refresh_token)

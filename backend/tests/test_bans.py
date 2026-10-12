@@ -60,6 +60,13 @@ def test_client_payload_has_reason_and_utc_end_but_nothing_internal() -> None:
 
 @pytest.fixture
 def api(monkeypatch: pytest.MonkeyPatch):
+    from app import login_sessions
+    async def valid_session(*args):
+        return None
+    async def issue_session(*args):
+        return str(uuid.uuid4())
+    monkeypatch.setattr(login_sessions, "require", valid_session)
+    monkeypatch.setattr(login_sessions, "issue", issue_session)
     monkeypatch.setenv("GLORY_SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setenv("GLORY_SUPABASE_PUBLISHABLE_KEY", "pk_test")
     monkeypatch.setenv("GLORY_DATABASE_URL", "")

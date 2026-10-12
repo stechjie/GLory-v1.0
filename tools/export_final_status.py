@@ -65,7 +65,7 @@ def build():
         "source_runtime_utc": runtime_stamp.group(),
         "scope": "本机 Godot 运行值与用户指定文案目标；线上服务端逐项系数待核",
         "units": {}, "pets": {}, "synergies": {}, "treasures": {},
-        "linkages": {}, "shop_items": {},
+        "linkages": {},
     }
     basics = {text(r[0]): r for r in records(wb["01_棋子基础"])}
     unit_defs = {item["id"]: item for item in tables["data/units/race_units.json"]["units"]}
@@ -91,15 +91,13 @@ def build():
         if unit_id == "dark_dragon":
             out["units"][unit_id]["skill_damage_multiplier_1to3"] = unit["damage_atk_pct"]
             out["units"][unit_id]["skill_damage_multiplier_4"] = unit["star4"]["damage_atk_pct"]
-    for r in records(wb["03_宠物与商城"]):
+    for r in records(wb["03_宠物技能"]):
         pet_id = text(r[0])
         out["pets"][pet_id] = {
             "name_cn": text(r[1]), "name_en": text(r[2]),
             "effect_type": text(r[3]), "value_percent": text(r[4]),
             "detail_cn": text(r[5]), "scope_cn": text(r[6]),
-            "starter": text(r[7]) == "是", "summary_cn": text(r[13]),
-            "shop_item_id": text(r[9]), "shop_currency": text(r[10]),
-            "shop_price": r[11], "shop_enabled": text(r[12]) == "是",
+            "starter": text(r[7]) == "是", "summary_cn": text(r[9]),
         }
     for r in records(wb["04_羁绊"]):
         if text(r[4]) != "已审定":
@@ -121,13 +119,6 @@ def build():
         out["linkages"][text(r[0])] = {
             "name_cn": text(r[1]), "requires_cn": text(r[2]),
             "effect_cn": text(r[4]),
-        }
-    for item in tables["data/shop.json"]["items"]:
-        out["shop_items"][item["id"]] = {
-            "kind": item["kind"], "grants": item["grants"],
-            "currency": item["currency"], "price": item["price"],
-            "enabled": item.get("enabled", True),
-            "name_cn": item.get("name", ""), "name_en": item.get("name_en", ""),
         }
     expected = {"units": 40, "pets": 5, "synergies": 5,
                 "treasures": 25, "linkages": 11}

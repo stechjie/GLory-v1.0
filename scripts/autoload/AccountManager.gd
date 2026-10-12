@@ -67,6 +67,19 @@ var ban_info: Dictionary = {}
 # 它一小时就过期，存它没有任何收益，却多一处会泄漏的地方（日志、崩溃报告、
 # 玩家发来的截图）。落盘的只有 refresh token，在 SaveManager.ACCOUNT_PATH。
 var _access_token := ""
+var _login_session_id := ""
+var _session_generation := 0
+
+func login_session_id() -> String:
+	return _login_session_id
+
+func invalidate_login_session() -> void:
+	_session_generation += 1
+	_access_token = ""
+	_login_session_id = ""
+	_token_expires_at = 0.0
+	_refresh_dead = true
+	state = State.IDLE
 
 # access token 的到期时刻（本机墙钟，unix 秒）。0 = 不知道 / 没登录。
 #
@@ -179,6 +192,10 @@ func login() -> void:
 
 
 func logout() -> void:
+	if not _access_token.is_empty() and not _login_session_id.is_empty():
+		_request(HTTPClient.METHOD_POST, "/v1/auth/logout", {}, true, false)
+	_login_session_id = ""
+	_session_generation += 1
 	SaveManager.clear_account_credentials()
 	_access_token = ""
 	_token_expires_at = 0.0
@@ -194,6 +211,7 @@ func logout() -> void:
 
 
 func _finish_success(body: Dictionary) -> void:
+	_login_session_id = str(body.get("session_id", ""))
 	player_id = str(body.get("player_id", ""))
 	player_name = str(body.get("player_name", ""))
 	_access_token = str(body.get("access_token", ""))
@@ -285,7 +303,7 @@ func refresh_session() -> bool:
 		return false
 
 	_refreshing = true
-	var result := await _post("/v1/auth/refresh", {"refresh_token": refresh_token})
+	var result := await _post("/v1/auth/refresh", {"refresh_token": refresh_token, "session_id": _login_session_id})
 	var code := int(result.get("code", 0))
 	var ok := false
 	if code == 200:
@@ -308,6 +326,9 @@ func refresh_session() -> bool:
 # 只换令牌，**不发 login_succeeded**：那个信号的订阅者（资料同步、在线状态补报、
 # 聊天连线）都是「刚登录」时才该做的事，续期时再跑一遍只会平白多几轮请求。
 func _apply_refreshed_session(body: Dictionary) -> bool:
+	if RealtimeService.is_kicked():
+		return false
+	_login_session_id = str(body.get("session_id", ""))
 	# 续期换回来的必须还是同一个玩家。对不上说明凭证串了（比如存档被换过），
 	# 这时绝不能在游戏开着的情况下悄悄换号。
 	if str(body.get("player_id", "")) != player_id:
@@ -810,9 +831,15 @@ func fetch_world_messages(before_id: int = 0) -> Dictionary:
 
 
 # client_msg_id 同私聊：网络失败后重发同一句时**原样复用**，服务端认出来就不会发两条。
-func send_world_message(body: String, client_msg_id: String) -> Dictionary:
-	return await _request(HTTPClient.METHOD_POST, "/v1/world/messages",
-		{"body": body, "client_msg_id": client_msg_id}, true)
+func send_world_message(body: String, client_msg_id: String,
+		kind: String = "", payload: Dictionary = {}) -> Dictionary:
+	# kind/payload 只有语音消息用（2026-10-11）。同私聊：不传就是普通文本，
+	# 传了必须**一起**传 —— 只传 kind 的话服务端会拿不到 clip_id 而 400。
+	var request := {"body": body, "client_msg_id": client_msg_id}
+	if not kind.is_empty():
+		request["kind"] = kind
+		request["payload"] = payload
+	return await _request(HTTPClient.METHOD_POST, "/v1/world/messages", request, true)
 
 
 # --- 举报（backend/app/reports.py）---------------------------------------------------
@@ -822,11 +849,15 @@ func send_world_message(body: String, client_msg_id: String) -> Dictionary:
 const REPORT_CONTEXTS := ["world", "profile", "dm", "match"]
 const REPORT_REASONS := ["abuse", "ads", "cheat", "name", "other"]
 
+# clip_id：举报某一段语音时带上（2026-10-11）。房间 / 对局里的语音不落库，
+# 证据全靠这个编号从账号服务器的 voice_clips 里查 —— 不带就只剩一句「有人发了语音」。
 func report_player(code: String, context: String, reason: String, message_id: int = 0,
-		detail: String = "") -> Dictionary:
+		detail: String = "", clip_id: String = "") -> Dictionary:
 	var payload := {"target_code": normalize_friend_code(code), "context": context, "reason": reason}
 	if message_id > 0:
 		payload["message_id"] = message_id
+	if not clip_id.strip_edges().is_empty():
+		payload["clip_id"] = clip_id.strip_edges()
 	if not detail.strip_edges().is_empty():
 		payload["detail"] = detail.strip_edges()
 	return await _request(HTTPClient.METHOD_POST, "/v1/reports", payload, true)
@@ -1105,6 +1136,23 @@ func patch_header_lines() -> PackedStringArray:
 	])
 
 
+# 🔴 每个打账号服务器的请求都必须带的头，**只有这一份清单**。
+#
+# 2026-10-12 的事故就是漏了其中一条：语音上传发的是裸字节（不是 JSON），
+# 所以它不走 _request()，自己拼了一份头 —— 少了 X-Glory-Session。
+# 单端登录那边 `uuid.UUID(session_id or "")` 对空串直接抛 ValueError，
+# 于是**一发语音就回 409 session_replaced**，玩家以为自己被顶号了。
+#
+# 漏一个头不会报错，只会在某一条路上坏掉（而且是别人加功能时才暴露），
+# 所以不许再有第二份清单：要发不是 JSON 的请求，从这里取头、再自己补 Authorization。
+func auth_header_lines(content_type: String = "application/json") -> PackedStringArray:
+	var headers := PackedStringArray(["Content-Type: " + content_type, client_header_line()])
+	if not _login_session_id.is_empty():
+		headers.append("X-Glory-Session: %s" % _login_session_id)
+	headers.append_array(patch_header_lines())
+	return headers
+
+
 func _request(
 	method: int,
 	path: String,
@@ -1112,8 +1160,14 @@ func _request(
 	authed: bool = false,
 	allow_refresh: bool = true,
 ) -> Dictionary:
-	var headers := PackedStringArray(["Content-Type: application/json", client_header_line()])
-	headers.append_array(patch_header_lines())
+	# 头只从 auth_header_lines() 取，**不在这里再拼一份** ——
+	# 2026-10-12 的事故就是某条路自己拼、漏了 X-Glory-Session（见那个函数的注释）。
+	var headers := auth_header_lines()
+	# ⚠️ 代次快照**不能**取在这里：下面 authed 分支里可能 await refresh_session()
+	# （一次真实 HTTP），那段时间代次若变化（登出 / 顶号），本请求会被误判成
+	# 「上一代的残留」而作废 —— 用户看到的就是聊天里一条 session_replaced 红字。
+	# 真正该判定的是「发出去之后、拿到响应之前有没有换代」，所以快照挪到
+	# 下面真正 request() 之前再取。
 	if authed:
 		# 令牌快过期就先续，免得这一趟白跑一次 401（见「令牌续期」那一节）。
 		if allow_refresh and _token_needs_refresh():
@@ -1130,12 +1184,25 @@ func _request(
 
 	var url := AccountConfig.endpoint(path)
 	var body_text := "" if payload == null else JSON.stringify(payload)
+	# 快照取在**真正发出去**的这一刻（见上面 headers 那段注释）：
+	# 代次在此之前变化（例如续期期间被顶号）不该作废这次请求。
+	var request_generation := _session_generation
 	var err := http.request(url, headers, method, body_text)
 	if err != OK:
 		http.queue_free()
 		return {"code": 0, "error": "请求发不出去（%s）" % error_string(err)}
 
 	var result: Array = await http.request_completed
+	if request_generation != _session_generation:
+		# 登录会话已换代（登出 / 顶号）：这次响应按约定作废。
+		# 🔴 **绝不把 "session_replaced" 这个内部标记交给调用方当玩家文案** ——
+		# 调用方（ChatScreen / WorldChatPanel / ChatService）会把它原样画成红字
+		# （「语音/聊天弹 session_replaced」那个 bug 就是这里泄漏出去的）。
+		# 恒返回 code=0（=「这次请求没有结论」）：调用方对 code=0 的既有处理是
+		# 保留输入、静默重试，而不是弹错误。真正的「被顶号」由 RealtimeService
+		# 的 kicked 通道负责（会走启动页，见 _mark_kicked）。
+		http.queue_free()
+		return {"code": 0, "error": ""}
 	http.queue_free()
 	var outcome := int(result[0])
 	var code := int(result[1])
@@ -1171,6 +1238,9 @@ func _request(
 	if code >= 200 and code < 300:
 		return {"code": code, "body": body}
 
+	if code == 409 and str(body.get("detail", "")) == "session_replaced":
+		RealtimeService._mark_kicked()
+		return {"code": 409, "error": "你的账号在其他设备登录"}
 	# 401 且这一趟还没重试过：令牌被提前吊销、或者本机时钟不准。续一次、重试一次。
 	# 服务端的 401 出在令牌校验那一步，业务逻辑还没跑 —— 所以连 POST 重试也是安全的。
 	if code == 401 and authed and allow_refresh:

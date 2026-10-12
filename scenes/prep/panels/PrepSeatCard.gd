@@ -7,8 +7,18 @@ extends PanelContainer
 #   语音 → VoiceService.set_muted（让语音桥接把这个人的音量设成 0）
 # 两边都按好友码认人，换座位跟着人走；整个游戏进程内有效，重开游戏清空。
 #
+# 2026-10-11 多一颗「举报」：屏蔽只影响自己，真要让人管得带证据上去。
+# 这是**房间 / 对局里唯一的举报入口** —— 那些消息不落库，账号服务器翻不出他说过什么，
+# 所以举报时顺手把他最后那段语音的编号带上（RoomChatLog.latest_voice_clip），
+# 后台才点得开听。只有文字 / 短语的话就只有「谁举报了谁」，这是 2026-09-11 已经接受的
+# fail-open（设计文档第四节）。
+#
 # 按钮一律实例化 GloryActionButton.tscn、样式走 GloryTokens：procedural_ui_ratchet 盯着
 # Button.new() / StyleBoxFlat.new()，新文件从 0 开始，写一个就红。
+
+# 举报面板由 PrepUI 弹（它才是 ModalStack 里这张卡片的 owner）：卡片自己弹的话，
+# owner 只能填 ModalRoot，卡片一收起举报面板就跟着没了。
+signal report_requested(friend_code: String, who: String, clip_id: String)
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
@@ -48,6 +58,9 @@ static func describe(p_slot: int) -> Dictionary:
 		"is_self": is_self,
 		"is_ai": state == "dummy" and who.is_empty(),
 		"can_mute": not is_self and (state == "player" or not who.is_empty()),
+		# 举报要有好友码（账号服务器按它找人）：AI 座位和资料还没到的座位举报不了。
+		"can_report": not is_self and not code.is_empty(),
+		"friend_code": code,
 		"avatar": str(identity.get("avatar", "")),
 		"avatar_frame": str(identity.get("avatar_frame", "")),
 	}
@@ -100,6 +113,12 @@ func _ready() -> void:
 		_refresh_buttons()
 		NetworkService.room_chat_log.mutes_changed.connect(_refresh_buttons)
 		VoiceService.mutes_changed.connect(_refresh_buttons)
+	if bool(info.can_report):
+		var report := _toggle_button(_open_report.bind(str(info.friend_code), str(info.title)))
+		report.name = "Report"
+		report.text = _text("举报", "Report")
+		report.theme_type_variation = Theming.VARIATION_GHOST
+		column.add_child(report)
 	elif bool(info.is_ai):
 		var note := Label.new()
 		note.text = _text("电脑代打，没有留言和语音", "Computer player: no chat or voice")
@@ -141,6 +160,12 @@ func _refresh_buttons() -> void:
 	if _voice_button != null:
 		_voice_button.text = _text("恢复听语音", "Unmute voice") if voice_muted() else _text("不听语音", "Mute voice")
 		_voice_button.theme_type_variation = Theming.VARIATION_DANGER if voice_muted() else ""
+
+
+func _open_report(code: String, who: String) -> void:
+	# 最后那段语音的编号在这里取：卡片知道 slot，PrepUI 不需要知道这条规矩。
+	report_requested.emit(code, who, NetworkService.room_chat_log.latest_voice_clip(
+		slot, NetworkService.team_seat_profiles))
 
 
 func _toggle_button(on_press: Callable) -> Button:

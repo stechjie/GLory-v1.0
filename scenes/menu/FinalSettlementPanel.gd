@@ -212,9 +212,38 @@ func _row(widths: Array) -> Container:
 
 func _team_title(side: int) -> String:
 	var allies: Array = data.get("allies", [])
-	var guardian := str(allies[side]).strip_edges() if side >= 0 and side < allies.size() else ""
+	var guardian := ""
+	if side >= 0 and side < allies.size():
+		guardian = _ally_display_name(str(allies[side]))
 	var base := tr("settle_team_red") if side == 0 else tr("settle_team_blue")
 	return base if guardian.is_empty() else tr("settle_team_ally") % [base, guardian]
+
+# 法阵守护者的名字跟随语言切换（10.12 反馈第 2 条）。
+#
+# 战报里存的是**守护者的中文名**（FinalSettlementData.build 取的是 actor 的 name，
+# 也就是 formation_allies.json 的 `name`），所以英文界面上这里一直冒中文。
+# 就地按「id / 中文名 / 英文名」任一命中反查同一张表，换成本语言的名字：
+#   · 不改战报格式 —— 已经存进历史里的旧记录同样能翻（历史详情复用的就是本面板）；
+#   · 表里查不到就**原样返回**，宁可不翻，也不要显示成空白或一串 id。
+func _ally_display_name(raw: String) -> String:
+	var key := raw.strip_edges()
+	if key.is_empty():
+		return ""
+	var english := _english()
+	for entry in DataRegistry.get_table("formation_allies").get("allies", []):
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var d: Dictionary = entry
+		if str(d.get("id", "")) != key and str(d.get("name", "")) != key \
+				and str(d.get("name_en", "")) != key:
+			continue
+		if english:
+			var name_en := str(d.get("name_en", ""))
+			if not name_en.is_empty():
+				return name_en
+		var name := str(d.get("name", ""))
+		return name if not name.is_empty() else key
+	return key
 
 func _team(side: int) -> Control:
 	var panel := PanelContainer.new()

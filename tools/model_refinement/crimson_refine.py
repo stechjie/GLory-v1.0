@@ -13,8 +13,8 @@ A refined GLB is a copy of the ORIGINAL (kept unchanged for rollback) with only:
   ShaderMaterials are attached at import (dark_race_materials.py --race crimson);
 - Icey's unused zero-weight morph target dropped.
 Nodes, skin joints and animations are copied value for value; --audit proves it.
-Textures per material: base colour <= 1024 px and normal map <= 512 px, RGB. Icey's white hair is
-recoloured to the race red (user decision 2026-10-05).
+Textures per material: base colour <= 1024 px and normal map <= 512 px, RGB.
+Icey keeps the source white hair to match the portrait (user correction 2026-10-12).
 """
 import argparse
 import copy
@@ -356,13 +356,8 @@ def textures(doc: dict, blob: bytes, unit: str, folder: Path) -> list:
         if base is None:
             raise RuntimeError(f"{unit}: material {mi} has no base colour texture")
         image = np.asarray(Image.open(io.BytesIO(image_bytes(doc, blob, base["index"]))).convert("RGB"))
-        if unit == "Icey":
-            meshes = [i for i, m in enumerate(doc["meshes"]) if m["primitives"][0].get("material") == mi]
-            mask = np.zeros(image.shape[:2], bool)
-            for m in meshes:
-                mask |= hair_mask(doc, blob, m, image)
-            image = recolour_hair(image, mask)
-            row["hair_texels"] = int(mask.sum())
+        # Keep Icey's original silver-white hair. Do not reapply the obsolete
+        # whole-race red-hair treatment when rebuilding the refined geometry.
         albedo = fit(Image.fromarray(image))
         albedo.save(folder / f"{unit}_m{mi}_albedo.png")
         row["albedo"] = f"{unit}_m{mi}_albedo.png"

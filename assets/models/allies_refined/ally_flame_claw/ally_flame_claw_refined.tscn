@@ -1,0 +1,45 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://assets/models/allies_refined/FormationAllyRefined.gd" id="1_script"]
+[ext_resource type="AnimationLibrary" path="res://assets/models/allies_refined/ally_flame_claw/ally_flame_claw_anims.tres" id="2_anims"]
+[ext_resource type="Material" path="res://assets/models/allies_refined/ally_flame_claw/ally_flame_claw_flame_material.tres" id="3_flame"]
+
+[sub_resource type="Animation" id="Animation_idle"]
+resource_name = "idle"
+length = 1.0
+loop_mode = 1
+
+[sub_resource type="Animation" id="Animation_attack"]
+resource_name = "attack"
+length = 1.0
+
+[sub_resource type="Animation" id="Animation_run"]
+resource_name = "run"
+length = 1.0
+loop_mode = 1
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_proxy"]
+_data = {
+&"attack": SubResource("Animation_attack"),
+&"idle": SubResource("Animation_idle"),
+&"run": SubResource("Animation_run")
+}
+
+[node name="AllyFlameClawRefined" type="Node3D"]
+script = ExtResource("1_script")
+idle_scene_path = "res://assets/models/allies/formation_ally_1_animated/idle.fbx"
+attack_scene_path = "res://assets/models/allies/formation_ally_1_animated/attack.fbx"
+run_scene_path = "res://assets/models/allies/formation_ally_1_animated/run.fbx"
+body_material_path = "res://assets/models/allies_refined/ally_flame_claw/ally_flame_claw_body_material.tres"
+display_name = "Flameclaw Imp"
+action_scales = {}
+action_yaw_degrees = {}
+action_lift = {}
+authored_animations = ExtResource("2_anims")
+flame_points = [{"bones": ["spine"], "size": 0.62, "amount": 16, "lifetime": 0.6, "rise": 1.8, "radius": 0.22, "lift": 0.55}, {"bones": ["chest"], "size": 0.56, "amount": 14, "lifetime": 0.6, "rise": 1.8, "radius": 0.2, "lift": 0.5}, {"bones": ["head"], "size": 0.36, "amount": 10, "lifetime": 0.6, "rise": 1.8, "radius": 0.1, "lift": 0.18}, {"bones": ["front_paw.L"], "size": 0.34, "amount": 8, "lifetime": 0.6, "rise": 1.8, "radius": 0.06, "lift": 0.06}, {"bones": ["front_paw.R"], "size": 0.34, "amount": 8, "lifetime": 0.6, "rise": 1.8, "radius": 0.06, "lift": 0.06}]
+flame_material = ExtResource("3_flame")
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+libraries/ = SubResource("AnimationLibrary_proxy")
+
+[node name="ModelRoot" type="Node3D" parent="."]

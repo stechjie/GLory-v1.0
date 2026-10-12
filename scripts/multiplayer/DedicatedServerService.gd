@@ -34,6 +34,8 @@ const SNAPSHOT_INTERVAL_SEC := 5.0
 # （每人一份含完整单位 def 的快照，一个房间就能到 MB 级），存它们会让快照
 # 大两个数量级，而丢了最坏也只是看门狗转 AI —— 不值得。
 const PERSISTED_ROOM_FIELDS := [
+	"bot_states",
+	"prep_timed_out", "timeout_buys",
 	"id", "state", "slot_states", "ready",
 	"slot_gold", "team_hp", "pve_completed", "boss_completed", "team_loss_streak",
 	"team_upgrade_stones",
@@ -282,3 +284,69 @@ func load_snapshot() -> void:
 		_tokens.public_token_seat = saved_public
 	_log("room snapshot restored: rooms=%d dropped=%d tokens=%d prev_epoch=%d new_epoch=%d" % [
 		restored, dropped, _tokens.token_seat.size(), int(payload.get("server_epoch", 0)), server_epoch])
+
+
+# --- 对局名册：告诉账号服务器「此刻谁真的在打」-----------------------------------
+#
+# 为什么要有它（docs/运营后台_OPS05_维护与关闭匹配.md）：
+#
+# 账号服务器开维护时要「停新准入、但别打断已经在打的人」，于是它必须知道
+# 谁在对局中。它自己能拿到的最好的东西是**它签过名片的记录**（match_entries），
+# 但那只是个启发式 —— 名片签出去不代表人真进来了，也不知道这局什么时候结束，
+# 所以它只能按「45 分钟内领过名片」粗判。
+#
+# 真相只有战斗服务器知道。这个文件就是把真相递过去。
+#
+# ## 为什么是文件，不是网络调用
+#
+# 两个服务跑在**同一台机器**上（glorytd-api / glorytd-battle 都解析到同一个 IP），
+# 补丁服务的 desired/status 桥已经是这个形状（backend/app/patch_battle_bridge.py）。
+# 照着来：不引入新端口、不引入新鉴权、战斗服务器挂了文件自然变陈旧。
+#
+# ## 🔴 带 generated_at，让读的人能判断新鲜度
+#
+# 战斗服务器崩了 / 没配这个路径时，文件会停在某个旧时刻。账号服务器读到陈旧的
+# 名册**必须**退回自己的启发式，而不是拿着一份过期名单去踢人 ——
+# 踢掉正在打的人违反 OPS-05 的 P0。所以时间戳不能省。
+#
+# ## 为什么不管房间有没有变更都写
+#
+# 房间快照（tick_snapshot）只在 rooms_dirty 时写，因为它的用途是「进程重启能恢复」。
+# 名册不一样：它的用途是「证明我还活着、而且这是此刻的真相」，
+# 不定期刷新的话，一局长时间没变化就会被读的人当成陈旧。
+const MATCH_ROSTER_INTERVAL_SEC := 5.0
+const MATCH_ROSTER_PROTOCOL := 1
+const MATCH_ROSTER_ENV := "GLORY_BATTLE_MATCH_ROSTER"
+
+var _roster_accum := 0.0
+
+
+func match_roster_path() -> String:
+	return OS.get_environment(MATCH_ROSTER_ENV).strip_edges()
+
+
+# pids 由门面收集（只有它有 _room_is_active_match）。限速与落盘在这里。
+func tick_match_roster(delta: float, pids: Array) -> void:
+	_roster_accum += delta
+	if _roster_accum < MATCH_ROSTER_INTERVAL_SEC:
+		return
+	_roster_accum = 0.0
+	write_match_roster(pids)
+
+
+func write_match_roster(pids: Array) -> void:
+	var path := match_roster_path()
+	if path.is_empty():
+		return   # 没配就什么也不做：账号服务器会退回自己的启发式
+	var payload := {
+		"protocol": MATCH_ROSTER_PROTOCOL,
+		"shard": shard_index,
+		"server_epoch": server_epoch,
+		"generated_at": _wall_time(),
+		"pids": pids,
+	}
+	var bytes := JSON.stringify(payload).to_utf8_buffer()
+	if not SaveManager.atomic_write_bytes(path, bytes):
+		# 写不进去只记日志：名册是给维护用的辅助信息，
+		# **绝不能因为它失败而影响任何一局对战**。
+		_log("match roster write failed: %s" % path)

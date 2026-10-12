@@ -36,6 +36,11 @@ const FIREFLY_DEFAULT := Color(1.0, 0.85, 0.45)  # 金色萤火虫
 # 当前用哪张。游戏里只有 PlayerProfile 写它（账号服务器上存的那张）；皮肤预览场景会临时改。
 static var active_id := DEFAULT_ID
 
+# 服务器上的皮肤本进程内**成功拉回来过至少一次**。冷启动时 Bootstrap 是异步拉的，
+# 而排位/组队对局可能在它回来之前就建好了摆放界面（那时 active_id 还是默认）。
+# PrepScreen._ready 用它判断「要不要进对局时再拉一次」（见 10.12 反馈第 7 条）。
+static var loaded := false
+
 
 # 当前皮肤这个槽位该用哪张图。
 static func path(slot: String) -> String:

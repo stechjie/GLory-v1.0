@@ -192,7 +192,15 @@ const USE_DTLS := true
 #      同一批：一人一座按账号 id（`_release_stale_seats_for_pid`，纯服务端）、
 #      自定义大厅座位宽限 600→60 秒（`CUSTOM_LOBBY_RESERVE_GRACE_SEC`）。
 #      战斗服务器重新打包部署到 p40、和新包一起上。
-const NETWORK_PROTOCOL_VERSION := 40
+# v41: 房间与对局内多了语音留言 —— `_rpc_team_chat_voice_submit` / `_rpc_team_chat_voice`
+#      两个 @rpc 方法，2026-10-11。**加 @rpc 方法本身就会改线上的 RPC 编号**（Godot 按
+#      方法名排序编号），所以协议号必须跟着 +1：旧客户端配新服务器时，编号对不上会报
+#      `process_simplify_path: The rpc node checksum failed`，然后方法表不一致、行为未定义。
+#      这是 v22 踩过的同一个坑（那次是局内聊天的两个方法）。
+#      转的只有编号 + 文件名 + 秒数，音频走账号服务器（见 NetworkService 里那段说明），
+#      所以战斗服务器不需要新配置、也不需要装 ffmpeg —— 只是重新打包部署到 p41、和新包一起上。
+#      同一批上线的私聊 / 世界频道语音只碰账号服务器，与协议号无关。
+const NETWORK_PROTOCOL_VERSION := 41
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false

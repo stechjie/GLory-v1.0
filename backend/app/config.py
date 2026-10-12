@@ -130,6 +130,17 @@ class Settings(BaseSettings):
     # 读它的只有两道闸，都走 ranked.accepting_now()。
     ranked_window_always_open: bool = False
 
+    # --- 对局名册（app/service_control.py，OPS-05）------------------------------
+    #
+    # 战斗服务器每 5 秒往这里写一份「此刻谁真的在打」（同机文件，
+    # 写方见 scripts/multiplayer/DedicatedServerService.gd 的 write_match_roster）。
+    # 维护时判断谁不能踢，先认它；读不到或太旧就退回 match_entries 那个启发式。
+    #
+    # 两个服务在同一台机器上（glorytd-api / glorytd-battle 解析到同一个 IP），
+    # 所以走文件而不是网络调用 —— 和补丁服务的 desired/status 桥同一个形状。
+    # 空 = 不读，一切照旧（退回启发式）。
+    battle_match_roster_file: str = ""
+
     @property
     def is_dev(self) -> bool:
         return self.environment != "prod"

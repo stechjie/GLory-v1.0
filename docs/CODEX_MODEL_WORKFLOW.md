@@ -755,3 +755,113 @@ draw calls 增量来自描边（每块网格 +1）。帧时间不代表手机。
 - **快照**：上次被强制关掉的模拟器快照恢复不了，用 `-no-snapshot-load` 冷启动（24 秒）。
 - **测试包大小**：预览的 `RACES` 表里写着三族全部原模型路径，测试包会把它们都收进来（约 640 MB），可以接受。
 - **截图标签**：点按钮切换原版/新版之后要等几秒再截，并以画面左上角标题核对版本。第一次截图有 2 张标签反了、1 组没切换成功。
+
+## 13. 法阵友军批次：五个 `ally_*`
+
+记录日期 **2026-10-12**。范围：`data/formation/formation_allies.json` 里的五个法阵友军（焰爪魔灵、暗狱锁魂者、深渊噬兽、炼狱焚界者、深渊魔君·厄夜），按本文流程只做本地验收。
+
+做了两轮：
+
+- **第一轮**：修动作、清贴图、改材质，保持原配色。
+- **第二轮**（用户确认方向后追加）：每只单独配色，身上加骨骼火焰，要求“整个模型更有辨识度”。
+
+不改玩法数值、动作时序（`model_attack_sync_seek 0.20` / `lock 0.45`）、`model_visual_scale` 和朝向补偿。证据在项目内 `work/model-allies-20261012/`（带 `.gdignore`，不会被 Godot 导入）。
+
+### 13.1 诊断（同条件：BattleArena 灯光、0.42×model_visual_scale、原点落地）
+
+先确认了一件和渲染器有关的事：`BattleRenderer._center_model_for_full_body_view` 在 actor 进树之前调用，此时包装器 `_ready` 还没加载任何动作 FBX，所以找不到网格、不做居中，模型就停在原生原点。预览和截图必须照这个行为来，否则会看到“全员悬空 1 米”的假问题。
+
+| 单位 | 主要缺陷（有截图和测量支持） |
+|---|---|
+| 焰爪魔灵 | 三个动作 FBX 是**同一个文件**（哈希相同），带 17 骨四足骨架但**没有任何动画**，待机、跑、攻击都是同一个静止姿势 |
+| 暗狱锁魂者 | `run.fbx` 是重新绑定的版本（27 骨 Hips/tail 模板、Unreal Take），Armature 缩放 1 而不是 100，**跑步时模型只有 0.005 单位大，等于消失**；朝向还偏了约 30°，整段循环下沉 0.1～0.3 |
+| 炼狱焚界者 | 同样的 `run.fbx` 问题（1/100 大小，跑步时消失） |
+| 1～3 | 图集岛之间是**不透明纯黑**，UV 下还有成块未绘制的黑色区域（UV 覆盖区内近黑 3～4%），低 mip 会把黑边混进细小岛 |
+| 全部 | 身体材质无描边（`shaders/formation_ally_outline.tres` 存在但没被任何材质使用），暗色身体放在暗色战场上轮廓发糊；2、3 的熔岩纹理不发光（emission 为 0），背光面一片暗；1 的发光遮罩整张全黑 |
+
+几何量没有问题：4、5 常驻三角面 16.3 万 / 21 万，在 `ally` 角色硬预算（36 万）内，本轮不减面。
+
+### 13.2 做法
+
+- **接入**：`assets/models/allies_refined/<id>/<id>_refined.tscn`，脚本 `FormationAllyRefined.gd` 继承原包装器 `FormationAllyAnimated.gd`，原 FBX 原地引用、不改。`formation_allies.json` 只改五个 `model` 字段。回退：改回 `docs/assets/formation_allies_refinement_20261012.json` 里记录的原路径。
+- **包装器只加三个按动作的修正**：`action_scales`（锁魂者 run ×580、焚界者 run ×355，由静止和动画姿势的 CPU 蒙皮高度/体长比求得）、`action_yaw_degrees`（锁魂者 run +30°，用俯视剪影 IoU 和截图确认）、`action_lift`（锁魂者 run +0.2）。另有 `authored_animations`：给没有 AnimationPlayer 的动作模型挂一个动画库。
+- **焰爪魔灵动作**：`tools/model_refinement/allies/gen_flame_claw_anims.gd` 在原 17 骨上生成 idle（2.4 秒呼吸/摆头）、run（0.6 秒四足奔跑）、attack（1.0 秒：0.22 秒蓄力、0.34 秒前扑挥爪、0.9 秒收回，配合 sync_seek 0.20 / lock 0.45）。参数用模型空间（俯仰/偏航）表达，换算到每根骨的静止坐标系后写成骨骼旋转轨道，输出 `ally_flame_claw_anims.tres`。
+- **贴图**：`tools/model_refinement/allies/ally_textures.py` 先按真实网格 UV 光栅化覆盖区，只改两类像素：覆盖区外的空白，以及覆盖区内面积 ≥150 texel（按 1024 折算）的近黑连通块；用推拉法从邻近有效颜色补上。小块深色（瞳孔、墨线、缝隙）保留，其余覆盖区像素一个不改（报告 `covered_pixels_changed=0`）。同时从覆盖区内的高亮熔岩像素生成发光遮罩。输出 RGB、无 alpha，运行时 ≤1024。
+  - 选图前先核对“哪张图对得上哪套 UV”：焚界者 `run_0.png` 在 run 网格 UV 下近黑 9.4%，`texture.png` 只有 0.38%。所以三个动作统一用 `texture.png`，`run_0.png` 不用。
+- **材质**（`build_ally_refined.py` 生成，每个单位一份，共享 `character_toon` 不改）：阴影带略提亮；熔岩发光（1～3 橙 1.15～1.6，4～5 赤红 1.4）；轻边缘光；4～5 加 0.35 条带高光；1～3 开原有法线贴图（0.12～0.16）；`next_pass` 描边（0.018～0.022，≤1.5 px）。
+
+### 13.2b 第二轮：识别色与身上火焰
+
+- **识别色**：一只一种主色，熔岩/发光贴图、发光、边缘光和火焰统一用这个颜色。
+
+  | 单位 | 主色 |
+  |---|---|
+  | 焰爪魔灵 | 琥珀橙焰 |
+  | 暗狱锁魂者 | 青蓝魂火 |
+  | 深渊噬兽 | 酸绿毒焰 |
+  | 炼狱焚界者 | 赤红狱火 |
+  | 深渊魔君·厄夜 | 紫色夜焰 |
+
+  实现在 `ally_textures.py` 的 `RECOLOR`：
+  - 只改色相，不改明度，所以明暗结构保持不变。
+  - 熔岩/发光像素转到主色。
+  - 其余饱和的身体色拉向身体色相（2、3、5）。
+  - 低饱和的暗部只加一点色调。
+  - 1、4 保留原身体色，只换火焰色。
+  - 加 `--no-recolor` 可以回到第一轮的原色版本。
+- **身上火焰**：`FormationAllyRefined.gd` 的 `flame_points` 在每个动作骨架上用 `BoneAttachment3D` 挂 `CPUParticles3D`。
+  - 每只 4～7 个火点：背脊/头顶/爪子/尾尖/手/披风下摆，候选骨名按动作骨架依次匹配。
+  - 发射器用世界坐标，跑动时火焰会拖尾。
+  - 只有当前可见动作的火在发射。
+  - 尺寸按“包装器单位”抵消 run.fbx 的 ×355/×580 缩放；`lift` 把发射点抬到体表外，避免被身体挡住。
+- **火焰材质**：`shared/ally_flame.gdshader`，程序化泪滴火焰，无贴图、加法混合、不写深度，每只一份颜色参数 `<id>_flame_material.tres`。
+- **成本**：每只可见友军多 4～7 个粒子 draw call、约 50～90 个 CPU 粒子；几何和贴图不变。最终战一方最多一只友军。手机上未实测。
+
+### 13.3 本轮失败与修正
+
+| 发现 | 修正 |
+|---|---|
+| 第一次预览五个全悬空约 1 米 | 截图工具照搬了“进树后按 mesh AABB 落地”，和正式渲染器不一致；改成原点落地后全部贴地 |
+| 第一次采样所有攻击都不动 | 采样时暂停了外层代理播放器，包装器 `_process` 立刻切回 idle；采样时关掉包装器 `_process` |
+| 锁魂者 run 放大后横着跑 | 加 `action_yaw_degrees`，俯视剪影 IoU 与 idle 最高的角度是 +30°，截图复核 |
+| 锁魂者 run 整段陷进地里 0.1～0.3 | 加 `action_lift` 0.2，整段最低点 −0.10～+0.10 |
+| 焰爪攻击把下巴扎进地面 0.41、跑步后半段下沉 0.19 | 减小胸/颈/头前俯，扑击时根骨抬高；跑步摆幅 26°→22°，根骨加 0.05 基线；复测最低 −0.18 / −0.12（爪尖） |
+| 第二轮火焰显示成米色方块 | Compatibility 下 `INSTANCE_ID * float` 编译失败；改成 `float(INSTANCE_ID)` |
+| 火焰挂在脊骨上看不见 | 骨头在身体内部，被身体挡住；加 `lift`，把发射点沿世界上方向抬到体表外 |
+| 火焰几乎全是白黄色，五只分不出 | 加法混合下核心色占比太大；缩小核心区，主色调整为中段色 |
+| 焚界者跑步时火柱挡住脸 | run 骨架回退骨从 `chest` 改成 `Hips`/`tailstart` |
+
+### 13.4 验证（本地，云端 Godot 4.7 + Compatibility）
+
+- `tools/model_refinement/allies/ally_refinement_contract_check.gd`：**591 项通过**。内容：
+  - 表格指向精修场景，原包装器保留可回退，脚本继承原包装器，三个接口方法都在；
+  - 完整加载与 `load_idle_only` 都正常；
+  - 每个动作用精修材质、带描边，贴图 ≤1024 且不透明；
+  - 每个动作都有在播的片段，姿势确实在变化；
+  - 动作高度为 idle 的 0.97～1.15 倍，都落地；
+  - 每个火点在每个动作骨架上都挂上，并且只有当前动作的火在发射。
+- 既有检查：`model_material_integrity` 五个精修场景 **PASS**；`model_asset_budget` 法阵友军只有软预算提示（4、5 顶点数和 1024 贴图，与原版几何相同）；`model_bounds` 的“尺寸异常候选”与原版一样来自 3～4 倍视觉缩放。这几项检查的整体 FAIL 都来自云端副本缺少其他单位的资源包，不是本批的问题。
+- 画面：`work/model-allies-20261012/` 里有前后对比。己方背面/俯视、敌方正面阵列各三个动作；每个单位正/背/侧/俯 × idle/run/attack。
+- **未做**：真实 `BattleScreen` 第 21 回合正式路线；桌面/手机帧时。云端副本没有完整资源包，跑不起正式战斗。
+- **成本变化**（几何不变）：
+  - 每个可见友军多 1 个描边 draw call，外加 4～7 个火焰 draw call；
+  - 2、3 多加载一张 1024 法线；
+  - 每只多一张 1024 发光遮罩。
+
+### 13.5 尚存限制与下一步
+
+配色是第二轮按“更有辨识度”统一选的，任何一只都可以在 `RECOLOR` 和 `UNITS[*].flame` 里单独改了重跑。焰爪魔灵的原贴图本身很暗（平均 RGB 47/25/24），提亮有限。新动作是程序生成的关键帧，比手 K 动作简单。焚界者原攻击动画里身体会转向约 90°，这是原资源的内容，没有改。深渊噬兽的卡通大眼造型和“噬兽”定位不太一致，这属于美术方向，需要用户决定。
+
+本地复验步骤：
+1. 用 Godot 导入后打开 `scenes/debug/ModelBattlePreview.tscn`，在法阵 Boss 条目里逐个看 idle/run/attack。
+2. 跑 `ally_refinement_contract_check.gd`。
+3. 用固定阵容进第 21 回合，看正式路线。
+
+```powershell
+& $G --headless --path $P --script res://tools/model_refinement/allies/ally_refinement_contract_check.gd -- --out "$D/audit/ally_contract.json"
+# 重新生成（改参数后）：
+& $G --headless --path $P --script res://tools/model_refinement/allies/dump_uv.gd -- <fbx> <uv.bin>   # 每个动作一次
+py -3 tools/model_refinement/allies/ally_textures.py assets/models/allies <uv目录> assets/models/allies_refined   # 加 --no-recolor 得到原色版
+& $G --headless --path $P --script res://tools/model_refinement/allies/gen_flame_claw_anims.gd
+py -3 tools/model_refinement/allies/build_ally_refined.py .
+```

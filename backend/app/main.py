@@ -23,7 +23,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app import (admin, admission, analytics, announcements, bans, db, mail, maintenance, matchmaking, party,
-                 realtime, seasons, single_instance, world_chat)
+                 realtime, schema_check, seasons, single_instance, voice_clips, world_chat)
 from app.config import get_settings
 from app import patch_service, patch_gate
 from app.routes import patches as patch_routes
@@ -45,7 +45,9 @@ from app.routes import profile as profile_routes
 from app.routes import reports as report_routes
 from app.routes import shop as shop_routes
 from app.routes import seven_day_login as seven_day_login_routes
+from app.routes import voice_clips as voice_clip_routes
 from app.routes import world as world_routes
+from app.routes import service_status as service_status_routes
 from app.routes import ws as ws_routes
 
 # Windows 控制台默认是 cp1252，中文日志会被转义成 以... 甚至直接抛
@@ -126,6 +128,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # 世界频道：从库里补回最近 100 条（app/world_chat.py）。不补的话每次部署完频道都是空的。
     # 019 没跑、库没配都只记日志 —— 第一次有人打开页签时会再补一次。
     if db.is_connected():
+        # 结构自检（app/schema_check.py）。放在这里 —— 池子刚建好、还没开始服务，
+        # 所以日志里它紧挨着启动行，部署完一眼就能看见。
+        # 只报警不拦启动，理由同上面那条「配置没填也让它起来」。
+        await schema_check.verify_and_log()
         await world_chat.warm_at_startup()
 
     # 巡检死连接。TCP 不会告诉你对端已经没了（手机进隧道、被系统冻结、
@@ -160,6 +166,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     recorder = analytics.install(analytics.Recorder())
     counter = asyncio.create_task(analytics.loop(recorder))
     battle_patches = asyncio.create_task(patch_service.battle_loop(patch_service.current())) if patch_service.current() else None
+    # 语音消息的文件清理（app/voice_clips.py）：每小时清过期登记行，再删没人引用的文件。
+    # 公告图片是永久留着的，语音不能 —— 没有这个循环，媒体目录只增不减。
+    voice_sweeper = asyncio.create_task(voice_clips.sweep_loop(cfg.media_dir))
     try:
         if patch_service.current() is not None:
             patch_service.current().restore_runtime()
@@ -170,7 +179,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 patch_service.current().runtime.clear()
             except Exception:
                 log.exception("Hotfix cleanup failed during server shutdown")
-        for task in (sweeper, cleaner, admitter, notices, postman, matcher, seasonal, banhammer, counter, battle_patches):
+        # battle_patches 可能是 None（没有可用补丁时不建任务），所以下面留着 None 守卫；
+        # voice_sweeper 一定不是 None，放同一个元组里是安全的。
+        for task in (sweeper, cleaner, admitter, notices, postman, matcher, seasonal, banhammer,
+                     counter, battle_patches, voice_sweeper):
             if task is None:
                 continue
             task.cancel()
@@ -246,6 +258,7 @@ app.include_router(profile_routes.router)
 app.include_router(friends_routes.router)
 app.include_router(presence_routes.router)
 app.include_router(chat_routes.router)
+app.include_router(voice_clip_routes.router)
 app.include_router(world_routes.router)
 app.include_router(report_routes.router)
 app.include_router(announcement_routes.router)
@@ -259,6 +272,8 @@ app.include_router(event_routes.router)
 app.include_router(matchmaking_routes.router)
 app.include_router(party_routes.router)
 app.include_router(matchmaking_routes.me_router)
+# 不要登录：维护中的玩家本来就登不进来，要让他问得到「为什么」。
+app.include_router(service_status_routes.router)
 app.include_router(ws_routes.router)
 # 网页运营后台（docs/运营后台设计.md）。只认后台自己的会话，不收玩家令牌。
 app.include_router(admin_routes.router)

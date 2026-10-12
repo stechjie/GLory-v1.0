@@ -434,38 +434,30 @@ func _execute_four_star_upgrade(where: String, index: int) -> void:
 	SaveManager.save_run()
 	_refresh_all()
 func _on_board_pressed(index: int) -> void:
+	# 10.12 bug 文档第 4 条：轻点棋子**不再**选中，也**不再**触发挪动。
+	#
+	# 旧实现是「点 A 选中 → 点 B 把 A 挪过去」。而长按看属性跟业务 pressed 挂在
+	# **同一个按钮**上（PrepUI 的 cell.pressed / attach_long_press），于是一次长按
+	# 既弹了详情、又把 A 设成了选中态；关掉详情框后 A 仍是选中的，下一次点别的
+	# 格子就把它挪走 —— 用户报的「误挪动」正是这一段。
+	#
+	# 现在挪动只剩一条路：**按住棋子拖到落点**。拖拽由 PrepDragButton.force_drag
+	# 发起，落点走 _can_drop_data/_drop_data（PrepBoardCellButton）→ 直接调
+	# _move_or_merge_*，完全不经过这里。
+	#
+	# 「查看属性」改由长按触发，见 PrepUI._inspect_board_cell —— 它只点亮射程
+	# 预览，不制造可挪动态。
+	#
+	# 商店那条轻点链（点商店卡选中 → 点棋盘格买入）**保留**：它针对的是商店卡片，
+	# 不是棋盘上的棋子，文档第 4 条没有要求改它。
 	if _shop.selected >= 0:
 		_buy_or_merge_shop_to_board(_shop.selected, index)
-		return
-	if _board_hud._selected_bench >= 0:
-		_move_or_merge_bench_to_board(_board_hud._selected_bench, index)
-		return
-	if _board_hud._selected_board >= 0 and _board_hud._selected_board != index:
-		_move_or_merge_board(_board_hud._selected_board, index)
-		return
-	if GameState.board_slots[index] != null:
-		_board_hud._selected_board = index
-		_board_hud._selected_bench = -1
-	else:
-		_board_hud._selected_board = -1
-	_refresh_all()
 
 func _on_bench_pressed(index: int) -> void:
+	# 同 _on_board_pressed：待命格轻点不再选中/挪动，只保留
+	# 「商店卡已选中 → 点待命格买入」这条针对商店卡片的链。
 	if _shop.selected >= 0:
 		_buy_or_merge_shop_to_bench(_shop.selected, index)
-		return
-	if _board_hud._selected_board >= 0:
-		_move_or_merge_board_to_bench(_board_hud._selected_board, index)
-		return
-	if _board_hud._selected_bench >= 0 and _board_hud._selected_bench != index:
-		_move_or_merge_bench(_board_hud._selected_bench, index)
-		return
-	if GameState.bench_slots[index] != null:
-		_board_hud._selected_bench = index
-		_board_hud._selected_board = -1
-	else:
-		_board_hud._selected_bench = -1
-	_refresh_all()
 
 func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 	# 9.13 #3：教学是纯本地流程，不存在「等别人」这回事。上一场对局的残留会话

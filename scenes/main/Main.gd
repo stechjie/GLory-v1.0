@@ -1527,6 +1527,11 @@ func _install_realtime() -> void:
 		AccountManager.logged_out.connect(_on_realtime_logout)
 	if not RealtimeService.kicked_by_other_device.is_connected(_on_realtime_kicked):
 		RealtimeService.kicked_by_other_device.connect(_on_realtime_kicked)
+	if not RealtimeService.service_state_changed.is_connected(_on_service_state):
+		RealtimeService.service_state_changed.connect(_on_service_state)
+	# 可能在这个场景就绪之前就收到过推送（握手当场被维护挡下就是这样），补看一眼。
+	if not RealtimeService.service_state.is_empty():
+		_on_service_state(RealtimeService.service_state)
 	if not RealtimeService.message_received.is_connected(_on_party_realtime):
 		RealtimeService.message_received.connect(_on_party_realtime)
 	# 10.07 第 6 条：自定义房间邀请是**一条带 kind 的私聊**（见 RoomInvite 文件头），
@@ -1708,12 +1713,62 @@ func _on_realtime_logout() -> void:
 	_kicked_notice_pending = false
 
 
-# 🔴 被顶号：**只在主菜单上弹**，对局中先挂着（设计文档第五节）。
-# 弹窗会直接打断操作；而战斗连接本来就不受这套机制影响，回主菜单再说清楚不迟。
+# 顶号立即终止游戏流程；启动页保留原因，只有玩家主动确认才能重新登录。
+# --- 全局维护（backend/app/service_control.py，OPS-05）---------------------------
+#
+# 服务端的开关一变就推过来。这里只管**维护**这一种：它要一个不可穿透的遮罩，
+# 按「确定」之后退出客户端（任务书 OPS-05 原始要求 A）。
+#
+# 「关闭匹配」不在这里弹 —— 那不该打断正在玩的人，玩家点匹配时服务端
+# 会回 409 带 X-Glory-Reason，由那条路就地提示。
+#
+# 🔴 **只在整局之外弹。** 对局里的人服务端本来就不会挡（他们不在新准入那一档），
+# 真弹出来反而会在结算前把人赶走 —— 那正是任务书里的 P0 禁止的事。
+var _maintenance_notified := false
+
+
+func _on_service_state(payload: Dictionary) -> void:
+	if not bool(payload.get("maintenance", false)):
+		# 维护解除了。不自动做任何事：这一局怎么继续由玩家决定。
+		_maintenance_notified = false
+		return
+	if _maintenance_notified:
+		return   # 同一轮维护只弹一份（任务书验收 M07：重复通知只显示一份）
+	_maintenance_notified = true
+	_show_maintenance_block.call_deferred(payload)
+
+
+func _show_maintenance_block(payload: Dictionary) -> void:
+	var en := LocaleManager.get_locale().begins_with("en")
+	var body := str(payload.get("notice_zh", "")).strip_edges()
+	if en:
+		body = str(payload.get("notice_en", "")).strip_edges()
+	if body.is_empty():
+		body = ("The server is under maintenance. The game will close."
+				if en else "服务器正在维护，游戏即将关闭。")
+	var back := str(payload.get("expected_back_at", ""))
+	if not back.is_empty():
+		body += "
+" + ("Expected back: " if en else "预计恢复：") + back
+	DialogService.info({
+		"request_id": "service_maintenance",
+		"title": "Maintenance" if en else "游戏正在维护",
+		"body": body,
+		"confirm_text": "OK" if en else "确定",
+		# 这两条就是「不可穿透」：点外面不关、按返回键也不关。
+		# 不设的话 INFO 默认点外面就能关掉，遮罩等于没有。
+		"dismiss_on_backdrop": false,
+		"persistent": true,
+		"on_result": func(_result: String, _request_id: String) -> void:
+			# 原始要求就是「确认关闭客户端」。
+			# ⚠️ iOS 上主动退出是 Apple 不鼓励的做法，要实机验收；
+			# 真不行就改成退回启动页，但那要产品点头（任务书 §七.3.10）。
+			get_tree().quit(),
+	})
+
+
 func _on_realtime_kicked() -> void:
-	_kicked_notice_pending = true
-	if _menu != null and is_instance_valid(_menu) and _menu.is_inside_tree():
-		_show_kicked_notice_if_pending()
+	_return_to_login.call_deferred("你的账号在其他设备登录")
 
 
 func _show_kicked_notice_if_pending() -> void:
@@ -1725,9 +1780,9 @@ func _show_kicked_notice_if_pending() -> void:
 	# 而不是「连接已断开」「登录已失效」这类什么都没说的话。
 	# 今天没有登录界面可回（匿名账号），所以确认之后停在原地：聊天保持断开，
 	# 在聊天界面里点「在本设备重新连接」才会再连。
-	var body := "你的账号在另一台设备上登录了，这里的聊天已断开。可以在聊天界面里重新连接。"
+	var body := "你的账号在其他设备登录。请回到启动页重新登录。"
 	if en:
-		body = "Your account signed in on another device, so chat here was disconnected. You can reconnect from the Chat screen."
+		body = "Your account signed in on another device. Sign in again from the entry screen."
 	DialogService.info({
 		"request_id": "realtime_kicked",
 		"owner": self,
@@ -3376,6 +3431,8 @@ func _on_team_battle_finished(result: Dictionary) -> void:
 	if NetworkService.team_active and not NetworkService.is_host:
 		await _finish_server_authoritative_team_battle(result)
 		return
+	if is_instance_valid(_battle):
+		NetworkService.settle_local_bots(_battle._replay_own, _battle._replay_rival)
 	var completed_round := GameState.round_index
 	var kind := str(result.get("kind", "pve"))
 	# PvP 是规范化棋局（A 队 = "player"）。本地在 B 队时结果要镜像。

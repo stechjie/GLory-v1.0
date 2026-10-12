@@ -51,9 +51,18 @@ const EXPECTED_IDS := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 # PINNED_RPC_SIGNATURES：全部 @rpc 方法「@rpc 配置 | 方法名(参数类型,…)」排序后的 SHA-256 前 16 位，
 # 算法见 _rpc_signature_digest。参数只改名字不算（线上不传名字）。
 # 2026-09-19 语音改 LiveKit：删 2 条语音转发、加 2 条发钥匙 → 数量仍是 58，签名指纹变了、30 -> 31。
-const PINNED_RPC_COUNT := 58
-const PINNED_RPC_PROTOCOL := 31
-const PINNED_RPC_SIGNATURES := "726189f3f99715ef"
+#
+# 🔴 2026-10-11 发现这三个钉子从 31 起就没人更新过，**这条门禁白绿了九个协议号**
+# （31 -> 40 期间方法数 58 -> 65）。失效的方式正是 carrot_online_check 顶上警告过的那种：
+# 数量一对不上就走 `expect(protocol != PINNED_RPC_PROTOCOL)`，而协议号早就不是 31 了 ——
+# 条件恒为真，门禁永远绿，等于没有。这条门禁本来挡的就是用户 2026-09-11 真撞上的那个
+# `process_simplify_path: The rpc node checksum failed`。
+# **改 @rpc 的人必须把这三行一起改**，不然下一次又是白绿。
+# 2026-10-11 语音留言：加 `_rpc_team_chat_voice_submit` / `_rpc_team_chat_voice`
+# → 65 -> 67、协议 40 -> 41、指纹变了。
+const PINNED_RPC_COUNT := 67
+const PINNED_RPC_PROTOCOL := 41
+const PINNED_RPC_SIGNATURES := "00ffeb43deee3e10"
 
 var _h: CheckHarness
 
@@ -74,6 +83,7 @@ func _ready() -> void:
 	_case_rpc_count_pinned()
 	_case_ws_constants_match_backend()
 	_case_admission_contract_matches_backend()
+	_case_service_control_contract_matches_backend()
 	_case_chat_constants_match_backend()
 	_case_token_refresh_wired()
 	_case_chat_entry_wired()
@@ -192,6 +202,91 @@ func _case_admission_contract_matches_backend() -> void:
 
 
 # --- 8. 🔴 私聊（批次 C）的跨语言常量 --------------------------------------------
+
+# 全局维护 / 关闭匹配（backend/app/service_control.py，OPS-05）。
+#
+# 同 admission 那条的理由：一个约定写在两种语言里，分开改没有任何症状。
+#   关闭码 4004 —— 对不上的话客户端把「服务器在维护」当成普通掉线，一直重连
+#   消息类型 service —— 对不上的话开关变了客户端收不到，维护遮罩永远不弹
+func _case_service_control_contract_matches_backend() -> void:
+	var py := FileAccess.get_file_as_string("res://backend/app/service_control.py")
+	var gd := FileAccess.get_file_as_string("res://scripts/autoload/RealtimeService.gd")
+	_h.item()
+	if py.is_empty() or gd.is_empty():
+		_h.fail("service_control_source_unreadable", "读不到 service_control.py 或 RealtimeService.gd")
+		return
+	_h.expect(true, "", "")
+
+	_h.item()
+	_h.expect(py.contains("CLOSE_MAINTENANCE = 4004") and gd.contains("const CLOSE_MAINTENANCE := 4004"),
+		"service_close_code_drift",
+		"service_control.CLOSE_MAINTENANCE 与 RealtimeService.CLOSE_MAINTENANCE 不再都是 4004 —— "
+		+ "客户端会把维护当成普通掉线，一直重连，玩家只看到「连接断开」。")
+
+	_h.item()
+	_h.expect(py.contains("MESSAGE_TYPE = \"service\"") and gd.contains("const SERVICE_PUSH_TYPE := \"service\""),
+		"service_message_type_drift",
+		"service_control.MESSAGE_TYPE 与 RealtimeService.SERVICE_PUSH_TYPE 不再都是 \"service\" —— "
+		+ "开关变了客户端收不到，维护遮罩永远不弹。")
+
+	# 🔴 关闭码兜底不许删：Godot 收到关闭帧之后就不再给读剩下的包
+	# （见 RealtimeService 里 CLOSE_BANNED 那段注释），所以「先发消息再关」的那条消息
+	# 多半读不到，关闭码是唯一可靠的信号。
+	_h.item()
+	_h.expect(gd.contains("if code == CLOSE_MAINTENANCE:"),
+		"service_close_code_not_handled",
+		"RealtimeService 没有按关闭码兜底处理维护 —— 握手被挡下时那条说明消息读不到，"
+		+ "玩家会停在一个什么都不说的「连接断开」上。")
+
+	# 遮罩必须是不可穿透的：点外面不关、返回键也不关（任务书 OPS-05 原始要求 A）。
+	var main := FileAccess.get_file_as_string("res://scenes/main/Main.gd")
+	_h.item()
+	_h.expect(main.contains("\"request_id\": \"service_maintenance\"")
+			and main.contains("\"dismiss_on_backdrop\": false")
+			and main.contains("\"persistent\": true"),
+		"maintenance_modal_not_blocking",
+		"维护遮罩不是不可穿透的：少了 dismiss_on_backdrop=false 或 persistent=true，"
+		+ "玩家点外面 / 按返回键就能绕过去继续玩。")
+
+	# 「关闭匹配」的提示文案由服务端给（backend/app/routes/matchmaking.py 的 _GATE_TEXT），
+	# 客户端只负责把它显示出来。这条盯着那根线没被掐断 ——
+	# 掐断了玩家会看到一句什么也没说的「进不了队列」，而闸本身照常工作，没有任何报错。
+	var panel := FileAccess.get_file_as_string("res://scenes/menu/MatchQueuePanel.gd")
+	_h.item()
+	_h.expect(panel.contains("_fail(str(result.get(\"error\""),
+		"queue_reason_not_surfaced",
+		"MatchQueuePanel 不再显示服务器给的失败原因了 —— 「排位功能暂时关闭」"
+		+ "这类提示会变成一句笼统的错误。")
+
+	# 对局名册（OPS-05 第三轮）：战斗服务器写、账号服务器读，同机文件。
+	# 协议号和新鲜度口径两边各写一份，分开改没有任何症状 ——
+	# 症状要到「维护时踢错人」那一刻才显形，而那时已经踢了。
+	var dss := FileAccess.get_file_as_string("res://scripts/multiplayer/DedicatedServerService.gd")
+	var sc := FileAccess.get_file_as_string("res://backend/app/service_control.py")
+	_h.item()
+	_h.expect(dss.contains("const MATCH_ROSTER_PROTOCOL := 1")
+			and sc.contains("int(data.get(\"protocol\", 0)) != 1"),
+		"match_roster_protocol_drift",
+		"对局名册的协议号两边对不上了 —— 账号服务器会把每一份名册都判成不认识，"
+		+ "悄悄退回 45 分钟的粗判，维护时该踢的不踢。")
+	# 🔴 战斗服务器写得比账号服务器的过期线勤，否则名册会周期性「过期」。
+	_h.item()
+	var interval := dss.contains("const MATCH_ROSTER_INTERVAL_SEC := 5.0")
+	var max_age := sc.contains("ROSTER_MAX_AGE_SEC = 30.0")
+	_h.expect(interval and max_age,
+		"match_roster_cadence_drift",
+		"名册的写入间隔（战斗服务器 5 秒）或过期线（账号服务器 30 秒）变了。"
+		+ "写得比过期线慢的话，名册会周期性被判成陈旧，这套东西就白做了 —— "
+		+ "改之前先确认过期线仍留着好几次写入的余量。")
+
+	# ModalStack 真的要认 persistent，否则上面那个参数只是摆设。
+	var stack := FileAccess.get_file_as_string("res://ui/services/ModalStack.gd")
+	_h.item()
+	_h.expect(stack.contains("\"persistent\": bool(opts.get(\"persistent\", false))")
+			and _chat_fn_body(stack, "func handle_back_request() -> bool:").contains("persistent"),
+		"modal_persistent_not_honoured",
+		"ModalStack 没有真正实现 persistent（返回键照样关得掉），维护遮罩形同虚设。")
+
 
 func _case_chat_constants_match_backend() -> void:
 	# 同上一条：同一个约定写在三种地方（Python / SQL / GDScript），分开改不会有任何症状。
@@ -417,7 +512,7 @@ func _case_rpc_count_pinned() -> void:
 			"NetworkService 的 @rpc 方法数变了（%d -> %d），但 NETWORK_PROTOCOL_VERSION "
 				% [PINNED_RPC_COUNT, count]
 			+ "还是 %d。旧服务器与新客户端的 scene cache 校验会失败，" % protocol
-			+ "整个 NetworkService 的 RPC 全部失效。请顶协议号、把 PINNED_RPC_COUNT / "
+			+ "方法编号会错位，两端的方法表不一致时行为未定义。请顶协议号、把 PINNED_RPC_COUNT / "
 			+ "PINNED_RPC_PROTOCOL / PINNED_RPC_SIGNATURES 一起改成新值，**并重新打包部署战斗服务器**。")
 		return
 	# 数量没变、签名变了（2026-09-14 聊天加 team_only 就是这种）：方法编号不会错位，

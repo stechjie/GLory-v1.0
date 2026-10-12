@@ -41,8 +41,15 @@ const MY_SLOT := 0
 # 「契约变了但协议号没变」，而它一旦落后，`VERSION != PINNED_PROTOCOL` 就恒为真，
 # 于是改契约不顶号也照样绿。协议号每次顶，这里必须跟。
 # 2026-09-19 跟到 31（语音改 LiveKit：删两条语音转发、加两条发钥匙的 RPC；经济契约没变，指纹不动）。
-const PINNED_PROTOCOL := 31
-const PINNED_CONTRACT := "YOp1apnKGVUXgHng"
+# 2026-10-11 跟到 41（语音留言加两条 RPC）。**中间 32 -> 40 没人跟过**，正是上面那段警告的情形。
+#
+# 🔴 把钉子跟回来的那一刻这条就红了：契约指纹从 YOp1apnKGVUXgHng 变成了 LlvUTlXCGoEExT1t。
+# 也就是说经济契约在 32 -> 40 期间确实变过，而这条断言当时正因为钉子落后而恒为真。
+# 从这里**看不出**是哪一次顶号带上去的（协议号那段时间顶了九次，大概率有一次覆盖了它）——
+# 能确定的只有「这条门禁那段时间没在干活」。两个数一起跟到现在的值，断言重新生效。
+# tools/chat_check.gd 的同一套钉子也落后了九个版本（58/31，实际 65），见那边的注释。
+const PINNED_PROTOCOL := 41
+const PINNED_CONTRACT := "LlvUTlXCGoEExT1t"
 
 var _h: CheckHarness
 

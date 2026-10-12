@@ -1172,6 +1172,7 @@ static func _apply_attack_statuses(attacker: Dictionary, target: Dictionary, sta
 	elif sid == "death_hunt":
 		StatusEffectService.add_status(target, "defense_flat_down", float(d.get("duration", 4.0)), {"amount": int(d.get("armor_break", 8))})
 		StatusEffectService.add_status(target, "heal_reduction", float(d.get("duration", 4.0)), {"pct": float(d.get("heal_reduction", 0.50))})
+		state.visual_events.append({"type": "unit_skill_proc", "skill_id": "death_hunt", "source_uid": str(attacker.get("uid", "")), "target_uid": str(target.get("uid", ""))})
 	elif sid == "attack_interrupt" and RngService.rng.randf() < float(d.get("interrupt_chance", 0.12)):
 		# 4 星把「打断」换成「眩晕」（设计文档 §5.4）：interrupt 只锁普攻、时长硬编码
 		# 1 秒；stun 是完整定身、连技能一起锁。stun_sec 只在 4 星的 star4 覆写里有，
@@ -1398,10 +1399,10 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 				BattleSimSkills._skill_shell_guard(caster, d)
 				caster.skill_ready = float(state.elapsed) + 6.0
 			"bubble_dream":
-				BattleSimSkills._skill_bubble_dream(caster, casters, opponents, d)
+				BattleSimSkills._skill_bubble_dream(caster, casters, opponents, d, state)
 				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 6.0))
 			"holy_song":
-				BattleSimSkills._skill_holy_song(caster, casters, d)
+				BattleSimSkills._skill_holy_song(caster, casters, d, state)
 				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 10.0))
 			"twin_strike":
 				BattleSimSkills._skill_twin_strike(caster, state, d)
@@ -1452,6 +1453,7 @@ static func _on_unit_killed(killer: Dictionary, victim: Dictionary, state: Dicti
 	state.total_deaths = int(state.get("total_deaths", 0)) + 1
 	if str(killer.get("def", {}).get("skill_id", "")) == "death_hunt":
 		_heal_unit(killer, maxi(1, int(round(float(killer.max_hp) * float(killer.get("def", {}).get("kill_heal_pct", 0.15))))))
+		state.visual_events.append({"type": "unit_skill_proc", "skill_id": "death_hunt_kill", "source_uid": str(killer.get("uid", "")), "target_uid": str(victim.get("uid", ""))})
 	if str(killer.get("def", {}).get("skill_id", "")) == "soul_devour":
 		_heal_unit(killer, maxi(1, int(round(float(killer.max_hp) * float(killer.get("def", {}).get("kill_heal_pct", 0.15))))))
 		killer.atk = maxi(1, int(round(float(killer.atk) * (1.0 + float(killer.get("def", {}).get("atk_stack", 0.10))))))

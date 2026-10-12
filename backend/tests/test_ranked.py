@@ -64,27 +64,38 @@ def test_tier_is_not_a_column() -> None:
 
 
 # --- 一局加减多少 -----------------------------------------------------------------
+#
+# 🔴 **赢 25、输 20 是不对称的**（ranked.BASE_DELTA / ranked.LOSS_BASE）。
+# 2026-10-10 的 de4213f 把输的基础分从 25 调到 20，注释写的理由是
+# 「比胜利低 5 分，减少连败挫败感」。那次只改了代码、没改这个文件，
+# 于是下面这些数字红了两天 —— 2026-10-12 按代码的现值对齐。
+#
+# 下面的数字是**写死的**，不从 ranked 的常量算出来：跟着常量算的话
+# 这些断言就永远成立，等于什么也没测。再调数值时它们会红，那是提醒不是故障。
 
 
 def test_even_match_is_the_base() -> None:
     assert ranked.score_delta(True, 400, 400) == 25
-    assert ranked.score_delta(False, 400, 400) == -25
+    assert ranked.score_delta(False, 400, 400) == -20
 
 
 def test_tier_gap_correction() -> None:
     """🔴 没有这一条，段位反映的是「打了多少局」而不是「多强」。"""
     # 打高 300 分的队伍：赢得多、输得少
     assert ranked.score_delta(True, 400, 700) == 40
-    assert ranked.score_delta(False, 400, 700) == -10
+    assert ranked.score_delta(False, 400, 700) == -5
     # 打低 300 分的：反过来
     assert ranked.score_delta(True, 700, 400) == 10
-    assert ranked.score_delta(False, 700, 400) == -40
+    assert ranked.score_delta(False, 700, 400) == -35
 
 
 def test_correction_is_clamped() -> None:
-    """分差再大也就 ±15。不夹的话打一个 0 分号能一局涨几百。"""
+    """修正再大也就 ±15。不夹的话打一个 0 分号能一局涨几百。
+
+    夹住之后每局的实际范围：胜 10 ~ 40、败 −5 ~ −35（基数不同所以不对称）。
+    """
     assert ranked.score_delta(True, 0, 99999) == 40
-    assert ranked.score_delta(False, 99999, 0) == -40
+    assert ranked.score_delta(False, 99999, 0) == -35
 
 
 def test_win_streak_only_boosts_wins() -> None:
@@ -93,7 +104,7 @@ def test_win_streak_only_boosts_wins() -> None:
     assert ranked.score_delta(True, 400, 400, win_streak=3) == 30    # +20%
     assert ranked.score_delta(True, 400, 400, win_streak=5) == 40    # +60% 封顶
     assert ranked.score_delta(True, 400, 400, win_streak=99) == 40, "连胜加成要封顶"
-    assert ranked.score_delta(False, 400, 400, win_streak=99) == -25
+    assert ranked.score_delta(False, 400, 400, win_streak=99) == -20
 
 
 def test_score_never_goes_below_zero() -> None:
@@ -323,21 +334,29 @@ async def test_casual_does_not_touch_ranked_score(monkeypatch, local_hour) -> No
     assert conn.reward_receipts == [], "休闲局不能产生排位奖励回执"
 
 
-_ABANDON_EXTRA = int(round(ranked.BASE_DELTA * ranked.ABANDON_PENALTY_MULT))
+# 跑路的额外扣分 = ranked.py:275 的 `LOSS_BASE * ABANDON_PENALTY_MULT` = 20 * 1.5。
+#
+# 🔴 **写死 30，不要改回 `int(round(ranked.LOSS_BASE * ranked.ABANDON_PENALTY_MULT))`。**
+# 那样写两边会一起变，断言就永远成立 —— 2026-10-12 实测过：把
+# ABANDON_PENALTY_MULT 从 1.5 调到 2.0，整个文件照样全绿，等于没测。
+#
+# 另外注意它乘的是 **LOSS_BASE**，不是 BASE_DELTA。10-10 两个常量分家之前
+# 都是 25，所以原来那行写错了也看不出来。
+_ABANDON_EXTRA = 30
 
 
 @pytest.mark.anyio
 async def test_abandoner_loses_extra_and_gets_credit_penalty() -> None:
     """🔴 跑路判负（2026-10-06 用户定，第四节「本局按输计算」）。
 
-    之前他在赢的那一队就跟着算赢：+25、胜场 +1、拿赢的游戏币，只是额外扣 38。
+    之前他在赢的那一队就跟着算赢：+25、胜场 +1、拿赢的游戏币，只是额外扣一份。
     """
     players_ = _six()
     runner = players_[0]
     conn = _FakeConn(set(players_), {p: 300 for p in players_}, {runner: 0})
     await ranked.settle(conn, _report("ranked", "team_a", players_, offline={runner}))
     writes = {w[0]: w for w in conn.ranked_writes}
-    # 队伍赢了，他照样按输算：输的分（−25）再额外扣一份（−38）。
+    # 队伍赢了，他照样按输算：输的分（−20）再额外扣一份（−30）。
     assert writes[runner][1] == 300 + ranked.score_delta(False, 300, 300) - _ABANDON_EXTRA
     assert writes[runner][2] == 0, "跑路不算胜场"
     assert writes[runner][3] == 0, "连胜清零"
@@ -409,11 +428,45 @@ async def test_ai_seats_are_skipped() -> None:
 
 
 class _GateConn:
-    def __init__(self, row: dict | None) -> None:
+    def __init__(self, row: dict | None, sanctioned: bool = False) -> None:
         self.row = row
+        # 人工禁排位（app/sanctions.py 的 is_sanctioned 走 fetchval）。
+        # 默认 False = 没被人工罚，老用例的行为不变。
+        self.sanctioned = sanctioned
 
     async def fetchrow(self, sql, *args):
         return self.row
+
+    async def fetchval(self, sql, *args):
+        return self.sanctioned
+
+
+@pytest.mark.anyio
+async def test_manual_ranked_sanction_blocks_ranked() -> None:
+    """人工禁排位（database/036 的 scope='ranked'）。信誉分是满的、窗口也开着，
+    照样进不去 —— 这是运营手动下的，和信誉分无关。"""
+    conn = _GateConn({"score": 100, "banned_until": None}, sanctioned=True)
+    assert await ranked.queue_gate(conn, uuid.uuid4(), "ranked", _at_myt(20)) == ranked.GATE_SANCTIONED
+
+
+@pytest.mark.anyio
+async def test_manual_ranked_sanction_leaves_casual_alone() -> None:
+    """🔴 任务书 §四.2：禁排位「默认不限制休闲」。"""
+    conn = _GateConn({"score": 100, "banned_until": None}, sanctioned=True)
+    assert await ranked.queue_gate(conn, uuid.uuid4(), "casual", _at_myt(20)) == ranked.GATE_OK
+
+
+@pytest.mark.anyio
+async def test_manual_and_credit_bans_report_different_reasons() -> None:
+    """🔴 两个码不能合并：一个是系统按跑路自动算的，一个是运营手动下的。
+    合成一个的话玩家看到的原因会说错，后台也分不清该撤哪一个。"""
+    manual = _GateConn({"score": 100, "banned_until": None}, sanctioned=True)
+    auto = _GateConn({"score": 100, "banned_until": _at_myt(21)}, sanctioned=False)
+    a = await ranked.queue_gate(manual, uuid.uuid4(), "ranked", _at_myt(20))
+    b = await ranked.queue_gate(auto, uuid.uuid4(), "ranked", _at_myt(20))
+    assert a == ranked.GATE_SANCTIONED
+    assert b == ranked.GATE_BANNED
+    assert a != b
 
 
 @pytest.mark.anyio

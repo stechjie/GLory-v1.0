@@ -155,6 +155,7 @@ const SEAT_CARD_MODAL_PRIORITY := 40
 # `tools/prep_layout_1009_check.gd`：它直接量「金钱宝藏按钮 vs TreasurePanel」有没有重叠。
 const SELL_LEFT_PANEL_TOP_RESERVE := 48.0
 const PrepSeatCard := preload("res://scenes/prep/panels/PrepSeatCard.gd")
+const ReportDialog := preload("res://ui/components/ReportDialog.gd")
 const PVP_WARNING_DWELL_SEC := 2.0
 const PVP_WARNING_FADE_SEC := 0.18
 
@@ -554,6 +555,54 @@ func _report_carrot_camp_state() -> void:
 # 这里只负责按拖拽状态调显隐与数值。
 
 
+# 满屏 2D 垫底背景（随棋盘皮肤换）。存成成员，供皮肤晚到时重贴。
+var _sky_background: TextureRect
+
+# 10.12 反馈第 7 条：棋盘皮肤「晚到」时要能追上。
+#
+# 摆放界面的皮肤图是在 _build 那一刻按 PrepSkin.path() 定死的（2D 垫底 + 3D 各贴图层 +
+# 萝卜 + 萤火虫色 + 河面波光），而皮肤是登录后**异步**从账号服务器拉的
+# （Bootstrap._fetch_loadout）。冷启动后立刻排/进一场排位或组队对局时，摆放界面可能
+# 在皮肤回来之前就建好了 —— 那一整局都会是默认青草地（就是测试员报的这条）。
+# PrepScreen 会监听 PlayerProfile.prep_skin_changed，皮肤一到就把这些图换过来。
+func reapply_prep_skin() -> void:
+	if is_instance_valid(_sky_background):
+		_sky_background.texture = PrepWidgets.cached_texture(PrepSkin.path("board"))
+	_swap_prep_skin_plane("PrepBaseLayer", "board")
+	_swap_prep_skin_plane("PrepRiverBottomLayer", "river")
+	_swap_prep_skin_plane("PrepStandbyBgLayer", "bench")
+	var carrot := find_child("CarrotGeneratedSprite", true, false)
+	if carrot is Sprite3D:
+		var carrot_tex := ResourceLoader.load(PrepSkin.path("carrot")) as Texture2D
+		if carrot_tex != null:
+			(carrot as Sprite3D).texture = carrot_tex
+	# 河面流动波光是照草地河道画的：皮肤可以关掉它（冰雪就关）。
+	var flow := find_child("PrepRiverFlowBottom", true, false)
+	if is_instance_valid(flow):
+		flow.visible = PrepSkin.river_glow()
+	# 萤火虫是 CPUParticles3D，颜色走 color_ramp（三档：淡入/亮/淡出）。
+	var fireflies := find_child("PrepFireflies", true, false)
+	if fireflies is CPUParticles3D:
+		var ramp := (fireflies as CPUParticles3D).color_ramp
+		if ramp != null:
+			var tint := PrepSkin.firefly_color()
+			ramp.colors = PackedColorArray([
+				Color(tint.r, tint.g, tint.b, 0.0),
+				Color(tint.r, tint.g, tint.b, 0.85),
+				Color(tint.r, tint.g, tint.b, 0.0)])
+			(fireflies as CPUParticles3D).color_ramp = ramp
+
+func _swap_prep_skin_plane(node_name: String, slot: String) -> void:
+	var node := find_child(node_name, true, false)
+	if not (node is MeshInstance3D):
+		return
+	var mat := (node as MeshInstance3D).material_override
+	if not (mat is StandardMaterial3D):
+		return
+	var tex := ResourceLoader.load(PrepSkin.path(slot)) as Texture2D
+	if tex != null:
+		(mat as StandardMaterial3D).albedo_texture = tex
+
 func _build(staged: bool = false) -> void:
 	if not LocaleManager.locale_changed.is_connected(_on_locale_changed):
 		LocaleManager.locale_changed.connect(_on_locale_changed)
@@ -595,15 +644,16 @@ func _build(staged: bool = false) -> void:
 
 	# 满屏 2D 背景垫底：用同一张棋盘 base 图，KEEP_ASPECT_COVERED 铺满任何屏幕；
 	# 3D 视口已设透明，棋盘没盖到的角落就露出这张图的草地，不再有黑角。
-	var sky_background := TextureRect.new()
-	sky_background.name = "PrepFullscreenBackground"
-	sky_background.texture = PrepWidgets.cached_texture(PrepSkin.path("board"))
-	sky_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	sky_background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	sky_background.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	sky_background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	sky_background.z_index = -20
-	add_child(sky_background)
+	# （存成成员：皮肤晚到时要能把它换掉，见 reapply_prep_skin。）
+	_sky_background = TextureRect.new()
+	_sky_background.name = "PrepFullscreenBackground"
+	_sky_background.texture = PrepWidgets.cached_texture(PrepSkin.path("board"))
+	_sky_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_sky_background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	_sky_background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_sky_background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_sky_background.z_index = -20
+	add_child(_sky_background)
 	if staged:
 		StartupTrace.mark("tutorial_background_built")
 		await get_tree().process_frame
@@ -903,8 +953,8 @@ func _build_rest(root: VBoxContainer) -> void:
 		cell.add_theme_stylebox_override("hover", _board_hud.hover_style)
 		cell.add_theme_stylebox_override("pressed", _board_hud.hover_style)
 		cell.add_theme_stylebox_override("focus", _board_hud.hover_style)
-		cell.pressed.connect(_on_board_pressed.bind(i))
-		_overlay.attach_long_press(cell, func(): _show_board_detail(i))
+		cell.pressed.connect(_on_board_activated.bind(i, cell))
+		_overlay.attach_long_press(cell, func(): _inspect_board_cell(i))
 		_board_hud.grid.add_child(cell)
 		_board_hud.buttons.append(cell)
 		var relation_overlay := RelationProgressOverlay.new()
@@ -1363,6 +1413,7 @@ const CHAT_FLOAT_GAP := 10.0
 const CHAT_LOG_HEIGHT := 184.0
 # 自由文字（批次 D）：输入条贴在屏幕顶部，理由见 ChatInputBar.gd 顶部（手机键盘）。
 const ChatInputBar := preload("res://ui/components/ChatInputBar.gd")
+const VoiceClipRow := preload("res://ui/components/VoiceClipRow.gd")
 # 消息从哪来：NetworkService.room_chat_log（整个房间一份，界面重建也不丢）。
 # 名字、范围标记都在记录那一刻定下来，这里只管显示。
 const RoomChatLog := preload("res://scripts/multiplayer/RoomChatLog.gd")
@@ -1689,8 +1740,13 @@ func _append_chat_record_row(entry: Dictionary) -> void:
 		_chat_record_list.add_child(_chat_record_label("—— %s ——" % RoomChatLog.round_label(entry_round, en),
 			GloryTokens.TEXT_SECONDARY, HORIZONTAL_ALIGNMENT_CENTER))
 		_chat_record_round = entry_round
-	_chat_record_list.add_child(_chat_record_label(RoomChatLog.line_text(entry, en),
-		Color(0.97, 0.93, 0.81), HORIZONTAL_ALIGNMENT_LEFT))
+	var line := _chat_record_label(RoomChatLog.line_text(entry, en),
+		Color(0.97, 0.93, 0.81), HORIZONTAL_ALIGNMENT_LEFT)
+	if RoomChatLog.is_voice_entry(entry):
+		# 语音：那行字前面多一颗播放键（点了才响 —— 对局里不自动响，见 VoiceClipRow 顶部）。
+		_chat_record_list.add_child(VoiceClipRow.wrap(entry, line))
+	else:
+		_chat_record_list.add_child(line)
 
 
 func _chat_record_label(text: String, color: Color, align: HorizontalAlignment) -> Label:
@@ -1736,8 +1792,13 @@ func _open_text_input() -> void:
 		_chat_panel.visible = false
 	var send := func(text: String) -> String:
 		return NetworkService.team_send_text(text, _chat_team_only)
+	# 语音照着文字的范围发：范围按钮改的是同一个 _chat_team_only，
+	# 「发给：队友」时录的语音对面也听不到（战斗服务器按 chat_recipients 转）。
+	var send_voice := func(clip: Dictionary) -> String:
+		return NetworkService.team_send_voice(clip, _chat_team_only)
 	ChatInputBar.new().present(self, send,
-		{"scope_text": _chat_scope_text, "on_scope_pressed": _toggle_chat_scope})
+		{"scope_text": _chat_scope_text, "on_scope_pressed": _toggle_chat_scope,
+		"on_voice": send_voice})
 
 
 func _toggle_chat_scope() -> void:
@@ -2156,10 +2217,13 @@ func _refresh_start_button_label() -> void:
 	if NetworkService.team_active:
 		var my := NetworkService.team_local_slot
 		var ready := my >= 0 and my < NetworkService.team_ready.size() and bool(NetworkService.team_ready[my])
-		_start_battle_button.set_idle_text(tr("lobby_ready_done") if ready else tr("lobby_ready"))
+		var seconds := int(get_meta("prep_countdown_seconds", -1))
+		var suffix := " (%d s)" % seconds if seconds >= 0 else ""
+		_start_battle_button.set_idle_text((tr("lobby_ready_done") if ready else tr("lobby_ready")) + suffix)
 		_apply_ready_button_tone(ready)
 	else:
-		_start_battle_button.set_idle_text(tr("ui_start_battle_btn"))
+		var seconds := int(get_meta("prep_countdown_seconds", -1))
+		_start_battle_button.set_idle_text(tr("ui_start_battle_btn") + (" (%d s)" % seconds if seconds >= 0 else ""))
 		_clear_ready_button_tone()
 
 
@@ -2291,6 +2355,7 @@ func open_seat_card(slot: int, badge: Control) -> void:
 		ModalStack.pop(SEAT_CARD_MODAL_ID, ModalStack.REASON_PROGRAMMATIC)
 	var card := PrepSeatCard.new()
 	card.setup(slot)
+	card.report_requested.connect(_on_seat_report_requested)
 	# 贴在头像下面；靠右的头像也不能让卡片伸出屏幕。
 	var rect := badge.get_global_rect()
 	var view_w := get_viewport_rect().size.x
@@ -2304,6 +2369,14 @@ func open_seat_card(slot: int, badge: Control) -> void:
 		# 同佣兵选择那张：小卡片，不把整个画面压暗。
 		"backdrop_color": Color.TRANSPARENT,
 	})
+
+
+# 卡片上的「举报」。卡片先收起（举报面板是另一层，叠着看不清下面写了什么），
+# owner 填 self —— 离开摆放界面时举报面板跟着关掉，不会留一块吃点击的玻璃板。
+func _on_seat_report_requested(code: String, who: String, clip_id: String) -> void:
+	if ModalStack.has(SEAT_CARD_MODAL_ID):
+		ModalStack.pop(SEAT_CARD_MODAL_ID, ModalStack.REASON_PROGRAMMATIC)
+	ReportDialog.new().present(self, code, who, "match", 0, clip_id)
 
 
 func _create_ready_avatar_badge() -> Control:
@@ -2415,7 +2488,7 @@ func _create_bench_portrait_card(index: int) -> BenchCellButton:
 	card.clip_contents = false   # 关裁剪：格子下方的名字/星级标签才不会被裁掉
 	card.text = ""
 	card.tooltip_text = tr("ui_bench_slot")
-	card.pressed.connect(_on_bench_pressed.bind(index))
+	card.pressed.connect(_on_bench_activated.bind(index, card))
 	_overlay.attach_long_press(card, func(): _show_bench_detail(index))
 	PrepWidgets.configure_unframed_portrait_card(card, _on_portrait_card_hover)
 	_board_hud.bench_buttons.append(card)
@@ -2753,6 +2826,65 @@ func _prep_attack_range_indices(selected_index: int) -> PackedInt32Array:
 		if delta.length() <= range_cells + 0.001:
 			result.append(index)
 	return result
+# --- 10.12 bug 文档第 4 条：棋子 轻点 / 长按 / 拖拽 三态分流 ---------------------
+#
+# 需求（用户原话）：
+#   「只是点击棋子的时候，不会变成选中棋子；长按棋子不动为查看属性，查看属性不会
+#     使棋子变成挪动状态；按住棋子（未出现属性弹窗时）进行拖动到相应落点才会进行挪动。」
+#
+# 三个手势都落在**同一个按钮**上，靠 PrepDetailOverlay 在按钮 meta 上留下的
+# 手势判据来分流（它自己就是这么设计的：long_press_triggered / long_press_cancelled
+# 由 attach_long_press 写，pressed 回调负责「消费」掉长按那一次）。
+#
+#   * 拖拽（按住移动 > PrepDragButton.DRAG_START_DISTANCE）：PrepDragButton 自己
+#     force_drag 起拖，引擎不再发 pressed ⇒ 天然不会走下面这两个 wrapper。
+#   * 长按（按住不动 0.7s）：meta long_press_consumed=true ⇒ consume_long_press 返真
+#     ⇒ 直接 return，**不**把 pressed 交给业务。这就是旧版「弹完属性又顺手选中」的洞。
+#   * 轻点：meta 全为假 ⇒ consume 返假 ⇒ 交给 _on_board_pressed / _on_bench_pressed。
+#     那两个函数在第 4 条之后对棋子本身**什么都不做**（轻点不选中），只保留
+#     「商店卡已选中 → 点格子买入」这条针对商店卡片的链。
+func _on_board_activated(index: int, cell: BaseButton) -> void:
+	if _overlay.consume_long_press(cell):
+		return
+	_on_board_pressed(index)
+
+func _on_bench_activated(index: int, card: BaseButton) -> void:
+	if _overlay.consume_long_press(card):
+		return
+	_on_bench_pressed(index)
+
+# 长按查看属性：详情框 + 该格的射程预览。
+#
+# 射程预览（BoardReadabilityLayer 的「选中格 + range 格」）此前由**轻点选中**驱动；
+# 第 4 条把轻点选中去掉之后，把它挂到「查看属性」这个手势上 —— 它本来就是玩家判断
+# 范围的凭据（README 2026-10-05 第 2 条那处口径判断）。
+# 只写 _board_hud._selected_board 这一个「检视格」标记；挪动链路已不读它（见
+# _on_board_pressed 的注释），所以长按**不会**让棋子变成可挪动态。
+func _inspect_board_cell(index: int) -> void:
+	if index < 0 or index >= GameState.board_slots.size():
+		return
+	if GameState.board_slots[index] == null:
+		# 空格不弹详情、也不点亮（_show_board_detail 对空格本来就静默 return）。
+		return
+	_board_hud._selected_board = index
+	_board_hud._selected_bench = -1
+	_refresh_all()
+	_show_board_detail(index)
+
+# 详情框一关，检视高亮就该消失 —— 否则会留下一个「看起来还选中着」的格子，
+# 那正是第 4 条要消掉的现象。每帧比一次「上帧开着 / 这帧关了」，只在翻转那一下清。
+var _overlay_was_showing := false
+
+func _sync_board_inspect_after_overlay() -> void:
+	var showing := _overlay.is_showing()
+	if _overlay_was_showing and not showing \
+			and _board_hud != null and is_instance_valid(_board_hud) \
+			and _board_hud._selected_board >= 0:
+		_board_hud._selected_board = -1
+		_board_hud._selected_bench = -1
+		_sync_prep_board_readability_state()
+	_overlay_was_showing = showing
+
 func _load_board_art_texture() -> Texture2D:
 	return null
 func _show_gold_interest_detail() -> void:
@@ -3527,7 +3659,7 @@ func _show_pvp_warning_overlay() -> void:
 	glow.texture = tex
 	glow.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	glow.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	glow.modulate = Color(1.0, 0.05, 0.02, 0.28)
+	glow.modulate = Color(1.0, 1.0, 1.0, 0.18)
 	glow.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var glow_mat := CanvasItemMaterial.new()
 	glow_mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
@@ -3544,16 +3676,20 @@ func _show_pvp_warning_overlay() -> void:
 
 	var title := Label.new()
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	title.text = "Showdown Time!" if LocaleManager.get_locale() == "en" else "敌袭快准备！"
+	title.text = "let's fight" if LocaleManager.get_locale() == "en" else "开战啦"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	title.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	title.offset_top = 90
 	title.offset_bottom = -70
 	title.add_theme_font_size_override("font_size", 72)
-	title.add_theme_color_override("font_color", Color(1.0, 0.05, 0.02))
-	title.add_theme_color_override("font_outline_color", Color(0.10, 0.0, 0.0, 0.95))
-	title.add_theme_constant_override("outline_size", 6)
+	var title_base_font: Font = null
+	if LocaleManager.get_locale() != "en":
+		title_base_font = UIFontFallback.chinese_font()
+	title.add_theme_font_override("font", UIFontFallback.bold_font(title_base_font, 1.2))
+	title.add_theme_color_override("font_color", Color(0.29, 0.13, 0.06))
+	title.add_theme_color_override("font_outline_color", Color(1.0, 0.84, 0.56, 0.95))
+	title.add_theme_constant_override("outline_size", 5)
 	center.add_child(title)
 
 	# 停留计时器挂在 content 上，**不是** get_tree().create_timer()。

@@ -25,6 +25,9 @@ config/icon="res://app_icon.png"
 [audio]
 
 general/ios/session_category=3
+driver/enable_input.windows=true
+driver/enable_input.android=true
+driver/enable_input.ios=true
 
 [autoload]
 
@@ -43,6 +46,7 @@ ChatService="*res://scripts/autoload/ChatService.gd"
 AnnouncementService="*res://scripts/autoload/AnnouncementService.gd"
 MailService="*res://scripts/autoload/MailService.gd"
 VoiceService="*res://scripts/autoload/VoiceService.gd"
+VoiceClipService="*res://scripts/autoload/VoiceClipService.gd"
 RngService="*res://scripts/autoload/RngService.gd"
 VFXManager="*res://effects/VFXManager.gd"
 TutorialMode="*res://scripts/tutorial/TutorialMode.gd"

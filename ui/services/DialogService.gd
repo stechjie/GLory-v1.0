@@ -35,6 +35,8 @@ func _ready() -> void:
 #   confirm_text / cancel_text
 #   owner            Object；被 free 时弹窗自动关闭
 #   request_id       不给就自动生成。**同一 id 重复调用不会开第二个框**
+#   dismiss_on_backdrop  点外面关不关。不给时按 intent 推（INFO 可关、其余不可）
+#   persistent       true = 返回键也关不掉，只能按按钮。维护提示用
 #   on_result        Callable(result: String, request_id: String)
 # 返回 request_id。
 func confirm(spec: Dictionary) -> String:
@@ -54,7 +56,13 @@ func confirm(spec: Dictionary) -> String:
 		"owner": spec.get("owner", null),
 		"priority": int(spec.get("priority", MODAL_PRIORITY)),
 		# 危险确认点外面不消失：玩家需要明确选一边。
-		"dismiss_on_backdrop": int(spec.get("intent", Dialog.Intent.NORMAL)) == Dialog.Intent.INFO,
+		# INFO 默认点外面可以关，但**可以被 spec 覆盖** —— 维护提示就是
+		# 「只有一个按钮、而且必须按它」，两者都要。
+		"dismiss_on_backdrop": bool(spec.get(
+			"dismiss_on_backdrop",
+			int(spec.get("intent", Dialog.Intent.NORMAL)) == Dialog.Intent.INFO)),
+		# 返回键也关不掉。见 ModalStack 的 persistent。
+		"persistent": bool(spec.get("persistent", false)),
 	})
 	if modal_id.is_empty():
 		# push 被拒时已经把 dialog 收掉了（见 ModalStack.push 的所有权说明），

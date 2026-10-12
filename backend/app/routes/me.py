@@ -19,7 +19,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
-from app import db, players
+from app import db, players, login_sessions
 from app.config import get_settings
 from app.jwt_verify import Claims, TokenError, TokenVerifier
 
@@ -41,6 +41,7 @@ def get_verifier() -> TokenVerifier:
 
 async def current_claims(
     authorization: Annotated[str | None, Header()] = None,
+    x_glory_session: Annotated[str | None, Header()] = None,
 ) -> Claims:
     """从 Authorization 头解出并校验令牌。所有需要身份的接口都依赖它。"""
     if not get_settings().supabase_url:
@@ -51,7 +52,9 @@ async def current_claims(
     if scheme.lower() != "bearer" or not token.strip():
         raise HTTPException(status_code=401, detail="Authorization 头应为 'Bearer <token>'")
     try:
-        return await get_verifier().verify(token.strip())
+        claims = await get_verifier().verify(token.strip())
+        await login_sessions.require(claims.auth_uid, x_glory_session)
+        return claims
     except TokenError as exc:
         # TokenError 的 message 里不含令牌本身（见 jwt_verify），可以外传。
         raise HTTPException(status_code=401, detail=str(exc)) from None
