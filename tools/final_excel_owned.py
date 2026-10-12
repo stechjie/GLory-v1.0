@@ -13,7 +13,6 @@ from decimal import Decimal, InvalidOperation
 SPECS = (
     ("01_棋子基础", "data/units/race_units.json", "units", ((6, "hp"), (10, "atk"), (14, "def"))),
     ("05_野怪", "data/pve/pve_monsters.json", "monsters", ((4, "hp"), (5, "atk"), (6, "def"))),
-    ("08_法阵友军", "data/formation/formation_allies.json", "allies", ((4, "hp"), (5, "atk"), (6, "def"))),
 )
 
 
@@ -137,7 +136,7 @@ def overlay_excel_owned(book, tables):
     if seen != set(items):
         raise ValueError(f"{sheet}: missing IDs {sorted(set(items) - seen)}")
 
-    sheet = "03_宠物与商城"
+    sheet = "03_宠物技能"
     items = index_items(tables, "data/pets/pets.json", "pets")
     seen = set()
     for number, row in data_rows(book, sheet):
@@ -146,7 +145,7 @@ def overlay_excel_owned(book, tables):
             raise ValueError(f"{sheet} row {number}: unknown or duplicate ID {item_id!r}")
         seen.add(item_id)
         value, shown = percent(row[4], f"{sheet} row {number} {item_id}.value")
-        for column in (5, 13):
+        for column in (5, 9):
             if shown not in str(row[column] or ""):
                 raise ValueError(f"{sheet} row {number} {item_id}: update description column {column + 1} to include {shown}")
         update(sheet, "data/pets/pets.json", item_id, items[item_id], "value", value)
