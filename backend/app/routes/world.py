@@ -85,7 +85,7 @@ async def _validated_voice_payload(player_id: uuid.UUID, body: WorldSendBody) ->
     except voice_clips.ClipRejected as exc:
         raise HTTPException(status_code=exc.status, detail=exc.message,
                             headers={"X-Glory-Reason": exc.code}) from None
-    return {"clip_id": str(clip.clip_id), "seconds": clip.seconds}
+    return {"clip_id": str(clip.clip_id), "media": clip.media_name, "seconds": clip.seconds}
 
 
 class WorldSendResponse(BaseModel):

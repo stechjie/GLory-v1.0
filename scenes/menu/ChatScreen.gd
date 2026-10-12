@@ -39,6 +39,9 @@ const WorldChatPanel := preload("res://scenes/menu/WorldChatPanel.gd")
 # 房间邀请（bug提交和修复.docx 第 2 条）：失效判据、文案、限流全在那一份纯逻辑里，
 # 界面只负责把 payload 里的房间号读出来 + 把「邀请已过时」丢给全局 toast。
 const RoomInvite := preload("res://scripts/multiplayer/RoomInvite.gd")
+# 语音消息（2026-10-11）。气泡与「按住说话」三个渠道共用，见 docs/聊天系统设计.md。
+const VoiceBubble := preload("res://ui/components/VoiceClipBubble.gd")
+const VoiceRecordButton := preload("res://ui/components/VoiceRecordButton.gd")
 const GloryToastScript := preload("res://ui/components/GloryToast.gd")
 const TAB_WORLD := "world"
 const TAB_DM := "dm"
@@ -87,6 +90,7 @@ var _msg_scroll: ScrollContainer
 var _msg_box: VBoxContainer
 var _input: LineEdit
 var _send_button: Button
+var _voice_button: Control = null
 
 
 # 从好友列表进来时带上对方的好友码，打开就定位到那个会话（私聊页签）。
@@ -374,6 +378,11 @@ func _conversation_panel() -> Control:
 	_input.placeholder_text = _text("说点什么…", "Say something…")
 	_input.text_submitted.connect(func(_submitted: String) -> void: _on_send_pressed())
 	input_row.add_child(_input)
+
+	_voice_button = VoiceRecordButton.create(VoiceClipService.SCOPE_PRIVATE)
+	_voice_button.clip_ready.connect(_on_voice_clip_ready)
+	_voice_button.failed.connect(_on_voice_failed)
+	input_row.add_child(_voice_button)
 
 	_send_button = _button(_text("发送", "Send"), _on_send_pressed)
 	_send_button.theme_type_variation = Theming.VARIATION_PRIMARY
@@ -680,6 +689,8 @@ func _refresh_input() -> void:
 	var usable := not _open_code.is_empty() and not ChatService.kicked
 	_input.editable = usable
 	_send_button.disabled = not usable
+	if _voice_button != null and is_instance_valid(_voice_button):
+		_voice_button.set_disabled(not usable)
 
 
 # --- 渲染 ---------------------------------------------------------------------
@@ -904,6 +915,9 @@ func _bubble(msg: Dictionary, max_width: float) -> Control:
 	# 10.07 第 10 条：组队邀请走同一套渲染，只是标题/文案/按钮动作不同。
 	if RoomInvite.is_any_invite(msg):
 		return _invite_bubble(msg, max_width)
+	# 语音：画成「▶ 12″」而不是把服务端写的那句「[语音 12″]」当文本显示。
+	if ChatService.is_voice(msg):
+		return _voice_row(msg)
 	var mine := bool(msg.get("from_me", false))
 	var row := HBoxContainer.new()
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -969,6 +983,71 @@ func _bubble(msg: Dictionary, max_width: float) -> Control:
 # 气泡的左右对齐讲的是「谁说的」，而邀请要讲的是「可不可以点进去」。
 # 邀请方是对方（from_me == false）：自己发出去的邀请不显示「立即参与」
 # （自己已经在房间里了，按钮没有意义，点下去只会加入自己的房）。
+func _voice_row(msg: Dictionary) -> Control:
+	"""一条语音：左右对齐与普通气泡一致，中间换成语音条。"""
+	var mine := bool(msg.get("from_me", false))
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.alignment = BoxContainer.ALIGNMENT_END if mine else BoxContainer.ALIGNMENT_BEGIN
+	row.add_child(VoiceBubble.build(msg, mine))
+	return row
+
+
+func _on_voice_clip_ready(clip: Dictionary) -> void:
+	"""录完并传好了：发一条 kind=voice 的私聊。
+
+	body 由服务端写（「[语音 12″]」），这里传空串 —— 两边各写一份的话，
+	旧客户端看到的文案与新客户端的语音条长度会对不上。
+	"""
+	if _open_code.is_empty() or ChatService.kicked:
+		return
+	_local_seq += 1
+	var msg := {
+		"message_id": 0,
+		"from_me": true,
+		"body": "",
+		"kind": ChatService.VOICE_KIND,
+		"payload": {
+			"clip_id": str(clip.get("clip_id", "")),
+			"media": str(clip.get("media", "")),
+			"seconds": float(clip.get("seconds", 0.0)),
+		},
+		"created_at": "",
+		"state": "pending",
+		"seq": _local_seq,
+		"client_msg_id": ChatService.new_client_msg_id(),
+	}
+	_messages.append(msg)
+	_render_messages(true)
+	var code := _open_code
+	var result: Dictionary = await AccountManager.send_chat_message(
+		code, "", str(msg.get("client_msg_id", "")), ChatService.VOICE_KIND,
+		{"clip_id": str(clip.get("clip_id", ""))})
+	if not is_inside_tree():
+		return
+	if int(result.get("code", 0)) / 100 == 2:
+		var server: Dictionary = (result.get("body", {}) as Dictionary).get("message", {})
+		msg["message_id"] = int(server.get("message_id", 0))
+		msg["body"] = str(server.get("body", ""))
+		msg["created_at"] = str(server.get("created_at", ""))
+		# 服务端回的 payload 才是准的（秒数以它登记的为准，见 routes/chat.py）。
+		var server_payload: Variant = server.get("payload")
+		if server_payload is Dictionary:
+			msg["payload"] = server_payload
+		msg["state"] = "sent"
+		_note_last_message(code, msg)
+	else:
+		msg["state"] = "failed"
+		msg["error"] = str(result.get("error", _text("网络错误", "Network error")))
+	if code == _open_code:
+		_messages.sort_custom(_before)
+		_render_messages()
+
+
+func _on_voice_failed(message: String) -> void:
+	DialogService.info({"owner": self, "body": message})
+
+
 func _invite_bubble(msg: Dictionary, max_width: float) -> Control:
 	var mine := bool(msg.get("from_me", false))
 	var row := HBoxContainer.new()

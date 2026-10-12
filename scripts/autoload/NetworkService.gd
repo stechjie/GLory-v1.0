@@ -694,6 +694,7 @@ func _ready() -> void:
 	})
 	team_chat_received.connect(_log_team_phrase)
 	team_chat_text_received.connect(_log_team_text)
+	team_chat_voice_received.connect(_log_team_voice)
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
@@ -2893,6 +2894,136 @@ func _host_send_text(slot: int, text: String, team_only: bool) -> void:
 	if chat_reaches(slot, team_local_slot, team_only):
 		team_chat_text_received.emit(slot, text, team_only)
 
+
+# --- 房间 / 局内语音留言（docs/聊天系统设计.md「语音消息」，2026-10-11）--------------
+#
+# 形状与上面的自由文字一样（客户端只交内容和范围，座位号由服务端反查，服务端定序转发）。
+# 不一样的是**音频根本不走这条线**：文件先传到账号服务器（VoiceClipService.finish_and_upload），
+# 这里转的只有一个编号 + 文件名 + 秒数，收到的人拿文件名去 /media 下载。三个理由：
+#   1. ENet 这条线是对局用的，塞一条 30 秒音频（约 90 KB）会和战斗指令抢带宽；
+#   2. 战斗服务器没有数据库、没有存储，音频存不住，也查不出是谁传的；
+#   3. 举报要留证据 —— 证据挂在账号服务器的 voice_clips 表上（见 database/033 顶部那段），
+#      所以对局里的语音不落库也照样举报得到。
+#
+# 🔴 **media 的形状必须在服务端卡死。** 收到的人会去 /media/<media> 下载，
+# 一个改包的客户端把 "../../../etc/passwd" 塞过来，就是让别人的手机去抓媒体服务器上的任意路径。
+# 两头都按 <64 位十六进制>.ogg 校验（与 backend/app/announcements.py 的 MEDIA_NAME_RE 同一个形状）：
+# 服务端这道是权威的，客户端那道是给本地房主模式兜底的。
+#
+# 🔴 **秒数不能信客户端。** 显示用它算语音条宽度、也用它决定 UI 上的时长：
+# 传一个 99999 过来就能把别人的语音条拉爆。所以这里夹到 [0, VoiceClipService.MAX_SECONDS]。
+# 真实秒数以账号服务器登记的为准（它解析过 WAV 头），这里只是防显示被玩坏。
+
+signal team_chat_voice_received(slot: int, clip: Dictionary, team_only: bool)
+
+# 客户端自己的节流，同 TEXT_SEND_MIN_INTERVAL_SEC 的那套算法：
+# 服务端额度是 10 秒 2 条（RateLimitService 的 chat_voice）、超了**静默丢弃**，
+# 所以必须满足 间隔 × 额度 ≥ 窗口（6 × 2 ≥ 10），玩家才看得到「发太快了」而不是凭空消失。
+const VOICE_SEND_MIN_INTERVAL_SEC := 6.0
+# 文件名形状。写死在这里而不是引 VoiceClipService：这个文件在战斗服务器上也跑，
+# 那边没有客户端的 autoload（见 docs 里「战斗服务器包不带导入资源」那条）。
+# 点用 [.] 而不是反斜杠转义：GDScript 的字符串会先吃掉一层反斜杠，
+# 写 "\.ogg" 在这里是非法转义序列。
+const VOICE_MEDIA_PATTERN := "^[0-9a-f]{64}[.]ogg$"
+const VOICE_MAX_SECONDS := 30.0
+
+var _last_voice_sent_at := -1000.0
+static var _voice_media_re: RegEx = null
+
+
+# 纯函数（不碰网络、不碰 autoload），tools/voice_clip_check 直接调。
+static func voice_media_ok(media: String) -> bool:
+	if _voice_media_re == null:
+		_voice_media_re = RegEx.new()
+		_voice_media_re.compile(VOICE_MEDIA_PATTERN)
+	return _voice_media_re.search(media) != null
+
+
+# 把收到的那三个字段收敛成能显示的样子；形状不对返回空字典（调用方丢掉这条）。
+static func sanitize_voice(clip_id: String, media: String, seconds: float) -> Dictionary:
+	if not voice_media_ok(media):
+		return {}
+	# clip_id 只用来「现在在放哪条」和举报，长度卡一下就够（uuid 是 36 位）。
+	var id := clip_id.strip_edges()
+	if id.is_empty() or id.length() > 40:
+		return {}
+	return {"clip_id": id, "media": media, "seconds": clampf(seconds, 0.0, VOICE_MAX_SECONDS)}
+
+
+# 返回空串表示已发出；否则是给玩家看的原因。clip 是 VoiceClipService 上传成功后给的那个字典。
+func team_send_voice(clip: Dictionary, team_only: bool = false) -> String:
+	if not team_active or team_local_slot < 0:
+		return "联机对局中才能发送"
+	var safe := sanitize_voice(
+		str(clip.get("clip_id", "")), str(clip.get("media", "")), float(clip.get("seconds", 0.0)))
+	if safe.is_empty():
+		return "语音发送失败"
+	var now := Time.get_ticks_msec() / 1000.0
+	var wait := VOICE_SEND_MIN_INTERVAL_SEC - (now - _last_voice_sent_at)
+	if wait > 0.0:
+		return "发得太快了，%d 秒后再发" % ceili(wait)
+	_last_voice_sent_at = now
+	if is_host:
+		# 本地房主模式：自己就是权威（同 team_send_text）。
+		_host_send_voice(team_local_slot, safe, team_only)
+	else:
+		_rpc_team_chat_voice_submit.rpc_id(1,
+			str(safe["clip_id"]), str(safe["media"]), float(safe["seconds"]), team_only)
+	return ""
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_team_chat_voice_submit(clip_id: String, media: String, seconds: float,
+		team_only: bool) -> void:
+	if _dedicated_server:
+		var sender := multiplayer.get_remote_sender_id()
+		# 软限，不计 strike：刷语音是烦人，不是攻击（理由同 chat_text）。
+		if not _rate_ok(sender, "chat_voice", false):
+			return
+		var room := _room_for_peer(sender)
+		if room.is_empty():
+			return
+		var slot := int((room.get("peer_slot", {}) as Dictionary).get(sender, -1))
+		if slot < 0 or slot >= TEAM_SLOTS:
+			return
+		# 权威的那一道（客户端发之前也过了一遍，但改包的客户端可以不过）。
+		var safe := sanitize_voice(clip_id, media, seconds)
+		if safe.is_empty():
+			_net_log("voice clip rejected peer=%d (bad media shape)" % sender)
+			return
+		for peer_id in chat_recipients(room, slot, team_only):
+			if _peer_connected(peer_id):
+				_rpc_team_chat_voice.rpc_id(peer_id, slot,
+					str(safe["clip_id"]), str(safe["media"]), float(safe["seconds"]), team_only)
+		return
+	if not is_host:
+		return
+	var host_slot := int(_team_peer_slot.get(multiplayer.get_remote_sender_id(), -1))
+	var cleaned := sanitize_voice(clip_id, media, seconds)
+	if host_slot < 0 or host_slot >= TEAM_SLOTS or cleaned.is_empty():
+		return
+	_host_send_voice(host_slot, cleaned, team_only)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_team_chat_voice(slot: int, clip_id: String, media: String, seconds: float,
+		team_only: bool) -> void:
+	# 收到的一样要校验：本地房主模式下这里就是唯一的那道门（同 _rpc_team_chat_text）。
+	if slot < 0 or slot >= TEAM_SLOTS:
+		return
+	var safe := sanitize_voice(clip_id, media, seconds)
+	if safe.is_empty():
+		return
+	team_chat_voice_received.emit(slot, safe, team_only)
+
+
+func _host_send_voice(slot: int, clip: Dictionary, team_only: bool) -> void:
+	for peer_id in _host_chat_peers(slot, team_only):
+		_rpc_team_chat_voice.rpc_id(peer_id, slot,
+			str(clip["clip_id"]), str(clip["media"]), float(clip["seconds"]), team_only)
+	if chat_reaches(slot, team_local_slot, team_only):
+		team_chat_voice_received.emit(slot, clip, team_only)
+
 # --- 房间 / 对局聊天记录（2026-09-27）-------------------------------------------------
 #
 # 上面两个信号每收到一条就记进 room_chat_log（见 RoomChatLog.gd 顶部）。界面**只听记录的
@@ -2908,10 +3039,14 @@ func _log_team_phrase(slot: int, phrase_id: int, team_only: bool) -> void:
 func _log_team_text(slot: int, text: String, team_only: bool) -> void:
 	_log_team_chat(slot, 0, text, team_only)
 
-func _log_team_chat(slot: int, phrase_id: int, text: String, team_only: bool) -> void:
+func _log_team_voice(slot: int, clip: Dictionary, team_only: bool) -> void:
+	_log_team_chat(slot, 0, "", team_only, clip)
+
+func _log_team_chat(slot: int, phrase_id: int, text: String, team_only: bool,
+		voice: Dictionary = {}) -> void:
 	room_chat_log.add(team_room_id, RoomChatLog.make_entry(slot, phrase_id, text, team_only,
 		team_local_slot, team_seat_profiles, AccountManager.profile, _chat_log_round(),
-		LocaleManager.get_locale() == "en"))
+		LocaleManager.get_locale() == "en", voice))
 
 # 10.11 bug 第 3/9 条：我是不是「正在一局对局里」。
 #

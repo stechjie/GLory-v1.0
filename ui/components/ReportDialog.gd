@@ -11,6 +11,8 @@ extends PanelContainer
 # 用法：
 #   ReportDialog.new().present(self, friend_code, "昵称 #好友码", "world", message_id)
 # context 取 AccountManager.REPORT_CONTEXTS 之一；message_id 只有世界频道里举报某一条时才给。
+# clip_id 只有举报某一段语音时才给（2026-10-11）：房间 / 对局里的语音不落库，
+# 不带这个编号，处理举报的人就只看得到「有人发了语音」，点不开听。
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
@@ -35,6 +37,7 @@ var _code := ""
 var _who := ""
 var _context := "profile"
 var _message_id := 0
+var _clip_id := ""
 var _reason := ""
 var _reason_buttons: Dictionary = {}   # reason -> Button
 var _detail: LineEdit
@@ -42,11 +45,13 @@ var _error: Label
 var _submit_button: Button
 
 
-func present(owner: Object, friend_code: String, who: String, context: String, message_id: int = 0) -> void:
+func present(owner: Object, friend_code: String, who: String, context: String, message_id: int = 0,
+		clip_id: String = "") -> void:
 	_code = friend_code
 	_who = who
 	_context = context
 	_message_id = message_id
+	_clip_id = clip_id
 	ModalStack.push(self, {
 		"id": MODAL_ID,
 		"owner": owner,
@@ -148,7 +153,8 @@ func _submit() -> void:
 		_show_error(_text("请选择举报原因", "Please choose a reason"))
 		return
 	_submit_button.disabled = true
-	var result: Dictionary = await AccountManager.report_player(_code, _context, _reason, _message_id, _detail.text)
+	var result: Dictionary = await AccountManager.report_player(
+		_code, _context, _reason, _message_id, _detail.text, _clip_id)
 	if not is_inside_tree():
 		return
 	_submit_button.disabled = false

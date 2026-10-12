@@ -19,6 +19,8 @@ const Theming := preload("res://ui/theme/GloryTheme.gd")
 const Catalog := preload("res://scripts/account/AvatarCatalog.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const ReportDialog := preload("res://ui/components/ReportDialog.gd")
+const VoiceBubble := preload("res://ui/components/VoiceClipBubble.gd")
+const VoiceRecordButton := preload("res://ui/components/VoiceRecordButton.gd")
 
 const AVATAR_SIZE := 40.0
 # 离底部多近算「正看着最新消息」（同 ChatScreen）。
@@ -34,6 +36,7 @@ var _status: Label
 var _notice: Label
 var _input: LineEdit
 var _send_button: Button
+var _voice_button: Control = null
 var _sending := false
 
 
@@ -137,6 +140,13 @@ func _build() -> void:
 	_input.text_submitted.connect(func(_submitted: String) -> void: _on_send_pressed())
 	row.add_child(_input)
 
+	# 「按住说话」和「发送」共用同一条 8 秒 CD（见 ChatService.send_world_voice）：
+	# 对服务器来说语音和文字是同一张嘴，分两条 CD 等于把刷屏速度翻倍。
+	_voice_button = VoiceRecordButton.create(VoiceClipService.SCOPE_WORLD)
+	_voice_button.clip_ready.connect(_on_voice_clip_ready)
+	_voice_button.failed.connect(_set_notice)
+	row.add_child(_voice_button)
+
 	_send_button = _button(_text("发送", "Send"), _on_send_pressed)
 	_send_button.theme_type_variation = Theming.VARIATION_PRIMARY
 	_send_button.custom_minimum_size = Vector2(104, Tokens.TOUCH_MIN)
@@ -218,6 +228,21 @@ func _on_send_pressed() -> void:
 	_refresh_send_button()
 
 
+# 录音上传完了（VoiceRecordButton 已经把文件传到账号服务器，拿到了编号）：
+# 这里只把编号发成一条世界频道消息。秒数以服务器登记的为准，不采用本地算的那个。
+func _on_voice_clip_ready(clip: Dictionary) -> void:
+	if _sending or ChatService.kicked:
+		return
+	_sending = true
+	_refresh_send_button()
+	var problem: String = await ChatService.send_world_voice(clip)
+	if not is_inside_tree():
+		return
+	_sending = false
+	_set_notice(problem)
+	_refresh_send_button()
+
+
 func _refresh_send_button() -> void:
 	if _send_button == null:
 		return
@@ -226,6 +251,8 @@ func _refresh_send_button() -> void:
 	_send_button.disabled = not usable
 	_send_button.text = ("%ds" % ceili(left)) if left > 0.0 else _text("发送", "Send")
 	_input.editable = not ChatService.kicked
+	if _voice_button != null and is_instance_valid(_voice_button):
+		_voice_button.set_disabled(not usable)
 
 
 func _refresh_status() -> void:
@@ -320,6 +347,20 @@ func _row(message: Dictionary, max_width: float) -> Control:
 		meta.add_child(name_button)
 	meta.add_child(_caption(ChatService.format_time(str(message.get("created_at", ""))), Tokens.TEXT_DISABLED))
 
+	if ChatService.is_voice(message):
+		# 语音条和私聊共用一个组件（ui/components/VoiceClipBubble.gd）：
+		# 投递路不同，收到之后长得必须一样。
+		var voice := VoiceBubble.build(message, mine)
+		voice.size_flags_horizontal = Control.SIZE_SHRINK_END if mine else Control.SIZE_SHRINK_BEGIN
+		col.add_child(voice)
+		if mine:
+			row.add_child(col)
+			row.add_child(avatar)
+		else:
+			row.add_child(avatar)
+			row.add_child(col)
+		return row
+
 	var bubble := PanelContainer.new()
 	bubble.size_flags_horizontal = Control.SIZE_SHRINK_END if mine else Control.SIZE_SHRINK_BEGIN
 	bubble.add_theme_stylebox_override("panel", Tokens.panel_box(
@@ -374,6 +415,7 @@ func _open_actions(message: Dictionary) -> void:
 	title.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
 	col.add_child(title)
 	var quote := Label.new()
+	# 语音的 body 是服务端写的「[语音 12″]」占位（database/033），直接引用就看得懂。
 	quote.text = "「%s」" % str(message.get("body", ""))
 	quote.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	quote.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
@@ -385,7 +427,10 @@ func _open_actions(message: Dictionary) -> void:
 	col.add_child(view)
 	var report := _button(_text("举报这条消息", "Report this message"), func() -> void:
 		ModalStack.pop(ACTIONS_MODAL_ID)
-		ReportDialog.new().present(self, code, who, "world", int(message.get("message_id", 0))))
+		# 语音那条还要带上 clip_id：后台据此押后清理、并且能点开听（见 ReportDialog 顶部）。
+		var clip_id := str(ChatService.voice_payload(message).get("clip_id", "")) 			if ChatService.is_voice(message) else ""
+		ReportDialog.new().present(self, code, who, "world",
+			int(message.get("message_id", 0)), clip_id))
 	report.theme_type_variation = Theming.VARIATION_DANGER
 	col.add_child(report)
 	var cancel := _button(_text("取消", "Cancel"), func() -> void: ModalStack.pop(ACTIONS_MODAL_ID))

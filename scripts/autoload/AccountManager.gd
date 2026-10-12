@@ -831,9 +831,15 @@ func fetch_world_messages(before_id: int = 0) -> Dictionary:
 
 
 # client_msg_id 同私聊：网络失败后重发同一句时**原样复用**，服务端认出来就不会发两条。
-func send_world_message(body: String, client_msg_id: String) -> Dictionary:
-	return await _request(HTTPClient.METHOD_POST, "/v1/world/messages",
-		{"body": body, "client_msg_id": client_msg_id}, true)
+func send_world_message(body: String, client_msg_id: String,
+		kind: String = "", payload: Dictionary = {}) -> Dictionary:
+	# kind/payload 只有语音消息用（2026-10-11）。同私聊：不传就是普通文本，
+	# 传了必须**一起**传 —— 只传 kind 的话服务端会拿不到 clip_id 而 400。
+	var request := {"body": body, "client_msg_id": client_msg_id}
+	if not kind.is_empty():
+		request["kind"] = kind
+		request["payload"] = payload
+	return await _request(HTTPClient.METHOD_POST, "/v1/world/messages", request, true)
 
 
 # --- 举报（backend/app/reports.py）---------------------------------------------------
@@ -843,11 +849,15 @@ func send_world_message(body: String, client_msg_id: String) -> Dictionary:
 const REPORT_CONTEXTS := ["world", "profile", "dm", "match"]
 const REPORT_REASONS := ["abuse", "ads", "cheat", "name", "other"]
 
+# clip_id：举报某一段语音时带上（2026-10-11）。房间 / 对局里的语音不落库，
+# 证据全靠这个编号从账号服务器的 voice_clips 里查 —— 不带就只剩一句「有人发了语音」。
 func report_player(code: String, context: String, reason: String, message_id: int = 0,
-		detail: String = "") -> Dictionary:
+		detail: String = "", clip_id: String = "") -> Dictionary:
 	var payload := {"target_code": normalize_friend_code(code), "context": context, "reason": reason}
 	if message_id > 0:
 		payload["message_id"] = message_id
+	if not clip_id.strip_edges().is_empty():
+		payload["clip_id"] = clip_id.strip_edges()
 	if not detail.strip_edges().is_empty():
 		payload["detail"] = detail.strip_edges()
 	return await _request(HTTPClient.METHOD_POST, "/v1/reports", payload, true)

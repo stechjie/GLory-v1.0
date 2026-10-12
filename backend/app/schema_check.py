@@ -67,6 +67,20 @@ _PROBES: list[tuple[str, str, str]] = [
         "select 1 where to_regclass('public.one_time_grants') is not null",
         "老玩家的赤律族归属没补发，出战名片可能把赤律族去掉",
     ),
+    (
+        "033 chat_messages.kind 放行 voice",
+        "select 1 from pg_constraint"
+        " where conname = 'chat_message_kind_allowed'"
+        "   and pg_get_constraintdef(oid) like '%voice%'",
+        "私聊发语音会 HTTP 500（同 030 那次组队邀请的毛病：约束拦在 insert 那一刻）",
+    ),
+    (
+        "033 world_messages.kind / payload 两列与放宽后的 body 约束",
+        "select 1 from pg_constraint"
+        " where conname = 'world_body_length'"
+        "   and pg_get_constraintdef(oid) like '%voice%'",
+        "世界频道发语音会 HTTP 500（旧约束要求 body 1–100 字，语音的 body 是服务端写的占位）",
+    ),
 ]
 
 

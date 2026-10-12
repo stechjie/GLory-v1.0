@@ -51,9 +51,18 @@ const EXPECTED_IDS := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 # PINNED_RPC_SIGNATURES：全部 @rpc 方法「@rpc 配置 | 方法名(参数类型,…)」排序后的 SHA-256 前 16 位，
 # 算法见 _rpc_signature_digest。参数只改名字不算（线上不传名字）。
 # 2026-09-19 语音改 LiveKit：删 2 条语音转发、加 2 条发钥匙 → 数量仍是 58，签名指纹变了、30 -> 31。
-const PINNED_RPC_COUNT := 58
-const PINNED_RPC_PROTOCOL := 31
-const PINNED_RPC_SIGNATURES := "726189f3f99715ef"
+#
+# 🔴 2026-10-11 发现这三个钉子从 31 起就没人更新过，**这条门禁白绿了九个协议号**
+# （31 -> 40 期间方法数 58 -> 65）。失效的方式正是 carrot_online_check 顶上警告过的那种：
+# 数量一对不上就走 `expect(protocol != PINNED_RPC_PROTOCOL)`，而协议号早就不是 31 了 ——
+# 条件恒为真，门禁永远绿，等于没有。这条门禁本来挡的就是用户 2026-09-11 真撞上的那个
+# `process_simplify_path: The rpc node checksum failed`。
+# **改 @rpc 的人必须把这三行一起改**，不然下一次又是白绿。
+# 2026-10-11 语音留言：加 `_rpc_team_chat_voice_submit` / `_rpc_team_chat_voice`
+# → 65 -> 67、协议 40 -> 41、指纹变了。
+const PINNED_RPC_COUNT := 67
+const PINNED_RPC_PROTOCOL := 41
+const PINNED_RPC_SIGNATURES := "00ffeb43deee3e10"
 
 var _h: CheckHarness
 
@@ -417,7 +426,7 @@ func _case_rpc_count_pinned() -> void:
 			"NetworkService 的 @rpc 方法数变了（%d -> %d），但 NETWORK_PROTOCOL_VERSION "
 				% [PINNED_RPC_COUNT, count]
 			+ "还是 %d。旧服务器与新客户端的 scene cache 校验会失败，" % protocol
-			+ "整个 NetworkService 的 RPC 全部失效。请顶协议号、把 PINNED_RPC_COUNT / "
+			+ "方法编号会错位，两端的方法表不一致时行为未定义。请顶协议号、把 PINNED_RPC_COUNT / "
 			+ "PINNED_RPC_PROTOCOL / PINNED_RPC_SIGNATURES 一起改成新值，**并重新打包部署战斗服务器**。")
 		return
 	# 数量没变、签名变了（2026-09-14 聊天加 team_only 就是这种）：方法编号不会错位，

@@ -99,10 +99,16 @@ comment on column chat_messages.kind is
 -- --------------------------------------------------------------------------
 -- 世界频道：加类型与 payload
 --
--- 019 那张表只存文本，而且 body 限 1–100 字。语音消息没有文本，
--- **直接发会撞 world_body_length** —— 所以约束要按类型分开：
--- 文本 1–100 字；语音 body 必须是空串（不留给「语音 + 一段文字」这种半吊子形态，
--- 真要做那是另一次迁移）。
+-- 019 那张表只存文本，而且 body 限 1–100 字。语音消息没有玩家写的文本，
+-- **直接发会撞 world_body_length** —— 所以约束要按类型分开。
+--
+-- 语音的 body 不是空串：服务端往里写一句「[语音 12″]」（见 routes/world.py）。
+-- 理由是**旧客户端**：不认 kind='voice' 的包会把 body 当文字画出来，写了这句
+-- 它至少看得见「这是一段语音」，空串只会给它一个空气泡。私聊那边同理
+-- （007 的 chat_body_length 本来就要求 1 字以上）。
+--
+-- 限到 32 字是为了挡死「语音 + 一段自由文字」这种半吊子形态：真要做是另一次迁移。
+-- 客户端传的 body 在路由里一律丢掉，所以这条只是多一道门。
 -- --------------------------------------------------------------------------
 
 alter table world_messages
@@ -123,10 +129,10 @@ alter table world_messages
 alter table world_messages
   add constraint world_body_length check (
     (kind = 'text' and char_length(body) between 1 and 100)
-    or (kind = 'voice' and body = '')
+    or (kind = 'voice' and char_length(body) between 1 and 32)
   );
 
 comment on column world_messages.kind is
-  '消息类型：text=普通文本，voice=语音消息（body 为空，payload 带 clip_id 与 seconds）。';
+  '消息类型：text=普通文本，voice=语音消息（body 是服务端写的「[语音 N″]」占位，payload 带 clip_id 与 seconds）。';
 comment on column world_messages.payload is
   '类型相关的机器可读数据。text 为 null；voice 为 {"clip_id": <uuid>, "seconds": <number>}。';

@@ -23,11 +23,18 @@ extends PanelContainer
 # 给了就在输入框左边多一个范围按钮（「发给：队友 / 全部」）：点它调 on_scope_pressed，
 # 再用 scope_text 刷新按钮上的字。打到一半发现范围不对，点一下就改，不用关掉重打。
 # 大厅不给（大厅只发全部），版面与以前一样。
+#
+# 可选的语音（2026-10-11）：
+#   {"on_voice": Callable(clip: Dictionary) -> String, "voice_scope": String}
+# 给了就在「发送」左边多一颗「按住说话」。回调的返回值与 on_submit 同一个约定：
+# 空串 = 已发出（输入条收起），否则是给玩家看的原因（输入条留着）。
+# 不给就完全和以前一样 —— 没有语音的界面（例如将来只读的那种）不用改。
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const ChatText := preload("res://scripts/multiplayer/ChatText.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
+const VoiceRecordButton := preload("res://ui/components/VoiceRecordButton.gd")
 
 # 固定 id：连点「打字」只会有一个输入条（ModalStack 拒绝重复 id，并收掉多出来的那个）。
 const MODAL_ID := "chat_text_input"
@@ -41,15 +48,20 @@ const SCOPE_BUTTON_WIDTH := 160.0
 var _on_submit: Callable = Callable()
 var _scope_text: Callable = Callable()
 var _on_scope_pressed: Callable = Callable()
+var _on_voice: Callable = Callable()
+var _voice_scope := ""
 var _input: LineEdit
 var _error: Label
 var _scope_button: Button = null
+var _voice_button: Control = null
 
 
 func present(owner: Object, on_submit: Callable, options: Dictionary = {}) -> void:
 	_on_submit = on_submit
 	_scope_text = options.get("scope_text", Callable())
 	_on_scope_pressed = options.get("on_scope_pressed", Callable())
+	_on_voice = options.get("on_voice", Callable())
+	_voice_scope = str(options.get("voice_scope", VoiceClipService.SCOPE_MATCH))
 	ModalStack.push(self, {
 		"id": MODAL_ID,
 		"owner": owner,
@@ -98,6 +110,12 @@ func _ready() -> void:
 	_input.text_submitted.connect(func(_submitted: String) -> void: _submit())
 	row.add_child(_input)
 
+	if _on_voice.is_valid():
+		_voice_button = VoiceRecordButton.create(_voice_scope)
+		_voice_button.clip_ready.connect(_on_voice_clip_ready)
+		_voice_button.failed.connect(_show_error)
+		row.add_child(_voice_button)
+
 	var send := _button(_text("发送", "Send"), _submit)
 	send.theme_type_variation = Theming.VARIATION_PRIMARY
 	row.add_child(send)
@@ -125,8 +143,24 @@ func _submit() -> void:
 	if reason.is_empty():
 		_close()
 		return
-	_error.text = reason
-	_error.visible = true
+	_show_error(reason)
+
+
+# 录音上传完了（文件已经在账号服务器上），把编号交给调用方去发。
+# 发出去就收起输入条：录完语音还留着一个空输入框在屏幕顶上，玩家不知道它为什么还在。
+func _on_voice_clip_ready(clip: Dictionary) -> void:
+	if not _on_voice.is_valid():
+		return
+	var reason := str(_on_voice.call(clip))
+	if reason.is_empty():
+		_close()
+		return
+	_show_error(reason)
+
+
+func _show_error(message: String) -> void:
+	_error.text = message
+	_error.visible = not message.is_empty()
 
 
 func _on_scope_button_pressed() -> void:

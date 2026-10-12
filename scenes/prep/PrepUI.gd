@@ -155,6 +155,7 @@ const SEAT_CARD_MODAL_PRIORITY := 40
 # `tools/prep_layout_1009_check.gd`：它直接量「金钱宝藏按钮 vs TreasurePanel」有没有重叠。
 const SELL_LEFT_PANEL_TOP_RESERVE := 48.0
 const PrepSeatCard := preload("res://scenes/prep/panels/PrepSeatCard.gd")
+const ReportDialog := preload("res://ui/components/ReportDialog.gd")
 const PVP_WARNING_DWELL_SEC := 2.0
 const PVP_WARNING_FADE_SEC := 0.18
 
@@ -1412,6 +1413,7 @@ const CHAT_FLOAT_GAP := 10.0
 const CHAT_LOG_HEIGHT := 184.0
 # 自由文字（批次 D）：输入条贴在屏幕顶部，理由见 ChatInputBar.gd 顶部（手机键盘）。
 const ChatInputBar := preload("res://ui/components/ChatInputBar.gd")
+const VoiceClipRow := preload("res://ui/components/VoiceClipRow.gd")
 # 消息从哪来：NetworkService.room_chat_log（整个房间一份，界面重建也不丢）。
 # 名字、范围标记都在记录那一刻定下来，这里只管显示。
 const RoomChatLog := preload("res://scripts/multiplayer/RoomChatLog.gd")
@@ -1738,8 +1740,13 @@ func _append_chat_record_row(entry: Dictionary) -> void:
 		_chat_record_list.add_child(_chat_record_label("—— %s ——" % RoomChatLog.round_label(entry_round, en),
 			GloryTokens.TEXT_SECONDARY, HORIZONTAL_ALIGNMENT_CENTER))
 		_chat_record_round = entry_round
-	_chat_record_list.add_child(_chat_record_label(RoomChatLog.line_text(entry, en),
-		Color(0.97, 0.93, 0.81), HORIZONTAL_ALIGNMENT_LEFT))
+	var line := _chat_record_label(RoomChatLog.line_text(entry, en),
+		Color(0.97, 0.93, 0.81), HORIZONTAL_ALIGNMENT_LEFT)
+	if RoomChatLog.is_voice_entry(entry):
+		# 语音：那行字前面多一颗播放键（点了才响 —— 对局里不自动响，见 VoiceClipRow 顶部）。
+		_chat_record_list.add_child(VoiceClipRow.wrap(entry, line))
+	else:
+		_chat_record_list.add_child(line)
 
 
 func _chat_record_label(text: String, color: Color, align: HorizontalAlignment) -> Label:
@@ -1785,8 +1792,13 @@ func _open_text_input() -> void:
 		_chat_panel.visible = false
 	var send := func(text: String) -> String:
 		return NetworkService.team_send_text(text, _chat_team_only)
+	# 语音照着文字的范围发：范围按钮改的是同一个 _chat_team_only，
+	# 「发给：队友」时录的语音对面也听不到（战斗服务器按 chat_recipients 转）。
+	var send_voice := func(clip: Dictionary) -> String:
+		return NetworkService.team_send_voice(clip, _chat_team_only)
 	ChatInputBar.new().present(self, send,
-		{"scope_text": _chat_scope_text, "on_scope_pressed": _toggle_chat_scope})
+		{"scope_text": _chat_scope_text, "on_scope_pressed": _toggle_chat_scope,
+		"on_voice": send_voice})
 
 
 func _toggle_chat_scope() -> void:
@@ -2343,6 +2355,7 @@ func open_seat_card(slot: int, badge: Control) -> void:
 		ModalStack.pop(SEAT_CARD_MODAL_ID, ModalStack.REASON_PROGRAMMATIC)
 	var card := PrepSeatCard.new()
 	card.setup(slot)
+	card.report_requested.connect(_on_seat_report_requested)
 	# 贴在头像下面；靠右的头像也不能让卡片伸出屏幕。
 	var rect := badge.get_global_rect()
 	var view_w := get_viewport_rect().size.x
@@ -2356,6 +2369,14 @@ func open_seat_card(slot: int, badge: Control) -> void:
 		# 同佣兵选择那张：小卡片，不把整个画面压暗。
 		"backdrop_color": Color.TRANSPARENT,
 	})
+
+
+# 卡片上的「举报」。卡片先收起（举报面板是另一层，叠着看不清下面写了什么），
+# owner 填 self —— 离开摆放界面时举报面板跟着关掉，不会留一块吃点击的玻璃板。
+func _on_seat_report_requested(code: String, who: String, clip_id: String) -> void:
+	if ModalStack.has(SEAT_CARD_MODAL_ID):
+		ModalStack.pop(SEAT_CARD_MODAL_ID, ModalStack.REASON_PROGRAMMATIC)
+	ReportDialog.new().present(self, code, who, "match", 0, clip_id)
 
 
 func _create_ready_avatar_badge() -> Control:

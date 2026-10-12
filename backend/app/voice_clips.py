@@ -91,6 +91,12 @@ def body_text(seconds: float) -> str:
     return "[语音 %d″]" % max(1, round(seconds))
 
 
+# payload 里为什么连文件名一起带：收消息的人要拿它去 /media 下载。
+# 只给 clip_id 的话，每条语音都要多一次「用编号换文件名」的往返 —— 一个聊天界面
+# 滚动一屏就是十几次。文件名是内容哈希，猜不到，发给看得到这条消息的人没有多余暴露。
+PAYLOAD_KEYS = ("clip_id", "media", "seconds")
+
+
 class ClipRejected(Exception):
     """拒收。code 给日志与客户端分支，message 给玩家看（同 text_guard.TextRejected）。"""
 

@@ -122,10 +122,10 @@ def _ws_headers(token: str, device: str) -> dict[str, str]:
 def _fake_post(calls: list):
     """代替 world_chat.post（那个要连库）：照真的那样推给订阅了的连接。"""
 
-    async def _post(player, body, client_msg_id):
-        calls.append((player.player_id, body, client_msg_id))
+    async def _post(player, body, client_msg_id, kind="text", payload=None):
+        calls.append((player.player_id, body, client_msg_id, kind, payload))
         message = world_chat.WorldMessage(len(calls), player.player_id, player.friend_code, player.player_name,
-                                          "preset:avatar_001", "", body, _WHEN)
+                                          "preset:avatar_001", "", body, _WHEN, kind, payload)
         world_chat.channel().remember_post(message, client_msg_id)
         await realtime.hub().publish(world_chat.TOPIC, {"t": world_chat.PUSH_TYPE, "message": message.to_client()})
         return message, True
@@ -228,7 +228,7 @@ def test_retry_with_same_client_msg_id_returns_the_first_message(wired, monkeypa
 
 
 def test_muted_player_gets_a_readable_reason(wired, monkeypatch: pytest.MonkeyPatch) -> None:
-    async def _muted(player, body, client_msg_id):
+    async def _muted(player, body, client_msg_id, kind="text", payload=None):
         raise world_chat.Muted(world_chat.Mute("世界频道刷屏", None))
 
     monkeypatch.setattr(world_chat, "post", _muted)
@@ -324,7 +324,54 @@ def test_ring_keeps_the_newest_and_drops_hidden() -> None:
 def test_client_payload_hides_the_internal_player_id() -> None:
     payload = world_chat.WorldMessage(7, PLAYER_A, CODE_A, "阿甲", "a", "f", "hi", _WHEN).to_client()
     assert str(PLAYER_A) not in str(payload)
-    assert set(payload) == {"message_id", "from_code", "name", "avatar", "avatar_frame", "body", "created_at"}
+    # kind / payload 是 2026-10-11 语音加的：客户端按 kind 决定画文字还是语音条。
+    # 这条断言钉的是「字段集**只有**这些」—— 多一个内部字段（sender_id）就会红。
+    assert set(payload) == {"message_id", "from_code", "name", "avatar", "avatar_frame", "body",
+                            "created_at", "kind", "payload"}
+
+
+def test_voice_message_carries_the_clip_but_not_the_uploader() -> None:
+    """语音那条推给客户端时带 clip_id / media / seconds，body 是服务端写的占位。
+
+    占位那句是给**旧客户端**看的（它不认 kind='voice'，会把 body 当文字画出来）。
+    payload 里不该出现上传者的内部 id —— 同上一条的理由。
+    """
+    from app import voice_clips
+    clip = {"clip_id": "11111111-2222-3333-4444-555555555555",
+            "media": "f" * 64 + ".ogg", "seconds": 12.0}
+    body = voice_clips.body_text(clip["seconds"])
+    payload = world_chat.WorldMessage(8, PLAYER_A, CODE_A, "阿甲", "a", "f", body, _WHEN,
+                                      "voice", clip).to_client()
+    assert payload["kind"] == "voice"
+    assert payload["payload"] == clip
+    assert "12" in payload["body"]
+    assert str(PLAYER_A) not in str(payload)
+
+
+def test_report_route_passes_the_voice_clip_id(wired, monkeypatch: pytest.MonkeyPatch) -> None:
+    """举报语音时 clip_id 要原样传下去，形状不对就当没给（举报本身不能被拒）。
+
+    这是**房间 / 对局内语音唯一的证据来源**：那条消息不落库，后台只能靠这个编号
+    从 voice_clips 里查（见 database/033 顶部）。丢了它，举报就只剩「谁举报了谁」。
+    """
+    calls: list = []
+
+    async def _create(reporter, target_code, context, reason, message_id, detail, clip_id=None):
+        calls.append(clip_id)
+        return 42, False
+
+    monkeypatch.setattr(reports, "create", _create)
+    clip = "11111111-2222-3333-4444-555555555555"
+    with TestClient(app) as client:
+        good = client.post("/v1/reports", headers=_auth("token-a"),
+                           json={"target_code": CODE_B, "context": "match", "reason": "abuse",
+                                 "clip_id": clip})
+        assert good.status_code == 200
+        junk = client.post("/v1/reports", headers=_auth("token-a"),
+                           json={"target_code": CODE_B, "context": "match", "reason": "ads",
+                                 "clip_id": "not-a-uuid"})
+        assert junk.status_code == 200, "编号不成形不该把整条举报拒掉"
+    assert [str(c) if c else c for c in calls] == [clip, None]
 
 
 # --- 文本规则 ------------------------------------------------------------------------
@@ -418,8 +465,8 @@ def test_every_new_table_has_rls_and_is_checked() -> None:
 def test_report_route_validates_and_rate_limits(wired, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list = []
 
-    async def _create(reporter, target_code, context, reason, message_id, detail):
-        calls.append((reporter.player_id, target_code, context, reason, message_id, detail))
+    async def _create(reporter, target_code, context, reason, message_id, detail, clip_id=None):
+        calls.append((reporter.player_id, target_code, context, reason, message_id, detail, clip_id))
         if context not in reports.CONTEXTS:
             raise reports.ReportRejected("bad_context", "不认识的举报场合")
         return 41, len(calls) > 1
@@ -443,7 +490,8 @@ def test_report_route_validates_and_rate_limits(wired, monkeypatch: pytest.Monke
         assert client.post("/v1/reports", headers=_auth("token-a"),
                            json={"target_code": CODE_B, "context": "profile", "reason": "name"}).status_code == 429
     # 好友码归一成大写、补充说明去掉首尾空白。
-    assert calls[0] == (PLAYER_A, CODE_B, "world", "abuse", 7, "骂人")
+    # 最后那个 None 是 clip_id（2026-10-11 语音加的）：没举报语音时不带。
+    assert calls[0] == (PLAYER_A, CODE_B, "world", "abuse", 7, "骂人", None)
 
 
 # ==============================================================================
