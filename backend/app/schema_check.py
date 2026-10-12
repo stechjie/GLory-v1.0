@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import logging
 
-from app import db, friends, presence
+from app import db, friends, presence, service_control
 
 log = logging.getLogger("glory.schema")
 
@@ -50,6 +50,12 @@ _PREPARED: list[tuple[str, str]] = [
     # 心跳（PUT /v1/me/presence）。同样引用 in_match ——
     # 这条挂了的症状是**所有人一起显示离线**，比朋友页报错更难往「漏跑迁移」上想。
     ("presence._HEARTBEAT", presence._HEARTBEAT),
+    # 服务控制（035）。这条挂了的症状最隐蔽：service_control.read() 会把
+    # 「表不存在」当成「功能没部署」而**放行一切** —— 也就是维护开关悄悄失效，
+    # 后台按了也没用，而且没有任何报错。所以必须在启动时喊出来。
+    ("service_control._READ_STATE", service_control._READ_STATE),
+    # 入场名册（035）。这条挂了维护会把正在打的人也踢掉。
+    ("service_control._CLEAR_MATCH", service_control._CLEAR_MATCH),
 ]
 
 # 第二类：prepare 看不见的东西。只收「不是加列」的迁移，一条迁移一行。

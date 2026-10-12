@@ -33,7 +33,7 @@ from fastapi import APIRouter, HTTPException
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from app import (admission, analytics, bans, db, matchmaking, party, players,
-                 realtime, login_sessions)
+                 realtime, login_sessions, service_control)
 from app.config import get_settings
 from app import patch_gate
 from app.jwt_verify import TokenError
@@ -104,6 +104,28 @@ async def realtime_endpoint(websocket: WebSocket) -> None:
         # 建账号只有 /v1/auth/anonymous 一条路。
         await websocket.close(code=CLOSE_POLICY)
         return
+
+    # 维护中：挡住**新**准入，放过正在对局里的人 —— 他们要回去打完并结算
+    # （任务书 OPS-05 的 P0：维护不能打断存量局）。
+    #
+    # 🔴 判据只认服务端自己的入场登记（app/service_control.py 的 match_entries）。
+    # 不能用上面那个 X-Glory-Admission: resume —— admission.parse_intent 的注释
+    # 自己写着「来意是客户端自报的」，拿它当准入依据等于白送一个绕过口。
+    #
+    # 同被封的人：先 accept、说清楚、再用一个**可区分**的码关掉，
+    # 这样客户端能显示「正在维护」而不是当成握手失败一直重试。
+    state = await service_control.read()
+    if not service_control.allows_new_entry(state):
+        in_match = await service_control.players_in_match()
+        if in_match is None:
+            # 名册读不出来。宁可这一阵多放几个人进来，也不要把正在打的人挡在门外 ——
+            # 两种判错的代价不对称，后者直接违反那条 P0。
+            log.error("维护中但读不到入场名册，这一次放行 player=%s", player.player_id)
+        elif player.player_id not in in_match:
+            await websocket.accept()
+            await websocket.send_json(service_control.maintenance_message(state))
+            await websocket.close(code=service_control.CLOSE_MAINTENANCE)
+            return
 
     await websocket.accept()
     conn = Connection(player_id=player.player_id, device_session_id=device, websocket=websocket)

@@ -401,3 +401,38 @@ async def hide_world_message(message_id: int, body: HideBody, who: Writer) -> di
 @router.get("/admin/api/audit")
 async def audit(_who: Me) -> dict:
     return {"audit": await admin.recent_audit()}
+
+
+# --- 服务控制：维护 / 关闭排位与休闲匹配（OPS-05）--------------------------------
+
+
+class ServiceControlBody(BaseModel):
+    # 后台读到的那一版。对不上回 409 让它刷新 —— 不靠前端禁用按钮防并发（任务书 §二.4）。
+    version: int
+    maintenance: bool
+    # 排位与休闲**共用**这一个（2026-10-12 用户拍板）。后台按钮文案要写明范围，
+    # 别让人以为只关 ranked。
+    matchmaking: bool
+    maintenance_notice_zh: str = Field("", max_length=500)
+    maintenance_notice_en: str = Field("", max_length=500)
+    matchmaking_notice_zh: str = Field("", max_length=500)
+    matchmaking_notice_en: str = Field("", max_length=500)
+    # 仅供展示，到点不自动开服。必须带时区。
+    expected_back_at: dt.datetime | None = None
+    reason: str = Field(..., min_length=1, max_length=500)
+
+
+@router.get("/admin/api/service-control")
+async def service_control_get(_who: Me) -> dict:
+    return await admin.service_control_state()
+
+
+@router.put("/admin/api/service-control")
+async def service_control_put(body: ServiceControlBody, who: Writer) -> dict:
+    return await admin.set_service_control(
+        who, version=body.version, maintenance=body.maintenance, matchmaking=body.matchmaking,
+        maintenance_notice_zh=body.maintenance_notice_zh,
+        maintenance_notice_en=body.maintenance_notice_en,
+        matchmaking_notice_zh=body.matchmaking_notice_zh,
+        matchmaking_notice_en=body.matchmaking_notice_en,
+        expected_back_at=body.expected_back_at, reason=body.reason)

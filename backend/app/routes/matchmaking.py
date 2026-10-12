@@ -39,7 +39,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app import db, matchmaking, players, ranked
+from app import db, matchmaking, players, ranked, service_control
 from app.jwt_verify import Claims
 from app.rate_limit import RateLimited, SlidingWindowLimiter
 from app.routes.me import current_claims
@@ -80,7 +80,24 @@ _GATE_TEXT = {
     ranked.GATE_WINDOW_CLOSED: "排位每天 19:00 - 23:00 开放",
     ranked.GATE_BANNED: "你被暂时禁止排队，稍后再试",
     ranked.GATE_CREDIT_TOO_LOW: "信誉分过低，暂时不能排这个模式",
+    # 全局开关（app/service_control.py）。三个码分开，客户端要显示的话不一样。
+    "service_maintenance": "服务器正在维护，暂时不能开始新对局",
+    "matchmaking_disabled": "排位功能暂时关闭",
+    "service_unavailable": "服务状态暂时确认不了，请稍后再试",
 }
+
+
+async def _service_gate() -> None:
+    """全局「关闭排位与休闲匹配」这道闸。排位和休闲**一起**关（2026-10-12 用户拍板）。
+
+    放在模式校验之后、ranked.queue_gate 之前：它和模式无关，
+    而 queue_gate 里的时间窗口 / 信誉分只管排位。
+    """
+    reason = service_control.matchmaking_block_reason(await service_control.read())
+    if reason:
+        raise HTTPException(
+            status_code=409, detail=_GATE_TEXT.get(reason, "现在不能开始新对局"),
+            headers={"X-Glory-Reason": reason})
 
 
 async def _me(claims: Claims) -> players.Player:
@@ -124,6 +141,7 @@ async def join_queue(
         raise HTTPException(
             status_code=409, detail="这个模式还没开放",
             headers={"X-Glory-Reason": "mode_closed"})
+    await _service_gate()
     # 时间窗口 / 禁赛 / 信誉分。三道都明说原因。
     async with db.pool().acquire() as conn:
         reason = await ranked.queue_gate(conn, me.player_id, mode)
@@ -157,6 +175,9 @@ async def accept_match(claims: Annotated[Claims, Depends(current_claims)]) -> Ma
     """
     me = await _me(claims)
     _limit(_queue_limiter, str(me.player_id))
+    # 确认也要过闸：开关可能在「匹配成功」和「点确认」之间被拨下来。
+    # 只在开始排队时检查会留下竞态（任务书 §七.3.4）。
+    await _service_gate()
     return MatchStateResponse(state=matchmaking.current().accept(me.player_id))
 
 

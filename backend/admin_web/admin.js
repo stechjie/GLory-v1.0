@@ -136,6 +136,7 @@ const TABS = [
   ["patches", "版本更新"],
   ["reports", "举报"],
   ["world", "世界频道"],
+  ["service", "维护"],
   ["audit", "操作记录"],
 ];
 
@@ -169,7 +170,8 @@ function render() {
   const main = h("main", {});
   app.replaceChildren(bar, main);
   const views = { players: playersView, data: dataView, requests: requestsView, mails: mailsView,
-                  announcements: announcementsView, patches: patchesView, reports: reportsView, world: worldView, audit: auditView };
+                  announcements: announcementsView, patches: patchesView, reports: reportsView, world: worldView,
+                    service: serviceView, audit: auditView };
   views[state.tab](main);
   refreshPendingCount();
   refreshOpenReports();
@@ -1663,3 +1665,106 @@ async function patchesView(main, feedback = null) {
 }
 
 boot();
+
+
+// --- 维护 / 关闭排位与休闲匹配（OPS-05）-------------------------------------
+//
+// 两个开关分别保存。解除维护**不会**把之前单独关掉的匹配打开 —— 服务端的
+// service_control.allows_matchmaking 和 database/035 的注释都写了这一条。
+//
+// 保存走版本号乐观并发：两个管理员同时改时，后到的那个会收到 409，
+// 必须先看到前一个的改动再决定（不靠禁用按钮防并发）。
+
+async function serviceView(main) {
+  let now;
+  try {
+    now = await api("GET", "/admin/api/service-control");
+  } catch (e) {
+    main.append(notice("error", e.message));
+    return;
+  }
+
+  const card = h("section", { class: "card" }, h("h2", {}, "维护与匹配开关"));
+
+  // 035 没跑 / 数据库读不出来，两种现场完全不同，必须分开说。
+  if (now.source === "absent") {
+    card.append(notice("error",
+      "数据库里还没有服务控制表 —— database/035_service_control.sql 没跑。" +
+      "此刻两个开关都是摆设：按了也不会生效，玩家照常进得来。请先在 Supabase SQL Editor 跑它。"));
+  } else if (now.source === "unknown") {
+    card.append(notice("error",
+      "读不到开关状态（数据库异常）。服务端此刻按「拒绝新准入」处理：玩家进不来，" +
+      "但已经在对局里的人不受影响。先修数据库，不要在这里反复点保存。"));
+  } else if (now.source === "cache") {
+    card.append(notice("warn", "这是几秒前的缓存值（刚才读库失败过一次）。"));
+  }
+
+  card.append(h("p", { class: "hint" },
+    `当前第 ${now.version} 版 · 在线 ${now.online_count} 人，其中 ${now.in_match_count} 人在对局中` +
+    (now.actor ? ` · 上次由 ${now.actor} 于 ${fmt(now.changed_at)} 修改：${now.change_reason}` : "")));
+
+  const maintenance = h("input", { type: "checkbox", checked: now.maintenance_enabled });
+  const matchmaking = h("input", { type: "checkbox", checked: now.matchmaking_enabled });
+  const mZh = h("input", { type: "text", value: now.maintenance_notice_zh || "", maxlength: 500 });
+  const mEn = h("input", { type: "text", value: now.maintenance_notice_en || "", maxlength: 500 });
+  const qZh = h("input", { type: "text", value: now.matchmaking_notice_zh || "", maxlength: 500 });
+  const qEn = h("input", { type: "text", value: now.matchmaking_notice_en || "", maxlength: 500 });
+  const back = h("input", { type: "datetime-local",
+                            value: now.expected_back_at ? String(now.expected_back_at).slice(0, 16) : "" });
+  const reason = h("input", { type: "text", maxlength: 500, placeholder: "为什么要改（必填，进操作记录）" });
+  const box = h("div", {});
+
+  card.append(
+    h("label", {}, maintenance, " 维护中：拒绝新玩家进入游戏"),
+    h("p", { class: "hint" },
+      "已经在对局里的人不受影响，可以打完并结算 —— 判据是服务器自己的发牌记录，不是客户端自报。" +
+      "开启的那一刻，不在对局中的在线玩家会被断开。"),
+    h("label", {}, matchmaking, " 允许开始匹配"),
+    h("p", { class: "hint" },
+      "取消勾选 = 关闭排位与休闲匹配（两者一起，自建房与教学不受影响）。" +
+      "维护优先级更高：维护开着时匹配一定也是关的，但解除维护不会把这一项替你打开。"),
+    h("label", {}, "维护提示（中文）", mZh),
+    h("label", {}, "维护提示（English）", mEn),
+    h("label", {}, "关闭匹配提示（中文）", qZh),
+    h("label", {}, "关闭匹配提示（English）", qEn),
+    h("label", {}, "预计恢复时间（可空，仅展示，到点不会自动开服）", back),
+    h("label", {}, "变更原因", reason),
+    box);
+
+  const save = h("button", { class: "btn danger" }, "保存开关");
+  save.addEventListener("click", () => action(save, box, async () => {
+    if (!reason.value.trim()) throw new Error("请填变更原因");
+    // 危险操作要说清楚影响和动作名，不能只有一个「确定」。
+    if (maintenance.checked && !now.maintenance_enabled) {
+      const ok = window.confirm(
+        `即将【开启维护】。
+
+当前在线 ${now.online_count} 人，其中 ${now.in_match_count} 人在对局中。
+` +
+        `在对局中的人不会被踢，其余 ${Math.max(0, now.online_count - now.in_match_count)} 人会被立刻断开。
+
+` +
+        "确定开启维护？");
+      if (!ok) throw new Error("已取消，没有改动");
+    }
+    const body = {
+      version: now.version,
+      maintenance: maintenance.checked,
+      matchmaking: matchmaking.checked,
+      maintenance_notice_zh: mZh.value, maintenance_notice_en: mEn.value,
+      matchmaking_notice_zh: qZh.value, matchmaking_notice_en: qEn.value,
+      // datetime-local 没有时区，按浏览器本地时区转成带时区的 ISO 再发
+      // —— 服务端会拒收不带时区的时间。
+      expected_back_at: back.value ? new Date(back.value).toISOString() : null,
+      reason: reason.value.trim(),
+    };
+    const out = await api("PUT", "/admin/api/service-control", body);
+    const kicked = out.aborted
+      ? "；⚠️ 名册读不出来，这一轮没有踢任何人，等下次切换再试"
+      : (out.kicked ? `；断开了 ${out.kicked} 条连接，放过对局中的 ${out.skipped} 人` : "");
+    state.tab = "service";
+    return `已保存（第 ${out.version} 版）${kicked}`;
+  }));
+  card.append(save);
+  main.append(card);
+}

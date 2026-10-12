@@ -21,7 +21,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from app import db, loadout, matchmaking, players, patch_gate
+from app import db, loadout, matchmaking, players, patch_gate, service_control
 from app.jwt_verify import Claims
 from app.rate_limit import RateLimited, SlidingWindowLimiter
 from app.routes.me import current_claims
@@ -153,6 +153,22 @@ async def battle_card(request: Request, claims: Annotated[Claims, Depends(curren
     team = assignment.team if assignment is not None else -1
     mode = assignment.mode if assignment is not None else ""
     seat = assignment.seat if assignment is not None else -1
+    # 维护中不发新名片 —— 没名片就进不了战斗服务器，这是「停止新准入」最硬的一道闸。
+    #
+    # 🔴 已经在打的人**不走这道闸**：断线重连要重新领名片（名片只活 60 秒），
+    # 把他们一起挡住就等于打断存量局，违反那条 P0。判据同 WS 那边，只认入场登记。
+    state = await service_control.read()
+    if not service_control.allows_new_entry(state):
+        in_match = await service_control.players_in_match()
+        if in_match is None:
+            log.error("维护中但读不到入场名册，这一次照发名片 player=%s", me.player_id)
+        elif me.player_id not in in_match:
+            # 503 而不是 403：这是服务器暂时不可用，不是这个玩家没资格
+            # （任务书 §九 末尾：维护可采用 503 加明确业务码）。
+            raise HTTPException(
+                status_code=503,
+                detail=state.maintenance_notice_zh or "服务器正在维护，稍后再试",
+                headers={"X-Glory-Reason": service_control.entry_block_reason(state)})
     patch_version = patch_gate.card_identity(request.headers)
     extra = {"patch_version": patch_version} if patch_version is not None else {}
     try:
@@ -164,4 +180,10 @@ async def battle_card(request: Request, claims: Annotated[Claims, Depends(curren
         raise HTTPException(status_code=503, detail="对战服务暂时不可用，稍后再试") from None
     except loadout.LoadoutRejected as exc:
         raise _reject(exc) from None
+    # 记一笔：服务器亲手放了这个人进这一局。维护时判断「谁还在打」只认这张账
+    # （database/035_service_control.sql 的长注释说明了为什么不能用客户端自报的信号）。
+    #
+    # 签成功之后才记、而且失败只写日志：登记不上最坏是维护时这个人被当成在大厅，
+    # 而发不出名片是他现在就进不去 —— 两害相权取其轻。
+    await service_control.record_entry(me.player_id, match_uid)
     return CardResponse(card=card, expires_in=loadout.CARD_TTL_SEC)

@@ -47,6 +47,7 @@ from app.routes import shop as shop_routes
 from app.routes import seven_day_login as seven_day_login_routes
 from app.routes import voice_clips as voice_clip_routes
 from app.routes import world as world_routes
+from app.routes import service_status as service_status_routes
 from app.routes import ws as ws_routes
 
 # Windows 控制台默认是 cp1252，中文日志会被转义成 以... 甚至直接抛
@@ -271,6 +272,8 @@ app.include_router(event_routes.router)
 app.include_router(matchmaking_routes.router)
 app.include_router(party_routes.router)
 app.include_router(matchmaking_routes.me_router)
+# 不要登录：维护中的玩家本来就登不进来，要让他问得到「为什么」。
+app.include_router(service_status_routes.router)
 app.include_router(ws_routes.router)
 # 网页运营后台（docs/运营后台设计.md）。只认后台自己的会话，不收玩家令牌。
 app.include_router(admin_routes.router)

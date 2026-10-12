@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from app import chat, db, world_chat
+from app import chat, db, service_control, world_chat
 
 log = logging.getLogger("glory.maintenance")
 
@@ -42,10 +42,17 @@ async def run_once() -> dict[str, int]:
             await conn.execute(_PURGE_REQUEST_LOG, REQUEST_LOG_RETENTION_DAYS)
         )
         world = await world_chat.purge(conn)
-    if conversations or request_logs or world:
-        log.info("定时清理：过期私聊会话 %d 段，好友请求日志 %d 行，世界频道 %d 条",
-                 conversations, request_logs, world)
-    return {"chat_conversations": conversations, "friend_request_log": request_logs, "world_messages": world}
+    # 陈旧的入场登记（database/035）。**放在 with 外面**：它自己取连接，
+    # 搁在里面就同时占着两条，而这一轮本来就不赶时间。
+    #
+    # 没有这一条的话 match_entries 会只增不减 —— 005 的 friend_request_log
+    # 就是这么一直涨到 2026-09-11 才被发现的，这次不重演。
+    entries = await service_control.sweep_entries()
+    if conversations or request_logs or world or entries:
+        log.info("定时清理：过期私聊会话 %d 段，好友请求日志 %d 行，世界频道 %d 条，陈旧入场登记 %d 行",
+                 conversations, request_logs, world, entries)
+    return {"chat_conversations": conversations, "friend_request_log": request_logs,
+            "world_messages": world, "match_entries": entries}
 
 
 async def loop() -> None:
