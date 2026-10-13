@@ -123,7 +123,15 @@ class MessagesResponse(BaseModel):
 
 class SendBody(BaseModel):
     # 这里只是请求体的粗上界。真正的 200 字判在 text_guard —— 规范化**之后**才数得准。
-    body: str = Field(min_length=1, max_length=2000)
+    #
+    # 🔴 下界必须是 0，与世界频道 WorldSendBody 一致（2026-10-14 修）：
+    #    语音消息不带文字，客户端传的是 body=""。原来写成 min_length=1 时，请求
+    #    **在进 send_message 之前就被 pydantic 422 挡掉** —— 消息不落库、不推送，
+    #    但发送方那条乐观回显的气泡照样画出来（而且语音气泡不显示状态），
+    #    看着像发出去了。症状：A 发语音、B 收不到、A 关掉对话框再打开就没了。
+    #    kind='text' 时 text_guard 仍然会拒空串（_structural_check「消息不能为空」），
+    #    所以放宽下界不会让空文本消息钻过去。
+    body: str = Field(default="", max_length=2000)
     # 客户端给每条消息生成的 uuid。重发同一条时靠它去重，见 chat.send()。
     client_msg_id: uuid.UUID
     # text / room_invite。老客户端不传 → 默认 "text"，既有行为一个字都不变。

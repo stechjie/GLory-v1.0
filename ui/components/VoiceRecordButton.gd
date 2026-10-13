@@ -38,6 +38,10 @@ static func create(scope: String) -> Control:
 
 func _ready() -> void:
 	add_theme_constant_override("separation", Tokens.GAP_S)
+	# 容器居中：这个 HBox 里是「麦克风按钮 + 计时提示」两颗。计时提示平时是空的，
+	# 一旦它出现/消失，如果不给容器定住对齐方式，按钮会跟着横向抖动、贴左。
+	# 定成 CENTER 后按钮位置稳定，图标也始终落在按钮正中（2026-10-14 用户截图反馈）。
+	alignment = BoxContainer.ALIGNMENT_CENTER
 	_button = ACTION_BUTTON.instantiate() as Button
 	# 图标为主：这是三个渠道（私聊 / 世界 / 对局内）共用的同一颗按钮，画成麦克风
 	# 一眼就知道是「说话」而不是「发送」——旁边那颗「发送」是字，两颗形状不同才分得开。
@@ -57,14 +61,26 @@ func _ready() -> void:
 
 	if not VoiceClipService.recording_tick.is_connected(_on_tick):
 		VoiceClipService.recording_tick.connect(_on_tick)
+	# 权限被拒（移动端）：界面上说清楚「去系统设置里开麦克风」，
+	# 不然玩家对着按下去没反应的按钮只会以为功能坏了（2026-10-14）。
+	if not VoiceClipService.permission_denied.is_connected(_on_permission_denied):
+		VoiceClipService.permission_denied.connect(_on_permission_denied)
 
 
 func _exit_tree() -> void:
 	if VoiceClipService.recording_tick.is_connected(_on_tick):
 		VoiceClipService.recording_tick.disconnect(_on_tick)
+	if VoiceClipService.permission_denied.is_connected(_on_permission_denied):
+		VoiceClipService.permission_denied.disconnect(_on_permission_denied)
 	# 界面被关掉时手还按着：丢掉这次录音，别让麦克风留在开着的状态。
 	if VoiceClipService.is_recording():
 		VoiceClipService.cancel_recording()
+
+
+func _on_permission_denied() -> void:
+	_hint.text = ""
+	failed.emit(_text("没有麦克风权限，去系统设置里打开后再试",
+		"Microphone permission denied — enable it in system settings"))
 
 
 func set_disabled(value: bool) -> void:
@@ -86,6 +102,13 @@ func _apply_mic_icon() -> void:
 	# 图标居中放大：默认图标跟着字体大小走，96px 的素材会缩成一小点。
 	_button.expand_icon = true
 	_button.add_theme_constant_override("icon_max_width", 40)
+	# 🔴 居中三件套（2026-10-14 用户截图反馈「麦克风不在框里居中」）：
+	#   Godot 的 Button 默认把图标与文字横排左对齐，且垂直也是 TOP —— 按钮被拉宽到
+	#   ICON_BUTTON_SIZE(132) 之后，图标就贴在左上角，右边和下面留一大片空白。
+	#   文字已经清空（_button.text = ""），所以这三行只管图标。
+	_button.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_button.vertical_icon_alignment = VERTICAL_ALIGNMENT_CENTER
 
 
 func _on_down() -> void:
@@ -97,11 +120,22 @@ func _on_down() -> void:
 		_hint.text = ""
 		failed.emit(reason)
 		return
+	# 移动端首次录音会先弹系统权限框（2026-10-14）。这时麦克风还没开，
+	# 别显示「0″ 松开发送」——玩家会以为已经在录了。等权限回来会自动补开。
+	if VoiceClipService.is_awaiting_permission():
+		_hint.text = _text("正在请求麦克风权限…", "Requesting microphone…")
+		return
 	_hint.text = _text("0″ 松开发送", "0″ release to send")
 
 
 func _on_up() -> void:
 	if _busy:
+		return
+	# 权限框还开着：玩家松手了（多半是慌了）。权限回调会把这次录音补上，
+	# 这里不要当成「录都没开起来」直接吞掉，也不要走到 finish_and_upload
+	# （那会拿到「没有在录音」的错误）。授权回来如果成了，照常开始录；
+	# 玩家不想录了就直接拖开松手取消 —— 由 _cancelled 分支处理。
+	if VoiceClipService.is_awaiting_permission():
 		return
 	if not VoiceClipService.is_recording() and VoiceClipService.recorded_seconds() <= 0.0:
 		# 录都没开起来（上面那条 failed 已经说过原因了）。

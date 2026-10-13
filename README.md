@@ -1,5 +1,25 @@
 # Glory Beta 0.04
 
+## 2026-10-14（私聊语音留言发不出去：1 个必现故障 + iOS 录音权限 + 图标居中）
+
+来自 `10.14bug提交及修复.docx` 的三条反馈。**服务端 1 行 + 客户端 3 个文件**；无新增运行期资源、无数据库迁移、**不需要升任何版本号（含网络协议号）**。改动先在本地 `GLory-codex` + 本地测试服完成、经用户实测通过，随后同步到 `GLory-v1.0`。版本控制提交与推送由用户执行。
+
+- **🔴 私聊语音留言：A 发出去、B 收不到，A 关掉对话框再打开就没了（正解在服务端）**。根因是私聊 `SendBody.body` 写成 `Field(min_length=1, max_length=2000)`，而**语音消息不带文字**、客户端传的就是 `body=""` ⇒ 请求**在进 `send_message()` 之前就被 pydantic 422 挡掉**，消息既不落库也不推送。发送方却照样看到语音条，是两件事叠出来的：客户端是**乐观回显**（先把消息 append 进列表再发请求，`ChatScreen.gd:1020`），而 422 只被静默写回 `state="failed"`（`ChatScreen.gd:1039`）、**语音气泡当时根本不画状态** ⇒「失败的语音条」与「成功的语音条」肉眼完全一样。B 收不到是因为 `chat.send()` / `realtime.hub().send_to_player()` 一行都没跑到；A 重开就没了是因为重开会从服务端全量拉（`ChatScreen.gd:455`），库里压根没这条。**修法**：与世界频道 `WorldSendBody` 对齐，改成 `body: str = Field(default="", max_length=2000)`（`backend/app/routes/chat.py:126`，就这一行）。空文本不会因此钻过去 —— `kind='text'` 时 `text_guard.clean_chat_message("")` 仍抛 `TextRejected("empty")`（`_structural_check`「消息不能为空」）⇒ 400，已实测。
+  - ★ 顺带一个推断：A 那条气泡能出现 = 上传拿到了 200 = `/v1/voice/clips` 跑通了 ⇒ **线上的 ffmpeg、媒体目录、`voice_clips` 表、033 迁移都是好的**，线上唯一的毛病就是上面这个 422。
+- **iOS 语音按键完全没反应**：**另一层原因，与上条无关**（不是同类问题）。`VoiceClipService.start_recording()` 以前**从不申请麦克风权限**；安卓靠装包时静态授予的权限侥幸能用，**iOS 首次录音被系统静默拒绝**，表现就是「按下去毫无反应也不报错」。修法：录音前在 iOS/Android 上 `OS.request_permission("android.permission.RECORD_AUDIO")`（桌面跳过）；新增 `permission_denied` 信号让界面给**可操作**的提示（「没有麦克风权限，去系统设置里打开后再试」）；授权回调回来**补开**这次录音，不让玩家那一下白按；申请期间提示「正在请求麦克风权限…」，不假装已经在录。
+- **麦克风图标没在按钮框里居中**：Godot `Button` 默认把图标**横排左对齐 + 垂直 TOP**，按钮被拉到 132px 宽后图标贴在左上角、右边和下面留一大片空白。修法：`alignment` / `icon_alignment` / `vertical_icon_alignment` 三件套全设 `CENTER`，外层容器也 `alignment = CENTER`（计时提示出现/消失时按钮不再横向抖动）。
+- **顺带补的「放大器」**：`VoiceClipBubble.gd` 以前**不显示发送状态** —— 这正是第 1 条被误判成「发送成功」的直接原因。现按消息的 `state` 显示「未发送」/「••• 发送中」并压暗，失败态一眼能认出来。
+
+验证：语音 `body=""` 通过校验（修复前 422）、空文本与纯空白消息仍被拒、正常文本照常通过、超长 2001 字仍被拒（`max_length=2000` 有效）；ffmpeg WAV→Ogg 真转码（48044 B → 4580 B，`OggS` 魔数正确）；`/media` 静态挂载与 `<sha256>.ogg` 落盘文件名合规；工程整体编译零脚本错误。脚本 `verify_sendbody_fix.py` / `verify_voice_local.py` 全绿。
+
+🔴 **上线要做的（就一步）**：把 `backend/app/routes/chat.py` 传上去并**重启账号后端**（改的是 Python，不重启不生效）。**不需要**跑迁移、**不需要**改协议号（`NETWORK_PROTOCOL_VERSION` 仍 **41**：本次一个 `@rpc` 都没碰，而且 `NetworkConfig.gd` 的 v41 段已写明「同一批上线的私聊 / 世界频道语音只碰账号服务器，与协议号无关」）、不需要改 `.env`、不存在「服务端应用版本号」这种常量（后端根本不读请求头里的 `build=`）。`backend/app/main.py` 那 9 行 `/media` **条件挂载**可传可不传：线上前面有 Caddy 的 `handle_path /media/*`，会挂上但永远收不到请求，无副作用。客户端 3 个文件随包发布（或发热更包）即可。
+
+★ **随批落地（非本轮 bug）**：本地测试服那套「覆写改造」的 6 个文件同批进了仓库 —— `NetworkConfig.gd`（新增 `server_host()`：命令行 `--battle-host=` > `user://local_test_override.cfg` > `SERVER_HOST`）、`NetTLS.gd`（`--tls-cert=` 与 `pinned_cert()` / `server_key_path()` 同样支持覆写）、`AccountConfig.gd`（`backend_url()` 末尾多查一次 cfg），以及改走 `server_host()` 的三个调用点 `MainMenu.gd` / `NetworkService.gd` / `SessionContext.gd`。**线上行为逐字节不变**：正式服的 `user://` 下没有那份 cfg、也没有命令行参数 ⇒ 一律回落源码里的线上默认值（已用 `probe_fallback.gd` 把 `APPDATA` 指向空目录实测：战斗服地址 / 账号后端 / 服务端私钥路径**三个值全部等于源码默认值**）。差异被刻意放在仓库之外的 `user://local_test_override.cfg` 里，所以源码可以整份同步、不用回退。⚠ 同步时**排除了** `project.godot`：它的 `config/name` 是 `user://` 隔离的钥匙（测试服 `测试服` / 正式服 `Glory Beta 0.04`），同步过去等于换掉线上包的应用名 ⇒ 玩家所有存档看起来全丢。
+
+同步核验（2026-10-14 同步到仓时补记）：`GLory-codex` / 本地运行时 → `GLory-v1.0` 共 **12 个文件**（客户端 3 语音 + 6 覆写改造 + `README.md`；服务端 `backend/app/routes/chat.py` + `backend/app/main.py`），逐字节 sha256 **PASS=12 FAIL=0**；行尾源/目标口径一致（`.gd` 全 CRLF、`README.md` 与两个 `.py` 全 LF，0 裸 LF 混入）。仓侧 `git status --porcelain` 恰好 **12 条 `M`**，**无新增、无未跟踪**；`git diff --stat` 为 12 files / 299 insertions / 19 deletions，`README.md` 自身是 20 insertions **0 deletions**（纯新增条目）。本批**未触及任何运行期资源**（`assets/` 零内容改动）⇒ 按「能进仓库的只进仓库」规则，**无需在桌面另建同目录同路径资源镜像夹**。**未做 git 提交与推送**（由用户在 GitHub Desktop 执行）。
+
+★ 同步时顺带把 `README.md` 的**两树差异归零**：codex 侧曾被我方格式化工具动过（表格补空格、合并折行），与仓版有约 2.2 KB 纯格式漂移。以**仓版为基线**只插入本条目后双写，两棵树现逐字节相同 —— 不把 200 余行格式噪音塞进这次提交。
+
 ## 2026-10-13（同事 `037de27 excel update`：final status 数值源去 shop_items，已同步本地）
 
 同事在远端提交 `037de27 "excel update"`（作者 lenoliew-Glory，2026-10-13 01:17），与我的 `e7bc202`（10.13bug 修复）在远端**无冲突合并**为 `1564f14`。本地拉取后已按三目录规则同步落地。
