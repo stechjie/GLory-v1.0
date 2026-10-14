@@ -1,5 +1,8 @@
 extends Node3D
 
+const DIVINE_PULSE := preload("res://effects/vfx3d/modules/VFXDivinePulseInvulnerability3D.gd")
+var _divine_pulse: Node3D
+
 const VFX_STATUS_EFFECT:=preload("res://effects/vfx3d/modules/VFXStatusEffect3D.gd")
 const SHIELD_EVENT_TEXTURE := preload("res://assets/vfx/oga/skills/angel_shield_event_frame.tres")
 const SHIELD_STEADY_TEXTURE := preload("res://assets/vfx/oga/skills/angel_shield_steady_frame.tres")
@@ -110,6 +113,7 @@ func _ready() -> void:
 	set_process(false)
 
 func update_from_fighter(fighter: Dictionary) -> void:
+	_sync_divine_pulse(fighter)
 	var shield_now := int(fighter.get("shield", 0))
 	_note_shield_transition(shield_now)
 	# BREAK 期间必须保持可见，否则 shield 归零的同一帧精灵就被隐藏，
@@ -130,6 +134,21 @@ func update_from_fighter(fighter: Dictionary) -> void:
 	# Poison remains one gameplay status with two independently timed stacks.
 	# Reuse its existing texture for a second head icon only while both are live.
 	_set_effect_visible("poison_2", active_poison_layers(statuses) >= 2)
+
+
+func _sync_divine_pulse(fighter: Dictionary) -> void:
+	if not DIVINE_PULSE.status_active(fighter):
+		if is_instance_valid(_divine_pulse):
+			_divine_pulse.stop_now()
+		_divine_pulse = null
+		return
+	if not is_instance_valid(_divine_pulse) or _divine_pulse.is_queued_for_deletion():
+		# Critical state: one instance per actor; count it, but never drop the
+		# invulnerability indicator because cosmetic impact effects filled the cap.
+		_divine_pulse = VFXBlockRoot.spawn_block(DIVINE_PULSE, self, true)
+		_divine_pulse.configure(fighter, float(get_parent().get_meta("model_height", 0.98)))
+	else:
+		_divine_pulse.sync_state(fighter)
 
 
 static func active_poison_layers(statuses: Dictionary) -> int:

@@ -1,5 +1,44 @@
 # Glory Beta 0.04
 
+## 2026-10-15（10.15 反馈两项：T3 唯一棋子漏标穿云弩手 + 神族「神圣脉冲」无敌特效接手完成）
+
+来自 `10.15bug提交及修复.docx` 的两项。**问题1 改 1 个数据字段；问题2 是纯客户端呈现（2 个新文件 + 1 处接线 + 1 条预热）**。无数据库迁移、无服务端代码改动、**不动 `NETWORK_PROTOCOL_VERSION`（仍 41：本轮一个 `@rpc` 都没碰）**。改动在本地 `GLory-codex` 完成，**待用户实测**；通过后再按 10.14 的口径同步到 `GLory-v1.0`（本批**尚未同步**）。版本控制提交与推送由用户执行。
+
+### 问题1：T3 棋子=唯一棋子 —— 漏的是穿云弩手
+
+- **反馈**：T3 棋子应均为唯一棋子，名字带「（唯一）」标识、上阵最多一只；实测穿云弩手是 T3 却能上两只。
+- **根因不是机制没做，是逐单位手写的清单漏了一个**。「唯一棋子」由 `data/units/race_units.json` 里**每个单位各自写**的 `unique_on_board` 字段驱动；全表 tier 3 共 **8** 枚，其中 **7 枚本来就有**该字段，**只有 `skypierce`（穿云弩手）漏写**。用户要的两件事早已由现成通用代码渲染与执行，本次**没有新增任何机制**。
+- **修法**：穿云弩手那一行补 `"unique_on_board": true`（`data/units/race_units.json:962`，一个字段）。改后 `sha256 = 2a3dceedc33b292a311f76d54394e9cc4d14a1756cb029870dd11788280f33e7`。
+- **不变量**（门禁硬查，正反两个方向都钉）：`tier==3` 恰 **8** 枚；8 枚全部带 `unique_on_board`；带该字段的全部是 T3；两个数量一致。
+- **两件事分别由谁执行**（均为既有代码，本次未改）：
+  - **「（唯一）」标识**：`UnitDetailFormat.unique_suffix()` → 中文 `（唯一）` / 英文 ` (Unique)`，由 `format_unit_def()` 拼进名字（`"%s %d星%s"`）。长按详情（`PrepDetailOverlay.gd:58`）与商店详情（`PrepBoardController.gd:1216`）都是脚本生成的卡片 ⇒ 自动带上；图鉴详情页 `CodexScreen.gd:439` 也调它。
+  - **上阵最多一只**：门是**两个条件的与** —— `bool(def.get("unique_on_board", false)) and PrepRules.has_unique_board_unit(...)`（`PrepRules.board_limit_for_def()` 把上限钳成 `maxi(1, board_limit)`）。调用点 5 处：`PrepBoardController.gd:497`（商店→棋盘）、`:641`（`_would_exceed_board_limit`）、`:740`（备战席→棋盘空位）、`:764`（备战席→棋盘换位）、`PrepUI.gd:3799`（购买按钮自动上阵）。
+- ★ **标识不能写进 `name`**。显示名走 `DataRegistry.unit_display_name()`，**以数据文件内容为准**读 `name`/`name_en`（服务端/存档里的旧快照名会被这两项覆盖）。把「（唯一）」揉进 `name`，图鉴、战斗、羁绊列表等所有读名字的地方都会多出一截，而且每次登录都会被这份数据重写一遍。既定路线是**渲染期后缀**（2026-09-13 台账里那条「唯一棋子缺（唯一）标识」就是这么修的），本次沿用。
+- **门禁**：`_qa_t3unique/check.tscn` —— **18 项全通过、退出码 0**。把穿云弩手那一个字段抹掉做**变异对照**：**9 项转红、退出码 1**，红的正是「该枚必须有字段」「门禁本身」「中/英标识」「详情卡文案」「棋盘拦截」这几项。日志 `E:/Users/WINDOWS/Desktop/其他/T3唯一棋子_20261015/check_green.log` / `check_mutated_red.log`。
+  - ⚠ 这门禁第一版**抓不到它自己要抓的 bug**：`_board_gate_contract()` 当时只调了 `PrepRules.has_unique_board_unit()`，变异状态下那三项照样 PASS —— 因为缺的那一半（`def.unique_on_board`）根本没被读。改成**逐字复刻真实调用点**后才转红。留一条变异对照就是为了防这类「判据自己漏掉半边」。
+
+### 问题2：神族羁绊「神圣脉冲」无敌标记特效（接手另一半并完成）
+
+- **反馈**：给「神圣脉冲」的无敌效果做持续期间展示在生效棋子身上的特效；符合游戏风格与神族设定、一眼能联想到神族无敌、但不能遮挡棋盘。
+- **接手时的状态**：美术与运行期接线已有（前一位完成），**四处验证是空的**。存量部分经复核是好的、本轮未改：`effects/vfx3d/modules/VFXDivinePulseInvulnerability3D.gd`（`SurfaceTool` 静态网格：金外环 + 白/金双顶环 + 4 条镂空拱肋 + 四点圣冠 + 外圈刻度；三档细分 24/32/48、刻度 4/8/12）、`shaders/divine_pulse_invulnerability.gdshader`（`unshaded, blend_mix, depth_draw_never, cull_disabled, shadows_disabled`）、`StatusVFXController._sync_divine_pulse`（`spawn_block(..., force=true)` **刻意**绕过并发上限：这是这枚棋子此刻必须读到的状态，不该在密集回合里被当成普通命中闪光丢掉）、`BattleRenderWarmup` 的预热条目。验证目录里那份 `新版控制器暂存.gd` 与在用的 `scenes/battle/StatusVFXController.gd` **逐字节相同**（sha256 `56e258de…`），只是留了个副本、**不是**没启用的另一版，别误读。
+- **生效判据**：`status_active()` 要求 `alive` + `statuses.invulnerable.remaining > 0` + **`dot_pass`**。第三个条件是关键：神王复活那 3 秒全免疫（`BattleSimTreasures.global_divine_blast`）的 `add_status` **不带** `dot_pass` ⇒ 不会被误挂上脉冲护罩。
+- **本轮补掉的四处（都是「验证本身不成立」，不是画面不好看）**：
+  1. **「特效跟着棋子走」原本是恒真断言**。旧写法是让棋子 `position += Vector3(1,0,1)`，再比较 `effect.global_position == actor.global_position` —— 而 `effect` 就是 `actor` 的子节点，这两者**永远**相等。改成量**相对偏移**在移动后是否不变，并加两条防空洞守卫（棋子真的移动了 >0.5；特效没有被留在世界坐标原处）。
+  2. **「不能遮挡棋盘」原本没有可量化判据**（只有「看着还行」）⇒ 补三条**与渲染无关**的读数：① 材质不写深度且**不跳过**深度测试（两个开关必须一起看：只查一个，能被「写死另一个」的实现蒙过去）；② 三档网格（作者坐标系，单位身高=1.0）半宽 ≤ 0.50、总高 ≤ 1.35；③ **轮廓密度**（三角面积 / 正投影包围盒面积）≤ 0.45 —— 它是镂空拱线，不是实心泡泡。实测 **0.475 / 1.225 / 0.305~0.316**。
+  3. **性能样板跑不完，也发现不了「一帧没画」**。旧样板只在最后写一次 `performance.json` ⇒ 这个文件**从来没存在过**；留下的 `performance.log` 只有 3/5 组，且 `drawn_frames: 0` 配 `frames: 1796`、`median 16.665ms` —— 看着完美，其实一帧没画（`--headless` 不渲染；`_process` 里的 `force_draw()` 也必须带 `--disable-render-loop` 才推得动帧）。旁边还有两份明确作废的记录（`performance_中断记录.log`、`performance_遮挡作废.log`）。修法：**每组采完即落盘**（带 `expected_groups`/`groups_done`/`complete`），组内 `drawn < 90% frames` 直接判 FAIL。
+  4. **`--check` 把 `DONE` 打了两次**（`contracts()` 里一次、`_ready()` 里又一次）。旧样板的 `contract.log` 尾巴上就留着两条 `DONE`。
+- **新增 `--board`：按真实格距排版照**（回答需求最后一句唯一有效的射法）。原来的默认预览把棋子摆在 **1.45 世界单位**间距上，而实战列距只有 **0.7146** —— 换算率按 `BattleUI.BATTLE_PLAYABLE_WIDTH / SIM_W × BattleArena.BATTLE_VISUAL_SPACE_SCALE` 现算、格坐标直接取 `BattleSimShared.board_cell_pos()`（与摆放界面、模拟同一个函数），不复制魔数 ⇒ **默认那张图把间距放大了两倍**，结构上不可能看出相邻格的护罩会不会互相穿插。`--board` 摆一个满编 4×4、神族刻意相邻（一排 3 枚 + 2×2 一团）。
+  - ⚠ 这个模式第一版**对照图是假的**：我提前把 `running=true`，而预览的 `_process` 在 running 时**每帧**把 16 枚棋子的 `statuses` 改成无敌 ⇒ OFF 那张「关特效」图其实是在快门等待的那一帧被点亮的，与 ON 图只差动画相位。改成该模式全程 `running=false`、自己驱动状态后读数才成立（`开镜前 0 座 / ON 16 座且全可见`），并留一条断言钉住这个对照（OFF 必须 0 座、ON 必须每枚一座），免得日后再退化成「两张都是开的」。
+  - **实测读数**（`board_real_pitch.log`，图 `board_real_pitch_off.png` / `board_real_pitch_on.png`，1600×720 同一相机）：列距 **0.7146** / 行距 **0.7446** 世界单位；护罩半宽 **0.5307~0.5633**（已含 `model_height` 1.117~1.186 与 T3 的 1.2 倍身高加成）；**相邻同排两枚护罩横向重叠 0.4120，占列距 58%**。
+  - **这个重叠是必然折中，不是缺陷**：棋子**自身的渲染包围盒半宽实测就有 0.42~0.70**（`dark_dragon` 0.697、`god_king` 0.653、`god_angel` 0.581），**本来就大于半列距 0.357** —— 这张盘上棋子之间从来就是互相穿插的。所以「护罩不超出本格」在这张盘上不是一条能成立的判据。我第一版试写了条「护罩半宽 / 棋子半宽 ∈ [0.9, 2.2]」的包线，红了 8 项，**红的是这个代理指标**（`god_angel`/`god_archangel`/`dark_dragon` 的 AABB 被翅膀撑大，不代表本体宽度）而不是特效 —— 已删除、不留。真正让「遮挡」不成立的是材质与几何：**不写深度 + 不跳过深度测试** ⇒ 永远被前面的棋子和棋盘挡住，也不会盖掉身后任何东西；**镂空细弧**轮廓密度 ≤ 0.45 ⇒ 不是实心泡泡。
+  - 观感佐证：把**全盘 16/16 枚**（最坏情况；实战里只有吃满神族羁绊的那 7 枚）都点上护罩，画面明亮（金/白）像素占比只从 **7.60% → 17.05%**；两张图里棋子轮廓、棋盘底环全部可读。是否还要再收小，等用户看实拍定（作者坐标系下 0.475 的半宽，与同项目 `VFXBarrierShield3D` 的弧半径 0.80 相比已属保守）。
+- **端到端（真实回放）**：`_qa_godpulse/formal.tscn` 跑一把 7 神族真回放（`replay_sha256 89d1d358…`），**73 个采样点、22 帧有脉冲、154 个「棋子×帧」样本逐单位核对**，`failures=0`、`max_live=7`、`remaining_pulse_nodes=0`（结束时一座不剩、没有留尾）。总契约门禁 `--check` **87 项全通过、退出码 0**。顺带补上此前缺失的 `_qa_godpulse/preview.gd.uid`。
+- **性能（本轮重测，`performance_vsync_off.log` / `performance_vsync_on.log`）**：5 组全部跑完、`failures=0`。⚠ 但要如实说明**这个样板测不出小成本**：`project.godot` 没写 vsync ⇒ 走 Godot 默认开启，五组 median 一律钉在 60fps 天花板（14.5~15.1ms）；把 vsync 关掉后又撞上显示节流（五组**全部** 12.12ms / 2476 帧每 30 秒 ≈ 82.5fps）。也就是说 **median 只能证明「没有掉出预算」，不是余量**。真正与帧率节流无关的成本信号是**绘制调用峰值**：同样 6 枚棋子，关特效 **54** → 开特效 **60**，即**每枚受影响棋子恰好 +1 个 draw call**（实现上就是每枚一个 `MeshInstance3D`）；12 枚 90、42 枚同时生效 240（并发 42 枚全部拿到，未触上限）。关 vsync 的那一轮 5 组一帧未丢（`drawn == frames`）；开 vsync 的那一轮 `42_high` 只画了 2309/2602 帧，被新守卫标成 FAIL 作废 —— 这正是旧样板会静默当 60fps 交上去的那类数据。
+- ★ **上一轮记录里两处不实，在此更正**（不洗进台账）：其一，「73 个采样逐单位核对」当时是**按子节点名**找的（`find_child("DivinePulseInvulnerability")`），而不是走特效自己的 `status_active()` 判据；其二，「状态契约检查 74 项通过」那份门禁里含一条**恒真断言**和一行重复的 `DONE`。两处现已在 `preview.gd` 里换成真判据。
+- **上线要点**：这是**纯客户端呈现**。两个新文件（模块 + shader）**不在** `user://` 覆写名单里 ⇒ **线上要让玩家看到必须出新包（或热更）**，只重启服务端没用。`export_presets.cfg` 的 `exclude_filter` 含 `_qa_*/*`，两个 QA 目录不入包。
+
+**未做**：未把本批同步进 `GLory-v1.0`（等用户实测通过后再按 10.14 的口径同步）；未改任何贴图/模型/音频资源；`project.godot` 不动（`config/name` 是 `user://` 隔离的钥匙）。
+
 ## 2026-10-14（私聊语音留言发不出去：1 个必现故障 + iOS 录音权限 + 图标居中）
 
 来自 `10.14bug提交及修复.docx` 的三条反馈。**服务端 1 行 + 客户端 3 个文件**；无新增运行期资源、无数据库迁移、**不需要升任何版本号（含网络协议号）**。改动先在本地 `GLory-codex` + 本地测试服完成、经用户实测通过，随后同步到 `GLory-v1.0`。版本控制提交与推送由用户执行。
