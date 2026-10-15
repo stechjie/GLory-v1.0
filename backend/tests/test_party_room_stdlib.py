@@ -39,6 +39,7 @@ config = types.ModuleType("app.config")
 
 class _Settings:
     party_voice_config_file = "/nonexistent"
+    party_full_team_only = False
 
 
 config.get_settings = lambda: _Settings()
@@ -357,6 +358,18 @@ class PartyHostPetTests(unittest.TestCase):
         self.assertEqual(room.ready, set())
         self.assertEqual(room.in_match, "abc123")
         self.assertEqual(self.parties.snapshot(room)["in_match"], "abc123")
+
+    def test_snapshot_tells_client_which_sizes_can_start(self):
+        """10-15：客户端照快照里的人数灰「开始匹配」，开关只改服务器 .env、不用出包。"""
+        room, _mate = self._two_member_room("casual")
+        self.assertEqual(self.parties.snapshot(room)["startable_sizes"], [1, 2, 3],
+                         "默认放开 2 人组队")
+        _Settings.party_full_team_only = True
+        try:
+            self.assertEqual(self.parties.snapshot(room)["startable_sizes"], [1, 3],
+                             "开关打开 = 只能单人或满 3 人")
+        finally:
+            _Settings.party_full_team_only = False
 
     def test_ranked_room_is_editable_after_match_start(self):
         """回来之后邀请 / 改模式照常可用（_require_editable 不再拦）。"""

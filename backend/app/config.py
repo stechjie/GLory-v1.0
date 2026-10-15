@@ -130,6 +130,16 @@ class Settings(BaseSettings):
     # 读它的只有两道闸，都走 ranked.accepting_now()。
     ranked_window_always_open: bool = False
 
+    # --- 组队开局人数（app/party.py 的 startable_sizes）------------------------
+    #
+    # True = 组队房只能单人或满 3 人开始匹配（docs/排位系统设计.md 第五节「不做 2 人车队」：
+    # 2+1 里那个路人是局外人，队里还有语音）。休闲、排位同一个口径。
+    #
+    # 默认 False = 2 人也能开：10-15 用户定，现在玩家太少，先放开，人够了再打开。
+    # 客户端按房间快照里的 startable_sizes 决定按钮灰不灰，所以翻这个开关**不用出新包**，
+    # 改 .env 后重启账号服务器即可（重启会清空匹配队列，别在高峰期）。
+    party_full_team_only: bool = False
+
     # --- 对局名册（app/service_control.py，OPS-05）------------------------------
     #
     # 战斗服务器每 5 秒往这里写一份「此刻谁真的在打」（同机文件，
