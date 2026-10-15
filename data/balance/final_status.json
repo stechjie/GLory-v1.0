@@ -1812,6 +1812,6 @@
       "effect_cn": "需要：生命丰碑 + 黄金祭坛 + 震荡余波 + 血契之刃 + 狂怒阵容。生命丰碑 ×1.20→×1.40；震荡余波眩晕 1→2 秒；血契之刃 ×1.25→×1.50；狂怒阵容上限 8→9。黄金祭坛使用不扣法阵 HP；选到胡牌手立即回复法阵 HP +2（上限 50）。\n表内字段：positive_effect_multiplier = 2"
     }
   },
-  "balance_version": "1527bbdc34552914b84cdf45606e1a905277b450d058a08cbe156c311382ac7b",
+  "balance_version": "ddf476a89ec8a9f2204ccbe63cb4a6965d254e1d0795eeee4835ff4bc3f51048",
   "final_workbook_sha256": "b7cc1b673de2d857237a8834debd493118089d7edcdaa98ce71e529d0d16c894"
 }
