@@ -281,6 +281,9 @@ func _tutorial_keep_clear_rects() -> Array[Rect2]:
 		_start_battle_button,
 		_merc_button,
 		_shop.open_button if _shop != null else null,
+		_shop.panel if _shop != null else null,
+		_shop.buy_button if _shop != null else null,
+		_shop.refresh_button if _shop != null else null,
 		_treasure._treasure_refresh_btn if _treasure != null else null,
 	]:
 		_append_visible_rect(control as Control, out)
@@ -3838,6 +3841,11 @@ func _on_shop_picker_toggled(is_open: bool) -> void:
 	for btn in _board_hud.bench_buttons:
 		if btn != null:
 			btn.mouse_filter = bench_filter
+	if GameState.tutorial_mode and not is_open:
+		# 关店事件会把 BUY_3 推进到 PLACE_3。card_selected 的刷新发生在
+		# 此事件之前，当时待命棋子的 drag_payload 仍因 BUY_3 被清空。
+		# 按推进后的步骤重建拖拽数据，否则提示已经让玩家上阵却仍无法起拖。
+		_board_hud.refresh_bench()
 	# 9.13 #6：语音按钮（宽 150、右对齐到 -292）的左半截正好压在商店弹窗
 	# （底部中央 896×230）的右下角里。商店面板本身是 Container（PASS）且背景层
 	# 一律 IGNORE，挡不住下层控件 —— 于是玩家在商店右端操作会穿透到语音按钮上，

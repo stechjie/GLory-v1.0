@@ -659,6 +659,10 @@ func refresh() -> void:
 func _refresh_picker() -> void:
 	if panel != null:
 		panel.visible = picker_open
+	# z_index 只决定绘制顺序，后创建的收起卷轴仍会抢走卡片的触摸。
+	# 展开时隐藏整个按钮子树；关闭后恢复入口及其空闲动画。
+	if open_button != null:
+		open_button.visible = not picker_open
 	if _shop_scroll_idle != null:
 		_shop_scroll_idle.set_effect_active(not picker_open)
 	if side_controls != null:
