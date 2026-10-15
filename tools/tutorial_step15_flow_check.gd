@@ -7,7 +7,8 @@ extends Node
 #                 与玩家点的是同两个 Button，成不成交仍由宿主的钱/待命区/售罄判断决定
 #   * 开关商店 -> `_shop.open_button.pressed`
 #   * 上阵     -> `_board_hud.bench_buttons[i].pressed` + `_board_hud.buttons[j].pressed`
-#   * 继续     -> 教学气泡自己的透明热区 `TutorialMode._hotspot.pressed`
+#   * 继续     -> `TutorialMode.confirm_tap_step()`（2026-10-15 第三轮起：覆盖层里那个
+#                 透明热点 `_hotspot` 已删掉，改由 `_input()` 旁听真实按下事件推进）
 #   * 战斗     -> `TutorialMode.begin_battle()` + `after_battle({})`，无需服务器
 #
 # **覆盖范围**：完整 22 个实际到访步骤（不是只跑 HIRE_MERC→DONE）。
@@ -294,9 +295,10 @@ func _take_treasure(prep: PrepScript) -> void:
 
 
 func _tap_continue(prep: PrepScript) -> void:
-	# 教学气泡自己的透明热区，就是玩家「点一下继续」按到的那个 Button。
-	if TutorialMode._hotspot != null and is_instance_valid(TutorialMode._hotspot):
-		TutorialMode._hotspot.pressed.emit()
+	# 2026-10-15 第三轮：透明热点 `_hotspot` 已删掉（覆盖层不得限制玩家操作），
+	# 四个「点一下继续」的步骤改由 `TutorialMode._input()` 旁听真实按下事件推进。
+	# 门禁直接调推进入口，等价于「玩家在目标上点了一下」。
+	TutorialMode.confirm_tap_step()
 	await _settle(2)
 
 

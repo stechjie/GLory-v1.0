@@ -665,9 +665,43 @@ func _refresh_picker() -> void:
 		side_controls.visible = picker_open     # 外挂层（钱袋A+刷新）跟商店一起显隐
 	if _closed_money_bag != null:
 		_closed_money_bag.visible = not picker_open   # 商店关时才显示钱袋 B
+	_set_bottom_bar_blocked(picker_open)
 	# 商店开着时待命格子被商店盖住，要禁用它们的输入，别去抢商店区域的点击。
 	# 但待命格属于**棋盘面板**，商店不该伸手去改别人的控件 —— 发信号，宿主去调。
 	picker_toggled.emit(picker_open)
+
+
+# 商店弹窗盖住底部木牌/钱袋 B 时，让它们**停止吃点击**（10.16 反馈问题 1）。
+#
+# 现场：商店开着时在弹窗里点一下（哪怕是采购那套流程里的空白处），商店又被关掉了。
+#
+# 根因**不是几何**：木牌 200×66 就压在整个弹窗 896×230 里面，弹窗自己的
+# `mouse_filter` 也是 STOP（`PanelContainer` 的默认值，`apply_transparent_panel_style`
+# 只改 stylebox、不动它）。真正的原因是**拾取顺序**：GUI 命中测试按树的**逆序**回
+# 子节点走，`z_index` 不参与判定。弹窗挂在 `center_host`（PrepUI 的第 5 个子节点）下，
+# 而木牌的 `ShopClosedControls` 是 PrepUI **更靠后**的兄弟 ⇒ 逆序先碰到
+# `ShopClosedControls`，这一下就落到那块**看不见的木牌**上，`toggle_picker()`
+# 把刚打开的商店关了。（实测：弹窗 z=40 / 木牌 z=6，拾取到的仍是木牌；同一机制
+# 也是 9.13「商店右端操作穿透到语音键」的成因。）
+#
+# 处理口径与 `PrepUI._set_overlay_blocked` 一致 —— **被遮住的东西不吃输入**。
+# 只改 `mouse_filter`、**不改 visible**：木牌本来就被弹窗背景（920×280，比判定框
+# 896×230 还大一圈）完整盖住，藏不藏看起来一样，但改 visible 会连带影响
+# `is_visible_in_tree()` 的读者（教学箭头按目标可见性解析），没必要冒这个风险。
+#
+# ⚠ 恢复必须 `set_deferred`：「点弹窗外面关店」那一下，`close_picker()` 是在
+# `PrepScreen._input`（**GUI 之前**）里跑的；当场把 STOP 恢复回去，紧接着的同一次
+# GUI 命中测试就又能打到木牌上，把商店**重新打开** —— 正是 `_set_overlay_blocked`
+# 注释里记着的那个坑，这里同源同解。
+func _set_bottom_bar_blocked(blocked: bool) -> void:
+	for node in [_closed_money_bag, open_button]:
+		var control := node as Control
+		if control == null or not is_instance_valid(control):
+			continue
+		if blocked:
+			control.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		else:
+			control.set_deferred("mouse_filter", Control.MOUSE_FILTER_STOP)
 
 
 # 原 _toggle_shop_picker（PrepUI.gd）

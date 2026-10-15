@@ -1,5 +1,209 @@
 # Glory Beta 0.04
 
+## 2026-10-15 第二批（`10.15新手教程、商店UI优化.docx` 两项：商店弹窗盖住的 UI 不得被点击 + 新手教学聚焦遮罩；**同日第二轮**再修遮罩的「闪 + 线」，并按反馈给两步取消遮罩；**同日第三轮**再按玩家反馈把覆盖层改成「只做提醒 + 明暗对比、一步操作都不吃」；**同日第四轮**接手同一份文档的**第 3 点**——备战-宠物界面点模型弹出技能浮框）
+
+来自 `10.15新手教程、商店UI优化.docx`（递交时曾用名 `10.16bug提交及修复.docx`，同日改名，**内容不变** —— 两条要求逐字一致）的两项，**都是纯客户端改动**：两个既有文件各加一段（34 + 154 = 188 行，**零删除**），外加 **1 个新 shader**（`shaders/tutorial_focus_mask.gdshader`，41 行）与 **7 个门禁/探针文件**（新目录 `_qa_1016/`）。**同日第三轮**又对 `TutorialMode.gd` 动了一次刀（`+310 / -33`：把整个透明热点删掉，见下文「同日第三轮」）：**上文的「188 行 / 零删除」与门禁数量已被第三轮取代，以「同日第三轮」小节和本页末尾的哈希表为准。****没有新美术资源（`assets/**` 零改动）、没有数据库/服务端改动、不动 `NETWORK_PROTOCOL_VERSION`（仍 41：本轮一个 `@rpc` 都没碰）**。改动在本地 `GLory-codex` 完成，**待用户实测**；通过后再按 10.14 的口径同步到 `GLory-v1.0`（本批**尚未同步**）。版本控制提交与推送由用户执行。**同日第四轮**追加第 3 点（备战-宠物界面技能浮框，见下文「问题3（同日第四轮）」小节）：改动面是 `PetScreen.gd` +207 行、`LocaleManager.gd` +2 行、新门禁 `_qa_1016/pet_skill_tip`，同样**纯客户端**。
+
+### 问题1：商店打开后，被弹窗盖住的「商店」木牌不该再吃点击
+
+- **反馈**：「对局中打开商店后，在里面进行购买棋子操作，在商店UI位置会点击到商店UI然后退出商店界面。修复要求：对于已经被遮盖的UI不应该被触发，像这种商店已经打开了，遮盖住了商店UI，那在商店UI的位置不应该能够再被点击到。」
+- **根因是拾取顺序，不是几何**：底部木牌 200×66 整个压在弹窗 896×230 里，弹窗自己的 `mouse_filter` 也是 STOP（`PanelContainer` 的默认值；`apply_transparent_panel_style` 只换 stylebox，不动它）。但 **GUI 命中测试按树的逆序回子节点走，`z_index` 不参与判定**：弹窗挂在 `center_host`（PrepUI 的第 5 个子节点）下，而木牌的 `ShopClosedControls` 是 PrepUI **更靠后**的兄弟 ⇒ 逆序先碰到木牌，那一下落到**看不见的木牌**上，`toggle_picker()` 把刚打开的商店关了。
+  - 实测证据（门禁日志）：`panel.mouse_filter=0 z=40  bar.mouse_filter=0 z=6`，光标停在木牌位置时 `gui_get_hovered_control()` 返回的是木牌本身而不是弹窗。
+  - 同一机制也是 9.13「商店右端操作穿透到语音键」的成因（当年是把被盖住的键逐个 `IGNORE` 绕过去的，没有动根因）。
+- **改法**：`ShopPanel` 新增 `_set_bottom_bar_blocked()`，在 `_refresh_picker()` 里按 `picker_open` 把**木牌 + 关闭态钱袋 B** 切成 `MOUSE_FILTER_IGNORE`。恢复**必须** `set_deferred`，与 `PrepUI._set_overlay_blocked` 同源：「点弹窗外面关店」那一下 `close_picker()` 跑在 `PrepScreen._input`（GUI 之前），当场恢复 STOP 会让紧接着的同一次命中测试又打到木牌上，把商店**重新打开**。
+- **只改 `mouse_filter`、不改 `visible`**：木牌本来就被弹窗背景（920×280，比判定框大一圈）完整盖住，藏不藏看起来一样；而 `is_visible_in_tree()` 另有读者（教学按目标可见性解析），没必要冒这个风险。
+- **反向保住的行为**（门禁里各有一条独立判据）：卡面点选、采购热区拾取、刷新键拾取、采购那一下不关店，以及「点弹窗外面仍然收起商店」。
+
+### 问题2：新手教学聚焦遮罩（第一版 4 块拼环形 → 玩家实测报「闪 + 线」→ 当日返工为单块 + shader）
+
+- **反馈**：「新手教学模式需要优化，当前为：新手教程步骤、箭头提示和目标过于不明显。优化为：调整明亮度，使除步骤、箭头提示和目标外的地方变暗，方便新手玩家更好看到操作指引。举例，如图里的"步骤1/22"，要保留亮度的就是步骤1/22、红色箭头、民兵，其他区域变暗。」
+- **第一版做法**：`TutorialMode` 新增 4 块 `ColorRect` 暗幕（上/下/左/右）围出**目标**的洞，`_update_focus_dim()` 由 `update_overlay()` 每帧驱动。`FOCUS_DIM_COLOR = Color(0.02, 0.025, 0.04, 0.66)`（与萝卜营地 0.68、商店不可买原因 0.64 同一档），洞外扩 `FOCUS_HOLE_PADDING = 6`。暗幕是 `_overlay` 的**头几个子节点**，画在箭头 / 气泡 / 跳过键 / 热点**下面**（那三样本来就该保持亮度），所以真正需要开洞的只有目标。当时选 4 块矩形而不是 shader，理由是「4 块矩形是精确的像素边界，headless 能直接断言『拼起来正好等于整幅减掉洞』；shader 只能验 uniform，弱得多」—— **这个取舍被下面的实测推翻了**。
+- **返工触发**：「第2点修复存在问题，屏幕会闪，伴有线」，附两张真机截图；其中一张 590×430 的裁剪图上能看到一条**贯穿整幅的 1px 亮线**，线上方偏暗、线下方偏亮（另有一条较弱的在洞底）。
+- **根因（实测，两个原因叠在同一处）**：
+  1. **相邻两块共用一条分数坐标的公共边**。GPU 按**每个 quad 各自的顶点**独立栅格化：`dim[0]`（上带）的底边 = `h.position.y`，`dim[2]/dim[3]`（左右带）的顶边也是 `h.position.y`，两边**分别计算同一个分数值**，像素级上就可能错开 1px ⇒ 一条亮线；洞底那条同理（较弱）。
+  2. **被框住的目标本身在逐帧漂移**。非 headless 连抓 8 帧，8 帧的暗幕几何**两两不同**：目标 `y` 716.5974 → 716.4107、`x` 700.1480 → 700.1680，即约 **−0.027 px/帧（y）、+0.003 px/帧（x）**（商店木牌的待机浮动）。于是那条缝被一秒扫过一两次 ⇒ 「闪」。
+  - 顺带排除了两个嫌疑：`update_overlay()` 的「版面没变就早退」**没有**被打穿（90 帧只重排 1 次、`reason=sticky_valid`），所以闪不是来自气泡/箭头的重排抖动；`project.godot` 也没有 `snap_2d_transforms_to_pixel` 之类的吸附设置。
+  - **诚实交代一句**：本地一次 1600×800 的静态抓帧里没复现出那条线（该尺寸下公共边落在像素里的位置刚好不出缝）。这恰恰说明**它取决于窗口尺寸/缩放**，是个"赌运气"的实现 —— 而真机截图抓到了那一帧（返工后这类"赌窗口尺寸"的结构已整个不存在，这条只作为"为什么必须换结构"的旁证保留）（那张裁剪图上还有一道很淡的品红短横，是水流动画在被扫过的那一帧）。
+- **返工做法**：**去掉"拼"，改成"一整块 + 逐片元开洞"**。新增 `shaders/tutorial_focus_mask.gdshader`（`canvas_item` + `render_mode unshaded`），把压暗颜色、洞（`hole`，本控件 UV 的 0..1）、`hole_on` 三个 uniform 化；`TutorialMode` 只建**一块**铺满 overlay 的 `ColorRect`（`FULL_RECT` 锚点 + `ShaderMaterial`）。
+  - **遮罩内部在结构上不存在任何边界** ⇒ 缝不可能出现。这是修法的主旨：不是"把缝调小"，而是把产生缝的那类结构删掉，于是不必再赌窗口尺寸。
+  - 这块 quad 的矩形**恒等于整幅 overlay**，每帧只写 uniform ⇒ **几何零变化**，连"边缘随目标亚像素游走"这条抖动来源也一并消失。
+  - 洞取**硬边**（不做抗锯齿、不用 `smoothstep`）：压暗是"要么全压、要么完全不打"的二元状态，硬边才能保证边缘像素不随亚像素漂移而明暗"呼吸"。
+  - 保留的行为一条没丢：仍只给**目标**开洞（箭头/气泡/跳过键/热点仍靠画序压在遮罩之上）、仍 `MOUSE_FILTER_IGNORE`、目标解析不出来时仍**整幅压暗**（`hole_on = 0`）、`FOCUS_HOLE_PADDING` 仍 6。
+- **像素级验证（非 headless 探针 `_qa_1016/mask_pixel_probe.tscn`）**：同一状态下抓两帧 —— A 正常、B 把遮罩节点 `visible=false`；逐像素求差，再按「洞左 / 洞内 / 洞右」三条横带逐行统计强差异像素数（洞左右各留 12px 作为洞外参照，所以"洞内"那列的下限 ≈24 是这 24 列造成的，不是噪声）。
+  - 结果：洞外的每一行都是**满值**（1600×800 下左带恒 683）；洞内那一段在**刚好一行之内**掉到底 —— 1600×800：y=709 时 235 → y=710 时 30；1280×720：y=646 时 191 → y=647 时 23；1440×720：y=636 时 214 → y=637 时 22。**没有任何一行出现"少压一行/多压一行"的中间值**，也就是没有缝。
+  - 洞的位置与 `target.grow(FOCUS_HOLE_PADDING)` 换算出的窗口坐标误差 **≤1px**（UV 采样点的半像素差），3 种分辨率（缩放 1.0 / 0.8 / 0.9）表现一致。
+  - 探针另存两张 3× 最近邻放大图（洞顶 / 洞底各 320px 宽横带）供肉眼复核，输出落在 `user://qa1016/`，**不污染工程目录**。
+  - ⚠ 这个探针**不能做成 headless 门禁**：`--headless` 不绘制、`Engine.get_frames_drawn()` 也不动，拿不到任何像素真值。契约层（节点数 / 矩形 / uniform / 画序）由 headless 门禁负责，两者互补，别把其中一个当成全部。
+- **没有新增 `Button.new()` / `StyleBoxFlat.new()`**：`procedural_ui_ratchet` 里这两个文件的计数原样（TutorialMode 3/4、ShopPanel 3/1）。这次 `ColorRect.new()` 从 4 降到 1、`ShaderMaterial.new()` 新增 1，两者都不在 ratchet 的计数范围内。
+
+- **同日第二轮（真机复测后立刻返工）**：`TutorialMode.gd` 从 +111 涨到 +154。新增 `focus_mask_disabled_for(step_value, shop_close_phase)` —— 一个**只看状态、不碰节点**的纯判据；外加 `focus_mask_disabled()`（把当前 `step` 与「买够 3 个且商店还开着」喂进去）和 `_focus_dim_node()`。`update_overlay()` 在开洞之前先问一句「这一步该压暗吗」，不该压就把**整块遮罩 `visible=false`**。
+  - **为什么这两步要取消遮罩**：它们要玩家做的动作**正好落在被压暗的区域上**，遮罩不是在帮忙、是在挡路。
+    - **步骤 1/22 = `BUY_3` 的「关闭商店」子阶段**：要点的就是商店**外面**，而遮罩恰好把外面全压暗（洞开在商店上）—— 指引和画面完全拧在一起。注意判的是**子阶段**（`step` 仍是 `BUY_3`），不是整个 `BUY_3`：正常「购买棋子」那一段遮罩是有效的，**必须留着**。
+    - **步骤 2/22 = `PLACE_3`（上阵布阵）**：要从**待命区**把棋子拖到棋盘，起手必须看清并落在待命区上；压暗后待命区的棋子几乎看不见（真机反馈原话「无法拖动操作」）。
+  - **「无法拖动」不是遮罩吃了输入**：遮罩一直是 `MOUSE_FILTER_IGNORE`，这一步的透明热点（`_hotspot`）本来也是隐藏的（只为 `BOND_HINT`/`VIEW_TREASURE`/`FORMATION_HP`/`CARROT_HARVEST` 服务），`PrepScreen._input` 在 `PLACE_3` 上没有任何早退。把输入链路逐段读完之后确认**纯粹是"看不清就没法拖"** ⇒ 改法只是把它**藏掉**，不需要碰输入。
+    - **同日第三轮更正：结论仍成立，但这半句写窄了。** `PLACE_3` 上 `_hotspot` 确实是隐藏的 ⇒「这一步不是它挡的」成立；但由此推出的**「覆盖层不吃输入」是错的** —— `_hotspot` 在 `BOND_HINT`/`VIEW_TREASURE`/`FORMATION_HP`/`CARROT_HARVEST` 四步是**可见且 `MOUSE_FILTER_STOP`** 的，`modulate = Color(1,1,1,0)` 只是"看不见"，**GUI 命中测试完全不读 alpha** ⇒ 那四步的点击**确实被它吃了**。第三轮据此把 `_hotspot` 整个删除。"不需要碰输入"这半句也在同日稍后被推翻：真正让 `PLACE_3` 拖不动的是 `BoardHud.gd:133` 的 **stale `drag_payload` 快照**（门禁 `_qa_1016/bench_drag_after_shop_close`），与遮挡无关。
+    - 顺带说明为什么不是"给一个填满屏幕的洞"：那会白留一个满屏的半透明 quad 每帧参与混合，视觉上毫无区别，纯粹多付一次混合。
+  - **`shop_close_phase` 三处同源**：`current_text()` / `step_display_name()` / `focus_mask_disabled()` 用的是**同一个**表达式「`_owned_normal_count() >= 3 and _fill_shop_open`」，否则会出现"标题写着关闭商店、遮罩却还在压暗"这种半截状态。
+  - **门禁相应补了两类断言**：① `mask_optout_table` —— 直接喂参数验这个纯判据的真值表（含「商店恰好开着也一样」那一行），**不去伪造 `GameState` 的棋盘/商店**（那会变成同义反复）；② 按步骤的可见性断言 `mask_shown_on_optout_step` / `mask_hidden_on_required_step`。
+  - ⚠ **可见性断言必须排在"目标解析不出来就 `return`"之前**。第一版排在后面，跑出来是绿的 —— 但日志里有 `Tutorial target missing step=PLACE_3 … resolver_returned_no_control`：门禁环境棋盘上没放棋子，`PLACE_3` 的目标控件根本解析不出来，整条 `_check_step` 被**静默跳过**，等于没验。把可见性判据提到最前面（它只依赖 `update_overlay()`，与 target 无关）之后 `checked` 从 397 涨到 409，下面那条"无视判据"的变异也才打得红。
+  - ⚠ **本门禁没有驱动「3 个棋子 + 商店开着」的真实状态**（那要伪造 `GameState.board_slots`，风险与收益不成比例）。所以步骤 1/22 这一处验的是**判据本身**（真值表）＋**执行链路**（`mask_on` 这条分支由 `PLACE_3` 那条变异证明是活的）；`step_display_name()` 与 `focus_mask_disabled()` 的"同源"目前靠**人工核对**保证。**真机复测是最终判据。**
+
+- **同日第三轮（玩家第二次真机复测：覆盖层不得限制玩家操作）**：反馈原话「此次修复增加的遮罩，你改动一下 不要增加玩家操作的限制仅设为提醒和明亮度的不同，但是其他操作都可以做的，就不会引发这么多问题」；随后进一步明确「我的要求是新手教程要保持本次修复之前的样子，但是只是加了明的 目标、步骤、箭头位置，暗的其他位置更改」。⇒ **覆盖层只保留"提醒 + 明暗对比"，一步操作都不许挡**；`TutorialMode` 的其它一切（步骤文案 / 顺序 / 箭头 / 目标解析 / 受理范围）**逐字不动**（`git diff` 实测：改动里 `_t(` 文案行 **0 条**）。
+  - **病根：覆盖层里塞了一个"透明但仍吃点击"的 `Button`**。`_hotspot` = `Button.new()` + `modulate = Color(1,1,1,0)` + `MOUSE_FILTER_STOP`，给 `BOND_HINT`/`VIEW_TREASURE`/`FORMATION_HP`/`CARROT_HARVEST` 四步用：前两步热区 = 目标矩形**外扩 10px**（`position - pad` / `size + pad * 2`），后两步**铺满整幅**。
+  - ★ **`alpha = 0` ≠ "不吃点击"**：GUI 命中测试只看 `visible` + `mouse_filter` + 矩形，**完全不读** `modulate`/`self_modulate`。这个"隐形按钮"就是整个覆盖层里唯一真正会吞输入的东西。
+  - ★ **被盖住的不止一层**：`_bubble`（气泡 `PanelContainer`）本身是 `STOP`，它内部的 `MarginContainer`/`VBoxContainer` **各自**默认 `STOP`（`Container` 的默认值就是 STOP，**不是 PASS**；`mouse_filter` **不继承**，必须逐个设）。所以第二版那句只对 `_bubble` 设 `IGNORE` 的做法只解了最外层，里层照样吃点击。
+  - **改法（四处）**：
+    1. **删掉整个 `_hotspot`**：`var _hotspot: Button`、`_position_hotspot()`、`update_overlay()` 里的构建/定位调用全删（本轮 **-33 行**）。
+    2. **新增 `_make_mouse_transparent(node)`**：递归把子树里每个 `Control` 设成 `MOUSE_FILTER_IGNORE`；在气泡子树**全部建完之后**对 `_bubble` 调一次，并把 `_bubble.mouse_filter` 从 `STOP` 改 `IGNORE`（**构造期设一次**，不再挂在 `update_overlay()` 的早退分支里 —— 那条路不保证每次走到）。
+    3. **四个「点一下继续」步骤改成 `TutorialMode._input()` 旁听真实按下**：新增 `is_tap_step()`（是不是这四步）、`_tap_advance_accepts(pos)`（这一下算不算）、`confirm_tap_step()`（推进入口，**函数体逐字**沿用原 `_on_hotspot_pressed()`）。**受理范围零变化**：新常量 `TAP_TARGET_PAD := 10.0` 与旧热区的 `pad` 同值 ⇒ 目标矩形 `grow(10)` 与旧热区矩形**完全等价**；本次改的只是"吃不吃输入"。
+    4. ★ **`_skip_btn` 是覆盖层里唯一「应该」吃点击的节点**（跳过教学），保留 `STOP`；`_input()` 在受理前先排除"落在跳过键上"那一下。
+  - ★ **触屏双投递的坑**：Godot 默认 `emulate_mouse_from_touch = true` ⇒ 每次触摸会在**同一批 flush** 里再补发一个同位置鼠标事件，`_input` 两个分支都会受理、一次点击推进**两格**；`VIEW_TREASURE`（要真点到宝藏图标）→ `FORMATION_HP`（任意处都算）正是能撞上的组合。修法与仓内 `ModalStack._mouse_emulated()` 同源：`InputEventScreenTouch` 分支在"补发鼠标存在"时**直接 return**，只认鼠标那一条。
+  - ★ **为什么放 `_input()` 而不是"替下层控件补发事件"**：`Viewport.push_input()` 的派发是 **`Node._input()` 先于 GUI 命中测试**（仓内先例 `PrepScreen._input`）⇒ 在 `_input` 里推进 `step` 改不了**本次**点击的落点；推进后请求的刷新走 `_refresh_prep()` → `ACTION_REFRESH_VIEW` → `_refresh_all.call_deferred()`，**延迟**执行，也扰不到同一次点击（与 `ShopPanel` 恢复 `mouse_filter` 必用 `set_deferred` 同一个道理）。
+  - **`procedural_ui_ratchet` 的口径**：删掉热点后 `TutorialMode.gd` 的 `Button.new()` **3 → 2**（`StyleBoxFlat.new()` 仍 4）。基线文件**故意没跟着收紧**（`--update-baseline` 是全局动作、且该门禁本就既有红），于是它那条 `baseline_not_tightened` 的措辞从「实测 84 < 基线 89」变成「实测 83 < 基线 89」，**失败条数仍是 3（既有，非本轮引入）**。
+  - **第三轮追加（同日、同批反馈的第二条）**：另外三张真机截图点名三步也要取消压暗 ——
+    **步骤 6/22 `TAKE_TREASURE_1`**、**步骤 15/22 `TAKE_TREASURE_2`**（「选择宝藏」三选一本身就是
+    一整块全屏面板、已经把别处盖住了；再叠一层压暗只会糊掉「长按看详情」要读的卡面，指引价值为零）、
+    **步骤 20/22 `FILL_7`**（「补满七人」，与 `PLACE_3` 同理：要把待命区棋子拖上棋盘，压暗后待命区
+    几乎看不见）。实现只是把这三个 Step 加进 `focus_mask_disabled_for()` 的放行表（判据仍是
+    **纯函数**、只看状态不碰节点）；`update_overlay()` **一行未动** —— 它本来就只是「问判据 → 藏/显遮罩」。
+  - ⚠ **步骤号 → Step 别照字面猜，`STEP_SEQUENCE` 才是玩家看到的序号**（它是「实际到访顺序」，
+    与枚举顺序不同）：`BUY_3`=1、`PLACE_3`=2、`START_PVE_1`=3、`UPGRADE_2`=4、`START_PVE_2`=5、
+    `TAKE_TREASURE_1`=**6**、`UPGRADE_3`=7、`UPGRADE_OTHERS`=8、`BOND_HINT`=9、`VIEW_TREASURE`=**10**、
+    `FORMATION_HP`=11、`CARROT_CAMP`=12、`HARVEST_UPGRADE`=13、`START_BOSS`=14、`TAKE_TREASURE_2`=**15**、
+    `CARROT_HARVEST`=16、`DRAW_STONE`=17、`FOUR_STAR`=18、`HIRE_MERC`=19、`FILL_7`=**20**、
+    `FORMATION_HP`=21、`START_PVP`=22。注意 `VIEW_TREASURE`（10/22「查看宝藏」）**仍要压暗**，
+    本轮**没有**顺手放开 —— 真值表里专门留了一行钉子，防的是「按 `TAKE_TREASURE_` 前缀整片放过」。
+
+### 门禁（新增两条：修复前红 → 修复后绿）
+
+两条都按 `tools/CheckHarness.gd` 那套写（退出码 0 = PASS / 1 = FAIL），放在**仓根 `_qa_1016/`** —— 与 10.15 那批已经提交进仓的 `_qa_t3unique/` / `_qa_godpulse/` 同一位置、同一写法。目录里自带一份 `CheckHarness.gd` 副本：`GLory-codex` 是**包体树、没有 `tools/`**，自带一份两棵树才能跑同一条门禁。
+
+| 门禁 | 修复前 | 修复后 |
+| --- | --- | --- |
+| `shop_covered_click` —— 被盖住的木牌不得吃点击（3 种画布宽度 + 5 条反向判据） | FAIL 6 / checked 27 | **PASS 27 / 0** |
+| `tutorial_focus_mask` —— 遮罩契约：只有一块 + 矩形恒等整幅 + 洞罩住目标 + 画序 + 不吃点击 + **按反馈给数步取消压暗**（3 种分辨率 × 18 个步骤） | FAIL 4 / checked 16 | **PASS 409 / 0**（同日第三轮：删掉 2 条「点击热点」断言 × 3 分辨率 → **403**；再把步骤 6/15/20 加进放行表 → **PASS 400 / 0**） |
+
+`tutorial_focus_mask` 的**变异对照**（每条单独 restore + 每次单独 `sha256sum` 校验；串命令一律用 `;` 不用 `&&`，免得门禁一挂/SIGTERM 恢复步骤被跳过、文件留在变异态）：
+
+| 变异 | 期望命中 | 实测 |
+| --- | --- | --- |
+| `_update_focus_dim` 直接 return（不写洞） | `hole_missing` | FAIL 42 |
+| 遮罩 `z_index = 999`（子节点 index 不变，只抬 z） | `dim_z_above_chrome` | FAIL 12 |
+| 每帧把遮罩 `move_child(dim, -1)` 挪到 overlay 末尾 | `dim_above_chrome` | FAIL 15 |
+| 遮罩改成 800×400（不再是整幅 overlay） | `mask_not_full_overlay` | FAIL 3 |
+| 退回"自由定位 + 每帧改几何"的旧写法 | `mask_geometry_moved` | FAIL 3 |
+| 整个换回 `HEAD` 版 `TutorialMode.gd`（没有遮罩） | `dim_node_count` + `too_few_measurements` | FAIL 4 |
+| `focus_mask_disabled_for` 恒 `return false`（把「这两步不压暗」的判据整个废掉） | `mask_optout_table` | FAIL 9 |
+| 判据留着，但 `update_overlay` 里写死 `var mask_on := true`（无视判据，遮罩照画） | `mask_shown_on_optout_step` | FAIL 3 |
+| **第三轮**：撤掉新三步（6/15/20）的放行（把 `focus_mask_disabled_for` 换回改前版本） | `mask_optout_table` | FAIL 12（4 行 × 3 分辨率；`VIEW_TREASURE` 那行仍绿 ⇒ 边界有效） |
+| **第三轮**：判据留着，但 `update_overlay` 写死 `var mask_on := true`（无视判据） | `mask_shown_on_optout_step` | FAIL 12 |
+| 干净构建（对照） | —— | **PASS 400 / 0** |
+
+跑道：`Godot_v4.7.2-stable_win64_console.exe --headless --path <工程根> _qa_1016/<name>.tscn`（`_qa_*/*` 在 `export_presets.cfg` 的 `exclude_filter` 里，不会进包体）
+
+**同日第三轮**新增第 3 条门禁，并把 `tutorial_focus_mask` 里那 2 条"点击热点"断言删掉（被测对象已不存在）：
+
+| 门禁 | 修复前 | 修复后 |
+| --- | --- | --- |
+| `tutorial_overlay_no_input_block` —— 覆盖层契约：子节点数 + 非跳过子树**全 `IGNORE`**（递归）+ 悬停不命中 + 4 步"真实按下即推进且落到下层控件" + 反向判据（3 种分辨率） | FAIL 6（**首版门禁的假红**，见下） | **PASS 181 / 0** |
+
+`tutorial_overlay_no_input_block` 的**变异对照**（每条单独 restore + 每次单独 `sha256sum` 校验，串命令一律用 `;` 不用 `&&`）：
+
+| 变异 | 期望命中 | 实测 |
+| --- | --- | --- |
+| 气泡退回 `STOP` 且删掉 `_make_mouse_transparent(_bubble)` | `overlay_child_blocks_input` + `overlay_in_hit_path` + `click_did_not_reach_widget` | FAIL 24（18 + 4 + 2） |
+| `confirm_tap_step()` 改成 `pass` | `tap_click_did_not_advance` + `tap_step_key_unchanged` | FAIL 24（12 + 12） |
+| `is_tap_step()` 恒 `return true` | `nontap_step_is_tap` | FAIL 18 |
+| `_tap_advance_accepts` 的受理矩形 `grow(10)` → `grow(4000)` | `outside_target_accepts_tap` | FAIL 3 |
+| 干净构建（对照） | —— | **PASS 181 / 0** |
+
+- ⚠ **首版门禁报的是"假红"**：6 条全在 `VIEW_TREASURE`（"在屏幕中心真实按下之后 step 没有推进"）。插桩查明 `_input` **确实进了**（`active=true / supp=false / ov=true / vis=true`），只是**目标控件是 0 尺寸** —— `VIEW_TREASURE` 的目标 `_treasure._owned_treasure_box`（`GridContainer`，无子节点）实测 `rect = P(6,549) S(0,0)`，`grow(10)` 只覆盖它原点那一小角，**屏幕中心当然不算数**。**病在门禁不在产品**：我自己的"目标可用"判断多加了一条 `size > 0`（产品规则里没有），于是回落去点屏幕中心。改成**逐字照抄产品的采样规则**（`target == null or not is_inside_tree()` → 用覆盖层中心；否则用目标矩形中心）后 **PASS 181 / 0**。
+- ⚠ 同时补掉一个**门禁自身的洞**：`tutorial_focus_mask._check_draw_order` 的 `above` 表原来是**字面 Dictionary**，四个条目会被**同时求值**，于是 `z_index` 那条判据连"热点"这种已失效条目也会跑；删掉热点条目后这个洞作为**副产品**消失。D1/D2 两条变异（`dim.z_index = 999` / 每帧 `move_child(dim, -1)`）在**当前**表上重跑仍分别命中 `dim_z_above_chrome` **9** 条 / `dim_above_chrome` **9** + `dim_not_first_child` **3** 条。
+
+> - 问题2 的门禁**不得在编译期绑定** `TutorialMode` 的新符号（`FOCUS_DIM_COUNT` / `FOCUS_HOLE_PADDING` / `_update_focus_dim`）：第一版直接写 `TutorialScript.FOCUS_DIM_COUNT`，在**未修复**的构建上整个脚本解析失败、场景没有脚本、进程**不退出** —— 门禁挂住而不是判红。改成常量走 `get_script_constant_map()`、方法走 `call()` 之后，"没有这套东西"才会落到 `dim_node_count` 这条正常失败上。
+> - 画序判据必须**同时**钉 `z_index` 和子节点 index：2D 绘制顺序是 `(z_index, index)` 这个二元组，只钉 index 会漏掉「把遮罩 z 抬到 999 盖住气泡」这种改法（变异对照里那条 `dim_z_above_chrome` 就是专门补这个洞的）。
+> - 变异对照的**载荷本身也要自检**。这一轮踩了两个坑：①「把遮罩挪到末尾」写在遮罩刚创建之后 —— 那时它本来就是唯一子节点，`move_child(-1)` 等于空操作；②「每帧改几何」的漂移周期写成 3，而采样窗口是 6 帧 —— 3 整除 6，两次采样同相位，等于没变（后来改成 `% 7`）。**变异不打中不等于门禁漏判**，先确认变异真的生效。
+
+### 回归（在 `GLory-codex` 上跑仓里既有门禁；跑完即卸载临时挂载的 `tools/`）
+
+- **单跑通过**：`prep_1005` 100/0、`prep_1006` 64/0、`prep_countdown_ui` 43/0、`prep_detail_overlay` 32/0、`prep_piece_interaction` 30/0、`prep_drag_threshold` 67/0、`tutorial_target` 150/0、`tutorial_text_leak` 95422/0、`touch_scroll` 11/0；`tutorial_carrot_flow` 自带汇总 47 passed / 0 failed。
+- **判红但已逐条对照"修复前版本"，失败集合完全一致 ⇒ 既有问题，非本轮引入**：`tutorial_overlay_layout` 7、`tutorial_checkpoint` 7、`prep_1008` 10、`comms_layout` 1、`synergy_bond` 6、`procedural_ui_ratchet` 3。返工后再跑一遍，数字与 FAIL 集合都没变。
+  对照口径：`git show HEAD:<file>` 换回未修改版本重跑同一门禁，把 `FAIL [...]` 行排序后 `diff` —— 两边一致才算既有。
+- **本轮没跑成 / 不适用**（保持原样，未被本轮影响）：`tutorial_arrow_alignment_check` 自带前置要求 `application/config/use_custom_user_dir=true`（codex 为 false，门禁直接 `quit(2)`）；`tutorial_step15_flow_check` 在**修复前版本上同样**跑满 75s 不产出 `CHECK_RESULT`（headless 下走不完，属既有现象）。`asset_manifest_check` / `icey_hair_check` 未跑 —— 本轮 `assets/**` 一个文件都没碰。
+  - **同日第三轮补充**：`tutorial_step15_flow` 这次**跑满了**（不再"75s 无输出"），**FAIL 48**；`tutorial_checkpoint` **FAIL 7**。两条都用 `HEAD` 版对照过，失败集合**完全一致** ⇒ 既有。关键证据：`grep -cE "BOND_HINT|VIEW_TREASURE|FORMATION_HP|CARROT_HARVEST" <完整日志>` = **0** ⇒ 那一轮 20 轮推进**全部死在 `PLACE_3`**，`_tap_continue()` **一次都没执行** ⇒ 这 48 条与第三轮把 `_on_hotspot_pressed` 改名成 `confirm_tap_step` 无关。
+
+### 本轮文件与哈希
+
+| 文件 | 改动 | sha256（改后） |
+| --- | --- | --- |
+| `scenes/prep/panels/ShopPanel.gd` | +34 行（`_set_bottom_bar_blocked` + 注释 + 1 处调用） | `ea461724815df5eca45baa7858912bb7b2b6811d1bd54b3b32e594d854cf24e6` |
+| `scripts/tutorial/TutorialMode.gd` | +154 行（3 个常量 + 1 个成员 + shader preload + 1 处调用 + 单块遮罩构建 + `_update_focus_dim`；同日第二轮追加 `focus_mask_disabled_for` / `focus_mask_disabled` / `_focus_dim_node` + 1 处显隐开关） | `e48a899f44cd854c00848a9c83653fff3a0bd8a319a99f9c13e4547dca8a003f` |
+| `shaders/tutorial_focus_mask.gdshader` | **新文件** 41 行（单块遮罩的 `canvas_item` shader） | `d156de6b5cbe1366007c957b0486a34b7872711d8a541e4f74cf10fd4b55ea76` |
+| `_qa_1016/` | **新目录** 7 文件（共 1237 行）：`CheckHarness.gd`（`tools/CheckHarness.gd` 的副本，191 行）+ `shop_covered_click.gd`（341 行）`/.tscn` + `tutorial_focus_mask.gd`（511 行）`/.tscn` + `mask_pixel_probe.gd`（176 行）`/.tscn` | —— |
+
+两个既有文件相对 HEAD 都是**纯新增**（`git diff --numstat` = 34 + 154 = 188 insertions / **0 deletions**），行尾仍是全 CRLF（codex 的 `core.autocrlf=true`，与树内其它文件一致）。新增的 8 个文件（1 shader + 7 门禁/探针）**全部 `git check-ignore` 实测可上传**，因此**桌面不放任何副本**；**本轮没有新增美术资源**（`assets/**` 零改动）。
+
+**同日第三轮的改动与哈希**（第二轮那两段里的 `188` / `零删除` / `PASS 409` 已被本轮取代）：
+
+| 文件 | 改动 | sha256（改后） |
+| --- | --- | --- |
+| `scripts/tutorial/TutorialMode.gd` | `+310 / -33`（vs HEAD）＝ 删 `_hotspot` 整套；新增 `TAP_TARGET_PAD`、`_input`、`is_tap_step`、`_tap_advance_accepts`、`confirm_tap_step`、`_make_mouse_transparent` | `6c37be501a1c488de6b8e32f30dc9647b318c18bbccf45e32e7f733a0bcc44ba` |
+| ↑ 同文件**第三轮追加** | 再 +9 行：`focus_mask_disabled_for()` 放行 `TAKE_TREASURE_1` / `TAKE_TREASURE_2` / `FILL_7` + 注释（净 vs HEAD 现为 `+319 / -33`） | `7ac775ae78048ce1e84e3184ed894bca16d5c3da0875600c327705aa5cf499ab` |
+| `_qa_1016/tutorial_overlay_no_input_block.gd` | **新文件** 546 行 | —— |
+| `_qa_1016/tutorial_overlay_no_input_block.tscn` | **新文件** | —— |
+| `_qa_1016/tutorial_focus_mask.gd` | checked 409 → 403 → **400**（删 2 条热点断言；真值表补 4 行 + 1 行 `VIEW_TREASURE` 边界钉子） | `a7182852300f9d5433d8186785eb7e2c51d25b5f2cfd918edef1aa67849992c8` |
+| `GLory-v1.0/tools/tutorial_checkpoint_check.gd` | `+9 / -5`（`_tap_continue()` 改调 `TutorialMode.confirm_tap_step()`） | `e0664ed2e78da525ee5446c08a3f9e7faa7232116fc8b41b023e0cb022e7d5e6` |
+| `GLory-v1.0/tools/tutorial_step15_flow_check.gd` | `+6 / -4` | `3ea685c45016ef2bc5e36fe1cd0e26ef77324e718b8951086aa3c55d7558912c` |
+| `GLory-v1.0/tools/tutorial_carrot_flow_check.gd` | `+2 / -1` | `803675426ec2d70c0a1eb81cbef1efe1efd9060a7c630250208c5ae0f86b3a17` |
+
+`TutorialMode.gd` 改后 **103733 B / 2186 行 / 全 CRLF**（第三轮追加前为 102957 B / 2177 行）（`_qa_1016/` 现为 **16 个文件**）。三个仓侧 `tools/` 门禁只是把"调用已不存在的 `_on_hotspot_pressed`"改成调用 `confirm_tap_step()`（**仓侧 `GLory-v1.0` 尚未 `add/commit/push`，由用户执行**）。第三轮的 `.gd.uid` 一并保留（仓里 884 个 `.uid` 全部入库，先例 `_qa_t3unique/check.gd.uid`）。本轮**无新美术资源**（`find ./assets -newermt` 为空）；`_qa_1016/**` 与 `README.md` 全部 `git check-ignore` 实测**可上传** ⇒ **桌面不放副本**。
+
+### 问题3（同日第四轮）：备战-宠物界面 —— 点宠物模型弹出技能浮框
+
+- **反馈（`10.15新手教程、商店UI优化.docx` 第 3 条，逐字）**：「备战-宠物界面，增加一个功能：点击宠物的模型可以显示出对应的宠物技能文本框，点击除宠物模型外的地方文本框消失，文本内容可以参考背包-宠物档案里的文本说明。」（前两点已由用户真机复测通过，本轮接手第 3 点。**纯客户端改动**：无新美术资源、无服务端/数据库改动、不动 `NETWORK_PROTOCOL_VERSION`（仍 41：本轮一个 `@rpc` 都没碰）。）
+- **文案就照背包**：浮框读 `PetService.display_name()` + `PetService.effect_text()` +（可选）`PetService.skill_detail_text()` —— 与「背包 → 伙伴档案」`BagScreen._render_pet_detail()`（`BagScreen.gd:546`）**同一个数据源**，并沿用它的同一条规则：**详情与摘要重复就不重复写**（蘑菇、兔子两条详情就是摘要原文，浮框里只显示一遍）。
+- **显示走立绘的 `gui_input`，收起只能走 `_input()`**：
+  - `PetPreview.build_illustration()` 返回的 `Control` 内层 `TextureRect` 是 `MOUSE_FILTER_IGNORE` ⇒ 把**外层框**改成 `MOUSE_FILTER_STOP` 才有事件可收（`_build_card()` 里立绘是 `content` 的 `[1]`，名字 `[2]`、效果 `[3]`）。
+  - 「点别处收起」**不能**写在 `_unhandled_input()`：`PetScreen` 根节点就是一块全屏 `MOUSE_FILTER_STOP` 的 `Control`，空白处的点击**会被它吃掉**，`_unhandled_input()` 永远不响 ⇒ 只有 `_input()` 这一条路（与 `PrepScreen._input` 同理）。
+  - 同一击落在立绘上**不会「先开后关」**：派发顺序是 `Node._input()` → GUI 命中测试 → `Node._unhandled_input()`，点立绘那一下先触发 `_input`（收起）再触发立绘自己的 `gui_input`（重新显示），净结果仍是「显示」。
+- **浮框一口都不吃输入**：整棵子树递归设 `MOUSE_FILTER_IGNORE`（`_ignore_mouse_tree()`）—— 与同日第三轮「覆盖层不得限制玩家操作」同一条铁律。门禁专门把浮框**挪到返回按钮上方**，断言 `gui_get_hovered_control()` 仍返回返回按钮、点下去 `back_requested` 照发。
+- ★ **踩到并绕开的坑：`PanelContainer` + 隐藏态 ⇒ 首次显示是个 814px 高的黑框**。
+  - 现象：第一次点立绘，浮框实测 `S=(620.0, 814.0)`（占满整屏），门禁 `tip_off_screen_shown` 当场红。
+  - 根因是**三处引擎行为叠在同一处**：① `Container::_sort_children()` 在 `!is_visible_in_tree()` 时**直接早退** ⇒ 隐藏的容器**从不给子节点排版**；② 自动换行的 `Label` 在宽度 0 时报出天文数字般的最小高度（"一行一个字"），而 `Control.set_size()` **按最小尺寸钳位**，于是那个数字被写进 `size`；③ 容器的 `minimum_size` 是**不随子节点重新排版而失效的缓存**（子节点 `get_minimum_size()` 已经是 29，父容器却还在用宽度 0 时算出的值）。
+  - 改法：**弃用容器**，浮框改成一块普通 `Panel` + **手写逐行布局** —— `_pet_tip_rows` 按加入顺序逐行量自己的 `get_minimum_size().y` 再摆位（`_fit_pet_tip()`），全程同步、不依赖排版时机，所以首帧就是对的。这同时修掉了真实产品的「首击黑框」。
+  - **高度按文案量、不写死**：`PET_TIP_WIDTH=620`、`PET_TIP_MIN/MAX_HEIGHT=120/420` —— 最长的一条是英文老虎说明（361 字符，中文只有 122），写死高度不是留一大片空白就是被裁。
+- ★ **`alpha = 0` ≠ 不吃点击这条同源教训在浮框上的用法**：浮框是**真的要给玩家看见**的，所以不能再走「`modulate.a = 0` 假装隐形」那条路（GUI 命中测试**完全不读** `modulate`）；正确做法就是 `MOUSE_FILTER_IGNORE`。
+- **`procedural_ui_ratchet` 口径**：`PetScreen.gd` 的基线是 `{"Button.new()": 2}` 且**没有 `StyleBoxFlat.new()` 条目** ⇒ 本轮 `Button.new()` / `StyleBoxFlat.new()` **一个都没加**（浮框底色走既有 `Tokens.panel_box(INK_PANEL, GOLD_EDGE, pad)`）。
+- **翻译键**：`LocaleManager.gd` 加 1 个键 `pet_skill_tip_title`（中 `宠物技能` / 英 `PET SKILL`），浮框眉标用它；名字/摘要/详情走 `PetService`，随语言实时取值，无需另加键。
+
+**本点新增第 4 条门禁**（仍在仓根 `_qa_1016/`，自带 `CheckHarness.gd` 副本）：
+
+| 门禁 | 覆盖 | 结果 |
+| --- | --- | --- |
+| `pet_skill_tip` —— 初始隐藏 + 浮框子树全 `IGNORE`（递归）+ 立绘全 `STOP` + 点立绘显示（名字/摘要/详情逐字对 `PetService`）+ 详情重复规则 + 点别处收起 + 点另一只切换（含「浮框正盖着的那只」）+ **首帧宽度/高度不许跑飞** + 浮框不吃点击（悬停仍落返回按钮、点击仍能返回）+ 切页签与 `_refresh_pets` 都收起 + 高度随文案 + 逐行不越界 + 3 种画布宽度 | —— | **PASS 57 / 0** |
+
+本点是**纯新增功能**，没有"修复前版本"可对照 ⇒ 红绿口径改用**变异对照**：
+
+| 变异 | 期望命中 | 实测 |
+| --- | --- | --- |
+| `_input()` 改名（等于没有"点别处收起"） | `tip_not_hidden_on_outside_tap` + 3 种分辨率的 `res_tip_not_hidden_*` | FAIL 4 |
+| `_pet_tip_detail.visible = false`（详情永不上屏） | `tip_detail_visibility_wrong` + `tip_height_not_tracking_text` | FAIL 2 |
+| 浮框子树 `IGNORE` 改回 `STOP` | `tip_eats_input`（6 个控件）+ `tip_steals_hover` + `covered_back_click_swallowed` | FAIL 3 |
+| 行高写死 `20.0`（不再量文案） | `tip_height_not_tracking_text` + `tip_clips_content` | FAIL 2 |
+| 干净构建（对照） | —— | **PASS 57 / 0** |
+
+（四条变异各自单独 restore + 单独 `sha256sum` 校验；串命令用 `;` 不用 `&&`，免得门禁一挂恢复步骤被跳过、文件留在变异态。）
+
+**本点的文件与哈希**（相对**本点开工前**的文件版本；`GLory-codex` 的 git `HEAD` 落后工作树若干轮，`git diff --numstat` 会把更早几轮的未提交改动一并算进来，所以这里**不引用 HEAD**）：
+
+| 文件 | 改动 | sha256（改后） |
+| --- | --- | --- |
+| `scenes/menu/PetScreen.gd` | **+207 行 / 0 删除**：5 个常量 + 6 个成员 + `_input()` + `_build_pet_tip` / `_add_pet_tip_row` / `_ignore_mouse_tree` / `_on_pet_art_gui_input` / `_show_pet_tip` / `_hide_pet_tip` / `_fit_pet_tip` / `_place_pet_tip` + 4 处调用（`_build` 尾部、立绘 `gui_input`、`_switch_tab`、`_refresh_pets`） | `e7986bf1282c845024c7dc6c2f6f60a8cf3b4b9d74c6787c2a76d621182377bc` |
+| `scripts/autoload/LocaleManager.gd` | **+2 行 / 0 删除**：`pet_skill_tip_title`（中/英各插在 `pet_none` 之后） | `baf23cb470947b80b62b902818fae4433871eace5b3ba0b962827f6450001d6a` |
+| `_qa_1016/pet_skill_tip.gd` + `.tscn` + `.gd.uid` | **新文件 3 个**（门禁脚本 22873 B + 场景 174 B + uid 20 B） | —— |
+
+改后 `PetScreen.gd` **50316 B / 1103 行 / 全 CRLF**（开工前 896 行 / 40408 B）；`LocaleManager.gd` **50158 B / 1027 行 / 全 CRLF**。`_qa_1016/` 现为 **20 个条目**（7 `.gd` + 7 `.gd.uid` + 6 `.tscn`）。新增 3 个文件 `git check-ignore` 实测可上传 ⇒ **桌面不放副本**；**本点无新美术资源**（`assets/**` 零改动，`find ./assets -newermt "2026-10-15 00:00"` 输出为空；`backend/**` 同样为空）。
+
 ## 2026-10-15（10.15 反馈两项：T3 唯一棋子漏标穿云弩手 + 神族「神圣脉冲」无敌特效接手完成）
 
 来自 `10.15bug提交及修复.docx` 的两项。**问题1 改 1 个数据字段；问题2 是纯客户端呈现（2 个新文件 + 1 处接线 + 1 条预热）**。无数据库迁移、无服务端代码改动、**不动 `NETWORK_PROTOCOL_VERSION`（仍 41：本轮一个 `@rpc` 都没碰）**。改动在本地 `GLory-codex` 完成，**待用户实测**；通过后再按 10.14 的口径同步到 `GLory-v1.0`（本批**尚未同步**）。版本控制提交与推送由用户执行。
