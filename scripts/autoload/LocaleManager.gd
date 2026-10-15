@@ -436,6 +436,7 @@ func _zh_strings() -> Dictionary:
 		"pet_back": "返回",
 		"pet_active_label": "出战宠物：%s",
 		"pet_none": "无",
+		"pet_skill_tip_title": "宠物技能",
 		# 宠物名 + 效果
 		"pet_name_pet_mushroom": "蘑菇",
 		"pet_name_pet_cat": "猫",
@@ -934,6 +935,7 @@ func _en_strings() -> Dictionary:
 		"pet_back": "Back",
 		"pet_active_label": "Active pet: %s",
 		"pet_none": "None",
+		"pet_skill_tip_title": "PET SKILL",
 		# Pet names + effects
 		"pet_name_pet_mushroom": "Mushroom",
 		"pet_name_pet_cat": "Cat",

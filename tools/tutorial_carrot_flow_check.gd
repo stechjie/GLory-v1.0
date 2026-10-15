@@ -119,7 +119,8 @@ func _cell(id: String, star: int) -> Dictionary:
 
 
 func _tap() -> void:
-	TutorialMode._on_hotspot_pressed()
+	# 2026-10-15 第三轮：原 `_on_hotspot_pressed()`，透明热点删掉后改名（覆盖层不再吃点击）。
+	TutorialMode.confirm_tap_step()
 
 
 # 与 PrepBoardController.request_upgrade_stone_draw 的本地结算同一串调用。

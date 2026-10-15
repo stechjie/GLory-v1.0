@@ -16,6 +16,55 @@ const SERVER_PORT := 8080
 const CONNECTION_TIMEOUT := 10.0
 const USE_DEDICATED_SERVER := true
 
+# --- 本地测试服覆写（默认完全不生效；改了也影响不到正式服）---------------------
+#
+# GLory-codex（config/name="测试服"）要连本机起的战斗服；GLory-v1.0
+#（config/name="正式服"）必须连线上。两份工程共用同一套源码，所以这里**不写死**
+# 本地地址，改成读一份**不在仓库里**的配置：
+#
+#     user://local_test_override.cfg
+#       测试服 → %APPDATA%\Godot\app_userdata\测试服\local_test_override.cfg
+#       正式服 → %APPDATA%\Godot\app_userdata\正式服\      （没有这个文件）
+#
+# user:// 按 config/name 天然隔离。正式服的 user:// 里没有这份文件 ⇒ 走 SERVER_HOST
+# 原值，行为与改动前**逐字节相同**。所以这份改动哪怕整份同步进 GLory-v1.0 也不用回退。
+#
+# 优先级：命令行 --battle-host=  >  user://local_test_override.cfg  >  SERVER_HOST
+#
+# ⚠ NetworkConfig / NetTLS / AccountConfig 三个文件里**各留一份同样的实现**，是刻意的：
+#   抽成公共脚本后，若只同步其中一个文件、漏了公共脚本，另一端会在解析阶段直接挂。
+#   各留一份 = 任意一个文件单独同步都安全。
+const LOCAL_TEST_CFG := "user://local_test_override.cfg"
+const BATTLE_HOST_FLAG := "--battle-host="
+
+static func _local_test_flag(flag: String) -> String:
+	# **两个来源都要查。** `--` 之后的参数只出现在 get_cmdline_user_args()，
+	# 不在 get_cmdline_args() 里（同 NetTLS.server_key_path() 踩过的坑）。
+	for source in [OS.get_cmdline_args(), OS.get_cmdline_user_args()]:
+		for arg in source:
+			if str(arg).begins_with(flag):
+				var v := str(arg).substr(flag.length()).strip_edges()
+				if not v.is_empty():
+					return v
+	return ""
+
+static func _local_test_cfg(section: String, key: String) -> String:
+	if not FileAccess.file_exists(LOCAL_TEST_CFG):
+		return ""
+	var cfg := ConfigFile.new()
+	if cfg.load(LOCAL_TEST_CFG) != OK:
+		return ""
+	return str(cfg.get_value(section, key, "")).strip_edges()
+
+# 取战斗服务器地址**一律走这里**，不要直接读 SERVER_HOST：
+# 直接读就等于把本地测试服的地址钉死在源码里，同步到正式服工程会出事。
+static func server_host() -> String:
+	var v := _local_test_flag(BATTLE_HOST_FLAG)
+	if v.is_empty():
+		v = _local_test_cfg("battle", "host")
+	return v if not v.is_empty() else SERVER_HOST
+
+
 # --- 传输加密（C14）---------------------------------------------------------
 # 战斗链路走 DTLS。实现在 scripts/multiplayer/NetTLS.gd，那里写了为什么审计文档
 # 原来记的"插不进去"是错的，以及为什么用 client_unsafe。

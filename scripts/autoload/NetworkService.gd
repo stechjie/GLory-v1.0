@@ -341,7 +341,10 @@ var _seen_card_jti: Dictionary = {}   # jti -> 过期时刻（unix 秒）
 # 验章在战斗服务器上，客户端怎么拿到名片都得过那一关。
 var seat_card_provider: Callable = Callable()
 const DEFAULT_PORT := NetworkConfig.SERVER_PORT
-const DEFAULT_HOST := NetworkConfig.SERVER_HOST
+# 注意：原来是 const，为了能读本地测试服覆写（NetworkConfig.server_host()）改成 var。
+# 因此 team_join() 的默认值不能再写 DEFAULT_HOST（GDScript 默认参数只接受常量），
+# 那里改成空串 + 进函数再取默认值。
+var DEFAULT_HOST := NetworkConfig.server_host()
 const TEAM_MAX_CLIENTS := 512
 var last_carrot_harvest_gain := 0
 const TEAM_SLOTS := 6
@@ -739,7 +742,7 @@ func _ready() -> void:
 # 解析失败不进缓存：建连时会再解析一次，照常走「连不上」那条路，这里不用管。
 # 无界面运行（门禁、工具）跳过，免得每次跑门禁都去查一次公网 DNS。
 func _warm_server_dns() -> void:
-	var host := NetworkConfig.SERVER_HOST
+	var host := NetworkConfig.server_host()
 	if host.is_valid_ip_address() or DisplayServer.get_name() == "headless":
 		return
 	var id := IP.resolve_hostname_queue_item(host)
@@ -1113,13 +1116,17 @@ func team_host(port: int = DEFAULT_PORT, dedicated: bool = false) -> bool:
 	team_lobby_changed.emit()
 	return true
 
-func team_join(address: String = DEFAULT_HOST, port: int = DEFAULT_PORT) -> bool:
+func team_join(address: String = "", port: int = DEFAULT_PORT) -> bool:
+	# 默认参数只能是常量，所以这里空串进来再取（见 DEFAULT_HOST 上方的说明）。
+	var host := address.strip_edges()
+	if host.is_empty():
+		host = DEFAULT_HOST
 	reset()
 	team_active = true
 	# 10.11 第 7 条：同 team_host —— 联机会话一开始就摘掉「本地自测」身份。
 	offline_selftest = false
 	public_token_id = SaveManager.load_public_token()
-	remote_address = address.strip_edges()
+	remote_address = host
 	remote_port = port
 	var p := ENetMultiplayerPeer.new()
 	var err := p.create_client(remote_address, remote_port)
