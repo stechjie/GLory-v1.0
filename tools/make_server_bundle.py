@@ -27,7 +27,7 @@ import time
 import uuid
 import zipfile
 
-ROOTS = ("scripts", "scenes", "effects", "data", "tools", "ui")
+ROOTS = ("scripts", "scenes", "effects", "data", "tools", "ui", "shaders")
 EXTENSIONS = {".gd", ".uid", ".tscn", ".tres", ".gdshader", ".gdshaderinc",
               ".json", ".csv", ".txt", ".cfg", ".py", ".sh", ".ps1", ".bat", ".md", ".java"}
 EXCLUDED_PARTS = {".git", ".godot", "__pycache__", "reference_packages", "node_modules",
