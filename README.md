@@ -1,8 +1,138 @@
 # Glory Beta 0.04
 
+## 2026-10-16 晚：本地化防复发基建（英文界面中文巡检 + 不许直读 `name` + 数据双语断言）
+
+**起因**：同一个坑第三次复发 —— `tools/prep_1008_check.gd` 里那条 `bug1_no_bare_chinese_literals` 只抓**中文字面量**（源码里写死中文、没走 `tr()`），而它自己的注释里就记着 10.08c 修过「统计行 / 上阵头像 / 宝物名」三处直读中文 `name`；10.16 又是七处。它抓不到的两类：
+① `str(def.get("name", ...))` —— 直读数据表的**中文字段**（是变量，不是字面量，扫描器看不见）；
+② 把**贴图名**当显示名（`treasure_logos/` 下就是中文文件名 `凤凰涅槃.png`）。
+⇒ 靠「记得写对」走不通，改成**让机器拦**。
+
+**数据侧先查清了**：11 张表 **237 条** `name_en` 全非空（avatars 60 / treasure_text 41 / race_units 40 / treasures 25 / shop 22 / pve_monsters 16 / mercenaries 12 / bosses 9 / formation_allies 5 / pets 5 / prep_skins 2）⇒ 纯调用侧问题，数据断言只是防**新增条目漏填**。
+
+**三样东西（全在 `_qa_1016/`，都是新增文件 —— 零生产代码改动、零工程配置改动）**
+
+| # | 东西 | 拦什么 |
+|---|---|---|
+| 1 | `locale_guard_check.tscn` + `LocaleTextAudit.gd` | **英文界面中文巡检**：不查代码怎么写，直接扫最终控件文本里的汉字 ⇒ 新增任何显示路径都逃不掉 |
+| 2 | `no_direct_name_read_check.tscn` | **不许直读 `name` 当显示名**：扫 `scenes/`+`ui/`+`scripts/`，粗筛出疑似行，必须落在合法清单或技术债里 |
+| 3 | 同上（第 3 段） | **数据双语断言**：237 条 `name` / `name_en` 双非空 |
+
+**① 巡检器 `LocaleTextAudit.gd`** —— 三道判据对付「中文不一定都是 bug」（玩家自己产生的内容本来就该原样显示）：
+- **控件类型**：`LineEdit` / `TextEdit` / `CodeEdit` 的 `text` 是玩家输入 ⇒ 不扫；它们自己的 `placeholder` / `tooltip` 是开发文案 ⇒ 照扫。
+- **节点路径**：路径命中 `chat` / `message` / `nickname` / `friend` / `mail` / `report` / `input` … ⇒ 整条豁免。
+- ★ **内容剔除**：把调用方给的 `player_strings`（当前账号昵称、聊天原文、好友名…）从文本里**挖掉**，再看剩下的还有没有汉字 —— 这条最要紧：`Shell Guard · 老王` 不误报，而 `Shell Guard · 老王 · 甲壳守卫` 里那个真漏点照样被抓。
+- 附带：**主窗口标题不扫**（那就是 `config/name`，两棵树靠它隔离：`测试服` / `Glory Beta 0.04`），只有子窗口标题算 UI 文案。
+
+**② 源码门禁的判据**（一行同时满足才算 offender）：出现 `get("name"` 或 `["name"]`；且不含任何「已经考虑过语言」的线索（`tr(` / `_t(` / `name_en` / `name_cn` / `is_en(` / `localized_name` / `unit_name` / `display_name`、贴图名 `.png` / `portrait` / `tname` / `catalog` / `ICON` / `LOGO` / `_DIR`、玩家名 `player` / `seat` / `message` / `who` / `actor` / `sender` / `account` / `nickname` / `owner` / `member`、反射 `property_info` / `method.get` / `parts[`、日志回放 `state.log` / `log_` / `roster` / `BattleSim` / `replay`）；且不是写字段形态 `"name": str(`；且不是纯比较排序。
+- ★★ **判据必须带词边界**：`tr(` 是 `str(` 的**子串** —— 写成裸子串会把所有含 `str(` 的行都豁免掉，实测 offender 从 **17 条假降到 1 条**（差点交出一份假绿的扫描）。
+- 66 处原始命中 → 粗筛剩 17 条 → 其中 **14 条是合法直读**（进 `ALLOW`，每条带 `why`：`_fighter_display_name` 兜底 / `_entry_name` 兜底 / `PrepSkin` 中文分支 / `PrepUI` 的**贴图名**参数 / `PetService.display_name` 的翻译兜底……），**3 条是真漏点但属死代码**（`CarrotCampPanel` V1/V2，进 `KNOWN_DEBT`，**带到期日 2026-11-15**，到期自动变红 —— 照抄既有 `check_allowlist.json` 的精神，防「登记一次永远绿」）。
+- **防判据被放宽**：门禁里带**正反样本自检**（10 条）—— 谁为了过门禁把 SAFE 改宽，自检立刻红。
+- **防腐烂**：`ALLOW` / `KNOWN_DEBT` 每条都必须仍在源码里找得到，否则报 stale。
+
+**验证。**
+- `locale_guard` **PASS checked=59 failures=0**（CJK 检测器 5 条 + 玩家文本豁免 6 条 + 数据 237 条与 2 条 + 中英两轮真界面巡检）；`no_direct_name_read` **PASS checked=248 failures=0**（正反样本 10 条 + 扫 231 个 `.gd` + 合法清单 14 条 + 技术债 3 条）。
+- 变异 **2/2 通过、且各打各的**：把联动标题改回中文 ⇒ `locale_guard` 红（`en_surface_has_chinese`）而源码门禁不红；往 `PrepUI` 插一行 `str({...}.get("name", ""))` ⇒ 源码门禁红（`unlisted_direct_name_read`）而巡检不红。两次都从备份还原，`sha256` 逐字节相符。
+
+**三条规矩（新增 UI 文案时照这个来）**
+① 显示名**只走 helper**：`PrepWidgets.unit_name(d)` / `PrepWidgets.localized_name(d)` / `UnitDetailFormat.localized_name(d)` / `DataRegistry.unit_display_name(d, is_en)` —— 不许 `def.get("name")`。
+② **贴图名参数不许塞显示名**：`treasure_logos/` 下的文件名是中文，参数命名要能自证（`art_name` vs `display_name`）。10.16 的「图标消失」就是往贴图名参数塞了显示名。
+③ 新增数据条目**必须同时填 `name_en`**。
+
+**跑法**
+```
+Godot_v4.7.2-stable_win64_console.exe --headless --path <工程根> _qa_1016/locale_guard_check.tscn
+Godot_v4.7.2-stable_win64_console.exe --headless --path <工程根> _qa_1016/no_direct_name_read_check.tscn
+```
+
+★ **未做（需你定）**：① 想让它**在运行中的游戏里按一下键就扫当前界面**，需要个常驻钩子 —— 最干净的是接进已经注册在 `project.godot` 里的 `DeviceHarness`（不必动工程配置），要接说一声；② 巡检现在驱动的是备战链（萝卜营地 / 四星确认 / 联动详情），图鉴 / 商店 / 结算 / 宠物那几个重界面还没进驱动列表 —— 不过它们在源码门禁那一侧已逐条确认过。
+
+★ **同步状态（2026-10-16 22:52）**：本批 10.16 的改动**已同步到 `GLory-v1.0`** —— 8 个已跟踪文件（`README.md` + `BattleResult.gd` + `Main.gd` + `CarrotCampPanelV3.gd` + `PrepBoardController.gd` + `PrepUI.gd` + `FinalSettlementData.gd` + `TutorialMode.gd`）＋ 10 个新增门禁文件（`_qa_1016/` 下 `LocaleTextAudit.gd` / `locale_guard_check.*` / `no_direct_name_read_check.*` / `prep_localized_name_check.*` / `tutorial_battle_result_check.*`），逐文件 `sha256` 相符（`v1.0` 侧 `git status` = 8 `M` + 10 `??`）。四份门禁**在两棵树里都跑过**：codex 74/59/248/29 全 0 失败，v1.0 74/59/243/29 全 0 失败（243 与 248 的差额 = `scenes/debug/` 那 5 条，调试预览器在包体树里不存在、门禁已跳过它）。**未** `git add/commit/push` —— 提交与推送由你在 GitHub Desktop 做。
+
+
+## 2026-10-16：《10.16bug提交及修复.docx》第 1 条（教程战斗显示 Defeat + 教程通关弹结算面板）
+
+文档第 1 条原文两点：①「点开『重新体验教学』，根据新手步骤教学进入战斗阶段，发现和原来预设的新手教程战斗不同」（视频里战斗结算播的是 **Defeat**，而教程预设的就是必胜的教学局）；②「新手教程结束有弹出结算面板的情况」（截图里是 **Result: Draw** + 两个 Main Menu）。两点都偶发、同会话内才出现。第 2 条（英文语音下萝卜营地四星升级棋子名未英化）另案，不在本条内。
+
+**根因 ①「显示 Defeat」：教程战斗的胜负从来不由模拟结果决定，但字幕读的是模拟结果。**
+- 链路：`BattleScreen._process` 的 finished 分支 → `BattleResult._finish_simulation()` → `_result = BattleSim.result_from_state(_state)` → `_emit_finished()`（水晶演出 → `_show_result_overlay()` 写字幕+播胜负音 → 停留 → `battle_finished.emit()`）→ `Main._on_battle_finished()` → `TutorialMode.after_battle(result)`。`after_battle()` **在字幕之后**才跑，而它只在 `START_PVP` 一个分支里把 `player_wins` 改写成 true，PVE/Boss 三个分支**根本不看 result**。
+- 那 PVE 教学局为什么会输：`prepare_tutorial_state()` 在 `player.is_empty()` 时直接返回 `finished=true` + `forced_result.player_wins=false`（reason `no_player_units`）⇒ **瞬间判负**。探针实测（`work/_qa_1016_tut/tutorial_battle_probe.gd`，真实 BattleSim）：3 个 1 星棋子打 3 只教学小怪（80HP/6ATK/0DEF）**必赢**（wipeout，3/0，1.9s）；空棋盘**必败**。所以「输」只有空棋盘一条路。
+- 空棋盘闸只住在 **UI 按钮层**（`PrepFlowController._on_start_battle` 的 `battle_board_gate_message()`）；`TutorialMode.begin_battle()` 只查步骤不查棋盘，而 `PrepScreen` 还有**不走按钮处理函数**就 emit `battle_requested` 的旁路（战斗加载重试、`team_round_start`）⇒ 闸门挡不全。
+- 教程输战斗**不掉** formation HP（全库只有金祭坛扣血）⇒ 没有连锁 game-over，表现就是「打了场没打的仗、还输了、然后被拽到下一步」。
+
+**根因 ②「通关弹结算面板」：教程收口蹭了联机结算屏，而联机残留没清。**
+- `Main._on_battle_finished()` 教程且 `step == DONE` → `TutorialMode.finish()` → `_show_game_over()`；后者取 `NetworkService.latest_match_state.get("final_settlement", {})` 当结算包。教程是本地模拟，**从来不产生 final_settlement** ⇒ 空字典；而 `can_show_details()` 只要 `kind` 非空就返 true（10.07 有意对所有 kind 放行），`kind` 只能来自**残留的** `latest_match_state`。空 data 进 `FinalSettlementPanel`：outcome 默认 2 →「Result: Draw」、seats 空 → 无详情、按钮加两次且都退化成只剩一个 ⇒ **两个 Main Menu**，与截图三特征全中。
+- `latest_match_state` 只在 `NetworkService.reset()` 里清，而多条退房路不走 reset：`_rpc_team_room_closed()`、`_on_server_disconnected()`（无 token）都只把 `team_active` 置假；`request_user_leave()` 的 match_started 分支要 `_manual_exit_notice_available()` 为真才 reset。`_enter_tutorial_from_startup()` 原来也只在 `team_active` 仍为真时才补 reset。⇒ **新进程第一次进教程不弹；同会话先打联机、再从主菜单→设置→「重新体验教学」打完才弹**（这正是「重新体验教学」的入口路径）。次级表现：若早先联机收到过带 final_settlement 的终局 match_state，教程后面板显示的是**上一场联机**的数据。
+
+**修法：四层兜底，每层都不依赖调用方做对。**
+| 层 | 落点 | 保证什么 |
+|---|---|---|
+| 1 | `BattleResult._finish_simulation()`：拿到结果之后、`_emit_finished()` 之前，`GameState.tutorial_mode` 下调 `TutorialMode.coerce_victory()` | 字幕 / 胜负音 / 水晶演出 / `battle_finished` 信号读到的都是同一份胜利结果。`coerce_victory()` 只改结果字典，**不动 `GameState.enemy_formation_hp`**（备战界面敌方血量教程中途要保持 10/10） |
+| 2 | `TutorialMode.begin_battle()`：新增 `required_board_units()`（与 `battle_board_gate_message()` 同源）+ `_ensure_board_ready_for_battle()` + `_auto_deploy_from_bench()` | 上阵数不足时先从待命区补（跳过会触发合成的、跳过重复的唯一棋子），补完仍不够就弹「上阵棋子数目少于N」并 `return false`，不烧调用方的一次性发射锁 |
+| 3a | `FinalSettlementData.can_show_details()`：空 `data` 一律 false | 没有结算包就没有详情按钮 |
+| 4 | `Main._enter_tutorial_from_startup()`：无条件清 `latest_match_state` / `team_replay` / `team_replay_rival`，且清在开教程**之前** | 教程收口读不到任何联机残留 |
+
+第 1/2 层分别挂在「生产链自己会走到的那一个点」上：`_finish_simulation` 是本地模拟 `_process` finished 分支与 `_skip_animation` 两条路的汇点；`begin_battle()` 是 `Main._on_battle_requested` 开战前的最后一个函数，旁路也要经过它 ⇒ 「旁路不过闸」这个根因在结构上被消掉。
+
+**验证。** 新门禁 `_qa_1016/tutorial_battle_result_check.tscn` **PASS checked=29 failures=0**（29 条 = 根因钉子 3 + 第 1 层行为 6 + 第 1 层接线序 2 + 第 2 层行为 5 + 闸门同源 6 + 第 3 层 4 + 第 4 层 3）。变异对照 **4/4 全部 RED 且失败码与预期逐条对应**：M1 拆掉第 1 层接线（`layer1_wrong_position`+`layer1_unguarded`）、M2 拆掉第 2 层开战闸（`self_heal_not_deploying`+`no_refuse_when_nothing_to_deploy`）、M3 拆掉空包守卫（`empty_settlement_opens_details*` 2 条）、M4 把清理改回条件式（`layer4_replay_residual_kept`+`layer4_clear_nested`）——M4 第一版没红，暴出门禁只钉位置钉不住「无条件」，补了「三条清理必须落在函数体顶层」这条才咬住。每次变异后核 `sha256` 还原，四个生产文件**逐字节还原**。相邻面回归：`tutorial_focus_mask` PASS 400/0、`tutorial_overlay_no_input_block` PASS 181/0、`bench_drag_after_shop_close` PASS 39/0、`shop_covered_click` PASS 27/0、`pet_skill_tip` PASS 57/0、`_qa_t3unique/check` 18/18。`--headless --editor --quit` 解析通过。
+
+★ **门禁量不到的部分**：`--headless` 不渲染，「字幕到底显示 Victory 还是 Defeat」没有画面真值；教程通关屏现在长什么样（保留 Victory 通关屏、只是没有详情按钮）也没做真机观感验收。
+
+★ **未启用的一档（第 3b，需要你定）**：教程 DONE 仍然走 `_show_game_over()`（现在因敌方法阵血量被置 0 而显示胜利通关屏，但没有详情按钮）。若想「教程完成后直接回主菜单/回备战、彻底不出现任何结算类界面」，改 `Main._on_battle_finished()` 的 DONE 分支即可 —— 第 3a + 第 4 层已经保证弹不出面板，这一档只是少一张通关庆祝屏。
+
+★ **未做**：真机验收；未重新导出 EXE / APK（改的是运行期源码，`balance_version` 未动 ⇒ 不需要顶协议号）。
+
+★ **同步状态**：已随 10.16 批次同步到 `GLory-v1.0`（sha256 逐文件相符）；**未** `git add/commit/push`（由你提交）。
+
+
+## 2026-10-16：《10.16bug提交及修复.docx》第 2 条（英文界面下显示名漏本地化：七处 + 一次返工）
+
+原文：「英文语音模式下，萝卜营地里三星升级四星功能棋子的名字未转成英文版格式。之前遇到太多相关的情况，也修复了几处类似的地方。请你仔细检查，如果还有类似的地方请调整过来。」
+
+**根因（一条，七处同源）：显示名直读数据表的 `name`。**
+`DataRegistry.canonicalize_unit_display_names()` 只把 `name` / `name_en` 覆写成正式表的值（防服务器 payload 与旧存档携带的历史名重新出现），**不按 locale 选语言**；全库按 locale 取 `name_en` 的只有 `unit_display_name()`，包装层是 `PrepWidgets.unit_name()`（≡ `PrepWidgets.localized_name()` ≡ `UnitDetailFormat.localized_name()`）。所以任何 `def.get("name")` 在英文界面下**永远**是中文 —— 与「这枚棋子的名字有没有被 canonicalize 过」无关。
+数据侧无需补：`race_units.json` 40 枚 + `mercenaries.json` 12 枚的 `name` / `name_en` 全非空，`treasures.json` 25 件与 `data/codex/treasure_text.json` 的 linkages / sets 也都有 `name_en` ⇒ 纯显示侧漏点。
+
+**修的七处**
+
+| # | 位置 | 界面上的地方 | 修法 |
+|---|---|---|---|
+| 1 | `CarrotCampPanelV3.gd:594` | 萝卜营地 · 升级石页 · 四星候选行标题（**玩家报告的本体**） | `PrepWidgets.unit_name(unit_def)`；def 为空时仍回落 `_t("棋子","Unit")` |
+| 2 | `PrepBoardController.gd:884` | 卖掉四星棋子 · 二次确认框正文 | 同上；`english` 变量上移，回落 `"Unit" / "棋子"` |
+| 3 | `PrepUI.gd:2554` | 佣兵购买卡 · 拖拽预览（按住拖动时飘的那行） | 与同一张卡 2622 行的 `name_label` 统一走 `unit_name` |
+| 4/5/6 | `PrepUI.gd:3459 / 3467 / 3475` | 已拥有宝物 / 联动 / 套装 logo 的 tooltip（悬停才出现） | 新增 `_localized_row_name(row, fallback)`，**只喂 tooltip** |
+| 7 | `PrepBoardController.gd:1244` | 联动详情浮层 · **标题**（点联动 logo 弹出的那一屏） | 与 `_show_set_detail` / `_bonus_title` 同口径取 `name_en`/`name` |
+
+★ 第 7 处是**返工补的**：第一轮只扫了「tooltip」那一层，漏掉了点开之后的详情标题 —— 玩家截图里正文已经是英文（`Treasures: Wail Resonance + Soul Counter` / `Effect: …`），标题却还是「凤凰涅槃」。
+
+**★ 返工：第一轮把「贴图名」当成了「显示名」，图标全消失。**
+`_add_owned_treasure_logo(key, logo_name, detail, tooltip)` 的**第二个参数是三合一的**：既当贴图路径（`treasure_logos/<logo_name>.png`）、又当缺图时的文字兜底、还是 tooltip 的默认值。`treasure_logos/` 里存的就是**中文文件名**（`凤凰涅槃.png` / `4防卫.png` / `铁壁之护.png`），第一轮把 `_localized_row_name(...)` 的返回值塞进第二参 ⇒ 英文界面下路径成了 `Phoenix Rebirth.png` ⇒ 找不到 ⇒ 走 3513 行的缺图兜底显示文字。玩家看到的是「宝藏图标消失了」，实际是**贴图名被换成了显示名**。
+- 修法：第二参恢复贴图名（宝物 `t.name`、联动 `TREASURE_LINKAGE_LOGOS[lid]`、套装 `art`），显示名只喂第四参 `tooltip`；并在 `_localized_row_name` 上写死一句注释「只能喂 tooltip / 文本，绝不能喂第二参」。
+- 铁证（无头真值，比对 `treasure_logos/` 的实际文件）：`铁壁之护.png` **存在** / `Iron Wall.png` **不存在**；`凤凰涅槃.png` 存在 / `Phoenix Rebirth.png` 不存在；`4防卫.png` 存在 / `4 Defense.png` 不存在。
+
+**验证。**
+- 无头探针 `work/_qa_1016_en/probe2.tscn`：中/英各跑一次，把**真实控件文本**原样打出来。七处 before/after 全部有真值 —— 行标题 `神侍  ★★★`→`Godhand  ★★★`；确认框 `Selling "神侍" refunds only 60 gold…`→`Selling "Godhand"…`；拖拽预览 `甲壳守卫\n萝卜 6`→`Shell Guard\nCarrots 6`；宝物 tooltip `铁壁之护`→`Iron Wall`；联动 tooltip `凤凰涅槃`→`Phoenix Rebirth`；套装 tooltip `4防御`→`4 Defense`；**联动详情标题 `凤凰涅槃` → `Phoenix Rebirth`**（正文那两行本来就是英文）。
+- 新门禁 `_qa_1016/prep_localized_name_check.tscn` **PASS checked=74 failures=0**。它是**两头钉**的：
+  - 行为侧：真面板（四星行标题）、真对话框（二次确认正文）、真浮层（联动详情标题，先 `bind` 一份 `_overlay` 再读它的 `RichTextLabel`）、真 helper（`has_method` + `Callable`，取法失效显式 `fail` 记账）；外加 **41 个贴图名 ↔ `treasure_logos/` 文件一致性**（11 联动 + 5 套装 + 25 宝物）。
+  - 源码侧：六处调用点的**第二参必须是贴图名表达式**（宝物 `t.name` / 联动 `TREASURE_LINKAGE_LOGOS[lid]` / 套装 `art`），显示名只能出现在 tooltip 位；再钉住 site3 拖拽预览、site7 标题、site1 行标题的写法。
+  - ⇒ 「图标会不会消失」完全取决于调用点怎么写。只钉数据会在「把显示名塞进第二参」时**照样绿**（这正是本次返工的教训），所以源码那一侧不能省。
+- 变异对照 **4/4 全部 RED、失败码逐条对应**：M1 拆 site1（`site1_en_not_english` + `site1_en_still_chinese` + `src_carrot_row_name`）、M2 拆 site7（5 条）、M3 重现返工前那版错（`src_treasure_logo_art` + `src_treasure_logo_tip`）、M4 抽掉 helper 的本地化（`helper_en_not_localized`）。每次变异后从 `work/_qa_1016_en/mut_backup/` 还原，三个生产文件 `sha256` **逐字节相符**（`PrepUI fbfbb38e…` / `PrepBoardController ecf2210f…` / `CarrotCampPanelV3 d1414159…`）。
+- 相邻回归全绿：`tutorial_battle_result_check` 29/0、`tutorial_focus_mask` 400/0、`tutorial_overlay_no_input_block` 181/0、`bench_drag_after_shop_close` 39/0、`shop_covered_click` 27/0、`pet_skill_tip` 56/0。
+- `--headless --editor --quit` 解析通过；`PrepUI.gd` / `PrepBoardController.gd` CRLF 完整（`lone_lf=0`、`doubled_cr=0`）。
+
+★ **三个探针坑（可复用）**：① GDScript 的 **lambda 对局部变量是值捕获**，在回调里改 `found` 外面读不到 ⇒ 收集结果要用递归函数返回。② `ModalStack._attach()` 在 root 未 ready 时是 `call_deferred` 挂载，弹窗要 `await get_tree().process_frame` 才在树上，同帧读不到。③ 想读 `_overlay` 的文本得先自己 `bind(popup, label)` 造一份，否则 `is_ready()` 为假、`show_text` 静默 return。
+
+★ **两处没动，需要你定**：
+- `CarrotCampPanel.gd` / `CarrotCampPanelV2.gd` 有同样的直读，但它们是**死代码** —— 没有任何 `.tscn` 引用，`PrepUI.gd:23` 只 preload V3（全库只有 `data/qa/procedural_ui_baseline.json` 提过这两个文件名）。
+- 战斗日志 `log_convert` / `log_kill` / `log_god_cleanse` / `log_attack_execute` 会在英文句子里嵌中文棋子名。但日志是**模拟时烘进回放**的，按 locale 取名会让回放永久依赖当时的语言 ⇒ 要改成「日志存双语、显示时再选」，是另一个决策。
+
+★ **未做**：真机观感验收。`--headless` 不渲染，「图标是不是真的画出来了」只验到了「贴图路径命中真实文件」这一层（那正是本 bug 的成因），画面本身请你在游戏里确认。
+
+★ **同步状态**：已随 10.16 批次同步到 `GLory-v1.0`（sha256 逐文件相符）；**未** `git add/commit/push`（由你提交）。
+
+
 ## 2026-10-15 第二批（`10.15新手教程、商店UI优化.docx` 两项：商店弹窗盖住的 UI 不得被点击 + 新手教学聚焦遮罩；**同日第二轮**再修遮罩的「闪 + 线」，并按反馈给两步取消遮罩；**同日第三轮**再按玩家反馈把覆盖层改成「只做提醒 + 明暗对比、一步操作都不吃」；**同日第四轮**接手同一份文档的**第 3 点**——备战-宠物界面点模型弹出技能浮框）
 
-来自 `10.15新手教程、商店UI优化.docx`（递交时曾用名 `10.16bug提交及修复.docx`，同日改名，**内容不变** —— 两条要求逐字一致）的两项，**都是纯客户端改动**：两个既有文件各加一段（34 + 154 = 188 行，**零删除**），外加 **1 个新 shader**（`shaders/tutorial_focus_mask.gdshader`，41 行）与 **7 个门禁/探针文件**（新目录 `_qa_1016/`）。**同日第三轮**又对 `TutorialMode.gd` 动了一次刀（`+310 / -33`：把整个透明热点删掉，见下文「同日第三轮」）：**上文的「188 行 / 零删除」与门禁数量已被第三轮取代，以「同日第三轮」小节和本页末尾的哈希表为准。****没有新美术资源（`assets/**` 零改动）、没有数据库/服务端改动、不动 `NETWORK_PROTOCOL_VERSION`（仍 41：本轮一个 `@rpc` 都没碰）**。改动在本地 `GLory-codex` 完成，**待用户实测**；通过后再按 10.14 的口径同步到 `GLory-v1.0`（本批**尚未同步**）。版本控制提交与推送由用户执行。**同日第四轮**追加第 3 点（备战-宠物界面技能浮框，见下文「问题3（同日第四轮）」小节）：改动面是 `PetScreen.gd` +207 行、`LocaleManager.gd` +2 行、新门禁 `_qa_1016/pet_skill_tip`，同样**纯客户端**。
+来自 `10.15新手教程、商店UI优化.docx`（递交时曾用名 `10.16bug提交及修复.docx`，同日改名，**内容不变** —— 两条要求逐字一致）的两项，**都是纯客户端改动**：两个既有文件各加一段（34 + 154 = 188 行，**零删除**），外加 **1 个新 shader**（`shaders/tutorial_focus_mask.gdshader`，41 行）与 **7 个门禁/探针文件**（新目录 `_qa_1016/`）。**同日第三轮**又对 `TutorialMode.gd` 动了一次刀（`+310 / -33`：把整个透明热点删掉，见下文「同日第三轮」）：**上文的「188 行 / 零删除」与门禁数量已被第三轮取代，以「同日第三轮」小节和本页末尾的哈希表为准。\*\*\*\*没有新美术资源（`assets/**` 零改动）、没有数据库/服务端改动、不动 `NETWORK_PROTOCOL_VERSION`（仍 41：本轮一个 `@rpc` 都没碰）**。改动在本地 `GLory-codex` 完成，**待用户实测**；通过后再按 10.14 的口径同步到 `GLory-v1.0`（本批**尚未同步**）。版本控制提交与推送由用户执行。**同日第四轮**追加第 3 点（备战-宠物界面技能浮框，见下文「问题3（同日第四轮）」小节）：改动面是 `PetScreen.gd` +207 行、`LocaleManager.gd` +2 行、新门禁 `_qa_1016/pet_skill_tip`，同样**纯客户端**。
 
 ### 问题1：商店打开后，被弹窗盖住的「商店」木牌不该再吃点击
 
@@ -13,6 +143,7 @@
 - **改法**：`ShopPanel` 新增 `_set_bottom_bar_blocked()`，在 `_refresh_picker()` 里按 `picker_open` 把**木牌 + 关闭态钱袋 B** 切成 `MOUSE_FILTER_IGNORE`。恢复**必须** `set_deferred`，与 `PrepUI._set_overlay_blocked` 同源：「点弹窗外面关店」那一下 `close_picker()` 跑在 `PrepScreen._input`（GUI 之前），当场恢复 STOP 会让紧接着的同一次命中测试又打到木牌上，把商店**重新打开**。
 - **只改 `mouse_filter`、不改 `visible`**：木牌本来就被弹窗背景（920×280，比判定框大一圈）完整盖住，藏不藏看起来一样；而 `is_visible_in_tree()` 另有读者（教学按目标可见性解析），没必要冒这个风险。
 - **反向保住的行为**（门禁里各有一条独立判据）：卡面点选、采购热区拾取、刷新键拾取、采购那一下不关店，以及「点弹窗外面仍然收起商店」。
+
 
 ### 问题2：新手教学聚焦遮罩（第一版 4 块拼环形 → 玩家实测报「闪 + 线」→ 当日返工为单块 + shader）
 
@@ -35,19 +166,17 @@
   - 探针另存两张 3× 最近邻放大图（洞顶 / 洞底各 320px 宽横带）供肉眼复核，输出落在 `user://qa1016/`，**不污染工程目录**。
   - ⚠ 这个探针**不能做成 headless 门禁**：`--headless` 不绘制、`Engine.get_frames_drawn()` 也不动，拿不到任何像素真值。契约层（节点数 / 矩形 / uniform / 画序）由 headless 门禁负责，两者互补，别把其中一个当成全部。
 - **没有新增 `Button.new()` / `StyleBoxFlat.new()`**：`procedural_ui_ratchet` 里这两个文件的计数原样（TutorialMode 3/4、ShopPanel 3/1）。这次 `ColorRect.new()` 从 4 降到 1、`ShaderMaterial.new()` 新增 1，两者都不在 ratchet 的计数范围内。
-
 - **同日第二轮（真机复测后立刻返工）**：`TutorialMode.gd` 从 +111 涨到 +154。新增 `focus_mask_disabled_for(step_value, shop_close_phase)` —— 一个**只看状态、不碰节点**的纯判据；外加 `focus_mask_disabled()`（把当前 `step` 与「买够 3 个且商店还开着」喂进去）和 `_focus_dim_node()`。`update_overlay()` 在开洞之前先问一句「这一步该压暗吗」，不该压就把**整块遮罩 `visible=false`**。
   - **为什么这两步要取消遮罩**：它们要玩家做的动作**正好落在被压暗的区域上**，遮罩不是在帮忙、是在挡路。
     - **步骤 1/22 = `BUY_3` 的「关闭商店」子阶段**：要点的就是商店**外面**，而遮罩恰好把外面全压暗（洞开在商店上）—— 指引和画面完全拧在一起。注意判的是**子阶段**（`step` 仍是 `BUY_3`），不是整个 `BUY_3`：正常「购买棋子」那一段遮罩是有效的，**必须留着**。
     - **步骤 2/22 = `PLACE_3`（上阵布阵）**：要从**待命区**把棋子拖到棋盘，起手必须看清并落在待命区上；压暗后待命区的棋子几乎看不见（真机反馈原话「无法拖动操作」）。
   - **「无法拖动」不是遮罩吃了输入**：遮罩一直是 `MOUSE_FILTER_IGNORE`，这一步的透明热点（`_hotspot`）本来也是隐藏的（只为 `BOND_HINT`/`VIEW_TREASURE`/`FORMATION_HP`/`CARROT_HARVEST` 服务），`PrepScreen._input` 在 `PLACE_3` 上没有任何早退。把输入链路逐段读完之后确认**纯粹是"看不清就没法拖"** ⇒ 改法只是把它**藏掉**，不需要碰输入。
-    - **同日第三轮更正：结论仍成立，但这半句写窄了。** `PLACE_3` 上 `_hotspot` 确实是隐藏的 ⇒「这一步不是它挡的」成立；但由此推出的**「覆盖层不吃输入」是错的** —— `_hotspot` 在 `BOND_HINT`/`VIEW_TREASURE`/`FORMATION_HP`/`CARROT_HARVEST` 四步是**可见且 `MOUSE_FILTER_STOP`** 的，`modulate = Color(1,1,1,0)` 只是"看不见"，**GUI 命中测试完全不读 alpha** ⇒ 那四步的点击**确实被它吃了**。第三轮据此把 `_hotspot` 整个删除。"不需要碰输入"这半句也在同日稍后被推翻：真正让 `PLACE_3` 拖不动的是 `BoardHud.gd:133` 的 **stale `drag_payload` 快照**（门禁 `_qa_1016/bench_drag_after_shop_close`），与遮挡无关。
+    - **同日第三轮更正：结论仍成立，但这半句写窄了。** `PLACE_3` 上 `_hotspot` 确实是隐藏的 ⇒「这一步不是它挡的」成立；但由此推出&#x7684;**「覆盖层不吃输入」是错的** —— `_hotspot` 在 `BOND_HINT`/`VIEW_TREASURE`/`FORMATION_HP`/`CARROT_HARVEST` 四步是**可见且 `MOUSE_FILTER_STOP`** 的，`modulate = Color(1,1,1,0)` 只是"看不见"，**GUI 命中测试完全不读 alpha** ⇒ 那四步的点击**确实被它吃了**。第三轮据此把 `_hotspot` 整个删除。"不需要碰输入"这半句也在同日稍后被推翻：真正让 `PLACE_3` 拖不动的是 `BoardHud.gd:133` 的 **stale `drag_payload` 快照**（门禁 `_qa_1016/bench_drag_after_shop_close`），与遮挡无关。
     - 顺带说明为什么不是"给一个填满屏幕的洞"：那会白留一个满屏的半透明 quad 每帧参与混合，视觉上毫无区别，纯粹多付一次混合。
   - **`shop_close_phase` 三处同源**：`current_text()` / `step_display_name()` / `focus_mask_disabled()` 用的是**同一个**表达式「`_owned_normal_count() >= 3 and _fill_shop_open`」，否则会出现"标题写着关闭商店、遮罩却还在压暗"这种半截状态。
   - **门禁相应补了两类断言**：① `mask_optout_table` —— 直接喂参数验这个纯判据的真值表（含「商店恰好开着也一样」那一行），**不去伪造 `GameState` 的棋盘/商店**（那会变成同义反复）；② 按步骤的可见性断言 `mask_shown_on_optout_step` / `mask_hidden_on_required_step`。
   - ⚠ **可见性断言必须排在"目标解析不出来就 `return`"之前**。第一版排在后面，跑出来是绿的 —— 但日志里有 `Tutorial target missing step=PLACE_3 … resolver_returned_no_control`：门禁环境棋盘上没放棋子，`PLACE_3` 的目标控件根本解析不出来，整条 `_check_step` 被**静默跳过**，等于没验。把可见性判据提到最前面（它只依赖 `update_overlay()`，与 target 无关）之后 `checked` 从 397 涨到 409，下面那条"无视判据"的变异也才打得红。
   - ⚠ **本门禁没有驱动「3 个棋子 + 商店开着」的真实状态**（那要伪造 `GameState.board_slots`，风险与收益不成比例）。所以步骤 1/22 这一处验的是**判据本身**（真值表）＋**执行链路**（`mask_on` 这条分支由 `PLACE_3` 那条变异证明是活的）；`step_display_name()` 与 `focus_mask_disabled()` 的"同源"目前靠**人工核对**保证。**真机复测是最终判据。**
-
 - **同日第三轮（玩家第二次真机复测：覆盖层不得限制玩家操作）**：反馈原话「此次修复增加的遮罩，你改动一下 不要增加玩家操作的限制仅设为提醒和明亮度的不同，但是其他操作都可以做的，就不会引发这么多问题」；随后进一步明确「我的要求是新手教程要保持本次修复之前的样子，但是只是加了明的 目标、步骤、箭头位置，暗的其他位置更改」。⇒ **覆盖层只保留"提醒 + 明暗对比"，一步操作都不许挡**；`TutorialMode` 的其它一切（步骤文案 / 顺序 / 箭头 / 目标解析 / 受理范围）**逐字不动**（`git diff` 实测：改动里 `_t(` 文案行 **0 条**）。
   - **病根：覆盖层里塞了一个"透明但仍吃点击"的 `Button`**。`_hotspot` = `Button.new()` + `modulate = Color(1,1,1,0)` + `MOUSE_FILTER_STOP`，给 `BOND_HINT`/`VIEW_TREASURE`/`FORMATION_HP`/`CARROT_HARVEST` 四步用：前两步热区 = 目标矩形**外扩 10px**（`position - pad` / `size + pad * 2`），后两步**铺满整幅**。
   - ★ **`alpha = 0` ≠ "不吃点击"**：GUI 命中测试只看 `visible` + `mouse_filter` + 矩形，**完全不读** `modulate`/`self_modulate`。这个"隐形按钮"就是整个覆盖层里唯一真正会吞输入的东西。
@@ -60,101 +189,101 @@
   - ★ **触屏双投递的坑**：Godot 默认 `emulate_mouse_from_touch = true` ⇒ 每次触摸会在**同一批 flush** 里再补发一个同位置鼠标事件，`_input` 两个分支都会受理、一次点击推进**两格**；`VIEW_TREASURE`（要真点到宝藏图标）→ `FORMATION_HP`（任意处都算）正是能撞上的组合。修法与仓内 `ModalStack._mouse_emulated()` 同源：`InputEventScreenTouch` 分支在"补发鼠标存在"时**直接 return**，只认鼠标那一条。
   - ★ **为什么放 `_input()` 而不是"替下层控件补发事件"**：`Viewport.push_input()` 的派发是 **`Node._input()` 先于 GUI 命中测试**（仓内先例 `PrepScreen._input`）⇒ 在 `_input` 里推进 `step` 改不了**本次**点击的落点；推进后请求的刷新走 `_refresh_prep()` → `ACTION_REFRESH_VIEW` → `_refresh_all.call_deferred()`，**延迟**执行，也扰不到同一次点击（与 `ShopPanel` 恢复 `mouse_filter` 必用 `set_deferred` 同一个道理）。
   - **`procedural_ui_ratchet` 的口径**：删掉热点后 `TutorialMode.gd` 的 `Button.new()` **3 → 2**（`StyleBoxFlat.new()` 仍 4）。基线文件**故意没跟着收紧**（`--update-baseline` 是全局动作、且该门禁本就既有红），于是它那条 `baseline_not_tightened` 的措辞从「实测 84 < 基线 89」变成「实测 83 < 基线 89」，**失败条数仍是 3（既有，非本轮引入）**。
-  - **第三轮追加（同日、同批反馈的第二条）**：另外三张真机截图点名三步也要取消压暗 ——
-    **步骤 6/22 `TAKE_TREASURE_1`**、**步骤 15/22 `TAKE_TREASURE_2`**（「选择宝藏」三选一本身就是
-    一整块全屏面板、已经把别处盖住了；再叠一层压暗只会糊掉「长按看详情」要读的卡面，指引价值为零）、
-    **步骤 20/22 `FILL_7`**（「补满七人」，与 `PLACE_3` 同理：要把待命区棋子拖上棋盘，压暗后待命区
-    几乎看不见）。实现只是把这三个 Step 加进 `focus_mask_disabled_for()` 的放行表（判据仍是
+  - **第三轮追加（同日、同批反馈的第二条）**：另外三张真机截图点名三步也要取消压暗 ——  
+    **步骤 6/22 `TAKE_TREASURE_1`**、**步骤 15/22 `TAKE_TREASURE_2`**（「选择宝藏」三选一本身就是  
+    一整块全屏面板、已经把别处盖住了；再叠一层压暗只会糊掉「长按看详情」要读的卡面，指引价值为零）、  
+    **步骤 20/22 `FILL_7`**（「补满七人」，与 `PLACE_3` 同理：要把待命区棋子拖上棋盘，压暗后待命区  
+    几乎看不见）。实现只是把这三个 Step 加进 `focus_mask_disabled_for()` 的放行表（判据仍是  
     **纯函数**、只看状态不碰节点）；`update_overlay()` **一行未动** —— 它本来就只是「问判据 → 藏/显遮罩」。
-  - ⚠ **步骤号 → Step 别照字面猜，`STEP_SEQUENCE` 才是玩家看到的序号**（它是「实际到访顺序」，
-    与枚举顺序不同）：`BUY_3`=1、`PLACE_3`=2、`START_PVE_1`=3、`UPGRADE_2`=4、`START_PVE_2`=5、
-    `TAKE_TREASURE_1`=**6**、`UPGRADE_3`=7、`UPGRADE_OTHERS`=8、`BOND_HINT`=9、`VIEW_TREASURE`=**10**、
-    `FORMATION_HP`=11、`CARROT_CAMP`=12、`HARVEST_UPGRADE`=13、`START_BOSS`=14、`TAKE_TREASURE_2`=**15**、
-    `CARROT_HARVEST`=16、`DRAW_STONE`=17、`FOUR_STAR`=18、`HIRE_MERC`=19、`FILL_7`=**20**、
-    `FORMATION_HP`=21、`START_PVP`=22。注意 `VIEW_TREASURE`（10/22「查看宝藏」）**仍要压暗**，
+  - ⚠ **步骤号 → Step 别照字面猜，`STEP_SEQUENCE` 才是玩家看到的序号**（它是「实际到访顺序」，  
+    与枚举顺序不同）：`BUY_3`=1、`PLACE_3`=2、`START_PVE_1`=3、`UPGRADE_2`=4、`START_PVE_2`=5、  
+    `TAKE_TREASURE_1`=**6**、`UPGRADE_3`=7、`UPGRADE_OTHERS`=8、`BOND_HINT`=9、`VIEW_TREASURE`=**10**、  
+    `FORMATION_HP`=11、`CARROT_CAMP`=12、`HARVEST_UPGRADE`=13、`START_BOSS`=14、`TAKE_TREASURE_2`=**15**、  
+    `CARROT_HARVEST`=16、`DRAW_STONE`=17、`FOUR_STAR`=18、`HIRE_MERC`=19、`FILL_7`=**20**、  
+    `FORMATION_HP`=21、`START_PVP`=22。注意 `VIEW_TREASURE`（10/22「查看宝藏」）**仍要压暗**，  
     本轮**没有**顺手放开 —— 真值表里专门留了一行钉子，防的是「按 `TAKE_TREASURE_` 前缀整片放过」。
 
 ### 门禁（新增两条：修复前红 → 修复后绿）
 
 两条都按 `tools/CheckHarness.gd` 那套写（退出码 0 = PASS / 1 = FAIL），放在**仓根 `_qa_1016/`** —— 与 10.15 那批已经提交进仓的 `_qa_t3unique/` / `_qa_godpulse/` 同一位置、同一写法。目录里自带一份 `CheckHarness.gd` 副本：`GLory-codex` 是**包体树、没有 `tools/`**，自带一份两棵树才能跑同一条门禁。
 
-| 门禁 | 修复前 | 修复后 |
-| --- | --- | --- |
-| `shop_covered_click` —— 被盖住的木牌不得吃点击（3 种画布宽度 + 5 条反向判据） | FAIL 6 / checked 27 | **PASS 27 / 0** |
+| 门禁                                                                                                | 修复前                 | 修复后                                                                                            |
+| ------------------------------------------------------------------------------------------------- | ------------------- | ---------------------------------------------------------------------------------------------- |
+| `shop_covered_click` —— 被盖住的木牌不得吃点击（3 种画布宽度 + 5 条反向判据）                                            | FAIL 6 / checked 27 | **PASS 27 / 0**                                                                                |
 | `tutorial_focus_mask` —— 遮罩契约：只有一块 + 矩形恒等整幅 + 洞罩住目标 + 画序 + 不吃点击 + **按反馈给数步取消压暗**（3 种分辨率 × 18 个步骤） | FAIL 4 / checked 16 | **PASS 409 / 0**（同日第三轮：删掉 2 条「点击热点」断言 × 3 分辨率 → **403**；再把步骤 6/15/20 加进放行表 → **PASS 400 / 0**） |
 
 `tutorial_focus_mask` 的**变异对照**（每条单独 restore + 每次单独 `sha256sum` 校验；串命令一律用 `;` 不用 `&&`，免得门禁一挂/SIGTERM 恢复步骤被跳过、文件留在变异态）：
 
-| 变异 | 期望命中 | 实测 |
-| --- | --- | --- |
-| `_update_focus_dim` 直接 return（不写洞） | `hole_missing` | FAIL 42 |
-| 遮罩 `z_index = 999`（子节点 index 不变，只抬 z） | `dim_z_above_chrome` | FAIL 12 |
-| 每帧把遮罩 `move_child(dim, -1)` 挪到 overlay 末尾 | `dim_above_chrome` | FAIL 15 |
-| 遮罩改成 800×400（不再是整幅 overlay） | `mask_not_full_overlay` | FAIL 3 |
-| 退回"自由定位 + 每帧改几何"的旧写法 | `mask_geometry_moved` | FAIL 3 |
-| 整个换回 `HEAD` 版 `TutorialMode.gd`（没有遮罩） | `dim_node_count` + `too_few_measurements` | FAIL 4 |
-| `focus_mask_disabled_for` 恒 `return false`（把「这两步不压暗」的判据整个废掉） | `mask_optout_table` | FAIL 9 |
-| 判据留着，但 `update_overlay` 里写死 `var mask_on := true`（无视判据，遮罩照画） | `mask_shown_on_optout_step` | FAIL 3 |
-| **第三轮**：撤掉新三步（6/15/20）的放行（把 `focus_mask_disabled_for` 换回改前版本） | `mask_optout_table` | FAIL 12（4 行 × 3 分辨率；`VIEW_TREASURE` 那行仍绿 ⇒ 边界有效） |
-| **第三轮**：判据留着，但 `update_overlay` 写死 `var mask_on := true`（无视判据） | `mask_shown_on_optout_step` | FAIL 12 |
-| 干净构建（对照） | —— | **PASS 400 / 0** |
+| 变异                                                             | 期望命中                                      | 实测                                               |
+| -------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------ |
+| `_update_focus_dim` 直接 return（不写洞）                             | `hole_missing`                            | FAIL 42                                          |
+| 遮罩 `z_index = 999`（子节点 index 不变，只抬 z）                          | `dim_z_above_chrome`                      | FAIL 12                                          |
+| 每帧把遮罩 `move_child(dim, -1)` 挪到 overlay 末尾                      | `dim_above_chrome`                        | FAIL 15                                          |
+| 遮罩改成 800×400（不再是整幅 overlay）                                    | `mask_not_full_overlay`                   | FAIL 3                                           |
+| 退回"自由定位 + 每帧改几何"的旧写法                                           | `mask_geometry_moved`                     | FAIL 3                                           |
+| 整个换回 `HEAD` 版 `TutorialMode.gd`（没有遮罩）                          | `dim_node_count` + `too_few_measurements` | FAIL 4                                           |
+| `focus_mask_disabled_for` 恒 `return false`（把「这两步不压暗」的判据整个废掉）   | `mask_optout_table`                       | FAIL 9                                           |
+| 判据留着，但 `update_overlay` 里写死 `var mask_on := true`（无视判据，遮罩照画）   | `mask_shown_on_optout_step`               | FAIL 3                                           |
+| **第三轮**：撤掉新三步（6/15/20）的放行（把 `focus_mask_disabled_for` 换回改前版本）  | `mask_optout_table`                       | FAIL 12（4 行 × 3 分辨率；`VIEW_TREASURE` 那行仍绿 ⇒ 边界有效） |
+| **第三轮**：判据留着，但 `update_overlay` 写死 `var mask_on := true`（无视判据） | `mask_shown_on_optout_step`               | FAIL 12                                          |
+| 干净构建（对照）                                                       | ——                                        | **PASS 400 / 0**                                 |
 
 跑道：`Godot_v4.7.2-stable_win64_console.exe --headless --path <工程根> _qa_1016/<name>.tscn`（`_qa_*/*` 在 `export_presets.cfg` 的 `exclude_filter` 里，不会进包体）
 
 **同日第三轮**新增第 3 条门禁，并把 `tutorial_focus_mask` 里那 2 条"点击热点"断言删掉（被测对象已不存在）：
 
-| 门禁 | 修复前 | 修复后 |
-| --- | --- | --- |
+| 门禁                                                                                                                    | 修复前                    | 修复后              |
+| --------------------------------------------------------------------------------------------------------------------- | ---------------------- | ---------------- |
 | `tutorial_overlay_no_input_block` —— 覆盖层契约：子节点数 + 非跳过子树**全 `IGNORE`**（递归）+ 悬停不命中 + 4 步"真实按下即推进且落到下层控件" + 反向判据（3 种分辨率） | FAIL 6（**首版门禁的假红**，见下） | **PASS 181 / 0** |
 
 `tutorial_overlay_no_input_block` 的**变异对照**（每条单独 restore + 每次单独 `sha256sum` 校验，串命令一律用 `;` 不用 `&&`）：
 
-| 变异 | 期望命中 | 实测 |
-| --- | --- | --- |
-| 气泡退回 `STOP` 且删掉 `_make_mouse_transparent(_bubble)` | `overlay_child_blocks_input` + `overlay_in_hit_path` + `click_did_not_reach_widget` | FAIL 24（18 + 4 + 2） |
-| `confirm_tap_step()` 改成 `pass` | `tap_click_did_not_advance` + `tap_step_key_unchanged` | FAIL 24（12 + 12） |
-| `is_tap_step()` 恒 `return true` | `nontap_step_is_tap` | FAIL 18 |
-| `_tap_advance_accepts` 的受理矩形 `grow(10)` → `grow(4000)` | `outside_target_accepts_tap` | FAIL 3 |
-| 干净构建（对照） | —— | **PASS 181 / 0** |
+| 变异                                                     | 期望命中                                                                                | 实测                  |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------- | ------------------- |
+| 气泡退回 `STOP` 且删掉 `_make_mouse_transparent(_bubble)`     | `overlay_child_blocks_input` + `overlay_in_hit_path` + `click_did_not_reach_widget` | FAIL 24（18 + 4 + 2） |
+| `confirm_tap_step()` 改成 `pass`                         | `tap_click_did_not_advance` + `tap_step_key_unchanged`                              | FAIL 24（12 + 12）    |
+| `is_tap_step()` 恒 `return true`                        | `nontap_step_is_tap`                                                                | FAIL 18             |
+| `_tap_advance_accepts` 的受理矩形 `grow(10)` → `grow(4000)` | `outside_target_accepts_tap`                                                        | FAIL 3              |
+| 干净构建（对照）                                               | ——                                                                                  | **PASS 181 / 0**    |
 
 - ⚠ **首版门禁报的是"假红"**：6 条全在 `VIEW_TREASURE`（"在屏幕中心真实按下之后 step 没有推进"）。插桩查明 `_input` **确实进了**（`active=true / supp=false / ov=true / vis=true`），只是**目标控件是 0 尺寸** —— `VIEW_TREASURE` 的目标 `_treasure._owned_treasure_box`（`GridContainer`，无子节点）实测 `rect = P(6,549) S(0,0)`，`grow(10)` 只覆盖它原点那一小角，**屏幕中心当然不算数**。**病在门禁不在产品**：我自己的"目标可用"判断多加了一条 `size > 0`（产品规则里没有），于是回落去点屏幕中心。改成**逐字照抄产品的采样规则**（`target == null or not is_inside_tree()` → 用覆盖层中心；否则用目标矩形中心）后 **PASS 181 / 0**。
 - ⚠ 同时补掉一个**门禁自身的洞**：`tutorial_focus_mask._check_draw_order` 的 `above` 表原来是**字面 Dictionary**，四个条目会被**同时求值**，于是 `z_index` 那条判据连"热点"这种已失效条目也会跑；删掉热点条目后这个洞作为**副产品**消失。D1/D2 两条变异（`dim.z_index = 999` / 每帧 `move_child(dim, -1)`）在**当前**表上重跑仍分别命中 `dim_z_above_chrome` **9** 条 / `dim_above_chrome` **9** + `dim_not_first_child` **3** 条。
 
-> - 问题2 的门禁**不得在编译期绑定** `TutorialMode` 的新符号（`FOCUS_DIM_COUNT` / `FOCUS_HOLE_PADDING` / `_update_focus_dim`）：第一版直接写 `TutorialScript.FOCUS_DIM_COUNT`，在**未修复**的构建上整个脚本解析失败、场景没有脚本、进程**不退出** —— 门禁挂住而不是判红。改成常量走 `get_script_constant_map()`、方法走 `call()` 之后，"没有这套东西"才会落到 `dim_node_count` 这条正常失败上。
-> - 画序判据必须**同时**钉 `z_index` 和子节点 index：2D 绘制顺序是 `(z_index, index)` 这个二元组，只钉 index 会漏掉「把遮罩 z 抬到 999 盖住气泡」这种改法（变异对照里那条 `dim_z_above_chrome` 就是专门补这个洞的）。
-> - 变异对照的**载荷本身也要自检**。这一轮踩了两个坑：①「把遮罩挪到末尾」写在遮罩刚创建之后 —— 那时它本来就是唯一子节点，`move_child(-1)` 等于空操作；②「每帧改几何」的漂移周期写成 3，而采样窗口是 6 帧 —— 3 整除 6，两次采样同相位，等于没变（后来改成 `% 7`）。**变异不打中不等于门禁漏判**，先确认变异真的生效。
+> * 问题2 的门禁**不得在编译期绑定** `TutorialMode` 的新符号（`FOCUS_DIM_COUNT` / `FOCUS_HOLE_PADDING` / `_update_focus_dim`）：第一版直接写 `TutorialScript.FOCUS_DIM_COUNT`，在**未修复**的构建上整个脚本解析失败、场景没有脚本、进程**不退出** —— 门禁挂住而不是判红。改成常量走 `get_script_constant_map()`、方法走 `call()` 之后，"没有这套东西"才会落到 `dim_node_count` 这条正常失败上。
+> * 画序判据必须**同时**钉 `z_index` 和子节点 index：2D 绘制顺序是 `(z_index, index)` 这个二元组，只钉 index 会漏掉「把遮罩 z 抬到 999 盖住气泡」这种改法（变异对照里那条 `dim_z_above_chrome` 就是专门补这个洞的）。
+> * 变异对照的**载荷本身也要自检**。这一轮踩了两个坑：①「把遮罩挪到末尾」写在遮罩刚创建之后 —— 那时它本来就是唯一子节点，`move_child(-1)` 等于空操作；②「每帧改几何」的漂移周期写成 3，而采样窗口是 6 帧 —— 3 整除 6，两次采样同相位，等于没变（后来改成 `% 7`）。**变异不打中不等于门禁漏判**，先确认变异真的生效。
 
 ### 回归（在 `GLory-codex` 上跑仓里既有门禁；跑完即卸载临时挂载的 `tools/`）
 
 - **单跑通过**：`prep_1005` 100/0、`prep_1006` 64/0、`prep_countdown_ui` 43/0、`prep_detail_overlay` 32/0、`prep_piece_interaction` 30/0、`prep_drag_threshold` 67/0、`tutorial_target` 150/0、`tutorial_text_leak` 95422/0、`touch_scroll` 11/0；`tutorial_carrot_flow` 自带汇总 47 passed / 0 failed。
-- **判红但已逐条对照"修复前版本"，失败集合完全一致 ⇒ 既有问题，非本轮引入**：`tutorial_overlay_layout` 7、`tutorial_checkpoint` 7、`prep_1008` 10、`comms_layout` 1、`synergy_bond` 6、`procedural_ui_ratchet` 3。返工后再跑一遍，数字与 FAIL 集合都没变。
+- **判红但已逐条对照"修复前版本"，失败集合完全一致 ⇒ 既有问题，非本轮引入**：`tutorial_overlay_layout` 7、`tutorial_checkpoint` 7、`prep_1008` 10、`comms_layout` 1、`synergy_bond` 6、`procedural_ui_ratchet` 3。返工后再跑一遍，数字与 FAIL 集合都没变。  
   对照口径：`git show HEAD:<file>` 换回未修改版本重跑同一门禁，把 `FAIL [...]` 行排序后 `diff` —— 两边一致才算既有。
 - **本轮没跑成 / 不适用**（保持原样，未被本轮影响）：`tutorial_arrow_alignment_check` 自带前置要求 `application/config/use_custom_user_dir=true`（codex 为 false，门禁直接 `quit(2)`）；`tutorial_step15_flow_check` 在**修复前版本上同样**跑满 75s 不产出 `CHECK_RESULT`（headless 下走不完，属既有现象）。`asset_manifest_check` / `icey_hair_check` 未跑 —— 本轮 `assets/**` 一个文件都没碰。
   - **同日第三轮补充**：`tutorial_step15_flow` 这次**跑满了**（不再"75s 无输出"），**FAIL 48**；`tutorial_checkpoint` **FAIL 7**。两条都用 `HEAD` 版对照过，失败集合**完全一致** ⇒ 既有。关键证据：`grep -cE "BOND_HINT|VIEW_TREASURE|FORMATION_HP|CARROT_HARVEST" <完整日志>` = **0** ⇒ 那一轮 20 轮推进**全部死在 `PLACE_3`**，`_tap_continue()` **一次都没执行** ⇒ 这 48 条与第三轮把 `_on_hotspot_pressed` 改名成 `confirm_tap_step` 无关。
 
 ### 本轮文件与哈希
 
-| 文件 | 改动 | sha256（改后） |
-| --- | --- | --- |
-| `scenes/prep/panels/ShopPanel.gd` | +34 行（`_set_bottom_bar_blocked` + 注释 + 1 处调用） | `ea461724815df5eca45baa7858912bb7b2b6811d1bd54b3b32e594d854cf24e6` |
-| `scripts/tutorial/TutorialMode.gd` | +154 行（3 个常量 + 1 个成员 + shader preload + 1 处调用 + 单块遮罩构建 + `_update_focus_dim`；同日第二轮追加 `focus_mask_disabled_for` / `focus_mask_disabled` / `_focus_dim_node` + 1 处显隐开关） | `e48a899f44cd854c00848a9c83653fff3a0bd8a319a99f9c13e4547dca8a003f` |
-| `shaders/tutorial_focus_mask.gdshader` | **新文件** 41 行（单块遮罩的 `canvas_item` shader） | `d156de6b5cbe1366007c957b0486a34b7872711d8a541e4f74cf10fd4b55ea76` |
-| `_qa_1016/` | **新目录** 7 文件（共 1237 行）：`CheckHarness.gd`（`tools/CheckHarness.gd` 的副本，191 行）+ `shop_covered_click.gd`（341 行）`/.tscn` + `tutorial_focus_mask.gd`（511 行）`/.tscn` + `mask_pixel_probe.gd`（176 行）`/.tscn` | —— |
+| 文件                                     | 改动                                                                                                                                                                                                   | sha256（改后）                                                         |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `scenes/prep/panels/ShopPanel.gd`      | +34 行（`_set_bottom_bar_blocked` + 注释 + 1 处调用）                                                                                                                                                        | `ea461724815df5eca45baa7858912bb7b2b6811d1bd54b3b32e594d854cf24e6` |
+| `scripts/tutorial/TutorialMode.gd`     | +154 行（3 个常量 + 1 个成员 + shader preload + 1 处调用 + 单块遮罩构建 + `_update_focus_dim`；同日第二轮追加 `focus_mask_disabled_for` / `focus_mask_disabled` / `_focus_dim_node` + 1 处显隐开关）                                | `e48a899f44cd854c00848a9c83653fff3a0bd8a319a99f9c13e4547dca8a003f` |
+| `shaders/tutorial_focus_mask.gdshader` | **新文件** 41 行（单块遮罩的 `canvas_item` shader）                                                                                                                                                             | `d156de6b5cbe1366007c957b0486a34b7872711d8a541e4f74cf10fd4b55ea76` |
+| `_qa_1016/`                            | **新目录** 7 文件（共 1237 行）：`CheckHarness.gd`（`tools/CheckHarness.gd` 的副本，191 行）+ `shop_covered_click.gd`（341 行）`/.tscn` + `tutorial_focus_mask.gd`（511 行）`/.tscn` + `mask_pixel_probe.gd`（176 行）`/.tscn` | ——                                                                 |
 
 两个既有文件相对 HEAD 都是**纯新增**（`git diff --numstat` = 34 + 154 = 188 insertions / **0 deletions**），行尾仍是全 CRLF（codex 的 `core.autocrlf=true`，与树内其它文件一致）。新增的 8 个文件（1 shader + 7 门禁/探针）**全部 `git check-ignore` 实测可上传**，因此**桌面不放任何副本**；**本轮没有新增美术资源**（`assets/**` 零改动）。
 
 **同日第三轮的改动与哈希**（第二轮那两段里的 `188` / `零删除` / `PASS 409` 已被本轮取代）：
 
-| 文件 | 改动 | sha256（改后） |
-| --- | --- | --- |
-| `scripts/tutorial/TutorialMode.gd` | `+310 / -33`（vs HEAD）＝ 删 `_hotspot` 整套；新增 `TAP_TARGET_PAD`、`_input`、`is_tap_step`、`_tap_advance_accepts`、`confirm_tap_step`、`_make_mouse_transparent` | `6c37be501a1c488de6b8e32f30dc9647b318c18bbccf45e32e7f733a0bcc44ba` |
-| ↑ 同文件**第三轮追加** | 再 +9 行：`focus_mask_disabled_for()` 放行 `TAKE_TREASURE_1` / `TAKE_TREASURE_2` / `FILL_7` + 注释（净 vs HEAD 现为 `+319 / -33`） | `7ac775ae78048ce1e84e3184ed894bca16d5c3da0875600c327705aa5cf499ab` |
-| `_qa_1016/tutorial_overlay_no_input_block.gd` | **新文件** 546 行 | —— |
-| `_qa_1016/tutorial_overlay_no_input_block.tscn` | **新文件** | —— |
-| `_qa_1016/tutorial_focus_mask.gd` | checked 409 → 403 → **400**（删 2 条热点断言；真值表补 4 行 + 1 行 `VIEW_TREASURE` 边界钉子） | `a7182852300f9d5433d8186785eb7e2c51d25b5f2cfd918edef1aa67849992c8` |
-| `GLory-v1.0/tools/tutorial_checkpoint_check.gd` | `+9 / -5`（`_tap_continue()` 改调 `TutorialMode.confirm_tap_step()`） | `e0664ed2e78da525ee5446c08a3f9e7faa7232116fc8b41b023e0cb022e7d5e6` |
-| `GLory-v1.0/tools/tutorial_step15_flow_check.gd` | `+6 / -4` | `3ea685c45016ef2bc5e36fe1cd0e26ef77324e718b8951086aa3c55d7558912c` |
-| `GLory-v1.0/tools/tutorial_carrot_flow_check.gd` | `+2 / -1` | `803675426ec2d70c0a1eb81cbef1efe1efd9060a7c630250208c5ae0f86b3a17` |
+| 文件                                               | 改动                                                                                                                                                    | sha256（改后）                                                         |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `scripts/tutorial/TutorialMode.gd`               | `+310 / -33`（vs HEAD）＝ 删 `_hotspot` 整套；新增 `TAP_TARGET_PAD`、`_input`、`is_tap_step`、`_tap_advance_accepts`、`confirm_tap_step`、`_make_mouse_transparent` | `6c37be501a1c488de6b8e32f30dc9647b318c18bbccf45e32e7f733a0bcc44ba` |
+| ↑ 同文件**第三轮追加**                                   | 再 +9 行：`focus_mask_disabled_for()` 放行 `TAKE_TREASURE_1` / `TAKE_TREASURE_2` / `FILL_7` + 注释（净 vs HEAD 现为 `+319 / -33`）                                | `7ac775ae78048ce1e84e3184ed894bca16d5c3da0875600c327705aa5cf499ab` |
+| `_qa_1016/tutorial_overlay_no_input_block.gd`    | **新文件** 546 行                                                                                                                                         | ——                                                                 |
+| `_qa_1016/tutorial_overlay_no_input_block.tscn`  | **新文件**                                                                                                                                               | ——                                                                 |
+| `_qa_1016/tutorial_focus_mask.gd`                | checked 409 → 403 → **400**（删 2 条热点断言；真值表补 4 行 + 1 行 `VIEW_TREASURE` 边界钉子）                                                                            | `a7182852300f9d5433d8186785eb7e2c51d25b5f2cfd918edef1aa67849992c8` |
+| `GLory-v1.0/tools/tutorial_checkpoint_check.gd`  | `+9 / -5`（`_tap_continue()` 改调 `TutorialMode.confirm_tap_step()`）                                                                                     | `e0664ed2e78da525ee5446c08a3f9e7faa7232116fc8b41b023e0cb022e7d5e6` |
+| `GLory-v1.0/tools/tutorial_step15_flow_check.gd` | `+6 / -4`                                                                                                                                             | `3ea685c45016ef2bc5e36fe1cd0e26ef77324e718b8951086aa3c55d7558912c` |
+| `GLory-v1.0/tools/tutorial_carrot_flow_check.gd` | `+2 / -1`                                                                                                                                             | `803675426ec2d70c0a1eb81cbef1efe1efd9060a7c630250208c5ae0f86b3a17` |
 
 `TutorialMode.gd` 改后 **103733 B / 2186 行 / 全 CRLF**（第三轮追加前为 102957 B / 2177 行）（`_qa_1016/` 现为 **16 个文件**）。三个仓侧 `tools/` 门禁只是把"调用已不存在的 `_on_hotspot_pressed`"改成调用 `confirm_tap_step()`（**仓侧 `GLory-v1.0` 尚未 `add/commit/push`，由用户执行**）。第三轮的 `.gd.uid` 一并保留（仓里 884 个 `.uid` 全部入库，先例 `_qa_t3unique/check.gd.uid`）。本轮**无新美术资源**（`find ./assets -newermt` 为空）；`_qa_1016/**` 与 `README.md` 全部 `git check-ignore` 实测**可上传** ⇒ **桌面不放副本**。
 
@@ -172,35 +301,36 @@
   - 根因是**三处引擎行为叠在同一处**：① `Container::_sort_children()` 在 `!is_visible_in_tree()` 时**直接早退** ⇒ 隐藏的容器**从不给子节点排版**；② 自动换行的 `Label` 在宽度 0 时报出天文数字般的最小高度（"一行一个字"），而 `Control.set_size()` **按最小尺寸钳位**，于是那个数字被写进 `size`；③ 容器的 `minimum_size` 是**不随子节点重新排版而失效的缓存**（子节点 `get_minimum_size()` 已经是 29，父容器却还在用宽度 0 时算出的值）。
   - 改法：**弃用容器**，浮框改成一块普通 `Panel` + **手写逐行布局** —— `_pet_tip_rows` 按加入顺序逐行量自己的 `get_minimum_size().y` 再摆位（`_fit_pet_tip()`），全程同步、不依赖排版时机，所以首帧就是对的。这同时修掉了真实产品的「首击黑框」。
   - **高度按文案量、不写死**：`PET_TIP_WIDTH=620`、`PET_TIP_MIN/MAX_HEIGHT=120/420` —— 最长的一条是英文老虎说明（361 字符，中文只有 122），写死高度不是留一大片空白就是被裁。
+
 - ★ **`alpha = 0` ≠ 不吃点击这条同源教训在浮框上的用法**：浮框是**真的要给玩家看见**的，所以不能再走「`modulate.a = 0` 假装隐形」那条路（GUI 命中测试**完全不读** `modulate`）；正确做法就是 `MOUSE_FILTER_IGNORE`。
 - **`procedural_ui_ratchet` 口径**：`PetScreen.gd` 的基线是 `{"Button.new()": 2}` 且**没有 `StyleBoxFlat.new()` 条目** ⇒ 本轮 `Button.new()` / `StyleBoxFlat.new()` **一个都没加**（浮框底色走既有 `Tokens.panel_box(INK_PANEL, GOLD_EDGE, pad)`）。
 - **翻译键**：`LocaleManager.gd` 加 1 个键 `pet_skill_tip_title`（中 `宠物技能` / 英 `PET SKILL`），浮框眉标用它；名字/摘要/详情走 `PetService`，随语言实时取值，无需另加键。
 
 **本点新增第 4 条门禁**（仍在仓根 `_qa_1016/`，自带 `CheckHarness.gd` 副本）：
 
-| 门禁 | 覆盖 | 结果 |
-| --- | --- | --- |
+| 门禁                                                                                                                                                                                                                              | 覆盖 | 结果              |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -- | --------------- |
 | `pet_skill_tip` —— 初始隐藏 + 浮框子树全 `IGNORE`（递归）+ 立绘全 `STOP` + 点立绘显示（名字/摘要/详情逐字对 `PetService`）+ 详情重复规则 + 点别处收起 + 点另一只切换（含「浮框正盖着的那只」）+ **首帧宽度/高度不许跑飞** + 浮框不吃点击（悬停仍落返回按钮、点击仍能返回）+ 切页签与 `_refresh_pets` 都收起 + 高度随文案 + 逐行不越界 + 3 种画布宽度 | —— | **PASS 57 / 0** |
 
 本点是**纯新增功能**，没有"修复前版本"可对照 ⇒ 红绿口径改用**变异对照**：
 
-| 变异 | 期望命中 | 实测 |
-| --- | --- | --- |
-| `_input()` 改名（等于没有"点别处收起"） | `tip_not_hidden_on_outside_tap` + 3 种分辨率的 `res_tip_not_hidden_*` | FAIL 4 |
-| `_pet_tip_detail.visible = false`（详情永不上屏） | `tip_detail_visibility_wrong` + `tip_height_not_tracking_text` | FAIL 2 |
-| 浮框子树 `IGNORE` 改回 `STOP` | `tip_eats_input`（6 个控件）+ `tip_steals_hover` + `covered_back_click_swallowed` | FAIL 3 |
-| 行高写死 `20.0`（不再量文案） | `tip_height_not_tracking_text` + `tip_clips_content` | FAIL 2 |
-| 干净构建（对照） | —— | **PASS 57 / 0** |
+| 变异                                        | 期望命中                                                                         | 实测              |
+| ----------------------------------------- | ---------------------------------------------------------------------------- | --------------- |
+| `_input()` 改名（等于没有"点别处收起"）                | `tip_not_hidden_on_outside_tap` + 3 种分辨率的 `res_tip_not_hidden_*`             | FAIL 4          |
+| `_pet_tip_detail.visible = false`（详情永不上屏） | `tip_detail_visibility_wrong` + `tip_height_not_tracking_text`               | FAIL 2          |
+| 浮框子树 `IGNORE` 改回 `STOP`                   | `tip_eats_input`（6 个控件）+ `tip_steals_hover` + `covered_back_click_swallowed` | FAIL 3          |
+| 行高写死 `20.0`（不再量文案）                        | `tip_height_not_tracking_text` + `tip_clips_content`                         | FAIL 2          |
+| 干净构建（对照）                                  | ——                                                                           | **PASS 57 / 0** |
 
 （四条变异各自单独 restore + 单独 `sha256sum` 校验；串命令用 `;` 不用 `&&`，免得门禁一挂恢复步骤被跳过、文件留在变异态。）
 
 **本点的文件与哈希**（相对**本点开工前**的文件版本；`GLory-codex` 的 git `HEAD` 落后工作树若干轮，`git diff --numstat` 会把更早几轮的未提交改动一并算进来，所以这里**不引用 HEAD**）：
 
-| 文件 | 改动 | sha256（改后） |
-| --- | --- | --- |
-| `scenes/menu/PetScreen.gd` | **+207 行 / 0 删除**：5 个常量 + 6 个成员 + `_input()` + `_build_pet_tip` / `_add_pet_tip_row` / `_ignore_mouse_tree` / `_on_pet_art_gui_input` / `_show_pet_tip` / `_hide_pet_tip` / `_fit_pet_tip` / `_place_pet_tip` + 4 处调用（`_build` 尾部、立绘 `gui_input`、`_switch_tab`、`_refresh_pets`） | `e7986bf1282c845024c7dc6c2f6f60a8cf3b4b9d74c6787c2a76d621182377bc` |
-| `scripts/autoload/LocaleManager.gd` | **+2 行 / 0 删除**：`pet_skill_tip_title`（中/英各插在 `pet_none` 之后） | `baf23cb470947b80b62b902818fae4433871eace5b3ba0b962827f6450001d6a` |
-| `_qa_1016/pet_skill_tip.gd` + `.tscn` + `.gd.uid` | **新文件 3 个**（门禁脚本 22873 B + 场景 174 B + uid 20 B） | —— |
+| 文件                                                | 改动                                                                                                                                                                                                                                                                              | sha256（改后）                                                         |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `scenes/menu/PetScreen.gd`                        | **+207 行 / 0 删除**：5 个常量 + 6 个成员 + `_input()` + `_build_pet_tip` / `_add_pet_tip_row` / `_ignore_mouse_tree` / `_on_pet_art_gui_input` / `_show_pet_tip` / `_hide_pet_tip` / `_fit_pet_tip` / `_place_pet_tip` + 4 处调用（`_build` 尾部、立绘 `gui_input`、`_switch_tab`、`_refresh_pets`） | `e7986bf1282c845024c7dc6c2f6f60a8cf3b4b9d74c6787c2a76d621182377bc` |
+| `scripts/autoload/LocaleManager.gd`               | **+2 行 / 0 删除**：`pet_skill_tip_title`（中/英各插在 `pet_none` 之后）                                                                                                                                                                                                                     | `baf23cb470947b80b62b902818fae4433871eace5b3ba0b962827f6450001d6a` |
+| `_qa_1016/pet_skill_tip.gd` + `.tscn` + `.gd.uid` | **新文件 3 个**（门禁脚本 22873 B + 场景 174 B + uid 20 B）                                                                                                                                                                                                                                 | ——                                                                 |
 
 改后 `PetScreen.gd` **50316 B / 1103 行 / 全 CRLF**（开工前 896 行 / 40408 B）；`LocaleManager.gd` **50158 B / 1027 行 / 全 CRLF**。`_qa_1016/` 现为 **20 个条目**（7 `.gd` + 7 `.gd.uid` + 6 `.tscn`）。新增 3 个文件 `git check-ignore` 实测可上传 ⇒ **桌面不放副本**；**本点无新美术资源**（`assets/**` 零改动，`find ./assets -newermt "2026-10-15 00:00"` 输出为空；`backend/**` 同样为空）。
 
@@ -272,9 +402,7 @@
 - **不影响客户端**：`scripts/ui/FinalStatusCatalog.gd` 只读 `units/pets/synergies/treasures/linkages`；`ShopScreen.gd` 只读 `balance_version`；商城条目来自服务端 `GET /v1/shop`（`AccountManager.fetch_shop()`）与 `data/shop.json`，两处都不依赖 `final_status.json` 的 `shop_items`。移除是安全清理。
 - **`data/shop.json` 未变**（仓/本地 sha256 一致 `f1e245b6…`）。
 - **本轮只读排查 + 同步，未改任何游戏代码**；`GLory-v1.0` 工作树干净、HEAD = `1564f14`，本地与远端一致。
-
 - **服务端提醒**（承前「商城数值版本红字」）：`balance_version` 又变了（现 `1527bbdc…`）。服务器必须重跑 `deploy/update.sh`（内含 rsync `balance/final_status.json` + `systemctl restart glory-backend`），否则新客户端进商城仍会弹红字、联机握手仍会被拒。
-
 - **同步落点**：包体文件 `data/balance/final_status.json` → `GLory-codex`（客户端运行时读 `res://data/balance/final_status.json`）；非包体 6 个文件（`docs/balance/*`、`tools/export_final_status.py`、`final_excel_owned.py`、`final_runtime.py`、`test_final_runtime.py`）→ `E:/Users/WINDOWS/Desktop/其他/GLory-codex瘦身归档_20261012/非游戏文件/`。7 个文件逐字节 sha256 全一致（PASS=7 FAIL=0）。
 
 ## 2026-10-13（PVP 开场流程与离线自测佣兵错模，已同步仓库）
@@ -307,12 +435,10 @@
   1. 在服务器上重跑 `sudo bash <仓>/deploy/update.sh` —— 该脚本第 128 行的数据清单明确含 `balance/final_status.json`（注释 120 行：「与客户端、专服核对的数值版本」），会把 `$SRC/data/balance/final_status.json` rsync 进运行目录；
   2. ⚠ **必须重启账号后端**：`balance_version.py:11` 带 `@lru_cache(maxsize=1)`，进程启动时读一次就永久缓存，只 rsync 不重启则旧值仍在内存；
   3. 按 `docs/balance/README_final_status.md` 第 45 行要求，发布后用线上实测**核对三端版本**。
-
 - **影响面**：红字**只是提示、不阻断购买**（581 行之后无 `return`，`_items` 照常 filter）。同一版本不一致还会让客户端与专服联机握手被拒（`NetworkTransport.gd:120` 比 `balance_version`），是同一根因的第二个症状面。
 - **无需动的**：`android/build/**/assets/data/balance/final_status.json` 仍是旧值 `77ee99f0…`，但 `android/` 被 `.gitignore` 忽略（导出构建产物），出包时会重新生成。
 
 本轮**只读排查，未改任何工程文件**；仓侧零写入、HEAD 仍 `81dc7aa`；未做任何 git 操作。
-
 
 ## 2026-10-12（世界频道语音红字）：1 个必现故障 + 1 个 UI 调整
 
@@ -339,11 +465,11 @@
 - **① 图鉴宠物立绘重叠**：点哪只就只显示哪只。根因是演示台 `_pet_stage` 的**唯一写入点** `BagScreen._render_pet_detail()` 只 `add_child`、从不清台，而点卡片走的 `_refresh_pet_selection()` 只清了右侧文案 ⇒ 每点一只就往演示台**追加**一张立绘，新图盖住旧图、旧图四周露出（用户截图：「猫的帽子后面还有蘑菇」）。修法：渲染前 `_clear_children(_pet_stage)`；演示台由 `CenterContainer` 改普通 `Control`、右侧档案面板定高 + 内部滚动，长文案不再把底部宠物栏顶出屏幕（矮屏 960×540 实测）。
 - **② 英文模式结算 / 历史里法阵守护者仍是中文**：战报存的是守护者**中文名**（`formation_allies.json` 的 `name`）。`FinalSettlementPanel` 新增 `_ally_display_name()`，按「id / 中文名 / 英文名」任一命中反查同表换本语言名 —— **不改战报格式**，历史里的旧记录同样能翻；查不到就**原样返回**（宁可不翻，也不显示成空白或一串 id）。
 - **③ 霜印使（Icey）棋子模型头发应为白色**：`tools/model_refinement/crimson_refine.py` 里**只对 Icey 生效**的「整族刷红发」分支已删（推翻 2026-10-05 的决定），重刷 `Icey_m0_albedo.png`（泛白发丝 91.6% / 正红 0.0%）。门禁 `icey_hair_check` 直接**读源 PNG 像素**（不能用 `load()` —— 那读的是导入后的 `.ctex` 缓存，改源图不反映，变异会假绿）。
-- **④ 棋子三态分流（轻点 / 长按 / 拖拽）**：点击棋子**不再变成选中**、长按不动＝**查看属性且不进入可挪动态**、按住滑动拖到落点才挪动。根因是棋盘格 / 待命格的 `pressed` 与 `attach_long_press` 挂在**同一个按钮**上，一次长按既弹属性又把格子设成选中态 ⇒ 关框后残留选中，下一次轻点就误挪。改法：①`pressed` 先 `consume_long_press(btn)` 再转业务；②`_on_board/bench_pressed` 里「点 A 选中 → 点 B 挪过去」整段删除（挪动只剩拖拽一条路）；③射程预览改挂「查看属性」，详情框一关就撤高亮。**保留**「商店卡选中 → 点格子买入」这条链。
+- **④ 棋子三态分流（轻点 / 长按 / 拖拽）**：点击棋子**不再变成选中**、长按不动＝**查看属性且不进入可挪动态**、按住滑动拖到落点才挪动。根因是棋盘格 / 待命格的 `pressed` 与 `attach_long_press` 挂在**同一个按钮**上，一次长按既弹属性又把格子设成选中态 ⇒ 关框后残留选中，下一次轻点就误挪。改法：①`pressed` 先 `consume_long_press(btn)` 再转业务；②`_on_board/bench_pressed` 里「点 A 选中 → 点 B 挪过去」整段删除（挪动只剩拖拽一条路）；③射程预览改挂「查看属性」，详情框一关就撤高亮。**保留**「商店卡选中 → 点格子买入」这条链。  
   ★ **返修（用户复测）**：长按弹过属性框后、手指还没松时随手一划过 28px 仍会 `force_drag` 挪走 ⇒ `PrepDragButton` 起拖前加 `if long_press_triggered: return`，本次手势只要弹过详情就只能「看完松手」，挪动必须**重新按下再滑动**。
 - **⑤ AI 佣兵 / 萝卜经济要与真人玩家一致**：`BotPlayer` 新增**有状态**的实时经济（`new_state`/`prepare_round`/`settle_round`/`view`，由 `scripts/economy/LiveBotEconomy.gd` 驱动），不再用「估算胜场 / 击杀 / 未来收入」的历史模拟；`NetworkService.team_bot_states` 取代按 `(seed,slot,round)` 播种子的预览路径；佣兵**打完一场即过期**（与玩家一致）、商店成本走 `EconomyLedger.unit_cost`（含宝藏折扣）、刷新价考虑「金钱套」。**离线自测里照旧生效**（与第 ⑥ 条是两码事）。
-- **⑥ 备战倒计时**：「准备」按钮带「（xx s）」后缀；全员就绪提前开局；到点**自动上阵**（待命区最左优先，否则买商店最左，`PrepDeadline.deploy` 幂等 + 不白送）；PVE 35s / PVP 50s；最后 3 秒屏幕正中大号「3!/2!/1!」（`mouse_filter=IGNORE`，**不挡棋盘**）。
-  ★ **口径：只对「离线自测」不生效**（离线自测保持原样无倒计时，含自动上阵守卫）；**其他房间对局一律生效**。判据统一 `NetworkService.is_offline_team_match()`。
+- **⑥ 备战倒计时**：「准备」按钮带「（xx s）」后缀；全员就绪提前开局；到点**自动上阵**（待命区最左优先，否则买商店最左，`PrepDeadline.deploy` 幂等 + 不白送）；PVE 35s / PVP 50s；最后 3 秒屏幕正中大号「3!/2!/1!」（`mouse_filter=IGNORE`，**不挡棋盘**）。  
+  ★ **口径：只对「离线自测」不生效**（离线自测保持原样无倒计时，含自动上阵守卫）；**其他房间对局一律生效**。判据统一 `NetworkService.is_offline_team_match()`。  
   ★ **返修（用户复测：自定义房间也没倒计时）**：根因**不是**离线守卫（`team_join`/`team_host` 在置 `team_active=true` 的同刻置 `offline_selftest=false`，两标记不可能同时为真 —— 四态探针实测），而是 `PrepCountdown` 把「服务端已确认 prep」当**前置条件**：**自定义房间的房主在专服上同样是 `is_host == false` 的客机**，服务器旧包不发 `prep_seconds_left` 时**整间房**都看不到。修法：服务端值由**前置条件降级为优先来源**，本地时钟兜底。
 - **⑦ 棋盘皮肤（冰雪）在排位 3v3 没生效**：皮肤图在 `_build` 那一刻定死，而皮肤是登录后**异步**从账号服务器拉的；冷启动后立刻进对局时界面可能先建好。两道保险：`PrepSkin.loaded`（本会话至少拉到过一次）⇒ 进对局补拉一次 + `PlayerProfile.prep_skin_changed` ⇒ `PrepUI.reapply_prep_skin()` 把已建好的棋盘底图 / 河面 / 待命区 / 萝卜 / 萤火虫色 / 河面波光全换过来。
 
@@ -355,16 +481,16 @@
 
 民兵、商人、弓箭手、剑士、法师、牧师、死侍、人王完成分角色制作、桌面验证及整族复核后统一接入，运行资源位于 `assets/models/units/human_refined/`。
 
-| 单位 | 本次结构与材质优化 |
-| --- | --- |
-| 民兵 | 贴身胸肩甲、护臂、皮革和背部圆盾，保持普通步兵定位 |
-| 商人 | 账簿、钱袋、腰扣及挂带，保留绿色轻装 |
-| 弓箭手 | 箭袋、箭羽、背带、护臂与叶形饰扣，修复图集缺色 |
-| 剑士 | 胸腹甲、分层肩甲、护臂和腰侧剑鞘，清理披风黑块 |
-| 法师 | 尖帽金边与宝石托、领链、封闭法书及书角，保留紫色职业色 |
-| 牧师 | 帽徽、绿叶圣徽、带端盖卷轴筒、挂带和祈祷珠 |
-| 死侍 | 契约盾章、链环、护臂及契约皮签；红黑布料取消造成浅色条块的硬高光 |
-| 人王 | 闭合冠箍、宝石托、披肩扣、链饰与王室徽章；贴身饰件沿衣料蒙皮 |
+| 单位  | 本次结构与材质优化                        |
+| --- | -------------------------------- |
+| 民兵  | 贴身胸肩甲、护臂、皮革和背部圆盾，保持普通步兵定位        |
+| 商人  | 账簿、钱袋、腰扣及挂带，保留绿色轻装               |
+| 弓箭手 | 箭袋、箭羽、背带、护臂与叶形饰扣，修复图集缺色          |
+| 剑士  | 胸腹甲、分层肩甲、护臂和腰侧剑鞘，清理披风黑块          |
+| 法师  | 尖帽金边与宝石托、领链、封闭法书及书角，保留紫色职业色      |
+| 牧师  | 帽徽、绿叶圣徽、带端盖卷轴筒、挂带和祈祷珠            |
+| 死侍  | 契约盾章、链环、护臂及契约皮签；红黑布料取消造成浅色条块的硬高光 |
+| 人王  | 闭合冠箍、宝石托、披肩扣、链饰与王室徽章；贴身饰件沿衣料蒙皮   |
 
 保留原身体、骨架、动作来源与时序、角色缩放/朝向、挂点及玩法数值。弓箭手、牧师、人王分别处理动作间绑定差异。每动作原身体和合批饰件共2个绘制表面；普通单位贴图1024，人王2048。原模型保留供回退；模型表仅调整上述八项路径。新增精修目录沿用既有模型白名单规则。剑士、死侍新包装脚本的继承路径已按实际文件名大小写校正。合入本地后再次通过八单位2718项模型/动画契约检查及备战、战斗抽检。
 
@@ -376,10 +502,10 @@
 
 来自 `依然存在问题.docx`（第 3 / 6 / 7 / 9 条）。**只有代码 + 门禁 + 后端改动，没有新增任何运行期美术/音频资源。** 详见 `docs/10.11依然存在问题记录.md`。
 
-- **房间邀请链（本轮主战场）**：发送冷却统一为 **5 秒**（`RoomInvite.RATE_LIMIT_SEC` / `chat.ROOM_INVITE_RATE_SEC` / `routes/party.py._invite_limiter` 三处同值，且**与房间号无关** —— 推翻 2026-09-28 的「换房 10 秒」）；
-  弹窗持续 30 秒、同房间**可再次弹**（`BUBBLE_CD_SEC`，推翻旧的「处理过就永不再弹」）；多个好友的邀请改成**新的覆盖旧的**（LIFO）；
+- **房间邀请链（本轮主战场）**：发送冷却统一为 **5 秒**（`RoomInvite.RATE_LIMIT_SEC` / `chat.ROOM_INVITE_RATE_SEC` / `routes/party.py._invite_limiter` 三处同值，且**与房间号无关** —— 推翻 2026-09-28 的「换房 10 秒」）；  
+  弹窗持续 30 秒、同房间**可再次弹**（`BUBBLE_CD_SEC`，推翻旧的「处理过就永不再弹」）；多个好友的邀请改成**新的覆盖旧的**（LIFO）；  
   好友已在同一房间时**既不发消息也不弹窗**；点聊天里的「加入」原来**全仓没有任何接收者**（点了毫无反应），现在信号带 `mode` 接到 `Main._join_party_by_id`，并在点击时**当场清红点**。
-- **自定义房里收不到邀请弹窗**：根因是 `Main._enter_match_flow()` **只置标记**，自定义房 `_show_team3v3_lobby()` 调了它、排位房 `_show_party_lobby()` **没有调**，而两个消息回调都以 `if _in_match_flow: return` 开头。
+- **自定义房里收不到邀请弹窗**：根因是 `Main._enter_match_flow()` **只置标记**，自定义房 `_show_team3v3_lobby()` 调了它、排位房 `_show_party_lobby()` **没有调**，而两个消息回调都以 `if _in_match_flow: return` 开头。  
   修法不是补一处赋值（那会把排位房也弄坏），而是把「在房间里」与「在对局流程里」**拆成两个语义**：新增 `_in_room_lobby`，判据收敛为 `_invite_popup_suppressed()`。
 - **离线自测里也能「退出对局」**：`NetworkService` 新增 `offline_selftest` 与 `is_offline_team_match()`（**不能**用「`team_active` 为假」反推 —— 排位大厅也满足它）；离线自测的设定页里点它＝**直接退出、直接结束对局**。
 - **附带修复**：`routes/chat.py` 的 `_STATUS_BY_CODE` 漏登记 `party_invite_duplicate`（表里只有旧名 `invite_duplicate`），该错误会退化成 400 而不是 409。线上其实无害（它在 `routes/party.py` 被 `except ChatRejected` 咽掉），但属邀请链口径不一致且对应一条一直红着的后端测试 ⇒ 补齐为 409 并加门禁断言 + 变异。后端全量 **73 → 72 failed**。
@@ -387,7 +513,7 @@
 
 ★ 已知红（**非本轮引入，都做了改动前基线对照**）：`prep_1008` 6 条（触摸探针坐标系）、`procedural_ui_ratchet` 3（基线过时）、`prep_tree_snapshot` 19、`voice` 8、`dynamic_call` 30、`asset_manifest` 38。
 
-🔴 **部署两步（缺一不可）**：① 在 Supabase SQL Editor 跑 `database/030_chat_party_invite.sql` 与 `database/032_presence_in_match.sql`（都幂等）；② **重启账号后端与战斗专用服务器**。
+🔴 **部署两步（缺一不可）**：① 在 Supabase SQL Editor 跑 `database/030_chat_party_invite.sql` 与 `database/032_presence_in_match.sql`（都幂等）；② **重启账号后端与战斗专用服务器**。  
 只做 ② 不做 ① 的后果：邀请 / 心跳直接 **HTTP 500**，而 032 的心跳 500 表现是**所有人一起显示离线**。
 
 ## 2026-10-11（bug 提交及修复）：9 条真机反馈
@@ -400,17 +526,17 @@
 - **种族 / 皮肤**：选中的那颗补**金边框**；**取消选择不再弹羁绊窗**（羁绊窗只由「查看羁绊」按钮打开）。
 - **自定义房**：隐藏「全房间」UI（`members_button` 不进树），**长按扬声器照旧开语音面板**。
 - **同房间邀请**：不再弹气泡，**聊天里的邀请消息 / 红点 / 音效照旧**（`Main._show_invite_bubble()` 是唯一入口，三种推送来源都汇到这里）。
-- **对局内 30 秒无活人 ⇒ 自动结束**（**作废、不结算**，适用于所有联网对局）：新增 `NO_LIVE_HUMAN_END_SEC` 与 `_tick_void_watchdog()`。
+- **对局内 30 秒无活人 ⇒ 自动结束**（**作废、不结算**，适用于所有联网对局）：新增 `NO_LIVE_HUMAN_END_SEC` 与 `_tick_void_watchdog()`。  
   ★ 两条**反直觉但故意**的判据：`_void_room_eligible()` **刻意不跳 `suspended`**（「全房零在线真人还留着 token 等人回来」正是要收掉的状态）；**必须有真人座位**才判（否则纯 AI 房 / 单人练习一开局就自杀）。
-- **「退出对局」＝该玩家掉线 > 30 秒**：**对局没结束前仍可重连、但不可进入新排位 / 自定义房**。`abandon_started_match()` 不再删重连凭证，改走 `_rpc_manual_exit_seat`
+- **「退出对局」＝该玩家掉线 > 30 秒**：**对局没结束前仍可重连、但不可进入新排位 / 自定义房**。`abandon_started_match()` 不再删重连凭证，改走 `_rpc_manual_exit_seat`  
   （**不是** `_rpc_abandon_seat` —— 后者会抹掉座位账号信息并把座位转 AI，跑路的人反而一分不扣）。
-- **升级石星爆**：新组件 `ui/components/StarBurst.gd`（**纯 `_draw()`**，刻意不用 `StyleBoxFlat` —— 本仓 `procedural_ui_ratchet` 是只降不涨的棘轮）。营地入口按「队伍里有升级石」亮。
+- **升级石星爆**：新组件 `ui/components/StarBurst.gd`（**纯 `_draw()`**，刻意不用 `StyleBoxFlat` —— 本仓 `procedural_ui_ratchet` 是只降不涨的棘轮）。营地入口按「队伍里有升级石」亮。  
   ★ 顺带抓到并修掉一个真缺陷：**入口按钮上的星爆从来没画出来过** —— `make_framed_text_button()` 返回的是普通 `Button`（不是 `Container`），子 `Control` 的 `size` 停在 `(0,0)`，`_draw()` 直接 return 而 `visible` 一直是真。补 `set_anchors_and_offsets_preset(PRESET_FULL_RECT)` + 门禁加 `_assert_drawable()`。
 - **好友在线态**：账号服务器 presence 新增 `in_match` 字段（迁移 `032`），**推翻 2026-09-29 的口径**；`room_started` / `database/022` 旧名旧迁移**继续禁**。两端接力：客户端上报 + 后端带出 + 两个大厅列表消费。
 
 ★ 已知红（**非本轮引入**）：`prep_1008` 6 条、`voice_redesign/lobby_reserve` 1、`ui_feedback/VIBRATE` 1、`prep_tree_snapshot` 19、`procedural_ui_ratchet` 3（基线过时）、`comms_layout` 的 `prep_wheel` 1。
 
-🔴 **部署两步（缺一不可）**：① 跑 `database/032_presence_in_match.sql`；② **重启账号后端与战斗专用服务器**。
+🔴 **部署两步（缺一不可）**：① 跑 `database/032_presence_in_match.sql`；② **重启账号后端与战斗专用服务器**。  
 客户端默认连**远程已部署后端**（`scripts/account/AccountConfig.gd` 的 `DEFAULT_BACKEND_URL`），**本地 `backend/` 改了不进真机**。
 
 ## 2026-10-10（排位 / 结算 / 语音 / 战斗）：14 条真机反馈 + 2 条返工
@@ -442,41 +568,40 @@
 
 ### 门禁 / 测试
 
-| 名称 | 条数 | 覆盖 | 变异 |
-|---|---|---|---|
-| `tools/party_lobby_rules_check.tscn` | **112**（10.09 批 98 → 112） | 房主宠物那行锁定 / 打勾 / 不接 `pressed` ＋ `host_pet_of` 3 条 ＋ `with_host_pet` 7 条真值表 ＋ **运行期真调 `_host_pet()` 3 条** | 4/4 CAUGHT |
-| `tools/pet_footstep_check.tscn` | **35**（原 22） | 只有一只发得出声：大厅＝自己的 / 排位＝房主的；`entry.audible` 静音门 ＋ 行为 | 2/2 CAUGHT |
-| `tools/cold_parse_chain_check.tscn` | 354 | 全量解析链未破坏 | — |
-| `backend/tests/test_party_room_stdlib.py` | **22**（原 14） | `_with_host_pet` 强制入列 / `PUT /pets` 踢不掉 / 快照带 `host_pet` | 2/2 CAUGHT |
+| 名称                                        | 条数                        | 覆盖                                                                                                      | 变异         |
+| ----------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------- | ---------- |
+| `tools/party_lobby_rules_check.tscn`      | **112**（10.09 批 98 → 112） | 房主宠物那行锁定 / 打勾 / 不接 `pressed` ＋ `host_pet_of` 3 条 ＋ `with_host_pet` 7 条真值表 ＋ **运行期真调 `_host_pet()` 3 条** | 4/4 CAUGHT |
+| `tools/pet_footstep_check.tscn`           | **35**（原 22）              | 只有一只发得出声：大厅＝自己的 / 排位＝房主的；`entry.audible` 静音门 ＋ 行为                                                       | 2/2 CAUGHT |
+| `tools/cold_parse_chain_check.tscn`       | 354                       | 全量解析链未破坏                                                                                                | —          |
+| `backend/tests/test_party_room_stdlib.py` | **22**（原 14）              | `_with_host_pet` 强制入列 / `PUT /pets` 踢不掉 / 快照带 `host_pet`                                                | 2/2 CAUGHT |
 
 ## 2026-10-09（真机返工）：`10.09bug提交及修复.docx` 4 条
 
 按文档逐条落码。**改动只有代码 + 门禁，无新增运行资源、未重导 EXE/APK、未真机验证、本轮回测后已同步 `GLory-v1.0`、未 `git add/commit/push`（由你本地提交）。**
 
-- **第 1 条（棋盘上已有人王时，把商店的人王拖到棋盘空格被整个吞掉）** `scenes/prep/PrepBoardController.gd`：
+- **第 1 条（棋盘上已有人王时，把商店的人王拖到棋盘空格被整个吞掉）** `scenes/prep/PrepBoardController.gd`：  
   「棋盘空格」这一支以前只有一句 `show_message(toast_unique_limit)` + `return` —— 拖过来的那枚既没升星、也没进备战区，**连钱都不扣**。按文档三条意图改为复用与「上阵已满」同构的那套分流（原 `_auto_dispatch_shop_when_board_full` **改名** `_auto_dispatch_shop_card`，两个调用点同构）：① 棋盘上同名同星能升星 → **就地升星**；② 升不了 → 新的一枚**进备战区**（先试待命区升星，再找空位）；③ 备战区也满 → **这时才**提示「传奇棋子只能上场一个」。★ 第 ① 步在这条路上是**活代码**：`_auto_combine_all()` 每次改动后都会把棋盘 + 待命区的同名同星自动融合，所以稳态下棋盘不会挂着可合成的一对，唯一能凑出一对的时刻恰好就是玩家把这一枚放下的当下。实拍三例（`work/_qa_1009/probe_bug1_shot.gd`，走**真实入口** `_drop_on_board(空格, {kind:"shop"})`，棋子用人王 `human_king`）：1★→2★ / 备战区 5→6 / 不扣钱 + 提示，逐条对上。
-- **第 2 条（选了金钱类宝藏后，获得的技能按钮排进左下角宝藏区、无法使用）** `scenes/prep/PrepUI.gd`：
+- **第 2 条（选了金钱类宝藏后，获得的技能按钮排进左下角宝藏区、无法使用）** `scenes/prep/PrepUI.gd`：  
   10.08 给两行准备头像让位时把 `SELL_LEFT_PANEL_TOP_RESERVE` 定成了 **132px**，实测**让多了** —— 头像底边 y=124 而羁绊栏顶端 y=216，中间**空了 92px**；整栏 400px 内容被顶到 y=616，最后两个金钱宝藏按钮（「黄金祭坛」「慷慨命运」）正好压在左下角宝藏 logo 面板（`TreasurePanel`，顶边 587）上。改成 **48px**（＝ 头像底边 124 ＋ 间距 8 − `left_drop.y` 84），整栏上移 84px。满羁绊（**棋盘上最多同时出场 4 个种族** —— 赤灯使 `lattern` 不在商店池里）＋ 满 5 枚金钱宝藏实拍复核：两种画布 gap 均为 8.0px、内容最低点 532 < 宝藏区顶边（758 画布 587 / 720 画布 549），**两个按钮完整可读可点**。
-- **第 3 条（3V3 结算后从大厅重进刚结算完的房间 → 按准备无反应、按离开提示「需要取消准备」）** `scripts/autoload/NetworkService.gd`：
+- **第 3 条（3V3 结算后从大厅重进刚结算完的房间 → 按准备无反应、按离开提示「需要取消准备」）** `scripts/autoload/NetworkService.gd`：  
   死锁 ＝ 两个状态同时成立：① `team_local_slot == -1`（结算房把没回来的人标 `settling`、且不放进 `peer_slot` ⇒ `_send_room_state` 整份不发）；② `_pending_ready == 1`（上一次「准备」的在途意图，而它是 `Main._lobby_exit_requires_cancel()` 的**唯一**判据；服务器那两条路 —— `_rpc_team_set_ready` 遇 `settling` 座位**直接 return**、`_send_room_state` 整份不发 —— 让确认回包永远不来，于是它撤不掉）。而 `Team3v3Lobby._on_primary_pressed` 与 `NetworkService.team_set_ready` 在 `my_slot < 0` 时都**静默 return** ⇒ 两个出口互为唯一，玩家被永久锁在大厅。修法四条：**无座位一律不算已准备**（`local_ready_intent()` 早退）；会话终结路径（`reset` / 掉线 / 房间关闭 / 结算切房）统一走新增的 `_clear_pending_ready()`；`_rpc_room_state` 里**座位不再是 player 也清**；新增 `READY_CONFIRM_TIMEOUT_SEC = 4.0` 超时兜底（这一版 ready 没有 request/ACK + revision，只能拿期限兜底，写法同 `_leave_deadline`）。C24 的「在途 ready ⇒ 不许退出」原窗口**保持不变**（有专门用例钉住）。
-- **第 4 条（结算面板「本回合总造成伤害」没算元素伤害）** `scripts/battle/DamageService.gd` ＋ `StatusEffectService` / `BattleSimTreasures` / `BattleSimulator` / `FinalSettlementData` / `FinalSettlementPanel`：
+- **第 4 条（结算面板「本回合总造成伤害」没算元素伤害）** `scripts/battle/DamageService.gd` ＋ `StatusEffectService` / `BattleSimTreasures` / `BattleSimulator` / `FinalSettlementData` / `FinalSettlementPanel`：  
   实测口径与直觉相反 —— **普通棋子挂的毒早就计入** `stats[].damage_dealt`（归毒 18000 全额记在挂毒棋子名下）；真正丢的只有两条**没有棋子身份**的路：自爆灵的死亡爆炸及其挂上的毒（**完全不设 stat source**，实测爆炸 250 ＋ 毒 600 ＝ 850 全丢）、寄生灵分身（uid 不在 `unit_stats` 里 ⇒ 普攻与它挂的毒无人认领）；两条恰好都是**灵族**。修法：`state.element_damage_by_slot` 席位级账本 ＋ `DamageService._element_owner_slot` 旁路（≥ 0 时只进账本、**不写任何棋子 `damage_dealt`**）；`FinalSettlementData.build` / `update_round_damage` 与 `FinalSettlementPanel._ready` 把它并进席位总伤害。**按用户口径：计入「本回合总造成伤害」，不计入棋子个人伤害。**
 
 详见 [10.09bug提交及修复记录](docs/10.09bug提交及修复记录.md)。
 
 ### 门禁 / 测试
 
-| 名称 | 条数 | 覆盖 | 变异 |
-|---|---|---|---|
-| `tools/prep_1005_check.tscn` | **100**（原 81） | 第 1 条三条意图：就地升星 / 进备战区 / 才拒绝 | 删唯一分支 ⇒ `failures=9` |
-| `tools/lobby050607_check.gd` `.tscn` | **18**（原 9） | 第 3 条六条：无座位不被锁、无座位无意图、房间关闭清意图、掉线清意图、意图超时、C24 窗口不被误伤 | 两处 ⇒ 红 2 / 红 1 |
-| `tools/prep_layout_1009_check.tscn`（新） | **15** | 第 2 条：量「金钱宝藏按钮 vs `TreasurePanel`」有没有重叠 ＋ 头像↔羁绊栏 gap | 改回 132 ⇒ `failures=7` |
-| `tools/settle_element_damage_check.tscn`（新） | **32** | 第 4 条：爆炸及其毒、分身、已归属毒不双计、狂暴死亡不算元素、账本并桶、3v3 全灵族恒等式 | 5 变体全 CAUGHT |
+| 名称                                          | 条数            | 覆盖                                                   | 变异                    |
+| ------------------------------------------- | ------------- | ---------------------------------------------------- | --------------------- |
+| `tools/prep_1005_check.tscn`                | **100**（原 81） | 第 1 条三条意图：就地升星 / 进备战区 / 才拒绝                          | 删唯一分支 ⇒ `failures=9`  |
+| `tools/lobby050607_check.gd` `.tscn`        | **18**（原 9）   | 第 3 条六条：无座位不被锁、无座位无意图、房间关闭清意图、掉线清意图、意图超时、C24 窗口不被误伤  | 两处 ⇒ 红 2 / 红 1        |
+| `tools/prep_layout_1009_check.tscn`（新）      | **15**        | 第 2 条：量「金钱宝藏按钮 vs `TreasurePanel`」有没有重叠 ＋ 头像↔羁绊栏 gap | 改回 132 ⇒ `failures=7` |
+| `tools/settle_element_damage_check.tscn`（新） | **32**        | 第 4 条：爆炸及其毒、分身、已归属毒不双计、狂暴死亡不算元素、账本并桶、3v3 全灵族恒等式      | 5 变体全 CAUGHT          |
 
 关联门禁回归全绿：`cold_parse_chain` 354/0、`final_settlement` 41/0、`round_settlement` 18/0、`prep_1006` 51/0、`battle_playback_stability` 145/0、`audio_0922` 174/0、`bug_0908` 14/0、`bug_0909` 11/0、`battle_summon_identity` 53/0、`battle_frenzy` 20/0、`battle_reach_target` 43/0。
 
 ★ 本次同步 `GLory-v1.0` 共 **18** 个文件：11 个内容有差异（10.09 生产代码 ＋ 两条门禁）、4 个新增门禁场景，＋ `README.md` / `docs/CHECKS.md` / `docs/10.09bug提交及修复记录.md`。`assets/` 白名单未跟踪不传、`work/_qa_*` 临时探针不传、机器随机 `tools/prep_1008_check.gd.uid` 不覆盖（判据：全工程零 `uid://` 引用）。
-
 
 ## 2026-10-08（真机返工）：#135 重连 / #136 出售区 / #138 跳过战斗 / #137 统计面板 + 对局历史支线
 
@@ -491,270 +616,267 @@
 
 ### 门禁 / 测试
 
-| 名称 | 条数 | 覆盖 | 变异 |
-|---|---|---|---|
-| `tools/prep_1008_check.tscn` | **163** | #137 三级接力 + 双语 + 对局历史支线四层判据 | 7 + 4 变体全 CAUGHT |
-| `tools/battle_playback_stability_check.tscn` | **145** | #138 时钟换算 | 3 变体 CAUGHT |
-| `tools/sell_geom_probe.tscn` | **24** | #136 多分辨率几何 | 3 变体 CAUGHT |
-| `tools/battle_report_check.tscn` | **54** | 战报结算白名单 `n_en`/`kst` | 2 用例 CAUGHT |
-| `tools/prep_mute_state_check.tscn` / `tools/settings_quality_check.tscn` / `tools/king_aura_stack_probe.tscn` | — | 关联回归 | — |
-| `backend/tests/test_battle_report.py` | **49** | 战报解析 + `n_en`/`kst` 保留 | 2 新用例 |
+| 名称                                                                                                            | 条数      | 覆盖                          | 变异               |
+| ------------------------------------------------------------------------------------------------------------- | ------- | --------------------------- | ---------------- |
+| `tools/prep_1008_check.tscn`                                                                                  | **163** | #137 三级接力 + 双语 + 对局历史支线四层判据 | 7 + 4 变体全 CAUGHT |
+| `tools/battle_playback_stability_check.tscn`                                                                  | **145** | #138 时钟换算                   | 3 变体 CAUGHT      |
+| `tools/sell_geom_probe.tscn`                                                                                  | **24**  | #136 多分辨率几何                 | 3 变体 CAUGHT      |
+| `tools/battle_report_check.tscn`                                                                              | **54**  | 战报结算白名单 `n_en`/`kst`        | 2 用例 CAUGHT      |
+| `tools/prep_mute_state_check.tscn` / `tools/settings_quality_check.tscn` / `tools/king_aura_stack_probe.tscn` | —       | 关联回归                        | —                |
+| `backend/tests/test_battle_report.py`                                                                         | **49**  | 战报解析 + `n_en`/`kst` 保留      | 2 新用例            |
 
 关联门禁回归全绿：`final_settlement` 41/0、`unit_growth` 84/0、`unit_name_consistency` 63/0、`round_settlement` 18/0、`match_history_ui` 83/0、`cold_parse_chain` 354/0。
 
 ★ 本轮同步 `GLory-v1.0` 共 63 个文件：19 个内容有差异（含对局历史支线 4 生产 + 2 测试/门禁）、44 个新增游戏内容文件（门禁/语音插件/特效/DB 迁移/历史文档）；`assets/` 白名单未跟踪不传、本地密钥/`.claude`/`.DS_Store`/`work/_qa_*` 临时探针不传。
 
-
-
 ## 2026-10-08：`10.08bug提交及修复.docx` 9 条
 
-按文档逐条落码。**改动只有代码 + 门禁 / 测试，无新增运行资源、未重导 EXE/APK、
+按文档逐条落码。**改动只有代码 + 门禁 / 测试，无新增运行资源、未重导 EXE/APK、  
 未真机验证、未同步 `GLory-v1.0`、未暂存/提交/推送。**
 
-- **第 1 条（统计面板英文没切 /「（N层）」不限人王）** `scenes/menu/FinalSettlementPanel.gd` 全文中文
-  **硬编码、零 `tr()`** ⇒ 切英文不生效；`（%d层）` 又是**人王专属**技能叠加层数却无条件拼在名字后。
-  面板全部改走 `tr()`（`LocaleManager` 补 **31 条** zh/en），层数用
+- **第 1 条（统计面板英文没切 /「（N层）」不限人王）** `scenes/menu/FinalSettlementPanel.gd` 全文中文  
+  **硬编码、零 `tr()`** ⇒ 切英文不生效；`（%d层）` 又是**人王专属**技能叠加层数却无条件拼在名字后。  
+  面板全部改走 `tr()`（`LocaleManager` 补 **31 条** zh/en），层数用  
   `DataRegistry.canonical_unit_def` + `UnitGrowth.is_king` 判定，**只在人王身上出**。
-- **第 2 条（图鉴按钮大小不一 / 种族图标要长按看羁绊）** `scenes/menu/CodexScreen.gd`：
-  分类按钮统一到 `TAB_BUTTON_SIZE = (132, 44)`（以前没给 `custom_minimum_size`，宽度随文字走）；
-  种族徽章加长按入口（0.7s，移动 >8px 取消），弹的羁绊文本**复用备战那份**
+- **第 2 条（图鉴按钮大小不一 / 种族图标要长按看羁绊）** `scenes/menu/CodexScreen.gd`：  
+  分类按钮统一到 `TAB_BUTTON_SIZE = (132, 44)`（以前没给 `custom_minimum_size`，宽度随文字走）；  
+  种族徽章加长按入口（0.7s，移动 >8px 取消），弹的羁绊文本**复用备战那份**  
   `SynergyPanel.format_synergy_title/_effects`，不在图鉴里另抄一份。
-- **第 3 条（切后台回来已进备战、回合战斗金没给）+ 第 5 条（对局卡屏、要重启重连）**
-  两条同一个根因：本场景所有 deadline 走**墙钟**，手机切后台再回来墙钟一次跳几分钟 ⇒
-  每个 deadline 瞬间过期 ⇒ 回放被判 `battle_playback_timeout` ⇒ `Main` 直接回菜单，
-  **没人去要权威结算**，回合战斗金永不发放；恢复帧的积压 `delta` 又让回放在单帧里补几十帧
-  （每帧起特效）= 卡屏。修法**四层**：`BattleScreen` 自攒只在前台推进的单调毫秒表
-  （后台期间一格不走，恢复帧 `delta` 夹到 0.25s，回放单帧补帧封顶 6 帧 + 累加器夹回）；
-  `Main` 端三处权威兜底（服务器已推进本回合就本地认领结算 / 权威 state 已含本回合就不报错 /
-  `battle_*` 类错误在组队下不作为结果相信）。★ 详见
+- **第 3 条（切后台回来已进备战、回合战斗金没给）+ 第 5 条（对局卡屏、要重启重连）**  
+  两条同一个根因：本场景所有 deadline 走**墙钟**，手机切后台再回来墙钟一次跳几分钟 ⇒  
+  每个 deadline 瞬间过期 ⇒ 回放被判 `battle_playback_timeout` ⇒ `Main` 直接回菜单，  
+  **没人去要权威结算**，回合战斗金永不发放；恢复帧的积压 `delta` 又让回放在单帧里补几十帧  
+  （每帧起特效）= 卡屏。修法**四层**：`BattleScreen` 自攒只在前台推进的单调毫秒表  
+  （后台期间一格不走，恢复帧 `delta` 夹到 0.25s，回放单帧补帧封顶 6 帧 + 累加器夹回）；  
+  `Main` 端三处权威兜底（服务器已推进本回合就本地认领结算 / 权威 state 已含本回合就不报错 /  
+  `battle_*` 类错误在组队下不作为结果相信）。★ 详见  
   [10.08bug提交及修复记录](docs/10.08bug提交及修复记录.md)。
-- **第 4 条（头像改上下两行）** `scenes/prep/PrepUI.gd`：准备头像从 `HBoxContainer` 一排改成
+- **第 4 条（头像改上下两行）** `scenes/prep/PrepUI.gd`：准备头像从 `HBoxContainer` 一排改成  
   VBox **两行**（`rows[pos / 3]`），「羁绊 / 宝藏」文本与图标向下挪（`SELL_LEFT_PANEL_TOP_RESERVE`）。
-- **第 6 条（手机背包点第一个「人王」头像跳到最后一个）** ★ 只在 **Android 双路投递**下发生：
-  `BagScreen._select_avatar()` 走 `_render()` 整体重建，把**正在处理这次点击**的瓦片 `queue_free`
-  掉；新控件这一帧还没布局、全堆在第一个格子，而 `emulate_mouse_from_touch` 投的第二路（模拟鼠标）
-  命中的是这批未布局控件里**最上层那个**（逆序 ⇒ 最后一个）。修法：**选中只重上色、不重建**
+- **第 6 条（手机背包点第一个「人王」头像跳到最后一个）** ★ 只在 **Android 双路投递**下发生：  
+  `BagScreen._select_avatar()` 走 `_render()` 整体重建，把**正在处理这次点击**的瓦片 `queue_free`  
+  掉；新控件这一帧还没布局、全堆在第一个格子，而 `emulate_mouse_from_touch` 投的第二路（模拟鼠标）  
+  命中的是这批未布局控件里**最上层那个**（逆序 ⇒ 最后一个）。修法：**选中只重上色、不重建**  
   （新增 `_avatar_tiles` / `_pet_tiles` 索引 + `_refresh_avatar_selection` / `_refresh_pet_selection`）。
-- **第 7 条（好友码输入框呼出键盘又自动隐藏）** `scenes/menu/FriendsScreen.gd`：5 秒轮询的
-  `_render()` 无条件 `queue_free` 重建列表 ⇒ 连输入框一起清掉、软键盘收起。改为
+- **第 7 条（好友码输入框呼出键盘又自动隐藏）** `scenes/menu/FriendsScreen.gd`：5 秒轮询的  
+  `_render()` 无条件 `queue_free` 重建列表 ⇒ 连输入框一起清掉、软键盘收起。改为  
   「正在编辑好友码时不动列表」（`_is_editing_code()`）。
-- **第 8 条（ghost 房间成员）** `backend/app/routes/ws.py` 断连 `finally` 里**没有**通知 party ⇒
-  掉线玩家的成员项永久残留。`party.py` 新增 60 秒掉线宽限（`on_disconnect` /
-  `mark_present` / `prune_disconnected`），`matchmaking.tick()` 定期剔除，
+- **第 8 条（ghost 房间成员）** `backend/app/routes/ws.py` 断连 `finally` 里**没有**通知 party ⇒  
+  掉线玩家的成员项永久残留。`party.py` 新增 60 秒掉线宽限（`on_disconnect` /  
+  `mark_present` / `prune_disconnected`），`matchmaking.tick()` 定期剔除，  
   `ws.py` `finally` 里 `party.current().on_disconnect(...)`。
-- **第 9 条（拖棋子到金图标 / 商店 UI 上不触发出售）** `scenes/prep/PrepUI.gd`：红区
-  `offset_top = -SHOP_POPUP_SIZE.y + 80`、左右 `∓448` 没盖住商店弹窗与钱袋 A。改成整块盖住
+- **第 9 条（拖棋子到金图标 / 商店 UI 上不触发出售）** `scenes/prep/PrepUI.gd`：红区  
+  `offset_top = -SHOP_POPUP_SIZE.y + 80`、左右 `∓448` 没盖住商店弹窗与钱袋 A。改成整块盖住  
   （`-SHOP_POPUP_SIZE.y - 8`、左右半宽、`offset_bottom = 0`）+ 新增 `_sync_sell_zone_geometry()`。
-- **门禁** 新增 `tools/prep_1008_check.tscn`（**59 条**，覆盖第 1/2/3/4/5/6/9 条 + 结构守卫）、
-  `backend/tests/test_party_presence_stdlib.py`（**11 条**）。变异 **6/6 全红**（第 3/5 条 3 红 +
-  1 冗余层、第 6 条 2 红）。后端全量 A/B **CLEAN**（只在现版出现的失败 = 0，passed 673 → 684）。
-  `cold_parse_chain` PASS 354。既存红（`dynamic_call` 30 / `battle_loading_layout` 1 /
+- **门禁** 新增 `tools/prep_1008_check.tscn`（**59 条**，覆盖第 1/2/3/4/5/6/9 条 + 结构守卫）、  
+  `backend/tests/test_party_presence_stdlib.py`（**11 条**）。变异 **6/6 全红**（第 3/5 条 3 红 +  
+  1 冗余层、第 6 条 2 红）。后端全量 A/B **CLEAN**（只在现版出现的失败 = 0，passed 673 → 684）。  
+  `cold_parse_chain` PASS 354。既存红（`dynamic_call` 30 / `battle_loading_layout` 1 /  
   `prep_text_coverage` 1）原样不动，且**无一条引用本轮改动文件**。
 
 ## 2026-10-07：人王 / 老虎的成长改记在每枚棋子上（协议 39，未提交）
 
-- **老虎**：每次升星（合成、升四星），当时手上（棋盘 + 待命区）每一枚一阶棋子生命 / 攻击 / 防御 +5%，累计；
+- **老虎**：每次升星（合成、升四星），当时手上（棋盘 + 待命区）每一枚一阶棋子生命 / 攻击 / 防御 +5%，累计；  
   之后才买的不吃；合成出来的继承最高层数再 +5%。以前是整局一个次数、所有一阶棋子统一乘，后买的也吃满。
-- **人王**：PvE / Boss / PvP 活过一场长一层，阵亡移出棋盘。以前的成长直接改 `def`，服务器只认数据表里的 `def`，
+- **人王**：PvE / Boss / PvP 活过一场长一层，阵亡移出棋盘。以前的成长直接改 `def`，服务器只认数据表里的 `def`，  
   **线上一层都没长过**；按格子号认死活，三路同一格分不清是谁的。现在按「主人座位 + 棋子 uid」认（`king_outcomes`）。
-- 两种成长都记在格子上（`scripts/units/UnitGrowth.gd`），开战时乘；摆放界面详情显示加成后的数，和实战读同一个函数。
+- 两种成长都记在格子上（`scripts/units/UnitGrowth.gd`），开战时乘；摆放界面详情显示加成后的数，和实战读同一个函数。  
   层数由手机算、随棋盘提交，服务器截上限（人王 ≤ 封顶 / 回合数；老虎 ≤ 服务器账本数到的升星次数）。
-- 新门禁 `tools/unit_growth_check` 81 项，变异 22 / 22 全红。**战斗服务器 p39 和新包一起上。**
+- 新门禁 `tools/unit_growth_check` 81 项，变异 22 / 22 全红。**战斗服务器 p39 和新包一起上。**  
   详见[10.07人王与老虎成长修复记录](docs/10.07人王与老虎成长修复记录.md)。
-- 同一批：PvP「正上方对正下方」恢复（10-06 晚 `3849d85` 撤回过；这次把镜像规则收成
-  `BattleSimShared.mirror_enemy_for`，离线自测台也走它）；四条本来就红的门禁修好（刺灵减防不叠层、删死字段
+- 同一批：PvP「正上方对正下方」恢复（10-06 晚 `3849d85` 撤回过；这次把镜像规则收成  
+  `BattleSimShared.mirror_enemy_for`，离线自测台也走它）；四条本来就红的门禁修好（刺灵减防不叠层、删死字段  
   `max_stacks`；元素套装 2 秒冷却；复利之道花没花钱；PvP 对齐），变异 7 / 7 全红，见 `docs/CHECKS.md`。
-- **晚上补修（只改客户端，出新包即可，不用重新部署战斗服务器）**：真机老虎仍是 0 层 —— 买进空格后的**自动合成**
-  从来没报给服务器账本，服务器的升星次数不涨，老虎层数被截成 0。10-07 之前「老虎没生效」多半也是它。
+- **晚上补修（只改客户端，出新包即可，不用重新部署战斗服务器）**：真机老虎仍是 0 层 —— 买进空格后的**自动合成**  
+  从来没报给服务器账本，服务器的升星次数不涨，老虎层数被截成 0。10-07 之前「老虎没生效」多半也是它。  
   `_combine_copies_auto` 现在和手动合成一样调 `_shadow_report_merge()`；`unit_growth_check` 84 项。
 
 ## 2026-10-07：`10.07bug提交及修复.docx` 14 条
 
-按文档逐条落码。**改动只有代码 + 门禁 / 探针，无新增运行资源、未重导 EXE/APK、
+按文档逐条落码。**改动只有代码 + 门禁 / 探针，无新增运行资源、未重导 EXE/APK、  
 未真机验证、未同步 `GLory-v1.0`、未暂存/提交/推送。**
 
-- **第 1 条（开始游戏键明暗）** `scenes/menu/Team3v3Lobby.gd`：原来无条件跑呼吸动画 ——
-  不管能不能开局都在闪，玩家分不出「现在能不能开」。改为每帧用
-  `_update_start_pulse(_start_block_reason(true).is_empty())` 驱动：**能开局才走呼吸，不能开局压到暗态**
+- **第 1 条（开始游戏键明暗）** `scenes/menu/Team3v3Lobby.gd`：原来无条件跑呼吸动画 ——  
+  不管能不能开局都在闪，玩家分不出「现在能不能开」。改为每帧用  
+  `_update_start_pulse(_start_block_reason(true).is_empty())` 驱动：**能开局才走呼吸，不能开局压到暗态**  
   （新增 `START_PLATE_DIM`）。判据与按钮实际可用性是同一个 `_start_block_reason()`，不另写一份条件。
-- **第 2 条（图鉴补四星技能）** `scenes/menu/CodexScreen.gd`：技能文本后追加两行 ——
-  「四级升星后」（与「技能」小标题同字号）+ 四星技能文本（与其它技能文本同字号）。
+- **第 2 条（图鉴补四星技能）** `scenes/menu/CodexScreen.gd`：技能文本后追加两行 ——  
+  「四级升星后」（与「技能」小标题同字号）+ 四星技能文本（与其它技能文本同字号）。  
   文本取自单位数据的四星技能字段，**不是硬编码**；文案 key 进 `LocaleManager`（zh/en）。
-- **第 3 条（所有滚动区可按住滑动）** 新增 `ui/components/TouchScrollContainer.gd`
-  （`extends ScrollContainer`，`_gui_input()` 处理 `InputEventScreenDrag`），
-  **20 个文件 27 处 `ScrollContainer` 换成它**。★ 没有逐处改 `_gui_input` —— 统一在一处，
+- **第 3 条（所有滚动区可按住滑动）** 新增 `ui/components/TouchScrollContainer.gd`  
+  （`extends ScrollContainer`，`_gui_input()` 处理 `InputEventScreenDrag`），  
+  **20 个文件 27 处 `ScrollContainer` 换成它**。★ 没有逐处改 `_gui_input` —— 统一在一处，  
   否则 27 份实现改一处漏 26 处。
-- **第 4 条（商店第四张卡点击不灵敏）** `scenes/prep/PrepDragButton.gd`：`DRAG_START_DISTANCE`
-  **16 → 28**。根因不是「第四张卡特殊」，是阈值太小 —— 手指按下去必然抖几像素，16 就被判成拖拽、
+- **第 4 条（商店第四张卡点击不灵敏）** `scenes/prep/PrepDragButton.gd`：`DRAG_START_DISTANCE`  
+  **16 → 28**。根因不是「第四张卡特殊」，是阈值太小 —— 手指按下去必然抖几像素，16 就被判成拖拽、  
   点击被吃掉。**为什么偏偏第四张最明显**：它在屏幕靠右、最贴近右手拇指自然落点，抖动量最大。
-- **第 5 条（三选一只留前三只）** `scenes/menu/PetScreen.gd`：`starter_mode` 改遍历
+- **第 5 条（三选一只留前三只）** `scenes/menu/PetScreen.gd`：`starter_mode` 改遍历  
   `PetService.starter_ids()`（**数据驱动**，不写死 3 个 id），不再遍历全部宠物。
-- **第 6 / 10 条（邀请气泡，两份共用）** 新建 `ui/components/PartyInviteBubble.gd`
-  （`CanvasLayer`，`BUBBLE_LAYER=1600`）：**非模态、整层 `IGNORE`、只有卡片 `STOP`**
-  （「不处理不影响主界面操作」是硬要求）；覆盖 + 补位（`MAX_VISIBLE=1`，被顶掉的进 `_pending`，
-  处理完当前这条再放出**上一个**）；**30 秒是绝对期限不是「显示 30 秒」**（每条记自己的 deadline，
-  排队等待时间照扣）；每条卡片**独立 `Timer`**；`_handled[party_id]` 供聊天红点过滤。
-  `Main` 接 `party_invite`（+提示音）/ `room_invite` / 私聊 `dm_received`（经
-  `RoomInvite.is_invite()` 判定），昵称走 `AccountManager.fetch_friends()` **现查**。
+- **第 6 / 10 条（邀请气泡，两份共用）** 新建 `ui/components/PartyInviteBubble.gd`  
+  （`CanvasLayer`，`BUBBLE_LAYER=1600`）：**非模态、整层 `IGNORE`、只有卡片 `STOP`**  
+  （「不处理不影响主界面操作」是硬要求）；覆盖 + 补位（`MAX_VISIBLE=1`，被顶掉的进 `_pending`，  
+  处理完当前这条再放出**上一个**）；**30 秒是绝对期限不是「显示 30 秒」**（每条记自己的 deadline，  
+  排队等待时间照扣）；每条卡片**独立 `Timer`**；`_handled[party_id]` 供聊天红点过滤。  
+  `Main` 接 `party_invite`（+提示音）/ `room_invite` / 私聊 `dm_received`（经  
+  `RoomInvite.is_invite()` 判定），昵称走 `AccountManager.fetch_friends()` **现查**。  
   第 10 条的组队邀请**复用同一份组件**（`KIND_TEAM` 文案分支）—— 两份实现的「30 秒/覆盖/补位」迟早漂移。
-- **第 7 条（安卓头像与 Godot 端一致）** `scenes/menu/ProfileScreen.gd` 整段重写为
-  `AvatarCatalog.frame_drawn_size()` + `frame_box_origin()`，与大厅**共用同一套内孔几何**；
-  `AvatarCatalog` 新增 `frame_hole_center_local()`（`frame_box_origin` 的逆运算，供判据用）。
-  ★ **这条我第一次判断错了方向**：初判「stage 被拉成宽而扁」，探针 dump 实测推翻
-  （`VBoxContainer.alignment=ALIGNMENT_CENTER` ⇒ 子节点居中不拉伸，stage 恒 176×176），
-  且第一版门禁**变异后仍 PASS** ⇒ 判据不区分，整条删掉重写。**真根因**：
-  `ProfileScreen` 是**唯一没走 `AvatarCatalog` 内孔几何**的地方，旧写法「两张 `PRESET_FULL_RECT` +
-  `KEEP_ASPECT_CENTERED`」在**头像与框素材宽高比不同**时数学上就是错的（框 1103×1426 竖长、
-  头像 330×330）—— **为什么手机端才看得出来**：不同机型 `content_scale_size` 不同，
+- **第 7 条（安卓头像与 Godot 端一致）** `scenes/menu/ProfileScreen.gd` 整段重写为  
+  `AvatarCatalog.frame_drawn_size()` + `frame_box_origin()`，与大厅**共用同一套内孔几何**；  
+  `AvatarCatalog` 新增 `frame_hole_center_local()`（`frame_box_origin` 的逆运算，供判据用）。  
+  ★ **这条我第一次判断错了方向**：初判「stage 被拉成宽而扁」，探针 dump 实测推翻  
+  （`VBoxContainer.alignment=ALIGNMENT_CENTER` ⇒ 子节点居中不拉伸，stage 恒 176×176），  
+  且第一版门禁**变异后仍 PASS** ⇒ 判据不区分，整条删掉重写。**真根因**：  
+  `ProfileScreen` 是**唯一没走 `AvatarCatalog` 内孔几何**的地方，旧写法「两张 `PRESET_FULL_RECT` +  
+  `KEEP_ASPECT_CENTERED`」在**头像与框素材宽高比不同**时数学上就是错的（框 1103×1426 竖长、  
+  头像 330×330）—— **为什么手机端才看得出来**：不同机型 `content_scale_size` 不同，  
   `KEEP_ASPECT_CENTERED` 的偏移量随容器尺寸变化，PC 端恰好落在偏移很小的一档。
-- **第 8 条（任何回合结束都出结算面板，含 PVE 佣兵）** ★ **根因是三处 `kind in ["pvp","final"]`
-  白名单串起来的**，不是「面板没做」：① `FinalSettlementData.build()` 的 `show_details`
-  ② `can_show_details()` ③ `MatchHistoryPanel.has_settlement_details()`。三处全放行，
-  但**没删判据**（无 kind 的旧 model 仍按 `show_details` 走、`settlement` 为 null 的旧局仍不给按钮）。
-  主路径 `Main._on_team_battle_finished()`：`local_settlement` 由「只在 `run_over` 时建」改为
-  **每回合都建**。★ **时序是技术核心**：`build_local()` 读 `GameState.board_slots` /
-  `mercenary_slots`（离线槽 0），**必须在 `GameState.clear_mercenaries()` 之前建** ——
-  放后面佣兵列全空，而「PVE 也要算我方上阵佣兵」正是这条的需求。服务端权威路径同样补上
-  （数据从**广播快照** `NetworkService.team_boards` 建，不受那次 `clear_mercenaries()` 影响）。
-  面板 `FinalSettlementPanel` 加 `in_progress` 模式：标题「回合结算 · 第 N 回合」、
+- **第 8 条（任何回合结束都出结算面板，含 PVE 佣兵）** ★ **根因是三处 `kind in ["pvp","final"]`  
+  白名单串起来的**，不是「面板没做」：① `FinalSettlementData.build()` 的 `show_details`  
+  ② `can_show_details()` ③ `MatchHistoryPanel.has_settlement_details()`。三处全放行，  
+  但**没删判据**（无 kind 的旧 model 仍按 `show_details` 走、`settlement` 为 null 的旧局仍不给按钮）。  
+  主路径 `Main._on_team_battle_finished()`：`local_settlement` 由「只在 `run_over` 时建」改为  
+  **每回合都建**。★ **时序是技术核心**：`build_local()` 读 `GameState.board_slots` /  
+  `mercenary_slots`（离线槽 0），**必须在 `GameState.clear_mercenaries()` 之前建** ——  
+  放后面佣兵列全空，而「PVE 也要算我方上阵佣兵」正是这条的需求。服务端权威路径同样补上  
+  （数据从**广播快照** `NetworkService.team_boards` 建，不受那次 `clear_mercenaries()` 影响）。  
+  面板 `FinalSettlementPanel` 加 `in_progress` 模式：标题「回合结算 · 第 N 回合」、  
   按钮只有「继续」（新信号 `continue_requested`），**终局 / 历史两路不带这个键 ⇒ 文案行为一字未变**。
-- **第 9 条（房间语音 UI 只留麦克风 + 扬声器）** `scenes/menu/PartyLobby.gd` + `PartyVoice.gd`：
+- **第 9 条（房间语音 UI 只留麦克风 + 扬声器）** `scenes/menu/PartyLobby.gd` + `PartyVoice.gd`：  
   排位/休闲全是队友，去掉「队友 / 所有人」受众切换（那是自定义房间有观众才需要的）。
 - **第 11 条（成员也可邀请）** `PartyLobby` 三处 `disabled` 去掉 `not _is_host()`。
-- **第 12 条（房主退出 + 接班）** `backend/app/party.py`：`Room` 新增
-  `joined_at: dict[uuid.UUID, float]`，**`create()` 与 `join()` 都记**（`join()` 也记 =
-  「重新进入房间重新计时」）；`leave()` 扩为 4 元组 `(room, old_members, closed, migrated)`，
-  剩余为空则解散，否则 `successor = min(remaining, key=lambda pid: room.joined_at.get(pid, 0.0))`
+- **第 12 条（房主退出 + 接班）** `backend/app/party.py`：`Room` 新增  
+  `joined_at: dict[uuid.UUID, float]`，**`create()` 与 `join()` 都记**（`join()` 也记 =  
+  「重新进入房间重新计时」）；`leave()` 扩为 4 元组 `(room, old_members, closed, migrated)`，  
+  剩余为空则解散，否则 `successor = min(remaining, key=lambda pid: room.joined_at.get(pid, 0.0))`  
   —— **进房最早的人接班**。
-- **第 13 条（换模式提示）** `backend/app/routes/party.py` 的 `mode` 路由给**非房主**推
-  `party_notice`（`kind="mode_changed"`、`房主更换了{休闲|排位}模式`）；客户端 `PartyLobby`
+- **第 13 条（换模式提示）** `backend/app/routes/party.py` 的 `mode` 路由给**非房主**推  
+  `party_notice`（`kind="mode_changed"`、`房主更换了{休闲|排位}模式`）；客户端 `PartyLobby`  
   新增该分支 + `_sticky_notice`（否则下一次房间状态刷新会把提示冲掉）+ `NOTICE_SEC=4.0` 计时器。
-- **第 14 条（任意成员取消回房间）** `scenes/menu/MatchQueuePanel.gd`：`_party_queue and
-  _state == "queued"` 时统一走 `cancel_party_match()`（**取消匹配**），不再按房主分叉 ——
-  以前非房主走 `leave_party()`，那是**退房**。服务端 `queued_room()` 从 `_require_host`
+- **第 14 条（任意成员取消回房间）** `scenes/menu/MatchQueuePanel.gd`：`_party_queue and _state == "queued"` 时统一走 `cancel_party_match()`（**取消匹配**），不再按房主分叉 ——  
+  以前非房主走 `leave_party()`，那是**退房**。服务端 `queued_room()` 从 `_require_host`  
   改 `_require_member`，`cancel` 路由加兜底。
-- **门禁**：新增 5 条 headless（`round_settlement` **23/0**、`party_invite_bubble` **20/0**、
-  `party_lobby_rules` **12/0**、`codex_four_star`、`party_voice_ui`）+ 1 条 stdlib 服务端测试
-  （`backend/tests/test_party_room_stdlib.py` **9/9**）。改动面涉及的既有门禁全绿：
-  `cold_parse_chain` **324/0**、`profile` **184/0**、`final_settlement` 41/0、
+- **门禁**：新增 5 条 headless（`round_settlement` **23/0**、`party_invite_bubble` **20/0**、  
+  `party_lobby_rules` **12/0**、`codex_four_star`、`party_voice_ui`）+ 1 条 stdlib 服务端测试  
+  （`backend/tests/test_party_room_stdlib.py` **9/9**）。改动面涉及的既有门禁全绿：  
+  `cold_parse_chain` **324/0**、`profile` **184/0**、`final_settlement` 41/0、  
   `match_history_ui` 83/0、`voice_redesign` 31/0、`frame_hole` 77/0、`chat` 293/0。
-- **变异**：第 8 条 **7/7 全红**（`其他/work/_qa_1007/mutate_1007.py`，含 ★ 核心需求
-  「`build_local` 不带佣兵列」→ `pve_mercenary_present` 红）；第 7 条 2/2 红
-  （m1 最大偏差 **26.20 px**，正是用户看到的偏移量级）；第 6/10 条 2/2 红；第 11-14 条
-  客户端 2/2 红 + 服务端 2/2 红。每条都「先备份 `.r3bak` → 改坏 → 跑门禁 → 还原 → 比 sha256」，
+- **变异**：第 8 条 **7/7 全红**（`其他/work/_qa_1007/mutate_1007.py`，含 ★ 核心需求  
+  「`build_local` 不带佣兵列」→ `pve_mercenary_present` 红）；第 7 条 2/2 红  
+  （m1 最大偏差 **26.20 px**，正是用户看到的偏移量级）；第 6/10 条 2/2 红；第 11-14 条  
+  客户端 2/2 红 + 服务端 2/2 红。每条都「先备份 `.r3bak` → 改坏 → 跑门禁 → 还原 → 比 sha256」，  
   `restored=True` 逐一核对。
-- 既存红（`procedural_ui_ratchet` 3、`prep_text_coverage` 1、`dynamic_call` 24、
-  `lobby_identity03` 2、`asset_manifest` 38）**本轮零新增** —— `dynamic_call` 的本轮 5 个文件
+- 既存红（`procedural_ui_ratchet` 3、`prep_text_coverage` 1、`dynamic_call` 24、  
+  `lobby_identity03` 2、`asset_manifest` 38）**本轮零新增** —— `dynamic_call` 的本轮 5 个文件  
   `grep` 零命中。**没有擅自重建过时基线**（那是替别人背书），只给证据 + 记账。
-- **本轮无新增运行资源**（纯 `.gd` / `.tscn` / `.py`，全部可上传 ⇒ 桌面不放副本）；
+- **本轮无新增运行资源**（纯 `.gd` / `.tscn` / `.py`，全部可上传 ⇒ 桌面不放副本）；  
   非运行产物在 `其他/work/_qa_1007/`。详见[10.07 修复记录](docs/10.07bug提交及修复记录.md)。
 
 ## 2026-10-06：`10.06bug提交及修复.docx` 8 条
 
-按文档逐条落码。**改动只有代码 + 1 张图标素材**（`assets/ui/race_logos/crimson.png`），
+按文档逐条落码。**改动只有代码 + 1 张图标素材**（`assets/ui/race_logos/crimson.png`），  
 无新增运行资源、未重导 EXE/APK、未真机验证、未同步 `GLory-v1.0`、未暂存/提交/推送。
 
-- **第 1 条（计数图案去底板）** `scenes/prep/panels/PrepDeployCounter.gd`：`_draw()` 删掉
-  `RoundedRectDraw.draw_soft_glow()` / `draw_colored_polygon(..., PLATE_BG)` / `draw_polyline(..., BORDER_WIDTH)`
-  三层，只留「棋子剪影 + 数字」。`box`/`center` 仍照算，`GLOW_MARGIN` 与
-  `PrepBoardModels.PREP_DEPLOY_COUNTER_VIEWPORT_SIZE` 的对应关系不变；数字那层深色投影**刻意保留** ——
+- **第 1 条（计数图案去底板）** `scenes/prep/panels/PrepDeployCounter.gd`：`_draw()` 删掉  
+  `RoundedRectDraw.draw_soft_glow()` / `draw_colored_polygon(..., PLATE_BG)` / `draw_polyline(..., BORDER_WIDTH)`  
+  三层，只留「棋子剪影 + 数字」。`box`/`center` 仍照算，`GLOW_MARGIN` 与  
+  `PrepBoardModels.PREP_DEPLOY_COUNTER_VIEWPORT_SIZE` 的对应关系不变；数字那层深色投影**刻意保留** ——  
   去掉底板后它是数字贴在草地上唯一的可读性保障。
-- **第 2 条（朋友列表只显昵称）** `scenes/menu/Team3v3Lobby.gd::_online_friend_row()` 改走
+- **第 2 条（朋友列表只显昵称）** `scenes/menu/Team3v3Lobby.gd::_online_friend_row()` 改走  
   `AccountManager.display_name(name, code, false)`。好友码**不是删掉、只是不显示** —— 邀请仍按它发消息。
-- **第 3 条（刷新键对齐 + 开商店收起通讯簇）** `scenes/prep/PrepUI.gd`：刷新键
-  `offset_left -105→-143`、`offset_right 25→-13`（框宽 130、中心正好落在右侧竖列 W-78；
-  原值中心在 W-40、右缘还探出屏幕）。`_on_shop_picker_toggled()` 里三行 `_set_overlay_blocked`
-  换成新抽的 `_set_comms_ui_hidden()` —— 商店开着**整块隐藏**右下角通讯簇（原来只禁输入、仍占位置看着拥挤），
-  关店走 `set_deferred` 下一帧按**进来时的可见性**放回。
-  ★ **第一版只藏了语音三键，真机复测「没消失」**（见下面「第二段」）：那四键外面还有一层共享底板
-  `_comms_dock`（`PanelContainer`，`308×88`、`z=19`、比最左语音键还宽一圈），加上同簇的聊天键；
+- **第 3 条（刷新键对齐 + 开商店收起通讯簇）** `scenes/prep/PrepUI.gd`：刷新键  
+  `offset_left -105→-143`、`offset_right 25→-13`（框宽 130、中心正好落在右侧竖列 W-78；  
+  原值中心在 W-40、右缘还探出屏幕）。`_on_shop_picker_toggled()` 里三行 `_set_overlay_blocked`  
+  换成新抽的 `_set_comms_ui_hidden()` —— 商店开着**整块隐藏**右下角通讯簇（原来只禁输入、仍占位置看着拥挤），  
+  关店走 `set_deferred` 下一帧按**进来时的可见性**放回。  
+  ★ **第一版只藏了语音三键，真机复测「没消失」**（见下面「第二段」）：那四键外面还有一层共享底板  
+  `_comms_dock`（`PanelContainer`，`308×88`、`z=19`、比最左语音键还宽一圈），加上同簇的聊天键；  
   现在的成员表是 `[_comms_dock, _chat_button, 语音, 队友, 所有人]` 五个，**整簇一起收**。
-- **第 4 条（赤律族图标去黑底）** `assets/ui/race_logos/crimson.png` 原来是 **RGB、无 alpha、黑底烘焙在像素里**
-  （其余 4 族 logo 都是 RGBA + 四角透明）。四边连通域泛洪（`lum<=26`）置透明 + 1px 高斯羽化，输出 RGBA 1254×1254，
-  不透明像素占比 **55.0%**。原件备份 `其他/work/_qa_1006/crimson_orig_backup.png`
+- **第 4 条（赤律族图标去黑底）** `assets/ui/race_logos/crimson.png` 原来是 **RGB、无 alpha、黑底烘焙在像素里**  
+  （其余 4 族 logo 都是 RGBA + 四角透明）。四边连通域泛洪（`lum<=26`）置透明 + 1px 高斯羽化，输出 RGBA 1254×1254，  
+  不透明像素占比 **55.0%**。原件备份 `其他/work/_qa_1006/crimson_orig_backup.png`  
   （sha `d0703af86f5dcaee` → 新 `a0ab6d311d683784`）。★ 本轮唯一素材改动，**已 `--import` 重导入**。
-- **第 5 条（结算面板上下两排按钮 + 删滚动提示）** `scenes/menu/FinalSettlementPanel.gd`：一排按钮抽成
-  `_button_row()`，在**面板上部（与标题同高）与底部各放一排**；`_return_button` 单变量改
-  `_return_buttons: Array`（两排一起禁用 / 一起被 `allow_return_retry()` 恢复）；删掉
+- **第 5 条（结算面板上下两排按钮 + 删滚动提示）** `scenes/menu/FinalSettlementPanel.gd`：一排按钮抽成  
+  `_button_row()`，在**面板上部（与标题同高）与底部各放一排**；`_return_button` 单变量改  
+  `_return_buttons: Array`（两排一起禁用 / 一起被 `allow_return_retry()` 恢复）；删掉  
   「↓ 本结算面板超过一屏，可上下滚动查看全部内容」。
-- **第 6 条（房间顶部文案）** `Team3v3Lobby.gd::_start_block_reason()` 只留「等待结算中的玩家返回」，
+- **第 6 条（房间顶部文案）** `Team3v3Lobby.gd::_start_block_reason()` 只留「等待结算中的玩家返回」，  
   「，或由房主请离」半句删掉。
-- **第 7 条（落点在商店里不购买）** `scenes/prep/PrepBoardController.gd`：`_drop_on_board()` /
-  `_drop_on_bench()` 加 `_shop_drop_inside_store(d)` 早退。根因是商店弹窗为**非模态透明 Container**
-  （`mouse_filter = PASS`）、背景层一律 `IGNORE`，悬在它下面的棋盘格/待命格仍会收到那次放置，
-  而弹窗正压在棋盘下缘 ⇒「在商店里随口一拖」被当成上阵买入。只有 `kind=="shop"` 且商店开着、
+- **第 7 条（落点在商店里不购买）** `scenes/prep/PrepBoardController.gd`：`_drop_on_board()` /  
+  `_drop_on_bench()` 加 `_shop_drop_inside_store(d)` 早退。根因是商店弹窗为**非模态透明 Container**  
+  （`mouse_filter = PASS`）、背景层一律 `IGNORE`，悬在它下面的棋盘格/待命格仍会收到那次放置，  
+  而弹窗正压在棋盘下缘 ⇒「在商店里随口一拖」被当成上阵买入。只有 `kind=="shop"` 且商店开着、  
   落点在弹窗或外挂层（钱袋 A / 刷新键）矩形内才拦；拖到空位照旧买入。
-- **第 8 条（房间里也能静音）** `Team3v3Lobby.gd` 右上角（`MUTE_BTN_POS=(1500,26)`、`edge="right"`）
-  新增「静音 / 已静音」键，走 `PrepWidgets.make_menu_button`（**刻意不用 `Button.new()`**，
-  否则顶红 `procedural_ui_ratchet`）。语义与备战期那颗同源：`Master` 总线静音 **或**
-  `Presentation.music_allowed()==false` 都算已静音；在「设置页关了背景音乐」那一态按下去会把声音
+- **第 8 条（房间里也能静音）** `Team3v3Lobby.gd` 右上角（`MUTE_BTN_POS=(1500,26)`、`edge="right"`）  
+  新增「静音 / 已静音」键，走 `PrepWidgets.make_menu_button`（**刻意不用 `Button.new()`**，  
+  否则顶红 `procedural_ui_ratchet`）。语义与备战期那颗同源：`Master` 总线静音 **或**  
+  `Presentation.music_allowed()==false` 都算已静音；在「设置页关了背景音乐」那一态按下去会把声音  
   **真正打开**（清总线静音 + 打开音乐开关），而不是翻一个本来就没静音的总线（按了像没反应）。
 
 **判据与变异**
 
-- 新增 `tools/prep_1006_check.tscn`（headless）**51 PASS / 0 FAIL**：第 2/3/5/6/7/8 条的行为判据，
-  外加两条结构判据（`_drop_on_board` / `_drop_on_bench` 都调用了守卫；计数图案 `_draw` 里不再有
-  `draw_soft_glow` / `PLATE_BG` / `draw_polyline`）。第 8 条用例结束**还原现场**（总线静音态 + 音乐开关）。
-  ★ 第 3 条那条用例必须先 `NetworkService.team_active = true` 才建得出语音三键
-  （`PrepUI._build_chat_entry()` 开头就 `not NetworkService.team_active → return`），
-  否则测的是「根本没有语音键」而不是「有没有隐藏」。并且它验的是**整簇 5 个成员**
-  （三键 + `_comms_dock` + `_chat_button`）、走**真实入口** `_shop.toggle_picker()`
+- 新增 `tools/prep_1006_check.tscn`（headless）**51 PASS / 0 FAIL**：第 2/3/5/6/7/8 条的行为判据，  
+  外加两条结构判据（`_drop_on_board` / `_drop_on_bench` 都调用了守卫；计数图案 `_draw` 里不再有  
+  `draw_soft_glow` / `PLATE_BG` / `draw_polyline`）。第 8 条用例结束**还原现场**（总线静音态 + 音乐开关）。  
+  ★ 第 3 条那条用例必须先 `NetworkService.team_active = true` 才建得出语音三键  
+  （`PrepUI._build_chat_entry()` 开头就 `not NetworkService.team_active → return`），  
+  否则测的是「根本没有语音键」而不是「有没有隐藏」。并且它验的是**整簇 5 个成员**  
+  （三键 + `_comms_dock` + `_chat_button`）、走**真实入口** `_shop.toggle_picker()`  
   （不是直接调 `_on_shop_picker_toggled()` —— 那样接线断了也全绿）。
-- 新增 `work/_qa_1006/deploy_counter_probe.tscn`（**非** headless —— headless 取不到像素真值、
-  真鼠标也不走 `BaseButton` 内建逻辑）**6 PASS / 0 FAIL**：把计数图案渲进 `SubViewport(transparent_bg)`
-  后逐像素判「底板圆角矩形以外整圈全透明 / 底板四角内侧取样点全透明 / 图案本体必须仍在」，
-  并真鼠标 `Input.parse_input_event` 点上面那排「返回房间」验证两排一起进「正在返回…」。
-  ★ 这个探针 **`work/**` 受 gitignore ⇒ 不进仓**（本地开发者产物，与先例 `work/_qa_shop/drag_fix_probe` 同一处理）；
+- 新增 `work/_qa_1006/deploy_counter_probe.tscn`（**非** headless —— headless 取不到像素真值、  
+  真鼠标也不走 `BaseButton` 内建逻辑）**6 PASS / 0 FAIL**：把计数图案渲进 `SubViewport(transparent_bg)`  
+  后逐像素判「底板圆角矩形以外整圈全透明 / 底板四角内侧取样点全透明 / 图案本体必须仍在」，  
+  并真鼠标 `Input.parse_input_event` 点上面那排「返回房间」验证两排一起进「正在返回…」。  
+  ★ 这个探针 **`work/**` 受 gitignore ⇒ 不进仓**（本地开发者产物，与先例 `work/_qa_shop/drag_fix_probe` 同一处理）；  
   需要复跑时按上面的命令行在本地建场景即可。
-- 新增 `其他/work/_qa_1006/assert_crimson_logo.py`（第 4 条，判据就是像素）**5 PASS / 0 FAIL**：
+- 新增 `其他/work/_qa_1006/assert_crimson_logo.py`（第 4 条，判据就是像素）**5 PASS / 0 FAIL**：  
   RGBA、四角 alpha=0、最外圈全透明、图案未被抹掉、与其余 4 族 logo 同口径。
-- **变异 13/13 全红**（`其他/work/_qa_1006/mutate_1006.py`，含探针模式 2 条；四道加固：
-  只认先复制的 `.r3bak` / 见残留拒跑 / SIGTERM 兜底 / 基线先绿）：显示好友码、刷新键退回 -105/25、
-  通讯簇成员表退回空（＝只藏三键、底板 + 聊天键留在原地，**正是真机报的第一版行为**）、上面那排按钮删掉、滚动提示加回来、文案补回「或由房主请离」、守卫恒返回 false、
-  棋盘那条路不再调守卫、`_is_audio_muted()` 恒 false、静音键根本不建、`_draw` 里把底板画回来、上面那排删掉。
+- **变异 13/13 全红**（`其他/work/_qa_1006/mutate_1006.py`，含探针模式 2 条；四道加固：  
+  只认先复制的 `.r3bak` / 见残留拒跑 / SIGTERM 兜底 / 基线先绿）：显示好友码、刷新键退回 -105/25、  
+  通讯簇成员表退回空（＝只藏三键、底板 + 聊天键留在原地，**正是真机报的第一版行为**）、上面那排按钮删掉、滚动提示加回来、文案补回「或由房主请离」、守卫恒返回 false、  
+  棋盘那条路不再调守卫、`_is_audio_muted()` 恒 false、静音键根本不建、`_draw` 里把底板画回来、上面那排删掉。  
   **每一处改坏后逐字节还原、sha256 与改坏前一致，全库 `.r3bak/.mutbak/.bak/.tmp` 残留 = 0。**
-- 连带回归全绿：`cold_parse_chain` 209、`prep_1005` 76、`prep_shop` 34、`prep_drag_threshold` 64、
-  `final_settlement` 41、`comms_layout` 113、`match_exit` 69、`voice_music` 31、`team_lobby_seat_label` 35。
-  既存红逐条确认与本轮无关：`procedural_ui_ratchet` 3（基线过时 + `PrepUI` 的 `StyleBoxFlat 4→5`
-  来自用户 10-06 自己的改动，本轮代码**零新增原语**）、`prep_mute_state` **12（本条门禁已过时 ——
-  它测备战页的静音键，而那颗键 10-06 被换成了「设定」；`match_exit_check` 反而反向断言「摆放界面上
-  不应再有静音键」）**、`asset_manifest` 28（4 条 allowlist 于 2026-09-30 到期 + 23 条既存缺失，
-  `grep prep_1006 / deploy_counter_probe / crimson` 零命中）、`prep_tree_snapshot` 19、
+- 连带回归全绿：`cold_parse_chain` 209、`prep_1005` 76、`prep_shop` 34、`prep_drag_threshold` 64、  
+  `final_settlement` 41、`comms_layout` 113、`match_exit` 69、`voice_music` 31、`team_lobby_seat_label` 35。  
+  既存红逐条确认与本轮无关：`procedural_ui_ratchet` 3（基线过时 + `PrepUI` 的 `StyleBoxFlat 4→5`  
+  来自用户 10-06 自己的改动，本轮代码**零新增原语**）、`prep_mute_state` **12（本条门禁已过时 ——  
+  它测备战页的静音键，而那颗键 10-06 被换成了「设定」；`match_exit_check` 反而反向断言「摆放界面上  
+  不应再有静音键」）**、`asset_manifest` 28（4 条 allowlist 于 2026-09-30 到期 + 23 条既存缺失，  
+  `grep prep_1006 / deploy_counter_probe / crimson` 零命中）、`prep_tree_snapshot` 19、  
   `prep_text_coverage` 1、`dynamic_call` 12。本轮文件逐文件核过为纯 CRLF（`bareLF == 0`）。
 - 详见[10.06 修复记录](docs/10.06bug提交及修复记录.md)。
 
 **★★ 第二段（真机复测后）：第 3 条补漏**
 
-用户真机复测回报 **「开商店而语音 UI 没消失」** —— 第 3 条第一版漏了整簇底板。根因与修法见
+用户真机复测回报 **「开商店而语音 UI 没消失」** —— 第 3 条第一版漏了整簇底板。根因与修法见  
 [修复记录 §6](docs/10.06bug提交及修复记录.md)：
 
-- **根因**：第一版只对语音三键 `visible = false`，但同簇的 `_comms_dock` 深色底板（`308×88`、`z=19`）
-  与 `_chat_button` 没被藏 ⇒ 右下角看着「根本没动」。**接线本身是通的**（真实入口验证过），
+- **根因**：第一版只对语音三键 `visible = false`，但同簇的 `_comms_dock` 深色底板（`308×88`、`z=19`）  
+  与 `_chat_button` 没被藏 ⇒ 右下角看着「根本没动」。**接线本身是通的**（真实入口验证过），  
   问题在**判据只盯三个按钮、与用户所见不一致**。
-- **修法**：`_set_voice_ui_hidden` → `_set_comms_ui_hidden`，成员扩为 5 个；
-  新增 `_comms_hidden_visible` 记下进入时各自可见性，关闭时按原样 `set_deferred` 恢复。
+- **修法**：`_set_voice_ui_hidden` → `_set_comms_ui_hidden`，成员扩为 5 个；  
+  新增 `_comms_hidden_visible` 记下进入时各自可见性，关闭时按原样 `set_deferred` 恢复。  
   门禁同步扩到 5 成员 + 改走真实入口 `toggle_picker()`，`checked` 45 → **51**。
-- **验证**：`prep_1006_check` **PASS 51/0**；重标定后的变异 `m3_bug3_comms_dock_left` **RED**
-  （`failures=2`：`_comms_dock` + `_chat_button`，正是这一版漏掉的两条），逐字节还原 sha256 一致；
-  回归 `comms_layout` **113/0**、`cold_parse_chain` **209/0**；残留普查 = 0。
+- **验证**：`prep_1006_check` **PASS 51/0**；重标定后的变异 `m3_bug3_comms_dock_left` **RED**  
+  （`failures=2`：`_comms_dock` + `_chat_button`，正是这一版漏掉的两条），逐字节还原 sha256 一致；  
+  回归 `comms_layout` **113/0**、`cold_parse_chain` **209/0**；残留普查 = 0。  
   第二段后 `PrepUI.gd` sha16 `eb5f3626d6bde603`、`prep_1006_check.gd` sha16 `a129771a84f2e708`。
 
-**★ 本批素材点名（唯一一件）**：`assets/ui/race_logos/crimson.png` —— **赤律族羁绊图标黑底透明化**。
-原件是 RGB 无 alpha、黑底烘焙在像素里，现改为 RGBA 且只保留图案本体；备份
-`其他/work/_qa_1006/crimson_orig_backup.png`，五族对照图 `其他/work/_qa_1006/race_family_compare.png`。
-该文件 `git check-ignore` 实测**可上传**（`assets/ui/**` 不受 `/assets/*` 白名单制约束），
+**★ 本批素材点名（唯一一件）**：`assets/ui/race_logos/crimson.png` —— **赤律族羁绊图标黑底透明化**。  
+原件是 RGB 无 alpha、黑底烘焙在像素里，现改为 RGBA 且只保留图案本体；备份  
+`其他/work/_qa_1006/crimson_orig_backup.png`，五族对照图 `其他/work/_qa_1006/race_family_compare.png`。  
+该文件 `git check-ignore` 实测**可上传**（`assets/ui/**` 不受 `/assets/*` 白名单制约束），  
 按 10.05 口径**只归仓库、桌面不放副本**。**没有需要另置桌面同路径目录的不可上传素材。**
 
-**★ 待用户确认**：第 8 条「放到房间里同位置处」我理解为**只**加在 3v3 房间界面（备战页那颗静音键
-10-06 已被换成「设定」，且 `match_exit_check` 断言摆放界面上不应再有静音键）；另外
+**★ 待用户确认**：第 8 条「放到房间里同位置处」我理解为**只**加在 3v3 房间界面（备战页那颗静音键  
+10-06 已被换成「设定」，且 `match_exit_check` 断言摆放界面上不应再有静音键）；另外  
 `prep_mute_state_check` 已成过时门禁，是否改它的口径或下掉，等用户决定 —— 本轮**没擅自动**。
 
 ## 2026-10-06：战斗分路光墙换成魔法能量护栏（按半场分红蓝）
 
 - 分路边界不再是半透明的符文墙，换成「魔法能量护栏」：地面能量线、流动光带、随机竖光、悬浮符文和少量粒子，中间是空的。
-- 每条边界上下两段，各涂所在半场那一队的颜色：红队 `#f7937e`、蓝队 `#6a9ade`。PvP 里红队那半场永远红、蓝队那半场永远蓝，
+- 每条边界上下两段，各涂所在半场那一队的颜色：红队 `#f7937e`、蓝队 `#6a9ade`。PvP 里红队那半场永远红、蓝队那半场永远蓝，  
   每个人自己那半场都在画面下方；打怪回合整条用自己队伍的颜色。决赛照旧不画分路线。
-- 调外观：打开 `effects/battlefield/energy_barrier/EnergyBarrierSegment.tscn`，各层材质里改了就生效；
+- 调外观：打开 `effects/battlefield/energy_barrier/EnergyBarrierSegment.tscn`，各层材质里改了就生效；  
   看效果打开 `scenes/debug/EnergyBarrierReview.tscn` 按 F6（3 / 4 是红队 / 蓝队玩家的战斗视角）。
 - 旧符文墙三个文件已删；门禁与变异验证见 `docs/CHECKS.md` 同日条目。未真机验证，未重导 EXE/APK。
 
@@ -866,7 +988,6 @@
 - 可编辑 `.blend`、复现脚本、前后对比页面、哈希和日志在桌面 `其他/天使精修_20261004/`，最终截图为 `captures/delivery-*`。完整源为 `source/angel_complete_editable.blend`。
 - 用户测试后，按光之卫士、大祭司的精修入仓方式，为 `assets/models/units/god_angel_refined/` 添加 `.gitignore` 白名单。12 个运行文件（包装脚本、场景、材质、网格、修复贴图和导入元数据）已完整同步 GLory-v1.0，可随代码上传；天使 model 路径和本节同时同步。原 FBX 动作仍沿用既有美术资源包。本次没有需另行分发的新增运行素材；桌面 `天使新增资源_20261004/` 保留同内容副本。可编辑源、截图和日志留在“其他”，未执行 Git 暂存、提交或推送。
 
-
 ## 2026-10-04 大祭司（god_priestess）模型精修接入 + 裙摆黑斑修复
 
 参考 `docs/CODEX_MODEL_WORKFLOW.md`，把大祭司从原包装场景切到精修场景 `res://assets/models/units/god_priestess_refined/god_priestess_refined.tscn`，并把用户箭头标记的裙摆黑块一并修掉。
@@ -945,148 +1066,148 @@
 
 ## 2026-10-02 三轮：任意头像框下，头像都一样大（头像尺寸恒定 + 框按内孔反推）
 
-真机反馈：「同样一张图片，其他头像框显示的图片大小和默认头像框显示的不一样，会变小；
-不管大厅的头像还是房间的头像，用任意头像框，大小都应该和默认头像框的一致，**头像框也同步修改**。」
+真机反馈：「同样一张图片，其他头像框显示的图片大小和默认头像框显示的不一样，会变小；  
+不管大厅的头像还是房间的头像，用任意头像框，大小都应该和默认头像框的一致，**头像框也同步修改**。」  
 中途修正：「头像的位置**不偏移往下**，而是**允许头像框超出屏幕外**」。
 
-**根因三条（都量出来的）**：① 旧口径**主动缩头像** —— 大厅除了 123 的头像还额外挂了一个
-**78×78 的 `_profile_frame_portrait` 专给「戴了商城框」用**，席位那边是 `SLOT_FRAME_AVATAR_SIZE = 78`；
-戴框就从 123 缩到 78（−37%）。② 五张商城框素材 W/H = 0.773~0.889（竖长），塞进 160 / 180 的方盒后按长边
-贴满 ⇒ 画出来只有盒的 8 成宽，**内孔装不下头像** —— 缩到 78 正是在迁就它。③ 默认圆盘**垫在头像下面**
+**根因三条（都量出来的）**：① 旧口径**主动缩头像** —— 大厅除了 123 的头像还额外挂了一个  
+**78×78 的 `_profile_frame_portrait` 专给「戴了商城框」用**，席位那边是 `SLOT_FRAME_AVATAR_SIZE = 78`；  
+戴框就从 123 缩到 78（−37%）。② 五张商城框素材 W/H = 0.773~0.889（竖长），塞进 160 / 180 的方盒后按长边  
+贴满 ⇒ 画出来只有盒的 8 成宽，**内孔装不下头像** —— 缩到 78 正是在迁就它。③ 默认圆盘**垫在头像下面**  
 （内孔看不见），而自定义框是后加的 ⇒ **盖在头像上**，那道圆内孔直接切掉头像边缘，且每个框切得不一样。
 
 **新口径：头像尺寸恒定；框画在头像下面；框的内孔几何对齐默认圆盘。** 三条都是**结构**保证，不是调数值：
 
 - **头像恒定**：房间恒 106 @(39,40)、大厅恒 123 @圆盘中心。三分支共用同一个头像节点，那个 78 的副本直接删掉。
-- **框画在头像下面**：`_build_slot()` / `_build()` 里 `move_child(...)` 把框挪到头像之前 ⇒ **头像的可见像素与
+- **框画在头像下面**：`_build_slot()` / `_build()` 里 `move_child(...)` 把框挪到头像之前 ⇒ **头像的可见像素与  
   戴哪个框逐像素无关**。与默认圆盘同一层次，观感也一致。
-- **内孔几何对齐默认圆盘**：目标内孔 = `圆盘盒边长 × 默认框内孔占比 0.6271`（房间 100.3 / 大厅 112.9，
-  都**小于**头像 ⇒ 头像盖得住、不会露背景缝）；绘制宽度 = `目标内孔 ÷ 该框自己的内孔占比`
-  （`AvatarCatalog.frame_drawn_size`）；框盒落点 = `圆盘中心 − 该框自己的内孔圆心偏移 − 绘制尺寸/2`
-  （`AvatarCatalog.frame_box_origin`）。**落点必须走这个函数**：6 张商城框的内孔圆心在图里普遍**偏上
-  20~35px**（绘制坐标 3~5px），按盒心对齐就会在头像外露出一圈背景缝 —— 这条是门禁抓出来的。
-  最厚的炽焰之心在大厅按内孔反推后约 **197×246**，圆盘中心 y=99.5 ⇒ 顶部约 23px 出画布被裁，
+- **内孔几何对齐默认圆盘**：目标内孔 = `圆盘盒边长 × 默认框内孔占比 0.6271`（房间 100.3 / 大厅 112.9，  
+  都**小于**头像 ⇒ 头像盖得住、不会露背景缝）；绘制宽度 = `目标内孔 ÷ 该框自己的内孔占比`  
+  （`AvatarCatalog.frame_drawn_size`）；框盒落点 = `圆盘中心 − 该框自己的内孔圆心偏移 − 绘制尺寸/2`  
+  （`AvatarCatalog.frame_box_origin`）。**落点必须走这个函数**：6 张商城框的内孔圆心在图里普遍**偏上  
+  20~35px**（绘制坐标 3~5px），按盒心对齐就会在头像外露出一圈背景缝 —— 这条是门禁抓出来的。  
+  最厚的炽焰之心在大厅按内孔反推后约 **197×246**，圆盘中心 y=99.5 ⇒ 顶部约 23px 出画布被裁，  
   **这是用户明确允许的**（别再为了不出屏缩框或挪资料卡）。
 
-**改动 3 个生产文件 + 门禁 1 改 1 新**：`scripts/account/AvatarCatalog.gd`（新增 `FRAME_HOLE_FRAC` /
-`FRAME_HOLE_OFFSET` 两张表 + `frame_drawn_size` / `frame_box_origin` 等）、`scenes/menu/Team3v3Lobby.gd`、
-`scenes/menu/MainMenu.gd`；`tools/seat_frame_check.gd`（63→84）；**新增门禁** `tools/frame_hole_check.gd/.tscn`。
+**改动 3 个生产文件 + 门禁 1 改 1 新**：`scripts/account/AvatarCatalog.gd`（新增 `FRAME_HOLE_FRAC` /  
+`FRAME_HOLE_OFFSET` 两张表 + `frame_drawn_size` / `frame_box_origin` 等）、`scenes/menu/Team3v3Lobby.gd`、  
+`scenes/menu/MainMenu.gd`；`tools/seat_frame_check.gd`（63→84）；**新增门禁** `tools/frame_hole_check.gd/.tscn`。  
 **没有新素材。**
 
-**验证（判决性的是三方渲染）**：`KEEP_ASPECT_CENTERED` 不改 `Control.size`，节点尺寸看不出「画出来多大」；
-而「头像可见直径」在「框在头像下面」时**天然等于头像自己的直径**，也照不出漏缝（缝在头像**外面**）。
-所以每个 case 渲三张：A 框+头像 / B 只有框 / P 既无框也无头像（原图基准）。
+**验证（判决性的是三方渲染）**：`KEEP_ASPECT_CENTERED` 不改 `Control.size`，节点尺寸看不出「画出来多大」；  
+而「头像可见直径」在「框在头像下面」时**天然等于头像自己的直径**，也照不出漏缝（缝在头像**外面**）。  
+所以每个 case 渲三张：A 框+头像 / B 只有框 / P 既无框也无头像（原图基准）。  
 `A−B` 量可见直径、`|A−P|<δ ∧ |B−P|<δ` 且落在「头像外一圈环带」判漏缝。
 
-| 位置 | 默认圆盘 | 6 张商城框 | bbox |
-| --- | --- | --- | --- |
-| 房间席位 0 | 101.5 | 102.0 ~ 102.5 | 全 `106×95`（可见范围就是头像节点本身） |
-| 大厅资料卡 | 123.0 | **123.0（+0.0%）** | 全 `123×123`（完整的圆 ⇒ **没有缝**） |
+| 位置     | 默认圆盘  | 6 张商城框           | bbox                        |
+| ------ | ----- | ---------------- | --------------------------- |
+| 房间席位 0 | 101.5 | 102.0 ~ 102.5    | 全 `106×95`（可见范围就是头像节点本身）    |
+| 大厅资料卡  | 123.0 | **123.0（+0.0%）** | 全 `123×123`（完整的圆 ⇒ **没有缝**） |
 
-漏缝检测（环带 `r ∈ [头像半径−3, +14]`）：**6 张里 5 张与默认圆盘逐像素同量级**（房间 1444 vs
-1444~1445；大厅 93 vs 3~42，多数比默认更干净）；只有「冰雪七日」多 134 / 71 px，集中在上/下冰晶的
+漏缝检测（环带 `r ∈ [头像半径−3, +14]`）：**6 张里 5 张与默认圆盘逐像素同量级**（房间 1444 vs  
+1444~~1445；大厅 93 vs 3~~42，多数比默认更干净）；只有「冰雪七日」多 134 / 71 px，集中在上/下冰晶的  
 **素材本身镂空**处，肉眼不可见。
 
-**门禁 84 + 77 = 161 条**：`seat_frame_check` 63→84（新增 `frame_below_avatar`、`hole_not_larger_than_avatar`、
-`hole_target_from_default_disc`、`lobby_frame_below_portrait`、`lobby_hole_le_avatar`、`lobby_hole_from_default_disc`、
-`player1_avatar_size==106`、`frame_drawn_size` / `frame_not_fixed_box` / `frame_hole_centered_on_disc` /
-`frame_hole_eccentric` / `frame_node_size` / `frame_node_pos`、`drawn_box_matches_art`）；
-`frame_hole_check` **新增 77 条**（把两张表拿 PNG **重新量一遍**对表 + 用**生产脚本里的常量**算
-`room/lobby_no_gap_*` / `not_too_small_*`）。**变异 14 条全 RED、0 SKIP**（S1~S9 打席位门禁、
-H1~H5 打内孔表），每次跑完核 `[restore] sha256 MATCH`。
+**门禁 84 + 77 = 161 条**：`seat_frame_check` 63→84（新增 `frame_below_avatar`、`hole_not_larger_than_avatar`、  
+`hole_target_from_default_disc`、`lobby_frame_below_portrait`、`lobby_hole_le_avatar`、`lobby_hole_from_default_disc`、  
+`player1_avatar_size==106`、`frame_drawn_size` / `frame_not_fixed_box` / `frame_hole_centered_on_disc` /  
+`frame_hole_eccentric` / `frame_node_size` / `frame_node_pos`、`drawn_box_matches_art`）；  
+`frame_hole_check` **新增 77 条**（把两张表拿 PNG **重新量一遍**对表 + 用**生产脚本里的常量**算  
+`room/lobby_no_gap_*` / `not_too_small_*`）。**变异 14 条全 RED、0 SKIP**（S1~~S9 打席位门禁、  
+H1~~H5 打内孔表），每次跑完核 `[restore] sha256 MATCH`。
 
-★ **五条自查订正**：① frame_hole_check 第一版把「内孔 ≥ 头像」写反了（漏缝的真正条件是内孔**比头像大**）
-⇒ 12 条全红，**正是这 12 条红逼出了「内孔圆心偏移」那张表**。② 「内孔 = 头像直径」与「内孔 = 默认圆盘内孔」
-在**正确层次**下可见结果相同（玩家的直觉是对的），但**框的绘制尺寸不同**：取头像直径时炽焰之心要画 219
-宽、左边缘出屏；取默认圆盘内孔只需 197 宽 ⇒ 选后者。③ 偏移的素材侧测量只有**亚像素**稳定度（炽焰之心的
-火焰把边界挤得很碎，两套独立实现差 5px 素材坐标 / <1px 绘制坐标）⇒ 判据按**绘制坐标**判 1.5px，
-不为了一个不可见的量把门禁调松。④ 占比表口径由「从**图心**打 180 向射线」改成「从**内孔圆心**打 720 向
-射线」（圆心偏移必须与占比同源，否则两者互相矛盾），旧值 0.6683/0.5951/… 变成 0.6617/0.6122/…。
-⑤ **S9 第一版锚点静默失效**：`_apply_tracked(placement)` 这个锚点命中了 **3 次**（行匹配不是行首锚定，
-4 个 TAB 的行里也含这串）⇒ `expect=1` 不满足 ⇒ 打 `VERDICT SKIP`。脚本里「锚点 0 命中判 SKIP、不算过」
+★ **五条自查订正**：① frame_hole_check 第一版把「内孔 ≥ 头像」写反了（漏缝的真正条件是内孔**比头像大**）  
+⇒ 12 条全红，**正是这 12 条红逼出了「内孔圆心偏移」那张表**。② 「内孔 = 头像直径」与「内孔 = 默认圆盘内孔」  
+在**正确层次**下可见结果相同（玩家的直觉是对的），但**框的绘制尺寸不同**：取头像直径时炽焰之心要画 219  
+宽、左边缘出屏；取默认圆盘内孔只需 197 宽 ⇒ 选后者。③ 偏移的素材侧测量只有**亚像素**稳定度（炽焰之心的  
+火焰把边界挤得很碎，两套独立实现差 5px 素材坐标 / <1px 绘制坐标）⇒ 判据按**绘制坐标**判 1.5px，  
+不为了一个不可见的量把门禁调松。④ 占比表口径由「从**图心**打 180 向射线」改成「从**内孔圆心**打 720 向  
+射线」（圆心偏移必须与占比同源，否则两者互相矛盾），旧值 0.6683/0.5951/… 变成 0.6617/0.6122/…。  
+⑤ **S9 第一版锚点静默失效**：`_apply_tracked(placement)` 这个锚点命中了 **3 次**（行匹配不是行首锚定，  
+4 个 TAB 的行里也含这串）⇒ `expect=1` 不满足 ⇒ 打 `VERDICT SKIP`。脚本里「锚点 0 命中判 SKIP、不算过」  
 的设计正是为拦这类无声失效 ⇒ **锚点要长到唯一，且必须把 SKIP 当失败看**。
 
-**行尾（收尾时自查抓到的）**：两个新门禁文件落盘时是 **LF**，而同目录其余 `tools/*.gd` 一律 CRLF ⇒
-已用 `to_crlf.py` 归一（**必须先归一化再转**，否则 CRLF 会变 `\r\r\n`）。共享仓 `core.autocrlf=true`，
-LF 工作树文件入库后下次 checkout 会改字节 ⇒ 逐字节 sha256 锚点集体失效，所以这条不能省。
+**行尾（收尾时自查抓到的）**：两个新门禁文件落盘时是 **LF**，而同目录其余 `tools/*.gd` 一律 CRLF ⇒  
+已用 `to_crlf.py` 归一（**必须先归一化再转**，否则 CRLF 会变 `\r\r\n`）。共享仓 `core.autocrlf=true`，  
+LF 工作树文件入库后下次 checkout 会改字节 ⇒ 逐字节 sha256 锚点集体失效，所以这条不能省。  
 转换后两个门禁复跑仍全绿（77/0、84/0），本轮 6 个文件 + 2 个文档已核为**纯 CRLF、零孤立 LF**。
 
-**同步时补登记**：`docs/CHECKS.md`（门禁台账）此前**没有**这两条新门禁的记录（它与共享仓逐字节
-一致 ⇒ 六/七/八轮都没追加过），已在文件末尾补一节「2026-10-02：头像框几何」，把读数、核心判据、
+**同步时补登记**：`docs/CHECKS.md`（门禁台账）此前**没有**这两条新门禁的记录（它与共享仓逐字节  
+一致 ⇒ 六/七/八轮都没追加过），已在文件末尾补一节「2026-10-02：头像框几何」，把读数、核心判据、  
 三条教训与「未涵盖」如实登记。**只补台账、不改任何判据。**
 
-**已知残留（本轮未做）**：资料页 `ProfileScreen` 的头像 stage 只有 112×112，戴框时 `_avatar_rect` 四边
-各内缩 21 ⇒ 头像 112 → **70**。它与本轮同一类问题，但**要改就得把 stage 从 112 放大到 ~180**（框必须比
-头像大才看得见外圈），那是**版式改动**、会动整块身份卡排版，需要先确认能不能动版面 ⇒ 本轮用户点名的是
+**已知残留（本轮未做）**：资料页 `ProfileScreen` 的头像 stage 只有 112×112，戴框时 `_avatar_rect` 四边  
+各内缩 21 ⇒ 头像 112 → **70**。它与本轮同一类问题，但**要改就得把 stage 从 112 放大到 ~180**（框必须比  
+头像大才看得见外圈），那是**版式改动**、会动整块身份卡排版，需要先确认能不能动版面 ⇒ 本轮用户点名的是  
 「大厅」和「房间」，故未擅自改（上一轮的变异 M6 还在保护它）。
 
 ## 2026-10-02 自定义房间席位头像框（去掉「头像框后面的座位」＋形状对齐大厅）
 
-依据桌面《bug修复及优化.docx》（**仅 1 条**），修复直接更新到桌面 `GLory-codex`，改的是
-`scenes/menu/Team3v3Lobby.gd` 一个文件。**本次没有新素材**（复用仓库已有的
+依据桌面《bug修复及优化.docx》（**仅 1 条**），修复直接更新到桌面 `GLory-codex`，改的是  
+`scenes/menu/Team3v3Lobby.gd` 一个文件。**本次没有新素材**（复用仓库已有的  
 `assets/ui/main_menu_live/profile_avatar.png`），所以桌面**不需要**放资源副本。
 
-**需求。** 自定义房间（3v3 大厅）里 **AI、空位维持原样不变**，**玩家席位的头像框展示与大厅一致**，
+**需求。** 自定义房间（3v3 大厅）里 **AI、空位维持原样不变**，**玩家席位的头像框展示与大厅一致**，  
 **不再保留头像框后面的座位**（那只木环），但**保留「房主」那块铭牌**。
 
 **席位原本是四层**：`slot.png` 木环底板 → 圆头像 → 玩家的头像框 → 铭牌复本。现在按三支分开画：
 
-| 席位状态 | 木环底图 | 金棕圆盘 | 头像框 | 铭牌 | 头像 |
-| --- | --- | --- | --- | --- | --- |
-| 玩家 + 自定义框 | 隐藏 | 不画 | 160×160 | 补复本 | 78 @ (53,54) ← **三轮已作废，见上一章：改为 106，框按内孔反推** |
-| 玩家 + 默认框 / 无框 | 隐藏 | 160×160 | 不画 | 补复本 | 106 @ (39,40) |
-| 空位 / 假想敌 | **显示（原样）** | 不画 | 不画 | 不画（吃底图自带那块） | 不可见（原样） |
+| 席位状态          | 木环底图       | 金棕圆盘    | 头像框     | 铭牌          | 头像                                          |
+| ------------- | ---------- | ------- | ------- | ----------- | ------------------------------------------- |
+| 玩家 + 自定义框     | 隐藏         | 不画      | 160×160 | 补复本         | 78 @ (53,54) ← **三轮已作废，见上一章：改为 106，框按内孔反推** |
+| 玩家 + 默认框 / 无框 | 隐藏         | 160×160 | 不画      | 补复本         | 106 @ (39,40)                               |
+| 空位 / 假想敌      | **显示（原样）** | 不画      | 不画      | 不画（吃底图自带那块） | 不可见（原样）                                     |
 
-- 「金棕圆盘」直接复用大厅资料卡那张素材，而它**也正是** `data/avatars.json` 里 `frame_default` 的
+- 「金棕圆盘」直接复用大厅资料卡那张素材，而它**也正是** `data/avatars.json` 里 `frame_default` 的  
   `source` ⇒ 席位与大厅的默认框是**同一张图**，不是另做一只。
-- 三分支的**头像中心都落在同一点 (92,93)**（圆盘内孔中心 / 160 框中心 / 原头像位），所以
+- 三分支的**头像中心都落在同一点 (92,93)**（圆盘内孔中心 / 160 框中心 / 原头像位），所以  
   默认框 ↔ 自定义框来回切换时头像只改直径、**不横跳**。
-- 木环底图节点原先 `_add_texture(TEX_SLOT, ...)` 的返回值被直接丢掉、改不动 ⇒ 新增
+- 木环底图节点原先 `_add_texture(TEX_SLOT, ...)` 的返回值被直接丢掉、改不动 ⇒ 新增  
   `_slot_bases` / `_slot_frame_bases` 两个引用数组。**空位与假想敌的显隐、落点一个字节没动。**
-- 铭牌：底图一隐，`slot.png` 里那块六边形木牌就跟着没了 ⇒ 玩家席位一律用 `AtlasTexture` 复本补上
+- 铭牌：底图一隐，`slot.png` 里那块六边形木牌就跟着没了 ⇒ 玩家席位一律用 `AtlasTexture` 复本补上  
   （原先只在有自定义框时补，因为那时是怕被框盖住）。
 
-**二轮：真机反馈「形状变成椭圆，大厅是圆的」。** 根因是 `_add_texture()` 内部写死
-`rect.stretch_mode = TextureRect.STRETCH_SCALE` = **非等比拉满矩形**：五张商城框素材实测 W/H =
-0.889 / 0.773 / 0.845 / 0.789 / 0.798（**都是竖长**）、金棕圆盘 850×825 = 1.030，拉进 160×160 的方盒子
-⇒ 横向被压扁 ≈1.29 倍 ⇒ 看起来就是椭圆。大厅那两个节点走的是 keep-aspect 系，于是席位**一一对齐、不新造口径**：
-头像框 `STRETCH_KEEP_ASPECT_CENTERED`（同大厅 `_profile_frame_art`）、金棕圆盘 `STRETCH_KEEP_ASPECT`
-（同大厅 `_profile_base_frame`）。纯黑底、只留目标节点渲染量包围盒 W/H：改前 **1.0263**（= 素材比 ×1.286）
+**二轮：真机反馈「形状变成椭圆，大厅是圆的」。** 根因是 `_add_texture()` 内部写死  
+`rect.stretch_mode = TextureRect.STRETCH_SCALE` = **非等比拉满矩形**：五张商城框素材实测 W/H =  
+0.889 / 0.773 / 0.845 / 0.789 / 0.798（**都是竖长**）、金棕圆盘 850×825 = 1.030，拉进 160×160 的方盒子  
+⇒ 横向被压扁 ≈1.29 倍 ⇒ 看起来就是椭圆。大厅那两个节点走的是 keep-aspect 系，于是席位**一一对齐、不新造口径**：  
+头像框 `STRETCH_KEEP_ASPECT_CENTERED`（同大厅 `_profile_frame_art`）、金棕圆盘 `STRETCH_KEEP_ASPECT`  
+（同大厅 `_profile_base_frame`）。纯黑底、只留目标节点渲染量包围盒 W/H：改前 **1.0263**（= 素材比 ×1.286）  
 → 改后 **0.7961**（×0.998），大厅 **0.8012**（×1.005）；圆盘 1.0461 vs 素材 1.0420（居中无偏移）。
 
-**验证。** 新增门禁 `tools/seat_frame_check.gd/.tscn`：真例化整页（`_build() + _refresh() + _layout()`）
-后读**节点实际显隐与尺寸/位置**，不读源码文本 —— 既读 `_placed` 期望值、也读节点实际值，两者都要对。
-`PASS checked=69 failures=0`（形状部分 6 条：`lobby_modes` 前提体检 / `frame_mode_like_lobby` /
-`base_mode_like_lobby` / `no_stretch_scale` / `aspect_preserved` / `non_square_frames_exist`）。
-**判据不抄大厅常量**，而是**真建一个大厅页**（`MenuProbe extends MainMenu.gd`，只跑 `_build() + _layout()`、
-不启动 BGM）读它那两个节点的实际取值来比 —— 抄一份就是两个真相，以后改一处忘另一处，门禁照样绿。
+**验证。** 新增门禁 `tools/seat_frame_check.gd/.tscn`：真例化整页（`_build() + _refresh() + _layout()`）  
+后读**节点实际显隐与尺寸/位置**，不读源码文本 —— 既读 `_placed` 期望值、也读节点实际值，两者都要对。  
+`PASS checked=69 failures=0`（形状部分 6 条：`lobby_modes` 前提体检 / `frame_mode_like_lobby` /  
+`base_mode_like_lobby` / `no_stretch_scale` / `aspect_preserved` / `non_square_frames_exist`）。  
+**判据不抄大厅常量**，而是**真建一个大厅页**（`MenuProbe extends MainMenu.gd`，只跑 `_build() + _layout()`、  
+不启动 BGM）读它那两个节点的实际取值来比 —— 抄一份就是两个真相，以后改一处忘另一处，门禁照样绿。  
 回归 `final_settlement_check PASS 41/0`、`profile_bug03_check PASS 15/0`、`cold_parse_chain_check PASS 143/0`。
 
-**变异 12 条全 RED、0 SKIP / 0 GREEN、`leaked = 0`**，每次跑完核 `[restore] sha256 MATCH`：
-M1 玩家席不隐藏木环(4) / M2 一刀切隐藏所有木环(5) / M3 不画圆盘(3) / M4 所有席位都画圆盘(7) /
-M5 铭牌退回旧口径(1) / M6 有框头像不内缩(3) / M7 默认框也当自定义框画(2) / M8 只写 `_placed` 不落节点(2) /
-M9 底图贴图画错(1) / M10 空位/AI 也补铭牌(5) / M11 头像框改回拉满矩形(3) / M12 金棕圆盘改回拉满矩形(2)。
+**变异 12 条全 RED、0 SKIP / 0 GREEN、`leaked = 0`**，每次跑完核 `[restore] sha256 MATCH`：  
+M1 玩家席不隐藏木环(4) / M2 一刀切隐藏所有木环(5) / M3 不画圆盘(3) / M4 所有席位都画圆盘(7) /  
+M5 铭牌退回旧口径(1) / M6 有框头像不内缩(3) / M7 默认框也当自定义框画(2) / M8 只写 `_placed` 不落节点(2) /  
+M9 底图贴图画错(1) / M10 空位/AI 也补铭牌(5) / M11 头像框改回拉满矩形(3) / M12 金棕圆盘改回拉满矩形(2)。  
 M2 与 M10 是**反方向**变异，专门证明「空位/AI 维持原样」那组断言咬得住，不只是玩家席对了就算过。
 
-★ **四条自查订正，如实记**：① M8 第一版是**变异本身写错了**（`TRACK_TAIL[:2]` 保留的其实是
-`_apply_tracked`、删掉的是那句无害的 `return`）⇒ 变异无效 ⇒ GREEN 是**正确结果**、不是门禁漏判；
-改正后 RED。结论：**「变异 GREEN」要先怀疑变异，再怀疑判据**。② M8 原先只有一条断言咬得住
-（`_ready()` 里 `_refresh()` 紧跟 `_layout()`，会把偏差抹平），补了条通用不变式：在「只调过 `_refresh()`」
-的那一刻逐席比对头像节点实际尺寸与 `_placed` 期望值。③ M9 第一版会让门禁崩（null 反射 ⇒ SCRIPT ERROR
-⇒ 被宿主闸门砍断、污染留在生产文件），换成「节点还在、只是贴图不对」才干净 —— 变异要挑「能被判据判掉」
-的形态，别挑「让门禁崩掉」的形态。④ **`aspect_preserved` 原本是恒真的自证式断言**：写成「无条件按保持比例
-去算落点」= 数学恒等式，**变异前后都真**（M11 把 mode 改回 `STRETCH_SCALE` 时它照样 PASS，属无声失效）——
-改成**读生产节点当前生效的 `stretch_mode`** 后再算，M11 才多红这一条（偏差 0.2265）。另注：
-`KEEP_ASPECT_CENTERED` **不改 `Control.size`**、只在盒内留黑边 ⇒ 光看节点尺寸量不出椭圆，
+★ **四条自查订正，如实记**：① M8 第一版是**变异本身写错了**（`TRACK_TAIL[:2]` 保留的其实是  
+`_apply_tracked`、删掉的是那句无害的 `return`）⇒ 变异无效 ⇒ GREEN 是**正确结果**、不是门禁漏判；  
+改正后 RED。结论：**「变异 GREEN」要先怀疑变异，再怀疑判据**。② M8 原先只有一条断言咬得住  
+（`_ready()` 里 `_refresh()` 紧跟 `_layout()`，会把偏差抹平），补了条通用不变式：在「只调过 `_refresh()`」  
+的那一刻逐席比对头像节点实际尺寸与 `_placed` 期望值。③ M9 第一版会让门禁崩（null 反射 ⇒ SCRIPT ERROR  
+⇒ 被宿主闸门砍断、污染留在生产文件），换成「节点还在、只是贴图不对」才干净 —— 变异要挑「能被判据判掉」  
+的形态，别挑「让门禁崩掉」的形态。④ **`aspect_preserved` 原本是恒真的自证式断言**：写成「无条件按保持比例  
+去算落点」= 数学恒等式，**变异前后都真**（M11 把 mode 改回 `STRETCH_SCALE` 时它照样 PASS，属无声失效）——  
+改成**读生产节点当前生效的 `stretch_mode`** 后再算，M11 才多红这一条（偏差 0.2265）。另注：  
+`KEEP_ASPECT_CENTERED` **不改 `Control.size`**、只在盒内留黑边 ⇒ 光看节点尺寸量不出椭圆，  
 像素级证据只能在渲染图里，不在 headless 门禁里。
 
-**量化与观感。** 用 `GLory-v1.0`（尚未同步本次改动的基线仓）那份 `Team3v3Lobby.gd` 当「改动前」，
-同一 fixture 原尺寸 1672×941 渲染 A/B，比**席位框内暖木色像素占比**：
-玩家席 23.37%→13.98%（默认框）、22.09%→15.73%（自定义框）；
-**假想敌 23.75%→23.75%、空位 38.32%→38.32%（0.00 pp，逐像素不变）**。
+**量化与观感。** 用 `GLory-v1.0`（尚未同步本次改动的基线仓）那份 `Team3v3Lobby.gd` 当「改动前」，  
+同一 fixture 原尺寸 1672×941 渲染 A/B，比**席位框内暖木色像素占比**：  
+玩家席 23.37%→13.98%（默认框）、22.09%→15.73%（自定义框）；  
+**假想敌 23.75%→23.75%、空位 38.32%→38.32%（0.00 pp，逐像素不变）**。  
 对比图与渲染图在 `C:\Users\WINDOWS\Desktop\其他\work\_qa_1002b\render\`。
 
-★ **未做**：没跑 `tools/*_check.tscn` 全集（本轮只跑改动面 + 直接相邻面）；**未重新导出 EXE / APK**；
+★ **未做**：没跑 `tools/*_check.tscn` 全集（本轮只跑改动面 + 直接相邻面）；**未重新导出 EXE / APK**；  
 **未做真机观感验收**（判的是节点结构 + 渲染像素读数 + 对比图）。本改动纯客户端界面，无需同步修改战斗服务端。
 
 详见[10.02 房间席位头像框记录](docs/10.02房间席位头像框记录.md)。
@@ -1112,20 +1233,20 @@ M2 与 M10 是**反方向**变异，专门证明「空位/AI 维持原样」那�
 - **长按收尾**：补上普通触摸松手的停表和手指编号释放，忽略其他手指抢占；保留长按查看后详情常驻、拖动取消、长按不误购买。纠正旧记录中的坐标说明：`gui_input` 事件是控件局部坐标，原始视口输入才是视口坐标。Windows 原生触摸分发会同时产生 `button_up`；额外隔离该信号验证触摸分支可独立收尾，不把这项模拟验证当作 iOS 真机证据。
 - **漏选宝藏补发时机**：改为下一战锁定输入前补发，确保第 4→5、第 20→21 回合立即带入战斗。成功后立即消费候选，保留可重复同步的补发记录；旧客户端快照也会补入已确认的宝藏。客户端只增加、去重，不删除已有宝藏；离座清理补发记录，避免下一位玩家继承。
 
-| 文档项 | 复核结果 |
-| --- | --- |
-| 1 结算 | 补全 AI 阵容到即时结算、战报和历史；原守护者、己方优先、伤害汇总、PvP/PvE 入口回归通过。 |
-| 2 商城/签到 | 已领取文案与深色卡片通过；另修复实际触摸滚动。 |
-| 3 木牌文字 | 文字边界、行距、字号与房间 ID 颜色检查通过。 |
-| 4 座位头像框 | 佩戴框、头像缩进、铭牌层级、空位/AI 状态检查通过，并复看已有渲染图。 |
-| 5 棋子说明 | 中英文增强提示清理及相关机制回归检查通过。 |
-| 6 上一场战报 | 蓝队 PvP 的己方映射及 Boss 分类检查通过；当前界面只有己方/Boss 两个页签。 |
-| 7 字体加粗 | 聊天与金币字号/描边检查通过。 |
-| 8 结算等待 | 客户端回执重试、六席服务端收齐回执推进、掉线/超时边界检查通过。公网六真人长局仍需联机实测。 |
+| 文档项      | 复核结果                                                  |
+| -------- | ----------------------------------------------------- |
+| 1 结算     | 补全 AI 阵容到即时结算、战报和历史；原守护者、己方优先、伤害汇总、PvP/PvE 入口回归通过。    |
+| 2 商城/签到  | 已领取文案与深色卡片通过；另修复实际触摸滚动。                               |
+| 3 木牌文字   | 文字边界、行距、字号与房间 ID 颜色检查通过。                              |
+| 4 座位头像框  | 佩戴框、头像缩进、铭牌层级、空位/AI 状态检查通过，并复看已有渲染图。                  |
+| 5 棋子说明   | 中英文增强提示清理及相关机制回归检查通过。                                 |
+| 6 上一场战报  | 蓝队 PvP 的己方映射及 Boss 分类检查通过；当前界面只有己方/Boss 两个页签。         |
+| 7 字体加粗   | 聊天与金币字号/描边检查通过。                                       |
+| 8 结算等待   | 客户端回执重试、六席服务端收齐回执推进、掉线/超时边界检查通过。公网六真人长局仍需联机实测。        |
 | 9 iOS 长按 | 原检查通过；新增真实视口输入、微抖动、短按、拖动、多指及独立松手收尾测试通过。尚未进行 iOS 真机测试。 |
-| 10 漏选宝藏 | 原未拥有池/数量上限检查通过；补修锁定战斗前生效、重复同步和座位释放。 |
-| 11 元素图鉴 | 分类顺序、三种元素图标、克制倍率、属性标签检查通过。 |
-| 12 种族说明 | 点击入口、羁绊效果、统一字体与隐藏解锁进度检查通过。 |
+| 10 漏选宝藏  | 原未拥有池/数量上限检查通过；补修锁定战斗前生效、重复同步和座位释放。                   |
+| 11 元素图鉴  | 分类顺序、三种元素图标、克制倍率、属性标签检查通过。                            |
+| 12 种族说明  | 点击入口、羁绊效果、统一字体与隐藏解锁进度检查通过。                            |
 
 验证：第 2–12 项原有 11 组共 **820 项**通过；新增完整链路及触摸/补宝专项 **158 项**通过；结算、签名战报、回执、房间及上一轮专项共 **299 项**回归通过。新增 4 组故障回退验证分别检出 AI 快照遗漏、独立触摸松手停表遗漏、补宝时机错误、商城触摸滚动遗漏；测试后逐字节恢复源码。实际渲染截图已核看 AI 棋子、星级、佣兵与宝藏显示。
 
@@ -1203,28 +1324,23 @@ M2 与 M10 是**反方向**变异，专门证明「空位/AI 维持原样」那�
 - **本次必须同步客户端与 Godot 战斗服务端并重启战斗服务端：联机协议 34 → 35。** 无账号后端或数据库迁移；只覆盖源码不会更新已导出的 EXE/APK。完整累计从更新后的新对局开始，旧对局没有完整历史收入，不能回填。
 - 验证与部署/检验步骤：[最终战结算与返回房间说明](docs/最终战结算与返回房间_20260929.md)。本机双客户端 ENet 验证、结算/布局专项、金币、匹配、战报与握手回归已执行；未部署远程服务端、未重新导出 EXE/APK。
 
-
 代码、Drive 资源与打包入口：[交付与打包边界](docs/DELIVERY-BOUNDARIES.md)。
 
 目录整理与新工具入口：[工作区目录说明](docs/WORKSPACE-LAYOUT.md)。Mac 同步和打包入口位于 `tools/workspace/`；Windows 服务端打包入口位于 `tools/make_server_zip.bat`。
 
-> 下面这一块由 `tools/current_health.ps1` 从各门禁产物生成，仅代表标注的生成日期；当前保留的是 2026-09-04 历史快照，未在本轮重新生成。
+> 下面这一块由 `tools/current_health.ps1` 从各门禁产物生成，仅代表标注的生成日期；当前保留的是 2026-09-04 历史快照，未在本轮重新生成。  
 > 本次结算修复及验证结果以顶部 2026-10-01 章节为准，不能用历史快照代替本轮验收。
-
-<!-- CURRENT_HEALTH:BEGIN -->
-
-<!-- Generated by tools/current_health.ps1. Do not edit by hand. -->
 
 ### Current health (generated 2026-09-04T01:32:41Z)
 
-| Item | Value |
-| --- | --- |
-| Commit | `a2f9f32` on `main` (0 dirty tracked, 14 untracked) |
-| Asset inventory | `ed99230ce8d75f20` / 2701 files |
-| Gates | latest run: 87 total / 0 failing at 2026-09-04T01:31:52Z; persisted union: 88 known / 0 failing (1 older targeted/server result(s)) |
-| Model material integrity | 75 models, 0 white-material suspects, 0 failing |
-| APK content scan | glory-4780262-20260831_151253.apk: 3503 entries, clean |
-| Last device run | 2026-08-30T04:24:41Z on 25028RN03A (passed; `glory-4780262-20260830_121542.apk`; SHA-256 `239560199c793655`; device hash verified) |
+| Item                     | Value                                                                                                                               |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Commit                   | `a2f9f32` on `main` (0 dirty tracked, 14 untracked)                                                                                 |
+| Asset inventory          | `ed99230ce8d75f20` / 2701 files                                                                                                     |
+| Gates                    | latest run: 87 total / 0 failing at 2026-09-04T01:31:52Z; persisted union: 88 known / 0 failing (1 older targeted/server result(s)) |
+| Model material integrity | 75 models, 0 white-material suspects, 0 failing                                                                                     |
+| APK content scan         | glory-4780262-20260831_151253.apk: 3503 entries, clean                                                                              |
+| Last device run          | 2026-08-30T04:24:41Z on 25028RN03A (passed; `glory-4780262-20260830_121542.apk`; SHA-256 `239560199c793655`; device hash verified)  |
 
 Known blockers (source: `data/qa/known_blockers.json`):
 
@@ -1243,8 +1359,6 @@ Known blockers (source: `data/qa/known_blockers.json`):
 
 Full machine-readable detail: `reports/current_health.json`.
 
-<!-- CURRENT_HEALTH:END -->
-
 Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、资源盘点、代码审查记录和后续可由 AI 逐项执行的改进路线。原始审查依据 2026-08-15 至 2026-08-16 的工作区、Godot 4.7.0 导入/运行结果、Android 实机试玩和工程内检查场景编写；下方 2026-08-19 实施进度为当前状态，优先于后续保留的历史基线描述。
 
 > **2026-09-09 新增工作轨道：账号层与玩家资料系统。** 本 README 的 A–E 清单来自 2026-08 的联机与表现审查，**完全没有覆盖账号层** —— 而账号层已经落地了一部分：`player_id` 签发（`scripts/save/SaveSchema.gd`）、`AccountManager` 门面、FastAPI 后端（`backend/`）、三个迁移文件（`database/001`–`003`）、匿名登录与启动自动登录。设计与边界见 [账号系统 RFC](docs/账号系统RFC.md)。
@@ -1257,29 +1371,29 @@ Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、
 
 > **2026-08-22 二次复审更新：** 当前工作区的资源交付、模型和脚本解析检查已经重新出现红灯，下面 2026-08-20 的“已完成”记录只能视为历史证据，不能代表当前文件树。白模/贴图、最新 Android 真机复测、战斗观感、教程闭环和 Codex 执行顺序以 [Glory V2：白模、资源交付与真机复审优化清单](docs/GLORY_V2_白模与真机复审优化清单_20260822.md) 为准。
 
-> 当前结论（2026-08-20）：**A1、A2、A3、A5、B4、B5、E1、E2-2A/E2-2B 与 BattlePresentationDirector D0-D6 的桌面闭环已全部完成；A4 的出包/安装/冷启动门禁已在真机跑通（Debug）。** 剩下的大块是 A4 的 Release 预设与 UI 驱动样本，以及 E3 量出来但还没动手的包体减重。**D2（PrepUI 拆分）已由同事完成；D1（NetworkService 拆分）已完成 —— 六个服务全部建成、ReplayTransferService 的压缩/分块/确认/重试四件齐了、重连补看回放已接入，协议号升到 17 且服务器已重新部署，联机回归 21/21 通过，**双设备公网实测已完成 21 回合完整对局**；详见 D1 节。**D3 仍由同事负责。后文关于“35 项不可加载”和“胶囊占位体”的文字是改造前历史基线，不再代表当前桌面结果。
+> 当前结论（2026-08-20）：**A1、A2、A3、A5、B4、B5、E1、E2-2A/E2-2B 与 BattlePresentationDirector D0-D6 的桌面闭环已全部完成；A4 的出包/安装/冷启动门禁已在真机跑通（Debug）。** 剩下的大块是 A4 的 Release 预设与 UI 驱动样本，以及 E3 量出来但还没动手的包体减重。**D2（PrepUI 拆分）已由同事完成；D1（NetworkService 拆分）已完成 —— 六个服务全部建成、ReplayTransferService 的压缩/分块/确认/重试四件齐了、重连补看回放已接入，协议号升到 17 且服务器已重新部署，联机回归 21/21 通过，**&#x53CC;设备公网实测已完成 21 回合完整对&#x5C40;**；详见 D1 节。**&#x44;3 仍由同事负责。后文关于“35 项不可加载”和“胶囊占位体”的文字是改造前历史基线，不再代表当前桌面结果。
 
 ## 2026-08-19 实施进度
 
 > 状态口径：`已完成` 表示本轮约定的桌面验收已闭环；`部分完成` 表示已有可运行基础但尚未达到该项完整验收；Android 侧自 2026-08-20 起已跑通出包、安装、冷启动**以及在真机上跑完整战斗**：固定回合 1/5/20/21 的跨平台 digest 逐字段一致，实机演出指标（帧时间、显存、孤儿节点）也已录得。**仍未验的是：低端机、双设备联机、冷缓存首启，以及需要驱动备战 UI 的那部分（商店页、教学主链）**——最后一项要等同事的 D2 落地。标着「实机 digest 已验」的行指的就是前者已验、后者未验。
 
-| 工作单 | 状态 | 已完成内容与剩余边界 |
-| --- | --- | --- |
-| A1 — 建立可复现资产清单 | ✅ 已完成（指纹已于 A5 更新） | 当前清单 2632 个文件，inventory fingerprint 为 `a0751fdc580e78dfe6e4023c3f55501471510d0db00d27ae5732a853faafb3fc`。历史值 `5dabb3f5…`（2,643 项）是 E2-2B 之前的状态——E2-2B 重导出了 5 个 FBX 却没重新生成清单，A5 才发现并订正。 |
-| A2 — 资源交付与 Git 解耦、可追溯 | ✅ 已完成（2026-08-20 重打包并首次真正验证往返） | 当前归档 `glory-assets-a0751fdc580e78df-2fd696d1d4f2dcfc.zip`，1782 个 Git 外资源、850 个已跟踪。`restore_assets.ps1` → `ASSET_RESTORE_RESULT status=PASS copied=0 already_present=1782`，接着 `ASSET_DELIVERY_RESULT status=PASS entries=2632 missing=0 hash_mismatch=0 extras=0`。**此前从未真正跑通过**：打包脚本有三个只在 Windows PowerShell 5.1 / 非 ASCII 文件名下发作的缺陷，见 A5 一节。 |
-| A3 — 让检查真正失败 | ✅ 已完成 | 缺资源失败路径与恢复后通过路径均已验证，检查不会再以空检查集或加载失败报假绿。 |
-| A4 — Android 出包、实机战斗与回归门禁 | 🟡 门禁+实机跑通 / Release 未做 | `tools/android_smoke.sh` 产出可追溯证据包（commit、manifest 指纹、APK SHA-256、安装方式、冷启动 logcat、截图）。694 MiB Debug 包在 25028RN03A / Android 15 上通过：`FATAL EXCEPTION` 0、`SCRIPT ERROR` 0、PSS 362 MB。抓掉四类假结果（假绿的旧版本启动、假红的通道掉线、读不出来的证据 JSON、空过滤器导出的静默胖包）。`tools/android_baseline.sh` 已在真机跑完**四个回合**（1/5/20/21，含两个 Boss 与满配 18 敌）：**桌面/设备回放摘要每回合五字段逐字一致（C4 第 3 条）**，孤儿节点两侧皆 0，并拿到战斗截图。第 20 回合顺带暴露并修掉一个真缺陷：召唤物用同一 uid 重生时，旧尸体交还会把活着的新 actor 从注册表里抹掉，死亡演出因此被丢弃（桌面/设备同为 3 条，非 Android 问题）；已修，掉落归 0，冻结哈希不变，门禁扩到 89 项。**双设备联机验收已于 2026-08-21 完成**：服务器升到 protocol 17、手机重装新包后，电脑 + 手机同连 `34.142.168.170:8080` 跑完 **21 回合完整对局**，两端各 21 份回放、0 错误，且回放字节数互为镜像（证明本方/敌方分发正确）；详见 D1 节。实测顺带抓到并修掉一个回环从未暴露的真缺陷（离开房间后再建房永远卡在 connecting）。装机要走无线 adb：本机 USB 推大文件会把 adbd 拖挂（1 MB 推送 0.002 秒、4 MB 卡 5 分钟后connection reset）。Release keystore、商店页截图、低端机验收仍未做。 |
-| E1 — 战场空间可读性 | ✅ 桌面完成 | Windows Forward Mobile 纵向切片完成；所有战斗单位经 `UnitVisualResolver → UnitActor3D`，固定两回合回放为 0 胶囊、0 可见 fallback；`BoardReadabilityLayer` 已接入准备/战斗并可持久化开关。人工盲测与 Android 验收仍待后续。 |
-| E2-2A / E2-2B — 模型与贴图预算 | ✅ 桌面完成 | 75/75 模型边界检查为 0 broken、0 anomaly；241/241 FBX 加载错误为 0；78/78 wrapper 合并通过；模型预算 75 项、0 hard failure。Android ASTC、APK 排除源 FBX 及低端机满编最终战仍待后续。 |
-| Director D0 — 基线与确定性证据 | ✅ 桌面完成 / 实机 digest 已验 | 当前提交 `931771c69e3f585b19e49f3bc1b846b04aa6f55d` 已完成固定 seed 的 round 1/2：完整 roster、事件/result/final-state JSON、SHA-256、actor/fallback/anchor 审计、1280×720 截图及逐帧 CSV 均已生成并独立校验；Android 证据保持暂停。 |
-| Director D1 — 语义事件 schema | ✅ 桌面完成 / 实机 digest 已验 | `BattlePresentationEvent` v1 已冻结 15 个核心字段、稳定 `event_key`、独立 `presentation_seed` 与一次性未知类型告警；2738 项 schema 检查、同步/异步确定性、两回合 D0 final-state 门禁和 28/28 联机回归通过。 |
-| Director D2 — 最小排程核心 | ✅ 桌面完成 / 实机 digest 已验 | 已实现 Director 生命周期、逐 tick 入队、每 `source_uid` 动作轨、去重、暂停/seek/skip/drain/dispose 和假 Registry/Adapter 测试；`BattleScreen` 已双路入队并保留 Legacy VFX。D2 不产生真实 VFX。 |
-| Director D3 — 单位演员 | ✅ 桌面完成 / 实机 digest 已验 | Director 现在只经 `UnitActorRegistry.get_anchor()` 取坐标，每次播放现解析、不缓存节点；缺 actor 分类 drop，缺锚点降级到 `ActorRoot` 并进同一份一次性汇总。锚点检查由 3 抽样扩到全部 74 个可战斗单位（1067 项）、Director 检查 49/49、固定两回合 0 drop / 0 降级、四个冻结哈希不变。 |
-| Director D4 — 四段普攻 | ✅ 桌面完成 / 实机 digest 已验 | 模拟层为全部单位产出 `attack_start → [projectile_spawn] → impact → hit_number → death`（`death` 此前完全不存在）；视觉按 C4 纵向切片迁移 `human_militia` / `human_archer` / `pve_sky_thunder_spirit`，其余仍走快照 diff。两个固定样本 0 `missing_actor` 掉落，切片样本播出 8 次死亡动画；D4 前后 final-state 哈希完全一致。 |
-| Director D5 — 手感与运行时预算 | ✅ 桌面完成 / 实机 digest 已验 | 五个 `.tres` cue profile + `VfxProfileResolver`；**扩展**现有 `VFXQualityBudget.gd` 加三档优先级预算；`BattleVfxReview.tscn` 评审场景；切片扩面到全部单位。133/133 profile 检查、70/70 Director 通过，固定样本 0 合并、20 次降级。 |
-| Director D6 — 清理旧路由 | ✅ 桌面完成 / 实机 digest 已验 | 删除三个快照 diff 函数、hit_number 旧分支与迁移期白名单；未迁移路由保留。删除前后播放计数逐项相同，回合间 orphan/tween 恒为 0。82/82 通过。 |
-| B4 — 特效预算 | ✅ 桌面完成 / 实机 digest 已验 | 优先级预算补上「单条 cue 有多贵」的一半（粒子 / 附加层 / 透明叠层 / 动态光 / 并发按优先级缩放）；满配第 21 回合三档实测 orphan 全 0、无节点增长，24 次死亡在低档也全部播出。162/162 通过。 |
-| E3 — 启动预热拆分与包体 | ✅ 拆分完成（含实机） / 减重未做 | 96 项拆成 `menu_minimal`(8) → `first_battle`(44) → `deferred`(44)，总量不变、顺序按需要排；修掉正式版在语言页画开发文字；修掉小怪技能热在 Boss 之后的排序错误。220/220 通过。实机上光前两阶段就 11.4 秒（桌面全量才 2.78 秒），拆分收益成立。包体构成已量出：`assets/` 占 92.0%，去掉 armeabi-v7a 只省 4.0%；减重本身未做。 |
+| 工作单                       | 状态                             | 已完成内容与剩余边界                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A1 — 建立可复现资产清单            | ✅ 已完成（指纹已于 A5 更新）              | 当前清单 2632 个文件，inventory fingerprint 为 `a0751fdc580e78dfe6e4023c3f55501471510d0db00d27ae5732a853faafb3fc`。历史值 `5dabb3f5…`（2,643 项）是 E2-2B 之前的状态——E2-2B 重导出了 5 个 FBX 却没重新生成清单，A5 才发现并订正。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| A2 — 资源交付与 Git 解耦、可追溯     | ✅ 已完成（2026-08-20 重打包并首次真正验证往返） | 当前归档 `glory-assets-a0751fdc580e78df-2fd696d1d4f2dcfc.zip`，1782 个 Git 外资源、850 个已跟踪。`restore_assets.ps1` → `ASSET_RESTORE_RESULT status=PASS copied=0 already_present=1782`，接着 `ASSET_DELIVERY_RESULT status=PASS entries=2632 missing=0 hash_mismatch=0 extras=0`。**此前从未真正跑通过**：打包脚本有三个只在 Windows PowerShell 5.1 / 非 ASCII 文件名下发作的缺陷，见 A5 一节。                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| A3 — 让检查真正失败              | ✅ 已完成                          | 缺资源失败路径与恢复后通过路径均已验证，检查不会再以空检查集或加载失败报假绿。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| A4 — Android 出包、实机战斗与回归门禁 | 🟡 门禁+实机跑通 / Release 未做        | `tools/android_smoke.sh` 产出可追溯证据包（commit、manifest 指纹、APK SHA-256、安装方式、冷启动 logcat、截图）。694 MiB Debug 包在 25028RN03A / Android 15 上通过：`FATAL EXCEPTION` 0、`SCRIPT ERROR` 0、PSS 362 MB。抓掉四类假结果（假绿的旧版本启动、假红的通道掉线、读不出来的证据 JSON、空过滤器导出的静默胖包）。`tools/android_baseline.sh` 已在真机跑完**四个回合**（1/5/20/21，含两个 Boss 与满配 18 敌）：**桌面/设备回放摘要每回合五字段逐字一致（C4 第 3 条）**，孤儿节点两侧皆 0，并拿到战斗截图。第 20 回合顺带暴露并修掉一个真缺陷：召唤物用同一 uid 重生时，旧尸体交还会把活着的新 actor 从注册表里抹掉，死亡演出因此被丢弃（桌面/设备同为 3 条，非 Android 问题）；已修，掉落归 0，冻结哈希不变，门禁扩到 89 项。**双设备联机验收已于 2026-08-21 完成**：服务器升到 protocol 17、手机重装新包后，电脑 + 手机同连 `34.142.168.170:8080` 跑完 **21 回合完整对局**，两端各 21 份回放、0 错误，且回放字节数互为镜像（证明本方/敌方分发正确）；详见 D1 节。实测顺带抓到并修掉一个回环从未暴露的真缺陷（离开房间后再建房永远卡在 connecting）。装机要走无线 adb：本机 USB 推大文件会把 adbd 拖挂（1 MB 推送 0.002 秒、4 MB 卡 5 分钟后connection reset）。Release keystore、商店页截图、低端机验收仍未做。 |
+| E1 — 战场空间可读性              | ✅ 桌面完成                         | Windows Forward Mobile 纵向切片完成；所有战斗单位经 `UnitVisualResolver → UnitActor3D`，固定两回合回放为 0 胶囊、0 可见 fallback；`BoardReadabilityLayer` 已接入准备/战斗并可持久化开关。人工盲测与 Android 验收仍待后续。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| E2-2A / E2-2B — 模型与贴图预算   | ✅ 桌面完成                         | 75/75 模型边界检查为 0 broken、0 anomaly；241/241 FBX 加载错误为 0；78/78 wrapper 合并通过；模型预算 75 项、0 hard failure。Android ASTC、APK 排除源 FBX 及低端机满编最终战仍待后续。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Director D0 — 基线与确定性证据    | ✅ 桌面完成 / 实机 digest 已验          | 当前提交 `931771c69e3f585b19e49f3bc1b846b04aa6f55d` 已完成固定 seed 的 round 1/2：完整 roster、事件/result/final-state JSON、SHA-256、actor/fallback/anchor 审计、1280×720 截图及逐帧 CSV 均已生成并独立校验；Android 证据保持暂停。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Director D1 — 语义事件 schema | ✅ 桌面完成 / 实机 digest 已验          | `BattlePresentationEvent` v1 已冻结 15 个核心字段、稳定 `event_key`、独立 `presentation_seed` 与一次性未知类型告警；2738 项 schema 检查、同步/异步确定性、两回合 D0 final-state 门禁和 28/28 联机回归通过。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Director D2 — 最小排程核心      | ✅ 桌面完成 / 实机 digest 已验          | 已实现 Director 生命周期、逐 tick 入队、每 `source_uid` 动作轨、去重、暂停/seek/skip/drain/dispose 和假 Registry/Adapter 测试；`BattleScreen` 已双路入队并保留 Legacy VFX。D2 不产生真实 VFX。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Director D3 — 单位演员        | ✅ 桌面完成 / 实机 digest 已验          | Director 现在只经 `UnitActorRegistry.get_anchor()` 取坐标，每次播放现解析、不缓存节点；缺 actor 分类 drop，缺锚点降级到 `ActorRoot` 并进同一份一次性汇总。锚点检查由 3 抽样扩到全部 74 个可战斗单位（1067 项）、Director 检查 49/49、固定两回合 0 drop / 0 降级、四个冻结哈希不变。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Director D4 — 四段普攻        | ✅ 桌面完成 / 实机 digest 已验          | 模拟层为全部单位产出 `attack_start → [projectile_spawn] → impact → hit_number → death`（`death` 此前完全不存在）；视觉按 C4 纵向切片迁移 `human_militia` / `human_archer` / `pve_sky_thunder_spirit`，其余仍走快照 diff。两个固定样本 0 `missing_actor` 掉落，切片样本播出 8 次死亡动画；D4 前后 final-state 哈希完全一致。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Director D5 — 手感与运行时预算    | ✅ 桌面完成 / 实机 digest 已验          | 五个 `.tres` cue profile + `VfxProfileResolver`；**扩展**现有 `VFXQualityBudget.gd` 加三档优先级预算；`BattleVfxReview.tscn` 评审场景；切片扩面到全部单位。133/133 profile 检查、70/70 Director 通过，固定样本 0 合并、20 次降级。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Director D6 — 清理旧路由       | ✅ 桌面完成 / 实机 digest 已验          | 删除三个快照 diff 函数、hit_number 旧分支与迁移期白名单；未迁移路由保留。删除前后播放计数逐项相同，回合间 orphan/tween 恒为 0。82/82 通过。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| B4 — 特效预算                 | ✅ 桌面完成 / 实机 digest 已验          | 优先级预算补上「单条 cue 有多贵」的一半（粒子 / 附加层 / 透明叠层 / 动态光 / 并发按优先级缩放）；满配第 21 回合三档实测 orphan 全 0、无节点增长，24 次死亡在低档也全部播出。162/162 通过。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| E3 — 启动预热拆分与包体            | ✅ 拆分完成（含实机） / 减重未做             | 96 项拆成 `menu_minimal`(8) → `first_battle`(44) → `deferred`(44)，总量不变、顺序按需要排；修掉正式版在语言页画开发文字；修掉小怪技能热在 Boss 之后的排序错误。220/220 通过。实机上光前两阶段就 11.4 秒（桌面全量才 2.78 秒），拆分收益成立。包体构成已量出：`assets/` 占 92.0%，去掉 armeabi-v7a 只省 4.0%；减重本身未做。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 ### E2-2B 本轮落地记录
 
@@ -1472,14 +1586,14 @@ flowchart LR
 
 ### 分层现状
 
-| 层 | 主要位置 | 职责 | 审查判断 |
-| --- | --- | --- | --- |
-| 配置与全局状态 | `project.godot`、`scripts/autoload/` | 本地化、存档、随机数、数据、玩家状态、网络、VFX | Autoload 边界明确；`project.godot` 同时出现正常 `config_version` 与乱码 BOM 键，建议清理。 |
-| 数据与规则 | `data/`、`scripts/{battle,economy,units,treasure,boss}/` | 数值表、羁绊、伤害、状态、经济、Boss、宝物 | 数据驱动的方向正确，经济/确定性检查已有基础。 |
-| 准备阶段 | `scenes/prep/` | 棋盘、商店、宝物、UI、模型摆放 | `PrepUI.gd` 约 2406 行，职责过多；当前继承链还出现解析错误。 |
-| 战斗模拟 | `scripts/battle/` | 时间步、目标、伤害、状态、结果、回放 | `BattleSimulator` 与可视化事件分离的方向正确；最重 3v3 最终战的服务器同步计算仍需容量规划。 |
-| 战斗呈现 | `scenes/battle/`、`effects/` | 模型、血条、回放帧、特效、屏震、结算 | `BattleScreen → BattleResult → BattleVfx → BattleRenderer → BattleArena` 为五层脚本继承；过深，演出改动风险高。 |
-| 网络 | `scripts/autoload/NetworkService.gd`、`scripts/multiplayer/` | 房间、席位、重连、状态、回放压缩 | 有权威回放、持久化及重连测试；`NetworkService.gd` 约 4264 行，是最高优先级拆分热点。 |
+| 层       | 主要位置                                                        | 职责                        | 审查判断                                                                                         |
+| ------- | ----------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------- |
+| 配置与全局状态 | `project.godot`、`scripts/autoload/`                         | 本地化、存档、随机数、数据、玩家状态、网络、VFX | Autoload 边界明确；`project.godot` 同时出现正常 `config_version` 与乱码 BOM 键，建议清理。                        |
+| 数据与规则   | `data/`、`scripts/{battle,economy,units,treasure,boss}/`     | 数值表、羁绊、伤害、状态、经济、Boss、宝物   | 数据驱动的方向正确，经济/确定性检查已有基础。                                                                      |
+| 准备阶段    | `scenes/prep/`                                              | 棋盘、商店、宝物、UI、模型摆放          | `PrepUI.gd` 约 2406 行，职责过多；当前继承链还出现解析错误。                                                      |
+| 战斗模拟    | `scripts/battle/`                                           | 时间步、目标、伤害、状态、结果、回放        | `BattleSimulator` 与可视化事件分离的方向正确；最重 3v3 最终战的服务器同步计算仍需容量规划。                                    |
+| 战斗呈现    | `scenes/battle/`、`effects/`                                 | 模型、血条、回放帧、特效、屏震、结算        | `BattleScreen → BattleResult → BattleVfx → BattleRenderer → BattleArena` 为五层脚本继承；过深，演出改动风险高。 |
+| 网络      | `scripts/autoload/NetworkService.gd`、`scripts/multiplayer/` | 房间、席位、重连、状态、回放压缩          | 有权威回放、持久化及重连测试；`NetworkService.gd` 约 4264 行，是最高优先级拆分热点。                                      |
 
 ## 美术与资源盘点
 
@@ -1487,13 +1601,13 @@ flowchart LR
 
 完整资源包原始交付位于外层 `../assets/`，约 1.3 GiB；2026-08-16 已无覆盖叠加进本机 `GLory-v1.0/assets/`，因此当前工程内 `assets/` 约 1.4 GiB。下表描述该完整包的组成：
 
-| 区域 | 文件数 | 约体积 | 内容 |
-| --- | ---: | ---: | --- |
-| `models/` | 393 | 1070.5 MiB | 单位、佣兵、Boss、PVE 怪、阵营援军、战场水晶及 FBX 动画/贴图 |
-| `ui/` | 490 | 224.1 MiB | 主菜单、房间、商店、卡牌、种族、角色、宝物、按钮 |
-| `board/` | 29 | 22.4 MiB | 准备与战斗场地、前景遮挡、水面、格子标识 |
-| `audio/` | 12 | 13.3 MiB | 菜单、准备、PVE、PVP BGM 与 UI 音效 |
-| `vfx/` 与纹理 | 25 | 约 2.6 MiB | 技能、状态与程序化效果辅助纹理 |
+| 区域         | 文件数 |        约体积 | 内容                                    |
+| ---------- | --: | ---------: | ------------------------------------- |
+| `models/`  | 393 | 1070.5 MiB | 单位、佣兵、Boss、PVE 怪、阵营援军、战场水晶及 FBX 动画/贴图 |
+| `ui/`      | 490 |  224.1 MiB | 主菜单、房间、商店、卡牌、种族、角色、宝物、按钮              |
+| `board/`   |  29 |   22.4 MiB | 准备与战斗场地、前景遮挡、水面、格子标识                  |
+| `audio/`   |  12 |   13.3 MiB | 菜单、准备、PVE、PVP BGM 与 UI 音效             |
+| `vfx/` 与纹理 |  25 |  约 2.6 MiB | 技能、状态与程序化效果辅助纹理                       |
 
 叠加前工程根仅有 556 个文件、约 130 MiB，静态扫描到 272 个明确资源文件引用，其中 115 个缺失。叠加后主场景、准备界面、商店、战斗背景、音频和首个 PVE 教程已可运行，说明“资源在外层导致主场景无法加载”的阻断已解除。
 
@@ -1522,24 +1636,24 @@ flowchart LR
 
 以下是当前环境的实际结果。`--quit-after` 会强制以 0 退出，即使脚本内部报错，因此不能将进程退出码单独当作通过证据。实机结果仅覆盖一台横屏 Android 16 设备，不能外推到低端机、竖屏、联机或商店发布。
 
-| 项目 | 结果 | 证据与范围 |
-| --- | --- | --- |
-| Godot 版本与完整资源导入 | 部分通过 | Godot `4.7.stable` 导入 930 个新增资源并注册脚本类。发现 `backups/` 与正式资源 UID 重复；多份 FBX 的外部贴图缺失，例如 `dark_imp_motong`、`dark_queen`、`god_arbiter`。 |
-| 确定性回放 | 通过（有限范围） | `determinism_check`：同进程、同 seed 的同步两次与异步一次哈希一致，203 帧。未覆盖跨平台/多 seed/全技能集。 |
-| 经济结算 | 通过 | `economy_settle_check` 所有用例通过，包括 PVE/PVP/Boss、利息、连败、刷新、击杀金。 |
-| 存档/房间持久化 | 通过 | `persist_check` 成功保存两个房间和 token。 |
-| 重连/席位规则 | 通过 | `reconnect_check` 的预留、AI 接管、leader 转移、换位恢复和对局中禁换位全部通过。 |
-| 协议握手 | 通过（仅正常路径） | `handshake_check` 的 `ok` 用例通过；仍需版本不匹配、畸形包与真实两端设备验证。 |
-| 水晶规则 | 通过 | `crystal_demo_rules_check` 的 PVE/PVP/最终战归属规则全部通过。 |
-| 战斗模拟性能 | 有测量值 | 最坏 3v3 最终战：单场中位 428.7 ms、两场约 857.4 ms；回放原始 5.32 MiB、Zstd 后 98.3 KiB。服务器单线程容量必须据此压测。 |
-| 准备棋盘烟测 | **失败（假绿）** | 资源叠加后不再卡在 `PrepDetails` 解析；但 `tools/board_4x4_smoke_node.gd:36` 断言 `NetProtocol.sanitize_board()` 对旧 25 格盘面迁移后仍有 2 个非空格，实际失败而进程退出码仍为 0。 |
-| 主场景运行 | 通过（有限范围） | `Main.tscn` 能启动，完成 96 项 VFX 预热并进入语言/教学界面；强制退出时有资源泄漏诊断，不能替代长期运行测试。 |
-| 资源依赖扫描 | 不完整 | 扫描到 203 个待问依赖文件、254 张被引用 PNG；一个 Binbun 场景的依赖查询失败，报告明确标为不可信。 |
-| 模型边界/骨骼检查 | **失败（假绿）** | 完整资源后已有部分模型被检到，但 `model_bounds_check` 仍报 35 个 broken scene；`dark_scythe` 缺脚本、`dark_doom` 缺材质，多个神/暗/亡灵/人类/佣兵场景路径不存在。进程退出码仍为 0。 |
-| Android Debug 导出 | 通过但有资源告警 | 生成 `../build/Glory-debug.apk`，609 MiB，SHA-256 `a30f160b6b32dd69fbca6e98af810cbee482062e7f084ecebff951366e960db5`，applicationId `com.glory.game`，版本 `1.0.0-debug`。导出同时打印缺脚本、缺贴图和缺 Binbun 场景错误，说明“能出包”不等于全资源正确。 |
-| ADB 实机安装与启动 | 通过 | vivo V2527A，Android 16 / API 36，Adreno 829。`adb push` 后 `pm install -r` 成功，设备记录的包版本为 `1.0.0-debug`，安装时间 2026-08-16 16:16:45；冷启动进入 Godot Vulkan Forward Mobile，无 `FATAL EXCEPTION` 或 Godot `SCRIPT ERROR`。 |
-| 实机教学主链 | 通过（单机、有限范围） | 语言选择 → 中文 → 商店打开/选卡/采购 3 名单位 → 拖拽上阵 → 首场 PVE → 民兵二星合成 → 第二场 PVE → 宝藏三选一 → 回到整备，均由 ADB 真实触控完成，进程持续存活。 |
-| 实机战斗观感/性能 | 发现 P1 问题 | 首场预热约 11.8 秒；实机最高日志 FPS 约 90，但预热期最低 6–7 FPS、处理时间约 1.26 秒，纹理显存峰值约 549 MiB。玩家单位在战斗中显示为胶囊占位体；第二场战斗约 2 秒即进入奖励，特效与技能不可读。 |
+| 项目               | 结果          | 证据与范围                                                                                                                                                                                                         |
+| ---------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Godot 版本与完整资源导入  | 部分通过        | Godot `4.7.stable` 导入 930 个新增资源并注册脚本类。发现 `backups/` 与正式资源 UID 重复；多份 FBX 的外部贴图缺失，例如 `dark_imp_motong`、`dark_queen`、`god_arbiter`。                                                                              |
+| 确定性回放            | 通过（有限范围）    | `determinism_check`：同进程、同 seed 的同步两次与异步一次哈希一致，203 帧。未覆盖跨平台/多 seed/全技能集。                                                                                                                                       |
+| 经济结算             | 通过          | `economy_settle_check` 所有用例通过，包括 PVE/PVP/Boss、利息、连败、刷新、击杀金。                                                                                                                                                   |
+| 存档/房间持久化         | 通过          | `persist_check` 成功保存两个房间和 token。                                                                                                                                                                              |
+| 重连/席位规则          | 通过          | `reconnect_check` 的预留、AI 接管、leader 转移、换位恢复和对局中禁换位全部通过。                                                                                                                                                        |
+| 协议握手             | 通过（仅正常路径）   | `handshake_check` 的 `ok` 用例通过；仍需版本不匹配、畸形包与真实两端设备验证。                                                                                                                                                           |
+| 水晶规则             | 通过          | `crystal_demo_rules_check` 的 PVE/PVP/最终战归属规则全部通过。                                                                                                                                                             |
+| 战斗模拟性能           | 有测量值        | 最坏 3v3 最终战：单场中位 428.7 ms、两场约 857.4 ms；回放原始 5.32 MiB、Zstd 后 98.3 KiB。服务器单线程容量必须据此压测。                                                                                                                           |
+| 准备棋盘烟测           | **失败（假绿）**  | 资源叠加后不再卡在 `PrepDetails` 解析；但 `tools/board_4x4_smoke_node.gd:36` 断言 `NetProtocol.sanitize_board()` 对旧 25 格盘面迁移后仍有 2 个非空格，实际失败而进程退出码仍为 0。                                                                       |
+| 主场景运行            | 通过（有限范围）    | `Main.tscn` 能启动，完成 96 项 VFX 预热并进入语言/教学界面；强制退出时有资源泄漏诊断，不能替代长期运行测试。                                                                                                                                             |
+| 资源依赖扫描           | 不完整         | 扫描到 203 个待问依赖文件、254 张被引用 PNG；一个 Binbun 场景的依赖查询失败，报告明确标为不可信。                                                                                                                                                   |
+| 模型边界/骨骼检查        | **失败（假绿）**  | 完整资源后已有部分模型被检到，但 `model_bounds_check` 仍报 35 个 broken scene；`dark_scythe` 缺脚本、`dark_doom` 缺材质，多个神/暗/亡灵/人类/佣兵场景路径不存在。进程退出码仍为 0。                                                                                 |
+| Android Debug 导出 | 通过但有资源告警    | 生成 `../build/Glory-debug.apk`，609 MiB，SHA-256 `a30f160b6b32dd69fbca6e98af810cbee482062e7f084ecebff951366e960db5`，applicationId `com.glory.game`，版本 `1.0.0-debug`。导出同时打印缺脚本、缺贴图和缺 Binbun 场景错误，说明“能出包”不等于全资源正确。 |
+| ADB 实机安装与启动      | 通过          | vivo V2527A，Android 16 / API 36，Adreno 829。`adb push` 后 `pm install -r` 成功，设备记录的包版本为 `1.0.0-debug`，安装时间 2026-08-16 16:16:45；冷启动进入 Godot Vulkan Forward Mobile，无 `FATAL EXCEPTION` 或 Godot `SCRIPT ERROR`。     |
+| 实机教学主链           | 通过（单机、有限范围） | 语言选择 → 中文 → 商店打开/选卡/采购 3 名单位 → 拖拽上阵 → 首场 PVE → 民兵二星合成 → 第二场 PVE → 宝藏三选一 → 回到整备，均由 ADB 真实触控完成，进程持续存活。                                                                                                          |
+| 实机战斗观感/性能        | 发现 P1 问题    | 首场预热约 11.8 秒；实机最高日志 FPS 约 90，但预热期最低 6–7 FPS、处理时间约 1.26 秒，纹理显存峰值约 549 MiB。玩家单位在战斗中显示为胶囊占位体；第二场战斗约 2 秒即进入奖励，特效与技能不可读。                                                                                           |
 
 ### ADB 回归脚本
 
@@ -1585,6 +1699,7 @@ adb exec-out screencap -p > /tmp/glory-launch.png
 
 下面每项是可以单独交给 AI 落地并验收的工作单。顺序不可颠倒：先保证资产、构建和测试可信，再做战斗表现升级。
 
+
 ### A. 构建、资源与质量门禁
 
 #### A1 — 建立可复现资产清单（P0）
@@ -1611,35 +1726,29 @@ adb exec-out screencap -p > /tmp/glory-launch.png
 #### A4 — Android 出包与设备回归门禁（P0）
 
 - **状态（2026-08-20）：出包 + 安装 + 冷启动门禁已跑通（Debug）；Release 预设、教学主链与低端机验收未做。**
-- **实施：** 保留无密钥 `Android Debug` 预设用于 QA，用私有 CI secret/本地安全钥匙串提供 Release 预设；新增 [tools/android_smoke.sh](tools/android_smoke.sh)，记录 Git commit（含未提交文件数）、manifest 指纹、Godot 版本、APK SHA-256、包名、安装方式与机上路径、冷启动 pid/`FATAL EXCEPTION` 数/`SCRIPT ERROR` 数/PSS、logcat 与截图。
+- **实施：** 保留无密钥 `Android Debug` 预设用于 QA，用私有 CI secret/本地安全钥匙串提供 Release 预设；新增 [tools/android\_smoke.sh](tools/android_smoke.sh)，记录 Git commit（含未提交文件数）、manifest 指纹、Godot 版本、APK SHA-256、包名、安装方式与机上路径、冷启动 pid/`FATAL EXCEPTION` 数/`SCRIPT ERROR` 数/PSS、logcat 与截图。
 - **为什么不用编辑器的 Remote Deploy：** 它只回答「能不能跑起来」，装的是临时 APK，装完即弃——没有哈希、没有 commit 关联、没有 logcat、没有截图。而 A4 的全部意义在于可追溯性。
-
 - **通过样本（`A4_android_smoke_20260820/pass_run/smoke.json`）：**
-
-  | 项 | 值 |
-  | --- | --- |
-  | APK | `glory-29df28f-20260820_134112.apk`，694.0 MiB |
+  | 项       | 值                                                                  |
+  | ------- | ------------------------------------------------------------------ |
+  | APK     | `glory-29df28f-20260820_134112.apk`，694.0 MiB                      |
   | SHA-256 | `562f82014282222e86ae6c0062cd11dc92c2312f1d568944ea48786dacff7869` |
-  | 机上 APK | 与本地逐字节一致 |
-  | 设备 | 25028RN03A / Android 15 / API 35 / arm64-v8a |
-  | 冷启动 | pid 19364，`FATAL EXCEPTION` 0，`SCRIPT ERROR` 0，PSS 362 MB |
-  | 截图 | 语言页正常渲染，见 `pass_run/launch.png` |
-
+  | 机上 APK  | 与本地逐字节一致                                                           |
+  | 设备      | 25028RN03A / Android 15 / API 35 / arm64-v8a                       |
+  | 冷启动     | pid 19364，`FATAL EXCEPTION` 0，`SCRIPT ERROR` 0，PSS 362 MB          |
+  | 截图      | 语言页正常渲染，见 `pass_run/launch.png`                                    |
 - **实测改了两条安装策略：**
   1. **694 MiB 的 streamed install 会把设备的 adbd 拖挂成 offline**，之后连 `adb shell` 都执行不了，只能在手机上重开 USB 调试才能恢复。脚本现在对 ≥300 MiB 的包直接走 `adb push` + `pm install`，根本不试 streamed install。
   2. **即便改成 push，推完 694 MiB 后通道仍有很高概率掉线**（USB 和无线各中过一次）。安装本身是成功的——`pm install` 打了 `Success`、`dumpsys` 里 `lastUpdateTime` 也确实更新了——掉的只是随后的校验。
   - 另外 Git Bash 的 MSYS 路径转换会把设备侧的 `/data/local/tmp/...` 改写成 Windows 路径，所有带设备路径的 adb 调用现在都加了 `MSYS_NO_PATHCONV=1`。
-
 - **这一项真正的产出是四类"假结果"被抓住并堵死，值得单独记：**
   1. **假绿：** 安装失败后脚本照样报出 pid/内存/零错误——因为 monkey 把设备上**原有的旧版本**拉起来了。现在只要安装步骤留下任何一条失败，就立刻写一份 `stopped_before=launch` 的证据并停住。**一个漂亮的旧版本启动报告，比没有结果更坏。**
   2. **假红：** 有一次报 `not_installed`，但包其实装上了，只是通道在推包后断了。现在 `_wait_transport()` 会先轮询 `adb get-state` 最多 60 秒（其间尝试 `adb reconnect`），仍然连不上就报 `device_lost_after_install` 而不是 `not_installed`。**假的失败会让下一个人去查一个并不存在的安装问题。**
   3. **证据读不出来：** `smoke.json` 一度不是合法 JSON。三个原因叠在一起：`set -o pipefail` 下 `grep -v` 无匹配时返回非零，导致 `|| echo '[]'` 兜底**也**执行了，写出两行 `[]`；Windows 上 Python 的文本 stdout 把 `\n` 翻成 `\r\n`，CR 混进了值里；Python 又用系统 ANSI 码页解 stdin，把 bash 传来的 UTF-8 中文失败原因解成乱码。现在失败列表由单次 Python 调用生成，二进制读入、显式 UTF-8 解码、`ensure_ascii=False` 二进制写出；**脚本最后会解析自己写出的 `smoke.json`，读不出来就报 `evidence_unparseable`**。损坏的那份留在 `A4_android_smoke_20260820/broken_evidence_before_fix/` 作对照。
   4. **静默变胖的导出：** `export_presets.cfg` 在 `.gitignore` 里且从未进过 git，新克隆一份代码出包时 `exclude_filter` 是空的，`backups/` 会被打进 APK——导出照样报成功。脚本现在在**导出之前**就检查，空过滤器直接停在 `stopped_before=export`。配套的模板与漂移门禁见 A5。
   5. 顺带修掉一个误导性兜底：编码器万一挂掉，原来会写 `failures: []`——在一次失败的运行上宣称"零条失败"。现在兜底是 `["failure_list_encoding_error"]`，空列表只在真的没有失败时才出现。
-
 - **`--skip-install` 的边界写死在代码里：** 它存在的唯一理由是重推大包会拖挂 adbd，不是为了图快跳过验证。用它时脚本会算机上 `base.apk` 的 SHA-256 与本地逐位比对，不一致就报 `skip_install_hash_mismatch`。**跳过安装可以，跳过"机上跑的确实是这一份"不行。**
-
-- **实机跑完整一场战斗（2026-08-20 新增）。** 冷启动只证明进程活着，A4 验收里的「首场战斗截图」和 C4 验收第 3 条（桌面/Android digest 一致）都要求真的在设备上跑一场。新增 [tools/android_baseline.sh](tools/android_baseline.sh)：同一 commit 下先跑桌面基线、再驱动设备跑同一场固定战斗，然后逐字段比对回放摘要。
+- **实机跑完整一场战斗（2026-08-20 新增）。** 冷启动只证明进程活着，A4 验收里的「首场战斗截图」和 C4 验收第 3 条（桌面/Android digest 一致）都要求真的在设备上跑一场。新增 [tools/android\_baseline.sh](tools/android_baseline.sh)：同一 commit 下先跑桌面基线、再驱动设备跑同一场固定战斗，然后逐字段比对回放摘要。
   - **为什么必须是同一 commit 的两次运行，而不是拿设备结果去比证据目录里的旧哈希：** 那些哈希是历史提交的产物。对不上时你分不清「跨平台不一致」还是「这中间有人改了战斗」——而这两件事的处理方式完全相反。
   - **三条入口逐条在真机上验过，前两条都不通：** ① 位置参数覆盖主场景——**无效**，传 `res://scripts/qa/battle_presentation_baseline.tscn` 跑起来的还是正常游戏（导出包的主场景来自 pack）。② `am start --esa command_line ...`——**参数根本到不了 Godot**。同一个包，无参数 53 行 godot 日志、加 `--verbose` 52 行，没有差别；原因是导出的入口是 `GodotAppLauncher`，真正的 `GodotApp` 没有 exported（直接 `am start` 它会 `SecurityException`），launcher 转发时把 extras 丢了。③ `assets/_cl_` 确实在包里，但那是导出时烘进去的，改它要重签名。**所以最后用文件触发**：`adb shell run-as` 往 `user://device_harness.json` 写标记，然后正常启动。
   - **⚠ 我第一次把 ② 测成了「生效」，为此白出了一次包。** 当时用 `grep -c 'godot'` 数 logcat 行数，`--verbose` 让数字从 250 涨到 1035，看着像是生效了——其实那些行大多是框架日志里的**包名** `com.godot.game` 被匹配到。改用 `logcat -s godot` 按 tag 过滤才看清是 53 vs 52。**教训：数一个到处都出现的词的出现次数，不是测量。**
@@ -1652,51 +1761,43 @@ adb exec-out screencap -p > /tmp/glory-launch.png
   - **退出码分三种，不合并：** 一致（0）、比过了但不一样（1）、有一侧根本没结果（2）。合并成一个的话，设备侧没跑起来会被读成跨平台不一致，然后有人去查一个并不存在的确定性问题——和前面 `not_installed` 那个假红是同一类错误。
   - **三条路径都在桌面上验过**：两侧一致 → `identical` 五个字段全 OK；篡改设备侧 `final_state_sha256` → `differs` 并点名该字段；设备侧缺结果 → `digest_incomparable` 而不是 `digest_mismatch`。
   - **实机结果（2026-08-20，commit `eee8268`、`dirty_tracked=0`）：桌面与真机的回放摘要五个字段逐字一致。**
-
-    | 字段 | 桌面 | 设备 |
-    | --- | --- | --- |
-    | `roster_sha256` | `42e00a5b…` | 相同 |
-    | `replay_sha256` | `7a6667c5…` | 相同 |
+    | 字段                    | 桌面          | 设备 |
+    | --------------------- | ----------- | -- |
+    | `roster_sha256`       | `42e00a5b…` | 相同 |
+    | `replay_sha256`       | `7a6667c5…` | 相同 |
     | `frame_events_sha256` | `6d3dd1f7…` | 相同 |
-    | `final_state_sha256` | `186f1587…` | 相同 |
-    | `repeatable` | `true` | 相同 |
-
+    | `final_state_sha256`  | `186f1587…` | 相同 |
+    | `repeatable`          | `true`      | 相同 |
     **这就是 C4 验收第 3 条。** 设备 25028RN03A / Android 15 / arm64-v8a，两侧同为 MEDIUM 档，`sim_elapsed_sec` 都是 4.500。
   - **同一场战斗的实机演出指标（截图不计入计时）：**
-
-    | 指标 | 桌面 | 设备 |
-    | --- | ---: | ---: |
-    | 平均 FPS | 143.56 | 25.60 |
-    | 1% low FPS | 67.25 | 7.19 |
-    | p95 帧时间 | 7.14 ms | 69.98 ms |
-    | 最差单帧 | 42.33 ms | 144.89 ms |
-    | 峰值显存 | — | 227.5 MB |
-    | 峰值贴图 | — | 144.8 MB |
-    | **孤儿节点** | **0** | **0** |
-    | 模拟首算耗时 | 40.6 ms | 183.0 ms |
-
+    | 指标         |       桌面 |        设备 |
+    | ---------- | -------: | --------: |
+    | 平均 FPS     |   143.56 |     25.60 |
+    | 1% low FPS |    67.25 |      7.19 |
+    | p95 帧时间    |  7.14 ms |  69.98 ms |
+    | 最差单帧       | 42.33 ms | 144.89 ms |
+    | 峰值显存       |        — |  227.5 MB |
+    | 峰值贴图       |        — |  144.8 MB |
+    | **孤儿节点**   |    **0** |     **0** |
+    | 模拟首算耗时     |  40.6 ms |  183.0 ms |
     **孤儿节点两侧都是 0** ——演出层在真机上同样把池化的东西全部释放了，没有跨回合泄漏。
   - **⚠ 这是暖着色器缓存的数字。** 设备上 `files/shader_cache` 从更早的启动就存在，所以它不代表玩家首次安装后的体验；冷缓存首启仍未测。
   - **战斗截图已拿到**（`start/mid/end`，1640×720，各带 SHA-256），而且**没有经过备战 UI**——记录器直接渲染 `BattleScreen`，所以这半不碰同事的 D2。截图里单位身上的蓝色泡泡是**护盾特效**（已与项目负责人确认），桌面同一回放帧的截图一模一样，不是 Android 侧的问题。
   - **20+ 回合与两个 Boss 样本也已跑完（回合 5 / 20 / 21）：四个回合的摘要全部逐字一致。** Boss 出现在第 5、10、15、20 回合，所以取了第 5 回合（首个 Boss）、第 20 回合（Boss + 满配 18 敌，最重的组合，也是唯一有召唤物的）、第 21 回合（满配无 Boss，与 B4 的档位压测同一回合）。
-
-    | 回合 | 内容 | digest | `missing_actor` 掉落（桌面/设备） |
-    | ---: | --- | --- | --- |
-    | 1 | 首场 | identical | 0 / 0 |
-    | 5 | 首个 Boss | identical | 0 / 0 |
-    | 20 | Boss + 满配 18 敌 | identical | **3 / 3** |
-    | 21 | 满配无 Boss | identical | 0 / 0 |
-
+    | 回合 | 内容             | digest    | `missing_actor` 掉落（桌面/设备） |
+    | -: | -------------- | --------- | ------------------------- |
+    |  1 | 首场             | identical | 0 / 0                     |
+    |  5 | 首个 Boss        | identical | 0 / 0                     |
+    | 20 | Boss + 满配 18 敌 | identical | **3 / 3**                 |
+    | 21 | 满配无 Boss       | identical | 0 / 0                     |
   - **⚠ 第 20 回合暴露了一个真缺陷，已修：镜像领主召唤出的 3 个镜像，死亡演出被丢弃。** 事件是 `local:20260807:20:boss:team0:{40:11, 55:1, 96:14}`，全部 `missing_actor:source`，受害者是 `enemy_mirror_1/2/3`。桌面与设备的掉落数都是 3，确定性一致——不是 Android 的问题；第 5 回合（另一个 Boss）和第 21 回合（无 Boss）都是 0，所以也不是 Boss 回合的问题。共同因素是**会重复召唤、复用同一 uid 的召唤物**。
   - **根因不是我一开始猜的那个，是打点测出来的。** 我先怀疑 `cue_claim_corpses()` 里的 `_cue_corpses.has(uid)` 跳过了重复认领，但打点显示第 20 回合 tick 40 的认领**是成功的**（`claim OK`），却仍被丢弃。决定性的一行是 release 时的 `held_null=false held_is_mine=false`：
-
     ```
     [PROBE] claim OK      uid=enemy_mirror_1 tick=32
     [PROBE] release       uid=enemy_mirror_1 held_null=false held_is_mine=false
     [PROBE] claim OK      uid=enemy_mirror_1 tick=40
     [PROBE] director DROP uid=enemy_mirror_1 type=death tick=40
     ```
-
     **真正的原因**：`release_death_actor()` 按 uid **无条件**注销。镜像在上一具尸体的死亡动画还没播完时就被重新召唤，新 actor 已经注册到同一个 uid 上；旧尸体播完时的注销抹掉的是**活着的那一个**，于是它随后的死亡被 Director 判成 `missing_actor:source`。
   - **修法：把规则放进注册表，而不是叮嘱调用方。** 新增 `UnitActorRegistry.unregister_if_holds(uid, actor)`，只在注册表里存的还是自己那一份时才注销；`release_death_actor()` 改用它。放在注册表里是因为调用方拿不到「注册表现在存的是谁」这个信息，只能想当然按 uid 删——而注册表拿得到。
   - **验证**：第 20 回合 `missing_actor_drop_count` 3 → **0**，`passed=true`；1/2/5/20/21 五个回合掉落全为 0；**两个冻结哈希逐字节不变**（`replay_sha` 修复前后完全相同，说明只动了演出、没碰模拟）；D2 的 `death_cancel_queue` 断言仍然通过——上次我在这一块猜着改，就是把它弄坏了。
@@ -1705,31 +1806,26 @@ adb exec-out screencap -p > /tmp/glory-launch.png
   - **仍未做：** 商店与备战页截图（需驱动备战 UI，正是 D2 的地盘）；低端机与双设备联机；冷缓存首启测量；**上面这个修复本身还没在真机上复验**——设备上装的是修复前的包，逻辑与平台无关（两侧掉落数一模一样），但那是推论不是实测。
   - 证据：`A4_device_battle_20260820/A4_DEVICE_BATTLE_VERIFICATION.json`、`digest_comparison.json` 与 `digest_comparison_rounds_5_20_21.json`，以及两侧的 `round_01/05/20/21`（`hashes.json`、`summary.json`、`frame_performance.csv`、审计与截图）。`round_01` 保留 start/mid/end 全套截图，其余各回合只留 `mid.png` 以控制目录体积，完整套在 `build/` 下。
   - **加 autoload 没有改变任何行为**：重跑桌面基线，`hashes.json` 与 `D6_battle_presentation_cleanup_20260819/baseline_regression/round_01/` **逐字节相同**；经 harness 接管跑出来的哈希与直接跑也完全一致。
-
 - **验收：** 每一份 QA APK 都能反查到源码 commit 和资源 manifest；安装、启动、语言页截图、无 `FATAL EXCEPTION` 已是必经门并已通过。**商店与首场战斗截图仍未接入**——它们需要脚本驱动 UI，目前只做到冷启动。
 - **清单第 8 节现在一项未打勾都没有了（2026-08-20）。**
   - **回放测试** —— 「desktop/Android 跨平台一致性」已验：同一 commit 下回合 1/5/20/21 的五个摘要字段逐字一致。
   - **真机测试** —— 三个样本跑完（第一场、20+ 回合、Boss），无 `SCRIPT ERROR`、无结果页抢跑、无持续节点增长（跨回合残留 14→24→36，orphan 与 tween 全程 0），FPS/显存/draw call/**粒子数**/dropped cue 全部记录在案。补齐过程中新增了两项原本根本没采集的指标：粒子数（Godot 4 没有内置监视器，只能每 6 帧走一次场景树取峰值）和结果页抢跑断言。
   - **粒子那项差点做成假指标**：最初从 `_screen` 往下遍历，三个回合全读 0——`VFXManager._get_parent()` 把特效挂到 `get_tree().current_scene`，那是 `_screen` 的**兄弟节点**。改从 `current_scene` 走才读到真实数字，且随负载递增。**一个永远读 0 的指标比没有指标更坏。**
-
 - **⚠ 收尾时在真机上抓出并修掉第二个缺陷，而且它推翻了我上一条结论。** 修完召唤物重生那个 bug 后我写过「逻辑与平台无关，真机上应该也归 0」——**实测是 3 → 2，没归 0**。剩下的 2 条是另一回事：tick 15 的 `attack_start`，source 是 `enemy_mirror_1/2`，正是镜像被召唤出来的那一刻；**桌面 0 条、设备 2 条**。
   - **机制用已有数据就证明了，不必打点**：`frame_performance.csv` 里每渲染帧推进的回放帧数，桌面恒为 1（916 次 0、231 次 1），设备出现 2（26 次）和 3（2 次）——第 20 回合在设备上只有 9.0 FPS，**回放要追帧**。追帧时 `_apply_replay_frame()` 会把跳过的 tick 一次性全部入队，而建模要等循环之后的 `_refresh_visuals()`；那批 tick 里刚被召唤的单位还没有 actor。
   - **修法与死亡那条对称**：原来只有 `cue_claim_corpses()`（把**要死的**身体扣下来，免得被先释放），现在补上 `_spawn_actors_for_tick()`（把**刚出生的**身体建出来，免得它还不存在）。两条是同一句话：让渲染层在 Director 排这一 tick 之前就绪。
   - **真机复验**：设备侧记录器 `passed=true`、failures 空，第 20 回合掉落桌面 0 / 设备 0。**这个 bug 只在真机上现形，所以只有真机跑过才算数**——桌面从不追帧，桌面的绿替不了它。
   - **门禁 89 → 93 项**，断言两个调用都必须出现在 `enqueue_tick()` 之前。做成源码顺序断言而非行为断言：桌面永远不追帧，行为测试怎么跑都是绿的。
   - **这条断言第一版自己就是假绿**：写成 `find("_spawn_actors_for_tick(")` 会命中函数定义（在文件靠前处），把调用挪到 `enqueue_tick` 之后照样通过。是在做「把 bug 塞回去」验证时**没变红**才发现的。改成匹配完整调用式后确认会红。**这说明「塞回去验证」这一步不能省，否则交付的是一个永远不会响的警报。**
-
 - **⚠ 顺带修掉 `android_baseline.sh` 自己的一个假绿。** 冷缓存那轮设备 manifest 写着 `passed=false`、两条 `director_missing_actor`，**脚本却报了 PASS**——它只判桌面记录器那一份。「两边算出同一个结果」和「设备上演出没问题」是两件事。现在取回产物后会读 `device/manifest.json`，`passed` 为假或 `failures` 非空都报 `device_recorder_reported_defects`；manifest 缺失单独报错而不是当作通过。
-
 - **冷缓存首启已测（`--cold-cache`）。** 此前所有设备数字都是暖着色器缓存下取的，不代表玩家装完游戏第一次打开。清掉 `files/shader_cache` 后回合 1 平均 **20.7 FPS**，暖缓存是 **25.6 FPS**——首启确实更慢。**引用设备帧率必须带上缓存状态**，否则下一个人会以为数字漂了。
-
 - **仍未完成：** Release 预设与私有 keystore（本次是 Debug 构建，**不得当作 Release 验收**）；教学主链的实机驱动与商店页截图（需驱动备战 UI，D2 地盘）；体积预算与最大增量阈值；低端机与双设备联机验收；冷缓存首启测量。（20+ 回合与 Boss 样本已完成，见上面的实机小节。）
 - 证据：`A4_android_smoke_20260820/A4_VERIFICATION.json` 与 `pass_run/`（`smoke.json`、`install.log`、`launch.log`、`logcat_full.log`、`logcat_errors.log`、`launch.png`）；备份在 `A4_prechange_backup_20260820/`。
 
 #### A5 — 资源瘦身与许可总账（P1）
 
 - **状态（2026-08-20）：桌面部分完成；FBX 分仓与 APK 体积验收未做。**
-- **最重要的发现是许可，不是体积：** 启动预热真正实例化的 8 个外部 VFX 场景里，**有 5 个来自完全没有许可证文件的包**——Binbun Vol 1 的 `beam_vfx` / `loot_effects`，以及整个 `Starter_Vfx`（5.5 MB）。它们不是可有可无的参考素材，是战斗里真会播的效果。已确认可再分发的只有 Binbun Vol 2 的两个 CC0 包和 Knewave 字体（OFL）。详见新建的 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+- **最重要的发现是许可，不是体积：** 启动预热真正实例化的 8 个外部 VFX 场景里，**有 5 个来自完全没有许可证文件的包**——Binbun Vol 1 的 `beam_vfx` / `loot_effects`，以及整个 `Starter_Vfx`（5.5 MB）。它们不是可有可无的参考素材，是战斗里真会播的效果。已确认可再分发的只有 Binbun Vol 2 的两个 CC0 包和 Knewave 字体（OFL）。详见新建的 [THIRD\_PARTY\_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 - **`export_presets.cfg` 原本 `exclude_filter=""`，两个预设都一个字都没排除**——这就是 609 MB APK 的直接原因。现已排除 `*.bak`、`backups/`、`Demo_GodotVFX`、`New folder`、`desktop.ini`、`Thumbs.db`。
 - **刻意没有排除 `*.fbx`：** 21 个 FBX 是**运行时依赖**，被 5 个阵营援军 wrapper 和 2 个双生守门人 wrapper 通过 `idle_scene_path` / `attack_scene_path` / `run_scene_path` 直接引用。排除它们等于让这 7 个单位没有模型。README 原文把「FBX 源文件与运行时分仓」写成简单挪目录，**按字面做会弄坏游戏**；真要分仓得先把这些单位转成 `.glb/.tscn`，那是 E2 的活。
 - **清理成果：** 删除 110 个已跟踪的 `.bak`/`.backup` 源码残留（`effects/vfx3d/units` 27 个、`scenes/battle` 17 个最多）；删除 `desktop.ini` 与 `race_logos/New folder`（8 个重复种族 logo）；`backups/` 282 MB、550 个文件迁出 git 跟踪并加入 `.gitignore`（本地磁盘副本保留）。
@@ -1745,12 +1841,11 @@ adb exec-out screencap -p > /tmp/glory-launch.png
 - **验证：** `asset_manifest_check` 2636/2636、`asset_delivery_check` 2632/2632、`model_bounds_check` 75/75；演出侧 Director 82/82、profile 162/162、预热 220/220、锚点 1067/1067 全部保持通过——确认删掉 110 个 `.bak` 没弄坏任何东西。新的 `exclude_filter` 已在 2026-08-20 用真实 APK 验过（3548 个条目全扫）：`*.bak`/`*.backup`、`backups/`、`Demo_GodotVFX`、`New folder`、`desktop.ini`、`Thumbs.db` **一条都没漏进去**。
 - **`exclude_filter` 原本不随仓库走，这是个真实的交接缺口，现已用「模板 + 漂移门禁」补上。** `export_presets.cfg` 在 [.gitignore](.gitignore) 第 5 行被排除（合理：Release 预设会把 keystore 口令明文存在里面），而且根目录那份**从来没进过 git**。所以同事新克隆一份代码出包，`exclude_filter` 是空的，`backups/`、`*.bak`、`Demo_GodotVFX` 会被静默打进 APK——导出照样"成功"，只是包大几百 MB。
   - **`export_presets.template.cfg` 已提交**，是去掉密钥字段后的完整副本。新克隆直接 `cp export_presets.template.cfg export_presets.cfg` 就有了正确的过滤器，keystore 各自在编辑器里设。
-  - **往 git 里放一份实文件的副本，副本一定会漂——所以不靠纪律，靠门禁。** 新增 [tools/export_presets_check.tscn](tools/export_presets_check.gd)：只要本机预设改了而模板没重新生成，检查就红，并**点名是哪个字段**（例如 `[preset.0] exclude_filter 值不同`）；结构性差异则报到具体行号。重新生成用 [tools/export_presets_template.tscn](tools/export_presets_template.gd)，一条命令。
+  - **往 git 里放一份实文件的副本，副本一定会漂——所以不靠纪律，靠门禁。** 新增 [tools/export\_presets\_check.tscn](tools/export_presets_check.gd)：只要本机预设改了而模板没重新生成，检查就红，并**点名是哪个字段**（例如 `[preset.0] exclude_filter 值不同`）；结构性差异则报到具体行号。重新生成用 [tools/export\_presets\_template.tscn](tools/export_presets_template.gd)，一条命令。
   - **「哪些字段算密钥」只写一遍。** 生成器和检查器共用 [tools/ExportPresetsTemplate.gd](tools/ExportPresetsTemplate.gd) 里的 `SECRET_KEYS`，所以两者不可能对密钥范围产生分歧，也不可能出现「检查通过但生成器不会产出这份模板」。
   - **刻意不失败的一种情况：** 本机没有 `export_presets.cfg` 时（新克隆的正常状态）检查**通过**，只给一条提示。在那里报红只会训练大家无视这个检查；真正要拦的出包动作已由 `android_smoke.sh` 在导出前拦住了。
   - **门禁另外锁死两件事：** 模板里的密钥字段必须是空值（否则口令会随模板进 git），以及 `.gitignore` 里必须仍然忽略 `export_presets.cfg`。
   - **六种故障逐条塞回去验证过它真会红**：本机改了没同步模板、模板过滤器为空、模板混进 keystore 口令、模板文件丢失、`.gitignore` 被削弱、以及新克隆无实文件（这条应当通过——确认它通过）。还原后回绿。
-
 - **「FBX 分仓」这条要重新定性（2026-08-20 实测）：** APK 里**一个原始 `.fbx` 都没有**——Godot 导出只打包 `.godot/imported/` 下的导入产物，源文件从来就不进包（FBX 导入产物 242 个、96.4 MiB，那是模型本身，分仓省不掉）。所以 README 原文把分仓当作**体积**手段是错的，它的收益是仓库卫生与许可可追溯，不是包体。真正的体积大头见 E3 的实测表。
 - **仍未完成：** FBX 分仓（需先转格式，但目标应改成仓库卫生而非体积）；`assets/models`、`assets/ui`、`assets/audio`、`assets/board` 仍然完全没有来源与许可记录——这是许可总账最大的缺口，已写进 `THIRD_PARTY_NOTICES.md` 第 5 节。
 - 证据：`A5_asset_and_license_20260820/A5_VERIFICATION.json`；备份在 `A5_prechange_backup_20260820/`。
@@ -1784,13 +1879,11 @@ adb exec-out screencap -p > /tmp/glory-launch.png
 
 - **状态（2026-08-19）：桌面完成 / Android 暂停。** D5 落地了预算的「排程」一半（每 tick 起播上限、存活上限、合并窗口、降级系数），B4 补上了「单条 cue 有多贵」的另一半：`particle_count_for` / `auxiliary_layers_for` / `distortion_layers_for` / `allow_dynamic_light_for` / `max_simultaneous_effects_for` 按**可见性优先级**在档位允许值之上再缩放，`VFXBlockRoot.can_spawn_block(priority)` 的 3D 闸门也随之分档（critical 不设限，理由同它原有的 `force=true`）。优先级以环境上下文传给生成路径（`begin_cue_priority` / `clear_cue_priority`），与 `DamageService.set_hit_context()` 同一形状——因为中间隔着几层 composer，没有理由让它们知道演出优先级。
 - **满配压力实测（第 21 回合最终战，26 单位 / 259 帧 / 1059 事件，1280×720 Forward Mobile）：**
-
-  | 质量档 | 平均 FPS | 1% low | 降级次数 | 合并次数 | 峰值节点 | 峰值 orphan |
-  | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-  | LOW | 89.3 | 23.8 | 179 | 8 | 1217 | 0 |
-  | MEDIUM | 86.8 | 24.0 | 25 | 2 | 1246 | 0 |
-  | HIGH | 85.6 | 23.1 | 14 | 1 | 1304 | 0 |
-
+  | 质量档    | 平均 FPS | 1% low | 降级次数 | 合并次数 | 峰值节点 | 峰值 orphan |
+  | ------ | -----: | -----: | ---: | ---: | ---: | --------: |
+  | LOW    |   89.3 |   23.8 |  179 |    8 | 1217 |         0 |
+  | MEDIUM |   86.8 |   24.0 |   25 |    2 | 1246 |         0 |
+  | HIGH   |   85.6 |   23.1 |   14 |    1 | 1304 |         0 |
   档位越低降级越多，正是预算该有的方向；三档 **orphan 全为 0、回合间无节点增长**，满足「低档满配无持续节点增长」。24 次死亡在三档全部播出——critical 从不被合并或丢弃。基线工具为此新增 `--rounds` 与 `--tier`。
 - **仍未完成：** 只有已迁移的 cue 路径带优先级；技能、Boss 与状态特效仍走旧 diff 路由，用的是不带优先级缩放的档位配额，要等它们各自迁移。丢弃事件数记在 `director_audit.json` 而不是 README 原文说的 CSV 里。移动端无法验证（Android 暂停）。
 - 证据：`B4_vfx_budget_20260819/B4_VERIFICATION.json`；备份在 `B4_prechange_backup_20260819/`。
@@ -1811,9 +1904,9 @@ adb exec-out screencap -p > /tmp/glory-launch.png
 - **顺带抽出共享 fixture** `scripts/qa/FixedBattleFixture.gd`：`battle_presentation_baseline.gd` 和 `promo_capture.gd` 各自带着一份阵容副本，靠注释叮嘱后人「保持一致」，而评审场景干脆一份都没有——就是上面那个 bug。现在基线工具和评审场景共用同一份；抽完重跑基线，**四个冻结哈希逐字未变**，证明重构没改变行为。（`promo_capture.gd` 仍是自己那份，属你的宣传工具，本轮未动。）
 - **仍未完成：** 人工美术评审本身要人来做，工具只是把它变得可行。
 - 证据：`B5_review_compare_20260820/B5_VERIFICATION.json` 与四张对照截图；备份在 `B5_prechange_backup_20260820/`。
-
 - **实施：** 扩展 `scenes/debug/ModelBattlePreview.tscn` 或新增 `scenes/debug/BattleVfxReview.tscn`：选择单位/技能/质量档/慢放倍率/背景，固定 seed 截帧，并能并排比较“旧 profile / 新 profile”。
 - **验收：** 不进入完整对局也能验证每个 profile、锚点、遮挡、循环清理和低档 fallback；截图和指标可作为美术评审附件。
+
 
 ### C. 战斗代码对标与模仿方案（P1，必须先完成一个纵向切片）
 
@@ -1834,13 +1927,13 @@ adb exec-out screencap -p > /tmp/glory-launch.png
 
 下列项目用于学习、抽取思想或在许可证允许下复用。执行时必须记录使用的 commit/tag、原始 LICENSE、改动文件和署名；外部项目的美术、音频、角色名、世界观与第三方资源一律不随代码自动进入 Glory。
 
-| 优先级 | 项目与源码入口 | 可模仿/可复用的具体代码 | Glory 中的落点 | 禁止事项 |
-| --- | --- | --- | --- | --- |
-| **P1 架构标杆** | [R055LE/horror-battler](https://github.com/R055LE/horror-battler) 的 `scripts/combat.gd`、`scripts/combat_animator.gd`、`scripts/game_manager.gd` | 最贴近 Glory 的“商店→布阵→自动战斗→结算”循环；`combat.gd` 先产出 structured event list，`combat_animator.gd` 再用 tween/await 回放。 | 逐项对照其 `combat → event list → animator` 边界，将 Glory 的 `frame_events` 变为稳定契约；只重写同等职责的代码。 | 仓库当前未提供 LICENSE 文件；**只可阅读、截图、人工复述架构，不可复制其代码、资源或数据。**也不可照搬其 5 槽、数值、技能与美术。 |
-| **P1 可直接借鉴代码结构** | [Lacaedemon/sparta](https://github.com/Lacaedemon/sparta)（MIT），重点 `scripts/Battle.gd`、`scripts/Replay.gd`、`scripts/Unit.gd`、`scripts/HUD.gd` 与 `scenes/Battle.tscn` | Godot 4.7/GDScript 的可重放战斗切片：`Battle` 协调兵种、AI、胜负和回放；`Replay` 记录固定种子；`Unit` 管角色状态；HUD 独立显示。 | 参考其“模拟/回放/单位演员/HUD”边界，建立 `BattlePresentationDirector` 与 `UnitActorRegistry`，并为事件回放写 headless 测试。若逐行移植 MIT 代码，须保留版权声明并写入 `THIRD_PARTY_NOTICES.md`。 | 它的单位目前以 `_draw()` 彩色 token 表现；这正是 Glory 现在要消除的占位效果，**不可移植其 token 绘制或 RTS 操作/编队规则**。 |
-| **P1 手感实现候选** | [Kelpekk/Juicee](https://github.com/Kelpekk/Juicee)（MIT），`addons/juicee/` 及 preset/sequence 示例 | Godot 4.3+ 的可组合屏震、受击闪白、缩放弹性、伤害数、粒子、音频与镜头效果；其 state stack 可避免并发 tween 恢复错误。 | Director 先完成后，试验性放入 `addons/juicee/`；新增 `JuiceeBattleFeelAdapter.gd`，只把 `impact/crit/heal/death` 映射为 mobile profile，不让插件理解伤害规则。 | 不在 `BattleSimShared.gd` 调插件；PVP/回放不得用全局 `Engine.time_scale` 改变模拟。不要与现有 `VFXManager` 双重控制相机/时间；默认关闭 blur、glitch、全屏后处理。 |
-| **P2 代码组织参考** | [GDQuest Godot 4 Open RPG](https://github.com/gdquest-demos/godot-open-rpg)（MIT），`combat/`、`src/` 目录 | 2D 回合制而非自动战斗，但战斗状态、数据资源、UI 和服务分层清晰，适合作为可测试 GDScript 的组织参考。 | 参考状态/命令/显示分离的写法，拆小 `PrepUI`、战斗服务和数据资源；不改变 Glory 的 3D 自动战斗玩法。 | 不导入 RPG 回合指令、Kenney 等第三方资源或其完整框架；依赖与资源许可证须单独核查。 |
-| **P2 VFX 素材/参数参考** | [Brackeys/vfx-in-godot](https://github.com/Brackeys/vfx-in-godot)（CC0） | 粒子、shader、冲击和预览工程的最小示例。 | 从单个效果开始改为 Glory 的材质、色板、缩放和 mobile budget；登记来源和文件哈希。 | 不能把示例工程整包塞进运行时资源根；不能因为 CC0 而跳过 APK 体积、透明叠层和 GPU 验证。 |
+| 优先级                | 项目与源码入口                                                                                                                                                             | 可模仿/可复用的具体代码                                                                                               | Glory 中的落点                                                                                                                                        | 禁止事项                                                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **P1 架构标杆**        | [R055LE/horror-battler](https://github.com/R055LE/horror-battler) 的 `scripts/combat.gd`、`scripts/combat_animator.gd`、`scripts/game_manager.gd`                      | 最贴近 Glory 的“商店→布阵→自动战斗→结算”循环；`combat.gd` 先产出 structured event list，`combat_animator.gd` 再用 tween/await 回放。 | 逐项对照其 `combat → event list → animator` 边界，将 Glory 的 `frame_events` 变为稳定契约；只重写同等职责的代码。                                                             | 仓库当前未提供 LICENSE 文件；**只可阅读、截图、人工复述架构，不可复制其代码、资源或数据。**&#x4E5F;不可照搬其 5 槽、数值、技能与美术。                                       |
+| **P1 可直接借鉴代码结构**   | [Lacaedemon/sparta](https://github.com/Lacaedemon/sparta)（MIT），重点 `scripts/Battle.gd`、`scripts/Replay.gd`、`scripts/Unit.gd`、`scripts/HUD.gd` 与 `scenes/Battle.tscn` | Godot 4.7/GDScript 的可重放战斗切片：`Battle` 协调兵种、AI、胜负和回放；`Replay` 记录固定种子；`Unit` 管角色状态；HUD 独立显示。                  | 参考其“模拟/回放/单位演员/HUD”边界，建立 `BattlePresentationDirector` 与 `UnitActorRegistry`，并为事件回放写 headless 测试。若逐行移植 MIT 代码，须保留版权声明并写入 `THIRD_PARTY_NOTICES.md`。 | 它的单位目前以 `_draw()` 彩色 token 表现；这正是 Glory 现在要消除的占位效果，**不可移植其 token 绘制或 RTS 操作/编队规则**。                                   |
+| **P1 手感实现候选**      | [Kelpekk/Juicee](https://github.com/Kelpekk/Juicee)（MIT），`addons/juicee/` 及 preset/sequence 示例                                                                      | Godot 4.3+ 的可组合屏震、受击闪白、缩放弹性、伤害数、粒子、音频与镜头效果；其 state stack 可避免并发 tween 恢复错误。                                 | Director 先完成后，试验性放入 `addons/juicee/`；新增 `JuiceeBattleFeelAdapter.gd`，只把 `impact/crit/heal/death` 映射为 mobile profile，不让插件理解伤害规则。                   | 不在 `BattleSimShared.gd` 调插件；PVP/回放不得用全局 `Engine.time_scale` 改变模拟。不要与现有 `VFXManager` 双重控制相机/时间；默认关闭 blur、glitch、全屏后处理。 |
+| **P2 代码组织参考**      | [GDQuest Godot 4 Open RPG](https://github.com/gdquest-demos/godot-open-rpg)（MIT），`combat/`、`src/` 目录                                                                | 2D 回合制而非自动战斗，但战斗状态、数据资源、UI 和服务分层清晰，适合作为可测试 GDScript 的组织参考。                                                 | 参考状态/命令/显示分离的写法，拆小 `PrepUI`、战斗服务和数据资源；不改变 Glory 的 3D 自动战斗玩法。                                                                                      | 不导入 RPG 回合指令、Kenney 等第三方资源或其完整框架；依赖与资源许可证须单独核查。                                                                       |
+| **P2 VFX 素材/参数参考** | [Brackeys/vfx-in-godot](https://github.com/Brackeys/vfx-in-godot)（CC0）                                                                                              | 粒子、shader、冲击和预览工程的最小示例。                                                                                    | 从单个效果开始改为 Glory 的材质、色板、缩放和 mobile budget；登记来源和文件哈希。                                                                                               | 不能把示例工程整包塞进运行时资源根；不能因为 CC0 而跳过 APK 体积、透明叠层和 GPU 验证。                                                                   |
 
 #### C2 — 目标架构与精确挂接点
 
@@ -1856,14 +1949,14 @@ BattleSimShared（确定性规则，只产出语义事件）
   → BattleResult（等待关键演出结束或玩家跳过）
 ```
 
-| 现有位置 | 改造方式 | 新职责/接口 |
-| --- | --- | --- |
-| `scripts/battle/BattleSimShared.gd::_add_visual_event()` | 保留为唯一语义事件出口；补齐字段，但绝不 `load()` 特效、访问场景树、创建 tween。 | `event_key = battle_id + tick + ordinal`、`type`、`source_uid`、`target_uids`、`skill_id`、`amount`、`is_crit`、`is_lethal`、`presentation_seed`、`visibility_priority`、`timing_hint`。 |
-| `scenes/battle/BattleScreen.gd` 的 `frame_events` 回灌处 | 从直接写 `_state.visual_events` 改为 `presentation_director.enqueue_tick(tick, events)`；暂停、seek、重播都调用 Director 的显式 API。 | `enqueue_tick()`、`seek_to_tick()`、`set_speed()`、`skip_to_result()`、`has_blocking_cues()`。 |
-| `scenes/battle/BattleRenderer.gd` / `BattleArena.gd` | 每个实际单位只注册一个 `Actor3D`，暴露 `world_foot`、`world_head`、`world_cast`、`world_hit` 锚点。 | `get_actor(uid)`、`get_anchor(uid, anchor_name)`；没有 actor 时返回角色立绘卡牌 fallback，绝不生成蓝/红胶囊。 |
-| `scenes/battle/BattleVfx.gd` | 第一阶段保留原接口作兼容；每迁移一种事件，就删掉它对应的硬编码分支。 | 最终只保留 replay 时钟/Director 适配，不继续成为“模拟、表现、资源加载”的混合类。 |
-| 新增 `effects/runtime/presentation/` | 新建 `BattlePresentationDirector.gd`、`UnitActorRegistry.gd`、`UnitVisualResolver.gd`、`BattleActionTrack.gd`、`adapters/JuiceeBattleFeelAdapter.gd`。 | 这些文件只能依赖事件 schema 与渲染接口，不能反向修改 BattleSimulator 状态。 |
-| 新增 `data/vfx/battle_cues/` | 用 `.tres` 描述 `basic_melee`、`basic_ranged`、`crit`、`heal`、`shield`、`death`、`boss_skill`。 | profile 决定时长、锚点、色板、音频、预算和低档替代；不会决定伤害数值或目标。 |
+| 现有位置                                                     | 改造方式                                                                                                                                            | 新职责/接口                                                                                                                                                                        |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scripts/battle/BattleSimShared.gd::_add_visual_event()` | 保留为唯一语义事件出口；补齐字段，但绝不 `load()` 特效、访问场景树、创建 tween。                                                                                                | `event_key = battle_id + tick + ordinal`、`type`、`source_uid`、`target_uids`、`skill_id`、`amount`、`is_crit`、`is_lethal`、`presentation_seed`、`visibility_priority`、`timing_hint`。 |
+| `scenes/battle/BattleScreen.gd` 的 `frame_events` 回灌处     | 从直接写 `_state.visual_events` 改为 `presentation_director.enqueue_tick(tick, events)`；暂停、seek、重播都调用 Director 的显式 API。                               | `enqueue_tick()`、`seek_to_tick()`、`set_speed()`、`skip_to_result()`、`has_blocking_cues()`。                                                                                     |
+| `scenes/battle/BattleRenderer.gd` / `BattleArena.gd`     | 每个实际单位只注册一个 `Actor3D`，暴露 `world_foot`、`world_head`、`world_cast`、`world_hit` 锚点。                                                                 | `get_actor(uid)`、`get_anchor(uid, anchor_name)`；没有 actor 时返回角色立绘卡牌 fallback，绝不生成蓝/红胶囊。                                                                                        |
+| `scenes/battle/BattleVfx.gd`                             | 第一阶段保留原接口作兼容；每迁移一种事件，就删掉它对应的硬编码分支。                                                                                                              | 最终只保留 replay 时钟/Director 适配，不继续成为“模拟、表现、资源加载”的混合类。                                                                                                                            |
+| 新增 `effects/runtime/presentation/`                       | 新建 `BattlePresentationDirector.gd`、`UnitActorRegistry.gd`、`UnitVisualResolver.gd`、`BattleActionTrack.gd`、`adapters/JuiceeBattleFeelAdapter.gd`。 | 这些文件只能依赖事件 schema 与渲染接口，不能反向修改 BattleSimulator 状态。                                                                                                                            |
+| 新增 `data/vfx/battle_cues/`                               | 用 `.tres` 描述 `basic_melee`、`basic_ranged`、`crit`、`heal`、`shield`、`death`、`boss_skill`。                                                          | profile 决定时长、锚点、色板、音频、预算和低档替代；不会决定伤害数值或目标。                                                                                                                                    |
 
 `timing_hint` 不是 wall-clock 的权威规则，而是给演出排程的提示。推荐首批 cue：普攻 `0.08–0.16s` 起手 → 命中点 → `0.15–0.45s` 收招；远程有可见投射物；死亡有 0.2 秒淡出/倒地。模拟先结束时，Director 仍播放所有关键事件；普通连击可合并，Boss/暴击/死亡/治疗/控制不能被吞掉。结果页须等待 `has_blocking_cues() == false`，并提供“跳过演出”，总演出时长另设上限以避免卡住。
 
@@ -1892,6 +1985,7 @@ BattleSimShared（确定性规则，只产出语义事件）
 #### C5 — 可直接交给 AI 的 `BattlePresentationDirector` 参考清单
 
 完整的职责边界、现有代码接入点、事件 schema、调度/seek/skip 规则、`.tres` profile 字段、分提交验收和测试矩阵见 [BattlePresentationDirector AI 实施参考清单](docs/BATTLE_PRESENTATION_DIRECTOR_IMPLEMENTATION_CHECKLIST.md)。AI 每次只能落实其中一个 D 阶段；先让 schema、回放哈希和单位锚点通过，再加新的演出效果。
+
 
 ### D. 代码与联机拆分
 
@@ -2907,6 +3001,9 @@ BattleVfx 里那三条旧调用点**删干净**（挂 `apocalypse_charging`，�
 `BattleSimTreasures.gd` / `ui_feedback_check.gd` 与本批 doc）。未做安卓 / 真机听感验收，未重新导出 EXE / APK。
 详见[9.23 第五批 boss 技能音双通道订正记录](docs/9.23第五批boss技能音双通道订正记录.md)。
 
+
+
+
 ## 2026-09-24：技能与弹道 10 条（命中后结算 / 落雷重设计 / 沉默箭 / 血契连线 / 法师首技能 / 弓箭手金属箭）
 
 依据用户《技能及弹道效果问题提交及修复.docx》（客户端 `GloryBeta0924`）的 **10 条**投射物与技能表现问题。
@@ -3106,6 +3203,9 @@ composer 新增 `_oga_silence_bolt()` 走 `VFXFlipbookProjectile3D` —— 该�
 它们若也有"表演目标与真实目标不一致"的毛病需要各自接线（**本轮未做，也未声称做了**）；
 血条队伍色只在**战斗内**生效，备战 / 详情页未同步。
 详见[9.24 技能与弹道问题修复记录](docs/9.24技能及弹道问题修复记录.md)。
+
+
+
 
 ## 2026-09-25：末日守卫血链「法阵 boss 免疫」+ 技能文案 + 新手教程 6 项优化
 
@@ -3546,6 +3646,9 @@ A 费用档位 / B 教程恒免费（刷 **999 次**仍为 0）/ C **递归扫 `
 ★ **未做真机观感验收**；批跑只覆盖「备战界面 + 本轮直接相邻」面，**批跑 ≠ 全集**；**未重新导出 EXE / APK**。
 
 详见[9.31 备战光圈对齐持续守卫修复记录](docs/9.31备战光圈对齐持续守卫修复记录.md)。
+
+
+
 
 ## 2026-10-01：《10.01bug提交及修复.docx》第 2~12 条
 

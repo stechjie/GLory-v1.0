@@ -940,6 +940,27 @@ func _enter_tutorial_from_startup() -> void:
 		NetworkService.disconnect_session()
 		if NetworkService.team_active:
 			NetworkService.reset()
+	# 10.16 bug 第 1 条（Bug ②，第 4 层兜底）：联机残留**无条件**清。
+	#
+	# 上面那个 reset() 是有条件的（只在 team_active 仍为真时才补），而 latest_match_state
+	# 恰恰只在 reset() 里被清 —— 于是下面这几条退房路都会把它留下：
+	#   * _rpc_team_room_closed()（NetworkService.gd:7624）只把 team_active 置假；
+	#   * _on_server_disconnected() 无 token（:7559）同样只置假；
+	#   * request_user_leave() 的 match_started 分支要 _manual_exit_notice_available()
+	#     为真才 reset（状态不在 [JOINING, READY] 或 peer 已关 ⇒ 永不 reset）。
+	# 残留的 latest_match_state 会被教程收口当成结算包读：_show_game_over() 取它的
+	# final_settlement，can_show_details 又因 kind 非空放行 ⇒ 教程通关弹出详情面板，
+	# 里面装的是**上一场联机**的数据（截图里的 "Result: Draw" + 两个 Main Menu）。
+	# 这条路径就是「重新体验教学」：主菜单 → 设置 → 重新体验教学，而玩家刚打完联机
+	# 回来时 team_active 往往已经是假的了，上面的条件分支正好不执行。
+	#
+	# 只清这三个字段、不无条件调 reset()：它们正是 _show_game_over() 会读的全部联机态
+	# （final_settlement 来源、match_state 判据、_battle 失效时的 replay 兜底），
+	# 而 reset() 还会顺手丢掉 session_token 与会话状态 —— 那属于会话生命周期，
+	# 不该由「进教程」这个动作代劳。
+	NetworkService.latest_match_state = {}
+	NetworkService.team_replay = {}
+	NetworkService.team_replay_rival = {}
 	if not TutorialMode.active:
 		PlayerProfile.begin_tutorial()
 		if not (TutorialMode.has_checkpoint() and TutorialMode.restore_checkpoint()):
