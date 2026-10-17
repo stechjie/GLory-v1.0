@@ -1,5 +1,29 @@
 # Glory Beta 0.04
 
+
+## 2026-10-18：备战商店支持「快速双击」购买棋子
+
+**文档来源**：`E:\Users\WINDOWS\Desktop\10.18商店购买操作优化.docx`。全文**只有 1 条**需求：
+
+> 对局里备战阶段商店购买棋子的操作需要优化，当前购买棋子有：拖动棋子到棋盘或者选中棋子然后点击购买。优化为：额外增加支持快速**双击购买棋子**的功能。
+
+追加口径（用户原话）：「要求的是快速双击，超过一定时间的不连续双击可不行。」⇒ 判定窗口必须**有上限**：两次点击间隔超过 `SHOP_DOUBLE_CLICK_WINDOW_MS`（350ms）就不算双击，退回「两次独立单击」。
+
+**改了什么**（`scenes/prep/panels/ShopPanel.gd`，854 -> 878 行，纯加法）
+
+| 位置 | 改动 |
+| --- | --- |
+| 新增常量 `SHOP_DOUBLE_CLICK_WINDOW_MS := 350` | 双击判定窗口（ms）。间隔超过它的两次点击不算双击 |
+| 新增 `_card_press_ms: Dictionary` | 每个卡位记录上一次「成交点击」的时间戳（ms）。**按卡位记** —— A 卡的时间戳不会和 B 卡配对 |
+| `_on_card_pressed()` | 窗口内再点一次**同一张卡** ⇒ 直接走成交，不再翻转选中态；否则照旧只切换选中态 |
+| 新增 `_request_buy(index)` | 从 `buy_selected()` 里拆出来的**成交前校验**（越界 / 空 offer / 已售 / 金币不足）。钱袋 A 与「快速双击」两条路共用，不再各写一份 |
+| `clear_slot_arrays()` / `toggle_picker()` / `close_picker()` | 一并清空时间戳 —— 否则「关店前一击 + 开店后一击」会被算成一次双击 |
+
+**为什么判定挂在 `pressed` 信号上，而不是按下事件**：`pressed` 只在「松手且没起过拖」时发。这样「按住棋子划走（起拖）、再回到卡上点一下」不会把两次操作误判成双击；顺带也避开了 `emulate_mouse_from_touch` 下「一次触摸发两次事件」的重复计数。成交后的落点（待命空位 / 棋盘空格 / 就地升星）仍由宿主 `PrepUI._on_shop_buy_requested` 在成交那一刻决定，本改动不碰。
+
+**验收**：`_qa_1018/shop_double_click_buy_check.tscn`（55 项，PASS）。单元段验窗口常量 / 端点含等于（== 窗口算、窗口 +1ms 不算）/ 按卡位配对 / 成交前校验四条 / 关店清时间戳；集成段用**真实输入事件**验「快速双击成交（金币按卡面价扣、`shop_sold`、待命落子）」「慢双击不成交、两下各自翻转选中态」「只按下不松手不记时间戳」「钱袋 A 旧路仍通」。
+
+
 ## 2026-10-17 晚：AI 托管继承（10.17 bug 文档第 1 条）
 
 **文档来源**：`E:\Users\WINDOWS\Desktop\10.17bug提交及修复.docx`。全文（正文 467 字 + 2 张截图）**只有 1 条**问题：
@@ -61,15 +85,15 @@
 
 **同步到 `GLory-v1.0`（2026-10-17 晚，已完成）**
 
-| 项 | 结果 |
-| - | - |
-| 前置条件 | v1.0 的 5 个既有文件 == codex **修复前**备份，逐个 `SAME`（否则说明 v1.0 被别处改过，停止搬运） |
-| 搬运 | `shutil.copy2` **逐字节**复制 10 个文件（5 改 + 3 新增 + 2 个 `.uid`），不经文本模式重写 |
-| 三向核对 | `entries=10 mismatch=0`（codex sha == v1.0 sha，10/10） |
-| `project.godot` | 两棵树**跑门禁前后**都是 `UNCHANGED`：codex `f5aa7a43…`（LF=78）/ v1.0 `b8d26107…`（CRLF=78） |
-| v1.0 门禁 | `_qa_1017/ai_handover_check` **PASS checked=47 failures=0**（与 codex 同数） |
-| v1.0 回归 | `locale_guard` PASS 59/0、`prep_localized_name` PASS 74/0、`no_direct_name_read` PASS **244**/0 |
-| v1.0 工作区 | `git status` 只有本批 8 条（5 `M` + `_qa_1017/` + `AiHandover.gd` + `.uid`），无夹带 |
+| 项               | 结果                                                                                            |
+| --------------- | --------------------------------------------------------------------------------------------- |
+| 前置条件            | v1.0 的 5 个既有文件 == codex **修复前**备份，逐个 `SAME`（否则说明 v1.0 被别处改过，停止搬运）                             |
+| 搬运              | `shutil.copy2` **逐字节**复制 10 个文件（5 改 + 3 新增 + 2 个 `.uid`），不经文本模式重写                             |
+| 三向核对            | `entries=10 mismatch=0`（codex sha == v1.0 sha，10/10）                                          |
+| `project.godot` | 两棵树**跑门禁前后**都是 `UNCHANGED`：codex `f5aa7a43…`（LF=78）/ v1.0 `b8d26107…`（CRLF=78）                |
+| v1.0 门禁         | `_qa_1017/ai_handover_check` **PASS checked=47 failures=0**（与 codex 同数）                       |
+| v1.0 回归         | `locale_guard` PASS 59/0、`prep_localized_name` PASS 74/0、`no_direct_name_read` PASS **244**/0 |
+| v1.0 工作区        | `git status` 只有本批 8 条（5 `M` + `_qa_1017/` + `AiHandover.gd` + `.uid`），无夹带                     |
 
 - `no_direct_name_read` 在 v1.0 是 **244**、codex 是 **249**：差的 5 条全是 `scenes/debug/` 下的文件 —— 发布树没有该目录，门禁本就跳过。**数量差是环境性的，不是回归。**
 - 反向标记扫描（`ai_handover_seq` / `AiHandover` / `_seed_from_human` / `_shop_for_round` / `merc_round` / `board_slots(` … 共 11 个）命中 7 个文件，6 个在清单内；清单外的 `scripts/autoload/SaveManager.gd` 是**宽 marker 误报** —— 它的 7 处 `board_slots` 全是既有的 `GameState.board_slots` 序列化/归一化，且该文件两棵树逐字节相同（`e3be998f55266440`）、未参与本批。**不补搬。**
@@ -81,6 +105,7 @@
 2. **重打包战斗服**：`tools/make_server_zip.ps1` + 手工重启。`deploy/update.sh` **只重启账号后端**，而 `NetworkService.gd` / `LiveBotEconomy.gd` / `BotPlayer.gd` 跑在**战斗服进程**里 —— 不重打包，线上还是旧行为（这是 §八 那条反复踩的坑）。
 3. **`git add / commit / push` 由用户自己做**（本批一行版本控制命令都没执行）。
 4. 协议号**未动**（无新增 `@rpc`）⇒ 不需要客户端强制更新才能连；但老客户端配新战斗服时只会忽略 `ai_handover_*` 两个键，退回旧表现。
+
 ## 2026-10-16 晚：本地化防复发基建（英文界面中文巡检 + 不许直读 `name` + 数据双语断言）
 
 **起因**：同一个坑第三次复发 —— `tools/prep_1008_check.gd` 里那条 `bug1_no_bare_chinese_literals` 只抓**中文字面量**（源码里写死中文、没走 `tr()`），而它自己的注释里就记着 10.08c 修过「统计行 / 上阵头像 / 宝物名」三处直读中文 `name`；10.16 又是七处。它抓不到的两类：  
@@ -144,18 +169,19 @@ Godot_v4.7.2-stable_win64_console.exe --headless --path <工程根> _qa_1016/no_
 - 空棋盘闸只住在 **UI 按钮层**（`PrepFlowController._on_start_battle` 的 `battle_board_gate_message()`）；`TutorialMode.begin_battle()` 只查步骤不查棋盘，而 `PrepScreen` 还有**不走按钮处理函数**就 emit `battle_requested` 的旁路（战斗加载重试、`team_round_start`）⇒ 闸门挡不全。
 - 教程输战斗**不掉** formation HP（全库只有金祭坛扣血）⇒ 没有连锁 game-over，表现就是「打了场没打的仗、还输了、然后被拽到下一步」。
 
-
 **根因 ②「通关弹结算面板」：教程收口蹭了联机结算屏，而联机残留没清。**
+
 - `Main._on_battle_finished()` 教程且 `step == DONE` → `TutorialMode.finish()` → `_show_game_over()`；后者取 `NetworkService.latest_match_state.get("final_settlement", {})` 当结算包。教程是本地模拟，**从来不产生 final_settlement** ⇒ 空字典；而 `can_show_details()` 只要 `kind` 非空就返 true（10.07 有意对所有 kind 放行），`kind` 只能来自**残留的** `latest_match_state`。空 data 进 `FinalSettlementPanel`：outcome 默认 2 →「Result: Draw」、seats 空 → 无详情、按钮加两次且都退化成只剩一个 ⇒ **两个 Main Menu**，与截图三特征全中。
 - `latest_match_state` 只在 `NetworkService.reset()` 里清，而多条退房路不走 reset：`_rpc_team_room_closed()`、`_on_server_disconnected()`（无 token）都只把 `team_active` 置假；`request_user_leave()` 的 match_started 分支要 `_manual_exit_notice_available()` 为真才 reset。`_enter_tutorial_from_startup()` 原来也只在 `team_active` 仍为真时才补 reset。⇒ **新进程第一次进教程不弹；同会话先打联机、再从主菜单→设置→「重新体验教学」打完才弹**（这正是「重新体验教学」的入口路径）。次级表现：若早先联机收到过带 final_settlement 的终局 match_state，教程后面板显示的是**上一场联机**的数据。
 
 **修法：四层兜底，每层都不依赖调用方做对。**
-| 层 | 落点 | 保证什么 |
-|---|---|---|
-| 1 | `BattleResult._finish_simulation()`：拿到结果之后、`_emit_finished()` 之前，`GameState.tutorial_mode` 下调 `TutorialMode.coerce_victory()` | 字幕 / 胜负音 / 水晶演出 / `battle_finished` 信号读到的都是同一份胜利结果。`coerce_victory()` 只改结果字典，**不动 `GameState.enemy_formation_hp`**（备战界面敌方血量教程中途要保持 10/10） |
-| 2 | `TutorialMode.begin_battle()`：新增 `required_board_units()`（与 `battle_board_gate_message()` 同源）+ `_ensure_board_ready_for_battle()` + `_auto_deploy_from_bench()` | 上阵数不足时先从待命区补（跳过会触发合成的、跳过重复的唯一棋子），补完仍不够就弹「上阵棋子数目少于N」并 `return false`，不烧调用方的一次性发射锁 |
-| 3a | `FinalSettlementData.can_show_details()`：空 `data` 一律 false | 没有结算包就没有详情按钮 |
-| 4 | `Main._enter_tutorial_from_startup()`：无条件清 `latest_match_state` / `team_replay` / `team_replay_rival`，且清在开教程**之前** | 教程收口读不到任何联机残留 |
+
+| 层  | 落点                                                                                                                                                              | 保证什么                                                                                                                                      |
+| -- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| 1  | `BattleResult._finish_simulation()`：拿到结果之后、`_emit_finished()` 之前，`GameState.tutorial_mode` 下调 `TutorialMode.coerce_victory()`                                   | 字幕 / 胜负音 / 水晶演出 / `battle_finished` 信号读到的都是同一份胜利结果。`coerce_victory()` 只改结果字典，**不动 `GameState.enemy_formation_hp`**（备战界面敌方血量教程中途要保持 10/10） |
+| 2  | `TutorialMode.begin_battle()`：新增 `required_board_units()`（与 `battle_board_gate_message()` 同源）+ `_ensure_board_ready_for_battle()` + `_auto_deploy_from_bench()` | 上阵数不足时先从待命区补（跳过会触发合成的、跳过重复的唯一棋子），补完仍不够就弹「上阵棋子数目少于N」并 `return false`，不烧调用方的一次性发射锁                                                          |
+| 3a | `FinalSettlementData.can_show_details()`：空 `data` 一律 false                                                                                                      | 没有结算包就没有详情按钮                                                                                                                              |
+| 4  | `Main._enter_tutorial_from_startup()`：无条件清 `latest_match_state` / `team_replay` / `team_replay_rival`，且清在开教程**之前**                                              | 教程收口读不到任何联机残留                                                                                                                             |
 
 第 1/2 层分别挂在「生产链自己会走到的那一个点」上：`_finish_simulation` 是本地模拟 `_process` finished 分支与 `_skip_animation` 两条路的汇点；`begin_battle()` 是 `Main._on_battle_requested` 开战前的最后一个函数，旁路也要经过它 ⇒ 「旁路不过闸」这个根因在结构上被消掉。
 
@@ -169,33 +195,34 @@ Godot_v4.7.2-stable_win64_console.exe --headless --path <工程根> _qa_1016/no_
 
 ★ **同步状态**：已随 10.16 批次同步到 `GLory-v1.0`（sha256 逐文件相符）；**未** `git add/commit/push`（由你提交）。
 
-
 ## 2026-10-16：《10.16bug提交及修复.docx》第 2 条（英文界面下显示名漏本地化：七处 + 一次返工）
 
 原文：「英文语音模式下，萝卜营地里三星升级四星功能棋子的名字未转成英文版格式。之前遇到太多相关的情况，也修复了几处类似的地方。请你仔细检查，如果还有类似的地方请调整过来。」
 
-**根因（一条，七处同源）：显示名直读数据表的 `name`。**
-`DataRegistry.canonicalize_unit_display_names()` 只把 `name` / `name_en` 覆写成正式表的值（防服务器 payload 与旧存档携带的历史名重新出现），**不按 locale 选语言**；全库按 locale 取 `name_en` 的只有 `unit_display_name()`，包装层是 `PrepWidgets.unit_name()`（≡ `PrepWidgets.localized_name()` ≡ `UnitDetailFormat.localized_name()`）。所以任何 `def.get("name")` 在英文界面下**永远**是中文 —— 与「这枚棋子的名字有没有被 canonicalize 过」无关。
+**根因（一条，七处同源）：显示名直读数据表的 `name`。**  
+`DataRegistry.canonicalize_unit_display_names()` 只把 `name` / `name_en` 覆写成正式表的值（防服务器 payload 与旧存档携带的历史名重新出现），**不按 locale 选语言**；全库按 locale 取 `name_en` 的只有 `unit_display_name()`，包装层是 `PrepWidgets.unit_name()`（≡ `PrepWidgets.localized_name()` ≡ `UnitDetailFormat.localized_name()`）。所以任何 `def.get("name")` 在英文界面下**永远**是中文 —— 与「这枚棋子的名字有没有被 canonicalize 过」无关。  
 数据侧无需补：`race_units.json` 40 枚 + `mercenaries.json` 12 枚的 `name` / `name_en` 全非空，`treasures.json` 25 件与 `data/codex/treasure_text.json` 的 linkages / sets 也都有 `name_en` ⇒ 纯显示侧漏点。
 
 **修的七处**
 
-| # | 位置 | 界面上的地方 | 修法 |
-|---|---|---|---|
-| 1 | `CarrotCampPanelV3.gd:594` | 萝卜营地 · 升级石页 · 四星候选行标题（**玩家报告的本体**） | `PrepWidgets.unit_name(unit_def)`；def 为空时仍回落 `_t("棋子","Unit")` |
-| 2 | `PrepBoardController.gd:884` | 卖掉四星棋子 · 二次确认框正文 | 同上；`english` 变量上移，回落 `"Unit" / "棋子"` |
-| 3 | `PrepUI.gd:2554` | 佣兵购买卡 · 拖拽预览（按住拖动时飘的那行） | 与同一张卡 2622 行的 `name_label` 统一走 `unit_name` |
-| 4/5/6 | `PrepUI.gd:3459 / 3467 / 3475` | 已拥有宝物 / 联动 / 套装 logo 的 tooltip（悬停才出现） | 新增 `_localized_row_name(row, fallback)`，**只喂 tooltip** |
-| 7 | `PrepBoardController.gd:1244` | 联动详情浮层 · **标题**（点联动 logo 弹出的那一屏） | 与 `_show_set_detail` / `_bonus_title` 同口径取 `name_en`/`name` |
+| #     | 位置                             | 界面上的地方                                | 修法                                                             |
+| ----- | ------------------------------ | ------------------------------------- | -------------------------------------------------------------- |
+| 1     | `CarrotCampPanelV3.gd:594`     | 萝卜营地 · 升级石页 · 四星候选行标题（**玩家报告的本体**）    | `PrepWidgets.unit_name(unit_def)`；def 为空时仍回落 `_t("棋子","Unit")` |
+| 2     | `PrepBoardController.gd:884`   | 卖掉四星棋子 · 二次确认框正文                      | 同上；`english` 变量上移，回落 `"Unit" / "棋子"`                           |
+| 3     | `PrepUI.gd:2554`               | 佣兵购买卡 · 拖拽预览（按住拖动时飘的那行）               | 与同一张卡 2622 行的 `name_label` 统一走 `unit_name`                     |
+| 4/5/6 | `PrepUI.gd:3459 / 3467 / 3475` | 已拥有宝物 / 联动 / 套装 logo 的 tooltip（悬停才出现） | 新增 `_localized_row_name(row, fallback)`，**只喂 tooltip**         |
+| 7     | `PrepBoardController.gd:1244`  | 联动详情浮层 · **标题**（点联动 logo 弹出的那一屏）      | 与 `_show_set_detail` / `_bonus_title` 同口径取 `name_en`/`name`    |
 
 ★ 第 7 处是**返工补的**：第一轮只扫了「tooltip」那一层，漏掉了点开之后的详情标题 —— 玩家截图里正文已经是英文（`Treasures: Wail Resonance + Soul Counter` / `Effect: …`），标题却还是「凤凰涅槃」。
 
-**★ 返工：第一轮把「贴图名」当成了「显示名」，图标全消失。**
+**★ 返工：第一轮把「贴图名」当成了「显示名」，图标全消失。**  
 `_add_owned_treasure_logo(key, logo_name, detail, tooltip)` 的**第二个参数是三合一的**：既当贴图路径（`treasure_logos/<logo_name>.png`）、又当缺图时的文字兜底、还是 tooltip 的默认值。`treasure_logos/` 里存的就是**中文文件名**（`凤凰涅槃.png` / `4防卫.png` / `铁壁之护.png`），第一轮把 `_localized_row_name(...)` 的返回值塞进第二参 ⇒ 英文界面下路径成了 `Phoenix Rebirth.png` ⇒ 找不到 ⇒ 走 3513 行的缺图兜底显示文字。玩家看到的是「宝藏图标消失了」，实际是**贴图名被换成了显示名**。
+
 - 修法：第二参恢复贴图名（宝物 `t.name`、联动 `TREASURE_LINKAGE_LOGOS[lid]`、套装 `art`），显示名只喂第四参 `tooltip`；并在 `_localized_row_name` 上写死一句注释「只能喂 tooltip / 文本，绝不能喂第二参」。
 - 铁证（无头真值，比对 `treasure_logos/` 的实际文件）：`铁壁之护.png` **存在** / `Iron Wall.png` **不存在**；`凤凰涅槃.png` 存在 / `Phoenix Rebirth.png` 不存在；`4防卫.png` 存在 / `4 Defense.png` 不存在。
 
 **验证。**
+
 - 无头探针 `work/_qa_1016_en/probe2.tscn`：中/英各跑一次，把**真实控件文本**原样打出来。七处 before/after 全部有真值 —— 行标题 `神侍  ★★★`→`Godhand  ★★★`；确认框 `Selling "神侍" refunds only 60 gold…`→`Selling "Godhand"…`；拖拽预览 `甲壳守卫\n萝卜 6`→`Shell Guard\nCarrots 6`；宝物 tooltip `铁壁之护`→`Iron Wall`；联动 tooltip `凤凰涅槃`→`Phoenix Rebirth`；套装 tooltip `4防御`→`4 Defense`；**联动详情标题 `凤凰涅槃` → `Phoenix Rebirth`**（正文那两行本来就是英文）。
 - 新门禁 `_qa_1016/prep_localized_name_check.tscn` **PASS checked=74 failures=0**。它是**两头钉**的：
   - 行为侧：真面板（四星行标题）、真对话框（二次确认正文）、真浮层（联动详情标题，先 `bind` 一份 `_overlay` 再读它的 `RichTextLabel`）、真 helper（`has_method` + `Callable`，取法失效显式 `fail` 记账）；外加 **41 个贴图名 ↔ `treasure_logos/` 文件一致性**（11 联动 + 5 套装 + 25 宝物）。
@@ -208,13 +235,13 @@ Godot_v4.7.2-stable_win64_console.exe --headless --path <工程根> _qa_1016/no_
 ★ **三个探针坑（可复用）**：① GDScript 的 **lambda 对局部变量是值捕获**，在回调里改 `found` 外面读不到 ⇒ 收集结果要用递归函数返回。② `ModalStack._attach()` 在 root 未 ready 时是 `call_deferred` 挂载，弹窗要 `await get_tree().process_frame` 才在树上，同帧读不到。③ 想读 `_overlay` 的文本得先自己 `bind(popup, label)` 造一份，否则 `is_ready()` 为假、`show_text` 静默 return。
 
 ★ **两处没动，需要你定**：
+
 - `CarrotCampPanel.gd` / `CarrotCampPanelV2.gd` 有同样的直读，但它们是**死代码** —— 没有任何 `.tscn` 引用，`PrepUI.gd:23` 只 preload V3（全库只有 `data/qa/procedural_ui_baseline.json` 提过这两个文件名）。
 - 战斗日志 `log_convert` / `log_kill` / `log_god_cleanse` / `log_attack_execute` 会在英文句子里嵌中文棋子名。但日志是**模拟时烘进回放**的，按 locale 取名会让回放永久依赖当时的语言 ⇒ 要改成「日志存双语、显示时再选」，是另一个决策。
 
 ★ **未做**：真机观感验收。`--headless` 不渲染，「图标是不是真的画出来了」只验到了「贴图路径命中真实文件」这一层（那正是本 bug 的成因），画面本身请你在游戏里确认。
 
 ★ **同步状态**：已随 10.16 批次同步到 `GLory-v1.0`（sha256 逐文件相符）；**未** `git add/commit/push`（由你提交）。
-
 
 ## 2026-10-15 第二批（`10.15新手教程、商店UI优化.docx` 两项：商店弹窗盖住的 UI 不得被点击 + 新手教学聚焦遮罩；**同日第二轮**再修遮罩的「闪 + 线」，并按反馈给两步取消遮罩；**同日第三轮**再按玩家反馈把覆盖层改成「只做提醒 + 明暗对比、一步操作都不吃」；**同日第四轮**接手同一份文档的**第 3 点**——备战-宠物界面点模型弹出技能浮框）
 
@@ -229,7 +256,6 @@ Godot_v4.7.2-stable_win64_console.exe --headless --path <工程根> _qa_1016/no_
 - **改法**：`ShopPanel` 新增 `_set_bottom_bar_blocked()`，在 `_refresh_picker()` 里按 `picker_open` 把**木牌 + 关闭态钱袋 B** 切成 `MOUSE_FILTER_IGNORE`。恢复**必须** `set_deferred`，与 `PrepUI._set_overlay_blocked` 同源：「点弹窗外面关店」那一下 `close_picker()` 跑在 `PrepScreen._input`（GUI 之前），当场恢复 STOP 会让紧接着的同一次命中测试又打到木牌上，把商店**重新打开**。
 - **只改 `mouse_filter`、不改 `visible`**：木牌本来就被弹窗背景（920×280，比判定框大一圈）完整盖住，藏不藏看起来一样；而 `is_visible_in_tree()` 另有读者（教学按目标可见性解析），没必要冒这个风险。
 - **反向保住的行为**（门禁里各有一条独立判据）：卡面点选、采购热区拾取、刷新键拾取、采购那一下不关店，以及「点弹窗外面仍然收起商店」。
-
 
 
 ### 问题2：新手教学聚焦遮罩（第一版 4 块拼环形 → 玩家实测报「闪 + 线」→ 当日返工为单块 + shader）
@@ -1463,6 +1489,7 @@ Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、
 > 当前结论（2026-08-20）：**A1、A2、A3、A5、B4、B5、E1、E2-2A/E2-2B 与 BattlePresentationDirector D0-D6 的桌面闭环已全部完成；A4 的出包/安装/冷启动门禁已在真机跑通（Debug）。** 剩下的大块是 A4 的 Release 预设与 UI 驱动样本，以及 E3 量出来但还没动手的包体减重。**D2（PrepUI 拆分）已由同事完成；D1（NetworkService 拆分）已完成 —— 六个服务全部建成、ReplayTransferService 的压缩/分块/确认/重试四件齐了、重连补看回放已接入，协议号升到 17 且服务器已重新部署，联机回归 21/21 通过，**&#x53CC;设备公网实测已完成 21 回合完整对&#x5C40;**；详见 D1 节。**&#x44;3 仍由同事负责。后文关于“35 项不可加载”和“胶囊占位体”的文字是改造前历史基线，不再代表当前桌面结果。
 
 
+
 ## 2026-08-19 实施进度
 
 > 状态口径：`已完成` 表示本轮约定的桌面验收已闭环；`部分完成` 表示已有可运行基础但尚未达到该项完整验收；Android 侧自 2026-08-20 起已跑通出包、安装、冷启动**以及在真机上跑完整战斗**：固定回合 1/5/20/21 的跨平台 digest 逐字段一致，实机演出指标（帧时间、显存、孤儿节点）也已录得。**仍未验的是：低端机、双设备联机、冷缓存首启，以及需要驱动备战 UI 的那部分（商店页、教学主链）**——最后一项要等同事的 D2 落地。标着「实机 digest 已验」的行指的就是前者已验、后者未验。
@@ -1791,6 +1818,7 @@ adb exec-out screencap -p > /tmp/glory-launch.png
 
 
 
+
 ### A. 构建、资源与质量门禁
 
 #### A1 — 建立可复现资产清单（P0）
@@ -2000,6 +2028,7 @@ adb exec-out screencap -p > /tmp/glory-launch.png
 
 
 
+
 ### C. 战斗代码对标与模仿方案（P1，必须先完成一个纵向切片）
 
 #### C0 — 本次实机评估结论
@@ -2077,6 +2106,7 @@ BattleSimShared（确定性规则，只产出语义事件）
 #### C5 — 可直接交给 AI 的 `BattlePresentationDirector` 参考清单
 
 完整的职责边界、现有代码接入点、事件 schema、调度/seek/skip 规则、`.tres` profile 字段、分提交验收和测试矩阵见 [BattlePresentationDirector AI 实施参考清单](docs/BATTLE_PRESENTATION_DIRECTOR_IMPLEMENTATION_CHECKLIST.md)。AI 每次只能落实其中一个 D 阶段；先让 schema、回放哈希和单位锚点通过，再加新的演出效果。
+
 
 
 
@@ -3098,6 +3128,7 @@ BattleVfx 里那三条旧调用点**删干净**（挂 `apocalypse_charging`，�
 
 
 
+
 ## 2026-09-24：技能与弹道 10 条（命中后结算 / 落雷重设计 / 沉默箭 / 血契连线 / 法师首技能 / 弓箭手金属箭）
 
 依据用户《技能及弹道效果问题提交及修复.docx》（客户端 `GloryBeta0924`）的 **10 条**投射物与技能表现问题。
@@ -3297,6 +3328,7 @@ composer 新增 `_oga_silence_bolt()` 走 `VFXFlipbookProjectile3D` —— 该�
 它们若也有"表演目标与真实目标不一致"的毛病需要各自接线（**本轮未做，也未声称做了**）；
 血条队伍色只在**战斗内**生效，备战 / 详情页未同步。
 详见[9.24 技能与弹道问题修复记录](docs/9.24技能及弹道问题修复记录.md)。
+
 
 
 
@@ -3741,6 +3773,7 @@ A 费用档位 / B 教程恒免费（刷 **999 次**仍为 0）/ C **递归扫 `
 ★ **未做真机观感验收**；批跑只覆盖「备战界面 + 本轮直接相邻」面，**批跑 ≠ 全集**；**未重新导出 EXE / APK**。
 
 详见[9.31 备战光圈对齐持续守卫修复记录](docs/9.31备战光圈对齐持续守卫修复记录.md)。
+
 
 
 
