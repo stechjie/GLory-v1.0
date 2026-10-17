@@ -89,14 +89,22 @@ func exercise_resume() -> void:
 	server._room_maybe_start_round(room)
 	h.expect(room.state == server.ROOM_PREP,
 		"prep_resume_blocks_start", "A ready opponent cannot start while the returning player is unready")
+	# This additional scenario must not exceed the production 5 resumes / 10s limit.
+	await get_tree().create_timer(server.RateLimitService.WINDOW_SEC + 0.1).timeout
+	room.state = server.ROOM_LOBBY
+	room.ready[0] = true
+	fresh._rpc_resume_request.rpc_id(1, "mobile_test_token")
+	await wait_reply(fresh, 2, 3)
+	h.expect(room.state == server.ROOM_LOBBY and bool(room.ready[0]),
+		"lobby_resume_keeps_ready", "Lobby reconnect preserves explicit readiness without starting a game")
 	room.state = server.ROOM_RESULT
 	room.run_over = true
 	room.last_match_state = {0: {"completed_round": 21, "run_over": true, "gold": 321}}
 	fresh._rpc_resume_request.rpc_id(1, "mobile_test_token")
-	await wait_reply(fresh, 2, 3)
-	h.expect(fresh.room_snapshots.size() == 3, "finished_room_resume", "Finished room accepts its retained seat credential")
-	if fresh.room_snapshots.size() == 3:
-		var payload: Dictionary = fresh.room_snapshots[2].get("payload", {})
+	await wait_reply(fresh, 2, 4)
+	h.expect(fresh.room_snapshots.size() == 4, "finished_room_resume", "Finished room accepts its retained seat credential")
+	if fresh.room_snapshots.size() == 4:
+		var payload: Dictionary = fresh.room_snapshots[3].get("payload", {})
 		h.expect(payload.get("completed_settlement", {}).get("gold", 0) == 321,
 			"finished_authority", "Recovery snapshot includes exact authoritative final settlement")
 

@@ -65,6 +65,14 @@ TRIO = [player(1), player(2), player(3)]
 
 
 class PartyMatchTests(unittest.TestCase):
+    def test_pruned_room_log_uses_room_id_field(self):
+        # Real party.Room exposes id; logging must not crash a completed prune.
+        store = types.SimpleNamespace(prune_disconnected=lambda: [types.SimpleNamespace(id="room-test")])
+        with mock.patch.object(matchmaking.party, "current", return_value=store):
+            with self.assertLogs(matchmaking.log, level="INFO") as captured:
+                asyncio.run(self.maker._prune_party_ghosts())
+        self.assertIn("room-test", captured.output[0])
+
     def setUp(self):
         # matchmaking 里是 `from app import party`（函数内现取）。整套 pytest 一起跑时，
         # 别的测试先导入过真的 app.party，包上的 `party` 属性已经指向它 —— 只换 sys.modules 不够，

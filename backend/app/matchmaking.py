@@ -548,7 +548,7 @@ class Matchmaker:
             log.exception("组队房掉线成员清理失败，这一轮放过")
             return
         for room in rooms:
-            log.info("组队房 %s 的掉线成员已过宽限，已剔除", room.room_id)
+            log.info("组队房 %s 的掉线成员已过宽限，已剔除", room.id)
 
     async def _send_one(self, player_id: uuid.UUID, payload: dict) -> int:
         try:
