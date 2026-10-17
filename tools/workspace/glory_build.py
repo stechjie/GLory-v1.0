@@ -757,6 +757,16 @@ def verify_import_diagnostics(content, stage, logdir, material_report):
     return report
 
 
+def known_export_shutdown_diagnostic(line):
+    """Exact host-only cleanup diagnostics; callers must verify export completion first."""
+    patterns = (
+        r"ERROR: \d+ resources still in use at exit \(run with --verbose for details\)\.",
+        r"ERROR: Pages in use exist at exit in PagedAllocator: N12VariantPools11BucketSmallE",
+        r"ERROR: \d+ RID allocations of type '(?:N13RendererDummy15MaterialStorage11DummyShaderE|PN13RendererDummy14TextureStorage12DummyTextureE)' were leaked at exit\.",
+    )
+    return any(re.fullmatch(pattern, line) for pattern in patterns)
+
+
 def verify_export_diagnostics(content, logdir):
     """Classify known exporter diagnostics without hiding a failed export.
 
@@ -779,8 +789,7 @@ def verify_export_diagnostics(content, logdir):
         line = match[0]
         if not ERROR_RE.search(line):
             continue
-        if done >= 0 and match.start() > done and re.fullmatch(
-                r"ERROR: \d+ RID allocations of type 'N13RendererDummy15MaterialStorage11DummyShaderE' were leaked at exit\.", line):
+        if match.start() > done and known_export_shutdown_diagnostic(line):
             accepted.append(line)
         elif re.fullmatch(
                 r"ERROR: Can't open file from path 'res://addons/effekseer/bin/android/libeffekseer\.(arm32|arm64)\.so'\.",

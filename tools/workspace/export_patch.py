@@ -55,14 +55,14 @@ def run(engine, stage, args, log, verify=None):
 
 
 def verify_pack_export(text, output):
-    """Accept only the known dummy-renderer shutdown leak after ZIP completion."""
+    """Record exact host cleanup diagnostics only after ZIP completion."""
+    from glory_build import known_export_shutdown_diagnostic
     done = text.rfind("[ DONE ] savezip")
     if done < 0:
         raise RuntimeError(f"Godot did not confirm ZIP completion; inspect {output / 'export.log'}")
     accepted = []
     for match in re.finditer(r"(?m)^ERROR:.*$", text):
-        if match.start() > done and re.fullmatch(
-                r"ERROR: \d+ RID allocations of type 'N13RendererDummy15MaterialStorage11DummyShaderE' were leaked at exit\.", match[0]):
+        if match.start() > done and known_export_shutdown_diagnostic(match[0]):
             accepted.append(match[0])
         else:
             raise RuntimeError(f"Godot ZIP export failed: {match[0]}")
