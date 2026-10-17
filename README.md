@@ -1,44 +1,129 @@
 # Glory Beta 0.04
 
+## 2026-10-17 晚：AI 托管继承（10.17 bug 文档第 1 条）
+
+**文档来源**：`E:\Users\WINDOWS\Desktop\10.17bug提交及修复.docx`。全文（正文 467 字 + 2 张截图）**只有 1 条**问题：
+
+> AI 托管存在的问题：玩家开局断线重连回来，棋子和经济与 AI 托管时不一致。修复为：AI 托管时，要继承玩家离线时的棋子和经济、商店的棋子，在已有的基础上进行发展，而不是凭空变化，玩家回来后，要和此时 AI 的棋子、经济、商店刷新情况一致。
+
+⇒ 本批**只做这一条**。`MEMORY-待修复清单.md` 里的另外三条（掉线后等 30 秒才开打 / 5 人准备后卡在战斗准备窗口）**不在本批**，一行都没动。
+
+**这句话拆成五个可验收的事实**（修复前逐条核对代码，第 1/3/5 条真的不成立）：
+
+| # | 文档要求        | 修复前的实际状态                                                                                                                                                   |
+| - | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 | 继承玩家离线时的棋子  | 半成品：`LiveBotEconomy.prepare` 会从账本 `roster` 播种，但 **佣兵被 `kind == "merc"` 直接 `continue`**，AI 顶上去的阵容里没有玩家花萝卜雇的佣兵                                               |
+| 2 | 继承经济        | 成立：金币 / 萝卜 / 科技 / 抽石次数 / 宝藏都搬了（`slot_gold` 或 `prep.gold`、`carrots`、`harvest_tech_level`、`stone_draw_count`、`owned_treasures`）                              |
+| 3 | 继承「商店的棋子」   | **不成立**：bot 每回合 `_roll_shop()` 另摇一批，玩家的 `prep.shop` 原封不动 ⇒ AI 打的那一轮和玩家回来看到的货架毫无关系                                                                          |
+| 4 | 在已有基础上发展    | 成立（bot 在继承的 roster 上继续买/合），但站位每回合被 `_arrange_board()` 重排                                                                                                   |
+| 5 | 回来与 AI 此刻一致 | **不成立**：`mirror()` 只回写金币 + 棋子（无佣兵、无商店）；客户端 `Main._on_resume_completed` 只 `SaveManager.load_run()`，**`economy.roster` 一个消费者都没有** ⇒ 金币因「未开权威」不取服务端值，棋盘留掉线前那张 |
+
+**根因一句话**：服务端那一半（播种 / `mirror`）是半成品，客户端那一半（落地）根本不存在 —— 断在「AI 打出来的状态 → 玩家棋盘」这条链的最后一米。
+
+**改动（5 个既有文件，+270 / -43；另 3 个新文件 459 行）**
+
+| 文件                                   | 改了什么                                                                                                                                                                                                 | 行数           |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| `scripts/economy/LiveBotEconomy.gd`  | 接管真人座位时**整份**继承：新增 `_seed_from_human` / `_mercs_from_roster` / `_seed_shop` / `_prep_for`；`mirror()` 补写佣兵（`kind:"merc"` + `merc_slot`）、站位（`slot`）、商店（offers/sold/refresh_uses/offer_id）              | 79 -> 169    |
+| `scripts/economy/BotPlayer.gd`       | `prepare_round` 按 `merc_round` 决定清不清佣兵（半路接管的当轮不能清，下一轮照常过期）、佣兵也发 uid；`_prep_round` 改用 `_shop_for_round`（有继承来的货架就用它；买掉哪格只标 `sold`、**不清空 offer**，回来的人才看得见那格卖掉了）；新增 `board_slots()`                      | 641 -> 714   |
+| `scripts/economy/AiHandover.gd`      | **新**。`build_slots(roster)` 纯函数：`slot` 优先、被占或缺省就找空格、棋盘满进备战席、佣兵按 `merc_slot`、查不到的 id 计 `missing` 不塞半个格子；`apply(state)` 写 `GameState`                                                                  | 新 92         |
+| `scripts/autoload/NetworkService.gd` | `_resume_seat` 加**交接块**（`bot.round >= 当前轮` 才 mirror -> 摘掉 bot -> `ai_handover_seq += 1`）；`_build_economy_state` 下发 `ai_handover_round` / `ai_handover_seq`；`_room_apply_economy` 成功后把标记归零（玩家自己动过账本了） | 7917 -> 7947 |
+| `scenes/main/Main.gd`                | `_apply_ai_handover(economy)` 一次性落地（按 `room/round/seq` 去重）；接在金币/萝卜同步**之后**（必须在 `load_run()` 后面，否则被磁盘存档盖掉），「仍在看回放」那条早退分支里也接一次                                                                         | 3870 -> 3904 |
+
+**契约（全部是加法，旧端忽略即可）**
+
+- `room_state.payload.economy.ai_handover_round` / `.ai_handover_seq`：`seq > 0` 才表示「这个座位的账本是 AI 写出来的」。
+- `prep.roster[uid]` 多两个键：`slot`（棋盘格下标，`mirror` 按 `BotPlayer.board_slots()` 写）、`merc_slot`（佣兵席）。`EconomyLedger` 只读 `unit_id/star/cost_basis/kind/merc_slot`，多出来的键惰性。
+- `prep.shop.offer_id` 在 AI 接管期间变成 `bot_<slot>_<round>_<refresh_uses>`（确定性）。客户端 `_adopt_server_shop` 靠 id 变化重新采纳货架 —— 不改 id 的话玩家回来看到的 `sold` 标记是旧的，点上去会被 `already_sold` 拒。
+- **不动** `NETWORK_PROTOCOL_VERSION`：没有新增 `@rpc`，只在既有字典里加键；新客户端配旧服务端时 `seq` 缺省 0 ⇒ 退回旧行为，不报错。
+
+**门禁**：`_qa_1017/ai_handover_check.tscn`（复用 `_qa_1016/CheckHarness.gd`；`_qa_*` 在 `export_presets.cfg` 的 `exclude_filter` 里，不进包体）
+
+跑道：`Godot_v4.7.2-stable_win64_console.exe --headless --path <工程根> _qa_1017/ai_handover_check.tscn`
+
+**修复后 PASS checked=47 failures=0**（A 段客户端布局 19 + B 段服务端接管 21 + C 段落地接线 7）。
+
+**变异对照（3/3 全红，各打各的；每次单独 restore + `sha256sum` 逐字节还原）**
+
+| 变异                                       | 结果                                                                                                                                                                   |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M1 回退整个 `LiveBotEconomy.gd`              | FAIL 7：`inherits_merc` / `inherits_merc_slot` / `inherits_shop_shelf` / `mirror_keeps_merc` / `mirror_keeps_merc_slot` / `mirror_unit_slot` / `mirror_shop_offer_id` |
+| M2 `_shop_for_round` 忽略 `bot.shop`（每轮重摇） | FAIL 1：`inherits_shop_shelf`                                                                                                                                         |
+| M3 `AiHandover._place` 忽略 `wanted`       | FAIL 5：`board_slot_kept` / `board_slot_kept_b` / `section_layout_incomplete` / `apply_board` / `section_apply_incomplete`                                            |
+
+★ **门禁写法规矩（本轮踩到两次，都记在这里）**
+
+- 第一版把「u-1 / u-2 必须还在」写成 1~2 星，跑出来 `inherits_unit_u2` 红 —— **不是修复错**：`_merge()` 把两枚同名 1 星合成了（合成会换 uid）。改成 **3 星**（`_merge` 只合 1/2 星）才把断言钉在「继承」上，而不是钉在「这一轮没被合掉」上。
+- 第一版没有分段护栏：M2 变异时 `_check_server_inheritance` **整体抛错**，而 `_ready` 照常往下跑，门禁报 **checked=26 PASS**（少检查 21 条还绿）。补 `_run_section()` 核对每段实际跑了几条之后，同样的变异变成 `section_*_incomplete` 红。这条对以后所有「一个脚本里跑好几段」的门禁都成立。
+- 商店继承用**哨兵键**判据（往账本某一格塞 `qa_marker`，自摇出来的货架不可能有它），不用「`sold[1]` 是不是 true」—— AI 自己买掉那一格也会让它变 true，那是假证据。为了让 AI 这一轮**刷不了店**（否则货架被重摇、哨兵就没了），账本金币故意给 60：`_reserve` 在 round>2 是 30，`gold - reserve < refresh_cost + 60` 立刻成立。
+
+**回归（codex 树里能跑的那几条）**：`locale_guard` PASS 59/0、`no_direct_name_read` PASS 249/0（比 10.16 的 248 多 1 = 新增 `AiHandover.gd` 一个源文件）、`prep_localized_name` PASS 74/0。`--headless --editor --quit` 无 error / parse。`project.godot` **未改**（mtime 仍是 10-16 02:50 —— 两棵树唯一差异 = user:// 隔离钥匙）。
+
+**同步到 `GLory-v1.0`（2026-10-17 晚，已完成）**
+
+| 项 | 结果 |
+| - | - |
+| 前置条件 | v1.0 的 5 个既有文件 == codex **修复前**备份，逐个 `SAME`（否则说明 v1.0 被别处改过，停止搬运） |
+| 搬运 | `shutil.copy2` **逐字节**复制 10 个文件（5 改 + 3 新增 + 2 个 `.uid`），不经文本模式重写 |
+| 三向核对 | `entries=10 mismatch=0`（codex sha == v1.0 sha，10/10） |
+| `project.godot` | 两棵树**跑门禁前后**都是 `UNCHANGED`：codex `f5aa7a43…`（LF=78）/ v1.0 `b8d26107…`（CRLF=78） |
+| v1.0 门禁 | `_qa_1017/ai_handover_check` **PASS checked=47 failures=0**（与 codex 同数） |
+| v1.0 回归 | `locale_guard` PASS 59/0、`prep_localized_name` PASS 74/0、`no_direct_name_read` PASS **244**/0 |
+| v1.0 工作区 | `git status` 只有本批 8 条（5 `M` + `_qa_1017/` + `AiHandover.gd` + `.uid`），无夹带 |
+
+- `no_direct_name_read` 在 v1.0 是 **244**、codex 是 **249**：差的 5 条全是 `scenes/debug/` 下的文件 —— 发布树没有该目录，门禁本就跳过。**数量差是环境性的，不是回归。**
+- 反向标记扫描（`ai_handover_seq` / `AiHandover` / `_seed_from_human` / `_shop_for_round` / `merc_round` / `board_slots(` … 共 11 个）命中 7 个文件，6 个在清单内；清单外的 `scripts/autoload/SaveManager.gd` 是**宽 marker 误报** —— 它的 7 处 `board_slots` 全是既有的 `GameState.board_slots` 序列化/归一化，且该文件两棵树逐字节相同（`e3be998f55266440`）、未参与本批。**不补搬。**
+- `AiHandover.gd` **没有 `class_name`**（`extends RefCounted` + 静态方法，`Main.gd` 用 `preload`）⇒ 不会往 `project.godot` 的 `_global_script_classes` 里塞条目，隔离钥匙安全。
+
+**剩下的不是「同步」，是「上线」**
+
+1. **本地测试服真机实测**：「A 看 B 的棋盘」那一侧单进程门禁量不到，必须两台机器 + 中间真掉线验一遍（`GLORY_TEST_UNLOCK` 全道具号 + 局域网测试服）。
+2. **重打包战斗服**：`tools/make_server_zip.ps1` + 手工重启。`deploy/update.sh` **只重启账号后端**，而 `NetworkService.gd` / `LiveBotEconomy.gd` / `BotPlayer.gd` 跑在**战斗服进程**里 —— 不重打包，线上还是旧行为（这是 §八 那条反复踩的坑）。
+3. **`git add / commit / push` 由用户自己做**（本批一行版本控制命令都没执行）。
+4. 协议号**未动**（无新增 `@rpc`）⇒ 不需要客户端强制更新才能连；但老客户端配新战斗服时只会忽略 `ai_handover_*` 两个键，退回旧表现。
 ## 2026-10-16 晚：本地化防复发基建（英文界面中文巡检 + 不许直读 `name` + 数据双语断言）
 
-**起因**：同一个坑第三次复发 —— `tools/prep_1008_check.gd` 里那条 `bug1_no_bare_chinese_literals` 只抓**中文字面量**（源码里写死中文、没走 `tr()`），而它自己的注释里就记着 10.08c 修过「统计行 / 上阵头像 / 宝物名」三处直读中文 `name`；10.16 又是七处。它抓不到的两类：
-① `str(def.get("name", ...))` —— 直读数据表的**中文字段**（是变量，不是字面量，扫描器看不见）；
-② 把**贴图名**当显示名（`treasure_logos/` 下就是中文文件名 `凤凰涅槃.png`）。
+**起因**：同一个坑第三次复发 —— `tools/prep_1008_check.gd` 里那条 `bug1_no_bare_chinese_literals` 只抓**中文字面量**（源码里写死中文、没走 `tr()`），而它自己的注释里就记着 10.08c 修过「统计行 / 上阵头像 / 宝物名」三处直读中文 `name`；10.16 又是七处。它抓不到的两类：  
+① `str(def.get("name", ...))` —— 直读数据表的**中文字段**（是变量，不是字面量，扫描器看不见）；  
+② 把**贴图名**当显示名（`treasure_logos/` 下就是中文文件名 `凤凰涅槃.png`）。  
 ⇒ 靠「记得写对」走不通，改成**让机器拦**。
 
 **数据侧先查清了**：11 张表 **237 条** `name_en` 全非空（avatars 60 / treasure_text 41 / race_units 40 / treasures 25 / shop 22 / pve_monsters 16 / mercenaries 12 / bosses 9 / formation_allies 5 / pets 5 / prep_skins 2）⇒ 纯调用侧问题，数据断言只是防**新增条目漏填**。
 
 **三样东西（全在 `_qa_1016/`，都是新增文件 —— 零生产代码改动、零工程配置改动）**
 
-| # | 东西 | 拦什么 |
-|---|---|---|
-| 1 | `locale_guard_check.tscn` + `LocaleTextAudit.gd` | **英文界面中文巡检**：不查代码怎么写，直接扫最终控件文本里的汉字 ⇒ 新增任何显示路径都逃不掉 |
-| 2 | `no_direct_name_read_check.tscn` | **不许直读 `name` 当显示名**：扫 `scenes/`+`ui/`+`scripts/`，粗筛出疑似行，必须落在合法清单或技术债里 |
-| 3 | 同上（第 3 段） | **数据双语断言**：237 条 `name` / `name_en` 双非空 |
+| # | 东西                                               | 拦什么                                                                    |
+| - | ------------------------------------------------ | ---------------------------------------------------------------------- |
+| 1 | `locale_guard_check.tscn` + `LocaleTextAudit.gd` | **英文界面中文巡检**：不查代码怎么写，直接扫最终控件文本里的汉字 ⇒ 新增任何显示路径都逃不掉                      |
+| 2 | `no_direct_name_read_check.tscn`                 | **不许直读 `name` 当显示名**：扫 `scenes/`+`ui/`+`scripts/`，粗筛出疑似行，必须落在合法清单或技术债里 |
+| 3 | 同上（第 3 段）                                        | **数据双语断言**：237 条 `name` / `name_en` 双非空                                |
 
 **① 巡检器 `LocaleTextAudit.gd`** —— 三道判据对付「中文不一定都是 bug」（玩家自己产生的内容本来就该原样显示）：
+
 - **控件类型**：`LineEdit` / `TextEdit` / `CodeEdit` 的 `text` 是玩家输入 ⇒ 不扫；它们自己的 `placeholder` / `tooltip` 是开发文案 ⇒ 照扫。
 - **节点路径**：路径命中 `chat` / `message` / `nickname` / `friend` / `mail` / `report` / `input` … ⇒ 整条豁免。
 - ★ **内容剔除**：把调用方给的 `player_strings`（当前账号昵称、聊天原文、好友名…）从文本里**挖掉**，再看剩下的还有没有汉字 —— 这条最要紧：`Shell Guard · 老王` 不误报，而 `Shell Guard · 老王 · 甲壳守卫` 里那个真漏点照样被抓。
 - 附带：**主窗口标题不扫**（那就是 `config/name`，两棵树靠它隔离：`测试服` / `Glory Beta 0.04`），只有子窗口标题算 UI 文案。
 
 **② 源码门禁的判据**（一行同时满足才算 offender）：出现 `get("name"` 或 `["name"]`；且不含任何「已经考虑过语言」的线索（`tr(` / `_t(` / `name_en` / `name_cn` / `is_en(` / `localized_name` / `unit_name` / `display_name`、贴图名 `.png` / `portrait` / `tname` / `catalog` / `ICON` / `LOGO` / `_DIR`、玩家名 `player` / `seat` / `message` / `who` / `actor` / `sender` / `account` / `nickname` / `owner` / `member`、反射 `property_info` / `method.get` / `parts[`、日志回放 `state.log` / `log_` / `roster` / `BattleSim` / `replay`）；且不是写字段形态 `"name": str(`；且不是纯比较排序。
+
 - ★★ **判据必须带词边界**：`tr(` 是 `str(` 的**子串** —— 写成裸子串会把所有含 `str(` 的行都豁免掉，实测 offender 从 **17 条假降到 1 条**（差点交出一份假绿的扫描）。
 - 66 处原始命中 → 粗筛剩 17 条 → 其中 **14 条是合法直读**（进 `ALLOW`，每条带 `why`：`_fighter_display_name` 兜底 / `_entry_name` 兜底 / `PrepSkin` 中文分支 / `PrepUI` 的**贴图名**参数 / `PetService.display_name` 的翻译兜底……），**3 条是真漏点但属死代码**（`CarrotCampPanel` V1/V2，进 `KNOWN_DEBT`，**带到期日 2026-11-15**，到期自动变红 —— 照抄既有 `check_allowlist.json` 的精神，防「登记一次永远绿」）。
 - **防判据被放宽**：门禁里带**正反样本自检**（10 条）—— 谁为了过门禁把 SAFE 改宽，自检立刻红。
 - **防腐烂**：`ALLOW` / `KNOWN_DEBT` 每条都必须仍在源码里找得到，否则报 stale。
 
 **验证。**
+
 - `locale_guard` **PASS checked=59 failures=0**（CJK 检测器 5 条 + 玩家文本豁免 6 条 + 数据 237 条与 2 条 + 中英两轮真界面巡检）；`no_direct_name_read` **PASS checked=248 failures=0**（正反样本 10 条 + 扫 231 个 `.gd` + 合法清单 14 条 + 技术债 3 条）。
 - 变异 **2/2 通过、且各打各的**：把联动标题改回中文 ⇒ `locale_guard` 红（`en_surface_has_chinese`）而源码门禁不红；往 `PrepUI` 插一行 `str({...}.get("name", ""))` ⇒ 源码门禁红（`unlisted_direct_name_read`）而巡检不红。两次都从备份还原，`sha256` 逐字节相符。
 
-**三条规矩（新增 UI 文案时照这个来）**
-① 显示名**只走 helper**：`PrepWidgets.unit_name(d)` / `PrepWidgets.localized_name(d)` / `UnitDetailFormat.localized_name(d)` / `DataRegistry.unit_display_name(d, is_en)` —— 不许 `def.get("name")`。
-② **贴图名参数不许塞显示名**：`treasure_logos/` 下的文件名是中文，参数命名要能自证（`art_name` vs `display_name`）。10.16 的「图标消失」就是往贴图名参数塞了显示名。
+**三条规矩（新增 UI 文案时照这个来）**  
+① 显示名**只走 helper**：`PrepWidgets.unit_name(d)` / `PrepWidgets.localized_name(d)` / `UnitDetailFormat.localized_name(d)` / `DataRegistry.unit_display_name(d, is_en)` —— 不许 `def.get("name")`。  
+② **贴图名参数不许塞显示名**：`treasure_logos/` 下的文件名是中文，参数命名要能自证（`art_name` vs `display_name`）。10.16 的「图标消失」就是往贴图名参数塞了显示名。  
 ③ 新增数据条目**必须同时填 `name_en`**。
 
 **跑法**
+
 ```
 Godot_v4.7.2-stable_win64_console.exe --headless --path <工程根> _qa_1016/locale_guard_check.tscn
 Godot_v4.7.2-stable_win64_console.exe --headless --path <工程根> _qa_1016/no_direct_name_read_check.tscn
@@ -48,16 +133,17 @@ Godot_v4.7.2-stable_win64_console.exe --headless --path <工程根> _qa_1016/no_
 
 ★ **同步状态（2026-10-16 22:52）**：本批 10.16 的改动**已同步到 `GLory-v1.0`** —— 8 个已跟踪文件（`README.md` + `BattleResult.gd` + `Main.gd` + `CarrotCampPanelV3.gd` + `PrepBoardController.gd` + `PrepUI.gd` + `FinalSettlementData.gd` + `TutorialMode.gd`）＋ 10 个新增门禁文件（`_qa_1016/` 下 `LocaleTextAudit.gd` / `locale_guard_check.*` / `no_direct_name_read_check.*` / `prep_localized_name_check.*` / `tutorial_battle_result_check.*`），逐文件 `sha256` 相符（`v1.0` 侧 `git status` = 8 `M` + 10 `??`）。四份门禁**在两棵树里都跑过**：codex 74/59/248/29 全 0 失败，v1.0 74/59/243/29 全 0 失败（243 与 248 的差额 = `scenes/debug/` 那 5 条，调试预览器在包体树里不存在、门禁已跳过它）。**未** `git add/commit/push` —— 提交与推送由你在 GitHub Desktop 做。
 
-
 ## 2026-10-16：《10.16bug提交及修复.docx》第 1 条（教程战斗显示 Defeat + 教程通关弹结算面板）
 
 文档第 1 条原文两点：①「点开『重新体验教学』，根据新手步骤教学进入战斗阶段，发现和原来预设的新手教程战斗不同」（视频里战斗结算播的是 **Defeat**，而教程预设的就是必胜的教学局）；②「新手教程结束有弹出结算面板的情况」（截图里是 **Result: Draw** + 两个 Main Menu）。两点都偶发、同会话内才出现。第 2 条（英文语音下萝卜营地四星升级棋子名未英化）另案，不在本条内。
 
 **根因 ①「显示 Defeat」：教程战斗的胜负从来不由模拟结果决定，但字幕读的是模拟结果。**
+
 - 链路：`BattleScreen._process` 的 finished 分支 → `BattleResult._finish_simulation()` → `_result = BattleSim.result_from_state(_state)` → `_emit_finished()`（水晶演出 → `_show_result_overlay()` 写字幕+播胜负音 → 停留 → `battle_finished.emit()`）→ `Main._on_battle_finished()` → `TutorialMode.after_battle(result)`。`after_battle()` **在字幕之后**才跑，而它只在 `START_PVP` 一个分支里把 `player_wins` 改写成 true，PVE/Boss 三个分支**根本不看 result**。
 - 那 PVE 教学局为什么会输：`prepare_tutorial_state()` 在 `player.is_empty()` 时直接返回 `finished=true` + `forced_result.player_wins=false`（reason `no_player_units`）⇒ **瞬间判负**。探针实测（`work/_qa_1016_tut/tutorial_battle_probe.gd`，真实 BattleSim）：3 个 1 星棋子打 3 只教学小怪（80HP/6ATK/0DEF）**必赢**（wipeout，3/0，1.9s）；空棋盘**必败**。所以「输」只有空棋盘一条路。
 - 空棋盘闸只住在 **UI 按钮层**（`PrepFlowController._on_start_battle` 的 `battle_board_gate_message()`）；`TutorialMode.begin_battle()` 只查步骤不查棋盘，而 `PrepScreen` 还有**不走按钮处理函数**就 emit `battle_requested` 的旁路（战斗加载重试、`team_round_start`）⇒ 闸门挡不全。
 - 教程输战斗**不掉** formation HP（全库只有金祭坛扣血）⇒ 没有连锁 game-over，表现就是「打了场没打的仗、还输了、然后被拽到下一步」。
+
 
 **根因 ②「通关弹结算面板」：教程收口蹭了联机结算屏，而联机残留没清。**
 - `Main._on_battle_finished()` 教程且 `step == DONE` → `TutorialMode.finish()` → `_show_game_over()`；后者取 `NetworkService.latest_match_state.get("final_settlement", {})` 当结算包。教程是本地模拟，**从来不产生 final_settlement** ⇒ 空字典；而 `can_show_details()` 只要 `kind` 非空就返 true（10.07 有意对所有 kind 放行），`kind` 只能来自**残留的** `latest_match_state`。空 data 进 `FinalSettlementPanel`：outcome 默认 2 →「Result: Draw」、seats 空 → 无详情、按钮加两次且都退化成只剩一个 ⇒ **两个 Main Menu**，与截图三特征全中。
@@ -145,6 +231,7 @@ Godot_v4.7.2-stable_win64_console.exe --headless --path <工程根> _qa_1016/no_
 - **反向保住的行为**（门禁里各有一条独立判据）：卡面点选、采购热区拾取、刷新键拾取、采购那一下不关店，以及「点弹窗外面仍然收起商店」。
 
 
+
 ### 问题2：新手教学聚焦遮罩（第一版 4 块拼环形 → 玩家实测报「闪 + 线」→ 当日返工为单块 + shader）
 
 - **反馈**：「新手教学模式需要优化，当前为：新手教程步骤、箭头提示和目标过于不明显。优化为：调整明亮度，使除步骤、箭头提示和目标外的地方变暗，方便新手玩家更好看到操作指引。举例，如图里的"步骤1/22"，要保留亮度的就是步骤1/22、红色箭头、民兵，其他区域变暗。」
@@ -202,6 +289,7 @@ Godot_v4.7.2-stable_win64_console.exe --headless --path <工程根> _qa_1016/no_
     `CARROT_HARVEST`=16、`DRAW_STONE`=17、`FOUR_STAR`=18、`HIRE_MERC`=19、`FILL_7`=**20**、  
     `FORMATION_HP`=21、`START_PVP`=22。注意 `VIEW_TREASURE`（10/22「查看宝藏」）**仍要压暗**，  
     本轮**没有**顺手放开 —— 真值表里专门留了一行钉子，防的是「按 `TAKE_TREASURE_` 前缀整片放过」。
+
 
 ### 门禁（新增两条：修复前红 → 修复后绿）
 
@@ -286,6 +374,7 @@ Godot_v4.7.2-stable_win64_console.exe --headless --path <工程根> _qa_1016/no_
 | `GLory-v1.0/tools/tutorial_carrot_flow_check.gd` | `+2 / -1`                                                                                                                                             | `803675426ec2d70c0a1eb81cbef1efe1efd9060a7c630250208c5ae0f86b3a17` |
 
 `TutorialMode.gd` 改后 **103733 B / 2186 行 / 全 CRLF**（第三轮追加前为 102957 B / 2177 行）（`_qa_1016/` 现为 **16 个文件**）。三个仓侧 `tools/` 门禁只是把"调用已不存在的 `_on_hotspot_pressed`"改成调用 `confirm_tap_step()`（**仓侧 `GLory-v1.0` 尚未 `add/commit/push`，由用户执行**）。第三轮的 `.gd.uid` 一并保留（仓里 884 个 `.uid` 全部入库，先例 `_qa_t3unique/check.gd.uid`）。本轮**无新美术资源**（`find ./assets -newermt` 为空）；`_qa_1016/**` 与 `README.md` 全部 `git check-ignore` 实测**可上传** ⇒ **桌面不放副本**。
+
 
 ### 问题3（同日第四轮）：备战-宠物界面 —— 点宠物模型弹出技能浮框
 
@@ -1373,6 +1462,7 @@ Godot 4.7 的 3v3 布阵自动战斗项目。本 README 同时是项目说明、
 
 > 当前结论（2026-08-20）：**A1、A2、A3、A5、B4、B5、E1、E2-2A/E2-2B 与 BattlePresentationDirector D0-D6 的桌面闭环已全部完成；A4 的出包/安装/冷启动门禁已在真机跑通（Debug）。** 剩下的大块是 A4 的 Release 预设与 UI 驱动样本，以及 E3 量出来但还没动手的包体减重。**D2（PrepUI 拆分）已由同事完成；D1（NetworkService 拆分）已完成 —— 六个服务全部建成、ReplayTransferService 的压缩/分块/确认/重试四件齐了、重连补看回放已接入，协议号升到 17 且服务器已重新部署，联机回归 21/21 通过，**&#x53CC;设备公网实测已完成 21 回合完整对&#x5C40;**；详见 D1 节。**&#x44;3 仍由同事负责。后文关于“35 项不可加载”和“胶囊占位体”的文字是改造前历史基线，不再代表当前桌面结果。
 
+
 ## 2026-08-19 实施进度
 
 > 状态口径：`已完成` 表示本轮约定的桌面验收已闭环；`部分完成` 表示已有可运行基础但尚未达到该项完整验收；Android 侧自 2026-08-20 起已跑通出包、安装、冷启动**以及在真机上跑完整战斗**：固定回合 1/5/20/21 的跨平台 digest 逐字段一致，实机演出指标（帧时间、显存、孤儿节点）也已录得。**仍未验的是：低端机、双设备联机、冷缓存首启，以及需要驱动备战 UI 的那部分（商店页、教学主链）**——最后一项要等同事的 D2 落地。标着「实机 digest 已验」的行指的就是前者已验、后者未验。
@@ -1700,6 +1790,7 @@ adb exec-out screencap -p > /tmp/glory-launch.png
 下面每项是可以单独交给 AI 落地并验收的工作单。顺序不可颠倒：先保证资产、构建和测试可信，再做战斗表现升级。
 
 
+
 ### A. 构建、资源与质量门禁
 
 #### A1 — 建立可复现资产清单（P0）
@@ -1908,6 +1999,7 @@ adb exec-out screencap -p > /tmp/glory-launch.png
 - **验收：** 不进入完整对局也能验证每个 profile、锚点、遮挡、循环清理和低档 fallback；截图和指标可作为美术评审附件。
 
 
+
 ### C. 战斗代码对标与模仿方案（P1，必须先完成一个纵向切片）
 
 #### C0 — 本次实机评估结论
@@ -1985,6 +2077,7 @@ BattleSimShared（确定性规则，只产出语义事件）
 #### C5 — 可直接交给 AI 的 `BattlePresentationDirector` 参考清单
 
 完整的职责边界、现有代码接入点、事件 schema、调度/seek/skip 规则、`.tres` profile 字段、分提交验收和测试矩阵见 [BattlePresentationDirector AI 实施参考清单](docs/BATTLE_PRESENTATION_DIRECTOR_IMPLEMENTATION_CHECKLIST.md)。AI 每次只能落实其中一个 D 阶段；先让 schema、回放哈希和单位锚点通过，再加新的演出效果。
+
 
 
 ### D. 代码与联机拆分
@@ -3004,6 +3097,7 @@ BattleVfx 里那三条旧调用点**删干净**（挂 `apocalypse_charging`，�
 
 
 
+
 ## 2026-09-24：技能与弹道 10 条（命中后结算 / 落雷重设计 / 沉默箭 / 血契连线 / 法师首技能 / 弓箭手金属箭）
 
 依据用户《技能及弹道效果问题提交及修复.docx》（客户端 `GloryBeta0924`）的 **10 条**投射物与技能表现问题。
@@ -3203,6 +3297,7 @@ composer 新增 `_oga_silence_bolt()` 走 `VFXFlipbookProjectile3D` —— 该�
 它们若也有"表演目标与真实目标不一致"的毛病需要各自接线（**本轮未做，也未声称做了**）；
 血条队伍色只在**战斗内**生效，备战 / 详情页未同步。
 详见[9.24 技能与弹道问题修复记录](docs/9.24技能及弹道问题修复记录.md)。
+
 
 
 
@@ -3646,6 +3741,7 @@ A 费用档位 / B 教程恒免费（刷 **999 次**仍为 0）/ C **递归扫 `
 ★ **未做真机观感验收**；批跑只覆盖「备战界面 + 本轮直接相邻」面，**批跑 ≠ 全集**；**未重新导出 EXE / APK**。
 
 详见[9.31 备战光圈对齐持续守卫修复记录](docs/9.31备战光圈对齐持续守卫修复记录.md)。
+
 
 
 
