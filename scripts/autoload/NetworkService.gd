@@ -2541,6 +2541,11 @@ func _build_economy_state(room: Dictionary, slot: int) -> Dictionary:
 			"refresh_uses": int(shop.get("refresh_uses", 0)),
 		},
 		"roster": (prep.get("roster", {}) as Dictionary).duplicate(true),
+		# AI 托管交接标记（10.17 bug 文档第 1 条）：seq > 0 表示这个座位的棋子/经济/
+		# 商店是 AI 打出来的，客户端要一次性落地（Main._apply_ai_handover）。
+		# seq 单调递增且在玩家做出第一笔经济操作后归零，重连读两次不会重放。
+		"ai_handover_round": int(prep.get("ai_handover_round", -1)),
+		"ai_handover_seq": int(prep.get("ai_handover_seq", 0)),
 		"gamble_used": bool(prep.get("gamble_used", false)),
 	}
 
@@ -5785,6 +5790,26 @@ func _resume_seat(sender: int, token: String) -> void:
 	peer_slot[sender] = slot
 	room.peer_slot = peer_slot
 	_peer_room[sender] = int(room.get("id", 0))
+	# --- AI 托管 -> 玩家收回座位：交接必须过账本（10.17 bug 文档第 1 条）------------
+	# 这个座位掉线期间是 AI 顶着的。先把 AI 此刻的棋子/佣兵/金币/商店原样 mirror 回
+	# prep，再摘掉 bot —— 否则玩家回来看到的是掉线前那张空棋盘 + 开局的起始金，
+	# 和 AI 实际打的完全是两套。
+	# 只有 AI 已经打过这一轮（bot.round >= 当前轮）才搬；它还没接手这一轮时，
+	# 账本里那份就是战后结算刚写好的正确状态，再 mirror 一次反而会把新商店冲掉。
+	var handover_bots: Dictionary = room.get("bot_states", {})
+	var retired: Variant = handover_bots.get(slot, null)
+	if typeof(retired) == TYPE_DICTIONARY and not (retired as Dictionary).is_empty():
+		var handover_bot: Dictionary = retired
+		if int(handover_bot.get("round", 0)) >= int(room.get("round_index", 1)):
+			LiveBotEconomy.mirror(room, slot, handover_bot)
+		handover_bots.erase(slot)
+		room["bot_states"] = handover_bots
+		var handover_prep := _room_prep(room, slot)
+		handover_prep["ai_handover_round"] = int(room.get("round_index", 1))
+		handover_prep["ai_handover_seq"] = int(handover_prep.get("ai_handover_seq", 0)) + 1
+		_net_log("ai handover room=%d slot=%d round=%d seq=%d gold=%d" % [
+			int(room.get("id", 0)), slot, int(room.get("round_index", 1)),
+			int(handover_prep["ai_handover_seq"]), int(handover_prep.get("gold", 0))])
 	# 座位可能仍是 reserved，也可能宽限已过被转成了 dummy(AI 顶着)——都要变回 player。
 	# A 重连后需重新准备，故 ready 复位 false。
 	var states: Array = room.get("slot_states", [])
@@ -6723,6 +6748,11 @@ func _room_apply_economy(room: Dictionary, slot: int, action: String, payload: D
 		if slot >= 0 and slot < slot_gold.size():
 			slot_gold[slot] = int(receipt.get("gold_after", slot_gold[slot]))
 			room["slot_gold"] = slot_gold
+			# 玩家自己动过账本了 —— 交接标记到此作废。留着它会让"重开客户端再重连"
+			# 把 AI 那份 roster 又盖回去（客户端只按 seq 去重，跨进程记不住）。
+			if int(prep.get("ai_handover_seq", 0)) > 0:
+				prep["ai_handover_seq"] = 0
+				prep["ai_handover_round"] = -1
 		_net_log("economy room=%d slot=%d %s delta=%d gold=%d rev=%d" % [
 			int(room.get("id", 0)), slot, action,
 			int(receipt.get("delta", 0)), int(receipt.get("gold_after", 0)),
