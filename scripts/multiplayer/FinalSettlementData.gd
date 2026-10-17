@@ -111,7 +111,18 @@ static func update_round_damage(seats: Array, stats: Array, element_by_slot: Dic
 # 10.07 bug 文档第 8 条：任何回合结束都有结算面板（PVE 回合也要算我方上阵佣兵的
 # 数据）⇒ 这里对所有 kind 一律放行。判据本身保留（它还要认 model 里现成的
 # show_details），只是不再按战斗种类把 PVE 挡在外面。
+#
+# 10.16 bug 第 1 条（Bug ②）：**没有结算包就没有详情可看。**
+# 教程收口（Main._on_battle_finished 的 DONE 分支）走的是本地模拟，从来不产生
+# final_settlement；而 match_state 可能是上一场联机残留下来的 latest_match_state
+# （kind 非空）。那只能证明「这个会话曾经打过一局联机」，不能证明「这一局有详情」——
+# 空 data 一律不放行，让 GameOverScreen 根本不画「查看详情」按钮。
+# 生产上所有真结算路径都有非空 data（联机终局由服务端写 final_settlement，
+# 本地房主走 FinalSettlementData.build_local），所以这条守卫只拦
+# 「拿残留冒充本局结算」这一种情况。
 static func can_show_details(data: Dictionary, match_state: Dictionary, replay: Dictionary = {}) -> bool:
+	if data.is_empty():
+		return false
 	var kind := str(match_state.get("kind", replay.get("kind", data.get("kind", ""))))
 	if not kind.is_empty():
 		return true

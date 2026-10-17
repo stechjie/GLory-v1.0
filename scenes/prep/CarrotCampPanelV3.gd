@@ -11,6 +11,9 @@ const TEX_STONE_REN: Texture2D = preload("res://assets/props/carrot_system/stone
 const TEX_STONE_REVEAL: Texture2D = preload("res://assets/props/carrot_system/vfx/atlas_stone_reveal_4x4.png")
 # 10.11 第 8 条：有存货的升级石要散发柔和星爆（纯 _draw() 组件，不进 procedural_ui_ratchet）。
 const StarBurstScript := preload("res://ui/components/StarBurst.gd")
+# 10.16 bug 文档第 2 条：棋子显示名统一走 PrepWidgets.unit_name（按 id 查正式表的
+# name_en）。本文件 extends PanelContainer，不在 PrepShared 的继承链上，得自己 preload。
+const PrepWidgets := preload("res://scenes/prep/PrepWidgets.gd")
 
 const PANEL_SIZE := Vector2(760.0, 520.0)
 const GOLD := Color(0.94, 0.72, 0.34)
@@ -584,7 +587,13 @@ func _refresh_four_star_list() -> void:
 		var info := VBoxContainer.new()
 		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row_content.add_child(info)
-		info.add_child(_label("%s  ★★★" % str(unit_def.get("name", unit_def.get("id", _t("棋子", "Unit")))), 16, TEXT))
+		# 10.16 bug 文档第 2 条：行标题的棋子名走统一的本地化取法。
+		# 直读 unit_def.name 在英文界面下永远是中文 —— DataRegistry
+		# .canonicalize_unit_display_names() 只同步「改名」，不做本地化；
+		# 按 locale 取 name_en 的只有 unit_display_name()（ PrepWidgets.unit_name ）。
+		var unit_name := PrepWidgets.unit_name(unit_def) if not unit_def.is_empty() \
+			else _t("棋子", "Unit")
+		info.add_child(_label("%s  ★★★" % unit_name, 16, TEXT))
 		var reason := _t("1 颗%s石 ＋ %d 金", "1 %s Stone + %d Gold") % [_stone_display(stone_type), CarrotEconomy.four_star_gold(int(unit_def.get("tier", 0)))]
 		if not ready:
 			reason = _four_star_reason(str(check.get("error", "")), stone_type)

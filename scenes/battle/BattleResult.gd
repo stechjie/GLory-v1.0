@@ -12,6 +12,19 @@ func _finish_simulation() -> void:
 	# 本地模拟即结果。组队联机不走这里——那条路播的是服务器下发的权威 replay，
 	# 结算取 match_state（见 Main._on_network_match_state_received）。
 	_result = BattleSim.result_from_state(_state)
+	# 10.16 bug 第 1 条（第 1 层兜底）：教程战斗的胜负**不由模拟结果决定**，步骤推进
+	# 才是叙事本身。而本地模拟会按真实规则判胜负，下面这几条路都会给出「失败/平局」：
+	#   * 空棋盘开局：prepare_tutorial_state 的 no_player_units 强制判负
+	#     （重启教程 / 断点恢复后棋盘被清空、旁路开战都会走到）；
+	#   * 双方全灭 → double_ko 平局；
+	#   * 超时按剩余战力比较 → 1 星棋子可能打不完 80HP 的小怪。
+	# TutorialMode.after_battle() 原来只在 START_PVP 一处改写过结果，而那时
+	# _emit_finished() 的字幕早已播完（顺序是：结果 → 水晶演出 → 字幕 → 停留 →
+	# battle_finished），玩家先看到「失败」再被拽回备战 —— 正是本次反馈的视频现象。
+	# 所以改写在**拿到结果之后、任何演出之前**完成，字幕 / 胜负音 / 水晶演出 /
+	# battle_finished 信号读到的就是同一份胜利结果。
+	if GameState.tutorial_mode:
+		TutorialMode.coerce_victory(_result)
 	_refresh_summary()
 	# 10.04 bug 文档第 3 条：本地模拟这条路不经过 BattleScreen._finish_replay /
 	# play_victory_finish，必须自己补一次动作归位，否则结束帧在移动的棋子

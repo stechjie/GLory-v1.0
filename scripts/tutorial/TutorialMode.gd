@@ -357,6 +357,18 @@ func can_start_battle() -> bool:
 	return step in [Step.START_PVE_1, Step.START_PVE_2, Step.START_BOSS, Step.START_PVP]
 
 
+# 当前这一步开战前的最低上阵数。0 = 不在开战步、不设限。
+#
+# 与 battle_board_gate_message() 共用同一个来源：那条提示里的数字必须由这里算，
+# 否则会出现「提示说少于 3、实际按 7 判」这类两处漂移。开战闸
+# （_ensure_board_ready_for_battle）与 PrepFlowController 的 UI 闸门也都读它。
+func required_board_units() -> int:
+	if step in [Step.START_PVE_1, Step.START_PVE_2, Step.START_BOSS]:
+		return EARLY_DEPLOY_UNITS
+	if step == Step.START_PVP:
+		return FILL_TARGET_UNITS
+	return 0
+
 # 9.25 教程优化第 4/5 条：开战前的最低上阵人数门槛。
 #
 # 文档里的「步骤 3 / 5 / 14 / 22」是 STEP_SEQUENCE 的 1-based 序号（也就是气泡右上角
@@ -370,11 +382,7 @@ func can_start_battle() -> bool:
 # 与 follow_arrow_hint() 的「请先完成前置任务」走同一个出口（PrepFlowController 的
 # show_message），因此样式天然一致。
 func battle_board_gate_message() -> String:
-	var need := 0
-	if step in [Step.START_PVE_1, Step.START_PVE_2, Step.START_BOSS]:
-		need = EARLY_DEPLOY_UNITS
-	elif step == Step.START_PVP:
-		need = FILL_TARGET_UNITS
+	var need := required_board_units()
 	if need <= 0 or GameState.normal_unit_count() >= need:
 		return ""
 	return _t("上阵棋子数目少于%d" % need, "Deploy at least %d units first" % need)
@@ -420,10 +428,111 @@ func begin_battle() -> bool:
 		if _target_provider != null:
 			_target_provider.show_feedback(follow_arrow_hint())
 		return false
+	# 第 2 层兜底：开战闸 + 状态自愈。只查步骤的 can_start_battle() 挡不住「棋盘是空的」，
+	# 而空棋盘一开战就会被 prepare_tutorial_state 按 no_player_units 判负。
+	if not _ensure_board_ready_for_battle():
+		return false
 	if step == Step.START_PVP:
 		opponent_snapshot = _tutorial_opponent_snapshot()
 	_detach()
 	return true
+
+# 开战前的最后一道闸（10.16 bug 第 1 条，第 2 层兜底）。
+#
+# 为什么需要它：重启教程（「重新体验教学」）或断点恢复都会走 TutorialMode.start() /
+# restore_checkpoint()，两条路都会把 board_slots 清空重铺。若玩家在铺满之前就点到
+# 「开始战斗」， prepare_tutorial_state 看到空棋盘会直接返回
+# forced_result.player_wins=false（no_player_units），于是结算字幕播「失败」，
+# 而 TutorialMode.after_battle() 又照样把步骤往前推 —— 玩家看到的就是
+# 「打了场没打的仗、还输了、然后被拽到下一步」。
+#
+# 原来的闸门只住在 UI 按钮层（PrepFlowController._on_start_battle 的
+# battle_board_gate_message），那条路有旁路（PrepScreen 的战斗加载重试、
+# team_round_start、断点恢复后的自动开战），挡不全。所以闸门搬进这里 ——
+# begin_battle() 是 Main._on_battle_requested 开战前的最后一个函数，
+# 所有入口都要经过它。
+#
+# 顺序不能换：先自愈、再判定、最后才允许开战。
+#   * 自愈只从待命区补，且挑「放上去不会触发合成」的棋子（合成可让上阵数不增反减）；
+#   * 补完还不够 → 不烧调用方的一次性发射锁，直接给提示返回 false，让玩家自己拖。
+func _ensure_board_ready_for_battle() -> bool:
+	var need := required_board_units()
+	if need <= 0:
+		return true
+	var missing := need - GameState.normal_unit_count()
+	if missing <= 0:
+		return true
+	var moved := _auto_deploy_from_bench(missing)
+	if moved > 0:
+		# 自愈搬动了棋盘：必须刷一次视图，否则玩家看到的计数还是旧的
+		#（返回 false 时人还停在备战页，尤其不能忍）。
+		_refresh_prep()
+		print("[TUTORIAL] begin_battle self-heal: moved %d unit(s) from bench (need %d, had %d)" % [moved, need, need - missing])
+	if GameState.normal_unit_count() < need:
+		if _target_provider != null:
+			_target_provider.show_feedback(battle_board_gate_message())
+		return false
+	return true
+
+# 从待命区挑棋子补上棋盘，返回真正搬上去几个。
+#
+# 挑法（两条都只为「让上阵数真的增加」服务）：
+#   1. 不放会触发合成的：放上去若凑满 copies_to_upgrade(star) 个同名同星，
+#      当场合成，上阵数不增反减（1 星 2 个就合、2 星 3 个才合，见
+#      GameConstants.STAR_UPGRADE_COPIES）；
+#   2. 不放重复的唯一棋子：unique_on_board 的棋子棋盘上只允许 board_limit 个，
+#      战斗侧 build_tutorial_player_fighters 会用 _is_duplicate_unique_cell 把
+#      多出来的那个直接跳过 —— 搬上去也不参战，纯占格子。
+func _auto_deploy_from_bench(want: int) -> int:
+	if want <= 0:
+		return 0
+	var cap := GameState.normal_unit_cap()
+	# 棋盘上每个 (id, star) 的现有数量，合成按这个口径判。
+	var counts := {}
+	var unique_used := {}
+	for cell in GameState.board_slots:
+		if typeof(cell) != TYPE_DICTIONARY:
+			continue
+		var data := cell as Dictionary
+		var key := _merge_key(data)
+		counts[key] = int(counts.get(key, 0)) + 1
+		var uid := str(data.get("id", ""))
+		if not uid.is_empty():
+			unique_used[uid] = int(unique_used.get(uid, 0)) + 1
+	var moved := 0
+	for bench_index in GameState.bench_slots.size():
+		if moved >= want or GameState.normal_unit_count() >= cap:
+			break
+		var bench_cell: Variant = GameState.bench_slots[bench_index]
+		if typeof(bench_cell) != TYPE_DICTIONARY:
+			continue
+		var data := bench_cell as Dictionary
+		var star := int(data.get("star", 1))
+		# (1) 会触发合成 → 跳过
+		if int(counts.get(_merge_key(data), 0)) + 1 >= GameState.copies_to_upgrade(star):
+			continue
+		# (2) 唯一棋子且棋盘上已经用满额度 → 跳过
+		var def: Dictionary = data.get("def", {})
+		if bool(def.get("unique_on_board", false)):
+			var uid := str(data.get("id", def.get("id", "")))
+			var limit := maxi(1, int(def.get("board_limit", 1)))
+			if not uid.is_empty() and int(unique_used.get(uid, 0)) >= limit:
+				continue
+		var board_index := GameState.board_slots.find(null)
+		if board_index < 0:
+			break
+		GameState.board_slots[board_index] = data
+		GameState.bench_slots[bench_index] = null
+		counts[_merge_key(data)] = int(counts.get(_merge_key(data), 0)) + 1
+		var moved_uid := str(data.get("id", ""))
+		if not moved_uid.is_empty():
+			unique_used[moved_uid] = int(unique_used.get(moved_uid, 0)) + 1
+		moved += 1
+	return moved
+
+# 合成口径的键：同名**同星**才合成。星级不同不合成（1 星 + 2 星各算各的）。
+func _merge_key(cell: Dictionary) -> String:
+	return "%s@%d" % [str(cell.get("id", "")), int(cell.get("star", 1))]
 
 func battle_kind() -> String:
 	match step:
@@ -436,6 +545,35 @@ func battle_kind() -> String:
 
 func pve_enemy_count() -> int:
 	return 4 if step == Step.START_PVE_2 else 3
+
+# 教程战斗强制胜利（10.16 bug 第 1 条，第 1 层兜底）。
+#
+# 调用点是 BattleResult._finish_simulation() —— 拿到结果之后、任何演出之前。
+# 那里是本地模拟路的唯一收口点（BattleUI._finish_simulation 只是 pass 占位，
+# BattleResult 才是真身；BattleScreen._process 的 finished 分支与 _skip_animation
+# 两条路都汇到它），所以「教程战斗必为胜」由这一处保证，不依赖调用方做对。
+#
+# 为什么需要它：教程是叙事流程，胜负只由步骤推进表达，战斗本身只是过场。而本地
+# 模拟按真实规则判胜负，下面这几条路都会给出「失败 / 平局」：
+#   * 空棋盘开局：prepare_tutorial_state 的 no_player_units 强制判负
+#     （重启教程 / 断点恢复后棋盘被清空、旁路开战都会走到）；
+#   * 双方全灭 → double_ko 平局；
+#   * 超时按剩余战力比较 → 1 星棋子可能打不完 80HP 的小怪。
+# 原来只有本文件 after_battle() 的 START_PVP 分支改写过结果，且那发生在
+# battle_finished 之后 —— 结算字幕（BattleResult._show_result_overlay）早把那句
+# 「失败」播完了，玩家先看到失败、再被拽回备战，正是本次反馈的视频现象。
+#
+# 只改结果字典，**不动 GameState.enemy_formation_hp**：备战界面的敌方法阵血量在
+# 教程中途要保持 10/10（START_PVP 通关时由 after_battle() 自己置 0）。
+func coerce_victory(result: Dictionary) -> void:
+	if result.is_empty():
+		return
+	result["kind"] = battle_kind()
+	result["player_wins"] = true
+	result["is_draw"] = false
+	result["reason"] = "tutorial_forced_victory"
+	result["enemy_alive"] = 0
+	result["enemy_hp_current"] = 0
 
 func after_battle(result: Dictionary) -> void:
 	match step:
@@ -450,10 +588,7 @@ func after_battle(result: Dictionary) -> void:
 			_start_treasure(TREASURE_2)
 			_advance_to(Step.TAKE_TREASURE_2)
 		Step.START_PVP:
-			result["kind"] = "pvp"
-			result["player_wins"] = true
-			result["enemy_alive"] = 0
-			result["enemy_hp_current"] = 0
+			coerce_victory(result)
 			GameState.enemy_formation_hp = 0
 			_advance_to(Step.DONE)
 	GameState.gold = TUTORIAL_GOLD
