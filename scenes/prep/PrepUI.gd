@@ -22,7 +22,9 @@ const SETTINGS_MODAL_PRIORITY := 50
 const TutorialModeScript := preload("res://scripts/tutorial/TutorialMode.gd")
 const CarrotCampPanelScript := preload("res://scenes/prep/CarrotCampPanelV3.gd")
 # 10.11 第 8 条：营地入口按钮在有升级石时散发柔和星爆（纯 _draw()，不进 procedural_ui_ratchet）。
-const StarBurstScript := preload("res://ui/components/StarBurst.gd")
+const CampEntryGlowScript := preload("res://ui/components/CampEntryGlow.gd")
+# 入口角标那枚石头图标（通用款，不分天 / 地 / 人 —— 角标说的是「队伍有石头」）。
+const CARROT_ENTRY_STONE_ICON_PATH := "res://assets/props/carrot_system/stones/stone_unknown.png"
 const UNIT_TEAM_RING_SHADER := preload("res://shaders/unit_team_ring.gdshader")
 
 # Keep the selector API used by preparation-screen regression checks while the
@@ -190,7 +192,14 @@ var _carrot_counter_label: Label
 # 萝卜数量那块底板。教学里要指着它（收获萝卜那一步），也要跟入口按钮一起显隐。
 var _carrot_counter_panel: PanelContainer
 # 10.11 第 8 条：营地入口按钮上那层星爆（有升级石才亮）。
-var _carrot_button_burst: Control
+# 10.18：入口提示改成两级 —— 一级（队伍有升级石）柔和同色呼吸光 + 石头角标，
+# 二级（有棋子能升 4★）转金、更亮、角标变 4★。等级存一份，才看得出「从不满足
+# 变满足」的那一刻该不该弹一下 + 出声。
+var _carrot_entry_glow: Control
+var _carrot_entry_badge: Control
+var _carrot_entry_badge_icon: TextureRect
+var _carrot_entry_badge_label: Label
+var _carrot_entry_level := -1
 var _carrot_dimmer: ColorRect
 var _tutorial_target_provider: TutorialTargetProviderScript
 
@@ -1275,34 +1284,59 @@ func _build_top_actions() -> void:
 	var carrot_btn := PrepWidgets.make_framed_text_button("", CARROT_BTN_PATH,
 		MERC_BTN_SIZE, 16, _toggle_carrot_camp)
 	_carrot_button = carrot_btn
-	# 10.11 第 8 条：星爆先于文字挂上 —— 子节点按树序绘制，所以它落在按钮贴图之上、
-	# 「萝卜营地」文字之下（不挡字；文字反过来也压不住它）。有升级石时由
-	# _refresh_carrot_counter() 打开。
-	var carrot_burst: Control = StarBurstScript.new()
-	carrot_burst.name = "CarrotCampBurst"
-	# ★ 半径系数 1.3：入口按钮 132×132 里那枚 512² 徽章几乎填满整个方框（实测不透明
-	#   像素半径 ≈ 65 / 66px），系数 1.0 时星芒末端正好停在图标边缘 ⇒ 只看到「压在图标
-	#   上」，没射到外面。1.3 ⇒ 末端约 86px，比图标多探出约 20px —— 用户 10.11 口径
-	#   「从图标中心向外散发到图标外面一点」。
-	#   ⚠️ 第三参 `inner` **不传**（默认 0.0）= 星芒从图标中心起画，正是「从图标中心向外」；
-	#   传 > 0 会变成「从图标边缘起画」，那是上一版口径、已被推翻，别再传。
-	# ★ 颜色换冰蓝白（不带黄）：用户 10.11 口径「不要黄色，不够显眼」。徽章本身是暖橙、
-	#   按钮又压在**亮草坪**上，暖黄系两头被吃平；冰蓝白与暖橙正互补，在绿底上最跳 ——
-	#   「显眼」靠色相对比，不是靠堆亮度。
-	# ★ 明暗交替：短芒压到 0.4（长芒 1.0）⇒ 一圈亮一圈暗；芒宽 ×1.5 加粗，10 根芒才
-	#   撑得起星爆形状（半径放大后细芒会显脏）。
-	carrot_burst.setup(Color(0.62, 0.86, 1.0), 1.3)
-	carrot_burst.base_alpha = 1.0
-	carrot_burst.short_ray_alpha = 0.4
-	carrot_burst.ray_width_scale = 1.5
-	carrot_burst.visible = false
-	carrot_btn.add_child(carrot_burst)
+	# 10.18：入口提示换成「背后一圈呼吸光 + 右上角小角标」。
+	# 换掉的是 10.11 那颗冰蓝白星爆 —— 10 根星芒压在橙色徽章**上面**，Leno 的评价是
+	# 「像贴纸 / 镜头光斑，冷暖冲突」。光环放到徽章背后就不压图了，颜色也跟着提示
+	# 等级走（一级暖同色、二级转金），不再跟徽章抢色相。
+	var carrot_glow: Control = CampEntryGlowScript.new()
+	carrot_glow.name = "CarrotCampGlow"
+	carrot_glow.visible = false
+	carrot_btn.add_child(carrot_glow)
+	# ★ 必须排到 0 号位：子节点按树序绘制，而徽章贴图是 make_framed_text_button 先挂的
+	#   frame。排在它后面 = 光压在徽章上（正是这次要改掉的毛病）；排到它前面才是「背后」。
+	carrot_btn.move_child(carrot_glow, 0)
 	# ★ 必须显式铺满：**Button 不是 Container**，新挂上去的子 Control 尺寸不会自己跟上来，
-	#   `size` 会停在 (0,0) ⇒ StarBurst._draw() 里 `radius <= 1.0` 直接 return，
-	#   **一个像素都画不出来**（而 `visible` 却是 true —— 门禁只看 visible 就会漏掉这一层）。
-	#   同文件既有写法：PrepWidgets.make_framed_text_button 里的 frame / lbl 都自己设了 anchors。
-	carrot_burst.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_carrot_button_burst = carrot_burst
+	#   `size` 会停在 (0,0) ⇒ _draw() 里 `peak <= 1.0` 直接 return，**一个像素都画不出来**
+	#   （而 `visible` 却是 true —— 门禁只看 visible 就会漏掉这一层）。10.11 实测踩过。
+	carrot_glow.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_carrot_entry_glow = carrot_glow
+	# 右上角小角标：一级显示石头图标 + 总数，二级换成「4★」。
+	# 刻意**不加底板** —— PanelContainer + StyleBoxFlat 会把 procedural_ui_ratchet 顶红，
+	# 文字描边在亮草坪上已经够读了（同 carrot_lbl 的写法）。
+	var carrot_badge := Control.new()
+	carrot_badge.name = "CarrotCampBadge"
+	carrot_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	carrot_badge.visible = false
+	carrot_badge.anchor_left = 0.52
+	carrot_badge.anchor_right = 1.0
+	carrot_badge.anchor_top = 0.0
+	carrot_badge.anchor_bottom = 0.26
+	carrot_btn.add_child(carrot_badge)
+	_carrot_entry_badge = carrot_badge
+	var badge_icon := TextureRect.new()
+	badge_icon.texture = load(CARROT_ENTRY_STONE_ICON_PATH)
+	badge_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	badge_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	badge_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge_icon.anchor_left = 0.0
+	badge_icon.anchor_right = 0.46
+	badge_icon.anchor_top = 0.0
+	badge_icon.anchor_bottom = 1.0
+	carrot_badge.add_child(badge_icon)
+	_carrot_entry_badge_icon = badge_icon
+	var badge_lbl := Label.new()
+	badge_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	badge_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	badge_lbl.anchor_left = 0.42
+	badge_lbl.anchor_right = 1.0
+	badge_lbl.anchor_top = 0.0
+	badge_lbl.anchor_bottom = 1.0
+	badge_lbl.add_theme_font_size_override("font_size", 15)
+	badge_lbl.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.95))
+	badge_lbl.add_theme_constant_override("outline_size", 4)
+	carrot_badge.add_child(badge_lbl)
+	_carrot_entry_badge_label = badge_lbl
 	var carrot_lbl := Label.new()
 	_carrot_button_label = carrot_lbl
 	carrot_lbl.text = "Carrot Camp" if LocaleManager.get_locale().begins_with("en") else "萝卜营地"
@@ -2083,13 +2117,7 @@ func _refresh_carrot_counter() -> void:
 	var carrot_visible := _carrot_ui_visible()
 	if _carrot_button != null and is_instance_valid(_carrot_button):
 		_carrot_button.visible = carrot_visible
-	# 10.11 第 8 条：队伍里只要有任意一颗升级石（天 / 地 / 人），入口按钮就亮星爆提醒 ——
-	# 「萝卜营地里存在升级石时，萝卜营地 UI 要散发柔和星爆」。入口不显示时一并关掉。
-	var stone_total := 0
-	for value in GameState.team_upgrade_stones.values():
-		stone_total += int(value)
-	if _carrot_button_burst != null and is_instance_valid(_carrot_button_burst):
-		_carrot_button_burst.visible = carrot_visible and (stone_total > 0 or (GameState.FINAL_ROUND == 13 and GameState.round_index >= 6 and not GameState.free_stone_claimed))
+	_refresh_carrot_entry_hint(carrot_visible)
 	if _carrot_counter_panel != null and is_instance_valid(_carrot_counter_panel):
 		_carrot_counter_panel.visible = carrot_visible
 	if _carrot_counter_label == null or not is_instance_valid(_carrot_counter_label):
@@ -2100,6 +2128,82 @@ func _refresh_carrot_counter() -> void:
 	_carrot_counter_label.tooltip_text = ("Current carrots" if LocaleManager.get_locale() == "en" else "现有萝卜")
 	_carrot_counter_label.add_theme_color_override("font_color",
 		Color(0.72, 1.0, 0.58) if amount >= capacity else Color(1.0, 0.94, 0.70))
+
+
+# 10.18：萝卜营地入口的**两级**提示。
+#
+# Leno 的口径：只要队伍里有升级石就要提示（提醒队友石头到账了）；有棋子能升 4★ 时
+# 要更强。所以：
+#   · 一级 = 队伍有任意一颗升级石，或本局还能免费抽一次（13 回合营地模式）。
+#     柔和的暖同色呼吸光 + 右上角「石头图标 + 数量」。
+#   · 二级 = 棋盘 / 待命区里**真有**一枚三星棋子现在就能升 4★。光转金、更亮，
+#     角标换成「4★」；**从不满足变满足的那一刻**弹一下 + 一声提示音，之后安静呼吸。
+#
+# 等级存在 _carrot_entry_level 里：只有「上一次不是二级、这一次是」才弹 —— 每次
+# refresh 都弹会变成持续闪烁，那不是提示是干扰。首次建页面（level == -1）也不弹。
+func _refresh_carrot_entry_hint(carrot_visible: bool) -> void:
+	var stone_total := 0
+	for value in GameState.team_upgrade_stones.values():
+		stone_total += int(value)
+	var free_draw_ready := GameState.FINAL_ROUND == 13 and GameState.round_index >= 6 		and not GameState.free_stone_claimed
+	var level := 0
+	if stone_total > 0 or free_draw_ready:
+		level = 1
+	if _any_four_star_ready():
+		level = 2
+	if not carrot_visible:
+		level = 0
+	var was := _carrot_entry_level
+	_carrot_entry_level = level
+
+	if _carrot_entry_glow != null and is_instance_valid(_carrot_entry_glow):
+		_carrot_entry_glow.visible = level > 0
+		if level == 2:
+			# 金、更亮、略微再探出一点 —— 二级必须一眼比一级强。
+			_carrot_entry_glow.setup(Color(1.0, 0.86, 0.40), 0.82, 1.12)
+		elif level == 1:
+			# 暖同色系：徽章本身是暖橙，光跟着它走就不会像上一版那样冷暖打架。
+			_carrot_entry_glow.setup(Color(1.0, 0.72, 0.34), 0.44, 1.06)
+		# 「从不满足变满足」那一刻弹一下 + 出声。was < 0 是首次建页面，不弹。
+		if level == 2 and was >= 0 and was < 2:
+			_carrot_entry_glow.call("pulse")
+			SfxService.play("ui_popup")
+
+	if _carrot_entry_badge != null and is_instance_valid(_carrot_entry_badge):
+		_carrot_entry_badge.visible = level > 0
+	if _carrot_entry_badge_icon != null and is_instance_valid(_carrot_entry_badge_icon):
+		# 二级的角标就是「4★」两个字，石头图标让位给它。
+		_carrot_entry_badge_icon.visible = level == 1
+	if _carrot_entry_badge_label != null and is_instance_valid(_carrot_entry_badge_label):
+		var en := LocaleManager.get_locale() == "en"
+		if level == 2:
+			_carrot_entry_badge_label.text = "4★"
+			_carrot_entry_badge_label.add_theme_color_override("font_color", Color(1.0, 0.90, 0.52))
+		elif stone_total > 0:
+			_carrot_entry_badge_label.text = str(stone_total)
+			_carrot_entry_badge_label.add_theme_color_override("font_color", Color(1.0, 0.94, 0.78))
+		else:
+			# 一级但手上还没有石头 = 免费抽那一次还没领。
+			_carrot_entry_badge_label.text = "Free" if en else "免费"
+			_carrot_entry_badge_label.add_theme_color_override("font_color", Color(0.80, 1.0, 0.72))
+
+
+# 现在有没有哪一枚棋子真的能升 4★。判据与 PrepBoardModels._sync_four_star_actor 的
+# state == 1（棋盘上那圈金色「可升」光环）**逐条一致** —— 两处不同口径的话，棋盘亮了
+# 而入口不亮（或反过来）才是最糟的提示。
+func _any_four_star_ready() -> bool:
+	if GameState.tutorial_mode and not TutorialMode.allows_carrot_action("four_star"):
+		return false
+	if not NetworkService.four_star_upgrade_available():
+		return false
+	if not NetworkService.four_star_request_id.is_empty():
+		return false
+	for slots in [GameState.board_slots, GameState.bench_slots]:
+		for cell in (slots as Array):
+			if cell is Dictionary and bool(GameState.four_star_check(cell).get("ok", false)):
+				return true
+	return false
+
 
 func _build_detail_popups() -> void:
 	_detail = PopupPanel.new()
