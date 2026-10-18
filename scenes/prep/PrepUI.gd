@@ -2893,6 +2893,9 @@ func _refresh_all() -> void:
 	# 9.17：羁绊激活音。放最后 —— 前面的 _auto_combine_all() 可能刚把棋子合成掉、
 	# 改变棋盘构成，先采样再判会拿到中间态。
 	_check_synergy_activation()
+	# 升星表现放在**模型重建之后**：合成那一刻保留的那枚棋子的模型马上要被换掉
+	# （星级变了 ⇒ signature 变了 ⇒ 整个节点 queue_free），当场挂特效立刻就没了。
+	flush_star_upgrades()
 func _sync_prep_board_readability_geometry() -> void:
 	if _board_hud.readability_layer == null or not is_instance_valid(_board_hud.readability_layer):
 		return

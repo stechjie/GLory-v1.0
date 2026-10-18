@@ -15,6 +15,7 @@ const PetPreview := preload("res://scripts/pets/PetPreview.gd")
 const UnitVisualResolverScript := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
 const UnitContactShadowScript := preload("res://effects/runtime/presentation/UnitContactShadow.gd")
 const FOUR_STAR_READY_AURA := preload("res://effects/vfx3d/modules/FourStarAura3D.gd")
+const STAR_UPGRADE_BURST := preload("res://scenes/prep/effects/PrepStarUpgradeBurst.gd")
 const FOUR_STAR_AURA := preload("res://effects/vfx3d/modules/FourStarAuraV3_3D.gd")
 const CARROT_CURRENCY_ICON := preload("res://assets/props/carrot_system/ui/icon_carrot_currency.png")
 # 棋盘正中的「上阵数 / 上限」图案本体（矢量自绘）。10.05 第 2 条返工把它从 2D 徽章
@@ -70,6 +71,222 @@ func _sync_four_star_actor(actor: Node3D, cell: Dictionary) -> void:
 			aura.transform = actor.get_meta("four_star_aura_v2_transform")
 			aura.attach_rim(actor)
 
+
+# -- 升星表现（1→2★ / 2→3★）--------------------------------------------------
+#
+# 流程照 play_four_star_upgrade 的写法：合成函数只把「谁升到了几星、被吃掉的那几枚
+# 当时站在哪」塞进待播列表，等 _refresh_all() 把模型重建完，再 call_deferred 播放。
+# **不能在合成那一刻直接播** —— 那时保留的那枚棋子的模型马上就要被重建（星级变了，
+# signature 变了，整个节点会被 queue_free 换新），特效挂上去立刻就没了。
+#
+# 连锁合成（9 枚一星 → 一枚三星，_auto_combine_all 一轮一轮来）会对同一个 uid 入队
+# 多次：按 uid 合并，只播**最终**星级，光点来源取并集 —— 否则一次操作会连着弹两下。
+const STAR_UPGRADE_MOTE_SEC := 0.25
+const STAR_UPGRADE_MOTE_SIZE := 0.075
+# 压扁回弹的幅度（3★ 更大）。TRANS_BACK 会先过冲再回落，正是「弹一下」的手感。
+const STAR_UPGRADE_SQUASH := {2: 0.16, 3: 0.26, 4: 0.22}
+const STAR_UPGRADE_SQUASH_SEC := 0.26
+# WARN: SfxService 没有变调接口，所以「3★ 音调更高」这条做不了，改用两条既有的升级音
+#       区分。要真做成同一条音效变调，得先给 SfxService 加 pitch 支持。
+const STAR_UPGRADE_CUE := {2: "carrot_farm_upgrade", 3: "harvest_tech_upgrade"}
+# 整体大小的唯一旋钮。_prep_effect_scale() 已经把「一格」对齐到实测格距，所以这个数
+# 只管「要多张扬」，不管尺度换算。真棋盘上实测偏小，调它就行 ——
+# 改完跑 tools/star_upgrade_board_capture 看图，别凭感觉。
+const STAR_UPGRADE_EFFECT_SCALE := 1.0
+
+var _pending_star_upgrades: Array = []
+
+
+# 合成**之前**调一次：把每个 uid 当前站的世界坐标记下来。合成会把被吃掉的那几枚
+# 从 slots 里抹掉，抹掉之后就再也问不出它们站在哪了，而「化成光点飞向保留的那枚」
+# 恰恰需要这个起点。
+func prep_slot_positions_by_uid() -> Dictionary:
+	var out: Dictionary = {}
+	for source in [[GameState.board_slots, _prep_board_model_nodes], [GameState.bench_slots, _prep_standby_model_nodes]]:
+		var slots: Array = source[0]
+		var models: Dictionary = source[1]
+		for index in slots.size():
+			if not (slots[index] is Dictionary):
+				continue
+			var uid := str((slots[index] as Dictionary).get("uid", ""))
+			if uid.is_empty():
+				continue
+			var node := models.get(index) as Node3D
+			if node != null and is_instance_valid(node) and node.is_inside_tree():
+				out[uid] = node.global_position
+	return out
+
+
+func queue_star_upgrade(uid: String, star: int, from_positions: Array) -> void:
+	if uid.is_empty():
+		return
+	for entry_value in _pending_star_upgrades:
+		var entry: Dictionary = entry_value
+		if str(entry.get("uid", "")) == uid:
+			entry["star"] = maxi(int(entry.get("star", star)), star)
+			(entry["from"] as Array).append_array(from_positions)
+			return
+	_pending_star_upgrades.append({"uid": uid, "star": star, "from": from_positions.duplicate()})
+
+
+# _refresh_all() 重建完模型后调。清空在播放**之前** —— 播放里有 await，中途再来一次
+# 刷新不该把同一笔又播一遍。
+func flush_star_upgrades() -> void:
+	if _pending_star_upgrades.is_empty():
+		return
+	var pending: Array = _pending_star_upgrades.duplicate(true)
+	_pending_star_upgrades.clear()
+	for entry_value in pending:
+		var entry: Dictionary = entry_value
+		play_star_upgrade.call_deferred(str(entry.get("uid", "")), int(entry.get("star", 2)), entry.get("from", []))
+
+
+func play_star_upgrade(uid: String, star: int, from_positions: Array) -> void:
+	var found := _find_prep_model_for_uid(uid)
+	if found.is_empty():
+		return
+	var keeper: Node3D = found[0]
+	# 1) 被吃掉的那几枚化成光点飞向保留的那枚（约 0.25 秒）。
+	_fly_star_motes(keeper, from_positions, star)
+	if not from_positions.is_empty():
+		await get_tree().create_timer(STAR_UPGRADE_MOTE_SEC).timeout
+		found = _find_prep_model_for_uid(uid)
+		if found.is_empty():
+			return
+		keeper = found[0]
+	# 2) 四角星迸发 + 压扁回弹 + 格子下方星级放大回弹 + 一声。
+	_spawn_star_burst(keeper, star)
+	_squash_prep_model(keeper, star)
+	pop_star_caption(str(found[1]), int(found[2]), star)
+	SfxService.play(str(STAR_UPGRADE_CUE.get(star, "carrot_farm_upgrade")))
+
+
+# [node, location, index]；找不到返回空数组。
+func _find_prep_model_for_uid(uid: String) -> Array:
+	if uid.is_empty():
+		return []
+	for source in [["board", GameState.board_slots, _prep_board_model_nodes], ["bench", GameState.bench_slots, _prep_standby_model_nodes]]:
+		var slots: Array = source[1]
+		var models: Dictionary = source[2]
+		for index in slots.size():
+			if not (slots[index] is Dictionary):
+				continue
+			if str((slots[index] as Dictionary).get("uid", "")) != uid:
+				continue
+			var node := models.get(index) as Node3D
+			if node != null and is_instance_valid(node) and node.is_inside_tree():
+				return [node, str(source[0]), index]
+			return []
+	return []
+
+
+# ★ 特效挂到棋盘模型根下面时必须自己换算尺度，踩过两次：
+#   · 不换算 ⇒ 模型根带 3.2~3.5 倍缩放（实测 root_gscale=(3.5, 3.2, 3.2)），
+#     星星直接飞出棋盘，屏幕上只剩几颗远处的小点，像场景自带的萤火虫；
+#   · 按「除以父级缩放」换算 ⇒ 又缩成棋子头顶一小撮。因为备战这边的
+#     `0.32 棋子高 / 0.20 格子圈`（见 FOUR_STAR_AURA.fit_to_actor 那几行）是
+#     **模型局部空间**的数，不是世界空间的。
+#   所以不猜了：现量一格在父级局部空间里有多大，再按特效自己的 CELL_SIZE 折算。
+#   棋盘尺寸、石台 UV、舞台缩放以后怎么改，这个比例都自动跟上。
+func _prep_effect_scale(parent: Node3D) -> Vector3:
+	if parent == null or not parent.is_inside_tree():
+		return Vector3.ONE
+	if GameConstants.BOARD_COLUMNS < 2:
+		return Vector3.ONE
+	var a := parent.to_local(_board_cell_plane_world_pos(0))
+	var b := parent.to_local(_board_cell_plane_world_pos(1))
+	var pitch := a.distance_to(b)
+	if pitch <= 0.0001:
+		return Vector3.ONE
+	return Vector3.ONE * (pitch / float(STAR_UPGRADE_BURST.CELL_SIZE)) * STAR_UPGRADE_EFFECT_SCALE
+
+
+func _spawn_star_burst(keeper: Node3D, star: int) -> void:
+	var parent := keeper.get_parent() as Node3D
+	if parent == null:
+		return
+	var burst: Node3D = STAR_UPGRADE_BURST.new()
+	parent.add_child(burst)
+	burst.position = keeper.position
+	burst.scale = _prep_effect_scale(parent)
+	burst.call("play", star)
+
+
+# 保留的那枚先压扁再回弹。TRANS_BACK 的过冲就是「弹」的来源；用 scale 而不是 position，
+# 棋子才像被「砸实」了一下，而不是跳起来。
+func _squash_prep_model(keeper: Node3D, star: int) -> void:
+	var base: Vector3 = keeper.scale
+	if keeper.has_meta("star_squash_base"):
+		base = keeper.get_meta("star_squash_base")
+	else:
+		keeper.set_meta("star_squash_base", base)
+	var amount := float(STAR_UPGRADE_SQUASH.get(star, 0.16))
+	keeper.scale = Vector3(base.x * (1.0 + amount), base.y * (1.0 - amount), base.z * (1.0 + amount))
+	var tween := keeper.create_tween()
+	tween.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.tween_property(keeper, "scale", base, STAR_UPGRADE_SQUASH_SEC)
+
+
+# 被吃掉的棋子化成光点飞向保留的那枚。光点用和迸发同一张四角星贴图，观感才连得上。
+func _fly_star_motes(keeper: Node3D, from_positions: Array, star: int) -> void:
+	var parent := keeper.get_parent() as Node3D
+	if parent == null or not keeper.is_inside_tree():
+		return
+	var target := keeper.global_position
+	var preset_star: int = star if STAR_UPGRADE_BURST.PRESETS.has(star) else 3
+	var color: Color = (STAR_UPGRADE_BURST.PRESETS[preset_star] as Dictionary)["big_color"]
+	for from_value in from_positions:
+		if typeof(from_value) != TYPE_VECTOR3:
+			continue
+		var mote := MeshInstance3D.new()
+		var quad := QuadMesh.new()
+		quad.size = Vector2.ONE * STAR_UPGRADE_MOTE_SIZE
+		mote.mesh = quad
+		mote.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		mat.albedo_texture = STAR_UPGRADE_BURST._star_tex()
+		mat.albedo_color = color
+		mote.material_override = mat
+		parent.add_child(mote)
+		mote.global_position = from_value
+		# 同 _spawn_star_burst：光点的尺寸也按实测格距折算。
+		var compensation := _prep_effect_scale(parent as Node3D)
+		mote.scale = compensation
+		var tween := mote.create_tween()
+		tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		tween.tween_property(mote, "global_position", target, STAR_UPGRADE_MOTE_SEC)
+		tween.parallel().tween_property(mote, "scale", compensation * 0.35, STAR_UPGRADE_MOTE_SEC)
+		tween.tween_callback(mote.queue_free)
+
+
+# 格子下方那个「名字 ★星级」标签弹一下。标签住在 _board_hud 里（PrepShared），
+# 本层够得着，所以不必再往上开钩子。
+func pop_star_caption(location: String, index: int, star: int) -> void:
+	var captions: Array = _board_hud.cell_captions if location == "board" else _board_hud.bench_card_labels
+	if index < 0 or index >= captions.size():
+		return
+	var caption: Label = captions[index]
+	if caption == null or not is_instance_valid(caption) or not caption.visible:
+		return
+	# 绕中心缩放：pivot 不设在中心的话，放大会把标签往右下角甩出去。
+	caption.pivot_offset = caption.size * 0.5
+	var amount := 1.45 if star >= 3 else 1.28
+	caption.scale = Vector2.ONE * amount
+	var tween := caption.create_tween()
+	tween.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.tween_property(caption, "scale", Vector2.ONE, 0.30)
+	if star >= 3:
+		# 3★ 以上加一道金色闪光：先把字染金，再 tween 回常色。
+		caption.add_theme_color_override("font_color", Color(1.0, 0.88, 0.45))
+		tween.parallel().tween_method(
+			func(c: Color) -> void: caption.add_theme_color_override("font_color", c),
+			Color(1.0, 0.88, 0.45), Color.WHITE, 0.45)
+
+
 func play_four_star_upgrade(uid: String) -> void:
 	for source in [[GameState.board_slots, _prep_board_model_nodes], [GameState.bench_slots, _prep_standby_model_nodes]]:
 		var slots: Array = source[0]
@@ -82,6 +299,10 @@ func play_four_star_upgrade(uid: String) -> void:
 					var aura := actor.get_node_or_null("FourStarAuraV2")
 					if aura != null:
 						aura.play_upgrade()
+					# 三档手感一致（Leno 已确认）：4★ 也补上同样的压扁回弹与星级回弹。
+					_squash_prep_model(actor, GameState.MAX_UNIT_STAR)
+					pop_star_caption("board" if slots == GameState.board_slots else "bench",
+						index, GameState.MAX_UNIT_STAR)
 				return
 # 3D 河流场地（river_arena FBX + 其材质）已弃用，改为贴在平躺 quad 上的 2D 分层棋盘，
 # 见下方 _add_prep_art_layers()。原来的两个路径常量与 _apply_prep_river_material()
@@ -1552,7 +1773,9 @@ func _board_plane_world_pos(u: float, v: float) -> Vector3:
 	# U=0→左(-X)，V=0→图上方=远端(-Z)
 	return Vector3(c.x - sx * 0.5 + u * sx, c.y, c.z - sz * 0.5 + v * sz)
 
-func _position_prep_board_model(model_node: Node3D, index: int, unit_def: Dictionary) -> void:
+# 格子序号 -> 棋盘平面上的世界坐标。摆模型和「量一格有多大」都走这一份，
+# 两处各算各的话，特效的尺度迟早和棋盘对不上。
+func _board_cell_plane_world_pos(index: int) -> Vector3:
 	# 直接按石台 UV 区域把 16 格落到 3D 平面上（确定性，不靠 2D 投影）
 	var column := index % GameConstants.BOARD_COLUMNS
 	var row := floori(float(index) / float(GameConstants.BOARD_COLUMNS))
@@ -1563,7 +1786,11 @@ func _position_prep_board_model(model_node: Node3D, index: int, unit_def: Dictio
 	var center_v := (BOARD_STONE_V.x + BOARD_STONE_V.y) * 0.5
 	u = center_u + (u - center_u) * BOARD_MODEL_SPREAD_U
 	v = center_v + (v - center_v) * BOARD_MODEL_SPREAD_V
-	var world_pos := _board_plane_world_pos(u, v)
+	return _board_plane_world_pos(u, v)
+
+
+func _position_prep_board_model(model_node: Node3D, index: int, unit_def: Dictionary) -> void:
+	var world_pos := _board_cell_plane_world_pos(index)
 	world_pos.y += PREP_CELL_MARK_Y_LIFT
 	if _prep_model_root != null and _prep_model_root.is_inside_tree():
 		model_node.position = _prep_model_root.to_local(world_pos)

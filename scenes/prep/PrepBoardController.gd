@@ -929,6 +929,9 @@ var _last_merge_keeper_uid := ""
 func _merge_copies_into_cell(target: Dictionary, incoming: Dictionary, excluded_board: Array = [], excluded_bench: Array = []) -> bool:
 	if not PrepRules.can_merge_cells(target, incoming):
 		return false
+	# 升星表现要「被吃掉的那几枚化成光点飞向保留的那枚」，而那几枚马上就会被从 slots
+	# 里抹掉（_take_extra_merge_piece 当场置 null）—— 所以起点坐标必须**现在**就记下。
+	var positions := prep_slot_positions_by_uid()
 	var id := str(target.get("id", ""))
 	var star := int(target.get("star", 1))
 	# target + incoming already provide 2 copies. 1-star fuses from those 2 alone;
@@ -946,7 +949,20 @@ func _merge_copies_into_cell(target: Dictionary, incoming: Dictionary, excluded_
 	_last_merge_uids = [_last_merge_keeper_uid, str(incoming.get("uid", ""))]
 	if not extra.is_empty():
 		_last_merge_uids.append(str(extra.get("uid", "")))
+	_queue_star_upgrade_from_merge(positions, star + 1)
 	return true
+
+
+# 把这一笔合成交给升星表现。_last_merge_uids 的第一个是 keeper，其余是被吃掉的那几枚
+# （两个合成函数都按这个约定填），所以光点起点就是「除 keeper 之外」那些 uid 的坐标。
+func _queue_star_upgrade_from_merge(positions: Dictionary, new_star: int) -> void:
+	var from: Array = []
+	for uid in _last_merge_uids:
+		if str(uid) == _last_merge_keeper_uid:
+			continue
+		if positions.has(str(uid)):
+			from.append(positions[str(uid)])
+	queue_star_upgrade(_last_merge_keeper_uid, new_star, from)
 
 func _take_extra_merge_piece(id: String, star: int, excluded_board: Array, excluded_bench: Array) -> Dictionary:
 	for i in GameState.board_slots.size():
@@ -1011,6 +1027,8 @@ func _gather_star_pieces(slots: Array, location: String, star: int, groups: Dict
 		groups[id].append([location, i])
 
 func _combine_copies_auto(star: int, locs: Array) -> void:
+	# 同 _merge_copies_into_cell：被吃掉那几枚的坐标必须在抹掉之前记下来。
+	var positions := prep_slot_positions_by_uid()
 	# Consume exactly the copies this star needs to fuse (2 for 1-star, 3 for 2-star).
 	var fuse: Array = locs.slice(0, GameState.copies_to_upgrade(star))
 	# Keeper: prefer a board cell so the upgraded unit stays on the board.
@@ -1037,6 +1055,7 @@ func _combine_copies_auto(star: int, locs: Array) -> void:
 	for c in cells:
 		if typeof(c) == TYPE_DICTIONARY:
 			_last_merge_uids.append(str((c as Dictionary).get("uid", "")))
+	_queue_star_upgrade_from_merge(positions, star + 1)
 	for loc in fuse:
 		if str(loc[0]) == str(keeper_loc[0]) and int(loc[1]) == int(keeper_loc[1]):
 			continue
