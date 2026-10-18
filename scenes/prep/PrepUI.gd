@@ -310,9 +310,23 @@ func _tutorial_keep_clear_rects() -> Array[Rect2]:
 		_shop.buy_button if _shop != null else null,
 		_shop.refresh_button if _shop != null else null,
 		_treasure._treasure_refresh_btn if _treasure != null else null,
+		_treasure._treasure_choice_row if _treasure != null else null,
+		_carrot_panel,
+		_merc_overlay_grid,
 	]:
 		_append_visible_rect(control as Control, out)
 	if _board_hud != null:
+		if GameState.tutorial_mode and TutorialMode.step in [TutorialMode.Step.PLACE_3, TutorialMode.Step.FILL_7]:
+			var board := Rect2()
+			var has_board := false
+			for button in _board_hud.buttons:
+				var cell := button as Control
+				if cell == null or not is_instance_valid(cell) or not cell.is_visible_in_tree():
+					continue
+				board = cell.get_global_rect() if not has_board else board.merge(cell.get_global_rect())
+				has_board = true
+			if has_board:
+				out.append(board)
 		# 待命区按整排算一个矩形：逐格加进去会让评分被格数放大。
 		var bench := Rect2()
 		var has_bench := false

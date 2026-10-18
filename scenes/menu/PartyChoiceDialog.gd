@@ -75,8 +75,8 @@ func _ready() -> void:
 func _build_modes(content: VBoxContainer) -> void:
 	var specs := [
 		["casual", _t("青苗", "SEEDLING"), _t("13 回合 · 每回合 60 秒 · 最多 3 族", "13 rounds · 60s prep · up to 3 races")],
-		["casual_normal", _t("普通", "NORMAL"), _t("21 回合 · 完整对局体验", "21 rounds · full match")],
-		["ranked", _t("排位", "RANKED"), _t("至少 3 族 · 突破森卫后进入 21 回合", "3+ races · 21 rounds after promotion")],
+		["casual_normal", _t("普通", "NORMAL"), _t("21 回合 · 至少携带 4 族", "21 rounds · equip at least 4 races")],
+		["ranked", _t("排位", "RANKED"), _t("至少 3 族参赛 · 携带 4 族才能突破森卫", "3+ races to play · equip 4 to pass Forest")],
 	]
 	for spec in specs:
 		var mode: String = spec[0]
@@ -84,7 +84,7 @@ func _build_modes(content: VBoxContainer) -> void:
 		card.text = ""
 		card.custom_minimum_size = Vector2(0, 92)
 		_style_button(card, mode == current_mode)
-		card.pressed.connect(func() -> void: selected.emit(mode))
+		card.pressed.connect(_choose_mode.bind(mode))
 		content.add_child(card)
 		var title := Label.new()
 		title.text = str(spec[1])
@@ -115,17 +115,21 @@ func _build_modes(content: VBoxContainer) -> void:
 
 
 func _build_races(content: VBoxContainer) -> void:
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 12)
-	content.add_child(row)
-	for raw in races:
-		var race := str(raw)
+	# Five unlocked races need two centered rows; the permanent prep lineup only holds four.
+	var per_row := 3 if races.size() > 4 else 4
+	var row: HBoxContainer = null
+	for index in range(races.size()):
+		if index % per_row == 0:
+			row = HBoxContainer.new()
+			row.alignment = BoxContainer.ALIGNMENT_CENTER
+			row.add_theme_constant_override("separation", 12)
+			content.add_child(row)
+		var race := str(races[index])
 		var card := Button.new()
 		card.custom_minimum_size = Vector2(166, 180)
 		card.text = ""
 		card.add_theme_color_override("font_color", INK)
-		card.pressed.connect(func() -> void: _toggle_race(race))
+		card.pressed.connect(_toggle_race.bind(race))
 		row.add_child(card)
 		_race_buttons[race] = card
 		var name_label := Label.new()
@@ -142,12 +146,13 @@ func _build_races(content: VBoxContainer) -> void:
 		if ResourceLoader.exists(logo_path):
 			var logo := TextureRect.new()
 			logo.texture = load(logo_path)
-			logo.position = Vector2(43, 18)
-			logo.size = Vector2(80, 80)
 			logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 			logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 			logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			card.add_child(logo)
+			logo.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+			logo.position = Vector2(43, 18)
+			logo.size = Vector2(80, 80)
 	_counter = Label.new()
 	_counter.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_counter.add_theme_color_override("font_color", SUBTLE)
@@ -167,7 +172,14 @@ func _toggle_race(race: String) -> void:
 		_picked.erase(race)
 	elif _picked.size() < 3:
 		_picked.append(race)
+	else:
+		_counter.text = _t("最多选 3 族，请先取消一族", "Select up to 3; deselect one first")
+		return
 	_refresh_races()
+
+
+func _choose_mode(mode: String) -> void:
+	selected.emit(mode)
 
 
 func _refresh_races() -> void:

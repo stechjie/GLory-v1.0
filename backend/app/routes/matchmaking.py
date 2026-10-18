@@ -163,6 +163,11 @@ async def join_queue(
             chosen = await loadout.seedling_races(me.player_id, body.races)
         except loadout.LoadoutRejected as exc:
             raise HTTPException(status_code=409, detail=exc.message) from None
+    elif mode == matchmaking.CASUAL_NORMAL:
+        try:
+            await loadout.require_normal_races(me.player_id)
+        except loadout.LoadoutRejected as exc:
+            raise HTTPException(status_code=409, detail=exc.message) from None
     return MatchStateResponse(state=matchmaking.current().join(me.player_id, mode, chosen))
 
 

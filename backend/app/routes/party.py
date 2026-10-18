@@ -443,6 +443,11 @@ async def ready(body: ReadyBody,
             chosen = await loadout.seedling_races(me.player_id, body.races)
         except loadout.LoadoutRejected as exc:
             raise HTTPException(status_code=409, detail=exc.message) from None
+    elif body.ready and current_room is not None and current_room.mode == "casual_normal":
+        try:
+            await loadout.require_normal_races(me.player_id)
+        except loadout.LoadoutRejected as exc:
+            raise HTTPException(status_code=409, detail=exc.message) from None
     try:
         room = party.current().set_ready(me.player_id, body.ready, chosen)
     except party.PartyRejected as exc:
@@ -503,6 +508,12 @@ async def start(body: StartBody, claims: Annotated[Claims, Depends(current_claim
             requested = body.races if pid == me.player_id else room.seedling_races.get(pid)
             try:
                 seedling[pid] = await loadout.seedling_races(pid, requested)
+            except loadout.LoadoutRejected as exc:
+                raise HTTPException(status_code=409, detail=exc.message) from None
+    elif room.mode == "casual_normal":
+        for pid in members:
+            try:
+                await loadout.require_normal_races(pid)
             except loadout.LoadoutRejected as exc:
                 raise HTTPException(status_code=409, detail=exc.message) from None
     async with db.pool().acquire() as conn:

@@ -5,6 +5,7 @@ const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
 # headless 跑检查场景时新全局类还没进 global_script_class_cache。
 const AiHandover := preload("res://scripts/economy/AiHandover.gd")
 const UnitGrowth := preload("res://scripts/units/UnitGrowth.gd")
+const RacePick := preload("res://scripts/units/RacePick.gd")
 
 signal public_token_request_check_requested(request_id: String)
 signal room_list_request_check_requested(request_id: String)
@@ -545,6 +546,10 @@ func _on_resume_completed(payload: Dictionary) -> void:
 	# 活着的重连（网络抖动）内存就是最新状态，不能用可能过期的磁盘存档覆盖它。
 	if _team_run_state_is_fresh():
 		SaveManager.load_run()
+	# The server seat locks the match lineup. Reapply it after loading an older
+	# local save, before any cold-start shop roll on the recovered prep screen.
+	if NetworkService.team_active and not NetworkService.is_host:
+		GameState.run_races = RacePick.resolve(payload.get("my_races", []))
 	# 服务器权威数值覆盖本地
 	# 键名跟着状态信封走（E2）：round_index -> round_id、enemy_team_hp -> rival_team_hp。
 	# 快照现在还多带了连败与 PVE/Boss 计数（C5 缺的那几项）。
@@ -3445,8 +3450,11 @@ func _show_public_token_in_menu(token_id: String) -> void:
 
 func _on_team3v3_start() -> void:
 	SaveManager.new_run()
-	# 出战种族在开局这一刻定下（GameState.run_races 的注释）。new_run() 刚清过它，所以放在后面。
-	GameState.run_races = PlayerProfile.get_selected_races()
+	# 匹配局以服务端座位名片为准；青苗的临时 1–3 族不等于备战区常驻的 4 族。
+	# 本地房主/离线自测仍使用备战区选择。new_run() 已清空 run_races。
+	GameState.run_races = RacePick.resolve(NetworkService.team_run_races) \
+		if NetworkService.team_active and not NetworkService.is_host \
+		else PlayerProfile.get_selected_races()
 	SaveManager.save_run()
 	GameState.team_mode = true
 	GameState.team_hp = GameState.START_FORMATION_HP

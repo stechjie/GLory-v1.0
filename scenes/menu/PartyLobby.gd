@@ -22,6 +22,7 @@ const BUTTON_SECONDARY := preload("res://assets/ui/party_lobby/party_button_seco
 const BUTTON_MODE_IDLE := preload("res://assets/ui/party_lobby/party_button_mode_idle.png")
 const BUTTON_MODE_ACTIVE := preload("res://assets/ui/party_lobby/party_button_mode_active.png")
 const CHOICE_DIALOG := preload("res://scenes/menu/PartyChoiceDialog.gd")
+const RacePick := preload("res://scripts/units/RacePick.gd")
 const MODE_MODAL_ID := "party_lobby_mode_picker"
 const RACES_MODAL_ID := "party_lobby_seedling_races"
 const GOLD := Color("e6c984")
@@ -1042,10 +1043,10 @@ func _update_mode_display(mode: String) -> void:
 	match mode:
 		"casual_normal":
 			_mode_button.text = _text("普通  ·  21 回合    ▾", "NORMAL  ·  21 ROUNDS    ▾")
-			_mode_hint.text = _text("完整对局体验", "Full match experience")
+			_mode_hint.text = _text("至少携带 4 族 · 21 回合", "Equip at least 4 races · 21 rounds")
 		"ranked", "ranked_normal":
 			_mode_button.text = _text("排位  ·  段位赛    ▾", "RANKED  ·  LADDER    ▾")
-			_mode_hint.text = _text("至少 3 族 · 森卫突破后 21 回合", "3+ races · 21 rounds after promotion")
+			_mode_hint.text = _text("携带 4 族才能突破森卫", "Equip 4 races to pass Forest")
 		_:
 			_mode_button.text = _text("青苗  ·  13 回合    ▾", "SEEDLING  ·  13 ROUNDS    ▾")
 			_mode_hint.text = _text("最多 3 族 · 更快上手", "Up to 3 races · a faster start")
@@ -1164,18 +1165,41 @@ func _send_chat() -> void:
 
 
 func _act() -> void:
-	if _local_only:
+	if _local_only or _busy:
 		return
 	if _preview != "":
 		_notice.text = _text("预览模式", "Preview mode")
 		return
 	if str(_room.get("mode", "casual")) == "casual" and (
 		_is_host() or not bool(_my_member().get("ready", false))):
-		var available: Array = PlayerProfile.get_selected_races()
+		_busy = true
+		var response: Dictionary = await AccountManager.fetch_entitlements()
+		_busy = false
+		if not is_inside_tree():
+			return
+		if int(response.get("code", 0)) != 200:
+			_notice.text = _text("种族资料读取失败，请重试", "Could not load your races. Try again.")
+			return
+		var available := available_seedling_races(
+			(response.get("body", {}) as Dictionary).get("items", []))
 		if available.size() >= 4:
 			_open_seedling_race_picker(available)
 			return
 	_start_with_races([])
+
+
+static func available_seedling_races(entitlements: Array) -> Array[String]:
+	var owned := {}
+	for raw in entitlements:
+		owned[str(raw)] = true
+	var available: Array[String] = []
+	var known: Array[String] = RacePick.all_races()
+	if known.has("human") and owned.has("human"):
+		available.append("human")
+	for race in known:
+		if race != "human" and owned.has(race):
+			available.append(race)
+	return available
 
 
 func _start_with_races(races: Array) -> void:

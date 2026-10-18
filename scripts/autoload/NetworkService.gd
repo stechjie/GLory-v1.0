@@ -558,6 +558,9 @@ var team_room_id: int:
 		return _session.team_room_id
 	set(value):
 		_session.team_room_id = value
+# The server's per-seat lineup for this match (Seedling may differ from the
+# four permanent prep races). Never infer it from the profile on a client.
+var team_run_races: Array[String] = []
 # --- 断线重连（客户端） ---
 # 服务器签发的会话 token（重连凭证，非账号）
 var session_token: String:
@@ -2510,6 +2513,7 @@ func _build_room_state(room: Dictionary, slot: int) -> Dictionary:
 		"suspended": bool(room.get("suspended", false)),
 		# --- 本座位身份 ---
 		"my_slot": slot,
+		"my_races": _room_seat_races(room, slot) if slot >= 0 else [],
 		"session_token": str((room.get("seat_tokens", {}) as Dictionary).get(slot, "")),
 		"public_id": str((room.get("seat_public_id", {}) as Dictionary).get(slot, "")),
 		# --- 队伍 ---
@@ -5099,6 +5103,7 @@ func reset() -> void:
 	team_active = false
 	team_local_slot = -1
 	team_room_id = 0
+	team_run_races.clear()
 	# 信封位置和上面这几个是**同一类**的每会话状态，必须一起清。
 	#
 	# 2026-08-21 双设备实测撞出的真缺陷：建房 -> 离开 -> 再建房，UI 永远卡在
@@ -6019,6 +6024,7 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 	GameState.FINAL_ROUND = int(payload.get("final_round", 21))
 	team_room_id = int(envelope.get("room_id", 0))
 	team_local_slot = int(payload.get("my_slot", -1))
+	team_run_races = RacePick.resolve(payload.get("my_races", [])) if team_local_slot >= 0 else []
 	team_leader_slot = int(payload.get("leader_slot", 0))
 	team_slot_states = (payload.get("slot_states", []) as Array).duplicate()
 	var team_discount := bool(payload.get("team_clearance_sale", false))

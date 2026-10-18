@@ -252,8 +252,26 @@ async def build_loadout(player_id: uuid.UUID) -> Loadout:
 
 
 async def seedling_races(player_id: uuid.UUID, chosen: list[str] | None) -> list[str]:
-    """Check the temporary three-race lineup against the current prep loadout."""
-    return validate_seedling_races((await build_loadout(player_id)).races, chosen)
+    """Check a temporary lineup against every unlocked race, including a fifth race.
+
+    Prep keeps four permanent races; Seedling may choose any three unlocked races
+    without changing that permanent selection.
+    """
+    owned = set(await shop.read_entitlements(player_id))
+    available = [race for race in ("human", "god", "dark", "undead", "crimson")
+                 if race in owned]
+    return validate_seedling_races(available, chosen)
+
+
+async def require_normal_races(player_id: uuid.UUID) -> None:
+    """A 21-round casual match needs four currently usable prep races."""
+    validate_normal_races((await build_loadout(player_id)).races)
+
+
+def validate_normal_races(races: list[str]) -> None:
+    if len(races) < 4:
+        raise LoadoutRejected("normal_need_four_races",
+                              "普通模式需在备战区携带至少 4 个已解锁种族")
 
 
 def validate_seedling_races(available: list[str], chosen: list[str] | None) -> list[str]:
@@ -266,7 +284,7 @@ def validate_seedling_races(available: list[str], chosen: list[str] | None) -> l
     if not 1 <= len(chosen) <= 3 or len(set(chosen)) != len(chosen) or any(
         race not in available for race in chosen
     ):
-        raise LoadoutRejected("bad_seedling_races", "青苗只能选择备战区中已解锁的 1 至 3 个种族")
+        raise LoadoutRejected("bad_seedling_races", "青苗只能选择已解锁的 1 至 3 个种族")
     return list(chosen)
 
 
@@ -378,6 +396,8 @@ async def issue_card(player_id: uuid.UUID, match_uid: str = "", team: int = -1,
     profile = await build_loadout(player_id)
     if mode == "casual" and match_uid:
         profile = dataclasses.replace(
-            profile, races=validate_seedling_races(profile.races, seedling_lineup))
+            profile, races=await seedling_races(player_id, seedling_lineup))
+    elif mode == "casual_normal" and match_uid:
+        validate_normal_races(profile.races)
     return sign(card_payload(profile, match_uid=match_uid,
                              team=team, mode=mode, seat=seat, patch_version=patch_version))

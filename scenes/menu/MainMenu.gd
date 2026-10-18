@@ -98,7 +98,8 @@ const TEX_SHOP := preload("res://assets/ui/main_menu_live/shop.png")
 const TEX_NEWS := preload("res://assets/ui/main_menu_live/news.png")
 const TEX_PREP := preload("res://assets/ui/main_menu_live/prep.png")
 const TEX_CASUAL := preload("res://assets/ui/main_menu_live/casual.png")
-const ProgressionPanel := preload("res://scenes/menu/ProgressionPanel.gd")
+const LevelUpRewardDialog := preload("res://scenes/menu/LevelUpRewardDialog.gd")
+const LEVEL_REWARD_MODAL_ID := "main_menu_level_rewards"
 const TEX_RANKED := preload("res://assets/ui/main_menu_live/ranked.png")
 const TEX_CUSTOM := preload("res://assets/ui/main_menu_live/custom.png")
 const TEX_GALLERY := preload("res://assets/ui/main_menu_live/gallery.png")
@@ -1047,11 +1048,10 @@ func _refresh_progression() -> void:
 	_account_level = int(state.get("level", 1))
 	_refresh_profile_plate()
 	var pending: Array = state.get("unseen_levels", [])
-	if pending.is_empty():
+	if pending.is_empty() or ModalStack.has(LEVEL_REWARD_MODAL_ID):
 		return
-	var lines: Array[String] = []
+	var rewards: Array = []
 	var seen: Array[int] = []
-	var prep_prompt := false
 	for raw in state.get("rewards", []):
 		if typeof(raw) != TYPE_DICTIONARY:
 			continue
@@ -1060,23 +1060,18 @@ func _refresh_progression() -> void:
 		if not pending.has(level):
 			continue
 		seen.append(level)
-		lines.append("Lv %d  ·  %s" % [level, ProgressionPanel.reward_text(reward)])
-		prep_prompt = prep_prompt or bool(reward.get("prep_prompt", false))
+		rewards.append(reward)
 	if seen.is_empty():
 		return
-	if prep_prompt:
-		lines.append(_menu_text("神族已集齐！请前往备战区查看，已自动选入出战种族。",
-			"God roster complete! Visit Prep; it has been added to your races."))
-	DialogService.info({
-		"owner": self,
-		"title": _menu_text("升级奖励", "Level Rewards"),
-		"body": "\n".join(lines),
-		"confirm_text": _menu_text("领取并继续", "Continue"),
-		"dismiss_on_backdrop": false,
-		"on_result": func(answer: String, _id: String) -> void:
-			if answer == "confirmed":
-				AccountManager.mark_progression_seen(seen),
-	})
+	var dialog := LevelUpRewardDialog.new() as Control
+	dialog.configure(seen, rewards)
+	dialog.claimed.connect(func(go_prep: bool) -> void:
+		ModalStack.pop(LEVEL_REWARD_MODAL_ID)
+		AccountManager.mark_progression_seen(seen)
+		if go_prep:
+			prep_requested.emit())
+	ModalStack.push(dialog, {"id": LEVEL_REWARD_MODAL_ID, "owner": self,
+		"priority": 100, "dismiss_on_backdrop": false, "persistent": true})
 
 
 func _refresh_wallet() -> void:

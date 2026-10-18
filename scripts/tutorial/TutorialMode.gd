@@ -5,7 +5,11 @@ signal completed
 signal skip_requested
 
 const TutorialTargetProviderScript := preload("res://scripts/tutorial/TutorialTargetProvider.gd")
-const TutorialArrowScript := preload("res://scripts/tutorial/TutorialArrow.gd")
+const TutorialGuideLightScript := preload("res://scripts/tutorial/TutorialGuideLight.gd")
+const DOG_WELCOME := preload("res://assets/ui/tutorial/dog_welcome.png")
+const DOG_GUIDE := preload("res://assets/ui/tutorial/dog_guide.png")
+const DOG_EXPLAIN := preload("res://assets/ui/tutorial/dog_explain.png")
+const DOG_ENCOURAGE := preload("res://assets/ui/tutorial/dog_encourage.png")
 # 聚焦遮罩的着色器：整幅压暗 + 逐片元开洞。见 FOCUS_DIM_COUNT 上方的长注释。
 const TutorialFocusMaskShader := preload("res://shaders/tutorial_focus_mask.gdshader")
 
@@ -81,16 +85,7 @@ const STEP_SEQUENCE: Array = [
 #   DEPLOY     <- GameState.board_slots 的真实占用数
 enum FillPhase { BUY, CLOSE_SHOP, DEPLOY }
 
-enum ArrowDir { DOWN, UP, LEFT }
-
-# The arrow is drawn geometry, with an exact tip instead of guessed font metrics.
-const ARROW_DOWN_Y_OFFSET := -86.0
-# 向上箭头贴在目标底边下方的间隙。
-const ARROW_UP_GAP := 6.0
-const ARROW_HEIGHT := 84.0
-const ARROW_WIDTH := 84.0
-# 向左箭头跟目标右边缘的间隙。
-const ARROW_LEFT_GAP := 8.0
+enum ArrowDir { DOWN, UP, LEFT } # Reused as bubble placement preference; no arrow is drawn.
 
 # 气泡尺寸。气泡是浮在 overlay 上的自由控件，没有父容器约束它，
 # 所以宽高必须显式钉死：autowrap 的 Label 在宽度未定时，最小高度会按
@@ -128,8 +123,8 @@ const LAYOUT_GEOMETRY_EPS := 2.0
 const FOCUS_DIM_COUNT := 1
 # 压暗强度。与既有遮罩同一档（萝卜营地 0.68 / 商店不可买原因 0.64）：
 # 够暗到能一眼分出主角，又留住足够多的场景轮廓让新手知道自己在哪一步。
-const FOCUS_DIM_COLOR := Color(0.02, 0.025, 0.04, 0.66)
-# 洞比目标外扩这么多像素：给箭头与目标自己留一圈呼吸位，
+const FOCUS_DIM_COLOR := Color(0.02, 0.025, 0.04, 0.72)
+# 洞比目标外扩这么多像素：给光圈与目标自己留一圈呼吸位，
 # 免得暗幕边界贴着卡面切过去显得像渲染错误。
 const FOCUS_HOLE_PADDING := 6.0
 # 「点一下继续」四个步骤的受理外扩（2026-10-15 第三轮，见 `_input()`）。
@@ -173,7 +168,8 @@ var _carrot_gift_claimed := false
 var opponent_snapshot: Dictionary = {}
 var _target_provider: TutorialTargetProviderScript
 var _overlay: Control
-var _arrow: TutorialArrowScript
+var _light: TutorialGuideLightScript
+var _guide: TextureRect
 var _bubble: PanelContainer
 var _text: Label
 var _progress_label: Label
@@ -698,6 +694,7 @@ func update_overlay() -> void:
 	var content_key := _overlay_content_key(target, next_text, dir)
 	if not _layout_signature.is_empty() and _layout_inputs_equivalent(
 			content_key, rect, safe, keep_clear):
+		_update_guide_light(focus)
 		return
 	var signature := _overlay_layout_signature(target, rect, next_text, dir)
 	var previous_signature := _layout_signature
@@ -708,15 +705,16 @@ func update_overlay() -> void:
 	_last_keep_clear_rects = keep_clear.duplicate()
 	_layout_recompute_count += 1
 	_last_layout_reason = "initial" if previous_signature.is_empty() else "inputs_changed"
-	_apply_arrow(rect, dir)
 	# Measure the combined minimum after content changed. Reading size immediately
 	# after reset_size() used to alternate between stale and settled container sizes.
 	_fit_bubble()
 	var target_id := target.get_instance_id() if target != null and is_instance_valid(target) else 0
 	var context := "%d|%d" % [step, target_id]
 	_bubble.position = _bubble_position(rect, dir, context)
-	_continue_btn.visible = false
 	_position_chrome()
+	_position_guide(rect, keep_clear)
+	_update_guide_light(focus)
+	_continue_btn.visible = false
 
 
 # 「这一步该不该整幅压暗」的**纯判据**：只看状态，不碰节点。
@@ -819,6 +817,8 @@ func layout_debug_snapshot() -> Dictionary:
 		"signature": _layout_signature,
 		"context": _layout_context,
 		"bubble_rect": _bubble.get_global_rect() if _bubble != null and is_instance_valid(_bubble) else Rect2(),
+		"guide_rect": _guide.get_global_rect() if _guide != null and is_instance_valid(_guide) else Rect2(),
+		"light_target_rect": _light.target_rect if _light != null and is_instance_valid(_light) else Rect2(),
 		"candidate_index": _last_candidate_index,
 		"recompute_count": _layout_recompute_count,
 		"reason": _last_layout_reason,
@@ -929,16 +929,13 @@ func _update_progress() -> void:
 	if _progress_label == null or not is_instance_valid(_progress_label):
 		return
 	_sync_progress_index()
-	_progress_label.text = progress_text()
+	_progress_label.text = _t("狗狗 · ", "Guide · ") + progress_text()
 	_step_name_label.text = step_display_name()
 	_progress_bar.value = float(step_number())
 
-# 箭头朝向：目标在屏幕上方（开始战斗按钮、法阵水晶）要从下往上指，
-# 左侧面板（羁绊、已获宝藏）从右往左指，其余目标（商店、棋盘、待命区）从上往下指。
+# 候选气泡的首选方向：目标在上方时放到下方，左侧面板时放到右侧。
 func _arrow_dir() -> int:
-	# 萝卜 / 四星教学的几个目标按控件位置定朝向：
-	#   页签在营地面板顶部 -> 从上往下指；四星那一行的按钮在面板右缘 -> 从右往左指；
-	#   其余（右侧营地入口、萝卜数量、面板底部的升级/抽取按钮、右上角 ×）-> 从下往上指。
+	# 萝卜 / 四星教学按当前控件定气泡方向；实际光线由控件位置实时计算。
 	var carrot_target := _carrot_target_id()
 	if not carrot_target.is_empty():
 		match carrot_target:
@@ -958,27 +955,63 @@ func _arrow_dir() -> int:
 			return ArrowDir.UP
 	return ArrowDir.DOWN
 
-func _apply_arrow(rect: Rect2, dir: int) -> void:
-	_arrow.set_direction(dir)
-	var tip := Vector2.ZERO
-	match dir:
-		ArrowDir.LEFT:
-			tip = Vector2(rect.end.x + ARROW_LEFT_GAP, rect.get_center().y)
-		ArrowDir.UP:
-			tip = Vector2(rect.get_center().x, rect.end.y + ARROW_UP_GAP)
-		_:
-			tip = Vector2(rect.get_center().x, rect.position.y - ARROW_UP_GAP)
-	# Fit around the anchored tip. Clamping position moved the pointer off the
-	# top row on wide phones; shrink its body slightly instead of moving its tip.
-	var local_tip := _arrow.tip_position()
+func _guide_texture() -> Texture2D:
+	match step:
+		Step.BUY_3, Step.START_PVE_1, Step.TAKE_TREASURE_1, Step.TAKE_TREASURE_2:
+			return DOG_WELCOME
+		Step.BOND_HINT, Step.VIEW_TREASURE, Step.FORMATION_HP, \
+		Step.CARROT_CAMP, Step.HARVEST_UPGRADE, Step.CARROT_HARVEST:
+			return DOG_EXPLAIN
+		Step.UPGRADE_3, Step.FOUR_STAR, Step.FILL_7:
+			return DOG_ENCOURAGE
+	return DOG_GUIDE
+
+
+# The target provider supplies live rectangles, including the redesigned carrot
+# camp controls. Place the mascot around the existing bubble while scoring both
+# against the target and every keep-clear control. Neither node receives input.
+func _position_guide(target_rect: Rect2, keep_clear: Array[Rect2]) -> void:
+	if _guide == null or not is_instance_valid(_guide):
+		return
+	_guide.texture = _guide_texture()
 	var safe := _safe_rect()
-	var fit := 1.0
-	for axis in 2:
-		fit = minf(fit, (tip[axis] - safe.position[axis]) / local_tip[axis])
-		fit = minf(fit, (safe.end[axis] - tip[axis]) / (_arrow.size[axis] - local_tip[axis]))
-	fit = clampf(fit, 0.05, 1.0)
-	_arrow.scale = Vector2.ONE * fit
-	_arrow.position = tip - local_tip * fit
+	var side := clampf(safe.size.y * 0.18, 96.0, 145.0)
+	_guide.size = Vector2.ONE * side
+	var bubble := Rect2(_bubble.position, _bubble.size)
+	var candidates: Array[Vector2] = [
+		Vector2(bubble.position.x - side - 8.0, bubble.end.y - side),
+		Vector2(bubble.end.x + 8.0, bubble.end.y - side),
+		Vector2(bubble.position.x - side - 8.0, bubble.position.y),
+		Vector2(bubble.end.x + 8.0, bubble.position.y),
+		Vector2(safe.position.x, safe.end.y - side),
+		Vector2(safe.end.x - side, safe.end.y - side),
+		Vector2(safe.position.x, safe.position.y),
+		Vector2(safe.end.x - side, safe.position.y),
+	]
+	var skip_rect := Rect2(_skip_btn.position, _skip_btn.size) if _skip_btn != null else Rect2()
+	var best := candidates[0]
+	var best_score := INF
+	for i in candidates.size():
+		var pos := _clamp_into(candidates[i], _guide.size, safe)
+		var area := Rect2(pos, _guide.size)
+		var score := _overlap_area(area, target_rect) * 30.0
+		score += _overlap_area(area, bubble) * 12.0
+		score += _overlap_area(area, skip_rect) * 20.0
+		for blocked in keep_clear:
+			score += _overlap_area(area, blocked) * 8.0
+		score += pos.distance_to(bubble.position) * 0.5 + float(i) * 12.0
+		if score < best_score:
+			best_score = score
+			best = pos
+	_guide.position = best
+
+
+func _update_guide_light(target_rect: Rect2) -> void:
+	if _light == null or _guide == null or not is_instance_valid(_light) \
+			or not is_instance_valid(_guide):
+		return
+	var medal := _guide.position + _guide.size * Vector2(0.63, 0.70)
+	_light.aim(medal, target_rect, PlayerProfile.reduced_motion_enabled)
 
 # V2 P1-09：常驻控件（跳过按钮、进度条所在的气泡）也要落在安全区内。
 # 跳过按钮原本写死在 (16, 44)；横屏时刘海在左边缘，正好压住它。
@@ -1660,10 +1693,12 @@ func _clamp_into(pos: Vector2, size: Vector2, bounds: Rect2) -> Vector2:
 func _bubble_candidates(target_rect: Rect2, size: Vector2, dir: int) -> Array[Vector2]:
 	var center_x := target_rect.position.x + target_rect.size.x * 0.5 - size.x * 0.5
 	var center_y := target_rect.position.y + target_rect.size.y * 0.5 - size.y * 0.5
-	var above_y := target_rect.position.y + ARROW_DOWN_Y_OFFSET - 8.0 - size.y
-	var below_y := target_rect.position.y + target_rect.size.y + ARROW_UP_GAP + ARROW_HEIGHT
-	var right_x := target_rect.position.x + target_rect.size.x + ARROW_LEFT_GAP + ARROW_WIDTH + 12.0
-	var left_x := target_rect.position.x - ARROW_LEFT_GAP - ARROW_WIDTH - 12.0 - size.x
+	# Keep the dialogue clear of the interaction area, including the shop and
+	# reserve bench. The guide light spans this gap without taking input.
+	var above_y := target_rect.position.y - 94.0 - size.y
+	var below_y := target_rect.end.y + 90.0
+	var right_x := target_rect.end.x + 104.0
+	var left_x := target_rect.position.x - 104.0 - size.x
 	# 每个方向再给三个沿垂直轴的对齐变体（居中 / 贴目标一边 / 贴另一边）。
 	# 只给四个正中候选时，四个都压住禁区就只能挑「最不糟」的那个；
 	# 多这几档平移能真正让开待命区和主按钮，而不是少压一点。
@@ -1710,17 +1745,19 @@ func _bubble_position(target_rect: Rect2, dir: int, context: String = "") -> Vec
 		maxf(_bubble.size.y, BUBBLE_MIN_HEIGHT))
 	var safe := _safe_rect()
 	var keep_clear := _keep_clear_rects()
-	# Clamping an above-target bubble into the safe area can cover the arrow
-	# without covering its target. Protect the drawn, scaled arrow in the same
-	# overlay coordinates for both candidate scoring and saved-position reuse.
-	if _arrow != null and is_instance_valid(_arrow):
-		var arrow_rect: Rect2 = _arrow.get_transform() * Rect2(Vector2.ZERO, _arrow.size)
-		keep_clear.append(arrow_rect.grow(6.0))
 	if context == _layout_context and _sticky_position_is_valid(
 			_last_bubble_position, bubble_size, safe, target_rect, keep_clear):
 		_last_layout_reason = "sticky_valid"
 		return _last_bubble_position
 	var candidates := _bubble_candidates(target_rect, bubble_size, dir)
+	# A bench or shop can span almost the full width below the target. In that
+	# case every target-adjacent candidate clips a playable control, so also
+	# search stable screen-edge positions. The light keeps the target connection.
+	for y_ratio in [0.0, 0.25, 0.5, 0.75, 1.0]:
+		for x_ratio in [0.0, 0.25, 0.5, 0.75, 1.0]:
+			candidates.append(Vector2(
+				safe.position.x + (safe.size.x - bubble_size.x) * x_ratio,
+				safe.position.y + (safe.size.y - bubble_size.y) * y_ratio))
 	var best := _clamp_into(candidates[0], bubble_size, safe)
 	var best_score := INF
 	var best_index := 0
@@ -1857,8 +1894,16 @@ func _ensure_overlay() -> void:
 	_overlay.add_child(dim)
 	_focus_dim.append(dim)
 
-	_arrow = TutorialArrowScript.new()
-	_overlay.add_child(_arrow)
+	_light = TutorialGuideLightScript.new()
+	_light.name = "TutorialGuideLight"
+	_overlay.add_child(_light)
+	_guide = TextureRect.new()
+	_guide.name = "TutorialDog"
+	_guide.texture = DOG_WELCOME
+	_guide.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_guide.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_guide.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_overlay.add_child(_guide)
 
 	_bubble = PanelContainer.new()
 	# 气泡只负责显示文字，不吃任何点击（2026-10-15 第三轮反馈）。整棵子树都要设，
@@ -1897,7 +1942,7 @@ func _ensure_overlay() -> void:
 	_step_name_label = Label.new()
 	_step_name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_step_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_step_name_label.add_theme_font_size_override("font_size", 12)
+	_step_name_label.add_theme_font_size_override("font_size", 14)
 	_step_name_label.add_theme_color_override("font_color", Color(0.60, 0.65, 0.72))
 	header.add_child(_step_name_label)
 
@@ -1968,16 +2013,12 @@ func _ensure_overlay() -> void:
 	_skip_btn.pressed.connect(_on_skip_pressed)
 	_overlay.add_child(_skip_btn)
 
-	if not PlayerProfile.reduced_motion_enabled:
-		var tween := _arrow.create_tween()
-		tween.set_loops()
-		tween.tween_property(_arrow, "modulate:a", 0.35, 0.45)
-		tween.tween_property(_arrow, "modulate:a", 1.0, 0.45)
-
 func _detach() -> void:
 	if _overlay != null and is_instance_valid(_overlay):
 		_overlay.queue_free()
 	_overlay = null
+	_light = null
+	_guide = null
 	_focus_dim.clear()
 	_target_provider = null
 	_overlay_suppressed = false
