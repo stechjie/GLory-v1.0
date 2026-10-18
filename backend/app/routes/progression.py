@@ -31,6 +31,17 @@ async def my_progression(claims: Annotated[Claims, Depends(current_claims)]) -> 
         return await progression.state(conn, player.player_id)
 
 
+@router.post("/progression/tutorial-complete")
+async def complete_first_tutorial(
+        claims: Annotated[Claims, Depends(current_claims)]) -> dict:
+    player = await _player(claims)
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            gained = await progression.award_tutorial(conn, player.player_id)
+            current = await progression.state(conn, player.player_id)
+    return {"gained_xp": gained, **current}
+
+
 @router.post("/progression/seen")
 async def seen_levels(body: AcknowledgeBody,
                       claims: Annotated[Claims, Depends(current_claims)]) -> dict:

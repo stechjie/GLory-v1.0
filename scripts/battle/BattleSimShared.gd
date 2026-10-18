@@ -737,6 +737,7 @@ static func _fighter_from_cell(cell: Dictionary, slot: int, team: String, mirror
 		d.hp = maxi(1, int(round(float(d.hp) * multiplier)))
 		d.atk = maxi(1, int(round(float(d.atk) * multiplier)))
 		d.def = maxi(0, int(round(float(d.def) * multiplier)))
+		UnitGrowth.apply_king_attack_speed_to_def(d, cell)
 	var f := _fighter_from_def(d, slot, team, slot, GameConstants.CELL_COUNT, int(cell.get("star", 1)), bool(cell.get("is_mercenary", false)), false, mirror_enemy_slot)
 	# 战后要按「哪一枚棋子」认人王死活（_king_outcomes）。fighter.uid 是战斗内编号，会被改写，
 	# 所以另记一份棋子 uid 和它出场时的阵营。
@@ -832,11 +833,18 @@ static func _select_attack_target(f: Dictionary, opponents: Array, index: Dictio
 		return taunter
 	var uid := str(f.get("locked_target_uid", ""))
 	var locked: Dictionary = index.by_uid.get(uid, {}) if not uid.is_empty() else {}
-	if not locked.is_empty() and bool(locked.get("alive", false)) and int(locked.get("hp", 0)) > 0 and _can_target(f, locked, opponents):
+	if not locked.is_empty() and bool(locked.get("alive", false)) and int(locked.get("hp", 0)) > 0 and _can_target(f, locked, opponents) and not _is_phoenix_revived(locked):
 		return locked
-	var picked := _pick_new_target(f, opponents, bodies)
+	var picked := _pick_new_target(f, opponents, bodies, true)
 	f.locked_target_uid = str(picked.get("uid", ""))
 	return picked
+
+
+# 10.18（用户定）：凤凰涅槃的复活体 3 秒无敌、到点强制真死 —— 普攻不再去打它，改找下一个目标。
+# 只作用于**普攻**选目标（_select_attack_target）；技能选目标（_select_target）不变。
+# 一路上只剩复活体时普攻就没有目标（站着等它真死），不会因此越过分路规则去打别路。
+static func _is_phoenix_revived(o: Dictionary) -> bool:
+	return bool(o.get("phoenix_used", false)) and bool(o.get("alive", false))
 
 
 static func _locked_target(f: Dictionary, opponents: Array) -> Dictionary:
@@ -852,21 +860,27 @@ static func _locked_target(f: Dictionary, opponents: Array) -> Dictionary:
 	return {}
 
 
-static func _pick_new_target(f: Dictionary, opponents: Array, bodies: Array = []) -> Dictionary:
+static func _pick_new_target(f: Dictionary, opponents: Array, bodies: Array = [], skip_phoenix := false) -> Dictionary:
 	# 冥界执行者（death_hunt）重选时优先打血量比例最低的敌人。
 	# （9.24：4 攻击套装已改为斩杀，不再改选敌。）
 	# 必须在组队分支之前判定：线上 3v3 与离线自测全走组队分支，判定写在它后面就永远轮不到。
 	var prefer_low_hp := str(f.get("def", {}).get("skill_id", "")) == "death_hunt"
 	if GameState.team_mode:
-		return _team_select_target(f, opponents, prefer_low_hp, bodies)
+		return _team_select_target(f, opponents, prefer_low_hp, bodies, skip_phoenix)
+	var pool := opponents
+	if skip_phoenix:
+		pool = []
+		for o in opponents:
+			if not _is_phoenix_revived(o):
+				pool.append(o)
 	if prefer_low_hp:
-		var low := _lowest_targetable_hp_ratio(f, opponents)
+		var low := _lowest_targetable_hp_ratio(f, pool)
 		if not low.is_empty():
 			return low
-	return _nearest(f, opponents)
+	return _nearest(f, pool)
 
 
-static func _team_select_target(f: Dictionary, opponents: Array, prefer_low_hp: bool = false, bodies: Array = []) -> Dictionary:
+static func _team_select_target(f: Dictionary, opponents: Array, prefer_low_hp: bool = false, bodies: Array = [], skip_phoenix := false) -> Dictionary:
 	# Fight your own lane first; when it is clear, help the LEFT lane (lower
 	# index) before the RIGHT lane. Within a lane: nearest, or lowest HP ratio.
 	var my_lane := int(f.get("lane", 0))
@@ -875,10 +889,16 @@ static func _team_select_target(f: Dictionary, opponents: Array, prefer_low_hp: 
 		lane_order.append(l)
 	for l in range(my_lane + 1, 3):
 		lane_order.append(l)
+	# 有凤凰复活体被跳过、导致某一路的候选被清空时，不退到最后那个「全场最近」——
+	# 复活体还活着，按分路规则本来就不该越路，只能站着等它真死。
+	var phoenix_blocked := false
 	for lane in lane_order:
 		var pool: Array = []
 		for o in opponents:
 			if not bool(o.get("alive", false)) or int(o.get("lane", -1)) != lane or not _can_target(f, o, opponents):
+				continue
+			if skip_phoenix and _is_phoenix_revived(o):
+				phoenix_blocked = true
 				continue
 			pool.append(o)
 		if pool.is_empty():
@@ -915,6 +935,8 @@ static func _team_select_target(f: Dictionary, opponents: Array, prefer_low_hp: 
 			return chosen
 		var rerouted := _score_target(f, clear_pool, prefer_low_hp)
 		return rerouted if not rerouted.is_empty() else chosen
+	if phoenix_blocked:
+		return {}
 	return _nearest(f, opponents)
 
 

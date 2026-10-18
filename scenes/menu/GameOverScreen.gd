@@ -19,6 +19,26 @@ var can_return_room := false
 # 10.10 bug 第 9 条：休闲 / 排位的账号服务器队伍房间在「六人确认」时被后端保留，
 # 所以结算首屏也要能「返回队伍」（原来这颗只在结算面板里，而休闲首屏走的是本界面）。
 var can_return_party := false
+var _body_label: Label
+var _menu_button: Button
+
+
+func tutorial_menu_target() -> Control:
+	return _menu_button
+
+
+func show_tutorial_level_up(gained_xp: int) -> void:
+	if _body_label == null:
+		return
+	var english := LocaleManager.get_locale().begins_with("en")
+	var status := ""
+	if english:
+		status = ("Tutorial complete · Lv 2 · +%d XP" % gained_xp) if gained_xp > 0 \
+			else "Lv 2 reward is in your account"
+	else:
+		status = ("教学完成 · Lv 2 · +%d XP" % gained_xp) if gained_xp > 0 \
+			else "教学完成 · Lv 2 奖励已存入账号"
+	_body_label.text = body_text + "\n" + status
 
 
 func _ready() -> void:
@@ -56,6 +76,7 @@ func _ready() -> void:
 	heading.add_child(rule)
 
 	var body := _label(body_text, 21, Color("f4f0e6"))
+	_body_label = body
 	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body.custom_minimum_size = Vector2(700, 70)
 	_region(0.69, 0.82).add_child(body)
@@ -82,6 +103,7 @@ func _ready() -> void:
 				party.disabled = true
 				return_party_requested.emit())
 		var menu := _button(_text("返回主菜单", "Main Menu"), actions, accent)
+		_menu_button = menu
 		menu.pressed.connect(func() -> void: return_menu_requested.emit())
 
 

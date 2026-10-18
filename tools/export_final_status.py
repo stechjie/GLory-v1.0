@@ -88,9 +88,12 @@ def build():
                 for star in range(1, 5)
             },
         }
-        if unit_id == "dark_dragon":
+        if unit_id in ("dark_dragon", "undead_bomb"):
             out["units"][unit_id]["skill_damage_multiplier_1to3"] = unit["damage_atk_pct"]
             out["units"][unit_id]["skill_damage_multiplier_4"] = unit["star4"]["damage_atk_pct"]
+        elif unit_id == "human_cleric":
+            out["units"][unit_id]["skill_heal_multiplier_1to3"] = unit["heal_pct"]
+            out["units"][unit_id]["skill_heal_multiplier_4"] = unit["star4"]["heal_pct"]
     for r in records(wb["03_宠物技能"]):
         pet_id = text(r[0])
         out["pets"][pet_id] = {

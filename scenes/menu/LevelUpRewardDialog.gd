@@ -1,6 +1,7 @@
 extends Control
 
 signal claimed(go_prep: bool)
+signal revealed()
 
 const UnitCollection := preload("res://scripts/account/UnitCollection.gd")
 const SfxService := preload("res://ui/services/SfxService.gd")
@@ -64,6 +65,16 @@ var _reveal_center: CenterContainer
 var _reveal_button: Button
 var _grant_note: Label
 var _action_buttons: HBoxContainer
+
+
+func tutorial_reveal_target() -> Control:
+	return _reveal_button
+
+
+func tutorial_claim_target() -> Control:
+	if _action_buttons == null or _action_buttons.get_child_count() == 0:
+		return null
+	return _action_buttons.get_child(0) as Control
 
 
 func configure(levels: Array, rewards: Array) -> void:
@@ -198,6 +209,7 @@ func _reveal_rewards() -> void:
 	_burst.play_at(_burst.size * 0.5)
 	SfxService.play(SfxService.CUE_UI_CURRENCY_GAIN)
 	_animate_reward_cards()
+	revealed.emit()
 
 
 func _animate_reward_cards() -> void:

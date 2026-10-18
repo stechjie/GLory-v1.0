@@ -638,7 +638,7 @@
                       "id":  "undead_bomb",
                       "model_in_place_actions": ["run"],
                       "star4":  {
-                          "damage_atk_pct":  5
+                          "damage_atk_pct":  2.5
                       },
                       "name":  "自爆灵",
                       "race":  "undead",
@@ -654,7 +654,7 @@
                       "crit":  0.08,
                       "crit_dmg":  1.6,
                       "skill_id":  "death_poison_explosion",
-                      "damage_atk_pct":  2.5,
+                      "damage_atk_pct":  1.0,
                       "model":  "res://assets/models/units/undead_refined/undead_bomb/undead_bomb_refined.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
@@ -867,7 +867,7 @@
                   {
                       "id":  "human_cleric",
                       "star4":  {
-                          "heal_pct":  0.4,
+                          "heal_pct":  0.2,
                           "every":  4
                       },
                       "name":  "牧师",
@@ -885,7 +885,7 @@
                       "crit_dmg":  1.6,
                       "skill_id":  "every_fifth_group_heal",
                       "every":  5,
-                      "heal_pct":  0.15,
+                      "heal_pct":  0.1,
                       "model":  "res://assets/models/units/human_refined/human_cleric/human_cleric_refined.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,

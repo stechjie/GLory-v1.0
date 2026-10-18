@@ -41,6 +41,16 @@ func play_treasure(skill_id: String, origin: Vector3, target: Vector3, context: 
 			_soul_counter(origin, target, context)
 		"treasure_control_refresh":
 			_refresh_clock(origin, context)
+		"treasure_flame_shatter":
+			_flame_burst(origin, target, context, false)
+		"treasure_blood_covenant":
+			_flame_burst(origin, target, context, true)
+		"treasure_gold_coins":
+			_gold_coins(origin, context)
+		"treasure_phoenix_rise":
+			_phoenix_moment(origin, context, false)
+		"treasure_phoenix_release":
+			_phoenix_moment(origin, context, true)
 		_:
 			finish()
 
@@ -193,6 +203,130 @@ func _soul_counter(from_foot: Vector3, killer_body: Vector3, context: Dictionary
 	track(hit_at, 0.5, func(x: float) -> void:
 		drive_shards(shards, pieces, x, 0.5, 0.06, 1.6))
 	_debug["hit_at"] = hit_at
+
+
+# ── 炎焰碎裂 / 血之契约 ────────────────────────────────────────────────
+# 炎焰碎裂：目标身上窜起一团火 —— 几道往上舔的火舌 + 火心爆闪 + 往上飘的火星。
+# 血之契约（伤害 40% → 100% ATK）：换成暗红血火、更大更猛，再拉一道血线从目标连回攻击者。
+const FIRE := {"edge": Color(0.30, 0.04, 0.0), "tint": Color(1.0, 0.40, 0.06), "hot": Color(1.0, 0.78, 0.32), "white_hot": Color(1.0, 0.96, 0.82)}
+const BLOOD_FIRE := {"edge": Color(0.16, 0.0, 0.02), "tint": Color(0.74, 0.04, 0.08), "hot": Color(1.0, 0.30, 0.22), "white_hot": Color(1.0, 0.80, 0.74)}
+const EMBER_BODY := {"facet": 0.2, "main_color": Color(1.0, 0.42, 0.08), "core_color": Color(1.0, 0.86, 0.40)}
+const BLOOD_EMBER_BODY := {"facet": 0.3, "main_color": Color(0.60, 0.02, 0.06), "core_color": Color(1.0, 0.36, 0.30)}
+
+func _flame_burst(attacker_foot: Vector3, target_body: Vector3, context: Dictionary, blood: bool) -> void:
+	var th := height_of(context, "target_height")
+	var oh := height_of(context, "origin_height")
+	var palette: Dictionary = BLOOD_FIRE if blood else FIRE
+	var size := 1.25 if blood else 1.0
+	var ref := weak_node(context.get("target_node"))
+	var base := node_position(ref, target_body)
+	var at_now := func() -> Vector3:
+		return target_body + (node_position(ref, base) - base)
+	_debug["blood"] = blood
+	# 火心爆闪
+	var core := glow_sprite("FireCore", toward_camera(target_body, 0.25), th * 0.9 * size, _pal(palette, {"shape": SHAPE_FLARE, "core_white": 0.75, "spin": _rng.randf() * TAU}))
+	track(0.0, 0.26, func(x: float) -> void:
+		core.global_position = toward_camera(at_now.call() as Vector3, 0.25)
+		core.scale = Vector3.ONE * th * size * lerpf(0.6, 1.3, ease_out(x))
+		show_with(core, 0.95 * (1.0 - x)))
+	# 火舌：几道从身体往上舔的火焰，左右错开、长短不一
+	var tongues := 5 if blood else 4
+	for k in tongues:
+		var tongue := streak("FireTongue%d" % k, _pal(palette, {"core_white": 0.55, "edge_dark": 0.35}))
+		var side := (float(k) - float(tongues - 1) * 0.5) * 0.16 * th
+		var start := 0.02 + 0.04 * float(k % 3)
+		var reach := th * size * _rng.randf_range(0.75, 1.15)
+		var sway := _rng.randf_range(-0.12, 0.12)
+		track(start, 0.42, func(x: float) -> void:
+			var c: Vector3 = at_now.call()
+			var root := c + Vector3.RIGHT * side + Vector3.DOWN * th * 0.15
+			var tip := root + SCREEN_UP * reach * ease_out(minf(1.0, x * 1.8)) + Vector3.RIGHT * sin(x * 9.0 + side * 20.0) * th * sway
+			var tail := root.lerp(tip, smoothstep(0.45, 1.0, x))
+			place_streak(tongue, toward_camera(tail, 0.24), toward_camera(tip, 0.24), th * 0.13 * size * (1.0 - 0.6 * x))
+			show_with(tongue, 0.95 * envelope(x, 0.1, 0.45)))
+	# 火星往上飘（负重力）
+	var embers := shard_cloud("FireEmbers", QUALITY_BUDGET.particle_count_for(10 if blood else 7), BLOOD_EMBER_BODY if blood else EMBER_BODY)
+	var pieces := scatter(embers.multimesh.instance_count, target_body, Vector3.ZERO, 0.7, 1.6, 0.6)
+	track(0.05, 0.7, func(x: float) -> void:
+		drive_shards(embers, pieces, x, 0.7, 0.05 * size, -0.5))
+	if not blood:
+		return
+	# 血线：从目标连回攻击者，一串血滴沿线流回去（吸血纹章的味道）
+	var line := streak("BloodLine", _pal(BLOOD_FIRE, {"core_white": 0.4, "edge_dark": 0.5}))
+	var line_glow := streak("BloodLineGlow", _pal(BLOOD_FIRE, {"core_white": 0.0, "edge_dark": 0.85}))
+	var drops := shard_cloud("BloodLineDrops", QUALITY_BUDGET.particle_count_for(6), BLOOD_EMBER_BODY)
+	var origin_ref := weak_node(context.get("origin_node"))
+	var attacker_body := attacker_foot + Vector3.UP * oh * 0.55
+	var origin_base := node_position(origin_ref, attacker_body)
+	track(0.08, 0.6, func(x: float) -> void:
+		var a: Vector3 = at_now.call()
+		var b := attacker_body + (node_position(origin_ref, origin_base) - origin_base)
+		var mid := a.lerp(b, 0.5) + Vector3.UP * th * 0.35
+		var grow := ease_out(minf(1.0, x * 2.5))
+		var end := bezier3(a, mid, b, grow)
+		place_streak(line, toward_camera(a, 0.22), toward_camera(end, 0.22), th * 0.05 * (1.0 - 0.5 * x))
+		place_streak(line_glow, toward_camera(a, 0.21), toward_camera(end, 0.21), th * 0.14 * (1.0 - 0.5 * x))
+		show_with(line, 0.9 * envelope(x, 0.05, 0.4))
+		show_with(line_glow, 0.5 * envelope(x, 0.05, 0.4))
+		for i in drops.multimesh.instance_count:
+			var u := clampf(x * 1.6 - float(i) * 0.12, 0.0, 1.0)
+			var p := bezier3(a, mid, b, u)
+			drops.multimesh.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ONE * th * 0.05), drops.to_local(toward_camera(p, 0.23))))
+			drops.multimesh.set_instance_color(i, Color(1, 1, 1, (1.0 if u > 0.0 and u < 1.0 else 0.0) * (1.0 - smoothstep(0.8, 1.0, x))))
+		show_with(drops, 1.0))
+
+
+# ── 富裕之路：+10 金 ────────────────────────────────────────────────────
+# 被打的对手头上蹦出一小把金币：往上弹开、翻转着落下，头顶一下金光。「+10」数字由 BattleVfx 的
+# 伤害数字层画（金色样式），这里只管金币。
+const GOLD := {"edge": Color(0.40, 0.22, 0.0), "tint": Color(1.0, 0.76, 0.16), "hot": Color(1.0, 0.92, 0.50), "white_hot": Color(1.0, 1.0, 0.86)}
+const GOLD_COIN_BODY := {"facet": 0.9, "main_color": Color(0.92, 0.64, 0.10), "core_color": Color(1.0, 0.92, 0.50)}
+
+func _gold_coins(head: Vector3, context: Dictionary) -> void:
+	var th := height_of(context, "target_height")
+	var at := head + Vector3.UP * th * 0.15
+	var flash := glow_sprite("GoldFlash", toward_camera(at, 0.3), th * 0.8, _pal(GOLD, {"shape": SHAPE_FLARE, "core_white": 0.8}))
+	track(0.0, 0.25, func(x: float) -> void:
+		flash.scale = Vector3.ONE * th * lerpf(0.4, 1.0, ease_out(x))
+		show_with(flash, 0.9 * (1.0 - x)))
+	var coins := shard_cloud("GoldCoins", QUALITY_BUDGET.particle_count_for(7), GOLD_COIN_BODY)
+	var flying := scatter(coins.multimesh.instance_count, at, Vector3.ZERO, 0.9, 2.1, 0.7)
+	track(0.0, 0.8, func(x: float) -> void:
+		drive_shards(coins, flying, x, 0.8, 0.09, 1.6))
+
+
+# ── 凤凰涅槃：复活瞬间 / 真死化魂 ─────────────────────────────────────
+# 身上的绿色鬼魂光由 BattleVfx 直接罩在模型上（与母灵处决同一套覆盖着色器，换绿色）；
+# 这里只画两个瞬间：复活时一下绿光爆开、魂粒往外散；真死时身体处升起一团绿色魂粒往上飘散。
+const PHOENIX_SOUL := {"edge": Color(0.0, 0.14, 0.06), "tint": Color(0.10, 0.80, 0.40), "hot": Color(0.50, 1.0, 0.70), "white_hot": Color(0.90, 1.0, 0.94)}
+
+func _phoenix_moment(foot: Vector3, context: Dictionary, release: bool) -> void:
+	var h := height_of(context, "origin_height")
+	var body := foot + Vector3.UP * h * 0.5
+	var burst := glow_sprite("PhoenixBurst", toward_camera(body, 0.25), h * 1.3, _pal(PHOENIX_SOUL, {"shape": SHAPE_FLARE, "core_white": 0.7}))
+	track(0.0, 0.35, func(x: float) -> void:
+		burst.scale = Vector3.ONE * h * lerpf(0.5, 1.5 if not release else 1.1, ease_out(x))
+		show_with(burst, (0.9 if not release else 0.6) * (1.0 - x)))
+	var count := QUALITY_BUDGET.particle_count_for(16)
+	var motes_node := shard_cloud("PhoenixMotes", count, {"facet": 0.0, "main_color": Color(0.10, 0.70, 0.34), "core_color": Color(0.60, 1.0, 0.76)})
+	var seeds: Array[Vector3] = []
+	for k in count:
+		seeds.append(Vector3(_rng.randf_range(-0.35, 0.35), _rng.randf_range(0.0, 1.0), _rng.randf_range(0.6, 1.4)))
+	var life := 0.9 if release else 0.6
+	track(0.02, life, func(x: float) -> void:
+		for k in seeds.size():
+			var s: Vector3 = seeds[k]
+			var p: Vector3
+			if release:
+				# 真死：从身体轮廓里浮起、往上飘散
+				p = foot + Vector3.RIGHT * s.x * h * (1.0 + x) + Vector3.UP * h * (s.y + x * 1.2 * s.z)
+			else:
+				# 复活：从身体中心往外散一圈
+				var ang := float(k) / float(seeds.size()) * TAU
+				p = body + (Vector3.RIGHT * cos(ang) + SCREEN_UP * sin(ang)) * h * 0.9 * ease_out(x) * s.z
+			motes_node.multimesh.set_instance_transform(k, Transform3D(Basis().scaled(Vector3.ONE * h * 0.06 * (1.0 - 0.5 * x)), motes_node.to_local(toward_camera(p, 0.2))))
+			motes_node.multimesh.set_instance_color(k, Color(1, 1, 1, 1.0 - smoothstep(0.6, 1.0, x)))
+		show_with(motes_node, 1.0))
 
 
 # ── 控制四件套：技能冷却刷新 ───────────────────────────────────────────

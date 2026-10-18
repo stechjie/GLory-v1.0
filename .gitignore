@@ -89,6 +89,16 @@ android/
 # walked back in, hence the alternating !dir / dir/* pairs below.
 !/assets/ui/
 /assets/ui/*
+!/assets/ui/tutorial/
+/assets/ui/tutorial/*
+!/assets/ui/tutorial/dog_welcome.png
+!/assets/ui/tutorial/dog_welcome.png.import
+!/assets/ui/tutorial/dog_guide.png
+!/assets/ui/tutorial/dog_guide.png.import
+!/assets/ui/tutorial/dog_explain.png
+!/assets/ui/tutorial/dog_explain.png.import
+!/assets/ui/tutorial/dog_encourage.png
+!/assets/ui/tutorial/dog_encourage.png.import
 !/assets/ui/pvp_warning_frame.png
 !/assets/ui/pvp_warning_frame.png.import
 !/assets/ui/menu_backgrounds/

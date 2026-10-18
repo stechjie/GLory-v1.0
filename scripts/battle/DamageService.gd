@@ -52,12 +52,14 @@ static func set_hit_context(kind: String, is_crit: bool = false, source_race: St
 
 # 宝藏反应伤害常在别的攻击结算中途触发（亡魂反击在击杀回调里、自爆在致死回调里），
 # 所以压入前先存下当前上下文，结算完原样还回去。返回值交给 restore_hit_context()。
-static func push_treasure_hit_context(skill_id: String, fx_source_uid: String = "") -> Dictionary:
+# number_tone：伤害数字的配色标记（走 hit_number 的 race 字段，BattleVfx 按它挑颜色），
+# 例如 "treasure_fire" / "treasure_blood" / "treasure_toxic"。空串 = 宝藏伤害的默认技能色。
+static func push_treasure_hit_context(skill_id: String, fx_source_uid: String = "", number_tone: String = "") -> Dictionary:
 	var saved := {"kind": _hit_kind, "crit": _hit_is_crit, "race": _hit_source_race,
 		"skill_id": _hit_skill_id, "fx_source": _hit_fx_source_uid}
 	_hit_kind = HIT_KIND_TREASURE
 	_hit_is_crit = false
-	_hit_source_race = ""
+	_hit_source_race = number_tone
 	_hit_skill_id = skill_id
 	_hit_fx_source_uid = fx_source_uid
 	return saved

@@ -1061,6 +1061,11 @@ static func _perform_attack(attacker: Dictionary, target: Dictionary, state: Dic
 		base *= _blood_rampage_damage_multiplier(attacker, d)
 	if str(d.get("skill_id", "")) == "same_target_damage_stack" and str(attacker.get("linked_target_uid", "")) == str(target.get("uid", "")):
 		base *= 1.0 + float(attacker.get("skill_stacks", 0)) * float(d.get("stack_damage", 0.06))
+	# 腐蚀毒针：只在这一下普攻开始前已经流血的目标上增伤。本次普攻新挂的流血
+	# 在下方 _apply_attack_treasure_effects 才施加，因此从下一击起生效。
+	if not _ignores_treasure(attacker) and _f_has_treasure(attacker, "ctrl_corrosive_needle") \
+			and (StatusEffectService.has_status(target, "bleed") or StatusEffectService.has_status(target, "bleed_nonlethal")):
+		base *= 1.0 + TreasureService.corrosive_needle_bleed_bonus()
 	var is_crit := false
 	attacker.attack_count = int(attacker.get("attack_count", 0)) + 1
 	if str(d.get("race", "")) == "human" and int(attacker.attack_count) % 3 == 0:

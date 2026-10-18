@@ -43,6 +43,8 @@ const UNIT_SKILLS := [
 	"current_hp_strike", "line_pierce",
 	# 10.18 宝藏触发（VFXTreasureSkill3D）。
 	"treasure_element_burst", "treasure_poison_blast", "treasure_soul_counter", "treasure_control_refresh",
+	"treasure_flame_shatter", "treasure_blood_covenant", "treasure_toxic_burst", "treasure_gold_coins",
+	"treasure_phoenix_rise", "treasure_phoenix_release",
 ]
 
 var _composer: BossSkillVFXComposer3D

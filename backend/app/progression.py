@@ -81,28 +81,55 @@ async def award_match(conn, player_id: uuid.UUID, match_uid: str,
         "update player_progression set xp = $2, level = $3, updated_at = now()"
         " where player_id = $1", player_id, after_xp, after)
     for level in range(before + 1, after + 1):
-        await conn.execute(
-            "insert into level_up_events (player_id, level, match_uid)"
-            " values ($1, $2, $3) on conflict do nothing",
-            player_id, level, match_uid)
-        reward = reward_for(level)
-        changes = {}
-        if reward["coin"]:
-            changes["coin"] = reward["coin"]
-        if reward["diamond"]:
-            changes["diamond_free"] = reward["diamond"]
-        if changes:
-            wallet = await shop._lock_wallet(conn, player_id)
-            await shop._apply(conn, player_id, wallet, changes, "level_reward",
-                              None, note=f"level {level} match {match_uid}")
-        for unit in reward["units"]:
-            content_id = f"unit:{unit}"
-            # Veterans already own the old free roster. Preserve their original
-            # entitlement receipt instead of re-granting and rewriting its source.
-            if not await shop._owns(conn, player_id, content_id):
-                await shop.grant_content(conn, player_id, content_id,
-                                         "level_reward", None)
+        await _grant_level(conn, player_id, level, match_uid)
     return gained
+
+
+async def award_tutorial(conn, player_id: uuid.UUID) -> int:
+    """Complete the first local lesson once. The progression row serializes retries.
+
+    A tutorial cannot be a signed multiplayer battle report. Its authenticated
+    completion request is only available while the account is still level one.
+    Set XP to at least 90, never above 90, so this milestone reaches Lv2 only.
+    """
+    await conn.execute(
+        "insert into player_progression (player_id) values ($1) on conflict do nothing",
+        player_id)
+    row = await conn.fetchrow(
+        "select xp, level from player_progression where player_id = $1 for update",
+        player_id)
+    if int(row["level"]) >= 2:
+        return 0
+    before_xp = int(row["xp"])
+    after_xp = max(before_xp, 90)
+    await conn.execute(
+        "update player_progression set xp = $2, level = 2, updated_at = now()"
+        " where player_id = $1", player_id, after_xp)
+    await _grant_level(conn, player_id, 2, f"tutorial:{player_id}")
+    return after_xp - before_xp
+
+
+async def _grant_level(conn, player_id: uuid.UUID, level: int, match_uid: str) -> None:
+    await conn.execute(
+        "insert into level_up_events (player_id, level, match_uid)"
+        " values ($1, $2, $3) on conflict do nothing",
+        player_id, level, match_uid)
+    reward = reward_for(level)
+    changes = {}
+    if reward["coin"]:
+        changes["coin"] = reward["coin"]
+    if reward["diamond"]:
+        changes["diamond_free"] = reward["diamond"]
+    if changes:
+        wallet = await shop._lock_wallet(conn, player_id)
+        await shop._apply(conn, player_id, wallet, changes, "level_reward",
+                          None, note=f"level {level} match {match_uid}")
+    for unit in reward["units"]:
+        content_id = f"unit:{unit}"
+        # Keep an existing entitlement's receipt and source intact.
+        if not await shop._owns(conn, player_id, content_id):
+            await shop.grant_content(conn, player_id, content_id,
+                                     "level_reward", None)
 
 
 async def state(conn, player_id: uuid.UUID) -> dict:

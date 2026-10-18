@@ -60,8 +60,8 @@
   "ctrl_corrosive_needle": {
    "name": "腐蚀毒针",
    "name_en": "Corrosive Needle",
-   "effect": "每第 4 次攻击使目标失血 3 秒，冷却 5 秒",
-   "effect_en": "Every 4th attack bleeds the target for 3s, 5s cooldown",
+   "effect": "每第 4 次攻击使目标失血 3 秒，冷却 5 秒；普攻已失血目标时伤害 +15%",
+   "effect_en": "Every 4th attack bleeds the target for 3s, 5s cooldown; basic attacks against an already bleeding target deal +15% damage",
    "trigger": "我方普通棋子攻击时",
    "trigger_en": "When an allied normal piece attacks"
   },

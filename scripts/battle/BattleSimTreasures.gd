@@ -168,7 +168,14 @@ static func _apply_attack_treasure_effects(attacker: Dictionary, target: Diction
 	if _f_has_treasure(attacker, "atk_frenzy_assault"):
 		_apply_frenzy_assault(attacker, target)
 	if _f_has_treasure(attacker, "elem_flame_shatter") and RngService.rng.randf() < 0.25:
+		# 10.18：火焰真伤跳数字 + 前端在目标身上窜火；有血之契约（100% ATK）换成血火 + 血线。
+		# 纯表现标记，伤害与 RNG 消耗不变。_apply_attribute_effect 也被法师技能调用，所以标记只打在这里。
+		var blood := _f_has_linkage(attacker, "link_blood_covenant")
+		var saved_fire := DamageService.push_treasure_hit_context(
+			"treasure_blood_covenant" if blood else "treasure_flame_shatter",
+			str(attacker.get("uid", "")), "treasure_blood" if blood else "treasure_fire")
 		_apply_attribute_effect("fire", attacker, target)
+		DamageService.restore_hit_context(saved_fire)
 	if _f_has_treasure(attacker, "elem_frost_blade") and RngService.rng.randf() < 0.25:
 		StatusEffectService.add_status(target, "slow", 2.0, {"move_pct": 0.35, "attack_speed_pct": 0.50})
 		StatusEffectService.add_status(target, "ice_affected", 2.0, {})
@@ -251,6 +258,12 @@ static func _apply_post_damage_treasures(attacker: Dictionary, target: Dictionar
 	if _f_has_linkage(attacker, "link_rich_path"):
 		if RngService.rng.randf() < 0.25:
 			state.bonus_gold = int(state.get("bonus_gold", 0)) + 10
+			# 10.18：富裕之路 +10 金 —— 前端在被打的对手头上蹦一把金币。纯表现事件，走
+			# visual_events（与母灵处决同一通道，回放的 frame_events 会记下来）。
+			if not state.has("visual_events") or typeof(state.visual_events) != TYPE_ARRAY:
+				state.visual_events = []
+			state.visual_events.append({"type": "treasure_gold", "source_uid": str(attacker.get("uid", "")),
+				"target_uid": str(target.get("uid", "")), "amount": 10, "time": float(state.get("elapsed", 0.0))})
 
 
 static func _apply_defender_treasure_reaction(defender: Dictionary, attacker: Dictionary, state: Dictionary, _dealt: int) -> void:
@@ -294,7 +307,10 @@ static func _try_toxic_burst(target: Dictionary) -> void:
 			burst_damage += tick_damage * ticks
 	if burst_damage <= 0:
 		return
+	# 10.18：剧毒爆发一口气结算剩余毒伤 —— 跳数字 + 前端在目标身上炸紫绿毒爆。纯表现标记。
+	var saved_hit := DamageService.push_treasure_hit_context("treasure_toxic_burst", str(target.get("uid", "")), "treasure_toxic")
 	DamageService.apply_damage(target, burst_damage, true)
+	DamageService.restore_hit_context(saved_hit)
 	target.statuses.erase("poison")
 
 static func _apply_soul_counter_treasure(killer: Dictionary, victim: Dictionary) -> void:

@@ -28,6 +28,7 @@ signal back_requested
 signal starter_picked   # 首次三选一选定后发出（用于「进主菜单前的强制关卡」）
 signal shop_requested   # 棋盘皮肤页点了「去商城」
 signal unit_shop_requested(race: String)   # 种族页点了没解锁的种族 ->「去商城」直接落在棋子页
+signal unit_ownership_loaded
 
 enum Tab { PETS, RACES, SKINS }
 enum SkinOwnership { NOT_LOADED, LOADING, READY, FAILED }
@@ -89,10 +90,29 @@ var _race_notice_label: Label
 # 拉不到就都是空的 -> 哪一族都不锁（真正挡人的是服务端，见 UnitCollection.gd 顶部）。
 var _shop_items: Array = []
 var _owned_content: Dictionary = {}
+var _unit_ownership_ready := false
+
+
+func tutorial_unit_ownership_ready() -> bool:
+	return _unit_ownership_ready
 # 草稿：玩家在页面上点来点去的那一份。只有凑满 RacePick.required_count() 个、按了「保存」
 # 才交给账号服务器 —— 选到一半（3 个）的状态绝不能存，否则存下来的就是一份不合法的选择。
 # 顺序始终跟 RacePick.all_races() 一致，这样才能直接和已保存的那份比较。
 var _race_draft: Array[String] = []
+
+
+func tutorial_pet_target() -> Control:
+	return _cards_row
+
+
+func tutorial_race_tab_target() -> Control:
+	return _tab_buttons.get(Tab.RACES) as Control
+
+
+func tutorial_god_target() -> Control:
+	if not _race_cards.has("god"):
+		return null
+	return _race_cards["god"].get("panel") as Control
 
 # --- 棋盘皮肤页 ---
 var _skin_box: VBoxContainer
@@ -741,6 +761,10 @@ func _refresh_race_card(race: String, forced: bool) -> void:
 	var complete := _race_complete(race)
 	var name_lbl: Label = parts["name"]
 	name_lbl.text = tr("race_pick_name") % UnitDetailFormat.unit_race_name(race)
+	if race == "god" and not complete and not _owned_content.is_empty():
+		name_lbl.add_theme_font_size_override("font_size", 16)
+		name_lbl.text += "  %d/%d" % [UnitCollection.owned_count(race, _owned_content),
+			UnitCollection.total_count(race)]
 	if picked:
 		name_lbl.text += "  ✓"
 	var panel: PanelContainer = parts["panel"]
@@ -856,6 +880,8 @@ func _load_unit_ownership() -> void:
 		_owned_content[str(id)] = true
 	await PlayerProfile.refresh_races()
 	_refresh_races()
+	_unit_ownership_ready = true
+	unit_ownership_loaded.emit()
 
 # 没解锁的种族：点 logo 或卡片按钮都弹这个，「去商城」直接落在棋子页那一族。
 func _prompt_race_shop(race: String) -> void:

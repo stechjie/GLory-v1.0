@@ -192,7 +192,8 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 		"death_poison_explosion":_oga_pack_skill("death_poison_explosion",origin,origin,context)
 		# 10.18：自爆的毒爆冲击环单独一个 id，由「被炸到」的伤害事件触发，不重播上面的毒爆贴图。
 		"treasure_poison_blast":_poison_blast(origin,context)
-		"treasure_element_burst","treasure_soul_counter","treasure_control_refresh":
+		"treasure_toxic_burst":_toxic_burst(target)
+		"treasure_element_burst","treasure_soul_counter","treasure_control_refresh","treasure_flame_shatter","treasure_blood_covenant","treasure_gold_coins","treasure_phoenix_rise","treasure_phoenix_release":
 			_treasure_skill(skill_id,origin,target,context)
 		"poison_reflect_armor_stack":_oga_pack_skill("poison_reflect_armor_stack",origin,origin,context)
 		"parasite_on_kill":_summon(target)
@@ -365,10 +366,27 @@ func _poison_blast(origin_foot:Vector3,context:Dictionary)->void:
 			if is_instance_valid(hit):
 				hit.play_spec(at,_poison_explosion_spec(1.0),{}))
 
-# 宝藏触发的战斗表现（元素四件套 / 亡魂反击 / 控制套装刷新时钟）。
+# 剧毒爆发（10.18 用户定：紫绿两色）：目标身上先炸绿色毒爆，紧跟一个稍小、稍偏的紫色毒爆叠上去。
+const POISON_EXPLOSION_PURPLE:="res://assets/vfx/oga/skill_packs/poison_explosion_purple.png"
+
+func _toxic_burst(target_body:Vector3)->void:
+	var green:=_block(VFX_OGA_SKILL) as VFXFlipbookSkill3D
+	if green!=null:
+		last_spawned=green
+		green.play_spec(target_body,_poison_explosion_spec(1.5),{})
+	var purple:=_block(VFX_OGA_SKILL) as VFXFlipbookSkill3D
+	if purple!=null:
+		var spec:=_poison_explosion_spec(1.15)
+		spec["path"]=POISON_EXPLOSION_PURPLE
+		var offset:=Vector3(0.12,0.10,0.0)
+		_after(0.08,func()->void:
+			if is_instance_valid(purple):
+				purple.play_spec(target_body+offset,spec,{}))
+
+# 宝藏触发的战斗表现（元素四件套 / 亡魂反击 / 控制套装刷新时钟 / 炎焰碎裂 / 富裕之路 / 凤凰涅槃）。
 # 亡魂反击与刷新时钟是玩家要读懂的关键反馈，走 critical 通道；元素环与毒环走普通预算。
 func _treasure_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var critical:=skill_id in ["treasure_soul_counter","treasure_control_refresh"]
+	var critical:=skill_id in ["treasure_soul_counter","treasure_control_refresh","treasure_phoenix_rise","treasure_phoenix_release"]
 	var effect:Node3D=_block_forced(VFX_TREASURE_SKILL) if critical else _block(VFX_TREASURE_SKILL)
 	if effect==null:
 		return

@@ -25,6 +25,21 @@ signal diamond_shop_requested   # 顶部钻石 +：直接进入钻石档位
 signal bag_requested            # 右上角「背包」：进入背包
 signal mail_requested           # 右上角「邮件」：进入邮箱（docs/邮件系统设计.md）
 
+var _tutorial_casual_target: Button
+var _tutorial_profile_target: Button
+var _tutorial_prep_target: Button
+
+func tutorial_casual_target() -> Control:
+	return _tutorial_casual_target
+
+
+func tutorial_profile_target() -> Control:
+	return _tutorial_profile_target
+
+
+func tutorial_prep_target() -> Control:
+	return _tutorial_prep_target
+
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
 # 9.17：BGM 走常驻服务（播放器挂 root），音效走 SfxService 的播放器池。
@@ -315,7 +330,7 @@ func _build() -> void:
 	# 等级/段位做出来之后再换回去，那时第二行才有真东西可放。
 	_profile_name_label = _add_label("", Vector2(200, 70), Vector2(330, 35), 24, "left")
 	_profile_sub_label = _add_label("", Vector2(200, 104), Vector2(330, 24), 18, "left")
-	_add_hit(Vector2(18, 12), Vector2(550, 178), _emit_profile, "left")
+	_tutorial_profile_target = _add_hit(Vector2(18, 12), Vector2(550, 178), _emit_profile, "left")
 	# 这两个数**曾经也是写死的假数据**（"89,450" / "2,350"），同上面名牌那两行。
 	# 现在接的是 GET /v1/me/wallet。拉到之前显示 "—" 而不是 0 ——
 	# 0 是一个**看起来正常的错值**，玩家会以为自己的钱没了。
@@ -399,8 +414,8 @@ func _build() -> void:
 	_add_label(_menu_text("排位", "Ranked"), Vector2(680, 820), Vector2(310, 43), 32)
 	_add_label(_menu_text("自定义", "Custom"), Vector2(1010, 809), Vector2(220, 36), 26)
 	_add_label(_menu_text("图鉴", "Gallery"), Vector2(1250, 807), Vector2(220, 36), 26)
-	_add_hit(Vector2(200, 690), Vector2(220, 190), _emit_prep)
-	_add_hit(Vector2(440, 690), Vector2(220, 190), _on_casual)
+	_tutorial_prep_target = _add_hit(Vector2(200, 690), Vector2(220, 190), _emit_prep)
+	_tutorial_casual_target = _add_hit(Vector2(440, 690), Vector2(220, 190), _on_casual)
 	_add_hit(Vector2(680, 650), Vector2(310, 260), _on_ranked)
 	_add_hit(Vector2(1010, 690), Vector2(220, 190), _show_room_overlay)
 	_add_hit(Vector2(1250, 690), Vector2(220, 190), _emit_codex)
@@ -845,6 +860,9 @@ func _emit_reconnect() -> void:
 # 先过 allow_new_match —— 上一局还没打完时不该让他去排新的队，
 # 同「排位」和「开始游戏」那两条。
 func _on_casual() -> void:
+	if PlayerProfile.startup_route() == PlayerProfile.STARTUP_TUTORIAL:
+		casual_requested.emit()
+		return
 	if await NetworkService.allow_new_match():
 		casual_requested.emit()
 
@@ -1048,6 +1066,8 @@ func _refresh_progression() -> void:
 	_account_level = int(state.get("level", 1))
 	_refresh_profile_plate()
 	var pending: Array = state.get("unseen_levels", [])
+	if not PlayerProfile.tutorial_followup_step.is_empty():
+		return
 	if pending.is_empty() or ModalStack.has(LEVEL_REWARD_MODAL_ID):
 		return
 	var rewards: Array = []

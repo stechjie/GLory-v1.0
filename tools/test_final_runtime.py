@@ -149,6 +149,47 @@ class FinalRuntimeTest(unittest.TestCase):
         finally:
             book.close()
 
+    def test_cleric_and_bomb_excel_percent_updates_both_star_groups(self) -> None:
+        book = load_workbook(BOOK, read_only=False, data_only=True)
+        try:
+            book["02_棋子技能"]["O23"] = 15
+            book["02_棋子技能"]["P23"] = 25
+            book["02_棋子技能"]["G23"] = "战歌：治疗周围友军最大生命15%。"
+            book["02_棋子技能"]["L23"] = "War Song: heal allies for 15%."
+            book["02_棋子技能"]["M23"] = "战歌：治疗周围友军最大生命25%。"
+            book["02_棋子技能"]["O30"] = 125
+            book["02_棋子技能"]["P30"] = 275
+            book["02_棋子技能"]["G30"] = "死亡毒爆：攻击125%伤害。"
+            book["02_棋子技能"]["L30"] = "Death Poison Burst: 125% ATK damage."
+            book["02_棋子技能"]["M30"] = "死亡毒爆：攻击275%伤害。"
+            tables = copy.deepcopy(self.tables)
+            changes = overlay_excel_owned(book, tables)
+            expected = {("human_cleric", "heal_pct"): 0.15,
+                        ("human_cleric", "star4.heal_pct"): 0.25,
+                        ("undead_bomb", "damage_atk_pct"): 1.25,
+                        ("undead_bomb", "star4.damage_atk_pct"): 2.75}
+            self.assertEqual(expected, {(change["id"], change["field"]): change["new"] for change in changes})
+            source = (ROOT / "data/units/race_units.json").read_text(encoding="utf-8-sig")
+            patched = patch_json_scalars(source, changes, tables["data/units/race_units.json"])
+            self.assertEqual(tables["data/units/race_units.json"], json.loads(patched))
+        finally:
+            book.close()
+
+    def test_corrosive_needle_excel_bonus_updates_only_its_json_number(self) -> None:
+        book = load_workbook(BOOK, read_only=False, data_only=True)
+        try:
+            cell = book["09_宝藏与套装"]["E11"]
+            cell.value = str(cell.value).replace("伤害+15%", "伤害+20%")
+            tables = copy.deepcopy(self.tables)
+            changes = overlay_excel_owned(book, tables)
+            self.assertEqual([("ctrl_corrosive_needle", "bonus_vs_bleeding", 0.15, 0.2)],
+                             [(item["id"], item["field"], item["old"], item["new"]) for item in changes])
+            source = (ROOT / "data/treasure/treasures.json").read_text(encoding="utf-8-sig")
+            patched = patch_json_scalars(source, changes, tables["data/treasure/treasures.json"])
+            self.assertEqual(tables["data/treasure/treasures.json"], json.loads(patched))
+        finally:
+            book.close()
+
     def test_invalid_excel_input_stops_before_writing(self) -> None:
         book = load_workbook(BOOK, read_only=False, data_only=True)
         try:

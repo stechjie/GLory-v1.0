@@ -6,6 +6,8 @@ signal queue_started(mode: String, host: bool)
 # `canceller` 是取消者的昵称（无数字 ID），拿不到就是空串。
 # 与 `queue_started` 配对：有开就有开，不然房主那边的面板会一直挂着。
 signal queue_canceled(canceller: String)
+signal tutorial_mode_selected
+signal tutorial_requested
 
 const REF := Vector2(1672, 941)
 const BG := preload("res://assets/ui/main_menu_live/background.png")
@@ -93,6 +95,7 @@ const START_DIM := Color(0.78, 0.76, 0.70, 1.0)
 var _initial_mode := "casual"
 var _invite_id := ""
 var _preview := ""
+var _tutorial_mode_chosen := false
 var _room: Dictionary = {}
 var _friends: Array = []
 var _friends_busy := false
@@ -178,6 +181,19 @@ func configure_preview(role: String) -> void:
 	_initial_mode = "ranked"
 
 
+func configure_tutorial_intro() -> void:
+	_preview = "tutorial"
+	_initial_mode = "casual"
+
+
+func tutorial_mode_target() -> Control:
+	return _mode_button
+
+
+func tutorial_start_target() -> Control:
+	return _action
+
+
 func _ready() -> void:
 	_build()
 	# 10.10 需求：排位房开麦后 BGM 要变小（与自定义房间、对局一致）。
@@ -190,6 +206,15 @@ func _ready() -> void:
 		RealtimeService.message_received.connect(_on_realtime)
 	if _preview != "":
 		_apply(_preview_room())
+		if _preview == "tutorial":
+			_action.text = _text("匹配 AI", "MATCH AI")
+			_action.disabled = true
+			_mode_button.disabled = false
+			_notice.text = _text("点击青苗，开始第一次教学", "Choose Seedling for your first lesson")
+			for control in [_friends_toggle, _pet_toggle, _chat_panel, _chat_toggle,
+					_voice_mic, _voice_speaker]:
+				if control != null:
+					control.visible = false
 		_friends = [
 			{"friend_code": "KLMN2345", "player_name": "月影", "online": true},
 			{"friend_code": "QWER7788", "player_name": "小木", "online": true},
@@ -892,6 +917,8 @@ func _refresh_room_now() -> void:
 
 
 func _on_realtime(payload: Dictionary) -> void:
+	if _preview != "":
+		return
 	var kind := str(payload.get("t", ""))
 	if kind == PRESENCE_PUSH:
 		# 好友上线 / 换房间（backend/app/presence.py 的 _notify_watchers）。
@@ -1054,6 +1081,14 @@ func _update_mode_display(mode: String) -> void:
 
 
 func _open_mode_picker() -> void:
+	if _preview == "tutorial":
+		_tutorial_mode_chosen = true
+		_mode_button.text = _text("青苗  ·  13 回合  ✓", "SEEDLING  ·  13 ROUNDS  ✓")
+		_mode_button.disabled = true
+		_action.disabled = false
+		_notice.text = _text("已选择青苗 · 13 回合", "Seedling selected · 13 rounds")
+		tutorial_mode_selected.emit()
+		return
 	if _local_only or ModalStack.has(MODE_MODAL_ID):
 		return
 	var dialog := CHOICE_DIALOG.new() as Control
@@ -1165,6 +1200,10 @@ func _send_chat() -> void:
 
 
 func _act() -> void:
+	if _preview == "tutorial":
+		if _tutorial_mode_chosen:
+			tutorial_requested.emit()
+		return
 	if _local_only or _busy:
 		return
 	if _preview != "":
@@ -1250,7 +1289,7 @@ func _run(action: Callable) -> void:
 
 func _is_host() -> bool:
 	if _preview != "":
-		return _preview == "host"
+		return _preview in ["host", "tutorial"]
 	return str(_room.get("host_code", "")) == str(AccountManager.profile.get("friend_code", ""))
 
 
@@ -1360,6 +1399,13 @@ func _my_member() -> Dictionary:
 
 
 func _preview_room() -> Dictionary:
+	if _preview == "tutorial":
+		return {"state": "room", "id": "tutorial_local", "mode": "casual",
+			"host_code": "TUTORIAL", "members": [{"friend_code": "TUTORIAL",
+			"player_name": str(AccountManager.profile.get("player_name", "Player")),
+			"avatar": AVATARS.default_avatar(), "avatar_frame": AVATARS.default_frame(),
+			"tier": 0, "host": true, "ready": true}], "pets": [],
+			"host_pet": "", "messages": [], "queued": false}
 	return {"state": "room", "id": "preview", "mode": "ranked", "host_code": "ABCD1234",
 		"members": [
 			{"friend_code": "ABCD1234", "player_name": "星河", "avatar": AVATARS.default_avatar(),

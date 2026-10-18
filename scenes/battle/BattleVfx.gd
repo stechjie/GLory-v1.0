@@ -258,6 +258,10 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 			apocalypse_ended.append(apocalypse_result)
 		var prev_skill_ready := float(prev.get("skill_ready", 0.0))
 		var now_skill_ready := float(now.get("skill_ready", 0.0))
+		# 10.18 凤凰涅槃：复活体第一次活着出现 → 复活瞬间的绿光（复活体是新 uid，每只只播一次）。
+		if bool(now.get("phoenix_used", false)) and bool(now.get("alive", false)) and not _phoenix_rise_played.has(id):
+			_phoenix_rise_played[id] = true
+			_play_unit_procedural("treasure_phoenix_rise", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO), _unit_target_context(now, now))
 		if now_skill_ready > prev_skill_ready + 0.1:
 			_play_skill_cast_vfx(now, prev, damage_events, current)
 		elif prev_skill_ready - now_skill_ready > REFRESH_MIN_DROP_SEC:
@@ -390,6 +394,7 @@ func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
 			u["skill_stacks"] = int(f.get("skill_stacks", 0))
 			# 人王的持久成长层数，只给天剑定尺寸用。3v3 回放的 roster 不带这个字段，读到 0。
 			u["king_stacks"] = int(f.get("king_growth_stacks", 0))
+			u["phoenix_used"] = bool(f.get("phoenix_used", false))
 			u["sim_uid"] = str(f.get("uid", ""))
 			u["killer_uid"] = str(f.get("killer_uid", ""))
 			u["mother_execute_kill"] = bool(f.get("mother_execute_kill", false))
@@ -1531,6 +1536,8 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 			_collect_crimson_event(crimson_pierces, event, false)
 		elif str(event.get("type", "")) == "hit_number" and bool(event.get("treasure", false)) and str(event.get("kind", "dmg")) == "dmg":
 			_collect_treasure_hit(treasure_groups, event)
+		elif str(event.get("type", "")) == "treasure_gold":
+			_play_treasure_gold(event, current)
 		elif str(event.get("type", "")) == "hit_number" and str(event.get("skill_id", "")) == "global_divine_blast" and str(event.get("kind", "dmg")) == "dmg":
 			_play_divine_pulse(event, current)
 		elif str(event.get("type", "")) == "hit_number" and str(event.get("skill_id", "")) == "current_hp_strike" and str(event.get("kind", "dmg")) == "dmg":
@@ -1587,13 +1594,36 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 # 模拟器给这三类伤害打了 kind = treasure 的 hit_number（DamageService.push_treasure_hit_context），
 # fx_source_uid 是表现起点：元素爆发的中心目标 / 自爆灵自己 / 亡魂反击的持有者。
 # 起点那一位可能当帧就死了（自爆灵、持有者），所以先查本帧快照、再退回上一帧。
+# 宝藏伤害数字的配色（模拟把 tone 写进 hit_number 的 race 字段，见 DamageService.push_treasure_hit_context）。
+const _TREASURE_NUMBER_TONES := {
+	"treasure_fire": {"color": Color(1.0, 0.50, 0.14), "size": 24, "outline": Color(0.24, 0.04, 0.0, 0.95)},
+	"treasure_blood": {"color": Color(0.96, 0.14, 0.20), "size": 28, "outline": Color(0.14, 0.0, 0.02, 0.95)},
+	# 剧毒爆发：紫色字、绿色描边 —— 和紫绿两色的毒爆一个调子。
+	"treasure_toxic": {"color": Color(0.80, 0.42, 1.0), "size": 28, "outline": Color(0.10, 0.42, 0.08, 0.95)},
+}
 const TREASURE_HIT_VFX := {
+	"treasure_flame_shatter": "treasure_flame_shatter",
+	"treasure_blood_covenant": "treasure_blood_covenant",
+	"treasure_toxic_burst": "treasure_toxic_burst",
 	"treasure_element_burst": "treasure_element_burst",
 	"death_poison_explosion": "treasure_poison_blast",
 	"treasure_soul_counter": "treasure_soul_counter",
 }
 # 元素四件套和自爆的模拟半径（BattleSimTreasures 里写死的 180）。
 const TREASURE_BLAST_SIM_RADIUS := 180.0
+
+# 富裕之路 +10 金：被打的对手头上蹦金币 + 金色「+10」。所有人都看得到（战场提示，不做归属门控）。
+func _play_treasure_gold(event: Dictionary, current: Dictionary) -> void:
+	var target := _vfx_unit_by_sim_uid(current, str(event.get("target_uid", "")))
+	if target.is_empty():
+		target = _vfx_unit_by_sim_uid(_vfx_prev_units, str(event.get("target_uid", "")))
+	if target.is_empty():
+		return
+	var context := _unit_target_context(target, target)
+	var head: Vector3 = target.get("world_head", target.get("world_hit", Vector3.ZERO))
+	_play_unit_procedural("treasure_gold_coins", head, head, context)
+	_spawn_hit_number(target.get("head_pos", Vector2.ZERO) + Vector2(0, -26), int(event.get("amount", 10)), "gold", false, false)
+
 
 func _collect_treasure_hit(groups: Dictionary, event: Dictionary) -> void:
 	var skill_id := str(event.get("skill_id", ""))
@@ -1959,6 +1989,7 @@ func cue_release_corpses() -> void:
 			release_death_actor(str(uid), actor as Node3D)
 	_cue_corpses.clear()
 	_mother_execute_victims.clear()
+	_phoenix_rise_played.clear()
 	for entry_value in _active_death_actors.values():
 		if not (entry_value is Dictionary):
 			continue
@@ -1986,6 +2017,9 @@ func cue_play_death(victim_uid: String, duration_sec: float = 0.35) -> bool:
 		return false
 	if _is_fresh_mother_execute_victim(victim_uid):
 		_play_mother_execute_death(victim_uid, actor)
+		return true
+	if _is_phoenix_revived_uid(victim_uid):
+		_play_phoenix_release(victim_uid, actor)
 		return true
 	# The profile owns the length so a low quality tier can shorten the fade
 	# without ever removing it (checklist 6: death must never just disappear).
@@ -2125,6 +2159,66 @@ func _play_mother_execute_death(uid: String, actor: Node3D) -> void:
 		tween.parallel().tween_property(geometry, "transparency", 1.0, MOTHER_EXECUTE_DISSOLVE_SEC)
 	tween.chain().tween_callback(func() -> void: _finish_death_actor(uid, actor))
 	_play_unit_node_death_fade(uid, MOTHER_EXECUTE_HOLD_SEC + MOTHER_EXECUTE_DISSOLVE_SEC)
+
+
+# --- 10.18 凤凰涅槃：复活体罩绿色鬼魂光，真死时化成绿色魂粒 -----------------------
+#
+# 用户口径：不要「死灵气息」，要母灵处决那种覆盖在身上的光，绿色。所以直接复用
+# MOTHER_ENCASE_SHADER_CODE（同一份着色器），只把 tint 换成绿色、亮度做呼吸。
+const PHOENIX_GHOST_TINT := Color(0.24, 1.0, 0.46)
+var _phoenix_rise_played: Dictionary = {}
+
+func _sync_phoenix_ghost(model_node: Node3D) -> void:
+	if model_node == null or not is_instance_valid(model_node):
+		return
+	var overlay: ShaderMaterial = model_node.get_meta("phoenix_ghost_overlay") if model_node.has_meta("phoenix_ghost_overlay") else null
+	if overlay == null:
+		if _mother_encase_shader == null:
+			_mother_encase_shader = Shader.new()
+			_mother_encase_shader.code = MOTHER_ENCASE_SHADER_CODE
+		overlay = ShaderMaterial.new()
+		overlay.shader = _mother_encase_shader
+		overlay.set_shader_parameter("tint", PHOENIX_GHOST_TINT)
+		for geometry in _death_fade_targets(model_node):
+			if geometry is MeshInstance3D:
+				geometry.material_overlay = overlay
+		model_node.set_meta("phoenix_ghost_overlay", overlay)
+	# 呼吸：0.55 ~ 0.85 之间起伏，看得出「这是借来的命」又不至于盖死本体。
+	overlay.set_shader_parameter("glow", 0.70 + 0.15 * sin(float(Time.get_ticks_msec()) * 0.006))
+
+
+# 复活体 uid 形如「<原 uid>_phoenix_<n>」（BattleSimTreasures._queue_phoenix_revive）；
+# 再用状态里的 phoenix_used 兜一次，两者都成立才算。
+func _is_phoenix_revived_uid(uid: String) -> bool:
+	if not uid.contains("_phoenix_"):
+		return false
+	for side in ["player", "enemy"]:
+		for f in _state.get(side, []):
+			if typeof(f) == TYPE_DICTIONARY and str(f.get("uid", "")) == uid:
+				return bool(f.get("phoenix_used", false))
+	return false
+
+
+func _play_phoenix_release(uid: String, actor: Node3D) -> void:
+	_freeze_actor_animation(actor)
+	var overlay: ShaderMaterial = actor.get_meta("phoenix_ghost_overlay") if actor.has_meta("phoenix_ghost_overlay") else null
+	var geometries := _death_fade_targets(actor)
+	var tween := create_tween()
+	_active_death_actors[actor.get_instance_id()] = {"uid": uid, "actor": actor, "tween": tween, "mother_execute": true}
+	if overlay != null:
+		var set_glow := func(value: float) -> void:
+			overlay.set_shader_parameter("glow", value)
+		tween.tween_method(set_glow, 0.85, 1.8, MOTHER_EXECUTE_DISSOLVE_SEC * 0.4)
+		tween.parallel().tween_property(actor, "scale", actor.scale * 0.85, MOTHER_EXECUTE_DISSOLVE_SEC).set_ease(Tween.EASE_IN)
+	else:
+		tween.tween_property(actor, "scale", actor.scale * 0.85, MOTHER_EXECUTE_DISSOLVE_SEC).set_ease(Tween.EASE_IN)
+	for geometry in geometries:
+		tween.parallel().tween_property(geometry, "transparency", 1.0, MOTHER_EXECUTE_DISSOLVE_SEC)
+	tween.chain().tween_callback(func() -> void: _finish_death_actor(uid, actor))
+	_play_unit_node_death_fade(uid, MOTHER_EXECUTE_DISSOLVE_SEC)
+	var foot := actor.global_position
+	var h := _model_height_of(actor)
+	_play_unit_procedural("treasure_phoenix_release", foot, foot, {"origin_height": h if h > 0.0 else 0.98})
 
 
 # 定身：停掉模型自己的动画（AnimationPlayer 暂停、AnimationTree 关掉）和残留的前冲 tween。
@@ -2499,7 +2593,16 @@ func _spawn_hit_number(head_pos: Vector2, amount: int, kind: String, crit: bool,
 	var rise := 46.0
 	var dur := 0.8
 	var pop := true
-	match kind:
+	var tone: Dictionary = _TREASURE_NUMBER_TONES.get(race, {}) if kind == "dmg" else {}
+	if kind == "gold":
+		tone = {"color": Color(1.0, 0.84, 0.22), "size": 22, "outline": Color(0.30, 0.16, 0.0, 0.95), "prefix": "+"}
+	match kind if tone.is_empty() else "__tone":
+		"__tone":
+			color = tone["color"]
+			text = str(tone.get("prefix", "")) + str(amount)
+			font_size = int(tone["size"])
+			rise = 52.0
+			dur = 0.75
 		"miss":
 			color = Color(0.72, 0.91, 1.0)
 			text = "MISS"
@@ -2540,7 +2643,10 @@ func _spawn_hit_number(head_pos: Vector2, amount: int, kind: String, crit: bool,
 	lbl.add_theme_color_override("font_color", color)
 	# Dark race numbers are near-black, so give them a light outline to stay legible;
 	# everything else keeps the default black outline.
-	lbl.add_theme_color_override("font_outline_color", Color(0.92, 0.94, 1.0, 0.95) if race == "dark" and kind == "dmg" and not crit and not is_skill else Color(0, 0, 0, 0.95))
+	if not tone.is_empty():
+		lbl.add_theme_color_override("font_outline_color", tone.get("outline", Color(0, 0, 0, 0.95)))
+	else:
+		lbl.add_theme_color_override("font_outline_color", Color(0.92, 0.94, 1.0, 0.95) if race == "dark" and kind == "dmg" and not crit and not is_skill else Color(0, 0, 0, 0.95))
 	lbl.text = text
 	lbl.reset_size()
 	var sz := lbl.get_minimum_size()

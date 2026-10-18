@@ -931,6 +931,10 @@ func fetch_progression() -> Dictionary:
 	return await _request(HTTPClient.METHOD_GET, "/v1/me/progression", null, true)
 
 
+func complete_first_tutorial() -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/progression/tutorial-complete", {}, true)
+
+
 func mark_progression_seen(levels: Array) -> Dictionary:
 	return await _request(HTTPClient.METHOD_POST, "/v1/me/progression/seen", {"levels": levels}, true)
 
