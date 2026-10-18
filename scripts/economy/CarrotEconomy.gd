@@ -40,11 +40,17 @@ const STONE_COST_INCREMENT := 20
 const STONE_COST := STONE_FIRST_COST
 const STONE_DRAW_PER_ROUND := 1
 const STONE_TYPES := ["sky", "land", "ren"]
-const FOUR_STAR_COST_VERSION := 1
+const FOUR_STAR_COST_VERSION := 2
 const FOUR_STAR_GOLD := {1: 500, 2: 800, 3: 1100}
 
 static func four_star_gold(tier: int) -> int:
 	return int(FOUR_STAR_GOLD.get(tier, -1))
+
+static func seedling_four_star_gold(upgrades_completed: int) -> int:
+	var count := maxi(0, upgrades_completed)
+	if count == 0:
+		return 300
+	return 200 + count * 300
 
 static func stone_cost_for_draw(draws_completed: int) -> int:
 	return STONE_FIRST_COST + maxi(0, draws_completed) * STONE_COST_INCREMENT

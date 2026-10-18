@@ -48,8 +48,8 @@ const MY_SLOT := 0
 # 从这里**看不出**是哪一次顶号带上去的（协议号那段时间顶了九次，大概率有一次覆盖了它）——
 # 能确定的只有「这条门禁那段时间没在干活」。两个数一起跟到现在的值，断言重新生效。
 # tools/chat_check.gd 的同一套钉子也落后了九个版本（58/31，实际 65），见那边的注释。
-const PINNED_PROTOCOL := 41
-const PINNED_CONTRACT := "LlvUTlXCGoEExT1t"
+const PINNED_PROTOCOL := 42
+const PINNED_CONTRACT := "dA4azY7aj7ZTYKXi"
 
 var _h: CheckHarness
 
@@ -64,11 +64,32 @@ func _ready() -> void:
 	_case_sell_then_harvest_modes()
 	_case_ledger_shadow_roundtrip()
 	_case_draw_stone_online()
+	_case_seedling_stone_economy()
 	_case_four_star_online()
 	_case_forged_four_star_rejected()
 	await _case_client_panel_online()
 	await _case_client_ui_tracks_room_state()
 	_h.finish(get_tree())
+
+
+func _case_seedling_stone_economy() -> void:
+	var prep := EconomyLedgerScript.new_prep(1200)
+	var stones := {"sky": 0, "land": 0, "ren": 0}
+	var ctx := {"ruleset": "seedling", "round_index": 6,
+		"team_stones": stones, "stone_roll": 0.0}
+	var free := EconomyLedgerScript.apply(prep, "draw_upgrade_stone", {}, ctx)
+	_h.expect(bool(free.get("ok", false)) and int(free.get("result", {}).get("cost", -1)) == 0
+		and bool(prep.get("free_stone_claimed", false)) and int(prep.get("stone_draw_count", -1)) == 0,
+		"seedling_free_stone", "第 5 回合 Boss 后，每位玩家首抽应免费且不增加付费抽取次数")
+	var same_round := EconomyLedgerScript.apply(prep, "draw_upgrade_stone", {}, ctx)
+	_h.expect(not bool(same_round.get("ok", false)), "seedling_one_draw_per_round",
+		"免费抽取后同回合还能再抽")
+	_h.expect(CarrotEconomy.stone_cost_for_draw(int(prep.get("stone_draw_count", 0))) == 50,
+		"seedling_next_stone_cost", "免费抽取后正常的第一次付费抽取应为 50 萝卜")
+	for i in 4:
+		var expected := int([300, 500, 800, 1100][i])
+		_h.expect(CarrotEconomy.seedling_four_star_gold(i) == expected,
+			"seedling_four_star_cost", "青苗第 %d 次四星升级应花 %d 金币" % [i + 1, expected])
 
 
 # 起一个已经进备战的 6 人房，并按服务端的做法给每个座位播种账本 + 首次采集。

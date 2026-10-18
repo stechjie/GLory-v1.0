@@ -2070,7 +2070,7 @@ func _refresh_carrot_counter() -> void:
 	for value in GameState.team_upgrade_stones.values():
 		stone_total += int(value)
 	if _carrot_button_burst != null and is_instance_valid(_carrot_button_burst):
-		_carrot_button_burst.visible = carrot_visible and stone_total > 0
+		_carrot_button_burst.visible = carrot_visible and (stone_total > 0 or (GameState.FINAL_ROUND == 13 and GameState.round_index >= 6 and not GameState.free_stone_claimed))
 	if _carrot_counter_panel != null and is_instance_valid(_carrot_counter_panel):
 		_carrot_counter_panel.visible = carrot_visible
 	if _carrot_counter_label == null or not is_instance_valid(_carrot_counter_label):

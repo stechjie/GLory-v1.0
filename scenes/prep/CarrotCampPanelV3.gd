@@ -514,7 +514,7 @@ func refresh() -> void:
 	var unlocked := capacity >= stone_cost or GameState.tutorial_mode
 	var draw_tutorial_locked := not _tutorial_allows("draw_stone")
 	_draw_status.text = _t("本回合剩余 1 次", "1 draw remaining") if draw_available else _t("本回合已抽取 · 下回合恢复", "Draw used · resets next round")
-	_draw_button.text = _t("抽取一次\n%d 萝卜", "Draw Once\n%d Carrots") % stone_cost if draw_available else _t("下回合恢复", "Resets next round")
+	_draw_button.text = (_t("免费抽取一次", "Free Stone Draw") if stone_cost == 0 else _t("抽取一次\n%d 萝卜", "Draw Once\n%d Carrots") % stone_cost) if draw_available else _t("下回合恢复", "Resets next round")
 	_draw_button.disabled = _action_locked or draw_tutorial_locked or not draw_available or not unlocked or GameState.carrots < stone_cost or online_blocked
 	if not unlocked:
 		_draw_result.text = _t("容量不足 · 需要储存 %d 萝卜", "Capacity too low · store %d carrots") % stone_cost

@@ -120,6 +120,9 @@ async def save_races(player_id: uuid.UUID, races: list[str]) -> list[str]:
     for race in clean:
         if shop.requires_entitlement(race) and race not in owned:
             raise LoadoutRejected("race_not_owned", "你还没有解锁这个种族")
+    available = [r for r in ("human", "god", "dark", "undead", "crimson") if r in owned]
+    if len(clean) != min(4, len(available)):
+        raise LoadoutRejected("bad_races", "请选满当前已解锁的种族，最多 4 个")
     async with db.pool().acquire() as conn:
         await conn.execute(
             "update players set selected_races = $2 where player_id = $1",
@@ -248,6 +251,25 @@ async def build_loadout(player_id: uuid.UUID) -> Loadout:
     )
 
 
+async def seedling_races(player_id: uuid.UUID, chosen: list[str] | None) -> list[str]:
+    """Check the temporary three-race lineup against the current prep loadout."""
+    return validate_seedling_races((await build_loadout(player_id)).races, chosen)
+
+
+def validate_seedling_races(available: list[str], chosen: list[str] | None) -> list[str]:
+    if not available:
+        raise LoadoutRejected("no_races", "请先在备战区选择种族")
+    if chosen is None:
+        if len(available) > 3:
+            raise LoadoutRejected("seedling_races_required", "青苗每局最多选择 3 个种族，请先选好出战种族")
+        return list(available)
+    if not 1 <= len(chosen) <= 3 or len(set(chosen)) != len(chosen) or any(
+        race not in available for race in chosen
+    ):
+        raise LoadoutRejected("bad_seedling_races", "青苗只能选择备战区中已解锁的 1 至 3 个种族")
+    return list(chosen)
+
+
 def card_payload(
     loadout: Loadout,
     now: float | None = None,
@@ -292,8 +314,9 @@ def card_payload(
         # 账号服务器说不出「去几号房」—— 房间是客户端连上去才建的（第 4a 步的发现）。
         payload["match"] = match_uid
         payload["team"] = int(team)
-        if mode in ("casual", "ranked"):
-            payload["mode"] = mode
+        if mode in ("casual", "casual_normal", "ranked", "ranked_normal"):
+            payload["mode"] = "ranked" if mode.startswith("ranked") else "casual"
+            payload["ruleset"] = "normal" if mode.endswith("_normal") else "seedling"
         # 本队里坐几号位（0~2，10-08）：组队房里选的位置带进对局。旧战斗服务器不认识这个字段，
         # 照旧按到达顺序坐第一个空位 —— 加字段向后兼容（见上面 CARD_VERSION 那条）。
         if 0 <= seat <= 2:
@@ -350,6 +373,11 @@ def sign(payload: dict) -> str:
 
 
 async def issue_card(player_id: uuid.UUID, match_uid: str = "", team: int = -1,
-                     mode: str = "casual", seat: int = -1, patch_version: dict | None = None) -> str:
-    return sign(card_payload(await build_loadout(player_id), match_uid=match_uid,
+                     mode: str = "casual", seat: int = -1, patch_version: dict | None = None,
+                     seedling_lineup: list[str] | None = None) -> str:
+    profile = await build_loadout(player_id)
+    if mode == "casual" and match_uid:
+        profile = dataclasses.replace(
+            profile, races=validate_seedling_races(profile.races, seedling_lineup))
+    return sign(card_payload(profile, match_uid=match_uid,
                              team=team, mode=mode, seat=seat, patch_version=patch_version))

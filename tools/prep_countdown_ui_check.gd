@@ -208,6 +208,11 @@ func _section_durations() -> void:
 		"PVE（含 boss）回合时长应为 35 秒，第 %d 回合实测 %s" % [pve, str(Deadline.duration(pve))])
 	h.expect(pvp > 0 and is_equal_approx(Deadline.duration(pvp), 50.0), "pvp_duration",
 		"PVP 回合时长应为 50 秒，第 %d 回合实测 %s" % [pvp, str(Deadline.duration(pvp))])
+	for round_index in range(1, 14):
+		var expected := 80.0 if round_index in [5, 9, 13] else 60.0
+		h.expect(is_equal_approx(Deadline.duration(round_index, "seedling"), expected),
+			"seedling_duration_%d" % round_index,
+			"青苗第 %d 回合备战应为 %.0f 秒" % [round_index, expected])
 
 
 # --- H 离线自测不装倒计时（用户 10.12 追加口径）--------------------------------

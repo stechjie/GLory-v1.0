@@ -508,12 +508,12 @@ func _build_race_card(race: String) -> Control:
 func _refresh_races() -> void:
 	if _race_count_label == null:
 		return
-	var need := RacePick.required_count()
-	var forced := RacePick.is_forced()
+	var need := mini(RacePick.PICK_COUNT, _available_race_count())
+	var forced := _available_race_count() <= RacePick.PICK_COUNT
 	var saved: Array[String] = PlayerProfile.get_selected_races()
 	if forced:
 		_race_draft = saved
-	_race_hint_label.text = (tr("race_pick_forced") % RacePick.all_races().size()) if forced else (tr("race_pick_hint") % need)
+	_race_hint_label.text = (tr("race_pick_forced") % need) if forced else (tr("race_pick_hint") % need)
 	for race in _race_cards:
 		_refresh_race_card(str(race), forced)
 	_refresh_race_roster()
@@ -583,8 +583,8 @@ func _refresh_race_roster() -> void:
 func _build_unit_tile(unit: Dictionary) -> Control:
 	var id := str(unit.get("id", ""))
 	var race_of_unit := str(unit.get("race", ""))
-	var missing := _race_has_products(race_of_unit) and not _owned_content.has(race_of_unit) \
-		and not _owned_content.has(UnitCollection.content_id(id))
+	var missing := not _owned_content.has(UnitCollection.content_id(id)) \
+		and not (race_of_unit == "human" and _shop_items.is_empty())
 	var tile := PanelContainer.new()
 	tile.custom_minimum_size = UNIT_TILE_SIZE
 	tile.add_theme_stylebox_override("panel", Tokens.panel_box(
@@ -624,10 +624,17 @@ func _build_unit_tile(unit: Dictionary) -> Control:
 func _race_has_products(race: String) -> bool:
 	return UnitCollection.race_requires_purchase(race, _shop_items)
 
-# 能不能出战：不在商城卖的族照旧免费；在卖的族要有种族那一行归属
-# （集齐最后一个棋子时服务端发，老玩家由 database/031 补发）。
+# 种族只有集齐全部棋子并收到服务端的种族归属后才能出战。
 func _race_complete(race: String) -> bool:
-	return not UnitCollection.is_race_locked(race, _shop_items, _owned_content)
+	return _owned_content.has(race) or (race == "human" and _shop_items.is_empty())
+
+
+func _available_race_count() -> int:
+	var count := 0
+	for race in RacePick.all_races():
+		if _race_complete(race):
+			count += 1
+	return count
 
 func _load_unit_ownership() -> void:
 	var catalog: Dictionary = await AccountManager.fetch_shop()
@@ -640,6 +647,7 @@ func _load_unit_ownership() -> void:
 	_owned_content.clear()
 	for id in ((owned.get("body", {}) as Dictionary).get("items", []) as Array):
 		_owned_content[str(id)] = true
+	await PlayerProfile.refresh_races()
 	_refresh_races()
 
 # 没解锁的种族：点 logo 或卡片按钮都弹这个，「去商城」直接落在棋子页那一族。
@@ -683,9 +691,9 @@ func _on_race_card_pressed(race: String) -> void:
 		_prompt_race_shop(race)
 		return
 	_race_notice.visible = false
-	if RacePick.is_forced():
+	if _available_race_count() <= RacePick.PICK_COUNT:
 		return
-	var need := RacePick.required_count()
+	var need := mini(RacePick.PICK_COUNT, _available_race_count())
 	if _race_draft.has(race):
 		_race_draft.erase(race)
 	elif _race_draft.size() >= need:

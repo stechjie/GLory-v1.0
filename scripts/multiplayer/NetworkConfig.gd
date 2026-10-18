@@ -200,7 +200,10 @@ const USE_DTLS := true
 #      转的只有编号 + 文件名 + 秒数，音频走账号服务器（见 NetworkService 里那段说明），
 #      所以战斗服务器不需要新配置、也不需要装 ffmpeg —— 只是重新打包部署到 p41、和新包一起上。
 #      同一批上线的私聊 / 世界频道语音只碰账号服务器，与协议号无关。
-const NETWORK_PROTOCOL_VERSION := 41
+# v42: 13/21-round ruleset in signed cards and room state; treasure follow-up
+# choice and per-player free stone state change the battle/economy contract.
+# Clients and the dedicated battle server must be updated together.
+const NETWORK_PROTOCOL_VERSION := 42
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false

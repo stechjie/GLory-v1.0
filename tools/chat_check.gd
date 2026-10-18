@@ -61,8 +61,8 @@ const EXPECTED_IDS := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 # 2026-10-11 语音留言：加 `_rpc_team_chat_voice_submit` / `_rpc_team_chat_voice`
 # → 65 -> 67、协议 40 -> 41、指纹变了。
 const PINNED_RPC_COUNT := 67
-const PINNED_RPC_PROTOCOL := 41
-const PINNED_RPC_SIGNATURES := "00ffeb43deee3e10"
+const PINNED_RPC_PROTOCOL := 42
+const PINNED_RPC_SIGNATURES := "fa2e5e2003cfb90b"
 
 var _h: CheckHarness
 

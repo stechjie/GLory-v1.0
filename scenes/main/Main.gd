@@ -2104,7 +2104,7 @@ func _on_match_ready() -> void:
 	if NetworkService.team_active and NetworkService.remote_port != target_port:
 		NetworkService.disconnect_session()
 	elif NetworkService.team_active 			and NetworkService.state == NetworkService.SessionState.READY 			and NetworkService.team_local_slot < 0:
-		NetworkService.team_request_join_matched(_match_queue_mode)
+		NetworkService.team_request_join_matched("ranked" if _match_queue_mode.begins_with("ranked") else "casual")
 		_watch_matched_lobby()
 		return
 	if NetworkService.team_active and NetworkService.team_local_slot >= 0:
@@ -2137,7 +2137,7 @@ func _on_matched_session_changed() -> void:
 	match NetworkService.state:
 		NetworkService.SessionState.READY:
 			_disconnect_matched_handlers()
-			NetworkService.team_request_join_matched(_match_queue_mode)
+			NetworkService.team_request_join_matched("ranked" if _match_queue_mode.begins_with("ranked") else "casual")
 			_watch_matched_lobby()
 		NetworkService.SessionState.FAILED, NetworkService.SessionState.OFFLINE:
 			_disconnect_matched_handlers()

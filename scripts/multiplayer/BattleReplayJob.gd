@@ -8,12 +8,12 @@ const Transfer := preload("res://scripts/multiplayer/ReplayTransferService.gd")
 const Event := preload("res://scripts/battle/BattlePresentationEvent.gd")
 const Bot := preload("res://scripts/economy/BotPlayer.gd")
 const GAME_FIELDS := [
-	"team_mode", "team_slot_states", "round_index", "pve_completed", "boss_completed",
+	"team_mode", "team_slot_states", "round_index", "FINAL_ROUND", "pve_completed", "boss_completed",
 	"final_round_played", "team_hp", "enemy_team_hp", "player_formation_hp",
 	"enemy_formation_hp", "owned_treasures", "board_slots", "mercenary_slots",
 ]
 const NET_FIELDS := ["team_active", "team_local_slot", "team_slot_states", "team_ready", "team_boards", "shared_seed", "team_bot_states"]
-const ROOM_INPUT_FIELDS := ["id", "battle_id", "round_index", "slot_states", "ready", "boards", "shared_seed", "team_hp", "pve_completed", "boss_completed", "run_over", "bot_states"]
+const ROOM_INPUT_FIELDS := ["id", "battle_id", "round_index", "ruleset", "slot_states", "ready", "boards", "shared_seed", "team_hp", "pve_completed", "boss_completed", "run_over", "bot_states"]
 
 var room_id := 0
 var battle_id := ""
@@ -69,6 +69,7 @@ func _init(room: Dictionary, queued_at: int = 0) -> void:
 	_game.team_mode = true
 	_game.team_slot_states = (room.get("slot_states", []) as Array).duplicate()
 	_game.round_index = round_index
+	_game.FINAL_ROUND = 13 if str(room.get("ruleset", "normal")) == "seedling" else 21
 	_game.pve_completed = int(room.get("pve_completed", 0))
 	_game.boss_completed = int(room.get("boss_completed", 0))
 	_game.final_round_played = bool(room.get("run_over", false))

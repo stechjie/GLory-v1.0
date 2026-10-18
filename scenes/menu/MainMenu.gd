@@ -98,6 +98,7 @@ const TEX_SHOP := preload("res://assets/ui/main_menu_live/shop.png")
 const TEX_NEWS := preload("res://assets/ui/main_menu_live/news.png")
 const TEX_PREP := preload("res://assets/ui/main_menu_live/prep.png")
 const TEX_CASUAL := preload("res://assets/ui/main_menu_live/casual.png")
+const ProgressionPanel := preload("res://scenes/menu/ProgressionPanel.gd")
 const TEX_RANKED := preload("res://assets/ui/main_menu_live/ranked.png")
 const TEX_CUSTOM := preload("res://assets/ui/main_menu_live/custom.png")
 const TEX_GALLERY := preload("res://assets/ui/main_menu_live/gallery.png")
@@ -131,6 +132,7 @@ var _profile_frame_overlay: Control
 var _profile_frame_art: TextureRect
 var _profile_name_label: Label
 var _profile_sub_label: Label
+var _account_level := 0
 var _coin_label: Label
 var _diamond_label: Label
 # 「聊天」图标右上角的未读红点。显隐只跟 ChatService 走（状态只有一份）。
@@ -206,6 +208,7 @@ func _ready() -> void:
 	_ensure_profile_loaded()
 	# 钱包**每次回主菜单都重拉**，不像资料那样吃缓存 —— 玩家多半是刚从商城买完东西回来的。
 	_refresh_wallet()
+	_refresh_progression()
 	_refresh_login_dot()
 	# 9.17 反馈第 6 条：朋友申请的红点与提示音。
 	#
@@ -986,8 +989,11 @@ func _refresh_profile_plate() -> void:
 	# 10.04 bug 文档第 5 条：大厅左上角资料卡只显示昵称（隐藏 #好友码）。
 	_profile_name_label.text = AccountManager.display_name(
 		str(profile.get("player_name", "")), str(profile.get("friend_code", "")), false)
-	var days := int(profile.get("days_since_created", 1))
-	_profile_sub_label.text = _menu_text("第 %d 天" % days, "Day %d" % days)
+	if _account_level > 0:
+		_profile_sub_label.text = _menu_text("等级 %d" % _account_level, "Level %d" % _account_level)
+	else:
+		var days := int(profile.get("days_since_created", 1))
+		_profile_sub_label.text = _menu_text("第 %d 天" % days, "Day %d" % days)
 
 
 # 目标内孔直径 = **默认圆盘的内孔直径**（圆盘盒 180 × 默认框内孔占比 0.6271 ≈ 112.9）。
@@ -1033,6 +1039,46 @@ func _emit_bag() -> void:
 	bag_requested.emit()
 
 # 拉余额。失败就**保持 "—"**，不要退回 0：0 是个看起来正常的错值。
+func _refresh_progression() -> void:
+	var response: Dictionary = await AccountManager.fetch_progression()
+	if not is_inside_tree() or int(response.get("code", 0)) != 200:
+		return
+	var state: Dictionary = response.get("body", {})
+	_account_level = int(state.get("level", 1))
+	_refresh_profile_plate()
+	var pending: Array = state.get("unseen_levels", [])
+	if pending.is_empty():
+		return
+	var lines: Array[String] = []
+	var seen: Array[int] = []
+	var prep_prompt := false
+	for raw in state.get("rewards", []):
+		if typeof(raw) != TYPE_DICTIONARY:
+			continue
+		var reward: Dictionary = raw
+		var level := int(reward.get("level", 0))
+		if not pending.has(level):
+			continue
+		seen.append(level)
+		lines.append("Lv %d  ·  %s" % [level, ProgressionPanel.reward_text(reward)])
+		prep_prompt = prep_prompt or bool(reward.get("prep_prompt", false))
+	if seen.is_empty():
+		return
+	if prep_prompt:
+		lines.append(_menu_text("神族已集齐！请前往备战区查看，已自动选入出战种族。",
+			"God roster complete! Visit Prep; it has been added to your races."))
+	DialogService.info({
+		"owner": self,
+		"title": _menu_text("升级奖励", "Level Rewards"),
+		"body": "\n".join(lines),
+		"confirm_text": _menu_text("领取并继续", "Continue"),
+		"dismiss_on_backdrop": false,
+		"on_result": func(answer: String, _id: String) -> void:
+			if answer == "confirmed":
+				AccountManager.mark_progression_seen(seen),
+	})
+
+
 func _refresh_wallet() -> void:
 	if not AccountManager.is_logged_in():
 		return

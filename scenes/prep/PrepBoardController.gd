@@ -348,7 +348,10 @@ func request_upgrade_stone_draw() -> void:
 		return
 	GameState.carrots -= stone_cost
 	GameState.stone_draw_used_round = GameState.round_index
-	GameState.stone_draw_count += 1
+	if stone_cost == 0 and GameState.FINAL_ROUND == 13:
+		GameState.free_stone_claimed = true
+	else:
+		GameState.stone_draw_count += 1
 	# 教学固定抽到与 3 星棋子同属性的石头，下一步升四星才一定接得上。
 	var stone_type := TutorialMode.forced_stone_type() if GameState.tutorial_mode \
 		else CarrotEconomy.draw_type_from_roll(randf())

@@ -51,6 +51,8 @@ class Room:
     # 不必在那个同步路径里再去查库（leave() 是纯内存操作）。
     active_pets: dict[uuid.UUID, str] = field(default_factory=dict)
     ready: set[uuid.UUID] = field(default_factory=set)
+    # 青苗本局临时阵容；不会改动 players.selected_races。
+    seedling_races: dict[uuid.UUID, list[str]] = field(default_factory=dict)
     queued: bool = False
     version: int = 1
     messages: list[dict] = field(default_factory=list)
@@ -89,7 +91,7 @@ class Parties:
         existing = self.of(player)
         if existing is not None:
             return existing
-        if mode not in ("casual", "ranked"):
+        if mode not in ("casual", "casual_normal", "ranked"):
             raise PartyRejected("bad_mode", "没有这个匹配模式")
         room_id = secrets.token_urlsafe(12)
         # 初始展示列表照旧是建房者自己的宠物，但**房主的出战宠物必须在内**（10.09）。
@@ -230,6 +232,7 @@ class Parties:
             room.members.remove(player)
             room.profiles.pop(player, None)
             room.active_pets.pop(player, None)
+            room.seedling_races.pop(player, None)
             room.joined_at.pop(player, None)
             room.seats.pop(player, None)
             room.ready.clear()
@@ -239,6 +242,7 @@ class Parties:
         self._rotate_voice(room)
         room.profiles.pop(player, None)
         room.active_pets.pop(player, None)
+        room.seedling_races.pop(player, None)
         room.joined_at.pop(player, None)
         room.seats.pop(player, None)
         room.ready.clear()
@@ -257,6 +261,7 @@ class Parties:
         room.members.remove(target)
         room.profiles.pop(target, None)
         room.active_pets.pop(target, None)
+        room.seedling_races.pop(target, None)
         room.joined_at.pop(target, None)
         room.seats.pop(target, None)
         # 换语音房间：被踢的人手上那把钥匙进的是旧房间（自建 LiveKit 踢人不一定作废钥匙）。
@@ -337,11 +342,12 @@ class Parties:
     def mode(self, player: uuid.UUID, mode: str) -> Room:
         room = self._require_host(player)
         self._require_editable(room)
-        if mode not in ("casual", "ranked"):
+        if mode not in ("casual", "casual_normal", "ranked"):
             raise PartyRejected("bad_mode", "没有这个匹配模式")
         if room.mode != mode:
             room.mode = mode
             room.ready.clear()
+            room.seedling_races.clear()
             room.version += 1
         return room
 
@@ -356,15 +362,19 @@ class Parties:
         room.version += 1
         return room
 
-    def set_ready(self, player: uuid.UUID, ready: bool) -> Room:
+    def set_ready(self, player: uuid.UUID, ready: bool,
+                  seedling_races: list[str] | None = None) -> Room:
         room = self._require_member(player)
         self._require_editable(room)
         if player == room.host:
             raise PartyRejected("host_ready", "房主直接按开始匹配")
         if ready:
             room.ready.add(player)
+            if room.mode == "casual" and seedling_races is not None:
+                room.seedling_races[player] = list(seedling_races)
         else:
             room.ready.discard(player)
+            room.seedling_races.pop(player, None)
         room.version += 1
         return room
 
@@ -417,7 +427,7 @@ class Parties:
             room = self._rooms.get(room_id)
             if room is None:
                 continue
-            if room.mode in ("casual", "ranked"):
+            if room.mode in ("casual", "casual_normal", "ranked"):
                 room.queued = False
                 room.ready.clear()
                 if match_uid:

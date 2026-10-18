@@ -150,6 +150,8 @@ android/
 !/assets/ui/shop/shop_hero_bg.png
 !/assets/ui/shop/frame_7day_ice.png
 !/assets/ui/shop/ice_reveal.gdshader
+!/assets/ui/shop/dark_unit_bg.png
+!/assets/ui/shop/undead_unit_bg.png
 !/assets/ui/shop/headframes/
 /assets/ui/shop/headframes/*
 !/assets/ui/shop/headframes/emerald.png

@@ -43,7 +43,7 @@ import secrets
 import uuid
 
 from app import shop
-from app import sanctions
+from app import sanctions, progression
 
 log = logging.getLogger("glory.ranked")
 
@@ -195,7 +195,7 @@ def daily_grant(score: int, last_grant: dt.date | None, today: dt.date) -> tuple
 
 def can_queue(credit: int, mode: str) -> bool:
     """信誉分够不够排这个模式。第 5b 步接到队列接口上。"""
-    if mode == "ranked":
+    if mode.startswith("ranked"):
         return int(credit) >= CREDIT_RANKED_MIN
     return int(credit) >= CREDIT_CASUAL_MIN
 
@@ -233,7 +233,16 @@ async def settle(conn, report: dict) -> None:
 
     if report["mode"] == "ranked":
         await _settle_ranked(conn, report, seats)
+    elif report["mode"] == "casual":
+        await _settle_casual(conn, report, seats)
     if report["mode"] != "custom":
+        for seat in seats:
+            if not seat["online_at_end"]:
+                continue
+            result = result_for_seat(report["outcome"], seat)
+            await progression.award_match(
+                conn, seat["player_id"], report["match_uid"], report["mode"],
+                int(report["rounds"]), result)
         await _settle_credit(conn, report, seats)
 
 
@@ -274,17 +283,25 @@ async def _settle_ranked(conn, report: dict, seats: list[dict]) -> None:
         # 跑路在输的分上再额外扣一份（第四节：输的那一份 × 1.5）。
         if abandoned:
             delta -= int(round(LOSS_BASE * ABANDON_PENALTY_MULT))
-        score_after = apply_delta(row["score"], delta)
+        # Forest (100) and post-breakthrough Starforge (300) are permanent floors.
+        floor = 300 if row["score"] >= 300 else (100 if row["score"] >= 100 else 0)
+        score_after = max(floor, apply_delta(row["score"], delta))
+        race_count = await owned_race_count(conn, seat["player_id"])
+        ready = row["breakthrough_ready"]
+        if score_after >= 300 and race_count < 4 and not row["breakthrough_complete"]:
+            score_after, ready = 299, True
+        elif ready and race_count >= 4:
+            score_after, ready = max(300, score_after), False
         await conn.execute(
             """
             update player_ranked
                set score = $2, games = games + 1, wins = wins + $3,
-                   win_streak = $4, updated_at = now()
+                   win_streak = $4, breakthrough_ready = $5, updated_at = now()
              where player_id = $1
             """,
-            seat["player_id"], score_after, 1 if won else 0, streak,
+            seat["player_id"], score_after, 1 if won else 0, streak, ready,
         )
-        reward = coin_reward(result)
+        reward = coin_reward(result, "ranked")
         wallet = await shop._lock_wallet(conn, seat["player_id"])
         wallet = await shop._apply(conn, seat["player_id"], wallet, {"coin": reward},
                                    "match_reward", None, note=f"ranked match {report['match_uid']}")
@@ -298,14 +315,41 @@ async def _settle_ranked(conn, report: dict, seats: list[dict]) -> None:
     log.info("排位结算 match=%s outcome=%s seats=%d", report["match_uid"], outcome, len(seats))
 
 
-def coin_reward(result: str) -> int:
-    """Inclusive ranges from the shop spec. Called only after match UID insertion.
+def result_for_seat(outcome: str, seat: dict) -> str:
+    if not seat["online_at_end"]:
+        return "lose"
+    if outcome == "draw":
+        return "draw"
+    return "win" if (outcome == "team_a") == (seat["team"] == 0) else "lose"
 
-    result 是**这个人**的结果（win / lose / draw），不是队伍的：跑路的人队伍赢了也按 lose 发。
-    """
+
+def coin_reward(result: str, mode: str = "ranked") -> int:
+    """Account coin per player; identical payout for 13 and 21 rounds."""
+    if mode == "ranked":
+        if result == "draw":
+            return 11
+        return 15 + secrets.randbelow(6) if result == "win" else 9 + secrets.randbelow(7)
     if result == "draw":
         return 5
     return 8 + secrets.randbelow(8) if result == "win" else 3 + secrets.randbelow(6)
+
+
+async def _settle_casual(conn, report: dict, seats: list[dict]) -> None:
+    for seat in seats:
+        result = result_for_seat(report["outcome"], seat)
+        reward = coin_reward(result, "casual")
+        wallet = await shop._lock_wallet(conn, seat["player_id"])
+        await shop._apply(conn, seat["player_id"], wallet, {"coin": reward},
+                          "match_reward", None,
+                          note=f"casual match {report['match_uid']}")
+
+
+async def owned_race_count(conn, player_id: uuid.UUID) -> int:
+    value = await conn.fetchval(
+        "select count(*) from player_entitlements where player_id = $1"
+        " and revoked_at is null and item_id = any($2::text[])",
+        player_id, ["human", "god", "dark", "undead", "crimson"])
+    return int(value or 0)
 
 
 async def _settle_credit(conn, report: dict, seats: list[dict]) -> None:
@@ -353,9 +397,11 @@ async def _ranked_rows(conn, ids: list[uuid.UUID]) -> dict[uuid.UUID, dict]:
         "insert into player_ranked (player_id) values ($1) on conflict do nothing",
         [(pid,) for pid in ids])
     rows = await conn.fetch(
-        "select player_id, score, win_streak from player_ranked"
+        "select player_id, score, win_streak, breakthrough_ready, breakthrough_complete from player_ranked"
         " where player_id = any($1::uuid[])", ids)
-    return {r["player_id"]: {"score": r["score"], "win_streak": r["win_streak"]} for r in rows}
+    return {r["player_id"]: {"score": r["score"], "win_streak": r["win_streak"],
+                              "breakthrough_ready": r["breakthrough_ready"],
+                              "breakthrough_complete": r["breakthrough_complete"]} for r in rows}
 
 
 async def _credit_row(conn, player_id: uuid.UUID, today: dt.date) -> dict:
@@ -505,11 +551,13 @@ async def queue_gate(conn, player_id: uuid.UUID, mode: str,
     ⚠️ 禁赛与信誉分是**两件事**，不能合并：禁赛有到期时间，信誉分低没有。
     合并的话禁赛一到期，信誉分那条限制会跟着被解除（014 里那一列的注释同此）。
     """
-    if mode == "ranked" and not accepting_now(now_utc):
+    if mode.startswith("ranked") and not accepting_now(now_utc):
         return GATE_WINDOW_CLOSED
+    if mode.startswith("ranked") and await owned_race_count(conn, player_id) < 3:
+        return "need_three_races"
     # 人工禁排位。只管排位，休闲照常（任务书 §四.2「默认不限制休闲」）。
     # 放在信誉分前面：它是运营明确下的，比系统算出来的更该优先解释给玩家听。
-    if mode == "ranked" and await sanctions.is_sanctioned(conn, player_id, sanctions.SCOPE_RANKED):
+    if mode.startswith("ranked") and await sanctions.is_sanctioned(conn, player_id, sanctions.SCOPE_RANKED):
         return GATE_SANCTIONED
     row = await conn.fetchrow(
         "select score, banned_until from player_credit where player_id = $1", player_id)
