@@ -21,6 +21,8 @@ async function start() {
   byId('status').textContent = t.checking;
   byId('ios-link').textContent = t.iosPending;
   byId('android-link').textContent = t.androidPending;
+  byId('android-group-link').textContent = t.androidGroupButton;
+  byId('android-release-status').textContent = t.androidAvailability;
   byId('android-help').textContent = t.androidHelp;
   const ua = navigator.userAgent;
   const platform = platformOf(ua, navigator.maxTouchPoints);
@@ -37,8 +39,10 @@ async function start() {
     const config = await response.json();
     const d = destinations(config);
     enable('ios-link', d.ios, t.iosButton);
+    enable('android-group-link', d.group, t.androidGroupButton);
     enable('android-link', d.android, t.androidButton);
-    if (d.android) {
+    byId('android-release-status').hidden = config.android?.ready === true;
+    if (d.group) {
       byId('android-help').textContent = t.androidHelp;
       const a = config.android;
       byId('android-version').textContent = a.version ? `${t.version} ${a.version}` : '';

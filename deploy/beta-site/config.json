@@ -4,9 +4,10 @@
     "url": "https://testflight.apple.com/join/W2p1ukJp"
   },
   "android": {
-    "ready": true,
-    "mode": "play_internal",
-    "url": "https://play.google.com/apps/internaltest/4701302260400909295",
+    "ready": false,
+    "mode": "play_closed",
+    "group_url": "https://groups.google.com/g/glorygame/about",
+    "url": "https://play.google.com/apps/testing/com.glory.game.google",
     "version": "0.0.24 (37)"
   }
 }

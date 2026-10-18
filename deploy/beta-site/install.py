@@ -32,10 +32,11 @@ def validate_config(config, allow_pending=False):
     ios, android = config['ios'], config['android']
     assert ios['ready'] is True and (android['ready'] is True or allow_pending and android['ready'] is False), 'Both platforms must be verified, or explicitly publish pending Android status'
     check_url(ios['url'], 'testflight.apple.com', r'/join/[A-Za-z0-9]+/?')
-    assert android['mode'] == 'play_internal'
+    assert android['mode'] == 'play_closed'
+    check_url(android['group_url'], 'groups.google.com', r'/g/[A-Za-z0-9_-]+(?:/about)?/?')
     if allow_pending and android['ready'] is False and not android.get('url'):
         return
-    check_url(android['url'], 'play.google.com', r'/apps/internaltest/[0-9]+/?')
+    check_url(android['url'], 'play.google.com', r'/apps/testing/[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+/?')
 
 def patch_config(text, domain):
     # Only the identified API site is modified; all other sites/directives remain intact.

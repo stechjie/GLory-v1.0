@@ -12,8 +12,10 @@ export function verifiedURL(value, kind) {
     if (u.protocol !== 'https:' || u.username || u.password || u.port || u.hash) return '';
     if (kind === 'ios') return !u.search && u.hostname === 'testflight.apple.com' && /^\/join\/[A-Za-z0-9]+\/?$/.test(u.pathname) ? u.href : '';
     if (kind === 'android') {
-      // Only the official Play internal-test invitation; no shared APK fallback.
-      return !u.search && u.hostname === 'play.google.com' && /^\/apps\/internaltest\/[0-9]+\/?$/.test(u.pathname) ? u.href : '';
+      return !u.search && u.hostname === 'play.google.com' && /^\/apps\/testing\/[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+\/?$/.test(u.pathname) ? u.href : '';
+    }
+    if (kind === 'group') {
+      return !u.search && u.hostname === 'groups.google.com' && /^\/g\/[A-Za-z0-9_-]+(?:\/about)?\/?$/.test(u.pathname) ? u.href : '';
     }
     return '';
   } catch { return ''; }
@@ -21,8 +23,10 @@ export function verifiedURL(value, kind) {
 export function destinations(config = {}) {
   const ios = config.ios?.ready === true ? verifiedURL(config.ios.url, 'ios') : '';
   const a = config.android || {};
-  const android = a.ready === true && a.mode === 'play_internal' ? verifiedURL(a.url, 'android') : '';
-  return {ios, android};
+  const group = a.mode === 'play_closed' ? verifiedURL(a.group_url, 'group') : '';
+  // Keep the enrollment link available during review; Play controls eligibility.
+  const android = a.mode === 'play_closed' && group ? verifiedURL(a.url, 'android') : '';
+  return {ios, android, group};
 }
 export function automaticDestination(config, ua, touchPoints, manual = false) {
   if (manual || embeddedBrowser(ua)) return '';
