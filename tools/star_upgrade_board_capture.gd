@@ -71,6 +71,12 @@ func _ready() -> void:
 		get_tree().quit(3)
 		return
 
+	# `-- --only-camp`：只拍萝卜营地面板（改营地 UI 时用，整套跑一遍要好几分钟）。
+	if "--only-camp" in OS.get_cmdline_user_args():
+		await _run_camp_states(def)
+		print("STAR_UPGRADE_BOARD_CAPTURE shots=%d dir=%s" % [_shots, _dir])
+		get_tree().quit(0)
+		return
 	# 1→2★：两枚一星同名棋子进棋盘，_refresh_all() 里的自动合成会把它们融成二星。
 	await _run_case(def, 1, "2star")
 	# 2→3★：三枚二星。
@@ -253,6 +259,40 @@ func _run_four_star_ready(def: Dictionary) -> void:
 
 # 打开萝卜营地并切到「升级石」页，整屏抓一张。这一页的三处改动都只能整屏看：
 # 页签的呼吸光、4★ 列表每行的棋子头像与属性对比、页顶那句规则。
+# 营地面板的两种提醒状态各拍一套（两页都拍）：
+#   ready —— 有一枚三星现在就能升 4★：页签上红底数字 + 金色光粒子绕着转；
+#   stones —— 只有石头、没有能升的：页签上一颗金点。
+func _run_camp_states(def: Dictionary) -> void:
+	for state in ["ready", "stones"]:
+		for i in GameState.board_slots.size():
+			GameState.board_slots[i] = null
+		GameState.gold = 5000
+		for stone_type in ["sky", "land", "ren"]:
+			GameState.team_upgrade_stones[stone_type] = 2
+		if state == "ready":
+			GameState.board_slots[5] = {
+				"id": str(def.get("id", "")),
+				"uid": GameState.mint_piece_uid(),
+				"star": GameState.MAX_MERGE_STAR,
+				"def": def.duplicate(true),
+			}
+		_screen.call("_refresh_all")
+		await _settle(10)
+		_screen.call("_toggle_carrot_camp")
+		await _settle(20)
+		var panel = _screen.get("_carrot_panel")
+		for page in [0, 1]:
+			if panel != null and is_instance_valid(panel):
+				panel.call("_show_page", page)
+				panel.call("refresh")
+			await _settle(20)
+			get_viewport().get_texture().get_image().save_png(
+				"%s/camp_%s_page%d.png" % [_dir, state, page])
+			_shots += 1
+		_screen.call("_toggle_carrot_camp")
+		await _settle(10)
+
+
 func _run_camp_page() -> void:
 	_screen.call("_toggle_carrot_camp")
 	await _settle(20)
@@ -263,6 +303,12 @@ func _run_camp_page() -> void:
 	await _settle(20)
 	var image := get_viewport().get_texture().get_image()
 	image.save_png("%s/camp_stone_page.png" % _dir)
+	_shots += 1
+	# 「营地」页也抓一张：营地面板整体的观感要两页一起看。
+	if panel != null and is_instance_valid(panel):
+		panel.call("_show_page", 0)
+	await _settle(20)
+	get_viewport().get_texture().get_image().save_png("%s/camp_main_page.png" % _dir)
 	_shots += 1
 
 
