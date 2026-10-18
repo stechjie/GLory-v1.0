@@ -36,6 +36,9 @@ const SHEET_CELL := Vector2i(300, 200)
 # 整屏 1600x720 里棋子只有四十来像素高，缩进联络表后根本看不出特效。
 # 裁到棋盘中段这一块再拼 —— 判断「特效在真棋盘上够不够看」只需要这一块。
 const CROP_RECT := Rect2i(390, 60, 600, 400)
+# 升 4★ 全屏特效：整段 1.0 秒 + 余韵，一张约 24ms ⇒ 48 张；联络表按整屏 1600x720 的比例缩。
+const FOUR_STAR_SHOTS := 48
+const FULL_SHEET_CELL := Vector2i(300, 135)
 
 var _dir := ""
 var _shots := 0
@@ -74,6 +77,14 @@ func _ready() -> void:
 	await _run_case(def, 2, "3star")
 	# 4.3：可升 4★ 的三星棋子，脚下那圈缓慢旋转的金环 + 上升光点。
 	await _run_four_star_ready(def)
+	# 升 4★ 的全屏特效：三种属性各拍一组（天 = 羽毛、地 = 碎晶、人 = 雷电）。
+	# 全屏特效必须整屏看，所以这三组**不裁剪**。
+	for element in ["sky", "land", "ren"]:
+		var element_def := _pick_unit_def_for_element(element)
+		if element_def.is_empty():
+			print("[FOUR_STAR] 表里没有 %s 属性的棋子，跳过" % element)
+			continue
+		await _run_four_star(element_def, element)
 	# 4.2：营地「升级石」页 —— 页签呼吸光 + 带数字、4★ 列表每行以棋子为主、
 	#      规则一句话在页顶。
 	await _run_camp_page()
@@ -95,6 +106,53 @@ func _pick_unit_def() -> Dictionary:
 			if typeof(row) == TYPE_DICTIONARY and not str((row as Dictionary).get("id", "")).is_empty():
 				return (row as Dictionary).duplicate(true)
 	return {}
+
+
+func _pick_unit_def_for_element(element: String) -> Dictionary:
+	var rows: Variant = DataRegistry.get_table("race_units").get("units", [])
+	if typeof(rows) != TYPE_ARRAY:
+		return {}
+	for row in (rows as Array):
+		if typeof(row) == TYPE_DICTIONARY and str((row as Dictionary).get("element", "")) == element:
+			return (row as Dictionary).duplicate(true)
+	return {}
+
+
+# 摆一枚该属性的三星，给够石头和金币，走**真的**本地升级路径
+# （_execute_four_star_upgrade —— 和玩家在详情框里点「确认升级」是同一条），整屏连拍。
+func _run_four_star(def: Dictionary, element: String) -> void:
+	for i in GameState.board_slots.size():
+		GameState.board_slots[i] = null
+	for i in GameState.bench_slots.size():
+		GameState.bench_slots[i] = null
+	GameState.gold = 5000
+	for stone_type in ["sky", "land", "ren"]:
+		GameState.team_upgrade_stones[stone_type] = 3
+	GameState.board_slots[5] = {
+		"id": str(def.get("id", "")),
+		"uid": GameState.mint_piece_uid(),
+		"star": GameState.MAX_MERGE_STAR,
+		"def": def.duplicate(true),
+	}
+	_screen.call("_refresh_all")
+	await _settle(25)
+	Engine.time_scale = CAPTURE_TIME_SCALE
+	var started := Time.get_ticks_msec()
+	_screen.call("_execute_four_star_upgrade", "board", 5)
+	var frames: Array[Image] = []
+	for shot in FOUR_STAR_SHOTS:
+		await _settle(1)
+		var image := get_viewport().get_texture().get_image()
+		var ms := int(round(float(Time.get_ticks_msec() - started) * CAPTURE_TIME_SCALE))
+		image.save_png("%s/4star_%s_%02d_%04dms.png" % [_dir, element, shot, ms])
+		_shots += 1
+		frames.append(image)
+	Engine.time_scale = 1.0
+	_save_sheet_sized(frames, "4star_%s_sheet" % element, FULL_SHEET_CELL)
+	# 「XX 升为四星」那条提示是等全屏特效播完（DURATION）才弹的。三种属性背靠背跑的话，
+	# 上一种的提示会串到下一种的画面里（第一版截图里地/人两排都被前一个的提示盖住了）。
+	# 等它弹完、消失再进下一种。
+	await get_tree().create_timer(3.0).timeout
 
 
 func _run_case(def: Dictionary, star: int, tag: String) -> void:
@@ -206,18 +264,21 @@ func _run_camp_page() -> void:
 
 
 func _save_sheet(frames: Array[Image], out_name: String) -> void:
+	_save_sheet_sized(frames, out_name, SHEET_CELL)
+
+
+func _save_sheet_sized(frames: Array[Image], out_name: String, cell_size: Vector2i) -> void:
 	if frames.is_empty():
 		return
 	var rows := int(ceil(float(frames.size()) / float(SHEET_COLS)))
-	var sheet := Image.create(SHEET_COLS * SHEET_CELL.x, rows * SHEET_CELL.y, false, Image.FORMAT_RGBA8)
+	var sheet := Image.create(SHEET_COLS * cell_size.x, rows * cell_size.y, false, Image.FORMAT_RGBA8)
 	sheet.fill(Color(0.05, 0.06, 0.05))
 	for i in frames.size():
 		var cell := frames[i].duplicate() as Image
-		# 视口抓下来的图不一定是 RGBA8，blit_rect 要求两边格式一致（不转会直接报错）。
 		cell.convert(Image.FORMAT_RGBA8)
-		cell.resize(SHEET_CELL.x, SHEET_CELL.y, Image.INTERPOLATE_LANCZOS)
+		cell.resize(cell_size.x, cell_size.y, Image.INTERPOLATE_LANCZOS)
 		sheet.blit_rect(cell, Rect2i(Vector2i.ZERO, cell.get_size()),
-			Vector2i((i % SHEET_COLS) * SHEET_CELL.x, (i / SHEET_COLS) * SHEET_CELL.y))
+			Vector2i((i % SHEET_COLS) * cell_size.x, (i / SHEET_COLS) * cell_size.y))
 	sheet.save_png("%s/%s.png" % [_dir, out_name])
 	_shots += 1
 

@@ -17,6 +17,14 @@ const UnitContactShadowScript := preload("res://effects/runtime/presentation/Uni
 const FOUR_STAR_READY_AURA := preload("res://effects/vfx3d/modules/FourStarAura3D.gd")
 const STAR_UPGRADE_BURST := preload("res://scenes/prep/effects/PrepStarUpgradeBurst.gd")
 const FOUR_STAR_READY_RING := preload("res://scenes/prep/effects/PrepFourStarReadyRing.gd")
+const FOUR_STAR_SCREEN_FX := preload("res://scenes/prep/effects/PrepFourStarScreenFx.gd")
+# 全屏层的画布层级。要压过棋盘与 HUD（升 4★ 那一下是全屏的主角），但必须在宝藏飞入
+# 动画（PrepUI.BONUS_FX_LAYER = 200）之下 —— 两者同时出现时宝藏那条是玩家要读的信息。
+const FOUR_STAR_FX_LAYER := 150
+# 冲击那一下的镜头轻震（只动相机的 h/v_offset，不动任何棋子）。天·羽毛不震 ——
+# 它是三种里最轻柔的那个。人·雷电最重。Leno 10.18 去掉了白闪，震屏没去。
+const FOUR_STAR_SHAKE := {"land": 0.020, "ren": 0.032}
+const FOUR_STAR_SHAKE_SEC := 0.24
 const FOUR_STAR_AURA := preload("res://effects/vfx3d/modules/FourStarAuraV3_3D.gd")
 const CARROT_CURRENCY_ICON := preload("res://assets/props/carrot_system/ui/icon_carrot_currency.png")
 # 棋盘正中的「上阵数 / 上限」图案本体（矢量自绘）。10.05 第 2 条返工把它从 2D 徽章
@@ -62,6 +70,8 @@ func _sync_four_star_actor(actor: Node3D, cell: Dictionary) -> void:
 			ready_aura.attach_rim(actor)
 	_sync_four_star_ready_ring(actor, state)
 	var aura := FOUR_STAR_AURA.sync(actor, 2 if state == 2 else 0, affinity, 1.0)
+	if aura != null and _four_star_hold_uids.has(str(cell.get("uid", ""))):
+		aura.visible = false
 	if aura != null and state == 2 and actor.is_inside_tree():
 		if not actor.has_meta("four_star_aura_v2_transform") and bool(actor.get_meta("prep_model_centered", false)):
 			# Prep units have no Foot/HeadAnchor; 0.32 matches the rendered prep model
@@ -97,6 +107,12 @@ const STAR_UPGRADE_CUE := {2: "carrot_farm_upgrade", 3: "harvest_tech_upgrade"}
 const STAR_UPGRADE_EFFECT_SCALE := 1.0
 
 var _pending_star_upgrades: Array = []
+var _four_star_fx_layer: CanvasLayer
+# 正在等全屏特效落地的 4★ 棋子（uid -> true）。这期间它的常驻光环要藏着。
+# 必须按 uid 记、在 _sync_four_star_actor 里认：升级后紧接着的 _refresh_all() 会重新
+# configure 光环（visible = true），而且可能把模型节点整个换新 —— 只在节点上设一次
+# visible = false 挡不住（第一版截图里光环在冲击之前就亮了，冲击时再缩回去重长）。
+var _four_star_hold_uids: Dictionary = {}
 
 
 # 合成**之前**调一次：把每个 uid 当前站的世界坐标记下来。合成会把被吃掉的那几枚
@@ -309,23 +325,85 @@ func _sync_four_star_ready_ring(actor: Node3D, state: int) -> void:
 		(ring as Node3D).scale = _prep_effect_scale(actor)
 
 
+# 升 4★ 那一瞬间。顺序是：全屏层的羽毛 / 碎晶 / 闪电先「落到」棋子上（IMPACT_SEC），
+# 落到的那一刻才放 3D 爆发 + 压扁回弹 + ★★★★ 回弹 + 镜头轻震 —— 前后是一个动作。
+#
+# 「只有自己升才全屏」（Leno 10.18）不需要另判：这里按 uid 在**本机**的
+# board_slots / bench_slots 里找棋子，队友的棋子根本不在这两张表里，找不到就直接 return。
 func play_four_star_upgrade(uid: String) -> void:
-	for source in [[GameState.board_slots, _prep_board_model_nodes], [GameState.bench_slots, _prep_standby_model_nodes]]:
-		var slots: Array = source[0]
-		var models: Dictionary = source[1]
-		for index in slots.size():
-			if slots[index] is Dictionary and str(slots[index].get("uid", "")) == uid:
-				var actor := models.get(index) as Node3D
-				if is_instance_valid(actor):
-					_sync_four_star_actor(actor, slots[index])
-					var aura := actor.get_node_or_null("FourStarAuraV2")
-					if aura != null:
-						aura.play_upgrade()
-					# 三档手感一致（Leno 已确认）：4★ 也补上同样的压扁回弹与星级回弹。
-					_squash_prep_model(actor, GameState.MAX_UNIT_STAR)
-					pop_star_caption("board" if slots == GameState.board_slots else "bench",
-						index, GameState.MAX_UNIT_STAR)
-				return
+	var found := _find_prep_model_for_uid(uid)
+	if found.is_empty():
+		return
+	var actor: Node3D = found[0]
+	var location := str(found[1])
+	var index := int(found[2])
+	var slots: Array = GameState.board_slots if location == "board" else GameState.bench_slots
+	var cell: Dictionary = slots[index]
+	# 常驻光环先藏住，等全屏元素落到了再和爆发一起出来 —— 否则它会先在原地亮着，
+	# 冲击那一刻再缩回去重新长，看着像抽了一下。
+	_four_star_hold_uids[uid] = true
+	_sync_four_star_actor(actor, cell)
+	var element := str((cell.get("def", {}) as Dictionary).get("element", ""))
+	await _play_four_star_screen_fx(actor, element)
+	_four_star_hold_uids.erase(uid)
+	# 等待期间模型可能被刷新重建过，重新按 uid 找一次。
+	found = _find_prep_model_for_uid(uid)
+	if found.is_empty():
+		return
+	actor = found[0]
+	var aura := actor.get_node_or_null("FourStarAuraV2") as Node3D
+	if aura != null:
+		aura.visible = true
+		aura.call("play_upgrade")
+	# 三档手感一致（Leno 已确认）：4★ 也补上同样的压扁回弹与星级回弹。
+	_squash_prep_model(actor, GameState.MAX_UNIT_STAR)
+	pop_star_caption(str(found[1]), int(found[2]), GameState.MAX_UNIT_STAR)
+	_shake_prep_camera(float(FOUR_STAR_SHAKE.get(element, 0.0)))
+
+
+# 放全屏层，等它的元素落到棋子上（impact 信号）再返回。放不出来（相机还没建、
+# 属性不认识）就立刻返回 —— 宁可没有全屏，也不能让 3D 爆发跟着卡住。
+func _play_four_star_screen_fx(actor: Node3D, element: String) -> void:
+	if _prep_river_camera == null or not is_instance_valid(_prep_river_camera):
+		return
+	if not actor.is_inside_tree() or element not in ["sky", "land", "ren"]:
+		return
+	if _four_star_fx_layer == null or not is_instance_valid(_four_star_fx_layer):
+		_four_star_fx_layer = CanvasLayer.new()
+		_four_star_fx_layer.name = "FourStarFxLayer"
+		_four_star_fx_layer.layer = FOUR_STAR_FX_LAYER
+		add_child(_four_star_fx_layer)
+	var fx: Control = FOUR_STAR_SCREEN_FX.new()
+	_four_star_fx_layer.add_child(fx)
+	# 落点取棋子**胸口**而不是脚底：全屏元素是飞向「这个人」的，落在脚下会显得打偏了。
+	var chest := actor.global_position + Vector3(0.0, 0.12, 0.0)
+	fx.call("play", element, _world_to_main_screen(chest), FOUR_STAR_AURA._palette(element), {
+		"feather": FOUR_STAR_AURA._get_texture("feather"),
+		"shard": FOUR_STAR_AURA._get_texture("shard"),
+		"sparkle": FOUR_STAR_AURA._get_texture("sparkle"),
+		"toon_ember": FOUR_STAR_AURA._get_texture("toon_ember"),
+	})
+	await fx.impact
+
+
+# 镜头轻震：只动 Camera3D 的 h_offset / v_offset（纯视觉，不碰任何棋子的变换）。
+# 平方衰减 + 正弦，不用每帧随机 —— 每帧随机读起来像信号干扰，不像「震了一下」。
+func _shake_prep_camera(amplitude: float) -> void:
+	if amplitude <= 0.0 or _prep_river_camera == null or not is_instance_valid(_prep_river_camera):
+		return
+	var cam := _prep_river_camera
+	var tween := cam.create_tween()
+	tween.tween_method(func(t: float) -> void:
+		if not is_instance_valid(cam):
+			return
+		var k := (1.0 - t) * (1.0 - t) * amplitude
+		cam.h_offset = k * sin(t * 61.0)
+		cam.v_offset = k * sin(t * 47.0 + 1.3),
+		0.0, 1.0, FOUR_STAR_SHAKE_SEC)
+	tween.tween_callback(func() -> void:
+		if is_instance_valid(cam):
+			cam.h_offset = 0.0
+			cam.v_offset = 0.0)
 # 3D 河流场地（river_arena FBX + 其材质）已弃用，改为贴在平躺 quad 上的 2D 分层棋盘，
 # 见下方 _add_prep_art_layers()。原来的两个路径常量与 _apply_prep_river_material()
 # 指向的 assets/models/prep/river_arena/ 目录早已不存在，且全仓无调用点，

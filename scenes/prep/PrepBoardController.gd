@@ -425,7 +425,12 @@ func _execute_four_star_upgrade(where: String, index: int) -> void:
 		return
 	GameState.record_tiger_starup()
 	var d: Dictionary = (cell as Dictionary).get("def", {})
-	show_message(("%s upgraded to four stars" if LocaleManager.get_locale() == "en" else "%s 升为四星") % DataRegistry.unit_display_name(d, LocaleManager.get_locale() == "en"))
+	# 10.18：这条提示**等全屏特效播完再弹**。它在画面中央，而棋子正好也在中段 ——
+	# 第一次真棋盘截图里它整条盖在棋子上，羽毛 / 碎晶 / 闪电落下去的那个点被它挡住了。
+	var upgraded_text := ("%s upgraded to four stars" if LocaleManager.get_locale() == "en" else "%s 升为四星") 		% DataRegistry.unit_display_name(d, LocaleManager.get_locale() == "en")
+	get_tree().create_timer(FOUR_STAR_SCREEN_FX.DURATION).timeout.connect(func() -> void:
+		if is_inside_tree():
+			show_message(upgraded_text))
 	# 9.17：按棋子分流。用 def.id 而不是 def.name —— 客机路径的名字会被
 	# DataRegistry.canonicalize_unit_display_names() 按本地化覆写，id 永远稳定。
 	# 放在成功判定之后（上面已经 return 掉了所有失败分支），所以只响真的升级。
