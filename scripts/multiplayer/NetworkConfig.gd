@@ -252,7 +252,14 @@ const USE_DTLS := true
 # v42: 13/21-round ruleset in signed cards and room state; treasure follow-up
 # choice and per-player free stone state change the battle/economy contract.
 # Clients and the dedicated battle server must be updated together.
-const NETWORK_PROTOCOL_VERSION := 42
+# v43: merging origin/main into the progression branch moved the server economy
+#      contract again (balance/final_status.json, race_units.json, shop data) on top
+#      of the v42 free-stone and seedling four-star gold changes. No new @rpc method,
+#      but carrot_online_check pins the contract digest to the protocol number, so the
+#      two have to move together: PINNED_PROTOCOL / PINNED_CONTRACT in
+#      tools/carrot_online_check.gd are bumped in the same commit.
+#      Clients and the dedicated battle server must be updated together.
+const NETWORK_PROTOCOL_VERSION := 43
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false
