@@ -119,6 +119,9 @@ func _on_start_battle() -> void:
 	# Cancelling an existing (including in-flight) ready intent is always allowed.
 	if NetworkService.team_active and NetworkService.local_ready_intent():
 		NetworkService.team_set_ready(false)
+		# 10.18：取消准备 = 作废提交。客户端同步丢掉「最后一次提交」缓存，
+		# 否则被拒后的校准重交(_rpc_board_rejected)会把作废的棋盘又发回去。
+		NetworkService.clear_last_team_submission()
 		_refresh_all()
 		return
 	if not _has_any_board_unit():
@@ -144,6 +147,11 @@ func _on_start_battle() -> void:
 		# launches for everyone (team_round_start) once all players are ready.
 		# 教学不算联机：残留会话不能让「准备」变成发给服务端的 ready 意图
 		# （那样教学里的战斗永远开不起来）。9.13 #3。
+		# 10.18「准备即提交棋盘」：客机在发 ready 之前先把棋盘交上去，之后哪怕
+		# 立刻掉线，服务端也有棋盘可 finalize，其他人不必干等。房主路径不提前交
+		# （它的提交流程在 _prepare_team_battle_package 里，本地路径无掉线保留）。
+		if not NetworkService.is_host:
+			NetworkService.team_submit_board(NetProtocol.team_board_submission(GameState.board_slots, GameState.mercenary_slots))
 		NetworkService.team_set_ready(true)
 		_refresh_all()
 		return
@@ -174,6 +182,8 @@ func _mark_online_board_changed() -> void:
 		# 它还是 false，取消请求根本不会发出，而服务器已经按已准备锁盘了。
 		if NetworkService.local_ready_intent():
 			NetworkService.team_set_ready(false)
+			# 10.18：改棋盘即取消准备 = 作废提交，缓存一起清（同 _on_start_battle）。
+			NetworkService.clear_last_team_submission()
 
 func _on_team_treasure_effects_changed() -> void:
 	SaveManager.save_run()

@@ -1,6 +1,90 @@
 # Glory Beta 0.04
 
 
+## 2026-10-18 晚二：备战不再弹战斗准备窗口（提交后直接进读条）
+
+**文档来源**：用户真机实测反馈（承接当天晚一批《备战掉线不再干等》）+ 截图。原话：
+
+> 经过修复后，确实是掉线不再需要等待了，但是还会弹出这个战斗准备窗口，虽然只是一瞬间，也不需要等待。但能不能把这个战斗准备窗口也去掉，做到真正的都准备后直接进入读条。
+>
+> 我的要求是不管有没有掉线 都不再弹战斗准备窗口。
+
+**为什么晚一批没做到**：那一批去掉了「等人」阶段（`wait_team_server`），但窗口本身（`GloryLoadingOverlay`，标题「战斗准备 / Battle Preparation」）仍会在 `_emit_battle_request_once()` 里无条件打开，并按阶段刷到 `receive_replay`「接收战斗回放」—— 无掉线时服务端毫秒级 finalize，这一帧纯粹是闪一下。只要窗口还开着，就必然闪。
+
+**口径与实现思路**：战斗的「读条」其实有两套 —— 备战页的模态准备窗口（`GloryLoadingOverlay`）和战斗场景自带的蓝色进度条（`BattleScreen` 的 `BattlePrepareBar`，0→90%，宠物跟着填充走，资源预加载完成时连它都不闪）。用户要的是后者。所以：
+
+- **备战路径（`GameState.team_mode`）不再打开这个模态窗**，无论有没有掉线；
+- 提交后的反馈 = 开始按钮 busy 态（「正在准备战斗」），随后直接切 `BattleScreen`，用它自己的读条完成剩余准备；
+- 单人路径**保留**原窗口（可取消、失败可重试的契约不变）；
+- **失败仍有出口**：备战路径平时不开窗，但失败瞬间会懒打开一个失败态面板（稳定错误码 + 重试/返回），不经过准备阶段 —— 不弹准备窗口不等于没有出口；
+- 返回键防护：模态遮罩随之消失，「已提交、不可反悔」的窗口期由 `handle_back_request()` 自己挡住，避免中途退出把对局状态带歪。
+
+**改了什么**（1 个生产文件 + 2 个门禁；`scenes/prep/PrepScreen.gd` 945 → 916 行）
+
+| 位置 | 改动 |
+| --- | --- |
+| `PrepScreen._emit_battle_request_once()` | overlay 打开加 `not GameState.team_mode` 守卫（原 `if not _open_battle_loading_overlay(...)` ⇒ `if not GameState.team_mode and not _open_...`） |
+| `PrepScreen._recover_battle_prepare()` | 失败时若 overlay 没开（备战路径）⇒ 懒打开一个直接以 failed 态呈现的面板（`elif GameState.team_mode` 分支） |
+| `PrepScreen.handle_back_request()` | 新增「`_battle_transition_running and team_mode` ⇒ 吃掉返回键」 |
+| `PrepScreen` | **删除** `TEAM_WAIT_HINT_SEC` 常量、`_update_team_wait_status()`、`_network_state_label()` 及三个等待循环里的刷新调用 —— overlay 在备战路径永不开，整条静默期/等人提示链路都是死代码 |
+| `_qa_1018/prep_battle_loading_check.gd` | 阶段契约表删 `wait_team_server`；新增「备战不开窗」源码守卫 + 死代码除净 + 返回键防护断言；新增功能用例 `_check_team_mode_no_prep_window()` |
+| `_qa_1018/prep_submit_board_check.gd` | 静态契约两条（静默期常量/用法）换成新口径（守卫存在 + 死代码除净） |
+
+**新门禁用例怎么证明「不弹」**：`_check_team_mode_no_prep_window()` 用 `hold_succeeded` 故障注入把提交后的战斗包挂住 —— 此刻 `battle_loading_snapshot_for_check()` 必须为空（pending 期没有任何窗口）；放行后必须恰好发出一次 `battle_requested`，且全程 snapshot 仍为空。失败路径再注入 `invalid_replay`：同样不弹准备窗口，但失败瞬间 ModalStack 必须出现失败态面板（错误码 `TEAM_REPLAY_INVALID`），返回后 depth 归零。
+
+**协议成本：零**。纯客户端表现与接线，无 RPC 签名/配置变动。
+
+**效果对照**（取代晚一批表格第三行）：
+
+| 场景 | 改前 | 改后 |
+| --- | --- | --- |
+| 无掉线，都准备 | 闪一下「战斗准备 · 接收战斗回放」窗口 | 按钮转「正在准备战斗」→ 直接切战斗场景，无模态窗 |
+| 有人掉线（已提交棋盘） | 闪窗口 + 秒开 | 按钮 busy → 秒进战斗，无模态窗 |
+| 有人掉线（未提交/已取消） | 战斗准备窗口显示「等待队友」 | 按钮 busy 直到备战倒计时/AI 托管收场，无模态窗 |
+
+**验收**：`prep_battle_loading` **PASS 137/0**（123 − 1 个 `wait_team_server` 阶段断言 + 15 条新断言）；`prep_submit_board_check` **PASS 28/0**；`--headless --editor --quit` EXIT=0 零 error；`project.godot` sha 未变（`f5aa7a43…`）。
+
+
+## 2026-10-18 晚：备战掉线不再干等（准备即提交棋盘 · 取消即作废 · 去掉战斗准备窗口）
+
+**文档来源**：`E:\Users\WINDOWS\Desktop\10.18备战阶段和战斗准备窗口优化.docx`。全文（正文 126 字 + 2 张截图）**只有 1 条**需求：
+
+> 备战阶段和战斗窗口需要优化，当前的表现为：对局的备战阶段，所有人进入准备后，会弹出战斗准备窗口，再进入读条，随后进入战斗，如果此时有人掉线，这个战斗窗口会等待一段时间再进入战斗。优化为：所有人准备后不再弹出战斗准备窗口，而是直接进入读条，随后进入战斗。
+
+追加口径（用户 10-18 逐条拍板）：
+- 「准备后就会提交棋盘（以最后一次准备状态为准），而不是等所有人准备再进行提交」⇒ 客机按下准备时就把棋盘交给服务端，之后哪怕立刻掉线，其他人也不必干等。
+- 「取消准备就会清除掉提交的棋盘」⇒ 取消 = **作废**，不是「一准备就锁定不给改」：准备 → 取消 → 调整 → 再准备是完全支持的日常操作，服务端以最后一次为准。改棋盘同样触发取消 ⇒ 一并作废。
+- 在线未准备的按原样走备战倒计时兜底；掉线未准备的由倒计时/AI 托管收场（原有机制，本次只补「转 dummy 后立即解锁」）。
+
+**根因（原来到底在等什么）**：客户端 `team_set_ready(true)` 只发意图，棋盘是在收到 `team_round_start` **之后**才交的（`PrepScreen._prepare_team_battle_package`）。A 准备后掉线 ⇒ 服务端只做**软移除**（座位仍是 `player`、保留 120s 重连凭证）⇒ B 一准备房间就进 `ROOM_BATTLE`，但 A 的棋盘永远不来 ⇒ `_room_try_finalize_boards` 卡住，直到 30s 看门狗（`BOARD_SUBMIT_TIMEOUT_SEC`）把 A 转 AI 才放行。截图里「战斗准备 · 队伍已就绪 2/2 · 剩余约 32 秒」就是这段 —— 它是**客户端收战斗包的 60s 看门狗**剩余量，与备战倒计时（50s/35s）无关；120s 那个是座位保留给真人重连的期限，也不是卡局时长。
+
+**改了什么**（3 个生产文件、14 处；`scripts/autoload/NetworkService.gd` 8 处 / `scenes/prep/PrepFlowController.gd` 3 处 / `scenes/prep/PrepScreen.gd` 3 处）
+
+| 位置 | 改动 |
+| --- | --- |
+| `PrepFlowController._on_start_battle()` | 客机发 `team_set_ready(true)` **之前**先 `team_submit_board(...)`。房主路径不提前交（它的提交流程在 `_prepare_team_battle_package` 里，本地路径也没有掉线保留机制） |
+| `PrepFlowController` 取消分支 ×2 | `_on_start_battle` / `_mark_online_board_changed` 取消准备时，除 `team_set_ready(false)` 外清客户端「最后一次提交」缓存 —— 否则被拒后的校准重交（`_rpc_board_rejected`）会把作废的棋盘又发回服务端 |
+| `NetworkService._rpc_team_submit_board` | 状态门从「仅 `ROOM_BATTLE`」放开到 `[ROOM_BATTLE, ROOM_PREP]`；duplicate 拒收加判据：**BATTLE 拒重复、PREP 允许覆盖**（取消 → 调整 → 再准备就是重新提交） |
+| `NetworkService._room_maybe_start_round()` | 删掉 `room.boards = {}` —— PREP 阶段提交的要带进 finalize。每回合的清理由 `_room_begin_next_prep` 与结算完成承担，新局入口（`_room_start_authoritative`）另补一次清空 |
+| `NetworkService._rpc_team_set_ready` | 取消准备（`value == false` 且处于 PREP）⇒ erase `room.boards[slot]` **和 `room.last_board[slot]`**。必须连缓存一起清：否则 30s 看门狗会拿 `_restamp_cached_board` 把作废那份补交回来。本地房主路径同步清 `_team_boards_collecting` |
+| `NetworkService._tick_prep_deadlines()` | 备战倒计时归零、把离线座位转 dummy 后，若房间已在 `ROOM_BATTLE` 再补一次 `_room_try_finalize_boards` —— 原来只调 `_room_maybe_start_round`（BATTLE 状态首行就早退），不会触发 finalize，还要再干等 30s 看门狗 |
+| `NetworkService.clear_last_team_submission()` | 新增，客户端取消准备时调 |
+| `PrepScreen._prepare_team_battle_package()` | 提交完棋盘**不再停** `wait_team_server`（战斗准备窗口），直接进 `generate_replay` / `receive_replay` |
+| `PrepScreen._update_team_wait_status()` | 新增静默期 `TEAM_WAIT_HINT_SEC := 3.0`：静默期内不覆盖 stage（读条/回放阶段继续显示）⇒ 无掉线时玩家看到的就是读条；只有真的等久了（有人掉线）才把 stage 切过来给反馈，不让人对着黑屏读条干等 |
+
+**协议成本：零**。没有新增/删除任何 `@rpc` 方法、没有改任何签名 —— `NetworkTransport.rpc_contract()` 只 hash `@rpc` 的配置与签名，以上全是方法内部逻辑 ⇒ `_rpc_contract` sha256 不变 ⇒ 不顶协议号、不重打包战斗服。
+
+**效果对照**：
+
+| 场景 | 改前 | 改后 |
+| --- | --- | --- |
+| 准备了再掉线，其他人准备 | 卡 ~30s（等看门狗转 AI） | **0s**（棋盘已在，立即 finalize） |
+| 准备 → 取消 → 掉线（没再准备） | 卡 ~30s | A 的 ready=false，房间不进 round；备战倒计时归零转 AI 收场，不卡（取消 = 弃疗） |
+| 无掉线 | 弹战斗准备窗口再进读条 | 直接进读条，不弹窗口 |
+
+**验收**：`_qa_1018/prep_submit_board_check.tscn`（**27 项，PASS**）。静态段验静默期常量 / 看门狗 30s / 清除 API / 客户端与服务端接线（防将来只回滚一半）；loopback 段用真实 ENet + RPC 验「PREP 收棋盘并写 last_board 缓存」「PREP 允许覆盖」「取消即清 boards + 缓存」「取消后重新提交」「掉线软移除不清棋盘」「B 准备即进 ROOM_BATTLE 且 boards 保留」「BATTLE 阶段拒重复」。回归全绿：`prep_battle_loading` PASS 123/0、`mobile_reconnect` PASS 37/0、`shop_double_click_buy` PASS 55/0；`--headless --editor --quit` EXIT=0 零 error，`project.godot` sha 未变。
+
+
 ## 2026-10-18：备战商店支持「快速双击」购买棋子
 
 **文档来源**：`E:\Users\WINDOWS\Desktop\10.18商店购买操作优化.docx`。全文**只有 1 条**需求：

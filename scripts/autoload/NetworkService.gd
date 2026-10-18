@@ -2297,6 +2297,9 @@ func _room_start_authoritative(room: Dictionary) -> void:
 	room["initial_seats"] = room.get("slot_states", []).duplicate()
 	room["initial_leader"] = int(room.get("leader_slot", 0))
 	_touch_room(room)
+	# 10.18：新局第一轮从零开始。PREP 阶段提交的棋盘不带进新局
+	# （_room_maybe_start_round 不再清 boards，见同批改动）。
+	room.boards = {}
 	# 🔴 大厅 → 备战。**这一行是整个开局的关键**：少了它服务器停在 LOBBY，
 	# 而下面的 _rpc_team_start 已经广播出去 —— 客户端进了对局，服务器以为还在大厅。
 	# 2026-09-22 第 1 步加 match_uid 时手滑删掉过一次，门禁没覆盖大厅→备战所以一路绿；
@@ -2380,6 +2383,10 @@ func _tick_prep_deadlines(now: float) -> void:
 					_reconnect_service.apply_ai_takeover(room, slot)
 			room.ready[slot] = true
 		_room_maybe_start_round(room)
+		# 房间若已被推进 ROOM_BATTLE（有人先准备），_room_maybe_start_round 首行就早退、
+		# 不会触发 finalize；补一次，让刚转 dummy 的座位立刻解锁，不必再等 30s 看门狗。
+		if str(room.get("state", ROOM_LOBBY)) == ROOM_BATTLE:
+			_room_try_finalize_boards(room)
 
 func _valid_timeout_buy(room: Dictionary, slot: int, action: String, payload: Dictionary) -> bool:
 	if action != "buy" or not bool(payload.get("timeout_deploy", false)):
@@ -2440,7 +2447,8 @@ func _room_maybe_start_round(room: Dictionary) -> void:
 		return
 	LiveBotEconomy.prepare(room)
 	_set_room_state(room, ROOM_BATTLE)
-	room.boards = {}
+	# 10.18「准备即提交棋盘」：不清 boards —— PREP 阶段提交的要带进 finalize。
+	# 每回合的清理由 _room_begin_next_prep 与结算完成(_publish_match_result)承担。
 	_net_log("PVP round started room=%d round=%d" % [int(room.get("id", 0)), int(room.get("round_index", 1))])
 	for peer_id in (room.get("peer_slot", {}) as Dictionary).keys():
 		if _peer_connected(int(peer_id)):
@@ -3866,6 +3874,12 @@ func _rpc_team_replay(packed: PackedByteArray, packed_rival: PackedByteArray = P
 		_replay_in[battle_id].done["rival"] = rival
 	_try_apply_buffered_replay(battle_id)
 
+# 10.18：取消准备时客户端丢掉的「最后一次提交」缓存。不清的话
+# _rpc_board_rejected 的校准重交会把已经作废的棋盘又发回服务端。
+func clear_last_team_submission() -> void:
+	_last_team_submission = {}
+
+
 func team_submit_board(snapshot: Dictionary) -> void:
 	if not team_active or team_local_slot < 0:
 		return
@@ -3930,11 +3944,15 @@ func _rpc_team_submit_board(slot: int, snapshot: Dictionary) -> void:
 		if room.is_empty() or int((room.get("peer_slot", {}) as Dictionary).get(sender, -1)) != slot:
 			_net_log("board rejected reason=bad_peer_or_slot peer=%d slot=%d" % [sender, slot])
 			return
-		if str(room.get("state", ROOM_LOBBY)) != ROOM_BATTLE:
+		# 10.18「准备即提交棋盘」：PREP 阶段也收。备战期提交先记进 room.boards，
+		# 玩家准备后掉线，其座位仍有棋盘可交，finalize 不必干等他。
+		if str(room.get("state", ROOM_LOBBY)) not in [ROOM_BATTLE, ROOM_PREP]:
 			_net_log("board rejected reason=wrong_state peer=%d slot=%d state=%s" % [sender, slot, str(room.get("state", ""))])
 			return
 		var boards: Dictionary = room.get("boards", {})
-		if boards.has(slot):
+		# BATTLE 阶段一回合一份，重复提交一律拒；PREP 阶段允许覆盖 ——
+		# 「取消准备 → 调整 → 再准备」就是重新提交，以最后一次为准。
+		if boards.has(slot) and str(room.get("state", ROOM_LOBBY)) != ROOM_PREP:
 			_net_log("board rejected reason=duplicate room=%d round=%d slot=%d" % [int(room.get("id", 0)), int(room.get("round_index", 1)), slot])
 			return
 		var validation := NetProtocol.validate_team_snapshot(snapshot, int(room.get("round_index", 1)))
@@ -7758,6 +7776,15 @@ func _rpc_team_set_ready(slot: int, value: bool) -> void:
 		var ready: Array = room.get("ready", [])
 		ready[slot] = value
 		room.ready = ready
+		# 10.18：取消准备 = 作废已提交的棋盘。必须连 last_board 一起清 ——
+		# 否则 30s board 看门狗会拿 _restamp_cached_board 把作废的那份补交回来。
+		if not value and str(room.get("state", ROOM_LOBBY)) == ROOM_PREP:
+			var dropped_boards: Dictionary = room.get("boards", {})
+			dropped_boards.erase(slot)
+			room.boards = dropped_boards
+			var dropped_last: Dictionary = room.get("last_board", {})
+			dropped_last.erase(slot)
+			room.last_board = dropped_last
 		_touch_room(room)
 		_net_log("ready received room=%d peer=%d slot=%d ready=%s round=%d" % [int(room.get("id", 0)), sender, slot, str(value), int(room.get("round_index", 1))])
 		_log_room_progress(room, "ready_changed_slot_%d" % slot)
@@ -7769,6 +7796,9 @@ func _rpc_team_set_ready(slot: int, value: bool) -> void:
 	if int(_team_peer_slot.get(multiplayer.get_remote_sender_id(), -1)) != slot:
 		return
 	team_ready[slot] = value
+	# 10.18：本地房主路径同样「取消准备 = 作废提交」（收集在 _team_boards_collecting）。
+	if not value:
+		_team_boards_collecting.erase(slot)
 	_team_broadcast_lobby()
 	team_lobby_changed.emit()
 	_team_maybe_start_round()

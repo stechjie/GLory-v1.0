@@ -66,6 +66,7 @@ func _ready() -> void:
 	var baseline: Array = ModalStack.find_invisible_stop_controls()
 	await _check_overlay_contract()
 	await _check_failure_recovery_paths()
+	await _check_team_mode_no_prep_window()
 	await _check_offline_success_path()
 	await _check_wait_escalation()
 	await _check_wait_resets_on_progress()
@@ -255,10 +256,19 @@ func _check_prep_source_contract() -> void:
 		"start_battle_not_controller_owned", "开始战斗没有接入 AsyncActionController")
 	_h.expect(source.contains("show_pending(request_id, tr(\"battle_load_busy\"))"),
 		"start_button_silent_disabled", "开始战斗没有在 pending 时显示 busy 动词")
-	for stage in ["submit_roster", "wait_team_server", "generate_replay", "receive_replay",
+	for stage in ["submit_roster", "generate_replay", "receive_replay",
 			"load_battle_scene", "load_battle_assets", "enter_battle"]:
 		_h.expect(source.contains("\"%s\"" % stage), "battle_stage_missing",
 			"开始战斗缺阶段 %s" % stage)
+	# 10.18 晚二：备战（team_mode）不再弹「战斗准备」窗口 —— 无论有没有掉线；
+	# 静默期/等人提示整条等待态刷新随窗口一起废除。
+	_h.expect(source.contains("not GameState.team_mode"),
+		"team_prep_window_guard_missing", "备战路径缺少「不开准备窗口」的 team_mode 守卫")
+	_h.expect(not source.contains("TEAM_WAIT_HINT_SEC") and not source.contains("_update_team_wait_status"),
+		"wait_status_leftover", "静默期/等待态刷新已废除，不应残留")
+	# 返回键防护：模态遮罩没了，「已提交不可反悔」的窗口期要自己挡。
+	_h.expect(source.contains("if _battle_transition_running and GameState.team_mode:"),
+		"team_back_guard_missing", "备战提交窗口期没有返回键防护（模态遮罩已没了）")
 	_h.expect(source.contains("BattleAssetService.release_owner(BattleAssetService.OWNER_BATTLE)"),
 		"cancel_does_not_release_assets", "失败/取消没有释放 battle 资源 owner")
 	_h.expect(source.contains("if not _battle_request_is_active(request_id)"),
@@ -375,6 +385,85 @@ func _check_failure_recovery_paths() -> void:
 	prep.take_loaded_battle_scene()
 	prep.queue_free()
 	await get_tree().process_frame
+
+
+# 10.18 晚二：备战路径（team_mode）从提交到进战斗都不弹「战斗准备」窗口，
+# 反馈交给开始按钮 busy 态与 BattleScreen 自己的读条。失败仍必须打开失败态面板
+# （稳定错误码 + 重试/返回）—— 不弹准备窗口不等于没有出口。
+func _check_team_mode_no_prep_window() -> void:
+	GameState.reset_run()
+	# ① 成功路径：提交后挂着（hold），此刻不应有任何准备窗口；放行后直接进战斗。
+	var packed := load("res://scenes/prep/PrepScreen.tscn") as PackedScene
+	if not _h.expect(packed != null, "team_prep_scene_load_failed",
+			"备战用例无法加载 PrepScreen"):
+		return
+	var prep: PrepScreenScript = packed.instantiate() as PrepScreenScript
+	add_child(prep)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var prefetch_deadline := Time.get_ticks_msec() + 5000
+	while PrepScreenScript._cached_battle_scene == null and Time.get_ticks_msec() < prefetch_deadline:
+		await get_tree().process_frame
+	var emitted := [0]
+	prep.battle_requested.connect(func() -> void: emitted[0] = int(emitted[0]) + 1)
+	# 切到备战口径放在 _ready 与预热之后：避免裸实例按 team 态初始化引入无关变量。
+	var old_team_mode := GameState.team_mode
+	var old_active := NetworkService.team_active
+	GameState.team_mode = true
+	NetworkService.team_active = true
+	var hold_probe := BattlePrepareProbe.new()
+	hold_probe.modes = ["hold_succeeded"]
+	_h.expect(prep.set_battle_prepare_check_hook(hold_probe.invoke),
+		"team_prep_hook_rejected", "debug 构建拒绝安装战斗准备故障注入 hook")
+	prep._emit_battle_request_once()
+	await _wait_for_probe_call(hold_probe, 1)
+	var pending_snapshot: Dictionary = prep.battle_loading_snapshot_for_check()
+	_h.expect(pending_snapshot.is_empty(), "team_prep_window_opened",
+		"备战提交后弹出了战斗准备窗口（snapshot=%s）" % str(pending_snapshot))
+	hold_probe.released.emit()
+	var enter_deadline := Time.get_ticks_msec() + 15000
+	while int(emitted[0]) == 0 and Time.get_ticks_msec() < enter_deadline:
+		await get_tree().process_frame
+	_h.expect(int(emitted[0]) == 1, "team_prep_did_not_enter",
+		"备战路径没有恰好发出一次 battle_requested")
+	_h.expect(prep.battle_loading_snapshot_for_check().is_empty(), "team_prep_window_after",
+		"备战全程都不应出现战斗准备窗口")
+	_h.expect(ModalStack.depth() == 0, "team_prep_overlay_leaked",
+		"备战路径结束后 ModalStack depth=%d，应为 0" % ModalStack.depth())
+	prep.take_loaded_battle_scene()
+	prep.queue_free()
+	await get_tree().process_frame
+	# ② 失败路径：同样不弹准备窗口，但失败瞬间要有兜底面板（失败态）。
+	var fail_packed := load("res://scenes/prep/PrepScreen.tscn") as PackedScene
+	if not _h.expect(fail_packed != null, "team_fail_scene_load_failed",
+			"备战失败用例无法加载 PrepScreen"):
+		GameState.team_mode = old_team_mode
+		NetworkService.team_active = old_active
+		return
+	var fail_prep: PrepScreenScript = fail_packed.instantiate() as PrepScreenScript
+	add_child(fail_prep)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	GameState.team_mode = true
+	NetworkService.team_active = true
+	var fail_probe := BattlePrepareProbe.new()
+	fail_probe.modes = ["invalid_replay"]
+	_h.expect(fail_prep.set_battle_prepare_check_hook(fail_probe.invoke),
+		"team_fail_hook_rejected", "debug 构建拒绝安装故障注入 hook")
+	fail_prep._emit_battle_request_once()
+	var fail_snap := await _wait_for_loading_mode(fail_prep, "failed")
+	_h.expect(str(fail_snap.get("error_code", "")) == "TEAM_REPLAY_INVALID",
+		"team_failure_code_missing", "备战失败没有稳定错误码 TEAM_REPLAY_INVALID")
+	_h.expect(ModalStack.depth() == 1, "team_failure_no_surface",
+		"备战失败时没有兜底面板（ModalStack depth=%d）" % ModalStack.depth())
+	_return_from_failed_loading(fail_prep)
+	await get_tree().process_frame
+	_h.expect(ModalStack.depth() == 0, "team_failure_overlay_leaked",
+		"备战失败面板关闭后 ModalStack depth=%d，应为 0" % ModalStack.depth())
+	fail_prep.queue_free()
+	await get_tree().process_frame
+	GameState.team_mode = old_team_mode
+	NetworkService.team_active = old_active
 
 
 func _wait_for_loading_mode(prep: PrepScreenScript, wanted_mode: String,

@@ -454,7 +454,12 @@ func _emit_battle_request_once() -> void:
 		# （GloryBusy 变体）⇒ 进忙碌前先撤掉，让「正在加载」看着还是加载。
 		_clear_ready_button_tone()
 		_start_battle_button.show_pending(request_id, tr("battle_load_busy"))
-	if not _open_battle_loading_overlay(request_id, cancellable):
+	# 10.18 晚二：备战（team_mode）不再弹「战斗准备」窗口 —— 棋盘在准备时就交了，
+	# 无掉线时服务端毫秒级 finalize，弹窗只会闪一下；有掉线时按用户口径也同样不弹。
+	# 提交后的反馈由开始按钮 busy 态（「正在准备战斗」）承担，随后直接切 BattleScreen，
+	# 用它自带的蓝色读条（BattlePrepareBar）完成剩余准备。单人路径保留原窗口
+	# （可取消、失败可重试的契约不变）；备战失败的兜底面板见 _recover_battle_prepare。
+	if not GameState.team_mode and not _open_battle_loading_overlay(request_id, cancellable):
 		AsyncActionController.fail(request_id, _battle_failure_code, true)
 		return
 	AsyncActionController.mark_pending(request_id)
@@ -701,7 +706,13 @@ func _prepare_team_battle_package(request_id: String) -> bool:
 	NetworkService.team_replay = {}
 	NetworkService.team_replay_rival = {}
 	NetworkService.team_submit_board(NetProtocol.team_board_submission(GameState.board_slots, GameState.mercenary_slots))
-	_set_battle_stage("wait_team_server", tr("battle_load_wait_server"), "", -1.0)
+	# 10.18 晚二：备战不开「战斗准备」窗口了（见 _emit_battle_request_once 的 team_mode
+	# 守卫），这里的阶段只喂 AsyncActionController 遥测；视觉由开始按钮 busy 态
+	# 直接交接给 BattleScreen 的读条。
+	if NetworkService.is_host and not bool(NetworkService.get("_dedicated_server")):
+		_set_battle_stage("generate_replay", tr("battle_load_generate_replay"), "", -1.0)
+	else:
+		_set_battle_stage("receive_replay", tr("battle_load_receive_replay"), "", -1.0)
 	var my_team := GameConstants.team_of_slot(NetworkService.team_local_slot)
 	if NetworkService.is_host and not bool(NetworkService.get("_dedicated_server")):
 		if not await _wait_for_team_boards(request_id):
@@ -729,7 +740,6 @@ func _wait_for_team_boards(request_id: String) -> bool:
 			return false
 		if not _battle_request_is_active(request_id):
 			return false
-		_update_team_wait_status(wait_elapsed, request_id)
 		await get_tree().create_timer(0.1).timeout
 		wait_elapsed += 0.1
 		if wait_elapsed >= TEAM_BATTLE_PREP_TIMEOUT_SEC:
@@ -748,7 +758,6 @@ func _wait_for_team_replay(request_id: String) -> bool:
 			return false
 		if not _battle_request_is_active(request_id):
 			return false
-		_update_team_wait_status(wait_elapsed, request_id)
 		await get_tree().create_timer(0.1).timeout
 		wait_elapsed += 0.1
 		if wait_elapsed >= TEAM_BATTLE_PREP_TIMEOUT_SEC:
@@ -767,7 +776,6 @@ func _wait_for_team_match_state(completed_round: int, request_id: String) -> boo
 			return false
 		if not _battle_request_is_active(request_id):
 			return false
-		_update_team_wait_status(wait_elapsed, request_id)
 		await get_tree().create_timer(0.1).timeout
 		wait_elapsed += 0.1
 		if wait_elapsed >= TEAM_BATTLE_PREP_TIMEOUT_SEC:
@@ -791,40 +799,6 @@ func _store_team_battle_package(replay: Dictionary, request_id: String) -> bool:
 		"replay": replay,
 	})
 	return true
-
-
-func _update_team_wait_status(wait_elapsed: float, request_id: String) -> void:
-	if not _battle_request_is_active(request_id):
-		return
-	if _battle_loading_overlay == null or not is_instance_valid(_battle_loading_overlay):
-		return
-	var total := 0
-	var ready := 0
-	for i in NetworkService.team_slot_states.size():
-		var state := str(NetworkService.team_slot_states[i])
-		if state == "empty":
-			continue
-		total += 1
-		if state == "dummy" or (i < NetworkService.team_ready.size() and bool(NetworkService.team_ready[i])):
-			ready += 1
-	var remaining := maxf(0.0, TEAM_BATTLE_PREP_TIMEOUT_SEC - wait_elapsed)
-	_battle_loading_overlay.set_stage("wait_team_server", tr("battle_load_wait_server"),
-		tr("battle_load_wait_ready") % [ready, total, remaining], -1.0)
-	_battle_loading_overlay.set_network_text(tr("battle_load_network_state") % _network_state_label())
-
-
-func _network_state_label() -> String:
-	match NetworkService.state:
-		NetworkService.SessionState.READY:
-			return "READY"
-		NetworkService.SessionState.JOINING:
-			return "JOINING"
-		NetworkService.SessionState.RECONNECTING:
-			return "RECONNECTING"
-		NetworkService.SessionState.FAILED:
-			return "FAILED"
-		_:
-			return "OFFLINE"
 
 
 func _battle_request_is_active(request_id: String) -> bool:
@@ -882,6 +856,11 @@ func _recover_battle_prepare(show_failure: bool, state: String, snapshot: Dictio
 			code = str(snapshot.get("error_code", "BATTLE_PREP_FAILED"))
 		if _battle_loading_overlay != null and is_instance_valid(_battle_loading_overlay):
 			_battle_loading_overlay.set_failed(code, _battle_failure_message, _battle_failure_retryable)
+		elif GameState.team_mode:
+			# 10.18 晚二：备战路径平时不开准备窗口，但失败不能没有出口 —— 这时才打开
+			# 面板，且直接以失败态呈现（稳定错误码 + 重试/返回），不经过准备阶段。
+			if _open_battle_loading_overlay(_battle_action_request_id, false):
+				_battle_loading_overlay.set_failed(code, _battle_failure_message, _battle_failure_retryable)
 	else:
 		_close_battle_loading_overlay()
 		if _start_battle_button != null:
@@ -921,6 +900,10 @@ func _on_battle_loading_retry_requested(request_id: String) -> void:
 #
 # 返回 true 表示「这一下被消费了」，Main 就不再往下走二次确认退出。
 func handle_back_request() -> bool:
+	# 10.18 晚二：备战提交后到进战斗前不再弹准备窗口，ModalStack 的输入遮罩随之消失。
+	# 这段「已提交、不可反悔」的窗口期仍要挡住返回键，否则中途退出会让对局状态对不上。
+	if _battle_transition_running and GameState.team_mode:
+		return true
 	if _shop != null and _shop.picker_open:
 		_shop.close_picker()
 		return true
