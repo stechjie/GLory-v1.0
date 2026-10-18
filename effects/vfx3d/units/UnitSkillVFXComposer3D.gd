@@ -193,7 +193,10 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 		# 10.18：自爆的毒爆冲击环单独一个 id，由「被炸到」的伤害事件触发，不重播上面的毒爆贴图。
 		"treasure_poison_blast":_poison_blast(origin,context)
 		"treasure_toxic_burst":_toxic_burst(target)
-		"treasure_element_burst","treasure_soul_counter","treasure_control_refresh","treasure_flame_shatter","treasure_blood_covenant","treasure_gold_coins","treasure_phoenix_rise","treasure_phoenix_release":
+		"treasure_flame_shatter","treasure_blood_covenant":
+			_flame_flipbooks(target,skill_id=="treasure_blood_covenant")
+			_treasure_skill(skill_id,origin,target,context)
+		"treasure_element_burst","treasure_soul_counter","treasure_control_refresh","treasure_gold_coins","treasure_phoenix_rise","treasure_phoenix_release":
 			_treasure_skill(skill_id,origin,target,context)
 		"poison_reflect_armor_stack":_oga_pack_skill("poison_reflect_armor_stack",origin,origin,context)
 		"parasite_on_kill":_summon(target)
@@ -373,15 +376,53 @@ func _toxic_burst(target_body:Vector3)->void:
 	var green:=_block(VFX_OGA_SKILL) as VFXFlipbookSkill3D
 	if green!=null:
 		last_spawned=green
-		green.play_spec(target_body,_poison_explosion_spec(1.5),{})
-	var purple:=_block(VFX_OGA_SKILL) as VFXFlipbookSkill3D
-	if purple!=null:
-		var spec:=_poison_explosion_spec(1.15)
+		green.play_spec(target_body,_poison_explosion_spec(1.3),{})
+	# 紫色：和火焰同一个节奏，在目标身上错开三个位置依次闪出 3 个小毒爆。
+	# 绿色主爆很大，紫色要拉开位置、往镜头推一点画在它上面，并等绿爆鼓到最大之后再出，否则会被盖住。
+	for i in range(SMALL_BURST_OFFSETS.size()):
+		var purple:=_block(VFX_OGA_SKILL) as VFXFlipbookSkill3D
+		if purple==null:
+			continue
+		var spec:=_poison_explosion_spec(0.95)
 		spec["path"]=POISON_EXPLOSION_PURPLE
-		var offset:=Vector3(0.12,0.10,0.0)
-		_after(0.08,func()->void:
+		spec["duration"]=0.5
+		var at:Vector3=target_body+(SMALL_BURST_OFFSETS[i] as Vector3)*1.7+VFXBlockRoot.vfx_toward_camera(0.12)
+		_after(0.16+SMALL_BURST_STAGGER*float(i),func()->void:
 			if is_instance_valid(purple):
-				purple.play_spec(target_body+offset,spec,{}))
+				purple.play_spec(at,spec,{}))
+
+# 炎焰碎裂 / 血之契约的火焰（10.18 用户定）：竖直的小火焰，触发时在目标身上错开三个位置依次闪出 3 个。
+# 贴图是 mage_fire_impact 逐帧顺时针转 90° 的竖版（火团在下、火苗往上）；血之契约用深红版、
+# 稍大，并叠一层血花（blood_bloom）。火星和血线由 VFXTreasureSkill3D 画。
+const FIRE_UP:="res://assets/vfx/oga/skill_packs/mage_fire_impact_up.png"
+const FIRE_UP_BLOOD:="res://assets/vfx/oga/skill_packs/mage_fire_impact_blood_up.png"
+const BLOOD_BLOOM:="res://assets/vfx/oga/skill_packs/blood_bloom.png"
+# 三个小火焰相对目标受击点的位置（世界单位）和出现的先后。
+const SMALL_BURST_OFFSETS:=[Vector3(-0.20,-0.02,0.0),Vector3(0.20,0.06,0.0),Vector3(0.0,0.20,0.0)]
+const SMALL_BURST_STAGGER:=0.07
+
+func _flame_flipbooks(target_body:Vector3,blood:bool)->void:
+	var w:=0.62 if blood else 0.52
+	for i in range(SMALL_BURST_OFFSETS.size()):
+		var flame:=_block(VFX_OGA_SKILL) as VFXFlipbookSkill3D
+		if flame==null:
+			continue
+		if i==0:
+			last_spawned=flame
+		var at:Vector3=target_body+SMALL_BURST_OFFSETS[i]
+		var spec:={"path":FIRE_UP_BLOOD if blood else FIRE_UP,"columns":7,"rows":2,"frame_count":14,"fps":26.0,
+			"size":Vector2(w,w*1.74),"duration":0.5,"billboard":true,"color":Color(1.0,1.0,1.0,0.98)}
+		_after(SMALL_BURST_STAGGER*float(i),func()->void:
+			if is_instance_valid(flame):
+				flame.play_spec(at,spec,{}))
+	if not blood:
+		return
+	var bloom:=_block(VFX_OGA_SKILL) as VFXFlipbookSkill3D
+	if bloom!=null:
+		_after(0.10,func()->void:
+			if is_instance_valid(bloom):
+				bloom.play_spec(target_body,{"path":BLOOD_BLOOM,"columns":5,"rows":1,"frame_count":5,"fps":12.0,
+					"size":Vector2(1.05,1.05),"duration":0.6,"billboard":true,"color":Color(1.0,0.55,0.55,0.92)},{}))
 
 # 宝藏触发的战斗表现（元素四件套 / 亡魂反击 / 控制套装刷新时钟 / 炎焰碎裂 / 富裕之路 / 凤凰涅槃）。
 # 亡魂反击与刷新时钟是玩家要读懂的关键反馈，走 critical 通道；元素环与毒环走普通预算。

@@ -206,7 +206,7 @@ func _soul_counter(from_foot: Vector3, killer_body: Vector3, context: Dictionary
 
 
 # ── 炎焰碎裂 / 血之契约 ────────────────────────────────────────────────
-# 炎焰碎裂：目标身上窜起一团火 —— 几道往上舔的火舌 + 火心爆闪 + 往上飘的火星。
+# 炎焰碎裂：目标身上一团手绘火焰（composer 的序列帧）+ 这里补的往上飘的火星。
 # 血之契约（伤害 40% → 100% ATK）：换成暗红血火、更大更猛，再拉一道血线从目标连回攻击者。
 const FIRE := {"edge": Color(0.30, 0.04, 0.0), "tint": Color(1.0, 0.40, 0.06), "hot": Color(1.0, 0.78, 0.32), "white_hot": Color(1.0, 0.96, 0.82)}
 const BLOOD_FIRE := {"edge": Color(0.16, 0.0, 0.02), "tint": Color(0.74, 0.04, 0.08), "hot": Color(1.0, 0.30, 0.22), "white_hot": Color(1.0, 0.80, 0.74)}
@@ -216,34 +216,13 @@ const BLOOD_EMBER_BODY := {"facet": 0.3, "main_color": Color(0.60, 0.02, 0.06), 
 func _flame_burst(attacker_foot: Vector3, target_body: Vector3, context: Dictionary, blood: bool) -> void:
 	var th := height_of(context, "target_height")
 	var oh := height_of(context, "origin_height")
-	var palette: Dictionary = BLOOD_FIRE if blood else FIRE
 	var size := 1.25 if blood else 1.0
 	var ref := weak_node(context.get("target_node"))
 	var base := node_position(ref, target_body)
 	var at_now := func() -> Vector3:
 		return target_body + (node_position(ref, base) - base)
 	_debug["blood"] = blood
-	# 火心爆闪
-	var core := glow_sprite("FireCore", toward_camera(target_body, 0.25), th * 0.9 * size, _pal(palette, {"shape": SHAPE_FLARE, "core_white": 0.75, "spin": _rng.randf() * TAU}))
-	track(0.0, 0.26, func(x: float) -> void:
-		core.global_position = toward_camera(at_now.call() as Vector3, 0.25)
-		core.scale = Vector3.ONE * th * size * lerpf(0.6, 1.3, ease_out(x))
-		show_with(core, 0.95 * (1.0 - x)))
-	# 火舌：几道从身体往上舔的火焰，左右错开、长短不一
-	var tongues := 5 if blood else 4
-	for k in tongues:
-		var tongue := streak("FireTongue%d" % k, _pal(palette, {"core_white": 0.55, "edge_dark": 0.35}))
-		var side := (float(k) - float(tongues - 1) * 0.5) * 0.16 * th
-		var start := 0.02 + 0.04 * float(k % 3)
-		var reach := th * size * _rng.randf_range(0.75, 1.15)
-		var sway := _rng.randf_range(-0.12, 0.12)
-		track(start, 0.42, func(x: float) -> void:
-			var c: Vector3 = at_now.call()
-			var root := c + Vector3.RIGHT * side + Vector3.DOWN * th * 0.15
-			var tip := root + SCREEN_UP * reach * ease_out(minf(1.0, x * 1.8)) + Vector3.RIGHT * sin(x * 9.0 + side * 20.0) * th * sway
-			var tail := root.lerp(tip, smoothstep(0.45, 1.0, x))
-			place_streak(tongue, toward_camera(tail, 0.24), toward_camera(tip, 0.24), th * 0.13 * size * (1.0 - 0.6 * x))
-			show_with(tongue, 0.95 * envelope(x, 0.1, 0.45)))
+	# 火焰本体是 composer 播的手绘序列帧（_flame_flipbooks），这里只补火星和血线。
 	# 火星往上飘（负重力）
 	var embers := shard_cloud("FireEmbers", QUALITY_BUDGET.particle_count_for(10 if blood else 7), BLOOD_EMBER_BODY if blood else EMBER_BODY)
 	var pieces := scatter(embers.multimesh.instance_count, target_body, Vector3.ZERO, 0.7, 1.6, 0.6)
@@ -264,14 +243,14 @@ func _flame_burst(attacker_foot: Vector3, target_body: Vector3, context: Diction
 		var mid := a.lerp(b, 0.5) + Vector3.UP * th * 0.35
 		var grow := ease_out(minf(1.0, x * 2.5))
 		var end := bezier3(a, mid, b, grow)
-		place_streak(line, toward_camera(a, 0.22), toward_camera(end, 0.22), th * 0.05 * (1.0 - 0.5 * x))
-		place_streak(line_glow, toward_camera(a, 0.21), toward_camera(end, 0.21), th * 0.14 * (1.0 - 0.5 * x))
-		show_with(line, 0.9 * envelope(x, 0.05, 0.4))
-		show_with(line_glow, 0.5 * envelope(x, 0.05, 0.4))
+		place_streak(line, toward_camera(a, 0.22), toward_camera(end, 0.22), th * 0.09 * (1.0 - 0.4 * x))
+		place_streak(line_glow, toward_camera(a, 0.21), toward_camera(end, 0.21), th * 0.24 * (1.0 - 0.4 * x))
+		show_with(line, 1.0 * envelope(x, 0.05, 0.4))
+		show_with(line_glow, 0.7 * envelope(x, 0.05, 0.4))
 		for i in drops.multimesh.instance_count:
 			var u := clampf(x * 1.6 - float(i) * 0.12, 0.0, 1.0)
 			var p := bezier3(a, mid, b, u)
-			drops.multimesh.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ONE * th * 0.05), drops.to_local(toward_camera(p, 0.23))))
+			drops.multimesh.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ONE * th * 0.08), drops.to_local(toward_camera(p, 0.23))))
 			drops.multimesh.set_instance_color(i, Color(1, 1, 1, (1.0 if u > 0.0 and u < 1.0 else 0.0) * (1.0 - smoothstep(0.8, 1.0, x))))
 		show_with(drops, 1.0))
 

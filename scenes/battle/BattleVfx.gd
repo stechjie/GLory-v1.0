@@ -2135,9 +2135,8 @@ func _play_mother_execute_death(uid: String, actor: Node3D) -> void:
 	overlay.set_shader_parameter("tint", MOTHER_EXECUTE_TINT)
 	overlay.set_shader_parameter("glow", 0.0)
 	var geometries := _death_fade_targets(actor)
-	for geometry in geometries:
-		if geometry is MeshInstance3D:
-			geometry.material_overlay = overlay
+	for geometry in _overlay_targets(geometries):
+		geometry.material_overlay = overlay
 	var set_glow := func(value: float) -> void:
 		overlay.set_shader_parameter("glow", value)
 	var tween := create_tween()
@@ -2179,9 +2178,8 @@ func _sync_phoenix_ghost(model_node: Node3D) -> void:
 		overlay = ShaderMaterial.new()
 		overlay.shader = _mother_encase_shader
 		overlay.set_shader_parameter("tint", PHOENIX_GHOST_TINT)
-		for geometry in _death_fade_targets(model_node):
-			if geometry is MeshInstance3D:
-				geometry.material_overlay = overlay
+		for geometry in _overlay_targets(_death_fade_targets(model_node)):
+			geometry.material_overlay = overlay
 		model_node.set_meta("phoenix_ghost_overlay", overlay)
 	# 呼吸：0.55 ~ 0.85 之间起伏，看得出「这是借来的命」又不至于盖死本体。
 	overlay.set_shader_parameter("glow", 0.70 + 0.15 * sin(float(Time.get_ticks_msec()) * 0.006))
@@ -2274,6 +2272,17 @@ func _death_fade_targets(root: Node) -> Array[GeometryInstance3D]:
 			out.append(node as GeometryInstance3D)
 		for child in node.get_children():
 			pending.append(child)
+	return out
+
+
+# 罩光（母灵处决青光 / 凤凰鬼魂光）只给真正的模型网格：导入的模型是 ArrayMesh；
+# 脚下选中圈、影子、状态图标这些是 Quad/Plane 之类的 PrimitiveMesh 或 Sprite3D，
+# 罩上去会变成一块块纯色方块（10.18 凤凰截图里看到的绿色方块）。
+func _overlay_targets(geometries: Array) -> Array[MeshInstance3D]:
+	var out: Array[MeshInstance3D] = []
+	for geometry in geometries:
+		if geometry is MeshInstance3D and (geometry as MeshInstance3D).mesh is ArrayMesh:
+			out.append(geometry as MeshInstance3D)
 	return out
 
 
