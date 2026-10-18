@@ -92,7 +92,17 @@ const TEAM_MERCS_CAMERA_POSITION := Vector3(0.0, 2.4, 1.9)
 const TEAM_MERCS_CAMERA_TARGET := Vector3(0.0, 0.05, 0.0)
 const TEAM_MERCS_CAMERA_FOV := 40.0
 const TEAM_MERCS_AREA_HALF := Vector2(0.42, 0.24)
-const TEAM_MERCS_MIN_DIST := 0.15
+# 检阅台按队友分三排：队伍首槽（GameConstants.team_first_slot）那一排最靠前、
+# 离相机最近，之后的槽位依次往后。排距与可用宽度都从 TEAM_MERCS_AREA_HALF 推，
+# 改舞台区域不用动这里。
+const TEAM_MERCS_ROW_Z := [0.20, 0.0, -0.20]
+# 一排里两个佣兵的理想间距。排不下时按「可用宽度 / 人数」收窄，并把整排模型
+# 等比缩小 —— 8 个也不会互相穿模或顶出背景框（迁移前随机撒点就是栽在这）。
+const TEAM_MERCS_SPOT_SPACING := 0.16
+const TEAM_MERCS_MIN_SHRINK := 0.55
+# 每排左侧那枚 2D 小标签（队友名字 + 数量）。
+const TEAM_MERCS_LABEL_FONT_SIZE := 13
+const TEAM_MERCS_LABEL_MARGIN := 6.0
 const TEAM_MERCS_PLATE_RADIUS := 0.055
 const TEAM_MERCS_PLATE_HEIGHT := 0.012
 const TREASURE_LOGO_DIRECTORY := "res://assets/ui/treasure_logos"
@@ -165,6 +175,12 @@ var _team_merc_counts_snapshot: Dictionary = {}
 # 迁进 ModalStack 后 content 不再是 center_host 的子节点，失去了自动跟随布局的能力。
 # 记住宿主，开合与尺寸变化时把 content 钉回它的屏幕矩形，视觉才和迁移前一致。
 var _team_mercs_host: Control
+# 每排左侧的 2D 名字标签。它们挂在 stage_holder 上（不进 3D 舞台），纵向位置由
+# 相机 unproject 从那一排的世界坐标换算 —— 相机或排距一改，标签自动跟上。
+var _team_mercs_label_layer: Control
+var _team_mercs_camera: Camera3D
+var _team_mercs_row_labels: Array = []
+var _team_mercs_rows: Array = []
 var _team_merc_snapshot_round := -1
 var _team_merc_snapshot_initialized := false
 var _carrot_panel
@@ -3146,6 +3162,7 @@ func _create_team_mercs_content() -> Control:
 	camera.fov = TEAM_MERCS_CAMERA_FOV
 	camera.look_at_from_position(TEAM_MERCS_CAMERA_POSITION, TEAM_MERCS_CAMERA_TARGET, Vector3.UP)
 	camera.current = true
+	_team_mercs_camera = camera
 	_team_mercs_viewport.add_child(camera)
 	_team_mercs_stage_root = Node3D.new()
 	_team_mercs_stage_root.name = "TeamMercsStageRoot"
@@ -3160,6 +3177,12 @@ func _create_team_mercs_content() -> Control:
 	_team_mercs_empty_label.add_theme_font_size_override("font_size", 18)
 	_team_mercs_empty_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	stage_holder.add_child(_team_mercs_empty_label)
+	_team_mercs_label_layer = Control.new()
+	_team_mercs_label_layer.name = "TeamMercsRowLabels"
+	_team_mercs_label_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_team_mercs_label_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	stage_holder.add_child(_team_mercs_label_layer)
+	_team_mercs_row_labels.clear()
 	return overlay
 
 
@@ -3168,6 +3191,7 @@ func _create_team_mercs_content() -> Control:
 # 那就是改视觉了。
 func _sync_team_mercs_content_rect() -> void:
 	_sync_modal_content_to_host(_team_mercs_overlay)
+	_update_team_mercs_row_labels()
 
 
 # 备战页两个模态共用：content 挂在 ModalStack 的全屏 root 下，不再自动跟随
@@ -3208,6 +3232,10 @@ func _team_mercs_teardown_state() -> void:
 	_team_mercs_viewport = null
 	_team_mercs_stage_root = null
 	_team_mercs_empty_label = null
+	_team_mercs_label_layer = null
+	_team_mercs_camera = null
+	_team_mercs_row_labels.clear()
+	_team_mercs_rows.clear()
 
 
 func _on_team_mercs_render_tick() -> void:
@@ -3389,52 +3417,117 @@ func _rebuild_team_mercs_stage() -> void:
 	var defs := {}
 	for row in (DataRegistry.get_table("mercenaries").get("mercenaries", []) as Array):
 		defs[str((row as Dictionary).get("id", ""))] = row
-	var taken: Array = []
+	# 一个队友一排。entries 已经是从 team_first_slot 起的连续槽位顺序，所以它们
+	# 出现的先后就是排序：首槽在第一排（最靠前、离相机最近），依次往后。
+	var rows: Array = []
+	var row_of_slot := {}
 	for entry_value in entries:
 		var entry: Dictionary = entry_value
-		var def_value = defs.get(str(entry.get("id", "")))
-		if typeof(def_value) != TYPE_DICTIONARY:
-			continue
-		var def: Dictionary = def_value
 		var slot := int(entry.get("slot", 0))
-		# 每回合固定的随机站位：种子=回合+槽位+序号，重开弹窗不变，
-		# 后买的佣兵也不会挪动先前佣兵的位置。
-		var rng := RandomNumberGenerator.new()
-		rng.seed = hash("team_mercs_%d_%d_%d" % [GameState.round_index, slot, int(entry.get("index", 0))])
-		var pos := _team_mercs_spot(rng, taken)
-		taken.append(pos)
-		var cell := {"id": str(entry.get("id", "")), "star": 1, "def": def, "is_mercenary": true}
-		var pivot := _make_prep_board_model(cell, def)
-		if pivot == null:
+		if not row_of_slot.has(slot):
+			row_of_slot[slot] = rows.size()
+			rows.append({"slot": slot, "entries": []})
+		(rows[int(row_of_slot[slot])]["entries"] as Array).append(entry)
+
+	_team_mercs_rows.clear()
+	var usable_width := TEAM_MERCS_AREA_HALF.x * 2.0
+	for row_index in rows.size():
+		var row: Dictionary = rows[row_index]
+		var row_entries: Array = row["entries"]
+		var count := row_entries.size()
+		if count <= 0:
 			continue
-		# 模型已不带 3D 名字/星级浮标，队伍佣兵检阅台本就不需要显示，无需再隐藏。
-		pivot.position = pos
-		pivot.rotation_degrees = Vector3(0.0, float(def.get("model_base_yaw", 180.0)) + rng.randf_range(-20.0, 20.0), 0.0)
-		_team_mercs_stage_root.add_child(pivot)
-		_team_mercs_stage_root.add_child(_make_team_mercs_plate(slot, pos))
+		var row_slot := int(row["slot"])
+		# 人少按理想间距，人多就把整排压进可用宽度里，并等比缩小模型。
+		var spacing := TEAM_MERCS_SPOT_SPACING
+		if count > 1:
+			spacing = minf(spacing, usable_width / float(count))
+		var shrink := clampf(spacing / TEAM_MERCS_SPOT_SPACING, TEAM_MERCS_MIN_SHRINK, 1.0)
+		var row_z := float(TEAM_MERCS_ROW_Z[mini(row_index, TEAM_MERCS_ROW_Z.size() - 1)])
+		var first_x := -spacing * float(count - 1) * 0.5
+		for i in count:
+			var entry: Dictionary = row_entries[i]
+			var def_value = defs.get(str(entry.get("id", "")))
+			if typeof(def_value) != TYPE_DICTIONARY:
+				continue
+			var def: Dictionary = def_value
+			# 站位只由「这一排的第几个」决定：后买的追加在排尾，先前佣兵的
+			# 前后次序不变（整排会跟着重新居中，否则排头永远贴着左边框）。
+			var pos := Vector3(first_x + spacing * float(i), 0.0, row_z)
+			var cell := {"id": str(entry.get("id", "")), "star": 1, "def": def, "is_mercenary": true}
+			var pivot := _make_prep_board_model(cell, def)
+			if pivot == null:
+				continue
+			# 模型已不带 3D 名字/星级浮标，队伍佣兵检阅台本就不需要显示，无需再隐藏。
+			pivot.position = pos
+			# 全排统一朝向镜头：站位既然排齐了，再随机转角只会看着更乱。
+			pivot.rotation_degrees = Vector3(0.0, float(def.get("model_base_yaw", 180.0)), 0.0)
+			pivot.scale *= shrink
+			_team_mercs_stage_root.add_child(pivot)
+			_team_mercs_stage_root.add_child(_make_team_mercs_plate(row_slot, pos, shrink))
+		_team_mercs_rows.append({
+			"slot": row_slot,
+			"count": count,
+			# 标签只借这个点的纵向位置，横向固定贴在舞台左边。
+			"anchor": Vector3(-usable_width * 0.5, 0.0, row_z),
+		})
+	_update_team_mercs_row_labels()
 
-func _team_mercs_spot(rng: RandomNumberGenerator, taken: Array) -> Vector3:
-	var candidate := Vector3.ZERO
-	for attempt in 24:
-		candidate = Vector3(
-			rng.randf_range(-TEAM_MERCS_AREA_HALF.x, TEAM_MERCS_AREA_HALF.x),
-			0.0,
-			rng.randf_range(-TEAM_MERCS_AREA_HALF.y, TEAM_MERCS_AREA_HALF.y)
-		)
-		var clear := true
-		for taken_pos in taken:
-			if candidate.distance_to(taken_pos) < TEAM_MERCS_MIN_DIST:
-				clear = false
-				break
-		if clear:
-			return candidate
-	return candidate
 
-func _make_team_mercs_plate(slot: int, pos: Vector3) -> MeshInstance3D:
+# 每排左边那枚「队友名字 + 数量」。重建舞台和宿主矩形变化时都要重算 ——
+# 标签是 2D 的，视口一改尺寸，unproject 出来的落点就不一样了。
+func _update_team_mercs_row_labels() -> void:
+	if _team_mercs_label_layer == null or not is_instance_valid(_team_mercs_label_layer):
+		return
+	for label_value in _team_mercs_row_labels:
+		if label_value != null and is_instance_valid(label_value):
+			(label_value as Label).queue_free()
+	_team_mercs_row_labels.clear()
+	if _team_mercs_camera == null or not is_instance_valid(_team_mercs_camera):
+		return
+	if _team_mercs_stage_root == null or not is_instance_valid(_team_mercs_stage_root):
+		return
+	if _team_mercs_viewport == null or not is_instance_valid(_team_mercs_viewport):
+		return
+	# 视口还没有尺寸时 unproject 全是 0；等下一次 rect 同步再画。
+	if _team_mercs_viewport.size.x <= 0 or _team_mercs_viewport.size.y <= 0:
+		return
+	for row_value in _team_mercs_rows:
+		var row: Dictionary = row_value
+		var row_slot := int(row.get("slot", 0))
+		var anchor: Vector3 = row.get("anchor", Vector3.ZERO)
+		var screen := _team_mercs_camera.unproject_position(_team_mercs_stage_root.global_transform * anchor)
+		var label := Label.new()
+		label.text = "%s %d/%d" % [_team_mercs_row_name(row_slot), int(row.get("count", 0)), GameState.MERCENARY_SLOTS]
+		label.add_theme_font_size_override("font_size", TEAM_MERCS_LABEL_FONT_SIZE)
+		label.add_theme_color_override("font_color", GameConstants.team_slot_color(row_slot))
+		label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.75))
+		label.add_theme_constant_override("outline_size", 4)
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_team_mercs_label_layer.add_child(label)
+		var label_size := label.get_combined_minimum_size()
+		label.position = Vector2(TEAM_MERCS_LABEL_MARGIN, screen.y - label_size.y * 0.5)
+		_team_mercs_row_labels.append(label)
+
+
+# 这一排是谁。照 PrepSeatCard.describe 的口径：自己读本地名片，队友读座位名片，
+# 名片还没到的座位退回「玩家」。
+func _team_mercs_row_name(slot: int) -> String:
+	var en := LocaleManager.get_locale() == "en"
+	var identity := _ready_slot_identity(slot)
+	var who := str(identity.get("player_name", "")).strip_edges()
+	var code := str(identity.get("friend_code", "")).strip_edges()
+	var title := AccountManager.display_name(who, code, false) if not who.is_empty() 		else ("Player" if en else "玩家")
+	if slot == int(NetworkService.team_local_slot):
+		title += " (me)" if en else "（我）"
+	return title
+
+
+func _make_team_mercs_plate(slot: int, pos: Vector3, shrink: float = 1.0) -> MeshInstance3D:
 	var plate := MeshInstance3D.new()
 	plate.name = "TeamMercOwnerRing"
 	var plate_mesh := PlaneMesh.new()
-	plate_mesh.size = Vector2.ONE * TEAM_MERCS_PLATE_RADIUS * 2.0
+	plate_mesh.size = Vector2.ONE * TEAM_MERCS_PLATE_RADIUS * 2.0 * shrink
 	plate.mesh = plate_mesh
 	var plate_material := ShaderMaterial.new()
 	plate_material.shader = UNIT_TEAM_RING_SHADER
