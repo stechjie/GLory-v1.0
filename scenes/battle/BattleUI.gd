@@ -138,6 +138,11 @@ var _unit_actor_registry = UnitActorRegistryScript.new()
 var _boss_intro_pending := false
 var _boss_intro_played := false
 var _battle_audio_generation := 0
+const PvpIntroOverlay := preload("res://scenes/battle/PvpIntroOverlay.gd")
+const PVP_READY_SEC := 1.5
+var _pvp_intro_active := false
+var _pvp_combat_waiting := false
+var _pvp_intro_overlay: Control
 
 func _finish_simulation() -> void:
 	pass
@@ -188,21 +193,27 @@ func _begin_boss_intro() -> void:
 	SfxService.play(SfxService.CUE_BOSS_APPEAR)
 
 
-# 最终回合 pvp 的开场演出：**先让备战页那首 BGM 让位，再响开局音。**
-#
-# 9.21 用户口径第 3 条：「最终回合 pvp 战斗场景开局播放，最终回合时开局播放，
-# 播放结束后再开始播放 pvp 战斗场景 bgm。」
-#
-# 与 `_begin_boss_intro()` 是**同一条时序**（开场音 → 等素材放完 → 起战斗 BGM），
-# 所以复用同一对标志与同一个 `_resolve_pending_battle_music()` 收口点，
-# 只是「等多久」换成 `_pending_intro_cue()` 报回来的那一条素材。
-#
-# 同样先停后响：反过来的话开局音的头几毫秒会和备战 BGM 叠在一起。
+# 10.13：原最终回合开局音用于所有 PVP，保留旧方法名兼容现有检查。
+# 先停备战 BGM；Ready 1.5 秒后切 Go；音效结束立即撤 Go 并起 PVP BGM。
+# BattleScreen 等本段结束才放行回放及战斗演出，期间单位只保持待机。
 func _begin_final_round_intro() -> void:
 	_battle_audio_generation += 1
 	MusicService.stop()
 	_boss_intro_played = true
+	_boss_intro_pending = true
+	_pvp_intro_active = true
+	_clear_pvp_intro_overlay()
+	_pvp_intro_overlay = PvpIntroOverlay.new()
+	add_child(_pvp_intro_overlay)
+	_pvp_intro_overlay.show_phase("Ready")
 	SfxService.play(SfxService.CUE_FINAL_ROUND_PVP_INTRO)
+
+
+func _clear_pvp_intro_overlay() -> void:
+	if is_instance_valid(_pvp_intro_overlay):
+		_pvp_intro_overlay.hide()
+		_pvp_intro_overlay.queue_free()
+	_pvp_intro_overlay = null
 
 
 # 当前挡在下 pending 里的那条开场音 cue id；没有 pending 时返回空串。
@@ -211,12 +222,15 @@ func _pending_intro_cue() -> String:
 	match _effective_kind():
 		"boss":
 			return SfxService.CUE_BOSS_APPEAR
-		"final":
+		"pvp", "final":
 			return SfxService.CUE_FINAL_ROUND_PVP_INTRO
 	return ""
 
 
 func _start_battle_music() -> void:
+	# 自测及重连可能重复请求 BGM，开场字幕结束前一律不抢播。
+	if _pvp_intro_active:
+		return
 	# 9.17 反馈第 4 条：「在 boss 回合战斗场景，先播放 boss 登场音效完毕后，
 	# 再播放 pve 战斗 bgm。」
 	#
@@ -241,6 +255,9 @@ func _start_battle_music() -> void:
 
 func _stop_battle_music() -> void:
 	_battle_audio_generation += 1
+	_pvp_intro_active = false
+	_pvp_combat_waiting = false
+	_clear_pvp_intro_overlay()
 	SfxService.stop_cue(SfxService.CUE_BOSS_APPEAR)
 	# 9.21：最终回合 pvp 的开局音同样要收口 —— 它和 boss 登场音走同一对标志，
 	# 退场时漏停会让它在下一回合的开场重新叠出来。
@@ -255,8 +272,7 @@ func _stop_battle_music() -> void:
 
 # battle 场景的收口：把 `_start_battle_music()` 挡下来的那次补上。
 #
-# 只在 boss 回合真的挡过（`_boss_intro_pending`）时才等 —— 非 boss 回合这里是
-# 一条空调用，BGM 早在 `_start_battle_music()` 那一刻就起了，不额外拖一帧。
+# 只在 Boss/PVP 回合有待播放的开场音时等待，普通 PVE 不增加延迟。
 #
 # 等的是**素材的真实长度**（SfxService.cue_length）而不是写死的秒数：
 # 换一条更长/更短的登场音，这条会自动跟上。
@@ -271,10 +287,21 @@ func _resolve_pending_battle_music() -> void:
 	if not cue.is_empty():
 		var generation := _battle_audio_generation
 		var intro_sec := SfxService.cue_length(cue)
+		if _pvp_intro_active:
+			# 静音也保持同样的开战时序；素材缺失时使用有界退路，避免卡住。
+			intro_sec = maxf(PVP_READY_SEC + 0.1, intro_sec)
+			await get_tree().create_timer(PVP_READY_SEC).timeout
+			if not is_inside_tree() or generation != _battle_audio_generation:
+				return
+			if is_instance_valid(_pvp_intro_overlay):
+				_pvp_intro_overlay.show_phase("Go")
+			intro_sec -= PVP_READY_SEC
 		if intro_sec > 0.0:
 			await get_tree().create_timer(intro_sec).timeout
 			if not is_inside_tree() or generation != _battle_audio_generation:
 				return
+	_pvp_intro_active = false
+	_clear_pvp_intro_overlay()
 	_start_battle_music()
 
 # 3v3 PvP 用规范化棋局（result 的 "player" 方恒为 A 队），B 队本地显示

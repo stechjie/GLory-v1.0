@@ -1,6 +1,9 @@
 extends Control
 const PlaybackRecovery := preload("res://scripts/battle/BattlePlaybackRecovery.gd")
 const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
+# AI 托管 -> 玩家收回座位的账本落地（10.17 bug 文档第 1 条）。同样不做 class_name：
+# headless 跑检查场景时新全局类还没进 global_script_class_cache。
+const AiHandover := preload("res://scripts/economy/AiHandover.gd")
 const UnitGrowth := preload("res://scripts/units/UnitGrowth.gd")
 
 signal public_token_request_check_requested(request_id: String)
@@ -473,6 +476,28 @@ func set_reconnect_cancel_navigation_check_hook(hook: Callable) -> bool:
 		reconnect_cancel_navigation_check_requested.connect(_reconnect_cancel_navigation_check_hook)
 	return true
 
+# AI 托管 -> 玩家收回座位的一次性落地。判据是服务端账本里的 ai_handover_seq：
+# 它只在「AI 顶着的座位被人接回」时 +1，玩家做出第一笔经济操作后归零，所以
+# 同一次交接读多少遍都只落地一次。落地内容与 economy 段同源：
+# roster（棋子 + 佣兵 + 站位）、gold —— 商店由 NetworkService._apply_server_shop 采纳。
+var _ai_handover_applied := ""
+
+
+func _apply_ai_handover(eco: Dictionary) -> void:
+	if eco.is_empty():
+		return
+	var seq := int(eco.get("ai_handover_seq", 0))
+	if seq <= 0:
+		return
+	var key := "%d/%d/%d" % [NetworkService.team_room_id, int(eco.get("ai_handover_round", -1)), seq]
+	if key == _ai_handover_applied:
+		return
+	_ai_handover_applied = key
+	if not AiHandover.apply(eco):
+		return
+	SaveManager.save_run()
+
+
 func _on_resume_completed(payload: Dictionary) -> void:
 	if _short_code_resume_ignore_late_result:
 		_short_code_resume_ignore_late_result = false
@@ -488,6 +513,9 @@ func _on_resume_completed(payload: Dictionary) -> void:
 	_hide_reconnect_overlay()
 	GameState.team_mode = true
 	var completed: Dictionary = payload.get("completed_settlement", {})
+	# 重连落地要用到 economy 段（AI 托管交接）。在这里取一次 —— 下面还有一条
+	# 「仍在看回放」的早退分支也要用它，而那一条在 load_run() 之前就 return 了。
+	var _eco_state: Dictionary = payload.get("economy", {}) as Dictionary
 	if bool(payload.get("run_over", false)) and not completed.is_empty():
 		NetworkService.latest_match_state = completed
 		_apply_team_match_state_payload(completed)
@@ -503,6 +531,9 @@ func _on_resume_completed(payload: Dictionary) -> void:
 	# Applying the settlement snapshot here would advance HP/round before playback.
 	if is_instance_valid(_battle) and _battle.is_inside_tree() \
 			and bool(_battle.call("can_resume_playback", payload)):
+		# 人还活着、还在看那一场的回放：棋盘同样要落地，否则看完回放进备战
+		# 时看到的是掉线前那张（AI 托管那段等于白打）。
+		_apply_ai_handover(_eco_state)
 		if bool(_battle.call("has_reported_battle_result")):
 			_on_team_battle_finished(_battle.call("completed_replay_result"))
 		return
@@ -527,13 +558,16 @@ func _on_resume_completed(payload: Dictionary) -> void:
 	# 等于"购买前"的金币。重连若用这份陈旧快照覆盖本地正确金币，金币会回退到购买前
 	# （BUG：商店购买阶段掉线重连后金币被重置）。因此未开启权威时保留本地金币不覆盖；
 	# 仅在经济账本权威开启、快照携带权威金币时才以服务端为准。
-	var _eco_state: Dictionary = payload.get("economy", {}) as Dictionary
 	if not _eco_state.is_empty() and bool(_eco_state.get("authoritative", false)):
 		GameState.gold = int(_eco_state.get("gold", GameState.gold))
 		GameState.gold_spent_this_round = bool(_eco_state.get("gold_spent_this_round", GameState.gold_spent_this_round))
 	if not _eco_state.is_empty() and bool(_eco_state.get("carrot_authoritative", false)):
 		NetworkService._apply_carrot_state(_eco_state)
 	# else: 保留本地金币（GameState.gold 已是本回合真实值）
+	# AI 托管交接：这个座位掉线期间是 AI 顶着的，服务端已把 AI 此刻的棋子/佣兵/
+	# 金币/商店原样写回账本（NetworkService._resume_seat）。这里**一次性**落地 ——
+	# 不做这一步，玩家回来看到的是掉线前那张空棋盘 + 开局的起始金（10.17 第 1 条）。
+	_apply_ai_handover(_eco_state)
 	GameState.loss_streak = int(payload.get("loss_streak", GameState.loss_streak))
 	GameState.pve_completed = int(payload.get("pve_completed", GameState.pve_completed))
 	GameState.boss_completed = int(payload.get("boss_completed", GameState.boss_completed))
@@ -940,6 +974,27 @@ func _enter_tutorial_from_startup() -> void:
 		NetworkService.disconnect_session()
 		if NetworkService.team_active:
 			NetworkService.reset()
+	# 10.16 bug 第 1 条（Bug ②，第 4 层兜底）：联机残留**无条件**清。
+	#
+	# 上面那个 reset() 是有条件的（只在 team_active 仍为真时才补），而 latest_match_state
+	# 恰恰只在 reset() 里被清 —— 于是下面这几条退房路都会把它留下：
+	#   * _rpc_team_room_closed()（NetworkService.gd:7624）只把 team_active 置假；
+	#   * _on_server_disconnected() 无 token（:7559）同样只置假；
+	#   * request_user_leave() 的 match_started 分支要 _manual_exit_notice_available()
+	#     为真才 reset（状态不在 [JOINING, READY] 或 peer 已关 ⇒ 永不 reset）。
+	# 残留的 latest_match_state 会被教程收口当成结算包读：_show_game_over() 取它的
+	# final_settlement，can_show_details 又因 kind 非空放行 ⇒ 教程通关弹出详情面板，
+	# 里面装的是**上一场联机**的数据（截图里的 "Result: Draw" + 两个 Main Menu）。
+	# 这条路径就是「重新体验教学」：主菜单 → 设置 → 重新体验教学，而玩家刚打完联机
+	# 回来时 team_active 往往已经是假的了，上面的条件分支正好不执行。
+	#
+	# 只清这三个字段、不无条件调 reset()：它们正是 _show_game_over() 会读的全部联机态
+	# （final_settlement 来源、match_state 判据、_battle 失效时的 replay 兜底），
+	# 而 reset() 还会顺手丢掉 session_token 与会话状态 —— 那属于会话生命周期，
+	# 不该由「进教程」这个动作代劳。
+	NetworkService.latest_match_state = {}
+	NetworkService.team_replay = {}
+	NetworkService.team_replay_rival = {}
 	if not TutorialMode.active:
 		PlayerProfile.begin_tutorial()
 		if not (TutorialMode.has_checkpoint() and TutorialMode.restore_checkpoint()):

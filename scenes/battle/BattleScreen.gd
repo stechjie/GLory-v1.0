@@ -102,6 +102,8 @@ const BATTLE_PREPARE_TIMEOUT_MSEC := 30000
 var _battle_prepare_deadline_msec := 0
 var _playback_deadline_msec := 0
 var battle_preparation_report: Dictionary = {}
+var _assets_ready_on_entry := false
+var _skip_cached_prepare_bar := false
 var _battle_prepare_started_msec := 0
 var _final_round_intro_active := false
 var _final_round_intro_started := false
@@ -405,6 +407,9 @@ func _start_replay(replay: Dictionary) -> void:
 	reset_battle_camera_framing()
 	_begin_presentation_replay(replay)
 	_load_replay_roster(replay)
+	_pvp_combat_waiting = _effective_kind() in ["pvp", "final"]
+	if _pvp_combat_waiting:
+		_clear_unit_visuals()
 	# 9.20：换了一局就必须把 VFX 差分缓存**重新播种**（下面的方法里写清了理由）。
 	_reseat_vfx_diff_for_new_battle()
 	_prefetch_battle_assets()
@@ -428,7 +433,10 @@ func _start_replay(replay: Dictionary) -> void:
 	# 见 BattleUI._color_flip 的注释与 BattleRenderer._display_team。
 	_color_flip = str(replay.get("kind", "")) == "pvp" and my_team == 1
 	if not replay.get("frames", []).is_empty():
-		_apply_replay_frame(0)
+		if _pvp_combat_waiting:
+			_stage_pvp_opening_frame()
+		else:
+			_apply_replay_frame(0)
 		# Round 21 shows formation allies before combat starts. Stage only the
 		# Lantern opening cast so its silence and cast VFX wait for frame 0 playback.
 		if GameState.round_index == GameState.FINAL_ROUND and _has_live_formation_ally():
@@ -446,6 +454,23 @@ func _start_replay(replay: Dictionary) -> void:
 		#   elapsed playback」——而墙钟在后台会跳，跳完立刻判定「播太久了」直接判负。
 		_playback_deadline_msec = _mono_msec + int((playback_seconds + 20.0) * 1000.0)
 		_presentation_director.set_playback_speed(PLAYBACK_SPEED * _readable_speed)
+
+
+func _stage_pvp_opening_frame() -> void:
+	# 回放第 0 帧已经含开场技能结果。读条/Ready/Go 只借用站位，不能提前
+	# 消费技能事件、伤害、护盾或冷却；完整第 0 帧在字幕撤下后才应用。
+	var frames: Array = _replay.get("frames", [])
+	if frames.is_empty():
+		return
+	for entry in frames[0]:
+		if not entry is Array or entry.size() < 5:
+			continue
+		var fighter: Dictionary = _replay_by_uid.get(str(entry[0]), {})
+		if fighter.is_empty():
+			continue
+		fighter.pos = Vector2(float(entry[1]), float(entry[2]))
+		fighter.alive = bool(entry[4])
+		fighter.hp = int(fighter.max_hp) if fighter.alive else 0
 
 
 func _has_live_formation_ally() -> bool:
@@ -509,19 +534,21 @@ func _prepare_replay_assets() -> bool:
 	var deadline := _mono_msec + 15000
 	var total := model_paths.size() + texture_paths.size()
 	var bar: ProgressBar = null
+	_assets_ready_on_entry = false
+	_skip_cached_prepare_bar = false
 	while is_inside_tree() and not _finished:
 		BattleAssetService.harvest()
 		var done := BattleAssetService.ready_count(model_paths) + VFXManager.ready_texture_count(texture_paths)
 		if done == total:
-			if is_instance_valid(bar):
-				bar.queue_free()
+			_assets_ready_on_entry = bar == null
+			_set_prepare_progress(bar, 30.0)
 			battle_preparation_report["assets"] = {"models": model_paths.size(), "textures": texture_paths.size(), "elapsed_ms": Time.get_ticks_msec() - started}
 			print("[BATTLE_ASSET_READY] models=%d textures=%d elapsed_ms=%d" % [
 				model_paths.size(), texture_paths.size(), Time.get_ticks_msec() - started])
 			return true
 		if bar == null:
 			bar = _make_battle_prepare_bar()
-		_set_prepare_progress(bar, 100.0 * float(done) / float(maxi(1, total)))
+		_set_prepare_progress(bar, 30.0 * float(done) / float(maxi(1, total)))
 		var failed: Array[String] = []
 		for path in model_paths + texture_paths:
 			if BattleAssetService.ready_count([path]) + VFXManager.ready_texture_count([path]) > 0:
@@ -578,6 +605,7 @@ const BATTLE_PREPARE_PET_SIZE := Vector2(64.0, 64.0)
 #
 # 必须「建完才开打」——否则 _apply_replay_frame 会去定位还不存在的单位。
 func _prepare_battle_models() -> void:
+	_pvp_combat_waiting = _effective_kind() in ["pvp", "final"]
 	var models_started := Time.get_ticks_msec()
 	# ★ _battle_prepare_started_msec 记的是**单调表**上的起点（见 _start_replay）。
 	#   绝不能用 models_started（墙钟）覆盖：battle_preparation_report.total_ms 与
@@ -594,6 +622,8 @@ func _prepare_battle_models() -> void:
 	var total := living.size()
 	if _battle_3d_root != null:
 		_battle_3d_root.visible = false
+	_skip_cached_prepare_bar = _assets_ready_on_entry and RenderWarmup.pending_job_count([_replay_own, _replay_rival], _battle_3d_viewport) == 0
+	battle_preparation_report["prefetched_on_entry"] = _skip_cached_prepare_bar
 	var bar := _make_battle_prepare_bar()
 	var done := 0
 	for f in living:
@@ -605,7 +635,7 @@ func _prepare_battle_models() -> void:
 		done += 1
 		if done % MODELS_PER_FRAME == 0:
 			if bar != null:
-				_set_prepare_progress(bar, 40.0 * float(done) / float(maxi(1, total)))
+				_set_prepare_progress(bar, 30.0 + 15.0 * float(done) / float(maxi(1, total)))
 			await get_tree().process_frame
 			if not is_inside_tree() or _finished or _prepare_deadline_expired():
 				# 中途退出也要把根恢复可见，否则这个节点被复用时棋盘是空的。
@@ -615,6 +645,10 @@ func _prepare_battle_models() -> void:
 					bar.queue_free()
 				return
 	battle_preparation_report["models"] = {"count": total, "elapsed_ms": Time.get_ticks_msec() - models_started}
+	var effect_replays := [_replay_own, _replay_rival]
+	var effect_total := RenderWarmup.collect_jobs(effect_replays).size()
+	var effect_cached := effect_total - RenderWarmup.pending_job_count(effect_replays, _battle_3d_viewport)
+	_set_prepare_progress(bar, 45.0 + 45.0 * float(effect_cached) / float(maxi(1, effect_total)))
 	var warmup := RenderWarmup.new()
 	add_child(warmup)
 	# ★ 跨模块**边界换算**（10.08c 真机回归修的就是这一行）：
@@ -627,9 +661,9 @@ func _prepare_battle_models() -> void:
 	var prepare_budget_left_msec := maxi(0, _battle_prepare_deadline_msec - _mono_msec)
 	var warmup_wall_cutoff_msec := warmup_cutoff_msec(prepare_budget_left_msec, Time.get_ticks_msec())
 	var render_report: Dictionary = await warmup.prepare_replays([_replay_own, _replay_rival], _battle_3d_viewport,
-		func(ready: int, count: int):
+		func(_ready_count: int, count: int):
 			if is_instance_valid(bar):
-				_set_prepare_progress(bar, 40.0 + 50.0 * float(ready) / float(maxi(1, count))),
+				_set_prepare_progress(bar, 45.0 + 45.0 * float(count - RenderWarmup.pending_job_count(effect_replays, _battle_3d_viewport)) / float(maxi(1, count))),
 		func() -> bool: return is_inside_tree() and not _finished and not _return_emitted,
 		warmup_wall_cutoff_msec)
 	battle_preparation_report["effects"] = render_report.duplicate(true)
@@ -695,32 +729,29 @@ func _prepare_battle_models() -> void:
 	# **同一时刻**发生（9.17 第三轮反馈），拆在两个地方迟早漂移。
 	if _effective_kind() == "boss":
 		_begin_boss_intro()
-	# 9.21 用户口径第 3 条：最终回合 pvp 战斗场景开局音。
-	#
-	# 位置与 boss 登场音并列，理由相同（见上一段）：这里是「模型全建完、战斗马上
-	# 开打」，不是进场景那一刻。演出顺序是「响开局音 → 播完 → 起 pvp 战斗 BGM」，
-	# 由本函数末尾的 _resolve_pending_battle_music() 收口。
-	#
-	# ★ 判据是 `_effective_kind() == "final"`，**不是** _try_start_final_round_intro()
-	#   的成功与否：后者只在「场上真有阵型盟友」时才演出召唤，而开局音是场景级的
-	#   开场（用户要的是「最终回合时开局播放」）。挂在那个返回值上会让没有阵型
-	#   盟友的最终回合整场没有开场音。
-	if _effective_kind() == "final":
+	# 10.13：所有 PVP 都在模型就绪后开始 Ready/Go；不依赖最终回合是否有法阵盟友。
+	if _effective_kind() in ["pvp", "final"]:
 		_begin_final_round_intro()
 	_try_start_final_round_intro()
-	# 9.17 反馈第 4 条：登场音播完之后才起 pve 战斗 BGM。
-	# 放在本函数**最末尾**：这是「模型全建完、战斗马上开打」的那一刻，
-	# 也是本函数里唯一保证会走到的收口点（前面几个早退分支都在建模型循环里）。
-	# Audio ordering is independent of combat readiness: some Boss intro clips
-	# last 15s. Their generation-guarded coroutine starts BGM when audio ends;
-	# neither replay frames nor the Director wait for that sound track.
-	_resolve_pending_battle_music()
+	if _effective_kind() in ["pvp", "final"]:
+		# PVP 的音效和 Ready/Go 属于开战流程；模型已就绪，但两条战斗时间线仍冻结。
+		await _resolve_pending_battle_music()
+	else:
+		# Boss 保留原有行为：较长的登场音不阻塞战斗。
+		_resolve_pending_battle_music()
 	# The actual final-round summon animation still gates both timelines.
 	while _final_round_intro_active:
 		await get_tree().process_frame
 		if not is_inside_tree() or _finished or _prepare_deadline_expired():
 			return
 	if is_inside_tree() and not _finished:
+		var release_pvp := _pvp_combat_waiting
+		_pvp_combat_waiting = false
+		if release_pvp:
+			if _replay_mode:
+				_apply_replay_frame(0)
+			# 不丢弃开场技能：仅延迟至音效结束、Go 撤下后，再播种其表现。
+			_refresh_visuals()
 		battle_preparation_report["total_ms"] = _mono_msec - _battle_prepare_started_msec
 		battle_preparation_report["ready"] = true
 		_battle_setup_ready = true
@@ -758,7 +789,13 @@ static func warmup_cutoff_msec(budget_left_msec: int, wall_now_msec: int) -> int
 # ★ 进度只能通过 `_set_prepare_progress()` 推进：宠物位置是跟着 value 算出来的，
 # 别处直接写 bar.value 会让「条走了、宠物没走」。
 func _make_battle_prepare_bar() -> ProgressBar:
+	var existing := get_node_or_null("BattlePrepareBar") as ProgressBar
+	if is_instance_valid(existing) and not existing.is_queued_for_deletion():
+		return existing
 	var bar := ProgressBar.new()
+	# Cached resources still need a few frames to attach actors and draw them.
+	# Avoid flashing a loading screen on this already-prepared fast path.
+	bar.visible = false
 	bar.name = "BattlePrepareBar"
 	bar.show_percentage = false
 	bar.min_value = 0.0
@@ -778,13 +815,20 @@ func _make_battle_prepare_bar() -> ProgressBar:
 	bar.add_theme_stylebox_override("background", bg)
 	bar.add_theme_stylebox_override("fill", fill)
 	add_child(bar)
-	_attach_prepare_pet(bar)
 	_set_prepare_progress(bar, 0.0)
+	_reveal_pending_prepare_bar(bar)
 	return bar
 
 
-# 进度条上的宠物。模型取玩家当前出战的宠物（`PlayerProfile.get_active()`）；
-# 没选宠物、模型缺失时 `build_runner` 返回 null —— 那就只留进度条，不给玩家看「?」占位。
+func _reveal_pending_prepare_bar(bar: ProgressBar) -> void:
+	await get_tree().create_timer(0.2).timeout
+	if is_inside_tree() and is_instance_valid(bar) and not bar.is_queued_for_deletion() and not _battle_setup_ready and not _finished and not _skip_cached_prepare_bar:
+		_attach_prepare_pet(bar)
+		_set_prepare_progress(bar, bar.value)
+		bar.visible = true
+
+
+# 进度条上的宠物。没有出战宠物时只显示进度条。
 func _attach_prepare_pet(bar: ProgressBar) -> void:
 	var pet := PetPreview.build_runner(PlayerProfile.get_active(), BATTLE_PREPARE_PET_SIZE)
 	if pet == null:
@@ -797,11 +841,11 @@ func _attach_prepare_pet(bar: ProgressBar) -> void:
 func _set_prepare_progress(bar: ProgressBar, value: float) -> void:
 	if bar == null or not is_instance_valid(bar):
 		return
-	bar.value = value
+	bar.value = maxf(bar.value, value)
 	var pet := bar.get_node_or_null("PreparePet") as Control
 	if pet == null:
 		return
-	var ratio := clampf(value / maxf(1.0, bar.max_value), 0.0, 1.0)
+	var ratio := clampf(bar.value / maxf(1.0, bar.max_value), 0.0, 1.0)
 	# 横向：宠物中心贴在进度条填充的右端；纵向：脚踩在条上（底边略低于条中线）。
 	pet.position = Vector2(
 		BATTLE_PREPARE_BAR_WIDTH * ratio - pet.size.x * 0.5,

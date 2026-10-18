@@ -42,31 +42,68 @@ const NetTLSCert := preload("res://scripts/multiplayer/NetTLSCert.gd")
 # 不进客户端包。用 --tls-key=<绝对路径> 覆盖。
 const DEFAULT_KEY_PATH := "user://glory_server_key.pem"
 const KEY_ARG := "--tls-key="
+# 本地测试服用的自签证书（与本地私钥配对）。默认不存在 → 走 NetTLSCert.PEM，
+# 行为与改动前逐字节相同；说明见 NetworkConfig.gd 的「本地测试服覆写」段。
+const CERT_ARG := "--tls-cert="
 
 # 传给 dtls_client_setup 的主机名。走 client_unsafe 时不参与校验，
 # 留一个可读的值只为日志。
 const PIN_HOSTNAME := "glory-battle"
 
+# --- 本地测试服覆写（详见 NetworkConfig.gd 同名段落）---------------------------
+# 刻意与 NetworkConfig / AccountConfig 各留一份实现，不抽公共脚本。
+const LOCAL_TEST_CFG := "user://local_test_override.cfg"
 
-static func server_key_path() -> String:
+
+static func _flag_value(flag: String) -> String:
 	# **两个来源都要查。** `--` 之后的参数只出现在 get_cmdline_user_args()，
-	# 不在 get_cmdline_args() 里。只查一个的后果是 --tls-key= 被静默忽略、
-	# 回落到 user://，然后服务器报「缺私钥」—— 而你明明传了那个参数。
+	# 不在 get_cmdline_args() 里。只查一个的后果是参数被静默忽略、回落到默认
+	# 值，然后报「缺私钥」—— 而你明明传了那个参数。
 	# tools/handshake_check_node.gd 的 _arg() 踩过同一个坑。
 	for source in [OS.get_cmdline_args(), OS.get_cmdline_user_args()]:
 		for arg in source:
-			if str(arg).begins_with(KEY_ARG):
-				var v := str(arg).substr(KEY_ARG.length()).strip_edges()
+			if str(arg).begins_with(flag):
+				var v := str(arg).substr(flag.length()).strip_edges()
 				if not v.is_empty():
 					return v
-	return DEFAULT_KEY_PATH
+	return ""
 
 
-# 客户端 pin 的那张证书。拿不到返回 null —— 调用方必须当失败处理，不能当"跳过加密"。
+static func _local_test_cfg(section: String, key: String) -> String:
+	if not FileAccess.file_exists(LOCAL_TEST_CFG):
+		return ""
+	var cfg := ConfigFile.new()
+	if cfg.load(LOCAL_TEST_CFG) != OK:
+		return ""
+	return str(cfg.get_value(section, key, "")).strip_edges()
+
+
+static func server_key_path() -> String:
+	var v := _flag_value(KEY_ARG)
+	if v.is_empty():
+		v = _local_test_cfg("battle", "tls_key")
+	return v if not v.is_empty() else DEFAULT_KEY_PATH
+
+
+# 客户端 pin 的那张证书（服务端也用同一张，配对的私钥在 server_key_path()）。
+# 拿不到返回 null —— 调用方必须当失败处理，不能当"跳过加密"。
 static func pinned_cert() -> X509Certificate:
-	var pem := str(NetTLSCert.PEM).strip_edges()
+	var pem := _flag_value(CERT_ARG)
+	if pem.is_empty():
+		pem = _local_test_cfg("battle", "tls_cert")
+	if not pem.is_empty() and not pem.begins_with("-----"):
+		# 当成文件路径读（本地测试服的自签证书放在 _local_test_server/keys/）。
+		var f := FileAccess.open(pem, FileAccess.READ)
+		if f == null:
+			return null
+		pem = f.get_as_text()
+		f.close()
+	if pem.is_empty():
+		# 没有本地覆写 → 用线上那张，行为与改动前完全一致。
+		pem = str(NetTLSCert.PEM).strip_edges()
 	if pem.is_empty():
 		return null
+	pem = pem.strip_edges()
 	var cert := X509Certificate.new()
 	if cert.load_from_string(pem) != OK:
 		return null

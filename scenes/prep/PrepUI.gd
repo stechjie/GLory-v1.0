@@ -281,6 +281,9 @@ func _tutorial_keep_clear_rects() -> Array[Rect2]:
 		_start_battle_button,
 		_merc_button,
 		_shop.open_button if _shop != null else null,
+		_shop.panel if _shop != null else null,
+		_shop.buy_button if _shop != null else null,
+		_shop.refresh_button if _shop != null else null,
 		_treasure._treasure_refresh_btn if _treasure != null else null,
 	]:
 		_append_visible_rect(control as Control, out)
@@ -2549,7 +2552,9 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 	card.drag_enabled = false
 	# 9.25：教学与正式局一样按萝卜标价。
 	var price_text := ("Carrots %d" if LocaleManager.get_locale().begins_with("en") else "萝卜 %d") % int(mercenary.get("carrot_cost", 0))
-	card.set_meta("drag_preview_text", "%s\n%s" % [str(mercenary.get("name", tr("ui_mercenary"))), price_text])
+	# 10.16 bug 文档第 2 条：拖拽预览与卡面 name_label（下面 2620 行）必须同一口径 ——
+	# 卡面走 PrepWidgets.unit_name，这里原来直读 mercenary.name，英文界面下冒中文。
+	card.set_meta("drag_preview_text", "%s\n%s" % [PrepWidgets.unit_name(mercenary), price_text])
 	var purchase_reason := _mercenary_purchase_reason(index)
 	var can_purchase := purchase_reason.is_empty()
 	card.set_meta("can_purchase", can_purchase)
@@ -3454,21 +3459,45 @@ func _refresh_owned_treasure_logos() -> void:
 	for tid in GameState.owned_treasures:
 		var tid_str := str(tid)
 		var t := TreasureService.treasure_by_id(tid)
-		_add_owned_treasure_logo(tid_str, str(t.get("name", tid_str)), _treasure.show_detail.bind(tid_str))
+		# 第二个参数是**贴图名**（treasure_logos/ 下就是中文文件名），
+		# 不能换成显示名；显示名只能喂第四个参数 tooltip。
+		_add_owned_treasure_logo(tid_str, str(t.get("name", tid_str)),
+			_treasure.show_detail.bind(tid_str), _localized_row_name(t, tid_str))
 	# Active linkages (their required treasures are all owned) get their own logo too.
 	var links: Array = DataRegistry.get_table("treasures").get("linkages", [])
 	for link in links:
 		var lid := str(link.get("id", ""))
 		if TREASURE_LINKAGE_LOGOS.has(lid) and TreasureService.has_linkage(lid):
-			_add_owned_treasure_logo(lid, str(TREASURE_LINKAGE_LOGOS[lid]), _show_linkage_detail.bind(lid))
+			_add_owned_treasure_logo(lid, str(TREASURE_LINKAGE_LOGOS[lid]),
+				_show_linkage_detail.bind(lid),
+				_localized_row_name(CodexService.link_text(lid), str(TREASURE_LINKAGE_LOGOS[lid])))
 	# 凑齐 4 件的套装排在联动后面（与图鉴「联动」分类同序）。
 	# 5 件持有上限下，套装最多再伴随 1 条联动，栏位最多 7 格，放得下两行 4 格。
 	for category in TreasureService.SET_CATEGORIES:
 		if TreasureService.has_set(category):
 			var art := str(CodexService.SET_ART_NAME.get(category, ""))
-			var set_name := str(CodexService.set_text(category).get("name", art))
 			_add_owned_treasure_logo(TreasureService.set_id(category), art,
-				_show_set_detail.bind(category), set_name)
+				_show_set_detail.bind(category), _localized_row_name(CodexService.set_text(category), art))
+
+# 10.16 bug 文档第 2 条：宝物 / 联动 / 套装行的显示名。
+#
+# 这三类数据表都带 name_en，但原来三处各自直读 `name`（套装那处还多读一层
+# CodexService.set_text），英文界面下冒中文。它们和棋子名是同一种错：
+# DataRegistry.canonicalize_unit_display_names() 只同步「改名」，不做本地化；
+# 按 locale 取 name_en 的只有 unit_display_name()（= PrepWidgets.localized_name）。
+#
+# 注意这三张表都不在 DataRegistry 的棋子索引里（canonical_unit_def 查不到），
+# 所以 helper 会直接拿传入的 definition 取 name_en —— 正好是我们要的行为。
+# 取不到名时回落调用方给的标识，而不是显示一个 "?"。
+#
+# ★ 这个返回值**只能喂 tooltip / 文本**，绝不能喂 _add_owned_treasure_logo 的
+#   第二个参数 —— 那个参数同时当贴图路径用（treasure_logos/ 下是中文文件名），
+#   换成英文名会让贴图找不到、只剩缺图兜底的文字（表现就是「图标消失」）。
+func _localized_row_name(row: Dictionary, fallback: String) -> String:
+	if row.is_empty():
+		return fallback
+	var name := PrepWidgets.localized_name(row)
+	return fallback if (name.is_empty() or name == "?") else name
 
 func _add_owned_treasure_logo(key: String, logo_name: String, detail: Callable, tooltip: String = "") -> void:
 	var b := Button.new()
@@ -3838,6 +3867,11 @@ func _on_shop_picker_toggled(is_open: bool) -> void:
 	for btn in _board_hud.bench_buttons:
 		if btn != null:
 			btn.mouse_filter = bench_filter
+	if GameState.tutorial_mode and not is_open:
+		# 关店事件会把 BUY_3 推进到 PLACE_3。card_selected 的刷新发生在
+		# 此事件之前，当时待命棋子的 drag_payload 仍因 BUY_3 被清空。
+		# 按推进后的步骤重建拖拽数据，否则提示已经让玩家上阵却仍无法起拖。
+		_board_hud.refresh_bench()
 	# 9.13 #6：语音按钮（宽 150、右对齐到 -292）的左半截正好压在商店弹窗
 	# （底部中央 896×230）的右下角里。商店面板本身是 Container（PASS）且背景层
 	# 一律 IGNORE，挡不住下层控件 —— 于是玩家在商店右端操作会穿透到语音按钮上，

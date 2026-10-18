@@ -56,6 +56,35 @@ class PatchStoreTests(unittest.TestCase):
         self.assertEqual(result["action"], "store_update")
         self.assertIsNone(result["artifact"])
 
+    def test_registered_full_client_does_not_receive_old_baseline_patch_or_hotfix(self):
+        self.publish(self.release())
+        self.hotfix()
+        self.store.register_client_base("stable", "android", "base-2", 1, "release")
+        result = self.snapshot(base="base-2")
+        self.assertEqual((result["action"], result["required_patch_seq"], result["hotfixes"]),
+                         ("none", 0, []))
+        self.assertIsNone(result["artifact"])
+        self.assertEqual(self.snapshot()["action"], "download")
+        self.assertEqual(self.snapshot(1)["action"], "none")
+        self.assertEqual(self.store.snapshot("stable", "ios", "base-2", 0)["action"], "store_update")
+        self.assertEqual(self.snapshot(1, "base-2")["action"], "reset_to_base")
+
+    def test_full_client_registration_cannot_skip_future_patches(self):
+        self.publish(self.release())
+        self.store.register_client_base("stable", "android", "base-2", 1, "release")
+        self.publish(self.release())
+        self.assertEqual(self.snapshot(base="base-2")["action"], "store_update")
+        r = self.store.create_release("stable", "New base patch", ["android"], "tester")
+        self.artifact(r, base="base-2")
+        self.publish(r)
+        self.assertEqual(self.snapshot(base="base-2")["action"], "download")
+        self.assertEqual(self.snapshot(3, "base-2")["action"], "none")
+
+    def test_full_client_registration_checks_active_sequence(self):
+        self.publish(self.release())
+        with self.assertRaises(PatchConflict):
+            self.store.register_client_base("stable", "android", "base-2", 2, "release")
+
     def test_cannot_publish_partial_platform_set(self):
         r = self.store.create_release("stable", "three platforms", ["ios", "android", "windows"], "tester")
         self.artifact(r)

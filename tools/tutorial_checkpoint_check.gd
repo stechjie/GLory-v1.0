@@ -436,8 +436,12 @@ func _take_treasure(prep: PrepScript) -> void:
 
 
 func _tap_continue() -> void:
-	if TutorialMode._hotspot != null and is_instance_valid(TutorialMode._hotspot):
-		TutorialMode._hotspot.pressed.emit()
+	# 2026-10-15 第三轮：教学覆盖层里那个透明热点 `_hotspot`（Button + STOP）已整个删掉
+	# —— 反馈明令覆盖层不得限制玩家操作，而透明按钮哪怕 alpha=0 也照样在命中测试里胜出。
+	# 四个「点一下继续」的步骤改由 `TutorialMode._input()` **旁听**真实按下事件推进；
+	# 门禁直接调它的推进入口，等价于「玩家在目标上点了一下」，行为与旧版逐字相同
+	# （`confirm_tap_step()` 对这四步之外的步骤直接 return，旧版 `_hotspot` 隐藏时同理）。
+	TutorialMode.confirm_tap_step()
 	await _settle(2)
 
 
@@ -630,9 +634,9 @@ func _split_funcs(src: String) -> Dictionary:
 # V3 P0-08：走完整条教程，每一次步骤推进之后**立刻**比对落盘内容。
 #
 # V2 实测缺陷：按下「继续」或点热点推进之后强杀 app，回来还在按之前那一步。
-# 根因是 _on_continue_pressed() / _on_hotspot_pressed() 推进了 step 却从不落盘，
-# 断点要等玩家在备战页再做点什么触发 sync() 才跟上 —— 而那两步之后玩家做的
-# 第一件事就是开战，中间隔着整场战斗。
+# 根因是 _on_continue_pressed() / confirm_tap_step()（旧名 _on_hotspot_pressed()）
+# 推进了 step 却从不落盘，断点要等玩家在备战页再做点什么触发 sync() 才跟上 ——
+# 而那两步之后玩家做的第一件事就是开战，中间隔着整场战斗。
 #
 # 上面那组 CHECKPOINT_STEPS 只抽查 1/6/10/15，而且是在 save_checkpoint(true)
 # **之后**才读，天然测不到「谁忘了落盘」。这里改成：只推进、不强制落盘，

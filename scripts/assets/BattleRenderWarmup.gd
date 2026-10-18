@@ -13,6 +13,7 @@ const OGA_PROJECTILE := preload("res://effects/vfx3d/modules/VFXFlipbookProjecti
 const OGA_MELEE := preload("res://effects/vfx3d/modules/VFXFlipbookMelee3D.gd")
 const OGA_PACK := preload("res://effects/vfx3d/modules/VFXPackSkill3D.gd")
 const OGA_CARD := preload("res://effects/vfx3d/modules/VFXSpriteFlipbook3D.gd")
+const DIVINE_PULSE := preload("res://effects/vfx3d/modules/VFXDivinePulseInvulnerability3D.gd")
 # These are the exclusive standard-card routes in UnitSkillVFXComposer3D.
 # A catalogue entry alone is insufficient: e.g. judgement_strike and the angel
 # guards now use procedural geometry and must still run their complete composer.
@@ -47,6 +48,9 @@ static func collect_jobs(replays: Array) -> Array[Dictionary]:
 			if unit.is_empty():
 				continue
 			var unit_def: Dictionary = entry.get("def", {})
+			if str(unit_def.get("race", "")) == "god":
+				# A single shared status shader job, never one per protected unit.
+				_append(jobs, seen, "god_synergy", "god_divine_pulse")
 			var skill := str(unit_def.get("skill_id", ""))
 			var mode := "ranged" if float(unit_def.get("range", 1.0)) > 1.5 else "melee"
 			if str(unit_def.get("race", "")) == CRIMSON.RACE:
@@ -96,6 +100,20 @@ static func _visual_race(unit: String) -> String:
 			return "god"
 	return "human"
 
+static func _format_key(template: SubViewport) -> String:
+	return "oga-direct-omni-v3|%s|%d|%d|%s|" % [RenderingServer.get_current_rendering_method(), template.msaa_3d, VFXManager.get_quality_tier(), str(template.transparent_bg)]
+
+static func pending_job_count(replays: Array, template: SubViewport) -> int:
+	var jobs := collect_jobs(replays)
+	if template == null:
+		return jobs.size()
+	var prefix := _format_key(template)
+	var pending := 0
+	for job in jobs:
+		if not _ready_jobs.has(prefix + str(job.key)):
+			pending += 1
+	return pending
+
 func prepare_replays(replays: Array, template: SubViewport, progress: Callable = Callable(), can_continue: Callable = Callable(), deadline_msec := 0) -> Dictionary:
 	var jobs := collect_jobs(replays)
 	if _cancelled(can_continue):
@@ -104,6 +122,8 @@ func prepare_replays(replays: Array, template: SubViewport, progress: Callable =
 		return {"ok": true, "headless": true, "jobs": jobs.size(), "rendered": 0}
 	if template == null or jobs.size() > MAX_JOBS:
 		return {"ok": false, "error": "render_warmup_invalid_viewport_or_capacity", "jobs": jobs.size()}
+	if pending_job_count(replays, template) == 0:
+		return {"ok": true, "jobs": jobs.size(), "rendered": 0, "cached": true}
 	var started := Time.get_ticks_msec()
 	var deadline := started + MAX_TOTAL_MSEC
 	if deadline_msec > 0:
@@ -118,7 +138,7 @@ func prepare_replays(replays: Array, template: SubViewport, progress: Callable =
 	var rendered := 0
 	var max_draw_frame_ms := 0
 	var costs: Array[Dictionary] = []
-	var format_key := "oga-direct-omni-v3|%s|%d|%d|%s|" % [RenderingServer.get_current_rendering_method(), template.msaa_3d, VFXManager.get_quality_tier(), str(template.transparent_bg)]
+	var format_key := _format_key(template)
 	for index in jobs.size():
 		if _cancelled(can_continue) or Time.get_ticks_msec() > deadline:
 			viewport.queue_free()
@@ -196,6 +216,8 @@ func prepare_replays(replays: Array, template: SubViewport, progress: Callable =
 # Coverage is checked against an independent full-duration composer run.
 static func composer_warmup_duration(effect: String) -> float:
 	match effect:
+		"god_divine_pulse":
+			return 0.12
 		"attack_interrupt", "every_fifth_group_heal":
 			return 0.20 # All modules/materials are constructed synchronously.
 		"unique_king_growth":
@@ -245,6 +267,10 @@ func _make_viewport(template: SubViewport) -> SubViewport:
 func _spawn(viewport: SubViewport, job: Dictionary) -> Node3D:
 	var holder := Node3D.new()
 	viewport.add_child(holder)
+	if str(job.effect) == "god_divine_pulse":
+		var pulse := VFXBlockRoot.spawn_block(DIVINE_PULSE, holder, true)
+		pulse.configure({"alive": true, "statuses": {"invulnerable": {"remaining": 1.0, "dot_pass": true}}}, 0.98)
+		return holder
 	var origin := Node3D.new()
 	var target := Node3D.new()
 	origin.position = Vector3(-0.4, 0.5, 0.0)

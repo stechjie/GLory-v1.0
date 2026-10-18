@@ -14,9 +14,17 @@ static func localized_name(d: Dictionary) -> String:
 	return DataRegistry.unit_display_name(d, is_en())
 
 
-# 「棋盘唯一」标记。unique_on_board 的棋子（大天使/神王/末日守卫/黑龙/母灵/人王）
-# 实测只能上场一只，但图鉴与棋子描述都没写，玩家只能靠试放才发现（9.13 测试反馈）。
-# 统一渲染成「名称 N星（唯一）」，图鉴与详情共用这一份文案。
+# 「棋盘唯一」标记。unique_on_board 的棋子实测只能上场一只，但图鉴与棋子描述都没写，
+# 玩家只能靠试放才发现（9.13 测试反馈）。统一渲染成「名称 N星（唯一）」，图鉴与详情
+# 共用这一份文案。
+#
+# ★ 这份名单**不是**手写的判据，只是给后来的人一眼看清范围：判据永远是
+# `def.unique_on_board`，上面这句注释不参与任何判断。10.15 的反馈（穿云弩手是 T3
+# 却漏标、能上两只）就是栽在"逐单位手写清单"上 —— 所以全表 tier 3 与带该字段的
+# 集合**必须一一对应**，门禁 `_qa_t3unique/check.tscn` 正反两个方向都钉住这一点。
+# 当前 tier 3 共 8 枚，全部唯一：大天使 god_archangel / 神王 god_king / 末日守卫
+# dark_doom / 黑龙 dark_dragon / 母灵 undead_mother / 人王 human_king /
+# 赤灯使 lattern / 穿云弩手 skypierce。
 static func unique_suffix(d: Dictionary) -> String:
 	if not bool(d.get("unique_on_board", false)):
 		return ""

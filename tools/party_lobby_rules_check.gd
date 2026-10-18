@@ -34,6 +34,7 @@ func _ready() -> void:
 	_case_mode_notice_to_members()
 	_case_party_invite_reaches_chat()
 	_case_host_pet_forced()
+	_case_startable_sizes()
 	_case_friend_buckets()
 	_h.finish(get_tree())
 
@@ -515,6 +516,82 @@ func _case_host_pet_forced() -> void:
 	if _h.expect(not route_src.is_empty(), "be_route_readable_1009", "读不到 backend/app/routes/party.py"):
 		_h.expect(route_src.contains("pets_state.active"),
 			"be_route_passes_active", "建房/入房路由要把玩家的出战宠物交给服务端")
+
+
+
+# ★★ 10.15b：「几个人能开始匹配」由**服务器下发**（房间快照的 `startable_sizes`）——
+# 开关 `GLORY_PARTY_FULL_TEAM_ONLY` 只在账号服务器的 `.env` 里，翻它**不用出新客户端包**。
+# 也就是说客户端**必须**真的读快照：自己硬编码一份，服务端翻了开关客户端毫无反应，而且**静默**。
+#
+# 判据分两层，客户端这半边在这里；服务端规则在 `backend/tests/test_party_room_stdlib.py`
+# （`test_snapshot_tells_client_which_sizes_can_start`，两条分支都断言）。
+#   ① **结构** —— `_startable_sizes()` 从 `_room` 取 `startable_sizes`、逐个 `int()`
+#      （JSON 里的数字到客户端是 float，`Array.has(2)` 不认 `2.0`）、类型不对时回落旧口径；
+#      灰按钮那处**必须走 `_startable_sizes()`** —— 回头用常量 ⇒ 新服务端放开 2 人组队也还是灰的。
+#   ② **运行期** —— 真 new 一个房间界面、手塞 `_room` 调真函数，覆盖服务端真会下发的几种形态。
+func _case_startable_sizes() -> void:
+	var src := _read(LOBBY_SRC)
+	# ① 结构
+	var body := _slice_func(src, "_startable_sizes")
+	_h.expect(not body.is_empty(), "sizes_helper_present",
+		"读不到 _startable_sizes()（灰按钮的人数判据就是它）")
+	_h.expect(body.contains("_room.get(\"startable_sizes\")"),
+		"sizes_reads_snapshot",
+		"_startable_sizes() 必须真的从房间快照取 startable_sizes（否则服务端开关翻不动）")
+	_h.expect(body.contains("int(value)"),
+		"sizes_coerces_to_int",
+		"快照里的数字到客户端是 float，必须逐个 int() —— 否则 has(2) 对不上 2.0，永远开不了")
+	_h.expect(body.contains("is Array") and body.contains("STARTABLE_SIZES"),
+		"sizes_type_guard_falls_back",
+		"快照没这个键 / 类型不对（旧服务端）时必须回落到 STARTABLE_SIZES")
+	_h.expect(src.contains("const STARTABLE_SIZES := [1, 3]"),
+		"sizes_fallback_is_old_rule",
+		"回落口径必须是改动前的 [1, 3]（旧服务端本来就只让单人或满 3 人开）")
+	_h.expect(src.contains("_startable_sizes().has("),
+		"sizes_gate_goes_through_helper",
+		"开始匹配的人数判据必须走 _startable_sizes()")
+	_h.expect(not src.contains("STARTABLE_SIZES.has("),
+		"sizes_no_direct_constant_use",
+		"不许再出现 STARTABLE_SIZES.has(...)：那是改动前的写法，会让服务端的开关彻底失效")
+	# ② 运行期。用 Callable 而不是直接调用：哪天这个函数改名 / 被删，直接调用会让**整个脚本
+	#    解析失败** ⇒ 场景没有脚本 ⇒ 进程不退出（「假挂」而不是判红，见 10-15 的教训）。
+	var lobby: Control = LOBBY.new()
+	var sizes := Callable(lobby, "_startable_sizes")
+	var callable_ok := _h.expect(sizes.is_valid(), "sizes_helper_callable",
+		"房间界面上没有可调用的 _startable_sizes() —— 结构断言全绿也白搭")
+	# ★ Callable 失效时**不能直接 call()**：那会抛运行期错误把本函数当场中断，下面 6 条
+	#   运行期断言一条都不会执行（实测 checked 131→125）—— 正是「该量的没量到」的形态。
+	#   显式记账：那 6 条不是「通过」，是「无从执行」。
+	if not callable_ok:
+		_h.fail("sizes_runtime_unavailable",
+			"_startable_sizes() 不存在 ⇒ 6 条运行期判据无从执行（不是通过）")
+		lobby.free()
+		return
+	# 旧服务端：快照里根本没这个键。
+	lobby._room = {}
+	_h.expect(sizes.call() == [1, 3], "sizes_runtime_old_server",
+		"快照没有 startable_sizes（旧服务端 / 未部署）⇒ 运行期回落 [1, 3]")
+	_h.expect(not sizes.call().has(2), "sizes_runtime_old_server_blocks_two",
+		"旧服务端口径下 2 人不能开匹配（回落值必须是旧的，不能偷偷放开）")
+	# 新服务端、开关关（默认）：快照 [1,2,3]；JSON 真形态是 float。
+	lobby._room = {"startable_sizes": [1.0, 2.0, 3.0]}
+	_h.expect(sizes.call() == [1, 2, 3], "sizes_runtime_float_coerced",
+		"快照下发 [1.0,2.0,3.0]（float）⇒ 必须转成 [1,2,3]")
+	_h.expect(sizes.call().has(2), "sizes_runtime_two_allowed",
+		"服务端放开 2 人组队时客户端必须认 —— 这条就是「翻开关不用出包」的客户端判据")
+	# 新服务端、开关开：快照 [1,3]。
+	lobby._room = {"startable_sizes": [1.0, 3.0]}
+	_h.expect(not sizes.call().has(2) and sizes.call().has(3),
+		"sizes_runtime_two_blocked", "服务端只给 [1,3] ⇒ 2 人灰、3 人可开")
+	# 脏数据：类型不对 ⇒ 回落，不许崩、也不许当真。
+	lobby._room = {"startable_sizes": "1,2,3"}
+	_h.expect(sizes.call() == [1, 3], "sizes_runtime_bad_type_falls_back",
+		"startable_sizes 不是 Array ⇒ 回落 [1,3]")
+	lobby.free()
+	_h.note("startable_sizes：服务端可达集合只有 [1,3] 与 [1,2,3]（MAX_MEMBERS=3）；"
+		+ "灰按钮旁「只能单人或满 3 人开始匹配」是硬编码文案，这两种集合下都不会说谎，故不钉死。"
+		+ "哪天服务端能下发别的集合，PartyLobby.gd 那句文案要跟着改。")
+
 
 
 # 10.11 bug 第 3 / 9 条：好友列表的分档与过滤。

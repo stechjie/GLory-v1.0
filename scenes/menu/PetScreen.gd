@@ -41,6 +41,15 @@ const UNIT_TILE_SIZE := Vector2(112, 104)
 const SKIN_CARD_SIZE := Vector2(300, 0)
 const SKIN_PREVIEW_SIZE := Vector2(276, 155)   # 预览图是实机画面截的 16:9
 
+# 宠物技能浮框（10.15 第 3 点）。宽度固定、高度按文案量（见 _fit_pet_tip）：
+# 最长的一条是英文老虎技能说明（361 字符），中文只有 122 —— 写死高度不是留一大片
+# 空白就是被裁掉，所以量。
+const PET_TIP_WIDTH := 620.0
+const PET_TIP_PAD := 16.0
+const PET_TIP_GAP := 6.0
+const PET_TIP_MIN_HEIGHT := 120.0
+const PET_TIP_MAX_HEIGHT := 420.0
+
 var _title_label: Label
 var _tab_row: HBoxContainer
 var _tab_buttons: Dictionary = {}   # Tab -> Button
@@ -56,6 +65,13 @@ var _pet_page := 0
 var _pet_prev_btn: Button
 var _pet_next_btn: Button
 var _pet_page_label: Label
+# 宠物技能浮框：点模型显示、点别处收起（10.15 第 3 点），见 _build_pet_tip。
+var _pet_tip: Panel
+var _pet_tip_rows: Array[Control] = []   # 眉标 / 名字 / 分隔线 / 摘要 / 详情（加入顺序）
+var _pet_tip_name: Label
+var _pet_tip_effect: Label
+var _pet_tip_detail: Label
+var _pet_tip_pet := ""
 
 # --- 种族页 ---
 var _race_box: VBoxContainer
@@ -120,6 +136,30 @@ func _exit_tree() -> void:
 	if PlayerProfile.prep_skin_changed.is_connected(_refresh_skins):
 		PlayerProfile.prep_skin_changed.disconnect(_refresh_skins)
 
+# 「点宠物模型以外的地方 -> 浮框消失」（10.15 第 3 点）。
+#
+# ★ 为什么由 _input 来收，而不是 _unhandled_input：引擎的派发顺序是
+#   `_input` -> GUI 命中测试 -> `_unhandled_input`，而这一页的根节点是个
+#   mouse_filter 默认 STOP 的 Control 且铺满整屏 —— 点在空白处会被它自己吃掉，
+#   `_unhandled_input` 永远不会响。
+#   顺序反过来正好帮了忙：点在**模型**上时这里先收起、紧跟着模型的 gui_input
+#   又把它打开，净效果是「保持显示」；点在别处则只有收起这一步。
+func _input(event: InputEvent) -> void:
+	if _pet_tip == null or not _pet_tip.visible:
+		return
+	if not is_visible_in_tree():
+		return
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+			_hide_pet_tip()
+	elif event is InputEventScreenTouch:
+		# 真机触摸：emulate_mouse_from_touch 不一定开着，触摸事件必须自己处理，
+		# 否则手指点别处收不起来（与 PrepDetailOverlay.attach_long_press 同一课）。
+		if (event as InputEventScreenTouch).pressed:
+			_hide_pet_tip()
+
+
 func _build() -> void:
 	# V3 P1-04 验收原文：「无业务按钮使用 Godot 默认主题」。
 	# 这一页此前既没有 theme=，也没有任何 add_theme_stylebox_override，
@@ -169,6 +209,10 @@ func _build() -> void:
 	_back_btn.pressed.connect(func(): back_requested.emit())
 	add_child(_back_btn)
 	SafeArea.track(_back_btn)
+
+	# 宠物技能浮框。**最后添加** = 画在所有东西上面；但它整棵子树不吃输入
+	# （见 _build_pet_tip），所以不会抢走底下卡片按钮的点击。
+	_build_pet_tip()
 
 # 页签：与 FriendsScreen 同一个做法 —— toggle_mode，当前页由 _refresh_chrome 按下。
 func _build_tabs() -> Control:
@@ -244,8 +288,164 @@ func _change_pet_page(delta: int) -> void:
 	_pet_page += delta
 	_refresh_pets()
 
+# --- 宠物技能浮框（10.15 第 3 点）-----------------------------------------------
+#
+# 需求原文：「备战-宠物界面，增加一个功能：点击宠物的模型可以显示出对应的宠物技能
+# 文本框，点击除宠物模型外的地方文本框消失，文本内容可以参考背包-宠物档案里的文本
+# 说明。」
+#
+# 文案与 BagScreen 的「伙伴档案」同源：都用 PetService 的三个取文案助手
+#（display_name / effect_text / skill_detail_text），所以两处永远是同一份文字。
+
+func _build_pet_tip() -> void:
+	# ★ 底板用 `Panel`（普通 Control），行的高度和位置自己摆 —— **刻意不用
+	#   PanelContainer / VBoxContainer**。容器版有三个坑叠在一起，10.15 实测
+	#   「第一次弹出会变成一个 814px 高的大黑框」（门禁 pet_skill_tip 抓到）：
+	#     ① 容器在 hidden 时完全不排版（`Container::_sort_children()` 一进门就是
+	#        `if (!is_visible_in_tree()) return;`），子标签一直停在 0 宽；
+	#     ② 0 宽下按自动换行算出来的最小高度是「每行一个字」的天文数字（实测 2961px）；
+	#     ③ `Control.set_size()` 会把尺寸**夹到不小于最小尺寸**，那个天文数字就被写进了
+	#        size；而容器的最小尺寸是缓存，标签重排后并不会同步失效（实测标签自己的
+	#        `get_minimum_size()` 已经是 29，外层容器按 0 宽算出来的老值却还在），
+	#        于是这 814px 再也降不下来。
+	#   自己算、自己摆则全程同步，与「什么时候排版」无关 —— 同一个探针里，容器版
+	#   在 `_ready` 里调是正常的、在输入回调里调就出错，这种看时机的坑不值得留。
+	_pet_tip = Panel.new()
+	_pet_tip.visible = false
+	_pet_tip.custom_minimum_size = Vector2(PET_TIP_WIDTH, PET_TIP_MIN_HEIGHT)
+	_pet_tip.size = Vector2(PET_TIP_WIDTH, PET_TIP_MIN_HEIGHT)
+	_pet_tip.add_theme_stylebox_override("panel",
+		Tokens.panel_box(Tokens.INK_PANEL, Tokens.GOLD_EDGE, int(PET_TIP_PAD)))
+	_pet_tip_rows = []
+
+	var eyebrow := Label.new()
+	eyebrow.text = tr("pet_skill_tip_title")
+	eyebrow.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	eyebrow.add_theme_color_override("font_color", Tokens.GOLD)
+	_add_pet_tip_row(eyebrow)
+
+	_pet_tip_name = Label.new()
+	_pet_tip_name.add_theme_font_size_override("font_size", 24)
+	_pet_tip_name.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+	_add_pet_tip_row(_pet_tip_name)
+
+	_add_pet_tip_row(HSeparator.new())
+
+	_pet_tip_effect = Label.new()
+	_pet_tip_effect.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_pet_tip_effect.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
+	_pet_tip_effect.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	_add_pet_tip_row(_pet_tip_effect)
+
+	_pet_tip_detail = Label.new()
+	_pet_tip_detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_pet_tip_detail.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	_pet_tip_detail.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	_add_pet_tip_row(_pet_tip_detail)
+
+	# 整棵子树一律 IGNORE。浮框只是提示，**绝不能吃掉底下的点击**：mouse_filter
+	# 不继承，漏掉任何一个后代，那一块区域就会替它收走点击（10.15 第二轮
+	#「被弹窗盖住的控件仍被命中」是同一类坑的反面）。
+	_ignore_mouse_tree(_pet_tip)
+	add_child(_pet_tip)
+
+
+# 浮框里的一行：按加入顺序记下来，高度和位置由 _fit_pet_tip 统一摆。
+func _add_pet_tip_row(row: Control) -> void:
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_pet_tip.add_child(row)
+	_pet_tip_rows.append(row)
+
+
+func _ignore_mouse_tree(node: Node) -> void:
+	if node is Control:
+		(node as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for child in node.get_children():
+		_ignore_mouse_tree(child)
+
+
+func _on_pet_art_gui_input(event: InputEvent, pet_id: String, art: Control) -> void:
+	var pressed := false
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		pressed = mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT
+	elif event is InputEventScreenTouch:
+		pressed = (event as InputEventScreenTouch).pressed
+	if pressed:
+		_show_pet_tip(pet_id, art)
+
+
+func _show_pet_tip(pet_id: String, art: Control) -> void:
+	if _pet_tip == null:
+		return
+	_pet_tip_pet = pet_id
+	_pet_tip_name.text = PetService.display_name(pet_id)
+	_pet_tip_effect.text = PetService.effect_text(pet_id)
+	var detail := PetService.skill_detail_text(pet_id)
+	_pet_tip_detail.text = detail
+	# 与背包一致：详情和摘要重复时不重复写一遍（蘑菇、兔子就是这种）。
+	_pet_tip_detail.visible = not detail.is_empty() and detail != _pet_tip_effect.text
+	_fit_pet_tip()
+	_place_pet_tip(art)
+	_pet_tip.visible = true
+
+
+func _hide_pet_tip() -> void:
+	if _pet_tip == null:
+		return
+	if _pet_tip.visible:
+		_pet_tip.visible = false
+	_pet_tip_pet = ""
+
+
+# 逐行算高度、就地摆好（宽度固定）。全程同步，不看排版时机。
+#
+# 高度按文案量是有必要的：中文和英文差一倍多（英文老虎技能说明 361 字符、中文 122），
+# 写死高度不是留一大片空白就是被裁掉。
+# 量的口径是**标签自己**的 `get_minimum_size()` —— Label 收到 RESIZED 会当场按
+# 当前宽度重排，这个值立刻就是真的；不去读外层控件的 `get_combined_minimum_size()`，
+# 那个是缓存（见 _build_pet_tip 里的三个坑）。
+func _fit_pet_tip() -> void:
+	var inner := PET_TIP_WIDTH - PET_TIP_PAD * 2.0
+	var cursor := PET_TIP_PAD
+	var first := true
+	for row in _pet_tip_rows:
+		if row == null or not is_instance_valid(row):
+			continue
+		row.size.x = inner          # 先定宽，下面量到的高度才是按这个宽度换行的
+		if not row.visible:
+			continue
+		if not first:
+			cursor += PET_TIP_GAP
+		first = false
+		var row_height := row.get_minimum_size().y
+		row.size = Vector2(inner, row_height)
+		row.position = Vector2(PET_TIP_PAD, cursor)
+		cursor += row_height
+	_pet_tip.size = Vector2(PET_TIP_WIDTH,
+		clampf(cursor + PET_TIP_PAD, PET_TIP_MIN_HEIGHT, PET_TIP_MAX_HEIGHT))
+
+
+# 贴着被点的模型放：优先放它下面，下面放不下就翻到上面，最后一律夹回屏内
+#（圆角屏的安全区、窄屏都不至于把它顶出画面）。
+func _place_pet_tip(art: Control) -> void:
+	var view := get_viewport_rect().size
+	var tip_size := _pet_tip.size
+	var pos := Vector2((view.x - tip_size.x) * 0.5, (view.y - tip_size.y) * 0.5)
+	if art != null and is_instance_valid(art) and art.is_inside_tree():
+		var rect := art.get_global_rect()
+		pos.x = rect.get_center().x - tip_size.x * 0.5
+		pos.y = rect.position.y + rect.size.y + 10.0
+		if pos.y + tip_size.y > view.y - 12.0:
+			pos.y = rect.position.y - tip_size.y - 10.0
+	pos.x = clampf(pos.x, 12.0, maxf(12.0, view.x - tip_size.x - 12.0))
+	pos.y = clampf(pos.y, 12.0, maxf(12.0, view.y - tip_size.y - 12.0))
+	_pet_tip.global_position = pos
+
+
 func _switch_tab(tab_id: int) -> void:
 	_tab = tab_id
+	_hide_pet_tip()
 	_refresh_chrome()
 	if _tab == Tab.RACES:
 		_refresh_races()
@@ -279,6 +479,8 @@ func _refresh_chrome() -> void:
 		_back_btn.visible = not starter_mode
 
 func _refresh_pets() -> void:
+	# 下面会把卡片整批 remove_child 重建，浮框贴着的那个 art 随之消失 —— 先收起。
+	_hide_pet_tip()
 	var starter_mode := PlayerProfile.needs_starter_pick
 	_hint_label.text = tr("pet_starter_hint") if starter_mode else ""
 	_hint_label.visible = starter_mode
@@ -333,6 +535,11 @@ func _build_card(pet_id: String, starter_mode: bool) -> Control:
 	art.modulate = Color(0.73, 0.73, 0.73) if greyed else Color.WHITE
 	art.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	content.add_child(art)
+	# 点模型 -> 弹出这只宠物的技能框（10.15 第 3 点）。立绘在卡片里是唯一「像模型」
+	# 的那块；PetPreview 默认把它设成 IGNORE，这里必须改成 STOP 才收得到 gui_input
+	# （卡片面板本身也是 STOP，所以这一个改动不会让别处的点击漏下去）。
+	art.mouse_filter = Control.MOUSE_FILTER_STOP
+	art.gui_input.connect(_on_pet_art_gui_input.bind(pet_id, art))
 
 	var name_lbl := Label.new()
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

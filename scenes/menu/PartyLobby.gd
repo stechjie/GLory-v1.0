@@ -56,7 +56,8 @@ const PRESENCE_PUSH := "presence"
 # 而这个界面的「邀请」按钮是 `disabled = not online`，所以一个其实已经上线、却被
 # 显示成离线的好友**根本邀请不了**（不是文字不好看，是这个界面的主要动作被卡住）。
 const FRIENDS_REFRESH_SEC := 5.0
-# 只能单人或满 3 人开始匹配（docs/排位系统设计.md；服务器 matchmaking.PARTY_SIZES 同口径）。
+# 几个人能开始匹配，以房间快照里服务器下发的 startable_sizes 为准（10-15：开关在账号服务器
+# .env 的 GLORY_PARTY_FULL_TEAM_ONLY，翻它不用出新包）。这里只是没有那个键的老服务器的口径。
 const STARTABLE_SIZES := [1, 3]
 # 排位房展示宠物的上限（与服务端 party.MAX_PETS 一致）：房主的出战宠物必占一席。
 const MAX_DISPLAY_PETS := 5
@@ -477,8 +478,8 @@ func _apply(next: Dictionary) -> void:
 			var entry: Dictionary = raw
 			if not bool(entry.get("host", false)) and not bool(entry.get("ready", false)):
 				all_ready = false
-		# 只能单人或满 3 人开始（2 人车队不排，见 STARTABLE_SIZES）。先说人数，再说准备。
-		var size_ok := STARTABLE_SIZES.has(members.size())
+		# 人数不对先说人数，再说准备（见 STARTABLE_SIZES）。
+		var size_ok := _startable_sizes().has(members.size())
 		_action.text = _text("开始匹配", "START MATCH")
 		_action.disabled = not size_ok or not all_ready or bool(_room.get("queued", false))
 		if not size_ok:
@@ -1227,6 +1228,18 @@ func _is_host() -> bool:
 	if _preview != "":
 		return _preview == "host"
 	return str(_room.get("host_code", "")) == str(AccountManager.profile.get("friend_code", ""))
+
+
+# 服务器下发的「几个人能开始匹配」。JSON 里的数字是 float，Godot 4 的 Array.has(2)
+# 不认 2.0，所以要逐个转回 int。
+func _startable_sizes() -> Array:
+	var raw: Variant = _room.get("startable_sizes")
+	if not raw is Array:
+		return STARTABLE_SIZES
+	var out := []
+	for value in raw:
+		out.append(int(value))
+	return out
 
 
 # 10.09：房主的出战宠物（服务端快照带 host_pet）。它**必须**出现在展示列表里，

@@ -161,7 +161,7 @@ def tool_environment(args: argparse.Namespace) -> dict:
     engine = discover_executable([
         args.godot, os.environ.get("GODOT_BIN"), "godot", "godot4",
         "/Applications/Godot.app", Path.home() / "Applications/Godot.app",
-        "/Volumes/repository/glory-ios-dev/tools/godot/Godot.app",
+        Path(__file__).resolve().parents[2] / "glory-ios-dev/tools/godot/Godot.app",
     ])
     if engine is None:
         raise RuntimeError("Godot 4.7 not found; pass --godot.")

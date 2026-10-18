@@ -6,6 +6,8 @@ signal skip_requested
 
 const TutorialTargetProviderScript := preload("res://scripts/tutorial/TutorialTargetProvider.gd")
 const TutorialArrowScript := preload("res://scripts/tutorial/TutorialArrow.gd")
+# 聚焦遮罩的着色器：整幅压暗 + 逐片元开洞。见 FOCUS_DIM_COUNT 上方的长注释。
+const TutorialFocusMaskShader := preload("res://shaders/tutorial_focus_mask.gdshader")
 
 const GOLD_TEXT := "∞"
 const TUTORIAL_GOLD := 9999
@@ -112,6 +114,30 @@ const CANDIDATE_ORDER_PENALTY := 1.0
 const MAX_STICKY_OVERLAP_RATIO := 0.10
 const LAYOUT_GEOMETRY_EPS := 2.0
 
+# 聚焦遮罩（2026-10-15 反馈问题 2）：**一整块**暗幕，洞由 shader 逐片元抠出来。
+#
+# ⚠ 这里曾经是 4（上/下/左/右四块拼成环形）。同日返工前玩家实测报「屏幕会闪，伴有线」，
+#   查下来是这套拼法的结构缺陷，换成单块 + shader 才根治：
+#     ① 相邻两块共用一条**同值的分数坐标边**，而 GPU 按每个 quad 各自的顶点独立
+#        栅格化，公共边在像素级上会错开 1px ⇒ 一条亮线；
+#     ② 被框住的目标（商店木牌）本身在**逐帧漂移**（实测 y ≈ −0.027 px/帧、
+#        x ≈ +0.003 px/帧），于是那条缝每秒被扫过一两次 ⇒ 「闪」。
+#   单块方案下遮罩内部**没有任何边界**，缝在结构上不可能出现；同时这块 quad 的
+#   矩形恒等于整幅 overlay，**每帧几何零变化**（只改 uniform），亚像素游走也没了。
+#   长度恒为 1；保留数组形态是为了让门禁沿用同一套「遍历暗幕」的写法。
+const FOCUS_DIM_COUNT := 1
+# 压暗强度。与既有遮罩同一档（萝卜营地 0.68 / 商店不可买原因 0.64）：
+# 够暗到能一眼分出主角，又留住足够多的场景轮廓让新手知道自己在哪一步。
+const FOCUS_DIM_COLOR := Color(0.02, 0.025, 0.04, 0.66)
+# 洞比目标外扩这么多像素：给箭头与目标自己留一圈呼吸位，
+# 免得暗幕边界贴着卡面切过去显得像渲染错误。
+const FOCUS_HOLE_PADDING := 6.0
+# 「点一下继续」四个步骤的受理外扩（2026-10-15 第三轮，见 `_input()`）。
+# 与已上线那版透明热区同值：热区当时是 `position - pad` / `size + pad * 2`，
+# 与矩形 `grow(10)` 等价 ⇒「点哪儿算数」相对真机反馈过的版本**零变化**，
+# 本次改的只是「吃不吃输入」。
+const TAP_TARGET_PAD := 10.0
+
 var active := false
 var step: int = Step.BUY_3
 var bought_units := 0
@@ -155,8 +181,10 @@ var _progress_label: Label
 var _step_name_label: Label
 var _progress_bar: ProgressBar
 var _continue_btn: Button
-var _hotspot: Button
 var _skip_btn: Button
+# 新手教学「聚焦遮罩」：一整块铺满 overlay 的 ColorRect（挂 shader），
+# 洞由 fragment 逐片元抠出来。恒为 1 个元素，见 FOCUS_DIM_COUNT 上方的注释。
+var _focus_dim: Array[ColorRect] = []
 var _overlay_suppressed := false
 var _layout_signature := ""
 var _layout_context := ""
@@ -329,6 +357,18 @@ func can_start_battle() -> bool:
 	return step in [Step.START_PVE_1, Step.START_PVE_2, Step.START_BOSS, Step.START_PVP]
 
 
+# 当前这一步开战前的最低上阵数。0 = 不在开战步、不设限。
+#
+# 与 battle_board_gate_message() 共用同一个来源：那条提示里的数字必须由这里算，
+# 否则会出现「提示说少于 3、实际按 7 判」这类两处漂移。开战闸
+# （_ensure_board_ready_for_battle）与 PrepFlowController 的 UI 闸门也都读它。
+func required_board_units() -> int:
+	if step in [Step.START_PVE_1, Step.START_PVE_2, Step.START_BOSS]:
+		return EARLY_DEPLOY_UNITS
+	if step == Step.START_PVP:
+		return FILL_TARGET_UNITS
+	return 0
+
 # 9.25 教程优化第 4/5 条：开战前的最低上阵人数门槛。
 #
 # 文档里的「步骤 3 / 5 / 14 / 22」是 STEP_SEQUENCE 的 1-based 序号（也就是气泡右上角
@@ -342,11 +382,7 @@ func can_start_battle() -> bool:
 # 与 follow_arrow_hint() 的「请先完成前置任务」走同一个出口（PrepFlowController 的
 # show_message），因此样式天然一致。
 func battle_board_gate_message() -> String:
-	var need := 0
-	if step in [Step.START_PVE_1, Step.START_PVE_2, Step.START_BOSS]:
-		need = EARLY_DEPLOY_UNITS
-	elif step == Step.START_PVP:
-		need = FILL_TARGET_UNITS
+	var need := required_board_units()
 	if need <= 0 or GameState.normal_unit_count() >= need:
 		return ""
 	return _t("上阵棋子数目少于%d" % need, "Deploy at least %d units first" % need)
@@ -392,10 +428,111 @@ func begin_battle() -> bool:
 		if _target_provider != null:
 			_target_provider.show_feedback(follow_arrow_hint())
 		return false
+	# 第 2 层兜底：开战闸 + 状态自愈。只查步骤的 can_start_battle() 挡不住「棋盘是空的」，
+	# 而空棋盘一开战就会被 prepare_tutorial_state 按 no_player_units 判负。
+	if not _ensure_board_ready_for_battle():
+		return false
 	if step == Step.START_PVP:
 		opponent_snapshot = _tutorial_opponent_snapshot()
 	_detach()
 	return true
+
+# 开战前的最后一道闸（10.16 bug 第 1 条，第 2 层兜底）。
+#
+# 为什么需要它：重启教程（「重新体验教学」）或断点恢复都会走 TutorialMode.start() /
+# restore_checkpoint()，两条路都会把 board_slots 清空重铺。若玩家在铺满之前就点到
+# 「开始战斗」， prepare_tutorial_state 看到空棋盘会直接返回
+# forced_result.player_wins=false（no_player_units），于是结算字幕播「失败」，
+# 而 TutorialMode.after_battle() 又照样把步骤往前推 —— 玩家看到的就是
+# 「打了场没打的仗、还输了、然后被拽到下一步」。
+#
+# 原来的闸门只住在 UI 按钮层（PrepFlowController._on_start_battle 的
+# battle_board_gate_message），那条路有旁路（PrepScreen 的战斗加载重试、
+# team_round_start、断点恢复后的自动开战），挡不全。所以闸门搬进这里 ——
+# begin_battle() 是 Main._on_battle_requested 开战前的最后一个函数，
+# 所有入口都要经过它。
+#
+# 顺序不能换：先自愈、再判定、最后才允许开战。
+#   * 自愈只从待命区补，且挑「放上去不会触发合成」的棋子（合成可让上阵数不增反减）；
+#   * 补完还不够 → 不烧调用方的一次性发射锁，直接给提示返回 false，让玩家自己拖。
+func _ensure_board_ready_for_battle() -> bool:
+	var need := required_board_units()
+	if need <= 0:
+		return true
+	var missing := need - GameState.normal_unit_count()
+	if missing <= 0:
+		return true
+	var moved := _auto_deploy_from_bench(missing)
+	if moved > 0:
+		# 自愈搬动了棋盘：必须刷一次视图，否则玩家看到的计数还是旧的
+		#（返回 false 时人还停在备战页，尤其不能忍）。
+		_refresh_prep()
+		print("[TUTORIAL] begin_battle self-heal: moved %d unit(s) from bench (need %d, had %d)" % [moved, need, need - missing])
+	if GameState.normal_unit_count() < need:
+		if _target_provider != null:
+			_target_provider.show_feedback(battle_board_gate_message())
+		return false
+	return true
+
+# 从待命区挑棋子补上棋盘，返回真正搬上去几个。
+#
+# 挑法（两条都只为「让上阵数真的增加」服务）：
+#   1. 不放会触发合成的：放上去若凑满 copies_to_upgrade(star) 个同名同星，
+#      当场合成，上阵数不增反减（1 星 2 个就合、2 星 3 个才合，见
+#      GameConstants.STAR_UPGRADE_COPIES）；
+#   2. 不放重复的唯一棋子：unique_on_board 的棋子棋盘上只允许 board_limit 个，
+#      战斗侧 build_tutorial_player_fighters 会用 _is_duplicate_unique_cell 把
+#      多出来的那个直接跳过 —— 搬上去也不参战，纯占格子。
+func _auto_deploy_from_bench(want: int) -> int:
+	if want <= 0:
+		return 0
+	var cap := GameState.normal_unit_cap()
+	# 棋盘上每个 (id, star) 的现有数量，合成按这个口径判。
+	var counts := {}
+	var unique_used := {}
+	for cell in GameState.board_slots:
+		if typeof(cell) != TYPE_DICTIONARY:
+			continue
+		var data := cell as Dictionary
+		var key := _merge_key(data)
+		counts[key] = int(counts.get(key, 0)) + 1
+		var uid := str(data.get("id", ""))
+		if not uid.is_empty():
+			unique_used[uid] = int(unique_used.get(uid, 0)) + 1
+	var moved := 0
+	for bench_index in GameState.bench_slots.size():
+		if moved >= want or GameState.normal_unit_count() >= cap:
+			break
+		var bench_cell: Variant = GameState.bench_slots[bench_index]
+		if typeof(bench_cell) != TYPE_DICTIONARY:
+			continue
+		var data := bench_cell as Dictionary
+		var star := int(data.get("star", 1))
+		# (1) 会触发合成 → 跳过
+		if int(counts.get(_merge_key(data), 0)) + 1 >= GameState.copies_to_upgrade(star):
+			continue
+		# (2) 唯一棋子且棋盘上已经用满额度 → 跳过
+		var def: Dictionary = data.get("def", {})
+		if bool(def.get("unique_on_board", false)):
+			var uid := str(data.get("id", def.get("id", "")))
+			var limit := maxi(1, int(def.get("board_limit", 1)))
+			if not uid.is_empty() and int(unique_used.get(uid, 0)) >= limit:
+				continue
+		var board_index := GameState.board_slots.find(null)
+		if board_index < 0:
+			break
+		GameState.board_slots[board_index] = data
+		GameState.bench_slots[bench_index] = null
+		counts[_merge_key(data)] = int(counts.get(_merge_key(data), 0)) + 1
+		var moved_uid := str(data.get("id", ""))
+		if not moved_uid.is_empty():
+			unique_used[moved_uid] = int(unique_used.get(moved_uid, 0)) + 1
+		moved += 1
+	return moved
+
+# 合成口径的键：同名**同星**才合成。星级不同不合成（1 星 + 2 星各算各的）。
+func _merge_key(cell: Dictionary) -> String:
+	return "%s@%d" % [str(cell.get("id", "")), int(cell.get("star", 1))]
 
 func battle_kind() -> String:
 	match step:
@@ -408,6 +545,35 @@ func battle_kind() -> String:
 
 func pve_enemy_count() -> int:
 	return 4 if step == Step.START_PVE_2 else 3
+
+# 教程战斗强制胜利（10.16 bug 第 1 条，第 1 层兜底）。
+#
+# 调用点是 BattleResult._finish_simulation() —— 拿到结果之后、任何演出之前。
+# 那里是本地模拟路的唯一收口点（BattleUI._finish_simulation 只是 pass 占位，
+# BattleResult 才是真身；BattleScreen._process 的 finished 分支与 _skip_animation
+# 两条路都汇到它），所以「教程战斗必为胜」由这一处保证，不依赖调用方做对。
+#
+# 为什么需要它：教程是叙事流程，胜负只由步骤推进表达，战斗本身只是过场。而本地
+# 模拟按真实规则判胜负，下面这几条路都会给出「失败 / 平局」：
+#   * 空棋盘开局：prepare_tutorial_state 的 no_player_units 强制判负
+#     （重启教程 / 断点恢复后棋盘被清空、旁路开战都会走到）；
+#   * 双方全灭 → double_ko 平局；
+#   * 超时按剩余战力比较 → 1 星棋子可能打不完 80HP 的小怪。
+# 原来只有本文件 after_battle() 的 START_PVP 分支改写过结果，且那发生在
+# battle_finished 之后 —— 结算字幕（BattleResult._show_result_overlay）早把那句
+# 「失败」播完了，玩家先看到失败、再被拽回备战，正是本次反馈的视频现象。
+#
+# 只改结果字典，**不动 GameState.enemy_formation_hp**：备战界面的敌方法阵血量在
+# 教程中途要保持 10/10（START_PVP 通关时由 after_battle() 自己置 0）。
+func coerce_victory(result: Dictionary) -> void:
+	if result.is_empty():
+		return
+	result["kind"] = battle_kind()
+	result["player_wins"] = true
+	result["is_draw"] = false
+	result["reason"] = "tutorial_forced_victory"
+	result["enemy_alive"] = 0
+	result["enemy_hp_current"] = 0
 
 func after_battle(result: Dictionary) -> void:
 	match step:
@@ -422,10 +588,7 @@ func after_battle(result: Dictionary) -> void:
 			_start_treasure(TREASURE_2)
 			_advance_to(Step.TAKE_TREASURE_2)
 		Step.START_PVP:
-			result["kind"] = "pvp"
-			result["player_wins"] = true
-			result["enemy_alive"] = 0
-			result["enemy_hp_current"] = 0
+			coerce_victory(result)
 			GameState.enemy_formation_hp = 0
 			_advance_to(Step.DONE)
 	GameState.gold = TUTORIAL_GOLD
@@ -506,6 +669,26 @@ func update_overlay() -> void:
 		# 这样 transient 的空目标对玩家完全不可见：箭头原地不动，下一帧目标回来了自然对上。
 		rect = _last_target_rect
 	var dir := _arrow_dir()
+	# 聚焦遮罩每帧跟上目标（2026-10-15 问题 2）。刻意放在下面那段「版面没变就早退」
+	# **之前**：遮罩只依赖 rect 与 overlay 尺寸，代价是 4 次赋值，而早退的判据里
+	# `safe` 是被安全区裁剪过的，存在"overlay 变宽但 safe 没变"的组合（安全区比
+	# overlay 小的时候），把遮罩塞进重排分支就会在那一种情形下留着旧尺寸。
+	# 目标既没解析出来、也没有上一次的位置（开机第一帧）时不留洞：
+	# 那时的 rect 是 (540,290,200,80) 那个占位矩形，照它开洞等于在屏幕中央凭空
+	# 亮出一块 —— 宁可整幅压暗。
+	var focus := rect
+	if not (target is Control and target.is_inside_tree()) \
+			and not (_last_target_rect.size.x > 0.0 and _last_target_rect.size.y > 0.0):
+		focus = Rect2()
+	# 关商店 / 上阵布阵这两处整幅不压暗（反馈 2026-10-15 第二轮，见 focus_mask_disabled_for）。
+	# 做法是**把遮罩整块藏掉**，而不是"给一个填满屏幕的洞" —— 后者会白留一个满屏的
+	# 半透明 quad 每帧参与混合，视觉上也没区别。
+	var mask_on := not focus_mask_disabled()
+	var dim := _focus_dim_node()
+	if dim != null and dim.visible != mask_on:
+		dim.visible = mask_on
+	if mask_on:
+		_update_focus_dim(focus)
 	var next_text := current_text()
 	if _text.text != next_text:
 		_text.text = next_text
@@ -533,9 +716,90 @@ func update_overlay() -> void:
 	var context := "%d|%d" % [step, target_id]
 	_bubble.position = _bubble_position(rect, dir, context)
 	_continue_btn.visible = false
-	_bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_position_hotspot(rect)
 	_position_chrome()
+
+
+# 「这一步该不该整幅压暗」的**纯判据**：只看状态，不碰节点。
+# 拆成一个纯函数是为了让门禁能直接喂参数验真值表，不必去伪造 GameState 的棋盘/商店。
+#
+# 反馈（2026-10-15 第二 / 第三轮，共 5 张真机截图）明令这些步骤**取消遮罩** —— 因为它们
+# 要玩家做的动作**正好落在被压暗的区域上**，遮罩不是在帮忙，是在挡路：
+#   ① `BUY_3` 的「关闭商店」子阶段：要点的就是**商店外面**的地方，而遮罩恰好把外面全压暗
+#      （洞开在商店上）—— 指引和画面完全拧着。注意判的是**子阶段**（step 仍是 BUY_3），
+#      不是整个 BUY_3：正常「购买棋子」那一段遮罩是有效的，要留着。
+#   ② `PLACE_3`（上阵布阵）：要从待命区把棋子拖到棋盘，起手必须看清并落在**被压暗的
+#      待命区**上。压暗后待命区的棋子几乎看不见（实测真机反馈「无法拖动操作」）；
+#      把它**藏掉**即可，不必碰输入。
+#      ⚠ 旧注释曾把结论写成「遮罩不吃输入」——作为泛化是**错的**：覆盖层里那个
+#      `modulate.a = 0` 的 `_hotspot`（Button + STOP）确实会吃点击，已在第三轮整个删除
+#      （见 `_input()` 一节）。这里取消遮罩的理由只有一条：**看不清**。
+#   ③ `TAKE_TREASURE_1` / `TAKE_TREASURE_2`（步骤 6/22、15/22「选择宝藏」）：宝藏三选一
+#      本身就是一整块全屏面板，已经把别处盖住了；再叠一层压暗只会把「长按看详情」要读的
+#      卡面糊掉，指引价值为零。
+#   ④ `FILL_7`（步骤 20/22「补满七人」）：与 `PLACE_3` 同理 —— 要把待命区的棋子拖上棋盘，
+#      压暗后待命区几乎看不见。
+func focus_mask_disabled_for(step_value: int, shop_close_phase: bool) -> bool:
+	if step_value == Step.PLACE_3:
+		return true
+	if step_value == Step.BUY_3 and shop_close_phase:
+		return true
+	if step_value in [Step.TAKE_TREASURE_1, Step.TAKE_TREASURE_2, Step.FILL_7]:
+		return true
+	return false
+
+
+# `shop_close_phase` 沿用 current_text() / step_display_name() 里那个「买够 3 个且商店还开着」的判据，
+# 三处必须同源，否则会出现"标题写着关闭商店、遮罩却还在压暗"这种半截状态。
+func focus_mask_disabled() -> bool:
+	return focus_mask_disabled_for(step, _owned_normal_count() >= 3 and _fill_shop_open)
+
+
+func _focus_dim_node() -> ColorRect:
+	if _focus_dim.is_empty():
+		return null
+	var dim := _focus_dim[0]
+	if dim == null or not is_instance_valid(dim):
+		return null
+	return dim
+
+
+# 把「洞」交给遮罩的 shader（2026-10-15 问题 2；同日返工改为单块 + 逐片元开洞）。
+# 洞口 = 目标矩形外扩 FOCUS_HOLE_PADDING，再裁进 overlay，最后换算成控件 UV（0..1）。
+# 洞退化成空（目标解析不出来）时把 hole_on 置 0，等价于整幅压暗。
+#
+# ⚠ 这里刻意**不碰**节点的 position / size：这块 quad 被 FULL_RECT 锚定，
+#   矩形恒等于整幅 overlay。每帧只写 uniform ⇒ 几何零变化 ⇒ 目标再怎么漂，
+#   遮罩边缘也不会做亚像素游走 —— 那正是玩家实测报的「屏幕会闪 + 1px 亮线」的来源。
+func _update_focus_dim(hole: Rect2) -> void:
+	if _focus_dim.is_empty():
+		return
+	var dim := _focus_dim[0]
+	if dim == null or not is_instance_valid(dim):
+		return
+	var mat := dim.material as ShaderMaterial
+	if mat == null:
+		return
+	var ov: Control = _overlay
+	if ov == null or not is_instance_valid(ov):
+		return
+	var full := Rect2(Vector2.ZERO, ov.size)
+	if full.size.x <= 0.0 or full.size.y <= 0.0:
+		return
+	# ⚠ 先判空再 grow：`Rect2().grow(6)` 会在原点长出一个 12×12 的洞，
+	# 于是"没有目标"会变成"左上角亮一小块"。
+	var h := hole if hole.size.x > 0.0 and hole.size.y > 0.0 else Rect2()
+	if h.size.x > 0.0 and h.size.y > 0.0:
+		h = h.grow(FOCUS_HOLE_PADDING).intersection(full)
+	if h.size.x <= 0.0 or h.size.y <= 0.0:
+		# 洞没了（或整个落在 overlay 外）：整幅压暗，不留洞。
+		mat.set_shader_parameter("hole_on", 0.0)
+		return
+	mat.set_shader_parameter("hole", Vector4(
+		h.position.x / full.size.x,
+		h.position.y / full.size.y,
+		h.size.x / full.size.x,
+		h.size.y / full.size.y))
+	mat.set_shader_parameter("hole_on", 1.0)
 
 
 func set_overlay_suppressed(suppressed: bool) -> void:
@@ -728,23 +992,22 @@ func _position_chrome() -> void:
 	_skip_btn.position = _clamp_into(Vector2(16.0, 44.0), size, safe)
 
 
-func _position_hotspot(rect: Rect2) -> void:
-	# 点击推进的步用透明热区拦截点击（不再依赖会被子节点吞掉的 gui_input）。
-	if _hotspot == null:
-		return
-	match step:
-		Step.BOND_HINT, Step.VIEW_TREASURE:
-			_hotspot.visible = true
-			var pad := 10.0
-			_hotspot.position = rect.position - Vector2(pad, pad)
-			_hotspot.size = rect.size + Vector2(pad, pad) * 2.0
-		Step.FORMATION_HP, Step.CARROT_HARVEST:
-			# 讲解 HP / 收获萝卜之后，点屏幕任意处一次即可继续。
-			_hotspot.visible = true
-			_hotspot.position = Vector2.ZERO
-			_hotspot.size = _overlay.size
-		_:
-			_hotspot.visible = false
+# 把一棵子树整个设成不吃点击（2026-10-15 第三轮反馈：遮罩/气泡不许限制玩家操作）。
+#
+# ⚠ 必须**递归**。Godot 的 GUI 命中测试是逐控件做的，`mouse_filter` 也不是继承属性：
+#   `PanelContainer` / `MarginContainer` / `VBoxContainer` 的默认值都是 **STOP**（不是
+#   PASS），所以「把气泡那一个 PanelContainer 设成 IGNORE」根本不成立 —— 它下面那层
+#   MarginContainer 照样会把落在气泡矩形里的点击吃掉。只改父节点属于半截修法，
+#   真机表现就是「气泡底下的按钮点不动」这种「操作受限」。
+#   （`Label` 默认就是 IGNORE；`_continue_btn` 也是 Button(STOP)，但它的 `visible`
+#    恒为 false，不参与命中测试。真要用它，得先把它自己的 mouse_filter 改回来。）
+func _make_mouse_transparent(node: Node) -> void:
+	var ctl := node as Control
+	if ctl != null:
+		ctl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for child in node.get_children():
+		_make_mouse_transparent(child)
+
 
 func _on_skip_pressed() -> void:
 	if not active:
@@ -785,7 +1048,99 @@ func _on_skip_dialog_result(result: String, _request_id: String) -> void:
 	AnalyticsService.tutorial_skipped(step_key(), step_number())
 	skip_requested.emit()
 
-func _on_hotspot_pressed() -> void:
+# ── 「点一下继续」的四个步骤：改成**旁听**真实点击（2026-10-15 第三轮反馈）──────────
+#
+# 反馈原文：「此次修复增加的遮罩，你改动一下，不要增加玩家操作的**限制**，仅设为提醒和
+# 明亮度的不同，但是其他操作都可以做的，就不会引发这么多问题」。
+#
+# 于是教程覆盖层里**再没有任何一个吃点击的节点**：
+#   * 透明热点 `_hotspot`（Button + `MOUSE_FILTER_STOP`；BOND_HINT / VIEW_TREASURE 时
+#     盖在目标上，FORMATION_HP / CARROT_HARVEST 时铺满整屏）—— **整个删掉**；
+#   * 气泡 `_bubble` 连同 MarginContainer / VBoxContainer 子树 —— 一律 IGNORE
+#     （见 `_make_mouse_transparent()`：只把父节点设 IGNORE 不够，Container 默认是 STOP）。
+# 覆盖层剩下的三样 —— 变暗、箭头、文字 —— 本来就只有「看」这一种用法。
+#
+# 推进改由 `_input()` **旁听**：按下落在当前步骤的受理范围内就推进，并且
+# **绝不 `set_input_as_handled()`** —— 同一次点击照常穿透到下面那个真控件上
+# （点羁绊栏真的会开羁绊说明、点宝藏图标真的会打开宝藏面板）。这才是「其他操作都可以做」
+# 的字面实现：遮罩只负责明暗，不负责放行。
+#
+# 顺序上为什么安全：Godot 的 `Viewport.push_input()` 先派发 `Node._input()`，再做 GUI 命中
+# 测试。所以在 `_input` 里推进 step 影响不到**这一次**点击落在哪个控件上；而推进后请求的
+# 视图刷新走 `_refresh_prep()` → `ACTION_REFRESH_VIEW` → `PrepUI._tutorial_refresh_view()`
+# → `_refresh_all.call_deferred()`，天然延迟到本帧 GUI 之后（与 `ShopPanel` 恢复木牌必须
+# `set_deferred` 是同一条教训）。
+#
+# 坐标口径：`_input()` 收到的 `event.position` 已经是**画布空间**，与
+# `Control.get_global_rect()` 同一坐标系，直接比即可（`PrepScreen._input` 就是这么写的）。
+# ⚠ 别套用 `pos * win / canvas` 那套换算 —— 那是 `Viewport.push_input()` 的口径（它收
+#   窗口坐标），两者混用是这套代码里踩过的坑。
+func _input(event: InputEvent) -> void:
+	if not active or _overlay_suppressed:
+		return
+	if _overlay == null or not is_instance_valid(_overlay) or not _overlay.visible:
+		return
+	var pos := Vector2.INF
+	if event is InputEventMouseButton:
+		var button := event as InputEventMouseButton
+		if not button.pressed or button.button_index != MOUSE_BUTTON_LEFT:
+			return
+		pos = button.position
+	elif event is InputEventScreenTouch:
+		# 触屏设备上 Godot 默认会把每次触摸**再补发一个同位置、同一批 flush 的鼠标事件**
+		# （`input_devices/pointing/emulate_mouse_from_touch`，与
+		# `ModalStack._mouse_emulated()` 同一个判据）。两个分支都受理的话一次点击会推进
+		# 两格 —— VIEW_TREASURE（要真的点到宝藏图标）→ FORMATION_HP（任意处都算）正好是
+		# 能撞上的组合，所以补发存在时只认鼠标那一条。
+		if bool(ProjectSettings.get_setting(
+				"input_devices/pointing/emulate_mouse_from_touch", true)):
+			return
+		var touch := event as InputEventScreenTouch
+		if not touch.pressed:
+			return
+		pos = touch.position
+	else:
+		return
+	if not _tap_advance_accepts(pos):
+		return
+	confirm_tap_step()
+
+
+# 这四个步骤是不是「点一下继续」型。其余步骤全靠真实进度推进（买够/上阵/升星/关面板…），
+# 点哪儿都不该跳步 —— 所以受理范围必须**只**覆盖这四步。
+func is_tap_step() -> bool:
+	return step in [Step.BOND_HINT, Step.VIEW_TREASURE, Step.FORMATION_HP, Step.CARROT_HARVEST]
+
+
+# 受理范围。与已上线那一版**透明热区的范围逐字对齐** —— 本次改的只是「吃不吃输入」，
+# 不是「点哪儿算数」：
+#   * BOND_HINT / VIEW_TREASURE：必须真的点到羁绊栏 / 宝藏图标（目标矩形 + TAP_TARGET_PAD）。
+#     目标这一刻解析不出来时退回「任意处受理」—— 否则玩家会被一个解析不出来的目标卡死，
+#     而那正是「引发更多问题」的形状。
+#   * FORMATION_HP / CARROT_HARVEST：讲解 + 领奖，本来就没有对应的真实操作，任意处都算。
+# 唯一的例外是「跳过教学」按钮自己的矩形：那一下是去开跳过确认框的，顺手再推一格只会让
+# 两个弹窗叠在一起。
+func _tap_advance_accepts(pos: Vector2) -> bool:
+	if not is_tap_step():
+		return false
+	if _skip_btn != null and is_instance_valid(_skip_btn) and _skip_btn.visible \
+			and _skip_btn.get_global_rect().has_point(pos):
+		return false
+	if step in [Step.FORMATION_HP, Step.CARROT_HARVEST]:
+		return true
+	var target := _target_control()
+	if target == null or not target.is_inside_tree():
+		return true
+	return target.get_global_rect().grow(TAP_TARGET_PAD).has_point(pos)
+
+
+# 四个「点一下继续」步骤的推进入口。由 `_input()` 在真实按下落在受理范围内时调用；
+# 门禁也可以直接调（`tools/tutorial_checkpoint_check.gd` / `tutorial_step15_flow_check.gd`
+# / `tutorial_carrot_flow_check.gd` 就是这么驱动教程的）。
+#
+# ⚠ 名字从 `_on_hotspot_pressed()` 改过来了：透明热点 `_hotspot` 已删掉（它会吃点击），
+#   所以这里不再是某个按钮的回调，而是「玩家在目标上点了一下」这件事的处理。
+func confirm_tap_step() -> void:
 	match step:
 		Step.BOND_HINT:
 			_advance_to(Step.VIEW_TREASURE)
@@ -834,7 +1189,8 @@ var _checkpoint_signature := ""
 # 唯一的运行时推进入口（V3 P0-08）。
 #
 # 此前 step 是十几处直接赋值，其中确认型的两处 —— _on_continue_pressed() 与
-# _on_hotspot_pressed() —— 忘了落盘。玩家按下「继续」之后强杀 app，回来还在
+# confirm_tap_step()（当时还叫 _on_hotspot_pressed()）—— 忘了落盘。玩家按下「继续」
+# 之后强杀 app，回来还在
 # 按之前那一步：断点要等下一次 sync() 才跟上，而那两步之后玩家做的第一件事
 # 就是开战，中间隔着整场战斗。
 #
@@ -1033,11 +1389,35 @@ func record_shop_toggled(is_open: bool) -> void:
 	if not active:
 		return
 	_fill_shop_open = is_open
+	var step_before := step
 	if step == Step.FILL_7:
 		sync()
 	elif step == Step.BUY_3:
 		# 9.13 #4：第 1 步的「关闭商店」子阶段靠这条事件推进。
 		sync()
+	# ★ 2026-10-15 真机反馈「步骤 2/22 待命区棋子拖不动」的修法（本事件就是元凶那一环）。
+	#
+	# 推进到 PLACE_3 会让**「待命格此刻能不能拖」翻面**：BoardHud.refresh_bench() 把
+	# 「tutorial_mode 且 step == BUY_3 ⇒ drag_payload = {}」这个判据**烘进按钮的数据快照**
+	# （BUY_3 期间不让拖 —— 要先买；PLACE_3 起必须能拖）。而本事件此前只改 step、不刷待命区：
+	# 玩家买满 3 个（每次买入都刷一遍待命区，但那一刻 step 仍是 BUY_3，于是快照全落成 `{}`），
+	# 再点商店外面关店，step 走到 PLACE_3 却**没有任何人再刷新** ⇒ 快照永远停在 `{}` ⇒
+	# PrepDragButton._maybe_launch_drag() 里的 `drag_payload.is_empty()` 直接早退 ⇒
+	# 待命区棋子**永远拖不起来**。
+	# 实测（`_qa_1016/_diag_drag_block.tscn`）：待命格中心没有任何控件遮挡，
+	# `gui_get_hovered_control()` 返回的就是待命格自己；把 step 手工改成 PLACE_3 但**不刷 UI**，
+	# payload 仍是 `{}`；一旦刷新就变成 `{"kind":"bench","index":i}` ⇒ 铁证是**快照过期**，不是遮挡。
+	#
+	# 用既有的「请宿主刷新视图」通道补发（与 sync() 里补发宝藏候选同一根线）：
+	# `_refresh_prep()` → provider ACTION_REFRESH_VIEW → PrepUI._tutorial_refresh_view()
+	# → `_refresh_all.call_deferred()`。选它而不是直接摸 UI，有两个原因：
+	#   ① 它天然是**延迟**的 —— 关店的点击跑在 PrepScreen._input 里，当场刷 UI 会跟同一次
+	#      命中测试打照面（与 ShopPanel 恢复木牌必须 set_deferred 是同一条教训）；
+	#   ② `_refresh_all()` 恰好是 **sync() 在前、refresh_bench() 在后**，所以快照拿到的一定是
+	#      刚推进完的 step，顺序不可能反。
+	# 只在**真的推进了**的时候补发，省掉商店每次开合都做一次全量刷新。
+	if step != step_before:
+		_refresh_prep()
 
 
 # --- FILL_7 子阶段（V2 P1-07）--------------------------------------------------
@@ -1439,11 +1819,52 @@ func _ensure_overlay() -> void:
 	_overlay.z_index = 500
 	host.add_child(_overlay)
 
+	# ── 聚焦遮罩（2026-10-15 反馈问题 2）────────────────────────────────────
+	# 反馈原文：「调整明亮度，使除步骤、箭头提示和目标外的地方变暗，方便新手玩家
+	# 更好看到操作指引。举例，如图里的"步骤1/22"，要保留亮度的就是步骤1/22、
+	# 红色箭头、民兵，其他区域变暗。」
+	#
+	# 做法：**一整块**铺满 overlay 的 ColorRect + shader，洞由 fragment 逐片元判定。
+	# 四个刻意选择：
+	#   ① 单块，不是四块拼环形 —— 内部没有公共边，就不可能有"拼接处 1px 亮线"。
+	#      这是玩家实测报的「屏幕会闪，伴有线」的根因与修法，详见
+	#      shaders/tutorial_focus_mask.gdshader 与 FOCUS_DIM_COUNT 上方的注释。
+	#   ② mouse_filter IGNORE —— 遮罩只负责变暗，一颗点击都不许吃：
+	#      「跳过教学」、商店、棋盘都还要照常可点。
+	#      （2026-10-15 第三轮起覆盖层里**已经没有别的吃点击的节点**了：透明热点连同
+	#       它那个 `MOUSE_FILTER_STOP` 一起删掉，气泡整棵子树也一律 IGNORE，
+	#       见 `_input()` 与 `_make_mouse_transparent()`。）
+	#   ③ 它是 _overlay 的**第 1 个子节点**，于是画在箭头 / 气泡 / 跳过键
+	#      **下面**。这三样本来就该保持亮度，压在上层自然不受影响 ——
+	#      所以真正需要开洞的只有**目标本身**（目标在游戏 UI 里，位于 overlay 之下）。
+	#      ⚠ 这条"靠层级保亮度"是设计的一部分，改画序就等于改动亮度承诺，
+	#      门禁里有一条专门钉它（dim 的 index 必须小于这三者）。
+	#   ④ 这块 quad 的矩形恒等于整幅 overlay（每帧只改 uniform），于是几何零变化 ——
+	#      目标漂移不会带动遮罩边缘做亚像素游走。
+	_focus_dim.clear()
+	var dim := ColorRect.new()
+	dim.name = "TutorialFocusDim"
+	# 节点色留白：真正的颜色由 shader 的 dim_color 决定（避免两处各写一份而漂移）。
+	dim.color = Color.WHITE
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var dim_mat := ShaderMaterial.new()
+	dim_mat.shader = TutorialFocusMaskShader
+	dim_mat.set_shader_parameter("dim_color", FOCUS_DIM_COLOR)
+	dim_mat.set_shader_parameter("hole", Vector4(0.0, 0.0, 0.0, 0.0))
+	dim_mat.set_shader_parameter("hole_on", 0.0)
+	dim.material = dim_mat
+	_overlay.add_child(dim)
+	_focus_dim.append(dim)
+
 	_arrow = TutorialArrowScript.new()
 	_overlay.add_child(_arrow)
 
 	_bubble = PanelContainer.new()
-	_bubble.mouse_filter = Control.MOUSE_FILTER_STOP
+	# 气泡只负责显示文字，不吃任何点击（2026-10-15 第三轮反馈）。整棵子树都要设，
+	# 见 `_make_mouse_transparent()` —— 只改这一层的话 MarginContainer / VBoxContainer
+	# 会照旧把落在气泡矩形里的点击吃掉。
+	_bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	# 只定宽不定高，高度由 _fit_bubble() 按内容算完再钉死。
 	_bubble.custom_minimum_size = Vector2(BUBBLE_WIDTH, 0)
 	var style := StyleBoxFlat.new()
@@ -1509,19 +1930,18 @@ func _ensure_overlay() -> void:
 	_continue_btn.visible = false
 	_continue_btn.pressed.connect(_on_continue_pressed)
 	box.add_child(_continue_btn)
+	# 气泡子树建完之后整棵设成不吃点击。刻意放在**最后**：`_make_mouse_transparent()`
+	# 只能遍历当时已经挂上的节点，早调一步就会漏掉后面 add_child 的那几个。
+	_make_mouse_transparent(_bubble)
 
-	# 透明点击热区：覆盖在目标上，点一下推进（BOND_HINT / VIEW_TREASURE / FORMATION_HP）。
-	_hotspot = Button.new()
-	_hotspot.name = "TutorialHotspot"
-	_hotspot.flat = true
-	_hotspot.focus_mode = Control.FOCUS_NONE
-	_hotspot.mouse_filter = Control.MOUSE_FILTER_STOP
-	_hotspot.modulate = Color(1, 1, 1, 0)   # 不可见但可点击
-	_hotspot.visible = false
-	_hotspot.pressed.connect(_on_hotspot_pressed)
-	_overlay.add_child(_hotspot)
+	# 这里原本有一个 `_hotspot`（透明 Button，`MOUSE_FILTER_STOP`）——「点一下继续」靠它
+	# 吃点击推进。2026-10-15 第三轮反馈明令「不要增加玩家操作的**限制**」，于是整个删掉：
+	# 透明按钮哪怕 `modulate.a = 0`，也仍然是一块**真的会在命中测试里胜出**的墙 ——
+	# 盖在目标上时把目标自己的点击抢走，铺满全屏时把整屏的点击抢走。
+	# 现在推进由 `_input()` 旁听（不回吞事件），同一次点击照常落到下面的真控件上。
 
 	# 「跳过教学」按钮：固定在左上角，任何步都能一键跳过整段教学。
+	# ⚠ 它是覆盖层里**唯一**该吃点击的节点，`MOUSE_FILTER_STOP` 是故意的。
 	_skip_btn = Button.new()
 	_skip_btn.name = "TutorialSkipButton"
 	_skip_btn.text = _t("跳过教学", "Skip Tutorial")
@@ -1558,6 +1978,7 @@ func _detach() -> void:
 	if _overlay != null and is_instance_valid(_overlay):
 		_overlay.queue_free()
 	_overlay = null
+	_focus_dim.clear()
 	_target_provider = null
 	_overlay_suppressed = false
 	_layout_signature = ""

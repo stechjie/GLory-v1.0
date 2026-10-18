@@ -45,6 +45,7 @@ var _frames: Array = []
 var _events: Array = []
 var _replays: Array = []
 var _battle_loadouts: Dictionary = {}
+var asset_prefetch_roster: Dictionary = {}
 var _shared_pvp := false
 var _bot_slots: Array[int] = []
 var _worker_task := -1
@@ -116,6 +117,8 @@ func advance(budget_usec: int) -> void:
 			_state = Sim.prepare_team_state(_team)
 			_state["_presentation_battle_id"] = Sim._presentation_battle_id(_state, _team, battle_id)
 			Sim._replay_capture_roster(_state, _roster)
+			if asset_prefetch_roster.is_empty():
+				_capture_asset_prefetch_roster()
 			_prepared = true
 			prepare_usec = maxi(prepare_usec, Time.get_ticks_usec() - preparation_started)
 			# Preparation is an indivisible bounded operation. Account for it before
@@ -165,6 +168,27 @@ func _capture_battle_loadouts() -> void:
 			snap = {"board": bot.board.duplicate(true), "mercenaries": bot.mercs.duplicate(true),
 				"treasures": bot.treasures.duplicate(), "stones_gained": bot.get("stones_gained", {}).duplicate(), "is_ai": true}
 		_battle_loadouts[slot] = snap
+
+# Visual definitions only: no seed, positions, economy, damage or result.
+# All locked player/AI loadouts plus this round's enemies are known before ticks.
+func _capture_asset_prefetch_roster() -> void:
+	for entry in _roster.values():
+		_add_asset_prefetch_unit(entry)
+	for snapshot in _battle_loadouts.values():
+		for cell in NetProtocol.extract_board(snapshot) + NetProtocol.extract_mercenaries(snapshot):
+			if cell is Dictionary:
+				_add_asset_prefetch_unit(cell)
+
+func _add_asset_prefetch_unit(entry: Dictionary) -> void:
+	var definition: Dictionary = entry.get("def", {})
+	var unit_id := str(entry.get("id", definition.get("id", "")))
+	if unit_id.is_empty():
+		return
+	var visual := {}
+	for field in ["model", "model_idle_animation", "model_by_element", "range", "race", "skill_id"]:
+		if definition.has(field):
+			visual[field] = definition[field]
+	asset_prefetch_roster[unit_id] = {"id": unit_id, "def": visual}
 
 func _warm_one_missing_bot() -> bool:
 	# The shared cache clears at 64 entries. Recheck every required key before

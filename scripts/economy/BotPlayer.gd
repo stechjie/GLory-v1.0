@@ -89,7 +89,10 @@ static func prepare_round(bot: Dictionary, round_index: int) -> void:
 		return
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(["glory_live_bot_prep_v2", bot.seed, bot.slot, round_index])
-	bot.mercs = []
+	# 佣兵只活一轮。但 AI 接管真人座位是**半路**接手 —— 那一轮雇的佣兵还在场上，
+	# 必须留着（merc_round 记着它是哪一轮搬进来的），下一轮才照常清空。
+	if int(bot.get("merc_round", -1)) != round_index:
+		bot.mercs = []
 	bot.gold_spent_this_round = false
 	var ledger := {"carrots": int(bot.carrots), "merc_carrots_spent_total": int(bot.carrot_spent),
 		"harvest_tech_level": int(bot.tech), "last_harvest_round": int(bot.get("round", 0))}
@@ -99,11 +102,14 @@ static func prepare_round(bot: Dictionary, round_index: int) -> void:
 	bot["harvest_gain"] = int(ledger.get("last_harvest_gain", 0))
 	_prep_round(bot, round_index, rng, RaceRules.shop_pool(
 		DataRegistry.get_table("race_units").get("units", []), bot.get("races", RaceRules.default_races())))
-	for unit in bot.roster:
+	# 佣兵也要 uid：账本是按 uid 记账的，没有 uid 的佣兵 mirror 不出去、
+	# 玩家收回座位时也就看不到（10.17 第 1 条）。
+	for unit in (bot.roster as Array) + (bot.mercs as Array):
 		if str(unit.get("uid", "")).is_empty():
 			var serial := int(bot.get("next_uid", 0)) + 1
 			bot["next_uid"] = serial
 			unit["uid"] = "bot_%s_%s" % [str(bot.slot), str(serial)]
+	bot["merc_round"] = round_index
 	bot.round = round_index
 
 
@@ -302,12 +308,19 @@ static func _prep_round(bot: Dictionary, round_index: int, rng: RandomNumberGene
 	_try_four_star(bot)
 	_try_tech(bot, round_index)
 	_spend_carrots(bot, round_index, rng)
+	# 商店：接管真人的座位用**玩家那一批**（bot.shop 由 LiveBotEconomy 从账本搬来），
+	# 纯 bot 座位才自己摇。以前一律 _roll_shop() 重摇，于是玩家回来看到的是一批
+	# 从没被 AI 花过钱的货 —— 商店状态和 AI 打的那一轮对不上（10.17 第 1 条）。
+	var shop := _shop_for_round(bot, round_index, units, rng)
 	var refreshes := 0
-	var offers := _roll_shop(units, round_index, rng)
 	while true:
+		var offers: Array = shop["offers"]
+		var sold: Array = shop["sold"]
 		for i in offers.size():
-			var offer: Dictionary = offers[i]
+			var offer: Dictionary = offers[i] if typeof(offers[i]) == TYPE_DICTIONARY else {}
 			if offer.is_empty():
+				continue
+			if i < sold.size() and bool(sold[i]):
 				continue
 			var cost := EconomyLedger.unit_cost(offer, bot.treasures)
 			if int(bot.gold) - cost < _reserve(bot, round_index):
@@ -317,7 +330,11 @@ static func _prep_round(bot: Dictionary, round_index: int, rng: RandomNumberGene
 			bot.gold = int(bot.gold) - cost
 			bot.gold_spent_this_round = true
 			(bot.roster as Array).append({"id": str(offer.get("id", "")), "star": 1, "def": offer, "cost_basis": cost})
-			offers[i] = {}
+			# 卖掉的那一格只打 sold 标记、**不清空** offer：账本里的商店要原样
+			# 留给回来的玩家（客户端按 sold 格置灰，和真人买过之后一模一样）。
+			if i < sold.size():
+				sold[i] = true
+				shop["sold"] = sold
 			_merge(bot)
 			_trim_roster(bot)
 		if refreshes >= MAX_REFRESH_PER_ROUND:
@@ -330,9 +347,49 @@ static func _prep_round(bot: Dictionary, round_index: int, rng: RandomNumberGene
 		if refresh_cost > 0:
 			bot.gold_spent_this_round = true
 		refreshes += 1
-		offers = _roll_shop(units, round_index, rng)
+		_roll_shop_into(bot, shop, units, round_index, rng)
 	_update_second_race(bot)
 	_try_four_star(bot)
+
+
+# 这一轮要用的商店。接管来的那一批只在**同一轮**有效：bot.shop 记着自己属于哪一轮，
+# 跨轮就作废（新的一轮由服务端 _room_begin_next_prep 重新摇好、再搬进来）。
+static func _shop_for_round(bot: Dictionary, round_index: int, units: Array, rng: RandomNumberGenerator) -> Dictionary:
+	var inherited: Variant = bot.get("shop", {})
+	if typeof(inherited) == TYPE_DICTIONARY:
+		var shop: Dictionary = inherited
+		var offers: Array = shop.get("offers", [])
+		if int(shop.get("round", -1)) == round_index and not offers.is_empty():
+			shop["offers"] = offers.duplicate(true)
+			var sold: Array = (shop.get("sold", []) as Array).duplicate()
+			while sold.size() < offers.size():
+				sold.append(false)
+			shop["sold"] = sold
+			shop["refresh_uses"] = int(shop.get("refresh_uses", 0))
+			bot["shop"] = shop
+			return shop
+	var fresh := {"round": round_index, "offer_id": "", "slot": int(bot.get("slot", -1)),
+		"refresh_uses": 0, "offers": [], "sold": []}
+	_roll_shop_into(bot, fresh, units, round_index, rng, false)
+	return fresh
+
+
+# 摇一批新货架进 shop。`bump` 区分"本轮第一次摇"（refresh_uses 保持 0）和"花钱刷新"。
+static func _roll_shop_into(bot: Dictionary, shop: Dictionary, units: Array, round_index: int,
+		rng: RandomNumberGenerator, bump: bool = true) -> void:
+	if bump:
+		shop["refresh_uses"] = int(shop.get("refresh_uses", 0)) + 1
+	var offers := _roll_shop(units, round_index, rng)
+	shop["offers"] = offers
+	var sold: Array = []
+	sold.resize(offers.size())
+	sold.fill(false)
+	shop["sold"] = sold
+	shop["round"] = round_index
+	# offer_id 变了客户端才会重新采纳这批商店（PrepBoardController._adopt_server_shop）。
+	shop["offer_id"] = "bot_%d_%d_%d" % [int(bot.get("slot", -1)), round_index,
+		int(shop.get("refresh_uses", 0))]
+	bot["shop"] = shop
 
 
 static func _roll_shop(units: Array, round_index: int, rng: RandomNumberGenerator) -> Array:
@@ -531,7 +588,8 @@ static func _hire_mercs(bot: Dictionary) -> void:
 		var carrots := int(pick.get("carrot_cost", 0))
 		bot.carrots = int(bot.carrots) - carrots
 		bot.carrot_spent = int(bot.carrot_spent) + carrots
-		owned.append({"id": str(pick.get("id", "")), "star": 1, "def": (pick as Dictionary).duplicate(true), "is_mercenary": true})
+		owned.append({"id": str(pick.get("id", "")), "star": 1, "def": (pick as Dictionary).duplicate(true),
+			"is_mercenary": true, "cost_basis": 0, "merc_slot": owned.size()})
 
 
 # ---------------------------------------------------------------- 宝藏
@@ -634,6 +692,21 @@ static func _arrange_board(bot: Dictionary) -> Array:
 		var u: Dictionary = back[i]
 		board[int(BACK_SLOTS[mini(i, BACK_SLOTS.size() - 1)])] = _cell(u)
 	return board
+
+
+# uid -> 棋盘格下标。给 LiveBotEconomy.mirror 用：玩家收回座位时按这张表落位，
+# 看到的就是 AI 打这一场时的站位（_arrange_board 是纯函数，两边算出来一致）。
+static func board_slots(bot: Dictionary) -> Dictionary:
+	var out := {}
+	var board := _arrange_board(bot)
+	for index in board.size():
+		var cell = board[index]
+		if typeof(cell) != TYPE_DICTIONARY:
+			continue
+		var uid := str((cell as Dictionary).get("uid", ""))
+		if not uid.is_empty():
+			out[uid] = index
+	return out
 
 
 static func _cell(u: Dictionary) -> Dictionary:

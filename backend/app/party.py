@@ -30,6 +30,17 @@ CHAT_LIMIT = 30
 LEFT_GRACE_SEC = 60.0
 
 
+def startable_sizes() -> frozenset[int]:
+    """组队房几个人可以开始匹配。
+
+    服务器的开局闸（routes/party.start、matchmaking.join_group）和客户端的「开始匹配」按钮
+    （快照里的 startable_sizes）都认这一处，开关见 config.party_full_team_only。
+    """
+    if get_settings().party_full_team_only:
+        return frozenset({1, MAX_MEMBERS})
+    return frozenset(range(1, MAX_MEMBERS + 1))
+
+
 class PartyRejected(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
@@ -116,6 +127,8 @@ class Parties:
             "pets": room.pets.copy(),
             "host_pet": room.active_pets.get(room.host, ""),
             "queued": room.queued,
+            # 几个人能开始匹配（10-15）。客户端照它灰按钮，没有这个键的老服务器按 [1, 3]。
+            "startable_sizes": sorted(startable_sizes()),
             "in_match": room.in_match,
             "version": room.version, "messages": room.messages.copy(),
             "voice_epoch": room.voice_epoch,

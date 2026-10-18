@@ -21,6 +21,7 @@ from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app import (admin, admission, analytics, announcements, bans, db, mail, maintenance, matchmaking, party,
                  realtime, schema_check, seasons, single_instance, voice_clips, world_chat)
@@ -285,6 +286,21 @@ app.include_router(patch_routes.router)
 # 而且没有任何生产用途 —— 少一个入口就少一个面。
 if settings.is_dev:
     app.include_router(debug_routes.router)
+
+# 语音消息的音频文件（app/voice_clips.py 写进 media_dir 的 <sha256>.ogg）。
+#
+# 生产上这一步是 Caddy 干的（deploy/Caddyfile 的 `handle_path /media/*` → root
+# /var/lib/glory-media），后端前面有反代，所以后端自己不发文件。
+# 本地测试服没有 Caddy，客户端又要 GET /media/<media> 才能放语音 ——
+# 少了这一段，症状是：语音能录、能上传（如果 ffmpeg 在），但对方点播放没声音
+# （_download 拿到 404 → 返回空字节 → 气泡静默不播）。
+#
+# 🔴 只在 media_dir 非空时挂载：线上 media_dir 由 systemd StateDirectory 给，
+# 值不是空；任何 media_dir 为空的部署（含老配置）行为完全不变，不受影响。
+if settings.media_dir:
+    _media_root = Path(settings.media_dir)
+    _media_root.mkdir(parents=True, exist_ok=True)
+    app.mount("/media", StaticFiles(directory=str(_media_root)), name="media")
 
 
 @app.get("/health")

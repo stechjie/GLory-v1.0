@@ -6,6 +6,7 @@ import types
 import unittest
 import uuid
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -64,6 +65,14 @@ TRIO = [player(1), player(2), player(3)]
 
 
 class PartyMatchTests(unittest.TestCase):
+    def test_pruned_room_log_uses_room_id_field(self):
+        # Real party.Room exposes id; logging must not crash a completed prune.
+        store = types.SimpleNamespace(prune_disconnected=lambda: [types.SimpleNamespace(id="room-test")])
+        with mock.patch.object(matchmaking.party, "current", return_value=store):
+            with self.assertLogs(matchmaking.log, level="INFO") as captured:
+                asyncio.run(self.maker._prune_party_ghosts())
+        self.assertIn("room-test", captured.output[0])
+
     def setUp(self):
         # matchmaking 里是 `from app import party`（函数内现取）。整套 pytest 一起跑时，
         # 别的测试先导入过真的 app.party，包上的 `party` 属性已经指向它 —— 只换 sys.modules 不够，
@@ -147,11 +156,26 @@ class PartyMatchTests(unittest.TestCase):
         self.assertEqual({msg["state"] for _, msg in self.sent}, {"found"})
         self.assertFalse(finished)
 
-    def test_two_person_party_is_rejected(self):
-        # 只能单排或满 3 人（docs/排位系统设计.md；10-08 休闲也一样）。
-        with self.assertRaises(ValueError):
-            self.maker.join_group([player(1), player(2)], matchmaking.CASUAL)
-        self.assertEqual(self.maker.state_of(player(1))["state"], "idle")
+    def test_two_person_party_matches_with_solos_by_default(self):
+        # 10-15：玩家太少，暂时放开 2 人组队。2 人队拼一个单人，队伍不拆。
+        duo = [player(1), player(2)]
+        self.maker.join_group(duo.copy(), matchmaking.CASUAL)
+        for i in range(3, 7):
+            self.maker.join(player(i), matchmaking.CASUAL)
+        asyncio.run(self.maker.tick())
+        self.assertEqual(len(self.sent), 6)
+        teams = {self.maker._pending[self.maker._pending_of[pid]].member(pid).team for pid in duo}
+        self.assertEqual(len(teams), 1, "2 人队必须在同一边")
+
+    def test_two_person_party_is_rejected_when_full_team_only(self):
+        # 人够了把 GLORY_PARTY_FULL_TEAM_ONLY 打开：回到只能单排或满 3 人（docs/排位系统设计.md）。
+        strict = types.SimpleNamespace(party_full_team_only=True)
+        with mock.patch.object(matchmaking.party, "get_settings", lambda: strict):
+            with self.assertRaises(ValueError):
+                self.maker.join_group([player(1), player(2)], matchmaking.CASUAL)
+            self.assertEqual(self.maker.state_of(player(1))["state"], "idle")
+            self.maker.join_group(TRIO.copy(), matchmaking.CASUAL)
+        self.assertEqual(self.maker.state_of(player(1))["state"], "queued", "满 3 人照常能排")
 
     def test_trio_stays_together_and_room_closes_only_after_all_accept(self):
         self._match_trio_with_three_solos()

@@ -63,12 +63,32 @@ static func auto_login_enabled() -> bool:
 # 宁可多等两秒也不要在弱网上把玩家直接判成登录失败。
 const REQUEST_TIMEOUT_SEC := 15.0
 
+# --- 本地测试服覆写（详见 NetworkConfig.gd 同名段落）---------------------------
+# 刻意与 NetworkConfig / NetTLS 各留一份实现，不抽公共脚本。
+#
+# 用途：GLory-codex（测试服）在 Godot 编辑器里直接 F5 时，命令行参数带不进来，
+# 账号后端会连到线上。这里给一条不带参数也能生效的路：
+#     user://local_test_override.cfg  →  [account] backend_url=http://192.168.2.100:8099
+# 正式服（config/name="正式服"）的 user:// 里没有这份文件 ⇒ 走线上地址，不变。
+const LOCAL_TEST_CFG := "user://local_test_override.cfg"
+
+static func _local_test_cfg(section: String, key: String) -> String:
+	if not FileAccess.file_exists(LOCAL_TEST_CFG):
+		return ""
+	var cfg := ConfigFile.new()
+	if cfg.load(LOCAL_TEST_CFG) != OK:
+		return ""
+	return str(cfg.get_value(section, key, "")).strip_edges()
+
 static func backend_url() -> String:
 	for arg in OS.get_cmdline_args():
 		if arg.begins_with(BACKEND_URL_FLAG):
 			var value := arg.substr(BACKEND_URL_FLAG.length()).strip_edges()
 			if not value.is_empty():
 				return value.rstrip("/")
+	var override := _local_test_cfg("account", "backend_url")
+	if not override.is_empty():
+		return override.rstrip("/")
 	return DEFAULT_BACKEND_URL.rstrip("/")
 
 static func endpoint(path: String) -> String:

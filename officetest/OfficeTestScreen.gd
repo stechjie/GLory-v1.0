@@ -733,6 +733,9 @@ func _on_upgrade_star(delta: int) -> void:
 
 
 func _rebuild_edit_preview() -> void:
+	# 编辑态的 uid 代表槽位/佣兵序号，不代表模型身份。换人或删除前一佣兵后
+	# 相同 uid 可以指向另一单位，必须连同血条、动画及 VFX 缓存一起重建。
+	_clear_unit_visuals()
 	_state = OfficeTestSim.build_test_state(_config, true)
 	_update_grid_buttons_state()
 	_refresh_king_row()
@@ -966,6 +969,7 @@ func _return_to_edit() -> void:
 	_sim_accumulator = 0.0
 	_result = {}
 	_demo_running = false
+	_clear_unit_visuals()
 	_state = OfficeTestSim.build_test_state(_config, true)
 	_edit_mode = true
 	_battle_setup_ready = true

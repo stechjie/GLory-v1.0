@@ -66,10 +66,6 @@ log = logging.getLogger("glory.matchmaking")
 MATCH_SIZE = 6
 TEAM_SIDE_SIZE = 3
 
-# 组队排队只收单人或满 3 人（docs/排位系统设计.md 拍板：「只能单排或满 3 人，不做 2 人车队」，
-# 用户 10-08 确认休闲也一样）。2+1 是匹配里最难受的组合：那个路人是局外人，队里还有语音。
-PARTY_SIZES = frozenset({1, TEAM_SIDE_SIZE})
-
 # 能排队的模式。第 5 步（分数 / 段位 / 信誉分）做完之后 ranked 也开了。
 #
 # ⚠️ 排位**还要过时间窗口**（19:00–23:00，`ranked.accepting_now`）和信誉分闸
@@ -369,8 +365,8 @@ class Matchmaker:
                    ratings: dict[uuid.UUID, int] | None = None,
                    seats: dict[uuid.UUID, int] | None = None,
                    seedling_races: dict[uuid.UUID, list[str]] | None = None) -> dict:
-        """一个单人或满 3 人的队伍作为一个整体进队列（PARTY_SIZES）。"""
-        if mode not in OPEN_MODES or len(players) not in PARTY_SIZES \
+        """一支组队房的队伍作为一个整体进队列。几个人能进看 party.startable_sizes()。"""
+        if mode not in OPEN_MODES or len(players) not in party.startable_sizes() \
                 or len(players) != len(set(players)):
             raise ValueError("队伍人数或模式无效")
         if any(self.state_of(pid)["state"] != "idle" for pid in players):
@@ -564,7 +560,7 @@ class Matchmaker:
             log.exception("组队房掉线成员清理失败，这一轮放过")
             return
         for room in rooms:
-            log.info("组队房 %s 的掉线成员已过宽限，已剔除", room.room_id)
+            log.info("组队房 %s 的掉线成员已过宽限，已剔除", room.id)
 
     async def _send_one(self, player_id: uuid.UUID, payload: dict) -> int:
         try:
@@ -866,7 +862,7 @@ def allocate_seats(players: list[uuid.UUID], teams: list[int],
     """每个人在本队里坐 0~2 号哪个位置，与 players 同序（10-08：组队房选的位置带进对局）。
 
     满 3 人的队伍独占一队，三个人的位置本来就不冲突，**一定按他们选的坐**。
-    一队是几个单人时可能撞位：按 players 的先后，先到先得，撞了的坐剩下的空位。
+    一队由几份拼成时（2 人队 + 单人、几个单人）可能撞位：按 players 的先后，先到先得，撞了的坐剩下的空位。
     没选过位置的（单排队列进来的）也给一个空位 —— 写进名片总比让战斗服务器按到达顺序排更可预期。
     """
     wanted: dict[uuid.UUID, int] = {}

@@ -880,12 +880,15 @@ func _needs_four_star_sell_confirm(cell: Variant) -> bool:
 
 func _ask_four_star_sell(where: String, index: int, cell: Dictionary) -> void:
 	var d: Dictionary = cell.get("def", {})
-	var unit_name := str(d.get("name", d.get("id", "棋子")))
+	# 10.16 bug 文档第 2 条：棋子名与标题 / 正文 / 按钮同一套本地化口径。
+	# 直读 d.name 在英文界面下永远是中文（canonicalize 只同步改名、不做本地化）；
+	# 这里弹的正是「卖掉一颗四星」，而四星只能由三星 + 升级石得来，属于同一条链路。
+	var english := LocaleManager.get_locale() == "en"
+	var unit_name := PrepWidgets.unit_name(d) if not d.is_empty() else ("Unit" if english else "棋子")
 	# 对话框解析时棋盘可能已经变了（拖拽、合成、服务端覆盖）。记下 id，回来再核对，
 	# 否则确认键会卖掉**换到这一格上的另一枚棋子**。
 	var unit_id := str(cell.get("id", ""))
 	var refund := _sell_refund_for_cell(cell)
-	var english := LocaleManager.get_locale() == "en"
 	DialogService.confirm({
 		"request_id": FOUR_STAR_SELL_DIALOG,
 		"owner": self,
@@ -1241,7 +1244,13 @@ func _show_linkage_detail(link_id: String) -> void:
 	var names: Array[String] = []
 	for req in link.get("requires", []):
 		names.append(PrepWidgets.localized_name(TreasureService.treasure_by_id(str(req))))
-	var title := str(TREASURE_LINKAGE_LOGOS.get(link_id, link_id))
+	# 标题走与 _show_set_detail / _bonus_title 同一口径：英文取 name_en、中文取 name。
+	# 原来直接用 TREASURE_LINKAGE_LOGOS —— 那是**贴图名**（恒为中文），
+	# 英文界面下标题就会冒中文（玩家截图：面板标题「凤凰涅槃」而正文已是英文）。
+	var entry := CodexService.link_text(link_id)
+	var title := str(entry.get("name_en", "")) if PrepWidgets.is_en() else str(entry.get("name", ""))
+	if title.is_empty():
+		title = str(TREASURE_LINKAGE_LOGOS.get(link_id, link_id))
 	var lines: Array[String] = [title]
 	if PrepWidgets.is_en():
 		lines.append("Treasures: %s" % " + ".join(names))

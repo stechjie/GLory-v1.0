@@ -111,6 +111,10 @@ func _update_vfx_camera_shake() -> void:
 	pass
 
 func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
+	# 建模也会主动刷新表现；只暂停回放不足以挡住首帧技能和技能音效。
+	# 不推进游标/播种标记，Go 撤下后的首帧仍会完整播放这些事件。
+	if _pvp_combat_waiting:
+		return
 	var current := _collect_vfx_units(state_snapshot)
 	_sync_persistent_unit_vfx(current)
 	_play_visual_events(state_snapshot,current)

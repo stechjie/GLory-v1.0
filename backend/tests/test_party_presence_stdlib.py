@@ -48,6 +48,7 @@ config = types.ModuleType("app.config")
 
 class _Settings:
     party_voice_config_file = "/nonexistent"
+    party_full_team_only = False
 
 
 config.get_settings = lambda: _Settings()

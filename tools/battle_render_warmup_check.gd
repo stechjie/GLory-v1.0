@@ -41,6 +41,11 @@ func _run() -> void:
 				h.expect(int(item.draw_frames) == 4 and item.drawn_texture_paths.size() == 2,
 					"direct_body_and_impact_%d" % fast_count, "The original projectile body and impact both draw with each Omni state in four frames")
 		h.expect(fast_count == 2, "complex_routes_preserved", "Only two standard projectiles are accelerated; combo, guard and blood-link teardown keep full composers")
+		h.expect(Warmup.pending_job_count([replay], template) == 0, "background_jobs_reused", "Completed preparation leaves no remaining render jobs")
+		var other_template := SubViewport.new()
+		other_template.transparent_bg = false
+		h.expect(Warmup.pending_job_count([replay], other_template) == 5, "format_cache_isolation", "Different viewport formats still require their own pipelines")
+		other_template.free()
 		var second: Dictionary = await warmup.prepare_replays([replay], template)
 		h.expect(int(second.get("rendered", -1)) == 0, "same_renderer_reuse", "Second preparation in the same renderer/quality reuses completed variants")
 		var keep_running := {"value": true}

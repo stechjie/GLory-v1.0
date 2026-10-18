@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Repeatable debug APK build; --sync updates Git and Drive before staging."""
+"""Repeatable slim release APK build; --sync updates Git and Drive before staging."""
 from __future__ import annotations
 
 import argparse
@@ -525,7 +525,7 @@ def export_preset(stage, wanted):
                             "ui/fonts/NotoSansSC-OFL.txt"]),
         ("exclude_filter", ["*.bak", "*.bak_*", "*.backup*", "backups/*", "*/backups/*", "*/Demo_GodotVFX/*",
                             "*/New folder/*", "*/desktop.ini", "*/Thumbs.db", "tools/*", "officetest/*", "reports/*",
-                            "backend/*", "work/*", "build/*", "logs/*", "docs/*", "*.pem", "*.key", ".env*",
+                            "backend/*", "work/*", "build/*", "logs/*", "docs/*", "deploy/*", "delivery/*", "prechange_backups/*", "effects/preview/*", "*.pem", "*.key", ".env*",
                             "scenes/debug/*", "effects/vfx3d/experimental/*", "addons/effekseer/*",
                             "addons/glory_voice/glory_voice.gdextension",
                             # Unreferenced vendor demo points to an undelivered shield_02 scene.
@@ -757,6 +757,16 @@ def verify_import_diagnostics(content, stage, logdir, material_report):
     return report
 
 
+def known_export_shutdown_diagnostic(line):
+    """Exact host-only cleanup diagnostics; callers must verify export completion first."""
+    patterns = (
+        r"ERROR: \d+ resources still in use at exit \(run with --verbose for details\)\.",
+        r"ERROR: Pages in use exist at exit in PagedAllocator: N12VariantPools11BucketSmallE",
+        r"ERROR: \d+ RID allocations of type '(?:N13RendererDummy15MaterialStorage11DummyShaderE|PN13RendererDummy14TextureStorage12DummyTextureE)' were leaked at exit\.",
+    )
+    return any(re.fullmatch(pattern, line) for pattern in patterns)
+
+
 def verify_export_diagnostics(content, logdir):
     """Classify known exporter diagnostics without hiding a failed export.
 
@@ -779,8 +789,7 @@ def verify_export_diagnostics(content, logdir):
         line = match[0]
         if not ERROR_RE.search(line):
             continue
-        if done >= 0 and match.start() > done and re.fullmatch(
-                r"ERROR: \d+ RID allocations of type 'N13RendererDummy15MaterialStorage11DummyShaderE' were leaked at exit\.", line):
+        if match.start() > done and known_export_shutdown_diagnostic(line):
             accepted.append(line)
         elif re.fullmatch(
                 r"ERROR: Can't open file from path 'res://addons/effekseer/bin/android/libeffekseer\.(arm32|arm64)\.so'\.",
@@ -795,7 +804,7 @@ def verify_export_diagnostics(content, logdir):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="将 GLory-v1.0 与本地 res 合并到隔离目录构建 Android 调试 APK；--sync 先更新 Git 和 Drive。")
+    parser = argparse.ArgumentParser(description="将 GLory-v1.0 与本地 res 合并到隔离目录构建 Android 精简 Release APK；--sync 先更新 Git 和 Drive。")
     parser.add_argument("--sync", action="store_true", help="先 git pull --ff-only 更新当前分支代码和仓库资源，再同步 Drive 资源，最后构建")
     parser.add_argument("--check", action="store_true", help="只读检查工具环境和资源目录；即使带 --sync 也不更新、导入或构建")
     parser.add_argument("--project", type=Path, default=ROOT / "GLory-v1.0")
@@ -806,7 +815,16 @@ def main():
     parser.add_argument("--templates", help="匹配 Godot 版本的导出模板目录")
     parser.add_argument("--preset", help="导出预设名，默认选首个 Android 预设")
     parser.add_argument("--patch-config", type=Path, help="更新器基础包配置 JSON；只修改隔离构建目录")
+    parser.add_argument("--debug", action="store_true", help="仅诊断使用调试包；默认精简 Release")
+    parser.add_argument("--version", help="覆盖 Android versionName")
+    parser.add_argument("--version-code", type=int, help="覆盖 Android versionCode")
+    parser.add_argument("--keystore", type=Path, default=ROOT / "build/aab/.signing/glory-release.keystore")
+    parser.add_argument("--result-file", type=Path, help="额外保存本次构建结果 JSON")
     args = parser.parse_args()
+    if args.version_code is not None and not 1 <= args.version_code <= 2100000000:
+        parser.error("version-code must be between 1 and 2100000000")
+    if not args.debug and not args.keystore.is_file():
+        parser.error("Release keystore missing; no debug signing fallback")
     project = args.project.expanduser().resolve()
     if not (project / "project.godot").is_file():
         raise RuntimeError(f"不是 Godot 工程：{project}")
@@ -856,6 +874,22 @@ def main():
                 report = stage_project(project, assets, stage, logdir)
             engine = prepare_engine(env, work)
             preset, package = export_preset(stage, args.preset)
+            # Change only the selected generated Android preset.
+            cfg = stage / "export_presets.cfg"
+            text = cfg.read_text()
+            preset_id = next(m[1] for m in re.finditer(r'(?ms)^\[preset\.(\d+)\]\n(.*?)(?=^\[|\Z)', text)
+                             if f'name="{preset}"' in m[2])
+            options = re.search(r'(?ms)^\[preset\.' + preset_id + r'\.options\]\n(.*?)(?=^\[|\Z)', text)
+            values = {"gradle_build/export_format": "0", "package/signed": "true" if args.debug else "false"}
+            if args.version is not None:
+                values["version/name"] = json.dumps(args.version)
+            if args.version_code is not None:
+                values["version/code"] = str(args.version_code)
+            body = options[1]
+            for key, value in values.items():
+                body = re.sub(r'(?m)^' + re.escape(key) + r'=.*\n?', '', body)
+                body += key + '=' + value + '\n'
+            cfg.write_text(text[:options.start(1)] + body + text[options.end(1):])
             if args.patch_config:
                 from prepare_patch_base import from_config
                 from_config(stage, args.patch_config, "android")
@@ -873,21 +907,28 @@ def main():
             imported = logged_process([engine, "--headless", "--path", stage, "--import"], logdir / "import.log", child_env, strict=False)
             materials = verify_model_materials(engine, stage, logdir, child_env)
             import_diagnostics = verify_import_diagnostics(imported, stage, logdir, materials)
+            import glory_slim
+            slim = glory_slim.apply(stage, engine, logdir)
+            note(f"依赖扫描完成：排除 {len(slim['removed_source_paths'])} 个无引用资源，保留原始画质和 ABI。")
             outdir = build / "apk"
             outdir.mkdir(exist_ok=True)
-            apk = outdir / f"Glory-debug-{stamp}-{commit[:8]}.apk"
-            note(f"导出 Android 调试包，包名 {package}，预设 {preset}…")
+            apk = outdir / f"Glory-{'debug' if args.debug else 'release-slim'}-{stamp}-{commit[:8]}.apk"
+            note(f"导出 Android 精简包，包名 {package}，预设 {preset}…")
             export_command = [engine, "--headless", "--path", stage]
             # A clean checkout has no generated android/build module. Ask
             # Godot to install the matching source template as part of this
             # first export; subsequent builds reuse the isolated module.
             if not (stage / "android/build/config.gradle").is_file():
                 export_command.append("--install-android-build-template")
-            export_command += ["--export-debug", preset, apk]
+            export_command += ["--export-debug" if args.debug else "--export-release", preset, apk]
             exported = logged_process(export_command, logdir / "export.log", child_env, strict=False)
             export_diagnostics = verify_export_diagnostics(exported, logdir)
             if not apk.is_file():
                 raise RuntimeError("Godot 未生成 APK。")
+            compression = None
+            if not args.debug:
+                from glory_package import sign_apk
+                compression = sign_apk(apk, env["build_tools"], args.keystore, child_env, logdir)
             with zipfile.ZipFile(apk) as archive:
                 bad = archive.testzip()
                 if bad:
@@ -903,6 +944,8 @@ def main():
             (logdir / "apk-badging.txt").write_text(badging + "\n")
             if f"package: name='{package}'" not in badging:
                 raise RuntimeError("APK 包名与导出预设不一致。")
+            if not args.debug and "application-debuggable" in badging:
+                raise RuntimeError("Release APK must not be debuggable")
             if "android.permission.RECORD_AUDIO" not in badging:
                 raise RuntimeError("APK 缺少语音录音权限。")
             for unwanted in ("android.permission.CAMERA", "android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"):
@@ -914,12 +957,17 @@ def main():
                            accepted_fbx_source_texture_errors=import_diagnostics["accepted_fbx_source_texture_errors"],
                            host_shutdown_diagnostics=export_diagnostics,
                            model_materials=materials["summary"] if materials else None,
-                           git_sync=git_sync)
+                           git_sync=git_sync, slim=slim, compression=compression, debug=args.debug)
             if args.patch_config:
                 summary["patch_base"] = retain_patch_base(stage, engine, preset, "android", args.patch_config,
-                    outdir / (apk.stem + "-patch-base"), apk, debug=True)
+                    outdir / (apk.stem + "-patch-base"), apk, debug=args.debug)
+                from glory_package import verify_baseline
+                summary["patch_base"]["payload_verification"] = verify_baseline(
+                    apk, Path(summary["patch_base"]["archive"]), "android")
             json_write(logdir / "result.json", summary)
             json_write(build / "latest-apk.json", summary)
+            if args.result_file:
+                json_write(args.result_file.expanduser().resolve(), summary)
             latest = outdir / "Glory-latest.apk"
             temporary = outdir / f".latest-{os.getpid()}"
             temporary.symlink_to(apk.name)

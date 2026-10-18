@@ -73,6 +73,9 @@ var reason_labels: Array[Label] = []   # 原 _shop_reason_labels
 var picker_open := false               # 原 _shop_picker_open：弹窗是否展开
 var selected := -1                     # 原 _selected_shop：当前选中的卡位，-1 = 未选
 var drag_sell_mode := false            # 原 _shop_drag_sell_mode：是否处于拖拽出售态
+# 10.18：每张卡上一次「成交点击」的时间戳（ms）。
+# 配对只认 `pressed`（松手才发、起过拖就不发）⇒「按住划走再回来点一下」不会被误判成双击。
+var _card_press_ms: Dictionary = {}
 
 
 # 卡位相关的数组一次性清空。构建前调用，避免重建界面时残留上一批控件引用
@@ -85,6 +88,7 @@ func clear_slot_arrays() -> void:
 	price_labels.clear()
 	race_icons.clear()
 	reason_labels.clear()
+	_card_press_ms.clear()
 
 
 # 商店卡片的 `drag_owner` 是本面板，`PrepDragButton` 起拖/松手时按名字回调这两个
@@ -171,6 +175,9 @@ const MONEY_BAG_GLOW_SHADER: Shader = preload("res://assets/shaders/prep_money_b
 const GOLD_NUMBER_FONT: Font = preload("res://assets/fonts/Knewave-Regular.ttf")
 const SHOP_CARD_SEPARATION := 12             # 手牌卡间距
 const SHOP_CARD_SIZE := Vector2(180, 180)    # 手牌卡尺寸（稀有度框比例 ~1:1）
+# 10.18「商店购买操作优化」：双击购买的判定窗口（ms）。
+# 两次点击间隔超过它就不算双击，退回「两次独立单击」（各自只切换选中态）。
+const SHOP_DOUBLE_CLICK_WINDOW_MS := 350
 const UNIT_PORTRAIT_DIR := "res://assets/ui/unit_portraits"   # 头像 = <dir>/<unit_id>.png
 const SHOP_CARD_FRAME_PATHS := {             # tier(1/2/3) → 普通/稀有/史诗框
 	1: "res://assets/ui/shop/card_frame_common.png",
@@ -659,15 +666,53 @@ func refresh() -> void:
 func _refresh_picker() -> void:
 	if panel != null:
 		panel.visible = picker_open
+	# z_index 只决定绘制顺序，后创建的收起卷轴仍会抢走卡片的触摸。
+	# 展开时隐藏整个按钮子树；关闭后恢复入口及其空闲动画。
+	if open_button != null:
+		open_button.visible = not picker_open
 	if _shop_scroll_idle != null:
 		_shop_scroll_idle.set_effect_active(not picker_open)
 	if side_controls != null:
 		side_controls.visible = picker_open     # 外挂层（钱袋A+刷新）跟商店一起显隐
 	if _closed_money_bag != null:
 		_closed_money_bag.visible = not picker_open   # 商店关时才显示钱袋 B
+	_set_bottom_bar_blocked(picker_open)
 	# 商店开着时待命格子被商店盖住，要禁用它们的输入，别去抢商店区域的点击。
 	# 但待命格属于**棋盘面板**，商店不该伸手去改别人的控件 —— 发信号，宿主去调。
 	picker_toggled.emit(picker_open)
+
+
+# 商店弹窗盖住底部木牌/钱袋 B 时，让它们**停止吃点击**（10.16 反馈问题 1）。
+#
+# 现场：商店开着时在弹窗里点一下（哪怕是采购那套流程里的空白处），商店又被关掉了。
+#
+# 根因**不是几何**：木牌 200×66 就压在整个弹窗 896×230 里面，弹窗自己的
+# `mouse_filter` 也是 STOP（`PanelContainer` 的默认值，`apply_transparent_panel_style`
+# 只改 stylebox、不动它）。真正的原因是**拾取顺序**：GUI 命中测试按树的**逆序**回
+# 子节点走，`z_index` 不参与判定。弹窗挂在 `center_host`（PrepUI 的第 5 个子节点）下，
+# 而木牌的 `ShopClosedControls` 是 PrepUI **更靠后**的兄弟 ⇒ 逆序先碰到
+# `ShopClosedControls`，这一下就落到那块**看不见的木牌**上，`toggle_picker()`
+# 把刚打开的商店关了。（实测：弹窗 z=40 / 木牌 z=6，拾取到的仍是木牌；同一机制
+# 也是 9.13「商店右端操作穿透到语音键」的成因。）
+#
+# 处理口径与 `PrepUI._set_overlay_blocked` 一致 —— **被遮住的东西不吃输入**。
+# 只改 `mouse_filter`、**不改 visible**：木牌本来就被弹窗背景（920×280，比判定框
+# 896×230 还大一圈）完整盖住，藏不藏看起来一样，但改 visible 会连带影响
+# `is_visible_in_tree()` 的读者（教学箭头按目标可见性解析），没必要冒这个风险。
+#
+# ⚠ 恢复必须 `set_deferred`：「点弹窗外面关店」那一下，`close_picker()` 是在
+# `PrepScreen._input`（**GUI 之前**）里跑的；当场把 STOP 恢复回去，紧接着的同一次
+# GUI 命中测试就又能打到木牌上，把商店**重新打开** —— 正是 `_set_overlay_blocked`
+# 注释里记着的那个坑，这里同源同解。
+func _set_bottom_bar_blocked(blocked: bool) -> void:
+	for node in [_closed_money_bag, open_button]:
+		var control := node as Control
+		if control == null or not is_instance_valid(control):
+			continue
+		if blocked:
+			control.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		else:
+			control.set_deferred("mouse_filter", Control.MOUSE_FILTER_STOP)
 
 
 # 原 _toggle_shop_picker（PrepUI.gd）
@@ -676,6 +721,7 @@ func toggle_picker() -> void:
 	picker_open = not picker_open
 	if not picker_open:
 		selected = -1
+		_card_press_ms.clear()
 		card_selected.emit(-1)
 	# 打开商店要关掉佣兵与队伍佣兵弹窗 —— 同样由宿主协调，见 picker_toggled。
 	_refresh_picker()
@@ -684,6 +730,7 @@ func toggle_picker() -> void:
 # 原 _close_shop_picker（PrepUI.gd）
 func close_picker() -> void:
 	selected = -1
+	_card_press_ms.clear()
 	card_selected.emit(-1)
 	if not picker_open:
 		return
@@ -704,6 +751,14 @@ func _on_card_selected(index: int) -> void:
 
 func _on_card_pressed(card: BaseButton, index: int) -> void:
 	if bool(card.get_meta("long_press_triggered", false)):
+		return
+	# 10.18：窗口内再点一次同一张卡 = 快速双击 ⇒ 直接买，不再翻转选中态。
+	var now_ms := Time.get_ticks_msec()
+	var last_ms: int = int(_card_press_ms.get(index, -1))
+	_card_press_ms[index] = now_ms
+	if last_ms >= 0 and now_ms - last_ms <= SHOP_DOUBLE_CLICK_WINDOW_MS:
+		_card_press_ms.erase(index)
+		_request_buy(index)
 		return
 	_on_card_selected(index)
 
@@ -732,8 +787,15 @@ func _purchase_reason(index: int) -> String:
 func buy_selected() -> void:
 	if selected < 0 or selected >= GameState.shop_offers.size():
 		return
-	var offer: Dictionary = GameState.shop_offers[selected]
-	if offer.is_empty() or bool(GameState.shop_sold[selected]):
+	_request_buy(selected)
+
+
+# 10.18：钱袋 A（选中后点购买）与「快速双击卡片」两条路共用的成交前校验。
+func _request_buy(index: int) -> void:
+	if index < 0 or index >= GameState.shop_offers.size():
+		return
+	var offer: Dictionary = GameState.shop_offers[index]
+	if offer.is_empty() or bool(GameState.shop_sold[index]):
 		return
 	# 买不了时给提示（原推车按钮的 tooltip 逻辑搬过来）
 	if GameState.gold < EconomyLedger.unit_cost(offer, GameState.owned_treasures, GameState.team_clearance_sale_active):
@@ -741,7 +803,7 @@ func buy_selected() -> void:
 		return
 	# 10.05：待命区满不再是「买不了」。落点（待命 / 棋盘空格 / 就地升星）
 	# 由宿主在成交那一刻决定，见 PrepUI._on_shop_buy_requested。
-	buy_requested.emit(selected)
+	buy_requested.emit(index)
 
 
 # 原 _format_gold_interest_detail（PrepUI.gd）

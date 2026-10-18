@@ -494,7 +494,7 @@ async def start(body: StartBody, claims: Annotated[Claims, Depends(current_claim
             headers={"X-Glory-Reason": reason})
     if room.mode not in matchmaking.OPEN_MODES:
         raise HTTPException(status_code=409, detail="这个模式还未开放")
-    if len(members) not in matchmaking.PARTY_SIZES:
+    if len(members) not in party.startable_sizes():
         raise HTTPException(status_code=409, detail="只能单人或满 3 人开始匹配，再邀请一位好友吧",
                             headers={"X-Glory-Reason": "party_size"})
     seedling: dict[uuid.UUID, list[str]] = {}

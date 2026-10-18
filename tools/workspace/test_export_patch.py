@@ -20,6 +20,22 @@ class PackExportDiagnosticTests(unittest.TestCase):
             record = json.loads((root / "export-diagnostics.json").read_text())
             self.assertEqual(record["host_shutdown_diagnostics"], [self.leak])
 
+    def test_host_cleanup_requires_completed_export(self):
+        from glory_build import verify_export_diagnostics
+        diagnostics = [
+            "ERROR: 90 resources still in use at exit (run with --verbose for details).",
+            "ERROR: Pages in use exist at exit in PagedAllocator: N12VariantPools11BucketSmallE",
+            "ERROR: 1 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.",
+        ]
+        with tempfile.TemporaryDirectory() as folder:
+            for verify, marker in [(verify_pack_export, "savezip"), (verify_export_diagnostics, "export")]:
+                for line in diagnostics:
+                    verify("[ DONE ] " + marker + "\n" + line, Path(folder))
+                    with self.assertRaises(RuntimeError):
+                        verify(line + "\n[ DONE ] " + marker, Path(folder))
+                with self.assertRaises(RuntimeError):
+                    verify("[ DONE ] " + marker + "\nERROR: Cannot save resource", Path(folder))
+
     def test_incomplete_or_early_leak_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
             for text in (self.leak, self.leak + "\n[ DONE ] savezip"):

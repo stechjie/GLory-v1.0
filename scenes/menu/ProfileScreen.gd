@@ -239,7 +239,7 @@ func _build() -> void:
 		_settings_panel.add_theme_constant_override("separation", Tokens.GAP_M)
 		_settings_panel.alignment = BoxContainer.ALIGNMENT_CENTER
 		_body.add_child(_settings_panel)
-		_settings_panel.add_child(_column(400, [_name_section(), _bind_account_slot()]))
+		_settings_panel.add_child(_column(400, [_name_section(), _bind_account_slot(), _privacy_section()]))
 		_settings_panel.add_child(_column(440, [_bio_section()]))
 		_settings_panel.add_child(_column(340, [_danger_zone()]))
 		_select_profile_tab(false)
@@ -937,6 +937,26 @@ func _placeholder_block(title: String, rows: Array) -> Control:
 	return panel
 
 
+func _privacy_section() -> Control:
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", Tokens.GAP_S)
+	for entry in [
+		[_text("隐私政策", "Privacy policy"), "https://glorytd-api.duckdns.org/legal/privacy.html"],
+		[_text("账号与数据删除说明", "Account and data deletion"), "https://glorytd-api.duckdns.org/legal/delete-account.html"],
+	]:
+		var button := ACTION_BUTTON.instantiate() as Button
+		button.text = str(entry[0])
+		button.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+		button.pressed.connect(_open_privacy_url.bind(str(entry[1])))
+		column.add_child(button)
+	return column
+
+
+func _open_privacy_url(url: String) -> void:
+	if OS.shell_open(url) != OK:
+		_status.text = _text("无法打开浏览器，请联系 bytegamesg2025@gmail.com", "Unable to open browser. Contact bytegamesg2025@gmail.com")
+
+
 # 注销账号。**这一版唯一能真正删除个人数据的途径。**
 #
 # 为什么必须有：生日是「只能设一次」的（产品决定），签名可以清空、性别地区可以
@@ -962,13 +982,12 @@ func _danger_zone() -> Control:
 	column.add_child(title)
 
 	var warn := Label.new()
-	# 购买与对局记录会匿名保留（database/017_account_deletion.sql）—— 这件事要在删之前说清楚，
-	# 商店的注销政策也要求写明保留了什么、为什么。
+	# 举报快照及部分技术记录仍可能关联玩家，不能承诺全部不可逆匿名化。
 	warn.text = _text(
-		"昵称、头像、资料、好友和聊天全部删除，宠物、钻石随账号作废，不可恢复，也没有冷静期。"
-		+ "购买与对局记录会去掉身份后保留，用于对账和处理违规。",
-		"Name, avatar, profile, friends and chats are deleted for good; pets and diamonds go with the account. "
-		+ "Purchase and match records are kept without your identity, for accounting and rule enforcement.")
+		"个人资料、好友和普通聊天会删除，宠物、钻石及进度不可恢复。"
+		+ "部分对局、物品流水、处罚、举报证据及技术记录仍会保留，用于核对记录、处理争议和防止滥用。详见账号与数据删除说明。",
+		"Profile, friends and ordinary chats are deleted; pets, diamonds and progress cannot be recovered. "
+		+ "Some match, item, penalty, report and technical records remain for verification, disputes and abuse prevention. See Account and data deletion.")
 	warn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	warn.add_theme_font_size_override("font_size", Tokens.FONT_BODY - 4)
 	warn.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
