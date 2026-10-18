@@ -710,7 +710,10 @@ func _death_book(origin: Vector3, target: Vector3, context: Dictionary) -> void:
 	var aura := g("BookAura", book_at, 1.6, {"softness": 1.3, "core_white": 0.25, "edge_dark": 0.3})
 	var sigil := g("BookSigil", book_at, 0.55, {"shape": SHAPE_SEAL, "pattern": 6, "seal_rings": 0.0, "stroke": 0.07, "fill": 0.0, "core_white": 0.55})
 	# 有目标：翻书 → 光波飞出去收人 → 魂火飞回 → 合书，整段要长一些。
-	var close_at := 1.62 if has_victim else 1.25
+	# 10.18：非 Boss 目标先被青光定身 SOUL_HOLD_SEC 秒，魂火之后才起飞，合书跟着推后。
+	var close_at := 1.25
+	if has_victim:
+		close_at = 1.62 if heavy else SOUL_HOLD_SEC + 1.0
 	var life := close_at + 0.6
 	# 书的总体：弹出 → 悬停微晃 → 合上后缩小上浮消失；整体跟着母灵头顶走。
 	track(0.0, life, func(x: float) -> void:
@@ -804,6 +807,15 @@ func _death_book(origin: Vector3, target: Vector3, context: Dictionary) -> void:
 	keep_alive_until(life)
 
 
+# 10.18：被处决（非 Boss）的目标在 BattleVfx 里被青光包住、定身这么久，然后才化开。
+# 必须与 BattleVfx.MOTHER_EXECUTE_HOLD_SEC 一致：魂火要在身体化开的同一刻升起。
+const SOUL_HOLD_SEC := 1.0
+# 光波命中那一拍的卡帧和屏震。Boss 是硬吃一记，给得更重。
+const SOUL_HIT_STOP_SEC := 0.08
+const SOUL_HIT_STOP_BOSS_SEC := 0.11
+const SOUL_HIT_SHAKE := 4.2
+const SOUL_HIT_SHAKE_SEC := 0.14
+
 func _book_victim(target: Vector3, context: Dictionary, heavy: bool, book_at: Vector3, head_ref: WeakRef, head_base: Vector3, leaves: Array[Node3D]) -> void:
 	var th := height_of(context, "target_height")
 	var foot: Vector3 = context.get("target_foot", target)
@@ -814,7 +826,11 @@ func _book_victim(target: Vector3, context: Dictionary, heavy: bool, book_at: Ve
 	var ring := gd("SoulRing", foot + Vector3.UP * 0.03, Vector2(0.6, 0.6), {"ring_radius": 0.8, "ring_width": 0.12, "breakup": 0.6, "fill": 0.45, "core_white": 0.45, "edge_dark": 0.2})
 	var mark_size := 1.0 if heavy else 0.78
 	var hit_time := _soul_wave(foot, th, ref, base, book_at, head_ref, head_base)
-	track(hit_time - 0.02, 0.85, func(x: float) -> void:
+	# 魂火起飞时刻：Boss 不定身，命中后立刻抽；普通目标等定身结束。
+	var release_at := hit_time + 0.16 if heavy else maxf(hit_time + 0.16, SOUL_HOLD_SEC)
+	_debug["release_at"] = release_at
+	_hit_feedback(hit_time, SOUL_HIT_STOP_BOSS_SEC if heavy else SOUL_HIT_STOP_SEC)
+	track(hit_time - 0.02, maxf(0.85, release_at - hit_time + 0.35), func(x: float) -> void:
 		var at := foot + _drift(ref, base)
 		mark.global_position = toward_camera(at + Vector3.UP * th * 1.25, 0.15)
 		mark.scale = Vector3.ONE * lerpf(mark_size * 1.9, mark_size, ease_out(minf(1.0, x * 3.0)))
@@ -823,29 +839,33 @@ func _book_victim(target: Vector3, context: Dictionary, heavy: bool, book_at: Ve
 		set_param(ring, "reveal", minf(1.0, x * 2.5))
 		ring.rotation.y = x * 1.5
 		show_with(ring, 0.75 * envelope(x, 0.05, 0.3)))
-	if heavy:
-		_debug["heavy_hit"] = true
-		var crash := g("SoulCrash", foot + Vector3.UP * th * 0.6, 1.4, {"shape": SHAPE_FLARE, "core_white": 0.9})
-		var shock := gd("SoulShock", foot + Vector3.UP * 0.03, Vector2.ONE, {"ring_radius": 0.9, "ring_width": 0.09, "breakup": 0.45, "core_white": 0.5})
-		track(hit_time, 0.4, func(x: float) -> void:
-			var at := foot + _drift(ref, base)
-			crash.global_position = toward_camera(at + Vector3.UP * th * 0.6, 0.25)
-			crash.scale = Vector3.ONE * lerpf(0.5, 1.7, ease_out(x))
-			set_param(crash, "spin", x)
-			show_with(crash, 1.0 * (1.0 - x))
-			var r := lerpf(0.3, 1.5, ease_out(x))
-			shock.global_position = at + Vector3.UP * 0.03
-			shock.scale = Vector3(r * 2.0, 1.0, r * 2.0)
-			show_with(shock, 0.8 * (1.0 - x)))
-		var shards := shard_cloud("SoulShards", QUALITY_BUDGET.particle_count_for(10), SOUL_BODY)
-		var flying := scatter(shards.multimesh.instance_count, foot + Vector3.UP * th * 0.6, Vector3.ZERO, 1.8, 1.4, 0.9)
-		track(hit_time, 0.6, func(x: float) -> void:
-			drive_shards(shards, flying, x, 0.6, 0.07, 0.9))
+	# 10.18：重击不再只给 Boss —— 每次处决命中都要有这一下，Boss 更大。
+	var crash_scale := 1.0 if heavy else 0.8
+	_debug["heavy_hit"] = true
+	var crash := g("SoulCrash", foot + Vector3.UP * th * 0.6, 1.4 * crash_scale, {"shape": SHAPE_FLARE, "core_white": 0.9})
+	var shock := gd("SoulShock", foot + Vector3.UP * 0.03, Vector2.ONE, {"ring_radius": 0.9, "ring_width": 0.09, "breakup": 0.45, "core_white": 0.5})
+	track(hit_time, 0.4, func(x: float) -> void:
+		var at := foot + _drift(ref, base)
+		crash.global_position = toward_camera(at + Vector3.UP * th * 0.6, 0.25)
+		crash.scale = Vector3.ONE * lerpf(0.5, 1.7, ease_out(x)) * crash_scale
+		set_param(crash, "spin", x)
+		show_with(crash, 1.0 * (1.0 - x))
+		var r := lerpf(0.3, 1.5, ease_out(x)) * crash_scale
+		shock.global_position = at + Vector3.UP * 0.03
+		shock.scale = Vector3(r * 2.0, 1.0, r * 2.0)
+		show_with(shock, 0.8 * (1.0 - x)))
+	var shards := shard_cloud("SoulShards", QUALITY_BUDGET.particle_count_for(10), SOUL_BODY)
+	var flying := scatter(shards.multimesh.instance_count, foot + Vector3.UP * th * 0.6, Vector3.ZERO, 1.8, 1.4, 0.9)
+	track(hit_time, 0.6, func(x: float) -> void:
+		drive_shards(shards, flying, x, 0.6, 0.07, 0.9))
+	# 身体化开：定身结束那一刻，一团绿色魂粒从身体轮廓里浮起、向胸口收拢，接上魂火。
+	if not heavy:
+		_soul_body_release(foot, th, ref, base, release_at)
 	# 魂火：从目标身上升起，沿弧线飞回书里，到书时书页一亮。
-	var wisp_count := 1 if heavy else (2 if QUALITY_BUDGET.tier == 0 else 3)
+	var wisp_count := 1 if heavy else (2 if QUALITY_BUDGET.tier == 0 else 4)
 	_debug["wisps"] = wisp_count
 	for j in wisp_count:
-		var start := hit_time + 0.16 + 0.10 * float(j)
+		var start := release_at + 0.08 * float(j)
 		var travel := 0.48
 		var lean := (float(j) - float(wisp_count - 1) * 0.5) * 0.5
 		var wisp := g("SoulWisp%d" % j, foot, 0.32, {"core_white": 0.9, "softness": 0.5})
@@ -874,6 +894,47 @@ func _book_victim(target: Vector3, context: Dictionary, heavy: bool, book_at: Ve
 		track(start + travel - 0.02, 0.25, func(x: float) -> void:
 			for leaf in leaves:
 				_leaf_param(leaf, "glow", 0.9 * (1.0 - x)))
+
+
+# 定身结束时身体化成的绿色魂粒：从脚到头散布在身体轮廓里，先轻微上浮，再收向胸口，
+# 交给随后起飞的魂火。纯装饰随机，走 Kit 的独立 RNG。
+func _soul_body_release(foot: Vector3, th: float, ref: WeakRef, base: Vector3, start: float) -> void:
+	var count := QUALITY_BUDGET.particle_count_for(18)
+	var cloud := motes("SoulBodyRelease", count, {"softness": 0.55, "core_white": 0.55})
+	var seeds: Array[Vector3] = []
+	for k in count:
+		var up := _rng.randf_range(0.05, 1.0)
+		var side := _rng.randf_range(-0.30, 0.30) * (1.0 - 0.4 * up)
+		seeds.append(Vector3(side, up, _rng.randf_range(-0.6, 0.6)))
+	track(start - 0.04, 0.42, func(x: float) -> void:
+		var at := foot + _drift(ref, base)
+		var chest := at + Vector3.UP * th * 0.6
+		for k in seeds.size():
+			var s: Vector3 = seeds[k]
+			var home := at + Vector3.RIGHT * s.x * th + Vector3.UP * s.y * th
+			var lift := Vector3.UP * th * 0.18 * ease_out(minf(1.0, x * 2.0))
+			var gather := smoothstep(0.35, 1.0, x)
+			var p := home.lerp(chest, gather) + lift + Vector3(sin(s.z * 9.0 + x * 12.0), 0.0, 0.0) * 0.03
+			set_mote(cloud, k, toward_camera(p, 0.2), 0.10 + 0.05 * absf(s.z), 0.95 * smoothstep(0.0, 0.12, x) * (1.0 - smoothstep(0.8, 1.0, x)))
+		show_with(cloud, 1.0))
+
+
+# 命中那一拍：卡帧 + 屏震。VFXManager 是 autoload，按名字从根节点取 —— 截帧工具用
+# --script 跑时 autoload 可能不在，直接写标识符会让整个模块编译失败（见 VFXBlockRoot.vfx_texture）。
+# 两个入口都过 PresentationSettings 的无障碍开关。
+func _hit_feedback(at_time: float, hit_stop_sec: float) -> void:
+	var fired := [false]
+	track(at_time, 0.02, func(_x: float) -> void:
+		if fired[0] or not is_inside_tree():
+			return
+		fired[0] = true
+		var manager := get_tree().root.get_node_or_null("VFXManager")
+		if manager == null:
+			return
+		if manager.has_method("play_hitstop"):
+			manager.call("play_hitstop", hit_stop_sec)
+		if manager.has_method("play_screen_shake"):
+			manager.call("play_screen_shake", SOUL_HIT_SHAKE, SOUL_HIT_SHAKE_SEC))
 
 
 # 书翻开后从书里射出一道弧形魂光波（新月形光刃 + 拖尾光束 + 粒子），飞到目标身上

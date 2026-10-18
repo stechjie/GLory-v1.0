@@ -27,6 +27,10 @@ uniform vec4 core_tint : source_color = vec4(1.0);
 uniform float opacity = 1.0;
 uniform float tiling = 3.0;
 uniform float scroll = 0.0;
+// 10.18：沿链流动的血光亮带（施法者 → 目标），和分摊伤害时整条链的一闪。
+uniform vec4 pulse_color : source_color = vec4(1.0, 0.22, 0.36, 1.0);
+uniform float pulse_strength = 0.9;
+uniform float flash = 0.0;
 
 void fragment() {
 	vec2 uv = vec2(UV.x * tiling + scroll, UV.y);
@@ -35,10 +39,13 @@ void fragment() {
 	vec3 color = mix(tex.rgb * dark_tint.rgb, tex.rgb * body_tint.rgb, smoothstep(0.06, 0.55, source_alpha));
 	float hot = smoothstep(0.62, 1.0, max(tex.r, max(tex.g, tex.b)));
 	color = mix(color, core_tint.rgb, hot * 0.30);
+	float travel = pow(0.5 + 0.5 * sin(UV.x * 9.0 - TIME * 4.5), 5.0) * pulse_strength;
+	float body = smoothstep(0.08, 0.5, source_alpha);
+	color += pulse_color.rgb * body * (travel * 0.55 + flash * 0.85);
 	float alpha = source_alpha * opacity;
 	if (alpha < 0.02) { discard; }
 	ALBEDO = color;
-	EMISSION = color * (0.30 + hot * 1.30);
+	EMISSION = color * (0.55 + hot * 1.6 + travel * 0.9 + flash * 2.2);
 	ALPHA = alpha;
 }
 """
@@ -62,6 +69,12 @@ var _buf_verts := PackedVector3Array()
 var _buf_uvs := PackedVector2Array()
 var _buf_indices := PackedInt32Array()
 var _buf_arrays: Array = []
+var _flash := 0.0
+const PACT_SPARKS := preload("res://effects/vfx3d/modules/VFXMaskedParticle3D.gd")
+const PACT_COLOR := Color(1.0, 0.22, 0.36)
+const RIBBON_WIDTH := 0.31
+# 一次分摊伤害的闪光衰减时长；同一帧两端都掉血只闪一次（取 max，不叠加）。
+const SHARE_FLASH_DECAY_SEC := 0.32
 
 func play_profile(profile: VFXProfile3D, context: Dictionary) -> void:
 	play_link(context.get("origin", Vector3(-1.0, .8, 0.0)), context.get("target", Vector3(1.0, .8, 0.0)),
@@ -84,6 +97,7 @@ func play_link(origin: Vector3, target: Vector3, profile: VFXProfile3D = null, o
 	_knots.append(_make_knot("DoomLinkKnot_Origin"))
 	_knots.append(_make_knot("DoomLinkKnot_Target"))
 	_update_ribbon()
+	_pact_burst()
 	if not _persistent:
 		if not is_inside_tree() or is_queued_for_deletion():
 			return
@@ -118,6 +132,9 @@ func _process(delta: float) -> void:
 		# Slow scroll along the body so it reads as alive rather than a rope
 		# decal stuck to the screen.
 		_chain_material.set_shader_parameter("scroll", _elapsed * .12)
+		if _flash > 0.0:
+			_flash = maxf(0.0, _flash - delta / SHARE_FLASH_DECAY_SEC)
+			_chain_material.set_shader_parameter("flash", _flash)
 	if _mesh_accum >= .055:
 		_mesh_accum = 0.0
 		_update_endpoints()
@@ -213,7 +230,7 @@ func _make_knot(node_name: String) -> MeshInstance3D:
 	return knot
 
 func _update_ribbon() -> void:
-	var width := _profile.size * .21
+	var width := _profile.size * RIBBON_WIDTH
 	for i in range(SEGMENTS + 1):
 		var t := float(i) / float(SEGMENTS)
 		var point := _curve_point(t)
@@ -243,6 +260,40 @@ func _update_ribbon() -> void:
 			_knots[0].position = _curve_point(.04)
 		if is_instance_valid(_knots[1]):
 			_knots[1].position = _curve_point(.96)
+
+# 分摊伤害：BattleVfx 在连线两端任一方掉血时调用，整条链亮一下、两个结跳一下。
+func pulse_share(strength: float = 1.0) -> void:
+	if _finished or _released:
+		return
+	_flash = maxf(_flash, clampf(strength, 0.0, 1.0))
+	for knot in _knots:
+		if not is_instance_valid(knot):
+			continue
+		var tw := track_tween(create_tween())
+		tw.tween_property(knot, "scale", Vector3.ONE * 1.35, 0.06).set_ease(Tween.EASE_OUT)
+		tw.tween_property(knot, "scale", Vector3.ONE, 0.20).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
+
+
+# 缔约：连线建立的瞬间，两端的结从小弹到大再回落，各爆一把血色光点，整条链先亮满再落回常态。
+func _pact_burst() -> void:
+	_flash = 1.0
+	if is_instance_valid(_chain_material):
+		_chain_material.set_shader_parameter("flash", _flash)
+	for knot in _knots:
+		if not is_instance_valid(knot):
+			continue
+		knot.scale = Vector3.ONE * 0.30
+		var tw := track_tween(create_tween())
+		tw.tween_property(knot, "scale", Vector3.ONE * 1.7, 0.14).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		tw.tween_property(knot, "scale", Vector3.ONE, 0.26).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
+	var parent := get_parent() as Node3D
+	if parent == null:
+		return
+	for t in [0.04, 0.96]:
+		var sparks := VFXBlockRoot.spawn_block(PACT_SPARKS, parent) as VFXMaskedParticle3D
+		if sparks != null:
+			sparks.play_burst(parent.to_local(to_global(_curve_point(t))), PACT_COLOR, 14, 2.0, 0.46)
+
 
 func _spawn_tear() -> void:
 	var quad := QuadMesh.new()

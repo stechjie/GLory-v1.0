@@ -380,6 +380,8 @@ func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
 			# 母灵处决打到 Boss 时是「重击」而不是吸魂（与模拟器 is_boss 判据一致）。
 			u["is_boss"] = bool(f.get("def", {}).get("is_boss", false))
 			u["skill_stacks"] = int(f.get("skill_stacks", 0))
+			# 人王的持久成长层数，只给天剑定尺寸用。3v3 回放的 roster 不带这个字段，读到 0。
+			u["king_stacks"] = int(f.get("king_growth_stacks", 0))
 			u["sim_uid"] = str(f.get("uid", ""))
 			u["killer_uid"] = str(f.get("killer_uid", ""))
 			u["mother_execute_kill"] = bool(f.get("mother_execute_kill", false))
@@ -703,6 +705,13 @@ func _sync_persistent_unit_vfx(current:Dictionary)->void:
 			# 9.24 #7：连接生效中 —— 绳子留着。
 			# 血条配色**不在**这里做了：那已由 BattleRenderer._refresh_visuals 每帧按
 			# 「当前队伍」裁决（见本文件顶部 9.24 #7（订正）那段），这里再插一手只会打架。
+			# 10.18：两端血量合计比上一帧少了 = 发生了一次分摊伤害，让链子闪一下。
+			# 只看表现快照里的 hp，不读模拟的 shared_link_* 字段（回放 roster 里没有）。
+			var hp_sum:=int(unit.get("hp",0))+int((current.get(bound_target,{}) as Dictionary).get("hp",0))
+			var last_hp:=int(record.get("hp_sum",hp_sum))
+			record["hp_sum"]=hp_sum
+			if hp_sum<last_hp and is_instance_valid(node) and node.has_method("pulse_share"):
+				node.call("pulse_share",1.0)
 			continue
 		if is_instance_valid(node) and node is Node3D and node.has_method("release_link"):
 			node.release_link()
@@ -1288,6 +1297,7 @@ func _play_attack_unit_procedural(attack:Dictionary,target:Dictionary,current:Di
 	# Human King's actual attack uses the target-bound vertical heaven sword.
 	# This is visual-only and leaves damage, timing and target selection untouched.
 	if str(attack.get("unit_id", attack.get("source_id", ""))) == "human_king":
+		context["king_stacks"] = int(source.get("king_stacks", 0))
 		_play_unit_procedural("unique_king_growth", origin, target_world, context)
 		return
 	_play_unit_procedural(sid,origin,target_world,context)
@@ -1496,6 +1506,9 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 				var book_context:Dictionary=_unit_target_context(mother,victim) if has_victim else _unit_target_context(mother,mother)
 				book_context["has_victim"]=has_victim
 				book_context["heavy"]=has_victim and bool(victim.get("is_boss",false))
+				# 10.18：非 Boss 目标当帧被处决 → 尸体改走「青光定身 → 化成魂火」。
+				if has_victim and not bool(victim.get("is_boss",false)):
+					_mark_mother_execute_victim(victim_uid)
 				var head_anchor:Variant=_unit_actor_registry.get_anchor(str(mother.get("id","")),"HeadAnchor")
 				if head_anchor is Node3D:
 					book_context["origin_head_node"]=head_anchor
@@ -1832,6 +1845,7 @@ func cue_release_corpses() -> void:
 		if actor != null and is_instance_valid(actor):
 			release_death_actor(str(uid), actor as Node3D)
 	_cue_corpses.clear()
+	_mother_execute_victims.clear()
 	for entry_value in _active_death_actors.values():
 		if not (entry_value is Dictionary):
 			continue
@@ -1857,14 +1871,20 @@ func cue_play_death(victim_uid: String, duration_sec: float = 0.35) -> bool:
 	if actor == null or not is_instance_valid(actor):
 		_release_dying_unit_node(victim_uid)
 		return false
+	if _is_fresh_mother_execute_victim(victim_uid):
+		_play_mother_execute_death(victim_uid, actor)
+		return true
 	# The profile owns the length so a low quality tier can shorten the fade
 	# without ever removing it (checklist 6: death must never just disappear).
 	var fade := maxf(0.08, duration_sec * 0.92)
 	var tween := create_tween()
+	# base_* 留给母灵处决：处决事件比死亡 cue 晚到时，要把已经开始的下沉复位再改走定身。
 	_active_death_actors[actor.get_instance_id()] = {
 		"uid": victim_uid,
 		"actor": actor,
 		"tween": tween,
+		"base_position": actor.position,
+		"base_scale": actor.scale,
 	}
 	tween.set_parallel(true)
 	var sink := actor.position + Vector3(0.0, -0.35, 0.0)
@@ -1889,6 +1909,126 @@ func _finish_death_actor(uid: String, actor: Node3D) -> void:
 	if actor != null:
 		_active_death_actors.erase(actor.get_instance_id())
 	release_death_actor(uid, actor)
+
+
+# --- 10.18 母灵处决：被处决的棋子先被青光包住、定住不动，再化成魂火收进书里 ---
+#
+# 纯表现层，不改模拟：目标在模拟里当帧就死了，这里只是把尸体多留一会儿。
+# 时长和书的节奏对齐（VFXHeroSkill3D._book_victim 的魂火在 HOLD 秒后才起飞），
+# 两边改一边必须同步改另一边。
+const MOTHER_EXECUTE_HOLD_SEC := 1.0
+const MOTHER_EXECUTE_DISSOLVE_SEC := 0.34
+const MOTHER_EXECUTE_TINT := Color(0.30, 0.96, 1.0)
+const MOTHER_ENCASE_SHADER_CODE := """
+shader_type spatial;
+render_mode unshaded, blend_mix, depth_draw_never, cull_back;
+uniform vec4 tint : source_color = vec4(0.30, 0.96, 1.0, 1.0);
+uniform float glow = 0.0;
+// 覆盖混合而不是纯叠加：叠加在绿色小灵身上会混成黄绿，读不出「青光」。
+// glow 1 时盖住约六成本色、边缘更亮；化开前推到 1.8，整只几乎变成发亮的青色剪影。
+void fragment() {
+	float rim = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 2.2);
+	float band = 0.5 + 0.5 * sin(TIME * 7.0 - VERTEX.y * 22.0);
+	ALBEDO = tint.rgb * (0.85 + rim * 1.2 + band * 0.15);
+	ALPHA = clamp(glow * (0.62 + rim * 0.38), 0.0, 1.0);
+}
+"""
+static var _mother_encase_shader: Shader = null
+# 本局被母灵处决的目标 sim uid → 标记时刻（毫秒）。mother_execute 视觉事件写入，死亡 cue 读走。
+# 两条路径先后不定（视觉事件走 _refresh_battle_vfx，死亡走 Director 的 cue），两种顺序都要接住。
+var _mother_execute_victims: Dictionary = {}
+
+
+func _mark_mother_execute_victim(uid: String) -> void:
+	if uid.is_empty():
+		return
+	_mother_execute_victims[uid] = Time.get_ticks_msec()
+	# 死亡 cue 已经先到、普通下沉已开始：打断它，复位后改走处决定身。
+	for key in _active_death_actors.keys():
+		var entry: Dictionary = _active_death_actors[key]
+		if str(entry.get("uid", "")) != uid or bool(entry.get("mother_execute", false)):
+			continue
+		var actor_value = entry.get("actor")
+		if not (actor_value is Node3D and is_instance_valid(actor_value)):
+			continue
+		var actor := actor_value as Node3D
+		var tween_value = entry.get("tween")
+		if tween_value is Tween and is_instance_valid(tween_value):
+			(tween_value as Tween).kill()
+		actor.position = entry.get("base_position", actor.position)
+		actor.scale = entry.get("base_scale", actor.scale)
+		for geometry in _death_fade_targets(actor):
+			geometry.transparency = 0.0
+		_active_death_actors.erase(key)
+		_play_mother_execute_death(uid, actor)
+		return
+
+
+# 召唤物会用同一个 uid 反复重生：标记只在处决后短时间内有效，免得下一只同 uid 的单位
+# 正常死亡时也被当成处决。
+const MOTHER_EXECUTE_MARK_TTL_MSEC := 3000
+
+func _is_fresh_mother_execute_victim(uid: String) -> bool:
+	if not _mother_execute_victims.has(uid):
+		return false
+	if Time.get_ticks_msec() - int(_mother_execute_victims[uid]) > MOTHER_EXECUTE_MARK_TTL_MSEC:
+		_mother_execute_victims.erase(uid)
+		return false
+	return true
+
+
+func _play_mother_execute_death(uid: String, actor: Node3D) -> void:
+	_mother_execute_victims.erase(uid)
+	_freeze_actor_animation(actor)
+	if _mother_encase_shader == null:
+		_mother_encase_shader = Shader.new()
+		_mother_encase_shader.code = MOTHER_ENCASE_SHADER_CODE
+	var overlay := ShaderMaterial.new()
+	overlay.shader = _mother_encase_shader
+	overlay.set_shader_parameter("tint", MOTHER_EXECUTE_TINT)
+	overlay.set_shader_parameter("glow", 0.0)
+	var geometries := _death_fade_targets(actor)
+	for geometry in geometries:
+		if geometry is MeshInstance3D:
+			geometry.material_overlay = overlay
+	var set_glow := func(value: float) -> void:
+		overlay.set_shader_parameter("glow", value)
+	var tween := create_tween()
+	_active_death_actors[actor.get_instance_id()] = {
+		"uid": uid,
+		"actor": actor,
+		"tween": tween,
+		"mother_execute": true,
+	}
+	# 青光包住：快速亮起，然后定住等魂火被抽走。
+	tween.tween_method(set_glow, 0.0, 1.0, 0.18).set_ease(Tween.EASE_OUT)
+	tween.tween_interval(maxf(0.0, MOTHER_EXECUTE_HOLD_SEC - 0.18))
+	# 化开：先闪亮一下，身体随之淡出、微缩，魂火（书那边画）同时从身上升起。
+	# ⚠️ 必须 chain() 开新的一步再在步内 parallel()。用 set_parallel(true) 的话，后面
+	#   这几条会并进上面那个 interval 同时开始 —— 实测定身只剩 0.2 秒就开始化开。
+	tween.chain().tween_method(set_glow, 1.0, 1.8, MOTHER_EXECUTE_DISSOLVE_SEC * 0.35)
+	tween.parallel().tween_property(actor, "scale", actor.scale * 0.88, MOTHER_EXECUTE_DISSOLVE_SEC).set_ease(Tween.EASE_IN)
+	for geometry in geometries:
+		tween.parallel().tween_property(geometry, "transparency", 1.0, MOTHER_EXECUTE_DISSOLVE_SEC)
+	tween.chain().tween_callback(func() -> void: _finish_death_actor(uid, actor))
+	_play_unit_node_death_fade(uid, MOTHER_EXECUTE_HOLD_SEC + MOTHER_EXECUTE_DISSOLVE_SEC)
+
+
+# 定身：停掉模型自己的动画（AnimationPlayer 暂停、AnimationTree 关掉）和残留的前冲 tween。
+# 尸体已经从 _battle_3d_models 摘掉，渲染层不会再驱动它的动作。
+func _freeze_actor_animation(actor: Node3D) -> void:
+	if actor.has_meta("lunge_tween"):
+		var lunge = actor.get_meta("lunge_tween")
+		if lunge is Tween and (lunge as Tween).is_valid():
+			(lunge as Tween).kill()
+	var pending: Array[Node] = [actor]
+	while not pending.is_empty():
+		var node: Node = pending.pop_back()
+		if node is AnimationPlayer:
+			(node as AnimationPlayer).pause()
+		elif node is AnimationTree:
+			(node as AnimationTree).active = false
+		pending.append_array(node.get_children())
 
 
 func _arm_death_claim_watchdog(uid: String) -> void:

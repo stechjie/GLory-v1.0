@@ -252,6 +252,9 @@ func _blood_bite(target: Vector3, context: Dictionary, delay: float) -> void:
 # ── 穿云弩手 · 贯穿 ──────────────────────────────────────────────────────
 # 标枪扎中主目标后不停，沿同一直线继续飞穿后排被贯穿的目标（按模拟器顺序），
 # 经过谁谁身上一道血口。与普攻标枪同一外形，看起来是同一支枪。
+# 穿云弩手贯穿线在标枪穿出后的停留时长。
+const PIERCE_LINE_LINGER := 0.32
+
 func _pierce_through(primary: Vector3, first_target: Vector3, context: Dictionary, delay: float) -> void:
 	var targets := _capped(context.get("targets", [first_target]))
 	if targets.is_empty():
@@ -278,16 +281,40 @@ func _pierce_through(primary: Vector3, first_target: Vector3, context: Dictionar
 		show_with(spear, 0.96 * out)
 		show_with(tip, 0.9 * out)
 		show_with(trail, 0.55 * out))
+	# 10.18：贯穿全程的拖尾线。头跟着标枪走，标枪穿出后整条线停留 PIERCE_LINE_LINGER 秒，
+	# 再从出手端往穿出端收掉 —— 一眼看出「一枪穿了这一串人」。
+	var line := streak("PierceLine", {"core_white": 0.45})
+	var line_glow := streak("PierceLineGlow", {"core_white": 0.1, "edge_dark": 0.0})
+	var line_life := travel + PIERCE_LINE_LINGER
+	track(delay, line_life, func(x: float) -> void:
+		var t := x * line_life
+		var head := start.lerp(finish_at, clampf(t / travel, 0.0, 1.0))
+		var retreat := smoothstep(travel, line_life, t)
+		var tail := start.lerp(head, pow(retreat, 1.6))
+		place_streak(line, tail, head, 0.10 * (1.0 - 0.5 * retreat))
+		place_streak(line_glow, tail, head, 0.28 * (1.0 - 0.4 * retreat))
+		show_with(line, 0.95 * (1.0 - smoothstep(0.75, 1.0, retreat)))
+		show_with(line_glow, 0.55 * (1.0 - retreat)))
+	_debug["pierce_line"] = true
+	# 被穿的目标按标枪到达的先后依次爆：伤口斜切 + 爆闪 + 一圈扩散环 + 几滴血。
 	for i in targets.size():
 		var at := toward_camera(targets[i] as Vector3, 0.18)
 		var reach := clampf(start.distance_to(at) / span, 0.0, 1.0)
+		var hit_at := delay + travel * reach
 		var slit := streak("PierceWound%d" % i, {"core_white": 0.75})
-		var glow := glow_sprite("PierceWoundGlow%d" % i, at, 0.55, {"shape": SHAPE_FLARE, "spin": screen_angle(start, at), "core_white": 0.7})
-		track(delay + travel * reach, 0.22, func(x: float) -> void:
-			place_streak(slit, at - dir * 0.46, at + dir * lerpf(0.12, 0.58, ease_out(x)), 0.21 * (1.0 - x * 0.6))
-			show_with(slit, 0.9 * (1.0 - x))
-			glow.scale = Vector3.ONE * lerpf(0.70, 0.34, x)
-			show_with(glow, 0.7 * (1.0 - x)))
+		var glow := glow_sprite("PierceWoundGlow%d" % i, at, 0.85, {"shape": SHAPE_FLARE, "spin": screen_angle(start, at), "core_white": 0.85})
+		var ring := glow_sprite("PierceWoundRing%d" % i, at, 0.9, {"shape": SHAPE_RING, "ring_radius": 0.62, "ring_width": 0.12, "core_white": 0.5, "edge_dark": 0.4})
+		track(hit_at, 0.30, func(x: float) -> void:
+			place_streak(slit, at - dir * 0.52, at + dir * lerpf(0.14, 0.66, ease_out(x)), 0.24 * (1.0 - x * 0.6))
+			show_with(slit, 0.95 * (1.0 - x))
+			glow.scale = Vector3.ONE * lerpf(1.05, 0.40, ease_out(x))
+			show_with(glow, 0.95 * (1.0 - x))
+			ring.scale = Vector3.ONE * lerpf(0.35, 1.05, ease_out(x))
+			show_with(ring, 0.8 * (1.0 - x)))
+		var drops := shard_cloud("PierceDrops%d" % i, QUALITY_BUDGET.particle_count_for(4), {"facet": 0.3, "main_color": Color(0.55, 0.012, 0.04), "core_color": Color(0.9, 0.16, 0.12)})
+		var pieces := scatter(drops.multimesh.instance_count, at, dir, 1.1, 0.7, 0.5)
+		track(hit_at, 0.42, func(x: float) -> void:
+			drive_shards(drops, pieces, x, 0.42, 0.055, 1.2))
 
 
 # ── 霜印使 · 霜印 ────────────────────────────────────────────────────────
