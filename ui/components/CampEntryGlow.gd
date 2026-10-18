@@ -39,6 +39,10 @@ var glow_color := Color(1.0, 0.78, 0.36)
 # 入口按钮里那枚徽章几乎填满方框，所以默认略微探出一点。
 var radius_scale := 1.06
 var base_alpha := 0.5
+# 宿主是**扁长**的控件（例如营地面板那两个页签）时打开：光环跟着控件的长宽比压成
+# 椭圆，绕着整个按钮走。不打开的话，圆环的半径由短边决定 —— 在 132×44 的页签上
+# 正好是一坨圆光糊在文字正中间（10.18 第一版就是这样，字都看不清了）。
+var fit_aspect := false
 
 var _phase := 0.0
 var _pulse := 0.0
@@ -50,10 +54,11 @@ func _ready() -> void:
 	resized.connect(queue_redraw)
 
 
-func setup(color: Color, alpha: float = 0.5, scale: float = 1.06) -> void:
+func setup(color: Color, alpha: float = 0.5, scale: float = 1.06, aspect: bool = false) -> void:
 	glow_color = color
 	base_alpha = alpha
 	radius_scale = scale
+	fit_aspect = aspect
 	queue_redraw()
 
 
@@ -87,6 +92,13 @@ func _draw() -> void:
 	peak *= 1.0 + PULSE_RADIUS_GAIN * pulse_ease
 	var alpha := base_alpha * _breath() + PULSE_ALPHA_GAIN * pulse_ease
 	var center := size * 0.5
+	if fit_aspect:
+		# 把画布按长宽比拉开，再照常画正圆 —— 画出来就是贴着控件形状的椭圆。
+		# 拉开之后坐标系也跟着变了，所以圆心退回原点。
+		var shorter := minf(size.x, size.y)
+		if shorter > 1.0:
+			draw_set_transform(center, 0.0, Vector2(size.x / shorter, size.y / shorter))
+			center = Vector2.ZERO
 	var r_in := peak * RING_INNER_RATIO
 	var r_out := peak * RING_OUTER_RATIO
 	for i in RING_COUNT:

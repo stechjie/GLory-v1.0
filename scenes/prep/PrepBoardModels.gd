@@ -16,6 +16,7 @@ const UnitVisualResolverScript := preload("res://effects/runtime/presentation/Un
 const UnitContactShadowScript := preload("res://effects/runtime/presentation/UnitContactShadow.gd")
 const FOUR_STAR_READY_AURA := preload("res://effects/vfx3d/modules/FourStarAura3D.gd")
 const STAR_UPGRADE_BURST := preload("res://scenes/prep/effects/PrepStarUpgradeBurst.gd")
+const FOUR_STAR_READY_RING := preload("res://scenes/prep/effects/PrepFourStarReadyRing.gd")
 const FOUR_STAR_AURA := preload("res://effects/vfx3d/modules/FourStarAuraV3_3D.gd")
 const CARROT_CURRENCY_ICON := preload("res://assets/props/carrot_system/ui/icon_carrot_currency.png")
 # 棋盘正中的「上阵数 / 上限」图案本体（矢量自绘）。10.05 第 2 条返工把它从 2D 徽章
@@ -59,6 +60,7 @@ func _sync_four_star_actor(actor: Node3D, cell: Dictionary) -> void:
 		if actor.has_meta("four_star_aura_transform"):
 			ready_aura.transform = actor.get_meta("four_star_aura_transform")
 			ready_aura.attach_rim(actor)
+	_sync_four_star_ready_ring(actor, state)
 	var aura := FOUR_STAR_AURA.sync(actor, 2 if state == 2 else 0, affinity, 1.0)
 	if aura != null and state == 2 and actor.is_inside_tree():
 		if not actor.has_meta("four_star_aura_v2_transform") and bool(actor.get_meta("prep_model_centered", false)):
@@ -285,6 +287,26 @@ func pop_star_caption(location: String, index: int, star: int) -> void:
 		tween.parallel().tween_method(
 			func(c: Color) -> void: caption.add_theme_color_override("font_color", c),
 			Color(1.0, 0.88, 0.45), Color.WHITE, 0.45)
+
+
+# 10.18：可升 4★ 的三星棋子，脚下加一圈缓慢旋转的金环 + 周期性上升光点。
+# 现有的全身 rim（FOUR_STAR_READY_AURA）保留当辅助 —— 单靠 rim 在 0.32 高的棋子上
+# 只有几像素宽，Leno 的评价是「不明显」。
+#
+# 环挂成 actor 的子节点：跟着棋子走、棋子没了自动一起没。尺度照样走
+# _prep_effect_scale()，它量的是真实格距，父级链上那些缩放都已经算进去了。
+func _sync_four_star_ready_ring(actor: Node3D, state: int) -> void:
+	var ring := actor.get_node_or_null("FourStarReadyRing")
+	if state != 1:
+		if ring != null:
+			ring.queue_free()
+		return
+	if ring == null:
+		ring = FOUR_STAR_READY_RING.new()
+		ring.name = "FourStarReadyRing"
+		actor.add_child(ring)
+	if actor.is_inside_tree():
+		(ring as Node3D).scale = _prep_effect_scale(actor)
 
 
 func play_four_star_upgrade(uid: String) -> void:

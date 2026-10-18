@@ -72,6 +72,11 @@ func _ready() -> void:
 	await _run_case(def, 1, "2star")
 	# 2→3★：三枚二星。
 	await _run_case(def, 2, "3star")
+	# 4.3：可升 4★ 的三星棋子，脚下那圈缓慢旋转的金环 + 上升光点。
+	await _run_four_star_ready(def)
+	# 4.2：营地「升级石」页 —— 页签呼吸光 + 带数字、4★ 列表每行以棋子为主、
+	#      规则一句话在页顶。
+	await _run_camp_page()
 
 	print("STAR_UPGRADE_BOARD_CAPTURE shots=%d dir=%s" % [_shots, _dir])
 	get_tree().quit(0)
@@ -148,6 +153,56 @@ func _run_case(def: Dictionary, star: int, tag: String) -> void:
 		frames.append(image)
 	Engine.time_scale = 1.0
 	_save_sheet(frames, "%s_sheet" % tag)
+
+
+# 摆一枚**现在就能升 4★** 的三星棋子（给够石头和金币），连拍一段看环转起来的样子。
+# 判据与游戏里一致：GameState.four_star_check(cell).ok 为真时 _sync_four_star_actor
+# 的 state 才会是 1，那圈环才会挂上。
+func _run_four_star_ready(def: Dictionary) -> void:
+	for i in GameState.board_slots.size():
+		GameState.board_slots[i] = null
+	for i in GameState.bench_slots.size():
+		GameState.bench_slots[i] = null
+	GameState.gold = 5000
+	for stone_type in ["sky", "land", "ren"]:
+		GameState.team_upgrade_stones[stone_type] = 3
+	GameState.board_slots[5] = {
+		"id": str(def.get("id", "")),
+		"uid": GameState.mint_piece_uid(),
+		"star": GameState.MAX_MERGE_STAR,
+		"def": def.duplicate(true),
+	}
+	_screen.call("_refresh_all")
+	await _settle(20)
+	var ready := bool(GameState.four_star_check(GameState.board_slots[5]).get("ok", false))
+	print("[READY_RING] four_star_check.ok=%s" % str(ready))
+	Engine.time_scale = CAPTURE_TIME_SCALE
+	var frames: Array[Image] = []
+	# 环 6 秒一圈，放慢之后抓 16 张刚好铺开大半圈，看得出它在转。
+	for shot in 16:
+		await _settle(1)
+		var full := get_viewport().get_texture().get_image()
+		var image := full.get_region(CROP_RECT)
+		image.save_png("%s/ready_%02d.png" % [_dir, shot])
+		_shots += 1
+		frames.append(image)
+	Engine.time_scale = 1.0
+	_save_sheet(frames, "ready_sheet")
+
+
+# 打开萝卜营地并切到「升级石」页，整屏抓一张。这一页的三处改动都只能整屏看：
+# 页签的呼吸光、4★ 列表每行的棋子头像与属性对比、页顶那句规则。
+func _run_camp_page() -> void:
+	_screen.call("_toggle_carrot_camp")
+	await _settle(20)
+	var panel = _screen.get("_carrot_panel")
+	if panel != null and is_instance_valid(panel):
+		panel.call("_show_page", 1)
+		panel.call("refresh")
+	await _settle(20)
+	var image := get_viewport().get_texture().get_image()
+	image.save_png("%s/camp_stone_page.png" % _dir)
+	_shots += 1
 
 
 func _save_sheet(frames: Array[Image], out_name: String) -> void:
