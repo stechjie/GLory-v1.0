@@ -1,6 +1,6 @@
 extends Node
 
-# 升星地面效果（scenes/prep/effects/PrepStarUpgradeGround.gd）的**截帧预览**。
+# 升星特效（scenes/prep/effects/PrepStarUpgradeBurst.gd）的**截帧预览**。
 #
 # 为什么需要它：参数表上的「0.12 → 0.26，0.35 秒，软边」说不清好不好看。先把
 # 2★ / 3★ 的整段动作逐帧渲出来给 Leno 挑，定稿了再接进 PrepBoardController 的两个
@@ -17,7 +17,7 @@ extends Node
 # ★ 取样用 effect.seek(t) 而不是等真实帧推进：帧率一抖，抓出来的时刻就对不上，
 #   两档之间也没法比。seek 让同一个 t 每次都渲出同一张图。
 
-const GroundFx := preload("res://scenes/prep/effects/PrepStarUpgradeGround.gd")
+const BurstFx := preload("res://scenes/prep/effects/PrepStarUpgradeBurst.gd")
 const CELL_MARK_PATH := "res://assets/board/prep_2_5d/board_cell_mark.png"
 
 const OUT_DIR := "res://reports/star_upgrade_preview"
@@ -29,7 +29,8 @@ const PREP_CAMERA_POSITION := Vector3(0.0, 3.8, 2.0)
 const PREP_CAMERA_TARGET := Vector3(0.0, -0.07, -0.03)
 const PREP_CAMERA_FOV := 44.0
 # 沿视线拉近到这个距离（原距离约 4.37）。
-const PREVIEW_DISTANCE := 2.0
+# 星星最远散到约 1.6 格（≈0.96 世界半径），相机得退到这个距离才框得住整片。
+const PREVIEW_DISTANCE := 2.4
 
 # 每一档取几帧。8 帧 × 两档，拼成两张 4×2 的联络表，一眼能看完整段动作。
 const FRAMES_PER_STAR := 8
@@ -148,7 +149,7 @@ func _build_stage() -> void:
 
 
 func _capture_star(star: int) -> void:
-	var fx: Node3D = GroundFx.new()
+	var fx: Node3D = BurstFx.new()
 	# 预览自己按 seek 取样，别让 _process 也在后台推进。
 	fx.set_process(false)
 	_stage.add_child(fx)
