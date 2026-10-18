@@ -3,9 +3,10 @@
 固定地址：`https://glorytd-api.duckdns.org/beta/`。二维码始终编码此地址，中间使用游戏水晶图标。
 
 - iPhone/iPad：保留现有 TestFlight 公开测试邀请；普通浏览器自动跳转，`?manual=1` 可查看完整页面。
-- Android：显示“下载 Android APK”，点击后打开 Google Drive 文件页。无需测试群组或名单。Drive 文件必须允许“知道链接的任何人”只读下载；在无登录状态验证后，才将 `android.ready` 设置为 `true`。
-- Android 不自动跳转，以便用户阅读安装说明。微信、抖音等内置浏览器提示使用系统浏览器。
-- 配置只接受 HTTPS 的 TestFlight 邀请和 Google Drive 文件地址，拒绝任意外部跳转。
+- Android：使用 Google Play 内部测试邀请，当前为 `https://play.google.com/apps/internaltest/4701302260400909295`。配置模式固定为 `play_internal`，不再使用 Drive 共享 APK 下载入口。
+- 测试者使用名单中的同一 Google 账号，依次接受邀请、点击 Download test app，并在 Google Play 安装。未被邀请的账号需先由管理员加入内部测试名单。
+- Android 保留引导页供用户阅读步骤；微信、抖音等内置浏览器提示使用系统浏览器。
+- 配置只接受 HTTPS 的 TestFlight 邀请和 Google Play 内部测试邀请地址，拒绝 Drive、任意外部地址和带查询参数的跳转。
 
 ## 校验和部署
 
@@ -22,9 +23,9 @@ python3 deploy/beta-site/install.py --domain glorytd-api.duckdns.org --check-onl
 sudo python3 /已上传目录/install.py --domain glorytd-api.duckdns.org
 ```
 
-安装器备份 `/opt/glory/public/beta`、Caddy 配置，验证后热重载；失败则恢复。部署只涉及下载页面，不重启账号或战斗服务。上线验收应包含 HTTPS 页面、实际 Drive 无登录下载、TestFlight 入口、二维码识别及 `/health`。
+安装器备份 `/opt/glory/public/beta`、Caddy 配置，验证后热重载；失败则恢复。部署只涉及下载页面，不重启账号或战斗服务。上线验收应包含 HTTPS 页面、Google Play 内部测试邀请与受邀账号访问、TestFlight 入口、二维码识别及 `/health`。
 
-2026-10-11 本地页面已改为 APK 下载流程；部署及公开分享状态以 `delivery/android-direct-20261011/status.json` 的验证结果为准，不能将本地修改当作已上线。
+2026-10-18 切换为 Google Play 内部测试，版本 0.0.24 (37)。二维码继续指向固定官网地址；发布和公网回读证据位于外层 `delivery/google-play-site-20261018/`。以后更新 Android 版本时沿用 Play 测试邀请，不回填 Drive 共享地址。
 
 ## 语言与反馈
 

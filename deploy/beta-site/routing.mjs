@@ -12,8 +12,8 @@ export function verifiedURL(value, kind) {
     if (u.protocol !== 'https:' || u.username || u.password || u.port || u.hash) return '';
     if (kind === 'ios') return !u.search && u.hostname === 'testflight.apple.com' && /^\/join\/[A-Za-z0-9]+\/?$/.test(u.pathname) ? u.href : '';
     if (kind === 'android') {
-      // Only a Drive file page; no arbitrary redirects or executable URL schemes.
-      return u.hostname === 'drive.google.com' && /^\/file\/d\/[A-Za-z0-9_-]+\/view$/.test(u.pathname) && (!u.search || u.search === '?usp=sharing' || u.search === '?usp=drivesdk') ? u.href : '';
+      // Only the official Play internal-test invitation; no shared APK fallback.
+      return !u.search && u.hostname === 'play.google.com' && /^\/apps\/internaltest\/[0-9]+\/?$/.test(u.pathname) ? u.href : '';
     }
     return '';
   } catch { return ''; }
@@ -21,7 +21,7 @@ export function verifiedURL(value, kind) {
 export function destinations(config = {}) {
   const ios = config.ios?.ready === true ? verifiedURL(config.ios.url, 'ios') : '';
   const a = config.android || {};
-  const android = a.ready === true && a.mode === 'apk' ? verifiedURL(a.url, 'android') : '';
+  const android = a.ready === true && a.mode === 'play_internal' ? verifiedURL(a.url, 'android') : '';
   return {ios, android};
 }
 export function automaticDestination(config, ua, touchPoints, manual = false) {

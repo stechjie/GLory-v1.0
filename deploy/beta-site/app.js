@@ -41,7 +41,7 @@ async function start() {
     if (d.android) {
       byId('android-help').textContent = t.androidHelp;
       const a = config.android;
-      byId('android-version').textContent = [a.version ? `${t.version} ${a.version}` : '', a.size_bytes ? `${t.approx} ${Math.round(a.size_bytes / 1048576)} MiB` : ''].filter(Boolean).join(' · ');
+      byId('android-version').textContent = a.version ? `${t.version} ${a.version}` : '';
     }
     const ready = platform === 'ios' ? d.ios : platform === 'android' ? d.android : d.ios || d.android;
     byId('status').textContent = ready ? t.choose : t.pending;

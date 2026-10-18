@@ -32,13 +32,10 @@ def validate_config(config, allow_pending=False):
     ios, android = config['ios'], config['android']
     assert ios['ready'] is True and (android['ready'] is True or allow_pending and android['ready'] is False), 'Both platforms must be verified, or explicitly publish pending Android status'
     check_url(ios['url'], 'testflight.apple.com', r'/join/[A-Za-z0-9]+/?')
-    assert android['mode'] == 'apk'
+    assert android['mode'] == 'play_internal'
     if allow_pending and android['ready'] is False and not android.get('url'):
         return
-    u = urlsplit(android['url'])
-    assert u.scheme == 'https' and u.netloc == 'drive.google.com' and not u.fragment
-    assert re.fullmatch(r'/file/d/[A-Za-z0-9_-]+/view', u.path)
-    assert u.query in ('', 'usp=sharing', 'usp=drivesdk')
+    check_url(android['url'], 'play.google.com', r'/apps/internaltest/[0-9]+/?')
 
 def patch_config(text, domain):
     # Only the identified API site is modified; all other sites/directives remain intact.
