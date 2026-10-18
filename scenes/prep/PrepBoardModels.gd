@@ -16,7 +16,7 @@ const UnitVisualResolverScript := preload("res://effects/runtime/presentation/Un
 const UnitContactShadowScript := preload("res://effects/runtime/presentation/UnitContactShadow.gd")
 const FOUR_STAR_READY_AURA := preload("res://effects/vfx3d/modules/FourStarAura3D.gd")
 const STAR_UPGRADE_BURST := preload("res://scenes/prep/effects/PrepStarUpgradeBurst.gd")
-const FOUR_STAR_READY_RING := preload("res://scenes/prep/effects/PrepFourStarReadyRing.gd")
+const FOUR_STAR_READY_GLOW := preload("res://scenes/prep/effects/PrepFourStarReadyGlow.gd")
 const FOUR_STAR_SCREEN_FX := preload("res://scenes/prep/effects/PrepFourStarScreenFx.gd")
 # 全屏层的画布层级。要压过棋盘与 HUD（升 4★ 那一下是全屏的主角），但必须在宝藏飞入
 # 动画（PrepUI.BONUS_FX_LAYER = 200）之下 —— 两者同时出现时宝藏那条是玩家要读的信息。
@@ -55,20 +55,12 @@ func _sync_four_star_actor(actor: Node3D, cell: Dictionary) -> void:
 		elif (not GameState.tutorial_mode or TutorialMode.allows_carrot_action("four_star")) and NetworkService.four_star_upgrade_available() and NetworkService.four_star_request_id.is_empty() and bool(GameState.four_star_check(cell).get("ok", false)):
 			state = 1
 	var affinity := str(def.get("element", ""))
-	# Keep the established gold readiness hint for eligible three-star pieces.
-	# The approved V2 envelope is reserved for completed four-star pieces.
-	var ready_aura := FOUR_STAR_READY_AURA.sync(actor, state if state == 1 else 0, affinity, 1.0)
-	if ready_aura != null and state == 1 and actor.is_inside_tree():
-		if not actor.has_meta("four_star_aura_transform") and bool(actor.get_meta("prep_model_centered", false)):
-			FOUR_STAR_READY_AURA.fit_to_skeleton(ready_aura, actor, 0.24)
-			var attempts := int(actor.get_meta("four_star_fit_attempts", 0)) + 1
-			actor.set_meta("four_star_fit_attempts", attempts)
-			if bool(ready_aura.get_meta("skeleton_fitted", false)) or attempts >= 10:
-				actor.set_meta("four_star_aura_transform", ready_aura.transform)
-		if actor.has_meta("four_star_aura_transform"):
-			ready_aura.transform = actor.get_meta("four_star_aura_transform")
-			ready_aura.attach_rim(actor)
-	_sync_four_star_ready_ring(actor, state)
+	# 10.18：「可升 4★」**不再**打开旧的 FourStarAura3D —— 它给棋子撒一身金色四角星
+	# 再描一圈金边，Leno 的评价是「全是金色的，很难看」。改由 PrepFourStarReadyGlow
+	# 只在脚下和身后往上照。这里仍以 state 0 调一次 sync：模型节点复用时，之前挂上的
+	# 那份要被关掉，不能留着。（这个模块只有备战页用，战斗里没有「可升」状态。）
+	FOUR_STAR_READY_AURA.sync(actor, 0, affinity, 1.0)
+	_sync_four_star_ready_glow(actor, state)
 	var aura := FOUR_STAR_AURA.sync(actor, 2 if state == 2 else 0, affinity, 1.0)
 	if aura != null and _four_star_hold_uids.has(str(cell.get("uid", ""))):
 		aura.visible = false
@@ -305,24 +297,22 @@ func pop_star_caption(location: String, index: int, star: int) -> void:
 			Color(1.0, 0.88, 0.45), Color.WHITE, 0.45)
 
 
-# 10.18：可升 4★ 的三星棋子，脚下加一圈缓慢旋转的金环 + 周期性上升光点。
-# 现有的全身 rim（FOUR_STAR_READY_AURA）保留当辅助 —— 单靠 rim 在 0.32 高的棋子上
-# 只有几像素宽，Leno 的评价是「不明显」。
+# 可升 4★ 的三星棋子：脚下金色光晕 + 往上照过头顶的光幕（见 PrepFourStarReadyGlow）。
 #
-# 环挂成 actor 的子节点：跟着棋子走、棋子没了自动一起没。尺度照样走
-# _prep_effect_scale()，它量的是真实格距，父级链上那些缩放都已经算进去了。
-func _sync_four_star_ready_ring(actor: Node3D, state: int) -> void:
-	var ring := actor.get_node_or_null("FourStarReadyRing")
+# 挂成 actor 的子节点：跟着棋子走、棋子没了自动一起没。尺度走 _prep_effect_scale()，
+# 它量的是真实格距，父级链上那些缩放都已经算进去了。
+func _sync_four_star_ready_glow(actor: Node3D, state: int) -> void:
+	var glow := actor.get_node_or_null("FourStarReadyGlow")
 	if state != 1:
-		if ring != null:
-			ring.queue_free()
+		if glow != null:
+			glow.queue_free()
 		return
-	if ring == null:
-		ring = FOUR_STAR_READY_RING.new()
-		ring.name = "FourStarReadyRing"
-		actor.add_child(ring)
+	if glow == null:
+		glow = FOUR_STAR_READY_GLOW.new()
+		glow.name = "FourStarReadyGlow"
+		actor.add_child(glow)
 	if actor.is_inside_tree():
-		(ring as Node3D).scale = _prep_effect_scale(actor)
+		(glow as Node3D).scale = _prep_effect_scale(actor)
 
 
 # 升 4★ 那一瞬间。顺序是：全屏层的羽毛 / 碎晶 / 闪电先「落到」棋子上（IMPACT_SEC），

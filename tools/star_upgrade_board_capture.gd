@@ -217,6 +217,9 @@ func _run_case(def: Dictionary, star: int, tag: String) -> void:
 # 判据与游戏里一致：GameState.four_star_check(cell).ok 为真时 _sync_four_star_actor
 # 的 state 才会是 1，那圈环才会挂上。
 func _run_four_star_ready(def: Dictionary) -> void:
+	# 上一段（3★ 升星）的迸发挂在模型根上、不跟着棋子清掉，而且就在同一格（5 号）。
+	# 不等它散完，它的金色星星会串进这一段，看着像「可升 4★」自己撒了一身金粉。
+	await get_tree().create_timer(2.0).timeout
 	for i in GameState.board_slots.size():
 		GameState.board_slots[i] = null
 	for i in GameState.bench_slots.size():
