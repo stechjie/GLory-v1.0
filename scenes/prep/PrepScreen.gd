@@ -114,6 +114,10 @@ func _ready() -> void:
 		PlayerProfile.refresh_prep_skin()
 	if not NetworkService.team_treasure_effects_changed.is_connected(_on_team_treasure_effects_changed):
 		NetworkService.team_treasure_effects_changed.connect(_on_team_treasure_effects_changed)
+	# 10.18：开场就接上祭坛结果 —— 队友献祭的同步（uses < 0）要让没有祭坛的人也看到爆金币；
+	# 原来只在自己点祭坛时才连这条信号。
+	if not NetworkService.altar_result.is_connected(_on_altar_result):
+		NetworkService.altar_result.connect(_on_altar_result)
 	if not carrot_harvest_gains.is_empty():
 		# 记账：客机那条路径（_maybe_play_pending_carrot_harvest）也会在权威采集
 		# 到达时补播，两边共用这个标记保证一回合只播一次。

@@ -76,6 +76,8 @@ static func apply_death_poison_explosion(victim: Dictionary, vd: Dictionary, ene
 	# 由结算面板并入席位总伤害、不进任何棋子的个人伤害。
 	var previous_slot := DamageService.current_element_owner_slot()
 	DamageService.set_element_owner_slot(int(victim.get("owner_slot", -1)))
+	# 10.18：爆炸伤害跳数字 + 前端按 fx_source（自爆灵自己）画毒爆冲击环。纯表现标记。
+	var saved_hit := DamageService.push_treasure_hit_context("death_poison_explosion", str(victim.get("uid", "")))
 	var exploded := false
 	for o in enemies:
 		if not bool(o.get("alive", false)):
@@ -87,6 +89,7 @@ static func apply_death_poison_explosion(victim: Dictionary, vd: Dictionary, ene
 		DamageService.apply_damage(o, maxi(1, int(round(float(victim.atk) * float(vd.get("damage_atk_pct", 2.5))))), true)
 		StatusEffectService.add_poison(o, 4.0, 0.03, 0.0, true)
 		exploded = true
+	DamageService.restore_hit_context(saved_hit)
 	DamageService.set_element_owner_slot(previous_slot)
 	return exploded
 
@@ -301,7 +304,10 @@ static func _apply_soul_counter_treasure(killer: Dictionary, victim: Dictionary)
 		return
 	if not bool(killer.get("alive", false)):
 		return
+	# 10.18：亡魂从倒下的持有者身上飞向凶手 —— fx_source 填持有者。纯表现标记。
+	var saved_hit := DamageService.push_treasure_hit_context("treasure_soul_counter", str(victim.get("uid", "")))
 	DamageService.apply_damage(killer, maxi(1, int(round(float(killer.get("max_hp", 1)) * 0.35))), true)
+	DamageService.restore_hit_context(saved_hit)
 
 
 static func _queue_phoenix_revive(victim: Dictionary, state: Dictionary) -> void:
@@ -349,9 +355,12 @@ static func _process_temporary_deaths(state: Dictionary) -> void:
 
 static func _apply_element_set_burst(attacker: Dictionary, target: Dictionary, state: Dictionary) -> void:
 	var opponents: Array = state.enemy if str(attacker.team) == "player" else state.player
+	# 10.18：四元素爆发跳数字 + 前端以被打中的那个目标（fx_source）为中心画元素环。纯表现标记。
+	var saved_hit := DamageService.push_treasure_hit_context("treasure_element_burst", str(target.get("uid", "")))
 	for o in opponents:
 		if bool(o.get("alive", false)) and _can_target(attacker, o, opponents) and target.pos.distance_to(o.pos) <= 180.0:
 			DamageService.apply_damage(o, maxi(1, int(round(float(o.max_hp) * 0.10))), true)
+	DamageService.restore_hit_context(saved_hit)
 
 
 static func _apply_frenzy_assault(attacker: Dictionary, target: Dictionary) -> void:

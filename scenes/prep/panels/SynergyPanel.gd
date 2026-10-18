@@ -57,6 +57,8 @@ func refresh() -> void:
 	_left_panel_signature = sig
 	for child in _left_panel.get_children():
 		child.queue_free()
+	altar_logo = null
+	gamble_logo = null
 	var title := _outlined(Label.new())
 	title.text = tr("ui_bond_treasure")
 	title.add_theme_font_size_override("font_size", 16)
@@ -70,23 +72,69 @@ func refresh() -> void:
 	_left_panel.add_child(sell_hint)
 
 	# Owned-treasure logos now live next to the money bag (see _owned_treasure_box).
+	# 10.18：两个金钱宝藏从「文字按钮上下堆」改成一行「左 logo（点它触发）+ 右侧名称与说明」。
+	# 只有拿到宝藏才出现；用完 / 血量不够时 logo 变灰、点不动。
 	if GameState.owned_treasures.has("money_golden_altar"):
-		var altar := Button.new()
 		# 显示实际到账金额。此前硬编码了 5，而 ALTAR_GOLD = 50 —— 玩家看到的和
 		# 拿到的差了一个数量级。改成读常量，以后调数值不会再漏改这里。
-		altar.text = tr("ui_altar") % [0 if TreasureService.has_linkage("link_hu_pai_master") else TreasureService.golden_altar_hp_cost(), NetworkService.ALTAR_GOLD, GameState.golden_altar_uses]
+		var hp_cost := 0 if TreasureService.has_linkage("link_hu_pai_master") else TreasureService.golden_altar_hp_cost()
 		var altar_hp := GameState.team_hp if GameState.team_mode else GameState.player_formation_hp
-		altar.disabled = altar_hp <= NetworkService.ALTAR_MIN_HP or GameState.golden_altar_uses >= NetworkService.ALTAR_MAX_USES_PER_ROUND
-		altar.pressed.connect(func(): altar_requested.emit())
-		_left_panel.add_child(altar)
+		var altar_ready := altar_hp > NetworkService.ALTAR_MIN_HP and GameState.golden_altar_uses < NetworkService.ALTAR_MAX_USES_PER_ROUND
+		altar_logo = _add_money_action(ALTAR_LOGO_PATH, tr("ui_altar_name"),
+			tr("ui_altar_desc") % [hp_cost, NetworkService.ALTAR_GOLD, GameState.golden_altar_uses],
+			altar_ready, func(): altar_requested.emit(), "money_golden_altar")
 
 	if GameState.owned_treasures.has("money_generous_fate"):
-		var gamble := Button.new()
-		gamble.text = tr("ui_gamble_used") if GameState.gamble_used else tr("ui_gamble")
-		gamble.disabled = GameState.gamble_used
-		gamble.pressed.connect(func(): gamble_requested.emit())
-		overlay.attach_long_press(gamble, func(): treasure_detail_requested.emit("money_generous_fate"))
-		_left_panel.add_child(gamble)
+		var loss_pct := 50 if TreasureService.has_linkage("link_fraud_fate") else 80
+		var desc := tr("ui_gamble_desc_used") if GameState.gamble_used else tr("ui_gamble_desc") % loss_pct
+		gamble_logo = _add_money_action(GAMBLE_LOGO_PATH, tr("ui_gamble_name"), desc,
+			not GameState.gamble_used, func(): gamble_requested.emit(), "money_generous_fate")
+
+
+# 金钱宝藏动作行。返回 logo 按钮，宿主拿它的位置做骰子 / 金币特效的起点。
+const ALTAR_LOGO_PATH := "res://assets/ui/treasure_logos/黄金祭坛_无框.png"
+# 骰子 logo 还没出图，先用慷慨命运原图占位；出图后只换这一个路径。
+const GAMBLE_LOGO_PATH := "res://assets/ui/treasure_logos/慷慨命运.png"
+const MONEY_LOGO_SIZE := Vector2(40, 40)
+const MONEY_DISABLED_TINT := Color(0.42, 0.42, 0.42, 0.85)
+var altar_logo: TextureButton
+var gamble_logo: TextureButton
+
+func _add_money_action(logo_path: String, title: String, desc: String, enabled: bool, on_press: Callable, detail_id: String) -> TextureButton:
+	var row := HBoxContainer.new()
+	row.custom_minimum_size = Vector2(220, MONEY_LOGO_SIZE.y)
+	row.add_theme_constant_override("separation", 8)
+	_left_panel.add_child(row)
+	var logo := TextureButton.new()
+	logo.texture_normal = PrepWidgets.cached_texture(logo_path)
+	logo.ignore_texture_size = true
+	logo.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+	logo.custom_minimum_size = MONEY_LOGO_SIZE
+	logo.focus_mode = Control.FOCUS_NONE
+	logo.disabled = not enabled
+	logo.modulate = Color.WHITE if enabled else MONEY_DISABLED_TINT
+	logo.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if enabled else Control.CURSOR_ARROW
+	logo.tooltip_text = title
+	logo.pressed.connect(on_press)
+	overlay.attach_long_press(logo, func(): treasure_detail_requested.emit(detail_id))
+	row.add_child(logo)
+	var text_box := VBoxContainer.new()
+	text_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	text_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text_box.add_theme_constant_override("separation", 0)
+	row.add_child(text_box)
+	var name_label := _outlined(Label.new())
+	name_label.text = title
+	name_label.add_theme_font_size_override("font_size", 13)
+	name_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.42) if enabled else Color(0.7, 0.7, 0.7))
+	text_box.add_child(name_label)
+	var desc_label := _outlined(Label.new())
+	desc_label.text = desc
+	# 单行：左栏高度很紧（4 行羁绊 + 两行宝藏要塞进 720 高），换行会压到下面的宝藏栏。
+	desc_label.add_theme_font_size_override("font_size", 12)
+	desc_label.add_theme_color_override("font_color", Color(0.94, 0.94, 0.90) if enabled else Color(0.62, 0.62, 0.62))
+	text_box.add_child(desc_label)
+	return logo
 
 
 

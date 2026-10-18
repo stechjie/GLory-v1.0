@@ -33,6 +33,12 @@ static var _hit_is_crit := false
 # numbers on the renderer side.
 static var _hit_source_race := ""
 static var _hit_skill_id := ""
+# 10.18：宝藏反应伤害（元素四件套 / 自爆灵爆炸 / 亡魂反击）用的表现来源。只进 hit_number
+# 事件给特效定位（亡魂从谁身上飞出、毒爆以谁为中心），**不**参与伤害统计归属。
+static var _hit_fx_source_uid := ""
+# 宝藏反应伤害的 hit kind。跳数字，但它不是普攻也不是技能 —— 赤卫格挡、闪避这些
+# 只认 basic / skill 的判定不会碰到它，玩法不变。
+const HIT_KIND_TREASURE := "treasure"
 
 
 static func current_battle_elapsed() -> float:
@@ -44,7 +50,27 @@ static func set_hit_context(kind: String, is_crit: bool = false, source_race: St
 	_hit_source_race = source_race
 	_hit_skill_id = skill_id
 
+# 宝藏反应伤害常在别的攻击结算中途触发（亡魂反击在击杀回调里、自爆在致死回调里），
+# 所以压入前先存下当前上下文，结算完原样还回去。返回值交给 restore_hit_context()。
+static func push_treasure_hit_context(skill_id: String, fx_source_uid: String = "") -> Dictionary:
+	var saved := {"kind": _hit_kind, "crit": _hit_is_crit, "race": _hit_source_race,
+		"skill_id": _hit_skill_id, "fx_source": _hit_fx_source_uid}
+	_hit_kind = HIT_KIND_TREASURE
+	_hit_is_crit = false
+	_hit_source_race = ""
+	_hit_skill_id = skill_id
+	_hit_fx_source_uid = fx_source_uid
+	return saved
+
+static func restore_hit_context(saved: Dictionary) -> void:
+	_hit_kind = str(saved.get("kind", ""))
+	_hit_is_crit = bool(saved.get("crit", false))
+	_hit_source_race = str(saved.get("race", ""))
+	_hit_skill_id = str(saved.get("skill_id", ""))
+	_hit_fx_source_uid = str(saved.get("fx_source", ""))
+
 static func clear_hit_context() -> void:
+	_hit_fx_source_uid = ""
 	_hit_kind = ""
 	_hit_is_crit = false
 	_hit_source_race = ""
@@ -59,14 +85,15 @@ static func _maybe_emit_hit_number(target: Dictionary, hp_damage: int) -> void:
 		return
 	# Basic attacks (crit or not) and skill hits surface; DoT ticks, treasure
 	# reactions and other unclassified paths stay silent (kind == "").
-	var show := _hit_kind == "skill" or _hit_kind == "basic"
+	var show := _hit_kind == "skill" or _hit_kind == "basic" or _hit_kind == HIT_KIND_TREASURE
 	if not show:
 		return
-	_append_presentation_event({
+	var event := {
 		"type": "hit_number",
 		"kind": "dmg",
 		"crit": _hit_is_crit,
-		"skill": _hit_kind == "skill",
+		# 宝藏伤害按技能伤害的样式显示数字。
+		"skill": _hit_kind == "skill" or _hit_kind == HIT_KIND_TREASURE,
 		"race": _hit_source_race,
 		"source_uid": _stat_source_uid,
 		"target_uid": str(target.get("uid", "")),
@@ -75,7 +102,12 @@ static func _maybe_emit_hit_number(target: Dictionary, hp_damage: int) -> void:
 		"amount": hp_damage,
 		"is_crit": _hit_is_crit,
 		"is_lethal": not bool(target.get("alive", true)),
-	})
+	}
+	if _hit_kind == HIT_KIND_TREASURE:
+		event["treasure"] = true
+		if not _hit_fx_source_uid.is_empty():
+			event["fx_source_uid"] = _hit_fx_source_uid
+	_append_presentation_event(event)
 
 # A successful dodge has no HP damage, so it needs its own presentation cue.
 # Keep the existing RNG roll and gameplay result untouched.
@@ -250,6 +282,7 @@ static func clear_stat_context() -> void:
 	_hit_is_crit = false
 	_hit_source_race = ""
 	_hit_skill_id = ""
+	_hit_fx_source_uid = ""
 
 static func current_stat_source_uid() -> String:
 	return _stat_source_uid

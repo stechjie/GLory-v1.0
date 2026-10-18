@@ -29,6 +29,7 @@ const VFX_CRIMSON_ATTACK:=preload("res://effects/vfx3d/units/VFXCrimsonAttack3D.
 const VFX_CRIMSON_SKILL:=preload("res://effects/vfx3d/units/VFXCrimsonSkill3D.gd")
 # 黑龙黑洞 / 神王神威 / 母灵亡者之书（10.10 重做，见 VFXHeroSkill3D 文件头）。
 const VFX_HERO_SKILL:=preload("res://effects/vfx3d/units/VFXHeroSkill3D.gd")
+const VFX_TREASURE_SKILL:=preload("res://effects/vfx3d/units/VFXTreasureSkill3D.gd")
 const CRIMSON_CATALOG:=preload("res://effects/vfx3d/units/CrimsonVFXCatalog.gd")
 const PROFILE_ANGEL_GUARD:=preload("res://effects/vfx3d/profiles/examples/angel_guard_example.tres")
 const OGA_CHESS_CATALOG:=preload("res://effects/vfx3d/units/OgaChessVFXCatalog.gd")
@@ -189,6 +190,10 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 		"every_fourth_combo":_combo_hit(origin,target,context)
 		"every_fifth_group_heal":_holy_group(origin,context)
 		"death_poison_explosion":_oga_pack_skill("death_poison_explosion",origin,origin,context)
+		# 10.18：自爆的毒爆冲击环单独一个 id，由「被炸到」的伤害事件触发，不重播上面的毒爆贴图。
+		"treasure_poison_blast":_poison_blast(origin,context)
+		"treasure_element_burst","treasure_soul_counter","treasure_control_refresh":
+			_treasure_skill(skill_id,origin,target,context)
 		"poison_reflect_armor_stack":_oga_pack_skill("poison_reflect_armor_stack",origin,origin,context)
 		"parasite_on_kill":_summon(target)
 		"left_neighbor_sacrifice":_tracked_link(origin,target,context,_blood_profile(.76,2.0))
@@ -328,6 +333,47 @@ func _hero_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionar
 		return
 	last_spawned=effect
 	effect.call("play_hero_skill",skill_id,origin,target,context)
+
+# 自爆灵炸到人时的毒爆（10.18 用户定：就用 poison_explosion 序列帧，改成绿色）。
+# 自爆灵中心一个大的，每个真被炸到的单位身上一个小的，按离中心的距离先后炸开。
+# 贴图是 poison_explosion.png 离线转色相（橙 → 毒绿）得到的，原图不动。
+const POISON_EXPLOSION_GREEN:="res://assets/vfx/oga/skill_packs/poison_explosion_green.png"
+const POISON_BLAST_MAX_TARGETS:=8
+
+func _poison_explosion_spec(size:float)->Dictionary:
+	return {"path":POISON_EXPLOSION_GREEN,"columns":4,"rows":4,"frame_count":16,"fps":24.0,
+		"size":Vector2(size,size),"duration":0.68,"billboard":true,"color":Color(1.0,1.0,1.0,0.96)}
+
+func _poison_blast(origin_foot:Vector3,context:Dictionary)->void:
+	var h:=_uh(context,"origin_height")
+	var center:=_lvl_foot(origin_foot,h,LEVEL_BODY)
+	var main:=_block(VFX_OGA_SKILL) as VFXFlipbookSkill3D
+	if main!=null:
+		last_spawned=main
+		main.play_spec(center,_poison_explosion_spec(2.2),{})
+	var targets:Array=[]
+	for v in context.get("targets",[]):
+		if v is Vector3:
+			targets.append(v)
+	for i in range(mini(targets.size(),POISON_BLAST_MAX_TARGETS)):
+		var at:Vector3=targets[i]
+		var dist:=Vector2(at.x-origin_foot.x,at.z-origin_foot.z).length()
+		var hit:=_block(VFX_OGA_SKILL) as VFXFlipbookSkill3D
+		if hit==null:
+			continue
+		_after(0.06+dist*0.12,func()->void:
+			if is_instance_valid(hit):
+				hit.play_spec(at,_poison_explosion_spec(1.0),{}))
+
+# 宝藏触发的战斗表现（元素四件套 / 亡魂反击 / 控制套装刷新时钟）。
+# 亡魂反击与刷新时钟是玩家要读懂的关键反馈，走 critical 通道；元素环与毒环走普通预算。
+func _treasure_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary)->void:
+	var critical:=skill_id in ["treasure_soul_counter","treasure_control_refresh"]
+	var effect:Node3D=_block_forced(VFX_TREASURE_SKILL) if critical else _block(VFX_TREASURE_SKILL)
+	if effect==null:
+		return
+	last_spawned=effect
+	effect.call("play_treasure",skill_id,origin,target,context)
 
 func _crimson_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var critical:=skill_id=="aoe_silence"

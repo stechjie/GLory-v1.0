@@ -127,6 +127,8 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 	var damage_events: Array[Dictionary] = []
 	var death_events: Array[Dictionary] = []
 	var apocalypse_ended: Array[Dictionary] = []
+	# 10.18 控制四件套刷新：冷却骤降的候选先存下，等本帧的死亡全部收齐再判（击杀者可能先于死者被遍历）。
+	var refresh_candidates: Array = []
 
 	for id: String in current.keys():
 		var now: Dictionary = current[id]
@@ -258,6 +260,8 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 		var now_skill_ready := float(now.get("skill_ready", 0.0))
 		if now_skill_ready > prev_skill_ready + 0.1:
 			_play_skill_cast_vfx(now, prev, damage_events, current)
+		elif prev_skill_ready - now_skill_ready > REFRESH_MIN_DROP_SEC:
+			refresh_candidates.append([prev, now])
 		if bool(prev.get("alive", true)) and not bool(now.get("alive", true)):
 			death_events.append({"pos": now.get("foot_pos", Vector2.ZERO), "world_foot": now.get("world_foot", Vector3.ZERO), "world_hit": now.get("world_hit", Vector3.ZERO), "killer_team": _opposite_team(str(now.get("team", ""))), "killer_uid": str(now.get("killer_uid", "")), "mother_execute_kill": bool(now.get("mother_execute_kill", false)), "model_node": now.get("model_node"), "victim_id": id})
 			if sid_now == "twin_revive":
@@ -281,6 +285,10 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 		_spawn_vfx("DEATH_EXPLOSION", prev_missing.get("foot_pos", Vector2.ZERO))
 		if bool(prev_missing.get("mother_execute_kill", false)):
 			death_events.append({"pos": prev_missing.get("foot_pos", Vector2.ZERO), "world_foot": prev_missing.get("world_foot", Vector3.ZERO), "world_hit": prev_missing.get("world_hit", Vector3.ZERO), "killer_uid": str(prev_missing.get("killer_uid", "")), "mother_execute_kill": true, "model_node": prev_missing.get("model_node"), "victim_id": id})
+
+	_note_refresh_death_teams(death_events)
+	for pair in refresh_candidates:
+		_maybe_play_refresh_clock(pair[0], pair[1])
 
 	for apocalypse: Dictionary in apocalypse_ended:
 		var affected := _boss_damage_events_for_lane(apocalypse, damage_events)
@@ -1472,6 +1480,8 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 	# 赤律族：同一次攻击产生的几条事件先归组，循环结束后各播一次（见 _play_crimson_event_groups）。
 	var crimson_hp_hits: Dictionary = {}
 	var crimson_pierces: Dictionary = {}
+	# 10.18 宝藏反应伤害（元素四件套 / 自爆 / 亡魂反击）：同一次触发的多条伤害归一组，播一次。
+	var treasure_groups: Dictionary = {}
 	while _vfx_visual_event_index < events.size():
 		var event = events[_vfx_visual_event_index]
 		_vfx_visual_event_index += 1
@@ -1519,6 +1529,8 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 			_play_crimson_proc(event, current)
 		elif str(event.get("type", "")) == "impact" and str(event.get("skill_id", "")) == "line_pierce":
 			_collect_crimson_event(crimson_pierces, event, false)
+		elif str(event.get("type", "")) == "hit_number" and bool(event.get("treasure", false)) and str(event.get("kind", "dmg")) == "dmg":
+			_collect_treasure_hit(treasure_groups, event)
 		elif str(event.get("type", "")) == "hit_number" and str(event.get("skill_id", "")) == "global_divine_blast" and str(event.get("kind", "dmg")) == "dmg":
 			_play_divine_pulse(event, current)
 		elif str(event.get("type", "")) == "hit_number" and str(event.get("skill_id", "")) == "current_hp_strike" and str(event.get("kind", "dmg")) == "dmg":
@@ -1567,6 +1579,107 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 		# D6: hit_number is drawn by the Director's adapter, on its timing. The old
 		# branch here would have been a second, untimed copy of the same number.
 	_play_crimson_event_groups(crimson_hp_hits, crimson_pierces, current)
+	_play_treasure_hit_groups(treasure_groups, current)
+
+
+# --- 10.18 宝藏反应伤害的表现 ------------------------------------------------
+#
+# 模拟器给这三类伤害打了 kind = treasure 的 hit_number（DamageService.push_treasure_hit_context），
+# fx_source_uid 是表现起点：元素爆发的中心目标 / 自爆灵自己 / 亡魂反击的持有者。
+# 起点那一位可能当帧就死了（自爆灵、持有者），所以先查本帧快照、再退回上一帧。
+const TREASURE_HIT_VFX := {
+	"treasure_element_burst": "treasure_element_burst",
+	"death_poison_explosion": "treasure_poison_blast",
+	"treasure_soul_counter": "treasure_soul_counter",
+}
+# 元素四件套和自爆的模拟半径（BattleSimTreasures 里写死的 180）。
+const TREASURE_BLAST_SIM_RADIUS := 180.0
+
+func _collect_treasure_hit(groups: Dictionary, event: Dictionary) -> void:
+	var skill_id := str(event.get("skill_id", ""))
+	if not TREASURE_HIT_VFX.has(skill_id):
+		return
+	var fx_source := str(event.get("fx_source_uid", ""))
+	var target_uid := str(event.get("target_uid", ""))
+	if fx_source.is_empty() or target_uid.is_empty():
+		return
+	var key := "%s|%s|%s" % [skill_id, fx_source, str(event.get("tick", event.get("time", "")))]
+	var group: Dictionary = groups.get(key, {"skill": skill_id, "fx_source": fx_source, "targets": []})
+	(group["targets"] as Array).append(target_uid)
+	groups[key] = group
+
+
+func _play_treasure_hit_groups(groups: Dictionary, current: Dictionary) -> void:
+	for key: String in groups:
+		var group: Dictionary = groups[key]
+		var skill_id := str(group["skill"])
+		var origin_unit := _vfx_unit_by_sim_uid(current, str(group["fx_source"]))
+		if origin_unit.is_empty():
+			origin_unit = _vfx_unit_by_sim_uid(_vfx_prev_units, str(group["fx_source"]))
+		if origin_unit.is_empty():
+			continue
+		var hit_positions: Array = []
+		var first_target: Dictionary = {}
+		for uid in group["targets"]:
+			var unit := _vfx_unit_by_sim_uid(current, str(uid))
+			if unit.is_empty():
+				unit = _vfx_unit_by_sim_uid(_vfx_prev_units, str(uid))
+			if unit.is_empty():
+				continue
+			if first_target.is_empty():
+				first_target = unit
+			hit_positions.append(unit.get("world_hit", unit.get("world_foot", Vector3.ZERO)))
+		if first_target.is_empty():
+			continue
+		var vfx_id := str(TREASURE_HIT_VFX[skill_id])
+		var context := _unit_target_context(origin_unit, first_target)
+		context["targets"] = hit_positions
+		context["radius"] = _guardian_taunt_world_radius(TREASURE_BLAST_SIM_RADIUS)
+		var origin: Vector3 = origin_unit.get("world_foot", Vector3.ZERO)
+		var target: Vector3 = first_target.get("world_hit", first_target.get("world_foot", Vector3.ZERO))
+		_play_unit_procedural(vfx_id, origin, target, context)
+
+
+# 10.18 控制四件套「普攻最后一下击杀 → 技能冷却清零」：模拟器不发事件，这里从冷却的变化推断。
+#
+# 判据（三条同时成立）：
+#   ① 一帧之内冷却缩短超过 0.3 秒 —— 正常情况冷却只会往后推（放完技能才更新）；
+#   ② 缩短量不是整 1 秒 / 2 秒 —— 排除赤律 7 赤潮（-1 秒）与赤律共鸣（-2 秒）没被截断的那几次；
+#   ③ 这一帧或上一帧有对方棋子阵亡 —— 刷新只由击杀触发。
+# 回放 roster 里没有棋子的宝藏列表，判不出谁带了控制套装，所以只能这样推；赤律那两条在
+# 剩余冷却不足 1/2 秒时会被压到「现在」，和击杀同帧时会误报一次，概率很低。
+# 用户口径：所有人都能看到（战场信息，不做归属门控）。
+const REFRESH_MIN_DROP_SEC := 0.3
+var _recent_death_teams: Dictionary = {}
+var _recent_death_teams_prev: Dictionary = {}
+
+func _note_refresh_death_teams(death_events: Array) -> void:
+	_recent_death_teams_prev = _recent_death_teams
+	_recent_death_teams = {}
+	for e: Dictionary in death_events:
+		var victim: Dictionary = _vfx_prev_units.get(str(e.get("victim_id", "")), {})
+		var team := str(victim.get("team", ""))
+		if not team.is_empty():
+			_recent_death_teams[team] = true
+
+
+func _maybe_play_refresh_clock(prev: Dictionary, now: Dictionary) -> void:
+	if not bool(now.get("alive", false)):
+		return
+	var drop := float(prev.get("skill_ready", 0.0)) - float(now.get("skill_ready", 0.0))
+	if drop <= REFRESH_MIN_DROP_SEC:
+		return
+	if absf(drop - 1.0) < 0.02 or absf(drop - 2.0) < 0.02:
+		return
+	var enemy_team := _opposite_team(str(now.get("team", "")))
+	if not (_recent_death_teams.has(enemy_team) or _recent_death_teams_prev.has(enemy_team)):
+		return
+	var context := _unit_target_context(now, now)
+	var head_anchor: Variant = _unit_actor_registry.get_anchor(str(now.get("id", "")), "HeadAnchor")
+	if head_anchor is Node3D:
+		context["origin_node"] = head_anchor
+	var head: Vector3 = now.get("world_head", now.get("world_cast", Vector3.ZERO))
+	_play_unit_procedural("treasure_control_refresh", head, head, context)
 
 # 10.10 神王：后续每一跳伤害（hit_number，skill_id = global_divine_blast）在目标身上
 # 补一个小脉冲。第一跳与施法同帧落下，那一下由光弹命中负责：同一次刷新里神王的

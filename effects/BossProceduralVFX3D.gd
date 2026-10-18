@@ -41,6 +41,8 @@ const UNIT_SKILLS := [
 	"random_ally_buff", "frost_status", "aoe_silence",
 	"block_guard", "team_random_stack", "stacking_def_break",
 	"current_hp_strike", "line_pierce",
+	# 10.18 宝藏触发（VFXTreasureSkill3D）。
+	"treasure_element_burst", "treasure_poison_blast", "treasure_soul_counter", "treasure_control_refresh",
 ]
 
 var _composer: BossSkillVFXComposer3D

@@ -141,6 +141,14 @@ func _zh_strings() -> Dictionary:
 		"ui_altar": "黄金祭坛 -%dHP +%d金 (%d/3)",
 		"ui_gamble_used": "慷慨命运 赌博（本回合已用）",
 		"ui_gamble": "慷慨命运 赌博：50%变为2.5倍 / 50%损失80%",
+		# 10.18：金钱宝藏改成「左 logo + 右说明」一行，点 logo 触发
+		"ui_altar_name": "黄金祭坛",
+		"ui_altar_desc": "-%dHP +%d金 (%d/3)",
+		"ui_gamble_name": "慷慨命运",
+		"ui_gamble_desc": "掷骰 4-6 ×2.5 / 1-3 -%d%%",
+		"ui_gamble_desc_used": "本回合已掷过",
+		"ui_gamble_win": "赢了！",
+		"ui_gamble_lose": "输了…",
 		# Prep 佣兵
 		"ui_choose_mercenary": "选择佣兵",
 		"ui_merc_hired_count": "已雇 %d/%d",
@@ -645,6 +653,13 @@ func _en_strings() -> Dictionary:
 		"ui_altar": "Golden Altar -%dHP +%d G (%d/3)",
 		"ui_gamble_used": "Fate Gamble (used this round)",
 		"ui_gamble": "Fate Gamble: 50% to 2.5x / 50% lose 80%",
+		"ui_altar_name": "Golden Altar",
+		"ui_altar_desc": "-%dHP +%d G (%d/3)",
+		"ui_gamble_name": "Generous Fate",
+		"ui_gamble_desc": "Roll 4-6 x2.5 / 1-3 -%d%%",
+		"ui_gamble_desc_used": "Rolled this round",
+		"ui_gamble_win": "You win!",
+		"ui_gamble_lose": "You lose...",
 		# Prep Mercenary
 		"ui_choose_mercenary": "Choose Mercenary",
 		"ui_merc_hired_count": "Hired %d/%d",
