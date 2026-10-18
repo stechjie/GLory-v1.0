@@ -29,7 +29,7 @@ const PREP_CAMERA_POSITION := Vector3(0.0, 3.8, 2.0)
 const PREP_CAMERA_TARGET := Vector3(0.0, -0.07, -0.03)
 const PREP_CAMERA_FOV := 44.0
 # 沿视线拉近到这个距离（原距离约 4.37）。
-const PREVIEW_DISTANCE := 1.35
+const PREVIEW_DISTANCE := 2.0
 
 # 每一档取几帧。8 帧 × 两档，拼成两张 4×2 的联络表，一眼能看完整段动作。
 const FRAMES_PER_STAR := 8
