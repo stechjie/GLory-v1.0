@@ -487,12 +487,40 @@ async def test_manual_and_credit_bans_report_different_reasons() -> None:
 
 
 @pytest.mark.anyio
-async def test_gate_blocks_ranked_outside_the_window() -> None:
-    conn = _GateConn({"score": 100, "banned_until": None})
-    assert await ranked.queue_gate(conn, uuid.UUID(int=1), "ranked",
-                                   _at_myt(12)) == ranked.GATE_WINDOW_CLOSED
-    assert await ranked.queue_gate(conn, uuid.UUID(int=1), "ranked",
-                                   _at_myt(20)) == ranked.GATE_OK
+async def test_gate_blocks_ranked_outside_the_window(monkeypatch) -> None:
+    # 时间窗口这条规则还在，只是线上默认全天开放（ranked_all_day）。关掉全天开放才验窗口。
+    from app.config import get_settings
+
+    monkeypatch.setenv("GLORY_RANKED_ALL_DAY", "false")
+    monkeypatch.setenv("GLORY_RANKED_WINDOW_ALWAYS_OPEN", "false")
+    get_settings.cache_clear()
+    try:
+        conn = _GateConn({"score": 100, "banned_until": None})
+        assert await ranked.queue_gate(conn, uuid.UUID(int=1), "ranked",
+                                       _at_myt(12)) == ranked.GATE_WINDOW_CLOSED
+        assert await ranked.queue_gate(conn, uuid.UUID(int=1), "ranked",
+                                       _at_myt(20)) == ranked.GATE_OK
+    finally:
+        get_settings.cache_clear()
+
+
+@pytest.mark.anyio
+async def test_ranked_all_day_opens_the_gate_at_noon(monkeypatch) -> None:
+    """2026-10-19：玩家少，排位全天开放（app/config.py ranked_all_day，默认开）。"""
+    from app.config import get_settings
+
+    monkeypatch.setenv("GLORY_RANKED_ALL_DAY", "true")
+    monkeypatch.setenv("GLORY_RANKED_WINDOW_ALWAYS_OPEN", "false")
+    get_settings.cache_clear()
+    try:
+        conn = _GateConn({"score": 100, "banned_until": None})
+        assert await ranked.queue_gate(conn, uuid.UUID(int=1), "ranked",
+                                       _at_myt(12)) == ranked.GATE_OK
+        assert ranked.accepting_now(_at_myt(3))
+        # 真实时间表照旧如实返回 —— 全天开放只影响准入判定与 /v1/match/window。
+        assert ranked.window_state(_at_myt(12))["accepting"] is False
+    finally:
+        get_settings.cache_clear()
 
 
 @pytest.mark.anyio
@@ -539,3 +567,28 @@ def test_ranked_mode_is_open_now() -> None:
     from app import matchmaking
 
     assert matchmaking.RANKED in matchmaking.OPEN_MODES
+
+
+
+@pytest.mark.anyio
+async def test_ranked_against_ai_counts_ai_as_my_own_team_average() -> None:
+    """2026-10-19 AI 补位：AI 座位没有分数，按己方真人的平均分算。
+
+    一个 150 分的人对 5 个 AI：赢了拿正常的 25、输了扣正常的 20。
+    把 AI 当 0 分的话，赢了只加十几分、输了反而多扣 —— 新玩家越打越亏。
+    """
+    me = uuid.UUID(int=1)
+
+    def report(outcome: str) -> dict:
+        seats = [{"slot": 0, "team": 0, "player_id": me, "online_at_end": True, "was_ai": False}]
+        seats += [{"slot": i, "team": 0 if i < 3 else 1, "player_id": None,
+                   "online_at_end": False, "was_ai": True} for i in range(1, 6)]
+        return {"match_uid": "b" * 32, "mode": "ranked", "outcome": outcome,
+                "rounds": 13, "seats": seats}
+
+    won = _FakeConn({me}, {me: 150})
+    await ranked.settle(won, report("team_a"))
+    assert [w[1] for w in won.ranked_writes if w[0] == me] == [150 + ranked.BASE_DELTA]
+    lost = _FakeConn({me}, {me: 150})
+    await ranked.settle(lost, report("team_b"))
+    assert [w[1] for w in lost.ranked_writes if w[0] == me] == [150 - ranked.LOSS_BASE]

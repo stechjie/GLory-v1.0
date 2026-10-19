@@ -157,7 +157,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # 重启 = 队列清空、待确认的对局作废 —— 高峰期别部署。
     party.install(party.Parties())
     matcher = asyncio.create_task(matchmaking.loop(matchmaking.install(
-        matchmaking.Matchmaker(matchmaking.hub_send))))
+        matchmaking.Matchmaker(matchmaking.hub_send,
+                               ai_fill_after_sec=matchmaking.ai_fill_after_from_settings()))))
     # 赛季结算（app/seasons.py）：每 5 分钟看一眼有没有到点的赛季。
     # 幂等不靠这个循环 —— 在 database/015 的 settle_season() 里认领 settled_at。
     seasonal = asyncio.create_task(seasons.loop())

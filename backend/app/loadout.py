@@ -296,6 +296,7 @@ def card_payload(
     mode: str = "casual",
     seat: int = -1,
     patch_version: dict | None = None,
+    ai_seats: list[dict] | None = None,
 ) -> dict:
     """名片的 JSON 结构。字段名与 BattleCard.gd 一一对应（test_loadout 钉着）。
 
@@ -339,6 +340,15 @@ def card_payload(
         # 照旧按到达顺序坐第一个空位 —— 加字段向后兼容（见上面 CARD_VERSION 那条）。
         if 0 <= seat <= 2:
             payload["seat"] = int(seat)
+        # AI 补位的座位（app/matchmaking.py）：战斗服务器照这份放 AI、立刻开局。
+        # 旧战斗服务器不认识这个字段，照旧等 90 秒再补 AI（排位则关房）—— 加字段向后兼容。
+        #
+        # 🔴 写成 [座位, 昵称, 头像 id] 的**数组**而不是对象：名片有 MAX_CARD_CHARS 上限
+        # （BattleCard.gd，2048），最大名片已经 1673。五个带键名的对象会顶破它，
+        # 表现是 AI 补位的对局谁都进不去。test_card_with_five_ai_seats_still_fits 量着。
+        if ai_seats:
+            payload["ai"] = [[int(ai["slot"]), str(ai["name"])[:16], str(ai.get("avatar", ""))[:16]]
+                             for ai in ai_seats if 0 <= int(ai.get("slot", -1)) < 6]
     if patch_version is not None:
         payload["patch"] = dict(patch_version)
     return payload
@@ -392,7 +402,8 @@ def sign(payload: dict) -> str:
 
 async def issue_card(player_id: uuid.UUID, match_uid: str = "", team: int = -1,
                      mode: str = "casual", seat: int = -1, patch_version: dict | None = None,
-                     seedling_lineup: list[str] | None = None) -> str:
+                     seedling_lineup: list[str] | None = None,
+                     ai_seats: list[dict] | None = None) -> str:
     profile = await build_loadout(player_id)
     if mode == "casual" and match_uid:
         profile = dataclasses.replace(
@@ -400,4 +411,5 @@ async def issue_card(player_id: uuid.UUID, match_uid: str = "", team: int = -1,
     elif mode == "casual_normal" and match_uid:
         validate_normal_races(profile.races)
     return sign(card_payload(profile, match_uid=match_uid,
-                             team=team, mode=mode, seat=seat, patch_version=patch_version))
+                             team=team, mode=mode, seat=seat, patch_version=patch_version,
+                             ai_seats=ai_seats))

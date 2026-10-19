@@ -175,7 +175,9 @@ async def battle_card(request: Request, claims: Annotated[Claims, Depends(curren
         card = await loadout.issue_card(me.player_id, match_uid=match_uid, team=team, mode=mode,
                                         seat=seat,
                                         seedling_lineup=assignment.seedling_races if assignment is not None
-                                        and mode == "casual" else None, **extra)
+                                        and mode == "casual" else None,
+                                        ai_seats=assignment.ai_seats if assignment is not None else None,
+                                        **extra)
     except loadout.CardKeyMissing as exc:
         # 日志里留原因，给玩家的只有一句「稍后再试」—— 路径不外传。
         log.error("发不了出战名片：%s", exc)

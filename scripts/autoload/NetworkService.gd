@@ -1594,7 +1594,9 @@ func _cleanup_matched_rooms() -> void:
 			continue
 		var states: Array = room.get("slot_states", [])
 		# 排位不凭空填 AI；尚未开局就缺员时明确结束等待，不生成战报。
-		if str(room.get("mode", "casual")) == "ranked" and (states.size() < TEAM_SLOTS or states.has("empty")):
+		# 例外：AI 补位的房间（ai_filled）本来就有 AI，缺的那个真人也用 AI 顶上，照常开局。
+		if str(room.get("mode", "casual")) == "ranked" and not bool(room.get("ai_filled", false)) \
+				and (states.size() < TEAM_SLOTS or states.has("empty")):
 			_log_room_progress(room, "ranked_entry_timeout")
 			_room_close(room, "ranked_entry_timeout")
 			continue
@@ -5523,6 +5525,7 @@ func _rpc_team_join_matched(public_id: String = "", card: String = "") -> void:
 		_rpc_team_action_failed.rpc_id(sender, "ruleset_mismatch")
 		return
 	room["ruleset"] = ruleset
+	_apply_matched_ai_seats(room, seat_card)
 	if str(room.get("state", "")) != ROOM_LOBBY:
 		# 这一局已经开打了（他确认完之后卡了很久才连上来）。
 		# 不是错误路径的终点：座位还留着的话，客户端会走重连那条路。
@@ -5542,6 +5545,41 @@ func _rpc_team_join_matched(public_id: String = "", card: String = "") -> void:
 	# 再要一次「准备」就是把「一个人不点、其他五个干等」这个洞重新开一遍，
 	# 而这一版没有备战倒计时（第二节）。
 	_matched_try_start(room)
+
+# AI 补位（2026-10-19，backend/app/matchmaking.py「人少时 AI 补位」）：账号服务器凑不满 6 个
+# 真人时，把空座位连同 AI 的昵称 / 头像写进名片（ai 字段）。第一个带着它来的人建房时就把
+# 这些座位放上 AI，真人到齐就开局 —— 不再干等 MATCHED_FILL_TIMEOUT_SEC。
+# 每张名片上的 ai 是同一份，所以只认第一次。昵称头像进 seat_profiles，备战 / 结算看到同一个名字；
+# 账号 id 不进（seat_pid 留空），战报里这几个座位就是 AI，不会被当成某个玩家。
+func _apply_matched_ai_seats(room: Dictionary, seat_card: Dictionary) -> void:
+	if bool(room.get("ai_seats_applied", false)):
+		return
+	var ai_seats := BattleCard.ai_seats_of(seat_card)
+	if ai_seats.is_empty():
+		return
+	room["ai_seats_applied"] = true
+	room["ai_filled"] = true
+	var states: Array = room.get("slot_states", [])
+	var profiles: Dictionary = room.get("seat_profiles", {})
+	var filled := 0
+	for entry in ai_seats:
+		var slot := int((entry as Dictionary).get("slot", -1))
+		if slot < 0 or slot >= states.size() or str(states[slot]) != "empty":
+			continue
+		states[slot] = "dummy"
+		var avatar := str((entry as Dictionary).get("avatar", ""))
+		profiles[slot] = {"player_name": str((entry as Dictionary).get("name", "")),
+			"avatar": ("preset:%s" % avatar) if not avatar.is_empty() else "", "avatar_frame": ""}
+		filled += 1
+	room.slot_states = states
+	room["seat_profiles"] = profiles
+	for entry in ai_seats:
+		var slot := int((entry as Dictionary).get("slot", -1))
+		if slot >= 0 and slot < states.size() and str(states[slot]) == "dummy":
+			_ensure_dummy_seat_pet(room, slot)
+	_net_log("matched room ai fill id=%d match=%s -> %d AI 座位" % [
+		int(room.get("id", 0)), str(room.get("match_uid", "")), filled])
+
 
 # 匹配来的人坐哪：名片上带了本队位置（组队房里选的，10-08）而且那个位置空着，就坐那里；
 # 否则坐本队第一个空位（原来的做法，也是旧名片 / 旧账号服务器的路径）。
@@ -5594,7 +5632,9 @@ func _matched_try_start(room: Dictionary) -> void:
 		if i >= states.size() or str(states[i]) not in ["player", "dummy"]:
 			_log_room_progress(room, "matched_waiting_for_seats")
 			return
-		if str(room.get("mode", "casual")) == "ranked" and str(states[i]) == "dummy":
+		# 排位原本不许 AI；账号服务器明确安排了 AI 补位的房间（ai_filled）除外。
+		if str(room.get("mode", "casual")) == "ranked" and str(states[i]) == "dummy" \
+				and not bool(room.get("ai_filled", false)):
 			_log_room_progress(room, "ranked_invalid_ai_seat")
 			return
 	for i in TEAM_SLOTS:

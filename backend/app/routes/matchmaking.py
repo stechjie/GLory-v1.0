@@ -208,6 +208,11 @@ async def ranked_window() -> WindowResponse:
     🔴 **只有服务器说了算。** 客户端改系统时区就能绕过本地判断，而排位是发分的
     （docs/排位系统设计.md 第二节）。这个接口是那条规则的落地方式。
     """
+    from app.config import get_settings
+
+    if get_settings().ranked_all_day:
+        # 全天开放（app/config.py ranked_all_day）：如实告诉客户端现在开着、没有倒计时。
+        return WindowResponse(accepting=True, open=True, opens_in_sec=0, closes_in_sec=0)
     return WindowResponse(**ranked.window_state())
 
 

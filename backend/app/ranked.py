@@ -256,6 +256,17 @@ async def _settle_ranked(conn, report: dict, seats: list[dict]) -> None:
         team: (sum(vals) // len(vals) if vals else 0)
         for team, vals in team_scores.items()
     }
+    # AI 补位（2026-10-19，app/matchmaking.py）：AI 座位没有分数。按「打分这个人己方真人的
+    # 平均分」算 —— 打一支全 AI 的队伍等于打一支同水平的队伍，赢输都是正常的分。
+    # 不这么算的话 AI 队伍平均分是 0：赢了几乎不加、输了按「输给弱队」多扣。
+    # 满员真人的局 fillers 全是 0，结果与原来逐位相同。
+    fillers = {team: max(0, 3 - len(vals)) for team, vals in team_scores.items()}
+
+    def rival_average(own_team: int) -> int:
+        rival = 1 - own_team
+        total = sum(team_scores[rival]) + fillers[rival] * averages[own_team]
+        count = len(team_scores[rival]) + fillers[rival]
+        return total // count if count else averages[own_team]
 
     outcome = report["outcome"]
     for seat in seats:
@@ -277,7 +288,7 @@ async def _settle_ranked(conn, report: dict, seats: list[dict]) -> None:
             delta = 0
             streak = row["win_streak"]
         else:
-            delta = score_delta(won, averages[seat["team"]], averages[1 - seat["team"]],
+            delta = score_delta(won, averages[seat["team"]], rival_average(seat["team"]),
                                 row["win_streak"])
             streak = row["win_streak"] + 1 if won else 0
         # 跑路在输的分上再额外扣一份（第四节：输的那一份 × 1.5）。
@@ -517,7 +528,8 @@ def accepting_now(now_utc: dt.datetime | None = None) -> bool:
     """
     from app.config import get_settings
 
-    if get_settings().ranked_window_always_open:
+    settings = get_settings()
+    if settings.ranked_window_always_open or settings.ranked_all_day:
         return True
     return bool(window_state(now_utc)["accepting"])
 
