@@ -1,13 +1,15 @@
 {
   "ios": {
-    "ready": true,
-    "url": "https://testflight.apple.com/join/W2p1ukJp"
+    "ready": false,
+    "url": "https://testflight.apple.com/join/W2p1ukJp",
+    "version": "0.0.25 (61)"
   },
   "android": {
-    "ready": false,
-    "mode": "play_closed",
-    "group_url": "https://groups.google.com/g/glorygame/about",
-    "url": "https://play.google.com/apps/testing/com.glory.game.google",
-    "version": "0.0.24 (37)"
+    "ready": true,
+    "mode": "apk",
+    "url": "https://glorytd-api.duckdns.org/beta/downloads/Glory-0.0.25-38-android.apk",
+    "version": "0.0.25 (38)",
+    "size_bytes": 529494538,
+    "size_label": "505.0 MiB"
   }
 }

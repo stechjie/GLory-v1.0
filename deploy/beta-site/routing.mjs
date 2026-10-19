@@ -14,6 +14,9 @@ export function verifiedURL(value, kind) {
     if (kind === 'android') {
       return !u.search && u.hostname === 'play.google.com' && /^\/apps\/testing\/[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+\/?$/.test(u.pathname) ? u.href : '';
     }
+    if (kind === 'apk') {
+      return !u.search && u.hostname === 'glorytd-api.duckdns.org' && /^\/beta\/downloads\/Glory-[A-Za-z0-9.-]+-android\.apk$/.test(u.pathname) ? u.href : '';
+    }
     if (kind === 'group') {
       return !u.search && u.hostname === 'groups.google.com' && /^\/g\/[A-Za-z0-9_-]+(?:\/about)?\/?$/.test(u.pathname) ? u.href : '';
     }
@@ -25,7 +28,8 @@ export function destinations(config = {}) {
   const a = config.android || {};
   const group = a.mode === 'play_closed' ? verifiedURL(a.group_url, 'group') : '';
   // Keep the enrollment link available during review; Play controls eligibility.
-  const android = a.mode === 'play_closed' && group ? verifiedURL(a.url, 'android') : '';
+  const android = a.mode === 'apk' && a.ready === true ? verifiedURL(a.url, 'apk') :
+    a.mode === 'play_closed' && group ? verifiedURL(a.url, 'android') : '';
   return {ios, android, group};
 }
 export function automaticDestination(config, ua, touchPoints, manual = false) {

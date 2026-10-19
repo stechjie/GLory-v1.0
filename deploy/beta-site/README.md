@@ -2,13 +2,12 @@
 
 固定地址：`https://glorytd-api.duckdns.org/beta/`。二维码始终编码此地址，中间使用游戏水晶图标。
 
-- iPhone/iPad：保留现有 TestFlight 公开测试邀请；普通浏览器自动跳转，`?manual=1` 可查看完整页面。
-- Android：采用 Google 群组＋Google Play 封闭测试，配置模式为 `play_closed`。页面固定提供“① 加入群组”和“② 加入测试”两步操作。
-- 未加入群组的用户先打开 `https://groups.google.com/g/glorygame/about` 自助加入；群组成员使用同一 Google 账号报名 Play 封闭测试，再安装游戏，无需逐个添加邮箱。
-- 曾参加内部测试的用户需先退出内部测试，再报名封闭测试。
-- Android 保留引导页供用户阅读步骤；微信、抖音等内置浏览器提示使用系统浏览器。
-- 封闭版本尚未正式可下载时保持 `android.ready: false`，群组按钮可用；取得正式报名链接后测试按钮也可用，并说明下载需等待审核和发布。Google Play 控制实际报名和下载资格，审核通过后链接继续沿用。送审成功与公开下载可用分别记录。
-- 配置只接受 HTTPS 的 TestFlight、Google Groups 与 Google Play 封闭测试地址；不提供 Drive 共享 APK 或内部测试的回退入口。
+- iPhone/iPad：使用现有 TestFlight 公开测试邀请。仅当 `ios.ready` 为 true 时自动跳转；新版尚待处理或审核时显示等待说明，避免继续安装不兼容的旧客户端。
+- Android：当前使用 `mode: apk`，官网 `/beta/downloads/` 直接提供已签名的精简 APK；不需要测试群组或 Google Play 报名。
+- APK 配置仅接受本站 HTTPS、固定 downloads 目录、明确 APK 文件名，禁止查询参数和任意外部跳转。先上传并验证实际 APK，再更新 ready 配置。
+- 保留 `play_closed` 模式，供明确切回 Google Play 封闭测试时使用；该模式仍提供群组与测试报名两步。
+- Android 保留安装说明页面；内置浏览器提示使用系统浏览器。`?manual=1` 可查看所有平台入口。
+- 0.0.25 (Android 38 / iOS 61) 使用协议 43。旧协议 41 的资源补丁不能完成网络层升级；必须安装整包。
 
 ## 校验和部署
 
@@ -17,7 +16,7 @@ node --test deploy/beta-site/*.test.mjs
 python3 deploy/beta-site/install.py --domain glorytd-api.duckdns.org --check-only
 ```
 
-尚未完成公开下载验证时保持 `android.ready: false`。仅在有意发布等待状态时使用 `--allow-pending`。
+尚未完成对应平台的公开下载验证时保持该平台 `ready: false`。仅在有意发布等待状态时使用 `--allow-pending`。
 
 将本目录复制到服务器后运行：
 
@@ -25,9 +24,9 @@ python3 deploy/beta-site/install.py --domain glorytd-api.duckdns.org --check-onl
 sudo python3 /已上传目录/install.py --domain glorytd-api.duckdns.org
 ```
 
-安装器备份 `/opt/glory/public/beta`、Caddy 配置，验证后热重载；失败则恢复。部署只涉及下载页面，不重启账号或战斗服务。上线验收应包含 HTTPS 页面、Google 群组自助加入、Play 封闭测试邀请与群组成员访问、TestFlight 入口、二维码识别及 `/health`。
+安装器备份 `/opt/glory/public/beta`、Caddy 配置，验证后热重载；失败则恢复。部署只涉及下载页面，不重启账号或战斗服务。上线验收应包含 HTTPS 页面、APK 大小与 SHA-256、下载响应、TestFlight 实际可用版本、二维码识别及 `/health`；只有切回 Play 模式时才检查群组与报名。
 
-2026-10-18 升级为群组＋封闭测试，版本 0.0.24 (37)。二维码继续指向固定官网地址；审核、发布和公网回读证据位于外层 `delivery/google-play-closed-20261018/`。以后更新 Android 版本时沿用 Play 测试邀请，不回填 Drive 共享地址。
+2026-10-20 因线上对局协议已升级至 43，构建 0.0.25 整包；APK 已上传 Drive，并经服务器完整 SHA-256 校验后开放官网下载。二维码继续指向固定官网地址；本次证据位于外层 `delivery/release-20261020-protocol43/`。iOS 外部测试需在 Apple 处理、测试组分配和审核完成后才设置 ready。
 
 ## 语言与反馈
 

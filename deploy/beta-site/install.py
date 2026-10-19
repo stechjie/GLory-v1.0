@@ -30,8 +30,12 @@ def check_url(value, host, pattern):
 
 def validate_config(config, allow_pending=False):
     ios, android = config['ios'], config['android']
-    assert ios['ready'] is True and (android['ready'] is True or allow_pending and android['ready'] is False), 'Both platforms must be verified, or explicitly publish pending Android status'
+    assert type(ios['ready']) is bool and type(android['ready']) is bool
+    assert allow_pending or ios['ready'] and android['ready'], 'Both platforms must be verified, or explicitly publish pending status'
     check_url(ios['url'], 'testflight.apple.com', r'/join/[A-Za-z0-9]+/?')
+    if android['mode'] == 'apk':
+        check_url(android['url'], 'glorytd-api.duckdns.org', r'/beta/downloads/Glory-[A-Za-z0-9.-]+-android\.apk')
+        return
     assert android['mode'] == 'play_closed'
     check_url(android['group_url'], 'groups.google.com', r'/g/[A-Za-z0-9_-]+(?:/about)?/?')
     if allow_pending and android['ready'] is False and not android.get('url'):

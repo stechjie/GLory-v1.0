@@ -38,9 +38,22 @@ async function start() {
     if (!response.ok) throw new Error('configuration unavailable');
     const config = await response.json();
     const d = destinations(config);
+    if (config.android?.mode === 'apk') {
+      document.querySelector('[data-i18n="intro"]').textContent = t.apkIntro;
+      document.querySelector('[data-i18n="androidTitle"]').textContent = t.apkTitle;
+      byId('android-help').textContent = t.apkHelp;
+      byId('android-group-link').hidden = true;
+      byId('android-link').textContent = t.apkPending;
+      byId('android-release-status').textContent = t.apkAvailability;
+    }
     enable('ios-link', d.ios, t.iosButton);
     enable('android-group-link', d.group, t.androidGroupButton);
-    enable('android-link', d.android, t.androidButton);
+    enable('android-link', d.android, config.android?.mode === 'apk' ? t.apkButton : t.androidButton);
+    byId('ios-version').textContent = config.ios?.version ? `${t.version} ${config.ios.version}` : '';
+    byId('ios-release-status').hidden = config.ios?.ready === true;
+    byId('ios-release-status').textContent = t.iosAvailability;
+    const a = config.android || {};
+    byId('android-version').textContent = [a.version ? `${t.version} ${a.version}` : '', a.size_label || ''].filter(Boolean).join(' · ');
     byId('android-release-status').hidden = config.android?.ready === true;
     if (d.group) {
       byId('android-help').textContent = t.androidHelp;
