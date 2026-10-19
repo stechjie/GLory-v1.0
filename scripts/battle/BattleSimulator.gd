@@ -115,6 +115,8 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 	# Enemy side (top): per-lane by round type. Enemy TYPE picked once per round.
 	var monster_template := _round_monster_template()
 	var boss_template := _round_boss_template()
+	if kind == "boss":
+		monster_template = _round_boss_monster_template(boss_template)
 	# (5) Monster count is a FIXED per-round number, NOT tied to how many pieces the
 	# player fielded. Same table single-player PvE uses.
 	var monster_count_by_round: Dictionary = DataRegistry.get_table("pve_monsters").get("enemy_count_by_round", {})
@@ -510,9 +512,11 @@ static func step_state(state: Dictionary) -> void:
 	_tick_skills(p_alive, e_alive, state)
 	_tick_skills(e_alive, p_alive, state)
 	_process_boss_charges(state)
+	BattleSimTreasures._process_boss_health_triggers(state)
 	constrain_battle_positions(state)
 	_process_frenzy(state, p_alive, e_alive)
 	_step_team(player, e_alive, float(state.elapsed), state)
+	BattleSimTreasures._process_boss_health_triggers(state)
 	_step_team(enemy, p_alive, float(state.elapsed), state)
 	# Solve crowd contacts once with a bounded iterative constraint pass.
 	_separate_units(player, enemy)
@@ -850,6 +854,8 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 			var was_alive := bool(target.get("alive", false))
 			var dealt := _perform_attack(f, target, state)
 			_handle_attack_kill(f, target, state, team_units, opponents, was_alive)
+			if dealt > 0 and str(f.get("def", {}).get("skill_id", "")) == "twin_revive":
+				_apply_twin_cleave(f, target, state, team_units, opponents)
 			if str(f.get("def", {}).get("skill_id", "")) == "line_pierce":
 				var pierce_index := 1
 				for pierced: Dictionary in CrimsonCombat.pierce_targets(f, target, opponents):
@@ -1030,6 +1036,34 @@ static func _handle_attack_kill(killer: Dictionary, target: Dictionary, state: D
 	_on_unit_killed(killer, target, state, killer_team, victim_team)
 
 
+static func _apply_twin_cleave(attacker: Dictionary, primary: Dictionary, state: Dictionary, allies: Array, opponents: Array) -> void:
+	var d: Dictionary = attacker.get("def", {})
+	var direction: Vector2 = Vector2(primary.pos) - Vector2(attacker.pos)
+	if direction.length_squared() < 0.001:
+		return
+	direction = direction.normalized()
+	var distance := float(d.get("cleave_distance", 180.0))
+	var start_width := float(d.get("cleave_start_half_width", 45.0))
+	var end_width := float(d.get("cleave_end_half_width", 90.0))
+	var damage := maxi(1, int(round(float(attacker.atk) * StatusEffectService.attack_multiplier(attacker) * float(d.get("cleave_atk_pct", 0.50)))))
+	for other: Dictionary in opponents:
+		if is_same(other, primary) or not bool(other.get("alive", false)) or not _can_target(attacker, other, opponents):
+			continue
+		var offset: Vector2 = Vector2(other.pos) - Vector2(primary.pos)
+		var along := offset.dot(direction)
+		if along <= 0.0 or along > distance:
+			continue
+		var half_width := lerpf(start_width, end_width, along / distance)
+		if absf(offset.cross(direction)) > half_width:
+			continue
+		var was_alive := bool(other.get("alive", false))
+		DamageService.set_hit_context("basic", false, str(d.get("race", "")), "twin_cleave")
+		DamageService.emit_impact(attacker, other, "twin_cleave", false)
+		DamageService.apply_damage(other, damage, false)
+		DamageService.clear_hit_context()
+		_handle_attack_kill(attacker, other, state, allies, opponents, was_alive)
+
+
 static func _tick_statuses(fighters: Array, state: Dictionary) -> void:
 	DamageService.set_stat_state(state)
 	for f in fighters:
@@ -1108,7 +1142,7 @@ static func _perform_attack(attacker: Dictionary, target: Dictionary, state: Dic
 	BattleSimTreasures._apply_dark_sap(attacker, target, state)
 	_apply_attack_statuses(attacker, target, state)
 	BattleSimTreasures._apply_attack_treasure_effects(attacker, target, state)
-	BattleSimTreasures._apply_defender_reaction(attacker, target, dealt)
+	BattleSimTreasures._apply_defender_reaction(attacker, target, dealt, state)
 	# 9.22：四星巨甲灵「反弹使攻击者中毒」的触发音。判据与上面那一步内部
 	# （`poison_reflect_armor_stack` + dealt > 0 + 自己还活着，见
 	# BattleSimTreasures.gd:448）**逐条一致**。
@@ -1459,14 +1493,7 @@ static func _on_unit_killed(killer: Dictionary, victim: Dictionary, state: Dicti
 	if str(killer.get("def", {}).get("skill_id", "")) == "death_hunt":
 		_heal_unit(killer, maxi(1, int(round(float(killer.max_hp) * float(killer.get("def", {}).get("kill_heal_pct", 0.15))))))
 		state.visual_events.append({"type": "unit_skill_proc", "skill_id": "death_hunt_kill", "source_uid": str(killer.get("uid", "")), "target_uid": str(victim.get("uid", ""))})
-	if str(killer.get("def", {}).get("skill_id", "")) == "soul_devour":
-		_heal_unit(killer, maxi(1, int(round(float(killer.max_hp) * float(killer.get("def", {}).get("kill_heal_pct", 0.15))))))
-		killer.atk = maxi(1, int(round(float(killer.atk) * (1.0 + float(killer.get("def", {}).get("atk_stack", 0.10))))))
-		# 9.23 第五批：噬魂领主（skills_devour）的技能音。用户口径：「应该在**击杀单位后**
-		# 播放」。补在**这里**而不是挂施法边沿：`soul_devour` 根本不在 `_tick_skills`
-		# 的 match 里（它的技能就是上面这两行击杀收益），压根没有 `skill_ready` 边沿 ——
-		# 挂在施法边沿上就是用户报的「音效未生效」。
-		_emit_sfx_proc(state, "soul_devour", killer, victim)
+	BattleSimTreasures._apply_soul_devour_on_death(state, victim)
 	BattleSimTreasures._queue_twin_revive(victim, state)
 	BattleSimTreasures._queue_phoenix_revive(victim, state)
 	BattleSimTreasures._apply_soul_counter_treasure(killer, victim)

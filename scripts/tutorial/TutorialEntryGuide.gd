@@ -9,6 +9,8 @@ const DogGuide := preload("res://assets/ui/tutorial/dog_guide.png")
 const DogExplain := preload("res://assets/ui/tutorial/dog_explain.png")
 
 var _target: Control
+# 除了要点的目标，还要一起露出来给玩家看的区域（匹配确认时的 6 个头像）。
+var _extra_focus: Control
 var _phase := "menu"
 var _dim: ColorRect
 var _light
@@ -22,6 +24,10 @@ func configure(target: Control, phase: String) -> void:
 	_phase = phase
 	if is_inside_tree():
 		_update_phase()
+
+
+func set_extra_focus(control: Control) -> void:
+	_extra_focus = control
 
 
 func _ready() -> void:
@@ -74,6 +80,10 @@ func _process(_delta: float) -> void:
 	target.position -= overlay_rect.position
 	var extent := Vector2(maxf(1.0, size.x), maxf(1.0, size.y))
 	var focus := target.grow(10.0)
+	if _extra_focus != null and is_instance_valid(_extra_focus) and _extra_focus.is_visible_in_tree():
+		var extra := _extra_focus.get_global_rect()
+		extra.position -= overlay_rect.position
+		focus = focus.merge(extra.grow(10.0))
 	(_dim.material as ShaderMaterial).set_shader_parameter("hole", Vector4(
 		focus.position.x / extent.x, focus.position.y / extent.y,
 		focus.size.x / extent.x, focus.size.y / extent.y))
@@ -91,12 +101,19 @@ func _process(_delta: float) -> void:
 		clampf(y, safe.position.y, safe.end.y - _bubble.size.y))
 	var side := clampf(size.y * 0.18, 95.0, 145.0)
 	_dog.size = Vector2.ONE * side
-	var dog_x: float = _bubble.position.x + _bubble.size.x + 8.0
-	if dog_x + side > safe.end.x:
-		dog_x = _bubble.position.x - side - 8.0
-	_dog.position = Vector2(clampf(dog_x, safe.position.x, safe.end.x - side),
-		clampf(_bubble.position.y + _bubble.size.y - side, safe.position.y, safe.end.y - side))
-	_light.aim(_dog.position + _dog.size * Vector2(0.65, 0.68), target,
+	if _phase == "queue_confirm":
+		# 匹配确认（10.19 教程反馈）：气泡和狗都贴屏幕右边，让开中间 6 个头像的打勾。
+		_bubble.position = Vector2(safe.end.x - _bubble.size.x,
+			clampf(size.y * 0.5 - _bubble.size.y - 8.0, safe.position.y, safe.end.y - _bubble.size.y - side))
+		_dog.position = Vector2(safe.end.x - side,
+			minf(_bubble.position.y + _bubble.size.y + 8.0, safe.end.y - side))
+	else:
+		var dog_x: float = _bubble.position.x + _bubble.size.x + 8.0
+		if dog_x + side > safe.end.x:
+			dog_x = _bubble.position.x - side - 8.0
+		_dog.position = Vector2(clampf(dog_x, safe.position.x, safe.end.x - side),
+			clampf(_bubble.position.y + _bubble.size.y - side, safe.position.y, safe.end.y - side))
+	_light.aim(_dog.position + _dog.size * Vector2(0.64, 0.72), target,
 		PlayerProfile.reduced_motion_enabled)
 
 
@@ -105,6 +122,10 @@ func _update_phase() -> void:
 		return
 	var english := LocaleManager.get_locale().begins_with("en")
 	match _phase:
+		"queue_confirm":
+			_label.text = "Woof! Five AI players are ready. Tap Confirm to enter your 3v3 lesson." if english else \
+				"汪！五位 AI 都准备好了。点击「确认」，开始 3v3 教学。"
+			_dog.texture = DogWelcome
 		"result_menu":
 			_label.text = "Woof! You're Lv2 now. Return to the lobby and tap your portrait for your first Divine piece." if english else \
 				"汪！你升到 Lv2 啦！回大厅点头像，看看第一枚神族棋子。"

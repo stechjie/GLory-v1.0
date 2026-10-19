@@ -218,6 +218,12 @@ func _drive_current_step(prep: PrepScript) -> void:
 			await _tap_continue(prep)
 		TutorialScript.Step.FILL_7:
 			await _drive_fill_step(prep)
+		# 10.19 人王教学：商店第一格就是人王，买下即推进；讲解步点一下继续。
+		TutorialScript.Step.BUY_KING:
+			await _open_shop(prep)
+			await _buy_one(prep)
+		TutorialScript.Step.KING_HINT:
+			await _tap_continue(prep)
 		_:
 			await _settle(1)
 

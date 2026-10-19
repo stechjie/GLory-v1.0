@@ -537,7 +537,13 @@ func refresh() -> void:
 	var tech_round_locked := GameState.round_index < 2 and not GameState.tutorial_mode
 	var tech_tutorial_locked := not _tutorial_allows("harvest_upgrade")
 	_tech_button.disabled = tech_round_locked or tech_tutorial_locked or _action_locked or GameState.gold < price or online_blocked
-	if tech_round_locked:
+	# 教学里采集科技有上限（TutorialMode.TUTORIAL_HARVEST_MAX），到顶后显示「已满」。
+	var tutorial_maxed := GameState.tutorial_mode and TutorialMode.harvest_maxed()
+	if tutorial_maxed:
+		_tech_button.text = _t("已满", "Maxed")
+		_tech_next.text = str(tech_production)
+		_tech_note.text = _t("采集等级已满", "Harvest level maxed")
+	elif tech_round_locked:
 		_tech_note.text = _t("下一回合解锁升级", "Unlocks next round")
 	elif GameState.gold < price:
 		_tech_note.text = _t("金币不足 · 还差 %d", "Not enough gold · need %d") % (price - GameState.gold)
@@ -552,7 +558,7 @@ func refresh() -> void:
 	var draw_available := GameState.can_draw_upgrade_stone(GameState.round_index)
 	var stone_cost := GameState.upgrade_stone_draw_cost()
 	# 教学（9.25）：送的萝卜可以超过容量，抽石头不看容量门槛；但只在抽石头那一步可点。
-	var unlocked := capacity >= stone_cost or GameState.tutorial_mode
+	var unlocked := capacity >= stone_cost or (GameState.tutorial_mode and TutorialMode.scripted_stone_draw())
 	var draw_tutorial_locked := not _tutorial_allows("draw_stone")
 	_draw_status.text = _t("本回合剩余 1 次", "1 draw remaining") if draw_available else _t("本回合已抽取 · 下回合恢复", "Draw used · resets next round")
 	_draw_button.text = (_t("免费抽取一次", "Free Stone Draw") if stone_cost == 0 else _t("抽取一次\n%d 萝卜", "Draw Once\n%d Carrots") % stone_cost) if draw_available else _t("下回合恢复", "Resets next round")

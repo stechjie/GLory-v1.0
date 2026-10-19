@@ -325,16 +325,19 @@ func request_upgrade_stone_draw() -> void:
 		show_message(TutorialMode.follow_arrow_hint())
 		SfxService.play(SfxService.CUE_UI_REJECT)
 		return
+	var en := LocaleManager.get_locale() == "en"
 	if not GameState.can_draw_upgrade_stone(GameState.round_index):
-		show_message("本回合已经抽取过升级石")
+		show_message("Stone already drawn this round" if en else "本回合已经抽取过升级石")
 		return
 	var stone_cost := GameState.upgrade_stone_draw_cost()
 	if GameState.carrots < stone_cost:
-		show_message("萝卜不足：需要%d萝卜" % stone_cost)
+		show_message(("Not enough carrots: need %d" if en else "萝卜不足：需要%d萝卜") % stone_cost)
 		return
-	# 教学送的萝卜可以超过容量（教学文案里讲了），所以教学不卡容量门槛。
-	if GameState.carrot_capacity() < stone_cost and not GameState.tutorial_mode:
-		show_message("萝卜田容量不足：需要能储存%d萝卜" % stone_cost)
+	# 教学抽石头那一步送的萝卜可以超过容量（教学文案里讲了），只有那一步不卡容量门槛；
+	# 讲完以后照正式局算。
+	var scripted_draw := GameState.tutorial_mode and TutorialMode.scripted_stone_draw()
+	if GameState.carrot_capacity() < stone_cost and not scripted_draw:
+		show_message(("Carrot field too small: must store %d carrots" if en else "萝卜田容量不足：需要能储存%d萝卜") % stone_cost)
 		return
 	if NetworkService.team_active and not NetworkService.is_host:
 		# 与 request_carrot_harvest_upgrade / _hire_mercenary_to_slot 同一道判据。
@@ -353,11 +356,14 @@ func request_upgrade_stone_draw() -> void:
 	else:
 		GameState.stone_draw_count += 1
 	# 教学固定抽到与 3 星棋子同属性的石头，下一步升四星才一定接得上。
-	var stone_type := TutorialMode.forced_stone_type() if GameState.tutorial_mode \
+	var stone_type := TutorialMode.forced_stone_type() if scripted_draw \
 		else CarrotEconomy.draw_type_from_roll(randf())
 	GameState.apply_team_stone(stone_type)
 	SaveManager.save_run()
-	show_message("获得%s石" % {"sky": "天", "land": "地", "ren": "人"}.get(stone_type, stone_type))
+	if en:
+		show_message("Received %s Stone" % {"sky": "Sky", "land": "Land", "ren": "Ren"}.get(stone_type, stone_type))
+	else:
+		show_message("获得%s石" % {"sky": "天", "land": "地", "ren": "人"}.get(stone_type, stone_type))
 	_refresh_all()
 
 # 用一颗同属性升级石把三星升为四星。
@@ -476,10 +482,6 @@ func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 	if NetworkService.shop_refresh_in_flight():
 		show_message("商店刷新中，请稍候")
 		return
-	if GameState.tutorial_mode:
-		_shop.selected = -1
-		_refresh_all()
-		return
 	if shop_index < 0 or shop_index >= GameState.shop_offers.size() or bool(GameState.shop_sold[shop_index]):
 		return
 	if board_index < 0 or board_index >= GameState.board_slots.size():
@@ -488,6 +490,12 @@ func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 	var cost := _shop_unit_cost(offer)
 	var target = GameState.board_slots[board_index]
 	var incoming := {"id": offer.id, "uid": GameState.mint_piece_uid(), "star": 1, "def": offer.duplicate(true)}
+	# 教学不允许从商店直接放上棋盘（先买进待命区、再单独一步上阵），但「待命区满了、
+	# 买下来正好和棋盘上的同名棋子合星」要放行（10.19 反馈：能升星却提示待命区已满）。
+	if GameState.tutorial_mode and not (target is Dictionary and PrepRules.can_merge_cells(target, incoming)):
+		_shop.selected = -1
+		_refresh_all()
+		return
 	if target == null:
 		# 10.09 bug 文档第 1 条：**棋盘上已有同名唯一棋子**时，不能再一句拒绝。
 		#

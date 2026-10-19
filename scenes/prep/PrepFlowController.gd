@@ -26,6 +26,7 @@ func _maybe_start_pending_treasure() -> void:
 			"round": completed_round,
 			"candidates": TreasureService.roll_candidates(3),
 			"refresh_index": 0,
+			"remaining": RoundService.treasure_pick_count(completed_round),
 		}
 
 func _pick_treasure(tid: String) -> void:
@@ -43,11 +44,24 @@ func _pick_treasure(tid: String) -> void:
 			GameState.pending_treasure.candidates = TreasureService.available_candidates(GameState.pending_treasure.get("candidates", []))
 		_refresh_all()
 		return
-	_claim_pending_treasure_round()
-	GameState.pending_treasure.active = false
+	var remaining := maxi(0, int(GameState.pending_treasure.get("remaining", 1)) - 1)
+	if remaining > 0 and TreasureService.can_draw():
+		GameState.pending_treasure["remaining"] = remaining
+		GameState.pending_treasure["candidates"] = TreasureService.roll_candidates(3)
+		GameState.pending_treasure["refresh_index"] = 0
+		GameState.pending_treasure["active"] = not GameState.pending_treasure["candidates"].is_empty()
+	else:
+		GameState.pending_treasure["active"] = false
+	if not bool(GameState.pending_treasure.get("active", false)):
+		_claim_pending_treasure_round()
+	elif GameState.tutorial_mode:
+		# 教程一轮要连选 2 个：本地已入袋，面板不关、换下一组候选。
+		# 防连点锁是给联机等服务端回复用的，这里不清会吞掉 5 秒内的第二次点击。
+		_treasure.clear_pick_pending()
 	if "link_hu_pai_master" not in bonus_before and TreasureService.has_linkage("link_hu_pai_master"):
 		if GameState.team_mode:
-			GameState.team_hp = mini(GameState.START_FORMATION_HP, GameState.team_hp + 2)
+			var max_hp := TutorialMode.TUTORIAL_HP if GameState.tutorial_mode else GameState.START_FORMATION_HP
+			GameState.team_hp = mini(max_hp, GameState.team_hp + 2)
 		else:
 			GameState.player_formation_hp = mini(GameState.START_FORMATION_HP, GameState.player_formation_hp + 2)
 	SaveManager.save_run()

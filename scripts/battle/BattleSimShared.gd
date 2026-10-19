@@ -313,6 +313,18 @@ static func _round_monster_template(round_index: int = -1) -> Dictionary:
 	return monsters[_round_pick_index(monsters.size(), "monster", round_index)]
 
 
+static func _round_boss_monster_template(boss: Dictionary, round_index: int = -1) -> Dictionary:
+	if str(boss.get("id", "")) != "boss_holy_priest":
+		return _round_monster_template(round_index)
+	var ranged: Array = []
+	for monster: Dictionary in DataRegistry.get_table("pve_monsters").get("monsters", []):
+		if float(monster.get("range", 1.0)) > 1.0:
+			ranged.append(monster)
+	if ranged.is_empty():
+		return {}
+	return ranged[_round_pick_index(ranged.size(), "holy_priest_ranged_monster", round_index)]
+
+
 static func _round_boss_template(round_index: int = -1) -> Dictionary:
 	var bosses: Array = DataRegistry.get_table("bosses").get("bosses", [])
 	if bosses.is_empty():
@@ -329,9 +341,10 @@ static func round_enemy_model_paths(round_index: int) -> Array[String]:
 	var kind := RoundService.schedule_kind_for_round(round_index)
 	if kind == "pvp" or kind == "final":
 		return out
-	var templates: Array[Dictionary] = [_round_monster_template(round_index)]
+	var boss := _round_boss_template(round_index) if kind == "boss" else {}
+	var templates: Array[Dictionary] = [_round_boss_monster_template(boss, round_index) if kind == "boss" else _round_monster_template(round_index)]
 	if kind == "boss":
-		templates.append(_round_boss_template(round_index))
+		templates.append(boss)
 	for t in templates:
 		for key in ["model", "model_idle_animation"]:
 			var p := str(t.get(key, ""))
@@ -382,6 +395,9 @@ static func _append_lane_boss(out: Array, lane: int, template: Dictionary) -> vo
 	d.def = maxi(0, int(round(float(d.get("def", 0)) * float(growth.def) * boss_mul)))
 	if d.has("skill_damage"):
 		d.skill_damage = maxi(1, int(round(float(d.get("skill_damage", 0)) * float(growth.skill_damage) * boss_mul)))
+	if d.has("splash_damage"):
+		# This input is the first Boss round's visible damage, unlike skill_damage's base value.
+		d.splash_damage = maxi(1, int(round(float(d.get("splash_damage", 0)) * float(growth.skill_damage))))
 	var y := ARENA_MID_Y - FRONT_ROW_GAP * 0.5 - BOARD_ROW_SPACING
 	if not bool(d.get("is_twin", false)):
 		var f := _fighter_from_def(d, 12, "enemy", 0, 1)

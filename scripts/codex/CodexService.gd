@@ -212,6 +212,9 @@ static func _bosses() -> Array[Dictionary]:
 		var d := raw as Dictionary
 		if d == null:
 			continue
+		var skill_def := d.duplicate(true)
+		if skill_def.has("skill_damage"):
+			skill_def.skill_damage = maxi(1, int(round(float(skill_def.skill_damage) * BossService.GLOBAL_STAT_MULTIPLIER)))
 		out.append({
 			"id": str(d.get("id", "")),
 			"name": str(d.get("name", "")),
@@ -221,7 +224,7 @@ static func _bosses() -> Array[Dictionary]:
 			"skill_id": str(d.get("skill_id", "")),
 			# The source row, kept so the codex can render the same skill copy the
 			# prep screen shows (UnitDetailFormat) instead of a bare skill id.
-			"raw": d,
+			"raw": skill_def,
 			# What the first boss round actually fields, not the raw table row:
 			# BattleSimShared multiplies every boss by BossService's global factor
 			# before the fight, so the bare numbers here would understate all of

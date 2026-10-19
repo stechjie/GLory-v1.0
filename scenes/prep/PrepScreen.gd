@@ -67,7 +67,9 @@ func _ready() -> void:
 	var carrot_harvest_gain := 0
 	var carrot_harvest_gains: Dictionary = {}
 	var carrot_server_authoritative := NetworkService.team_active and not NetworkService.is_host
-	if not GameState.tutorial_mode and not carrot_server_authoritative:
+	# 教学：Boss 后那一次脚本收获讲完以后，每回合也照常收获（10.19 教程反馈第 4 条）。
+	var local_harvest := not GameState.tutorial_mode or TutorialMode.round_harvest_enabled()
+	if local_harvest and not carrot_server_authoritative:
 		var harvest := GameState.harvest_carrots_for_round(GameState.round_index)
 		if bool(harvest.get("ok", false)):
 			carrot_harvest_gain = int(harvest.get("gain", 0))

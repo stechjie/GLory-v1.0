@@ -15,6 +15,26 @@ SPECS = (
     ("05_野怪", "data/pve/pve_monsters.json", "monsters", ((4, "hp"), (5, "atk"), (6, "def"))),
 )
 
+# 06_Boss!B16:E51 is the editable skill input table. Column A stays blank so
+# the existing one-row-per-boss summary parser does not treat these as bosses.
+BOSS_SKILL_FIELDS = {
+    "boss_meteor_caster": ("skill_cd", "skill_damage", "aoe_radius"),
+    "boss_thunder_core": ("hit_threshold", "skill_damage", "interrupt_chance", "splash_damage", "splash_radius"),
+    "boss_mirror_lord": ("clone_per_missing_hp_pct", "clone_hp_pct", "clone_atk_pct", "clone_def"),
+    "boss_holy_priest": ("skill_cd", "heal_pct", "shield_pct"),
+    "boss_rage_beast": ("atk_per_hit", "aspd_per_hit", "max_stacks"),
+    "boss_blood_demon": ("trigger_hp_pct", "atk_bonus", "aspd_bonus", "lifesteal"),
+    "boss_soul_devourer": ("kill_heal_pct", "atk_stack", "aspd_stack"),
+    "boss_twin_gate": ("revive_delay", "revive_hp_pct", "revives_per_twin", "cleave_atk_pct", "cleave_distance", "cleave_start_half_width", "cleave_end_half_width"),
+    "boss_apocalypse": ("skill_cd", "charge_sec", "charge_shield_pct", "damage_atk_pct"),
+}
+BOSS_PERCENT_FIELDS = {
+    "interrupt_chance", "clone_per_missing_hp_pct", "clone_hp_pct", "clone_atk_pct",
+    "heal_pct", "shield_pct", "atk_per_hit", "trigger_hp_pct", "atk_bonus",
+    "lifesteal", "kill_heal_pct", "atk_stack", "revive_hp_pct",
+    "cleave_atk_pct", "charge_shield_pct", "damage_atk_pct",
+}
+
 
 def data_rows(book, sheet_name):
     for number, row in enumerate(book[sheet_name].iter_rows(min_row=4, values_only=True), 4):
@@ -150,6 +170,38 @@ def overlay_excel_owned(book, tables):
             update(sheet, "data/boss/bosses.json", item_id, items[item_id], key, value)
     if seen != set(items):
         raise ValueError(f"{sheet}: missing IDs {sorted(set(items) - seen)}")
+
+    expected_skills = {(item_id, key) for item_id, keys in BOSS_SKILL_FIELDS.items() for key in keys}
+    seen_skills = set()
+    for number in range(16, book[sheet].max_row + 1):
+        ws = book[sheet]
+        item_id, key, raw = (ws.cell(number, col).value for col in (2, 3, 4))
+        if item_id is None and key is None and raw is None:
+            continue
+        pair = (item_id, key)
+        if pair not in expected_skills or pair in seen_skills:
+            raise ValueError(f"{sheet} row {number}: unknown or duplicate skill parameter {pair!r}")
+        seen_skills.add(pair)
+        old = items[item_id][key]
+        label = f"{sheet} D{number} {item_id}.{key}"
+        if isinstance(raw, bool) or type(raw) not in (int, float) or not math.isfinite(raw):
+            raise ValueError(f"{label}: enter a finite number")
+        if type(old) is int:
+            if type(raw) is not int or raw < (0 if key == "clone_def" else 1):
+                raise ValueError(f"{label}: enter a nonnegative whole number" if key == "clone_def" else f"{label}: enter a positive whole number")
+            value = raw
+        else:
+            if key in BOSS_PERCENT_FIELDS:
+                if not 0.0 <= raw <= 300.0:
+                    raise ValueError(f"{label}: enter a whole percentage from 0 to 300 (20 means 20%)")
+                value = float(Decimal(str(raw)) / 100)
+            else:
+                value = float(raw)
+            if key not in BOSS_PERCENT_FIELDS and value <= 0:
+                raise ValueError(f"{label}: enter a positive number")
+        update(sheet, "data/boss/bosses.json", item_id, items[item_id], key, value)
+    if seen_skills != expected_skills:
+        raise ValueError(f"{sheet}: missing skill parameters {sorted(expected_skills - seen_skills)}")
 
     sheet = "03_宠物技能"
     items = index_items(tables, "data/pets/pets.json", "pets")

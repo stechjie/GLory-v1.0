@@ -1,5 +1,6 @@
 extends Node
 const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
+const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
 
 signal completed
 signal skip_requested
@@ -47,6 +48,10 @@ enum Step {
 	FORMATION_HP,
 	START_PVP,
 	DONE,
+	# 10.19：第 7 回合开局刷出人王，狗狗叫玩家买，再讲人王规则。
+	# 追加在 DONE 之后，旧断点里的 step 编号保持不变。
+	BUY_KING,
+	KING_HINT,
 }
 
 # 进度显示用的「实际到访顺序」，不是枚举顺序。FORMATION_HP 会被走两次
@@ -163,14 +168,19 @@ var _camp_page := CAMP_PAGE_CAMP
 var _carrot_harvested := false
 var _carrot_harvest_gain := 0
 var _carrot_gift_claimed := false
+# UPGRADE_3 送的那个 2 星民兵是否已到账。满格时先不送（_grant_units 满格会静默放弃），
+# 等玩家卖出空位再送。进断点：恢复后不能重复送。
+var _militia_granted := false
 # 教学 PVP 步的伪造对手棋盘（原先借用 NetworkService.opponent_board_snapshot，
 # 1v1 联机删除后由教学模式自持，BattleSimulator 的教学 PVP 路径从这里读）。
 var opponent_snapshot: Dictionary = {}
 var _target_provider: TutorialTargetProviderScript
 var _overlay: Control
+var _overlay_layer: CanvasLayer
 var _light: TutorialGuideLightScript
 var _guide: TextureRect
 var _bubble: PanelContainer
+var _cheer_label: Label
 var _text: Label
 var _progress_label: Label
 # Shows the localized step NAME. Never the enum key — see step_display_name().
@@ -211,11 +221,23 @@ const FILL_TARGET_UNITS := GameConstants.NORMAL_UNIT_CAP
 # 注意别和 _owned_normal_count() 混：那个数是「棋盘 + 待命区」的持有数，
 # 教学里同样是 3，但口径不同（BUY_3 用它）。
 const EARLY_DEPLOY_UNITS := 3
+# PVP 回合（第 7–13 回合）的开战门槛。FILL_7 那一步仍引导补满 7 个，
+# 但之后每回合不再强制 7 个，至少 4 个即可开战（10.19 教程反馈第 1 条）。
+const PVP_DEPLOY_UNITS := 4
 # 升星步：商店铺满玩家要凑的同名棋子，让玩家自己买 + 刷新
 const UPGRADE_2_SHOP := ["human_militia", "human_militia", "human_militia", "human_militia"]
 const UPGRADE_OTHERS_SHOP := ["human_archer", "human_archer", "human_merchant", "human_merchant"]
 const PVP_OPPONENT := ["human_militia", "human_archer", "human_merchant", "human_swordsman", "human_mage"]
 const TREASURE_1 := ["def_iron_wall", "atk_blood_pact", "ctrl_shockwave"]
+# 自由回合（脚本步之外）的商店：新手局只有人族，随机刷。死侍、人王都能出；
+# 人王从 KING_FIRST_ROUND 起才进池子，之前不出，免得抢在人王讲解之前被买走。
+const FREE_SHOP_POOL := ["human_militia", "human_archer", "human_merchant", "human_swordsman",
+	"human_mage", "human_cleric", "human_death_servant"]
+const KING_ID := "human_king"
+# 第 6 回合是萝卜 / 四星 / 佣兵 / 补满七人的连续脚本，人王放到下一回合讲。
+const KING_FIRST_ROUND := 7
+# 教学里采集科技最多升到这一级（正式局没有上限）。到顶后按钮显示「已满」。
+const TUTORIAL_HARVEST_MAX := 10
 const TREASURE_2 := ["atk_fury_roster", "def_formation_heal", "money_discount"]
 
 func start() -> void:
@@ -229,7 +251,12 @@ func start() -> void:
 	clear_checkpoint()
 	GameState.reset_run()
 	GameState.tutorial_mode = true
+	GameState.team_mode = true
+	GameState.team_slot_states = ["player", "dummy", "dummy", "dummy", "dummy", "dummy"]
 	GameState.FINAL_ROUND = 13
+	GameState.team_hp = TUTORIAL_HP
+	GameState.enemy_team_hp = TUTORIAL_HP
+	NetworkService.shared_seed = 20261019
 	GameState.player_formation_hp = TUTORIAL_HP
 	GameState.enemy_formation_hp = TUTORIAL_HP
 	GameState.gold = TUTORIAL_GOLD
@@ -238,7 +265,11 @@ func start() -> void:
 
 func finish(clear_saved_checkpoint: bool = true) -> void:
 	active = false
+	_ai_avatar_seed = 0
 	GameState.tutorial_mode = false
+	GameState.team_mode = false
+	GameState.team_slot_states.clear()
+	NetworkService.shared_seed = 0
 	opponent_snapshot = {}
 	_end_fill_step()
 	if clear_saved_checkpoint:
@@ -265,13 +296,14 @@ func sync() -> void:
 	var required := 2 if step == Step.TAKE_TREASURE_1 else \
 		(4 if GameState.round_index <= 9 else 5) if step == Step.TAKE_TREASURE_2 else 0
 	if required > 0 and GameState.owned_treasures.size() < required:
-		var preferred: Array = GameState.pending_treasure.get("candidates", [])
-		if preferred.is_empty():
-			preferred = TREASURE_1 if step == Step.TAKE_TREASURE_1 else TREASURE_2
-		var candidates := TreasureService.available_candidates(preferred)
-		if not bool(GameState.pending_treasure.get("active", false)) or candidates != preferred:
+		var candidates: Array = GameState.pending_treasure.get("candidates", [])
+		if not bool(GameState.pending_treasure.get("active", false)) or candidates.is_empty():
+			var preferred: Array = TREASURE_1 if step == Step.TAKE_TREASURE_1 else TREASURE_2
+			candidates = TreasureService.available_candidates(preferred)
 			GameState.pending_treasure["active"] = true
 			GameState.pending_treasure["candidates"] = candidates
+			GameState.pending_treasure["remaining"] = required - GameState.owned_treasures.size()
+			GameState.claimed_treasure_rounds.erase(int(GameState.pending_treasure.get("round", 0)))
 			_refresh_prep()
 	# 按「实际拥有 3 个」推进，不按采购次数：自动合成下重复买同名会融合，
 	# 买满 3 次也可能只剩 2 个棋子，那样 PLACE_3 的 3 个上阵条件永远达不到。
@@ -286,16 +318,23 @@ func sync() -> void:
 	if step == Step.UPGRADE_2 and _unit_star("human_militia") >= 2:
 		_advance_to(Step.START_PVE_2)
 	if step == Step.TAKE_TREASURE_1 and GameState.owned_treasures.size() >= 2:
+		_militia_granted = false
+		if _max_normal_star() >= GameState.MAX_MERGE_STAR:
+			# 10.19 教程反馈第 3 条：玩家自己已经合出 3 星了，不用再教合 3 星。
+			_enter_upgrade_others()
+		else:
+			# 回合开局已经清过商店（after_battle），这里铺回要凑的民兵。
+			_apply_shop(UPGRADE_2_SHOP)
+			_advance_to(Step.UPGRADE_3)
+			_refresh_prep()
+	if step == Step.UPGRADE_3 and not _militia_granted and space_shortfall() == 0:
 		# 只送 1 个 2 星（送 2 个会和场上那个凑满 3 个、当场自动合成到 3 星，
 		# UPGRADE_3 就被跳过了）。剩下 1 个 2 星让玩家自己买 2 个 1 星凑。
-		_grant_units("human_militia", 1, 2)
-		_advance_to(Step.UPGRADE_3)
+		# 只有真的放进待命区了才记账：数据没加载等情况下 _grant_units 会静默放弃。
+		_militia_granted = _grant_units("human_militia", 1, 2) > 0
 		_refresh_prep()
-	if step == Step.UPGRADE_3 and _unit_star("human_militia") >= 3:
-		# 弓手/商人升 2 星也让玩家自己在商店买，不再直接发材料。
-		_apply_shop(UPGRADE_OTHERS_SHOP)
-		_advance_to(Step.UPGRADE_OTHERS)
-		_refresh_prep()
+	if step == Step.UPGRADE_3 and _max_normal_star() >= GameState.MAX_MERGE_STAR:
+		_enter_upgrade_others()
 	if step == Step.UPGRADE_OTHERS and _unit_star("human_archer") >= 2 and _unit_star("human_merchant") >= 2:
 		_advance_to(Step.BOND_HINT)
 	# --- 9.25 萝卜 / 四星教学 ---
@@ -344,12 +383,62 @@ func sync() -> void:
 	if step == Step.FILL_7:
 		# 幂等：重复 sync() 只会把子阶段往前推，不会重置计数、不会重复补偿。
 		_advance_fill_step()
+	if step == Step.BUY_KING and _owns_unit(KING_ID):
+		_advance_to(Step.KING_HINT)
+		_refresh_prep()
 	if step == Step.FILL_7 and GameState.normal_unit_count() >= FILL_TARGET_UNITS:
 		_end_fill_step()
 		_advance_to(Step.FORMATION_HP)
 	# 每次推进都落一次断点（内部按进度签名节流，不会每帧写盘）。
 	save_checkpoint()
 	update_overlay()
+
+# 合完 3 星接「弓手 / 商人升 2 星」。玩家已经有民兵以外的 2 星棋子，就不用再教，直接看羁绊。
+func _enter_upgrade_others() -> void:
+	if _has_other_two_star():
+		_advance_to(Step.BOND_HINT)
+	else:
+		# 弓手/商人升 2 星也让玩家自己在商店买，不再直接发材料。
+		_apply_shop(UPGRADE_OTHERS_SHOP)
+		_advance_to(Step.UPGRADE_OTHERS)
+	_refresh_prep()
+
+
+func _has_other_two_star() -> bool:
+	for cell in GameState.board_slots + GameState.bench_slots:
+		if typeof(cell) != TYPE_DICTIONARY:
+			continue
+		var c: Dictionary = cell
+		if str(c.get("id", "")) != "human_militia" and int(c.get("star", 1)) >= 2:
+			return true
+	return false
+
+
+# 第 5 回合的升星步还差几个空待命格才能继续（0 = 不缺）。棋盘和待命区都满时，
+# 狗狗先让玩家卖掉用不到的棋子腾位置（10.19 教程反馈第 3 条）。
+# UPGRADE_3 要放送的 2 星民兵 + 买的民兵 = 2 格；送过以后、以及 UPGRADE_OTHERS 只要 1 格。
+func space_shortfall() -> int:
+	var need := 0
+	if step == Step.UPGRADE_3:
+		need = 1 if _militia_granted else 2
+	elif step == Step.UPGRADE_OTHERS:
+		need = 1
+	elif step == Step.BUY_KING and not _owns_unit(KING_ID):
+		# 第 7 回合买人王：待命区满了买不进来，同样先腾 1 格。
+		need = 1
+	else:
+		return 0
+	return maxi(0, need - GameState.bench_slots.count(null))
+
+
+# 腾位置时不能卖的棋子：这一步要凑的，以及刚合好的民兵。
+func sell_protected_ids() -> Array:
+	if step == Step.BUY_KING:
+		return []
+	if step == Step.UPGRADE_OTHERS:
+		return ["human_militia", "human_archer", "human_merchant"]
+	return ["human_militia"]
+
 
 func can_start_battle() -> bool:
 	return step in [Step.START_PVE_1, Step.START_PVE_2, Step.START_BOSS, Step.START_PVP]
@@ -364,7 +453,7 @@ func required_board_units() -> int:
 	if step in [Step.START_PVE_1, Step.START_PVE_2, Step.START_BOSS]:
 		return EARLY_DEPLOY_UNITS
 	if step == Step.START_PVP:
-		return FILL_TARGET_UNITS
+		return PVP_DEPLOY_UNITS
 	return 0
 
 # 9.25 教程优化第 4/5 条：开战前的最低上阵人数门槛。
@@ -372,7 +461,7 @@ func required_board_units() -> int:
 # 文档里的「步骤 3 / 5 / 14 / 22」是 STEP_SEQUENCE 的 1-based 序号（也就是气泡右上角
 # 那个「步 N/22」），逐条对上：
 #   3  = START_PVE_1 、5  = START_PVE_2 、14 = START_BOSS  -> 至少 3 个
-#   22 = START_PVP                                          -> 至少 7 个（FILL_TARGET_UNITS）
+#   22 = START_PVP                                          -> 至少 4 个（PVP_DEPLOY_UNITS）
 # 上阵数一律取 GameState.normal_unit_count()：那是 board_slots 上的**普通**棋子数，
 # 与 PLACE_3 / FILL_7 的完成条件同一口径（佣兵在 mercenary_slots，不算）。
 #
@@ -418,7 +507,10 @@ func _target_is_in_shop() -> bool:
 		# 「目标本来就在商店里」而吞掉。
 		return _owned_normal_count() < 3
 	if step in [Step.UPGRADE_2, Step.UPGRADE_3, Step.UPGRADE_OTHERS]:
-		return true
+		# 腾位置时目标是待命区的棋子，不在商店里。
+		return space_shortfall() == 0
+	if step == Step.BUY_KING:
+		return space_shortfall() == 0 and not _owns_unit(KING_ID)
 	return step == Step.FILL_7 and _fill_phase == FillPhase.BUY
 
 func begin_battle() -> bool:
@@ -533,13 +625,7 @@ func _merge_key(cell: Dictionary) -> String:
 	return "%s@%d" % [str(cell.get("id", "")), int(cell.get("star", 1))]
 
 func battle_kind() -> String:
-	match step:
-		Step.START_BOSS:
-			return "boss"
-		Step.START_PVP:
-			return "pvp"
-		_:
-			return "pve"
+	return RoundService.schedule_kind_for_round(GameState.round_index)
 
 func pve_enemy_count() -> int:
 	return 4 if step == Step.START_PVE_2 else 3
@@ -574,6 +660,10 @@ func coerce_victory(result: Dictionary) -> void:
 	result["enemy_hp_current"] = 0
 
 func after_battle(result: Dictionary) -> void:
+	# 新回合换一批新卡：清空后由 PrepScreen._ready -> _roll_shop -> tutorial_shop_ids() 重摇；
+	# 下面各分支如果自己 _apply_shop() 了脚本商店，以分支为准。
+	GameState.reset_shop_refreshes()
+	GameState.clear_shop()
 	match step:
 		Step.START_PVE_1:
 			GameState.round_index = 2
@@ -595,12 +685,17 @@ func after_battle(result: Dictionary) -> void:
 			if completed_round >= GameState.FINAL_ROUND:
 				coerce_victory(result)
 				GameState.enemy_formation_hp = 0
+				GameState.enemy_team_hp = 0
+				GameState.team_run_won = true
 				_advance_to(Step.DONE)
 			else:
 				if completed_round in [8, 12]:
 					_start_treasure(TREASURE_2)
 					_advance_to(Step.TAKE_TREASURE_2)
 				GameState.round_index = completed_round + 1
+				if GameState.round_index == KING_FIRST_ROUND:
+					_apply_shop(_king_shop_ids())
+					_advance_to(Step.BUY_KING)
 	GameState.gold = TUTORIAL_GOLD
 	save_checkpoint(true)
 
@@ -625,6 +720,12 @@ func current_text() -> String:
 			return _t("主力已经 2 星了。再开始战斗，这次打 4 个小怪。", "Your main unit is 2-star. Start battle again against 4 monsters.")
 		Step.TAKE_TREASURE_1:
 			return _t("第 4 回合奖励：选择 2 个宝藏。拿到的宝藏会显示在左下角。", "Round 4 reward: choose 2 treasures. Owned treasures appear at the bottom-left.")
+		Step.BUY_KING when space_shortfall() > 0:
+			return _t("商店里出现了「人王」，可是待命区满了！先把用不到的棋子拖到左边卖掉，空出位置再买人王。",
+				"The Human King is in the shop, but your standby is full! Drag a unit you don't need to the left to sell it, then buy the King.")
+		Step.UPGRADE_3, Step.UPGRADE_OTHERS when space_shortfall() > 0:
+			return _t("棋盘和待命区都满了！把用不到的棋子拖到左边卖掉，空出位置来合星。",
+				"Your board and standby are full! Drag units you don't need to the left to sell them and make room for merging.")
 		Step.UPGRADE_3:
 			return _t("已经送你 1 个 2 星民兵。再去商店买 2 个民兵（不够就刷新），它们会先合成 2 星，凑够 3 个 2 星就自动升到 3 星。", "You received one 2-star Militia. Buy 2 more Militia from the shop (refresh if needed) — they merge into a 2-star, and three 2-stars merge into a 3-star.")
 		Step.UPGRADE_OTHERS:
@@ -660,6 +761,12 @@ func current_text() -> String:
 		Step.START_PVP:
 			return _t("第 %d／13 回合：检查阵容后点击开始战斗。" % GameState.round_index,
 				"Round %d/13: review your team and start battle." % GameState.round_index)
+		Step.BUY_KING:
+			return _t("商店里出现了「人王」！打开商店把他买下来。",
+				"The Human King is in the shop! Open the shop and buy him.")
+		Step.KING_HINT:
+			return _t("人王很特别：棋盘上只能有一只。每场战斗后只要他还活着，就会永久变强（最多 5 层）；可一旦阵亡，他就会从棋盘上消失、再也回不来。把他放上棋盘，记得放在后排保护好。点一下继续。",
+				"The Human King is special: only one can be on the board. Each battle he survives makes him permanently stronger (up to 5 stacks), but if he dies he is removed from the board for good. Deploy him and keep him safe in the back row. Tap to continue.")
 		_:
 			return _t("教学胜利。", "Tutorial victory.")
 
@@ -670,6 +777,16 @@ func update_overlay() -> void:
 		_overlay.visible = false
 		return
 	_overlay.visible = true
+	if _overlay_layer != null:
+		_overlay_layer.layer = 1100 if (ModalStack.has("treasure_choice") or
+			ModalStack.has("mercenary_picker")) else 1
+	if _passive_round():
+		_show_passive_dog()
+		return
+	if _cheer_label != null:
+		_cheer_label.visible = false
+	_bubble.visible = true
+	_light.visible = true
 	var target := _target_control()
 	var rect := Rect2(Vector2(540, 290), Vector2(200, 80))
 	if target is Control and target.is_inside_tree():
@@ -734,6 +851,30 @@ func update_overlay() -> void:
 	_position_guide(rect, keep_clear)
 	_update_guide_light(focus)
 	_continue_btn.visible = false
+
+func _passive_round() -> bool:
+	if step == Step.START_PVE_2:
+		return GameState.round_index >= 3
+	return step == Step.START_PVP and GameState.round_index >= 7
+
+# 自由回合（第 11 回合等）那只狗的固定位置与大小。萝卜营地开着时也放这里。
+func _place_dog_at_passive_spot() -> void:
+	_guide.size = Vector2(96, 96)
+	_guide.position = Vector2(_overlay.size.x - 126, _overlay.size.y * 0.52)
+
+
+func _show_passive_dog() -> void:
+	_layout_signature = ""
+	var dim := _focus_dim_node()
+	if dim != null:
+		dim.visible = false
+	_light.visible = false
+	_bubble.visible = false
+	_guide.texture = DOG_GUIDE
+	_place_dog_at_passive_spot()
+	_cheer_label.text = _t("加油！", "You can do it!")
+	_cheer_label.position = _guide.position + Vector2(-88, 28)
+	_cheer_label.visible = true
 
 
 # 「这一步该不该整幅压暗」的**纯判据**：只看状态，不碰节点。
@@ -903,6 +1044,8 @@ func step_display_name() -> String:
 				"Round %d Practice Battle" % GameState.round_index)
 		Step.TAKE_TREASURE_1:
 			return _t("选择宝藏", "Choose Treasure")
+		Step.UPGRADE_3, Step.UPGRADE_OTHERS, Step.BUY_KING when space_shortfall() > 0:
+			return _t("腾出位置", "Make Room")
 		Step.UPGRADE_3:
 			return _t("升到 3 星", "Reach 3-Star")
 		Step.UPGRADE_OTHERS:
@@ -936,6 +1079,10 @@ func step_display_name() -> String:
 				"Round %d Seedling Battle" % GameState.round_index)
 		Step.DONE:
 			return _t("教学完成", "Tutorial Complete")
+		Step.BUY_KING:
+			return _t("购买人王", "Buy the King")
+		Step.KING_HINT:
+			return _t("保护人王", "Protect the King")
 	# 兜底：新增步骤但忘了在上面补一行时走到这里。玩家看到的是一句通用的话，
 	# 不是 "?" 也不是枚举名 —— 漏文案是我们的问题，不该由玩家来读代号。
 	return _t("教学步骤", "Tutorial Step")
@@ -944,7 +1091,7 @@ func progress_text() -> String:
 	var total := total_steps()
 	if step == Step.DONE:
 		return _t("教学完成 %d/%d" % [total, total], "Complete %d/%d" % [total, total])
-	if step in [Step.START_PVP, Step.TAKE_TREASURE_2]:
+	if step in [Step.START_PVP, Step.TAKE_TREASURE_2, Step.BUY_KING, Step.KING_HINT]:
 		return _t("青苗 %d/13 回合" % GameState.round_index,
 			"Seedling round %d/13" % GameState.round_index)
 	return _t("步骤 %d/%d" % [step_number(), total], "Step %d/%d" % [step_number(), total])
@@ -984,8 +1131,10 @@ func _guide_texture() -> Texture2D:
 		Step.BUY_3, Step.START_PVE_1, Step.TAKE_TREASURE_1, Step.TAKE_TREASURE_2:
 			return DOG_WELCOME
 		Step.BOND_HINT, Step.VIEW_TREASURE, Step.FORMATION_HP, \
-		Step.CARROT_CAMP, Step.HARVEST_UPGRADE, Step.CARROT_HARVEST:
+		Step.CARROT_CAMP, Step.HARVEST_UPGRADE, Step.CARROT_HARVEST, Step.KING_HINT:
 			return DOG_EXPLAIN
+		Step.BUY_KING:
+			return DOG_WELCOME
 		Step.UPGRADE_3, Step.FOUR_STAR, Step.FILL_7:
 			return DOG_ENCOURAGE
 	return DOG_GUIDE
@@ -1002,16 +1151,18 @@ func _position_guide(target_rect: Rect2, keep_clear: Array[Rect2]) -> void:
 	var side := clampf(safe.size.y * 0.18, 96.0, 145.0)
 	_guide.size = Vector2.ONE * side
 	var bubble := Rect2(_bubble.position, _bubble.size)
-	var candidates: Array[Vector2] = [
-		Vector2(bubble.position.x - side - 8.0, bubble.end.y - side),
-		Vector2(bubble.end.x + 8.0, bubble.end.y - side),
-		Vector2(bubble.position.x - side - 8.0, bubble.position.y),
-		Vector2(bubble.end.x + 8.0, bubble.position.y),
-		Vector2(safe.position.x, safe.end.y - side),
-		Vector2(safe.end.x - side, safe.end.y - side),
-		Vector2(safe.position.x, safe.position.y),
-		Vector2(safe.end.x - side, safe.position.y),
-	]
+	# 10.19 教程反馈第 7 条：狗狗一律靠屏幕右边，不再跟着气泡跑到棋盘中间挡住棋盘。
+	# 只在右边缘挑高度，仍按下面的评分避开目标、气泡和常驻按钮。
+	var right_x := safe.end.x - side
+	var candidates: Array[Vector2] = []
+	if _camp_open:
+		# 萝卜营地开着时（10.19 反馈）：狗放到自由回合那只「加油」狗的位置和大小，
+		# 与 _show_passive_dog() 同一处，不再参与评分。
+		_place_dog_at_passive_spot()
+		return
+	else:
+		for fraction in [0.52, 0.34, 0.70, 0.16, 0.86]:
+			candidates.append(Vector2(right_x, safe.position.y + (safe.size.y - side) * float(fraction)))
 	var skip_rect := Rect2(_skip_btn.position, _skip_btn.size) if _skip_btn != null else Rect2()
 	var best := candidates[0]
 	var best_score := INF
@@ -1023,7 +1174,7 @@ func _position_guide(target_rect: Rect2, keep_clear: Array[Rect2]) -> void:
 		score += _overlap_area(area, skip_rect) * 20.0
 		for blocked in keep_clear:
 			score += _overlap_area(area, blocked) * 8.0
-		score += pos.distance_to(bubble.position) * 0.5 + float(i) * 12.0
+		score += float(i) * 12.0
 		if score < best_score:
 			best_score = score
 			best = pos
@@ -1034,7 +1185,7 @@ func _update_guide_light(target_rect: Rect2) -> void:
 	if _light == null or _guide == null or not is_instance_valid(_light) \
 			or not is_instance_valid(_guide):
 		return
-	var medal := _guide.position + _guide.size * Vector2(0.63, 0.70)
+	var medal := _guide.position + _guide.size * Vector2(0.64, 0.72)
 	_light.aim(medal, target_rect, PlayerProfile.reduced_motion_enabled)
 
 # V2 P1-09：常驻控件（跳过按钮、进度条所在的气泡）也要落在安全区内。
@@ -1069,6 +1220,7 @@ func _make_mouse_transparent(node: Node) -> void:
 func _on_skip_pressed() -> void:
 	if not active:
 		return
+	set_overlay_suppressed(true)
 	_show_skip_confirm()
 
 # 跳过确认改走 DialogService（V3 P1-02 / P1-03）。
@@ -1099,6 +1251,7 @@ func _show_skip_confirm() -> void:
 
 func _on_skip_dialog_result(result: String, _request_id: String) -> void:
 	if result != SkipDialog.RESULT_CONFIRMED:
+		set_overlay_suppressed(false)
 		return
 	if not active:
 		return
@@ -1166,7 +1319,8 @@ func _input(event: InputEvent) -> void:
 # 这四个步骤是不是「点一下继续」型。其余步骤全靠真实进度推进（买够/上阵/升星/关面板…），
 # 点哪儿都不该跳步 —— 所以受理范围必须**只**覆盖这四步。
 func is_tap_step() -> bool:
-	return step in [Step.BOND_HINT, Step.VIEW_TREASURE, Step.FORMATION_HP, Step.CARROT_HARVEST]
+	return step in [Step.BOND_HINT, Step.VIEW_TREASURE, Step.FORMATION_HP, Step.CARROT_HARVEST,
+		Step.KING_HINT]
 
 
 # 受理范围。与已上线那一版**透明热区的范围逐字对齐** —— 本次改的只是「吃不吃输入」，
@@ -1183,7 +1337,7 @@ func _tap_advance_accepts(pos: Vector2) -> bool:
 	if _skip_btn != null and is_instance_valid(_skip_btn) and _skip_btn.visible \
 			and _skip_btn.get_global_rect().has_point(pos):
 		return false
-	if step in [Step.FORMATION_HP, Step.CARROT_HARVEST]:
+	if step in [Step.FORMATION_HP, Step.CARROT_HARVEST, Step.KING_HINT]:
 		return true
 	var target := _target_control()
 	if target == null or not target.is_inside_tree():
@@ -1221,6 +1375,9 @@ func confirm_tap_step() -> void:
 				_carrot_gift_claimed = true
 			_ensure_four_star_candidate()
 			_advance_to(Step.DRAW_STONE)
+			_refresh_prep()
+		Step.KING_HINT:
+			_advance_to(Step.START_PVP)
 			_refresh_prep()
 		_:
 			return
@@ -1298,6 +1455,7 @@ func save_checkpoint(force: bool = false) -> void:
 			"harvest_gain": _carrot_harvest_gain,
 			"gift_claimed": _carrot_gift_claimed,
 		},
+		"militia_granted": _militia_granted,
 		"carrots": GameState.carrots,
 		"harvest_tech_level": GameState.harvest_tech_level,
 		"merc_carrots_spent_total": GameState.merc_carrots_spent_total,
@@ -1360,12 +1518,17 @@ func restore_checkpoint() -> bool:
 	if data.is_empty() or int(data.get("version", 0)) != CHECKPOINT_VERSION:
 		return false
 	var saved_step := int(data.get("step", -1))
-	if saved_step < 0 or saved_step > int(Step.DONE):
+	if saved_step < 0 or saved_step >= Step.size():
 		return false
 
 	active = true
 	GameState.reset_run()
 	GameState.tutorial_mode = true
+	GameState.team_mode = true
+	GameState.team_slot_states = ["player", "dummy", "dummy", "dummy", "dummy", "dummy"]
+	GameState.team_hp = TUTORIAL_HP
+	GameState.enemy_team_hp = TUTORIAL_HP
+	NetworkService.shared_seed = 20261019
 	step = saved_step
 	_progress_index = int(data.get("progress_index", 0))
 	bought_units = int(data.get("bought_units", 0))
@@ -1382,6 +1545,8 @@ func restore_checkpoint() -> bool:
 	_carrot_harvested = bool(carrot.get("harvested", false))
 	_carrot_harvest_gain = int(carrot.get("harvest_gain", 0))
 	_carrot_gift_claimed = bool(carrot.get("gift_claimed", false))
+	# 旧断点没有这个字段：旧流程在进 UPGRADE_3 时就已经送过了。
+	_militia_granted = bool(data.get("militia_granted", true))
 	_camp_open = false
 	_camp_page = CAMP_PAGE_CAMP
 
@@ -1839,6 +2004,8 @@ func _target_control() -> Control:
 			target_id = TutorialTargetProviderScript.TARGET_BUY_UNIT
 		Step.PLACE_3:
 			target_id = TutorialTargetProviderScript.TARGET_PLACE_UNIT
+		Step.UPGRADE_3, Step.UPGRADE_OTHERS, Step.BUY_KING when space_shortfall() > 0:
+			target_id = TutorialTargetProviderScript.TARGET_SELL_UNIT
 		Step.UPGRADE_2, Step.UPGRADE_3, Step.UPGRADE_OTHERS:
 			target_id = TutorialTargetProviderScript.TARGET_UPGRADE_UNIT
 		Step.START_PVE_1, Step.START_PVE_2, Step.START_BOSS, Step.START_PVP:
@@ -1851,6 +2018,8 @@ func _target_control() -> Control:
 			target_id = TutorialTargetProviderScript.TARGET_HIRE_MERCENARY
 		Step.FILL_7:
 			target_id = TutorialTargetProviderScript.TARGET_FILL_SEVEN
+		Step.BUY_KING, Step.KING_HINT:
+			target_id = TutorialTargetProviderScript.TARGET_KING
 		Step.BOND_HINT:
 			target_id = TutorialTargetProviderScript.TARGET_BOND_ROW
 		Step.VIEW_TREASURE:
@@ -1885,12 +2054,16 @@ func _ensure_overlay() -> void:
 		push_warning("Tutorial overlay host missing provider=%s" %
 			_target_provider.provider_name())
 		return
+	_overlay_layer = CanvasLayer.new()
+	_overlay_layer.name = "TutorialOverlayLayer"
+	_overlay_layer.layer = 1
+	host.add_child(_overlay_layer)
 	_overlay = Control.new()
 	_overlay.name = "TutorialOverlay"
 	_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_overlay.z_index = 500
-	host.add_child(_overlay)
+	_overlay_layer.add_child(_overlay)
 
 	# ── 聚焦遮罩（2026-10-15 反馈问题 2）────────────────────────────────────
 	# 反馈原文：「调整明亮度，使除步骤、箭头提示和目标外的地方变暗，方便新手玩家
@@ -1940,6 +2113,15 @@ func _ensure_overlay() -> void:
 	_guide.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_guide.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_overlay.add_child(_guide)
+	_cheer_label = Label.new()
+	_cheer_label.visible = false
+	_cheer_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_cheer_label.add_theme_font_size_override("font_size", 19)
+	_cheer_label.add_theme_color_override("font_color", Color(1.0, 0.91, 0.53))
+	_cheer_label.add_theme_color_override("font_shadow_color", Color(0.04, 0.03, 0.02, 0.95))
+	_cheer_label.add_theme_constant_override("shadow_offset_x", 2)
+	_cheer_label.add_theme_constant_override("shadow_offset_y", 2)
+	_overlay.add_child(_cheer_label)
 
 	_bubble = PanelContainer.new()
 	# 气泡只负责显示文字，不吃任何点击（2026-10-15 第三轮反馈）。整棵子树都要设，
@@ -2050,11 +2232,13 @@ func _ensure_overlay() -> void:
 	_overlay.add_child(_skip_btn)
 
 func _detach() -> void:
-	if _overlay != null and is_instance_valid(_overlay):
-		_overlay.queue_free()
+	if _overlay_layer != null and is_instance_valid(_overlay_layer):
+		_overlay_layer.queue_free()
+	_overlay_layer = null
 	_overlay = null
 	_light = null
 	_guide = null
+	_cheer_label = null
 	_focus_dim.clear()
 	_target_provider = null
 	_overlay_suppressed = false
@@ -2073,8 +2257,40 @@ func tutorial_shop_ids() -> Array:
 			return UPGRADE_2_SHOP
 		Step.UPGRADE_OTHERS:
 			return UPGRADE_OTHERS_SHOP
+		Step.BUY_KING:
+			return _king_shop_ids()
 		_:
+			if _free_shop_round():
+				return _random_human_shop_ids()
 			return FILL_SHOP if step >= Step.HIRE_MERC else START_SHOP
+
+# 不在脚本步里的回合：第 3、4 回合练习战，第 7 回合起的青苗战与其间的选宝藏。
+func _free_shop_round() -> bool:
+	return _passive_round() or step in [Step.TAKE_TREASURE_2, Step.KING_HINT]
+
+func _random_human_shop_ids() -> Array:
+	var pool: Array = FREE_SHOP_POOL.duplicate()
+	if GameState.round_index >= KING_FIRST_ROUND:
+		pool.append(KING_ID)
+	var ids: Array = []
+	for i in GameState.SHOP_UNIT_SLOTS:
+		ids.append(pool[randi() % pool.size()])
+	# 第 7 回合（人王回合）怎么刷新都至少有一个人王（10.19 反馈第 2 条）。
+	if GameState.round_index == KING_FIRST_ROUND and not ids.has(KING_ID):
+		ids[randi() % ids.size()] = KING_ID
+	return ids
+
+# 人王步：第一格固定是人王（箭头指它），其余照常随机人族。
+func _king_shop_ids() -> Array:
+	var ids := _random_human_shop_ids()
+	ids[0] = KING_ID
+	return ids
+
+func _owns_unit(id: String) -> bool:
+	for cell in GameState.board_slots + GameState.bench_slots:
+		if typeof(cell) == TYPE_DICTIONARY and str((cell as Dictionary).get("id", "")) == id:
+			return true
+	return false
 
 func _apply_shop(ids: Array) -> void:
 	var offers: Array = []
@@ -2088,15 +2304,19 @@ func _apply_shop(ids: Array) -> void:
 		GameState.shop_offers[i] = offers[i % offers.size()].duplicate(true) if not offers.is_empty() else {}
 		GameState.shop_sold[i] = false
 
-func _grant_units(id: String, count: int, star: int = 1) -> void:
+# 返回实际放进待命区的个数（待命区满或数据缺失时会少于 count）。
+func _grant_units(id: String, count: int, star: int = 1) -> int:
 	var def := _unit_def(id)
 	if def.is_empty():
-		return
+		return 0
+	var granted := 0
 	for n in count:
 		var index := GameState.bench_slots.find(null)
 		if index < 0:
-			return
+			return granted
 		GameState.bench_slots[index] = {"id": id, "uid": GameState.mint_piece_uid(), "star": star, "def": def.duplicate(true)}
+		granted += 1
+	return granted
 
 func _on_continue_pressed() -> void:
 	if step == Step.BOND_HINT:
@@ -2124,7 +2344,9 @@ func shop_refresh_all_free() -> bool:
 	return GameState.tutorial_mode
 
 func _start_treasure(ids: Array) -> void:
-	GameState.pending_treasure = {"active": true, "round": GameState.round_index, "candidates": TreasureService.available_candidates(ids), "refresh_index": 0}
+	GameState.pending_treasure = {"active": true, "round": GameState.round_index,
+		"candidates": TreasureService.available_candidates(ids), "refresh_index": 0,
+		"remaining": RoundService.treasure_pick_count(GameState.round_index)}
 
 func _tutorial_opponent_snapshot() -> Dictionary:
 	var board := []
@@ -2220,16 +2442,89 @@ func allows_carrot_action(action: String) -> bool:
 		return false
 	match action:
 		"harvest_upgrade":
-			return step == Step.HARVEST_UPGRADE and GameState.harvest_tech_level < 1
+			if GameState.harvest_tech_level >= TUTORIAL_HARVEST_MAX:
+				return false
+			# 讲解那一步只升一次（升完箭头指关营地）；讲完以后随时可升（金币无限）。
+			if step == Step.HARVEST_UPGRADE:
+				return GameState.harvest_tech_level < 1
+			return GameState.harvest_tech_level >= 1
+		# 抽石头 / 升四星：讲解那一步放行；第 7 回合起照正式局规则开放
+		# （10.19 教程反馈第 6 条）。四星那一步里不放抽石头：这回合已经抽过了。
 		"draw_stone":
-			return step == Step.DRAW_STONE
+			return step == Step.DRAW_STONE or _carrot_free_play()
 		"four_star":
-			return step == Step.FOUR_STAR
+			return step == Step.FOUR_STAR or _carrot_free_play()
 		"hire_merc":
 			# 佣兵从 HIRE_MERC 这一步起才开放：更早雇会把抽升级石要用的萝卜花掉。
 			var hire_at := STEP_SEQUENCE.find(Step.HIRE_MERC)
 			return step == Step.DONE or (hire_at >= 0 and _progress_index >= hire_at)
 	return false
+
+
+# 教学萝卜收获讲完（Boss 后那一次）之后，每个新回合照正式局一样自动收获。
+# PrepScreen 开局读它；之前的回合收获由教学自己脚本化（_run_tutorial_harvest）。
+func round_harvest_enabled() -> bool:
+	return active and _carrot_harvested
+
+
+func harvest_maxed() -> bool:
+	return GameState.harvest_tech_level >= TUTORIAL_HARVEST_MAX
+
+
+# 教学里 5 个 AI 的昵称与头像（10.19 教程反馈）：每局随机一次，匹配面板、
+# 备战左上角头像、结算面板读的都是这里，前后一致。种子在 finish() 才清：
+# 匹配面板在 start() 之前就要画它们。
+const AI_NAMES_ZH := ["小麦田", "风之旅人", "橘子汽水", "夜行猫", "星河", "糯米团",
+	"晚风", "青柠", "山海", "木鱼", "跳跳糖", "云朵", "北极熊", "柚子", "阿福",
+	"薄荷", "大白兔", "小火龙", "雪球", "向日葵"]
+const AI_NAMES_EN := ["Windwalker", "Maple", "Nightcat", "Starfall", "Pudding", "Breeze",
+	"Lime", "Mochi", "Pebble", "Comet", "Biscuit", "Cloudy", "Polar", "Citrus",
+	"Lucky", "Mint", "Snowball", "Ember", "Sunny", "Juniper"]
+var _ai_avatar_seed := 0
+
+func _ai_seed() -> int:
+	if _ai_avatar_seed == 0:
+		_ai_avatar_seed = randi() | 1
+	return _ai_avatar_seed
+
+func ai_avatar(slot: int) -> String:
+	var list: Array = AvatarCatalog.avatars()
+	if list.is_empty():
+		return AvatarCatalog.default_avatar()
+	var entry: Variant = list[absi(hash([_ai_seed(), slot])) % list.size()]
+	return str((entry as Dictionary).get("id", "")) if entry is Dictionary else str(entry)
+
+# slot 1-5 各取一个，同一局里不重名：按种子洗一次牌，按 slot 取。
+func ai_name(slot: int) -> String:
+	var pool: Array = (AI_NAMES_EN if LocaleManager.get_locale().begins_with("en") else AI_NAMES_ZH).duplicate()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = _ai_seed()
+	for i in range(pool.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var tmp: Variant = pool[i]
+		pool[i] = pool[j]
+		pool[j] = tmp
+	return str(pool[clampi(slot - 1, 0, pool.size() - 1)])
+
+
+# 教学流程是否已经走过某一步（不含正在这一步）。人王两步不在 STEP_SEQUENCE 里，
+# 进度指针停在最后的 START_PVP 上，也算走过了前面所有步骤。
+func _past_step(s: int) -> bool:
+	if step == Step.DONE:
+		return true
+	var at := STEP_SEQUENCE.find(s)
+	return at >= 0 and _progress_index > at and step != s
+
+
+# 第 6 回合是萝卜 / 四星 / 佣兵的连续脚本，按顺序点；第 7 回合起抽石头、升四星自由用。
+func _carrot_free_play() -> bool:
+	return _past_step(Step.FOUR_STAR) and GameState.round_index >= KING_FIRST_ROUND
+
+
+# 抽石头那一步是脚本化的：不卡容量（送的萝卜可以超过容量）、固定出与 3 星同属性的石头。
+# 讲完以后照正式局：要卡容量、随机出石头。
+func scripted_stone_draw() -> bool:
+	return active and step == Step.DRAW_STONE
 
 
 func last_harvest_gain() -> int:

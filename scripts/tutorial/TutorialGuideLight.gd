@@ -49,34 +49,34 @@ func _draw() -> void:
 	var side := -1.0 if delta.x >= 0.0 else 1.0
 	var control_a := emitter + delta * 0.26 + Vector2(side * bend, -bend * 0.48)
 	var control_b := emitter + delta * 0.76 + Vector2(-side * bend * 0.30, -bend * 0.18)
-	var points := PackedVector2Array()
-	for i in 33:
-		points.append(_curve_point(emitter, control_a, control_b, end, float(i) / 32.0))
-	# A steady faint thread tells the player where to look between launches.
-	draw_polyline(points, Color(1.0, 0.71, 0.29, 0.18), 3.0, true)
 	var phase := 0.72 if reduced_motion else _elapsed / PERIOD
 	var linear := clampf(phase / TRAVEL_TIME, 0.0, 1.0)
 	var head_t := linear * linear * (3.0 - 2.0 * linear)
 	var tail_t := maxf(0.0, head_t - 0.26)
-	var moving := PackedVector2Array()
-	for i in 13:
-		moving.append(_curve_point(emitter, control_a, control_b, end,
-			lerpf(tail_t, head_t, float(i) / 12.0)))
-	var fade := 1.0 if reduced_motion else minf(1.0, minf(phase * 8.0, (1.0 - phase) * 8.0))
-	draw_polyline(moving, Color(0.93, 0.53, 0.12, 0.12 * fade), 22.0, true)
-	draw_polyline(moving, Color(1.0, 0.75, 0.30, 0.42 * fade), 9.0, true)
-	draw_polyline(moving, Color(1.0, 0.96, 0.73, 0.95 * fade), 2.5, true)
+	# Only the travelling burst is visible. Leave no guide rail after it arrives.
+	var in_flight := reduced_motion or phase <= TRAVEL_TIME
+	var fade := 1.0 if reduced_motion else minf(1.0, phase * 8.0)
+	if in_flight:
+		var moving := PackedVector2Array()
+		for i in 13:
+			moving.append(_curve_point(emitter, control_a, control_b, end,
+				lerpf(tail_t, head_t, float(i) / 12.0)))
+		draw_polyline(moving, Color(0.93, 0.53, 0.12, 0.12 * fade), 22.0, true)
+		draw_polyline(moving, Color(1.0, 0.75, 0.30, 0.42 * fade), 9.0, true)
+		draw_polyline(moving, Color(1.0, 0.96, 0.73, 0.95 * fade), 2.5, true)
 	var head := _curve_point(emitter, control_a, control_b, end, head_t)
 	for layer in 5:
 		var radius := 24.0 - float(layer) * 4.5
 		draw_circle(emitter, radius, Color(1.0, 0.69, 0.25, (0.025 + float(layer) * 0.012)))
-		draw_circle(head, radius * 0.7, Color(1.0, 0.81, 0.43, (0.025 + float(layer) * 0.015) * fade))
-	for i in 7:
-		var t := maxf(0.0, head_t - float(i) * 0.032)
-		var mote := _curve_point(emitter, control_a, control_b, end, t)
-		var wobble := sin(float(i) * 7.3 + _elapsed * 17.0) * (2.0 + float(i) * 0.4)
-		draw_circle(mote + Vector2(wobble, -wobble * 0.6), 2.8 - float(i) * 0.24,
-			Color(1.0, 0.91, 0.64, 0.75 * fade))
+		if in_flight:
+			draw_circle(head, radius * 0.7, Color(1.0, 0.81, 0.43, (0.025 + float(layer) * 0.015) * fade))
+	if in_flight:
+		for i in 7:
+			var t := maxf(0.0, head_t - float(i) * 0.032)
+			var mote := _curve_point(emitter, control_a, control_b, end, t)
+			var wobble := sin(float(i) * 7.3 + _elapsed * 17.0) * (2.0 + float(i) * 0.4)
+			draw_circle(mote + Vector2(wobble, -wobble * 0.6), 2.8 - float(i) * 0.24,
+				Color(1.0, 0.91, 0.64, 0.75 * fade))
 	var impact := 0.0
 	if not reduced_motion and phase > 0.62 and phase < 0.96:
 		impact = sin((phase - 0.62) / 0.34 * PI)

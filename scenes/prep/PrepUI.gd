@@ -284,6 +284,10 @@ func tutorial_target_provider() -> TutorialTargetProviderScript:
 		_tutorial_target_stone_draw)
 	provider.bind_target(TutorialTargetProviderScript.TARGET_FOUR_STAR_ROW,
 		_tutorial_target_four_star_row)
+	provider.bind_target(TutorialTargetProviderScript.TARGET_KING,
+		_tutorial_target_king)
+	provider.bind_target(TutorialTargetProviderScript.TARGET_SELL_UNIT,
+		_tutorial_target_sell_unit)
 	provider.bind_action(TutorialTargetProviderScript.ACTION_CLOSE_MERCENARY,
 		_close_merc_picker)
 	provider.bind_action(TutorialTargetProviderScript.ACTION_REFRESH_VIEW,
@@ -361,6 +365,53 @@ func _tutorial_target_buy_unit() -> Control:
 	if _shop.picker_open and _tutorial_owned_normal_count() >= 3:
 		return _tutorial_first_empty_board()
 	return _tutorial_shop_purchase_target()
+
+
+# 人王教学：没买到时走商店购买链（商店第一格就是人王）；买到后指人王本身，
+# 在棋盘上就指棋盘格，还在待命区就指待命格（商店开着时待命区被盖住，先指棋盘让玩家关店）。
+func _tutorial_target_king() -> Control:
+	for i in GameState.board_slots.size():
+		if _tutorial_cell_is_king(GameState.board_slots[i]) and i < _board_hud.buttons.size():
+			return _board_hud.buttons[i] as Control
+	for i in GameState.bench_slots.size():
+		if _tutorial_cell_is_king(GameState.bench_slots[i]) and i < _board_hud.bench_buttons.size():
+			if _shop.picker_open:
+				return _tutorial_first_empty_board()
+			return _board_hud.bench_buttons[i] as Control
+	if _shop.picker_open and _tutorial_shop_index_available(_shop.selected) \
+			and str((GameState.shop_offers[_shop.selected] as Dictionary).get("id", "")) == TutorialModeScript.KING_ID:
+		return _shop.buy_button
+	for i in _shop.buttons.size():
+		if _tutorial_shop_index_available(i) \
+				and str((GameState.shop_offers[i] as Dictionary).get("id", "")) == TutorialModeScript.KING_ID:
+			return _shop.buttons[i] as Control if _shop.picker_open else _shop.open_button
+	return _tutorial_shop_purchase_target()
+
+
+# 满格腾位置：先指待命区里第一个不在保护名单上的棋子，没有再指棋盘上的。
+# 商店开着时待命区被盖住，先指商店入口让玩家关店（follow_arrow_hint 也会这样提示）。
+func _tutorial_target_sell_unit() -> Control:
+	if _shop.picker_open:
+		return _shop.open_button
+	var keep: Array = TutorialMode.sell_protected_ids()
+	for i in GameState.bench_slots.size():
+		var cell: Variant = GameState.bench_slots[i]
+		if typeof(cell) == TYPE_DICTIONARY and not str((cell as Dictionary).get("id", "")) in keep \
+				and int((cell as Dictionary).get("star", 1)) < GameState.MAX_UNIT_STAR \
+				and i < _board_hud.bench_buttons.size():
+			return _board_hud.bench_buttons[i] as Control
+	for i in GameState.board_slots.size():
+		var cell: Variant = GameState.board_slots[i]
+		if typeof(cell) == TYPE_DICTIONARY and not str((cell as Dictionary).get("id", "")) in keep \
+				and int((cell as Dictionary).get("star", 1)) < GameState.MAX_UNIT_STAR \
+				and i < _board_hud.buttons.size():
+			return _board_hud.buttons[i] as Control
+	return _tutorial_first_occupied_bench()
+
+
+func _tutorial_cell_is_king(cell: Variant) -> bool:
+	return typeof(cell) == TYPE_DICTIONARY \
+		and str((cell as Dictionary).get("id", "")) == TutorialModeScript.KING_ID
 
 
 func _tutorial_target_place_unit() -> Control:
@@ -2295,23 +2346,24 @@ func _crystal_textures_for_element(is_fire: bool) -> Array:
 	return texs
 func _refresh_formation_status() -> void:
 	# (1) 3v3 uses the shared team HP, not the 1v1 formation HP fields.
+	var display_max_hp := TutorialMode.TUTORIAL_HP if GameState.tutorial_mode else GameState.START_FORMATION_HP
 	var player_hp: int
 	var enemy_hp: int
 	if GameState.team_mode:
-		player_hp = clampi(GameState.team_hp, 0, GameState.START_FORMATION_HP)
-		enemy_hp = clampi(GameState.enemy_team_hp, 0, GameState.START_FORMATION_HP)
+		player_hp = clampi(GameState.team_hp, 0, display_max_hp)
+		enemy_hp = clampi(GameState.enemy_team_hp, 0, display_max_hp)
 	else:
-		player_hp = clampi(GameState.player_formation_hp, 0, GameState.START_FORMATION_HP)
-		enemy_hp = clampi(GameState.enemy_formation_hp, 0, GameState.START_FORMATION_HP)
+		player_hp = clampi(GameState.player_formation_hp, 0, display_max_hp)
+		enemy_hp = clampi(GameState.enemy_formation_hp, 0, display_max_hp)
 	if _player_formation_bar != null:
 		_player_formation_bar.value = player_hp
 	if _enemy_formation_bar != null:
 		_enemy_formation_bar.value = enemy_hp
 	if _player_formation_hp_label != null:
-		_player_formation_hp_label.text = "%d/%d" % [player_hp, GameState.START_FORMATION_HP]
+		_player_formation_hp_label.text = "%d/%d" % [player_hp, display_max_hp]
 	if _enemy_formation_hp_label != null:
-		_enemy_formation_hp_label.text = "%d/%d" % [enemy_hp, GameState.START_FORMATION_HP]
-	var max_hp := maxi(1, GameState.START_FORMATION_HP)
+		_enemy_formation_hp_label.text = "%d/%d" % [enemy_hp, display_max_hp]
+	var max_hp := maxi(1, display_max_hp)
 	# 队伍元素：组队时本人 slot<3=火队(红)、slot>=3=水队(蓝)，敌方取反；非组队默认本方火/敌方水。
 	var local_fire := true
 	if NetworkService.team_active and NetworkService.team_local_slot >= 0:
@@ -2483,6 +2535,9 @@ func _on_ready_badge_input(event: InputEvent, badge: Control) -> void:
 		or (event is InputEventScreenTouch and (event as InputEventScreenTouch).pressed)
 	if not pressed or not badge.has_meta("slot"):
 		return
+	# 教学里的座位都是 AI，没有名片、留言和语音可看。
+	if GameState.tutorial_mode:
+		return
 	badge.accept_event()
 	open_seat_card(int(badge.get_meta("slot")), badge)
 
@@ -2579,6 +2634,9 @@ func _create_ready_avatar_badge() -> Control:
 
 
 func _ready_slot_identity(slot: int) -> Dictionary:
+	if GameState.tutorial_mode:
+		# 教学：slot 0 是玩家本人（红队），其余 5 个是随机头像的 AI。
+		return AccountManager.profile if slot == 0 else {"avatar": TutorialMode.ai_avatar(slot)}
 	if slot == int(NetworkService.team_local_slot):
 		return AccountManager.profile
 	var profiles: Dictionary = NetworkService.team_seat_profiles
@@ -2588,13 +2646,16 @@ func _ready_slot_identity(slot: int) -> Dictionary:
 func _refresh_ready_indicator() -> void:
 	if _ready_indicator == null or _ready_dots.size() < 6:
 		return
-	_ready_indicator.visible = NetworkService.team_active
-	if not NetworkService.team_active:
+	# 教学没有联机会话，但也要显示 6 个头像（10.19 教程反馈第 3 条）：
+	# 座位表取 TutorialMode.start() 写的 GameState.team_slot_states，玩家固定 slot 0（红队）。
+	var tutorial := GameState.tutorial_mode
+	_ready_indicator.visible = NetworkService.team_active or tutorial
+	if not _ready_indicator.visible:
 		return
-	var states: Array = NetworkService.team_slot_states
-	var ready_arr: Array = NetworkService.team_ready
+	var states: Array = GameState.team_slot_states if tutorial else NetworkService.team_slot_states
+	var ready_arr: Array = [] if tutorial else NetworkService.team_ready
 	# 自己队永远在左边：team_local_slot<3=火队(0,1,2)、≥3=水队(3,4,5)；-1(没入队)默认火队在左。
-	var local_fire := NetworkService.team_local_slot < 3
+	var local_fire := tutorial or NetworkService.team_local_slot < 3
 	var own_slots: Array = [0, 1, 2] if local_fire else [3, 4, 5]
 	var enemy_slots: Array = [3, 4, 5] if local_fire else [0, 1, 2]
 	var pos_to_slot: Array = own_slots + enemy_slots   # 位置 0-2=自己队、3-5=对面
@@ -4022,11 +4083,6 @@ func _on_shop_buy_requested(index: int) -> void:
 	if empty_bench >= 0:
 		_buy_or_merge_shop_to_bench(index, empty_bench)
 		return
-	if GameState.tutorial_mode:
-		# 教学是脚本化流程（先「买齐」再单独一步「上阵」），自动往棋盘上放会替玩家
-		# 跳过那一步。教学里待命区满由 TutorialMode 的自动补偿处理，维持原口径。
-		show_message(tr("ui_bench_full"))
-		return
 	if index < 0 or index >= GameState.shop_offers.size():
 		return
 	var offer: Dictionary = GameState.shop_offers[index]
@@ -4039,9 +4095,11 @@ func _on_shop_buy_requested(index: int) -> void:
 		return
 	# ② 棋盘空位。上阵上限与「同名唯一」两条都要先判掉，否则 _buy_or_merge_shop_to_board
 	#    会在里面弹别的提示后直接 return —— 这里挑的就是「真能放」的格子。
+	#    教学跳过这一条：教学是脚本化流程（先「买齐」再单独一步「上阵」），自动往棋盘上放
+	#    会替玩家跳过那一步。但①③的升星照常（10.19 反馈：能升星却提示待命区已满）。
 	var unique_blocked := bool(offer.get("unique_on_board", false)) \
 		and PrepRules.has_unique_board_unit(str(offer.get("id", "")), PrepRules.board_limit_for_def(offer))
-	if GameState.normal_unit_count() < GameState.normal_unit_cap() and not unique_blocked:
+	if not GameState.tutorial_mode and GameState.normal_unit_count() < GameState.normal_unit_cap() and not unique_blocked:
 		var placeable := PrepRules.empty_slot_indices(GameState.board_slots)
 		if placeable.size() > 0:
 			_buy_or_merge_shop_to_board(index, placeable[_board_pick_rng().randi_range(0, placeable.size() - 1)])
@@ -4052,7 +4110,7 @@ func _on_shop_buy_requested(index: int) -> void:
 		_buy_or_merge_shop_to_bench(index, bench_merge)
 		return
 	# ④ 真放不下。
-	show_message(tr("ui_pieces_full"))
+	show_message(tr("ui_bench_full") if GameState.tutorial_mode else tr("ui_pieces_full"))
 
 
 # 「随机放到棋盘可放置处」用的 RNG。**刻意不复用 RngService** ——

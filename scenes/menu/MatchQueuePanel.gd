@@ -30,6 +30,7 @@ const AVATARS := preload("res://scripts/account/AvatarCatalog.gd")
 
 # 拿到对局分配，可以去连战斗服务器了。
 signal match_ready()
+signal tutorial_found()
 # 玩家自己退出，或者出错退不下去了。
 signal dismissed()
 
@@ -46,6 +47,7 @@ var _party_queue := false
 # 10.07 第 14 条后取消对全队一视同仁，这个旗标不再决定行为；保留它是为了不
 # 动 configure() 的签名（Main.gd 仍然按原有位置传 host 标记）。
 var _party_host := false
+var _tutorial_ai := false
 var _state := "idle"
 var _accept_deadline := 0.0
 var _poll_timer := 0.0
@@ -64,10 +66,24 @@ func configure(mode: String, party_queue: bool = false, party_host: bool = false
 	_party_queue = party_queue
 	_party_host = party_host
 
+func configure_tutorial_ai() -> void:
+	_tutorial_ai = true
+	_mode = "casual"
+
+func tutorial_accept_target() -> Control:
+	return _accept_btn
+
+# 教学匹配确认时一起露出来的 6 个头像（两队两排）。
+func tutorial_roster_target() -> Control:
+	return _roster
+
 
 func _ready() -> void:
 	theme = Theming.get_theme()
 	_build()
+	if _tutorial_ai:
+		_begin_tutorial_ai_queue()
+		return
 	if not RealtimeService.message_received.is_connected(_on_realtime_message):
 		RealtimeService.message_received.connect(_on_realtime_message)
 	if _party_queue:
@@ -153,6 +169,15 @@ func _join() -> void:
 
 
 func _on_accept() -> void:
+	if _tutorial_ai:
+		if _state != "found":
+			return
+		var seats := _tutorial_ai_seats(true)
+		_apply({"state": "found", "seats": seats, "accepted": true, "accept_sec": ACCEPT_SEC})
+		await get_tree().create_timer(0.45).timeout
+		if is_inside_tree():
+			_apply({"state": "ready"})
+		return
 	if _busy:
 		return
 	_busy = true
@@ -172,6 +197,9 @@ func _on_accept() -> void:
 
 func _on_leave() -> void:
 	SfxService.play(SfxService.CUE_UI_CONFIRM)
+	if _tutorial_ai:
+		dismissed.emit()
+		return
 	if _party_queue and _state == "queued":
 		# 10.07 第 14 条：队里**任意成员**取消都只是取消匹配，全队回到房间。
 		# 以前非房主走 leave_party()，那是退房 —— 房主以外的队友一点取消就掉出队伍。
@@ -186,6 +214,8 @@ func _on_leave() -> void:
 
 # WS 推送与轮询走同一个函数 —— 两边是同一个形状（见文件头第 1 条）。
 func _on_realtime_message(payload: Dictionary) -> void:
+	if _tutorial_ai:
+		return
 	if str(payload.get("t", "")) == "match":
 		_apply(payload)
 
@@ -195,6 +225,10 @@ func _process(delta: float) -> void:
 		var left := maxi(0, int(ceil(_accept_deadline - Time.get_ticks_msec() / 1000.0)))
 		# 10.10 bug 第 6 条：标题改成「匹配成功。确认倒计时：N」。
 		_title.text = _text("匹配成功。确认倒计时：%d", "Match found. Confirming in %d") % left
+		if _tutorial_ai and left == 0:
+			_apply({"state": "idle", "reason": "declined"})
+	if _tutorial_ai:
+		return
 	if _state in ["idle", "ready"]:
 		return
 	# WS 断着时的兜底。连着的时候也轮询，只是拿到的都是同一个状态 ——
@@ -215,6 +249,29 @@ func _poll() -> void:
 	if not is_inside_tree() or int(result.get("code", 0)) != 200:
 		return
 	_apply((result.get("body", {}) as Dictionary).get("state", {}))
+
+func _begin_tutorial_ai_queue() -> void:
+	_apply({"state": "queued", "position": 1})
+	await get_tree().create_timer(1.2).timeout
+	if not is_inside_tree() or _state != "queued":
+		return
+	_apply({"state": "found", "seats": _tutorial_ai_seats(false),
+		"accepted": false, "accept_sec": ACCEPT_SEC})
+	tutorial_found.emit()
+
+func _tutorial_ai_seats(player_accepted: bool) -> Array:
+	var seats: Array = []
+	for slot in 6:
+		var me: Dictionary = AccountManager.profile
+		var my_name := str(me.get("player_name", "")).strip_edges()
+		seats.append({"team": int(slot / 3), "seat": slot % 3,
+			"name": (my_name if not my_name.is_empty() else _text("玩家", "Player")) if slot == 0 \
+				else TutorialMode.ai_name(slot),
+			"avatar": str(me.get("avatar", "")) if slot == 0 else TutorialMode.ai_avatar(slot),
+			"avatar_frame": str(me.get("avatar_frame", "")) if slot == 0 else "",
+			"accepted": slot != 0 or player_accepted,
+			"me": slot == 0, "ai": slot != 0})
+	return seats
 
 
 # --- 状态机 -------------------------------------------------------------------
@@ -419,6 +476,16 @@ func _seat_chip(seat: Dictionary) -> Control:
 	else:
 		# 还没确认 → 整格（框 + 头像一起）压暗。一眼看出「谁还没按」，省掉那行计数文案。
 		box.modulate = Color(1, 1, 1, 0.32)
+	if bool(seat.get("ai", false)):
+		var ai_label := Label.new()
+		ai_label.text = str(seat.get("name", "AI"))
+		ai_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		ai_label.add_theme_font_size_override("font_size", 16)
+		ai_label.add_theme_color_override("font_color", Color("fff1d0"))
+		ai_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ai_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+		ai_label.offset_top = -25.0
+		box.add_child(ai_label)
 	return box
 
 

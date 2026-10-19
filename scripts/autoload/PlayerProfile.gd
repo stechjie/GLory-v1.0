@@ -106,6 +106,9 @@ var language_selected := false
 var onboarding_version := ONBOARDING_VERSION
 var onboarding_status := ONBOARDING_NOT_STARTED
 var tutorial_reward_eligible := true
+# 教程打完了、但「升 Lv2 + 神族棋子」的奖励没同步到服务器（没网 / 服务器不通）。
+# 这时先放玩家回主页，回主页时再自动补发；服务器那边重复领取会返回 0，补发不会多给。
+var tutorial_reward_pending := false
 # Empty after the first-match reward tour is finished. This is presentation
 # progress only; XP and unit ownership remain server-authoritative.
 var tutorial_followup_step := ""
@@ -170,6 +173,7 @@ func load_profile() -> void:
 	tutorial_followup_step = str(data.get("tutorial_followup_step", ""))
 	if tutorial_followup_step not in ["", "avatar", "reward", "prep", "pet", "race"]:
 		tutorial_followup_step = ""
+	tutorial_reward_pending = bool(data.get("tutorial_reward_pending", false))
 	_apply_reduced_motion()
 	LocaleManager.set_locale(locale)
 	# Persist the migrated shape so the upgrade only ever runs once.
@@ -200,6 +204,7 @@ func save_profile() -> bool:
 		"onboarding_status": onboarding_status,
 		"tutorial_reward_eligible": tutorial_reward_eligible,
 		"tutorial_followup_step": tutorial_followup_step,
+		"tutorial_reward_pending": tutorial_reward_pending,
 	}
 	return _atomic_write(PROFILE_PATH, JSON.stringify(payload))
 
@@ -226,6 +231,7 @@ func _reset_defaults() -> void:
 	onboarding_status = ONBOARDING_NOT_STARTED
 	tutorial_reward_eligible = true
 	tutorial_followup_step = ""
+	tutorial_reward_pending = false
 	needs_starter_pick = true
 	_apply_reduced_motion()
 	LocaleManager.set_locale(locale)
@@ -390,6 +396,29 @@ func complete_tutorial_with_followup() -> bool:
 	onboarding_status = previous_status
 	tutorial_reward_eligible = previous_eligible
 	tutorial_followup_step = previous_step
+	return false
+
+
+# 奖励同步失败：教程算完成（玩家可以去主页、不会再被拉回教程），奖励记成待补发。
+func defer_tutorial_reward() -> bool:
+	var previous_status := onboarding_status
+	var previous_pending := tutorial_reward_pending
+	onboarding_version = ONBOARDING_VERSION
+	onboarding_status = ONBOARDING_COMPLETED
+	tutorial_reward_pending = true
+	if save_profile():
+		return true
+	onboarding_status = previous_status
+	tutorial_reward_pending = previous_pending
+	return false
+
+
+# 补发成功：与正常领奖同一个收尾（complete_tutorial_with_followup），再清掉待补发。
+func finish_deferred_tutorial_reward() -> bool:
+	tutorial_reward_pending = false
+	if complete_tutorial_with_followup():
+		return true
+	tutorial_reward_pending = true
 	return false
 
 

@@ -54,7 +54,8 @@ static func state_for(seed: Variant, slot: int, round_n: int) -> Dictionary:
 	var live: Dictionary = NetworkService.team_bot_states.get(slot, {})
 	if int(live.get("round", -1)) == round_n and str(live.get("seed", "")) == str(seed):
 		return view(live)
-	var key := "%s/%d/%d" % [str(seed), slot, round_n]
+	var key := "%s/%d/%d/%s" % [str(seed), slot, round_n,
+		"tutorial" if GameState.tutorial_mode else "normal"]
 	if _cache.has(key):
 		return _cache[key]
 	if _cache.size() >= CACHE_LIMIT:
@@ -154,6 +155,9 @@ static func _simulate(seed: Variant, slot: int, round_n: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(["glory_bot_v1", str(seed), slot])
 	var units: Array = DataRegistry.get_table("race_units").get("units", [])
+	if GameState.tutorial_mode:
+		units = units.filter(func(unit: Variant) -> bool:
+			return unit is Dictionary and str(unit.get("race", "")) == "human")
 	var races := _races(units)
 	var bot := {
 		"gold": GameState.START_GOLD,
@@ -177,7 +181,8 @@ static func _simulate(seed: Variant, slot: int, round_n: int) -> Dictionary:
 		if r > 1:
 			_settle_battle(bot, r - 1, rng)
 			if draw_rounds.has(r - 1):
-				_pick_treasure(bot, rng)
+				for pick in RoundService.treasure_pick_count(r - 1):
+					_pick_treasure(bot, rng)
 		# Hired mercenaries expire after ONE battle, just like player mercenaries.
 		bot.mercs = []
 		_harvest(bot)

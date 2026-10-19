@@ -22,6 +22,7 @@ static func _process_single_race_death(state: Dictionary, victim: Dictionary) ->
 		return
 	processed[uid] = true
 	state.race_trait_processed_deaths = processed
+	_apply_soul_devour_on_death(state, victim)
 	# 人7（9.24 改）放在母灵处决早退之前：被处决也算「己方死了一个」。
 	_owner_human_rally(state, victim)
 	if bool(victim.get("mother_execute_kill", false)):
@@ -388,7 +389,7 @@ static func _apply_frenzy_assault(attacker: Dictionary, target: Dictionary) -> v
 	# 独立倍率由 StatusEffectService 计算，不永久污染基础攻速。
 	attacker.frenzy_stacks = mini(int(attacker.frenzy_stacks), 64)
 
-static func _apply_defender_reaction(attacker: Dictionary, target: Dictionary, dealt: int) -> void:
+static func _apply_defender_reaction(attacker: Dictionary, target: Dictionary, dealt: int, state: Dictionary = {}) -> void:
 	var d: Dictionary = target.get("def", {})
 	var prev_source := DamageService.current_stat_source_uid()
 	DamageService.set_stat_source_uid(str(target.get("uid", "")))
@@ -396,7 +397,15 @@ static func _apply_defender_reaction(attacker: Dictionary, target: Dictionary, d
 		target.skill_stacks = int(target.get("skill_stacks", 0)) + 1
 		if int(target.skill_stacks) >= int(d.get("hit_threshold", 8)):
 			target.skill_stacks = 0
+			DamageService.set_hit_context("skill", false, str(d.get("race", "")), "overload_counter")
 			DamageService.apply_damage(attacker, maxi(1, int(d.get("skill_damage", 300))), true)
+			var opponents: Array = state.get("enemy", []) if str(target.get("team", "")) == "player" else state.get("player", [])
+			for other: Dictionary in opponents:
+				if is_same(other, attacker) or not bool(other.get("alive", false)) or not _can_target(target, other, opponents):
+					continue
+				if Vector2(attacker.pos).distance_to(Vector2(other.pos)) <= float(d.get("splash_radius", 180.0)):
+					DamageService.apply_damage(other, maxi(1, int(d.get("splash_damage", 200))), true)
+			DamageService.clear_hit_context()
 			if RngService.rng.randf() < float(d.get("interrupt_chance", 0.25)):
 				StatusEffectService.interrupt(attacker)
 	if str(d.get("skill_id", "")) == "poison_reflect_armor_stack" and dealt > 0 and bool(target.get("alive", false)):
@@ -596,25 +605,66 @@ static func _apply_boss_attacker_passives(attacker: Dictionary, state: Dictionar
 	var d: Dictionary = attacker.get("def", {})
 	if str(d.get("skill_id", "")) == "rage_stack":
 		var old_stacks := int(attacker.get("skill_stacks", 0))
-		var new_stacks := mini(int(d.get("max_stacks", 20)), old_stacks + 1)
+		var new_stacks := mini(int(d.get("max_stacks", 50)), old_stacks + 1)
 		if new_stacks > old_stacks:
 			attacker.skill_stacks = new_stacks
-			attacker.atk = maxi(1, int(round(float(attacker.atk) * (1.0 + float(d.get("atk_per_hit", 0.03))))))
+			attacker.atk = maxi(1, int(round(float(attacker.atk) * (1.0 + float(d.get("atk_per_hit", 0.05))))))
 			attacker.attack_speed = clampf(float(attacker.attack_speed) + float(d.get("aspd_per_hit", 0.03)), 0.25, 2.5)
-	elif str(d.get("skill_id", "")) == "blood_rage" and not bool(attacker.get("blood_rage_active", false)) and float(attacker.hp) / float(maxi(1, int(attacker.max_hp))) <= float(d.get("trigger_hp_pct", 0.35)):
-		attacker.blood_rage_active = true
-		attacker.atk = maxi(1, int(round(float(attacker.atk) * (1.0 + float(d.get("atk_bonus", 0.40))))))
-		attacker.attack_speed = clampf(float(attacker.attack_speed) + float(d.get("aspd_bonus", 0.30)), 0.25, 2.5)
-		# 用户口径：「应该在生命值降至 35% 以下**触发技能进入暴走时**播放**一次**该音效」。
-		# 「一次」由上面那个 `not blood_rage_active` 前置条件天然保证 ——
-		# 标记一置真这条 `elif` 就再也不成立了。
-		_emit_sfx_proc(state, "blood_rage", attacker, attacker)
+	elif str(d.get("skill_id", "")) == "blood_rage":
+		_activate_blood_rage(attacker, state)
+
+
+static func _process_boss_health_triggers(state: Dictionary) -> void:
+	for fighter: Dictionary in state.get("player", []) + state.get("enemy", []):
+		_activate_blood_rage(fighter, state)
+
+
+static func _activate_blood_rage(attacker: Dictionary, state: Dictionary) -> void:
+	var d: Dictionary = attacker.get("def", {})
+	if not bool(attacker.get("alive", false)) or str(d.get("skill_id", "")) != "blood_rage" or bool(attacker.get("blood_rage_active", false)):
+		return
+	if float(attacker.get("hp", 0)) / float(maxi(1, int(attacker.get("max_hp", 1)))) > float(d.get("trigger_hp_pct", 0.50)):
+		return
+	attacker.blood_rage_active = true
+	attacker.atk = maxi(1, int(round(float(attacker.atk) * (1.0 + float(d.get("atk_bonus", 1.00))))))
+	attacker.attack_speed = clampf(float(attacker.attack_speed) + float(d.get("aspd_bonus", 0.50)), 0.25, 2.5)
+	_emit_sfx_proc(state, "blood_rage", attacker, attacker)
 
 
 static func _apply_boss_attack_lifesteal(attacker: Dictionary, d: Dictionary, dealt: int) -> void:
 	if dealt <= 0 or str(d.get("skill_id", "")) != "blood_rage" or not bool(attacker.get("blood_rage_active", false)):
 		return
-	_heal_unit(attacker, maxi(1, int(round(float(dealt) * float(d.get("lifesteal", 0.10))))))
+	_heal_unit(attacker, maxi(1, int(round(float(dealt) * float(d.get("lifesteal", 0.20))))))
+
+
+static func _apply_soul_devour_on_death(state: Dictionary, victim: Dictionary) -> void:
+	var victim_uid := str(victim.get("uid", ""))
+	if victim_uid.is_empty():
+		return
+	var processed: Dictionary = state.get("soul_devour_processed_deaths", {})
+	if bool(processed.get(victim_uid, false)):
+		return
+	processed[victim_uid] = true
+	state.soul_devour_processed_deaths = processed
+	var victim_def: Dictionary = victim.get("def", {})
+	var is_monster := str(victim.get("id", "")).begins_with("pve_")
+	var is_piece := victim_def.has("race") and not bool(victim.get("is_mercenary", false)) and not bool(victim.get("is_formation_ally", false))
+	var summoned_uid := victim_uid.contains("_mirror_") or victim_uid.contains("_parasite_") or victim_uid.contains("_revive_")
+	for boss: Dictionary in state.get("player", []) + state.get("enemy", []):
+		if not bool(boss.get("alive", false)) or str(boss.get("def", {}).get("skill_id", "")) != "soul_devour":
+			continue
+		if int(boss.get("lane", -1)) != int(victim.get("lane", -1)):
+			continue
+		var friendly_monster := str(boss.get("team", "")) == str(victim.get("team", "")) and is_monster
+		var hostile_piece := str(boss.get("team", "")) != str(victim.get("team", "")) and is_piece and not summoned_uid
+		if not friendly_monster and not hostile_piece:
+			continue
+		var d: Dictionary = boss.get("def", {})
+		boss.soul_devour_stacks = int(boss.get("soul_devour_stacks", 0)) + 1
+		_heal_unit(boss, maxi(1, int(round(float(boss.max_hp) * float(d.get("kill_heal_pct", 0.20))))))
+		boss.atk = maxi(1, int(round(float(d.get("atk", boss.atk)) * (1.0 + float(boss.soul_devour_stacks) * float(d.get("atk_stack", 0.20))))))
+		boss.attack_speed = clampf(float(d.get("attack_speed", boss.attack_speed)) + float(boss.soul_devour_stacks) * float(d.get("aspd_stack", 0.20)), 0.25, 2.5)
+		_emit_sfx_proc(state, "soul_devour", boss, victim)
 
 
 # 9.24：4 控制套装旧效果「普攻成功挂状态后再随机追加一个负面」已删除，

@@ -1274,6 +1274,8 @@ func _show_menu() -> void:
 	_menu.mail_requested.connect(_show_mail_screen)
 	add_child(_menu)
 	_show_kicked_notice_if_pending()
+	if PlayerProfile.tutorial_reward_pending:
+		_retry_pending_tutorial_reward()
 	if PlayerProfile.startup_route() == PlayerProfile.STARTUP_TUTORIAL \
 			and not TutorialMode.has_checkpoint():
 		var guide := TutorialEntryGuide.new() as Control
@@ -2244,7 +2246,7 @@ func _show_tutorial_lobby() -> void:
 		return
 	lobby.call("configure_tutorial_intro")
 	lobby.connect("back_requested", _show_menu)
-	lobby.connect("tutorial_requested", _enter_tutorial_from_startup)
+	lobby.connect("tutorial_requested", _show_tutorial_ai_queue)
 	_page_back_route = func() -> void: lobby.call("_leave")
 	add_child(lobby)
 	var guide := TutorialEntryGuide.new() as Control
@@ -2254,6 +2256,24 @@ func _show_tutorial_lobby() -> void:
 	lobby.connect("tutorial_mode_selected", func() -> void:
 		if is_instance_valid(guide) and is_instance_valid(lobby):
 			guide.call("configure", lobby.call("tutorial_start_target"), "lobby_start"))
+
+func _show_tutorial_ai_queue() -> void:
+	if ModalStack.has(MATCH_QUEUE_MODAL_ID):
+		return
+	var panel := MatchQueuePanel.new() as Control
+	panel.call("configure_tutorial_ai")
+	panel.match_ready.connect(func() -> void:
+		ModalStack.pop(MATCH_QUEUE_MODAL_ID)
+		_enter_tutorial_from_startup())
+	panel.dismissed.connect(func() -> void: ModalStack.pop(MATCH_QUEUE_MODAL_ID))
+	panel.tutorial_found.connect(func() -> void:
+		var guide := TutorialEntryGuide.new() as Control
+		guide.call("configure", panel.call("tutorial_accept_target"), "queue_confirm")
+		guide.call("set_extra_focus", panel.call("tutorial_roster_target"))
+		guide.z_index = 1000
+		panel.add_child(guide))
+	ModalStack.push(panel, {"id": MATCH_QUEUE_MODAL_ID, "owner": self,
+		"priority": 40, "dismiss_on_backdrop": false})
 
 
 # 排位。窗口 / 信誉分 / 禁赛的闸全在服务器（`ranked.queue_gate`）——
@@ -3954,6 +3974,15 @@ func _complete_tutorial_reward() -> void:
 		var response: Dictionary = await AccountManager.complete_first_tutorial()
 		var body: Dictionary = response.get("body", {})
 		if int(response.get("code", 0)) / 100 != 2 or int(body.get("level", 1)) < 2:
+			# 10.19：同步失败不再把玩家关在结算页（没网时会永远出不去）。教程算完成、
+			# 奖励记成待补发，回主页时 _retry_pending_tutorial_reward() 自动补。
+			if PlayerProfile.defer_tutorial_reward():
+				TutorialMode.finish(true)
+				_tutorial_completion_busy = false
+				DialogService.info({"title": _startup_text("教学奖励", "Tutorial Reward"), "body":
+					_startup_text("网络暂时连不上，奖励（升到 Lv2 + 神族棋子）会在联网后自动补发。可以先回主页。",
+						"Can't reach the server right now. Your reward (Lv2 + a Divine piece) will be delivered automatically once you're online. You can go to the lobby now.")})
+				return
 			_tutorial_completion_busy = false
 			DialogService.info({"title": "教学奖励", "body":
 				"奖励同步暂时失败。教学进度已保存，点击「返回主菜单」重试。"})
@@ -3976,11 +4005,55 @@ func _complete_tutorial_reward() -> void:
 			_tutorial_result_screen.call("tutorial_menu_target"), "result_menu")
 
 
+# 教程奖励补发（10.19）：结算页同步失败时玩家已先回主页，这里在每次回主页时重试，
+# 失败就 30 秒后再试（只要还在主页）。服务器对已到 Lv2 的账号返回 0，重复调用不会多给。
+var _tutorial_reward_retry_busy := false
+
+func _retry_pending_tutorial_reward() -> void:
+	if _tutorial_reward_retry_busy or not PlayerProfile.tutorial_reward_pending:
+		return
+	_tutorial_reward_retry_busy = true
+	var response: Dictionary = await AccountManager.complete_first_tutorial()
+	_tutorial_reward_retry_busy = false
+	if not PlayerProfile.tutorial_reward_pending:
+		return
+	var body: Dictionary = response.get("body", {})
+	var ok := int(response.get("code", 0)) / 100 == 2 and int(body.get("level", 1)) >= 2
+	var on_menu := _menu != null and is_instance_valid(_menu) and _menu.is_inside_tree()
+	if not ok:
+		if on_menu:
+			get_tree().create_timer(30.0).timeout.connect(func() -> void:
+				if _menu != null and is_instance_valid(_menu) and _menu.is_inside_tree():
+					_retry_pending_tutorial_reward())
+		return
+	if not PlayerProfile.finish_deferred_tutorial_reward():
+		return
+	DialogService.info({"title": _startup_text("教学奖励", "Tutorial Reward"), "body":
+		_startup_text("教学奖励已到账：升到 Lv2，获得神族棋子！点头像看看。",
+			"Tutorial reward delivered: you reached Lv2 and got a Divine piece! Tap your portrait to see it.")})
+	if on_menu:
+		_attach_tutorial_followup_guide(_menu, _menu.call("tutorial_profile_target"), "reward_avatar")
+
+
 func _on_battle_finished(result: Dictionary = {}) -> void:
 	if GameState.tutorial_mode:
+		# 人王战后成长 / 阵亡移除与正式局同一处实现，教学里讲的规则才是真的。
+		_apply_post_battle_unit_outcomes(result)
+		GameState.battle_history.append(result)
 		TutorialMode.after_battle(result)
 		if TutorialMode.step == TutorialMode.Step.DONE:
-			_show_game_over()
+			# 教学也出完整对战数据（10.19 教程反馈第 6 条）：与离线局同一个 build_local，
+			# 必须在 _show_game_over() 的 _clear() 释放战斗场景之前取回放。
+			var own_replay: Dictionary = _battle._replay_own if is_instance_valid(_battle) else NetworkService.team_replay
+			var rival_replay: Dictionary = _battle._replay_rival if is_instance_valid(_battle) else NetworkService.team_replay_rival
+			var settlement: Dictionary = preload("res://scripts/multiplayer/FinalSettlementData.gd").build_local([own_replay, rival_replay])
+			settlement["completed_round"] = GameState.FINAL_ROUND
+			settlement["outcome"] = TeamOutcome.TEAM_A
+			for seat in settlement.get("seats", []):
+				var seat_slot := int((seat as Dictionary).get("slot", 0))
+				if seat_slot > 0:
+					seat["name"] = TutorialMode.ai_name(seat_slot)
+			_show_game_over(settlement)
 			_complete_tutorial_reward()
 			return
 		_show_prep()
@@ -3990,6 +4063,8 @@ func _on_battle_finished(result: Dictionary = {}) -> void:
 		return
 
 func _game_over_kind() -> String:
+	if GameState.tutorial_mode:
+		return "win"
 	if GameState.team_mode:
 		if TeamOutcome.is_draw(GameState.team_run_outcome):
 			return "draw"
@@ -4004,6 +4079,8 @@ func _game_over_kind() -> String:
 
 
 func _game_over_title() -> String:
+	if GameState.tutorial_mode:
+		return tr("gameover_final_win")
 	if GameState.team_mode:
 		if TeamOutcome.is_draw(GameState.team_run_outcome):
 			return tr("gameover_final_draw")
@@ -4020,6 +4097,10 @@ func _game_over_title() -> String:
 	return tr("gameover_lost")
 
 func _game_over_body() -> String:
+	if GameState.tutorial_mode:
+		return tr("gameover_body") % [GameState.round_index,
+			tr("gameover_result_win"), GameState.player_formation_hp,
+			GameState.enemy_formation_hp]
 	if GameState.team_mode:
 		var team_result := tr("gameover_result_win") if GameState.team_run_won else tr("gameover_result_lose")
 		if TeamOutcome.is_draw(GameState.team_run_outcome):
@@ -4121,4 +4202,5 @@ func _start_treasure_for_completed_round(completed_round: int) -> void:
 		"round": completed_round,
 		"candidates": candidates,
 		"refresh_index": 0,
+		"remaining": RoundService.treasure_pick_count(completed_round),
 	}

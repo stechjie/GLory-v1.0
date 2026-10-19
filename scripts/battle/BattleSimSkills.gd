@@ -313,7 +313,7 @@ static func _skill_element_meteor(caster: Dictionary, opponents: Array, d: Dicti
 		return
 	_mark_vfx_target(caster, target)
 	for o in opponents:
-		if bool(o.get("alive", false)) and _can_target(caster, o, opponents) and target.pos.distance_to(o.pos) <= 180.0:
+		if bool(o.get("alive", false)) and _can_target(caster, o, opponents) and target.pos.distance_to(o.pos) <= float(d.get("aoe_radius", 250.0)):
 			DamageService.apply_damage(o, maxi(1, int(d.get("skill_damage", 240))), true)
 			_apply_attribute_effect(str(d.get("element", "fire")), caster, o)
 
