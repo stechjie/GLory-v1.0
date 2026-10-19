@@ -79,9 +79,10 @@ func _meteor_v2(target: Vector3) -> void:
 	_extra("meteor_warn", target, target, {"target_height": UNIT_H, "fall_sec": METEOR_FALL_SEC})
 	_painted("boss_meteor_trail.png", {"from": target + Vector3(-.55,3.25,.02), "to": target + Vector3(0,.34,0), "size": Vector2(1.15,.62), "duration": .80, "delay": .08, "rotation_z": -12.0, "dark_tint": Color(.30,.04,.0), "body_tint": Color(1.0,.36,.04), "core_tint": Color(1.0,.92,.55), "seed": 7.1, "flow_strength": .024})
 	_after(METEOR_FALL_SEC, func() -> void:
-		_painted("boss_meteor_explosion.png", {"position": target + Vector3(0,.30,.06), "size": Vector2(1.05,.98), "duration": .62, "start_scale": .25, "peak_scale": 1.0, "dark_tint": Color(.10,.06,.06), "body_tint": Color(1.0,.62,.30), "core_tint": Color(1.0,.96,.80), "seed": 2.6})
-		_flip(target + Vector3(0,.02,0), {"path": OGA + "earth_crack.png", "columns": 5, "rows": 1, "frame_count": 5, "fps": 10.0, "size": Vector2(1.1,.9), "duration": .9, "ground": true, "color": Color(1.0,.62,.32,.95)})
-		_extra("meteor_embers", target, target, {"target_height": UNIT_H})
+		# 10.19 用户：爆炸再放大 100%（预警圈不变）。
+		_painted("boss_meteor_explosion.png", {"position": target + Vector3(0,.50,.06), "size": Vector2(2.1,1.96), "duration": .62, "start_scale": .25, "peak_scale": 1.0, "dark_tint": Color(.10,.06,.06), "body_tint": Color(1.0,.62,.30), "core_tint": Color(1.0,.96,.80), "seed": 2.6})
+		_flip(target + Vector3(0,.02,0), {"path": OGA + "earth_crack.png", "columns": 5, "rows": 1, "frame_count": 5, "fps": 10.0, "size": Vector2(2.2,1.8), "duration": .9, "ground": true, "color": Color(1.0,.62,.32,.95)})
+		_extra("meteor_embers", target, target, {"target_height": UNIT_H * 2.0})
 		_impact_feedback(9.0, .22, .05))
 
 func _overload_stack(origin: Vector3) -> void:

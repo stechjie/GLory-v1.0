@@ -233,6 +233,8 @@ func _rage_shock(foot: Vector3, context: Dictionary) -> void:
 # ── 血怒魔王：暴走粒子气（常驻） ────────────────────────────────────────
 # 用户口径：「红色的粒子气的感觉」。粒子从身体轮廓里不断冒出、往上飘、边飘边散，
 # 循环播放直到调用方释放（Boss 死亡 / 战斗结束）。跟着模型走。
+# 10.19：原来脚下还有一圈暗红地面光环，和赤灯使（赤律族）的红色地面圈撞了，去掉；
+# 改由 BattleVfx 给模型本身罩一层红色心跳光（_sync_blood_qi_vfx）。
 const QI_COUNT := 30
 const QI_PUFFS := 7
 const QI_LIFE := 1.1
@@ -249,7 +251,6 @@ func _blood_qi(foot: Vector3, context: Dictionary) -> void:
 	var base := node_position(ref, foot)
 	var count := QUALITY_BUDGET.particle_count_for(QI_COUNT)
 	var motes := shard_cloud("BloodQi", count, QI_MOTE_BODY)
-	var halo := ground_decal("BloodQiGround", foot + Vector3.UP * 0.03, Vector2(h * 0.5, h * 0.4), _pal(QI_PUFF, {"ring_radius": 0.8, "ring_width": 0.18, "core_white": 0.45, "edge_dark": 0.3, "breakup": 0.35, "fill": 0.35}))
 	# 往上飘的红雾：几团柔光片，从身体下半部升起、边升边胀边淡，循环错相。
 	var puffs: Array = []
 	var puff_seeds: Array[Vector3] = []
@@ -283,9 +284,6 @@ func _blood_qi(foot: Vector3, context: Dictionary) -> void:
 			puff.global_position = toward_camera(pp, 0.26)
 			puff.scale = Vector3.ONE * h * lerpf(0.30, 0.62, v)
 			show_with(puff, 0.42 * fade_in * smoothstep(0.0, 0.2, v) * (1.0 - smoothstep(0.5, 1.0, v)))
-		var pulse := 0.75 + 0.25 * sin(t * 5.0)
-		halo.global_position = at + Vector3.UP * 0.03
-		show_with(halo, 0.9 * pulse * fade_in)
 	_debug["motes"] = count
 
 

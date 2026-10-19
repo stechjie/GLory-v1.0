@@ -2150,6 +2150,31 @@ var _blood_qi_vfx: Dictionary = {}
 const _DELAYED_IMPACT_BOSS_SKILLS := ["element_meteor", "apocalypse_charge"]
 
 
+# 暴走期间模型本身罩一层血红光（与母灵处决 / 凤凰鬼魂同一个覆盖着色器），按心跳节奏起伏：
+# 平时只罩一成多（边缘发红、本体细节看得清），每次「咚」一下推到四成左右。
+# 第一版平时三成、峰值六成，实战截图里整只变成纯红剪影，太重。
+const BLOOD_RAGE_GLOW_TINT := Color(1.0, 0.10, 0.12)
+
+func _sync_blood_rage_glow(model_value: Variant) -> void:
+	if not is_instance_valid(model_value) or not (model_value is Node3D):
+		return
+	var model_node := model_value as Node3D
+	var overlay: ShaderMaterial = model_node.get_meta("blood_rage_overlay") if model_node.has_meta("blood_rage_overlay") else null
+	if overlay == null:
+		if _mother_encase_shader == null:
+			_mother_encase_shader = Shader.new()
+			_mother_encase_shader.code = MOTHER_ENCASE_SHADER_CODE
+		overlay = ShaderMaterial.new()
+		overlay.shader = _mother_encase_shader
+		overlay.set_shader_parameter("tint", BLOOD_RAGE_GLOW_TINT)
+		for geometry in _overlay_targets(_death_fade_targets(model_node)):
+			geometry.material_overlay = overlay
+		model_node.set_meta("blood_rage_overlay", overlay)
+	var beat := fposmod(float(Time.get_ticks_msec()) * 0.001, 0.9) / 0.9
+	var thump := exp(-beat * 9.0) + 0.6 * exp(-absf(beat - 0.22) * 18.0)
+	overlay.set_shader_parameter("glow", 0.12 + 0.26 * clampf(thump, 0.0, 1.0))
+
+
 func _sync_blood_qi_vfx(current: Dictionary) -> void:
 	var seen: Dictionary = {}
 	for id: String in _blood_rage_entered.keys():
@@ -2159,6 +2184,7 @@ func _sync_blood_qi_vfx(current: Dictionary) -> void:
 		seen[id] = true
 		if not is_instance_valid(_blood_qi_vfx.get(id)):
 			_blood_qi_vfx[id] = _play_boss_procedural("blood_qi", unit.get("world_foot", Vector3.ZERO), unit.get("world_foot", Vector3.ZERO), {"boss_node": unit.get("model_node")})
+		_sync_blood_rage_glow(unit.get("model_node"))
 	for id: String in _blood_qi_vfx.keys().duplicate():
 		if seen.has(id):
 			continue
