@@ -1,12 +1,15 @@
 extends RefCounted
 
-static func duration(round_index: int) -> float:
+static func duration(round_index: int, ruleset: String = "normal") -> float:
+	if ruleset == "seedling":
+		return 80.0 if round_index in [5, 9, 13] else 60.0
 	return 50.0 if RoundService.schedule_kind_for_round(round_index) in ["pvp", "final"] else 35.0
 
 static func remaining(room: Dictionary, now: float) -> float:
 	if str(room.get("state", "")) != "prep":
 		return -1.0
-	return maxf(0.0, duration(int(room.get("round_index", 1))) - (now - float(room.get("state_started_at", now))))
+	return maxf(0.0, duration(int(room.get("round_index", 1)),
+		str(room.get("ruleset", "normal"))) - (now - float(room.get("state_started_at", now))))
 
 # Mutates only the supplied slots after all checks succeed. No free units or
 # negative gold when a player has spent everything on refreshes/technology.

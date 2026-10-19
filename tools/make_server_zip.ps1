@@ -135,7 +135,12 @@ try {
     # ui/ 一共 171 KB / 28 个文件，相对 4.7 MB 的包可以忽略。
     # 比起从 project.godot 里摘掉那几个 autoload，直接打进去更稳：以后再加 UI
     # autoload 不会又一次静默地把服务器打回这个状态。
-    foreach ($d in @("scripts", "scenes", "effects", "data", "tools", "ui")) {
+    # shaders 是 2026-10-18 加的，同一类事故：10-15 起 TutorialMode（autoload）
+    # preload 了 shaders/tutorial_focus_mask.gdshader，包里没有它 -> TutorialMode 编译失败，
+    # 连带 GameState / NetworkService 等一串 autoload 全挂，冒烟测试直接红。
+    # .gdshader 是纯文本、不走导入，专服能直接加载；整个目录 78 KB。
+    # make_server_bundle.py 的 ROOTS 早就带着 shaders，两边保持一致。
+    foreach ($d in @("scripts", "scenes", "effects", "data", "tools", "ui", "shaders")) {
         if (-not (Test-Path "$src\$d")) { throw "缺少文件夹: $src\$d" }
         Copy-Item -Recurse -Force "$src\$d" "$stage\$d"
     }

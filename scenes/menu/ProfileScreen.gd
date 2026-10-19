@@ -27,6 +27,7 @@ const TouchChoice := preload("res://ui/components/TouchChoiceButton.gd")
 # 仓库里 TutorialMode 就是引用常量的（SkipDialog.RESULT_CONFIRMED）。
 const ConfirmDialog := preload("res://ui/components/GloryConfirmDialog.gd")
 const MatchHistory := preload("res://scenes/menu/MatchHistoryPanel.gd")
+const ProgressionPanel := preload("res://scenes/menu/ProgressionPanel.gd")
 const ReportDialog := preload("res://ui/components/ReportDialog.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const PROFILE_BG_TEX := preload("res://assets/ui/profile/hall_of_glory.png")
@@ -39,6 +40,7 @@ enum Mode { SELF, PUBLIC }
 const PICKER_MODAL_ID := "profile_avatar_picker"
 const FRAME_PICKER_MODAL_ID := "profile_frame_picker"
 const HISTORY_MODAL_ID := "profile_match_history"
+const PROGRESSION_MODAL_ID := "profile_progression"
 
 # 资料页专用的默认框素材：`main_menu_live/profile_avatar.png` 把内圆抠透明后的副本。
 # **刻意不写进 data/avatars.json** —— 那一行是「资料页 + 大厅名牌」共用的，
@@ -156,6 +158,8 @@ func _exit_tree() -> void:
 		ModalStack.pop(FRAME_PICKER_MODAL_ID)
 	if ModalStack.has(HISTORY_MODAL_ID):
 		ModalStack.pop(HISTORY_MODAL_ID)
+	if ModalStack.has(PROGRESSION_MODAL_ID):
+		ModalStack.pop(PROGRESSION_MODAL_ID)
 
 
 # --- 骨架 ---------------------------------------------------------------------
@@ -209,6 +213,11 @@ func _build() -> void:
 		_overview_tab.custom_minimum_size = Vector2(190, Tokens.TOUCH_MIN)
 		_overview_tab.pressed.connect(func() -> void: _select_profile_tab(false))
 		tabs.add_child(_overview_tab)
+		var level_tab := ACTION_BUTTON.instantiate() as Button
+		level_tab.text = _text("等级奖励", "Level Rewards")
+		level_tab.custom_minimum_size = Vector2(190, Tokens.TOUCH_MIN)
+		level_tab.pressed.connect(_open_progression)
+		tabs.add_child(level_tab)
 		var history_tab := ACTION_BUTTON.instantiate() as Button
 		history_tab.text = _text("对局记录", "Match History")
 		history_tab.custom_minimum_size = Vector2(190, Tokens.TOUCH_MIN)
@@ -827,7 +836,7 @@ func _load_ranked() -> void:
 	var score := int(body.get("score", 0))
 	var progress := int(body.get("tier_progress", 0))
 	var span := int(body.get("tier_span", 0))
-	if games <= 0:
+	if games <= 0 and score < 100:
 		_rank_value.text = _text("尚未排位", "Unranked")
 		_rank_badge.visible = false
 		_rank_progress.visible = false
@@ -837,6 +846,9 @@ func _load_ranked() -> void:
 		_rank_badge.texture = RankedTiers.badge_of(tier)
 		_rank_badge.visible = true
 		_rank_value.text = RankedTiers.name_of(tier, _is_en())
+		var division := str(body.get("forest_division", ""))
+		if tier == 1 and not division.is_empty():
+			_rank_value.text += " " + division
 		if span <= 0:
 			_rank_progress.visible = false
 			_rank_progress_label.text = _text("累计 %d 排位分" % score, "%d total rank points" % score)
@@ -846,10 +858,25 @@ func _load_ranked() -> void:
 			_rank_progress.max_value = span
 			_rank_progress.value = clampi(progress, 0, span)
 			_rank_progress_label.text = _text("本段进度 %d / %d" % [progress, span], "Progress %d / %d" % [progress, span])
-			_next_rank_label.text = _text("距「%s」还差 %d 分" % [RankedTiers.name_of(tier + 1), maxi(0, span - progress)],
-				"%d points to %s" % [maxi(0, span - progress), RankedTiers.name_of(tier + 1, true)])
+			var need := maxi(0, span - progress)
+			if tier >= RankedTiers.BADGES.size() - 1:
+				# 最高段没有下一段：进度条走到服务器定的终点（10-15 是 1600 分），过了服务器发 span=0。
+				_next_rank_label.text = _text("距 %d 分还差 %d 分" % [score + need, need],
+					"%d points to %d" % [need, score + need])
+			else:
+				_next_rank_label.text = _text("距「%s」还差 %d 分" % [RankedTiers.name_of(tier + 1), need],
+					"%d points to %s" % [need, RankedTiers.name_of(tier + 1, true)])
+	if bool(body.get("need_four_races", false)):
+		var owned := int(body.get("owned_races", 0))
+		_next_rank_label.text = _text(
+			"集齐第 4 族才能突破森卫（已解锁 %d / 4）" % owned,
+			"Collect a 4th race to pass Forest (%d / 4)" % owned)
+		if bool(body.get("breakthrough_ready", false)):
+			_rank_progress.value = _rank_progress.max_value
+	elif tier == 0 and int(body.get("owned_races", 0)) < 3:
+		_next_rank_label.text = _text("集齐 3 族后可参加排位", "Collect 3 races to enter Ranked")
 	for index in _tier_icons.size():
-		_tier_icons[index].modulate.a = 1.0 if games > 0 and index == tier else 0.38
+		_tier_icons[index].modulate.a = 1.0 if (games > 0 or score >= 100) and index == tier else 0.38
 	var wins := int(body.get("wins", 0))
 	_record_value.text = str(games)
 	_wins_value.text = str(wins)
@@ -863,6 +890,20 @@ func _load_ranked() -> void:
 		_credit_value.add_theme_color_override("font_color", Tokens.DANGER)
 	elif bool(body.get("credit_warn", false)):
 		_credit_value.add_theme_color_override("font_color", Tokens.DANGER)
+
+
+func _open_progression() -> void:
+	if ModalStack.has(PROGRESSION_MODAL_ID):
+		return
+	SfxService.play(SfxService.CUE_UI_POPUP)
+	var panel := ProgressionPanel.new() as Control
+	panel.connect("dismissed", func() -> void: ModalStack.pop(PROGRESSION_MODAL_ID))
+	ModalStack.push(panel, {
+		"id": PROGRESSION_MODAL_ID,
+		"owner": self,
+		"priority": PICKER_PRIORITY,
+		"dismiss_on_backdrop": true,
+	})
 
 
 func _open_match_history() -> void:

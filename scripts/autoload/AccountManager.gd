@@ -654,11 +654,17 @@ func set_party_mode(mode: String) -> Dictionary:
 func set_party_pets(pets: Array) -> Dictionary:
 	return await _request(HTTPClient.METHOD_PUT, "/v1/party/pets", {"pets": pets}, true)
 
-func set_party_ready(ready: bool) -> Dictionary:
-	return await _request(HTTPClient.METHOD_PUT, "/v1/party/ready", {"ready": ready}, true)
+func set_party_ready(ready: bool, races: Array = []) -> Dictionary:
+	var body := {"ready": ready}
+	if ready and not races.is_empty():
+		body["races"] = races
+	return await _request(HTTPClient.METHOD_PUT, "/v1/party/ready", body, true)
 
-func start_party_match() -> Dictionary:
-	return await _request(HTTPClient.METHOD_POST, "/v1/party/start", {}, true)
+func start_party_match(races: Array = []) -> Dictionary:
+	var body := {}
+	if not races.is_empty():
+		body["races"] = races
+	return await _request(HTTPClient.METHOD_POST, "/v1/party/start", body, true)
 
 func cancel_party_match() -> Dictionary:
 	return await _request(HTTPClient.METHOD_POST, "/v1/party/cancel", {}, true)
@@ -682,10 +688,13 @@ func fetch_party_voice_token() -> Dictionary:
 # `t: "match"` 消息**一模一样**。推送是主路径，这几个是 WS 正好断着时的兜底 ——
 # 两边形状一致，客户端才只需要写一套解析。
 
-func join_match_queue(mode: String = "casual") -> Dictionary:
+func join_match_queue(mode: String = "casual", races: Array = []) -> Dictionary:
 	# 运营数据：接下来匹配进的那一局按这个模式记。
-	AnalyticsService.note_mode(mode)
-	return await _request(HTTPClient.METHOD_POST, "/v1/match/queue", {"mode": mode}, true)
+	AnalyticsService.note_mode("ranked" if mode.begins_with("ranked") else "casual")
+	var body := {"mode": mode}
+	if mode == "casual" and not races.is_empty():
+		body["races"] = races
+	return await _request(HTTPClient.METHOD_POST, "/v1/match/queue", body, true)
 
 
 func leave_match_queue() -> Dictionary:
@@ -916,6 +925,18 @@ func fetch_shop() -> Dictionary:
 # {"diamond": int, "coin": int}。付费与赠送的分账**不下发** —— 那是退款与对账的口径。
 func fetch_wallet() -> Dictionary:
 	return await _request(HTTPClient.METHOD_GET, "/v1/me/wallet", null, true)
+
+
+func fetch_progression() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/me/progression", null, true)
+
+
+func complete_first_tutorial() -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/progression/tutorial-complete", {}, true)
+
+
+func mark_progression_seen(levels: Array) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/progression/seen", {"levels": levels}, true)
 
 
 func fetch_seven_day_login() -> Dictionary:

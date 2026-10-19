@@ -629,7 +629,8 @@ async def test_ranked_reward_receipt_is_scoped_to_the_signed_in_player(
     claims = Claims(auth_uid="auth-a", is_anonymous=True, expires_at=0)
     own = await report_routes.my_ranked_reward("a" * 32, claims)
     assert own.status == "settled" and own.coin == 12 and own.score_after == 345
-    assert (own.tier_before, own.tier_after, own.tier_progress, own.tier_span) == (2, 2, 45, 200)
+    # 320 → 345 都在星铸（200–399）：本段 145 / 200。
+    assert (own.tier_before, own.tier_after, own.tier_progress, own.tier_span) == (2, 2, 145, 200)
 
     async def other_player(_claims):
         return _FakePlayer(PLAYER_B, "阿乙", "BBBB2222")

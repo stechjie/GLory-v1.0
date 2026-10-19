@@ -6,7 +6,7 @@ extends Node
 #   * 买棋子   -> `_shop.buttons[i].pressed` 选卡 + `_shop.buy_button.pressed` 采购，
 #                 与玩家点的是同两个 Button，成不成交仍由宿主的钱/待命区/售罄判断决定
 #   * 开关商店 -> `_shop.open_button.pressed`
-#   * 上阵     -> `_board_hud.bench_buttons[i].pressed` + `_board_hud.buttons[j].pressed`
+#   * 上阵     -> `_drop_on_board(j, {kind: bench, index: i})`，与拖拽落点同一入口
 #   * 继续     -> `TutorialMode.confirm_tap_step()`（2026-10-15 第三轮起：覆盖层里那个
 #                 透明热点 `_hotspot` 已删掉，改由 `_input()` 旁听真实按下事件推进）
 #   * 战斗     -> `TutorialMode.begin_battle()` + `after_battle({})`，无需服务器
@@ -34,6 +34,8 @@ const METRICS: PackedStringArray = [
 ]
 
 var _h: CheckHarness
+var _battle_rounds: Array[int] = []
+var _treasure_rounds: Array[int] = []
 
 
 func _ready() -> void:
@@ -65,9 +67,9 @@ func _check_sequence_contract() -> void:
 		"fill7_position_changed",
 		"第 20 个到访步骤不再是 FILL_7 —— 本任务按稳定的步骤状态表达，不写 step==20 特判，"
 		+ "但门禁要能发现序列被改动")
-	_h.expect(TutorialScript.FILL_TARGET_UNITS == GameConstants.NORMAL_UNIT_CAP,
+	_h.expect(TutorialScript.FILL_TARGET_UNITS == 4,
 		"fill_target_detached",
-		"FILL_TARGET_UNITS 脱离了生产常量 NORMAL_UNIT_CAP")
+		"首次 PvP 前补强目标应为 4 枚，不能要求新手填满 7 格")
 
 
 # --- 20 次完整流程 --------------------------------------------------------------
@@ -105,8 +107,13 @@ func _check_twenty_runs() -> void:
 				regressed = true
 		_h.expect(not regressed, "buy_progress_regressed",
 			"第 %d 轮购买进度倒退了：%s" % [i + 1, str(bought)])
-		_h.expect(int(r.get("visited", 0)) == 22, "not_all_steps_visited",
-			"第 %d 轮只走到 %d 个实际步骤，应为 22" % [i + 1, int(r.get("visited", 0))])
+		_h.expect(int(r.get("visited", 0)) == 21 and bool(r.get("late_treasure", false)),
+			"not_all_steps_visited", "第 %d 轮教学动作有漏步：%s" % [i + 1, str(r)])
+		_h.expect(r.get("battle_rounds", []) == range(1, 14), "battle_rounds_wrong",
+			"第 %d 轮实际战斗回合：%s" % [i + 1, str(r.get("battle_rounds", []))])
+		_h.expect(r.get("treasure_rounds", []) == [4, 4, 8, 8, 12],
+			"treasure_schedule_wrong",
+			"第 %d 轮宝藏领取回合：%s" % [i + 1, str(r.get("treasure_rounds", []))])
 
 	_h.expect(completed == RUNS, "completion_rate_below_100",
 		"%d/%d 轮跑到 DONE，完成率不是 100%%（首个失败原因：%s）"
@@ -126,6 +133,8 @@ func _run_once(index: int, trace: bool) -> Dictionary:
 		"done": false, "visited": 0, "phases": [], "bought_trace": [], "why": "",
 	}
 	TutorialMode.start()
+	_battle_rounds.clear()
+	_treasure_rounds.clear()
 	var prep := _new_prep()
 	if prep == null:
 		out["why"] = "PrepScreen 实例化失败"
@@ -137,10 +146,13 @@ func _run_once(index: int, trace: bool) -> Dictionary:
 	var visited: Array = []
 	var phases: Array = []
 	var bought: Array = []
+	var late_treasure := false
 	var guard := 0
 	while TutorialMode.step != TutorialScript.Step.DONE and guard < 200:
 		guard += 1
 		var before_step: int = TutorialMode.step
+		if before_step == TutorialScript.Step.TAKE_TREASURE_2:
+			late_treasure = true
 		# 记的是**序列位置**而不是枚举值：FORMATION_HP 在 STEP_SEQUENCE 里出现两次，
 		# 按枚举去重永远只有 21 个。
 		var pos := TutorialMode.step_number()
@@ -159,6 +171,9 @@ func _run_once(index: int, trace: bool) -> Dictionary:
 	if TutorialMode.step == TutorialScript.Step.DONE and not visited.has(TutorialMode.step_number()):
 		visited.append(TutorialMode.step_number())
 	out["visited"] = visited.size()
+	out["late_treasure"] = late_treasure
+	out["battle_rounds"] = _battle_rounds.duplicate()
+	out["treasure_rounds"] = _treasure_rounds.duplicate()
 	out["phases"] = phases
 	out["bought_trace"] = bought
 	out["done"] = TutorialMode.step == TutorialScript.Step.DONE
@@ -203,6 +218,12 @@ func _drive_current_step(prep: PrepScript) -> void:
 			await _tap_continue(prep)
 		TutorialScript.Step.FILL_7:
 			await _drive_fill_step(prep)
+		# 10.19 人王教学：商店第一格就是人王，买下即推进；讲解步点一下继续。
+		TutorialScript.Step.BUY_KING:
+			await _open_shop(prep)
+			await _buy_one(prep)
+		TutorialScript.Step.KING_HINT:
+			await _tap_continue(prep)
 		_:
 			await _settle(1)
 
@@ -267,9 +288,7 @@ func _place_one(prep: PrepScript) -> void:
 	if bench < 0 or board < 0:
 		await _settle(1)
 		return
-	prep._board_hud.bench_buttons[bench].pressed.emit()
-	await _settle(1)
-	prep._board_hud.buttons[board].pressed.emit()
+	prep._drop_on_board(board, {"kind": "bench", "index": bench})
 	await _settle(2)
 
 
@@ -277,6 +296,7 @@ func _fight(prep: PrepScript) -> void:
 	if not TutorialMode.begin_battle():
 		await _settle(1)
 		return
+	_battle_rounds.append(GameState.round_index)
 	TutorialMode.after_battle({})
 	# begin_battle() 会 _detach()，打完要重新挂回当前屏。
 	TutorialMode.attach(prep.tutorial_target_provider())
@@ -289,7 +309,10 @@ func _take_treasure(prep: PrepScript) -> void:
 	if cands.is_empty():
 		await _settle(1)
 		return
-	prep._pick_treasure(str(cands[0]))
+	# Enter through the actual card click lock, so two picks in the same round
+	# catch a stale pending flag instead of bypassing the UI layer.
+	prep._treasure._on_candidate_pressed(str(cands[0]))
+	_treasure_rounds.append(GameState.round_index - 1)
 	TutorialMode.sync()
 	await _settle(2)
 
@@ -366,18 +389,31 @@ func _check_recovery_auto_merge() -> void:
 	var prep := await _arrive_at_fill_step()
 	if prep == null:
 		return
-	var target: int = int(TutorialMode.fill_buy_progress()[1])
-	# 造一次必然发生的合成：在待命区放一个与 FILL_SHOP 首项同名同星的棋子，
+	# Keep one existing unit and seed two copies of the first shop card. The
+	# first purchase then makes three copies and must trigger an auto merge.
+	for cells in [GameState.bench_slots, GameState.board_slots]:
+		for i in cells.size():
+			cells[i] = null
+	_force_bench_unit("human_militia")
+	# 造一次必然发生的合成：在待命区放两个与 FILL_SHOP 首项同名同星的棋子，
 	# 玩家买它时会融合，成交计数 +1、可上阵数量却不增加。
 	var merge_id := str(TutorialScript.FILL_SHOP[0])
 	_force_bench_unit(merge_id)
+	_force_bench_unit(merge_id)
+	TutorialMode._end_fill_step()
+	TutorialMode._begin_fill_step()
+	var target: int = int(TutorialMode.fill_buy_progress()[1])
 	await _settle(2)
 	var owned_before := _owned_count()
+	_h.note("自动合成预置：持有 %d，购买目标 %d" % [owned_before, target])
 	var budget := 0
 	while TutorialMode.fill_phase() == TutorialScript.FillPhase.BUY and budget < ACTION_BUDGET:
 		budget += 1
 		await _open_shop(prep)
 		await _buy_one(prep)
+	_h.note("购买后：持有 %d，成交 %s，补偿 %d，阶段 %s"
+		% [_owned_count(), str(TutorialMode.fill_buy_progress()),
+			TutorialMode.fill_compensated_count(), str(TutorialMode.fill_phase())])
 	_h.expect(TutorialMode.fill_phase() != TutorialScript.FillPhase.BUY,
 		"merge_stuck_in_buy",
 		"制造自动合成之后购买阶段没能结束（成交 %d/%d）"

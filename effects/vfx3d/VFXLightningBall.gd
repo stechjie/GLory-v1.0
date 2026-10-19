@@ -186,9 +186,10 @@ func _make_irregular_core() -> MeshInstance3D:
 	node.mesh = mesh
 	var material := StandardMaterial3D.new()
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.albedo_color = Color(0.012, 0.045, 0.28, 1.0)
+	# 10.18：原来的深海军蓝内核在草地上看着像一团黑球（用户反馈「不像电」），改成亮蓝白。
+	material.albedo_color = Color(0.55, 0.85, 1.0, 1.0)
 	material.emission_enabled = true
-	material.emission = Color(0.02, 0.28, 1.0)
+	material.emission = Color(0.42, 0.80, 1.0)
 	material.emission_energy_multiplier = 5.8
 	node.material_override = material
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -204,7 +205,7 @@ func _make_shell() -> MeshInstance3D:
 	shell.mesh = sphere
 	var material := ShaderMaterial.new()
 	material.shader = SHADER_CACHE.get_shader(BALL_SHADER)
-	material.set_shader_parameter("core_color", Color(0.03, 0.35, 1.0, 1.0))
+	material.set_shader_parameter("core_color", Color(0.30, 0.72, 1.0, 1.0))
 	material.set_shader_parameter("pulse", 0.4)
 	shell.material_override = material
 	shell.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

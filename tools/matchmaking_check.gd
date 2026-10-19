@@ -70,8 +70,8 @@ func _card(overrides: Dictionary) -> Dictionary:
 	return got.get("card", {})
 
 
-func _matched_card(match_uid: String, team: int) -> Dictionary:
-	return _card({"match": match_uid, "team": team})
+func _matched_card(match_uid: String, team: int, pid: String = "player-x") -> Dictionary:
+	return _card({"match": match_uid, "team": team, "pid": pid})
 
 
 func _drop(room: Dictionary) -> void:
@@ -155,7 +155,7 @@ func _case_seating_follows_the_card() -> void:
 	# 三个 B 队的人先到：他们必须坐 3/4/5，不能占 0 号位
 	for i in 3:
 		var slot := int(svc.room_next_free_slot_on_team(room, 1))
-		NetworkService._assign_peer_to_room(9000 + i, room, "", _matched_card(MATCH_A, 1), slot)
+		NetworkService._assign_peer_to_room(9000 + i, room, "", _matched_card(MATCH_A, 1, "player-b-%d" % i), slot)
 	var states: Array = room.get("slot_states", [])
 	for i in 3:
 		_eq(str(states[i]), "empty", "team_b_did_not_take_team_a_slots",
@@ -233,7 +233,7 @@ func _case_match_uid_is_not_overwritten() -> void:
 		for i in 3:
 			var slot := int(svc.room_next_free_slot_on_team(room, team))
 			NetworkService._assign_peer_to_room(9100 + team * 3 + i, room, "",
-				_matched_card(MATCH_A, team), slot)
+				_matched_card(MATCH_A, team, "player-%d-%d" % [team, i]), slot)
 	NetworkService._matched_try_start(room)
 	_eq(str(room.get("state", "")), NetworkService.ROOM_PREP, "full_room_starts",
 		"六个人到齐应该自己开打（匹配对局没有「准备」那一步）")
@@ -311,7 +311,7 @@ func _case_constants_line_up() -> void:
 
 	# 匹配房间的三个字段必须活过进程重启。
 	var persisted := FileAccess.get_file_as_string("res://scripts/multiplayer/DedicatedServerService.gd")
-	for field in ["matched", "mode", "match_uid"]:
+	for field in ["matched", "mode", "match_uid", "ruleset"]:
 		_eq(persisted.contains('"%s"' % field), true, "persisted_" + field,
 			"%s 没进 PERSISTED_ROOM_FIELDS —— 重启后匹配房间会退化成普通房间" % field)
 

@@ -12,8 +12,8 @@ extends RefCounted
 #                       （棋盘 + 待命区）**每一枚**一阶棋子 +1 层；之后才买的棋子从 0 层开始。
 #                       合成出来的那一枚先继承被合掉的几枚里最高的层数，再吃这一次的 +1。
 #
-# 生命 / 攻击 / 防御 × king_mult × (1 + 老虎成长率 × tiger_stacks)，只这三项（同四星规格 §1：
-# 攻速、暴伤直接乘 DPS，不跟着涨）。摆放界面详情（UnitDetailFormat）和战斗
+# 生命 / 攻击 / 防御 × king_mult × (1 + 老虎成长率 × tiger_stacks)；人王攻速另乘 king_mult，
+# 到战斗上限 2.5 次/秒为止。老虎仍只作用前三项。摆放界面详情（UnitDetailFormat）和战斗
 # （BattleSimShared._fighter_from_cell，服务器与本机同一份）读的都是 stat_multiplier()。
 #
 # 信谁：备战经济还在影子期（客户端算钱，服务器本来就信客户端报的 1~3 星），层数也由客户端
@@ -110,6 +110,12 @@ static func apply_to_def(d: Dictionary, mult: float) -> void:
 	d["hp"] = maxi(1, int(round(float(d.get("hp", 1)) * mult)))
 	d["atk"] = maxi(1, int(round(float(d.get("atk", 1)) * mult)))
 	d["def"] = maxi(0, int(round(float(d.get("def", 0)) * mult)))
+
+
+static func apply_king_attack_speed_to_def(d: Dictionary, cell: Dictionary) -> void:
+	if not is_king(cell):
+		return
+	d["attack_speed"] = minf(2.5, float(d.get("attack_speed", 1.0)) * king_mult(cell))
 
 
 # 发生了一次升星（合成或升四星）：手上每一枚一阶棋子老虎 +1 层。

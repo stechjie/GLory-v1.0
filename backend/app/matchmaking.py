@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import secrets
 import time
 import uuid
@@ -72,10 +73,12 @@ TEAM_SIDE_SIZE = 3
 # （`ranked.queue_gate`）。「在 OPEN_MODES 里」只是「这个模式存在」，不是「随时能排」。
 # 判窗口一律走 `accepting_now`，**不要直接读 `window_state`** —— 后者是发给客户端的
 # 真实时间表，前者才带 GLORY_RANKED_WINDOW_ALWAYS_OPEN 那个测试开关。
-CASUAL = "casual"
-RANKED = "ranked"
-OPEN_MODES = frozenset({CASUAL, RANKED})
-KNOWN_MODES = frozenset({CASUAL, RANKED})
+CASUAL = "casual"                 # 青苗 13 rounds
+CASUAL_NORMAL = "casual_normal"   # 普通 21 rounds
+RANKED = "ranked"                 # 森卫突破前 13 rounds
+RANKED_NORMAL = "ranked_normal"   # 突破后 21 rounds
+OPEN_MODES = frozenset({CASUAL, CASUAL_NORMAL, RANKED, RANKED_NORMAL})
+KNOWN_MODES = OPEN_MODES
 
 # 确认框的时限。
 #
@@ -105,6 +108,47 @@ QUEUE_GRACE_SEC = 60.0
 
 # 消息类型。客户端按 t 分发（scripts/autoload/RealtimeService.gd `_handle`）。
 MESSAGE_TYPE = "match"
+
+# --- 人少时 AI 补位（2026-10-19）---------------------------------------------
+#
+# 玩家还少，新来的人排休闲 / 排位常常凑不满 6 个人，一直排不到。于是：队列里等得最久
+# 的那个人满 `ai_fill_after_sec`（默认 10 秒，见 app/config.py）还凑不满一桌，就用
+# 当下在线的人开一桌，空座位由 AI 坐（_take_short_group / _form_with_ai）。
+#
+#   · 分队：按排队先后往 A 队装（装得下整队才装），A 队满了再装 B 队 ——
+#     1~3 个真人一定同一队对 AI；4~5 个真人时一队满员真人，剩下的去另一队。
+#   · 只有一个真人：不弹确认框，直接推 ready（一个人对 AI，没有「别人挂机」这回事）。
+#   · AI 的昵称 / 头像在这里随机定好，写进确认框的名单和出战名片（ai_seats），
+#     战斗服务器照名片放 AI、立刻开局 —— 三处看到的是同一个名字。
+#
+# 开关在配置里（GLORY_MATCH_AI_FILL / GLORY_MATCH_AI_FILL_AFTER_SEC）：人多了可以关。
+AI_NAMES = (
+    "小麦田", "风之旅人", "橘子汽水", "夜行猫", "星河", "糯米团", "晚风", "青柠",
+    "山海", "木鱼", "跳跳糖", "云朵", "北极熊", "柚子", "阿福", "薄荷",
+    "Windwalker", "Maple", "Nightcat", "Starfall", "Pudding", "Breeze", "Mochi",
+    "Pebble", "Comet", "Biscuit", "Lucky", "Snowball", "Ember", "Juniper",
+)
+
+
+def _ai_avatar_pool() -> list[str]:
+    """AI 用的头像 id（不带 preset: 前缀，名片里要省字节）。清单读不到就留空，画默认头像。"""
+    try:
+        from app import avatar_catalog
+
+        return list(avatar_catalog.avatar_ids())
+    except Exception:  # noqa: BLE001 - 头像只是装饰，读不到不该拦住开局
+        log.warning("AI 头像清单读不到，AI 用默认头像", exc_info=True)
+        return []
+
+
+def ai_identities(free: list[tuple[int, int]], rng: random.Random,
+                  avatars: list[str] | None = None) -> list[dict]:
+    """给空座位（队伍, 本队位置）各配一个不重名的 AI。slot = 队伍 * 3 + 位置。"""
+    pool = list(avatars if avatars is not None else _ai_avatar_pool())
+    names = rng.sample(AI_NAMES, len(free))
+    return [{"slot": team * TEAM_SIDE_SIZE + seat, "team": team, "seat": seat,
+             "name": name, "avatar": rng.choice(pool) if pool else ""}
+            for (team, seat), name in zip(free, names, strict=True)]
 
 Send = Callable[[uuid.UUID, dict], Awaitable[int]]
 
@@ -206,6 +250,7 @@ class _Waiter:
     rating: int = 0
     # 组队房里各人选的位置（0~2，10-08）。进对局时按它坐（_allocate_seats）；单排没有。
     seats: dict[uuid.UUID, int] = field(default_factory=dict)
+    seedling_races: dict[uuid.UUID, list[str]] = field(default_factory=dict)
 
 
 @dataclass
@@ -222,6 +267,7 @@ class _Member:
     # ⚠ 只允许放**公开**字段（昵称 / 头像 / 头像框）—— 见 seat_roster() 的白名单，
     #   名片里的 friend_code 绝不能进这条消息。
     profile: dict = field(default_factory=dict)
+    seedling_races: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -234,6 +280,8 @@ class _Pending:
     deadline: float
     # 这一桌里的组队（原样的排队条目）。拆桌时整队放回、或整队回房间 —— **不拆成单人**。
     parties: list[_Waiter] = field(default_factory=list)
+    # AI 补位的座位（见文件里「人少时 AI 补位」那节）。普通满员桌是空的。
+    ai_seats: list[dict] = field(default_factory=list)
 
     def member(self, player_id: uuid.UUID) -> _Member | None:
         for m in self.members:
@@ -274,6 +322,15 @@ class _Pending:
                 "accepted": bool(m.accepted),
                 "me": m.player_id == me,
             })
+        # AI 座位：名字头像是开桌时随机定的，算作已确认。
+        for ai in self.ai_seats:
+            out.append({
+                "team": int(ai["team"]), "seat": int(ai["seat"]),
+                "name": str(ai["name"]),
+                "avatar": ("preset:%s" % ai["avatar"]) if ai["avatar"] else "",
+                "avatar_frame": "", "accepted": True, "me": False, "ai": True,
+            })
+        out.sort(key=lambda s: (s["team"], s["seat"]))
         return out
 
 
@@ -287,6 +344,9 @@ class Assignment:
     expires_at: float
     # 本队里的位置 0~2（-1 = 不指定）。写进名片，战斗服务器按它入座。
     seat: int = -1
+    seedling_races: list[str] = field(default_factory=list)
+    # 这一局里由 AI 坐的座位（slot / name / avatar），写进名片交给战斗服务器。
+    ai_seats: list[dict] = field(default_factory=list)
 
 
 class Matchmaker:
@@ -297,9 +357,14 @@ class Matchmaker:
     只有 tick 里的发送会让出执行权，而发送前状态已经改完了。
     """
 
-    def __init__(self, send: Send, *, now: Callable[[], float] = time.monotonic) -> None:
+    def __init__(self, send: Send, *, now: Callable[[], float] = time.monotonic,
+                 ai_fill_after_sec: float | None = None,
+                 rng: random.Random | None = None) -> None:
         self._send = send
         self._now = now
+        # None = 不用 AI 补位（满 6 个真人才开桌，原来的行为）。线上由 current() 按配置传入。
+        self._ai_fill_after = ai_fill_after_sec
+        self._rng = rng or random.Random()
         # mode -> (player_id -> _Waiter)。按模式分队列：两个模式的人不能互相匹配。
         self._queues: dict[str, OrderedDict[uuid.UUID, _Waiter]] = {
             mode: OrderedDict() for mode in KNOWN_MODES
@@ -324,7 +389,8 @@ class Matchmaker:
 
     # --- 排队 -----------------------------------------------------------------
 
-    def join(self, player_id: uuid.UUID, mode: str) -> dict:
+    def join(self, player_id: uuid.UUID, mode: str,
+             seedling_races: list[str] | None = None) -> dict:
         """进队列。已经在待确认里的人**不许重排** —— 那会把自己从那一桌里摘掉。"""
         if player_id in self._party_of:
             return self.state_of(player_id)
@@ -348,14 +414,17 @@ class Matchmaker:
             waiter.dropped_at = 0.0
             return queued_message(self.position_of(player_id, mode), mode)
 
-        queue[player_id] = _Waiter(mode=mode, joined_at=self._now(), party=[player_id])
+        lineup = {player_id: list(seedling_races)} if seedling_races is not None else {}
+        queue[player_id] = _Waiter(mode=mode, joined_at=self._now(), party=[player_id],
+                                   seedling_races=lineup)
         position = len(queue)
         queue[player_id].sent_position = position
         return queued_message(position, mode)
 
     def join_group(self, players: list[uuid.UUID], mode: str,
                    ratings: dict[uuid.UUID, int] | None = None,
-                   seats: dict[uuid.UUID, int] | None = None) -> dict:
+                   seats: dict[uuid.UUID, int] | None = None,
+                   seedling_races: dict[uuid.UUID, list[str]] | None = None) -> dict:
         """一支组队房的队伍作为一个整体进队列。几个人能进看 party.startable_sizes()。"""
         if mode not in OPEN_MODES or len(players) not in party.startable_sizes() \
                 or len(players) != len(set(players)):
@@ -367,7 +436,9 @@ class Matchmaker:
         self._party_queues[mode][leader] = _Waiter(
             mode=mode, joined_at=self._now(), party=players.copy(),
             rating=sum(int(score.get(pid, 0)) for pid in players),
-            seats={pid: int(seat) for pid, seat in (seats or {}).items() if pid in players})
+            seats={pid: int(seat) for pid, seat in (seats or {}).items() if pid in players},
+            seedling_races={pid: list(races) for pid, races in (seedling_races or {}).items()
+                            if pid in players})
         for pid in players:
             self._party_of[pid] = leader
             self._party_disconnected.discard(pid)
@@ -505,19 +576,25 @@ class Matchmaker:
         for mode in OPEN_MODES:
             # 排位**只在窗口内凑新的一桌**（19:00–23:00，docs/排位系统设计.md 第二节）。
             # 已经开打的局不受影响 —— 00:00 关的是队列，不是对局。
-            if mode == RANKED and not ranked.accepting_now():
+            if mode.startswith("ranked") and not ranked.accepting_now():
                 continue
             while True:
                 party_seats = self._take_party_match(mode)
                 if party_seats is None:
                     break
-                players, teams, parties = party_seats
-                messages.extend(self._form_party(players, teams, parties, mode, now))
+                players, teams, parties, lineups = party_seats
+                messages.extend(self._form_party(players, teams, parties, lineups, mode, now))
             while True:
                 group = self._take_group(mode, now)
                 if group is None:
                     break
-                messages.extend(self._form(group, mode, now))
+                players, lineups = group
+                messages.extend(self._form(players, lineups, mode, now))
+            # 凑不满 6 个真人：等得最久的人满了时限，就用现在在线的人开一桌，空位给 AI。
+            if self._ai_fill_after is not None:
+                short = self._take_short_group(mode, now)
+                if short is not None:
+                    messages.extend(self._form_with_ai(*short, mode, now))
         messages.extend(self._position_updates(now))
         # 扣分放在发消息之前：被罚的那个人应该先收到 idle，再去查自己为什么被禁。
         if self._pending_penalties:
@@ -557,7 +634,7 @@ class Matchmaker:
             log.warning("匹配消息发不出去 player=%s", player_id, exc_info=True)
             return 0
 
-    def _take_party_match(self, mode: str) -> tuple[list[uuid.UUID], list[int], list[_Waiter]] | None:
+    def _take_party_match(self, mode: str) -> tuple[list[uuid.UUID], list[int], list[_Waiter], dict[uuid.UUID, list[str]]] | None:
         rooms = self._party_queues[mode]
         active_rooms = [("room", pid, tuple(waiter.party))
                         for pid, waiter in rooms.items() if waiter.dropped_at <= 0.0]
@@ -570,9 +647,11 @@ class Matchmaker:
         players: list[uuid.UUID] = []
         teams: list[int] = []
         parties: list[_Waiter] = []
+        lineups: dict[uuid.UUID, list[str]] = {}
         for team, side in enumerate(sides):
             for kind, leader, members in side:
                 waiter = (rooms if kind == "room" else self._queues[mode]).pop(leader)
+                lineups.update(waiter.seedling_races)
                 if kind == "room":
                     parties.append(waiter)
                     for pid in members:
@@ -580,14 +659,16 @@ class Matchmaker:
                         self._party_disconnected.discard(pid)
                 players.extend(members)
                 teams.extend([team] * len(members))
-        return players, teams, parties
+        return players, teams, parties, lineups
 
     def _form_party(self, players: list[uuid.UUID], teams: list[int], parties: list[_Waiter],
+                    lineups: dict[uuid.UUID, list[str]],
                     mode: str, now: float) -> list[tuple[uuid.UUID, dict]]:
         match_uid = new_match_uid()
         seats = allocate_seats(players, teams, parties)
         profiles = self._public_profiles(players)
-        members = [_Member(pid, team, seat=seat, profile=profiles.get(pid, {}))
+        members = [_Member(pid, team, seat=seat, profile=profiles.get(pid, {}),
+                           seedling_races=list(lineups.get(pid, [])))
                    for pid, team, seat in zip(players, teams, seats, strict=True)]
         pending = _Pending(match_uid, mode, members, now + ACCEPT_TIMEOUT_SEC, parties)
         self._pending[match_uid] = pending
@@ -618,7 +699,7 @@ class Matchmaker:
                 out[pid] = dict(profile)
         return out
 
-    def _take_group(self, mode: str, now: float) -> list[uuid.UUID] | None:
+    def _take_group(self, mode: str, now: float) -> tuple[list[uuid.UUID], dict[uuid.UUID, list[str]]] | None:
         """按先来后到取一桌。**只取还连着的人。**
 
         断线宽限内的人留在队列里、占着位次，但不会被凑进一桌 ——
@@ -636,15 +717,20 @@ class Matchmaker:
                 break
         if len(picked) < MATCH_SIZE:
             return None
+        lineups: dict[uuid.UUID, list[str]] = {}
         for pid in picked:
-            queue.pop(pid, None)
-        return picked[:MATCH_SIZE]
+            waiter = queue.pop(pid, None)
+            if waiter is not None:
+                lineups.update(waiter.seedling_races)
+        return picked[:MATCH_SIZE], lineups
 
-    def _form(self, players: list[uuid.UUID], mode: str, now: float) -> list[tuple[uuid.UUID, dict]]:
+    def _form(self, players: list[uuid.UUID], lineups: dict[uuid.UUID, list[str]],
+              mode: str, now: float) -> list[tuple[uuid.UUID, dict]]:
         match_uid = new_match_uid()
         profiles = self._public_profiles(players)
         members = [
-            _Member(player_id=pid, team=team, profile=profiles.get(pid, {}))
+            _Member(player_id=pid, team=team, profile=profiles.get(pid, {}),
+                    seedling_races=list(lineups.get(pid, [])))
             for pid, team in zip(players, assign_teams(players, {}), strict=True)
         ]
         pending = _Pending(match_uid=match_uid, mode=mode, members=members,
@@ -655,6 +741,80 @@ class Matchmaker:
         log.info("匹配成功 match=%s mode=%s players=%d", match_uid, mode, len(members))
         return [(m.player_id, found_message(match_uid, mode, ACCEPT_TIMEOUT_SEC))
                 for m in members]
+
+    def _take_short_group(self, mode: str, now: float) -> tuple[list[uuid.UUID], list[int], list[_Waiter], dict[uuid.UUID, list[str]]] | None:
+        """人不够 6 个时取一桌（AI 补位）。等得最久的那份还没满时限就不取。
+
+        单排与组队都算，按进队列的先后；组队整队进同一队，装不下就跳过等下一桌。
+        只取还连着的人 —— 与 _take_group 同一条理由。
+        """
+        entries: list[tuple[float, int, str, uuid.UUID, _Waiter]] = []
+        for index, (pid, waiter) in enumerate(self._queues[mode].items()):
+            if waiter.dropped_at <= 0.0:
+                entries.append((waiter.joined_at, index, "solo", pid, waiter))
+        for index, (leader, waiter) in enumerate(self._party_queues[mode].items()):
+            if waiter.dropped_at <= 0.0 and not any(
+                    pid in self._party_disconnected for pid in waiter.party):
+                entries.append((waiter.joined_at, index, "room", leader, waiter))
+        if not entries:
+            return None
+        entries.sort(key=lambda e: (e[0], e[1]))
+        if now - entries[0][0] < float(self._ai_fill_after or 0.0):
+            return None
+        room_left = [TEAM_SIDE_SIZE, TEAM_SIDE_SIZE]
+        chosen: list[tuple[int, str, uuid.UUID]] = []
+        for _joined, _index, kind, key, waiter in entries:
+            size = len(waiter.party or [key])
+            team = 0 if room_left[0] >= size else (1 if room_left[1] >= size else -1)
+            if team < 0:
+                continue
+            room_left[team] -= size
+            chosen.append((team, kind, key))
+            if room_left == [0, 0]:
+                break
+        players: list[uuid.UUID] = []
+        teams: list[int] = []
+        parties: list[_Waiter] = []
+        lineups: dict[uuid.UUID, list[str]] = {}
+        for team, kind, key in chosen:
+            waiter = (self._party_queues[mode] if kind == "room" else self._queues[mode]).pop(key)
+            lineups.update(waiter.seedling_races)
+            members = waiter.party or [key]
+            if kind == "room":
+                parties.append(waiter)
+                for pid in members:
+                    self._party_of.pop(pid, None)
+                    self._party_disconnected.discard(pid)
+            players.extend(members)
+            teams.extend([team] * len(members))
+        return players, teams, parties, lineups
+
+    def _form_with_ai(self, players: list[uuid.UUID], teams: list[int], parties: list[_Waiter],
+                      lineups: dict[uuid.UUID, list[str]],
+                      mode: str, now: float) -> list[tuple[uuid.UUID, dict]]:
+        """开一桌 AI 补位的对局。只有一个真人时跳过确认框直接 ready。"""
+        match_uid = new_match_uid()
+        seats = allocate_seats(players, teams, parties)
+        profiles = self._public_profiles(players)
+        members = [_Member(pid, team, seat=seat, profile=profiles.get(pid, {}),
+                           seedling_races=list(lineups.get(pid, [])))
+                   for pid, team, seat in zip(players, teams, seats, strict=True)]
+        taken = {(m.team, m.seat) for m in members}
+        free = [(team, seat) for team in (0, 1) for seat in range(TEAM_SIDE_SIZE)
+                if (team, seat) not in taken]
+        pending = _Pending(match_uid, mode, members, now + ACCEPT_TIMEOUT_SEC, parties,
+                           ai_seats=ai_identities(free, self._rng))
+        self._pending[match_uid] = pending
+        for member in members:
+            self._pending_of[member.player_id] = match_uid
+        log.info("AI 补位开桌 match=%s mode=%s players=%d ai=%d",
+                 match_uid, mode, len(members), len(free))
+        if len(members) == 1:
+            # 一个人对 AI：没有「等别人确认」这回事，直接 ready（_finalise 自己推）。
+            members[0].accepted = True
+            self._finalise(pending)
+            return []
+        return [(m.player_id, pending.found_for(m.player_id, ACCEPT_TIMEOUT_SEC)) for m in members]
 
     def _expire_stale(self, now: float, messages: list[tuple[uuid.UUID, dict]]) -> None:
         # 确认超时的一桌。
@@ -742,7 +902,9 @@ class Matchmaker:
                 continue
             # 插到队首：OrderedDict 没有「插到开头」，所以先加再 move_to_end(last=False)。
             queue[member.player_id] = _Waiter(
-                mode=pending.mode, joined_at=self._now(), party=[member.player_id])
+                mode=pending.mode, joined_at=self._now(), party=[member.player_id],
+                seedling_races={member.player_id: list(member.seedling_races)}
+                    if member.seedling_races else {})
             queue.move_to_end(member.player_id, last=False)
             out.append((member.player_id, queued_message(
                 self.position_of(member.player_id, pending.mode), pending.mode)))
@@ -777,7 +939,9 @@ class Matchmaker:
             self._pending_of.pop(member.player_id, None)
             self._assignments[member.player_id] = Assignment(
                 match_uid=pending.match_uid, mode=pending.mode,
-                team=member.team, expires_at=expires_at, seat=member.seat)
+                team=member.team, expires_at=expires_at, seat=member.seat,
+                seedling_races=list(member.seedling_races),
+                ai_seats=[dict(ai) for ai in pending.ai_seats])
         if pending.parties:
             from app import party
             # match_uid 传下去：排位房间要记「这支队伍在打哪一局」（10.10 bug 第 9 条）。
@@ -908,8 +1072,18 @@ def install(instance: Matchmaker) -> Matchmaker:
 def current() -> Matchmaker:
     global _instance
     if _instance is None:
-        _instance = Matchmaker(hub_send)
+        _instance = Matchmaker(hub_send, ai_fill_after_sec=ai_fill_after_from_settings())
     return _instance
+
+
+def ai_fill_after_from_settings() -> float | None:
+    """配置里的 AI 补位时限；关掉就是 None（满 6 个真人才开桌）。"""
+    from app.config import get_settings
+
+    settings = get_settings()
+    if not settings.match_ai_fill:
+        return None
+    return max(0.0, float(settings.match_ai_fill_after_sec))
 
 
 async def loop(target: Matchmaker) -> None:

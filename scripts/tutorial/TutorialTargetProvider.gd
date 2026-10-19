@@ -24,6 +24,10 @@ const TARGET_CARROT_STONE_TAB := "carrot_stone_tab"
 const TARGET_HARVEST_UPGRADE := "harvest_upgrade"
 const TARGET_STONE_DRAW := "stone_draw"
 const TARGET_FOUR_STAR_ROW := "four_star_row"
+# 10.19 人王教学：买人王时指商店里的人王，买到后指场上 / 待命区的人王。
+const TARGET_KING := "king"
+# 10.19 第 5 回合满格：指一个可以卖掉的棋子。
+const TARGET_SELL_UNIT := "sell_unit"
 
 const ACTION_CLOSE_MERCENARY := "close_mercenary"
 const ACTION_REFRESH_VIEW := "refresh_view"
@@ -49,6 +53,8 @@ const REQUIRED_TARGETS := [
 	TARGET_HARVEST_UPGRADE,
 	TARGET_STONE_DRAW,
 	TARGET_FOUR_STAR_ROW,
+	TARGET_KING,
+	TARGET_SELL_UNIT,
 ]
 
 var _provider_name := "unbound"

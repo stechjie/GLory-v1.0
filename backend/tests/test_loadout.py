@@ -173,6 +173,10 @@ def test_assigned_card_carries_server_chosen_mode() -> None:
     ranked = loadout.card_payload(_loadout(), match_uid="b" * 32, team=1, mode="ranked")
     assert casual["mode"] == "casual"
     assert ranked["mode"] == "ranked"
+    assert casual["ruleset"] == ranked["ruleset"] == "seedling"
+    normal = loadout.card_payload(_loadout(), match_uid="c" * 32, team=0,
+                                  mode="casual_normal")
+    assert normal["mode"] == "casual" and normal["ruleset"] == "normal"
     assert "mode" not in loadout.card_payload(_loadout())
 
 
@@ -373,8 +377,8 @@ def test_save_races_rejects_locked_race(monkeypatch: pytest.MonkeyPatch) -> None
     assert not conn.executed, "没解锁还是写进库了"
 
 
-def test_save_races_stores_free_races(monkeypatch: pytest.MonkeyPatch) -> None:
-    conn = _wire(monkeypatch, _row(), owned=[])
+def test_save_races_stores_four_unlocked_races(monkeypatch: pytest.MonkeyPatch) -> None:
+    conn = _wire(monkeypatch, _row(), owned=["human", "god", "dark", "undead"])
     saved = asyncio.run(loadout.save_races(PLAYER_A, ["human", "god", "dark", "undead"]))
     assert saved == ["human", "god", "dark", "undead"]
     assert conn.executed and conn.executed[0][1][1] == saved

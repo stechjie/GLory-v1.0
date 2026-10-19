@@ -22,6 +22,7 @@ static func _process_single_race_death(state: Dictionary, victim: Dictionary) ->
 		return
 	processed[uid] = true
 	state.race_trait_processed_deaths = processed
+	_apply_soul_devour_on_death(state, victim)
 	# 人7（9.24 改）放在母灵处决早退之前：被处决也算「己方死了一个」。
 	_owner_human_rally(state, victim)
 	if bool(victim.get("mother_execute_kill", false)):
@@ -76,6 +77,8 @@ static func apply_death_poison_explosion(victim: Dictionary, vd: Dictionary, ene
 	# 由结算面板并入席位总伤害、不进任何棋子的个人伤害。
 	var previous_slot := DamageService.current_element_owner_slot()
 	DamageService.set_element_owner_slot(int(victim.get("owner_slot", -1)))
+	# 10.18：爆炸伤害跳数字 + 前端按 fx_source（自爆灵自己）画毒爆冲击环。纯表现标记。
+	var saved_hit := DamageService.push_treasure_hit_context("death_poison_explosion", str(victim.get("uid", "")))
 	var exploded := false
 	for o in enemies:
 		if not bool(o.get("alive", false)):
@@ -87,6 +90,7 @@ static func apply_death_poison_explosion(victim: Dictionary, vd: Dictionary, ene
 		DamageService.apply_damage(o, maxi(1, int(round(float(victim.atk) * float(vd.get("damage_atk_pct", 2.5))))), true)
 		StatusEffectService.add_poison(o, 4.0, 0.03, 0.0, true)
 		exploded = true
+	DamageService.restore_hit_context(saved_hit)
 	DamageService.set_element_owner_slot(previous_slot)
 	return exploded
 
@@ -165,7 +169,14 @@ static func _apply_attack_treasure_effects(attacker: Dictionary, target: Diction
 	if _f_has_treasure(attacker, "atk_frenzy_assault"):
 		_apply_frenzy_assault(attacker, target)
 	if _f_has_treasure(attacker, "elem_flame_shatter") and RngService.rng.randf() < 0.25:
+		# 10.18：火焰真伤跳数字 + 前端在目标身上窜火；有血之契约（100% ATK）换成血火 + 血线。
+		# 纯表现标记，伤害与 RNG 消耗不变。_apply_attribute_effect 也被法师技能调用，所以标记只打在这里。
+		var blood := _f_has_linkage(attacker, "link_blood_covenant")
+		var saved_fire := DamageService.push_treasure_hit_context(
+			"treasure_blood_covenant" if blood else "treasure_flame_shatter",
+			str(attacker.get("uid", "")), "treasure_blood" if blood else "treasure_fire")
 		_apply_attribute_effect("fire", attacker, target)
+		DamageService.restore_hit_context(saved_fire)
 	if _f_has_treasure(attacker, "elem_frost_blade") and RngService.rng.randf() < 0.25:
 		StatusEffectService.add_status(target, "slow", 2.0, {"move_pct": 0.35, "attack_speed_pct": 0.50})
 		StatusEffectService.add_status(target, "ice_affected", 2.0, {})
@@ -248,6 +259,12 @@ static func _apply_post_damage_treasures(attacker: Dictionary, target: Dictionar
 	if _f_has_linkage(attacker, "link_rich_path"):
 		if RngService.rng.randf() < 0.25:
 			state.bonus_gold = int(state.get("bonus_gold", 0)) + 10
+			# 10.18：富裕之路 +10 金 —— 前端在被打的对手头上蹦一把金币。纯表现事件，走
+			# visual_events（与母灵处决同一通道，回放的 frame_events 会记下来）。
+			if not state.has("visual_events") or typeof(state.visual_events) != TYPE_ARRAY:
+				state.visual_events = []
+			state.visual_events.append({"type": "treasure_gold", "source_uid": str(attacker.get("uid", "")),
+				"target_uid": str(target.get("uid", "")), "amount": 10, "time": float(state.get("elapsed", 0.0))})
 
 
 static func _apply_defender_treasure_reaction(defender: Dictionary, attacker: Dictionary, state: Dictionary, _dealt: int) -> void:
@@ -291,7 +308,10 @@ static func _try_toxic_burst(target: Dictionary) -> void:
 			burst_damage += tick_damage * ticks
 	if burst_damage <= 0:
 		return
+	# 10.18：剧毒爆发一口气结算剩余毒伤 —— 跳数字 + 前端在目标身上炸紫绿毒爆。纯表现标记。
+	var saved_hit := DamageService.push_treasure_hit_context("treasure_toxic_burst", str(target.get("uid", "")), "treasure_toxic")
 	DamageService.apply_damage(target, burst_damage, true)
+	DamageService.restore_hit_context(saved_hit)
 	target.statuses.erase("poison")
 
 static func _apply_soul_counter_treasure(killer: Dictionary, victim: Dictionary) -> void:
@@ -301,7 +321,10 @@ static func _apply_soul_counter_treasure(killer: Dictionary, victim: Dictionary)
 		return
 	if not bool(killer.get("alive", false)):
 		return
+	# 10.18：亡魂从倒下的持有者身上飞向凶手 —— fx_source 填持有者。纯表现标记。
+	var saved_hit := DamageService.push_treasure_hit_context("treasure_soul_counter", str(victim.get("uid", "")))
 	DamageService.apply_damage(killer, maxi(1, int(round(float(killer.get("max_hp", 1)) * 0.35))), true)
+	DamageService.restore_hit_context(saved_hit)
 
 
 static func _queue_phoenix_revive(victim: Dictionary, state: Dictionary) -> void:
@@ -349,9 +372,12 @@ static func _process_temporary_deaths(state: Dictionary) -> void:
 
 static func _apply_element_set_burst(attacker: Dictionary, target: Dictionary, state: Dictionary) -> void:
 	var opponents: Array = state.enemy if str(attacker.team) == "player" else state.player
+	# 10.18：四元素爆发跳数字 + 前端以被打中的那个目标（fx_source）为中心画元素环。纯表现标记。
+	var saved_hit := DamageService.push_treasure_hit_context("treasure_element_burst", str(target.get("uid", "")))
 	for o in opponents:
 		if bool(o.get("alive", false)) and _can_target(attacker, o, opponents) and target.pos.distance_to(o.pos) <= 180.0:
 			DamageService.apply_damage(o, maxi(1, int(round(float(o.max_hp) * 0.10))), true)
+	DamageService.restore_hit_context(saved_hit)
 
 
 static func _apply_frenzy_assault(attacker: Dictionary, target: Dictionary) -> void:
@@ -363,7 +389,7 @@ static func _apply_frenzy_assault(attacker: Dictionary, target: Dictionary) -> v
 	# 独立倍率由 StatusEffectService 计算，不永久污染基础攻速。
 	attacker.frenzy_stacks = mini(int(attacker.frenzy_stacks), 64)
 
-static func _apply_defender_reaction(attacker: Dictionary, target: Dictionary, dealt: int) -> void:
+static func _apply_defender_reaction(attacker: Dictionary, target: Dictionary, dealt: int, state: Dictionary = {}) -> void:
 	var d: Dictionary = target.get("def", {})
 	var prev_source := DamageService.current_stat_source_uid()
 	DamageService.set_stat_source_uid(str(target.get("uid", "")))
@@ -371,7 +397,15 @@ static func _apply_defender_reaction(attacker: Dictionary, target: Dictionary, d
 		target.skill_stacks = int(target.get("skill_stacks", 0)) + 1
 		if int(target.skill_stacks) >= int(d.get("hit_threshold", 8)):
 			target.skill_stacks = 0
+			DamageService.set_hit_context("skill", false, str(d.get("race", "")), "overload_counter")
 			DamageService.apply_damage(attacker, maxi(1, int(d.get("skill_damage", 300))), true)
+			var opponents: Array = state.get("enemy", []) if str(target.get("team", "")) == "player" else state.get("player", [])
+			for other: Dictionary in opponents:
+				if is_same(other, attacker) or not bool(other.get("alive", false)) or not _can_target(target, other, opponents):
+					continue
+				if Vector2(attacker.pos).distance_to(Vector2(other.pos)) <= float(d.get("splash_radius", 180.0)):
+					DamageService.apply_damage(other, maxi(1, int(d.get("splash_damage", 200))), true)
+			DamageService.clear_hit_context()
 			if RngService.rng.randf() < float(d.get("interrupt_chance", 0.25)):
 				StatusEffectService.interrupt(attacker)
 	if str(d.get("skill_id", "")) == "poison_reflect_armor_stack" and dealt > 0 and bool(target.get("alive", false)):
@@ -571,25 +605,66 @@ static func _apply_boss_attacker_passives(attacker: Dictionary, state: Dictionar
 	var d: Dictionary = attacker.get("def", {})
 	if str(d.get("skill_id", "")) == "rage_stack":
 		var old_stacks := int(attacker.get("skill_stacks", 0))
-		var new_stacks := mini(int(d.get("max_stacks", 20)), old_stacks + 1)
+		var new_stacks := mini(int(d.get("max_stacks", 50)), old_stacks + 1)
 		if new_stacks > old_stacks:
 			attacker.skill_stacks = new_stacks
-			attacker.atk = maxi(1, int(round(float(attacker.atk) * (1.0 + float(d.get("atk_per_hit", 0.03))))))
+			attacker.atk = maxi(1, int(round(float(attacker.atk) * (1.0 + float(d.get("atk_per_hit", 0.05))))))
 			attacker.attack_speed = clampf(float(attacker.attack_speed) + float(d.get("aspd_per_hit", 0.03)), 0.25, 2.5)
-	elif str(d.get("skill_id", "")) == "blood_rage" and not bool(attacker.get("blood_rage_active", false)) and float(attacker.hp) / float(maxi(1, int(attacker.max_hp))) <= float(d.get("trigger_hp_pct", 0.35)):
-		attacker.blood_rage_active = true
-		attacker.atk = maxi(1, int(round(float(attacker.atk) * (1.0 + float(d.get("atk_bonus", 0.40))))))
-		attacker.attack_speed = clampf(float(attacker.attack_speed) + float(d.get("aspd_bonus", 0.30)), 0.25, 2.5)
-		# 用户口径：「应该在生命值降至 35% 以下**触发技能进入暴走时**播放**一次**该音效」。
-		# 「一次」由上面那个 `not blood_rage_active` 前置条件天然保证 ——
-		# 标记一置真这条 `elif` 就再也不成立了。
-		_emit_sfx_proc(state, "blood_rage", attacker, attacker)
+	elif str(d.get("skill_id", "")) == "blood_rage":
+		_activate_blood_rage(attacker, state)
+
+
+static func _process_boss_health_triggers(state: Dictionary) -> void:
+	for fighter: Dictionary in state.get("player", []) + state.get("enemy", []):
+		_activate_blood_rage(fighter, state)
+
+
+static func _activate_blood_rage(attacker: Dictionary, state: Dictionary) -> void:
+	var d: Dictionary = attacker.get("def", {})
+	if not bool(attacker.get("alive", false)) or str(d.get("skill_id", "")) != "blood_rage" or bool(attacker.get("blood_rage_active", false)):
+		return
+	if float(attacker.get("hp", 0)) / float(maxi(1, int(attacker.get("max_hp", 1)))) > float(d.get("trigger_hp_pct", 0.50)):
+		return
+	attacker.blood_rage_active = true
+	attacker.atk = maxi(1, int(round(float(attacker.atk) * (1.0 + float(d.get("atk_bonus", 1.00))))))
+	attacker.attack_speed = clampf(float(attacker.attack_speed) + float(d.get("aspd_bonus", 0.50)), 0.25, 2.5)
+	_emit_sfx_proc(state, "blood_rage", attacker, attacker)
 
 
 static func _apply_boss_attack_lifesteal(attacker: Dictionary, d: Dictionary, dealt: int) -> void:
 	if dealt <= 0 or str(d.get("skill_id", "")) != "blood_rage" or not bool(attacker.get("blood_rage_active", false)):
 		return
-	_heal_unit(attacker, maxi(1, int(round(float(dealt) * float(d.get("lifesteal", 0.10))))))
+	_heal_unit(attacker, maxi(1, int(round(float(dealt) * float(d.get("lifesteal", 0.20))))))
+
+
+static func _apply_soul_devour_on_death(state: Dictionary, victim: Dictionary) -> void:
+	var victim_uid := str(victim.get("uid", ""))
+	if victim_uid.is_empty():
+		return
+	var processed: Dictionary = state.get("soul_devour_processed_deaths", {})
+	if bool(processed.get(victim_uid, false)):
+		return
+	processed[victim_uid] = true
+	state.soul_devour_processed_deaths = processed
+	var victim_def: Dictionary = victim.get("def", {})
+	var is_monster := str(victim.get("id", "")).begins_with("pve_")
+	var is_piece := victim_def.has("race") and not bool(victim.get("is_mercenary", false)) and not bool(victim.get("is_formation_ally", false))
+	var summoned_uid := victim_uid.contains("_mirror_") or victim_uid.contains("_parasite_") or victim_uid.contains("_revive_")
+	for boss: Dictionary in state.get("player", []) + state.get("enemy", []):
+		if not bool(boss.get("alive", false)) or str(boss.get("def", {}).get("skill_id", "")) != "soul_devour":
+			continue
+		if int(boss.get("lane", -1)) != int(victim.get("lane", -1)):
+			continue
+		var friendly_monster := str(boss.get("team", "")) == str(victim.get("team", "")) and is_monster
+		var hostile_piece := str(boss.get("team", "")) != str(victim.get("team", "")) and is_piece and not summoned_uid
+		if not friendly_monster and not hostile_piece:
+			continue
+		var d: Dictionary = boss.get("def", {})
+		boss.soul_devour_stacks = int(boss.get("soul_devour_stacks", 0)) + 1
+		_heal_unit(boss, maxi(1, int(round(float(boss.max_hp) * float(d.get("kill_heal_pct", 0.20))))))
+		boss.atk = maxi(1, int(round(float(d.get("atk", boss.atk)) * (1.0 + float(boss.soul_devour_stacks) * float(d.get("atk_stack", 0.20))))))
+		boss.attack_speed = clampf(float(d.get("attack_speed", boss.attack_speed)) + float(boss.soul_devour_stacks) * float(d.get("aspd_stack", 0.20)), 0.25, 2.5)
+		_emit_sfx_proc(state, "soul_devour", boss, victim)
 
 
 # 9.24：4 控制套装旧效果「普攻成功挂状态后再随机追加一个负面」已删除，
@@ -622,7 +697,7 @@ static func _process_revives(state: Dictionary) -> void:
 				continue
 			f.alive = true
 			f.statuses = {}
-			f.hp = maxi(1, int(round(float(f.max_hp) * float(f.get("def", {}).get("revive_hp_pct", 0.30)))))
+			f.hp = maxi(1, int(round(float(f.max_hp) * float(f.get("def", {}).get("revive_hp_pct", 0.60)))))
 			f.shield = 0
 			f.next_attack = float(state.elapsed) + 0.5
 			# 凤凰涅槃：以 40% 最大生命复活并获得 3 秒无敌，撑到 temporary_deaths 的强制真死（+3.1s）。

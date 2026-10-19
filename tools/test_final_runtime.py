@@ -149,6 +149,47 @@ class FinalRuntimeTest(unittest.TestCase):
         finally:
             book.close()
 
+    def test_cleric_and_bomb_excel_percent_updates_both_star_groups(self) -> None:
+        book = load_workbook(BOOK, read_only=False, data_only=True)
+        try:
+            book["02_棋子技能"]["O23"] = 15
+            book["02_棋子技能"]["P23"] = 25
+            book["02_棋子技能"]["G23"] = "战歌：治疗周围友军最大生命15%。"
+            book["02_棋子技能"]["L23"] = "War Song: heal allies for 15%."
+            book["02_棋子技能"]["M23"] = "战歌：治疗周围友军最大生命25%。"
+            book["02_棋子技能"]["O30"] = 125
+            book["02_棋子技能"]["P30"] = 275
+            book["02_棋子技能"]["G30"] = "死亡毒爆：攻击125%伤害。"
+            book["02_棋子技能"]["L30"] = "Death Poison Burst: 125% ATK damage."
+            book["02_棋子技能"]["M30"] = "死亡毒爆：攻击275%伤害。"
+            tables = copy.deepcopy(self.tables)
+            changes = overlay_excel_owned(book, tables)
+            expected = {("human_cleric", "heal_pct"): 0.15,
+                        ("human_cleric", "star4.heal_pct"): 0.25,
+                        ("undead_bomb", "damage_atk_pct"): 1.25,
+                        ("undead_bomb", "star4.damage_atk_pct"): 2.75}
+            self.assertEqual(expected, {(change["id"], change["field"]): change["new"] for change in changes})
+            source = (ROOT / "data/units/race_units.json").read_text(encoding="utf-8-sig")
+            patched = patch_json_scalars(source, changes, tables["data/units/race_units.json"])
+            self.assertEqual(tables["data/units/race_units.json"], json.loads(patched))
+        finally:
+            book.close()
+
+    def test_corrosive_needle_excel_bonus_updates_only_its_json_number(self) -> None:
+        book = load_workbook(BOOK, read_only=False, data_only=True)
+        try:
+            cell = book["09_宝藏与套装"]["E11"]
+            cell.value = str(cell.value).replace("伤害+15%", "伤害+20%")
+            tables = copy.deepcopy(self.tables)
+            changes = overlay_excel_owned(book, tables)
+            self.assertEqual([("ctrl_corrosive_needle", "bonus_vs_bleeding", 0.15, 0.2)],
+                             [(item["id"], item["field"], item["old"], item["new"]) for item in changes])
+            source = (ROOT / "data/treasure/treasures.json").read_text(encoding="utf-8-sig")
+            patched = patch_json_scalars(source, changes, tables["data/treasure/treasures.json"])
+            self.assertEqual(tables["data/treasure/treasures.json"], json.loads(patched))
+        finally:
+            book.close()
+
     def test_invalid_excel_input_stops_before_writing(self) -> None:
         book = load_workbook(BOOK, read_only=False, data_only=True)
         try:
@@ -173,6 +214,38 @@ class FinalRuntimeTest(unittest.TestCase):
             self.assertEqual(0.12, tables["data/pets/pets.json"]["pets"][0]["value"])
             self.assertEqual(2, len(changes))
             self.assertEqual(240, tables["data/boss/bosses.json"]["bosses"][0]["skill_damage"])
+        finally:
+            book.close()
+
+    def test_boss_skill_inputs_update_only_allowlisted_json_numbers(self) -> None:
+        book = load_workbook(BOOK, read_only=False, data_only=True)
+        try:
+            boss = book["06_Boss"]
+            boss["D18"] = 275  # meteor radius in pixels
+            boss["D21"] = 30   # 30% interrupt probability
+            tables = copy.deepcopy(self.tables)
+            changes = overlay_excel_owned(book, tables)
+            self.assertEqual(
+                {("boss_meteor_caster", "aoe_radius"): 275.0,
+                 ("boss_thunder_core", "interrupt_chance"): 0.3},
+                {(c["id"], c["field"]): c["new"] for c in changes},
+            )
+            source = (ROOT / "data/boss/bosses.json").read_text(encoding="utf-8-sig")
+            patched = patch_json_scalars(source, changes, tables["data/boss/bosses.json"])
+            self.assertEqual(tables["data/boss/bosses.json"], json.loads(patched))
+        finally:
+            book.close()
+
+    def test_invalid_boss_skill_input_stops_sync(self) -> None:
+        book = load_workbook(BOOK, read_only=False, data_only=True)
+        try:
+            book["06_Boss"]["D18"] = -1
+            with self.assertRaisesRegex(ValueError, "D18.*positive number"):
+                overlay_excel_owned(book, copy.deepcopy(self.tables))
+            book["06_Boss"]["D18"] = 250
+            book["06_Boss"]["D24"] = 0
+            with self.assertRaisesRegex(ValueError, "D24.*above 0%"):
+                overlay_excel_owned(book, copy.deepcopy(self.tables))
         finally:
             book.close()
 

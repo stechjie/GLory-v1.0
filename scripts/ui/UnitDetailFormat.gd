@@ -56,6 +56,7 @@ static func grown_def(d: Dictionary, star: int, cell: Dictionary = {}) -> Dictio
 		return d.duplicate(true)
 	var out := UnitFactory.apply_star_stats(d, star)
 	UnitGrowth.apply_to_def(out, growth_multiplier(cell))
+	UnitGrowth.apply_king_attack_speed_to_def(out, cell)
 	return out
 
 
@@ -71,9 +72,9 @@ static func format_growth_detail(cell: Dictionary, star: int) -> String:
 		var cap := UnitGrowth.king_cap(probe)
 		var layers := ("%d/%d" % [stacks, cap]) if cap > 0 else str(stacks)
 		if is_en():
-			lines.append("King growth: %s stacks (HP/ATK/DEF ×%.2f)" % [layers, UnitGrowth.king_mult(probe)])
+			lines.append("King growth: %s stacks (HP/ATK/DEF/AS ×%.2f; AS cap 2.5/s)" % [layers, UnitGrowth.king_mult(probe)])
 		else:
-			lines.append("人王成长：%s 层（生命、攻击、防御 ×%.2f）" % [layers, UnitGrowth.king_mult(probe)])
+			lines.append("人王成长：%s 层（生命、攻击、防御、攻速 ×%.2f；攻速上限 2.5 次/秒）" % [layers, UnitGrowth.king_mult(probe)])
 	var rate := _local_tiger_rate()
 	if rate > 0.0 and UnitGrowth.tiger_eligible(probe):
 		var tiger := mini(UnitGrowth.tiger_stacks(probe), GameState.tiger_starup_count)
@@ -109,7 +110,7 @@ static func format_unit_def(d: Dictionary, star: int = 1, cell: Dictionary = {})
 			uname, star, uniq,
 			race, elem, int(d.get("tier", 0)), purchase_price_text(d),
 			int(shown.get("hp", 0)), int(shown.get("atk", 0)), int(shown.get("def", 0)),
-			float(d.get("attack_speed", 1.0)), float(d.get("crit", 0.0)) * 100.0, float(d.get("crit_dmg", 1.5)) * 100.0,
+			float(shown.get("attack_speed", 1.0)), float(d.get("crit", 0.0)) * 100.0, float(d.get("crit_dmg", 1.5)) * 100.0,
 			str(d.get("range", 1)), str(d.get("move_speed", 3.0)), growth_text, skill_text,
 		]
 	else:
@@ -117,7 +118,7 @@ static func format_unit_def(d: Dictionary, star: int = 1, cell: Dictionary = {})
 			uname, star, uniq,
 			race, elem, int(d.get("tier", 0)), purchase_price_text(d),
 			int(shown.get("hp", 0)), int(shown.get("atk", 0)), int(shown.get("def", 0)),
-			float(d.get("attack_speed", 1.0)), float(d.get("crit", 0.0)) * 100.0, float(d.get("crit_dmg", 1.5)) * 100.0,
+			float(shown.get("attack_speed", 1.0)), float(d.get("crit", 0.0)) * 100.0, float(d.get("crit_dmg", 1.5)) * 100.0,
 			str(d.get("range", 1)), str(d.get("move_speed", 3.0)), growth_text, skill_text,
 		]
 	var relation_detail := format_unit_relation_detail(cell, str(d.get("race", "")))
@@ -336,7 +337,7 @@ static func format_skill_detail(d: Dictionary) -> String:
 			# 数值全部读 def（apply_star_stats 会把 star4 的 0.3 / 8 覆盖上来）。
 			var king_growth := float(d.get("post_battle_all_stat_growth", 0.20))
 			var king_cap := int(d.get("max_stacks", 5))
-			return "人王唯一技：棋盘上只能存在一只人王。若参战且战后仍存活，生命、攻击、防御永久x%.1f（上限%d层）；若死亡则从棋盘移除；升星继承三只材料中成长最高的人王数值。" % [1.0 + king_growth, king_cap]
+			return "人王唯一技：棋盘上只能存在一只人王。若参战且战后仍存活，生命、攻击、防御、攻速永久x%.1f（上限%d层，战斗攻速上限2.5次/秒）；若死亡则从棋盘移除；升星继承三只材料中成长最高的人王数值。" % [1.0 + king_growth, king_cap]
 		"balance_judge":
 			return "均衡裁决：攻击当前生命高于自己的目标时，伤害+%s。" % pct(float(d.get("bonus_vs_higher_hp", 0.40)))
 		"bubble_dream":
@@ -365,21 +366,21 @@ static func format_skill_detail(d: Dictionary) -> String:
 			return "冥界处决：优先攻击低血目标；击杀回复最大生命%s。普攻破甲%d并降低治疗%s，持续%.1f秒。" % [pct(float(d.get("kill_heal_pct", 0.15))), int(d.get("armor_break", 8)), pct(float(d.get("heal_reduction", 0.50))), float(d.get("duration", 4.0))]
 		# --- Boss ---
 		"element_meteor":
-			return "陨星轰击%s：召唤陨星砸向最近的敌人，对其与周围敌人造成 %d 点真实伤害，并附加自身属性效果。" % [cd, int(d.get("skill_damage", 240))]
+			return "陨星轰击%s：砸向最近的敌人，对落点周围 %.0f 像素内的敌人造成 %d 点真实伤害。" % [cd, float(d.get("aoe_radius", 250.0)), int(d.get("skill_damage", 240))]
 		"overload_counter":
-			return "过载反击：每承受 %d 次攻击后释放一次过载，对攻击者造成 %d 点真实伤害，并有 %s 概率打断其攻击。" % [int(d.get("hit_threshold", 8)), int(d.get("skill_damage", 300)), pct(float(d.get("interrupt_chance", 0.25)))]
+			return "过载反击：每承受 %d 次攻击后，对攻击者造成 %d 点真实伤害；其周围 %.0f 像素内的其他敌人各受 %d 点真实伤害，并有 %s 概率打断攻击者。" % [int(d.get("hit_threshold", 8)), int(d.get("skill_damage", 300)), float(d.get("splash_radius", 180.0)), int(d.get("splash_damage", 200)), pct(float(d.get("interrupt_chance", 0.25)))]
 		"mirror_clone":
-			return "镜像分裂：自身每损失 %s 最大生命就分裂出一个镜像；镜像生命为本体最大生命 %s、攻击为本体 %s，且不会释放技能。" % [pct(float(d.get("clone_per_missing_hp_pct", 0.25))), pct(float(d.get("clone_hp_pct", 0.30))), pct(float(d.get("clone_atk_pct", 0.40)))]
+			return "镜像分裂：自身每损失 %s 最大生命就分裂出一个镜像；镜像生命为本体最大生命 %s、攻击为本体 %s，且不会释放技能。" % [pct(float(d.get("clone_per_missing_hp_pct", 0.25))), pct(float(d.get("clone_hp_pct", 0.30))), pct(float(d.get("clone_atk_pct", 1.00)))]
 		"holy_purify":
-			return "圣愈净化%s：清除全体友军身上的所有状态，治疗其最大生命 %s，并给予最大生命 %s 的护盾。" % [cd, pct(float(d.get("heal_pct", 0.12))), pct(float(d.get("shield_pct", 0.10)))]
+			return "圣愈净化%s：清除全体友军身上的所有状态，治疗其最大生命 %s，并给予最大生命 %s 的护盾；随行小怪均为远程。" % [cd, pct(float(d.get("heal_pct", 0.20))), pct(float(d.get("shield_pct", 0.15)))]
 		"rage_stack":
-			return "狂怒叠加：每次普通攻击命中后攻击 +%s、攻速 +%.2f，最多叠加 %d 层。" % [pct(float(d.get("atk_per_hit", 0.03))), float(d.get("aspd_per_hit", 0.03)), int(d.get("max_stacks", 20))]
+			return "狂怒叠加：每次普通攻击后，当前攻击提高 %s、攻速 +%.2f，最多叠加 %d 层。" % [pct(float(d.get("atk_per_hit", 0.05))), float(d.get("aspd_per_hit", 0.03)), int(d.get("max_stacks", 50))]
 		"blood_rage":
-			return "血怒暴走：生命降至 %s 以下时永久进入暴走，攻击 +%s、攻速 +%.2f，并获得 %s 吸血。" % [pct(float(d.get("trigger_hp_pct", 0.35))), pct(float(d.get("atk_bonus", 0.40))), float(d.get("aspd_bonus", 0.30)), pct(float(d.get("lifesteal", 0.10)))]
+			return "血怒暴走：生命降至 %s 时立即进入暴走，攻击 +%s、攻速 +%.2f，并获得 %s 吸血。" % [pct(float(d.get("trigger_hp_pct", 0.50))), pct(float(d.get("atk_bonus", 1.00))), float(d.get("aspd_bonus", 0.50)), pct(float(d.get("lifesteal", 0.20)))]
 		"soul_devour":
-			return "噬魂：每击杀一个目标，回复自身最大生命 %s，并永久提升攻击 %s。" % [pct(float(d.get("kill_heal_pct", 0.15))), pct(float(d.get("atk_stack", 0.10)))]
+			return "噬魂：同一路的己方小怪或敌方棋子每死亡一名，回复最大生命 %s，按入场攻击累计 +%s，攻速 +%.2f。" % [pct(float(d.get("kill_heal_pct", 0.20))), pct(float(d.get("atk_stack", 0.20))), float(d.get("aspd_stack", 0.20))]
 		"twin_revive":
-			return "双生复活：双子同时登场。任一方死亡后 %.1f 秒以 %s 生命复活，每只最多复活 %d 次；若同伴已全部阵亡则不再复活。" % [float(d.get("revive_delay", 5.0)), pct(float(d.get("revive_hp_pct", 0.30))), int(d.get("revives_per_twin", 1))]
+			return "双生分裂：普攻对主目标身后扇形中的其他敌人造成 %s 攻击伤害。双子同时登场；任一方死亡后 %.1f 秒以 %s 生命复活，每只最多 %d 次，同伴阵亡则无法复活。" % [pct(float(d.get("cleave_atk_pct", 0.50))), float(d.get("revive_delay", 5.0)), pct(float(d.get("revive_hp_pct", 0.60))), int(d.get("revives_per_twin", 1))]
 		"apocalypse_charge":
 			return "灭世蓄力%s：先获得最大生命 %s 的护盾并蓄力 %.1f 秒，随后对全场敌人造成自身攻击 %s 的伤害%s；蓄力期间护盾被打破则中断。" % [cd, pct(float(d.get("charge_shield_pct", 0.10))), float(d.get("charge_sec", 2.0)), pct(float(d.get("damage_atk_pct", 2.5))), "（无视防御）" if bool(d.get("ignore_def", true)) else ""]
 		# --- 法阵守护者 ---
@@ -516,7 +517,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"unique_king_growth":
 			var king_growth := float(d.get("post_battle_all_stat_growth", 0.20))
 			var king_cap := int(d.get("max_stacks", 5))
-			return "Human King Unique (one on board): If this unit survives a battle, HP/ATK/DEF permanently ×%.1f (cap %d stacks). If it dies, it is removed from the board. On upgrade, inherit the highest growth value from the three materials." % [1.0 + king_growth, king_cap]
+			return "Human King Unique (one on board): If this unit survives a battle, HP/ATK/DEF/AS permanently ×%.1f (cap %d stacks; battle AS cap 2.5 attacks/s). If it dies, it is removed from the board. On upgrade, inherit the highest growth value from the three materials." % [1.0 + king_growth, king_cap]
 		"balance_judge":
 			return "Balance Judgement: Deal +%s damage against targets with more current HP than this unit." % pct(float(d.get("bonus_vs_higher_hp", 0.40)))
 		"bubble_dream":
@@ -543,21 +544,21 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 			return "Death Hunt: Prioritizes low-HP targets; kills restore %s max HP. Normal attacks break %d armor and reduce healing by %s for %.1fs." % [pct(float(d.get("kill_heal_pct", 0.15))), int(d.get("armor_break", 8)), pct(float(d.get("heal_reduction", 0.50))), float(d.get("duration", 4.0))]
 		# --- Boss ---
 		"element_meteor":
-			return "Meteor Strike%s: Call a meteor down on the nearest enemy, dealing %d true damage to it and nearby enemies plus this unit's element effect." % [cd, int(d.get("skill_damage", 240))]
+			return "Meteor Strike%s: Hit the nearest enemy and other enemies within %.0f pixels of the impact for %d true damage." % [cd, float(d.get("aoe_radius", 250.0)), int(d.get("skill_damage", 240))]
 		"overload_counter":
-			return "Overload Counter: After taking %d hits, discharge for %d true damage to the attacker with a %s chance to interrupt them." % [int(d.get("hit_threshold", 8)), int(d.get("skill_damage", 300)), pct(float(d.get("interrupt_chance", 0.25)))]
+			return "Overload Counter: After taking %d hits, deal %d true damage to the attacker and %d true damage to other enemies within %.0f pixels of them; %s chance to interrupt the attacker." % [int(d.get("hit_threshold", 8)), int(d.get("skill_damage", 300)), int(d.get("splash_damage", 200)), float(d.get("splash_radius", 180.0)), pct(float(d.get("interrupt_chance", 0.25)))]
 		"mirror_clone":
-			return "Mirror Split: For every %s of max HP lost, split off a mirror image with %s of max HP and %s ATK. Clones cannot cast skills." % [pct(float(d.get("clone_per_missing_hp_pct", 0.25))), pct(float(d.get("clone_hp_pct", 0.30))), pct(float(d.get("clone_atk_pct", 0.40)))]
+			return "Mirror Split: For every %s of max HP lost, split off a mirror image with %s of max HP and %s ATK. Clones cannot cast skills." % [pct(float(d.get("clone_per_missing_hp_pct", 0.25))), pct(float(d.get("clone_hp_pct", 0.30))), pct(float(d.get("clone_atk_pct", 1.00)))]
 		"holy_purify":
-			return "Holy Purify%s: Cleanse all statuses from every ally, heal them for %s max HP and grant a shield worth %s max HP." % [cd, pct(float(d.get("heal_pct", 0.12))), pct(float(d.get("shield_pct", 0.10)))]
+			return "Holy Purify%s: Cleanse all statuses from every ally, heal them for %s max HP and grant a shield worth %s max HP. Escort monsters are ranged." % [cd, pct(float(d.get("heal_pct", 0.20))), pct(float(d.get("shield_pct", 0.15)))]
 		"rage_stack":
-			return "Rage Stacks: Each landed normal attack grants ATK +%s and AS +%.2f, up to %d stacks." % [pct(float(d.get("atk_per_hit", 0.03))), float(d.get("aspd_per_hit", 0.03)), int(d.get("max_stacks", 20))]
+			return "Rage Stacks: After every basic attack, increase current ATK by %s and AS by %.2f, up to %d stacks." % [pct(float(d.get("atk_per_hit", 0.05))), float(d.get("aspd_per_hit", 0.03)), int(d.get("max_stacks", 50))]
 		"blood_rage":
-			return "Blood Frenzy: Below %s HP, permanently enrage — ATK +%s, AS +%.2f, and %s lifesteal." % [pct(float(d.get("trigger_hp_pct", 0.35))), pct(float(d.get("atk_bonus", 0.40))), float(d.get("aspd_bonus", 0.30)), pct(float(d.get("lifesteal", 0.10)))]
+			return "Blood Frenzy: At %s HP, enrage immediately — ATK +%s, AS +%.2f, and %s lifesteal." % [pct(float(d.get("trigger_hp_pct", 0.50))), pct(float(d.get("atk_bonus", 1.00))), float(d.get("aspd_bonus", 0.50)), pct(float(d.get("lifesteal", 0.20)))]
 		"soul_devour":
-			return "Soul Devour: Each kill restores %s max HP and permanently raises ATK by %s." % [pct(float(d.get("kill_heal_pct", 0.15))), pct(float(d.get("atk_stack", 0.10)))]
+			return "Soul Devour: Each friendly monster or enemy piece death in this lane restores %s max HP, adds %s of entry ATK, and grants +%.2f AS." % [pct(float(d.get("kill_heal_pct", 0.20))), pct(float(d.get("atk_stack", 0.20))), float(d.get("aspd_stack", 0.20))]
 		"twin_revive":
-			return "Twin Revival: The twins enter together. When one dies it revives after %.1fs at %s HP, up to %d time(s); no revival happens once every twin is dead." % [float(d.get("revive_delay", 5.0)), pct(float(d.get("revive_hp_pct", 0.30))), int(d.get("revives_per_twin", 1))]
+			return "Twin Cleave: Basics deal %s ATK damage in a cone behind the primary target. The twins enter together; each may revive once after %.1fs at %s HP while its partner lives (limit %d)." % [pct(float(d.get("cleave_atk_pct", 0.50))), float(d.get("revive_delay", 5.0)), pct(float(d.get("revive_hp_pct", 0.60))), int(d.get("revives_per_twin", 1))]
 		"apocalypse_charge":
 			return "Apocalypse Charge%s: Gain a shield worth %s max HP and charge for %.1fs, then hit all enemies for %s ATK%s. Breaking the shield before it lands interrupts the cast." % [cd, pct(float(d.get("charge_shield_pct", 0.10))), float(d.get("charge_sec", 2.0)), pct(float(d.get("damage_atk_pct", 2.5))), " (ignores DEF)" if bool(d.get("ignore_def", true)) else ""]
 		# --- Formation guardians ---

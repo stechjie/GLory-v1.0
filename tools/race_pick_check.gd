@@ -25,7 +25,8 @@ const FAKE_PREFIX := "zz_"
 const FAKE_RACE := "zz_fake"
 # 真实数据的独立副本：故意不从 RacePick 读，否则规则改了检查跟着改，等于没测。
 const REAL_RACES := ["god", "dark", "undead", "human", "crimson"]
-const DEFAULT_RACES := ["god", "dark", "undead", "human"]
+const DEFAULT_RACES := ["human"]
+const FOUR_RACES := ["god", "dark", "undead", "human"]
 const PICK_WITH_FAKE := ["dark", "undead", "human", "zz_fake"]
 const EXCLUDED := "god"
 const ROOMS := 60
@@ -160,7 +161,6 @@ func _case_sanitize_rejects() -> void:
 		"not_array": "god,dark,undead,human",
 		"dictionary": {"god": true, "dark": true, "undead": true, "human": true},
 		"null": null,
-		"too_few": ["god", "dark", "undead"],
 		"too_many": ["god", "dark", "undead", "human", "god"],
 		"duplicate": ["god", "god", "undead", "human"],
 		"unknown": ["god", "dark", "undead", "elf"],
@@ -171,16 +171,16 @@ func _case_sanitize_rejects() -> void:
 	for key in bad:
 		_h.expect(RacePick.sanitize(bad[key]).is_empty(), "sanitize_accepted_bad",
 			"%s 这份不合法的选择被收下了：%s" % [str(key), str(bad[key])])
-	_h.expect(str(RacePick.resolve(["god"])) == str(DEFAULT_RACES), "resolve_bad_not_default",
-		"不合法的选择没有回落到默认，实际 %s" % str(RacePick.resolve(["god"])))
+	_h.expect(str(RacePick.resolve(["god"])) == str(["god"]), "resolve_single_race",
+		"单族出战应当有效，实际 %s" % str(RacePick.resolve(["god"])))
 
 
 func _case_sanitize_orders() -> void:
 	var shuffled := ["human", "god", "undead", "dark"]
-	_h.expect(str(RacePick.sanitize(shuffled)) == str(DEFAULT_RACES), "sanitize_not_ordered",
+	_h.expect(str(RacePick.sanitize(shuffled)) == str(FOUR_RACES), "sanitize_not_ordered",
 		"乱序的合法选择没有按棋子表顺序整理：%s" % str(RacePick.sanitize(shuffled)))
 	var names := [&"god", &"dark", &"undead", &"human"]
-	_h.expect(str(RacePick.sanitize(names)) == str(DEFAULT_RACES), "sanitize_rejects_string_name",
+	_h.expect(str(RacePick.sanitize(names)) == str(FOUR_RACES), "sanitize_rejects_string_name",
 		"StringName 写的合法选择被拒了")
 
 
@@ -342,9 +342,9 @@ func _case_server_seat_without_races_defaults() -> void:
 		ns._room_start_authoritative(room)
 		_tally_offers(seen, _seat_offers(room, 0))
 		ns._rooms.erase(int(room.id))
-	_h.expect(int(seen.get(FAKE_RACE, 0)) == 0 and int(seen.get("crimson", 0)) == 0 and int(seen.get(EXCLUDED, 0)) > 0,
+	_h.expect(int(seen.get(FAKE_RACE, 0)) == 0 and int(seen.get("crimson", 0)) == 0 and int(seen.get("human", 0)) > 0,
 		"seat_without_races_not_default",
-		"座位没有出战种族时应当回落默认（表里前四族：有神族、没有假族），实际 %s" % str(seen))
+		"座位没有出战种族时应当只回落人族，实际 %s" % str(seen))
 
 
 # 恶意载荷在 adversarial_client；这里补「种族多于四个时」的两条 —— 真实数据下测不到。
@@ -388,15 +388,18 @@ func _press_race(screen: PetScreenScript, race: String) -> void:
 func _case_pet_screen_race_tab() -> void:
 	var saved_starter: bool = PlayerProfile.needs_starter_pick
 	var saved_races: Array = PlayerProfile.selected_races.duplicate()
-	# 只改内存，不落盘：清空 = 从没选过 = 默认前四族。
+	# 模拟已解锁四族的老账号；新账号默认只有人族。
 	PlayerProfile.needs_starter_pick = false
-	PlayerProfile.selected_races.clear()
+	PlayerProfile.selected_races.assign(FOUR_RACES)
 	var screen := _open_pet_screen()
 	if screen == null:
 		PlayerProfile.needs_starter_pick = saved_starter
 		PlayerProfile.selected_races.assign(saved_races)
 		return
 	await get_tree().process_frame
+	for race in RacePick.all_races():
+		screen._owned_content[race] = true
+	screen._refresh_races()
 	_h.expect(screen._tab_row.visible, "tabs_hidden", "非首次进入备战页，页签却没显示")
 	_h.expect(screen._pet_box.visible and not screen._race_box.visible, "default_tab_not_pets",
 		"备战页默认应当停在宠物页")
@@ -426,7 +429,7 @@ func _case_pet_screen_race_tab() -> void:
 		"草稿应当是 %s，实际 %s" % [str(PICK_WITH_FAKE), str(screen._race_draft)])
 	_h.expect(not screen._race_save_btn.disabled, "save_disabled_when_valid",
 		"选满 4 个且有改动，保存按钮却点不了")
-	_h.expect(PlayerProfile.selected_races.is_empty(), "draft_saved_without_press",
+	_h.expect(str(PlayerProfile.selected_races) == str(FOUR_RACES), "draft_saved_without_press",
 		"没按保存，出战种族就变了")
 
 	# 按保存但存不上：缓存不动、要提示、草稿留着能直接再点
@@ -435,7 +438,7 @@ func _case_pet_screen_race_tab() -> void:
 	screen._race_save_btn.pressed.emit()
 	await get_tree().process_frame
 	await get_tree().process_frame
-	_h.expect(PlayerProfile.selected_races.is_empty(), "save_failure_cached",
+	_h.expect(str(PlayerProfile.selected_races) == str(FOUR_RACES), "save_failure_cached",
 		"没存到账号服务器，出战种族却变了 —— 页面显示已保存，对局里用的却是服务端那份")
 	_h.expect(GloryToast.shown_count() > 0, "save_failure_silent", "保存失败没有任何提示")
 	_h.expect(str(screen._race_draft) == str(PICK_WITH_FAKE) and not screen._race_save_btn.disabled,
@@ -474,8 +477,8 @@ func _case_races_live_on_server() -> void:
 	_h.expect(str(PlayerProfile.selected_races) == str(PICK_WITH_FAKE), "adopt_races",
 		"服务端答复的种族没装进缓存：%s" % str(PlayerProfile.selected_races))
 	PlayerProfile._adopt_races({"races": ["dark"]})
-	_h.expect(PlayerProfile.selected_races.is_empty(), "adopt_bad_races_kept",
-		"服务端存的不合规则（只有 1 族），缓存应清成空 = 用默认，实际 %s" % str(PlayerProfile.selected_races))
+	_h.expect(str(PlayerProfile.selected_races) == str(["dark"]), "adopt_single_race",
+		"单族出战应当保存在缓存，实际 %s" % str(PlayerProfile.selected_races))
 	PlayerProfile._adopt_races({"races": PICK_WITH_FAKE.duplicate()})
 	PlayerProfile._adopt_races({"races": null})
 	_h.expect(PlayerProfile.selected_races.is_empty()
@@ -498,6 +501,8 @@ func _case_races_live_on_server() -> void:
 
 
 func _case_pet_screen_forced_and_starter() -> void:
+	var saved_races: Array = PlayerProfile.selected_races.duplicate()
+	PlayerProfile.selected_races.assign(FOUR_RACES)
 	# The real catalog now has five races. Remove Crimson from the in-memory
 	# table for this legacy four-of-four forced-state check, then restore it.
 	var units := _units()
@@ -514,6 +519,9 @@ func _case_pet_screen_forced_and_starter() -> void:
 		units.append_array(crimson_rows)
 		return
 	await get_tree().process_frame
+	for race in RacePick.all_races():
+		screen._owned_content[race] = true
+	screen._refresh_races()
 	(screen._tab_buttons[PetScreenScript.Tab.RACES] as Button).pressed.emit()
 	_h.expect(screen._race_cards.size() == 4, "forced_card_count",
 		"四族应当四张卡，实际 %d" % screen._race_cards.size())
@@ -554,4 +562,5 @@ func _case_pet_screen_forced_and_starter() -> void:
 	gate.queue_free()
 	await get_tree().process_frame
 	PlayerProfile.needs_starter_pick = saved_starter
+	PlayerProfile.selected_races.assign(saved_races)
 	units.append_array(crimson_rows)

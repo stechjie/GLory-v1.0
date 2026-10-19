@@ -3,6 +3,13 @@
   "pvp_rounds": [6, 12, 18, 21],
   "boss_rounds": [5, 10, 15, 20],
   "treasure_after_battle_rounds": [4, 8, 12, 16, 20],
+  "seedling": {
+    "final_round": 13,
+    "pvp_rounds": [6, 11],
+    "boss_rounds": [5, 10],
+    "treasure_after_battle_rounds": [4, 8, 12],
+    "treasure_pick_counts": {"4": 2, "8": 2, "12": 1}
+  },
   "pvp_without_online_opponent": "pve"
 }
 

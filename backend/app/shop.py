@@ -84,7 +84,7 @@ CURRENCIES = ("diamond", "coin")
 # 而那通常发生在出事故的当天），所以这一层漏了就等于没校验。
 #
 # mail = 系统邮件的附件（backend/app/mail.py）。那一笔流水同时记 mail_id，指明是哪封。
-SOURCES = ("shop", "iap", "grant", "refund", "starter_pick", "match_reward", "mail", "seven_day_login", "pet_draw")
+SOURCES = ("shop", "iap", "grant", "refund", "starter_pick", "match_reward", "mail", "seven_day_login", "pet_draw", "level_reward")
 
 
 class ShopRejected(RuntimeError):
@@ -488,6 +488,26 @@ async def grant_content(
         # 种族那一行记在同一张订单 / 同一封邮件名下：客服查「种族哪来的」能直接追到最后那一笔。
         await _grant(conn, player_id, set_item.grants, source, order_id)
         unlocked.append(set_item.grants)
+        # A fourth completed race immediately releases a pending Forest breakthrough.
+        race_count = await conn.fetchval(
+            "select count(*) from player_entitlements where player_id = $1"
+            " and revoked_at is null and item_id = any($2::text[])",
+            player_id, ["human", "god", "dark", "undead", "crimson"])
+        if int(race_count or 0) >= 4:
+            # 函数内 import：ranked 在模块顶层 import 了 shop，顶层互相 import 会循环。
+            from app import ranked
+            await conn.execute(
+                "update player_ranked set score = greatest(score, $2),"
+                " breakthrough_ready = false where player_id = $1"
+                " and breakthrough_ready", player_id, ranked.STARFORGE_FLOOR)
+        # Newly completed race joins the loadout automatically until four are selected.
+        await conn.execute(
+            "update players set selected_races = array_append("
+            "coalesce(selected_races, array['human']::text[]), $2)"
+            " where player_id = $1 and not ($2 = any("
+            "coalesce(selected_races, array['human']::text[])))"
+            " and cardinality(coalesce(selected_races, array['human']::text[])) < 4",
+            player_id, set_item.grants)
     return unlocked
 
 

@@ -121,6 +121,12 @@ func _check_revive_with_partner(twin: Dictionary) -> void:
 	st.elapsed = float(twin.get("revive_delay", 5.0)) + 0.1
 	BattleSimTreasures._process_revives(st)
 	_h.expect(_alive_in_group(st, "%s_L0" % TWIN_ID) == 2, "revived", "alive in group after revive: %d" % _alive_in_group(st, "%s_L0" % TWIN_ID))
+	var revived_hp := -1
+	for f: Dictionary in st.enemy:
+		if str(f.get("uid", "")).begins_with(str(victim.uid) + "_revive_"):
+			revived_hp = int(f.get("hp", -1))
+	_h.expect(revived_hp == int(round(float(victim.max_hp) * 0.60)), "revive_60_pct",
+		"twin should revive at 60%% HP; got %d/%d" % [revived_hp, victim.max_hp])
 
 
 func _check_no_revive_across_lanes(twin: Dictionary) -> void:

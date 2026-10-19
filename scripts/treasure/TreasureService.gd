@@ -19,6 +19,16 @@ static func golden_altar_hp_cost() -> int:
 	return 2
 
 
+# Final Excel 的「腐蚀毒针」增伤数值，经 treasures.json 供单机与专服共用。
+static func corrosive_needle_bleed_bonus() -> float:
+	var treasure := treasure_by_id("ctrl_corrosive_needle")
+	var bonus := float(treasure.get("bonus_vs_bleeding", -1.0))
+	if bonus > 0.0 and bonus <= 1.0:
+		return bonus
+	push_error("Corrosive Needle bonus_vs_bleeding missing or invalid in treasures.json")
+	return 0.0
+
+
 static func refresh_cost(index: int, _money_set_active: bool = false) -> int:
 	var i := maxi(index, 0)
 	# 50, 100, 200, 400, then keep doubling with no cap: 800, 1600, ...

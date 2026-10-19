@@ -1543,6 +1543,8 @@ func _finish_replay() -> void:
 	_presentation_director.begin_draining()
 	_finished = true
 	_result = _replay.get("result", {})
+	if GameState.tutorial_mode:
+		TutorialMode.coerce_victory(_result)
 	_return_emitted = true
 	# 运营数据：这一回合的战斗播完了（从开始准备到播完多久）。和服务器的结算对得上 = 玩家看到了结果。
 	AnalyticsService.track("replay_done", {"round": _replay_round,

@@ -5,6 +5,7 @@ const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
 # headless 跑检查场景时新全局类还没进 global_script_class_cache。
 const AiHandover := preload("res://scripts/economy/AiHandover.gd")
 const UnitGrowth := preload("res://scripts/units/UnitGrowth.gd")
+const RacePick := preload("res://scripts/units/RacePick.gd")
 
 signal public_token_request_check_requested(request_id: String)
 signal room_list_request_check_requested(request_id: String)
@@ -25,6 +26,12 @@ const PrepStartupAssets := preload("res://scripts/assets/PrepStartupAssets.gd")
 const StartupLoadingOverlay := preload("res://ui/components/GloryLoadingOverlay.gd")
 const PREP_STARTUP_PATH := "res://scenes/prep/PrepScreen.tscn"
 const STARTUP_LOADING_MODAL_ID := "startup_preparation"
+const TutorialEntryGuide := preload("res://scripts/tutorial/TutorialEntryGuide.gd")
+const TUTORIAL_REWARD_MODAL_ID := "tutorial_level_two_reward"
+var _tutorial_completion_busy := false
+var _tutorial_reward_claim_busy := false
+var _tutorial_followup_guide: Control
+var _tutorial_result_screen: Control
 var _startup_transition_running := false
 var _startup_transition_committing := false
 var _startup_transition_serial := 0
@@ -545,6 +552,10 @@ func _on_resume_completed(payload: Dictionary) -> void:
 	# 活着的重连（网络抖动）内存就是最新状态，不能用可能过期的磁盘存档覆盖它。
 	if _team_run_state_is_fresh():
 		SaveManager.load_run()
+	# The server seat locks the match lineup. Reapply it after loading an older
+	# local save, before any cold-start shop roll on the recovered prep screen.
+	if NetworkService.team_active and not NetworkService.is_host:
+		GameState.run_races = RacePick.resolve(payload.get("my_races", []))
 	# 服务器权威数值覆盖本地
 	# 键名跟着状态信封走（E2）：round_index -> round_id、enemy_team_hp -> rival_team_hp。
 	# 快照现在还多带了连败与 PVE/Boss 计数（C5 缺的那几项）。
@@ -935,9 +946,19 @@ func _show_language_select() -> void:
 func _route_startup() -> void:
 	match PlayerProfile.startup_route():
 		PlayerProfile.STARTUP_MENU:
+			if TutorialMode.checkpoint_is_done():
+				TutorialMode.clear_checkpoint()
 			_show_menu()
 		PlayerProfile.STARTUP_TUTORIAL:
-			_enter_tutorial_from_startup()
+			if TutorialMode.has_checkpoint():
+				if TutorialMode.checkpoint_is_done() and TutorialMode.restore_checkpoint():
+					NetworkService.latest_match_state = {}
+					_show_game_over()
+					_complete_tutorial_reward()
+				else:
+					_enter_tutorial_from_startup()
+			else:
+				_show_menu()
 		_:
 			_show_language_select()
 
@@ -1079,7 +1100,7 @@ func _cancel_startup_preparation(_request_id: String) -> void:
 	ModalStack.pop(STARTUP_LOADING_MODAL_ID, ModalStack.REASON_PROGRAMMATIC)
 	_startup_loading_overlay = null
 	TutorialMode.finish(false)
-	_show_language_select()
+	_show_tutorial_lobby() if PlayerProfile.startup_route() == PlayerProfile.STARTUP_TUTORIAL else _show_language_select()
 
 
 func _retry_startup_preparation(_request_id: String) -> void:
@@ -1099,7 +1120,7 @@ func _select_language(locale: String) -> void:
 		return
 	PlayerProfile.select_language(locale)
 	StartupTrace.mark_first_action("select_language", locale)
-	_enter_tutorial_from_startup()
+	_show_menu()
 
 
 # --- V2 P1-08 / V3 P0-09：返回键与 ui_cancel ---------------------------------
@@ -1219,7 +1240,9 @@ func _show_menu() -> void:
 	# 🔴 **必须先 pets_loaded。** 归属上云之后，没拉到服务端答复时 owned_pets 是空的 ——
 	# 只看 needs_starter_pick 的话，弱网下老玩家会被要求重选一遍三选一。
 	# 拉到之后如果确实要选，由 _on_pets_changed 补一次。
-	if PlayerProfile.pets_loaded and PlayerProfile.needs_starter_pick:
+	if PlayerProfile.startup_route() == PlayerProfile.STARTUP_MENU \
+			and PlayerProfile.pets_loaded and PlayerProfile.needs_starter_pick \
+			and PlayerProfile.tutorial_followup_step.is_empty():
 		_show_starter_pet_gate()
 		return
 	_clear()
@@ -1250,8 +1273,33 @@ func _show_menu() -> void:
 	_menu.bag_requested.connect(_show_bag_screen)
 	_menu.mail_requested.connect(_show_mail_screen)
 	add_child(_menu)
-	# 对局中被顶号时挂着的提示，回到主菜单这一刻才弹（设计文档第五节）。
 	_show_kicked_notice_if_pending()
+	if PlayerProfile.tutorial_reward_pending:
+		_retry_pending_tutorial_reward()
+	if PlayerProfile.startup_route() == PlayerProfile.STARTUP_TUTORIAL \
+			and not TutorialMode.has_checkpoint():
+		var guide := TutorialEntryGuide.new() as Control
+		guide.call("configure", _menu.call("tutorial_casual_target"), "menu")
+		guide.z_index = 1000
+		_menu.add_child(guide)
+		return
+	match PlayerProfile.tutorial_followup_step:
+		"avatar":
+			_attach_tutorial_followup_guide(_menu,
+				_menu.call("tutorial_profile_target"), "reward_avatar")
+			return
+		"reward":
+			_show_profile_screen.call_deferred()
+			return
+		"prep", "pet", "race":
+			_attach_tutorial_followup_guide(_menu,
+				_menu.call("tutorial_prep_target"), "reward_prep")
+			return
+		"casual":
+			_attach_tutorial_followup_guide(_menu,
+				_menu.call("tutorial_casual_target"), "followup_casual")
+			return
+	# 对局中被顶号时挂着的提示，回到主菜单这一刻才弹（设计文档第五节）。
 	# 公告：回主菜单时顺手刷新（有节流），有该弹的登录弹窗就弹（docs/公告系统设计.md）。
 	AnnouncementService.refresh()
 	_queue_announcement_popup()
@@ -1385,7 +1433,11 @@ func _show_settings() -> void:
 
 
 func _on_replay_tutorial_requested() -> void:
-	_enter_tutorial_from_startup()
+	if not PlayerProfile.begin_tutorial():
+		DialogService.info({"title": "新手教学", "body": "暂时无法保存教学进度，请重试。"})
+		return
+	TutorialMode.clear_checkpoint()
+	_show_menu()
 
 # 备战界面（暂时只有宠物系统）。从主菜单「备战」按钮进入，返回回主菜单。
 func _show_pet_screen() -> void:
@@ -1398,6 +1450,46 @@ func _show_pet_screen() -> void:
 	pet_screen.unit_shop_requested.connect(_show_shop_units)
 	_page_back_route = _show_menu
 	add_child(pet_screen)
+	if PlayerProfile.tutorial_followup_step in ["prep", "pet", "race"]:
+		_show_tutorial_prep_guide(pet_screen)
+
+
+func _show_tutorial_prep_guide(pet_screen: Control) -> void:
+	if not PlayerProfile.pets_loaded:
+		await PlayerProfile.pets_changed
+	if not is_instance_valid(pet_screen) or not pet_screen.is_inside_tree():
+		return
+	if PlayerProfile.needs_starter_pick:
+		PlayerProfile.set_tutorial_followup_step("pet")
+		_attach_tutorial_followup_guide(pet_screen,
+			pet_screen.call("tutorial_pet_target"), "starter_pet")
+		pet_screen.connect("starter_picked", _on_tutorial_starter_picked.bind(pet_screen),
+			CONNECT_ONE_SHOT)
+	else:
+		_on_tutorial_starter_picked(pet_screen)
+
+
+func _on_tutorial_starter_picked(pet_screen: Control) -> void:
+	if not is_instance_valid(pet_screen) or not pet_screen.is_inside_tree():
+		return
+	PlayerProfile.set_tutorial_followup_step("race")
+	var race_tab := pet_screen.call("tutorial_race_tab_target") as Button
+	_attach_tutorial_followup_guide(pet_screen, race_tab, "race_tab")
+	if race_tab != null:
+		race_tab.pressed.connect(_on_tutorial_races_opened.bind(pet_screen), CONNECT_ONE_SHOT)
+
+
+func _on_tutorial_races_opened(pet_screen: Control) -> void:
+	if not is_instance_valid(pet_screen) or not pet_screen.is_inside_tree():
+		return
+	if not bool(pet_screen.call("tutorial_unit_ownership_ready")):
+		await pet_screen.unit_ownership_loaded
+	if not is_instance_valid(pet_screen) or not pet_screen.is_inside_tree():
+		return
+	# 10.19：看完种族还有最后一步 —— 回大厅打一局正常排队的休闲 · 青苗（见 _show_menu）。
+	PlayerProfile.set_tutorial_followup_step("casual")
+	_attach_tutorial_followup_guide(pet_screen,
+		pet_screen.call("tutorial_god_target"), "god_progress")
 
 
 # 商城棋子页集齐一族后点「去备战」：打开备战页的种族页签、看那一族。
@@ -2039,6 +2131,75 @@ func _show_profile_screen() -> void:
 	profile.back_requested.connect(_show_menu)
 	_page_back_route = _show_menu
 	add_child(profile)
+	if PlayerProfile.tutorial_followup_step in ["avatar", "reward"]:
+		PlayerProfile.set_tutorial_followup_step("reward")
+		_show_tutorial_level_reward(profile)
+
+
+func _attach_tutorial_followup_guide(owner: Control, target: Control,
+		phase: String) -> void:
+	if target == null or not is_instance_valid(target):
+		return
+	if is_instance_valid(_tutorial_followup_guide):
+		_tutorial_followup_guide.queue_free()
+	var guide := TutorialEntryGuide.new() as Control
+	guide.call("configure", target, phase)
+	guide.z_index = 1000
+	owner.add_child(guide)
+	_tutorial_followup_guide = guide
+
+
+func _show_tutorial_level_reward(profile: Control) -> void:
+	var response: Dictionary = await AccountManager.fetch_progression()
+	if not is_instance_valid(profile) or not profile.is_inside_tree():
+		return
+	if int(response.get("code", 0)) != 200:
+		DialogService.info({"title": "等级奖励", "body": "奖励暂时无法读取，请返回大厅后重试。",
+			"owner": profile})
+		return
+	var state: Dictionary = response.get("body", {})
+	if int(state.get("level", 1)) < 2:
+		DialogService.info({"title": "等级奖励", "body": "等级尚未同步，请返回大厅后重试。",
+			"owner": profile})
+		return
+	if not (state.get("unseen_levels", []) as Array).has(2):
+		if PlayerProfile.set_tutorial_followup_step("prep"):
+			_show_menu()
+		return
+	var reward: Dictionary = {}
+	for raw in state.get("rewards", []):
+		if raw is Dictionary and int(raw.get("level", 0)) == 2:
+			reward = raw
+			break
+	if reward.is_empty():
+		return
+	var dialog_script := load("res://scenes/menu/LevelUpRewardDialog.gd") as GDScript
+	var dialog := dialog_script.new() as Control
+	dialog.call("configure", [2], [reward])
+	dialog.connect("claimed", _on_tutorial_reward_claimed)
+	ModalStack.push(dialog, {"id": TUTORIAL_REWARD_MODAL_ID, "owner": profile,
+		"priority": 100, "dismiss_on_backdrop": false, "persistent": true})
+	_attach_tutorial_followup_guide(dialog,
+		dialog.call("tutorial_reveal_target"), "reward_reveal")
+	dialog.connect("revealed", func() -> void:
+		if is_instance_valid(dialog):
+			_attach_tutorial_followup_guide(dialog,
+				dialog.call("tutorial_claim_target"), "reward_claim"))
+
+
+func _on_tutorial_reward_claimed(_go_prep: bool) -> void:
+	if _tutorial_reward_claim_busy:
+		return
+	_tutorial_reward_claim_busy = true
+	var response: Dictionary = await AccountManager.mark_progression_seen([2])
+	_tutorial_reward_claim_busy = false
+	if int(response.get("code", 0)) / 100 != 2:
+		DialogService.info({"title": "等级奖励", "body": "领取状态暂时无法同步，请再试一次。"})
+		return
+	if not PlayerProfile.set_tutorial_followup_step("prep"):
+		return
+	ModalStack.pop(TUTORIAL_REWARD_MODAL_ID)
+	_show_menu()
 
 # 宠物归属到手之后补判一次三选一。
 #
@@ -2047,6 +2208,8 @@ func _show_profile_screen() -> void:
 # 不补这一下，这两种情况玩家会停在一个没有宠物的主菜单里，而且没有任何提示。
 func _on_pets_changed() -> void:
 	if not PlayerProfile.pets_loaded or not PlayerProfile.needs_starter_pick:
+		return
+	if not PlayerProfile.tutorial_followup_step.is_empty():
 		return
 	# 只在主菜单上拦。对局中、或已经在三选一页上时都不许打断。
 	if _menu == null or not is_instance_valid(_menu) or not _menu.is_inside_tree():
@@ -2073,7 +2236,49 @@ const MatchQueuePanel := preload("res://scenes/menu/MatchQueuePanel.gd")
 
 
 func _show_casual_queue() -> void:
+	if PlayerProfile.startup_route() == PlayerProfile.STARTUP_TUTORIAL:
+		_show_tutorial_lobby()
+		return
 	_show_party_lobby("casual")
+
+
+func _show_tutorial_lobby() -> void:
+	VoiceService.set_mode(VoiceService.Mode.OFF)
+	_clear()
+	var lobby := _instantiate_screen("res://scenes/menu/PartyLobby.tscn")
+	if lobby == null:
+		_show_menu()
+		return
+	lobby.call("configure_tutorial_intro")
+	lobby.connect("back_requested", _show_menu)
+	lobby.connect("tutorial_requested", _show_tutorial_ai_queue)
+	_page_back_route = func() -> void: lobby.call("_leave")
+	add_child(lobby)
+	var guide := TutorialEntryGuide.new() as Control
+	guide.call("configure", lobby.call("tutorial_mode_target"), "lobby_mode")
+	guide.z_index = 1000
+	lobby.add_child(guide)
+	lobby.connect("tutorial_mode_selected", func() -> void:
+		if is_instance_valid(guide) and is_instance_valid(lobby):
+			guide.call("configure", lobby.call("tutorial_start_target"), "lobby_start"))
+
+func _show_tutorial_ai_queue() -> void:
+	if ModalStack.has(MATCH_QUEUE_MODAL_ID):
+		return
+	var panel := MatchQueuePanel.new() as Control
+	panel.call("configure_tutorial_ai")
+	panel.match_ready.connect(func() -> void:
+		ModalStack.pop(MATCH_QUEUE_MODAL_ID)
+		_enter_tutorial_from_startup())
+	panel.dismissed.connect(func() -> void: ModalStack.pop(MATCH_QUEUE_MODAL_ID))
+	panel.tutorial_found.connect(func() -> void:
+		var guide := TutorialEntryGuide.new() as Control
+		guide.call("configure", panel.call("tutorial_accept_target"), "queue_confirm")
+		guide.call("set_extra_focus", panel.call("tutorial_roster_target"))
+		guide.z_index = 1000
+		panel.add_child(guide))
+	ModalStack.push(panel, {"id": MATCH_QUEUE_MODAL_ID, "owner": self,
+		"priority": 40, "dismiss_on_backdrop": false})
 
 
 # 排位。窗口 / 信誉分 / 禁赛的闸全在服务器（`ranked.queue_gate`）——
@@ -2104,6 +2309,14 @@ func _show_party_lobby(mode: String, invite_id: String = "") -> void:
 	lobby.connect("queue_canceled", _on_party_queue_canceled)
 	_page_back_route = func() -> void: lobby.call("_leave")
 	add_child(lobby)
+	if PlayerProfile.tutorial_followup_step == "casual":
+		# 引导的最后一步：休闲默认就是青苗，只指「开始匹配」。一开始排队引导就结束，
+		# 之后是正常的真人匹配，对局里不再有教学。
+		_attach_tutorial_followup_guide(lobby, lobby.call("tutorial_start_target"), "followup_lobby_start")
+		lobby.connect("queue_started", func(_mode: String, _host: bool) -> void:
+			PlayerProfile.set_tutorial_followup_step("")
+			if is_instance_valid(_tutorial_followup_guide):
+				_tutorial_followup_guide.queue_free(), CONNECT_ONE_SHOT)
 
 
 # 队友取消了排队。**无条件 pop**：这个信号只在「本来在排队」时才发，
@@ -2159,7 +2372,7 @@ func _on_match_ready() -> void:
 	if NetworkService.team_active and NetworkService.remote_port != target_port:
 		NetworkService.disconnect_session()
 	elif NetworkService.team_active 			and NetworkService.state == NetworkService.SessionState.READY 			and NetworkService.team_local_slot < 0:
-		NetworkService.team_request_join_matched(_match_queue_mode)
+		NetworkService.team_request_join_matched("ranked" if _match_queue_mode.begins_with("ranked") else "casual")
 		_watch_matched_lobby()
 		return
 	if NetworkService.team_active and NetworkService.team_local_slot >= 0:
@@ -2192,7 +2405,7 @@ func _on_matched_session_changed() -> void:
 	match NetworkService.state:
 		NetworkService.SessionState.READY:
 			_disconnect_matched_handlers()
-			NetworkService.team_request_join_matched(_match_queue_mode)
+			NetworkService.team_request_join_matched("ranked" if _match_queue_mode.begins_with("ranked") else "casual")
 			_watch_matched_lobby()
 		NetworkService.SessionState.FAILED, NetworkService.SessionState.OFFLINE:
 			_disconnect_matched_handlers()
@@ -2498,6 +2711,7 @@ func _show_game_over(local_settlement: Dictionary = {}) -> void:
 	result_screen.title_text = _game_over_title()
 	result_screen.body_text = _game_over_body()
 	result_screen.show_details = bool(_final_settlement_data.get("show_details", false))
+	result_screen.tutorial_result = GameState.tutorial_mode and TutorialMode.step == TutorialMode.Step.DONE
 	result_screen.can_return_room = bool(_final_settlement_data.get("can_return_room", false))
 	result_screen.can_return_party = bool(_final_settlement_data.get("can_return_party", false))
 	result_screen.details_requested.connect(_show_final_settlement)
@@ -2505,6 +2719,8 @@ func _show_game_over(local_settlement: Dictionary = {}) -> void:
 	result_screen.return_party_requested.connect(_return_to_party_room)
 	result_screen.return_menu_requested.connect(_on_return_menu_requested)
 	add_child(result_screen)
+	if GameState.tutorial_mode and TutorialMode.step == TutorialMode.Step.DONE:
+		_tutorial_result_screen = result_screen
 
 func _show_final_settlement() -> void:
 	_clear()
@@ -3445,8 +3661,11 @@ func _show_public_token_in_menu(token_id: String) -> void:
 
 func _on_team3v3_start() -> void:
 	SaveManager.new_run()
-	# 出战种族在开局这一刻定下（GameState.run_races 的注释）。new_run() 刚清过它，所以放在后面。
-	GameState.run_races = PlayerProfile.get_selected_races()
+	# 匹配局以服务端座位名片为准；青苗的临时 1–3 族不等于备战区常驻的 4 族。
+	# 本地房主/离线自测仍使用备战区选择。new_run() 已清空 run_races。
+	GameState.run_races = RacePick.resolve(NetworkService.team_run_races) \
+		if NetworkService.team_active and not NetworkService.is_host \
+		else PlayerProfile.get_selected_races()
 	SaveManager.save_run()
 	GameState.team_mode = true
 	GameState.team_hp = GameState.START_FORMATION_HP
@@ -3750,18 +3969,106 @@ func _on_battle_requested() -> void:
 	_show_battle(loaded_battle_scene)
 
 func _on_return_menu_requested() -> void:
+	if GameState.tutorial_mode and TutorialMode.step == TutorialMode.Step.DONE:
+		if _tutorial_completion_busy:
+			return
+		await _complete_tutorial_reward()
+		if GameState.tutorial_mode:
+			return
 	SaveManager.save_run()
 	NetworkService.disconnect_session()
 	_show_menu()
 
+func _complete_tutorial_reward() -> void:
+	if _tutorial_completion_busy:
+		return
+	_tutorial_completion_busy = true
+	var gained_xp := 0
+	if PlayerProfile.tutorial_reward_eligible:
+		var response: Dictionary = await AccountManager.complete_first_tutorial()
+		var body: Dictionary = response.get("body", {})
+		if int(response.get("code", 0)) / 100 != 2 or int(body.get("level", 1)) < 2:
+			# 10.19：同步失败不再把玩家关在结算页（没网时会永远出不去）。教程算完成、
+			# 奖励记成待补发，回主页时 _retry_pending_tutorial_reward() 自动补。
+			if PlayerProfile.defer_tutorial_reward():
+				TutorialMode.finish(true)
+				_tutorial_completion_busy = false
+				DialogService.info({"title": _startup_text("教学奖励", "Tutorial Reward"), "body":
+					_startup_text("网络暂时连不上，奖励（升到 Lv2 + 神族棋子）会在联网后自动补发。可以先回主页。",
+						"Can't reach the server right now. Your reward (Lv2 + a Divine piece) will be delivered automatically once you're online. You can go to the lobby now.")})
+				return
+			_tutorial_completion_busy = false
+			DialogService.info({"title": "教学奖励", "body":
+				"奖励同步暂时失败。教学进度已保存，点击「返回主菜单」重试。"})
+			return
+		gained_xp = int(body.get("gained_xp", 0))
+		if not PlayerProfile.complete_tutorial_with_followup():
+			_tutorial_completion_busy = false
+			DialogService.info({"title": "教学奖励", "body":
+				"本地引导进度暂时无法保存。教学进度已保留，请重试。"})
+			return
+	else:
+		if not PlayerProfile.set_onboarding_status(PlayerProfile.ONBOARDING_COMPLETED):
+			_tutorial_completion_busy = false
+			return
+	TutorialMode.finish(true)
+	_tutorial_completion_busy = false
+	if is_instance_valid(_tutorial_result_screen) and PlayerProfile.tutorial_followup_step == "avatar":
+		_tutorial_result_screen.call("show_tutorial_level_up", gained_xp)
+		_attach_tutorial_followup_guide(_tutorial_result_screen,
+			_tutorial_result_screen.call("tutorial_menu_target"), "result_menu")
+
+
+# 教程奖励补发（10.19）：结算页同步失败时玩家已先回主页，这里在每次回主页时重试，
+# 失败就 30 秒后再试（只要还在主页）。服务器对已到 Lv2 的账号返回 0，重复调用不会多给。
+var _tutorial_reward_retry_busy := false
+
+func _retry_pending_tutorial_reward() -> void:
+	if _tutorial_reward_retry_busy or not PlayerProfile.tutorial_reward_pending:
+		return
+	_tutorial_reward_retry_busy = true
+	var response: Dictionary = await AccountManager.complete_first_tutorial()
+	_tutorial_reward_retry_busy = false
+	if not PlayerProfile.tutorial_reward_pending:
+		return
+	var body: Dictionary = response.get("body", {})
+	var ok := int(response.get("code", 0)) / 100 == 2 and int(body.get("level", 1)) >= 2
+	var on_menu := _menu != null and is_instance_valid(_menu) and _menu.is_inside_tree()
+	if not ok:
+		if on_menu:
+			get_tree().create_timer(30.0).timeout.connect(func() -> void:
+				if _menu != null and is_instance_valid(_menu) and _menu.is_inside_tree():
+					_retry_pending_tutorial_reward())
+		return
+	if not PlayerProfile.finish_deferred_tutorial_reward():
+		return
+	DialogService.info({"title": _startup_text("教学奖励", "Tutorial Reward"), "body":
+		_startup_text("教学奖励已到账：升到 Lv2，获得神族棋子！点头像看看。",
+			"Tutorial reward delivered: you reached Lv2 and got a Divine piece! Tap your portrait to see it.")})
+	if on_menu:
+		_attach_tutorial_followup_guide(_menu, _menu.call("tutorial_profile_target"), "reward_avatar")
+
+
 func _on_battle_finished(result: Dictionary = {}) -> void:
 	if GameState.tutorial_mode:
+		# 人王战后成长 / 阵亡移除与正式局同一处实现，教学里讲的规则才是真的。
+		_apply_post_battle_unit_outcomes(result)
+		GameState.battle_history.append(result)
 		TutorialMode.after_battle(result)
 		if TutorialMode.step == TutorialMode.Step.DONE:
-			var persisted := PlayerProfile.set_onboarding_status(
-				PlayerProfile.ONBOARDING_COMPLETED)
-			TutorialMode.finish(persisted)
-			_show_game_over()
+			# 教学也出完整对战数据（10.19 教程反馈第 6 条）：与离线局同一个 build_local，
+			# 必须在 _show_game_over() 的 _clear() 释放战斗场景之前取回放。
+			var own_replay: Dictionary = _battle._replay_own if is_instance_valid(_battle) else NetworkService.team_replay
+			var rival_replay: Dictionary = _battle._replay_rival if is_instance_valid(_battle) else NetworkService.team_replay_rival
+			var settlement: Dictionary = preload("res://scripts/multiplayer/FinalSettlementData.gd").build_local([own_replay, rival_replay])
+			settlement["completed_round"] = GameState.FINAL_ROUND
+			settlement["outcome"] = TeamOutcome.TEAM_A
+			for seat in settlement.get("seats", []):
+				var seat_slot := int((seat as Dictionary).get("slot", 0))
+				if seat_slot > 0:
+					seat["name"] = TutorialMode.ai_name(seat_slot)
+			_show_game_over(settlement)
+			_complete_tutorial_reward()
 			return
 		_show_prep()
 		return
@@ -3770,6 +4077,8 @@ func _on_battle_finished(result: Dictionary = {}) -> void:
 		return
 
 func _game_over_kind() -> String:
+	if GameState.tutorial_mode:
+		return "win"
 	if GameState.team_mode:
 		if TeamOutcome.is_draw(GameState.team_run_outcome):
 			return "draw"
@@ -3784,6 +4093,8 @@ func _game_over_kind() -> String:
 
 
 func _game_over_title() -> String:
+	if GameState.tutorial_mode:
+		return tr("gameover_final_win")
 	if GameState.team_mode:
 		if TeamOutcome.is_draw(GameState.team_run_outcome):
 			return tr("gameover_final_draw")
@@ -3800,6 +4111,10 @@ func _game_over_title() -> String:
 	return tr("gameover_lost")
 
 func _game_over_body() -> String:
+	if GameState.tutorial_mode:
+		return tr("gameover_body") % [GameState.round_index,
+			tr("gameover_result_win"), GameState.player_formation_hp,
+			GameState.enemy_formation_hp]
 	if GameState.team_mode:
 		var team_result := tr("gameover_result_win") if GameState.team_run_won else tr("gameover_result_lose")
 		if TeamOutcome.is_draw(GameState.team_run_outcome):
@@ -3901,4 +4216,5 @@ func _start_treasure_for_completed_round(completed_round: int) -> void:
 		"round": completed_round,
 		"candidates": candidates,
 		"refresh_index": 0,
+		"remaining": RoundService.treasure_pick_count(completed_round),
 	}

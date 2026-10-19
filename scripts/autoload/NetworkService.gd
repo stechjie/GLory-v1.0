@@ -558,6 +558,9 @@ var team_room_id: int:
 		return _session.team_room_id
 	set(value):
 		_session.team_room_id = value
+# The server's per-seat lineup for this match (Seedling may differ from the
+# four permanent prep races). Never infer it from the profile on a client.
+var team_run_races: Array[String] = []
 # --- 断线重连（客户端） ---
 # 服务器签发的会话 token（重连凭证，非账号）
 var session_token: String:
@@ -1591,7 +1594,9 @@ func _cleanup_matched_rooms() -> void:
 			continue
 		var states: Array = room.get("slot_states", [])
 		# 排位不凭空填 AI；尚未开局就缺员时明确结束等待，不生成战报。
-		if str(room.get("mode", "casual")) == "ranked" and (states.size() < TEAM_SLOTS or states.has("empty")):
+		# 例外：AI 补位的房间（ai_filled）本来就有 AI，缺的那个真人也用 AI 顶上，照常开局。
+		if str(room.get("mode", "casual")) == "ranked" and not bool(room.get("ai_filled", false)) \
+				and (states.size() < TEAM_SLOTS or states.has("empty")):
 			_log_room_progress(room, "ranked_entry_timeout")
 			_room_close(room, "ranked_entry_timeout")
 			continue
@@ -1838,6 +1843,10 @@ func _rpc_result_ack(battle_id: String) -> void:
 	if str(room.get("state", "")) == ROOM_RESULT and _room_result_acks_complete(room):
 		_room_begin_next_prep(room)
 
+func _room_final_round(room: Dictionary) -> int:
+	return 13 if str(room.get("ruleset", "normal")) == "seedling" else 21
+
+
 func _room_begin_next_prep(room: Dictionary) -> void:
 	# 对局已结束（最终局打完）就不再开新回合，避免服务器把回合推过 FINAL_ROUND、
 	# 与封顶在 21 的客户端分叉，导致客户端等一个对不上号的 match_state 死循环。
@@ -1862,7 +1871,7 @@ func _room_begin_next_prep(room: Dictionary) -> void:
 	# round_index 封顶到 FINAL_ROUND，和客户端一致（客户端从 match_state 拿的是 min(+1, 21)）。
 	# 提前算出来：下面摇的商店属于**即将开始的那一轮**，而档位曲线是按回合走的，
 	# 用自增前的旧值会让整条曲线慢一轮（第 5 回合才拿到第 4 回合的档位分布）。
-	var next_round := mini(int(room.get("round_index", 1)) + 1, GameState.FINAL_ROUND)
+	var next_round := mini(int(room.get("round_index", 1)) + 1, _room_final_round(room))
 	# 账本的按回合部分同样重置，并给每个座位摇一份新商店（P1）。
 	# 金币与 roster **不重置** —— 那是跨回合累积的。
 	if _economy_action_enabled("upgrade_harvest_tech"):
@@ -2297,6 +2306,9 @@ func _room_start_authoritative(room: Dictionary) -> void:
 	room["initial_seats"] = room.get("slot_states", []).duplicate()
 	room["initial_leader"] = int(room.get("leader_slot", 0))
 	_touch_room(room)
+	# 10.18：新局第一轮从零开始。PREP 阶段提交的棋盘不带进新局
+	# （_room_maybe_start_round 不再清 boards，见同批改动）。
+	room.boards = {}
 	# 🔴 大厅 → 备战。**这一行是整个开局的关键**：少了它服务器停在 LOBBY，
 	# 而下面的 _rpc_team_start 已经广播出去 —— 客户端进了对局，服务器以为还在大厅。
 	# 2026-09-22 第 1 步加 match_uid 时手滑删掉过一次，门禁没覆盖大厅→备战所以一路绿；
@@ -2380,6 +2392,10 @@ func _tick_prep_deadlines(now: float) -> void:
 					_reconnect_service.apply_ai_takeover(room, slot)
 			room.ready[slot] = true
 		_room_maybe_start_round(room)
+		# 房间若已被推进 ROOM_BATTLE（有人先准备），_room_maybe_start_round 首行就早退、
+		# 不会触发 finalize；补一次，让刚转 dummy 的座位立刻解锁，不必再等 30s 看门狗。
+		if str(room.get("state", ROOM_LOBBY)) == ROOM_BATTLE:
+			_room_try_finalize_boards(room)
 
 func _valid_timeout_buy(room: Dictionary, slot: int, action: String, payload: Dictionary) -> bool:
 	if action != "buy" or not bool(payload.get("timeout_deploy", false)):
@@ -2440,7 +2456,8 @@ func _room_maybe_start_round(room: Dictionary) -> void:
 		return
 	LiveBotEconomy.prepare(room)
 	_set_room_state(room, ROOM_BATTLE)
-	room.boards = {}
+	# 10.18「准备即提交棋盘」：不清 boards —— PREP 阶段提交的要带进 finalize。
+	# 每回合的清理由 _room_begin_next_prep 与结算完成(_publish_match_result)承担。
 	_net_log("PVP round started room=%d round=%d" % [int(room.get("id", 0)), int(room.get("round_index", 1))])
 	for peer_id in (room.get("peer_slot", {}) as Dictionary).keys():
 		if _peer_connected(int(peer_id)):
@@ -2477,7 +2494,7 @@ func _build_room_state(room: Dictionary, slot: int) -> Dictionary:
 	# 给旧值会让客户端从此落后一轮、之后提交全被 wrong_round 拒收（实测确认过）。
 	var round_id := int(room.get("round_index", 1))
 	if str(room.get("state", "")) == ROOM_RESULT:
-		round_id = mini(round_id + 1, GameState.FINAL_ROUND)
+		round_id = mini(round_id + 1, _room_final_round(room))
 	var streak: Array = room.get("team_loss_streak", [0, 0])
 	var replays: Dictionary = room.get("replay_packed", {})
 	var replay_available := not (replays.get("a", PackedByteArray()) as PackedByteArray).is_empty() \
@@ -2487,6 +2504,8 @@ func _build_room_state(room: Dictionary, slot: int) -> Dictionary:
 		"phase": str(room.get("state", ROOM_LOBBY)),
 		"prep_seconds_left": PrepDeadline.remaining(room, _now()),
 		"round_id": round_id,
+		"ruleset": str(room.get("ruleset", "normal")),
+		"final_round": 13 if str(room.get("ruleset", "normal")) == "seedling" else 21,
 		"battle_id": str(room.get("battle_id", "")),
 		"battle_round": int(room.get("round_index", 1)),
 		"asset_prefetch": room.get("asset_prefetch", {}) if bool(room.get("replay_pending", false)) else {},
@@ -2504,6 +2523,7 @@ func _build_room_state(room: Dictionary, slot: int) -> Dictionary:
 		"suspended": bool(room.get("suspended", false)),
 		# --- 本座位身份 ---
 		"my_slot": slot,
+		"my_races": _room_seat_races(room, slot) if slot >= 0 else [],
 		"session_token": str((room.get("seat_tokens", {}) as Dictionary).get(slot, "")),
 		"public_id": str((room.get("seat_public_id", {}) as Dictionary).get(slot, "")),
 		# --- 队伍 ---
@@ -2546,6 +2566,8 @@ func _build_economy_state(room: Dictionary, slot: int) -> Dictionary:
 		"tiger_starup_count": int(prep.get("tiger_starup_count", 0)),
 		"stone_draw_used_round": int(prep.get("stone_draw_used_round", -1)),
 		"stone_draw_count": maxi(0, int(prep.get("stone_draw_count", 0))),
+		"free_stone_claimed": bool(prep.get("free_stone_claimed", false)),
+		"four_star_upgrade_count": int(prep.get("four_star_upgrade_count", 0)),
 		"team_upgrade_stones": _room_team_stones(room, slot).duplicate(true),
 		"shop": {
 			"offer_id": str(shop.get("offer_id", "")),
@@ -3866,6 +3888,12 @@ func _rpc_team_replay(packed: PackedByteArray, packed_rival: PackedByteArray = P
 		_replay_in[battle_id].done["rival"] = rival
 	_try_apply_buffered_replay(battle_id)
 
+# 10.18：取消准备时客户端丢掉的「最后一次提交」缓存。不清的话
+# _rpc_board_rejected 的校准重交会把已经作废的棋盘又发回服务端。
+func clear_last_team_submission() -> void:
+	_last_team_submission = {}
+
+
 func team_submit_board(snapshot: Dictionary) -> void:
 	if not team_active or team_local_slot < 0:
 		return
@@ -3930,11 +3958,15 @@ func _rpc_team_submit_board(slot: int, snapshot: Dictionary) -> void:
 		if room.is_empty() or int((room.get("peer_slot", {}) as Dictionary).get(sender, -1)) != slot:
 			_net_log("board rejected reason=bad_peer_or_slot peer=%d slot=%d" % [sender, slot])
 			return
-		if str(room.get("state", ROOM_LOBBY)) != ROOM_BATTLE:
+		# 10.18「准备即提交棋盘」：PREP 阶段也收。备战期提交先记进 room.boards，
+		# 玩家准备后掉线，其座位仍有棋盘可交，finalize 不必干等他。
+		if str(room.get("state", ROOM_LOBBY)) not in [ROOM_BATTLE, ROOM_PREP]:
 			_net_log("board rejected reason=wrong_state peer=%d slot=%d state=%s" % [sender, slot, str(room.get("state", ""))])
 			return
 		var boards: Dictionary = room.get("boards", {})
-		if boards.has(slot):
+		# BATTLE 阶段一回合一份，重复提交一律拒；PREP 阶段允许覆盖 ——
+		# 「取消准备 → 调整 → 再准备」就是重新提交，以最后一次为准。
+		if boards.has(slot) and str(room.get("state", ROOM_LOBBY)) != ROOM_PREP:
 			_net_log("board rejected reason=duplicate room=%d round=%d slot=%d" % [int(room.get("id", 0)), int(room.get("round_index", 1)), slot])
 			return
 		var validation := NetProtocol.validate_team_snapshot(snapshot, int(room.get("round_index", 1)))
@@ -4427,7 +4459,7 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 		room.pve_completed = int(room.get("pve_completed", 0)) + 1
 	elif kind == "boss":
 		room.boss_completed = int(room.get("boss_completed", 0)) + 1
-	var run_over := hp_a <= 0 or hp_b <= 0 or completed_round >= GameState.FINAL_ROUND
+	var run_over := hp_a <= 0 or hp_b <= 0 or completed_round >= _room_final_round(room)
 	# 记入 room：对局结束后服务器不再开新回合、也不再把第21回合当 final 重算（见
 	# _room_begin_next_prep / _room_compute_and_broadcast_replays），掐断卡死循环。
 	if run_over:
@@ -4436,14 +4468,14 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 	# 双杀且无正面胜负可依时记平局，不再用 `hp_a >= hp_b`（0 >= 0）默认判 A 胜。
 	var outcome := TeamOutcome.run_outcome({
 		"completed_round": completed_round,
-		"final_round": GameState.FINAL_ROUND,
+		"final_round": _room_final_round(room),
 		"hp_a": hp_a,
 		"hp_b": hp_b,
 		"kind": kind,
 		"battle_a_wins": bool(res_a.get("player_wins", false)),
 		"battle_is_draw": bool(res_a.get("is_draw", false)),
 	})
-	var next_round := mini(completed_round + 1, GameState.FINAL_ROUND)
+	var next_round := mini(completed_round + 1, _room_final_round(room))
 	var out := {}
 	var slot_gold: Array = room.get("slot_gold", [])
 	if slot_gold.size() < TEAM_SLOTS:
@@ -4511,12 +4543,14 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 			"last_harvest_round": int(_room_prep(room, slot).get("last_harvest_round", -1)),
 			"stone_draw_used_round": int(_room_prep(room, slot).get("stone_draw_used_round", -1)),
 			"stone_draw_count": maxi(0, int(_room_prep(room, slot).get("stone_draw_count", 0))),
+			"free_stone_claimed": bool(_room_prep(room, slot).get("free_stone_claimed", false)),
+			"four_star_upgrade_count": int(_room_prep(room, slot).get("four_star_upgrade_count", 0)),
 			"team_upgrade_stones": _room_team_stones(room, slot).duplicate(true),
 			"pve_completed": int(room.get("pve_completed", 0)),
 			"boss_completed": int(room.get("boss_completed", 0)),
 			"loss_streak": int(loss_streak[own_team]),
 			"run_over": run_over,
-			"final_round_played": completed_round >= GameState.FINAL_ROUND,
+			"final_round_played": completed_round >= _room_final_round(room),
 			# run_outcome 是权威值（TEAM_A / TEAM_B / DRAW）。
 			# team_run_won 保留为派生的本队视角布尔：平局时两队都不算赢。
 			"run_outcome": outcome,
@@ -4733,22 +4767,28 @@ func _server_compensate_missed_treasure(room: Dictionary, slot: int) -> String:
 	var owned := _room_owned_treasures(room, slot)
 	if owned.size() >= TreasureService.MAX_OWNED:
 		return ""
-	var pool := _server_roll_treasure_candidates(owned, 1)
-	if pool.is_empty():
-		return ""
-	var tid := str(pool[0])
-	owned = _room_grant_owned_treasure(room, slot, tid)
+	var first := ""
 	var receipts: Dictionary = room.get("treasure_compensations", {})
 	var granted: Array = receipts.get(slot, [])
-	if not granted.has(tid):
-		granted.append(tid)
+	for _pick in int(offer.get("remaining", 1)):
+		if owned.size() >= TreasureService.MAX_OWNED:
+			break
+		var pool := _server_roll_treasure_candidates(owned, 1)
+		if pool.is_empty():
+			break
+		var tid := str(pool[0])
+		if first.is_empty():
+			first = tid
+		owned = _room_grant_owned_treasure(room, slot, tid)
+		if not granted.has(tid):
+			granted.append(tid)
 	receipts[slot] = granted
 	room["treasure_compensations"] = receipts
 	(room.get("treasure_offer", {}) as Dictionary).erase(slot)
 	_touch_room(room)
-	_net_log("treasure compensated room=%d round=%d slot=%d tid=%s owned=%d" % [
-		int(room.get("id", 0)), int(offer.get("round", 0)), slot, _log_safe(tid), owned.size()])
-	return tid
+	_net_log("treasure compensated room=%d round=%d slot=%d gained=%d owned=%d" % [
+		int(room.get("id", 0)), int(offer.get("round", 0)), slot, granted.size(), owned.size()])
+	return first
 
 # 发放本回合的宝物候选，并把这份 offer 记进房间。
 # 关键改动：`owned` 从「客户端上报的 treasures」换成「服务端记录的持有列表」——
@@ -4778,9 +4818,12 @@ func _server_pending_treasure(room: Dictionary, slot: int, completed_round: int)
 		offers.erase(slot)
 		room.treasure_offer = offers
 		return TREASURE_OFFER_NONE.duplicate(true)
-	offers[slot] = {"round": completed_round, "candidates": candidates.duplicate(), "refresh_index": 0}
+	var remaining := 2 if str(room.get("ruleset", "normal")) == "seedling" and completed_round in [4, 8] else 1
+	offers[slot] = {"round": completed_round, "candidates": candidates.duplicate(),
+		"refresh_index": 0, "remaining": remaining}
 	room.treasure_offer = offers
-	return {"active": true, "round": completed_round, "candidates": candidates, "refresh_index": 0}
+	return {"active": true, "round": completed_round, "candidates": candidates,
+		"refresh_index": 0, "remaining": remaining}
 
 func _server_roll_treasure_candidates(owned: Array, count: int) -> Array:
 	var pool := []
@@ -5080,6 +5123,7 @@ func reset() -> void:
 	team_active = false
 	team_local_slot = -1
 	team_room_id = 0
+	team_run_races.clear()
 	# 信封位置和上面这几个是**同一类**的每会话状态，必须一起清。
 	#
 	# 2026-08-21 双设备实测撞出的真缺陷：建房 -> 离开 -> 再建房，UI 永远卡在
@@ -5475,6 +5519,13 @@ func _rpc_team_join_matched(public_id: String = "", card: String = "") -> void:
 	if room.is_empty():
 		_rpc_team_action_failed.rpc_id(sender, "server_busy")
 		return
+	var ruleset := BattleCard.ruleset_of(seat_card)
+	var occupied := not (room.get("peer_slot", {}) as Dictionary).is_empty()
+	if occupied and str(room.get("ruleset", "normal")) != ruleset:
+		_rpc_team_action_failed.rpc_id(sender, "ruleset_mismatch")
+		return
+	room["ruleset"] = ruleset
+	_apply_matched_ai_seats(room, seat_card)
 	if str(room.get("state", "")) != ROOM_LOBBY:
 		# 这一局已经开打了（他确认完之后卡了很久才连上来）。
 		# 不是错误路径的终点：座位还留着的话，客户端会走重连那条路。
@@ -5494,6 +5545,41 @@ func _rpc_team_join_matched(public_id: String = "", card: String = "") -> void:
 	# 再要一次「准备」就是把「一个人不点、其他五个干等」这个洞重新开一遍，
 	# 而这一版没有备战倒计时（第二节）。
 	_matched_try_start(room)
+
+# AI 补位（2026-10-19，backend/app/matchmaking.py「人少时 AI 补位」）：账号服务器凑不满 6 个
+# 真人时，把空座位连同 AI 的昵称 / 头像写进名片（ai 字段）。第一个带着它来的人建房时就把
+# 这些座位放上 AI，真人到齐就开局 —— 不再干等 MATCHED_FILL_TIMEOUT_SEC。
+# 每张名片上的 ai 是同一份，所以只认第一次。昵称头像进 seat_profiles，备战 / 结算看到同一个名字；
+# 账号 id 不进（seat_pid 留空），战报里这几个座位就是 AI，不会被当成某个玩家。
+func _apply_matched_ai_seats(room: Dictionary, seat_card: Dictionary) -> void:
+	if bool(room.get("ai_seats_applied", false)):
+		return
+	var ai_seats := BattleCard.ai_seats_of(seat_card)
+	if ai_seats.is_empty():
+		return
+	room["ai_seats_applied"] = true
+	room["ai_filled"] = true
+	var states: Array = room.get("slot_states", [])
+	var profiles: Dictionary = room.get("seat_profiles", {})
+	var filled := 0
+	for entry in ai_seats:
+		var slot := int((entry as Dictionary).get("slot", -1))
+		if slot < 0 or slot >= states.size() or str(states[slot]) != "empty":
+			continue
+		states[slot] = "dummy"
+		var avatar := str((entry as Dictionary).get("avatar", ""))
+		profiles[slot] = {"player_name": str((entry as Dictionary).get("name", "")),
+			"avatar": ("preset:%s" % avatar) if not avatar.is_empty() else "", "avatar_frame": ""}
+		filled += 1
+	room.slot_states = states
+	room["seat_profiles"] = profiles
+	for entry in ai_seats:
+		var slot := int((entry as Dictionary).get("slot", -1))
+		if slot >= 0 and slot < states.size() and str(states[slot]) == "dummy":
+			_ensure_dummy_seat_pet(room, slot)
+	_net_log("matched room ai fill id=%d match=%s -> %d AI 座位" % [
+		int(room.get("id", 0)), str(room.get("match_uid", "")), filled])
+
 
 # 匹配来的人坐哪：名片上带了本队位置（组队房里选的，10-08）而且那个位置空着，就坐那里；
 # 否则坐本队第一个空位（原来的做法，也是旧名片 / 旧账号服务器的路径）。
@@ -5546,7 +5632,9 @@ func _matched_try_start(room: Dictionary) -> void:
 		if i >= states.size() or str(states[i]) not in ["player", "dummy"]:
 			_log_room_progress(room, "matched_waiting_for_seats")
 			return
-		if str(room.get("mode", "casual")) == "ranked" and str(states[i]) == "dummy":
+		# 排位原本不许 AI；账号服务器明确安排了 AI 补位的房间（ai_filled）除外。
+		if str(room.get("mode", "casual")) == "ranked" and str(states[i]) == "dummy" \
+				and not bool(room.get("ai_filled", false)):
 			_log_room_progress(room, "ranked_invalid_ai_seat")
 			return
 	for i in TEAM_SLOTS:
@@ -5991,8 +6079,10 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 	_apply_server_shop((payload.get("economy", {}) as Dictionary))
 
 	team_active = true
+	GameState.FINAL_ROUND = int(payload.get("final_round", 21))
 	team_room_id = int(envelope.get("room_id", 0))
 	team_local_slot = int(payload.get("my_slot", -1))
+	team_run_races = RacePick.resolve(payload.get("my_races", [])) if team_local_slot >= 0 else []
 	team_leader_slot = int(payload.get("leader_slot", 0))
 	team_slot_states = (payload.get("slot_states", []) as Array).duplicate()
 	var team_discount := bool(payload.get("team_clearance_sale", false))
@@ -6535,7 +6625,8 @@ func _tx_replay(sender: int, rid: String, entry: Dictionary) -> void:
 	match str(entry.get("kind", "")):
 		"treasure_choice":
 			if ok:
-				_rpc_treasure_granted.rpc_id(sender, rid, str(result.get("tid", "")), result.get("owned", []))
+				_rpc_treasure_granted.rpc_id(sender, rid, str(result.get("tid", "")),
+					result.get("owned", []), result.get("next_offer", {}))
 			else:
 				_rpc_treasure_denied.rpc_id(sender, rid, str(result.get("reason", "denied")))
 		"treasure_refresh":
@@ -6714,6 +6805,7 @@ func _economy_ctx(room: Dictionary, slot: int, action: String) -> Dictionary:
 		"roster_cap": GameConstants.CELL_COUNT + GameState.BENCH_SLOTS,
 		"merc_cap": GameState.MERCENARY_SLOTS,
 		"round_index": int(room.get("round_index", 1)),
+		"ruleset": str(room.get("ruleset", "normal")),
 		"team_stones": _room_team_stones(room, slot),
 		"carrot_bonus_rate": PetService.carrot_bonus_rate(_room_seat_pet(room, slot)),
 		"tiger_growth_rate": PetService.tier1_growth_rate(_room_seat_pet(room, slot)),
@@ -6914,6 +7006,8 @@ func _apply_carrot_state(state: Dictionary) -> void:
 	last_carrot_harvest_gain = maxi(0, int(state.get("last_harvest_gain", 0)))
 	GameState.stone_draw_used_round = int(state.get("stone_draw_used_round", GameState.stone_draw_used_round))
 	GameState.stone_draw_count = maxi(0, int(state.get("stone_draw_count", GameState.stone_draw_count)))
+	GameState.free_stone_claimed = bool(state.get("free_stone_claimed", GameState.free_stone_claimed))
+	GameState.four_star_upgrade_count = maxi(0, int(state.get("four_star_upgrade_count", GameState.four_star_upgrade_count)))
 	var stones: Variant = state.get("team_upgrade_stones", {})
 	if typeof(stones) == TYPE_DICTIONARY:
 		GameState.team_upgrade_stones = (stones as Dictionary).duplicate(true)
@@ -6979,11 +7073,13 @@ func _apply_carrot_receipt(receipt: Dictionary) -> void:
 			GameState.carrots = int(result.get("carrots", GameState.carrots))
 			GameState.stone_draw_used_round = int(result.get("stone_draw_used_round", GameState.stone_draw_used_round))
 			GameState.stone_draw_count = maxi(0, int(result.get("stone_draw_count", GameState.stone_draw_count)))
+			GameState.free_stone_claimed = bool(result.get("free_stone_claimed", GameState.free_stone_claimed))
 			var stones: Variant = result.get("team_upgrade_stones", {})
 			if typeof(stones) == TYPE_DICTIONARY:
 				GameState.team_upgrade_stones = (stones as Dictionary).duplicate(true)
 		"use_upgrade_stone":
 			var upgraded_uid := str(result.get("uid", ""))
+			GameState.four_star_upgrade_count = maxi(0, int(result.get("four_star_upgrade_count", GameState.four_star_upgrade_count)))
 			var already_applied := false
 			for slots in [GameState.board_slots, GameState.bench_slots]:
 				for cell in slots:
@@ -7184,7 +7280,8 @@ func _rpc_treasure_choice(request_id: String, tid: String) -> void:
 	if not bool(outcome.get("ok", false)):
 		_rpc_treasure_denied.rpc_id(sender, request_id, str(outcome.get("reason", "denied")))
 		return
-	_rpc_treasure_granted.rpc_id(sender, request_id, tid, outcome.get("owned", []))
+	_rpc_treasure_granted.rpc_id(sender, request_id, tid, outcome.get("owned", []),
+		outcome.get("next_offer", {}))
 	_broadcast_room_lobby(room)
 
 # 选择裁决与 RPC 分开（和本文件其余 _rpc_X → _room_X 的分层一致），
@@ -7213,13 +7310,24 @@ func _room_apply_treasure_choice(room: Dictionary, slot: int, tid: String) -> Di
 	# 发放与「胡牌手」联动的补正都在 _room_grant_owned_treasure 里，
 	# 和掉线补偿共用同一份实现。
 	owned = _room_grant_owned_treasure(room, slot, tid)
-	# offer 用后即弃：同一轮不能再选第二件，重复请求会落到 no_offer。
-	offers.erase(slot)
+	# 青苗第 4/8 回合各需实际获得两件，第一次领取后继续发下一份候选。
+	var next_offer := {}
+	var remaining := maxi(0, int(offer.get("remaining", 1)) - 1)
+	if remaining > 0 and owned.size() < TreasureService.MAX_OWNED:
+		var next_candidates := _server_roll_treasure_candidates(owned, 3)
+		if not next_candidates.is_empty():
+			next_offer = {"active": true, "round": int(offer.get("round", 0)),
+				"candidates": next_candidates, "refresh_index": 0,
+				"remaining": remaining}
+	if next_offer.is_empty():
+		offers.erase(slot)
+	else:
+		offers[slot] = next_offer.duplicate(true)
 	room.treasure_offer = offers
 	_touch_room(room)
 	_net_log("treasure granted room=%d round=%d slot=%d tid=%s owned=%d" % [
 		int(room.get("id", 0)), int(offer.get("round", 0)), slot, tid, owned.size()])
-	return {"ok": true, "reason": "", "owned": owned}
+	return {"ok": true, "reason": "", "owned": owned, "next_offer": next_offer}
 
 @rpc("any_peer", "call_remote", "reliable")
 func _rpc_treasure_refresh(request_id: String) -> void:
@@ -7262,6 +7370,7 @@ func _room_apply_treasure_refresh(room: Dictionary, slot: int) -> Dictionary:
 		"round": int(offer.get("round", 0)),
 		"candidates": candidates.duplicate(),
 		"refresh_index": next_index,
+		"remaining": int(offer.get("remaining", 1)),
 	}
 	room.treasure_offer = offers
 	_touch_room(room)
@@ -7275,10 +7384,15 @@ func _rpc_treasure_offer(request_id: String, candidates: Array, refresh_index: i
 	treasure_offer_changed.emit(candidates, refresh_index)
 
 @rpc("authority", "call_remote", "reliable")
-func _rpc_treasure_granted(request_id: String, tid: String, owned: Array) -> void:
+func _rpc_treasure_granted(request_id: String, tid: String, owned: Array,
+		next_offer: Dictionary = {}) -> void:
 	if not _tx_consume(request_id):
 		return
 	treasure_granted.emit(tid, owned)
+	if not next_offer.is_empty():
+		GameState.pending_treasure = next_offer.duplicate(true)
+		treasure_offer_changed.emit(next_offer.get("candidates", []),
+			int(next_offer.get("refresh_index", 0)))
 
 @rpc("authority", "call_remote", "reliable")
 func _rpc_treasure_denied(request_id: String, reason: String) -> void:
@@ -7758,6 +7872,15 @@ func _rpc_team_set_ready(slot: int, value: bool) -> void:
 		var ready: Array = room.get("ready", [])
 		ready[slot] = value
 		room.ready = ready
+		# 10.18：取消准备 = 作废已提交的棋盘。必须连 last_board 一起清 ——
+		# 否则 30s board 看门狗会拿 _restamp_cached_board 把作废的那份补交回来。
+		if not value and str(room.get("state", ROOM_LOBBY)) == ROOM_PREP:
+			var dropped_boards: Dictionary = room.get("boards", {})
+			dropped_boards.erase(slot)
+			room.boards = dropped_boards
+			var dropped_last: Dictionary = room.get("last_board", {})
+			dropped_last.erase(slot)
+			room.last_board = dropped_last
 		_touch_room(room)
 		_net_log("ready received room=%d peer=%d slot=%d ready=%s round=%d" % [int(room.get("id", 0)), sender, slot, str(value), int(room.get("round_index", 1))])
 		_log_room_progress(room, "ready_changed_slot_%d" % slot)
@@ -7769,6 +7892,9 @@ func _rpc_team_set_ready(slot: int, value: bool) -> void:
 	if int(_team_peer_slot.get(multiplayer.get_remote_sender_id(), -1)) != slot:
 		return
 	team_ready[slot] = value
+	# 10.18：本地房主路径同样「取消准备 = 作废提交」（收集在 _team_boards_collecting）。
+	if not value:
+		_team_boards_collecting.erase(slot)
 	_team_broadcast_lobby()
 	team_lobby_changed.emit()
 	_team_maybe_start_round()

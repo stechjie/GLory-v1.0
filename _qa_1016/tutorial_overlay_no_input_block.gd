@@ -64,10 +64,10 @@ const RESOLUTIONS: Array = [
 	{"name": "iPhone 灵动岛在左 1748x804", "size": Vector2i(1748, 804), "insets": Vector4(114, 0, 0, 38)},
 ]
 
-# 契约：覆盖层直接子节点只有这 4 个。**刻意写成门禁自己的字面量** —— 读实现里的
+# 契约：覆盖层直接子节点只有这 5 个。**刻意写成门禁自己的字面量** —— 读实现里的
 # 常量就成了同义反复（改常量两边一起动，永远对得上）。多一个就是要红：历史形状是
 # 「又加回来一个吃点击的节点」（透明热点就是那一个）。
-const EXPECT_OVERLAY_CHILDREN := 4
+const EXPECT_OVERLAY_CHILDREN := 5
 
 # 「点一下继续」必须**就是**这 4 步（枚举本身没有变过，这里直接静态引用是安全的）。
 const TAP_STEPS := [
@@ -167,13 +167,16 @@ func _check_resolution(entry: Dictionary) -> void:
 func _check_overlay_children(overlay: Control, label: String) -> void:
 	var children := overlay.get_children()
 	_h.expect(children.size() == EXPECT_OVERLAY_CHILDREN, "overlay_child_count",
-		"%s：覆盖层直接子节点有 %d 个，契约是 %d 个（遮罩 / 箭头 / 气泡 / 跳过键）—— "
+		"%s：覆盖层直接子节点有 %d 个，契约是 %d 个（遮罩 / 金光 / 狗狗 / 气泡 / 跳过键）—— "
 			% [label, children.size(), EXPECT_OVERLAY_CHILDREN]
 		+ "多出来的那一个多半又在吃点击（历史形状：透明热点 `_hotspot`，Button + STOP，"
 		+ "alpha=0 也照样在命中测试里胜出）")
 	_h.expect(overlay.mouse_filter == Control.MOUSE_FILTER_IGNORE, "overlay_blocks_input",
 		"%s：覆盖层根节点 mouse_filter=%d（应为 IGNORE）—— 整层都会吃点击"
 			% [label, overlay.mouse_filter])
+	_h.expect(children.has(TutorialMode._light) and children.has(TutorialMode._guide)
+		and children.has(TutorialMode._bubble) and children.has(TutorialMode._skip_btn),
+		"overlay_children_wrong", "%s：覆盖层缺少金光、狗狗、气泡或跳过键" % label)
 
 	var skip: Control = TutorialMode._skip_btn
 	if skip == null or not is_instance_valid(skip):

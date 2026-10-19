@@ -20,11 +20,12 @@ const STAR4_DEFAULT_MULTIPLIER := 1.15
 # 真正的定义在 GameConstants —— 服务端账本（EconomyLedger）也要读同一份，
 # 而它按设计不能读 GameState。这里保留同名常量只是为了不动那些调用点。
 const STAR_UPGRADE_COPIES := GameConstants.STAR_UPGRADE_COPIES
-const FINAL_ROUND := 21
+var FINAL_ROUND := 21
 const BATTLE_HARD_TIMEOUT_SEC := 180.0
 const SHOP_UNIT_SLOTS := 4
 const BENCH_SLOTS := 8
 const MERCENARY_SLOTS := 8
+const TUTORIAL_CARROT_CAPACITY := 200
 
 var round_index := 1
 var player_formation_hp := START_FORMATION_HP
@@ -45,6 +46,8 @@ var last_harvest_round := -1
 var tiger_starup_count := 0
 var stone_draw_used_round := -1
 var stone_draw_count := 0
+var free_stone_claimed := false
+var four_star_upgrade_count := 0
 
 # --- 棋子唯一标识（P3 血统）---------------------------------------------------
 # 每一枚玩家棋子从买入那一刻起带一个本局唯一的 uid，合成时由存活的那一枚继承，
@@ -116,6 +119,7 @@ func _ready() -> void:
 func reset_run() -> void:
 	tutorial_mode = false
 	round_index = 1
+	FINAL_ROUND = 21
 	player_formation_hp = START_FORMATION_HP
 	enemy_formation_hp = START_FORMATION_HP
 	gold = START_GOLD
@@ -129,6 +133,8 @@ func reset_run() -> void:
 	tiger_starup_count = 0
 	stone_draw_used_round = -1
 	stone_draw_count = 0
+	free_stone_claimed = false
+	four_star_upgrade_count = 0
 	team_upgrade_stones = CarrotEconomyRules.empty_stones()
 	new_run_nonce()
 	board_slots.resize(GameConstants.CELL_COUNT)
@@ -167,8 +173,9 @@ func copies_to_upgrade(star: int) -> int:
 	return GameConstants.copies_to_upgrade(star)
 
 func carrot_capacity() -> int:
-	return CarrotEconomyRules.capacity_for_spent(merc_carrots_spent_total,
+	var capacity := CarrotEconomyRules.capacity_for_spent(merc_carrots_spent_total,
 		PetService.carrot_bonus_rate(PlayerProfile.get_active()))
+	return maxi(capacity, TUTORIAL_CARROT_CAPACITY) if tutorial_mode else capacity
 
 func carrot_production() -> int:
 	return CarrotEconomyRules.total_production(harvest_tech_level, merc_carrots_spent_total,
@@ -192,12 +199,23 @@ func carrot_next_threshold() -> int:
 
 ## Idempotent per-round harvest. The caller may safely invoke this whenever the
 ## prep scene is entered; only the first call for a round can change state.
+func carrot_harvest_preview() -> Dictionary:
+	if not tutorial_mode:
+		return CarrotEconomyRules.harvest(carrots, merc_carrots_spent_total, harvest_tech_level,
+			PetService.carrot_bonus_rate(PlayerProfile.get_active()))
+	# The tutorial's 100-carrot gift must not be clamped back to the normal starter
+	# capacity on the next round. This larger capacity applies only to the lesson.
+	var capacity := carrot_capacity()
+	var production := carrot_production()
+	var gain := mini(production, maxi(0, capacity - carrots))
+	return {"before": carrots, "gain": gain, "overflow": production - gain,
+		"after": carrots + gain, "production": production, "capacity": capacity}
+
 func harvest_carrots_for_round(round_number: int) -> Dictionary:
 	if round_number < 1 or last_harvest_round >= round_number:
 		return {"ok": false, "already_harvested": true, "gain": 0, "overflow": 0,
 			"after": carrots, "capacity": carrot_capacity(), "production": carrot_production()}
-	var result := CarrotEconomyRules.harvest(carrots, merc_carrots_spent_total, harvest_tech_level,
-		PetService.carrot_bonus_rate(PlayerProfile.get_active()))
+	var result := carrot_harvest_preview()
 	carrots = int(result.after)
 	last_harvest_round = round_number
 	return {"ok": true, "already_harvested": false, "gain": int(result.gain),
@@ -232,6 +250,8 @@ func can_draw_upgrade_stone(round_number: int) -> bool:
 	return stone_draw_used_round != round_number
 
 func upgrade_stone_draw_cost() -> int:
+	if FINAL_ROUND == 13 and round_index >= 6 and not free_stone_claimed:
+		return 0
 	return CarrotEconomyRules.stone_cost_for_draw(stone_draw_count)
 
 func apply_team_stone(stone_type: String) -> void:
@@ -264,7 +284,7 @@ func four_star_check(cell: Variant) -> Dictionary:
 		return {"ok": false, "error": "bad_element", "stone": stone}
 	if int(team_upgrade_stones.get(stone, 0)) <= 0:
 		return {"ok": false, "error": "no_stone", "stone": stone}
-	var cost := CarrotEconomyRules.four_star_gold(int((c.get("def", {}) as Dictionary).get("tier", 0)))
+	var cost := CarrotEconomyRules.seedling_four_star_gold(four_star_upgrade_count) if FINAL_ROUND == 13 else CarrotEconomyRules.four_star_gold(int((c.get("def", {}) as Dictionary).get("tier", 0)))
 	if cost < 0:
 		return {"ok": false, "error": "bad_tier", "stone": stone}
 	if gold < cost:
@@ -282,6 +302,8 @@ func upgrade_cell_to_four_star(cell: Variant) -> Dictionary:
 	spend_gold(int(check["cost"]))
 	team_upgrade_stones[stone] = int(team_upgrade_stones.get(stone, 0)) - 1
 	(cell as Dictionary)["star"] = MAX_UNIT_STAR
+	if FINAL_ROUND == 13:
+		four_star_upgrade_count += 1
 	return {"ok": true, "error": "", "stone": stone}
 
 ## 星级属性系数。unit_def 只在 4 星时才被读到（取 `star4_multiplier` 覆写）——

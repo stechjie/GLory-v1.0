@@ -130,6 +130,20 @@ class Settings(BaseSettings):
     # 读它的只有两道闸，都走 ranked.accepting_now()。
     ranked_window_always_open: bool = False
 
+    # --- 排位全天开放（2026-10-19）---------------------------------------------
+    #
+    # 玩家还少，只开 19:00–23:00 的话新玩家多数时候根本排不了。True = 全天都能排位；
+    # 人多了改回 False 就恢复时间窗口。与上面那个测试开关不同，这是**产品配置**：
+    # /v1/match/window 会如实说「现在开着」，客户端不会出现倒计时与行为对不上。
+    ranked_all_day: bool = True
+
+    # --- 人少时 AI 补位（app/matchmaking.py「人少时 AI 补位」那节）--------------
+    #
+    # True = 等得最久的人满 match_ai_fill_after_sec 秒还凑不满 6 个真人，就用 AI 补满开局。
+    # 休闲与排位都适用。人多了可以关掉，或把时限调长。
+    match_ai_fill: bool = True
+    match_ai_fill_after_sec: float = 10.0
+
     # --- 组队开局人数（app/party.py 的 startable_sizes）------------------------
     #
     # True = 组队房只能单人或满 3 人开始匹配（docs/排位系统设计.md 第五节「不做 2 人车队」：

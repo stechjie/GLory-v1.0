@@ -106,6 +106,40 @@ def test_five_tier_migration_preserves_settlement_guards() -> None:
         assert f"r.score >= {floor} then {tier}" in SQL_028
 
 
+def test_latest_settlement_uses_the_same_floors_as_the_game() -> None:
+    """🔴 SQL 调不到 ranked.py，赛季归档的门槛是另抄的一份（10-15 改段位时发现）。
+
+    最新那份 settle_season 必须和 TIER_FLOORS 一致，否则结算按旧段位发奖。
+    以后再改段位：新加一个迁移，把这里的两处 038 文件名换成它。
+    """
+    sql = (REPO / "database" / "038_ranked_tier_floors.sql").read_text(encoding="utf-8")
+    for tier in range(ranked.MAX_TIER, 0, -1):
+        assert f"r.score >= {ranked.TIER_FLOORS[tier]} then {tier}" in sql
+    # 028 的那几道硬规则不能在重定义时丢掉。
+    for guard in ("settled_at is null", "on conflict (season, player_id) do nothing",
+                  "h.games > 0", "season = p_season + 1", "where season = p_season and tier > 4"):
+        assert guard in sql
+    migrations = sorted(p.name for p in (REPO / "database").glob("[0-9][0-9][0-9]_*.sql")
+                        if "function settle_season" in p.read_text(encoding="utf-8"))
+    assert migrations[-1] == "038_ranked_tier_floors.sql", "有更新的迁移重定义了 settle_season，这条测试要跟过去"
+
+
+def test_latest_stage_floor_trigger_matches_the_game() -> None:
+    """🔴 森卫 / 星铸永久保底在 SQL 触发器里另抄了一份（10-19：037_progression 按旧门槛写死 300）。"""
+    migrations = sorted(p for p in (REPO / "database").glob("[0-9][0-9][0-9]_*.sql")
+                        if "function keep_ranked_stage_floor" in p.read_text(encoding="utf-8"))
+    assert migrations[-1].name == "038_ranked_tier_floors.sql", "有更新的迁移重定义了保底触发器，这条测试要跟过去"
+    sql = migrations[-1].read_text(encoding="utf-8")
+    trigger = sql[sql.index("function keep_ranked_stage_floor"):]
+    assert f"new.score >= {ranked.FOREST_FLOOR};" in trigger
+    assert f"new.score >= {ranked.STARFORGE_FLOOR};" in trigger
+    assert f"greatest(new.score, {ranked.STARFORGE_FLOOR})" in trigger
+    assert f"greatest(new.score, {ranked.FOREST_FLOOR})" in trigger
+    # 先换函数、再补记：反过来的话，补记那条 update 会被旧触发器把 200–299 分的人抬到 300。
+    assert sql.index("function keep_ranked_stage_floor") < sql.index("set breakthrough_complete = true")
+    assert f"where score >= {ranked.STARFORGE_FLOOR} and not breakthrough_complete" in sql
+
+
 def test_rewards_only_go_to_people_who_played() -> None:
     """一局没打就收到「赛季奖励」是噪音。"""
     assert "h.games > 0" in _settle_body()
@@ -266,4 +300,4 @@ def test_tier_uses_the_single_conversion() -> None:
     src = (REPO / "backend" / "app" / "loadout.py").read_text(encoding="utf-8")
     assert "ranked.tier_of(" in src
     assert "// 100" not in src and "/ 100" not in src
-    assert ranked.tier_of(0) == 0 and ranked.tier_of(700) == 4
+    assert ranked.tier_of(0) == 0 and ranked.tier_of(800) == 4

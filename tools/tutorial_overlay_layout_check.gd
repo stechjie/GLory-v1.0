@@ -125,12 +125,13 @@ func _check_resolution(entry: Dictionary) -> void:
 
 		# --- 不出界 -----------------------------------------------------------
 		_expect_inside(TutorialMode._bubble.get_global_rect(), safe, where, "气泡")
-		_expect_inside(_arrow_rect(), safe, where, "箭头")
+		_expect_inside(_guide_rect(), safe, where, "狗狗")
 		_expect_inside(TutorialMode._skip_btn.get_global_rect(), safe, where, "跳过按钮")
 
 		# --- 目标可见面积 ≥90% ------------------------------------------------
 		var target_area := target_rect.size.x * target_rect.size.y
-		var covered := _overlap(TutorialMode._bubble.get_global_rect(), target_rect)
+		var covered := _overlap(TutorialMode._bubble.get_global_rect(), target_rect) \
+			+ _overlap(_guide_rect(), target_rect)
 		var visible_ratio := 1.0 - covered / maxf(1.0, target_area)
 		_h.expect(visible_ratio >= MIN_TARGET_VISIBLE, "target_occluded",
 			"%s：气泡盖住了目标 %.1f%%，可见面积只剩 %.1f%%（要求 ≥%.0f%%）"
@@ -143,12 +144,16 @@ func _check_resolution(entry: Dictionary) -> void:
 		# 四个方向 ×3 个对齐档全部试完仍可能剩下几像素的接缝 ——
 		# 把线画在零，门禁就会因为一条 5px 的窄缝常年红，而按钮其实照样点得到。
 		for blocked in prep.tutorial_target_provider().keep_clear_rects():
-			var hit := _overlap(TutorialMode._bubble.get_global_rect(), blocked)
+			var bubble_hit := _overlap(TutorialMode._bubble.get_global_rect(), blocked)
+			var guide_hit := _overlap(_guide_rect(), blocked)
+			var hit := bubble_hit + guide_hit
 			var blocked_area := maxf(1.0, blocked.size.x * blocked.size.y)
 			_h.expect(hit / blocked_area <= 1.0 - MIN_TARGET_VISIBLE, "keep_clear_occluded",
-				"%s：气泡压住了禁区 %.1f%%（%.0f px² / %.0f px²），上限 %.0f%%"
-					% [where, 100.0 * hit / blocked_area, hit, blocked_area,
-						100.0 * (1.0 - MIN_TARGET_VISIBLE)])
+				"%s：对话或狗狗压住禁区 %.1f%%（气泡 %.0f + 狗狗 %.0f / %.0f px²），上限 %.0f%%；禁区 %s，气泡 %s，狗狗 %s"
+					% [where, 100.0 * hit / blocked_area, bubble_hit, guide_hit,
+						blocked_area, 100.0 * (1.0 - MIN_TARGET_VISIBLE),
+						str(blocked), str(TutorialMode._bubble.get_global_rect()),
+						str(_guide_rect())])
 
 	_h.expect(measured >= 6, "too_few_targets_measured",
 		"%s：只量到 %d 个可解析目标，这一档等于没验" % [label, measured])
@@ -243,11 +248,11 @@ func _expected_safe(canvas: Vector2) -> Rect2:
 	return full.grow(-inset)
 
 
-func _arrow_rect() -> Rect2:
-	var arrow: Control = TutorialMode._arrow
-	if arrow == null or not is_instance_valid(arrow):
+func _guide_rect() -> Rect2:
+	var guide: Control = TutorialMode._guide
+	if guide == null or not is_instance_valid(guide):
 		return Rect2()
-	return arrow.get_global_rect()
+	return guide.get_global_rect()
 
 
 func _expect_inside(rect: Rect2, bounds: Rect2, where: String, what: String) -> void:

@@ -179,4 +179,4 @@ async def my_ranked_reward(
                                 coin_balance_after=int(row["coin_balance_after"]),
                                 tier_before=ranked.tier_of(before), tier_after=after_tier,
                                 tier_progress=ranked.tier_progress(after),
-                                tier_span=ranked.tier_span(after_tier))
+                                tier_span=ranked.progress_span(after))

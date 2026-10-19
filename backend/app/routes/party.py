@@ -9,7 +9,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app import (chat, db, friends, matchmaking, party, party_voice, players, profile, ranked,
+from app import (chat, db, friends, loadout, matchmaking, party, party_voice, players, profile, ranked,
                  realtime, sanctions, service_control, shop, text_guard)
 from app.config import get_settings
 from app.jwt_verify import Claims
@@ -50,6 +50,11 @@ class PetsBody(BaseModel):
 
 class ReadyBody(BaseModel):
     ready: bool
+    races: list[str] | None = None
+
+
+class StartBody(BaseModel):
+    races: list[str] | None = None
 
 
 class KickBody(BaseModel):
@@ -401,7 +406,7 @@ async def mode(body: ModeBody,
         room = party.current().mode(me.player_id, body.mode)
     except party.PartyRejected as exc:
         raise _reject(exc) from None
-    label = "休闲" if body.mode == "casual" else "排位"
+    label = "休闲" if body.mode.startswith("casual") else "排位"
     notice = {"t": "party_notice", "kind": "mode_changed", "mode": body.mode,
               "text": f"房主更换了{label}模式"}
     # 广播房间状态前先给非房主成员推条提示，让客户端弹提示语。
@@ -431,8 +436,20 @@ async def pets(body: PetsBody,
 async def ready(body: ReadyBody,
                 claims: Annotated[Claims, Depends(current_claims)]) -> StateResponse:
     me = await _me(claims)
+    current_room = party.current().of(me.player_id)
+    chosen = None
+    if body.ready and current_room is not None and current_room.mode == "casual":
+        try:
+            chosen = await loadout.seedling_races(me.player_id, body.races)
+        except loadout.LoadoutRejected as exc:
+            raise HTTPException(status_code=409, detail=exc.message) from None
+    elif body.ready and current_room is not None and current_room.mode == "casual_normal":
+        try:
+            await loadout.require_normal_races(me.player_id)
+        except loadout.LoadoutRejected as exc:
+            raise HTTPException(status_code=409, detail=exc.message) from None
     try:
-        room = party.current().set_ready(me.player_id, body.ready)
+        room = party.current().set_ready(me.player_id, body.ready, chosen)
     except party.PartyRejected as exc:
         raise _reject(exc) from None
     await party.current().broadcast(room)
@@ -462,7 +479,7 @@ async def cancel(claims: Annotated[Claims, Depends(current_claims)]) -> StateRes
 
 
 @router.post("/start", response_model=StateResponse)
-async def start(claims: Annotated[Claims, Depends(current_claims)]) -> StateResponse:
+async def start(body: StartBody, claims: Annotated[Claims, Depends(current_claims)]) -> StateResponse:
     me = await _me(claims)
     service = party.current()
     try:
@@ -485,6 +502,20 @@ async def start(claims: Annotated[Claims, Depends(current_claims)]) -> StateResp
     if len(members) not in party.startable_sizes():
         raise HTTPException(status_code=409, detail="只能单人或满 3 人开始匹配，再邀请一位好友吧",
                             headers={"X-Glory-Reason": "party_size"})
+    seedling: dict[uuid.UUID, list[str]] = {}
+    if room.mode == "casual":
+        for pid in members:
+            requested = body.races if pid == me.player_id else room.seedling_races.get(pid)
+            try:
+                seedling[pid] = await loadout.seedling_races(pid, requested)
+            except loadout.LoadoutRejected as exc:
+                raise HTTPException(status_code=409, detail=exc.message) from None
+    elif room.mode == "casual_normal":
+        for pid in members:
+            try:
+                await loadout.require_normal_races(pid)
+            except loadout.LoadoutRejected as exc:
+                raise HTTPException(status_code=409, detail=exc.message) from None
     async with db.pool().acquire() as conn:
         for pid in members:
             reason = await ranked.queue_gate(conn, pid, room.mode)
@@ -494,11 +525,18 @@ async def start(claims: Annotated[Claims, Depends(current_claims)]) -> StateResp
         rows = await conn.fetch(
             "select player_id, score from player_ranked where player_id = any($1::uuid[])", members)
     ratings = {row["player_id"]: int(row["score"]) for row in rows}
+    queue_mode = room.mode
+    if room.mode == "ranked":
+        stages = {int(ratings.get(pid, 0)) >= ranked.STARFORGE_FLOOR for pid in members}
+        if len(stages) != 1:
+            raise HTTPException(status_code=409,
+                                detail="队伍成员须处于相同排位回合阶段（突破前 13 回合，突破后 21 回合）")
+        queue_mode = matchmaking.RANKED_NORMAL if True in stages else matchmaking.RANKED
     try:
         room = service.mark_queued(me.player_id, version)
         # 组队房里选的位置带进对局（10-08）：满 3 人的队伍一定按它坐，见 matchmaking.allocate_seats。
         seats = {pid: service.seat_of(room, pid) for pid in members}
-        matchmaking.current().join_group(members, room.mode, ratings, seats)
+        matchmaking.current().join_group(members, queue_mode, ratings, seats, seedling)
     except (party.PartyRejected, ValueError) as exc:
         service.mark_idle(room)
         if isinstance(exc, party.PartyRejected):

@@ -130,6 +130,7 @@ func new_room() -> Dictionary:
 		"last_match_state": {},
 		"shared_seed": randi(),
 		"round_index": 1,
+		"ruleset": "normal",
 		"created_at": now,
 		"last_activity_at": now,
 		"state_started_at": now,

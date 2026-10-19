@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 import asyncpg
 
-from app import bans, db
+from app import bans, db, progression
 
 # 与 database/003_player_identities.sql 的 provider 白名单一致。
 # 匿名登录也走 supabase —— Supabase 的匿名用户就是一个普通 auth 用户。
@@ -151,6 +151,7 @@ async def _resolve_or_create_in(
             auth_uid,
             player_id,
         )
+        await progression.starter_human(conn, player_id)
         return Player(
             row["player_id"],
             row["player_name"],

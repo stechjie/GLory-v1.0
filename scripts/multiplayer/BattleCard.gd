@@ -69,7 +69,10 @@ const CLOCK_LEEWAY_SEC := 30
 # 这边要为一次 base64 解码 + RSA 验签花多少内存和 CPU。
 # 实测普通名片 705 字节，按数据库允许的上限造的最大名片 1673 字节
 # （backend/tests/test_loadout.py 每次都量一遍，超过这个数会红）。
-const MAX_CARD_CHARS := 2048
+# 2026-10-19 AI 补位：名片多了五个 AI 座位（ai 字段），最大名片量出来 2037 —— 离 2048
+# 只差 11 个字符，于是放到 3072。仍是几 KB 的量级，挡不可信输入的作用不变。
+# backend/tests/test_matchmaking.py 的 test_card_with_five_ai_seats_still_fits 量着。
+const MAX_CARD_CHARS := 3072
 
 # RSA-2048 的签名固定 256 字节。
 const SIGNATURE_BYTES := 256
@@ -224,6 +227,7 @@ static func _clean(raw: Dictionary) -> Dictionary:
 				continue
 			races.append(str(value).left(MAX_RACE_ID))
 	out["races"] = races
+	out["ruleset"] = "seedling" if str(raw.get("ruleset", "")) == "seedling" else "normal"
 	out["exp"] = int(raw.get("exp", 0))
 	var patch: Variant = raw.get("patch", {})
 	if patch is Dictionary and not patch.is_empty():
@@ -238,7 +242,43 @@ static func _clean(raw: Dictionary) -> Dictionary:
 	# 段位（第 6 步）。同理 **-1 = 没打过排位**，不是 0 —— 0 是第一段。
 	# 默认成 0 会让每个新玩家在房间里顶着一个没打过的段位。
 	out["tier"] = int(raw.get("tier", -1))
+	out["ai"] = _clean_ai_seats(raw.get("ai", []))
 	return out
+
+
+# AI 补位的座位（2026-10-19，backend/app/matchmaking.py「人少时 AI 补位」）。
+# 线格式是 [座位 0~5, 昵称, 头像 id] 的数组（省字节，见 loadout.card_payload 的注释）。
+# 清洗成 {slot, name, avatar}；座位越界、重复、类型不对的条目直接丢掉。
+const MAX_AI_NAME := 16
+const MAX_AI_AVATAR := 16
+
+static func _clean_ai_seats(raw: Variant) -> Array:
+	var out: Array = []
+	if typeof(raw) != TYPE_ARRAY:
+		return out
+	var seen := {}
+	for entry in raw:
+		if typeof(entry) != TYPE_ARRAY or (entry as Array).size() < 3:
+			continue
+		var row: Array = entry
+		if typeof(row[0]) not in [TYPE_INT, TYPE_FLOAT] or typeof(row[1]) != TYPE_STRING \
+				or typeof(row[2]) != TYPE_STRING:
+			continue
+		var slot := int(row[0])
+		if slot < 0 or slot > 5 or seen.has(slot):
+			continue
+		seen[slot] = true
+		out.append({"slot": slot, "name": str(row[1]).strip_edges().left(MAX_AI_NAME),
+			"avatar": str(row[2]).left(MAX_AI_AVATAR)})
+		if out.size() >= 5:
+			break
+	return out
+
+
+# 这张名片带的 AI 座位。空数组 = 满员真人的普通对局。
+static func ai_seats_of(card: Dictionary) -> Array:
+	var value: Variant = card.get("ai", [])
+	return (value as Array).duplicate(true) if typeof(value) == TYPE_ARRAY else []
 
 
 # --- 匹配出来的对局（协议 32）---------------------------------------------------
@@ -279,6 +319,10 @@ static func team_of(card: Dictionary) -> int:
 static func seat_of(card: Dictionary) -> int:
 	var seat := int(card.get("seat", -1))
 	return seat if seat >= 0 and seat <= 2 else -1
+
+
+static func ruleset_of(card: Dictionary) -> String:
+	return "seedling" if str(card.get("ruleset", "")) == "seedling" else "normal"
 
 
 static func mode_of(card: Dictionary) -> String:

@@ -4,7 +4,7 @@ extends RefCounted
 static func schedule_kind_for_round(round_index: int) -> String:
 	if _is_final_round(round_index):
 		return "final"
-	var schedule: Dictionary = DataRegistry.get_table("rounds")
+	var schedule := active_schedule()
 	if _array_has_round(schedule.get("boss_rounds", []), round_index):
 		return "boss"
 	if _array_has_round(schedule.get("pvp_rounds", []), round_index):
@@ -17,12 +17,25 @@ static func _is_final_round(round_index: int) -> bool:
 	return int(round_index) == GameState.FINAL_ROUND and not GameState.final_round_played
 
 static func is_treasure_round(round_index: int) -> bool:
-	var schedule: Dictionary = DataRegistry.get_table("rounds")
+	var schedule := active_schedule()
 	return _array_has_round(schedule.get("treasure_after_battle_rounds", []), round_index)
 
 static func is_pvp_schedule_round(round_index: int) -> bool:
-	var schedule: Dictionary = DataRegistry.get_table("rounds")
+	var schedule := active_schedule()
 	return _array_has_round(schedule.get("pvp_rounds", []), round_index)
+
+static func active_schedule() -> Dictionary:
+	var all_rounds: Dictionary = DataRegistry.get_table("rounds")
+	if GameState.FINAL_ROUND == 13:
+		return all_rounds.get("seedling", {}) as Dictionary
+	return all_rounds
+
+static func treasure_pick_count(round_index: int) -> int:
+	var schedule := active_schedule()
+	if not _array_has_round(schedule.get("treasure_after_battle_rounds", []), round_index):
+		return 0
+	var counts: Dictionary = schedule.get("treasure_pick_counts", {})
+	return maxi(1, int(counts.get(str(round_index), 1)))
 
 static func _array_has_round(values: Variant, round_index: int) -> bool:
 	if typeof(values) != TYPE_ARRAY:

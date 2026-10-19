@@ -22,7 +22,9 @@ const SETTINGS_MODAL_PRIORITY := 50
 const TutorialModeScript := preload("res://scripts/tutorial/TutorialMode.gd")
 const CarrotCampPanelScript := preload("res://scenes/prep/CarrotCampPanelV3.gd")
 # 10.11 第 8 条：营地入口按钮在有升级石时散发柔和星爆（纯 _draw()，不进 procedural_ui_ratchet）。
-const StarBurstScript := preload("res://ui/components/StarBurst.gd")
+const CampEntryGlowScript := preload("res://ui/components/CampEntryGlow.gd")
+# 入口角标那枚石头图标（通用款，不分天 / 地 / 人 —— 角标说的是「队伍有石头」）。
+const CARROT_ENTRY_STONE_ICON_PATH := "res://assets/props/carrot_system/stones/stone_unknown.png"
 const UNIT_TEAM_RING_SHADER := preload("res://shaders/unit_team_ring.gdshader")
 
 # Keep the selector API used by preparation-screen regression checks while the
@@ -92,7 +94,17 @@ const TEAM_MERCS_CAMERA_POSITION := Vector3(0.0, 2.4, 1.9)
 const TEAM_MERCS_CAMERA_TARGET := Vector3(0.0, 0.05, 0.0)
 const TEAM_MERCS_CAMERA_FOV := 40.0
 const TEAM_MERCS_AREA_HALF := Vector2(0.42, 0.24)
-const TEAM_MERCS_MIN_DIST := 0.15
+# 检阅台按队友分三排：队伍首槽（GameConstants.team_first_slot）那一排最靠前、
+# 离相机最近，之后的槽位依次往后。排距与可用宽度都从 TEAM_MERCS_AREA_HALF 推，
+# 改舞台区域不用动这里。
+const TEAM_MERCS_ROW_Z := [0.20, 0.0, -0.20]
+# 一排里两个佣兵的理想间距。排不下时按「可用宽度 / 人数」收窄，并把整排模型
+# 等比缩小 —— 8 个也不会互相穿模或顶出背景框（迁移前随机撒点就是栽在这）。
+const TEAM_MERCS_SPOT_SPACING := 0.16
+const TEAM_MERCS_MIN_SHRINK := 0.55
+# 每排左侧那枚 2D 小标签（队友名字 + 数量）。
+const TEAM_MERCS_LABEL_FONT_SIZE := 13
+const TEAM_MERCS_LABEL_MARGIN := 6.0
 const TEAM_MERCS_PLATE_RADIUS := 0.055
 const TEAM_MERCS_PLATE_HEIGHT := 0.012
 const TREASURE_LOGO_DIRECTORY := "res://assets/ui/treasure_logos"
@@ -165,6 +177,12 @@ var _team_merc_counts_snapshot: Dictionary = {}
 # 迁进 ModalStack 后 content 不再是 center_host 的子节点，失去了自动跟随布局的能力。
 # 记住宿主，开合与尺寸变化时把 content 钉回它的屏幕矩形，视觉才和迁移前一致。
 var _team_mercs_host: Control
+# 每排左侧的 2D 名字标签。它们挂在 stage_holder 上（不进 3D 舞台），纵向位置由
+# 相机 unproject 从那一排的世界坐标换算 —— 相机或排距一改，标签自动跟上。
+var _team_mercs_label_layer: Control
+var _team_mercs_camera: Camera3D
+var _team_mercs_row_labels: Array = []
+var _team_mercs_rows: Array = []
 var _team_merc_snapshot_round := -1
 var _team_merc_snapshot_initialized := false
 var _carrot_panel
@@ -174,7 +192,14 @@ var _carrot_counter_label: Label
 # 萝卜数量那块底板。教学里要指着它（收获萝卜那一步），也要跟入口按钮一起显隐。
 var _carrot_counter_panel: PanelContainer
 # 10.11 第 8 条：营地入口按钮上那层星爆（有升级石才亮）。
-var _carrot_button_burst: Control
+# 10.18：入口提示改成两级 —— 一级（队伍有升级石）柔和同色呼吸光 + 石头角标，
+# 二级（有棋子能升 4★）转金、更亮、角标变 4★。等级存一份，才看得出「从不满足
+# 变满足」的那一刻该不该弹一下 + 出声。
+var _carrot_entry_glow: Control
+var _carrot_entry_badge: Control
+var _carrot_entry_badge_icon: TextureRect
+var _carrot_entry_badge_label: Label
+var _carrot_entry_level := -1
 var _carrot_dimmer: ColorRect
 var _tutorial_target_provider: TutorialTargetProviderScript
 
@@ -259,6 +284,10 @@ func tutorial_target_provider() -> TutorialTargetProviderScript:
 		_tutorial_target_stone_draw)
 	provider.bind_target(TutorialTargetProviderScript.TARGET_FOUR_STAR_ROW,
 		_tutorial_target_four_star_row)
+	provider.bind_target(TutorialTargetProviderScript.TARGET_KING,
+		_tutorial_target_king)
+	provider.bind_target(TutorialTargetProviderScript.TARGET_SELL_UNIT,
+		_tutorial_target_sell_unit)
 	provider.bind_action(TutorialTargetProviderScript.ACTION_CLOSE_MERCENARY,
 		_close_merc_picker)
 	provider.bind_action(TutorialTargetProviderScript.ACTION_REFRESH_VIEW,
@@ -285,9 +314,23 @@ func _tutorial_keep_clear_rects() -> Array[Rect2]:
 		_shop.buy_button if _shop != null else null,
 		_shop.refresh_button if _shop != null else null,
 		_treasure._treasure_refresh_btn if _treasure != null else null,
+		_treasure._treasure_choice_row if _treasure != null else null,
+		_carrot_panel,
+		_merc_overlay_grid,
 	]:
 		_append_visible_rect(control as Control, out)
 	if _board_hud != null:
+		if GameState.tutorial_mode and TutorialMode.step in [TutorialMode.Step.PLACE_3, TutorialMode.Step.FILL_7]:
+			var board := Rect2()
+			var has_board := false
+			for button in _board_hud.buttons:
+				var cell := button as Control
+				if cell == null or not is_instance_valid(cell) or not cell.is_visible_in_tree():
+					continue
+				board = cell.get_global_rect() if not has_board else board.merge(cell.get_global_rect())
+				has_board = true
+			if has_board:
+				out.append(board)
 		# 待命区按整排算一个矩形：逐格加进去会让评分被格数放大。
 		var bench := Rect2()
 		var has_bench := false
@@ -322,6 +365,53 @@ func _tutorial_target_buy_unit() -> Control:
 	if _shop.picker_open and _tutorial_owned_normal_count() >= 3:
 		return _tutorial_first_empty_board()
 	return _tutorial_shop_purchase_target()
+
+
+# 人王教学：没买到时走商店购买链（商店第一格就是人王）；买到后指人王本身，
+# 在棋盘上就指棋盘格，还在待命区就指待命格（商店开着时待命区被盖住，先指棋盘让玩家关店）。
+func _tutorial_target_king() -> Control:
+	for i in GameState.board_slots.size():
+		if _tutorial_cell_is_king(GameState.board_slots[i]) and i < _board_hud.buttons.size():
+			return _board_hud.buttons[i] as Control
+	for i in GameState.bench_slots.size():
+		if _tutorial_cell_is_king(GameState.bench_slots[i]) and i < _board_hud.bench_buttons.size():
+			if _shop.picker_open:
+				return _tutorial_first_empty_board()
+			return _board_hud.bench_buttons[i] as Control
+	if _shop.picker_open and _tutorial_shop_index_available(_shop.selected) \
+			and str((GameState.shop_offers[_shop.selected] as Dictionary).get("id", "")) == TutorialModeScript.KING_ID:
+		return _shop.buy_button
+	for i in _shop.buttons.size():
+		if _tutorial_shop_index_available(i) \
+				and str((GameState.shop_offers[i] as Dictionary).get("id", "")) == TutorialModeScript.KING_ID:
+			return _shop.buttons[i] as Control if _shop.picker_open else _shop.open_button
+	return _tutorial_shop_purchase_target()
+
+
+# 满格腾位置：先指待命区里第一个不在保护名单上的棋子，没有再指棋盘上的。
+# 商店开着时待命区被盖住，先指商店入口让玩家关店（follow_arrow_hint 也会这样提示）。
+func _tutorial_target_sell_unit() -> Control:
+	if _shop.picker_open:
+		return _shop.open_button
+	var keep: Array = TutorialMode.sell_protected_ids()
+	for i in GameState.bench_slots.size():
+		var cell: Variant = GameState.bench_slots[i]
+		if typeof(cell) == TYPE_DICTIONARY and not str((cell as Dictionary).get("id", "")) in keep \
+				and int((cell as Dictionary).get("star", 1)) < GameState.MAX_UNIT_STAR \
+				and i < _board_hud.bench_buttons.size():
+			return _board_hud.bench_buttons[i] as Control
+	for i in GameState.board_slots.size():
+		var cell: Variant = GameState.board_slots[i]
+		if typeof(cell) == TYPE_DICTIONARY and not str((cell as Dictionary).get("id", "")) in keep \
+				and int((cell as Dictionary).get("star", 1)) < GameState.MAX_UNIT_STAR \
+				and i < _board_hud.buttons.size():
+			return _board_hud.buttons[i] as Control
+	return _tutorial_first_occupied_bench()
+
+
+func _tutorial_cell_is_king(cell: Variant) -> bool:
+	return typeof(cell) == TYPE_DICTIONARY \
+		and str((cell as Dictionary).get("id", "")) == TutorialModeScript.KING_ID
 
 
 func _tutorial_target_place_unit() -> Control:
@@ -1259,34 +1349,59 @@ func _build_top_actions() -> void:
 	var carrot_btn := PrepWidgets.make_framed_text_button("", CARROT_BTN_PATH,
 		MERC_BTN_SIZE, 16, _toggle_carrot_camp)
 	_carrot_button = carrot_btn
-	# 10.11 第 8 条：星爆先于文字挂上 —— 子节点按树序绘制，所以它落在按钮贴图之上、
-	# 「萝卜营地」文字之下（不挡字；文字反过来也压不住它）。有升级石时由
-	# _refresh_carrot_counter() 打开。
-	var carrot_burst: Control = StarBurstScript.new()
-	carrot_burst.name = "CarrotCampBurst"
-	# ★ 半径系数 1.3：入口按钮 132×132 里那枚 512² 徽章几乎填满整个方框（实测不透明
-	#   像素半径 ≈ 65 / 66px），系数 1.0 时星芒末端正好停在图标边缘 ⇒ 只看到「压在图标
-	#   上」，没射到外面。1.3 ⇒ 末端约 86px，比图标多探出约 20px —— 用户 10.11 口径
-	#   「从图标中心向外散发到图标外面一点」。
-	#   ⚠️ 第三参 `inner` **不传**（默认 0.0）= 星芒从图标中心起画，正是「从图标中心向外」；
-	#   传 > 0 会变成「从图标边缘起画」，那是上一版口径、已被推翻，别再传。
-	# ★ 颜色换冰蓝白（不带黄）：用户 10.11 口径「不要黄色，不够显眼」。徽章本身是暖橙、
-	#   按钮又压在**亮草坪**上，暖黄系两头被吃平；冰蓝白与暖橙正互补，在绿底上最跳 ——
-	#   「显眼」靠色相对比，不是靠堆亮度。
-	# ★ 明暗交替：短芒压到 0.4（长芒 1.0）⇒ 一圈亮一圈暗；芒宽 ×1.5 加粗，10 根芒才
-	#   撑得起星爆形状（半径放大后细芒会显脏）。
-	carrot_burst.setup(Color(0.62, 0.86, 1.0), 1.3)
-	carrot_burst.base_alpha = 1.0
-	carrot_burst.short_ray_alpha = 0.4
-	carrot_burst.ray_width_scale = 1.5
-	carrot_burst.visible = false
-	carrot_btn.add_child(carrot_burst)
+	# 10.18：入口提示换成「背后一圈呼吸光 + 右上角小角标」。
+	# 换掉的是 10.11 那颗冰蓝白星爆 —— 10 根星芒压在橙色徽章**上面**，Leno 的评价是
+	# 「像贴纸 / 镜头光斑，冷暖冲突」。光环放到徽章背后就不压图了，颜色也跟着提示
+	# 等级走（一级暖同色、二级转金），不再跟徽章抢色相。
+	var carrot_glow: Control = CampEntryGlowScript.new()
+	carrot_glow.name = "CarrotCampGlow"
+	carrot_glow.visible = false
+	carrot_btn.add_child(carrot_glow)
+	# ★ 必须排到 0 号位：子节点按树序绘制，而徽章贴图是 make_framed_text_button 先挂的
+	#   frame。排在它后面 = 光压在徽章上（正是这次要改掉的毛病）；排到它前面才是「背后」。
+	carrot_btn.move_child(carrot_glow, 0)
 	# ★ 必须显式铺满：**Button 不是 Container**，新挂上去的子 Control 尺寸不会自己跟上来，
-	#   `size` 会停在 (0,0) ⇒ StarBurst._draw() 里 `radius <= 1.0` 直接 return，
-	#   **一个像素都画不出来**（而 `visible` 却是 true —— 门禁只看 visible 就会漏掉这一层）。
-	#   同文件既有写法：PrepWidgets.make_framed_text_button 里的 frame / lbl 都自己设了 anchors。
-	carrot_burst.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_carrot_button_burst = carrot_burst
+	#   `size` 会停在 (0,0) ⇒ _draw() 里 `peak <= 1.0` 直接 return，**一个像素都画不出来**
+	#   （而 `visible` 却是 true —— 门禁只看 visible 就会漏掉这一层）。10.11 实测踩过。
+	carrot_glow.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_carrot_entry_glow = carrot_glow
+	# 右上角小角标：一级显示石头图标 + 总数，二级换成「4★」。
+	# 刻意**不加底板** —— PanelContainer + StyleBoxFlat 会把 procedural_ui_ratchet 顶红，
+	# 文字描边在亮草坪上已经够读了（同 carrot_lbl 的写法）。
+	var carrot_badge := Control.new()
+	carrot_badge.name = "CarrotCampBadge"
+	carrot_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	carrot_badge.visible = false
+	carrot_badge.anchor_left = 0.52
+	carrot_badge.anchor_right = 1.0
+	carrot_badge.anchor_top = 0.0
+	carrot_badge.anchor_bottom = 0.26
+	carrot_btn.add_child(carrot_badge)
+	_carrot_entry_badge = carrot_badge
+	var badge_icon := TextureRect.new()
+	badge_icon.texture = load(CARROT_ENTRY_STONE_ICON_PATH)
+	badge_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	badge_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	badge_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge_icon.anchor_left = 0.0
+	badge_icon.anchor_right = 0.46
+	badge_icon.anchor_top = 0.0
+	badge_icon.anchor_bottom = 1.0
+	carrot_badge.add_child(badge_icon)
+	_carrot_entry_badge_icon = badge_icon
+	var badge_lbl := Label.new()
+	badge_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	badge_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	badge_lbl.anchor_left = 0.42
+	badge_lbl.anchor_right = 1.0
+	badge_lbl.anchor_top = 0.0
+	badge_lbl.anchor_bottom = 1.0
+	badge_lbl.add_theme_font_size_override("font_size", 15)
+	badge_lbl.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.95))
+	badge_lbl.add_theme_constant_override("outline_size", 4)
+	carrot_badge.add_child(badge_lbl)
+	_carrot_entry_badge_label = badge_lbl
 	var carrot_lbl := Label.new()
 	_carrot_button_label = carrot_lbl
 	carrot_lbl.text = "Carrot Camp" if LocaleManager.get_locale().begins_with("en") else "萝卜营地"
@@ -2067,13 +2182,7 @@ func _refresh_carrot_counter() -> void:
 	var carrot_visible := _carrot_ui_visible()
 	if _carrot_button != null and is_instance_valid(_carrot_button):
 		_carrot_button.visible = carrot_visible
-	# 10.11 第 8 条：队伍里只要有任意一颗升级石（天 / 地 / 人），入口按钮就亮星爆提醒 ——
-	# 「萝卜营地里存在升级石时，萝卜营地 UI 要散发柔和星爆」。入口不显示时一并关掉。
-	var stone_total := 0
-	for value in GameState.team_upgrade_stones.values():
-		stone_total += int(value)
-	if _carrot_button_burst != null and is_instance_valid(_carrot_button_burst):
-		_carrot_button_burst.visible = carrot_visible and stone_total > 0
+	_refresh_carrot_entry_hint(carrot_visible)
 	if _carrot_counter_panel != null and is_instance_valid(_carrot_counter_panel):
 		_carrot_counter_panel.visible = carrot_visible
 	if _carrot_counter_label == null or not is_instance_valid(_carrot_counter_label):
@@ -2084,6 +2193,82 @@ func _refresh_carrot_counter() -> void:
 	_carrot_counter_label.tooltip_text = ("Current carrots" if LocaleManager.get_locale() == "en" else "现有萝卜")
 	_carrot_counter_label.add_theme_color_override("font_color",
 		Color(0.72, 1.0, 0.58) if amount >= capacity else Color(1.0, 0.94, 0.70))
+
+
+# 10.18：萝卜营地入口的**两级**提示。
+#
+# Leno 的口径：只要队伍里有升级石就要提示（提醒队友石头到账了）；有棋子能升 4★ 时
+# 要更强。所以：
+#   · 一级 = 队伍有任意一颗升级石，或本局还能免费抽一次（13 回合营地模式）。
+#     柔和的暖同色呼吸光 + 右上角「石头图标 + 数量」。
+#   · 二级 = 棋盘 / 待命区里**真有**一枚三星棋子现在就能升 4★。光转金、更亮，
+#     角标换成「4★」；**从不满足变满足的那一刻**弹一下 + 一声提示音，之后安静呼吸。
+#
+# 等级存在 _carrot_entry_level 里：只有「上一次不是二级、这一次是」才弹 —— 每次
+# refresh 都弹会变成持续闪烁，那不是提示是干扰。首次建页面（level == -1）也不弹。
+func _refresh_carrot_entry_hint(carrot_visible: bool) -> void:
+	var stone_total := 0
+	for value in GameState.team_upgrade_stones.values():
+		stone_total += int(value)
+	var free_draw_ready := GameState.FINAL_ROUND == 13 and GameState.round_index >= 6 		and not GameState.free_stone_claimed
+	var level := 0
+	if stone_total > 0 or free_draw_ready:
+		level = 1
+	if _any_four_star_ready():
+		level = 2
+	if not carrot_visible:
+		level = 0
+	var was := _carrot_entry_level
+	_carrot_entry_level = level
+
+	if _carrot_entry_glow != null and is_instance_valid(_carrot_entry_glow):
+		_carrot_entry_glow.visible = level > 0
+		if level == 2:
+			# 金、更亮、略微再探出一点 —— 二级必须一眼比一级强。
+			_carrot_entry_glow.setup(Color(1.0, 0.86, 0.40), 0.82, 1.12)
+		elif level == 1:
+			# 暖同色系：徽章本身是暖橙，光跟着它走就不会像上一版那样冷暖打架。
+			_carrot_entry_glow.setup(Color(1.0, 0.72, 0.34), 0.44, 1.06)
+		# 「从不满足变满足」那一刻弹一下 + 出声。was < 0 是首次建页面，不弹。
+		if level == 2 and was >= 0 and was < 2:
+			_carrot_entry_glow.call("pulse")
+			SfxService.play("ui_popup")
+
+	if _carrot_entry_badge != null and is_instance_valid(_carrot_entry_badge):
+		_carrot_entry_badge.visible = level > 0
+	if _carrot_entry_badge_icon != null and is_instance_valid(_carrot_entry_badge_icon):
+		# 二级的角标就是「4★」两个字，石头图标让位给它。
+		_carrot_entry_badge_icon.visible = level == 1
+	if _carrot_entry_badge_label != null and is_instance_valid(_carrot_entry_badge_label):
+		var en := LocaleManager.get_locale() == "en"
+		if level == 2:
+			_carrot_entry_badge_label.text = "4★"
+			_carrot_entry_badge_label.add_theme_color_override("font_color", Color(1.0, 0.90, 0.52))
+		elif stone_total > 0:
+			_carrot_entry_badge_label.text = str(stone_total)
+			_carrot_entry_badge_label.add_theme_color_override("font_color", Color(1.0, 0.94, 0.78))
+		else:
+			# 一级但手上还没有石头 = 免费抽那一次还没领。
+			_carrot_entry_badge_label.text = "Free" if en else "免费"
+			_carrot_entry_badge_label.add_theme_color_override("font_color", Color(0.80, 1.0, 0.72))
+
+
+# 现在有没有哪一枚棋子真的能升 4★。判据与 PrepBoardModels._sync_four_star_actor 的
+# state == 1（棋盘上那圈金色「可升」光环）**逐条一致** —— 两处不同口径的话，棋盘亮了
+# 而入口不亮（或反过来）才是最糟的提示。
+func _any_four_star_ready() -> bool:
+	if GameState.tutorial_mode and not TutorialMode.allows_carrot_action("four_star"):
+		return false
+	if not NetworkService.four_star_upgrade_available():
+		return false
+	if not NetworkService.four_star_request_id.is_empty():
+		return false
+	for slots in [GameState.board_slots, GameState.bench_slots]:
+		for cell in (slots as Array):
+			if cell is Dictionary and bool(GameState.four_star_check(cell).get("ok", false)):
+				return true
+	return false
+
 
 func _build_detail_popups() -> void:
 	_detail = PopupPanel.new()
@@ -2161,23 +2346,24 @@ func _crystal_textures_for_element(is_fire: bool) -> Array:
 	return texs
 func _refresh_formation_status() -> void:
 	# (1) 3v3 uses the shared team HP, not the 1v1 formation HP fields.
+	var display_max_hp := TutorialMode.TUTORIAL_HP if GameState.tutorial_mode else GameState.START_FORMATION_HP
 	var player_hp: int
 	var enemy_hp: int
 	if GameState.team_mode:
-		player_hp = clampi(GameState.team_hp, 0, GameState.START_FORMATION_HP)
-		enemy_hp = clampi(GameState.enemy_team_hp, 0, GameState.START_FORMATION_HP)
+		player_hp = clampi(GameState.team_hp, 0, display_max_hp)
+		enemy_hp = clampi(GameState.enemy_team_hp, 0, display_max_hp)
 	else:
-		player_hp = clampi(GameState.player_formation_hp, 0, GameState.START_FORMATION_HP)
-		enemy_hp = clampi(GameState.enemy_formation_hp, 0, GameState.START_FORMATION_HP)
+		player_hp = clampi(GameState.player_formation_hp, 0, display_max_hp)
+		enemy_hp = clampi(GameState.enemy_formation_hp, 0, display_max_hp)
 	if _player_formation_bar != null:
 		_player_formation_bar.value = player_hp
 	if _enemy_formation_bar != null:
 		_enemy_formation_bar.value = enemy_hp
 	if _player_formation_hp_label != null:
-		_player_formation_hp_label.text = "%d/%d" % [player_hp, GameState.START_FORMATION_HP]
+		_player_formation_hp_label.text = "%d/%d" % [player_hp, display_max_hp]
 	if _enemy_formation_hp_label != null:
-		_enemy_formation_hp_label.text = "%d/%d" % [enemy_hp, GameState.START_FORMATION_HP]
-	var max_hp := maxi(1, GameState.START_FORMATION_HP)
+		_enemy_formation_hp_label.text = "%d/%d" % [enemy_hp, display_max_hp]
+	var max_hp := maxi(1, display_max_hp)
 	# 队伍元素：组队时本人 slot<3=火队(红)、slot>=3=水队(蓝)，敌方取反；非组队默认本方火/敌方水。
 	var local_fire := true
 	if NetworkService.team_active and NetworkService.team_local_slot >= 0:
@@ -2349,6 +2535,9 @@ func _on_ready_badge_input(event: InputEvent, badge: Control) -> void:
 		or (event is InputEventScreenTouch and (event as InputEventScreenTouch).pressed)
 	if not pressed or not badge.has_meta("slot"):
 		return
+	# 教学里的座位都是 AI，没有名片、留言和语音可看。
+	if GameState.tutorial_mode:
+		return
 	badge.accept_event()
 	open_seat_card(int(badge.get_meta("slot")), badge)
 
@@ -2445,6 +2634,9 @@ func _create_ready_avatar_badge() -> Control:
 
 
 func _ready_slot_identity(slot: int) -> Dictionary:
+	if GameState.tutorial_mode:
+		# 教学：slot 0 是玩家本人（红队），其余 5 个是随机头像的 AI。
+		return AccountManager.profile if slot == 0 else {"avatar": TutorialMode.ai_avatar(slot)}
 	if slot == int(NetworkService.team_local_slot):
 		return AccountManager.profile
 	var profiles: Dictionary = NetworkService.team_seat_profiles
@@ -2454,13 +2646,16 @@ func _ready_slot_identity(slot: int) -> Dictionary:
 func _refresh_ready_indicator() -> void:
 	if _ready_indicator == null or _ready_dots.size() < 6:
 		return
-	_ready_indicator.visible = NetworkService.team_active
-	if not NetworkService.team_active:
+	# 教学没有联机会话，但也要显示 6 个头像（10.19 教程反馈第 3 条）：
+	# 座位表取 TutorialMode.start() 写的 GameState.team_slot_states，玩家固定 slot 0（红队）。
+	var tutorial := GameState.tutorial_mode
+	_ready_indicator.visible = NetworkService.team_active or tutorial
+	if not _ready_indicator.visible:
 		return
-	var states: Array = NetworkService.team_slot_states
-	var ready_arr: Array = NetworkService.team_ready
+	var states: Array = GameState.team_slot_states if tutorial else NetworkService.team_slot_states
+	var ready_arr: Array = [] if tutorial else NetworkService.team_ready
 	# 自己队永远在左边：team_local_slot<3=火队(0,1,2)、≥3=水队(3,4,5)；-1(没入队)默认火队在左。
-	var local_fire := NetworkService.team_local_slot < 3
+	var local_fire := tutorial or NetworkService.team_local_slot < 3
 	var own_slots: Array = [0, 1, 2] if local_fire else [3, 4, 5]
 	var enemy_slots: Array = [3, 4, 5] if local_fire else [0, 1, 2]
 	var pos_to_slot: Array = own_slots + enemy_slots   # 位置 0-2=自己队、3-5=对面
@@ -2773,6 +2968,9 @@ func _refresh_all() -> void:
 	# 9.17：羁绊激活音。放最后 —— 前面的 _auto_combine_all() 可能刚把棋子合成掉、
 	# 改变棋盘构成，先采样再判会拿到中间态。
 	_check_synergy_activation()
+	# 升星表现放在**模型重建之后**：合成那一刻保留的那枚棋子的模型马上要被换掉
+	# （星级变了 ⇒ signature 变了 ⇒ 整个节点 queue_free），当场挂特效立刻就没了。
+	flush_star_upgrades()
 func _sync_prep_board_readability_geometry() -> void:
 	if _board_hud.readability_layer == null or not is_instance_valid(_board_hud.readability_layer):
 		return
@@ -3146,6 +3344,7 @@ func _create_team_mercs_content() -> Control:
 	camera.fov = TEAM_MERCS_CAMERA_FOV
 	camera.look_at_from_position(TEAM_MERCS_CAMERA_POSITION, TEAM_MERCS_CAMERA_TARGET, Vector3.UP)
 	camera.current = true
+	_team_mercs_camera = camera
 	_team_mercs_viewport.add_child(camera)
 	_team_mercs_stage_root = Node3D.new()
 	_team_mercs_stage_root.name = "TeamMercsStageRoot"
@@ -3160,6 +3359,12 @@ func _create_team_mercs_content() -> Control:
 	_team_mercs_empty_label.add_theme_font_size_override("font_size", 18)
 	_team_mercs_empty_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	stage_holder.add_child(_team_mercs_empty_label)
+	_team_mercs_label_layer = Control.new()
+	_team_mercs_label_layer.name = "TeamMercsRowLabels"
+	_team_mercs_label_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_team_mercs_label_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	stage_holder.add_child(_team_mercs_label_layer)
+	_team_mercs_row_labels.clear()
 	return overlay
 
 
@@ -3168,6 +3373,7 @@ func _create_team_mercs_content() -> Control:
 # 那就是改视觉了。
 func _sync_team_mercs_content_rect() -> void:
 	_sync_modal_content_to_host(_team_mercs_overlay)
+	_update_team_mercs_row_labels()
 
 
 # 备战页两个模态共用：content 挂在 ModalStack 的全屏 root 下，不再自动跟随
@@ -3208,6 +3414,10 @@ func _team_mercs_teardown_state() -> void:
 	_team_mercs_viewport = null
 	_team_mercs_stage_root = null
 	_team_mercs_empty_label = null
+	_team_mercs_label_layer = null
+	_team_mercs_camera = null
+	_team_mercs_row_labels.clear()
+	_team_mercs_rows.clear()
 
 
 func _on_team_mercs_render_tick() -> void:
@@ -3389,52 +3599,117 @@ func _rebuild_team_mercs_stage() -> void:
 	var defs := {}
 	for row in (DataRegistry.get_table("mercenaries").get("mercenaries", []) as Array):
 		defs[str((row as Dictionary).get("id", ""))] = row
-	var taken: Array = []
+	# 一个队友一排。entries 已经是从 team_first_slot 起的连续槽位顺序，所以它们
+	# 出现的先后就是排序：首槽在第一排（最靠前、离相机最近），依次往后。
+	var rows: Array = []
+	var row_of_slot := {}
 	for entry_value in entries:
 		var entry: Dictionary = entry_value
-		var def_value = defs.get(str(entry.get("id", "")))
-		if typeof(def_value) != TYPE_DICTIONARY:
-			continue
-		var def: Dictionary = def_value
 		var slot := int(entry.get("slot", 0))
-		# 每回合固定的随机站位：种子=回合+槽位+序号，重开弹窗不变，
-		# 后买的佣兵也不会挪动先前佣兵的位置。
-		var rng := RandomNumberGenerator.new()
-		rng.seed = hash("team_mercs_%d_%d_%d" % [GameState.round_index, slot, int(entry.get("index", 0))])
-		var pos := _team_mercs_spot(rng, taken)
-		taken.append(pos)
-		var cell := {"id": str(entry.get("id", "")), "star": 1, "def": def, "is_mercenary": true}
-		var pivot := _make_prep_board_model(cell, def)
-		if pivot == null:
+		if not row_of_slot.has(slot):
+			row_of_slot[slot] = rows.size()
+			rows.append({"slot": slot, "entries": []})
+		(rows[int(row_of_slot[slot])]["entries"] as Array).append(entry)
+
+	_team_mercs_rows.clear()
+	var usable_width := TEAM_MERCS_AREA_HALF.x * 2.0
+	for row_index in rows.size():
+		var row: Dictionary = rows[row_index]
+		var row_entries: Array = row["entries"]
+		var count := row_entries.size()
+		if count <= 0:
 			continue
-		# 模型已不带 3D 名字/星级浮标，队伍佣兵检阅台本就不需要显示，无需再隐藏。
-		pivot.position = pos
-		pivot.rotation_degrees = Vector3(0.0, float(def.get("model_base_yaw", 180.0)) + rng.randf_range(-20.0, 20.0), 0.0)
-		_team_mercs_stage_root.add_child(pivot)
-		_team_mercs_stage_root.add_child(_make_team_mercs_plate(slot, pos))
+		var row_slot := int(row["slot"])
+		# 人少按理想间距，人多就把整排压进可用宽度里，并等比缩小模型。
+		var spacing := TEAM_MERCS_SPOT_SPACING
+		if count > 1:
+			spacing = minf(spacing, usable_width / float(count))
+		var shrink := clampf(spacing / TEAM_MERCS_SPOT_SPACING, TEAM_MERCS_MIN_SHRINK, 1.0)
+		var row_z := float(TEAM_MERCS_ROW_Z[mini(row_index, TEAM_MERCS_ROW_Z.size() - 1)])
+		var first_x := -spacing * float(count - 1) * 0.5
+		for i in count:
+			var entry: Dictionary = row_entries[i]
+			var def_value = defs.get(str(entry.get("id", "")))
+			if typeof(def_value) != TYPE_DICTIONARY:
+				continue
+			var def: Dictionary = def_value
+			# 站位只由「这一排的第几个」决定：后买的追加在排尾，先前佣兵的
+			# 前后次序不变（整排会跟着重新居中，否则排头永远贴着左边框）。
+			var pos := Vector3(first_x + spacing * float(i), 0.0, row_z)
+			var cell := {"id": str(entry.get("id", "")), "star": 1, "def": def, "is_mercenary": true}
+			var pivot := _make_prep_board_model(cell, def)
+			if pivot == null:
+				continue
+			# 模型已不带 3D 名字/星级浮标，队伍佣兵检阅台本就不需要显示，无需再隐藏。
+			pivot.position = pos
+			# 全排统一朝向镜头：站位既然排齐了，再随机转角只会看着更乱。
+			pivot.rotation_degrees = Vector3(0.0, float(def.get("model_base_yaw", 180.0)), 0.0)
+			pivot.scale *= shrink
+			_team_mercs_stage_root.add_child(pivot)
+			_team_mercs_stage_root.add_child(_make_team_mercs_plate(row_slot, pos, shrink))
+		_team_mercs_rows.append({
+			"slot": row_slot,
+			"count": count,
+			# 标签只借这个点的纵向位置，横向固定贴在舞台左边。
+			"anchor": Vector3(-usable_width * 0.5, 0.0, row_z),
+		})
+	_update_team_mercs_row_labels()
 
-func _team_mercs_spot(rng: RandomNumberGenerator, taken: Array) -> Vector3:
-	var candidate := Vector3.ZERO
-	for attempt in 24:
-		candidate = Vector3(
-			rng.randf_range(-TEAM_MERCS_AREA_HALF.x, TEAM_MERCS_AREA_HALF.x),
-			0.0,
-			rng.randf_range(-TEAM_MERCS_AREA_HALF.y, TEAM_MERCS_AREA_HALF.y)
-		)
-		var clear := true
-		for taken_pos in taken:
-			if candidate.distance_to(taken_pos) < TEAM_MERCS_MIN_DIST:
-				clear = false
-				break
-		if clear:
-			return candidate
-	return candidate
 
-func _make_team_mercs_plate(slot: int, pos: Vector3) -> MeshInstance3D:
+# 每排左边那枚「队友名字 + 数量」。重建舞台和宿主矩形变化时都要重算 ——
+# 标签是 2D 的，视口一改尺寸，unproject 出来的落点就不一样了。
+func _update_team_mercs_row_labels() -> void:
+	if _team_mercs_label_layer == null or not is_instance_valid(_team_mercs_label_layer):
+		return
+	for label_value in _team_mercs_row_labels:
+		if label_value != null and is_instance_valid(label_value):
+			(label_value as Label).queue_free()
+	_team_mercs_row_labels.clear()
+	if _team_mercs_camera == null or not is_instance_valid(_team_mercs_camera):
+		return
+	if _team_mercs_stage_root == null or not is_instance_valid(_team_mercs_stage_root):
+		return
+	if _team_mercs_viewport == null or not is_instance_valid(_team_mercs_viewport):
+		return
+	# 视口还没有尺寸时 unproject 全是 0；等下一次 rect 同步再画。
+	if _team_mercs_viewport.size.x <= 0 or _team_mercs_viewport.size.y <= 0:
+		return
+	for row_value in _team_mercs_rows:
+		var row: Dictionary = row_value
+		var row_slot := int(row.get("slot", 0))
+		var anchor: Vector3 = row.get("anchor", Vector3.ZERO)
+		var screen := _team_mercs_camera.unproject_position(_team_mercs_stage_root.global_transform * anchor)
+		var label := Label.new()
+		label.text = "%s %d/%d" % [_team_mercs_row_name(row_slot), int(row.get("count", 0)), GameState.MERCENARY_SLOTS]
+		label.add_theme_font_size_override("font_size", TEAM_MERCS_LABEL_FONT_SIZE)
+		label.add_theme_color_override("font_color", GameConstants.team_slot_color(row_slot))
+		label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.75))
+		label.add_theme_constant_override("outline_size", 4)
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_team_mercs_label_layer.add_child(label)
+		var label_size := label.get_combined_minimum_size()
+		label.position = Vector2(TEAM_MERCS_LABEL_MARGIN, screen.y - label_size.y * 0.5)
+		_team_mercs_row_labels.append(label)
+
+
+# 这一排是谁。照 PrepSeatCard.describe 的口径：自己读本地名片，队友读座位名片，
+# 名片还没到的座位退回「玩家」。
+func _team_mercs_row_name(slot: int) -> String:
+	var en := LocaleManager.get_locale() == "en"
+	var identity := _ready_slot_identity(slot)
+	var who := str(identity.get("player_name", "")).strip_edges()
+	var code := str(identity.get("friend_code", "")).strip_edges()
+	var title := AccountManager.display_name(who, code, false) if not who.is_empty() 		else ("Player" if en else "玩家")
+	if slot == int(NetworkService.team_local_slot):
+		title += " (me)" if en else "（我）"
+	return title
+
+
+func _make_team_mercs_plate(slot: int, pos: Vector3, shrink: float = 1.0) -> MeshInstance3D:
 	var plate := MeshInstance3D.new()
 	plate.name = "TeamMercOwnerRing"
 	var plate_mesh := PlaneMesh.new()
-	plate_mesh.size = Vector2.ONE * TEAM_MERCS_PLATE_RADIUS * 2.0
+	plate_mesh.size = Vector2.ONE * TEAM_MERCS_PLATE_RADIUS * 2.0 * shrink
 	plate.mesh = plate_mesh
 	var plate_material := ShaderMaterial.new()
 	plate_material.shader = UNIT_TEAM_RING_SHADER
@@ -3808,11 +4083,6 @@ func _on_shop_buy_requested(index: int) -> void:
 	if empty_bench >= 0:
 		_buy_or_merge_shop_to_bench(index, empty_bench)
 		return
-	if GameState.tutorial_mode:
-		# 教学是脚本化流程（先「买齐」再单独一步「上阵」），自动往棋盘上放会替玩家
-		# 跳过那一步。教学里待命区满由 TutorialMode 的自动补偿处理，维持原口径。
-		show_message(tr("ui_bench_full"))
-		return
 	if index < 0 or index >= GameState.shop_offers.size():
 		return
 	var offer: Dictionary = GameState.shop_offers[index]
@@ -3825,9 +4095,11 @@ func _on_shop_buy_requested(index: int) -> void:
 		return
 	# ② 棋盘空位。上阵上限与「同名唯一」两条都要先判掉，否则 _buy_or_merge_shop_to_board
 	#    会在里面弹别的提示后直接 return —— 这里挑的就是「真能放」的格子。
+	#    教学跳过这一条：教学是脚本化流程（先「买齐」再单独一步「上阵」），自动往棋盘上放
+	#    会替玩家跳过那一步。但①③的升星照常（10.19 反馈：能升星却提示待命区已满）。
 	var unique_blocked := bool(offer.get("unique_on_board", false)) \
 		and PrepRules.has_unique_board_unit(str(offer.get("id", "")), PrepRules.board_limit_for_def(offer))
-	if GameState.normal_unit_count() < GameState.normal_unit_cap() and not unique_blocked:
+	if not GameState.tutorial_mode and GameState.normal_unit_count() < GameState.normal_unit_cap() and not unique_blocked:
 		var placeable := PrepRules.empty_slot_indices(GameState.board_slots)
 		if placeable.size() > 0:
 			_buy_or_merge_shop_to_board(index, placeable[_board_pick_rng().randi_range(0, placeable.size() - 1)])
@@ -3838,7 +4110,7 @@ func _on_shop_buy_requested(index: int) -> void:
 		_buy_or_merge_shop_to_bench(index, bench_merge)
 		return
 	# ④ 真放不下。
-	show_message(tr("ui_pieces_full"))
+	show_message(tr("ui_bench_full") if GameState.tutorial_mode else tr("ui_pieces_full"))
 
 
 # 「随机放到棋盘可放置处」用的 RNG。**刻意不复用 RngService** ——

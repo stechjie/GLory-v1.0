@@ -627,14 +627,18 @@ def test_queue_requires_login(wired) -> None:
     assert TestClient(app).post("/v1/match/queue", json={"mode": "casual"}).status_code == 401
 
 
-def test_ranked_queue_outside_the_window_says_why(wired) -> None:
+def test_ranked_queue_outside_the_window_says_why(wired, monkeypatch) -> None:
     """🔴 排在一条永远凑不齐的队里，是最让人摸不着头脑的一种失败。
 
     窗口外要明说「19:00 - 23:00 开放」，不能默默排着。
+    （线上默认全天开放；这条验的是关掉全天开放之后的窗口规则。）
     """
     import datetime as _dt
 
     from app import ranked as _ranked
+
+    monkeypatch.setenv("GLORY_RANKED_ALL_DAY", "false")
+    get_settings.cache_clear()
 
     inside = _ranked.window_state()["accepting"]
     with TestClient(app) as client:
@@ -874,3 +878,155 @@ def test_switches_open_change_nothing(wired, monkeypatch) -> None:
         r = client.post("/v1/match/queue", json={"mode": "casual"},
                         headers={"Authorization": "Bearer token-a"})
     assert r.status_code == 200
+
+
+# --- 人少时 AI 补位（2026-10-19）------------------------------------------------
+
+
+def _ai_mm(after: float = 10.0):
+    import random as _random
+
+    clock = _Clock()
+    recorder = _Recorder()
+    maker = matchmaking.Matchmaker(recorder, now=clock, ai_fill_after_sec=after,
+                                   rng=_random.Random(7))
+    return maker, recorder, clock
+
+
+@pytest.mark.anyio
+async def test_ai_fill_is_off_unless_configured(mm) -> None:
+    """不传 ai_fill_after_sec = 原来的行为：凑不满 6 个人就一直排着。"""
+    maker, _, clock = mm
+    maker.join(_players(1)[0], matchmaking.CASUAL)
+    clock.advance(600)
+    await maker.tick()
+    assert maker.state_of(_players(1)[0])["state"] == "queued"
+
+
+@pytest.mark.anyio
+async def test_lonely_player_gets_an_ai_match_after_ten_seconds_without_confirm() -> None:
+    maker, rec, clock = _ai_mm()
+    me = _players(1)[0]
+    maker.join(me, matchmaking.RANKED)
+    clock.advance(9)
+    await maker.tick()
+    assert maker.state_of(me)["state"] == "queued", "不到 10 秒不开桌"
+    clock.advance(1)
+    await maker.tick()
+    await _drain_background()
+    # 一个人对 AI：不弹确认框，直接 ready。
+    assert maker.state_of(me)["state"] == "ready"
+    assert "found" not in rec.states_for(me)
+    assert rec.last_for(me)["state"] == "ready"
+    assignment = maker.assignment_for(me)
+    assert assignment is not None and assignment.mode == matchmaking.RANKED
+    slots = {ai["slot"] for ai in assignment.ai_seats}
+    mine = assignment.team * 3 + assignment.seat
+    assert len(slots) == 5 and mine not in slots and slots | {mine} == set(range(6))
+    names = [ai["name"] for ai in assignment.ai_seats]
+    assert len(set(names)) == 5 and all(n in matchmaking.AI_NAMES for n in names)
+
+
+@pytest.mark.anyio
+async def test_two_humans_sit_on_the_same_team_and_must_confirm() -> None:
+    maker, rec, clock = _ai_mm()
+    a, b = _players(2)
+    maker.join(a, matchmaking.CASUAL)
+    maker.join(b, matchmaking.CASUAL)
+    clock.advance(10)
+    await maker.tick()
+    found = rec.last_for(a)
+    assert found["state"] == "found"
+    seats = found["seats"]
+    assert len(seats) == 6
+    humans = [s for s in seats if not s.get("ai")]
+    ais = [s for s in seats if s.get("ai")]
+    assert len(humans) == 2 and len(ais) == 4
+    assert {s["team"] for s in humans} == {0}, "1~3 个真人坐同一队"
+    assert all(s["accepted"] for s in ais) and all(s["name"] for s in ais)
+    maker.accept(a)
+    assert maker.state_of(b)["state"] == "found"
+    maker.accept(b)
+    assert maker.state_of(a)["state"] == "ready"
+    assert len(maker.assignment_for(a).ai_seats) == 4
+    assert maker.assignment_for(a).ai_seats == maker.assignment_for(b).ai_seats
+
+
+@pytest.mark.anyio
+async def test_four_humans_fill_one_team_then_the_other() -> None:
+    maker, rec, clock = _ai_mm()
+    four = _players(4)
+    _fill(maker, four)
+    clock.advance(10)
+    await maker.tick()
+    seats = rec.last_for(four[0])["seats"]
+    humans = [s for s in seats if not s.get("ai")]
+    assert sorted(s["team"] for s in humans) == [0, 0, 0, 1]
+    assert len([s for s in seats if s.get("ai")]) == 2
+
+
+@pytest.mark.anyio
+async def test_ten_seconds_count_from_the_longest_waiter() -> None:
+    maker, rec, clock = _ai_mm()
+    first, second = _players(2)
+    maker.join(first, matchmaking.CASUAL)
+    clock.advance(8)
+    maker.join(second, matchmaking.CASUAL)
+    clock.advance(2)
+    await maker.tick()
+    # 第二个人只等了 2 秒，也跟着这一桌走：时限看的是等得最久的那个人。
+    assert maker.state_of(first)["state"] == "found"
+    assert maker.state_of(second)["state"] == "found"
+
+
+@pytest.mark.anyio
+async def test_six_humans_still_make_a_normal_match_without_ai() -> None:
+    maker, rec, clock = _ai_mm()
+    six = _players(6)
+    _fill(maker, six)
+    clock.advance(30)
+    await maker.tick()
+    roster = maker.state_of(six[0])["seats"]
+    assert len(roster) == 6 and not any(s.get("ai") for s in roster)
+
+
+@pytest.mark.anyio
+async def test_ai_fill_keeps_modes_apart() -> None:
+    maker, rec, clock = _ai_mm()
+    casual, ranked_player = _players(2)
+    maker.join(casual, matchmaking.CASUAL)
+    maker.join(ranked_player, matchmaking.RANKED)
+    clock.advance(10)
+    await maker.tick()
+    await _drain_background()
+    assert maker.assignment_for(casual).match_uid != maker.assignment_for(ranked_player).match_uid
+
+
+def test_card_carries_ai_seats_as_compact_arrays() -> None:
+    ai = [{"slot": 1, "team": 0, "seat": 1, "name": "小麦田", "avatar": "avatar_005"}]
+    payload = loadout.card_payload(_loadout(), match_uid="a" * 32, team=0, ai_seats=ai)
+    assert payload["ai"] == [[1, "小麦田", "avatar_005"]]
+    assert "ai" not in loadout.card_payload(_loadout(), match_uid="a" * 32, team=0)
+
+
+def test_card_with_five_ai_seats_still_fits() -> None:
+    """🔴 最大名片 + 五个 AI 座位也要在 BattleCard.MAX_CARD_CHARS 以内，
+    否则 AI 补位的对局所有人都进不去。"""
+    limit = int(re.search(r"MAX_CARD_CHARS\s*:=\s*(\d+)", CARD_GD).group(1))
+    fat = _loadout(
+        player_name="字" * 24, avatar="upload:" + "a" * 64, avatar_frame="upload:" + "b" * 64,
+        pet="p" * 32, races=[("r%02d" % i) + "x" * 29 for i in range(loadout.MAX_RACES)],
+    )
+    longest = max(matchmaking.AI_NAMES, key=lambda n: len(n.encode("utf-8")))
+    ai = [{"slot": i, "name": longest, "avatar": "avatar_052"} for i in range(1, 6)]
+    payload = loadout.card_payload(fat, match_uid="f" * 32, team=0, seat=0, ai_seats=ai)
+    import json as _json
+
+    body = _json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    wire = len(body) * 4 // 3 + 1 + 344
+    assert wire < limit, "带五个 AI 的最大名片 %d 字符，超过战斗服务器的 %d" % (wire, limit)
+
+
+def test_ai_names_match_the_battle_server_limits() -> None:
+    assert len(matchmaking.AI_NAMES) == len(set(matchmaking.AI_NAMES)) >= 5
+    assert all(0 < len(n) <= 16 for n in matchmaking.AI_NAMES)

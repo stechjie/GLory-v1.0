@@ -358,7 +358,8 @@ func _check_draw_order(dims: Array, overlay: Control, label: String) -> void:
 	for dim in dims:
 		dim_max = maxi(dim_max, (dim as Node).get_index())
 	var above := {
-		"箭头": TutorialMode._arrow,
+		"金色光辉": TutorialMode._light,
+		"狗狗": TutorialMode._guide,
 		"气泡": TutorialMode._bubble,
 		"跳过按钮": TutorialMode._skip_btn,
 	}

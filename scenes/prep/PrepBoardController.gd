@@ -325,16 +325,19 @@ func request_upgrade_stone_draw() -> void:
 		show_message(TutorialMode.follow_arrow_hint())
 		SfxService.play(SfxService.CUE_UI_REJECT)
 		return
+	var en := LocaleManager.get_locale() == "en"
 	if not GameState.can_draw_upgrade_stone(GameState.round_index):
-		show_message("本回合已经抽取过升级石")
+		show_message("Stone already drawn this round" if en else "本回合已经抽取过升级石")
 		return
 	var stone_cost := GameState.upgrade_stone_draw_cost()
 	if GameState.carrots < stone_cost:
-		show_message("萝卜不足：需要%d萝卜" % stone_cost)
+		show_message(("Not enough carrots: need %d" if en else "萝卜不足：需要%d萝卜") % stone_cost)
 		return
-	# 教学送的萝卜可以超过容量（教学文案里讲了），所以教学不卡容量门槛。
-	if GameState.carrot_capacity() < stone_cost and not GameState.tutorial_mode:
-		show_message("萝卜田容量不足：需要能储存%d萝卜" % stone_cost)
+	# 教学抽石头那一步送的萝卜可以超过容量（教学文案里讲了），只有那一步不卡容量门槛；
+	# 讲完以后照正式局算。
+	var scripted_draw := GameState.tutorial_mode and TutorialMode.scripted_stone_draw()
+	if GameState.carrot_capacity() < stone_cost and not scripted_draw:
+		show_message(("Carrot field too small: must store %d carrots" if en else "萝卜田容量不足：需要能储存%d萝卜") % stone_cost)
 		return
 	if NetworkService.team_active and not NetworkService.is_host:
 		# 与 request_carrot_harvest_upgrade / _hire_mercenary_to_slot 同一道判据。
@@ -348,13 +351,19 @@ func request_upgrade_stone_draw() -> void:
 		return
 	GameState.carrots -= stone_cost
 	GameState.stone_draw_used_round = GameState.round_index
-	GameState.stone_draw_count += 1
+	if stone_cost == 0 and GameState.FINAL_ROUND == 13:
+		GameState.free_stone_claimed = true
+	else:
+		GameState.stone_draw_count += 1
 	# 教学固定抽到与 3 星棋子同属性的石头，下一步升四星才一定接得上。
-	var stone_type := TutorialMode.forced_stone_type() if GameState.tutorial_mode \
+	var stone_type := TutorialMode.forced_stone_type() if scripted_draw \
 		else CarrotEconomy.draw_type_from_roll(randf())
 	GameState.apply_team_stone(stone_type)
 	SaveManager.save_run()
-	show_message("获得%s石" % {"sky": "天", "land": "地", "ren": "人"}.get(stone_type, stone_type))
+	if en:
+		show_message("Received %s Stone" % {"sky": "Sky", "land": "Land", "ren": "Ren"}.get(stone_type, stone_type))
+	else:
+		show_message("获得%s石" % {"sky": "天", "land": "地", "ren": "人"}.get(stone_type, stone_type))
 	_refresh_all()
 
 # 用一颗同属性升级石把三星升为四星。
@@ -422,7 +431,12 @@ func _execute_four_star_upgrade(where: String, index: int) -> void:
 		return
 	GameState.record_tiger_starup()
 	var d: Dictionary = (cell as Dictionary).get("def", {})
-	show_message(("%s upgraded to four stars" if LocaleManager.get_locale() == "en" else "%s 升为四星") % DataRegistry.unit_display_name(d, LocaleManager.get_locale() == "en"))
+	# 10.18：这条提示**等全屏特效播完再弹**。它在画面中央，而棋子正好也在中段 ——
+	# 第一次真棋盘截图里它整条盖在棋子上，羽毛 / 碎晶 / 闪电落下去的那个点被它挡住了。
+	var upgraded_text := ("%s upgraded to four stars" if LocaleManager.get_locale() == "en" else "%s 升为四星") 		% DataRegistry.unit_display_name(d, LocaleManager.get_locale() == "en")
+	get_tree().create_timer(FOUR_STAR_SCREEN_FX.DURATION).timeout.connect(func() -> void:
+		if is_inside_tree():
+			show_message(upgraded_text))
 	# 9.17：按棋子分流。用 def.id 而不是 def.name —— 客机路径的名字会被
 	# DataRegistry.canonicalize_unit_display_names() 按本地化覆写，id 永远稳定。
 	# 放在成功判定之后（上面已经 return 掉了所有失败分支），所以只响真的升级。
@@ -468,10 +482,6 @@ func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 	if NetworkService.shop_refresh_in_flight():
 		show_message("商店刷新中，请稍候")
 		return
-	if GameState.tutorial_mode:
-		_shop.selected = -1
-		_refresh_all()
-		return
 	if shop_index < 0 or shop_index >= GameState.shop_offers.size() or bool(GameState.shop_sold[shop_index]):
 		return
 	if board_index < 0 or board_index >= GameState.board_slots.size():
@@ -480,6 +490,12 @@ func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 	var cost := _shop_unit_cost(offer)
 	var target = GameState.board_slots[board_index]
 	var incoming := {"id": offer.id, "uid": GameState.mint_piece_uid(), "star": 1, "def": offer.duplicate(true)}
+	# 教学不允许从商店直接放上棋盘（先买进待命区、再单独一步上阵），但「待命区满了、
+	# 买下来正好和棋盘上的同名棋子合星」要放行（10.19 反馈：能升星却提示待命区已满）。
+	if GameState.tutorial_mode and not (target is Dictionary and PrepRules.can_merge_cells(target, incoming)):
+		_shop.selected = -1
+		_refresh_all()
+		return
 	if target == null:
 		# 10.09 bug 文档第 1 条：**棋盘上已有同名唯一棋子**时，不能再一句拒绝。
 		#
@@ -926,6 +942,9 @@ var _last_merge_keeper_uid := ""
 func _merge_copies_into_cell(target: Dictionary, incoming: Dictionary, excluded_board: Array = [], excluded_bench: Array = []) -> bool:
 	if not PrepRules.can_merge_cells(target, incoming):
 		return false
+	# 升星表现要「被吃掉的那几枚化成光点飞向保留的那枚」，而那几枚马上就会被从 slots
+	# 里抹掉（_take_extra_merge_piece 当场置 null）—— 所以起点坐标必须**现在**就记下。
+	var positions := prep_slot_positions_by_uid()
 	var id := str(target.get("id", ""))
 	var star := int(target.get("star", 1))
 	# target + incoming already provide 2 copies. 1-star fuses from those 2 alone;
@@ -943,7 +962,20 @@ func _merge_copies_into_cell(target: Dictionary, incoming: Dictionary, excluded_
 	_last_merge_uids = [_last_merge_keeper_uid, str(incoming.get("uid", ""))]
 	if not extra.is_empty():
 		_last_merge_uids.append(str(extra.get("uid", "")))
+	_queue_star_upgrade_from_merge(positions, star + 1)
 	return true
+
+
+# 把这一笔合成交给升星表现。_last_merge_uids 的第一个是 keeper，其余是被吃掉的那几枚
+# （两个合成函数都按这个约定填），所以光点起点就是「除 keeper 之外」那些 uid 的坐标。
+func _queue_star_upgrade_from_merge(positions: Dictionary, new_star: int) -> void:
+	var from: Array = []
+	for uid in _last_merge_uids:
+		if str(uid) == _last_merge_keeper_uid:
+			continue
+		if positions.has(str(uid)):
+			from.append(positions[str(uid)])
+	queue_star_upgrade(_last_merge_keeper_uid, new_star, from)
 
 func _take_extra_merge_piece(id: String, star: int, excluded_board: Array, excluded_bench: Array) -> Dictionary:
 	for i in GameState.board_slots.size():
@@ -1008,6 +1040,8 @@ func _gather_star_pieces(slots: Array, location: String, star: int, groups: Dict
 		groups[id].append([location, i])
 
 func _combine_copies_auto(star: int, locs: Array) -> void:
+	# 同 _merge_copies_into_cell：被吃掉那几枚的坐标必须在抹掉之前记下来。
+	var positions := prep_slot_positions_by_uid()
 	# Consume exactly the copies this star needs to fuse (2 for 1-star, 3 for 2-star).
 	var fuse: Array = locs.slice(0, GameState.copies_to_upgrade(star))
 	# Keeper: prefer a board cell so the upgraded unit stays on the board.
@@ -1034,6 +1068,7 @@ func _combine_copies_auto(star: int, locs: Array) -> void:
 	for c in cells:
 		if typeof(c) == TYPE_DICTIONARY:
 			_last_merge_uids.append(str((c as Dictionary).get("uid", "")))
+	_queue_star_upgrade_from_merge(positions, star + 1)
 	for loc in fuse:
 		if str(loc[0]) == str(keeper_loc[0]) and int(loc[1]) == int(keeper_loc[1]):
 			continue

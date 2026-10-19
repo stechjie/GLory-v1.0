@@ -22,6 +22,7 @@ const NODE_NAME := "FourStarAuraV2"
 const RING_SHADER := preload("res://effects/vfx3d/shaders/four_star_ring_v3.gdshader")
 const COLUMN_SHADER := preload("res://effects/vfx3d/shaders/four_star_column_v3.gdshader")
 const RIM_SHADER := preload("res://effects/vfx3d/shaders/four_star_rim.gdshader")
+const ASCEND_BURST := preload("res://effects/vfx3d/modules/FourStarAscendBurstV3.gd")
 const ELEMENTS := ["sky", "land", "ren"]
 
 const RING_RADIUS := 0.82        # default ring centre-line radius, in actor heights
@@ -139,9 +140,37 @@ func set_footprint(radius: float) -> void:
 	if configured:
 		_build()
 
-## Kept for API compatibility. V3 has no ascension burst by design.
+## 升 4★ 那一瞬间的爆发。
+##
+## V3 最初的设计是「没有升级爆发」（这里原来只有 pass）。Leno 10.18 推翻了这一条：
+## 升级那一刻是哑的，常驻光环只是突然出现。现在补上一段按属性的爆发（羽毛 / 碎晶 /
+## 雷电，取 V3 自己的配色与粒子贴图），并让常驻的地环与光柱**从爆发里长出来**，
+## 而不是同一帧啪地出现。
+##
+## 爆发是一个一次性子节点，播完自删 —— 常驻光环本身仍然零逐帧脚本。
 func play_upgrade() -> void:
-	pass
+	if not configured or not visible:
+		return
+	var old := get_node_or_null("AscendBurst")
+	if old != null:
+		old.queue_free()
+	var burst: Node3D = ASCEND_BURST.new()
+	burst.name = "AscendBurst"
+	add_child(burst)
+	var kind: String = _particle_kinds(element)[0]
+	burst.call("setup", _palette(element), footprint, RING_Z_SCALE,
+		_get_column_mesh(), _get_column_material(element, in_battle),
+		_get_particle_parts(kind, in_battle, footprint))
+	# 常驻的地环与光柱从 0 长到原尺寸。_build() 里给它们的 scale 是 (fp, 1, fp·Z)。
+	var fp := footprint / RING_RADIUS
+	var settled := Vector3(fp, 1.0, fp * RING_Z_SCALE)
+	for node in [ring, column]:
+		if node == null or not is_instance_valid(node):
+			continue
+		(node as Node3D).scale = settled * Vector3(0.2, 0.2, 0.2)
+		var tween := (node as Node3D).create_tween()
+		tween.tween_interval(0.12)
+		tween.tween_property(node, "scale", settled, 0.38) 			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 func _exit_tree() -> void:
 	_clear_rim()

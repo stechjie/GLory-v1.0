@@ -150,9 +150,22 @@ func _case_member_can_invite() -> void:
 			and not src.contains("add.pressed.connect(_toggle_friends_drawer)"),
 		"seat_slot_moves_not_invites",
 		"10-08：点空位 = 换到那个位置（同自定义房间），不能再拉出邀请抽屉")
-	_h.expect(src.contains("row_tap.pressed.connect(func() -> void: _invite(code))"),
-		"friend_row_invites",
-		"10-08：邀请在好友列表里，点好友那一行就是邀请（同自定义房间的好友列表）")
+	# ★★ 10.19 用户改口径：「让玩家自己按邀请，有时候只是想看看那个人的 profile」。
+	#    ⇒ 点好友那一行 / 头像 = 看资料；邀请只走行内的「邀请」按钮；
+	#    右侧快捷头像栏点一下 = 打开好友抽屉（不再一点就邀请）。
+	#    10.19 换皮后头像不再是单独的按钮，画在整行点击区上面（MOUSE_FILTER_IGNORE），点头像就是点行。
+	_h.expect(src.contains("row_tap.pressed.connect(_view_member_profile.bind(code))")
+			and not src.contains("row_tap.pressed.connect(func() -> void: _invite(code))")
+			and not src.contains("avatar.pressed.connect(func() -> void: _invite(code))"),
+		"friend_row_opens_profile",
+		"10.19：点好友行 / 头像是看资料，不能直接邀请")
+	_h.expect(src.contains("invite.pressed.connect(func() -> void: _invite(code))"),
+		"friend_invite_button_invites",
+		"10.19：邀请只走好友行里的「邀请」按钮")
+	_h.expect(src.contains("quick.pressed.connect(_toggle_friends_drawer)")
+			and not src.contains("quick.pressed.connect(func() -> void: _invite(code))"),
+		"friend_rail_opens_drawer",
+		"10.19：快捷头像栏点一下是打开好友抽屉，不能直接邀请")
 	# 10-08：按键尺寸照自定义房间（Team3v3Lobby），钉住几颗主要的，免得以后又各改各的。
 	var custom := _read("res://scenes/menu/Team3v3Lobby.gd")
 	_h.expect(custom.contains("const VOICE_BTN_SIZE := Vector2(78, 60)")

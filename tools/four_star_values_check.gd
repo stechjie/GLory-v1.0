@@ -228,7 +228,9 @@ func _case_caps_respected() -> void:
 			if base <= 0.0:
 				continue
 			var ratio := float(scaled[key]) / base
-			var limit := float(RELATIVE_CAPS[key])
+			# final status 2026-10-19 定稿：自爆灵 1–3★ 100%、4★ 250%。
+			# 只放宽这一只；其他伤害技能仍遵守原 2 倍守门规则。
+			var limit := 2.5 if uid == "undead_bomb" and key == "damage_atk_pct" else float(RELATIVE_CAPS[key])
 			if ratio > limit + 0.0001:
 				_h.fail("relative_cap_exceeded",
 					"%s 的 4 星 %s 是基准的 %.2f 倍（%s -> %s），封顶 %s 倍"
