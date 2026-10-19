@@ -720,15 +720,17 @@ func _render_friends() -> void:
 			var row := _paper_panel(_friend_list, Vector2.ZERO, Vector2(359, 82), 0.75)
 			row.custom_minimum_size = Vector2(359, 82)
 			var code := str(friend.get("friend_code", ""))
-			# 10-08：点好友这一行就是邀请（同自定义房间的好友列表）；空位不再弹邀请。
+			# 10.19：点好友这一行 / 头像 = 看对方资料；邀请只走右边的「邀请」按钮。
+			# 原来（10-08）点整行就直接邀请 —— 玩家有时只想看看对方资料，一点就把邀请发出去了。
+			# 离线 / 对局中的好友资料照样能看，只有「邀请」按钮按档位禁用。
 			var row_tap := _button(row, "", Vector2.ZERO, Vector2(359, 82))
 			row_tap.flat = true
 			row_tap.focus_mode = Control.FOCUS_NONE
-			row_tap.disabled = _local_only or not can_invite or room_count >= 3
-			row_tap.pressed.connect(func() -> void: _invite(code))
+			row_tap.disabled = _local_only
+			row_tap.pressed.connect(_view_member_profile.bind(code))
 			var avatar := _friend_avatar(row, friend, Vector2(8, 7), 67)
 			avatar.disabled = row_tap.disabled
-			avatar.pressed.connect(func() -> void: _invite(code))
+			avatar.pressed.connect(_view_member_profile.bind(code))
 			var name := _label(row, str(friend.get("player_name", "")), Vector2(85, 13), Vector2(152, 31), 21,
 				Color("31412e") if can_invite or in_match else Color("8b8d7b"))
 			name.clip_text = true
@@ -739,12 +741,13 @@ func _render_friends() -> void:
 			var invite := _button(row, _text("邀请", "Invite") if can_invite else \
 				(_text("对局中", "In match") if in_match else _text("邀请", "Invite")), Vector2(254, 20), Vector2(87, 42))
 			_style_paper_button(invite, true)
-			invite.disabled = row_tap.disabled
+			invite.disabled = _local_only or not can_invite or room_count >= 3
 			invite.pressed.connect(func() -> void: _invite(code))
+			# 10.19：右侧快捷头像栏点一下 = 打开好友抽屉，在抽屉里再选看资料还是邀请；
+			# 不再一点就邀请（同上，避免误发）。
 			if can_invite and quick_count < 3:
 				var quick := _friend_avatar(_friend_rail, friend, Vector2.ZERO, 72)
-				quick.disabled = _local_only or room_count >= 3
-				quick.pressed.connect(func() -> void: _invite(code))
+				quick.pressed.connect(_toggle_friends_drawer)
 				quick_count += 1
 	if _friends.is_empty():
 		_label(_friend_list, _text("暂无好友", "No friends yet"), Vector2(18, 16), Vector2(312, 36), 19, Color("657057"))
