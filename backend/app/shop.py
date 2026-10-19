@@ -494,10 +494,12 @@ async def grant_content(
             " and revoked_at is null and item_id = any($2::text[])",
             player_id, ["human", "god", "dark", "undead", "crimson"])
         if int(race_count or 0) >= 4:
+            # 函数内 import：ranked 在模块顶层 import 了 shop，顶层互相 import 会循环。
+            from app import ranked
             await conn.execute(
-                "update player_ranked set score = greatest(score, 300),"
+                "update player_ranked set score = greatest(score, $2),"
                 " breakthrough_ready = false where player_id = $1"
-                " and breakthrough_ready", player_id)
+                " and breakthrough_ready", player_id, ranked.STARFORGE_FLOOR)
         # Newly completed race joins the loadout automatically until four are selected.
         await conn.execute(
             "update players set selected_races = array_append("

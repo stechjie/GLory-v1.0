@@ -152,7 +152,8 @@ async def join_queue(
         if mode.startswith("ranked"):
             score = await conn.fetchval(
                 "select score from player_ranked where player_id = $1", me.player_id)
-            mode = matchmaking.RANKED_NORMAL if int(score or 0) >= 300 else matchmaking.RANKED
+            mode = (matchmaking.RANKED_NORMAL if int(score or 0) >= ranked.STARFORGE_FLOOR
+                    else matchmaking.RANKED)
     if reason:
         raise HTTPException(
             status_code=409, detail=_GATE_TEXT.get(reason, "现在不能排这个模式"),
@@ -271,16 +272,15 @@ async def my_ranked(claims: Annotated[Claims, Depends(current_claims)]) -> MyRan
         score=score,
         tier=ranked.tier_of(score),
         tier_progress=ranked.tier_progress(score),
-        tier_span=ranked.tier_span(ranked.tier_of(score)),
+        tier_span=ranked.progress_span(score),
         games=int(row["games"]) if row else 0,
         wins=int(row["wins"]) if row else 0,
         win_streak=int(row["win_streak"]) if row else 0,
         credit=credit,
         credit_warn=credit < ranked.CREDIT_WARN,
         banned_sec=banned_sec,
-        forest_division=("I" if score < 150 else "II" if score < 200 else
-                         "III" if score < 250 else "IV") if 100 <= score < 300 else "",
+        forest_division=ranked.forest_division(score),
         breakthrough_ready=bool(row["breakthrough_ready"]) if row else False,
-        need_four_races=100 <= score < 300 and owned_races < 4,
+        need_four_races=ranked.FOREST_FLOOR <= score < ranked.STARFORGE_FLOOR and owned_races < 4,
         owned_races=owned_races,
     )

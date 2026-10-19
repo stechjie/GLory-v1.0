@@ -527,7 +527,7 @@ async def start(body: StartBody, claims: Annotated[Claims, Depends(current_claim
     ratings = {row["player_id"]: int(row["score"]) for row in rows}
     queue_mode = room.mode
     if room.mode == "ranked":
-        stages = {int(ratings.get(pid, 0)) >= 300 for pid in members}
+        stages = {int(ratings.get(pid, 0)) >= ranked.STARFORGE_FLOOR for pid in members}
         if len(stages) != 1:
             raise HTTPException(status_code=409,
                                 detail="队伍成员须处于相同排位回合阶段（突破前 13 回合，突破后 21 回合）")

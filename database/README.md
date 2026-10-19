@@ -93,6 +93,7 @@ Supabase Dashboard → SQL Editor，按编号顺序逐个执行。
 | `030_chat_party_invite.sql` | 放宽 `chat_messages.kind` 的 check 约束，放行 `party_invite`（组队邀请私聊，见 020 预留的那句话）。**这是 10-07「排位里邀请好友 → HTTP 500」的根治**：代码先加了 kind、迁移没跟上，insert 被约束拒绝、异常冒到接口层。顺带补 `party_invite` 的部分索引。写法带 `if exists` / `if not exists`，手工执行两遍也安全 |
 | `031_crimson_grandfather.sql` | 赤律族改成「商城集齐 8 个棋子解锁」：给**第一次执行时已存在**的账号补发种族 + 8 个棋子（source = grant）。`one_time_grants` 记一笔，重跑整段跳过，不会白送给之后的新玩家。**必须先于新的 `data/shop.json` 部署** |
 | `037_progression.sql` | 账号等级与升级事件、森卫突破标记；旧账号的一次性种族补发。先按编号执行 `032`–`036`，再运行本迁移，最后部署新商城目录与服务端。重跑不会给新账号补发旧种族。 |
+| `038_ranked_tier_floors.sql` | 段位门槛改成每段上限 100 / 200 / 400 / 800 / 1600（初誓 0–99 … 荣耀之冠 800 起）：重定义 `settle_season()` 归档那段 case（其余同 028）；把 037 按旧门槛写死的星铸保底 300 改成 200，并给 200 分以上的人补记突破。玩家平时看到的段位由 `ranked.TIER_FLOORS` 现算、更新账号服务器就变；**这个文件管赛季结算发奖与保底，必须在 `037_progression.sql` 之后、更新账号服务器之前跑**。可重复执行，不用重启 |
 
 **真库测试**：`backend/tests/pg_harness.py` 能在本机 PostgreSQL 上把这里全部文件跑一遍再测（设 `GLORY_TEST_PG`，只许本机）。
 见 `docs/运营后台设计.md` 第七节。

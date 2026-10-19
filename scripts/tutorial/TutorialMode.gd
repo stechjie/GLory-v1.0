@@ -7,10 +7,14 @@ signal skip_requested
 
 const TutorialTargetProviderScript := preload("res://scripts/tutorial/TutorialTargetProvider.gd")
 const TutorialGuideLightScript := preload("res://scripts/tutorial/TutorialGuideLight.gd")
-const DOG_WELCOME := preload("res://assets/ui/tutorial/dog_welcome.png")
-const DOG_GUIDE := preload("res://assets/ui/tutorial/dog_guide.png")
-const DOG_EXPLAIN := preload("res://assets/ui/tutorial/dog_explain.png")
-const DOG_ENCOURAGE := preload("res://assets/ui/tutorial/dog_encourage.png")
+# 教学小狗立绘：这里只存路径，用到时经 _dog() 再 load。**不要改回 preload。**
+# TutorialMode 是自动加载，战斗服务器启动时也要编译它；而服务器包不带美术资源，
+# preload 一张图片就让它编译失败，连带 GameState / NetworkService 一串自动加载全挂，
+# 战斗服务器包冷启动直接红（10-19 踩过）。专服不建教学界面，永远走不到 _dog()。
+const DOG_WELCOME := "res://assets/ui/tutorial/dog_welcome.png"
+const DOG_GUIDE := "res://assets/ui/tutorial/dog_guide.png"
+const DOG_EXPLAIN := "res://assets/ui/tutorial/dog_explain.png"
+const DOG_ENCOURAGE := "res://assets/ui/tutorial/dog_encourage.png"
 # 聚焦遮罩的着色器：整幅压暗 + 逐片元开洞。见 FOCUS_DIM_COUNT 上方的长注释。
 const TutorialFocusMaskShader := preload("res://shaders/tutorial_focus_mask.gdshader")
 
@@ -876,7 +880,7 @@ func _show_passive_dog() -> void:
 		dim.visible = false
 	_light.visible = false
 	_bubble.visible = false
-	_guide.texture = DOG_GUIDE
+	_guide.texture = _dog(DOG_GUIDE)
 	_place_dog_at_passive_spot()
 	_cheer_label.text = _t("加油！", "You can do it!")
 	_cheer_label.position = _guide.position + Vector2(-88, 28)
@@ -1132,18 +1136,21 @@ func _arrow_dir() -> int:
 			return ArrowDir.UP
 	return ArrowDir.DOWN
 
+func _dog(path: String) -> Texture2D:
+	return load(path) as Texture2D
+
 func _guide_texture() -> Texture2D:
 	match step:
 		Step.BUY_3, Step.START_PVE_1, Step.TAKE_TREASURE_1, Step.TAKE_TREASURE_2:
-			return DOG_WELCOME
+			return _dog(DOG_WELCOME)
 		Step.BOND_HINT, Step.VIEW_TREASURE, Step.FORMATION_HP, \
 		Step.CARROT_CAMP, Step.HARVEST_UPGRADE, Step.CARROT_HARVEST, Step.KING_HINT:
-			return DOG_EXPLAIN
+			return _dog(DOG_EXPLAIN)
 		Step.BUY_KING:
-			return DOG_WELCOME
+			return _dog(DOG_WELCOME)
 		Step.UPGRADE_3, Step.FOUR_STAR, Step.FILL_7:
-			return DOG_ENCOURAGE
-	return DOG_GUIDE
+			return _dog(DOG_ENCOURAGE)
+	return _dog(DOG_GUIDE)
 
 
 # The target provider supplies live rectangles, including the redesigned carrot
@@ -2119,7 +2126,7 @@ func _ensure_overlay() -> void:
 	_overlay.add_child(_light)
 	_guide = TextureRect.new()
 	_guide.name = "TutorialDog"
-	_guide.texture = DOG_WELCOME
+	_guide.texture = _dog(DOG_WELCOME)
 	_guide.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_guide.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_guide.mouse_filter = Control.MOUSE_FILTER_IGNORE

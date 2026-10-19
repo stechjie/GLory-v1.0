@@ -24,7 +24,7 @@ func _ready() -> void:
 		return
 	badge.texture = TIERS.badge_of(3)
 	badge.visible = true
-	rank_value.text = "天曜 · 50/200"
+	rank_value.text = "天曜 · 50/400"
 	for _i in 10:
 		await get_tree().process_frame
 	await RenderingServer.frame_post_draw

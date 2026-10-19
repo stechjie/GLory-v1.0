@@ -11,7 +11,7 @@
 
 ## 段位不存，是分数的显示切片
 
-    段位起点 = 0 / 100 / 300 / 500 / 700     五段，最高段不封顶
+    段位起点 = 0 / 100 / 200 / 400 / 800     五段，最高段不封顶
 
 不加 `tier` 列的理由写在 014 的文件头。当前口径由 TIER_FLOORS 定义。
 
@@ -49,10 +49,21 @@ log = logging.getLogger("glory.ranked")
 
 # --- 段位 ---------------------------------------------------------------------
 
-# Five visible ranks. Keep existing score totals and the 700-point top-rank threshold.
-TIER_FLOORS = (0, 100, 300, 500, 700)
+# 五档，每段上限 100 / 200 / 400 / 800 / 1600（10-15 用户定；原来是 0/100/300/500/700 起）：
+#   初誓 0–99 · 森卫 100–199 · 星铸 200–399 · 天曜 400–799 · 荣耀之冠 800 以上
+# 🔴 database/038_ranked_tier_floors.sql 里抄着同一组数（SQL 调不到这里）：
+#    settle_season 的归档门槛、keep_ranked_stage_floor 的森卫 / 星铸保底。
+#    改这里要连那边一起改，否则赛季结算按旧门槛发奖、保底停在旧分数。
+TIER_FLOORS = (0, 100, 200, 400, 800)
 TIER_COUNT = len(TIER_FLOORS)
 MAX_TIER = TIER_COUNT - 1
+# 荣耀之冠的进度条终点：800–1599 显示 x/800，1600 满格；过了照常加分，只显示累计分。
+TOP_TIER_GOAL = 1600
+# 进阶（10-18）：森卫是永久保底；集齐第 4 族才能突破森卫，突破后星铸也是永久保底，
+# 排位改打 21 回合。这两个数一律从 TIER_FLOORS 取，别再写死 ——
+# 10-19 就是因为那批按旧门槛写死了 300 / 299，和新门槛差了一整段。
+FOREST_FLOOR = TIER_FLOORS[1]
+STARFORGE_FLOOR = TIER_FLOORS[2]
 
 
 def tier_of(score: int) -> int:
@@ -66,10 +77,25 @@ def tier_progress(score: int) -> int:
     return max(0, int(score) - TIER_FLOORS[tier_of(score)])
 
 
-def tier_span(tier: int) -> int:
-    """升到下一档所需分数；最高档没有上限。"""
-    index = max(0, min(MAX_TIER, int(tier)))
-    return 0 if index == MAX_TIER else TIER_FLOORS[index + 1] - TIER_FLOORS[index]
+def progress_span(score: int) -> int:
+    """本段进度条满格是多少分（发给客户端的 tier_span）；0 = 不画进度条，只显示累计分。
+
+    荣耀之冠没有下一档，进度条走到 TOP_TIER_GOAL，到了就是 0。分数本身不封顶。
+    """
+    value = max(0, int(score))
+    tier = tier_of(value)
+    if tier < MAX_TIER:
+        return TIER_FLOORS[tier + 1] - TIER_FLOORS[tier]
+    return TOP_TIER_GOAL - TIER_FLOORS[MAX_TIER] if value < TOP_TIER_GOAL else 0
+
+
+def forest_division(score: int) -> str:
+    """森卫里的 I–IV 小段：森卫均分四份（现在每份 25 分）。不在森卫返回空串。"""
+    value = int(score)
+    if not FOREST_FLOOR <= value < STARFORGE_FLOOR:
+        return ""
+    quarter = (value - FOREST_FLOOR) * 4 // (STARFORGE_FLOOR - FOREST_FLOOR)
+    return ("I", "II", "III", "IV")[quarter]
 
 
 # --- 一局加减多少 ---------------------------------------------------------------
@@ -294,15 +320,16 @@ async def _settle_ranked(conn, report: dict, seats: list[dict]) -> None:
         # 跑路在输的分上再额外扣一份（第四节：输的那一份 × 1.5）。
         if abandoned:
             delta -= int(round(LOSS_BASE * ABANDON_PENALTY_MULT))
-        # Forest (100) and post-breakthrough Starforge (300) are permanent floors.
-        floor = 300 if row["score"] >= 300 else (100 if row["score"] >= 100 else 0)
+        # 森卫、以及突破后的星铸都是永久保底。
+        floor = (STARFORGE_FLOOR if row["score"] >= STARFORGE_FLOOR
+                 else FOREST_FLOOR if row["score"] >= FOREST_FLOOR else 0)
         score_after = max(floor, apply_delta(row["score"], delta))
         race_count = await owned_race_count(conn, seat["player_id"])
         ready = row["breakthrough_ready"]
-        if score_after >= 300 and race_count < 4 and not row["breakthrough_complete"]:
-            score_after, ready = 299, True
+        if score_after >= STARFORGE_FLOOR and race_count < 4 and not row["breakthrough_complete"]:
+            score_after, ready = STARFORGE_FLOOR - 1, True
         elif ready and race_count >= 4:
-            score_after, ready = max(300, score_after), False
+            score_after, ready = max(STARFORGE_FLOOR, score_after), False
         await conn.execute(
             """
             update player_ranked

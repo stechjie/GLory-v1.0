@@ -50,19 +50,30 @@ def _isolate_xp_awards(monkeypatch):
 
 
 @pytest.mark.parametrize("score, tier", [
-    (0, 0), (99, 0), (100, 1), (299, 1), (300, 2), (499, 2),
-    (500, 3), (699, 3), (700, 4), (1200, 4), (99999, 4),
+    (0, 0), (99, 0), (100, 1), (199, 1), (200, 2), (399, 2),
+    (400, 3), (799, 3), (800, 4), (1600, 4), (99999, 4),
 ])
 def test_tier_slices(score, tier) -> None:
+    # 10-15：每段上限 100 / 200 / 400 / 800 / 1600，整数起点（打到 100 分进第二段）。
     assert ranked.tier_of(score) == tier
 
 
+@pytest.mark.parametrize("score, span", [
+    (0, 100), (150, 100), (250, 200), (500, 400), (799, 400),
+    (800, 800), (1599, 800), (1600, 0), (5000, 0),
+])
+def test_progress_bar_spans(score, span) -> None:
+    """资料页 / 结算页的进度条满格。荣耀之冠走到 1600 满，之后只显示累计分（10-15 用户定）。"""
+    assert ranked.progress_span(score) == span
+
+
 def test_top_tier_is_uncapped() -> None:
-    """🔴 最高档不封顶，高手仍靠总分区分。"""
-    assert ranked.tier_of(700) == ranked.tier_of(5000) == ranked.MAX_TIER
-    assert ranked.tier_progress(700) == 0
-    assert ranked.tier_progress(950) == 250
-    assert [ranked.tier_span(i) for i in range(5)] == [100, 200, 200, 200, 0]
+    """🔴 最高档不封顶，高手仍靠总分区分 —— 1600 只是进度条终点，不是分数上限。"""
+    assert ranked.tier_of(800) == ranked.tier_of(5000) == ranked.MAX_TIER
+    assert ranked.tier_progress(800) == 0
+    assert ranked.tier_progress(1599) == 799
+    assert ranked.tier_progress(1700) == 900
+    assert ranked.apply_delta(1600, 30) == 1630
 
 
 def test_tier_is_not_a_column() -> None:
@@ -221,8 +232,9 @@ class _FakeConn:
     """够 ranked.settle 用的最小假连接。记下所有写入。"""
 
     def __init__(self, known: set[uuid.UUID], scores: dict[uuid.UUID, int],
-                 abandon_counts: dict[uuid.UUID, int] | None = None) -> None:
+                 abandon_counts: dict[uuid.UUID, int] | None = None, races: int = 4) -> None:
         self.known = known
+        self.races = races
         self.scores = scores
         self.abandon_counts = abandon_counts or {}
         self.ranked_writes: list[tuple] = []
@@ -238,7 +250,7 @@ class _FakeConn:
         if "player_ranked" in sql:
             return [{"player_id": p, "score": self.scores.get(p, 0), "win_streak": 0,
                      "breakthrough_ready": False,
-                     "breakthrough_complete": self.scores.get(p, 0) >= 300}
+                     "breakthrough_complete": self.scores.get(p, 0) >= ranked.STARFORGE_FLOOR}
                     for p in args[0]]
         return []
 
@@ -254,7 +266,7 @@ class _FakeConn:
 
     async def fetchval(self, sql, *args):
         if "player_entitlements" in sql:
-            return 4
+            return self.races
         if "kind = 'abandon'" in sql:
             return self.abandon_counts.get(args[0], 0) + 1
         return 1
@@ -338,7 +350,7 @@ async def test_casual_does_not_touch_ranked_score(monkeypatch, local_hour) -> No
     monkeypatch.setattr(dt, "datetime", FrozenDatetime)
     monkeypatch.setattr(dt, "date", LocalDate)
     players_ = _six()
-    conn = _FakeConn(set(players_), {p: 300 for p in players_})
+    conn = _FakeConn(set(players_), {p: ranked.STARFORGE_FLOOR for p in players_})
     await ranked.settle(conn, _report("casual", "team_a", players_))
     assert conn.ranked_writes == [], "休闲局不该动排位分"
     assert len(conn.credit_writes) == 6, "但信誉分照算 —— 跑路的损失和模式无关"
@@ -367,14 +379,14 @@ async def test_abandoner_loses_extra_and_gets_credit_penalty() -> None:
     """
     players_ = _six()
     runner = players_[0]
-    conn = _FakeConn(set(players_), {p: 300 for p in players_}, {runner: 0})
+    conn = _FakeConn(set(players_), {p: ranked.STARFORGE_FLOOR for p in players_}, {runner: 0})
     await ranked.settle(conn, _report("ranked", "team_a", players_, offline={runner}))
     writes = {w[0]: w for w in conn.ranked_writes}
     # 队伍赢了，他照样按输算：输的分（−20）再额外扣一份（−30）。
-    assert writes[runner][1] == 300, "突破森卫后掉线也不能跌回森卫"
+    assert writes[runner][1] == ranked.STARFORGE_FLOOR, "突破森卫后掉线也不能跌回森卫"
     assert writes[runner][2] == 0, "跑路不算胜场"
     assert writes[runner][3] == 0, "连胜清零"
-    assert writes[players_[1]][1] > 300, "队友照常算赢"
+    assert writes[players_[1]][1] > ranked.STARFORGE_FLOOR, "队友照常算赢"
     receipts = {r[1]: r for r in conn.reward_receipts}
     assert receipts[runner][2] == "lose"
     assert 9 <= receipts[runner][3] <= 15, "游戏币按排位输发"
@@ -387,11 +399,11 @@ async def test_abandoner_loses_extra_and_gets_credit_penalty() -> None:
 async def test_abandoner_in_draw_is_judged_loss() -> None:
     players_ = _six()
     runner = players_[3]
-    conn = _FakeConn(set(players_), {p: 300 for p in players_}, {runner: 0})
+    conn = _FakeConn(set(players_), {p: ranked.STARFORGE_FLOOR for p in players_}, {runner: 0})
     await ranked.settle(conn, _report("ranked", "draw", players_, offline={runner}))
     writes = {w[0]: w for w in conn.ranked_writes}
-    assert writes[runner][1] == 300
-    assert writes[players_[0]][1] == 300, "其他人平局不动分"
+    assert writes[runner][1] == ranked.STARFORGE_FLOOR
+    assert writes[players_[0]][1] == ranked.STARFORGE_FLOOR, "其他人平局不动分"
     receipts = {r[1]: r for r in conn.reward_receipts}
     assert receipts[runner][2] == "lose"
     assert receipts[players_[0]][2] == "draw"
@@ -402,19 +414,41 @@ async def test_custom_room_never_touches_credit() -> None:
     """🔴 自定房间不加也不扣信誉分（2026-10-06 用户定）：信誉分只管匹配和排位。"""
     players_ = _six()
     runner = players_[0]
-    conn = _FakeConn(set(players_), {p: 300 for p in players_}, {runner: 0})
+    conn = _FakeConn(set(players_), {p: ranked.STARFORGE_FLOOR for p in players_}, {runner: 0})
     await ranked.settle(conn, _report("custom", "team_a", players_, offline={runner}))
     assert conn.credit_writes == [], "自定房间：跑路不扣、打完也不加"
     assert conn.events == []
     assert conn.ranked_writes == [] and conn.wallet_writes == [] and conn.reward_receipts == []
 
 
+def test_stage_floors_follow_new_tier_floors() -> None:
+    """🔴 10-19 用户定：以 10-15 的新门槛为准，突破森卫 = 进星铸 = 200 分。
+
+    10-18 的进阶是按旧门槛写的（森卫 100–299、写死 300 / 299）。写死数字这里会红。
+    """
+    assert (ranked.FOREST_FLOOR, ranked.STARFORGE_FLOOR) == (100, 200)
+    assert [ranked.forest_division(s) for s in (99, 100, 124, 125, 150, 175, 199, 200)] == \
+        ["", "I", "I", "II", "III", "IV", "IV", ""], "森卫均分四份，每份 25 分"
+
+
+@pytest.mark.anyio
+async def test_forest_stops_below_starforge_until_fourth_race() -> None:
+    """集齐第 4 族才能突破森卫：3 族的人赢过星铸门槛也停在 199，并记下在门口等。"""
+    players_ = _six()
+    conn = _FakeConn(set(players_), {p: 190 for p in players_}, races=3)
+    await ranked.settle(conn, _report("ranked", "team_a", players_))
+    writes = {w[0]: w for w in conn.ranked_writes}
+    assert writes[players_[0]][1] == 199
+    assert writes[players_[0]][4] is True, "breakthrough_ready：等第 4 族"
+    assert writes[players_[3]][1] < 190 and writes[players_[3]][4] is False, "输的照常扣分"
+
+
 @pytest.mark.anyio
 async def test_draw_does_not_move_score() -> None:
     players_ = _six()
-    conn = _FakeConn(set(players_), {p: 300 for p in players_})
+    conn = _FakeConn(set(players_), {p: ranked.STARFORGE_FLOOR for p in players_})
     await ranked.settle(conn, _report("ranked", "draw", players_))
-    assert {w[1] for w in conn.ranked_writes} == {300}, "平局不动分"
+    assert {w[1] for w in conn.ranked_writes} == {ranked.STARFORGE_FLOOR}, "平局不动分"
     assert {w[3] for w in conn.wallet_writes} == {11}
     assert {r[3] for r in conn.reward_receipts} == {11}
 
@@ -423,7 +457,7 @@ async def test_draw_does_not_move_score() -> None:
 async def test_unknown_players_are_skipped_not_fatal() -> None:
     """一个人在对局结束到交战报之间注销，不该让另外五个的结算一起回滚。"""
     players_ = _six()
-    conn = _FakeConn(set(players_[1:]), {p: 300 for p in players_})
+    conn = _FakeConn(set(players_[1:]), {p: ranked.STARFORGE_FLOOR for p in players_})
     await ranked.settle(conn, _report("ranked", "team_a", players_))
     assert len(conn.ranked_writes) == 5
 
@@ -433,7 +467,7 @@ async def test_ai_seats_are_skipped() -> None:
     players_ = _six()
     report = _report("ranked", "team_a", players_)
     report["seats"][5]["player_id"] = None
-    conn = _FakeConn(set(players_), {p: 300 for p in players_})
+    conn = _FakeConn(set(players_), {p: ranked.STARFORGE_FLOOR for p in players_})
     await ranked.settle(conn, report)
     assert len(conn.ranked_writes) == 5
 

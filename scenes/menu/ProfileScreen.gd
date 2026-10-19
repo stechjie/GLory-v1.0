@@ -858,8 +858,14 @@ func _load_ranked() -> void:
 			_rank_progress.max_value = span
 			_rank_progress.value = clampi(progress, 0, span)
 			_rank_progress_label.text = _text("本段进度 %d / %d" % [progress, span], "Progress %d / %d" % [progress, span])
-			_next_rank_label.text = _text("距「%s」还差 %d 分" % [RankedTiers.name_of(tier + 1), maxi(0, span - progress)],
-				"%d points to %s" % [maxi(0, span - progress), RankedTiers.name_of(tier + 1, true)])
+			var need := maxi(0, span - progress)
+			if tier >= RankedTiers.BADGES.size() - 1:
+				# 最高段没有下一段：进度条走到服务器定的终点（10-15 是 1600 分），过了服务器发 span=0。
+				_next_rank_label.text = _text("距 %d 分还差 %d 分" % [score + need, need],
+					"%d points to %d" % [need, score + need])
+			else:
+				_next_rank_label.text = _text("距「%s」还差 %d 分" % [RankedTiers.name_of(tier + 1), need],
+					"%d points to %s" % [need, RankedTiers.name_of(tier + 1, true)])
 	if bool(body.get("need_four_races", false)):
 		var owned := int(body.get("owned_races", 0))
 		_next_rank_label.text = _text(

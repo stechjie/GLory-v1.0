@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import logging
 
-from app import db, friends, presence, sanctions, service_control
+from app import db, friends, presence, ranked, sanctions, service_control
 
 log = logging.getLogger("glory.schema")
 
@@ -115,6 +115,20 @@ _PROBES: list[tuple[str, str, str]] = [
         " where conname = 'world_body_length'"
         "   and pg_get_constraintdef(oid) like '%voice%'",
         "世界频道发语音会 HTTP 500（旧约束要求 body 1–100 字，语音的 body 是服务端写的占位）",
+    ),
+    (
+        # 门槛 = ranked.TIER_FLOORS 最高档起点，改段位时探针跟着走。
+        "038 settle_season 用新段位门槛",
+        "select 1 from pg_proc where proname = 'settle_season'"
+        "   and prosrc like '%%r.score >= %d then 4%%'" % ranked.TIER_FLOORS[-1],
+        "赛季结算会按旧门槛归档发奖，和玩家平时看到的段位对不上（不报错，结算那天才发现）",
+    ),
+    (
+        # 保底分 = ranked.STARFORGE_FLOOR；037_progression 原版写死的是旧门槛 300。
+        "038 星铸保底跟新门槛",
+        "select 1 from pg_proc where proname = 'keep_ranked_stage_floor'"
+        "   and prosrc like '%%greatest(new.score, %d)%%'" % ranked.STARFORGE_FLOOR,
+        "突破森卫后的保底停在旧的 300：星铸 200–299 分的人打完一局会被直接抬到 300",
     ),
 ]
 
