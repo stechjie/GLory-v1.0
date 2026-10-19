@@ -54,9 +54,9 @@ func _pick_treasure(tid: String) -> void:
 		GameState.pending_treasure["active"] = false
 	if not bool(GameState.pending_treasure.get("active", false)):
 		_claim_pending_treasure_round()
-	elif GameState.tutorial_mode:
-		# 教程一轮要连选 2 个：本地已入袋，面板不关、换下一组候选。
-		# 防连点锁是给联机等服务端回复用的，这里不清会吞掉 5 秒内的第二次点击。
+	else:
+		# 本地连续选择已完成一次领取，新候选已经生效，应当立即解开点击锁。
+		# 联机仍只在 grant/deny/offer_changed 回执中解锁。
 		_treasure.clear_pick_pending()
 	if "link_hu_pai_master" not in bonus_before and TreasureService.has_linkage("link_hu_pai_master"):
 		if GameState.team_mode:

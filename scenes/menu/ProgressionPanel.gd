@@ -224,7 +224,7 @@ func _render_detail(level: int) -> void:
 		_detail.remove_child(child)
 		child.queue_free()
 	var reward: Dictionary = _rewards.get(level, {})
-	var art := _reward_art(reward, 100 if _compact else 130)
+	var art := _detail_reward_art(reward)
 	_detail.add_child(art)
 	var info := VBoxContainer.new()
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -253,6 +253,26 @@ func _render_detail(level: int) -> void:
 		GOLD if level <= _current_level else MUTED)
 	status.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_detail.add_child(status)
+
+
+func _detail_reward_art(reward: Dictionary) -> Control:
+	var units: Array = reward.get("units", [])
+	if units.size() <= 1:
+		return _reward_art(reward, 100 if _compact else 130)
+	var portraits := HBoxContainer.new()
+	portraits.add_theme_constant_override("separation", 12)
+	for unit_id in units:
+		var portrait := VBoxContainer.new()
+		portrait.add_theme_constant_override("separation", 4)
+		portraits.add_child(portrait)
+		var single_reward := {"units": [unit_id]}
+		portrait.add_child(_reward_art(single_reward, 82 if _compact else 98))
+		var definition := UnitCollection.unit_def(str(unit_id))
+		var name := str(definition.get("name_en", unit_id)) if _english() else str(definition.get("name", unit_id))
+		var caption := _label(name, 16, CREAM)
+		caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		portrait.add_child(caption)
+	return portraits
 
 
 func _reward_art(reward: Dictionary, dimension: int) -> Control:

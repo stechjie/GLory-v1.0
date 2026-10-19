@@ -500,8 +500,7 @@ func refresh() -> void:
 		return
 	var capacity := GameState.carrot_capacity()
 	var production := GameState.carrot_production()
-	var preview := CarrotEconomy.harvest(GameState.carrots, GameState.merc_carrots_spent_total,
-		GameState.harvest_tech_level, PetService.carrot_bonus_rate(PlayerProfile.get_active()))
+	var preview := GameState.carrot_harvest_preview()
 	var actual_gain := int(preview.get("gain", 0))
 	var overflow := int(preview.get("overflow", 0))
 	_carrot_balance.text = str(GameState.carrots)

@@ -2711,6 +2711,7 @@ func _show_game_over(local_settlement: Dictionary = {}) -> void:
 	result_screen.title_text = _game_over_title()
 	result_screen.body_text = _game_over_body()
 	result_screen.show_details = bool(_final_settlement_data.get("show_details", false))
+	result_screen.tutorial_result = GameState.tutorial_mode and TutorialMode.step == TutorialMode.Step.DONE
 	result_screen.can_return_room = bool(_final_settlement_data.get("can_return_room", false))
 	result_screen.can_return_party = bool(_final_settlement_data.get("can_return_party", false))
 	result_screen.details_requested.connect(_show_final_settlement)

@@ -23,6 +23,24 @@ func _ready() -> void:
 		"local_team", "Tutorial uses local 3v3")
 	h.expect(GameState.team_slot_states == ["player", "dummy", "dummy", "dummy", "dummy", "dummy"],
 		"six_seats", "One player and five AI")
+	TutorialMode.step = TutorialMode.Step.UPGRADE_3
+	GameState.round_index = 5
+	var guided_shop: Array = TutorialMode.tutorial_shop_ids()
+	h.expect(guided_shop.size() == 4 and guided_shop[0] == "human_militia"
+		and guided_shop[1] == "human_militia" and guided_shop[2] != guided_shop[3],
+		"guided_shop_variety", "Guaranteed merge materials leave room for two different Human cards")
+	TutorialMode.step = TutorialMode.Step.START_PVP
+	GameState.round_index = 8
+	var free_shop_a: Array = TutorialMode.tutorial_shop_ids()
+	var free_shop_b: Array = TutorialMode.tutorial_shop_ids()
+	var shared := 0
+	for id in free_shop_b:
+		if free_shop_a.has(id):
+			shared += 1
+	h.expect(free_shop_a.size() == 4 and free_shop_b.size() == 4 and shared <= 2,
+		"new_shop_cards", "Successive tutorial offers have at least two new Human cards")
+	h.expect(TutorialMode.required_board_units() == 1,
+		"late_board_gate", "Later tutorial rounds only require one deployed unit")
 	var queue := QueuePanel.new()
 	queue.configure_tutorial_ai()
 	var seats: Array = queue._tutorial_ai_seats(false)

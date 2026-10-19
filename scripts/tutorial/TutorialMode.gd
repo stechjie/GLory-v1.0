@@ -205,7 +205,8 @@ var _last_keep_clear_rects: Array[Rect2] = []
 # 跳过确认框不再由本文件持有节点：见 _show_skip_confirm()。
 
 const START_SHOP := ["human_militia", "human_archer", "human_merchant", "human_swordsman"]
-# FILL_7 铺货（买齐 7 个上阵）。**9.25 教程优化第 3 条：不出死侍**，
+# FILL_7 是旧断点使用的内部步骤名；现在只教玩家再补强一次阵容。
+# 此处铺货仍不出死侍，保留原教学的棋子范围。
 # 所以这里把 human_death_servant 拿掉、只留三种。
 # 三种而不是四种没关系：_apply_shop() 按 `offers[i % size]` 循环填满 4 个卡位，
 # 刷新（_roll_shop -> tutorial_shop_ids -> 本表）也走同一张表，
@@ -214,19 +215,20 @@ const START_SHOP := ["human_militia", "human_archer", "human_merchant", "human_s
 # 可上阵数不增，_fill_buy_target 就永远凑不满（见 _compensate_fill_shortfall）。
 const FILL_SHOP := ["human_swordsman", "human_mage", "human_cleric"]
 
-# PVP 前要凑满的上阵数。取生产常量而不是写死 7 —— 规则改了这里跟着走。
-const FILL_TARGET_UNITS := GameConstants.NORMAL_UNIT_CAP
+# 首次 PvP 前只引导从 3 枚补到 4 枚；不要求新手填满 7 格。
+const FILL_TARGET_UNITS := 4
 # 开战前的最低上阵数（board_slots 上的普通棋子，即 GameState.normal_unit_count）。
 # 与 PLACE_3 的完成条件、battle_board_gate_message() 共用同一个值。
 # 注意别和 _owned_normal_count() 混：那个数是「棋盘 + 待命区」的持有数，
 # 教学里同样是 3，但口径不同（BUY_3 用它）。
 const EARLY_DEPLOY_UNITS := 3
-# PVP 回合（第 7–13 回合）的开战门槛。FILL_7 那一步仍引导补满 7 个，
-# 但之后每回合不再强制 7 个，至少 4 个即可开战（10.19 教程反馈第 1 条）。
-const PVP_DEPLOY_UNITS := 4
+# 补满七人只在第一次 PvP 前教一次；后续回合即使棋子阵亡，
+# 只要棋盘上还有一枚普通棋子就能开战。
+const PVP_DEPLOY_UNITS := 1
 # 升星步：商店铺满玩家要凑的同名棋子，让玩家自己买 + 刷新
-const UPGRADE_2_SHOP := ["human_militia", "human_militia", "human_militia", "human_militia"]
-const UPGRADE_OTHERS_SHOP := ["human_archer", "human_archer", "human_merchant", "human_merchant"]
+const UPGRADE_2_SHOP := ["human_militia"]
+const UPGRADE_3_SHOP := ["human_militia", "human_militia"]
+const UPGRADE_OTHERS_SHOP := ["human_archer", "human_merchant"]
 const PVP_OPPONENT := ["human_militia", "human_archer", "human_merchant", "human_swordsman", "human_mage"]
 const TREASURE_1 := ["def_iron_wall", "atk_blood_pact", "ctrl_shockwave"]
 # 自由回合（脚本步之外）的商店：新手局只有人族，随机刷。死侍、人王都能出；
@@ -239,6 +241,7 @@ const KING_FIRST_ROUND := 7
 # 教学里采集科技最多升到这一级（正式局没有上限）。到顶后按钮显示「已满」。
 const TUTORIAL_HARVEST_MAX := 10
 const TREASURE_2 := ["atk_fury_roster", "def_formation_heal", "money_discount"]
+var _last_random_shop_ids: Array = []
 
 func start() -> void:
 	active = true
@@ -247,6 +250,7 @@ func start() -> void:
 	_progress_index = 0
 	_end_fill_step()
 	_reset_carrot_tutorial()
+	_last_random_shop_ids.clear()
 	# 重新开始教程：旧断点必须先清掉，否则下次启动会把玩家拽回上一局的进度。
 	clear_checkpoint()
 	GameState.reset_run()
@@ -324,7 +328,7 @@ func sync() -> void:
 			_enter_upgrade_others()
 		else:
 			# 回合开局已经清过商店（after_battle），这里铺回要凑的民兵。
-			_apply_shop(UPGRADE_2_SHOP)
+			_apply_shop(_guided_shop_ids(UPGRADE_3_SHOP))
 			_advance_to(Step.UPGRADE_3)
 			_refresh_prep()
 	if step == Step.UPGRADE_3 and not _militia_granted and space_shortfall() == 0:
@@ -399,7 +403,7 @@ func _enter_upgrade_others() -> void:
 		_advance_to(Step.BOND_HINT)
 	else:
 		# 弓手/商人升 2 星也让玩家自己在商店买，不再直接发材料。
-		_apply_shop(UPGRADE_OTHERS_SHOP)
+		_apply_shop(_guided_shop_ids(UPGRADE_OTHERS_SHOP))
 		_advance_to(Step.UPGRADE_OTHERS)
 	_refresh_prep()
 
@@ -461,7 +465,7 @@ func required_board_units() -> int:
 # 文档里的「步骤 3 / 5 / 14 / 22」是 STEP_SEQUENCE 的 1-based 序号（也就是气泡右上角
 # 那个「步 N/22」），逐条对上：
 #   3  = START_PVE_1 、5  = START_PVE_2 、14 = START_BOSS  -> 至少 3 个
-#   22 = START_PVP                                          -> 至少 4 个（PVP_DEPLOY_UNITS）
+#   22 = START_PVP                                          -> 至少 1 个（PVP_DEPLOY_UNITS）
 # 上阵数一律取 GameState.normal_unit_count()：那是 board_slots 上的**普通**棋子数，
 # 与 PLACE_3 / FILL_7 的完成条件同一口径（佣兵在 mercenary_slots，不算）。
 #
@@ -668,7 +672,7 @@ func after_battle(result: Dictionary) -> void:
 		Step.START_PVE_1:
 			GameState.round_index = 2
 			# 升 2 星的民兵材料让玩家自己在商店买，不再直接发。
-			_apply_shop(UPGRADE_2_SHOP)
+			_apply_shop(_guided_shop_ids(UPGRADE_2_SHOP))
 			_advance_to(Step.UPGRADE_2)
 		Step.START_PVE_2:
 			if GameState.round_index < 4:
@@ -860,7 +864,9 @@ func _passive_round() -> bool:
 # 自由回合（第 11 回合等）那只狗的固定位置与大小。萝卜营地开着时也放这里。
 func _place_dog_at_passive_spot() -> void:
 	_guide.size = Vector2(96, 96)
-	_guide.position = Vector2(_overlay.size.x - 126, _overlay.size.y * 0.52)
+	var safe := _safe_rect()
+	_guide.position = _clamp_into(Vector2(safe.end.x - 112.0,
+		safe.position.y + safe.size.y * 0.52), _guide.size, safe)
 
 
 func _show_passive_dog() -> void:
@@ -1071,7 +1077,7 @@ func step_display_name() -> String:
 		Step.HIRE_MERC:
 			return _t("召唤佣兵", "Hire Mercenaries")
 		Step.FILL_7:
-			return _t("补满七人", "Fill Seven Slots")
+			return _t("补强阵容", "Strengthen Your Team")
 		Step.FORMATION_HP:
 			return _t("了解法阵", "Formation HP")
 		Step.START_PVP:
@@ -1151,9 +1157,9 @@ func _position_guide(target_rect: Rect2, keep_clear: Array[Rect2]) -> void:
 	var side := clampf(safe.size.y * 0.18, 96.0, 145.0)
 	_guide.size = Vector2.ONE * side
 	var bubble := Rect2(_bubble.position, _bubble.size)
-	# 10.19 教程反馈第 7 条：狗狗一律靠屏幕右边，不再跟着气泡跑到棋盘中间挡住棋盘。
-	# 只在右边缘挑高度，仍按下面的评分避开目标、气泡和常驻按钮。
+	# 狗狗只在左右安全边缘选位置，避开棋盘中间和当前目标。
 	var right_x := safe.end.x - side
+	var left_x := safe.position.x
 	var candidates: Array[Vector2] = []
 	if _camp_open:
 		# 萝卜营地开着时（10.19 反馈）：狗放到自由回合那只「加油」狗的位置和大小，
@@ -1162,7 +1168,9 @@ func _position_guide(target_rect: Rect2, keep_clear: Array[Rect2]) -> void:
 		return
 	else:
 		for fraction in [0.52, 0.34, 0.70, 0.16, 0.86]:
-			candidates.append(Vector2(right_x, safe.position.y + (safe.size.y - side) * float(fraction)))
+			var y := safe.position.y + (safe.size.y - side) * float(fraction)
+			candidates.append(Vector2(right_x, y))
+			candidates.append(Vector2(left_x, y))
 	var skip_rect := Rect2(_skip_btn.position, _skip_btn.size) if _skip_btn != null else Rect2()
 	var best := candidates[0]
 	var best_score := INF
@@ -1358,7 +1366,7 @@ func confirm_tap_step() -> void:
 		Step.VIEW_TREASURE:
 			_advance_to(Step.FORMATION_HP)
 		Step.FORMATION_HP:
-			if GameState.normal_unit_count() >= 7 and _mercenary_count() >= 2:
+			if GameState.normal_unit_count() >= FILL_TARGET_UNITS and _mercenary_count() >= 2:
 				_advance_to(Step.START_PVP)
 			elif GameState.harvest_tech_level < 1:
 				# 第一次讲完法阵 HP：Boss 之前先认识萝卜营地（萝卜入口此刻才出现）。
@@ -1709,22 +1717,25 @@ func _advance_fill_step() -> void:
 	match _fill_phase:
 		FillPhase.BUY:
 			if _fill_buy_done():
-				# 走出购买阶段前先把「买够了却还是不满 7 个」补齐 ——
-				# 否则自动合成会把玩家留在一个永远完成不了的上阵阶段里。
+				# 买够后补足首次上阵人数。
 				_compensate_fill_shortfall()
-				# 商店没开过就没有「关闭商店」可言（比如进这一步时就已经有 7 个）。
+				# 商店没开过就没有「关闭商店」可言。
 				_fill_phase = FillPhase.CLOSE_SHOP if _fill_shop_open else FillPhase.DEPLOY
 		FillPhase.CLOSE_SHOP:
 			if not _fill_shop_open:
 				_fill_phase = FillPhase.DEPLOY
 		_:
 			pass
+	# 采购回调先结算成交，然后 PrepUI._refresh_all() 才自动合成。
+	# 若合成吃掉棋子，上一轮补足的数量会再次不足；刷新后的 sync 必须补齐。
+	if _fill_phase != FillPhase.BUY:
+		_compensate_fill_shortfall()
 
 
 func _fill_buy_done() -> bool:
 	if _fill_bought >= _fill_buy_target:
 		return true
-	# 玩家已经（提前或中途）攒够 7 个可上阵棋子，不必再买。
+	# 玩家已经（提前或中途）攒够上阵目标，不必再买。
 	if _owned_normal_count() >= FILL_TARGET_UNITS:
 		return true
 	# 商店里已经没有买得到的东西了（全部售罄，或 FILL_SHOP 的候选在数据表里
@@ -1732,10 +1743,10 @@ func _fill_buy_done() -> bool:
 	return _fill_shop_purchasable_count() <= 0
 
 
-# 补足「可上阵棋子」到 7 个。只发到待命区 —— 上阵那一步必须由玩家自己完成，
+# 补足「可上阵棋子」到当前目标。只发到待命区 —— 上阵那一步必须由玩家自己完成，
 # 直接放上棋盘等于替玩家把教学做完了。
 #
-# 待命区满时这里必然不会被触发：满 = 待命区 8 个，加上棋盘的就已经 >= 8 > 7，
+# 待命区满时这里必然不会被触发：满 = 待命区 8 个，已经超过当前目标，
 # 差额是负的、直接 return。所以不存在「补偿时没地方放」的分支。
 func _compensate_fill_shortfall() -> void:
 	var guard := 0
@@ -2251,12 +2262,14 @@ func _detach() -> void:
 	_last_keep_clear_rects.clear()
 
 func tutorial_shop_ids() -> Array:
-	# 刷新商店时按当前步铺货：升星步铺满要凑的同名棋子。
+	# 教学步骤保留必需材料，其余格子给不同的人族棋子。
 	match step:
-		Step.UPGRADE_2, Step.UPGRADE_3:
-			return UPGRADE_2_SHOP
+		Step.UPGRADE_2:
+			return _guided_shop_ids(UPGRADE_2_SHOP)
+		Step.UPGRADE_3:
+			return _guided_shop_ids(UPGRADE_3_SHOP)
 		Step.UPGRADE_OTHERS:
-			return UPGRADE_OTHERS_SHOP
+			return _guided_shop_ids(UPGRADE_OTHERS_SHOP)
 		Step.BUY_KING:
 			return _king_shop_ids()
 		_:
@@ -2270,14 +2283,32 @@ func _free_shop_round() -> bool:
 
 func _random_human_shop_ids() -> Array:
 	var pool: Array = FREE_SHOP_POOL.duplicate()
-	if GameState.round_index >= KING_FIRST_ROUND:
-		pool.append(KING_ID)
 	var ids: Array = []
-	for i in GameState.SHOP_UNIT_SLOTS:
-		ids.append(pool[randi() % pool.size()])
-	# 第 7 回合（人王回合）怎么刷新都至少有一个人王（10.19 反馈第 2 条）。
-	if GameState.round_index == KING_FIRST_ROUND and not ids.has(KING_ID):
-		ids[randi() % ids.size()] = KING_ID
+	if GameState.round_index >= KING_FIRST_ROUND:
+		if GameState.round_index == KING_FIRST_ROUND:
+			ids.append(KING_ID)
+		else:
+			pool.append(KING_ID)
+	pool.shuffle()
+	# 优先拿上一批没出现的名字，四格内不重复；第七回合保底人王。
+	for id in pool:
+		if ids.size() < GameState.SHOP_UNIT_SLOTS and not _last_random_shop_ids.has(id):
+			ids.append(id)
+	for id in pool:
+		if ids.size() < GameState.SHOP_UNIT_SLOTS and not ids.has(id):
+			ids.append(id)
+	_last_random_shop_ids = ids.duplicate()
+	return ids
+
+func _guided_shop_ids(required: Array) -> Array:
+	var ids := required.duplicate()
+	var pool: Array = FREE_SHOP_POOL.duplicate()
+	pool.shuffle()
+	for id in pool:
+		if ids.size() >= GameState.SHOP_UNIT_SLOTS:
+			break
+		if not ids.has(id):
+			ids.append(id)
 	return ids
 
 # 人王步：第一格固定是人王（箭头指它），其余照常随机人族。

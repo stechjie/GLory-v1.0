@@ -67,9 +67,9 @@ func _check_sequence_contract() -> void:
 		"fill7_position_changed",
 		"第 20 个到访步骤不再是 FILL_7 —— 本任务按稳定的步骤状态表达，不写 step==20 特判，"
 		+ "但门禁要能发现序列被改动")
-	_h.expect(TutorialScript.FILL_TARGET_UNITS == GameConstants.NORMAL_UNIT_CAP,
+	_h.expect(TutorialScript.FILL_TARGET_UNITS == 4,
 		"fill_target_detached",
-		"FILL_TARGET_UNITS 脱离了生产常量 NORMAL_UNIT_CAP")
+		"首次 PvP 前补强目标应为 4 枚，不能要求新手填满 7 格")
 
 
 # --- 20 次完整流程 --------------------------------------------------------------
@@ -309,7 +309,9 @@ func _take_treasure(prep: PrepScript) -> void:
 	if cands.is_empty():
 		await _settle(1)
 		return
-	prep._pick_treasure(str(cands[0]))
+	# Enter through the actual card click lock, so two picks in the same round
+	# catch a stale pending flag instead of bypassing the UI layer.
+	prep._treasure._on_candidate_pressed(str(cands[0]))
 	_treasure_rounds.append(GameState.round_index - 1)
 	TutorialMode.sync()
 	await _settle(2)
@@ -387,18 +389,31 @@ func _check_recovery_auto_merge() -> void:
 	var prep := await _arrive_at_fill_step()
 	if prep == null:
 		return
-	var target: int = int(TutorialMode.fill_buy_progress()[1])
-	# 造一次必然发生的合成：在待命区放一个与 FILL_SHOP 首项同名同星的棋子，
+	# Keep one existing unit and seed two copies of the first shop card. The
+	# first purchase then makes three copies and must trigger an auto merge.
+	for cells in [GameState.bench_slots, GameState.board_slots]:
+		for i in cells.size():
+			cells[i] = null
+	_force_bench_unit("human_militia")
+	# 造一次必然发生的合成：在待命区放两个与 FILL_SHOP 首项同名同星的棋子，
 	# 玩家买它时会融合，成交计数 +1、可上阵数量却不增加。
 	var merge_id := str(TutorialScript.FILL_SHOP[0])
 	_force_bench_unit(merge_id)
+	_force_bench_unit(merge_id)
+	TutorialMode._end_fill_step()
+	TutorialMode._begin_fill_step()
+	var target: int = int(TutorialMode.fill_buy_progress()[1])
 	await _settle(2)
 	var owned_before := _owned_count()
+	_h.note("自动合成预置：持有 %d，购买目标 %d" % [owned_before, target])
 	var budget := 0
 	while TutorialMode.fill_phase() == TutorialScript.FillPhase.BUY and budget < ACTION_BUDGET:
 		budget += 1
 		await _open_shop(prep)
 		await _buy_one(prep)
+	_h.note("购买后：持有 %d，成交 %s，补偿 %d，阶段 %s"
+		% [_owned_count(), str(TutorialMode.fill_buy_progress()),
+			TutorialMode.fill_compensated_count(), str(TutorialMode.fill_phase())])
 	_h.expect(TutorialMode.fill_phase() != TutorialScript.FillPhase.BUY,
 		"merge_stuck_in_buy",
 		"制造自动合成之后购买阶段没能结束（成交 %d/%d）"

@@ -25,6 +25,7 @@ const BATTLE_HARD_TIMEOUT_SEC := 180.0
 const SHOP_UNIT_SLOTS := 4
 const BENCH_SLOTS := 8
 const MERCENARY_SLOTS := 8
+const TUTORIAL_CARROT_CAPACITY := 200
 
 var round_index := 1
 var player_formation_hp := START_FORMATION_HP
@@ -172,8 +173,9 @@ func copies_to_upgrade(star: int) -> int:
 	return GameConstants.copies_to_upgrade(star)
 
 func carrot_capacity() -> int:
-	return CarrotEconomyRules.capacity_for_spent(merc_carrots_spent_total,
+	var capacity := CarrotEconomyRules.capacity_for_spent(merc_carrots_spent_total,
 		PetService.carrot_bonus_rate(PlayerProfile.get_active()))
+	return maxi(capacity, TUTORIAL_CARROT_CAPACITY) if tutorial_mode else capacity
 
 func carrot_production() -> int:
 	return CarrotEconomyRules.total_production(harvest_tech_level, merc_carrots_spent_total,
@@ -197,12 +199,23 @@ func carrot_next_threshold() -> int:
 
 ## Idempotent per-round harvest. The caller may safely invoke this whenever the
 ## prep scene is entered; only the first call for a round can change state.
+func carrot_harvest_preview() -> Dictionary:
+	if not tutorial_mode:
+		return CarrotEconomyRules.harvest(carrots, merc_carrots_spent_total, harvest_tech_level,
+			PetService.carrot_bonus_rate(PlayerProfile.get_active()))
+	# The tutorial's 100-carrot gift must not be clamped back to the normal starter
+	# capacity on the next round. This larger capacity applies only to the lesson.
+	var capacity := carrot_capacity()
+	var production := carrot_production()
+	var gain := mini(production, maxi(0, capacity - carrots))
+	return {"before": carrots, "gain": gain, "overflow": production - gain,
+		"after": carrots + gain, "production": production, "capacity": capacity}
+
 func harvest_carrots_for_round(round_number: int) -> Dictionary:
 	if round_number < 1 or last_harvest_round >= round_number:
 		return {"ok": false, "already_harvested": true, "gain": 0, "overflow": 0,
 			"after": carrots, "capacity": carrot_capacity(), "production": carrot_production()}
-	var result := CarrotEconomyRules.harvest(carrots, merc_carrots_spent_total, harvest_tech_level,
-		PetService.carrot_bonus_rate(PlayerProfile.get_active()))
+	var result := carrot_harvest_preview()
 	carrots = int(result.after)
 	last_harvest_round = round_number
 	return {"ok": true, "already_harvested": false, "gain": int(result.gain),

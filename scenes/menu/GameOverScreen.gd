@@ -15,6 +15,7 @@ var result_kind := "lose"
 var title_text := ""
 var body_text := ""
 var show_details := false
+var tutorial_result := false
 var can_return_room := false
 # 10.10 bug 第 9 条：休闲 / 排位的账号服务器队伍房间在「六人确认」时被后端保留，
 # 所以结算首屏也要能「返回队伍」（原来这颗只在结算面板里，而休闲首屏走的是本界面）。
@@ -88,7 +89,7 @@ func _ready() -> void:
 	if show_details:
 		var details := _button(_text("查看详情", "View Details"), actions, accent)
 		details.pressed.connect(func() -> void: details_requested.emit())
-	else:
+	if not show_details:
 		if can_return_room:
 			var room := _button(_text("返回房间", "Return to Room"), actions, accent)
 			room.pressed.connect(func() -> void:
@@ -102,6 +103,7 @@ func _ready() -> void:
 			party.pressed.connect(func() -> void:
 				party.disabled = true
 				return_party_requested.emit())
+	if not show_details or tutorial_result:
 		var menu := _button(_text("返回主菜单", "Main Menu"), actions, accent)
 		_menu_button = menu
 		menu.pressed.connect(func() -> void: return_menu_requested.emit())

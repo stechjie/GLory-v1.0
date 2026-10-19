@@ -1,5 +1,6 @@
 extends "res://scenes/battle/BattleUI.gd"
 const PresentationSettings := preload("res://effects/runtime/presentation/PresentationSettings.gd")
+const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
 
 const BossProceduralVFX3D := preload("res://effects/BossProceduralVFX3D.gd")
 const CrystalRibbon3D := preload("res://effects/CrystalRibbon3D.gd")
@@ -224,6 +225,8 @@ func _build() -> void:
 	_top5_atk_lbl.z_index = 90
 	add_child(_top5_atk_lbl)
 	SafeArea.track(_top5_atk_lbl)
+	if GameState.tutorial_mode:
+		_add_tutorial_team_portraits()
 
 	# Floating skip button (top-right corner, above the full-screen arena).
 	var skip := Button.new()
@@ -258,6 +261,81 @@ func _build() -> void:
 		SafeArea.track(team_hp_lbl)
 
 const BATTLE_3V3_BOUNDS := [1.0 / 3.0, 2.0 / 3.0]
+
+
+func _add_tutorial_team_portraits() -> void:
+	# The local six-seat tutorial has no NetworkService lobby UI. Keep the two
+	# teams visible during combat, matching the prep screen's seat order.
+	var panel := PanelContainer.new()
+	panel.name = "TutorialTeamPortraits"
+	panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	panel.offset_left = 16
+	panel.offset_top = 12
+	panel.offset_right = 204
+	panel.offset_bottom = 118
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.z_index = 100
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.035, 0.055, 0.064, 0.78)
+	style.border_color = Color(0.73, 0.62, 0.40, 0.85)
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(10)
+	style.set_content_margin_all(6)
+	panel.add_theme_stylebox_override("panel", style)
+	var rows := VBoxContainer.new()
+	rows.add_theme_constant_override("separation", 3)
+	rows.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(rows)
+	var english := LocaleManager.get_locale().begins_with("en")
+	for team in 2:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 5)
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		rows.add_child(row)
+		var team_name := Label.new()
+		team_name.text = ("RED" if english else "红") if team == 0 else ("BLUE" if english else "蓝")
+		team_name.custom_minimum_size.x = 36
+		team_name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		team_name.add_theme_font_size_override("font_size", 15)
+		team_name.add_theme_color_override("font_color", Color("f7937e") if team == 0 else Color("86bbf3"))
+		team_name.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(team_name)
+		for seat in 3:
+			var slot := team * 3 + seat
+			var avatar_id := str(AccountManager.profile.get("avatar", "")) if slot == 0 else TutorialMode.ai_avatar(slot)
+			var badge := Control.new()
+			badge.custom_minimum_size = Vector2(40, 40)
+			badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			row.add_child(badge)
+			var frame := TextureRect.new()
+			frame.texture = AvatarCatalog.frame_texture_for("")
+			frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+			frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			badge.add_child(frame)
+			var mask := Panel.new()
+			mask.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
+			mask.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+			mask.offset_left = 7
+			mask.offset_top = 7
+			mask.offset_right = -7
+			mask.offset_bottom = -7
+			mask.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			var circle := StyleBoxFlat.new()
+			circle.bg_color = Color.WHITE
+			circle.set_corner_radius_all(40)
+			mask.add_theme_stylebox_override("panel", circle)
+			badge.add_child(mask)
+			var portrait := TextureRect.new()
+			portrait.texture = AvatarCatalog.texture_for(avatar_id)
+			portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+			portrait.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+			portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			mask.add_child(portrait)
+	add_child(panel)
+	SafeArea.track(panel)
 
 
 func _add_layered_battle_background(arena_wrap: Control) -> void:
