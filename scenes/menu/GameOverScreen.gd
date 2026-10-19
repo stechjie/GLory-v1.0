@@ -61,9 +61,15 @@ func _ready() -> void:
 	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(veil)
 
+	# 10.19 教程反馈第 3 条：教学结算界面只保留「返回主菜单」。
+	#   ① 「查看详情」与「返回主菜单」挤在同一行，还会把下方的文字说明压给按钮；
+	#   ② result_menu 引导气泡贴在主菜单按钮上方（约 0.69~0.84 屏高），
+	#      原来的正文区 0.69~0.82 正好整段被它盖住（截图 image11「最终胜利及下面」）。
+	# 只对教学生效：联机 / 单机的结算照旧要能看详情。
+	var compact := tutorial_result
 	var heading := VBoxContainer.new()
 	heading.add_theme_constant_override("separation", 8)
-	_region(0.43, 0.67).add_child(heading)
+	_region(0.24 if compact else 0.43, 0.46 if compact else 0.67).add_child(heading)
 	var eyebrow := _label(
 		_text("荣耀战绩", "MATCH RESULT") if result_kind == "win" else _text("战局落幕", "MATCH ENDED"),
 		17, accent)
@@ -80,16 +86,16 @@ func _ready() -> void:
 	_body_label = body
 	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body.custom_minimum_size = Vector2(700, 70)
-	_region(0.69, 0.82).add_child(body)
+	_region(0.47 if compact else 0.69, 0.61 if compact else 0.82).add_child(body)
 
 	var actions := HBoxContainer.new()
 	actions.alignment = BoxContainer.ALIGNMENT_CENTER
 	actions.add_theme_constant_override("separation", 18)
 	_region(0.83, 0.96).add_child(actions)
-	if show_details:
+	if show_details and not tutorial_result:
 		var details := _button(_text("查看详情", "View Details"), actions, accent)
 		details.pressed.connect(func() -> void: details_requested.emit())
-	if not show_details:
+	if not show_details and not tutorial_result:
 		if can_return_room:
 			var room := _button(_text("返回房间", "Return to Room"), actions, accent)
 			room.pressed.connect(func() -> void:

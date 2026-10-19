@@ -25,17 +25,33 @@ uniform vec4 dim_color : source_color = vec4(0.02, 0.025, 0.04, 0.66);
 // 洞口，单位是本控件的 UV（0..1）：xy = 左上角，zw = 宽高。hole_on = 0 时整幅压暗。
 uniform vec4 hole = vec4(0.0, 0.0, 0.0, 0.0);
 uniform float hole_on = 0.0;
+// 第二个洞（10.20 教程反馈第 4 条补）：同屏还有一处也要保持亮度时用。
+// 成长之路：主目标是「返回」键，第二个洞给「已获得的奖励」那一排。
+// 两个洞都是硬边、互不影响；hole2_on = 0 时行为与单洞完全一致。
+uniform vec4 hole2 = vec4(0.0, 0.0, 0.0, 0.0);
+uniform float hole2_on = 0.0;
 
 void fragment() {
 	COLOR.rgb = dim_color.rgb;
 	// 乘上进来时的 alpha（= 节点色 × 各级 modulate），这样以后要淡入淡出遮罩
 	// 只要动 modulate 就行，不必回来改 shader。
 	COLOR.a = dim_color.a * COLOR.a;
+	bool lit = false;
 	if (hole_on > 0.5) {
 		vec2 lo = hole.xy;
 		vec2 hi = hole.xy + hole.zw;
 		if (UV.x >= lo.x && UV.x <= hi.x && UV.y >= lo.y && UV.y <= hi.y) {
-			COLOR = vec4(0.0);
+			lit = true;
 		}
+	}
+	if (!lit && hole2_on > 0.5) {
+		vec2 lo2 = hole2.xy;
+		vec2 hi2 = hole2.xy + hole2.zw;
+		if (UV.x >= lo2.x && UV.x <= hi2.x && UV.y >= lo2.y && UV.y <= hi2.y) {
+			lit = true;
+		}
+	}
+	if (lit) {
+		COLOR = vec4(0.0);
 	}
 }

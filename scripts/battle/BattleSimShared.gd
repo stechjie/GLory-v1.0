@@ -544,12 +544,20 @@ static func _team_mercs_for_slot(slot_idx: int, rng: RandomNumberGenerator) -> A
 
 static func _dummy_board_for_slot(slot_idx: int) -> Array:
 	var bot := BotPlayer.state_for(NetworkService.shared_seed, slot_idx, GameState.round_index)
-	return (bot.get("board", []) as Array).duplicate(true)
+	var board := (bot.get("board", []) as Array).duplicate(true)
+	# 10.19 教程反馈第 2 条：教程 PVP 按脚本调双方 AI 阵容。
+	# 计划为空（普通对局 / 门禁直调）时原样返回。
+	if GameState.tutorial_mode:
+		board = TutorialMode.apply_ai_roster_board(board, slot_idx)
+	return board
 
 
 static func _dummy_mercs_for_slot(slot_idx: int) -> Array:
 	var bot := BotPlayer.state_for(NetworkService.shared_seed, slot_idx, GameState.round_index)
-	return (bot.get("mercs", []) as Array).duplicate(true)
+	var mercs := (bot.get("mercs", []) as Array).duplicate(true)
+	if GameState.tutorial_mode:
+		mercs = TutorialMode.apply_ai_roster_mercs(mercs, slot_idx)
+	return mercs
 
 
 # --- 旧版假想敌经济（legacy_estimate_v1，已不驱动阵容）------------------------

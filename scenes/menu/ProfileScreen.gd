@@ -34,6 +34,9 @@ const PROFILE_BG_TEX := preload("res://assets/ui/profile/hall_of_glory.png")
 const RankedTiers := preload("res://scenes/menu/RankedTiers.gd")
 
 signal back_requested
+# 10.19 教程反馈第 4 条：教学引导要看「成长之路」里的「返回」键，
+# 由 Main 在这里接住面板实例（ProgressionPanel 是运行期 new 出来的，外部拿不到）。
+signal tutorial_progression_opened(panel: Control)
 
 enum Mode { SELF, PUBLIC }
 
@@ -65,6 +68,8 @@ var _overview_panel: Control
 var _settings_panel: Control
 var _overview_tab: Button
 var _settings_tab: Button
+# 「等级奖励」页签：教学引导（10.19 第 4 条）要把它露出来并高亮。
+var _level_tab: Button
 # 与主菜单房间面板同档：都是页面级面板。
 const PICKER_PRIORITY := 40
 
@@ -218,6 +223,7 @@ func _build() -> void:
 		level_tab.custom_minimum_size = Vector2(190, Tokens.TOUCH_MIN)
 		level_tab.pressed.connect(_open_progression)
 		tabs.add_child(level_tab)
+		_level_tab = level_tab
 		var history_tab := ACTION_BUTTON.instantiate() as Button
 		history_tab.text = _text("对局记录", "Match History")
 		history_tab.custom_minimum_size = Vector2(190, Tokens.TOUCH_MIN)
@@ -892,6 +898,11 @@ func _load_ranked() -> void:
 		_credit_value.add_theme_color_override("font_color", Tokens.DANGER)
 
 
+# 教学引导目标：玩家主页上的「等级奖励」页签（10.19 教程反馈第 4 条）。
+func tutorial_level_tab_target() -> Control:
+	return _level_tab
+
+
 func _open_progression() -> void:
 	if ModalStack.has(PROGRESSION_MODAL_ID):
 		return
@@ -904,6 +915,8 @@ func _open_progression() -> void:
 		"priority": PICKER_PRIORITY,
 		"dismiss_on_backdrop": true,
 	})
+	# 10.19 教程反馈第 4 条：教学引导要指着面板里的「返回」键。
+	tutorial_progression_opened.emit(panel)
 
 
 func _open_match_history() -> void:
