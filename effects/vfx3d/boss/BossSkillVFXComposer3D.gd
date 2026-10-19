@@ -154,7 +154,7 @@ func _holy_purify(origin: Vector3, targets: Array) -> void:
 # ── 狂暴兽 ──────────────────────────────────────────────────────────────
 func _rage_stack(origin: Vector3, stacks: int) -> void:
 	# 狂战灾兽。层数越高越猛（基数 .95 + 每层 .03，20 层封顶 1.55），再整体按 Boss 体型放大。
-	_painted("boss_rage_stack.png", {"position": _on_boss(origin, .46), "size": Vector2(.78,.82) * BOSS_SCALE, "duration": .42, "peak_scale": .95 + minf(stacks,20)*.03, "dark_tint": Color(.22,.03,.0), "body_tint": Color(.95,.22,.05), "core_tint": Color(1,.74,.30), "seed": float(stacks)})
+	_painted("boss_rage_stack.png", {"position": _on_boss(origin, .46), "size": Vector2(.78,.82) * BOSS_SCALE, "duration": .42, "peak_scale": .95 + minf(stacks,50)*.018, "dark_tint": Color(.22,.03,.0), "body_tint": Color(.95,.22,.05), "core_tint": Color(1,.74,.30), "seed": float(stacks)})
 
 func _rage_milestone(origin: Vector3, target: Vector3, stacks: int) -> void:
 	_painted("boss_rage_aura.png", {"position": _on_boss(origin, .48), "size": Vector2(1.42,1.42) * BOSS_SCALE, "duration": 1.05, "dark_tint": Color(.22,.03,.0), "body_tint": Color(.90,.16,.03), "core_tint": Color(1,.62,.18), "seed": float(stacks)})

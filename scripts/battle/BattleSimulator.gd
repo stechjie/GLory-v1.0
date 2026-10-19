@@ -852,9 +852,10 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 			CrimsonRuneService.begin_action(f, state)
 			DamageService.begin_stat_context(state, f)
 			var was_alive := bool(target.get("alive", false))
+			var primary_shield_before := int(target.get("shield", 0))
 			var dealt := _perform_attack(f, target, state)
 			_handle_attack_kill(f, target, state, team_units, opponents, was_alive)
-			if dealt > 0 and str(f.get("def", {}).get("skill_id", "")) == "twin_revive":
+			if (dealt > 0 or int(target.get("shield", 0)) < primary_shield_before) and str(f.get("def", {}).get("skill_id", "")) == "twin_revive":
 				_apply_twin_cleave(f, target, state, team_units, opponents)
 			if str(f.get("def", {}).get("skill_id", "")) == "line_pierce":
 				var pierce_index := 1
@@ -1425,7 +1426,7 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 				# 在「已经在蓄力」时会提前 return false，那一次不该再响。
 				if BattleSimSkills._skill_apocalypse_charge(caster, state, d):
 					_emit_sfx_proc(state, "apocalypse_charge", caster, caster)
-				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 10.0))
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 8.0))
 			"mirror_clone":
 				# 9.23 第五批：**真的召唤出分身**的那一次补事件。该技能每秒都会被
 				# `_tick_skills` 调到一次（`skill_ready = elapsed + 1.0`），

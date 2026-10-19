@@ -697,7 +697,7 @@ static func _process_revives(state: Dictionary) -> void:
 				continue
 			f.alive = true
 			f.statuses = {}
-			f.hp = maxi(1, int(round(float(f.max_hp) * float(f.get("def", {}).get("revive_hp_pct", 0.30)))))
+			f.hp = maxi(1, int(round(float(f.max_hp) * float(f.get("def", {}).get("revive_hp_pct", 0.60)))))
 			f.shield = 0
 			f.next_attack = float(state.elapsed) + 0.5
 			# 凤凰涅槃：以 40% 最大生命复活并获得 3 秒无敌，撑到 temporary_deaths 的强制真死（+3.1s）。

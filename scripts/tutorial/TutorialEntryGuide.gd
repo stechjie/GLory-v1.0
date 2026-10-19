@@ -155,9 +155,17 @@ func _update_phase() -> void:
 				"宠物选好啦！点「种族」看看你收集的棋子。"
 			_dog.texture = DogGuide
 		"god_progress":
-			_label.text = "Human is ready. Divine is 1/8; collect the other 7 before selecting it for a match." if english else \
-				"人族已经能用。神族现在是 1/8，集齐剩下 7 枚后才能选择出战。"
+			_label.text = "Human is ready. Divine is 1/8; collect the other 7 before selecting it for a match. Then head back to the lobby!" if english else \
+				"人族已经能用。神族现在是 1/8，集齐剩下 7 枚后才能选择出战。看完回大厅吧！"
 			_dog.texture = DogExplain
+		"followup_casual":
+			_label.text = "Woof! You're all set. Tap Casual and play a real Seedling match!" if english else \
+				"汪！准备好啦，点「休闲」去打一局真正的青苗对局吧！"
+			_dog.texture = DogWelcome
+		"followup_lobby_start":
+			_label.text = "Seedling is already selected. Tap Start to find real players — good luck, I'll be cheering!" if english else \
+				"已经选好青苗了，点「开始匹配」和真人玩家一起打吧。狗狗在这里为你加油！"
+			_dog.texture = DogGuide
 		"lobby_mode":
 			_label.text = "Woof! Choose Seedling for your first 13-round match." if english else \
 				"汪！先点「青苗」，用 13 回合认识棋盘。"

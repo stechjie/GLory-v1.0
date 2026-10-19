@@ -592,9 +592,10 @@ func _effect_prefetch_replay() -> Dictionary:
 	var pending_round := GameState.round_index
 	var kind := RoundService.schedule_kind_for_round(pending_round)
 	if BattleAssetManifest.has_seed() and kind not in ["pvp", "final"]:
-		var definitions := [BattleSimShared._round_monster_template(pending_round)]
+		var boss_definition := BattleSimShared._round_boss_template(pending_round) if kind == "boss" else {}
+		var definitions := [BattleSimShared._round_boss_monster_template(boss_definition, pending_round) if kind == "boss" else BattleSimShared._round_monster_template(pending_round)]
 		if kind == "boss":
-			definitions.append(BattleSimShared._round_boss_template(pending_round))
+			definitions.append(boss_definition)
 		for definition: Dictionary in definitions:
 			var unit_id := str(definition.get("id", ""))
 			if not unit_id.is_empty():

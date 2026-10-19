@@ -1295,6 +1295,10 @@ func _show_menu() -> void:
 			_attach_tutorial_followup_guide(_menu,
 				_menu.call("tutorial_prep_target"), "reward_prep")
 			return
+		"casual":
+			_attach_tutorial_followup_guide(_menu,
+				_menu.call("tutorial_casual_target"), "followup_casual")
+			return
 	# 对局中被顶号时挂着的提示，回到主菜单这一刻才弹（设计文档第五节）。
 	# 公告：回主菜单时顺手刷新（有节流），有该弹的登录弹窗就弹（docs/公告系统设计.md）。
 	AnnouncementService.refresh()
@@ -1482,7 +1486,8 @@ func _on_tutorial_races_opened(pet_screen: Control) -> void:
 		await pet_screen.unit_ownership_loaded
 	if not is_instance_valid(pet_screen) or not pet_screen.is_inside_tree():
 		return
-	PlayerProfile.set_tutorial_followup_step("")
+	# 10.19：看完种族还有最后一步 —— 回大厅打一局正常排队的休闲 · 青苗（见 _show_menu）。
+	PlayerProfile.set_tutorial_followup_step("casual")
 	_attach_tutorial_followup_guide(pet_screen,
 		pet_screen.call("tutorial_god_target"), "god_progress")
 
@@ -2304,6 +2309,14 @@ func _show_party_lobby(mode: String, invite_id: String = "") -> void:
 	lobby.connect("queue_canceled", _on_party_queue_canceled)
 	_page_back_route = func() -> void: lobby.call("_leave")
 	add_child(lobby)
+	if PlayerProfile.tutorial_followup_step == "casual":
+		# 引导的最后一步：休闲默认就是青苗，只指「开始匹配」。一开始排队引导就结束，
+		# 之后是正常的真人匹配，对局里不再有教学。
+		_attach_tutorial_followup_guide(lobby, lobby.call("tutorial_start_target"), "followup_lobby_start")
+		lobby.connect("queue_started", func(_mode: String, _host: bool) -> void:
+			PlayerProfile.set_tutorial_followup_step("")
+			if is_instance_valid(_tutorial_followup_guide):
+				_tutorial_followup_guide.queue_free(), CONNECT_ONE_SHOT)
 
 
 # 队友取消了排队。**无条件 pop**：这个信号只在「本来在排队」时才发，

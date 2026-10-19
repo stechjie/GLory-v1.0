@@ -171,7 +171,7 @@ func load_profile() -> void:
 	tutorial_reward_eligible = bool(data.get("tutorial_reward_eligible",
 		onboarding_status in [ONBOARDING_NOT_STARTED, ONBOARDING_IN_PROGRESS]))
 	tutorial_followup_step = str(data.get("tutorial_followup_step", ""))
-	if tutorial_followup_step not in ["", "avatar", "reward", "prep", "pet", "race"]:
+	if tutorial_followup_step not in ["", "avatar", "reward", "prep", "pet", "race", "casual"]:
 		tutorial_followup_step = ""
 	tutorial_reward_pending = bool(data.get("tutorial_reward_pending", false))
 	_apply_reduced_motion()
@@ -423,7 +423,7 @@ func finish_deferred_tutorial_reward() -> bool:
 
 
 func set_tutorial_followup_step(value: String) -> bool:
-	if value not in ["", "avatar", "reward", "prep", "pet", "race"]:
+	if value not in ["", "avatar", "reward", "prep", "pet", "race", "casual"]:
 		return false
 	var previous := tutorial_followup_step
 	tutorial_followup_step = value

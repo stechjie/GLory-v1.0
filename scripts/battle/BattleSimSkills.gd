@@ -323,8 +323,8 @@ static func _skill_holy_purify(_caster: Dictionary, allies: Array, d: Dictionary
 		if not bool(a.get("alive", false)):
 			continue
 		a.statuses = {}
-		_heal_unit(a, maxi(1, int(round(float(a.max_hp) * float(d.get("heal_pct", 0.12))))))
-		_grant_shield(a, maxi(1, int(round(float(a.max_hp) * float(d.get("shield_pct", 0.10))))))
+		_heal_unit(a, maxi(1, int(round(float(a.max_hp) * float(d.get("heal_pct", 0.20))))))
+		_grant_shield(a, maxi(1, int(round(float(a.max_hp) * float(d.get("shield_pct", 0.15))))))
 
 
 # 9.23 第五批：返回值改成 bool = 「这一下真的开始蓄力了」。
@@ -364,7 +364,7 @@ static func _skill_mirror_clone(caster: Dictionary, state: Dictionary, d: Dictio
 		clone.uid = "%s_mirror_%s_%d" % [str(caster.team), str(caster.uid), idx]
 		clone.hp = maxi(1, int(round(float(caster.max_hp) / inherited_money_multiplier * float(d.get("clone_hp_pct", 0.30)))))
 		clone.max_hp = clone.hp
-		clone.atk = maxi(1, int(round(float(caster.atk) / inherited_money_multiplier * float(d.get("clone_atk_pct", 0.40)))))
+		clone.atk = maxi(1, int(round(float(caster.atk) / inherited_money_multiplier * float(d.get("clone_atk_pct", 1.00)))))
 		clone.defense = int(d.get("clone_def", 0))
 		clone.alive = true
 		clone.statuses = {}

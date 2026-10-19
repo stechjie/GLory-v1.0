@@ -370,7 +370,7 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"overload_counter":
 			return "过载反击：每承受 %d 次攻击后，对攻击者造成 %d 点真实伤害；其周围 %.0f 像素内的其他敌人各受 %d 点真实伤害，并有 %s 概率打断攻击者。" % [int(d.get("hit_threshold", 8)), int(d.get("skill_damage", 300)), float(d.get("splash_radius", 180.0)), int(d.get("splash_damage", 200)), pct(float(d.get("interrupt_chance", 0.25)))]
 		"mirror_clone":
-			return "镜像分裂：自身每损失 %s 最大生命就分裂出一个镜像；镜像生命为本体最大生命 %s、攻击为本体 %s，且不会释放技能。" % [pct(float(d.get("clone_per_missing_hp_pct", 0.25))), pct(float(d.get("clone_hp_pct", 0.30))), pct(float(d.get("clone_atk_pct", 0.40)))]
+			return "镜像分裂：自身每损失 %s 最大生命就分裂出一个镜像；镜像生命为本体最大生命 %s、攻击为本体 %s，且不会释放技能。" % [pct(float(d.get("clone_per_missing_hp_pct", 0.25))), pct(float(d.get("clone_hp_pct", 0.30))), pct(float(d.get("clone_atk_pct", 1.00)))]
 		"holy_purify":
 			return "圣愈净化%s：清除全体友军身上的所有状态，治疗其最大生命 %s，并给予最大生命 %s 的护盾；随行小怪均为远程。" % [cd, pct(float(d.get("heal_pct", 0.20))), pct(float(d.get("shield_pct", 0.15)))]
 		"rage_stack":
@@ -548,7 +548,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"overload_counter":
 			return "Overload Counter: After taking %d hits, deal %d true damage to the attacker and %d true damage to other enemies within %.0f pixels of them; %s chance to interrupt the attacker." % [int(d.get("hit_threshold", 8)), int(d.get("skill_damage", 300)), int(d.get("splash_damage", 200)), float(d.get("splash_radius", 180.0)), pct(float(d.get("interrupt_chance", 0.25)))]
 		"mirror_clone":
-			return "Mirror Split: For every %s of max HP lost, split off a mirror image with %s of max HP and %s ATK. Clones cannot cast skills." % [pct(float(d.get("clone_per_missing_hp_pct", 0.25))), pct(float(d.get("clone_hp_pct", 0.30))), pct(float(d.get("clone_atk_pct", 0.40)))]
+			return "Mirror Split: For every %s of max HP lost, split off a mirror image with %s of max HP and %s ATK. Clones cannot cast skills." % [pct(float(d.get("clone_per_missing_hp_pct", 0.25))), pct(float(d.get("clone_hp_pct", 0.30))), pct(float(d.get("clone_atk_pct", 1.00)))]
 		"holy_purify":
 			return "Holy Purify%s: Cleanse all statuses from every ally, heal them for %s max HP and grant a shield worth %s max HP. Escort monsters are ranged." % [cd, pct(float(d.get("heal_pct", 0.20))), pct(float(d.get("shield_pct", 0.15)))]
 		"rage_stack":

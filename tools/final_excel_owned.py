@@ -195,6 +195,8 @@ def overlay_excel_owned(book, tables):
                 if not 0.0 <= raw <= 300.0:
                     raise ValueError(f"{label}: enter a whole percentage from 0 to 300 (20 means 20%)")
                 value = float(Decimal(str(raw)) / 100)
+                if key == "clone_per_missing_hp_pct" and value <= 0:
+                    raise ValueError(f"{label}: clone threshold must be above 0%")
             else:
                 value = float(raw)
             if key not in BOSS_PERCENT_FIELDS and value <= 0:

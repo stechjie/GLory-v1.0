@@ -217,6 +217,38 @@ class FinalRuntimeTest(unittest.TestCase):
         finally:
             book.close()
 
+    def test_boss_skill_inputs_update_only_allowlisted_json_numbers(self) -> None:
+        book = load_workbook(BOOK, read_only=False, data_only=True)
+        try:
+            boss = book["06_Boss"]
+            boss["D18"] = 275  # meteor radius in pixels
+            boss["D21"] = 30   # 30% interrupt probability
+            tables = copy.deepcopy(self.tables)
+            changes = overlay_excel_owned(book, tables)
+            self.assertEqual(
+                {("boss_meteor_caster", "aoe_radius"): 275.0,
+                 ("boss_thunder_core", "interrupt_chance"): 0.3},
+                {(c["id"], c["field"]): c["new"] for c in changes},
+            )
+            source = (ROOT / "data/boss/bosses.json").read_text(encoding="utf-8-sig")
+            patched = patch_json_scalars(source, changes, tables["data/boss/bosses.json"])
+            self.assertEqual(tables["data/boss/bosses.json"], json.loads(patched))
+        finally:
+            book.close()
+
+    def test_invalid_boss_skill_input_stops_sync(self) -> None:
+        book = load_workbook(BOOK, read_only=False, data_only=True)
+        try:
+            book["06_Boss"]["D18"] = -1
+            with self.assertRaisesRegex(ValueError, "D18.*positive number"):
+                overlay_excel_owned(book, copy.deepcopy(self.tables))
+            book["06_Boss"]["D18"] = 250
+            book["06_Boss"]["D24"] = 0
+            with self.assertRaisesRegex(ValueError, "D24.*above 0%"):
+                overlay_excel_owned(book, copy.deepcopy(self.tables))
+        finally:
+            book.close()
+
     def test_code_rule_drift_is_detected(self) -> None:
         changed = copy.deepcopy(self.rules)
         changed["treasure.phoenix_revive_hp_rate"]["value"] += 0.1
