@@ -56,6 +56,7 @@ static func grown_def(d: Dictionary, star: int, cell: Dictionary = {}) -> Dictio
 		return d.duplicate(true)
 	var out := UnitFactory.apply_star_stats(d, star)
 	UnitGrowth.apply_to_def(out, growth_multiplier(cell))
+	UnitGrowth.apply_king_attack_speed_to_def(out, cell)
 	return out
 
 
@@ -71,9 +72,9 @@ static func format_growth_detail(cell: Dictionary, star: int) -> String:
 		var cap := UnitGrowth.king_cap(probe)
 		var layers := ("%d/%d" % [stacks, cap]) if cap > 0 else str(stacks)
 		if is_en():
-			lines.append("King growth: %s stacks (HP/ATK/DEF ×%.2f)" % [layers, UnitGrowth.king_mult(probe)])
+			lines.append("King growth: %s stacks (HP/ATK/DEF/AS ×%.2f; AS cap 2.5/s)" % [layers, UnitGrowth.king_mult(probe)])
 		else:
-			lines.append("人王成长：%s 层（生命、攻击、防御 ×%.2f）" % [layers, UnitGrowth.king_mult(probe)])
+			lines.append("人王成长：%s 层（生命、攻击、防御、攻速 ×%.2f；攻速上限 2.5 次/秒）" % [layers, UnitGrowth.king_mult(probe)])
 	var rate := _local_tiger_rate()
 	if rate > 0.0 and UnitGrowth.tiger_eligible(probe):
 		var tiger := mini(UnitGrowth.tiger_stacks(probe), GameState.tiger_starup_count)
@@ -109,7 +110,7 @@ static func format_unit_def(d: Dictionary, star: int = 1, cell: Dictionary = {})
 			uname, star, uniq,
 			race, elem, int(d.get("tier", 0)), purchase_price_text(d),
 			int(shown.get("hp", 0)), int(shown.get("atk", 0)), int(shown.get("def", 0)),
-			float(d.get("attack_speed", 1.0)), float(d.get("crit", 0.0)) * 100.0, float(d.get("crit_dmg", 1.5)) * 100.0,
+			float(shown.get("attack_speed", 1.0)), float(d.get("crit", 0.0)) * 100.0, float(d.get("crit_dmg", 1.5)) * 100.0,
 			str(d.get("range", 1)), str(d.get("move_speed", 3.0)), growth_text, skill_text,
 		]
 	else:
@@ -117,7 +118,7 @@ static func format_unit_def(d: Dictionary, star: int = 1, cell: Dictionary = {})
 			uname, star, uniq,
 			race, elem, int(d.get("tier", 0)), purchase_price_text(d),
 			int(shown.get("hp", 0)), int(shown.get("atk", 0)), int(shown.get("def", 0)),
-			float(d.get("attack_speed", 1.0)), float(d.get("crit", 0.0)) * 100.0, float(d.get("crit_dmg", 1.5)) * 100.0,
+			float(shown.get("attack_speed", 1.0)), float(d.get("crit", 0.0)) * 100.0, float(d.get("crit_dmg", 1.5)) * 100.0,
 			str(d.get("range", 1)), str(d.get("move_speed", 3.0)), growth_text, skill_text,
 		]
 	var relation_detail := format_unit_relation_detail(cell, str(d.get("race", "")))
@@ -336,7 +337,7 @@ static func format_skill_detail(d: Dictionary) -> String:
 			# 数值全部读 def（apply_star_stats 会把 star4 的 0.3 / 8 覆盖上来）。
 			var king_growth := float(d.get("post_battle_all_stat_growth", 0.20))
 			var king_cap := int(d.get("max_stacks", 5))
-			return "人王唯一技：棋盘上只能存在一只人王。若参战且战后仍存活，生命、攻击、防御永久x%.1f（上限%d层）；若死亡则从棋盘移除；升星继承三只材料中成长最高的人王数值。" % [1.0 + king_growth, king_cap]
+			return "人王唯一技：棋盘上只能存在一只人王。若参战且战后仍存活，生命、攻击、防御、攻速永久x%.1f（上限%d层，战斗攻速上限2.5次/秒）；若死亡则从棋盘移除；升星继承三只材料中成长最高的人王数值。" % [1.0 + king_growth, king_cap]
 		"balance_judge":
 			return "均衡裁决：攻击当前生命高于自己的目标时，伤害+%s。" % pct(float(d.get("bonus_vs_higher_hp", 0.40)))
 		"bubble_dream":
@@ -516,7 +517,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"unique_king_growth":
 			var king_growth := float(d.get("post_battle_all_stat_growth", 0.20))
 			var king_cap := int(d.get("max_stacks", 5))
-			return "Human King Unique (one on board): If this unit survives a battle, HP/ATK/DEF permanently ×%.1f (cap %d stacks). If it dies, it is removed from the board. On upgrade, inherit the highest growth value from the three materials." % [1.0 + king_growth, king_cap]
+			return "Human King Unique (one on board): If this unit survives a battle, HP/ATK/DEF/AS permanently ×%.1f (cap %d stacks; battle AS cap 2.5 attacks/s). If it dies, it is removed from the board. On upgrade, inherit the highest growth value from the three materials." % [1.0 + king_growth, king_cap]
 		"balance_judge":
 			return "Balance Judgement: Deal +%s damage against targets with more current HP than this unit." % pct(float(d.get("bonus_vs_higher_hp", 0.40)))
 		"bubble_dream":

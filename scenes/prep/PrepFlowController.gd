@@ -1,5 +1,8 @@
 extends "res://scenes/prep/PrepUI.gd"
 
+const DiceRollFxScript := preload("res://scenes/prep/fx/DiceRollFx.gd")
+const AltarCoinBurstFxScript := preload("res://scenes/prep/fx/AltarCoinBurstFx.gd")
+
 # 已经播过采集反馈的回合号。客机的采集是服务端发的，到达时机与本场景 _ready()
 # 是竞态的，所以两条路径都可能触发播放 —— 用它保证一回合只播一次。
 var _carrot_feedback_round := -1
@@ -258,12 +261,15 @@ func _on_golden_altar() -> void:
 	GameState.golden_altar_uses += 1
 	SaveManager.save_run()
 	_refresh_all()
+	_play_altar_coin_burst(NetworkService.ALTAR_GOLD)
 
 # 服务端对祭坛请求的裁决。uses < 0 表示这是队友用祭坛导致的共享 HP 同步，
 # 本人不加金币、只刷新显示。
 func _on_altar_result(granted: bool, team_hp: int, uses: int) -> void:
 	if uses < 0:
 		_refresh_all()
+		# 10.18：队友献祭 —— 共享水晶上同样爆一把金币，不带数字。
+		_play_altar_coin_burst(0)
 		return
 	if not granted:
 		_refresh_all()
@@ -274,6 +280,7 @@ func _on_altar_result(granted: bool, team_hp: int, uses: int) -> void:
 	GameState.prep_income_total += NetworkService.ALTAR_GOLD
 	SaveManager.save_run()
 	_refresh_all()
+	_play_altar_coin_burst(NetworkService.ALTAR_GOLD)
 	# 祭坛按钮的文案（剩余次数）会改变左面板高度 ⇒ 同样挤动棋盘。收尾与宝物入袋一致：
 	# 只靠 `item_rect_changed` 信号会在「平移落在稳定轮询窗口之外」时漏掉。
 	_queue_prep_model_layout_refresh()
@@ -291,14 +298,45 @@ func _on_generous_fate_gamble() -> void:
 	var fraud_fate := TreasureService.has_linkage("link_fraud_fate")
 	var win_chance := 0.60 if fraud_fate else 0.50
 	var loss_keep := 0.50 if fraud_fate else 0.20
-	if randf() < win_chance:
-		GameState.gold = int(floor(float(before) * 2.5))
-		GameState.prep_income_total += maxi(0, GameState.gold - before)
-	else:
-		GameState.gold = maxi(0, int(floor(float(before) * loss_keep)))
-		if GameState.gold < before:
-			GameState.gold_spent_this_round = true
-	SaveManager.save_run()
+	# 10.18：开奖先定，再掷骰演 2 秒；骰子落定（revealed）那一刻才改金币、刷新界面。
+	# 骰面只是演出：赢在 4-6 里挑、输在 1-3 里挑，概率仍是上面这一行（联动 60%）。
+	var won := randf() < win_chance
+	var after := int(floor(float(before) * 2.5)) if won else maxi(0, int(floor(float(before) * loss_keep)))
+	# 先把 logo 置灰，防止演出期间再点一次。
 	_refresh_all()
-	# 赌博同样会改变面板内容并触发棋盘平移，重新对齐圆圈以防偏移。
-	_queue_prep_model_layout_refresh()
+	var apply_result := func() -> void:
+		GameState.gold = after
+		if won:
+			GameState.prep_income_total += maxi(0, after - before)
+		elif after < before:
+			GameState.gold_spent_this_round = true
+		SaveManager.save_run()
+		if is_inside_tree():
+			_refresh_all()
+			# 赌博同样会改变面板内容并触发棋盘平移，重新对齐圆圈以防偏移。
+			_queue_prep_model_layout_refresh()
+	_play_dice_roll(won, after - before, apply_result)
+
+
+# 黄金祭坛爆金币：从顶栏正中自家法阵水晶喷出。gold_gain <= 0 是队友献祭，不显示数字。
+func _play_altar_coin_burst(gold_gain: int) -> void:
+	if _player_formation_art == null or not is_instance_valid(_player_formation_art) or not is_inside_tree():
+		return
+	var rect := _screen_rect(_player_formation_art)
+	var fx := AltarCoinBurstFxScript.new()
+	_bonus_fx_host().add_child(fx)
+	fx.play(rect.position + rect.size * 0.5, gold_gain)
+
+
+# 掷骰演出。起点取骰子 logo 的屏幕中心；拿不到（面板正在重建）就从屏幕中央起手。
+# revealed 只会发一次，节点被提前移出树也会补发，所以结算不会丢。
+func _play_dice_roll(won: bool, gold_delta: int, on_reveal: Callable) -> void:
+	var fx := DiceRollFxScript.new()
+	_bonus_fx_host().add_child(fx)
+	fx.revealed.connect(on_reveal, CONNECT_ONE_SHOT)
+	var from := get_viewport_rect().size * Vector2(0.5, 0.6)
+	var logo: Control = _synergy.gamble_logo
+	if logo != null and is_instance_valid(logo):
+		var rect := _screen_rect(logo)
+		from = rect.position + rect.size * 0.5
+	fx.play(from, won, gold_delta)

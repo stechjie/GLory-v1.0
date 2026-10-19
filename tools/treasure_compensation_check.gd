@@ -44,6 +44,7 @@ func _ready() -> void:
 	h.expect(not RoundService.is_treasure_round(_plain_round), "fixture_plain_round", "普通回合判据")
 
 	_section_offer()
+	_section_seedling_five_treasures()
 	_section_compensation()
 	_section_client()
 	_section_regression()
@@ -71,6 +72,28 @@ func _section_offer() -> void:
 	h.expect(int(offer.get("round", -1)) == _treasure_round, "offer_round", "候选记录的轮次")
 	var owned := NetworkService._room_owned_treasures(room, 0)
 	h.expect(owned.is_empty(), "offer_grants_nothing", "只是发候选，手里不该多出宝物")
+
+
+func _section_seedling_five_treasures() -> void:
+	var room := _room()
+	room.ruleset = "seedling"
+	for round_index in [4, 8, 12]:
+		var expected := 2 if round_index in [4, 8] else 1
+		var offer: Dictionary = NetworkService._server_pending_treasure(room, 0, round_index)
+		for pick_index in expected:
+			h.expect(bool(offer.get("active", false)), "seedling_offer_%d_%d" % [round_index, pick_index],
+				"青苗第 %d 回合第 %d 次必须可选宝" % [round_index, pick_index + 1])
+			var candidates: Array = offer.get("candidates", [])
+			if candidates.is_empty():
+				h.fail("seedling_candidates_%d_%d" % [round_index, pick_index], "青苗候选不能空")
+				return
+			var result: Dictionary = NetworkService._room_apply_treasure_choice(room, 0, str(candidates[0]))
+			h.expect(bool(result.get("ok", false)), "seedling_grant_%d_%d" % [round_index, pick_index],
+				"青苗选择必须实际入袋")
+			offer = result.get("next_offer", {})
+		h.expect(NetworkService._room_owned_treasures(room, 0).size() == (2 if round_index == 4 else 4 if round_index == 8 else 5),
+			"seedling_owned_%d" % round_index, "青苗第 %d 回合后的实际持有数" % round_index)
+		h.expect(offer.is_empty(), "seedling_finished_%d" % round_index, "本回合所需宝藏领完后不能再发候选")
 
 
 # ── B. 补偿 ─────────────────────────────────────────────────────────────────

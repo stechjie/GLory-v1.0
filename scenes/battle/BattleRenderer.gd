@@ -530,7 +530,9 @@ func _sync_3d_model_nodes(living: Array, facing_delta: float, prune := true) -> 
 		# 复活体，原体身上没有），而不是 uid 里含 `_phoenix_` —— 回放里 uid 是
 		# 数据，判据要跟着数据走；同时补 `alive` 防止死亡帧仍挂着。
 		if bool(f.get("alive", false)) and bool(f.get("phoenix_used", false)):
-			UNDEAD_NECROSIS_AURA.sync(model_node, true, float(model_node.get_meta("model_height", NOMINAL_UNIT_HEIGHT)))
+			# 10.18（用户定）：不再用「死灵气息」，改成母灵处决那种覆盖在身上的鬼魂光（绿色），
+			# 由 BattleVfx._sync_phoenix_ghost 实现（着色器和母灵处决共用一份）。
+			_sync_phoenix_ghost(model_node)
 		var status_vfx: Node = _status_vfx_by_id.get(id)
 		if status_vfx == null or not is_instance_valid(status_vfx):
 			status_vfx = _ensure_status_vfx_controller(model_node)
@@ -604,6 +606,11 @@ func detach_actor_for_death(uid: String) -> Node3D:
 		(status_vfx as Node).set_process(false)
 	_status_vfx_by_id.erase(uid)
 	return node_value as Node3D
+
+
+# 凤凰涅槃复活体的身上表现。渲染层只负责「每帧对活着的复活体调一次」，具体样子在 BattleVfx。
+func _sync_phoenix_ghost(_model_node: Node3D) -> void:
+	pass
 
 
 func release_death_actor(uid: String, actor: Node3D) -> void:

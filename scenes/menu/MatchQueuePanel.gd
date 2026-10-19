@@ -302,8 +302,9 @@ func _set_detail(text_value: String) -> void:
 
 func _mode_word() -> String:
 	match _mode:
-		"ranked": return _text("排位", "Ranked")
-		_: return _text("休闲", "Casual")
+		"ranked", "ranked_normal": return _text("排位", "Ranked")
+		"casual_normal": return _text("普通休闲 · 21回合", "Normal Casual · 21 rounds")
+		_: return _text("青苗休闲 · 13回合", "Seedling Casual · 13 rounds")
 
 
 func _text(zh: String, en: String) -> String:

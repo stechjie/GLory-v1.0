@@ -39,7 +39,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app import db, matchmaking, players, ranked, service_control
+from app import db, loadout, matchmaking, players, ranked, service_control
 from app.jwt_verify import Claims
 from app.rate_limit import RateLimited, SlidingWindowLimiter
 from app.routes.me import current_claims
@@ -60,6 +60,7 @@ _state_limiter = SlidingWindowLimiter(STATE_PER_MINUTE, 60.0)
 
 class QueueBody(BaseModel):
     mode: str = matchmaking.CASUAL
+    races: list[str] | None = None
 
 
 class MatchStateResponse(BaseModel):
@@ -82,6 +83,7 @@ _GATE_TEXT = {
     ranked.GATE_CREDIT_TOO_LOW: "信誉分过低，暂时不能排这个模式",
     # 人工禁排位（app/sanctions.py）。和 credit_banned 分开 —— 两者原因不同、解除方式也不同。
     ranked.GATE_SANCTIONED: "你的排位资格已被暂停",
+    "need_three_races": "需要集齐 3 个种族才能参加排位。去商城收集第三族棋子。",
     # 全局开关（app/service_control.py）。三个码分开，客户端要显示的话不一样。
     "service_maintenance": "服务器正在维护，暂时不能开始新对局",
     "matchmaking_disabled": "排位功能暂时关闭",
@@ -144,14 +146,29 @@ async def join_queue(
             status_code=409, detail="这个模式还没开放",
             headers={"X-Glory-Reason": "mode_closed"})
     await _service_gate()
-    # 时间窗口 / 禁赛 / 信誉分。三道都明说原因。
+    # Ranked format is derived from authoritative score; clients cannot choose 21 rounds early.
     async with db.pool().acquire() as conn:
         reason = await ranked.queue_gate(conn, me.player_id, mode)
+        if mode.startswith("ranked"):
+            score = await conn.fetchval(
+                "select score from player_ranked where player_id = $1", me.player_id)
+            mode = matchmaking.RANKED_NORMAL if int(score or 0) >= 300 else matchmaking.RANKED
     if reason:
         raise HTTPException(
             status_code=409, detail=_GATE_TEXT.get(reason, "现在不能排这个模式"),
             headers={"X-Glory-Reason": reason})
-    return MatchStateResponse(state=matchmaking.current().join(me.player_id, mode))
+    chosen = None
+    if mode == matchmaking.CASUAL:
+        try:
+            chosen = await loadout.seedling_races(me.player_id, body.races)
+        except loadout.LoadoutRejected as exc:
+            raise HTTPException(status_code=409, detail=exc.message) from None
+    elif mode == matchmaking.CASUAL_NORMAL:
+        try:
+            await loadout.require_normal_races(me.player_id)
+        except loadout.LoadoutRejected as exc:
+            raise HTTPException(status_code=409, detail=exc.message) from None
+    return MatchStateResponse(state=matchmaking.current().join(me.player_id, mode, chosen))
 
 
 @router.delete("/queue", response_model=MatchStateResponse)
@@ -209,6 +226,10 @@ class MyRankedResponse(BaseModel):
     credit: int
     credit_warn: bool
     banned_sec: int
+    forest_division: str = ""
+    breakthrough_ready: bool = False
+    need_four_races: bool = False
+    owned_races: int = 0
 
 
 # 🔴 这一条挂在 /v1/me 下，不在 /v1/match 下 —— 它是「我的资料」，不是「匹配状态」。
@@ -227,10 +248,11 @@ async def my_ranked(claims: Annotated[Claims, Depends(current_claims)]) -> MyRan
     _limit(_state_limiter, str(me.player_id))
     async with db.pool().acquire() as conn:
         row = await conn.fetchrow(
-            "select season, score, games, wins, win_streak from player_ranked"
-            " where player_id = $1", me.player_id)
+            "select season, score, games, wins, win_streak, breakthrough_ready"
+            " from player_ranked where player_id = $1", me.player_id)
         credit_row = await conn.fetchrow(
             "select score, banned_until from player_credit where player_id = $1", me.player_id)
+        owned_races = await ranked.owned_race_count(conn, me.player_id)
     score = int(row["score"]) if row else 0
     credit = int(credit_row["score"]) if credit_row else ranked.CREDIT_START
     banned_until = credit_row["banned_until"] if credit_row else None
@@ -251,4 +273,9 @@ async def my_ranked(claims: Annotated[Claims, Depends(current_claims)]) -> MyRan
         credit=credit,
         credit_warn=credit < ranked.CREDIT_WARN,
         banned_sec=banned_sec,
+        forest_division=("I" if score < 150 else "II" if score < 200 else
+                         "III" if score < 250 else "IV") if 100 <= score < 300 else "",
+        breakthrough_ready=bool(row["breakthrough_ready"]) if row else False,
+        need_four_races=100 <= score < 300 and owned_races < 4,
+        owned_races=owned_races,
     )

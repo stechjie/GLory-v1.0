@@ -29,7 +29,7 @@ const PREP_SCENE := "res://scenes/prep/PrepScreen.tscn"
 # MD 点名的四个断点。用序列位置（1 起）而不是枚举值，与进度条口径一致。
 # 9.25：再加第 18 步（FOUR_STAR）—— 萝卜、升级石、采集等级、收获/领奖标记
 # 都要从断点里原样恢复，四星那一步才接得上。
-const CHECKPOINT_STEPS := [1, 6, 10, 15, 18]
+const CHECKPOINT_STEPS := [1, 6, 10, 16, 18]
 # 教程里只增不减的三样。断点里它们回退就说明写进去的是过期快照。
 const MONOTONE_FIELDS := ["宝藏", "佣兵", "采购"]
 const ACTION_BUDGET := 60
@@ -147,6 +147,9 @@ func _snapshot_state() -> Dictionary:
 		"fill_phase": TutorialMode.fill_phase(),
 		"fill_bought": int(TutorialMode.fill_buy_progress()[0]),
 		"round_index": GameState.round_index,
+		"final_round": GameState.FINAL_ROUND,
+		"free_stone_claimed": GameState.free_stone_claimed,
+		"four_star_upgrade_count": GameState.four_star_upgrade_count,
 		# 9.25 萝卜 / 四星教学
 		"carrots": GameState.carrots,
 		"harvest_tech_level": GameState.harvest_tech_level,
@@ -409,9 +412,7 @@ func _place_one(prep: PrepScript) -> void:
 	if bench < 0 or board < 0:
 		await _settle(1)
 		return
-	prep._board_hud.bench_buttons[bench].pressed.emit()
-	await _settle(1)
-	prep._board_hud.buttons[board].pressed.emit()
+	prep._drop_on_board(board, {"kind": "bench", "index": bench})
 	await _settle(2)
 
 

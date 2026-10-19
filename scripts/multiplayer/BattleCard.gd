@@ -224,6 +224,7 @@ static func _clean(raw: Dictionary) -> Dictionary:
 				continue
 			races.append(str(value).left(MAX_RACE_ID))
 	out["races"] = races
+	out["ruleset"] = "seedling" if str(raw.get("ruleset", "")) == "seedling" else "normal"
 	out["exp"] = int(raw.get("exp", 0))
 	var patch: Variant = raw.get("patch", {})
 	if patch is Dictionary and not patch.is_empty():
@@ -279,6 +280,10 @@ static func team_of(card: Dictionary) -> int:
 static func seat_of(card: Dictionary) -> int:
 	var seat := int(card.get("seat", -1))
 	return seat if seat >= 0 and seat <= 2 else -1
+
+
+static func ruleset_of(card: Dictionary) -> String:
+	return "seedling" if str(card.get("ruleset", "")) == "seedling" else "normal"
 
 
 static func mode_of(card: Dictionary) -> String:

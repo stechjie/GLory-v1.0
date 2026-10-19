@@ -6,7 +6,7 @@ extends Node
 #   * 买棋子   -> `_shop.buttons[i].pressed` 选卡 + `_shop.buy_button.pressed` 采购，
 #                 与玩家点的是同两个 Button，成不成交仍由宿主的钱/待命区/售罄判断决定
 #   * 开关商店 -> `_shop.open_button.pressed`
-#   * 上阵     -> `_board_hud.bench_buttons[i].pressed` + `_board_hud.buttons[j].pressed`
+#   * 上阵     -> `_drop_on_board(j, {kind: bench, index: i})`，与拖拽落点同一入口
 #   * 继续     -> `TutorialMode.confirm_tap_step()`（2026-10-15 第三轮起：覆盖层里那个
 #                 透明热点 `_hotspot` 已删掉，改由 `_input()` 旁听真实按下事件推进）
 #   * 战斗     -> `TutorialMode.begin_battle()` + `after_battle({})`，无需服务器
@@ -34,6 +34,8 @@ const METRICS: PackedStringArray = [
 ]
 
 var _h: CheckHarness
+var _battle_rounds: Array[int] = []
+var _treasure_rounds: Array[int] = []
 
 
 func _ready() -> void:
@@ -105,8 +107,13 @@ func _check_twenty_runs() -> void:
 				regressed = true
 		_h.expect(not regressed, "buy_progress_regressed",
 			"第 %d 轮购买进度倒退了：%s" % [i + 1, str(bought)])
-		_h.expect(int(r.get("visited", 0)) == 22, "not_all_steps_visited",
-			"第 %d 轮只走到 %d 个实际步骤，应为 22" % [i + 1, int(r.get("visited", 0))])
+		_h.expect(int(r.get("visited", 0)) == 21 and bool(r.get("late_treasure", false)),
+			"not_all_steps_visited", "第 %d 轮教学动作有漏步：%s" % [i + 1, str(r)])
+		_h.expect(r.get("battle_rounds", []) == range(1, 14), "battle_rounds_wrong",
+			"第 %d 轮实际战斗回合：%s" % [i + 1, str(r.get("battle_rounds", []))])
+		_h.expect(r.get("treasure_rounds", []) == [4, 4, 8, 8, 12],
+			"treasure_schedule_wrong",
+			"第 %d 轮宝藏领取回合：%s" % [i + 1, str(r.get("treasure_rounds", []))])
 
 	_h.expect(completed == RUNS, "completion_rate_below_100",
 		"%d/%d 轮跑到 DONE，完成率不是 100%%（首个失败原因：%s）"
@@ -126,6 +133,8 @@ func _run_once(index: int, trace: bool) -> Dictionary:
 		"done": false, "visited": 0, "phases": [], "bought_trace": [], "why": "",
 	}
 	TutorialMode.start()
+	_battle_rounds.clear()
+	_treasure_rounds.clear()
 	var prep := _new_prep()
 	if prep == null:
 		out["why"] = "PrepScreen 实例化失败"
@@ -137,10 +146,13 @@ func _run_once(index: int, trace: bool) -> Dictionary:
 	var visited: Array = []
 	var phases: Array = []
 	var bought: Array = []
+	var late_treasure := false
 	var guard := 0
 	while TutorialMode.step != TutorialScript.Step.DONE and guard < 200:
 		guard += 1
 		var before_step: int = TutorialMode.step
+		if before_step == TutorialScript.Step.TAKE_TREASURE_2:
+			late_treasure = true
 		# 记的是**序列位置**而不是枚举值：FORMATION_HP 在 STEP_SEQUENCE 里出现两次，
 		# 按枚举去重永远只有 21 个。
 		var pos := TutorialMode.step_number()
@@ -159,6 +171,9 @@ func _run_once(index: int, trace: bool) -> Dictionary:
 	if TutorialMode.step == TutorialScript.Step.DONE and not visited.has(TutorialMode.step_number()):
 		visited.append(TutorialMode.step_number())
 	out["visited"] = visited.size()
+	out["late_treasure"] = late_treasure
+	out["battle_rounds"] = _battle_rounds.duplicate()
+	out["treasure_rounds"] = _treasure_rounds.duplicate()
 	out["phases"] = phases
 	out["bought_trace"] = bought
 	out["done"] = TutorialMode.step == TutorialScript.Step.DONE
@@ -267,9 +282,7 @@ func _place_one(prep: PrepScript) -> void:
 	if bench < 0 or board < 0:
 		await _settle(1)
 		return
-	prep._board_hud.bench_buttons[bench].pressed.emit()
-	await _settle(1)
-	prep._board_hud.buttons[board].pressed.emit()
+	prep._drop_on_board(board, {"kind": "bench", "index": bench})
 	await _settle(2)
 
 
@@ -277,6 +290,7 @@ func _fight(prep: PrepScript) -> void:
 	if not TutorialMode.begin_battle():
 		await _settle(1)
 		return
+	_battle_rounds.append(GameState.round_index)
 	TutorialMode.after_battle({})
 	# begin_battle() 会 _detach()，打完要重新挂回当前屏。
 	TutorialMode.attach(prep.tutorial_target_provider())
@@ -290,6 +304,7 @@ func _take_treasure(prep: PrepScript) -> void:
 		await _settle(1)
 		return
 	prep._pick_treasure(str(cands[0]))
+	_treasure_rounds.append(GameState.round_index - 1)
 	TutorialMode.sync()
 	await _settle(2)
 

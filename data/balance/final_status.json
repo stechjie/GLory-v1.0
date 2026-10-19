@@ -700,11 +700,11 @@
       "cost": 30,
       "skill_id": "every_fifth_group_heal",
       "skill_name_cn": "战歌",
-      "skill_cn_1to3": "战歌：每第5次普通攻击治疗周围友军最大生命15%。",
-      "skill_cn_4": "战歌：每第4次普通攻击治疗周围友军最大生命40%。",
-      "skill_en_1to3": "War Song: Every 5 attacks, heal nearby allies for 15% of their max HP.",
-      "skill_raw_params": "every = 5\nheal_pct = 0.15",
-      "star4_changes": "every: 5 → 4\nheal_pct: 0.15 → 0.4",
+      "skill_cn_1to3": "战歌：每第5次普通攻击治疗周围友军最大生命10%。",
+      "skill_cn_4": "战歌：每第4次普通攻击治疗周围友军最大生命20%。",
+      "skill_en_1to3": "War Song: Every 5 attacks, heal nearby allies for 10% of their max HP.",
+      "skill_raw_params": "every = 5\nheal_pct = 0.1",
+      "star4_changes": "every: 5 → 4\nheal_pct: 0.1 → 0.2",
       "stats": {
         "1": {
           "hp": 1200,
@@ -726,7 +726,9 @@
           "atk": 166,
           "defense": 21
         }
-      }
+      },
+      "skill_heal_multiplier_1to3": 0.1,
+      "skill_heal_multiplier_4": 0.2
     },
     "human_death_servant": {
       "name_cn": "死侍",
@@ -844,9 +846,9 @@
       "cost": 50,
       "skill_id": "unique_king_growth",
       "skill_name_cn": "人王唯一技",
-      "skill_cn_1to3": "人王唯一技：棋盘上只能存在一只人王。若参战且战后仍存活，全属性永久x1.2（上限5层）；若死亡则从棋盘移除；升星继承三只材料中成长最高的人王数值。",
-      "skill_cn_4": "人王唯一技：棋盘上只能存在一只人王。若参战且战后仍存活，生命、攻击、防御永久x1.3（上限8层）；若死亡则从棋盘移除；升星继承三只材料中成长最高的人王数值。",
-      "skill_en_1to3": "Human King Unique (one on board): If this unit survives a battle, HP/ATK/DEF permanently ×1.2 (cap 5 stacks). If it dies, it is removed from the board. On upgrade, inherit the highest growth value from the three materials.",
+      "skill_cn_1to3": "人王唯一技：棋盘上只能存在一只人王。若参战且战后仍存活，生命、攻击、防御、攻速永久x1.2（上限5层，战斗攻速上限2.5次/秒）；若死亡则从棋盘移除；升星继承三只材料中成长最高的人王数值。",
+      "skill_cn_4": "人王唯一技：棋盘上只能存在一只人王。若参战且战后仍存活，生命、攻击、防御、攻速永久x1.3（上限8层，战斗攻速上限2.5次/秒）；若死亡则从棋盘移除；升星继承三只材料中成长最高的人王数值。",
+      "skill_en_1to3": "Human King Unique (one on board): If this unit survives a battle, HP/ATK/DEF/AS permanently ×1.2 (cap 5 stacks; battle AS cap 2.5 attacks/s). If it dies, it is removed from the board. On upgrade, inherit the highest growth value from the three materials.",
       "skill_raw_params": "max_stacks = 5\npost_battle_all_stat_growth = 0.2\nremove_on_death = true\nunique_on_board = true",
       "star4_changes": "max_stacks: 5 → 8\npost_battle_all_stat_growth: 0.2 → 0.3",
       "stats": {
@@ -952,11 +954,11 @@
       "cost": 30,
       "skill_id": "death_poison_explosion",
       "skill_name_cn": "死亡毒爆",
-      "skill_cn_1to3": "死亡毒爆：死亡时对周围敌人造成自身攻击250%真实伤害，并施加中毒。",
-      "skill_cn_4": "死亡毒爆：死亡时对周围敌人造成自身攻击500%真实伤害，并施加中毒（最多2层，分别扣血）。",
-      "skill_en_1to3": "Death Poison Burst: On death, deal 250% ATK true damage to surrounding enemies and apply poison (up to 2 separate damage stacks).",
-      "skill_raw_params": "damage_atk_pct = 2.5",
-      "star4_changes": "damage_atk_pct: 2.5 → 5",
+      "skill_cn_1to3": "死亡毒爆：死亡时对周围敌人造成自身攻击100%真实伤害，并施加中毒（最多2层，分别扣血）。",
+      "skill_cn_4": "死亡毒爆：死亡时对周围敌人造成自身攻击250%真实伤害，并施加中毒（最多2层，分别扣血）。",
+      "skill_en_1to3": "Death Poison Burst: On death, deal 100% ATK true damage to surrounding enemies and apply poison (up to 2 separate damage stacks).",
+      "skill_raw_params": "damage_atk_pct = 1.0",
+      "star4_changes": "damage_atk_pct: 1.0 → 2.5",
       "stats": {
         "1": {
           "hp": 600,
@@ -978,7 +980,9 @@
           "atk": 500,
           "defense": 0
         }
-      }
+      },
+      "skill_damage_multiplier_1to3": 1.0,
+      "skill_damage_multiplier_4": 2.5
     },
     "undead_fly": {
       "name_cn": "飞灵",
@@ -1649,7 +1653,7 @@
     "ctrl_corrosive_needle": {
       "name_cn": "腐蚀毒针",
       "category_cn": "控制",
-      "effect_cn": "目标流血：每秒 当前生命×6%，持续 3 秒",
+      "effect_cn": "目标流血：每秒当前生命×6%，持续3秒；我方普通棋子普攻已流血目标时伤害+15%（本次攻击新施加的流血从下一击起生效）。",
       "hu_pai_text_cn": "—"
     },
     "ctrl_interrupt_chain": {
@@ -1812,6 +1816,6 @@
       "effect_cn": "需要：生命丰碑 + 黄金祭坛 + 震荡余波 + 血契之刃 + 狂怒阵容。生命丰碑 ×1.20→×1.40；震荡余波眩晕 1→2 秒；血契之刃 ×1.25→×1.50；狂怒阵容上限 8→9。黄金祭坛使用不扣法阵 HP；选到胡牌手立即回复法阵 HP +2（上限 50）。\n表内字段：positive_effect_multiplier = 2"
     }
   },
-  "balance_version": "ddf476a89ec8a9f2204ccbe63cb4a6965d254e1d0795eeee4835ff4bc3f51048",
-  "final_workbook_sha256": "b7cc1b673de2d857237a8834debd493118089d7edcdaa98ce71e529d0d16c894"
+  "balance_version": "6170c6dbd9b957d3337e863a2f06fc0861c8262f7f313ad41d2db38dc1c51fff",
+  "final_workbook_sha256": "f83c9a104503bcdaddbb538f5ab53d614637d5043d83ef0e143ce5e7019f1b51"
 }

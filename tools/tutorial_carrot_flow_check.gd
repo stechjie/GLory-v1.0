@@ -90,7 +90,7 @@ func _check_sequence() -> void:
 		S.CARROT_HARVEST, S.DRAW_STONE, S.FOUR_STAR, S.HIRE_MERC, S.FILL_7,
 		S.FORMATION_HP, S.START_PVP]
 	_expect(seq == expected, "sequence", "%d 步" % seq.size())
-	_expect(TutorialScript.CHECKPOINT_VERSION == 2, "checkpoint_version", str(TutorialScript.CHECKPOINT_VERSION))
+	_expect(TutorialScript.CHECKPOINT_VERSION == 3, "checkpoint_version", str(TutorialScript.CHECKPOINT_VERSION))
 
 
 # 把教程摆到「第一次讲完法阵 HP」：棋盘上一个 3 星民兵 + 若干棋子，已有 1 件宝藏。
@@ -134,7 +134,10 @@ func _draw_like_prep() -> bool:
 		return false
 	GameState.carrots -= cost
 	GameState.stone_draw_used_round = GameState.round_index
-	GameState.stone_draw_count += 1
+	if cost == 0 and GameState.FINAL_ROUND == 13:
+		GameState.free_stone_claimed = true
+	else:
+		GameState.stone_draw_count += 1
 	GameState.apply_team_stone(TutorialMode.forced_stone_type())
 	TutorialMode.sync()
 	return true
@@ -175,17 +178,14 @@ func _check_happy_path() -> void:
 	TutorialMode.record_carrot_camp_state(false, TutorialScript.CAMP_PAGE_CAMP)
 	_expect(TutorialMode.step == TutorialScript.Step.START_BOSS, "close_to_boss", TutorialMode.step_key())
 
-	# 打 Boss -> 选第 2 件宝藏
+	# 第 5 回合 Boss 后自动收获；第 8 回合才会选下一批宝藏。
+	_harvest_action_calls = 0
 	_expect(TutorialMode.begin_battle(), "boss_battle_allowed", "")
 	TutorialMode.after_battle({})
 	TutorialMode.attach(_fake)
-	_expect(TutorialMode.step == TutorialScript.Step.TAKE_TREASURE_2, "boss_to_treasure", TutorialMode.step_key())
-	_expect(GameState.carrots == 0, "no_harvest_yet", "选宝藏前还没收获：%d" % GameState.carrots)
-	GameState.owned_treasures.append("atk_fury_roster")
-	_harvest_action_calls = 0
-	TutorialMode.sync()
+	_expect(TutorialMode.step == TutorialScript.Step.CARROT_HARVEST and GameState.round_index == 6,
+		"boss_to_harvest", TutorialMode.step_key())
 	var production := CarrotEconomy.total_production(1, 0)
-	_expect(TutorialMode.step == TutorialScript.Step.CARROT_HARVEST, "treasure_to_harvest", TutorialMode.step_key())
 	_expect(GameState.carrots == production and TutorialMode.last_harvest_gain() == production and _harvest_action_calls == 1,
 		"harvest_once", "收获 %d（应为升级后的 %d），动画请求 %d 次" % [GameState.carrots, production, _harvest_action_calls])
 	TutorialMode.sync()
@@ -207,7 +207,8 @@ func _check_happy_path() -> void:
 	_expect(TutorialMode.forced_stone_type() == "land", "forced_land", TutorialMode.forced_stone_type())
 	var carrots_before := GameState.carrots
 	_expect(_draw_like_prep(), "draw_ok", "")
-	_expect(int(GameState.team_upgrade_stones.get("land", 0)) == 1 and GameState.carrots == carrots_before - 50,
+	_expect(int(GameState.team_upgrade_stones.get("land", 0)) == 1 and GameState.carrots == carrots_before \
+		and GameState.free_stone_claimed,
 		"draw_result", "地石 %d，萝卜 %d -> %d" % [int(GameState.team_upgrade_stones.get("land", 0)), carrots_before, GameState.carrots])
 	_expect(TutorialMode.step == TutorialScript.Step.FOUR_STAR, "draw_to_four_star", TutorialMode.step_key())
 	_expect(not _draw_like_prep(), "draw_once", "四星这一步不能再抽")

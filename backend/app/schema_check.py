@@ -65,6 +65,18 @@ _PREPARED: list[tuple[str, str]] = [
 #   sql 回一行 = 在；回零行 = 缺。
 _PROBES: list[tuple[str, str, str]] = [
     (
+        "037 等级、升级事件与森卫突破",
+        "select 1 where to_regclass('public.player_progression') is not null"
+        " and to_regclass('public.level_up_events') is not null"
+        " and exists (select 1 from information_schema.columns"
+        " where table_name = 'player_ranked' and column_name = 'breakthrough_ready')"
+        " and exists (select 1 from information_schema.columns"
+        " where table_name = 'player_ranked' and column_name = 'breakthrough_complete')"
+        " and exists (select 1 from pg_trigger"
+        " where tgname = 'ranked_stage_floor' and not tgisinternal)",
+        "新账号初始化、对局经验与排位结算会失败",
+    ),
+    (
         "030 chat_messages.kind 放行 party_invite",
         "select 1 from pg_constraint"
         " where conname = 'chat_message_kind_allowed'"

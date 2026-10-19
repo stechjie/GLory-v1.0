@@ -38,6 +38,14 @@ def anyio_backend():
     return "asyncio"
 
 
+@pytest.fixture(autouse=True)
+def _isolate_xp_awards(monkeypatch):
+    """These cases exercise ranked score and wallet paths, not XP persistence."""
+    async def award_match(*_args, **_kwargs):
+        return 0
+    monkeypatch.setattr(ranked.progression, "award_match", award_match)
+
+
 # --- 段位是分数的切片 -------------------------------------------------------------
 
 
@@ -228,7 +236,9 @@ class _FakeConn:
         if "from players" in sql:
             return [{"player_id": p} for p in args[0] if p in self.known]
         if "player_ranked" in sql:
-            return [{"player_id": p, "score": self.scores.get(p, 0), "win_streak": 0}
+            return [{"player_id": p, "score": self.scores.get(p, 0), "win_streak": 0,
+                     "breakthrough_ready": False,
+                     "breakthrough_complete": self.scores.get(p, 0) >= 300}
                     for p in args[0]]
         return []
 
@@ -243,6 +253,8 @@ class _FakeConn:
         return None
 
     async def fetchval(self, sql, *args):
+        if "player_entitlements" in sql:
+            return 4
         if "kind = 'abandon'" in sql:
             return self.abandon_counts.get(args[0], 0) + 1
         return 1
@@ -270,7 +282,7 @@ def _report(mode: str, outcome: str, players_: list[uuid.UUID],
             offline: set[uuid.UUID] | None = None) -> dict:
     offline = offline or set()
     return {
-        "match_uid": "a" * 32, "mode": mode, "outcome": outcome,
+        "match_uid": "a" * 32, "mode": mode, "outcome": outcome, "rounds": 13,
         "seats": [
             {"slot": i, "team": 0 if i < 3 else 1, "player_id": p,
              "online_at_end": p not in offline, "was_ai": False}
@@ -301,8 +313,8 @@ async def test_ranked_settlement_uses_pre_match_averages() -> None:
     assert len(conn.wallet_writes) == 6
     assert len(conn.ledger_writes) == 6
     assert len(conn.reward_receipts) == 6
-    assert all(8 <= w[3] <= 15 for w in conn.wallet_writes[:3])
-    assert all(3 <= w[3] <= 8 for w in conn.wallet_writes[3:])
+    assert all(15 <= w[3] <= 20 for w in conn.wallet_writes[:3])
+    assert all(9 <= w[3] <= 15 for w in conn.wallet_writes[3:])
     assert all(r[2] == "win" and r[3] == r[6] for r in conn.reward_receipts[:3])
     assert all(r[2] == "lose" and r[3] == r[6] for r in conn.reward_receipts[3:])
 
@@ -330,7 +342,9 @@ async def test_casual_does_not_touch_ranked_score(monkeypatch, local_hour) -> No
     await ranked.settle(conn, _report("casual", "team_a", players_))
     assert conn.ranked_writes == [], "休闲局不该动排位分"
     assert len(conn.credit_writes) == 6, "但信誉分照算 —— 跑路的损失和模式无关"
-    assert conn.wallet_writes == [], "休闲局不发排位游戏币"
+    assert len(conn.wallet_writes) == 6, "休闲局也发游戏币"
+    assert all(8 <= w[3] <= 15 for w in conn.wallet_writes[:3])
+    assert all(3 <= w[3] <= 8 for w in conn.wallet_writes[3:])
     assert conn.reward_receipts == [], "休闲局不能产生排位奖励回执"
 
 
@@ -357,13 +371,13 @@ async def test_abandoner_loses_extra_and_gets_credit_penalty() -> None:
     await ranked.settle(conn, _report("ranked", "team_a", players_, offline={runner}))
     writes = {w[0]: w for w in conn.ranked_writes}
     # 队伍赢了，他照样按输算：输的分（−20）再额外扣一份（−30）。
-    assert writes[runner][1] == 300 + ranked.score_delta(False, 300, 300) - _ABANDON_EXTRA
+    assert writes[runner][1] == 300, "突破森卫后掉线也不能跌回森卫"
     assert writes[runner][2] == 0, "跑路不算胜场"
     assert writes[runner][3] == 0, "连胜清零"
     assert writes[players_[1]][1] > 300, "队友照常算赢"
     receipts = {r[1]: r for r in conn.reward_receipts}
     assert receipts[runner][2] == "lose"
-    assert 3 <= receipts[runner][3] <= 8, "游戏币按输发"
+    assert 9 <= receipts[runner][3] <= 15, "游戏币按排位输发"
     kinds = {e[1] for e in conn.events}
     assert "abandon" in kinds
     assert all(e[2] < 0 for e in conn.events if e[1] == "abandon")
@@ -376,7 +390,7 @@ async def test_abandoner_in_draw_is_judged_loss() -> None:
     conn = _FakeConn(set(players_), {p: 300 for p in players_}, {runner: 0})
     await ranked.settle(conn, _report("ranked", "draw", players_, offline={runner}))
     writes = {w[0]: w for w in conn.ranked_writes}
-    assert writes[runner][1] == 300 + ranked.score_delta(False, 300, 300) - _ABANDON_EXTRA
+    assert writes[runner][1] == 300
     assert writes[players_[0]][1] == 300, "其他人平局不动分"
     receipts = {r[1]: r for r in conn.reward_receipts}
     assert receipts[runner][2] == "lose"
@@ -401,8 +415,8 @@ async def test_draw_does_not_move_score() -> None:
     conn = _FakeConn(set(players_), {p: 300 for p in players_})
     await ranked.settle(conn, _report("ranked", "draw", players_))
     assert {w[1] for w in conn.ranked_writes} == {300}, "平局不动分"
-    assert {w[3] for w in conn.wallet_writes} == {5}
-    assert {r[3] for r in conn.reward_receipts} == {5}
+    assert {w[3] for w in conn.wallet_writes} == {11}
+    assert {r[3] for r in conn.reward_receipts} == {11}
 
 
 @pytest.mark.anyio
@@ -428,8 +442,9 @@ async def test_ai_seats_are_skipped() -> None:
 
 
 class _GateConn:
-    def __init__(self, row: dict | None, sanctioned: bool = False) -> None:
+    def __init__(self, row: dict | None, sanctioned: bool = False, race_count: int = 4) -> None:
         self.row = row
+        self.race_count = race_count
         # 人工禁排位（app/sanctions.py 的 is_sanctioned 走 fetchval）。
         # 默认 False = 没被人工罚，老用例的行为不变。
         self.sanctioned = sanctioned
@@ -438,6 +453,8 @@ class _GateConn:
         return self.row
 
     async def fetchval(self, sql, *args):
+        if "player_entitlements" in sql:
+            return self.race_count
         return self.sanctioned
 
 
@@ -498,9 +515,9 @@ async def test_gate_blocks_banned_and_low_credit() -> None:
 
 
 @pytest.mark.anyio
-async def test_gate_lets_brand_new_players_through() -> None:
-    assert await ranked.queue_gate(_GateConn(None), uuid.UUID(int=1), "ranked",
-                                   _at_myt(20)) == ranked.GATE_OK
+async def test_gate_requires_three_complete_races() -> None:
+    assert await ranked.queue_gate(_GateConn(None, race_count=2), uuid.UUID(int=1), "ranked",
+                                   _at_myt(20)) == "need_three_races"
 
 
 # --- 跨文件约定 -------------------------------------------------------------------

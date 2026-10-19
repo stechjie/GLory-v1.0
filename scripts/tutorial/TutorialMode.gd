@@ -5,7 +5,11 @@ signal completed
 signal skip_requested
 
 const TutorialTargetProviderScript := preload("res://scripts/tutorial/TutorialTargetProvider.gd")
-const TutorialArrowScript := preload("res://scripts/tutorial/TutorialArrow.gd")
+const TutorialGuideLightScript := preload("res://scripts/tutorial/TutorialGuideLight.gd")
+const DOG_WELCOME := preload("res://assets/ui/tutorial/dog_welcome.png")
+const DOG_GUIDE := preload("res://assets/ui/tutorial/dog_guide.png")
+const DOG_EXPLAIN := preload("res://assets/ui/tutorial/dog_explain.png")
+const DOG_ENCOURAGE := preload("res://assets/ui/tutorial/dog_encourage.png")
 # 聚焦遮罩的着色器：整幅压暗 + 逐片元开洞。见 FOCUS_DIM_COUNT 上方的长注释。
 const TutorialFocusMaskShader := preload("res://shaders/tutorial_focus_mask.gdshader")
 
@@ -81,16 +85,7 @@ const STEP_SEQUENCE: Array = [
 #   DEPLOY     <- GameState.board_slots 的真实占用数
 enum FillPhase { BUY, CLOSE_SHOP, DEPLOY }
 
-enum ArrowDir { DOWN, UP, LEFT }
-
-# The arrow is drawn geometry, with an exact tip instead of guessed font metrics.
-const ARROW_DOWN_Y_OFFSET := -86.0
-# 向上箭头贴在目标底边下方的间隙。
-const ARROW_UP_GAP := 6.0
-const ARROW_HEIGHT := 84.0
-const ARROW_WIDTH := 84.0
-# 向左箭头跟目标右边缘的间隙。
-const ARROW_LEFT_GAP := 8.0
+enum ArrowDir { DOWN, UP, LEFT } # Reused as bubble placement preference; no arrow is drawn.
 
 # 气泡尺寸。气泡是浮在 overlay 上的自由控件，没有父容器约束它，
 # 所以宽高必须显式钉死：autowrap 的 Label 在宽度未定时，最小高度会按
@@ -128,8 +123,8 @@ const LAYOUT_GEOMETRY_EPS := 2.0
 const FOCUS_DIM_COUNT := 1
 # 压暗强度。与既有遮罩同一档（萝卜营地 0.68 / 商店不可买原因 0.64）：
 # 够暗到能一眼分出主角，又留住足够多的场景轮廓让新手知道自己在哪一步。
-const FOCUS_DIM_COLOR := Color(0.02, 0.025, 0.04, 0.66)
-# 洞比目标外扩这么多像素：给箭头与目标自己留一圈呼吸位，
+const FOCUS_DIM_COLOR := Color(0.02, 0.025, 0.04, 0.72)
+# 洞比目标外扩这么多像素：给光圈与目标自己留一圈呼吸位，
 # 免得暗幕边界贴着卡面切过去显得像渲染错误。
 const FOCUS_HOLE_PADDING := 6.0
 # 「点一下继续」四个步骤的受理外扩（2026-10-15 第三轮，见 `_input()`）。
@@ -173,7 +168,8 @@ var _carrot_gift_claimed := false
 var opponent_snapshot: Dictionary = {}
 var _target_provider: TutorialTargetProviderScript
 var _overlay: Control
-var _arrow: TutorialArrowScript
+var _light: TutorialGuideLightScript
+var _guide: TextureRect
 var _bubble: PanelContainer
 var _text: Label
 var _progress_label: Label
@@ -233,6 +229,7 @@ func start() -> void:
 	clear_checkpoint()
 	GameState.reset_run()
 	GameState.tutorial_mode = true
+	GameState.FINAL_ROUND = 13
 	GameState.player_formation_hp = TUTORIAL_HP
 	GameState.enemy_formation_hp = TUTORIAL_HP
 	GameState.gold = TUTORIAL_GOLD
@@ -265,11 +262,12 @@ func sync() -> void:
 		return
 	GameState.gold = TUTORIAL_GOLD
 	# 旧版本重复领取会关掉选择层却没有增加持有数。恢复候选让该步骤可继续。
-	var required := 1 if step == Step.TAKE_TREASURE_1 else 2 if step == Step.TAKE_TREASURE_2 else 0
+	var required := 2 if step == Step.TAKE_TREASURE_1 else \
+		(4 if GameState.round_index <= 9 else 5) if step == Step.TAKE_TREASURE_2 else 0
 	if required > 0 and GameState.owned_treasures.size() < required:
 		var preferred: Array = GameState.pending_treasure.get("candidates", [])
 		if preferred.is_empty():
-			preferred = TREASURE_1 if required == 1 else TREASURE_2
+			preferred = TREASURE_1 if step == Step.TAKE_TREASURE_1 else TREASURE_2
 		var candidates := TreasureService.available_candidates(preferred)
 		if not bool(GameState.pending_treasure.get("active", false)) or candidates != preferred:
 			GameState.pending_treasure["active"] = true
@@ -287,7 +285,7 @@ func sync() -> void:
 		_advance_to(Step.START_PVE_1)
 	if step == Step.UPGRADE_2 and _unit_star("human_militia") >= 2:
 		_advance_to(Step.START_PVE_2)
-	if step == Step.TAKE_TREASURE_1 and GameState.owned_treasures.size() >= 1:
+	if step == Step.TAKE_TREASURE_1 and GameState.owned_treasures.size() >= 2:
 		# 只送 1 个 2 星（送 2 个会和场上那个凑满 3 个、当场自动合成到 3 星，
 		# UPGRADE_3 就被跳过了）。剩下 1 个 2 星让玩家自己买 2 个 1 星凑。
 		_grant_units("human_militia", 1, 2)
@@ -319,8 +317,8 @@ func sync() -> void:
 	# 升级完还要玩家自己关掉营地（营地盖住了「开始战斗」），关掉才进 Boss。
 	if step == Step.HARVEST_UPGRADE and GameState.harvest_tech_level >= 1 and not _camp_open:
 		_advance_to(Step.START_BOSS)
-	if step == Step.TAKE_TREASURE_2 and GameState.owned_treasures.size() >= 2:
-		_advance_to(Step.CARROT_HARVEST)
+	if step == Step.TAKE_TREASURE_2 and GameState.owned_treasures.size() >= (4 if GameState.round_index <= 9 else 5):
+		_advance_to(Step.START_PVP)
 	if step == Step.CARROT_HARVEST and not _carrot_harvested:
 		_run_tutorial_harvest()
 	if step == Step.DRAW_STONE:
@@ -578,19 +576,31 @@ func coerce_victory(result: Dictionary) -> void:
 func after_battle(result: Dictionary) -> void:
 	match step:
 		Step.START_PVE_1:
+			GameState.round_index = 2
 			# 升 2 星的民兵材料让玩家自己在商店买，不再直接发。
 			_apply_shop(UPGRADE_2_SHOP)
 			_advance_to(Step.UPGRADE_2)
 		Step.START_PVE_2:
-			_start_treasure(TREASURE_1)
-			_advance_to(Step.TAKE_TREASURE_1)
+			if GameState.round_index < 4:
+				GameState.round_index += 1
+			else:
+				_start_treasure(TREASURE_1)
+				GameState.round_index = 5
+				_advance_to(Step.TAKE_TREASURE_1)
 		Step.START_BOSS:
-			_start_treasure(TREASURE_2)
-			_advance_to(Step.TAKE_TREASURE_2)
+			GameState.round_index = 6
+			_advance_to(Step.CARROT_HARVEST)
 		Step.START_PVP:
-			coerce_victory(result)
-			GameState.enemy_formation_hp = 0
-			_advance_to(Step.DONE)
+			var completed_round := GameState.round_index
+			if completed_round >= GameState.FINAL_ROUND:
+				coerce_victory(result)
+				GameState.enemy_formation_hp = 0
+				_advance_to(Step.DONE)
+			else:
+				if completed_round in [8, 12]:
+					_start_treasure(TREASURE_2)
+					_advance_to(Step.TAKE_TREASURE_2)
+				GameState.round_index = completed_round + 1
 	GameState.gold = TUTORIAL_GOLD
 	save_checkpoint(true)
 
@@ -609,9 +619,12 @@ func current_text() -> String:
 		Step.UPGRADE_2:
 			return _t("在商店买 1 个「民兵」（不够就点刷新）。凑够 2 个相同棋子会自动合成，民兵就升到 2 星。", "Buy 1 Militia from the shop (refresh if needed). Two matching units merge automatically, taking your Militia to 2-star.")
 		Step.START_PVE_2:
+			if GameState.round_index >= 3:
+				return _t("第 %d 回合：自由调整阵容，准备好就点击开始战斗。" % GameState.round_index,
+					"Round %d: adjust your team, then start battle." % GameState.round_index)
 			return _t("主力已经 2 星了。再开始战斗，这次打 4 个小怪。", "Your main unit is 2-star. Start battle again against 4 monsters.")
 		Step.TAKE_TREASURE_1:
-			return _t("选择一个宝藏。拿到的宝藏会显示在左下角。", "Choose a treasure. Owned treasures appear at the bottom-left.")
+			return _t("第 4 回合奖励：选择 2 个宝藏。拿到的宝藏会显示在左下角。", "Round 4 reward: choose 2 treasures. Owned treasures appear at the bottom-left.")
 		Step.UPGRADE_3:
 			return _t("已经送你 1 个 2 星民兵。再去商店买 2 个民兵（不够就刷新），它们会先合成 2 星，凑够 3 个 2 星就自动升到 3 星。", "You received one 2-star Militia. Buy 2 more Militia from the shop (refresh if needed) — they merge into a 2-star, and three 2-stars merge into a 3-star.")
 		Step.UPGRADE_OTHERS:
@@ -623,7 +636,8 @@ func current_text() -> String:
 		Step.START_BOSS:
 			return _t("阵容变强了，点击开始战斗挑战 Boss。", "Your team is stronger. Start battle to challenge the Boss.")
 		Step.TAKE_TREASURE_2:
-			return _t("Boss 打完后，再选择一个宝藏强化阵容。", "After the Boss, choose another treasure to strengthen your team.")
+			return _t("第 8 回合再选 2 个宝藏。" if GameState.round_index <= 9 else "第 12 回合选择最后 1 个宝藏。",
+				"Choose 2 more treasures after round 8." if GameState.round_index <= 9 else "Choose your final treasure after round 12.")
 		Step.CARROT_CAMP:
 			return _t("新资源「萝卜」来了！点击右侧的「萝卜营地」。宠物每回合会自动收获萝卜，萝卜用来雇佣兵和抽升级石。",
 				"New resource: carrots! Tap Carrot Camp on the right. Your pet harvests carrots every round — spend them on mercenaries and upgrade stones.")
@@ -644,7 +658,8 @@ func current_text() -> String:
 		Step.FORMATION_HP:
 			return _t("看上方血条——教学局法阵 HP 是 10，把敌方法阵打到归零就胜利。点一下继续。", "See the HP bar above — tutorial formation HP is 10. Bring the enemy's to 0 to win. Tap to continue.")
 		Step.START_PVP:
-			return _t("点击开始战斗进入 PVP，赢下最后一战。", "Start battle for PVP and win the final fight.")
+			return _t("第 %d／13 回合：检查阵容后点击开始战斗。" % GameState.round_index,
+				"Round %d/13: review your team and start battle." % GameState.round_index)
 		_:
 			return _t("教学胜利。", "Tutorial victory.")
 
@@ -698,6 +713,7 @@ func update_overlay() -> void:
 	var content_key := _overlay_content_key(target, next_text, dir)
 	if not _layout_signature.is_empty() and _layout_inputs_equivalent(
 			content_key, rect, safe, keep_clear):
+		_update_guide_light(focus)
 		return
 	var signature := _overlay_layout_signature(target, rect, next_text, dir)
 	var previous_signature := _layout_signature
@@ -708,15 +724,16 @@ func update_overlay() -> void:
 	_last_keep_clear_rects = keep_clear.duplicate()
 	_layout_recompute_count += 1
 	_last_layout_reason = "initial" if previous_signature.is_empty() else "inputs_changed"
-	_apply_arrow(rect, dir)
 	# Measure the combined minimum after content changed. Reading size immediately
 	# after reset_size() used to alternate between stale and settled container sizes.
 	_fit_bubble()
 	var target_id := target.get_instance_id() if target != null and is_instance_valid(target) else 0
 	var context := "%d|%d" % [step, target_id]
 	_bubble.position = _bubble_position(rect, dir, context)
-	_continue_btn.visible = false
 	_position_chrome()
+	_position_guide(rect, keep_clear)
+	_update_guide_light(focus)
+	_continue_btn.visible = false
 
 
 # 「这一步该不该整幅压暗」的**纯判据**：只看状态，不碰节点。
@@ -819,6 +836,8 @@ func layout_debug_snapshot() -> Dictionary:
 		"signature": _layout_signature,
 		"context": _layout_context,
 		"bubble_rect": _bubble.get_global_rect() if _bubble != null and is_instance_valid(_bubble) else Rect2(),
+		"guide_rect": _guide.get_global_rect() if _guide != null and is_instance_valid(_guide) else Rect2(),
+		"light_target_rect": _light.target_rect if _light != null and is_instance_valid(_light) else Rect2(),
 		"candidate_index": _last_candidate_index,
 		"recompute_count": _layout_recompute_count,
 		"reason": _last_layout_reason,
@@ -842,7 +861,7 @@ func _sync_progress_index() -> void:
 			return
 	# 前面找不到（理论上只有回退流程才会），退回全表首次匹配。
 	var first := STEP_SEQUENCE.find(step)
-	if first >= 0:
+	if first > _progress_index:
 		_progress_index = first
 
 func step_number() -> int:
@@ -880,7 +899,8 @@ func step_display_name() -> String:
 		Step.UPGRADE_2:
 			return _t("升到 2 星", "Reach 2-Star")
 		Step.START_PVE_2:
-			return _t("第二场战斗", "Second Battle")
+			return _t("第 %d 回合练习战" % GameState.round_index,
+				"Round %d Practice Battle" % GameState.round_index)
 		Step.TAKE_TREASURE_1:
 			return _t("选择宝藏", "Choose Treasure")
 		Step.UPGRADE_3:
@@ -912,7 +932,8 @@ func step_display_name() -> String:
 		Step.FORMATION_HP:
 			return _t("了解法阵", "Formation HP")
 		Step.START_PVP:
-			return _t("玩家对战", "Player Battle")
+			return _t("第 %d 回合青苗战" % GameState.round_index,
+				"Round %d Seedling Battle" % GameState.round_index)
 		Step.DONE:
 			return _t("教学完成", "Tutorial Complete")
 	# 兜底：新增步骤但忘了在上面补一行时走到这里。玩家看到的是一句通用的话，
@@ -923,22 +944,22 @@ func progress_text() -> String:
 	var total := total_steps()
 	if step == Step.DONE:
 		return _t("教学完成 %d/%d" % [total, total], "Complete %d/%d" % [total, total])
+	if step in [Step.START_PVP, Step.TAKE_TREASURE_2]:
+		return _t("青苗 %d/13 回合" % GameState.round_index,
+			"Seedling round %d/13" % GameState.round_index)
 	return _t("步骤 %d/%d" % [step_number(), total], "Step %d/%d" % [step_number(), total])
 
 func _update_progress() -> void:
 	if _progress_label == null or not is_instance_valid(_progress_label):
 		return
 	_sync_progress_index()
-	_progress_label.text = progress_text()
+	_progress_label.text = _t("狗狗 · ", "Guide · ") + progress_text()
 	_step_name_label.text = step_display_name()
 	_progress_bar.value = float(step_number())
 
-# 箭头朝向：目标在屏幕上方（开始战斗按钮、法阵水晶）要从下往上指，
-# 左侧面板（羁绊、已获宝藏）从右往左指，其余目标（商店、棋盘、待命区）从上往下指。
+# 候选气泡的首选方向：目标在上方时放到下方，左侧面板时放到右侧。
 func _arrow_dir() -> int:
-	# 萝卜 / 四星教学的几个目标按控件位置定朝向：
-	#   页签在营地面板顶部 -> 从上往下指；四星那一行的按钮在面板右缘 -> 从右往左指；
-	#   其余（右侧营地入口、萝卜数量、面板底部的升级/抽取按钮、右上角 ×）-> 从下往上指。
+	# 萝卜 / 四星教学按当前控件定气泡方向；实际光线由控件位置实时计算。
 	var carrot_target := _carrot_target_id()
 	if not carrot_target.is_empty():
 		match carrot_target:
@@ -958,27 +979,63 @@ func _arrow_dir() -> int:
 			return ArrowDir.UP
 	return ArrowDir.DOWN
 
-func _apply_arrow(rect: Rect2, dir: int) -> void:
-	_arrow.set_direction(dir)
-	var tip := Vector2.ZERO
-	match dir:
-		ArrowDir.LEFT:
-			tip = Vector2(rect.end.x + ARROW_LEFT_GAP, rect.get_center().y)
-		ArrowDir.UP:
-			tip = Vector2(rect.get_center().x, rect.end.y + ARROW_UP_GAP)
-		_:
-			tip = Vector2(rect.get_center().x, rect.position.y - ARROW_UP_GAP)
-	# Fit around the anchored tip. Clamping position moved the pointer off the
-	# top row on wide phones; shrink its body slightly instead of moving its tip.
-	var local_tip := _arrow.tip_position()
+func _guide_texture() -> Texture2D:
+	match step:
+		Step.BUY_3, Step.START_PVE_1, Step.TAKE_TREASURE_1, Step.TAKE_TREASURE_2:
+			return DOG_WELCOME
+		Step.BOND_HINT, Step.VIEW_TREASURE, Step.FORMATION_HP, \
+		Step.CARROT_CAMP, Step.HARVEST_UPGRADE, Step.CARROT_HARVEST:
+			return DOG_EXPLAIN
+		Step.UPGRADE_3, Step.FOUR_STAR, Step.FILL_7:
+			return DOG_ENCOURAGE
+	return DOG_GUIDE
+
+
+# The target provider supplies live rectangles, including the redesigned carrot
+# camp controls. Place the mascot around the existing bubble while scoring both
+# against the target and every keep-clear control. Neither node receives input.
+func _position_guide(target_rect: Rect2, keep_clear: Array[Rect2]) -> void:
+	if _guide == null or not is_instance_valid(_guide):
+		return
+	_guide.texture = _guide_texture()
 	var safe := _safe_rect()
-	var fit := 1.0
-	for axis in 2:
-		fit = minf(fit, (tip[axis] - safe.position[axis]) / local_tip[axis])
-		fit = minf(fit, (safe.end[axis] - tip[axis]) / (_arrow.size[axis] - local_tip[axis]))
-	fit = clampf(fit, 0.05, 1.0)
-	_arrow.scale = Vector2.ONE * fit
-	_arrow.position = tip - local_tip * fit
+	var side := clampf(safe.size.y * 0.18, 96.0, 145.0)
+	_guide.size = Vector2.ONE * side
+	var bubble := Rect2(_bubble.position, _bubble.size)
+	var candidates: Array[Vector2] = [
+		Vector2(bubble.position.x - side - 8.0, bubble.end.y - side),
+		Vector2(bubble.end.x + 8.0, bubble.end.y - side),
+		Vector2(bubble.position.x - side - 8.0, bubble.position.y),
+		Vector2(bubble.end.x + 8.0, bubble.position.y),
+		Vector2(safe.position.x, safe.end.y - side),
+		Vector2(safe.end.x - side, safe.end.y - side),
+		Vector2(safe.position.x, safe.position.y),
+		Vector2(safe.end.x - side, safe.position.y),
+	]
+	var skip_rect := Rect2(_skip_btn.position, _skip_btn.size) if _skip_btn != null else Rect2()
+	var best := candidates[0]
+	var best_score := INF
+	for i in candidates.size():
+		var pos := _clamp_into(candidates[i], _guide.size, safe)
+		var area := Rect2(pos, _guide.size)
+		var score := _overlap_area(area, target_rect) * 30.0
+		score += _overlap_area(area, bubble) * 12.0
+		score += _overlap_area(area, skip_rect) * 20.0
+		for blocked in keep_clear:
+			score += _overlap_area(area, blocked) * 8.0
+		score += pos.distance_to(bubble.position) * 0.5 + float(i) * 12.0
+		if score < best_score:
+			best_score = score
+			best = pos
+	_guide.position = best
+
+
+func _update_guide_light(target_rect: Rect2) -> void:
+	if _light == null or _guide == null or not is_instance_valid(_light) \
+			or not is_instance_valid(_guide):
+		return
+	var medal := _guide.position + _guide.size * Vector2(0.63, 0.70)
+	_light.aim(medal, target_rect, PlayerProfile.reduced_motion_enabled)
 
 # V2 P1-09：常驻控件（跳过按钮、进度条所在的气泡）也要落在安全区内。
 # 跳过按钮原本写死在 (16, 44)；横屏时刘海在左边缘，正好压住它。
@@ -1179,7 +1236,7 @@ func confirm_tap_step() -> void:
 # 2（9.25）：Step 枚举中间插入了萝卜 / 四星教学的 5 步，旧断点里的步骤编号全部错位。
 # 版本不符时 restore_checkpoint() 返回 false，调用方回到「从头开始教程」，
 # 绝不把旧编号套进新枚举里恢复出一个错步的状态。
-const CHECKPOINT_VERSION := 2
+const CHECKPOINT_VERSION := 3
 
 # 写盘节流用的进度签名。sync() 每次 _refresh_all() 都会跑，
 # 不加签名就会变成每帧写文件。
@@ -1247,6 +1304,8 @@ func save_checkpoint(force: bool = false) -> void:
 		"last_harvest_round": GameState.last_harvest_round,
 		"stone_draw_used_round": GameState.stone_draw_used_round,
 		"stone_draw_count": GameState.stone_draw_count,
+		"free_stone_claimed": GameState.free_stone_claimed,
+		"four_star_upgrade_count": GameState.four_star_upgrade_count,
 		"team_upgrade_stones": GameState.team_upgrade_stones.duplicate(true),
 		"player_formation_hp": GameState.player_formation_hp,
 		"enemy_formation_hp": GameState.enemy_formation_hp,
@@ -1265,7 +1324,7 @@ func save_checkpoint(force: bool = false) -> void:
 
 # 进度签名只取「玩家实际推进了什么」，不取金币这类每帧会被 sync() 重置的量。
 func _checkpoint_progress_signature() -> String:
-	return "%d|%d|%d|%s|%d|%d|%d|%d|%d|%d|%d|%d|%s|%s|%d" % [
+	return "%d|%d|%d|%s|%d|%d|%d|%d|%d|%d|%d|%d|%s|%s|%d|%d|%s" % [
 		step, _progress_index, bought_units,
 		# _fill_started 也算进来：BUY 相位与 bought=0 在「还没开始」和
 		# 「刚开始」两种状态下取值相同，只看那两个会漏掉这次转变。
@@ -1275,11 +1334,18 @@ func _checkpoint_progress_signature() -> String:
 		# 萝卜 / 四星教学：采集等级、升级石、收获与领奖、四星都是玩家实际推进的东西。
 		GameState.harvest_tech_level, _stone_count(),
 		str(_carrot_harvested), str(_carrot_gift_claimed), _max_normal_star(),
+		GameState.round_index, str(GameState.free_stone_claimed),
 	]
 
 
 func has_checkpoint() -> bool:
 	return SaveManager.has_tutorial()
+
+
+func checkpoint_is_done() -> bool:
+	var data := SaveManager.load_tutorial()
+	return int(data.get("version", 0)) == CHECKPOINT_VERSION \
+		and int(data.get("step", -1)) == Step.DONE
 
 
 func clear_checkpoint() -> void:
@@ -1320,6 +1386,7 @@ func restore_checkpoint() -> bool:
 	_camp_page = CAMP_PAGE_CAMP
 
 	GameState.round_index = int(data.get("round_index", 1))
+	GameState.FINAL_ROUND = 13
 	GameState.gold = int(data.get("gold", TUTORIAL_GOLD))
 	GameState.carrots = maxi(0, int(data.get("carrots", 0)))
 	GameState.harvest_tech_level = maxi(0, int(data.get("harvest_tech_level", 0)))
@@ -1327,6 +1394,8 @@ func restore_checkpoint() -> bool:
 	GameState.last_harvest_round = int(data.get("last_harvest_round", -1))
 	GameState.stone_draw_used_round = int(data.get("stone_draw_used_round", -1))
 	GameState.stone_draw_count = maxi(0, int(data.get("stone_draw_count", 0)))
+	GameState.free_stone_claimed = bool(data.get("free_stone_claimed", false))
+	GameState.four_star_upgrade_count = maxi(0, int(data.get("four_star_upgrade_count", 0)))
 	var saved_stones: Variant = data.get("team_upgrade_stones", {})
 	if saved_stones is Dictionary:
 		# 断点走 JSON，整数会读回成浮点（1 -> 1.0）。9.25 起教学真的会用到升级石，
@@ -1660,10 +1729,12 @@ func _clamp_into(pos: Vector2, size: Vector2, bounds: Rect2) -> Vector2:
 func _bubble_candidates(target_rect: Rect2, size: Vector2, dir: int) -> Array[Vector2]:
 	var center_x := target_rect.position.x + target_rect.size.x * 0.5 - size.x * 0.5
 	var center_y := target_rect.position.y + target_rect.size.y * 0.5 - size.y * 0.5
-	var above_y := target_rect.position.y + ARROW_DOWN_Y_OFFSET - 8.0 - size.y
-	var below_y := target_rect.position.y + target_rect.size.y + ARROW_UP_GAP + ARROW_HEIGHT
-	var right_x := target_rect.position.x + target_rect.size.x + ARROW_LEFT_GAP + ARROW_WIDTH + 12.0
-	var left_x := target_rect.position.x - ARROW_LEFT_GAP - ARROW_WIDTH - 12.0 - size.x
+	# Keep the dialogue clear of the interaction area, including the shop and
+	# reserve bench. The guide light spans this gap without taking input.
+	var above_y := target_rect.position.y - 94.0 - size.y
+	var below_y := target_rect.end.y + 90.0
+	var right_x := target_rect.end.x + 104.0
+	var left_x := target_rect.position.x - 104.0 - size.x
 	# 每个方向再给三个沿垂直轴的对齐变体（居中 / 贴目标一边 / 贴另一边）。
 	# 只给四个正中候选时，四个都压住禁区就只能挑「最不糟」的那个；
 	# 多这几档平移能真正让开待命区和主按钮，而不是少压一点。
@@ -1710,17 +1781,19 @@ func _bubble_position(target_rect: Rect2, dir: int, context: String = "") -> Vec
 		maxf(_bubble.size.y, BUBBLE_MIN_HEIGHT))
 	var safe := _safe_rect()
 	var keep_clear := _keep_clear_rects()
-	# Clamping an above-target bubble into the safe area can cover the arrow
-	# without covering its target. Protect the drawn, scaled arrow in the same
-	# overlay coordinates for both candidate scoring and saved-position reuse.
-	if _arrow != null and is_instance_valid(_arrow):
-		var arrow_rect: Rect2 = _arrow.get_transform() * Rect2(Vector2.ZERO, _arrow.size)
-		keep_clear.append(arrow_rect.grow(6.0))
 	if context == _layout_context and _sticky_position_is_valid(
 			_last_bubble_position, bubble_size, safe, target_rect, keep_clear):
 		_last_layout_reason = "sticky_valid"
 		return _last_bubble_position
 	var candidates := _bubble_candidates(target_rect, bubble_size, dir)
+	# A bench or shop can span almost the full width below the target. In that
+	# case every target-adjacent candidate clips a playable control, so also
+	# search stable screen-edge positions. The light keeps the target connection.
+	for y_ratio in [0.0, 0.25, 0.5, 0.75, 1.0]:
+		for x_ratio in [0.0, 0.25, 0.5, 0.75, 1.0]:
+			candidates.append(Vector2(
+				safe.position.x + (safe.size.x - bubble_size.x) * x_ratio,
+				safe.position.y + (safe.size.y - bubble_size.y) * y_ratio))
 	var best := _clamp_into(candidates[0], bubble_size, safe)
 	var best_score := INF
 	var best_index := 0
@@ -1857,8 +1930,16 @@ func _ensure_overlay() -> void:
 	_overlay.add_child(dim)
 	_focus_dim.append(dim)
 
-	_arrow = TutorialArrowScript.new()
-	_overlay.add_child(_arrow)
+	_light = TutorialGuideLightScript.new()
+	_light.name = "TutorialGuideLight"
+	_overlay.add_child(_light)
+	_guide = TextureRect.new()
+	_guide.name = "TutorialDog"
+	_guide.texture = DOG_WELCOME
+	_guide.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_guide.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_guide.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_overlay.add_child(_guide)
 
 	_bubble = PanelContainer.new()
 	# 气泡只负责显示文字，不吃任何点击（2026-10-15 第三轮反馈）。整棵子树都要设，
@@ -1897,7 +1978,7 @@ func _ensure_overlay() -> void:
 	_step_name_label = Label.new()
 	_step_name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_step_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_step_name_label.add_theme_font_size_override("font_size", 12)
+	_step_name_label.add_theme_font_size_override("font_size", 14)
 	_step_name_label.add_theme_color_override("font_color", Color(0.60, 0.65, 0.72))
 	header.add_child(_step_name_label)
 
@@ -1968,16 +2049,12 @@ func _ensure_overlay() -> void:
 	_skip_btn.pressed.connect(_on_skip_pressed)
 	_overlay.add_child(_skip_btn)
 
-	if not PlayerProfile.reduced_motion_enabled:
-		var tween := _arrow.create_tween()
-		tween.set_loops()
-		tween.tween_property(_arrow, "modulate:a", 0.35, 0.45)
-		tween.tween_property(_arrow, "modulate:a", 1.0, 0.45)
-
 func _detach() -> void:
 	if _overlay != null and is_instance_valid(_overlay):
 		_overlay.queue_free()
 	_overlay = null
+	_light = null
+	_guide = null
 	_focus_dim.clear()
 	_target_provider = null
 	_overlay_suppressed = false
@@ -2213,10 +2290,14 @@ func _harvest_upgrade_text() -> String:
 
 func _draw_stone_text() -> String:
 	if not _camp_open:
-		return _t("打开「萝卜营地」，用萝卜抽一颗升级石。", "Open Carrot Camp and spend carrots on an upgrade stone.")
+		return _t("第 5 回合 Boss 奖励已到账！打开「萝卜营地」领取一次免费升级石抽取。",
+			"Your round 5 Boss reward is ready! Open Carrot Camp for a free upgrade stone draw.")
 	if _camp_page != CAMP_PAGE_STONE:
 		return _t("点「升级石」页签。", "Tap the Upgrade Stones tab.")
 	var cost := GameState.upgrade_stone_draw_cost()
+	if cost == 0:
+		return _t("点「免费抽取一次」，领取一颗与 3 星棋子属性匹配的升级石。之后再抽会按正常价格消耗萝卜。",
+			"Tap Free Draw for a stone matching your 3-star unit. Later draws cost carrots normally.")
 	return _t("点「抽取一次」，花 %d 萝卜抽一颗升级石。教学奖励的萝卜可以超过容量；平时每回合自动收获，最多收到容量上限。" % cost,
 		"Tap Draw Once: %d carrots for one upgrade stone. Tutorial bonus carrots may exceed capacity; normally each round's harvest stops at the cap." % cost)
 

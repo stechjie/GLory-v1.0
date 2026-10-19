@@ -75,6 +75,7 @@
                           "name":  "腐蚀毒针",
                           "category":  "control",
                           "cooldown":  5.0,
+                          "bonus_vs_bleeding":  0.15,
                           "name_en":  "Corrosive Needle"
                       },
                       {

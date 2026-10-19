@@ -41,6 +41,10 @@ const UNIT_SKILLS := [
 	"random_ally_buff", "frost_status", "aoe_silence",
 	"block_guard", "team_random_stack", "stacking_def_break",
 	"current_hp_strike", "line_pierce",
+	# 10.18 宝藏触发（VFXTreasureSkill3D）。
+	"treasure_element_burst", "treasure_poison_blast", "treasure_soul_counter", "treasure_control_refresh",
+	"treasure_flame_shatter", "treasure_blood_covenant", "treasure_toxic_burst", "treasure_gold_coins",
+	"treasure_phoenix_rise", "treasure_phoenix_release",
 ]
 
 var _composer: BossSkillVFXComposer3D
@@ -77,7 +81,7 @@ func play(skill_id: String, origin: Vector3, target: Vector3, context: Dictionar
 		"meteor_strike":
 			_composer.play_skill("element_meteor", origin, target, context)
 		_:
-			_composer.play_skill(skill_id, origin, target, context)
+			return _composer.play_skill(skill_id, origin, target, context)
 	return null
 
 func mercenary_rework_active_target_uids() -> Array:

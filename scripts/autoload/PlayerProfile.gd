@@ -105,6 +105,10 @@ var locale := "zh"
 var language_selected := false
 var onboarding_version := ONBOARDING_VERSION
 var onboarding_status := ONBOARDING_NOT_STARTED
+var tutorial_reward_eligible := true
+# Empty after the first-match reward tour is finished. This is presentation
+# progress only; XP and unit ownership remain server-authoritative.
+var tutorial_followup_step := ""
 # 与 GloryTokens.REDUCED_MOTION_SETTING 必须一致。这里不 preload 那个类：
 # autoload 反过来依赖 UI 层会把依赖方向倒过来。门禁断言两边字面相同。
 const REDUCED_MOTION_SETTING := "glory/ui/reduced_motion"
@@ -161,6 +165,11 @@ func load_profile() -> void:
 	onboarding_version = int(data.get("onboarding_version", ONBOARDING_VERSION))
 	onboarding_status = _normalise_onboarding_status(
 		str(data.get("onboarding_status", ONBOARDING_LEGACY_UNKNOWN)))
+	tutorial_reward_eligible = bool(data.get("tutorial_reward_eligible",
+		onboarding_status in [ONBOARDING_NOT_STARTED, ONBOARDING_IN_PROGRESS]))
+	tutorial_followup_step = str(data.get("tutorial_followup_step", ""))
+	if tutorial_followup_step not in ["", "avatar", "reward", "prep", "pet", "race"]:
+		tutorial_followup_step = ""
 	_apply_reduced_motion()
 	LocaleManager.set_locale(locale)
 	# Persist the migrated shape so the upgrade only ever runs once.
@@ -189,6 +198,8 @@ func save_profile() -> bool:
 		"language_selected": language_selected,
 		"onboarding_version": onboarding_version,
 		"onboarding_status": onboarding_status,
+		"tutorial_reward_eligible": tutorial_reward_eligible,
+		"tutorial_followup_step": tutorial_followup_step,
 	}
 	return _atomic_write(PROFILE_PATH, JSON.stringify(payload))
 
@@ -213,6 +224,8 @@ func _reset_defaults() -> void:
 	language_selected = false
 	onboarding_version = ONBOARDING_VERSION
 	onboarding_status = ONBOARDING_NOT_STARTED
+	tutorial_reward_eligible = true
+	tutorial_followup_step = ""
 	needs_starter_pick = true
 	_apply_reduced_motion()
 	LocaleManager.set_locale(locale)
@@ -262,6 +275,7 @@ func reset_account_state() -> void:
 	selected_races.clear()
 	codex_seen.clear()
 	needs_starter_pick = true
+	tutorial_followup_step = ""
 	# 放在最后：它内部会 save_profile()，上面几个字段要先改完。
 	reissue_player_id()
 	pets_changed.emit()
@@ -361,6 +375,33 @@ func set_onboarding_status(value: String) -> bool:
 
 func begin_tutorial() -> bool:
 	return set_onboarding_status(ONBOARDING_IN_PROGRESS)
+
+
+func complete_tutorial_with_followup() -> bool:
+	var previous_status := onboarding_status
+	var previous_eligible := tutorial_reward_eligible
+	var previous_step := tutorial_followup_step
+	onboarding_version = ONBOARDING_VERSION
+	onboarding_status = ONBOARDING_COMPLETED
+	tutorial_reward_eligible = false
+	tutorial_followup_step = "avatar"
+	if save_profile():
+		return true
+	onboarding_status = previous_status
+	tutorial_reward_eligible = previous_eligible
+	tutorial_followup_step = previous_step
+	return false
+
+
+func set_tutorial_followup_step(value: String) -> bool:
+	if value not in ["", "avatar", "reward", "prep", "pet", "race"]:
+		return false
+	var previous := tutorial_followup_step
+	tutorial_followup_step = value
+	if save_profile():
+		return true
+	tutorial_followup_step = previous
+	return false
 
 # --- presentation settings -----------------------------------------------
 

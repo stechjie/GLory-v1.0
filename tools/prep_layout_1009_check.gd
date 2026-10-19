@@ -91,8 +91,14 @@ func _measure(packed: PackedScene, size: Vector2i) -> void:
 	for c in lp.get_children():
 		if c is Control:
 			content_bottom = maxf(content_bottom, (c as Control).get_global_rect().end.y)
-			if c is Button:
+			if c is BaseButton:
 				buttons.append(c)
+			# 10.18：金钱宝藏改成「logo 按钮 + 说明」一行，按钮在行（HBoxContainer）里面。
+			# 羁绊行里的种族 logo 是普通 Button，不算金钱宝藏按钮，按 TextureButton 区分。
+			elif c is HBoxContainer:
+				for inner in (c as Control).get_children():
+					if inner is TextureButton:
+						buttons.append(inner)
 
 	var gap := panel_top - avatar_bottom
 	_h.note("[%s] avatar_bottom=%.1f panel_top=%.1f gap=%.1f content_bottom=%.1f treasure_top=%.1f buttons=%d" % [
@@ -115,7 +121,7 @@ func _measure(packed: PackedScene, size: Vector2i) -> void:
 		var br := b.get_global_rect()
 		_h.expect(br.end.y <= treasure_top, "treasure_button_overlaps_treasure",
 			"[%s] 羁绊栏按钮「%s」底边 %.1f 越过 TreasurePanel 顶边 %.1f" % [
-				tag, str(b.text).substr(0, 18), br.end.y, treasure_top])
+				tag, str(b.tooltip_text if b is TextureButton else b.get("text")).substr(0, 18), br.end.y, treasure_top])
 	# 5) 确实渲染出了按钮（否则本用例没覆盖到目标场景）
 	_h.expect(buttons.size() >= 1, "no_treasure_buttons_found",
 		"[%s] 羁绊栏里一个按钮都没渲染出来 —— 本用例没真的覆盖到金钱宝藏场景" % tag)

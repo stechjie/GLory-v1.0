@@ -269,6 +269,7 @@ func _write_now() -> void:
 		return
 	var payload := {
 		"round_index": GameState.round_index,
+		"final_round": GameState.FINAL_ROUND,
 		"player_formation_hp": GameState.player_formation_hp,
 		"enemy_formation_hp": GameState.enemy_formation_hp,
 		"gold": GameState.gold,
@@ -280,6 +281,8 @@ func _write_now() -> void:
 		"tiger_starup_count": GameState.tiger_starup_count,
 		"stone_draw_used_round": GameState.stone_draw_used_round,
 		"stone_draw_count": GameState.stone_draw_count,
+		"free_stone_claimed": GameState.free_stone_claimed,
+		"four_star_upgrade_count": GameState.four_star_upgrade_count,
 		"team_upgrade_stones": GameState.team_upgrade_stones,
 		# 棋子的 uid 键随 board_slots/bench_slots 整块序列化，这里只需要存计数器本身。
 		"run_nonce": GameState.run_nonce,
@@ -318,6 +321,7 @@ func load_run() -> bool:
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return false
 	GameState.round_index = int(parsed.get("round_index", 1))
+	GameState.FINAL_ROUND = 13 if int(parsed.get("final_round", 21)) == 13 else 21
 	GameState.player_formation_hp = int(parsed.get("player_formation_hp", GameState.START_FORMATION_HP))
 	GameState.enemy_formation_hp = int(parsed.get("enemy_formation_hp", GameState.START_FORMATION_HP))
 	GameState.gold = int(parsed.get("gold", GameState.START_GOLD))
@@ -331,6 +335,8 @@ func load_run() -> bool:
 	GameState.tiger_starup_count = maxi(0, int(parsed.get("tiger_starup_count", 0)))
 	GameState.stone_draw_used_round = int(parsed.get("stone_draw_used_round", -1))
 	GameState.stone_draw_count = maxi(0, int(parsed.get("stone_draw_count", 0)))
+	GameState.free_stone_claimed = bool(parsed.get("free_stone_claimed", false))
+	GameState.four_star_upgrade_count = maxi(0, int(parsed.get("four_star_upgrade_count", 0)))
 	GameState.team_upgrade_stones = CarrotEconomy.empty_stones()
 	var saved_stones: Variant = parsed.get("team_upgrade_stones", {})
 	if typeof(saved_stones) == TYPE_DICTIONARY:

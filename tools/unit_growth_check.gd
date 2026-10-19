@@ -240,6 +240,20 @@ func _case_fighter_applies_growth() -> void:
 			and int(k2.defense) == int(round(float(k0.defense) * 1.44)),
 		"fighter_king", "人王 ×1.44：%d/%d/%d → %d/%d/%d"
 			% [k0.max_hp, k0.atk, k0.defense, k2.max_hp, k2.atk, k2.defense])
+	_h.expect(is_equal_approx(float(k2.attack_speed), float(k0.attack_speed) * 1.44),
+		"fighter_king_attack_speed", "人王攻速应和自身层数倍率一起成长")
+	var king_five := BattleSimShared._fighter_from_cell(_cell(KING, "k5", 3,
+		{UnitGrowth.KING_STACKS: 5, UnitGrowth.KING_MULT: pow(1.2, 5)}), 0, "player")
+	_h.expect(is_equal_approx(float(king_five.attack_speed), 0.6 * pow(1.2, 5)),
+		"fighter_king_five_stacks", "三星人王5层攻速应约为1.49次/秒")
+	var king_four_five := BattleSimShared._fighter_from_cell(_cell(KING, "k4", 4,
+		{UnitGrowth.KING_STACKS: 5, UnitGrowth.KING_MULT: pow(1.3, 5)}), 0, "player")
+	_h.expect(is_equal_approx(float(king_four_five.attack_speed), 0.6 * pow(1.3, 5)),
+		"fighter_king_four_star_five_stacks", "四星获得5层攻速应约为2.23次/秒")
+	var king_four_eight := BattleSimShared._fighter_from_cell(_cell(KING, "k8", 4,
+		{UnitGrowth.KING_STACKS: 8, UnitGrowth.KING_MULT: pow(1.3, 8)}), 0, "player")
+	_h.expect(is_equal_approx(float(king_four_eight.attack_speed), 2.5),
+		"fighter_king_attack_speed_cap", "四星8层攻速应封顶2.5次/秒")
 
 
 # --- 5. 摆放界面看到的 = 实战乘上去的 ------------------------------------------------
@@ -267,8 +281,10 @@ func _case_display_matches_battle() -> void:
 	var king := _cell(KING, "kk", 3, {UnitGrowth.KING_STACKS: 2, UnitGrowth.KING_MULT: 1.44})
 	var kshown := UnitDetailFormat.grown_def(king.def, 3, king)
 	var kf := BattleSimShared._fighter_from_cell(king, 0, "player")
-	_h.expect(int(kshown.hp) == int((kf.def as Dictionary).hp), "display_matches_battle_king",
-		"人王详情生命 %d ≠ 实战 %d" % [int(kshown.hp), int((kf.def as Dictionary).hp)])
+	_h.expect(int(kshown.hp) == int((kf.def as Dictionary).hp)
+			and is_equal_approx(float(kshown.attack_speed), float(kf.attack_speed)),
+		"display_matches_battle_king",
+		"人王详情生命/攻速应和实战一致")
 	_h.expect(UnitDetailFormat.format_unit_def(king.def, 3, king).contains("2/5"), "display_king_line",
 		"人王详情里要写当前层数 2/5")
 

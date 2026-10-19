@@ -21,6 +21,25 @@ func _ready() -> void:
 		push_error("final status: dark dragon battle damage does not match Excel")
 		get_tree().quit(1)
 		return
+	for spec in [{"id": "human_cleric", "key": "heal_pct", "catalog": "skill_heal_multiplier"},
+			{"id": "undead_bomb", "key": "damage_atk_pct", "catalog": "skill_damage_multiplier"}]:
+		var unit_def: Dictionary = {}
+		for raw in DataRegistry.get_table("race_units").get("units", []):
+			if str(raw.get("id", "")) == str(spec.id):
+				unit_def = raw
+				break
+		var catalog: Dictionary = table.get("units", {}).get(spec.id, {})
+		if unit_def.is_empty() or catalog.is_empty() \
+				or not is_equal_approx(float(UnitFactory.apply_star_stats(unit_def, 1).get(spec.key, 0.0)), float(catalog.get(str(spec.catalog) + "_1to3", -1.0))) \
+				or not is_equal_approx(float(UnitFactory.apply_star_stats(unit_def, 4).get(spec.key, 0.0)), float(catalog.get(str(spec.catalog) + "_4", -1.0))):
+			push_error("final status: %s battle skill value does not match Excel" % spec.id)
+			get_tree().quit(1)
+			return
+	if not is_equal_approx(TreasureService.corrosive_needle_bleed_bonus(), 0.15) \
+			or not FinalStatusCatalog.treasure_effect_cn("ctrl_corrosive_needle").contains("伤害+15%"):
+		push_error("final status: corrosive needle bleed bonus does not match Excel")
+		get_tree().quit(1)
+		return
 	LocaleManager.set_locale("zh")
 	if PetService.effect_text("pet_mushroom") != "己方棋子生命 +10%":
 		push_error("final status: pet summary is not connected")

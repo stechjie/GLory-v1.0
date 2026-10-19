@@ -18,7 +18,7 @@ func _ready() -> void:
 		push_error("tutorial_arrow_alignment_check requires an isolated custom user directory")
 		get_tree().quit(2)
 		return
-	_h = CheckHarness.new("tutorial_arrow_alignment")
+	_h = CheckHarness.new("tutorial_guide_alignment")
 	for resolution in RESOLUTIONS:
 		await _check_resolution(resolution)
 	await _check_canvas_transform()
@@ -46,24 +46,16 @@ func _check_buy_three_close_target() -> void:
 		"buy_three_skipped_close", "Buying three units must keep the close-shop tutorial substage")
 	var target: Control = TutorialMode._target_control()
 	_h.expect(target == prep._tutorial_first_empty_board() and target.is_visible_in_tree(),
-		"buy_three_wrong_close_target", "The close-shop arrow must target a visible area outside the shop")
+		"buy_three_wrong_close_target", "The close-shop light must target a visible area outside the shop")
 	var click_point := target.get_global_rect().get_center()
 	_h.expect(not prep._shop.panel.get_global_rect().has_point(click_point)
 		and not prep._shop.open_button.get_global_rect().has_point(click_point),
 		"buy_three_close_target_covered", "The close target must not be inside the shop or its covered wooden toggle")
-	# A position kept from an earlier layout may expose the target while covering
-	# the arrow above it. Reproduce that valid-target, hidden-arrow state directly.
-	var arrow_bounds: Rect2 = TutorialMode._arrow.get_transform() \
-		* Rect2(Vector2.ZERO, TutorialMode._arrow.size)
-	var overlapping_position := arrow_bounds.end - TutorialMode._bubble.size
-	TutorialMode._last_bubble_position = TutorialMode._clamp_into(overlapping_position,
-		TutorialMode._bubble.size, TutorialMode._safe_rect())
-	TutorialMode._layout_signature = ""
 	TutorialMode.update_overlay()
-	var arrow_overlap := Rect2(TutorialMode._bubble.position, TutorialMode._bubble.size) \
-		.intersection(arrow_bounds)
-	_h.expect(arrow_overlap.get_area() < 1.0, "close_shop_bubble_covers_arrow",
-		"The tutorial bubble must move away from the arrow body, even when its old position exposed the target")
+	_h.expect(TutorialMode._light.target_rect.get_center().distance_to(click_point) < EPS,
+		"close_shop_light_misses_target", "The gold light must land on the close-shop target")
+	_h.expect(not TutorialMode._guide.get_global_rect().has_point(click_point),
+		"close_shop_dog_covers_target", "The dog must not cover the close-shop target")
 	await _capture("%dx%d_close_shop" % [get_window().size.x, get_window().size.y])
 	var touch := InputEventScreenTouch.new()
 	touch.position = click_point
@@ -72,7 +64,7 @@ func _check_buy_three_close_target() -> void:
 	await _settle(2)
 	_h.expect(TutorialMode.step == TutorialScript.Step.PLACE_3
 		and TutorialMode._target_control() == prep._board_hud.bench_buttons[0],
-		"buy_three_close_not_advanced", "Closing the shop must advance the arrow to the first standby unit")
+		"buy_three_close_not_advanced", "Closing the shop must advance the light to the first standby unit")
 	TutorialMode.finish()
 	prep.queue_free()
 	await _settle(3)
@@ -135,12 +127,11 @@ func _check_slot(button: Control, label: String) -> void:
 	var control_bounds := button.get_global_transform_with_canvas() * Rect2(Vector2.ZERO, button.size)
 	_h.expect(control_bounds.size.distance_to(bounds.size) < EPS,
 		"stale_minimum_size", "%s control=%s ring=%s" % [label, str(control_bounds), str(bounds)])
-	var actual_tip: Vector2 = TutorialMode._arrow.get_global_transform_with_canvas() \
-		* TutorialMode._arrow.tip_position()
-	var expected_tip := Vector2(bounds.get_center().x, bounds.position.y - TutorialScript.ARROW_UP_GAP)
-	_h.expect(actual_tip.distance_to(expected_tip) < EPS, "arrow_misses_ring",
-		"%s tip=%s expected=%s error=%.2f" % [label, str(actual_tip), str(expected_tip),
-			actual_tip.distance_to(expected_tip)])
+	var actual: Vector2 = TutorialMode._light.target_rect.get_center()
+	var expected := bounds.get_center()
+	_h.expect(actual.distance_to(expected) < EPS, "light_misses_ring",
+		"%s landing=%s expected=%s error=%.2f" % [label, str(actual), str(expected),
+			actual.distance_to(expected)])
 
 
 func _check_canvas_transform() -> void:
@@ -164,11 +155,11 @@ func _check_canvas_transform() -> void:
 	TutorialMode.attach(provider)
 	await _settle(2)
 	TutorialMode.update_overlay()
-	var actual: Vector2 = TutorialMode._arrow.get_global_transform_with_canvas() * TutorialMode._arrow.tip_position()
-	var edge := target.get_global_transform_with_canvas() * Vector2(target.size.x * 0.5, 0)
-	var expected := edge - Vector2(0, TutorialScript.ARROW_UP_GAP * host.scale.y)
+	var actual: Vector2 = TutorialMode._overlay.get_global_transform_with_canvas() \
+		* TutorialMode._light.target_rect.get_center()
+	var expected := target.get_global_transform_with_canvas() * (target.size * 0.5)
 	_h.expect(actual.distance_to(expected) < EPS, "canvas_space_mismatch",
-		"tip=%s expected=%s" % [str(actual), str(expected)])
+		"landing=%s expected=%s" % [str(actual), str(expected)])
 	TutorialMode.finish()
 	host.queue_free()
 	layer.queue_free()
@@ -178,7 +169,7 @@ func _check_canvas_transform() -> void:
 func _capture(label: String) -> void:
 	if DisplayServer.get_name() == "headless":
 		return
-	var output := "res://reports/tutorial_arrows"
+	var output := "res://reports/tutorial_guides"
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(output))
 	await RenderingServer.frame_post_draw
 	var picture := get_viewport().get_texture().get_image()

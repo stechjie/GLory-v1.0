@@ -46,6 +46,8 @@ static func new_prep(start_gold: int) -> Dictionary:
 		"tiger_starup_count": 0,
 		"stone_draw_used_round": -1,
 		"stone_draw_count": 0,
+		"free_stone_claimed": false,
+		"four_star_upgrade_count": 0,
 		"four_star_uids": {},   # uid -> {unit_id, round}：四星血统，见 _use_upgrade_stone
 		"revision": 0,
 		"shop": {"offer_id": "", "offers": [], "sold": [], "refresh_uses": 0},
@@ -318,7 +320,8 @@ static func _draw_upgrade_stone(prep: Dictionary, _payload: Dictionary, ctx: Dic
 	if int(prep.get("stone_draw_used_round", -1)) == round_index:
 		return {"ok": false, "error": "already_used"}
 	var draw_count := maxi(0, int(prep.get("stone_draw_count", 0)))
-	var cost := CarrotEconomy.stone_cost_for_draw(draw_count)
+	var free_draw := str(ctx.get("ruleset", "normal")) == "seedling" and round_index >= 6 and not bool(prep.get("free_stone_claimed", false))
+	var cost := 0 if free_draw else CarrotEconomy.stone_cost_for_draw(draw_count)
 	var carrots := int(prep.get("carrots", 0))
 	if carrots < cost:
 		return {"ok": false, "error": "not_enough_carrots"}
@@ -335,7 +338,9 @@ static func _draw_upgrade_stone(prep: Dictionary, _payload: Dictionary, ctx: Dic
 	var stone_type := CarrotEconomy.draw_type_from_roll(roll)
 	prep["carrots"] = carrots - cost
 	prep["stone_draw_used_round"] = round_index
-	prep["stone_draw_count"] = draw_count + 1
+	prep["stone_draw_count"] = draw_count if free_draw else draw_count + 1
+	if free_draw:
+		prep["free_stone_claimed"] = true
 	var gained: Dictionary = prep.get("stones_gained", {})
 	gained[stone_type] = int(gained.get(stone_type, 0)) + 1
 	prep["stones_gained"] = gained
@@ -346,6 +351,7 @@ static func _draw_upgrade_stone(prep: Dictionary, _payload: Dictionary, ctx: Dic
 		"carrots": int(prep["carrots"]),
 		"stone_draw_used_round": round_index,
 		"stone_draw_count": int(prep["stone_draw_count"]),
+		"free_stone_claimed": bool(prep.get("free_stone_claimed", false)),
 		"team_upgrade_stones": team_stones.duplicate(true),
 	}}
 
@@ -384,7 +390,8 @@ static func _use_upgrade_stone(prep: Dictionary, payload: Dictionary, ctx: Dicti
 		return {"ok": false, "error": "team_stones_unavailable"}
 	if int(team_stones.get(element, 0)) <= 0:
 		return {"ok": false, "error": "no_stone"}
-	var cost := CarrotEconomy.four_star_gold(int(def.get("tier", 0)))
+	var seedling := str(ctx.get("ruleset", "normal")) == "seedling"
+	var cost := CarrotEconomy.seedling_four_star_gold(int(prep.get("four_star_upgrade_count", 0))) if seedling else CarrotEconomy.four_star_gold(int(def.get("tier", 0)))
 	if cost < 0:
 		return {"ok": false, "error": "bad_tier"}
 	if int(prep.get("gold", 0)) < cost:
@@ -411,6 +418,8 @@ static func _use_upgrade_stone(prep: Dictionary, payload: Dictionary, ctx: Dicti
 	team_stones[element] = int(team_stones[element]) - 1
 	granted[uid] = {"unit_id": unit_id, "round": int(ctx.get("round_index", 0)), "cost": cost}
 	prep["four_star_uids"] = granted
+	if seedling:
+		prep["four_star_upgrade_count"] = int(prep.get("four_star_upgrade_count", 0)) + 1
 	if float(ctx.get("tiger_growth_rate", 0.0)) > 0.0:
 		prep["tiger_starup_count"] = int(prep.get("tiger_starup_count", 0)) + 1
 	if roster.has(uid):
@@ -424,6 +433,7 @@ static func _use_upgrade_stone(prep: Dictionary, payload: Dictionary, ctx: Dicti
 		"stone_type": element,
 		"cost": cost,
 		"cost_version": CarrotEconomy.FOUR_STAR_COST_VERSION,
+		"four_star_upgrade_count": int(prep.get("four_star_upgrade_count", 0)),
 		"team_upgrade_stones": team_stones.duplicate(true),
 	}}
 

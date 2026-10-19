@@ -28,6 +28,7 @@ func _ready() -> void:
 	_h = Harness.new("treasure_set_effect")
 	_probe_defense()
 	_probe_attack_targeting()
+	_probe_corrosive_needle()
 	_probe_element()
 	_probe_control()
 	_probe_money()
@@ -111,6 +112,36 @@ func _lane0_units(state: Dictionary) -> Array:
 		if str(f.get("uid", "")).begins_with("player_L0_") and not BattleSimShared._ignores_treasure(f):
 			out.append(f)
 	return out
+
+
+func _corrosive_hit(treasures: Array, already_bleeding: bool, attack_count: int = 0,
+		is_mercenary: bool = false) -> Dictionary:
+	var attacker := _fighter(_plain_def("corrosive_attacker", 100), "player", 0, treasures)
+	attacker.attack_count = attack_count
+	attacker.is_mercenary = is_mercenary
+	var target := _target("enemy", 0, "corrosive_target", 3000, 3000, Vector2(500, 400))
+	if already_bleeding:
+		StatusEffectService.add_bleed(target, 3.0, 0.06)
+	var state := _state([attacker], [target])
+	DamageService.begin_stat_context(state, attacker)
+	var hp_before := int(target.hp)
+	BattleSimulator._perform_attack(attacker, target, state)
+	DamageService.clear_stat_context()
+	return {"damage": hp_before - int(target.hp), "target": target}
+
+
+func _probe_corrosive_needle() -> void:
+	var no_treasure := _corrosive_hit([], true)
+	var fresh := _corrosive_hit(["ctrl_corrosive_needle"], false)
+	var bleeding := _corrosive_hit(["ctrl_corrosive_needle"], true)
+	var fourth := _corrosive_hit(["ctrl_corrosive_needle"], false, 3)
+	var mercenary := _corrosive_hit(["ctrl_corrosive_needle"], true, 0, true)
+	_h.expect(int(no_treasure.damage) == 100 and int(fresh.damage) == 100
+			and int(bleeding.damage) == 115 and int(fourth.damage) == 100
+			and int(mercenary.damage) == 100,
+		"corrosive_bleed_bonus", "只有持宝藏的普通棋子普攻已流血目标时才应从100增至115")
+	_h.expect(StatusEffectService.has_status(fourth.target, "bleed"),
+		"corrosive_fourth_hit_bleeds", "第4次普攻应给目标施加流血，但本次不加伤害")
 
 
 # --- 4 defense ---------------------------------------------------------------

@@ -76,6 +76,14 @@ var _persistent_crest: MeshInstance3D = null
 var _persistent_crest_material: ShaderMaterial = null
 var _persistent_shadow: MeshInstance3D = null
 var _persistent_shadow_material: ShaderMaterial = null
+var _profile: VFXProfile3D = null
+var _shattered := false
+# 10.18：呼吸加深（旧版 ±3.5% 肉眼看不出来），结束时碎裂而不是单纯淡出。
+const BREATHE_SCALE := 0.055
+const BREATHE_GLOW := 0.16
+const SHATTER_SPARKS := preload("res://effects/vfx3d/modules/VFXMaskedParticle3D.gd")
+# 三段弧片各自的中线角（与 _spawn_guard_fragments 的 ranges 对应），碎裂时沿它向外飞。
+const FRAGMENT_MID_ANGLES := [3.0, 0.125, 1.54]
 
 func play_profile(profile: VFXProfile3D, context: Dictionary) -> void:
 	play_guard(context.get("target", Vector3.ZERO), profile, context)
@@ -88,6 +96,8 @@ func play_guard(anchor: Vector3, profile: VFXProfile3D, context: Dictionary = {}
 	_fade_time = minf(float(profile.parameters.get("fade_time", 0.48)), _duration * 0.35)
 	_form_time = minf(float(profile.parameters.get("form_time", 0.32)), _duration * 0.25)
 	_pulse_speed = float(profile.parameters.get("pulse_speed", 1.35))
+	_profile = profile
+	_shattered = false
 	_spawn_activation_crests(profile)
 	_spawn_persistent_crest(profile)
 	_spawn_guard_fragments(profile)
@@ -104,16 +114,28 @@ func _process(delta: float) -> void:
 	var fade := 1.0
 	if _elapsed > _duration - _fade_time:
 		fade = 1.0 - _smooth01((_elapsed - (_duration - _fade_time)) / maxf(_fade_time, 0.01))
-	var breathe := 0.965 + 0.035 * sin(_elapsed * TAU * _pulse_speed)
+	if not _shattered and _elapsed > _duration - _fade_time:
+		_shatter()
+	var wave := sin(_elapsed * TAU * _pulse_speed)
+	var breathe := 1.0 - BREATHE_SCALE + BREATHE_SCALE * wave
+	if _shattered:
+		# 碎裂时盾面猛地撑开一下再散掉，不再呼吸。
+		breathe = 1.0 + 0.16 * (1.0 - fade)
 	if is_instance_valid(_persistent_crest) and _persistent_crest_material != null:
 		_persistent_crest.scale = Vector3.ONE * formed * breathe
-		_persistent_crest_material.set_shader_parameter("opacity", fade * (0.60 + 0.05 * sin(_elapsed * TAU * _pulse_speed)))
+		# 第二个慢波让亮度起伏不那么机械。
+		var shimmer := 0.5 + 0.5 * sin(_elapsed * 2.3 + 1.1)
+		_persistent_crest_material.set_shader_parameter("opacity", fade * (0.58 + BREATHE_GLOW * (0.65 * wave + 0.35 * shimmer)))
 	if is_instance_valid(_persistent_shadow) and _persistent_shadow_material != null:
 		_persistent_shadow.scale = Vector3.ONE * formed * breathe * 1.07
 		_persistent_shadow_material.set_shader_parameter("opacity", fade * 0.40)
 	for index in range(_fragment_nodes.size()):
 		var node := _fragment_nodes[index]
 		if not is_instance_valid(node):
+			continue
+		if _shattered:
+			# 位置/旋转交给 _shatter 的 tween，这里只跟着淡。
+			_fragment_materials[index].set_shader_parameter("opacity", fade * 0.95)
 			continue
 		var stagger := clampf((_elapsed - float(index) * 0.055) / maxf(_form_time, 0.01), 0.0, 1.0)
 		var local_form := _ease_out_back(stagger)
@@ -124,6 +146,30 @@ func _process(delta: float) -> void:
 	if _elapsed >= _duration:
 		set_process(false)
 		finish()
+
+# 护盾到期：三段弧片沿各自中线向外崩飞并翻转，盾心白闪一下，迸出一把蓝白碎光。
+func _shatter() -> void:
+	_shattered = true
+	var size := _profile.size if _profile != null else 1.12
+	for index in range(_fragment_nodes.size()):
+		var node := _fragment_nodes[index]
+		if not is_instance_valid(node):
+			continue
+		var angle: float = FRAGMENT_MID_ANGLES[index % FRAGMENT_MID_ANGLES.size()]
+		var outward := Vector3(cos(angle), sin(angle), 0.0) * size * 0.55
+		var tween := track_tween(create_tween())
+		tween.set_parallel(true)
+		tween.tween_property(node, "position", node.position + outward, _fade_time).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		tween.tween_property(node, "rotation:z", node.rotation.z + (0.9 if index % 2 == 0 else -0.9), _fade_time)
+		tween.tween_property(node, "scale", Vector3.ONE * 0.55, _fade_time).set_ease(Tween.EASE_IN)
+	var texture := vfx_texture(ANGEL_SHIELD_ATLAS)
+	if texture != null and _profile != null:
+		_spawn_crest("AngelGuardShatterFlash", texture, int(_profile.parameters.get("crest_white_frame", 16)), size * Vector2(1.10, 1.10), Color(1.0, 1.0, 1.0), 0.0, 0.34)
+	var parent := get_parent()
+	if parent != null:
+		var sparks := VFXBlockRoot.spawn_block(SHATTER_SPARKS, parent) as VFXMaskedParticle3D
+		if sparks != null:
+			sparks.play_burst(position, Color(0.62, 0.84, 1.0), 16, 2.0, 0.48)
 
 func _spawn_activation_crests(profile: VFXProfile3D) -> void:
 	var texture := vfx_texture(ANGEL_SHIELD_ATLAS)

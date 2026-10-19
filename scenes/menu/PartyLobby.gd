@@ -6,6 +6,8 @@ signal queue_started(mode: String, host: bool)
 # `canceller` 是取消者的昵称（无数字 ID），拿不到就是空串。
 # 与 `queue_started` 配对：有开就有开，不然房主那边的面板会一直挂着。
 signal queue_canceled(canceller: String)
+signal tutorial_mode_selected
+signal tutorial_requested
 
 const REF := Vector2(1672, 941)
 const BG := preload("res://assets/ui/main_menu_live/background.png")
@@ -21,6 +23,10 @@ const BUTTON_PRIMARY := preload("res://assets/ui/party_lobby/party_button_primar
 const BUTTON_SECONDARY := preload("res://assets/ui/party_lobby/party_button_secondary.png")
 const BUTTON_MODE_IDLE := preload("res://assets/ui/party_lobby/party_button_mode_idle.png")
 const BUTTON_MODE_ACTIVE := preload("res://assets/ui/party_lobby/party_button_mode_active.png")
+const CHOICE_DIALOG := preload("res://scenes/menu/PartyChoiceDialog.gd")
+const RacePick := preload("res://scripts/units/RacePick.gd")
+const MODE_MODAL_ID := "party_lobby_mode_picker"
+const RACES_MODAL_ID := "party_lobby_seedling_races"
 const GOLD := Color("e6c984")
 const CREAM := Color("f8f0d8")
 const MUTED := Color("bbc5b9")
@@ -61,7 +67,7 @@ const MAX_DISPLAY_PETS := 5
 # 10-08 用户要求：**所有按键大小照自定义房间**（Team3v3Lobby）走，图案不变。
 # 两个房间的设计稿都是 1672×941，尺寸一比一照搬；括号里是 Team3v3Lobby 的出处。
 const BACK_SIZE := Vector2(143, 83)            # 返回（_build 里 TEX_BACK 那颗）
-const ACTION_SIZE := Vector2(270, 95)          # 开始 / 准备（hit_start）
+const ACTION_SIZE := Vector2(420, 133)         # 主要操作保留足够的触控面积
 const VOICE_BTN_SIZE := Vector2(78, 60)        # 语音按钮（VOICE_BTN_SIZE）
 const TOP_BTN_SIZE := Vector2(140, 62)         # 右上角「设定」（原静音 MUTE_BTN_SIZE）；休闲 / 排位、宠物也按它
 # 10.11 第 2 条：右上角「设定」推上 ModalStack 的 id。刻意与自定义房间的
@@ -89,6 +95,7 @@ const START_DIM := Color(0.78, 0.76, 0.70, 1.0)
 var _initial_mode := "casual"
 var _invite_id := ""
 var _preview := ""
+var _tutorial_mode_chosen := false
 var _room: Dictionary = {}
 var _friends: Array = []
 var _friends_busy := false
@@ -133,8 +140,8 @@ var _chat_list: VBoxContainer
 var _chat_scroll: ScrollContainer
 var _chat_input: LineEdit
 var _send_button: Button
-var _mode_casual: Button
-var _mode_ranked: Button
+var _mode_button: Button
+var _mode_hint: Label
 var _action: Button
 var _notice: Label
 # 10.07 第 9 条：房间语音改为「麦克风 + 扬声器」两个图标按钮（房间里只有队友，
@@ -174,6 +181,19 @@ func configure_preview(role: String) -> void:
 	_initial_mode = "ranked"
 
 
+func configure_tutorial_intro() -> void:
+	_preview = "tutorial"
+	_initial_mode = "casual"
+
+
+func tutorial_mode_target() -> Control:
+	return _mode_button
+
+
+func tutorial_start_target() -> Control:
+	return _action
+
+
 func _ready() -> void:
 	_build()
 	# 10.10 需求：排位房开麦后 BGM 要变小（与自定义房间、对局一致）。
@@ -186,6 +206,15 @@ func _ready() -> void:
 		RealtimeService.message_received.connect(_on_realtime)
 	if _preview != "":
 		_apply(_preview_room())
+		if _preview == "tutorial":
+			_action.text = _text("匹配 AI", "MATCH AI")
+			_action.disabled = true
+			_mode_button.disabled = false
+			_notice.text = _text("点击青苗，开始第一次教学", "Choose Seedling for your first lesson")
+			for control in [_friends_toggle, _pet_toggle, _chat_panel, _chat_toggle,
+					_voice_mic, _voice_speaker]:
+				if control != null:
+					control.visible = false
 		_friends = [
 			{"friend_code": "KLMN2345", "player_name": "月影", "online": true},
 			{"friend_code": "QWER7788", "player_name": "小木", "online": true},
@@ -245,10 +274,13 @@ func _build() -> void:
 	var back := _button(_canvas, "‹  " + _text("返回", "Back"), Vector2(43, 30), BACK_SIZE)
 	_style_paper_button(back, false)
 	back.pressed.connect(_leave)
-	_mode_casual = _button(_canvas, _text("休闲", "CASUAL"), Vector2(686, 38), TOP_BTN_SIZE)
-	_mode_ranked = _button(_canvas, _text("排位", "RANKED"), Vector2(836, 38), TOP_BTN_SIZE)
-	_mode_casual.pressed.connect(func() -> void: _change_mode("casual"))
-	_mode_ranked.pressed.connect(func() -> void: _change_mode("ranked"))
+	_mode_button = _button(_canvas, "", Vector2(621, 27), Vector2(430, 94))
+	_mode_button.pressed.connect(_open_mode_picker)
+	_mode_hint = _label(_canvas, "", Vector2(563, 116), Vector2(546, 34), 19, CREAM)
+	_mode_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_mode_hint.add_theme_color_override("font_outline_color", Color("1c2b23"))
+	_mode_hint.add_theme_constant_override("outline_size", 3)
+	_update_mode_display(_initial_mode)
 	_pet_toggle = _button(_canvas, _text("宠物", "PETS"), Vector2(1325, 38), TOP_BTN_SIZE)
 	_style_paper_button(_pet_toggle, false)
 	_pet_toggle.pressed.connect(_toggle_pets_drawer)
@@ -298,7 +330,7 @@ func _build() -> void:
 	_notice = _label(_canvas, "", Vector2(566, 899), Vector2(540, 36), 18, CREAM)
 	_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_action = _button(_canvas, _text("开始匹配", "START MATCH"), Vector2(701, 800), ACTION_SIZE)
+	_action = _button(_canvas, _text("开始匹配", "START MATCH"), Vector2(656, 756), ACTION_SIZE)
 	_action.pressed.connect(_act)
 
 	_friends_toggle = _button(_canvas, _text("好友", "FRIENDS"), Vector2(1481, 166), Vector2(159, TOP_BTN_SIZE.y))
@@ -420,10 +452,8 @@ func _show_local_identity() -> void:
 	_render_pets()
 	_stage.configure_party_display(_display_pet_ids(), Vector2(385, 315), Vector2(920, 355),
 		_audible_pet())
-	_mode_casual.disabled = true
-	_mode_ranked.disabled = true
-	_style_mode(_mode_casual, _initial_mode == "casual")
-	_style_mode(_mode_ranked, _initial_mode == "ranked")
+	_mode_button.disabled = true
+	_update_mode_display(_initial_mode)
 	_pet_toggle.visible = false
 	_pets_drawer.visible = false
 	_chat_input.editable = false
@@ -458,10 +488,8 @@ func _apply(next: Dictionary) -> void:
 	_pet_toggle.visible = host and not bool(_room.get("queued", false))
 	if not _pet_toggle.visible:
 		_pets_drawer.visible = false
-	_mode_casual.disabled = not host or bool(_room.get("queued", false))
-	_mode_ranked.disabled = not host or bool(_room.get("queued", false))
-	_style_mode(_mode_casual, mode == "casual")
-	_style_mode(_mode_ranked, mode == "ranked")
+	_mode_button.disabled = not host or bool(_room.get("queued", false))
+	_update_mode_display(mode)
 	_render_seats()
 	_render_chat()
 	_render_pets()
@@ -889,6 +917,8 @@ func _refresh_room_now() -> void:
 
 
 func _on_realtime(payload: Dictionary) -> void:
+	if _preview != "":
+		return
 	var kind := str(payload.get("t", ""))
 	if kind == PRESENCE_PUSH:
 		# 好友上线 / 换房间（backend/app/presence.py 的 _notify_watchers）。
@@ -1034,6 +1064,56 @@ func _process(delta: float) -> void:
 					back_requested.emit()
 
 
+func _update_mode_display(mode: String) -> void:
+	if _mode_button == null:
+		return
+	match mode:
+		"casual_normal":
+			_mode_button.text = _text("普通  ·  21 回合    ▾", "NORMAL  ·  21 ROUNDS    ▾")
+			_mode_hint.text = _text("至少携带 4 族 · 21 回合", "Equip at least 4 races · 21 rounds")
+		"ranked", "ranked_normal":
+			_mode_button.text = _text("排位  ·  段位赛    ▾", "RANKED  ·  LADDER    ▾")
+			_mode_hint.text = _text("携带 4 族才能突破森卫", "Equip 4 races to pass Forest")
+		_:
+			_mode_button.text = _text("青苗  ·  13 回合    ▾", "SEEDLING  ·  13 ROUNDS    ▾")
+			_mode_hint.text = _text("最多 3 族 · 更快上手", "Up to 3 races · a faster start")
+	_style_mode(_mode_button, true)
+
+
+func _open_mode_picker() -> void:
+	if _preview == "tutorial":
+		_tutorial_mode_chosen = true
+		_mode_button.text = _text("青苗  ·  13 回合  ✓", "SEEDLING  ·  13 ROUNDS  ✓")
+		_mode_button.disabled = true
+		_action.disabled = false
+		_notice.text = _text("已选择青苗 · 13 回合", "Seedling selected · 13 rounds")
+		tutorial_mode_selected.emit()
+		return
+	if _local_only or ModalStack.has(MODE_MODAL_ID):
+		return
+	var dialog := CHOICE_DIALOG.new() as Control
+	dialog.configure_modes(str(_room.get("mode", _initial_mode)))
+	dialog.canceled.connect(func() -> void: ModalStack.pop(MODE_MODAL_ID))
+	dialog.selected.connect(func(value: Variant) -> void:
+		ModalStack.pop(MODE_MODAL_ID)
+		_change_mode(str(value)))
+	ModalStack.push(dialog, {"id": MODE_MODAL_ID, "owner": self,
+		"priority": 50, "dismiss_on_backdrop": true})
+
+
+func _open_seedling_race_picker(available: Array) -> void:
+	if ModalStack.has(RACES_MODAL_ID):
+		return
+	var dialog := CHOICE_DIALOG.new() as Control
+	dialog.configure_races(available)
+	dialog.canceled.connect(func() -> void: ModalStack.pop(RACES_MODAL_ID))
+	dialog.selected.connect(func(value: Variant) -> void:
+		ModalStack.pop(RACES_MODAL_ID)
+		_start_with_races(value as Array))
+	ModalStack.push(dialog, {"id": RACES_MODAL_ID, "owner": self,
+		"priority": 50, "dismiss_on_backdrop": false})
+
+
 func _change_mode(mode: String) -> void:
 	if _local_only:
 		return
@@ -1120,15 +1200,53 @@ func _send_chat() -> void:
 
 
 func _act() -> void:
-	if _local_only:
+	if _preview == "tutorial":
+		if _tutorial_mode_chosen:
+			tutorial_requested.emit()
+		return
+	if _local_only or _busy:
 		return
 	if _preview != "":
 		_notice.text = _text("预览模式", "Preview mode")
 		return
+	if str(_room.get("mode", "casual")) == "casual" and (
+		_is_host() or not bool(_my_member().get("ready", false))):
+		_busy = true
+		var response: Dictionary = await AccountManager.fetch_entitlements()
+		_busy = false
+		if not is_inside_tree():
+			return
+		if int(response.get("code", 0)) != 200:
+			_notice.text = _text("种族资料读取失败，请重试", "Could not load your races. Try again.")
+			return
+		var available := available_seedling_races(
+			(response.get("body", {}) as Dictionary).get("items", []))
+		if available.size() >= 4:
+			_open_seedling_race_picker(available)
+			return
+	_start_with_races([])
+
+
+static func available_seedling_races(entitlements: Array) -> Array[String]:
+	var owned := {}
+	for raw in entitlements:
+		owned[str(raw)] = true
+	var available: Array[String] = []
+	var known: Array[String] = RacePick.all_races()
+	if known.has("human") and owned.has("human"):
+		available.append("human")
+	for race in known:
+		if race != "human" and owned.has(race):
+			available.append(race)
+	return available
+
+
+func _start_with_races(races: Array) -> void:
 	if _is_host():
-		_run(AccountManager.start_party_match)
+		_run(AccountManager.start_party_match.bind(races))
 	else:
-		_run(AccountManager.set_party_ready.bind(not bool(_my_member().get("ready", false))))
+		_run(AccountManager.set_party_ready.bind(
+			not bool(_my_member().get("ready", false)), races))
 
 
 func _leave() -> void:
@@ -1171,7 +1289,7 @@ func _run(action: Callable) -> void:
 
 func _is_host() -> bool:
 	if _preview != "":
-		return _preview == "host"
+		return _preview in ["host", "tutorial"]
 	return str(_room.get("host_code", "")) == str(AccountManager.profile.get("friend_code", ""))
 
 
@@ -1281,6 +1399,13 @@ func _my_member() -> Dictionary:
 
 
 func _preview_room() -> Dictionary:
+	if _preview == "tutorial":
+		return {"state": "room", "id": "tutorial_local", "mode": "casual",
+			"host_code": "TUTORIAL", "members": [{"friend_code": "TUTORIAL",
+			"player_name": str(AccountManager.profile.get("player_name", "Player")),
+			"avatar": AVATARS.default_avatar(), "avatar_frame": AVATARS.default_frame(),
+			"tier": 0, "host": true, "ready": true}], "pets": [],
+			"host_pet": "", "messages": [], "queued": false}
 	return {"state": "room", "id": "preview", "mode": "ranked", "host_code": "ABCD1234",
 		"members": [
 			{"friend_code": "ABCD1234", "player_name": "星河", "avatar": AVATARS.default_avatar(),

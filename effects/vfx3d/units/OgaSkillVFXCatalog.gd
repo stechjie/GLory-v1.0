@@ -47,7 +47,8 @@ const SKILLS := {
 		{"name":"PoisonArmorSparks", "path":ROOT+"special_green.png", "columns":5, "rows":2, "frame_count":10, "fps":18.0, "duration":0.48, "delay":0.14, "anchor":"origin_body", "size":Vector2(0.38,0.38), "color":Color(0.40,0.74,0.14,0.58), "fade_out":0.16, "emission_scale":0.23},
 	]},
 	"death_poison_explosion": {"layers": [
-		{"name":"PoisonDeathBurst", "path":ROOT+"poison_explosion.png", "columns":4, "rows":4, "frame_count":16, "fps":24.0, "duration":0.58, "anchor":"origin_body", "size":Vector2(0.80,0.80), "color":Color(0.10,0.34,0.06,0.78), "fade_out":0.16, "emission_scale":0.24},
+		# 10.18：换成转色相后的绿色毒爆（与宝藏触发的自爆毒爆同一张图），不再拿橙图乘暗绿。
+		{"name":"PoisonDeathBurst", "path":ROOT+"poison_explosion_green.png", "columns":4, "rows":4, "frame_count":16, "fps":24.0, "duration":0.58, "anchor":"origin_body", "size":Vector2(0.80,0.80), "color":Color(1.0,1.0,1.0,0.90), "fade_out":0.16, "emission_scale":0.30},
 		{"name":"PoisonDeathDebris", "path":ROOT+"poison_debris.png", "columns":4, "rows":4, "frame_count":16, "fps":24.0, "duration":0.58, "delay":0.06, "anchor":"origin_body", "size":Vector2(0.68,0.68), "color":Color(0.38,0.72,0.14,0.66), "fade_out":0.16, "emission_scale":0.28},
 	]},
 }

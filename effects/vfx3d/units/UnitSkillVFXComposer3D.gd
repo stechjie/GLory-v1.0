@@ -15,6 +15,7 @@ const VFX_SLASH_RING:=preload("res://effects/vfx3d/modules/VFXSlashRing3D.gd")
 const VFX_LIGHT_PULSE:=preload("res://effects/vfx3d/modules/VFXLightPulse3D.gd")
 const VFX_ENERGY_BURST:=preload("res://effects/vfx3d/modules/VFXEnergyBurst3D.gd")
 const VFX_IMPACT_FLASH:=preload("res://effects/vfx3d/modules/VFXImpactFlash3D.gd")
+const VFX_SPARKS:=preload("res://effects/vfx3d/modules/VFXMaskedParticle3D.gd")
 const VFX_RACE_BASIC_ATTACK:=preload("res://effects/vfx3d/modules/VFXRaceBasicAttack3D.gd")
 const VFX_AUTHORED_UNIT_PROJECTILE:=preload("res://effects/vfx3d/modules/VFXAuthoredUnitProjectile3D.gd")
 const VFX_OGA_PROJECTILE:=preload("res://effects/vfx3d/modules/VFXFlipbookProjectile3D.gd")
@@ -28,6 +29,7 @@ const VFX_CRIMSON_ATTACK:=preload("res://effects/vfx3d/units/VFXCrimsonAttack3D.
 const VFX_CRIMSON_SKILL:=preload("res://effects/vfx3d/units/VFXCrimsonSkill3D.gd")
 # 黑龙黑洞 / 神王神威 / 母灵亡者之书（10.10 重做，见 VFXHeroSkill3D 文件头）。
 const VFX_HERO_SKILL:=preload("res://effects/vfx3d/units/VFXHeroSkill3D.gd")
+const VFX_TREASURE_SKILL:=preload("res://effects/vfx3d/units/VFXTreasureSkill3D.gd")
 const CRIMSON_CATALOG:=preload("res://effects/vfx3d/units/CrimsonVFXCatalog.gd")
 const PROFILE_ANGEL_GUARD:=preload("res://effects/vfx3d/profiles/examples/angel_guard_example.tres")
 const OGA_CHESS_CATALOG:=preload("res://effects/vfx3d/units/OgaChessVFXCatalog.gd")
@@ -188,6 +190,14 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 		"every_fourth_combo":_combo_hit(origin,target,context)
 		"every_fifth_group_heal":_holy_group(origin,context)
 		"death_poison_explosion":_oga_pack_skill("death_poison_explosion",origin,origin,context)
+		# 10.18：自爆的毒爆冲击环单独一个 id，由「被炸到」的伤害事件触发，不重播上面的毒爆贴图。
+		"treasure_poison_blast":_poison_blast(origin,context)
+		"treasure_toxic_burst":_toxic_burst(target)
+		"treasure_flame_shatter","treasure_blood_covenant":
+			_flame_flipbooks(target,skill_id=="treasure_blood_covenant")
+			_treasure_skill(skill_id,origin,target,context)
+		"treasure_element_burst","treasure_soul_counter","treasure_control_refresh","treasure_gold_coins","treasure_phoenix_rise","treasure_phoenix_release":
+			_treasure_skill(skill_id,origin,target,context)
 		"poison_reflect_armor_stack":_oga_pack_skill("poison_reflect_armor_stack",origin,origin,context)
 		"parasite_on_kill":_summon(target)
 		"left_neighbor_sacrifice":_tracked_link(origin,target,context,_blood_profile(.76,2.0))
@@ -327,6 +337,102 @@ func _hero_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionar
 		return
 	last_spawned=effect
 	effect.call("play_hero_skill",skill_id,origin,target,context)
+
+# 自爆灵炸到人时的毒爆（10.18 用户定：就用 poison_explosion 序列帧，改成绿色）。
+# 自爆灵中心一个大的，每个真被炸到的单位身上一个小的，按离中心的距离先后炸开。
+# 贴图是 poison_explosion.png 离线转色相（橙 → 毒绿）得到的，原图不动。
+const POISON_EXPLOSION_GREEN:="res://assets/vfx/oga/skill_packs/poison_explosion_green.png"
+const POISON_BLAST_MAX_TARGETS:=8
+
+func _poison_explosion_spec(size:float)->Dictionary:
+	return {"path":POISON_EXPLOSION_GREEN,"columns":4,"rows":4,"frame_count":16,"fps":24.0,
+		"size":Vector2(size,size),"duration":0.68,"billboard":true,"color":Color(1.0,1.0,1.0,0.96)}
+
+func _poison_blast(origin_foot:Vector3,context:Dictionary)->void:
+	var h:=_uh(context,"origin_height")
+	var center:=_lvl_foot(origin_foot,h,LEVEL_BODY)
+	var main:=_block(VFX_OGA_SKILL) as VFXFlipbookSkill3D
+	if main!=null:
+		last_spawned=main
+		main.play_spec(center,_poison_explosion_spec(2.2),{})
+	var targets:Array=[]
+	for v in context.get("targets",[]):
+		if v is Vector3:
+			targets.append(v)
+	for i in range(mini(targets.size(),POISON_BLAST_MAX_TARGETS)):
+		var at:Vector3=targets[i]
+		var dist:=Vector2(at.x-origin_foot.x,at.z-origin_foot.z).length()
+		var hit:=_block(VFX_OGA_SKILL) as VFXFlipbookSkill3D
+		if hit==null:
+			continue
+		_after(0.06+dist*0.12,func()->void:
+			if is_instance_valid(hit):
+				hit.play_spec(at,_poison_explosion_spec(1.0),{}))
+
+# 剧毒爆发（10.18 用户定：紫绿两色）：目标身上先炸绿色毒爆，紧跟一个稍小、稍偏的紫色毒爆叠上去。
+const POISON_EXPLOSION_PURPLE:="res://assets/vfx/oga/skill_packs/poison_explosion_purple.png"
+
+func _toxic_burst(target_body:Vector3)->void:
+	var green:=_block(VFX_OGA_SKILL) as VFXFlipbookSkill3D
+	if green!=null:
+		last_spawned=green
+		green.play_spec(target_body,_poison_explosion_spec(1.3),{})
+	# 紫色：和火焰同一个节奏，在目标身上错开三个位置依次闪出 3 个小毒爆。
+	# 绿色主爆很大，紫色要拉开位置、往镜头推一点画在它上面，并等绿爆鼓到最大之后再出，否则会被盖住。
+	for i in range(SMALL_BURST_OFFSETS.size()):
+		var purple:=_block(VFX_OGA_SKILL) as VFXFlipbookSkill3D
+		if purple==null:
+			continue
+		var spec:=_poison_explosion_spec(0.95)
+		spec["path"]=POISON_EXPLOSION_PURPLE
+		spec["duration"]=0.5
+		var at:Vector3=target_body+(SMALL_BURST_OFFSETS[i] as Vector3)*1.7+VFXBlockRoot.vfx_toward_camera(0.12)
+		_after(0.16+SMALL_BURST_STAGGER*float(i),func()->void:
+			if is_instance_valid(purple):
+				purple.play_spec(at,spec,{}))
+
+# 炎焰碎裂 / 血之契约的火焰（10.18 用户定）：竖直的小火焰，触发时在目标身上错开三个位置依次闪出 3 个。
+# 贴图是 mage_fire_impact 逐帧顺时针转 90° 的竖版（火团在下、火苗往上）；血之契约用深红版、
+# 稍大，并叠一层血花（blood_bloom）。火星和血线由 VFXTreasureSkill3D 画。
+const FIRE_UP:="res://assets/vfx/oga/skill_packs/mage_fire_impact_up.png"
+const FIRE_UP_BLOOD:="res://assets/vfx/oga/skill_packs/mage_fire_impact_blood_up.png"
+const BLOOD_BLOOM:="res://assets/vfx/oga/skill_packs/blood_bloom.png"
+# 三个小火焰相对目标受击点的位置（世界单位）和出现的先后。
+const SMALL_BURST_OFFSETS:=[Vector3(-0.20,-0.02,0.0),Vector3(0.20,0.06,0.0),Vector3(0.0,0.20,0.0)]
+const SMALL_BURST_STAGGER:=0.07
+
+func _flame_flipbooks(target_body:Vector3,blood:bool)->void:
+	var w:=0.62 if blood else 0.52
+	for i in range(SMALL_BURST_OFFSETS.size()):
+		var flame:=_block(VFX_OGA_SKILL) as VFXFlipbookSkill3D
+		if flame==null:
+			continue
+		if i==0:
+			last_spawned=flame
+		var at:Vector3=target_body+SMALL_BURST_OFFSETS[i]
+		var spec:={"path":FIRE_UP_BLOOD if blood else FIRE_UP,"columns":7,"rows":2,"frame_count":14,"fps":26.0,
+			"size":Vector2(w,w*1.74),"duration":0.5,"billboard":true,"color":Color(1.0,1.0,1.0,0.98)}
+		_after(SMALL_BURST_STAGGER*float(i),func()->void:
+			if is_instance_valid(flame):
+				flame.play_spec(at,spec,{}))
+	if not blood:
+		return
+	var bloom:=_block(VFX_OGA_SKILL) as VFXFlipbookSkill3D
+	if bloom!=null:
+		_after(0.10,func()->void:
+			if is_instance_valid(bloom):
+				bloom.play_spec(target_body,{"path":BLOOD_BLOOM,"columns":5,"rows":1,"frame_count":5,"fps":12.0,
+					"size":Vector2(1.05,1.05),"duration":0.6,"billboard":true,"color":Color(1.0,0.55,0.55,0.92)},{}))
+
+# 宝藏触发的战斗表现（元素四件套 / 亡魂反击 / 控制套装刷新时钟 / 炎焰碎裂 / 富裕之路 / 凤凰涅槃）。
+# 亡魂反击与刷新时钟是玩家要读懂的关键反馈，走 critical 通道；元素环与毒环走普通预算。
+func _treasure_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary)->void:
+	var critical:=skill_id in ["treasure_soul_counter","treasure_control_refresh","treasure_phoenix_rise","treasure_phoenix_release"]
+	var effect:Node3D=_block_forced(VFX_TREASURE_SKILL) if critical else _block(VFX_TREASURE_SKILL)
+	if effect==null:
+		return
+	last_spawned=effect
+	effect.call("play_treasure",skill_id,origin,target,context)
 
 func _crimson_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var critical:=skill_id=="aoe_silence"
@@ -494,13 +600,41 @@ func _angel_guard(target:Vector3,context:Dictionary)->void:
 	# This is a six-to-eight-second gameplay state, not a disposable hit spark.
 	# Spawn it through the critical lane so a crowded battle cannot silently drop
 	# the only protection readout for the selected ally.
+	# 10.18「降临」起手：一道蓝白圣光柱落到目标脚下，落地一圈闪光 + 向上溅起的光点，
+	# 护盾在光柱触地那一刻才成形。光柱按 VFXFallingPillar3D 的节奏在 duration*0.24 触地。
+	var th:=_uh(context)
+	var foot:=_lvl(target,th,LEVEL_FOOT,0.0)
+	var pillar_profile:=_profile(Color(.04,.10,.26),Color(.46,.76,1.0),Color(.95,.99,1.0),.92,.92,3.4,10)
+	_spawn(VFX_FALLING_PILLAR,pillar_profile,{"target":foot})
+	var descend_at:=pillar_profile.duration*.24
+	var flash:=_block(VFX_IMPACT_FLASH) as VFXImpactFlash3D
+	var sparks:=_block(VFX_SPARKS) as VFXMaskedParticle3D
+	_after(descend_at,func()->void:
+		if is_instance_valid(flash):
+			flash.play_flash(foot,Color(.55,.82,1.0),1.15,.42)
+		if is_instance_valid(sparks):
+			sparks.play_burst(foot+Vector3.UP*th*.2,Color(.70,.90,1.0),14,2.2,.50))
 	var guard:=_block_forced(VFX_ANGEL_GUARD) as VFXAngelGuard3D
 	if guard!=null:
 		last_spawned=guard
 		var guard_context:=context.duplicate(false)
 		guard_context["target"]=anchor
-		guard_context["status_duration"]=active.duration
-		guard.play_guard(anchor,active,guard_context)
+		# 晚出现多少就少持续多少，护盾仍在模拟的减伤结束时刻消失。
+		guard_context["status_duration"]=maxf(.9,active.duration-descend_at)
+		# 目标在这 0.2 秒里可能走动：成形时按它的当前位置重算锚点，保持施法时的相对偏移。
+		var node_value:Variant=context.get("target_node")
+		var node_ref:WeakRef=weakref(node_value) if node_value is Node3D and is_instance_valid(node_value) else null
+		var cast_node_pos:Vector3=(node_value as Node3D).global_position if node_ref!=null else Vector3.ZERO
+		_after(descend_at,func()->void:
+			if not is_instance_valid(guard):
+				return
+			var at:=anchor
+			if node_ref!=null:
+				var live:Variant=node_ref.get_ref()
+				if live is Node3D and is_instance_valid(live):
+					at=anchor+((live as Node3D).global_position-cast_node_pos)
+			guard_context["target"]=at
+			guard.play_guard(at,active,guard_context))
 
 # 普攻用的着色 profile：怪物/Boss/佣兵统一灰色中性弹道，和玩家种族区分开；
 # 玩家种族按种族色。
@@ -1048,7 +1182,8 @@ func _doom_blood_link(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	#
 	# 9.24 #7：走 forced 通道 —— 这是一条持续数秒的玩法状态（共享血量），
 	# 在特效密集的回合里被并发上限静默丢弃就等于「连线没出现」。
-	var p:=_profile(Color(.16,.06,.14),Color(1.0,.88,.94),Color(1.0,.72,.84),1.0,2.4,1.6,6)
+	# 10.18：核心色压红、发光调高 —— 旧色在深色地面上对比度太低，链子几乎看不见。
+	var p:=_profile(Color(.18,.05,.12),Color(1.0,.86,.92),Color(1.0,.42,.58),1.0,2.4,2.0,6)
 	_spawn_forced(VFX_DOOM_LINK,p,{
 		"origin":origin,"target":target,
 		"origin_node":context.get("origin_node"),"target_node":context.get("target_node"),
@@ -1611,12 +1746,61 @@ func _king_aura(origin:Vector3,context:Dictionary)->void:
 		if blessing!=null:
 			blessing.play_layer(PRIESTESS_BLESSING_SIGIL_TEXTURE,{"name":"King_AuraMark","position":_lvl_foot(value,th,LEVEL_FOOT,0.0),"ground":true,"size":Vector2(.84,.84),"duration":1.20,"start_scale":.18,"peak_scale":.86,"end_scale":.98,"dark_tint":Color(.08,.04,.01),"body_tint":Color(.88,.52,.12),"core_tint":Color(1.0,.90,.44),"seed":40.0+float(i),"flow_strength":.012,"opacity":.76,"delay":.28})
 
+const KING_SWORD_TEXTURE:="res://assets/vfx/skills/human_king/human_king_heaven_sword.png"
+const KING_GOLD:=Color(1.0,.74,.22)
+# 每层成长让光剑放大 10%，封顶取 4 星上限 8 层（1.8 倍）。
+const KING_GROWTH_SCALE_PER_STACK:=.10
+const KING_GROWTH_MAX_STACKS:=8
+
 func _king_attack(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var th := _uh(context)
-	# One straight, target-bound sword drop for Human King's normal attack.
+	# 10.18：人王普攻的天剑。旧版落到胸口锚点后会沉进目标模型里被挡住，实际只露 2 帧
+	# 左右。现在改成落到目标身前的地面（push 加大，保证在模型前面），快落、停住、再
+	# 溶解，并补下落光粒和落地冲击。
+	# 尺寸随人王的持久成长层数（king_growth_stacks）变大；BattleVfx 经 context 传入，
+	# 截帧工具没有这个字段时退回它统一给的 stacks。
+	var stacks:=clampi(int(context.get("king_stacks",context.get("stacks",0))),0,KING_GROWTH_MAX_STACKS)
+	var grow:=1.0+KING_GROWTH_SCALE_PER_STACK*float(stacks)
+	var duration:=.95
+	var travel_ratio:=.28
+	var land_at:=duration*travel_ratio
+	var sky:=_lvl(target,th,LEVEL_SKY+.30*grow,1.35)
+	var ground:=_lvl(target,th,LEVEL_LOW,1.35)
+	var foot:=_lvl(target,th,LEVEL_FOOT,0.0)
+	# 外层光晕：同一张剑，放大、压低不透明度，衬在剑身后面当辉光。
+	var halo:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+	if halo!=null:
+		halo.play_layer(KING_SWORD_TEXTURE,{"name":"King_SwordHalo","from":sky+VFXBlockRoot.vfx_toward_camera(-.04),"to":ground+VFXBlockRoot.vfx_toward_camera(-.04),"size":Vector2(1.02,2.46)*grow,"duration":duration,"travel_ratio":travel_ratio,"start_scale":.60,"peak_scale":1.0,"end_scale":1.10,"rise":0.0,"dark_tint":Color(1.0,.62,.14),"body_tint":Color(1.0,.86,.42),"core_tint":Color(1.0,1.0,.86),"seed":92.0,"flow_strength":.016,"opacity":.36})
 	var sword:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if sword!=null:
-		sword.play_layer("res://assets/vfx/skills/human_king/human_king_heaven_sword.png",{"from":_lvl(target,th,LEVEL_SKY),"to":_lvl(target,th,LEVEL_BODY),"size":Vector2(.64,1.72),"duration":.58,"travel_ratio":.48,"start_scale":.20,"peak_scale":.86,"end_scale":.72,"dark_tint":Color(.08,.04,.012),"body_tint":Color(.98,.62,.12),"core_tint":Color(1.0,.92,.42),"seed":91.0,"flow_strength":.010,"opacity":.92})
+		last_spawned=sword
+		sword.play_layer(KING_SWORD_TEXTURE,{"name":"King_Sword","from":sky,"to":ground,"size":Vector2(.72,1.90)*grow,"duration":duration,"travel_ratio":travel_ratio,"start_scale":.62,"peak_scale":1.0,"end_scale":1.04,"rise":0.0,"dark_tint":Color(.80,.48,.10),"body_tint":Color(1.0,.90,.50),"core_tint":Color(1.0,1.0,.94),"seed":91.0,"flow_strength":.008,"opacity":1.0})
+	# 下落途中两团细碎金光，拖在剑身后面。
+	for i in range(2):
+		var trail:=_block(VFX_SPARKS) as VFXMaskedParticle3D
+		if trail==null:
+			continue
+		var at:=sky.lerp(ground,.35+.30*float(i))
+		_after(land_at*(.35+.35*float(i)),func()->void:
+			if is_instance_valid(trail):
+				trail.play_burst(at,KING_GOLD,6+stacks,.9,.36))
+	# 落地：贴地冲击环 + 向上迸溅的金色粒子，粒子数随层数增加。
+	var flash:=_block(VFX_IMPACT_FLASH) as VFXImpactFlash3D
+	var burst:=_block(VFX_SPARKS) as VFXMaskedParticle3D
+	_after(land_at,func()->void:
+		if is_instance_valid(flash):
+			flash.play_flash(foot,KING_GOLD,.95*grow,.38)
+		if is_instance_valid(burst):
+			burst.play_burst(foot+Vector3.UP*th*.12,Color(1.0,.84,.40),12+stacks*2,2.4*sqrt(grow),.46))
+
+# 延后执行一个纯表现回调；施法者节点（composer）先被释放时 tween 随之失效，不会空打。
+func _after(delay:float,fn:Callable)->void:
+	if delay<=0.0:
+		fn.call()
+		return
+	var tw:=create_tween()
+	tw.tween_interval(delay)
+	tw.tween_callback(fn)
 
 func _arrow_rain(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var th := _uh(context)

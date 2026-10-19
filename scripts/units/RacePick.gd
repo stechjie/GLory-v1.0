@@ -68,8 +68,7 @@ static func sanitize(value: Variant) -> Array[String]:
 		return out
 	var arr: Array = value
 	var known := all_races()
-	var need := mini(PICK_COUNT, known.size())
-	if need <= 0 or arr.size() != need:
+	if arr.is_empty() or arr.size() > mini(PICK_COUNT, known.size()):
 		return out
 	var picked := {}
 	for raw in arr:
@@ -85,12 +84,11 @@ static func sanitize(value: Variant) -> Array[String]:
 	return out
 
 
-# 从没选过、或选择已经不合法（比如某族被删了）时用这一份：表里前 PICK_COUNT 族。
+# 旧存档或离线回落时只给新手的默认人族，不暴露其他种族。
 static func default_races() -> Array[String]:
-	var known := all_races()
 	var out: Array[String] = []
-	for i in mini(PICK_COUNT, known.size()):
-		out.append(known[i])
+	if all_races().has("human"):
+		out.append("human")
 	return out
 
 

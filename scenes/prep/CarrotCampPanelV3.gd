@@ -9,13 +9,18 @@ const TEX_STONE_SKY: Texture2D = preload("res://assets/props/carrot_system/stone
 const TEX_STONE_LAND: Texture2D = preload("res://assets/props/carrot_system/stones/stone_land.png")
 const TEX_STONE_REN: Texture2D = preload("res://assets/props/carrot_system/stones/stone_ren.png")
 const TEX_STONE_REVEAL: Texture2D = preload("res://assets/props/carrot_system/vfx/atlas_stone_reveal_4x4.png")
+const OrbitSparklesScript := preload("res://ui/components/OrbitSparkles.gd")
+const NotifyBadgeScript := preload("res://ui/components/NotifyBadge.gd")
+# 棋子头像 = <dir>/<unit_id>.png（同 PrepUI.UNIT_PORTRAIT_DIR 的约定）。
+const UNIT_PORTRAIT_DIR := "res://assets/ui/unit_portraits"
+
 # 10.11 第 8 条：有存货的升级石要散发柔和星爆（纯 _draw() 组件，不进 procedural_ui_ratchet）。
-const StarBurstScript := preload("res://ui/components/StarBurst.gd")
 # 10.16 bug 文档第 2 条：棋子显示名统一走 PrepWidgets.unit_name（按 id 查正式表的
 # name_en）。本文件 extends PanelContainer，不在 PrepShared 的继承链上，得自己 preload。
 const PrepWidgets := preload("res://scenes/prep/PrepWidgets.gd")
 
 const PANEL_SIZE := Vector2(760.0, 520.0)
+const TAB_HEIGHT := 56.0
 const GOLD := Color(0.94, 0.72, 0.34)
 const TEXT := Color(0.97, 0.92, 0.80)
 const MUTED := Color(0.72, 0.72, 0.62)
@@ -55,8 +60,15 @@ var _stone_art: TextureRect
 var _stone_reveal: TextureRect
 var _stone_counts: Dictionary = {}
 var _stone_names: Dictionary = {}
-# 10.11 第 8 条：每格石头一个星爆层（stone_type -> StarBurst）。有存货才 visible。
-var _stone_bursts: Dictionary = {}
+# 10.18：三格石头的星爆去掉了（Leno：贴纸感）。改成「有存货时图标与数字变亮」——
+# 同一条信息、同一处位置，但不再往画面上加一层光。stone_type -> 那一格的图标。
+var _stone_icons: Dictionary = {}
+# 10.18：「升级石」页签的两级提醒（Leno 定的口径）：
+#   · 队伍有升级石、但还没有能升 4★ 的 —— 右上角一颗**金点**；
+#   · 有棋子现在就能升 4★ —— 右上角**红底数字**（几枚能升）+ 金色光粒子绕着页签转。
+# 上一版是 CampEntryGlow 压成椭圆的一团呼吸光，实际是糊在字后面的一片橙雾，已换掉。
+var _stone_tab_orbit: Control
+var _stone_tab_badge: Control
 var _stone_rail: PanelContainer
 var _four_star_list: VBoxContainer
 var _last_stones := {"sky": 0, "land": 0, "ren": 0}
@@ -201,20 +213,38 @@ func _build_header(parent: VBoxContainer) -> void:
 	header.add_child(close)
 	_close_button = close
 
+# 10.18：两个页签**左右各占 50%**。原来各固定 132px、右边一大段空弹簧，两个按钮挤在
+# 左上角，英文的「Upgrade Stones」还比页签宽、溢出去了。
+# 每个页签带一个图标：不靠颜色也能一眼分清两个入口（game-ui-design：选中/区分
+# 不能只靠颜色）。
 func _build_tabs(parent: VBoxContainer) -> void:
 	var tabs := HBoxContainer.new()
-	tabs.custom_minimum_size.y = 45
-	tabs.add_theme_constant_override("separation", 8)
+	tabs.custom_minimum_size.y = TAB_HEIGHT
+	tabs.add_theme_constant_override("separation", 10)
 	parent.add_child(tabs)
 	_camp_tab = _tab_button(_t("营地", "Camp"))
+	_camp_tab.icon = TEX_FARM
+	_camp_tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_camp_tab.size_flags_stretch_ratio = 1.0
 	_camp_tab.pressed.connect(_show_page.bind(0))
 	tabs.add_child(_camp_tab)
 	_stone_tab = _tab_button(_t("升级石", "Upgrade Stones"))
+	_stone_tab.icon = TEX_STONE_UNKNOWN
+	_stone_tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_stone_tab.size_flags_stretch_ratio = 1.0
 	_stone_tab.pressed.connect(_show_page.bind(1))
 	tabs.add_child(_stone_tab)
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	tabs.add_child(spacer)
+	# 金色光粒子绕着页签转（能升 4★ 时才亮）。挂在页签上、铺满它，光点沿它的外沿走。
+	var orbit: Control = OrbitSparklesScript.new()
+	orbit.name = "StoneTabOrbit"
+	orbit.visible = false
+	_stone_tab.add_child(orbit)
+	_stone_tab_orbit = orbit
+	var badge: Control = NotifyBadgeScript.new()
+	badge.name = "StoneTabBadge"
+	badge.visible = false
+	_stone_tab.add_child(badge)
+	_stone_tab_badge = badge
 
 func _build_camp_page() -> Control:
 	var page := VBoxContainer.new()
@@ -223,6 +253,10 @@ func _build_camp_page() -> Control:
 	cards.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	cards.add_theme_constant_override("separation", 14)
 	page.add_child(cards)
+	# 10.18：左右两张卡片的标题层级统一（Leno：「标题层级不太一致」）。原来左卡深绿底、
+	# 副标题绿色，右卡暖金底、副标题灰色 —— 同一层级两套样子，读起来像两种东西。
+	# 现在两张卡同一种底、同一套「小标题(金) / 大标题(白 22) / 说明(灰 13)」，
+	# 标题块下面都接一道分隔线再进正文。强调交给右卡那颗主按钮，不靠卡片底色。
 	var farm_card := _card(false)
 	farm_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	cards.add_child(farm_card)
@@ -239,7 +273,8 @@ func _build_camp_page() -> Control:
 	_farm_level = _label(_t("营地等级 · 1", "Camp Lv. 1"), 14, GOLD)
 	farm_titles.add_child(_farm_level)
 	farm_titles.add_child(_label(_t("萝卜田", "Carrot Field"), 22, TEXT))
-	farm_titles.add_child(_label(_t("随雇佣自动成长", "Grows as you hire"), 13, GREEN))
+	farm_titles.add_child(_label(_t("随雇佣自动成长", "Grows as you hire"), 13, MUTED))
+	farm.add_child(_divider())
 	_farm_need = _label(_t("距离下一级", "To next level"), 15, TEXT)
 	farm.add_child(_farm_need)
 	_farm_progress = ProgressBar.new()
@@ -257,7 +292,7 @@ func _build_camp_page() -> Control:
 	_farm_next_capacity = _value_row(next_box, _t("下级容量", "Next Capacity"))
 	_farm_next_production = _value_row(next_box, _t("每回合产量", "Yield / Round"))
 	_farm_next_income = _value_row(next_box, _t("营地金币收益", "Camp Gold / Battle"))
-	var tech_card := _card(true)
+	var tech_card := _card(false)
 	tech_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	cards.add_child(tech_card)
 	var tech := VBoxContainer.new()
@@ -274,6 +309,7 @@ func _build_camp_page() -> Control:
 	tech_titles.add_child(_tech_level)
 	tech_titles.add_child(_label(_t("提升采集", "Harvest Upgrade"), 22, TEXT))
 	tech_titles.add_child(_label(_t("采集基础产量", "Base Harvest Yield"), 13, MUTED))
+	tech.add_child(_divider())
 	var yield_row := HBoxContainer.new()
 	yield_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	yield_row.custom_minimum_size.y = 76
@@ -306,6 +342,11 @@ func _build_camp_page() -> Control:
 func _build_stone_page() -> Control:
 	var page := VBoxContainer.new()
 	page.add_theme_constant_override("separation", 10)
+	# 10.18：规则这句原本在页面**最底部**，玩家滚不到。提到顶上来 ——
+	# 这是整页唯一需要先读懂的一句话。
+	var rule := _label(_t("三星棋子 ＋ 同属性升级石 ＝ 四星", "3-star unit + matching stone = 4 stars"), 15, GREEN)
+	rule.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	page.add_child(rule)
 	var cards := HBoxContainer.new()
 	cards.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	cards.add_theme_constant_override("separation", 14)
@@ -365,9 +406,6 @@ func _build_stone_page() -> Control:
 	_four_star_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_four_star_list.add_theme_constant_override("separation", 6)
 	scroll.add_child(_four_star_list)
-	var footer := _label(_t("对应升级石 ×1  →  三星棋子升至四星", "1 matching stone → upgrade a 3-star unit to 4 stars"), 14, GREEN)
-	footer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	page.add_child(footer)
 	return page
 
 func _build_help_panel() -> void:
@@ -517,7 +555,7 @@ func refresh() -> void:
 	var unlocked := capacity >= stone_cost or GameState.tutorial_mode
 	var draw_tutorial_locked := not _tutorial_allows("draw_stone")
 	_draw_status.text = _t("本回合剩余 1 次", "1 draw remaining") if draw_available else _t("本回合已抽取 · 下回合恢复", "Draw used · resets next round")
-	_draw_button.text = _t("抽取一次\n%d 萝卜", "Draw Once\n%d Carrots") % stone_cost if draw_available else _t("下回合恢复", "Resets next round")
+	_draw_button.text = (_t("免费抽取一次", "Free Stone Draw") if stone_cost == 0 else _t("抽取一次\n%d 萝卜", "Draw Once\n%d Carrots") % stone_cost) if draw_available else _t("下回合恢复", "Resets next round")
 	_draw_button.disabled = _action_locked or draw_tutorial_locked or not draw_available or not unlocked or GameState.carrots < stone_cost or online_blocked
 	if not unlocked:
 		_draw_result.text = _t("容量不足 · 需要储存 %d 萝卜", "Capacity too low · store %d carrots") % stone_cost
@@ -534,10 +572,14 @@ func refresh() -> void:
 		var name_label := _stone_names.get(stone_type) as Label
 		if name_label != null:
 			name_label.text = _stone_display(stone_type)
-		# 10.11 第 8 条：这格石头有存货（count > 0）才让它亮星爆 —— 「存在升级石时」。
-		var burst := _stone_bursts.get(stone_type) as Control
-		if burst != null and is_instance_valid(burst):
-			burst.visible = count > 0
+		# 10.18：这格有存货就让图标与数字**变亮**，没货的压暗 —— 取代原来那层星爆。
+		# 「有 / 没有」还是一眼能分，但不再往格子上糊一层光。
+		var has_stock := count > 0
+		var stone_icon := _stone_icons.get(stone_type) as TextureRect
+		if stone_icon != null and is_instance_valid(stone_icon):
+			stone_icon.modulate = Color(1.0, 1.0, 1.0) if has_stock else Color(0.52, 0.56, 0.50)
+		if count_label != null:
+			count_label.add_theme_color_override("font_color", GREEN if has_stock else Color(0.52, 0.56, 0.50))
 		if _stones_initialized and count > int(_last_stones.get(stone_type, 0)):
 			changed = stone_type
 		_last_stones[stone_type] = count
@@ -545,6 +587,36 @@ func refresh() -> void:
 		_play_stone_reveal(changed)
 	_stones_initialized = true
 	_refresh_four_star_list()
+	_refresh_stone_tab_hint()
+
+
+# 页签上的两级提醒。数量取「现在真能升 4★ 的三星棋子有几枚」，判据走
+# GameState.four_star_check —— 和棋盘上的「可升」光幕、营地入口角标同一口径。
+#   · 有升级石、没有能升的 —— 金点；
+#   · 有能升的 —— 红底数字 + 金色光粒子绕着页签转。
+func _refresh_stone_tab_hint() -> void:
+	if _stone_tab == null or not is_instance_valid(_stone_tab):
+		return
+	var ready_count := 0
+	for slots in [GameState.board_slots, GameState.bench_slots]:
+		for cell in (slots as Array):
+			if cell is Dictionary and bool(GameState.four_star_check(cell).get("ok", false)):
+				ready_count += 1
+	var stone_total := 0
+	for value in GameState.team_upgrade_stones.values():
+		stone_total += int(value)
+	if _stone_tab_orbit != null and is_instance_valid(_stone_tab_orbit):
+		_stone_tab_orbit.visible = ready_count > 0
+	if _stone_tab_badge == null or not is_instance_valid(_stone_tab_badge):
+		return
+	if ready_count > 0:
+		_stone_tab_badge.visible = true
+		_stone_tab_badge.call("show_count", ready_count)
+	elif stone_total > 0:
+		_stone_tab_badge.visible = true
+		_stone_tab_badge.call("show_dot")
+	else:
+		_stone_tab_badge.visible = false
 
 func _refresh_four_star_list() -> void:
 	if _four_star_list == null:
@@ -583,7 +655,9 @@ func _refresh_four_star_list() -> void:
 		var row_content := HBoxContainer.new()
 		row_content.add_theme_constant_override("separation", 6)
 		row.add_child(row_content)
-		row_content.add_child(_icon(_stone_texture(stone_type), Vector2(42,42)))
+		# 10.18：每行以**棋子**为主（原来左边是石头图标，玩家认不出是哪枚棋子）。
+		# 头像取不到时退回石头图标，不至于空一块。
+		row_content.add_child(_icon(_unit_portrait(unit_def, stone_type), Vector2(48,48)))
 		var info := VBoxContainer.new()
 		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row_content.add_child(info)
@@ -593,16 +667,20 @@ func _refresh_four_star_list() -> void:
 		# 按 locale 取 name_en 的只有 unit_display_name()（ PrepWidgets.unit_name ）。
 		var unit_name := PrepWidgets.unit_name(unit_def) if not unit_def.is_empty() \
 			else _t("棋子", "Unit")
-		info.add_child(_label("%s  ★★★" % unit_name, 16, TEXT))
+		info.add_child(_shrinkable(_label("%s  ★★★ → ★★★★" % unit_name, 16, TEXT)))
+		# 升星到底强在哪：攻击与生命的前后对比。光写「升至四星」玩家不知道值不值。
+		var gain := _four_star_gain_text(unit_def)
+		if not gain.is_empty():
+			info.add_child(_shrinkable(_label(gain, 12, GREEN if ready else MUTED)))
 		var reason := _t("1 颗%s石 ＋ %d 金", "1 %s Stone + %d Gold") % [_stone_display(stone_type), CarrotEconomy.four_star_gold(int(unit_def.get("tier", 0)))]
 		if not ready:
 			reason = _four_star_reason(str(check.get("error", "")), stone_type)
-		info.add_child(_label(reason, 12, MUTED))
-		var action := Button.new()
-		action.text = _t("升至四星", "Upgrade to 4 Stars")
-		action.custom_minimum_size = Vector2(96,48)
+		info.add_child(_shrinkable(_label(reason, 12, MUTED)))
+		# 能升的用金色主按钮（这一行就是要让人点）；不能升的照旧是次级样式。
+		var action := _primary_button(_t("升至四星", "Upgrade to 4 Stars")) if ready \
+			else _secondary_action_button(_t("升至四星", "Upgrade to 4 Stars"))
+		action.custom_minimum_size = Vector2(112, 52)
 		action.add_theme_font_size_override("font_size", 14)
-		action.add_theme_stylebox_override("normal", _secondary_button_style())
 		action.disabled = _action_locked or not ready or not NetworkService.four_star_upgrade_available() or not NetworkService.four_star_request_id.is_empty() \
 			or not _tutorial_allows("four_star")
 		action.pressed.connect(_on_four_star.bind(str(candidate.where), int(candidate.index)))
@@ -627,22 +705,13 @@ func _add_stone_counter(parent: VBoxContainer, stone_type: String, texture: Text
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_theme_stylebox_override("panel", _flat(Color(0.055,0.10,0.075,0.95),9,Color(0.25,0.32,0.24),1))
 	parent.add_child(box)
-	# 10.11 第 8 条：星爆层放进 box 的**第一个**子节点 —— PanelContainer 先画自己的底板、
-	# 再按顺序画子节点，所以星爆落在底板之上、图标与文字之下（既不被底板盖住，也不挡字）。
-	# 有存货时由 refresh() 打开（下面 _stone_bursts）。
-	var burst: Control = StarBurstScript.new()
-	burst.name = "StoneBurst"
-	# 这里保持第一版参数（半径只到格子内、星芒从圆心起）—— 10.11 用户口径：
-	# 只优化萝卜营地入口按钮，天 / 地 / 人三格石头不动。别往这里加 scale / inner。
-	burst.setup(_stone_burst_color(stone_type))
-	burst.visible = false
-	box.add_child(burst)
-	_stone_bursts[stone_type] = burst
 	var column := VBoxContainer.new()
 	column.alignment = BoxContainer.ALIGNMENT_CENTER
 	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(column)
-	column.add_child(_icon(texture, Vector2(80,72)))
+	var stone_icon := _icon(texture, Vector2(80,72))
+	column.add_child(stone_icon)
+	_stone_icons[stone_type] = stone_icon
 	var name_label := _label(_stone_display(stone_type), 16, TEXT)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(name_label)
@@ -652,14 +721,6 @@ func _add_stone_counter(parent: VBoxContainer, stone_type: String, texture: Text
 	column.add_child(count)
 	_stone_counts[stone_type] = count
 
-
-# 10.11 第 8 条：星爆取该石头自己的颜色（天青 / 地绿 / 人红），一眼能对上是哪一格。
-func _stone_burst_color(stone_type: String) -> Color:
-	match stone_type:
-		"sky": return Color(0.55, 0.85, 1.0)
-		"land": return Color(0.58, 1.0, 0.62)
-		"ren": return Color(1.0, 0.52, 0.5)
-		_: return GOLD
 
 func _play_stone_reveal(stone_type: String) -> void:
 	_reveal_serial += 1
@@ -782,21 +843,39 @@ func _icon_button(value: String, tooltip: String) -> Button:
 func _tab_button(value: String) -> Button:
 	var result := Button.new()
 	result.text = value
-	result.custom_minimum_size = Vector2(132,44)
-	result.add_theme_font_size_override("font_size", 17)
+	# 高 56：原来 44 低于触控目标下限（game-ui-design：48dp / 44pt），手机上容易点歪。
+	result.custom_minimum_size = Vector2(0, TAB_HEIGHT)
+	result.add_theme_font_size_override("font_size", 19)
 	result.add_theme_color_override("font_color", MUTED)
 	result.add_theme_color_override("font_hover_color", TEXT)
+	result.add_theme_constant_override("icon_max_width", 30)
+	result.add_theme_constant_override("h_separation", 10)
+	# 图标**靠左**、文字居中。icon_alignment 设成居中时，Godot 会把图标和文字叠在同一
+	# 位置画（第一版截图里就是「Ca🥕mp」）。
+	result.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	result.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	return result
 
+# 选中 / 未选中靠**形状**区分，不只是颜色（game-ui-design：选中态要有底、边、下划线
+# 这类形状变化）。原来未选中那个就是一行暗字，看不出它是个能点的按钮。
+#   · 选中：暗金实底 + 金色描边 + 底部 4px 金色下划线 + 亮字
+#   · 未选中：深色实底 + 细描边（一眼是按钮）+ 暗一档的字
 func _set_tab(button: Button, selected: bool) -> void:
-	var style := _flat(Color(0.16,0.18,0.12,0.92) if selected else Color(0,0,0,0),8)
+	var style: StyleBoxFlat
 	if selected:
-		style.border_color = GOLD
-		style.set_border_width(SIDE_BOTTOM,3)
+		style = _flat(Color(0.30,0.25,0.13,0.98), 10, GOLD, 1)
+		style.set_border_width(SIDE_BOTTOM, 4)
+	else:
+		style = _flat(Color(0.10,0.14,0.11,0.92), 10, Color(0.34,0.38,0.30), 1)
+	var hover := style.duplicate() as StyleBoxFlat
+	if not selected:
+		hover.border_color = Color(0.62,0.55,0.36)
 	button.add_theme_stylebox_override("normal", style)
-	button.add_theme_stylebox_override("hover", style)
+	button.add_theme_stylebox_override("hover", hover)
 	button.add_theme_stylebox_override("pressed", style)
+	button.add_theme_stylebox_override("focus", hover)
 	button.add_theme_color_override("font_color", TEXT if selected else MUTED)
+	button.add_theme_color_override("icon_normal_color", Color.WHITE if selected else Color(1, 1, 1, 0.6))
 
 func _primary_button(value: String) -> Button:
 	var result := Button.new()
@@ -848,6 +927,55 @@ func _stone_display(stone_type: String) -> String:
 		"land": return _t("地", "Land")
 		"ren": return _t("人", "Ren")
 		_: return "?"
+
+# 让一行文字在空间不够时**截断加省略号**，而不是把整行撑宽。Label 默认的最小宽度
+# 等于整行文字宽 —— 英文下「Godhand ★★★ → ★★★★」加属性对比加按钮，一行就比卡片宽，
+# 把整张 4★ 卡片撑出了面板（按钮被切成「Upgrade to 4 Sta」）。中文字短，之前没暴露。
+func _shrinkable(label: Label) -> Label:
+	label.clip_text = true
+	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	return label
+
+
+# 棋子头像；没有这张图就退回该属性的石头图标。
+func _unit_portrait(unit_def: Dictionary, stone_type: String) -> Texture2D:
+	var unit_id := str(unit_def.get("id", ""))
+	if not unit_id.is_empty():
+		var path := "%s/%s.png" % [UNIT_PORTRAIT_DIR, unit_id]
+		if ResourceLoader.exists(path):
+			var tex := load(path) as Texture2D
+			if tex != null:
+				return tex
+	return _stone_texture(stone_type)
+
+
+# 「攻击 80 → 104 · 生命 1200 → 1560」。系数走 GameState.star_stat_multiplier ——
+# 四星的覆写（unit_def 里的 star4_multiplier）也在那一份里，别在这儿另算一遍。
+func _four_star_gain_text(unit_def: Dictionary) -> String:
+	var atk := float(unit_def.get("atk", 0))
+	var hp := float(unit_def.get("hp", 0))
+	if atk <= 0.0 and hp <= 0.0:
+		return ""
+	var m3 := GameState.star_stat_multiplier(GameState.MAX_MERGE_STAR, unit_def)
+	var m4 := GameState.star_stat_multiplier(GameState.MAX_UNIT_STAR, unit_def)
+	var parts: PackedStringArray = []
+	if atk > 0.0:
+		parts.append(_t("攻击 %d → %d", "ATK %d → %d") % [int(round(atk * m3)), int(round(atk * m4))])
+	if hp > 0.0:
+		parts.append(_t("生命 %d → %d", "HP %d → %d") % [int(round(hp * m3)), int(round(hp * m4))])
+	return "  ·  ".join(parts)
+
+
+# 不能升的那一行用的次级按钮。抽出来只是为了让上面那行三目看得清，样式没变。
+func _secondary_action_button(value: String) -> Button:
+	var result := _tab_button(value)
+	result.add_theme_color_override("font_color", TEXT)
+	result.add_theme_stylebox_override("normal", _secondary_button_style())
+	result.add_theme_stylebox_override("hover", _secondary_button_style())
+	result.add_theme_stylebox_override("pressed", _secondary_button_style())
+	return result
+
 
 func _four_star_reason(error: String, stone_type: String) -> String:
 	match error:
