@@ -153,8 +153,8 @@ func _case_member_can_invite() -> void:
 	# ★★ 10.19 用户改口径：「让玩家自己按邀请，有时候只是想看看那个人的 profile」。
 	#    ⇒ 点好友那一行 / 头像 = 看资料；邀请只走行内的「邀请」按钮；
 	#    右侧快捷头像栏点一下 = 打开好友抽屉（不再一点就邀请）。
+	#    10.19 换皮后头像不再是单独的按钮，画在整行点击区上面（MOUSE_FILTER_IGNORE），点头像就是点行。
 	_h.expect(src.contains("row_tap.pressed.connect(_view_member_profile.bind(code))")
-			and src.contains("avatar.pressed.connect(_view_member_profile.bind(code))")
 			and not src.contains("row_tap.pressed.connect(func() -> void: _invite(code))")
 			and not src.contains("avatar.pressed.connect(func() -> void: _invite(code))"),
 		"friend_row_opens_profile",
