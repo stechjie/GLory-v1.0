@@ -1,0 +1,5 @@
+[gd_scene load_steps=3 format=3]
+[ext_resource type="PackedScene" path="res://assets/models/bosses/boss_twin_gate_animated/land/boss_twin_gate_land_animated.tscn" id="1"]
+[ext_resource type="Script" path="res://assets/models/enemies_refined/boss_twin_gate/Refined.gd" id="2"]
+[node name="TwinGateLandRefined" instance=ExtResource("1")]
+script=ExtResource("2")

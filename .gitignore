@@ -27,6 +27,9 @@ android/
 # formation-ally refinement 2026-10-12: refined wrappers/materials/textures are source-tracked;
 # the original allies/ FBX still ship through the asset bundle.
 !/assets/models/allies_refined/
+# Enemy (PvE monster + boss) refinement 2026-10-20: refined wrappers/materials/textures are
+# source-tracked; the original monsters/ and bosses/ FBX still ship through the asset bundle.
+!/assets/models/enemies_refined/
 !/assets/models/units/
 /assets/models/units/*
 # Race refinements (2026-10-04) ship with code; their original models stay in the

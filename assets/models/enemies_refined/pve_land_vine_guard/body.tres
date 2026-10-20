@@ -1,0 +1,30 @@
+[gd_resource type="ShaderMaterial" load_steps=6 format=3]
+
+[ext_resource type="Shader" path="res://shaders/character_toon.gdshader" id="1_toon"]
+[ext_resource type="Texture2D" path="res://assets/models/enemies_refined/pve_land_vine_guard/albedo.png" id="2_albedo"]
+[ext_resource type="Texture2D" path="res://assets/models/monsters/land/pve_land_vine_guard_animated/pve_land_vine_guard_emit.png" id="4_emission"]
+[resource]
+resource_name = "pve_land_vine_guard_body_material"
+shader = ExtResource("1_toon")
+shader_parameter/albedo_color = Color(1, 1, 1, 1)
+shader_parameter/albedo_texture = ExtResource("2_albedo")
+shader_parameter/shadow_tint = Color(0.551, 0.709, 0.593, 1)
+shader_parameter/light_threshold = 0.32
+shader_parameter/band_softness = 0.02
+shader_parameter/light_energy = 1.08
+shader_parameter/light_response = 1.5
+shader_parameter/rim_color = Color(0.85, 0.95, 1, 1)
+shader_parameter/rim_strength = 0.035
+shader_parameter/rim_power = 3.0
+shader_parameter/rim_threshold = 0.55
+shader_parameter/specular_color = Color(1, 1, 1, 1)
+shader_parameter/specular_amount = 0.0
+shader_parameter/specular_gloss = 0.7
+shader_parameter/specular_threshold = 0.5
+shader_parameter/use_normal_map = false
+shader_parameter/normal_map_depth = 0.38
+shader_parameter/emission_color = Color(0, 0, 0, 1)
+shader_parameter/emission_energy = 0.0
+shader_parameter/emission_mask = ExtResource("4_emission")
+shader_parameter/uv_scale = Vector2(1, 1)
+shader_parameter/uv_offset = Vector2(0, 0)
