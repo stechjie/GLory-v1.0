@@ -5,6 +5,7 @@ const UnitActor3DScript := preload("res://effects/runtime/presentation/UnitActor
 const UnitVisualResolverScript := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
 const ModelRootMotionPolicyScript := preload("res://effects/runtime/presentation/ModelRootMotionPolicy.gd")
 const UnitContactShadowScript := preload("res://effects/runtime/presentation/UnitContactShadow.gd")
+const UnitPlanarShadowScript := preload("res://effects/runtime/presentation/UnitPlanarShadow.gd")
 const UNIT_TEAM_RING_SHADER := preload("res://shaders/unit_team_ring.gdshader")
 const FOUR_STAR_AURA := preload("res://effects/vfx3d/modules/FourStarAuraV3_3D.gd")
 const CrimsonDrumBadge := preload("res://scenes/battle/CrimsonDrumBadge.gd")
@@ -1483,7 +1484,15 @@ func _add_3d_unit_readability(pivot: Node3D, f: Dictionary) -> void:
 	# One shadow in the actor's 3D space follows its movement, facing and death
 	# fade. The old fixed 68 px HUD ellipse doubled this into a dark ground smear.
 	var footprint_scale := clampf(float(pivot.get_meta("model_height", NOMINAL_UNIT_HEIGHT)) / NOMINAL_UNIT_HEIGHT, 0.7, 2.4)
-	var shadow := UnitContactShadowScript.create("GroundShadow3D", Vector2.ONE * 0.62 * footprint_scale)
+	# 10.21：中 / 高画质加投影剪影（角色轮廓压在地上，落向右下），脚底圆缩成小核心只管
+	# 「踩住」；低画质和立绘兜底单位保持原来的整圆。见 UnitPlanarShadow.gd。
+	var model: Node3D = pivot.get("visual_root") as Node3D if str(pivot.get_meta("visual_kind", "")) == "model" else null
+	var planar := model != null and UnitPlanarShadowScript.enabled_for_tier(VFXManager.get_quality_tier())
+	var shadow_scale := footprint_scale
+	if planar:
+		UnitPlanarShadowScript.attach(model, battle_unit_y_offset)
+		shadow_scale *= UnitPlanarShadowScript.CORE_SCALE
+	var shadow := UnitContactShadowScript.create("GroundShadow3D", Vector2.ONE * 0.62 * shadow_scale)
 	var shadow_root := pivot.get_node_or_null("Shadow") as Node3D
 	if shadow_root != null:
 		shadow_root.add_child(shadow)
