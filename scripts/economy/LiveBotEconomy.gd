@@ -19,6 +19,7 @@ static func prepare(room: Dictionary) -> Dictionary:
 				_seed_from_human(bot, room, slot, round_index)
 			bots[slot] = bot
 		var pet := str(room.get("seat_pets", {}).get(slot, ""))
+		bots[slot]["final_round"] = 13 if str(room.get("ruleset", "normal")) == "seedling" else 21
 		bots[slot]["carrot_bonus_rate"] = PetService.carrot_bonus_rate(pet)
 		bots[slot]["stones"] = NetworkService._room_team_stones(room, slot)
 		Bot.prepare_round(bots[slot], round_index)

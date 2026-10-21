@@ -1905,7 +1905,7 @@ func _room_begin_next_prep(room: Dictionary) -> void:
 				PetService.carrot_bonus_rate(_room_seat_pet(room, slot)))
 			var shop: Dictionary = prep.get("shop", {})
 			shop["offers"] = _server_roll_shop_offers(GameState.SHOP_UNIT_SLOTS, next_round,
-				_room_seat_races(room, slot))
+				_room_seat_races(room, slot), _room_final_round(room))
 			shop["offer_id"] = _make_offer_id()
 			var sold: Array = []
 			sold.resize(GameState.SHOP_UNIT_SLOTS)
@@ -2352,7 +2352,7 @@ func _room_start_authoritative(room: Dictionary) -> void:
 				# 玩家看到「商店刷新失败：gold_desync」。第 2 回合起 server_shop 有值就正常。
 				var shop: Dictionary = prep.get("shop", {})
 				shop["offers"] = _server_roll_shop_offers(GameState.SHOP_UNIT_SLOTS,
-					int(room.get("round_index", 1)), _room_seat_races(room, slot))
+					int(room.get("round_index", 1)), _room_seat_races(room, slot), _room_final_round(room))
 				shop["offer_id"] = _make_offer_id()
 				var sold: Array = []
 				sold.resize(GameState.SHOP_UNIT_SLOTS)
@@ -2433,6 +2433,7 @@ func prepare_local_bots() -> void:
 	var local_team := GameConstants.team_of_slot(team_local_slot) if team_active else 0
 	_local_bot_stones[local_team] = GameState.team_upgrade_stones
 	var room := {"bot_states": team_bot_states, "round_index": GameState.round_index,
+		"ruleset": "seedling" if GameState.FINAL_ROUND == 13 else "normal",
 		"shared_seed": shared_seed, "slot_states": GameState.team_slot_states,
 		"team_upgrade_stones": _local_bot_stones}
 	team_bot_states = LiveBotEconomy.prepare(room)
@@ -4537,6 +4538,7 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 			# 只判 has("carrots")，于是开关关掉时每次战后结算都会拿服务端那份没动过的
 			# 零值把客户端的萝卜/科技/消费总额/队伍石头**全部清掉**，且无从察觉。
 			"carrot_authoritative": carrot_economy_enabled(),
+			"four_star_cost_version": CarrotEconomy.FOUR_STAR_COST_VERSION,
 			"carrots": int(_room_prep(room, slot).get("carrots", 0)),
 			"harvest_tech_level": int(_room_prep(room, slot).get("harvest_tech_level", 0)),
 			"merc_carrots_spent_total": int(_room_prep(room, slot).get("merc_carrots_spent_total", 0)),
@@ -6781,14 +6783,15 @@ func _room_seat_races(room: Dictionary, slot: int) -> Array:
 # 随机源仍然是 Crypto，只是「怎么摇」这条规则不再各写一份。
 # races 是这个座位的出战种族（_room_seat_races）。必须先过滤再交给 pick_offer ——
 # 顺序反了，pick_offer 在「这一档没有棋子」时退回全表，就会刷出没选的族。
-func _server_roll_shop_offers(count: int, round_index: int, races: Array) -> Array:
+func _server_roll_shop_offers(count: int, round_index: int, races: Array,
+		final_round: int = 21) -> Array:
 	var units: Array = RacePick.shop_pool(DataRegistry.get_table("race_units").get("units", []), races)
 	var out: Array = []
 	if units.is_empty():
 		return out
 	for _i in count:
 		out.append(ShopRoll.pick_offer(units, round_index,
-			_crypto_unit_float(), _crypto_unit_float()))
+			_crypto_unit_float(), _crypto_unit_float(), final_round))
 	return out
 
 func _make_offer_id() -> String:
@@ -6813,7 +6816,7 @@ func _economy_ctx(room: Dictionary, slot: int, action: String) -> Dictionary:
 	match action:
 		"shop_refresh":
 			ctx["rolled_offers"] = _server_roll_shop_offers(GameState.SHOP_UNIT_SLOTS,
-				int(room.get("round_index", 1)), _room_seat_races(room, slot))
+				int(room.get("round_index", 1)), _room_seat_races(room, slot), _room_final_round(room))
 			ctx["offer_id"] = _make_offer_id()
 		"gamble":
 			# 用 Crypto 取 [0,1)：randf() 的种子是可预测的，而这是钱。
@@ -6983,7 +6986,6 @@ func _apply_server_shop(state: Dictionary) -> void:
 
 
 func _apply_carrot_state(state: Dictionary) -> void:
-	server_four_star_cost_version = int(state.get("four_star_cost_version", 0))
 	if state.is_empty() or not bool(state.get("carrot_authoritative", false)):
 		return
 	# 9.13 #5：挡掉**过期的**萝卜状态。
@@ -6999,6 +7001,10 @@ func _apply_carrot_state(state: Dictionary) -> void:
 	# 同一回合内的正当同步（room_state / 重连恢复）round 相等，不受影响。
 	if int(state.get("last_harvest_round", GameState.last_harvest_round)) < GameState.last_harvest_round:
 		return
+	# 战后 match_state 是部分状态，不带规则版本；不能把缺省字段当成旧服。
+	# 仅接受有效快照中明确声明的版本。reset() 仍会清零，旧服不会继承上一局能力。
+	if state.has("four_star_cost_version"):
+		server_four_star_cost_version = int(state["four_star_cost_version"])
 	GameState.carrots = maxi(0, int(state.get("carrots", GameState.carrots)))
 	GameState.harvest_tech_level = maxi(0, int(state.get("harvest_tech_level", GameState.harvest_tech_level)))
 	GameState.merc_carrots_spent_total = maxi(0, int(state.get("merc_carrots_spent_total", GameState.merc_carrots_spent_total)))

@@ -1190,7 +1190,7 @@ func _roll_shop() -> void:
 	rng.randomize()
 	for i in GameState.SHOP_UNIT_SLOTS:
 		GameState.shop_offers[i] = ShopRoll.pick_offer(
-			units, GameState.round_index, rng.randf(), rng.randf())
+			units, GameState.round_index, rng.randf(), rng.randf(), GameState.FINAL_ROUND)
 		GameState.shop_sold[i] = false
 
 # 采用服务端下发的这一轮商店。成功返回 true。
@@ -1222,7 +1222,7 @@ func _adopt_server_shop() -> bool:
 # 之前服务端是全表均匀随机，第一回合就能刷出三档单位（设计上应为 0%），
 # 而影子比对只对金币，抓不到这个差异。详见 ShopRoll.gd 顶部说明。
 func _roll_shop_tier(rng: RandomNumberGenerator) -> int:
-	return ShopRoll.tier_for_roll(GameState.round_index, rng.randf())
+	return ShopRoll.tier_for_roll(GameState.round_index, rng.randf(), GameState.FINAL_ROUND)
 
 # 定价改为委托服务端的权威实现 EconomyLedger.unit_cost()。
 #

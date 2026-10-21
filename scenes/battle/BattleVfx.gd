@@ -8,6 +8,7 @@ const _UnitGrowth := preload("res://scripts/units/UnitGrowth.gd")
 # 赤律族特效查表（弹体速度 / 技能清单）与 Director 起手拍长度，见 _crimson_* 一组函数。
 const _CRIMSON_CATALOG := preload("res://effects/vfx3d/units/CrimsonVFXCatalog.gd")
 const _CRIMSON_ADAPTER := preload("res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd")
+const _HIT_FEEDBACK := preload("res://effects/runtime/presentation/BattleHitFeedback.gd")
 
 var _vfx_prev_units: Dictionary = {}
 var _vfx_seeded: bool = false
@@ -112,8 +113,42 @@ func _refresh_visuals() -> void:
 	super._refresh_visuals()
 	_refresh_battle_vfx(_state)
 
+# 10.21：战斗屏震。原来 _screen_shake 交给 VFXManager 去晃 Camera2D，但战斗画面是
+# 3D 子视口叠在 2D 战场图上，整个项目里没有一台 Camera2D —— 命中屏震、技能屏震全是空转。
+# 现在直接平移整个战场容器（_arena：2D 底图 + 3D 单位层 + 血条一起动），单位不会相对棋盘乱晃。
+# 幅度按时长衰减（平方包络），偏移用两个不同频率的正弦而不是每帧随机，读起来是「一下冲击」
+# 而不是信号不良的抖动。玩家的屏震开关 / 低画质缩放沿用 PresentationSettings。
+const SHAKE_PX_PER_STRENGTH := 0.55
+const SHAKE_MAX_PX := 9.0
+var _shake_px := 0.0
+var _shake_started_msec := 0
+var _shake_duration_msec := 1
+var _shake_base := Vector2.ZERO
+var _shake_applied := false
+# 不需要在离开战斗时注销：BattleScreen._exit_tree 不往上调父类，写了也不会执行；
+# 而战斗场景释放后这个 Callable 自动失效（is_valid() 为 false），VFXManager 会退回原路。
+var _shake_sink_registered := false
+
 func _update_vfx_camera_shake() -> void:
-	pass
+	if _arena == null or not is_instance_valid(_arena):
+		return
+	if not _shake_sink_registered:
+		_shake_sink_registered = true
+		VFXManager.set_battle_shake_sink(_screen_shake)
+	var elapsed := Time.get_ticks_msec() - _shake_started_msec
+	if _shake_px <= 0.0 or elapsed >= _shake_duration_msec:
+		if _shake_applied:
+			_arena.position = _shake_base
+			_shake_applied = false
+		_shake_px = 0.0
+		return
+	if not _shake_applied:
+		_shake_base = _arena.position
+		_shake_applied = true
+	var left := 1.0 - float(elapsed) / float(_shake_duration_msec)
+	var amplitude := _shake_px * left * left
+	var t := float(elapsed) * 0.001
+	_arena.position = _shake_base + Vector2(sin(t * 47.0), sin(t * 59.0 + 1.3)) * amplitude
 
 func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 	# 建模也会主动刷新表现；只暂停回放不足以挡住首帧技能和技能音效。
@@ -1774,6 +1809,7 @@ func cue_play_basic_attack(source_uid: String, target_uid: String, ranged: bool)
 		_play_boss_procedural("mirror_slash", attack.get("world_cast", Vector3.ZERO),
 			target.get("world_foot", Vector3.ZERO), _boss_target_context(target))
 		return true
+	_last_basic_attacker[target_uid] = {"uid": source_uid, "msec": Time.get_ticks_msec()}
 	var race := _visual_race_from_unit_id(unit_id)
 	if str(source.get("race", "")) == _CRIMSON_CATALOG.RACE:
 		race = _CRIMSON_CATALOG.RACE
@@ -1877,7 +1913,36 @@ func cue_spawn_hit_number(target_uid: String, amount: int, kind: String, crit: b
 	if target.is_empty():
 		return false
 	_spawn_hit_number(target.get("head_pos", Vector2.ZERO), amount, kind, crit, is_skill, race)
+	_play_hit_reaction(target_uid, kind, amount, crit, is_skill)
 	return true
+
+
+# 10.21：受击反馈（闪白 / 后仰压扁 / 局部顿帧 / 技能屏震），和伤害数字同一拍。
+# 普攻的攻击者从 cue_play_basic_attack 记下的「最近一次谁打了它」取，用来定后仰方向和
+# 暴击时让攻击者一起顿帧；技能取不到攻击者就按向后仰。
+const HIT_ATTACKER_MEMORY_MSEC := 1500
+const SKILL_HIT_SHAKE_STRENGTH := 4.5
+const SKILL_HIT_SHAKE_SEC := 0.16
+var _last_basic_attacker: Dictionary = {}   # target_uid -> {"uid": source_uid, "msec": int}
+
+func _play_hit_reaction(target_uid: String, kind: String, amount: int, crit: bool, is_skill: bool) -> void:
+	if kind != "dmg" or amount <= 0:
+		return
+	var victim = _battle_3d_models.get(target_uid)
+	if not (victim is Node3D) or not is_instance_valid(victim):
+		return
+	var attacker: Node3D = null
+	var memory: Dictionary = _last_basic_attacker.get(target_uid, {})
+	if not is_skill and Time.get_ticks_msec() - int(memory.get("msec", -100000)) <= HIT_ATTACKER_MEMORY_MSEC:
+		var found = _battle_3d_models.get(str(memory.get("uid", "")))
+		if found is Node3D and is_instance_valid(found):
+			attacker = found
+	var tier := "skill" if is_skill else ("crit" if crit else "basic")
+	_HIT_FEEDBACK.play(victim, attacker, tier, PresentationSettings.flash_allowed(), PresentationSettings.hit_stop_allowed())
+	# 普攻 / 暴击的屏震由 impact 那一拍的 cue_play_impact_feedback 负责（暴击只乘系数），
+	# 这里只给技能命中补一下：skill_shake 事件只有少数技能会发。
+	if is_skill:
+		_screen_shake(SKILL_HIT_SHAKE_STRENGTH, SKILL_HIT_SHAKE_SEC)
 
 
 # Death had no visual at all before D4: the renderer simply freed the model on the
@@ -2866,9 +2931,14 @@ func _spawn_hit_number(head_pos: Vector2, amount: int, kind: String, crit: bool,
 	tw.set_parallel(true)
 	tw.tween_property(lbl, "position", start + Vector2(0, -rise), dur).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tw.tween_property(lbl, "modulate:a", 0.0, dur * 0.55).set_delay(dur * 0.45)
+	# 10.21 数字弹出：暴击 / 技能「先大后落」—— 从 1.7 倍砸回原大，比从小长大更像一记重击；
+	# 普攻原来完全不动，现在给一个很轻的弹出（仍是最安静的一层）。
 	if pop:
-		lbl.scale = Vector2(0.55, 0.55)
-		tw.tween_property(lbl, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		lbl.scale = Vector2(1.7, 1.7) if crit else Vector2(1.35, 1.35)
+		tw.tween_property(lbl, "scale", Vector2.ONE, 0.16).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	elif kind == "dmg":
+		lbl.scale = Vector2(0.8, 0.8)
+		tw.tween_property(lbl, "scale", Vector2.ONE, 0.10).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.set_parallel(false)
 	tw.tween_callback(lbl.hide)
 
@@ -2883,7 +2953,18 @@ func _hitstop(duration: float) -> void:
 	VFXManager.play_hitstop(duration)
 
 func _screen_shake(strength: float, duration: float) -> void:
-	VFXManager.play_screen_shake(strength, duration)
+	var px := minf(strength * SHAKE_PX_PER_STRENGTH * PresentationSettings.screen_shake_scale(), SHAKE_MAX_PX)
+	if px <= 0.0:
+		return
+	# 正在震时新来一下：取「剩余幅度」和新幅度的较大者重新起跳，不叠加成更大的震。
+	var elapsed := Time.get_ticks_msec() - _shake_started_msec
+	var left := clampf(1.0 - float(elapsed) / float(maxi(1, _shake_duration_msec)), 0.0, 1.0)
+	var remaining := _shake_px * left * left
+	if px < remaining:
+		return
+	_shake_px = px
+	_shake_started_msec = Time.get_ticks_msec()
+	_shake_duration_msec = maxi(1, int(round(duration * 1000.0)))
 
 func _unit_node_for_id(id: String) -> Node:
 	if _unit_nodes.has(id):

@@ -54,8 +54,8 @@ static func state_for(seed: Variant, slot: int, round_n: int) -> Dictionary:
 	var live: Dictionary = NetworkService.team_bot_states.get(slot, {})
 	if int(live.get("round", -1)) == round_n and str(live.get("seed", "")) == str(seed):
 		return view(live)
-	var key := "%s/%d/%d/%s" % [str(seed), slot, round_n,
-		"tutorial" if GameState.tutorial_mode else "normal"]
+	var key := "%s/%d/%d/%s/%d" % [str(seed), slot, round_n,
+		"tutorial" if GameState.tutorial_mode else "normal", GameState.FINAL_ROUND]
 	if _cache.has(key):
 		return _cache[key]
 	if _cache.size() >= CACHE_LIMIT:
@@ -161,6 +161,7 @@ static func _simulate(seed: Variant, slot: int, round_n: int) -> Dictionary:
 	var races := _races(units)
 	var bot := {
 		"gold": GameState.START_GOLD,
+		"final_round": GameState.FINAL_ROUND,
 		"roster": [],            # [{id, star, def, cost_basis}]
 		"treasures": [],
 		"stones": CarrotRules.empty_stones(),
@@ -384,7 +385,7 @@ static func _roll_shop_into(bot: Dictionary, shop: Dictionary, units: Array, rou
 		rng: RandomNumberGenerator, bump: bool = true) -> void:
 	if bump:
 		shop["refresh_uses"] = int(shop.get("refresh_uses", 0)) + 1
-	var offers := _roll_shop(units, round_index, rng)
+	var offers := _roll_shop(units, round_index, rng, int(bot.get("final_round", 21)))
 	shop["offers"] = offers
 	var sold: Array = []
 	sold.resize(offers.size())
@@ -397,10 +398,11 @@ static func _roll_shop_into(bot: Dictionary, shop: Dictionary, units: Array, rou
 	bot["shop"] = shop
 
 
-static func _roll_shop(units: Array, round_index: int, rng: RandomNumberGenerator) -> Array:
+static func _roll_shop(units: Array, round_index: int, rng: RandomNumberGenerator,
+		final_round: int = 21) -> Array:
 	var out: Array = []
 	for _i in SHOP_SLOTS:
-		out.append(ShopRoll.pick_offer(units, round_index, rng.randf(), rng.randf()))
+		out.append(ShopRoll.pick_offer(units, round_index, rng.randf(), rng.randf(), final_round))
 	return out
 
 

@@ -575,7 +575,7 @@ static func _dummy_total_gold(round_n: int) -> int:
 
 static func _dummy_tier_for_round(round_n: int, rng: RandomNumberGenerator) -> int:
 	# 客户端、服务端和假想敌共用同一条档位曲线。
-	return ShopRoll.tier_for_roll(round_n, rng.randf())
+	return ShopRoll.tier_for_roll(round_n, rng.randf(), GameState.FINAL_ROUND)
 
 
 static func _dummy_star_buckets(copy_count: int) -> Dictionary:

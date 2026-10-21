@@ -277,11 +277,26 @@ func play_hitstop(duration: float) -> void:
 func is_hitstop_active() -> bool:
 	return Time.get_ticks_msec() < _hitstop_until_msec
 
+# 10.21：战斗画面没有 Camera2D（3D 子视口叠 2D 战场图），下面那套 Camera2D 抖动在战斗里
+# 一直是空转。战斗场景打开时把自己的屏震登记成接收方，Boss 技能、结算等直接调
+# VFXManager.play_screen_shake 的地方就自动改走战斗屏震；离开战斗时注销。
+var _battle_shake_sink := Callable()
+
+func set_battle_shake_sink(sink: Callable) -> void:
+	_battle_shake_sink = sink
+
+func clear_battle_shake_sink(sink: Callable) -> void:
+	if _battle_shake_sink == sink:
+		_battle_shake_sink = Callable()
+
 func play_screen_shake(strength: float, duration: float) -> void:
 	# 低画质档只降幅度不清零；玩家关掉时 scale 为 0，直接不排这次震动。
 	var scaled := strength * PresentationSettings.screen_shake_scale()
 	if scaled <= 0.0:
 		return
+	# 战斗接收方自己按 PresentationSettings 缩放，这里传原始强度，免得缩两次。
+	if _battle_shake_sink.is_valid():
+		_battle_shake_sink.call(strength, duration)
 	_shake_strength = maxf(_shake_strength, scaled)
 	_shake_until_msec = maxi(_shake_until_msec, Time.get_ticks_msec() + int(round(duration * 1000.0)))
 

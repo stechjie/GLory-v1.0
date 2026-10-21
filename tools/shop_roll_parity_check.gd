@@ -13,7 +13,8 @@ extends Node
 # （`_shadow_audit_economy`），刷新价两边一分不差，**结构上抓不到内容差异**。
 #
 # 两类断言：
-#   1. 硬断言（零抽样风险）：10 回合以前**绝不允许**出现三档单位
+#   1. 硬断言（零抽样风险）：普通赛程 10 回合以前**绝不允许**出现三档单位；
+#      13 回合赛程第 5 回合以前不出三档，第 6 回合开始出三档
 #   2. 分布断言：采样 8000 次，各档占比须落在曲线 ±5 个百分点内
 # 均匀随机在第 1 回合会给出 ~19% 的三档，第 1 类断言当场就红。
 #
@@ -23,6 +24,7 @@ extends Node
 const CheckHarness := preload("res://tools/CheckHarness.gd")
 const ShopRoll := preload("res://scripts/economy/ShopRoll.gd")
 const RacePick := preload("res://scripts/units/RacePick.gd")
+const BotPlayer := preload("res://scripts/economy/BotPlayer.gd")
 
 const CHECK_NAME := "shop_roll_parity"
 const SAMPLES := 8000
@@ -40,6 +42,8 @@ func _ready() -> void:
 	_case_server_no_tier3_before_round10()
 	_case_server_distribution()
 	_case_client_matches_curve()
+	_case_seedling_curve()
+	_case_bot_matches_seedling_curve()
 	_case_pick_offer_respects_tier()
 	_case_server_wiring_passes_round()
 	_case_next_prep_uses_upcoming_round()
@@ -81,13 +85,77 @@ func _case_curve_boundaries() -> void:
 			"回合 %d、roll %.3f 应出 tier%d，实际 tier%d" % [r, roll, want, got])
 
 
-func _server_tier_histogram(round_index: int, count: int) -> Dictionary:
+func _case_seedling_curve() -> void:
+	# 13 回合赛程从第 6 回合开始三阶 15%；21 回合赛程仍到第 10 回合。
+	for probe in [
+		[5, 0.999, 13, 2], [6, 0.249, 13, 1], [6, 0.25, 13, 2],
+		[6, 0.849, 13, 2], [6, 0.85, 13, 3], [9, 0.999, 13, 3],
+		[6, 0.999, 21, 2], [9, 0.999, 21, 2], [10, 0.85, 21, 3],
+	]:
+		var got := ShopRoll.tier_for_roll(int(probe[0]), float(probe[1]), int(probe[2]))
+		_h.expect(got == int(probe[3]), "seedling_tier_boundary_wrong",
+			"%d 回合赛程第 %d 回合、roll %.3f 应出 tier%d，实际 tier%d" % [
+				int(probe[2]), int(probe[0]), float(probe[1]), int(probe[3]), got])
+	for r in [5, 6, 9, 13]:
+		var hist := _server_tier_histogram(r, SAMPLES, 13)
+		var total := int(hist.get("_total", 0))
+		if not _h.expect(total >= SAMPLES, "seedling_server_sample_short",
+				"13 回合赛程第 %d 回合只采到 %d 个样本" % [r, total]):
+			continue
+		var want := {1: 0.50, 2: 0.50, 3: 0.0} if r == 5 else {1: 0.25, 2: 0.60, 3: 0.15}
+		for tier in [1, 2, 3]:
+			var share := float(int(hist.get(tier, 0))) / float(total)
+			_h.expect(absf(share - float(want[tier])) <= TOLERANCE, "seedling_server_share_off",
+				"13 回合赛程第 %d 回合 tier%d 占比 %.1f%%，期望 %.0f%%" % [
+					r, tier, share * 100.0, float(want[tier]) * 100.0])
+	var saved_round := GameState.round_index
+	var saved_final := GameState.FINAL_ROUND
+	GameState.FINAL_ROUND = 13
+	if _h.expect(_prep != null, "seedling_scene_load_failed", "PrepScreen.tscn 无法加载"):
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 1306
+		for r in [5, 6, 9]:
+			GameState.round_index = r
+			var tier3 := 0
+			for _i in SAMPLES:
+				if int(_prep.call("_roll_shop_tier", rng)) == 3:
+					tier3 += 1
+			var want := 0.0 if r == 5 else 0.15
+			_h.expect(absf(float(tier3) / float(SAMPLES) - want) <= TOLERANCE,
+				"seedling_client_share_off",
+				"13 回合赛程第 %d 回合客户端三阶占比 %.1f%%，期望 %.0f%%" % [
+					r, float(tier3) / float(SAMPLES) * 100.0, want * 100.0])
+	GameState.round_index = saved_round
+	GameState.FINAL_ROUND = saved_final
+
+
+func _case_bot_matches_seedling_curve() -> void:
+	var units: Array = DataRegistry.get_table("race_units").get("units", [])
+	if not _h.expect(not units.is_empty(), "seedling_bot_units_empty", "Bot 商店单位池为空"):
+		return
+	for probe in [[5, 13, 0.0], [6, 13, 0.15], [6, 21, 0.0]]:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 130600 + int(probe[0]) + int(probe[1])
+		var tier3 := 0
+		var total := 0
+		for _i in 1000:
+			for offer in BotPlayer._roll_shop(units, int(probe[0]), rng, int(probe[1])):
+				total += 1
+				if int((offer as Dictionary).get("tier", 1)) == 3:
+					tier3 += 1
+		var share := float(tier3) / float(total)
+		_h.expect(absf(share - float(probe[2])) <= TOLERANCE, "seedling_bot_share_off",
+			"%d 回合赛程第 %d 回合 Bot 三阶占比 %.1f%%，期望 %.0f%%" % [
+				int(probe[1]), int(probe[0]), share * 100.0, float(probe[2]) * 100.0])
+
+
+func _server_tier_histogram(round_index: int, count: int, final_round: int = 21) -> Dictionary:
 	var hist := {1: 0, 2: 0, 3: 0}
 	var drawn := 0
 	while drawn < count:
 		# 默认四族 = 今天的全表，曲线断言不受出战种族影响（出战种族本身见 race_pick_check）。
 		var batch: Array = NetworkService._server_roll_shop_offers(
-			GameState.SHOP_UNIT_SLOTS, round_index, RacePick.default_races())
+			GameState.SHOP_UNIT_SLOTS, round_index, RacePick.default_races(), final_round)
 		if batch.is_empty():
 			break
 		for entry in batch:
@@ -98,7 +166,7 @@ func _server_tier_histogram(round_index: int, count: int) -> Dictionary:
 	return hist
 
 
-# 硬断言：10 回合以前一个三档单位都不该出现。
+# 硬断言：普通 21 回合赛程在第 10 回合以前一个三档单位都不该出现。
 # 这条不依赖统计容差 —— 均匀随机会立刻违反它。
 func _case_server_no_tier3_before_round10() -> void:
 	for r in [1, 4, 5, 9]:
@@ -202,10 +270,12 @@ func _case_server_wiring_passes_round() -> void:
 	ServerFlags._values = {"economy_ledger_enabled": true}
 	ServerFlags._loaded = true
 
-	for probe in [[1, false], [21, true]]:
+	for probe in [[1, false, "normal"], [6, false, "normal"],
+			[5, false, "seedling"], [6, true, "seedling"], [21, true, "normal"]]:
 		var round_index := int(probe[0])
 		var want_tier3 := bool(probe[1])
 		var room: Dictionary = ns._new_room()
+		room.ruleset = str(probe[2])
 		room.state = ns.ROOM_PREP
 		room.slot_states = ["player", "empty", "empty", "empty", "empty", "empty"]
 		room.round_index = round_index
@@ -248,7 +318,7 @@ func _case_server_wiring_passes_round() -> void:
 
 # _room_begin_next_prep() 摇的是**下一轮**的商店，而它在 round_index 自增之前。
 # 用自增前的旧值会让整条曲线慢一轮 —— 这条断言把那个 off-by-one 钉住。
-# 取 round_index=9：自增后是 10，正好跨过「开始出三档」那道坎。
+# 普通赛程 9→10、13 回合赛程 5→6，都跨过「开始出三档」那道坎。
 func _case_next_prep_uses_upcoming_round() -> void:
 	var ns := NetworkService
 	var saved_values: Dictionary = ServerFlags._values.duplicate(true)
@@ -256,28 +326,32 @@ func _case_next_prep_uses_upcoming_round() -> void:
 	ServerFlags._values = {"economy_ledger_enabled": true}
 	ServerFlags._loaded = true
 
-	var tier3 := 0
-	var total := 0
-	for _i in 200:
-		var room: Dictionary = ns._new_room()
-		room.state = ns.ROOM_RESULT
-		room.slot_states = ["player", "empty", "empty", "empty", "empty", "empty"]
-		room.round_index = 9
-		ns._room_prep(room, 0)
-		ns._room_begin_next_prep(room)
-		if int(room.get("round_index", 0)) != 10:
-			_h.fail("next_prep_did_not_advance",
-				"_room_begin_next_prep 后 round_index=%d，期望 10" % int(room.get("round_index", 0)))
-			break
-		for entry in ((ns._room_prep(room, 0).get("shop", {}) as Dictionary).get("offers", []) as Array):
-			total += 1
-			if int((entry as Dictionary).get("tier", 1)) == 3:
-				tier3 += 1
-	if _h.expect(total > 0, "next_prep_no_samples", "新回合一个商品都没摇出来"):
-		# 第 10 回合期望约 15% 三档；用旧值(9)则恒为 0。
-		_h.expect(tier3 > 0, "next_prep_round_off_by_one",
-			"从第 9 轮进入第 10 轮，%d 个商品里一个三档都没有 —— " % total +
-			"摇商店用的多半还是自增前的旧回合号，整条曲线慢一轮")
+	for probe in [[9, 10, "normal"], [5, 6, "seedling"]]:
+		var from_round := int(probe[0])
+		var to_round := int(probe[1])
+		var tier3 := 0
+		var total := 0
+		for _i in 200:
+			var room: Dictionary = ns._new_room()
+			room.ruleset = str(probe[2])
+			room.state = ns.ROOM_RESULT
+			room.slot_states = ["player", "empty", "empty", "empty", "empty", "empty"]
+			room.round_index = from_round
+			ns._room_prep(room, 0)
+			ns._room_begin_next_prep(room)
+			if int(room.get("round_index", 0)) != to_round:
+				_h.fail("next_prep_did_not_advance",
+					"_room_begin_next_prep 后 round_index=%d，期望 %d" % [
+						int(room.get("round_index", 0)), to_round])
+				break
+			for entry in ((ns._room_prep(room, 0).get("shop", {}) as Dictionary).get("offers", []) as Array):
+				total += 1
+				if int((entry as Dictionary).get("tier", 1)) == 3:
+					tier3 += 1
+		if _h.expect(total > 0, "next_prep_no_samples", "新回合一个商品都没摇出来"):
+			_h.expect(tier3 > 0, "next_prep_round_off_by_one",
+				"从第 %d 轮进入第 %d 轮，%d 个商品里一个三档都没有" % [
+					from_round, to_round, total])
 
 	ServerFlags._values = saved_values
 	ServerFlags._loaded = saved_loaded

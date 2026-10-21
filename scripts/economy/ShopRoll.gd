@@ -8,7 +8,8 @@ extends RefCounted
 #
 #   回合      客户端 tier1/2/3        服务端（均匀，按 8/18/6 的表分布）
 #   1–4       80% / 20% /  0%         25% / 56% / 19%
-#   5–9       50% / 50% /  0%         25% / 56% / 19%
+#   5         50% / 50% /  0%         25% / 56% / 19%
+#   6–9       21 回合模式 50% / 50% / 0%；13 回合模式 25% / 60% / 15%
 #   10–14     25% / 60% / 15%         25% / 56% / 19%
 #   15+       15% / 60% / 25%         25% / 56% / 19%
 #
@@ -29,14 +30,15 @@ extends RefCounted
 
 # 档位阈值。读法：roll 落在哪个累积区间就出哪一档。
 # 改这张表 = 改整个游戏的成长节奏，改之前先想清楚。
-static func tier_for_roll(round_index: int, roll: float) -> int:
+static func tier_for_roll(round_index: int, roll: float, final_round: int = 21) -> int:
 	if round_index >= 15:
 		if roll < 0.15:
 			return 1
 		if roll < 0.75:
 			return 2
 		return 3
-	if round_index >= 10:
+	# 13 回合赛程在第 6 回合开始使用原本第 10 回合的三阶档位。
+	if round_index >= 10 or (final_round == 13 and round_index >= 6):
 		if roll < 0.25:
 			return 1
 		if roll < 0.85:
@@ -51,10 +53,11 @@ static func tier_for_roll(round_index: int, roll: float) -> int:
 #   tier_roll  决定档位
 #   pick_roll  决定该档里选哪个单位
 # 该档没有任何单位时退回全表（与原客户端行为一致），否则会摇出空位。
-static func pick_offer(units: Array, round_index: int, tier_roll: float, pick_roll: float) -> Dictionary:
+static func pick_offer(units: Array, round_index: int, tier_roll: float, pick_roll: float,
+		final_round: int = 21) -> Dictionary:
 	if units.is_empty():
 		return {}
-	var tier := tier_for_roll(round_index, tier_roll)
+	var tier := tier_for_roll(round_index, tier_roll, final_round)
 	var pool: Array = []
 	for u in units:
 		if int((u as Dictionary).get("tier", 1)) == tier:
