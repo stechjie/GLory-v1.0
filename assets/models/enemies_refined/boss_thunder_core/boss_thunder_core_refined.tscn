@@ -1,0 +1,5 @@
+[gd_scene load_steps=3 format=3]
+[ext_resource type="PackedScene" path="res://assets/models/bosses/boss_thunder_core_animated/boss_thunder_core_animated.tscn" id="1"]
+[ext_resource type="Script" path="res://assets/models/enemies_refined/boss_thunder_core/Refined.gd" id="2"]
+[node name="ThunderCoreRefined" instance=ExtResource("1")]
+script=ExtResource("2")

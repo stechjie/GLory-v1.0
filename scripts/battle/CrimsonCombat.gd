@@ -119,6 +119,9 @@ static func passive_attack(attacker: Dictionary, target: Dictionary, state: Dict
 					_heal_unit(ally, maxi(1, int(round(float(ally.get("max_hp", 1)) * float(d.get("heal_pct", 0.05))))))
 			if applied:
 				resonance(attacker, state)
+				# 10.21 审查批次：战鼓使四星技能音。走 sfx_proc（不出特效，层数由头顶徽章表达）。
+				# 该技能每次普攻都触发，节流表单独配 2.6s 当鼓点，见 THROTTLE_MSEC_BY_CUE。
+				_emit_sfx_proc(state, "team_random_stack", attacker, attacker)
 	return 0
 
 

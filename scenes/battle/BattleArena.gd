@@ -244,7 +244,11 @@ func _build() -> void:
 
 	if GameState.team_mode:
 		var team_hp_lbl := Label.new()
-		team_hp_lbl.text = tr("battle_team_hp") % [GameState.team_hp, GameState.START_FORMATION_HP]
+		# 10.19 教程反馈第 2 条：教学的法阵是 10 点（TUTORIAL_HP），这里原来写死
+		# START_FORMATION_HP(50)，战斗 HUD 会显示「10/50」—— 扣 1 点看起来就像归零。
+		var team_hp_max := TutorialMode.TUTORIAL_HP if GameState.tutorial_mode \
+			else GameState.START_FORMATION_HP
+		team_hp_lbl.text = tr("battle_team_hp") % [GameState.team_hp, team_hp_max]
 		team_hp_lbl.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
 		team_hp_lbl.offset_left = -150
 		team_hp_lbl.offset_right = 150
@@ -895,7 +899,15 @@ func _crystal_hp_ratio(losing_team: int, result: Dictionary = {}) -> float:
 			# 没盖伤害戳时退回"赢家存活数"，跟 stamp_team_round_damages 的 PvP 口径一致。
 			var winner_alive_key := "player_alive" if bool(result.get("player_wins", false)) else "enemy_alive"
 			hp -= float(result.get(winner_alive_key, 1))
-	return clampf(hp / maxf(1.0, float(GameState.START_FORMATION_HP)), 0.0, 1.0)
+		if GameState.tutorial_mode and GameState.round_index < TutorialMode.SCRIPT_FINAL_ROUND:
+			# 教学第 6/11 回合法阵不能扣完（after_battle 落账时也保底留 1），
+			# 演出这里跟落账口径一致，否则水晶先归零、HUD 又变回 1/10。
+			hp = maxf(1.0, hp)
+	# 10.19 教程反馈第 2 条：教学血量是 10，不是 50 —— 分母用错会把「扣 1 点」
+	# 演成「直接归零」（截图里「团队法阵 HP 10/50」就是这条）。
+	var max_hp := float(TutorialMode.TUTORIAL_HP) if GameState.tutorial_mode \
+		else float(GameState.START_FORMATION_HP)
+	return clampf(hp / maxf(1.0, max_hp), 0.0, 1.0)
 
 func _apply_battle_crystal_toon(root: Node3D, is_red: bool, ratio: float) -> void:
 	var shade_color := Color(0.24, 0.012, 0.028) if is_red else Color(0.012, 0.10, 0.31)

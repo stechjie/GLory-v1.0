@@ -227,7 +227,22 @@ func _pending_intro_cue() -> String:
 	return ""
 
 
+# 战斗 BGM 的基础电平（线性）。0.5 ≈ −6 dB。
+#
+# 10-21 用户实测「战斗时 BGM 太响，完全盖住普攻音」。实测差距：
+# 总线只有 Master + SFX 且都是 0 dB，BGM 落 Master 为 1.0 线性；普攻音
+# cue 配平 −3~−7 dB 再叠归属 −2~−6 dB ⇒ 比 BGM 低 7~9 dB（振幅 2~3 倍）。
+# 压到 0.5 后差距缩到 1~3 dB 量级，配合 cue 的 +2 dB 就是能听清的程度。
+#
+# ⚠️ 这个数**只在对局里生效**（`_start_battle_music` 设、`_stop_battle_music` 还原）。
+#    用户觉得还吵就调小（0.4 = −8 dB），觉得 BGM 没了存在感就回到 0.6（−4.4 dB）。
+const BATTLE_BGM_LINEAR := 0.5
+
+
 func _start_battle_music() -> void:
+	# ⚠️ 电平要在**所有早退之前**设：boss 回合 / pvp 开场字幕都会先 return，
+	# 而那些情况下 BGM 是稍后才起的 —— 放在后面设会让开场那一段仍是满音量。
+	MusicService.set_base_linear(BATTLE_BGM_LINEAR)
 	# 自测及重连可能重复请求 BGM，开场字幕结束前一律不抢播。
 	if _pvp_intro_active:
 		return
@@ -254,6 +269,10 @@ func _start_battle_music() -> void:
 	MusicService.play(_battle_music_path())
 
 func _stop_battle_music() -> void:
+	# 10-21：退出战斗必须把 BGM 电平还原 —— 否则主菜单 / 备战 / 商城整片都变小声。
+	# 恢复点选在这里是因为它被 `BattleScreen._exit_tree()` 兜底调用，
+	# 任何退场路径（结算、返回、掉线、回放失败）都会经过。
+	MusicService.set_base_linear(1.0)
 	_battle_audio_generation += 1
 	_pvp_intro_active = false
 	_pvp_combat_waiting = false

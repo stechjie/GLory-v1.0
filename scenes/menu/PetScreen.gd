@@ -114,6 +114,36 @@ func tutorial_god_target() -> Control:
 		return null
 	return _race_cards["god"].get("panel") as Control
 
+
+# 10.19 教程反馈第 5 条：教学引导走到种族页时，「返回」是唯一该点的键。
+func tutorial_back_target() -> Control:
+	return _back_btn
+
+
+# 教学模式下锁掉本页除「返回」以外的所有按钮（10.19 教程反馈第 5 条）。
+#
+# 为什么只改 mouse_filter、不改 disabled：disabled 会把按钮画成灰底，
+# 玩家第一眼会以为页面坏了；IGNORE 只是不响应点击，外观保持原样。
+# 为什么必须递归：Godot 的 mouse_filter 不继承，卡片上的点击来自
+# logo(TextureButton) / 选择按钮(Button) 这些子节点，只锁父容器等于没锁。
+# ⚠ 只在教程里调用（Main._on_tutorial_races_opened），普通玩家进这一页不受影响。
+var _tutorial_input_locked := false
+
+
+func tutorial_lock_page_input(locked: bool) -> void:
+	_tutorial_input_locked = locked
+	_apply_tutorial_input_lock(self)
+
+
+func _apply_tutorial_input_lock(node: Node) -> void:
+	if not _tutorial_input_locked:
+		return
+	for child in node.get_children():
+		var btn := child as BaseButton
+		if btn != null and btn != _back_btn:
+			btn.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_apply_tutorial_input_lock(child)
+
 # --- 棋盘皮肤页 ---
 var _skin_box: VBoxContainer
 var _skin_cards: Dictionary = {}   # skin id -> {"panel", "name", "status", "button"}
@@ -481,6 +511,8 @@ func _refresh() -> void:
 	_refresh_pets()
 	_refresh_races()
 	_refresh_skins()
+	# 重建卡片会新建按钮：教学锁必须跟着重新套一遍（否则刷新一次就又点得动了）。
+	_apply_tutorial_input_lock(self)
 
 # 标题、页签、返回按钮、哪一页可见。
 func _refresh_chrome() -> void:

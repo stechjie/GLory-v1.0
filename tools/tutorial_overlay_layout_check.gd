@@ -155,6 +155,23 @@ func _check_resolution(entry: Dictionary) -> void:
 						str(blocked), str(TutorialMode._bubble.get_global_rect()),
 						str(_guide_rect())])
 
+		# --- 10.19 教程反馈第 1 条：「跳过教学」按钮必须保持可点 -----------------
+		# 现象：步骤 1/4/13/17/18/22 的教学文本框上沿压住左上角「跳过教学」按钮
+		#（提交截图 image1/image4）。生产侧修法 = 把按钮外扩 8px 加进气泡的
+		# keep_clear（TutorialMode.SKIP_BUBBLE_CLEAR_PAD），与其它禁区同一条通过线。
+		# 这条断言在修复前必红：去掉那个 append，气泡在左上角目标处就会压回去。
+		var skip_rect := Rect2()
+		if TutorialMode._skip_btn != null and is_instance_valid(TutorialMode._skip_btn):
+			skip_rect = TutorialMode._skip_btn.get_global_rect()
+		if skip_rect.size.x > 0.0 and skip_rect.size.y > 0.0:
+			var skip_hit := _overlap(TutorialMode._bubble.get_global_rect(), skip_rect) \
+				+ _overlap(_guide_rect(), skip_rect)
+			var skip_area := maxf(1.0, skip_rect.size.x * skip_rect.size.y)
+			_h.expect(skip_hit / skip_area <= 1.0 - MIN_TARGET_VISIBLE, "skip_button_occluded",
+				"%s：气泡或狗狗压住「跳过教学」按钮 %.1f%%（上限 %.0f%%）；按钮 %s，气泡 %s，狗狗 %s"
+					% [where, 100.0 * skip_hit / skip_area, 100.0 * (1.0 - MIN_TARGET_VISIBLE),
+						str(skip_rect), str(TutorialMode._bubble.get_global_rect()), str(_guide_rect())])
+
 	_h.expect(measured >= 6, "too_few_targets_measured",
 		"%s：只量到 %d 个可解析目标，这一档等于没验" % [label, measured])
 

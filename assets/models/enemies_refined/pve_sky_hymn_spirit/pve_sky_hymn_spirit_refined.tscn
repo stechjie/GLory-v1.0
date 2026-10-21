@@ -1,0 +1,5 @@
+[gd_scene load_steps=3 format=3]
+[ext_resource type="PackedScene" path="res://assets/models/monsters/sky/pve_sky_hymn_spirit_animated/pve_sky_hymn_spirit_animated.tscn" id="1"]
+[ext_resource type="Script" path="res://assets/models/enemies_refined/pve_sky_hymn_spirit/Refined.gd" id="2"]
+[node name="HymnSpiritRefined" instance=ExtResource("1")]
+script=ExtResource("2")

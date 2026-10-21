@@ -697,10 +697,13 @@ func _prepare_team_battle_package(request_id: String) -> bool:
 	_set_battle_stage("submit_roster", tr("battle_load_submit"), tr("battle_load_submit_detail"), 0.08)
 	if not NetworkService.team_active:
 		_set_battle_stage("generate_replay", tr("battle_load_generate_replay"), "", -1.0)
-		var local_a: Dictionary = await BattleSim.compute_team_replay_async(0)
+		var local_a: Dictionary = await _prepare_tutorial_scripted_replay(request_id)
 		if not _battle_request_is_active(request_id):
+			TutorialMode.clear_ai_roster_plan()
 			return false
 		var local_b: Dictionary = await BattleSim.compute_team_replay_async(1)
+		# 阵容计划只服务这一场：两场都算完立刻清掉，别让下一次备战捡到旧计划。
+		TutorialMode.clear_ai_roster_plan()
 		if not _battle_request_is_active(request_id):
 			return false
 		BattleSim.stamp_team_round_damages(local_a, local_b)
@@ -737,6 +740,31 @@ func _prepare_team_battle_package(request_id: String) -> bool:
 		return _store_team_battle_package(replay_a if my_team == 0 else replay_b, request_id)
 	_set_battle_stage("receive_replay", tr("battle_load_receive_replay"), "", -1.0)
 	return await _wait_for_team_replay(request_id)
+
+# 10.19 教程反馈第 2 条：教学里的 PVP（第 6 / 11 / 13 回合）要按脚本出结果
+#（6 胜、11 败、13 胜），靠的是 TutorialMode 按玩家棋盘动态调整双方假想敌阵容。
+# 做法：调一档阵容 → 真推一场 → 比对真实 player_wins 与脚本；不符就再调一档（最多 4 档）。
+# 不靠改结果横幅兜底（用户 10-20 定）—— 棋盘不会空，玩家三星时由镜像对手 + 弱化队友平衡。
+func _prepare_tutorial_scripted_replay(request_id: String) -> Dictionary:
+	if not TutorialMode.scripted_pvp_round():
+		TutorialMode.clear_ai_roster_plan()
+		return await BattleSim.compute_team_replay_async(0)
+	var expect_win := TutorialMode.script_round_expects_win()
+	var last: Dictionary = {}
+	for notch in 4:
+		TutorialMode.set_ai_roster_plan(notch)
+		last = await BattleSim.compute_team_replay_async(0)
+		if not _battle_request_is_active(request_id):
+			return last
+		var result: Dictionary = last.get("result", {})
+		if bool(result.get("player_wins", false)) == expect_win:
+			print("[TUTORIAL] scripted PVP round %d notch %d -> %s" % [
+				GameState.round_index, notch, "win" if expect_win else "lose"])
+			return last
+	print("[TUTORIAL] scripted PVP round %d fell through all notches (expect %s)" % [
+		GameState.round_index, "win" if expect_win else "lose"])
+	return last
+
 
 func _wait_for_team_boards(request_id: String) -> bool:
 	var wait_elapsed := 0.0

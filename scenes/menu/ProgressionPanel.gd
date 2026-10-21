@@ -23,6 +23,19 @@ var _cards: Dictionary = {}
 var _rewards: Dictionary = {}
 var _current_level := 1
 var _selected_level := 2
+# 10.19 教程反馈第 4 条：教学引导要指向面板右上角的「返回」。
+var _close_btn: Button
+
+
+func tutorial_back_target() -> Control:
+	return _close_btn
+
+
+# 10.20 教程反馈第 4 条补：除了「返回」，「已获得的奖励」也要一起打亮。
+# 返回奖励栏（滚动容器）本身：1 级「人族全套棋子」、2 级「神侍」都在这一排里，
+# 已获得的卡带金框和「已获得」字样，比单独点某一级更完整。
+func tutorial_reward_target() -> Control:
+	return _track_scroll
 var _compact := false
 
 
@@ -68,6 +81,7 @@ func _build() -> void:
 	close.custom_minimum_size = Vector2(150, 50 if _compact else 58)
 	close.pressed.connect(func() -> void: dismissed.emit())
 	header.add_child(close)
+	_close_btn = close
 	var hero := PanelContainer.new()
 	hero.custom_minimum_size.y = 145 if _compact else 175
 	hero.add_theme_stylebox_override("panel", _box(Color("162d32"), GOLD, 18, 2,

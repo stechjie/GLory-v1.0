@@ -1,5 +1,228 @@
 # Glory Beta 0.04
 
+## 2026-10-21：战场音效全量接入（29 条）—— 普攻从「完全无声」到全链路有声
+
+135 条逐条审查后落地。**改动 = 7 个源文件 + 29 个音频素材 + 2 个新门禁**，
+`assets/audio/sfx/battle/` 从 37 个 mp3 增至 66 个。
+未真机验证、未同步 `GLory-v1.0`、未暂存/提交/推送。
+
+★ **起点是个硬事实：接入前 `BattleVfx` 里 grep `SfxService.play` 只剩技能 / 人王 / Boss 三支，
+普攻完全无声。** 审查表里那 57 行「上一批」素材（15 条普攻音）文件在 QA 目录、
+从没进过 `assets/` —— 不是没做音效，是做好了没接进去。故本次实际落库 **29 条**：
+
+- 普攻飞行声 12 条 + 近战命中声 3 条（上一批生成，**首次落库**）+ 人王金色剑 /
+  法师属性弹 / 雷怒核心雷弹 3 条新增；
+- 四星技能音 9 条：赤律族 8 子（赤卫 / 赤舞者 / 战鼓使 / 血猎者 / 破甲者 / 霜印使 /
+  穿云弩手 / 赤灯使）+ 光之卫士 + 痛苦女王 —— **这批棋子此前一条四星技能音都没有**。
+  其中破甲者**复用**已存在的 `star4_spike_proc`，不新做；
+- 佣兵技能音 2 条：甲壳守卫 `shell_guard` / 炎阳王者 `king_aura`；
+- 法师 1~3★ 破例给技能音（本作唯一例外 —— 惯例是「普通技能音只给四星」，
+  而法师 `no_basic_attack=true`，1~3★ 原本连一声都没有）。
+
+**派发按技能类型分四条路，塞错表 = 永远不响**（表都在 `ui/services/SfxService.gd`）：
+
+| 类型 | 表 | 键 | 条目 |
+|---|---|---|---|
+| 施法型 | `STAR4_SKILL_CUES` / `MERC_SKILL_CUES` | unit_id | dancer / Icey / lattern / cancer_shell / leo_sun |
+| 普攻第 N 次 | `STAR4_ATTACK_SKILL_CUES` | unit_id | dark_queen（`attack_count % 2`） |
+| 普攻触发 / 真事件 | `STAR4_PROC_SKILL_CUES` | skill_id | block_guard / stacking_def_break / current_hp_strike / line_pierce / team_random_stack / guardian_shield_taunt |
+| 普攻音 | `BASIC_RANGED_CUES` / `BASIC_MELEE_CUES` | unit_id | 32 个远程 + 43 个近战 |
+
+后两类里**有两条没有现成事件**，本批在模拟器补了 `sfx_proc` 发射点：
+`CrimsonCombat.gd`（战鼓使，每次普攻触发）+ `BattleSimulator.gd`
+（光之卫士，开场授盾+嘲讽那一次）。用 `sfx_proc` 而不是 `unit_skill_proc`，
+是因为后者派发完音效还会顺带放程序化特效 —— 加音效不该顺手变成加演出。
+
+**四项用户拍板**：① 人王四星战斗技能音**不做**（删 `STAR4_SKILL_CUES["human_king"]`，
+并加 `STAR4_SILENT_UNITS` 让它返回空串，而不是退回默认合成音）② 法师 1~3★
+**一条通用**（不按 fire/ice/thunder/poison 拆 4 条）③ 光之卫士斩击特效**修**
+④ 战斗层并发上限 **6**（PvE 7）。
+
+**混音四层**，参数集中在 `THROTTLE_MSEC_BY_CUE` / `VOLUME_DB_BY_CUE` 两张表：
+
+- **节流**：P2 技能 200ms / P5 普通技能 300ms / P6 近战命中 340ms / P7 飞行 400ms，
+  **随层级降低单调变长**（越不重要的越容易被节流；反过来只会把高价值事件自己那一下也吃掉）。
+  战鼓使单配 2600ms 当鼓点 —— 它每次普攻都触发，按 200ms 走就是「每打一下都响一声技能音」。
+- **音色配平**：整体 −3 dB 起，再按「亮/尖」程度 ±（灯烬 −1 / 箭矢与冰棱 −5）。
+  ★ 10-21 二次：实测「战斗时 BGM 完全盖住普攻音」⇒ 17 条普攻音整体 **再 +2 dB**，
+  同时把战斗 BGM 压到 **0.5 线性（−6 dB）**（`BattleUI.BATTLE_BGM_LINEAR`，
+  进战斗设、`_stop_battle_music` 还原）。根因是总线只有 Master + SFX 且**都是 0 dB**，
+  BGM 落 Master 为满幅，普攻音净下来低 7~9 dB —— 必须两头一起动，只抬音效会让整体过载。
+  **11 条技能音刻意不入表**，统一走 P2 默认 —— 加进来反而会把技能音压到跟普攻一个量级。
+- **归属**：自身 0 / 交战敌方 −2 / 友军 −4 / 其他敌方 −6 dB，与上面的 mix_db **相加**生效。
+  「交战」用**目标归属**判（这一击打的是不是我方单位）—— 棋盘一屏全览，距离衰减不可用，
+  这是唯一可靠的「跟我有关」判据。远程飞行声在「其他敌方」下**直接不出声**；
+  近战命中声仍出，只压到 −6（近战是贴着我方在打，和隔着半张地图的飞矢不是一回事）。
+- **并发上限**：战斗层**独立计数器**，`VOICE_COUNT`(8) 一动没动 —— 那个 8 是全局共享池
+  且被 `audio_sfx_check` 钉死（数 root 下 `GlorySfxVoice*` 节点、要求正好 8 个）。
+  技能音（P2）**刻意不走**这道闸门：拿一次技能音换一次普攻音是错的优先级。
+
+**「技能音替代普攻音」的 11 个单位**（用户 135 条备注里 11 次确认的同一条规则）：
+那一击若会出技能音就不播普攻音，**不是叠加**。判据 `_skill_cue_replaces_basic_attack()`
+只覆盖**能预判**的（取模 / 查表）；概率型（民兵 `attack_interrupt` 是 `randf()`）在出手那帧
+判不出来 —— 那种偶尔叠一声，比「为了不叠而永远不响普攻音」可接受得多。
+
+**光之卫士特效修复**（本批唯一动既有逻辑的地方）：专属晶体圣刃的贴图与实现
+（`VFXRaceBasicAttack3D._spawn_guardian_crystal_slash/hit`）**早就写了**，
+`MELEE_KIND_BY_UNIT["god_guard"]` 也早就写了，但玩家棋子被 `is_player_chess(uid)`
+的 return 挡死 ⇒ 死代码。三处**必须一起改**：
+`OgaChessVFXCatalog` 加 `PLAYER_PAINTED_MELEE_UNITS` 白名单 →
+`UnitSkillVFXComposer3D._basic_attack` 放行 → `BattleRenderWarmup` 预热条件同步
+（**漏了第三处，首次出手会现场编译 shader、首帧卡一下**）。
+刻意**不**放开整个 `MELEE_KIND_BY_UNIT` —— 那会连带给 dark_imp / dark_fear /
+dark_suc / dark_dragon / dark_doom 五个单位冒出通用斩击，超出「修光之卫士」的范围。
+
+**判据与变异**
+
+- 新增 `_qa_1018/sfx_wiring_probe.tscn` **163 PASS / 0 FAIL**：29 条 cue 常量与路径对得上、
+  57 行普攻路由逐条对、派发表逐条对、混音参数逐条对、法师无普攻音、人王四星已删。
+- 新增 `_qa_1018/sfx_playback_probe.tscn` **36 PASS / 0 FAIL**：29 条**真的能播**
+  （播放计数器 +1，不是「看着接上了」）、空串安全、并发上限真的拦得住、
+  节流真的把同 cue 连打 3 次压成 1 次。
+- 复跑既有门禁全绿：`battle_render_warmup` 5 / `star_burst` 45 / `four_star_values` 799；
+  `--headless --editor --quit` 零 SCRIPT ERROR。
+- ★ 探针里两个**必须保留**的处理（这个仓的既有坑，不是本次引入）：
+  ① 多等两帧 —— `_ensure_voices()` 用 `add_child.call_deferred` 挂播放器，
+  同帧 `play()` 会静默失败；② 显式 `PlayerProfile.set_presentation_toggle("ui_sound", true)`
+  —— headless 空档案会读到 false，`play()` 在第一道门就被挡掉。
+
+**自查出并修掉的三个问题**
+
+1. `set_battle_voice_cap()` 第一版会清空记账 ⇒ 调一次 cap 就把已响的全部清零、闸门失效
+   （探针 SEG3 抓到 `live_count_should_be_2 got=0`）。现改为只按真实到期时间清理。
+2. `CrimsonCombat.passive_attack()` 的 `return 0` 只缩进 1 tab，是**既有的缩进悬崖** ——
+   在它上面插注释后 Godot 报 `Expected expression for match pattern`。已移出 match 块。
+3. 删 `STAR4_SKILL_CUES["human_king"]` 后，`.get(uid, CUE_STAR4_DEFAULT)` 会**退回通用合成音**，
+   比不删更糟 ⇒ 用 `STAR4_SILENT_UNITS` 显式返空串 + `play()` 空串早退（不刷 warning）。
+
+★ 完整交接文档（含逐条「单位 / 什么时候响 / 文件路径」清单、全部行号锚点）
+在 `其他/_qa_sfx_battle_audit/接入报告_详细交接版.md`；
+每处改动代码里都有 `10.21 审查批次` 注释，`grep -n "10.21" <file>` 可一把捞出。
+
+
+## 2026-10-20 怪物与 Boss 模型批量精修
+
+本轮覆盖全部 16 种怪物、9 种 Boss；双生守门人的地系、天空两种形态分别精修，共 26 套模型资源。正式入口位于 `assets/models/enemies_refined/<unit_id>/`，怪物与 Boss 数据表仅调整模型路径，以及双生守门人的 `model_by_element` 路由。
+
+- 保留原有种族配色、体型、武器、骨架、动作时序和正式挂点；逐个调整 UV 贴图清晰度、材质分区，并按角色增加贴合原模型的甲片、扣件、骨饰、叶枝或器具边框。地脉虫、狂战灾兽、血怒魔王及双生守门人两形态采用原轮廓上的贴图与材质精修。
+- 对已通过原贴图、UV 和实际姿态确认的局部缺色做定点修补；圣愈祭司的破损衣摆保留为裁切缺口，原有深色花纹与内层衣料保留。主色贴图使用 1024 分辨率及 mipmap，局部材质/裁切遮罩单独保存；追加部件合并蒙皮，单动作最多 2 个表面，本批单动作最高 7,535 顶点、3,802 三角形。
+- 已逐个保存优化前后视图、三种动作及极端姿态、骨架/绑定/动画契约检查、正式战斗模型路由和桌面 6/12 单位对照采样。整批另做正背面、轮廓、真实灰度与草绿/雪白背景辨识度复核。
+- 使用当前本地游戏代码重跑全部 25 个单位的优化前后回放对照，模型路径以外的战斗帧、事件与结果一致；Boss 正式画面补测包含镜像分身、双生守门人的两种形态及复活后模型。保留本地已有的玩法代码和数值更新。
+
+本轮验收范围为 Windows Godot 4.7.2 Compatibility 桌面环境（RTX 3080）。6/12 单位采样用于同条件资源对照，不能推导整场战斗或手机性能；未进行手机测试、联网对局验收或重新导出安装包。既有退出时 ObjectDB 等警告与原动作造型局限记录在外部证据中，没有以模型精修名义修改玩法代码。
+
+可编辑 Blender 源、可重跑脚本、逐单位记录、回退文件与截图/回放证据统一保存在 `E:\Users\WINDOWS\Desktop\其他\怪物Boss批量精修_20261015`，游戏目录只接入运行资源、数据表路由和本说明。原始模型资源仍保留。此次未同步、提交或推送 GitHub 仓库；请重新打开项目完成资源导入后进行游戏实测。
+
+
+## 2026-10-20 教程二次修正：AI 阵容不再「只剩一个」+ 成长之路奖励双高亮
+
+**文档来源**：用户 10-20 实机复测反馈（对 10-19 批次的两点修正）：
+
+> 1、第6、11、13回合的对战，不能为了达成条件，让AI的棋子变得只剩一个啊，还是要有几个棋子，不能让玩家感觉自己孤军奋战，以及敌人数目过少觉得很不智能，AI第6、11、13回合的棋子配置应该是恒定上升的，影响胜负你可以调整队友和对手的棋子，不一定是镜像的形式。比如第6回合，若是玩家棋子较弱，你就把对手棋子变弱一点，队友变强，再到第9回合，若是玩家较强，你就让队友提升变小，对手提升变大。
+>
+> 2、点击头像-等级奖励-成长之路页面，除了返回需要高亮提示，已获得的奖励（人族全棋子、神侍）也要高亮提示。
+
+### 1. AI 阵容：一兵不删，只调星级配比
+
+**上一版的问题**：为了把胜负掰到脚本方向，把对手削成三路各 1 个 1 星、队友压到 1 个，末档甚至直接清空对手 —— 玩家变成孤军奋战，对面也不像一支队伍。
+
+**现在怎么做**（`TutorialMode.ai_roster_plan` 重写）：
+
+| 维度 | 做法 |
+| --- | --- |
+| 阵容 | **一兵不删**。队友/对手都保留 `BotPlayer` 按回合推出来的整副阵容（实测第 6/11/13 回合都是 **7 人满编**，星级 2~4★、随回合自然变强） |
+| 强弱配比 | 按「玩家棋盘强度 / 该条 AI 基线强度」算比值：玩家弱 ⇒ 对手收着打（最多让 28%）、队友补强；玩家强 ⇒ 队友少补、对手按基线正常打 |
+| 第 11 回合（脚本败） | 对手加码、队友收着打；重推档位继续加对手、减队友 |
+| 重推档位 | 只调**星级比例**（升星从最便宜的棋子开始、降星从最贵的开始），不换人、不清场；星数顶满还不够才补编队人数（复制最便宜的非唯一棋子，只往空格放） |
+| 4 星保护 | 上限用 `ROSTER_MAX_STAR = 4`，**不能**用 `MAX_MERGE_STAR`(3) —— 第 13 回合的假想敌本来就有升级石做的 4★ |
+| 胜负兜底 | 仍是「调一档 → 真推一场 → 比对 `player_wins`」最多 4 档，但对手不再会被清空 |
+
+**实测阵容强度**（cost × 星²，每路 7 枚）：
+
+| 回合 | 对手三路 | 队友两路 | 脚本要求 |
+| --- | --- | --- | --- |
+| 6 | 590 / 590 / 450 | 900~1340（玩家弱时补强） | 玩家胜 |
+| 11 | 1260 / 1560 / 1410 起，玩家越强越是加码（最高 2.6× 基线，4★ 满编 + 补编队到 8~10 人/路） | 1470~1620，玩家越强收得越多（最低 0.4×） | 玩家败 |
+| 13 | 1410 / 1260 / 1260 | 2250~2670（AI 自然长到 4★） | 玩家胜 |
+
+**10-20 二修（第 11 回合「必须败」没兜住）**：用户实测「用人王四星战胜了对手」。旧系数按玩家强度每 +100% 只给对手 +6%，对 4★ 人王这种强棋盘远远不够。现在第 11 回合的对手强度改成 `1.10 + 0.55 × 比值`（上限 2.6×）、队友改成 `0.85 − 0.12 × 比值`（下限 0.4×），并按真实强棋盘补了门禁用例：4★ 人王 + 3★ 民兵/弓手/商人 + 2★ 其余 —— 四档阵容全部判负（我方存活 0，对面 16~20 枚），每路仍是 7 人起的满编队伍。「法阵至少留 1 点」的落账口径不变。
+
+### 2. 成长之路：返回 + 已获得奖励双高亮
+
+`tutorial_focus_mask.gdshader` 增加**第二个洞**（`hole2 / hole2_on`，硬边、与主洞互不影响，默认关闭）；`TutorialEntryGuide.set_second_focus()` 负责每帧重算它的位置（奖励栏会滚动）。成长之路的引导因此变成：主目标仍是右上「返回」键，第二个洞打亮**奖励栏**（1 级「人族全套棋子」、2 级「神侍」都在这一排，已获得的卡带金框与「已获得」）；提示词同步改成「这里是你已获得的奖励：人族全套棋子、神侍。看完点「返回」回大厅继续！」。
+
+**协议成本：零**。全是客户端本地推演与表现。
+
+**门禁**：
+
+| 门禁 | 结果 |
+| --- | --- |
+| `tutorial_pvp_script_check` | **PASS 45/0**（新增：三路每路 ≥2 枚、调整后棋子数不得少于 Bot 原始阵容、第 6/11/13 回合基线强度必须递增、**4★ 人王强棋盘在第 11 回合四档全负**；连跑 4 次稳定） |
+| `tutorial_guide_chain_check` | **PASS 38/0**（新增：奖励目标 / 第二个洞 / shader uniform 契约） |
+| `tutorial_focus_mask` | PASS 406/0（新增 hole2 后单洞行为不变） |
+| `tutorial_overlay_layout` / `seedling_3v3` / `battle_result` / `reward_ui` / `entry` / `overlay_no_input_block` / `prep_battle_loading` / `step15_flow` / `checkpoint` | 1002 / 68 / 29 / 12 / 15 / 190 / 137 / 256 / 294 全 0 失败 |
+
+编译零 error；`project.godot` sha 未变（`f5aa7a43…`）；门禁跑前备份、跑后还原了 `user://` 状态（本轮门禁把用户 01:24 真机测试的 round-13 存档轮换成了 `.bak`，已从 `.bak` 还原回主档）。
+
+
+## 2026-10-19 教程反馈：新手教学 5 项修复（AI 阵容按脚本 · 法阵点数同步 · 结算与引导链）
+
+**文档来源**：`E:\Users\WINDOWS\Desktop\10.19bug提交及修复.docx`（5 条反馈 + 18 张真机截图）。两条实现口径由用户 10-20 拍板：① 不做「结果横幅按脚本兜底」，靠动态调双方 AI 阵容让真实推演就落在脚本方向（棋盘不会空；玩家三星时削队友、镜像对手）；② 种族页只在**教学模式**下锁输入。
+
+### 1. 教学文本框被「跳过教学」按钮遮挡
+
+**现象**：步骤 1/4/13/17/18/22 的对话框上沿压住左上角「跳过教学」（截图 image1/image4）。
+**根因**：气泡选位的 `keep_clear` 只来自目标 provider，没有把跳过按钮算进去；狗狗那边本来就躲它，气泡漏了。
+**改法**：`TutorialMode._bubble_position()` 把跳过按钮外扩 8px 追加进避让区（`SKIP_BUBBLE_CLEAR_PAD`），气泡自动「往下/往旁边挪一些」；`tutorial_overlay_layout_check` 新增 `skip_button_occluded` 断言（气泡+狗狗盖住按钮 ≤10%）。
+
+### 2. 第 6/11/13 回合「战败却显示胜利」+ 法阵点数不动
+
+**现象**：我方战败仍显示胜利、不扣法阵；真实胜利时对方法阵演成归零、出来还是 10/10（截图 image7「团队法阵 HP 10/50」、image10 双 10/10）。
+**三个根因**：① 伤害其实早已由 `stamp_team_round_damages()` 盖进 replay result，但**教程分支从不应用**；② 战斗水晶与顶部标签的分母写死 `START_FORMATION_HP`(50)，教学是 10，扣 1 点就像归零；③ 假想敌由 `BotPlayer` 通用经济推演，胜负不可控，而 `coerce_victory()` 又把每场教学战斗一律改写成胜利。
+**改法**：
+
+| 位置 | 改动 |
+| --- | --- |
+| `TutorialMode.ai_roster_plan`（static） | 教程 PVP 的双方阵容计划：我方 AI 队友（座位 1/2）压到 1 个 1 星、升级档清空；6/13 回合对手三路各 1 个 1 星、末档空场；11 回合对手 = **玩家棋盘镜像星 +1**（封顶 3 星）。空计划 = 原样 |
+| `BattleSimShared._dummy_board_for_slot / _dummy_mercs_for_slot` | 教程模式下套用上述计划（默认不生效，普通对局与其它门禁不受影响） |
+| `PrepScreen._prepare_tutorial_scripted_replay()` | 调一档 → 真推一场 → 比对真实 `player_wins` 与脚本，不符再调一档（最多 4 档）；算完立即清计划 |
+| `TutorialMode.coerce_victory()` | 第 11 回合（`SCRIPTED_LOSS_ROUNDS`）直接返回，**不再改写成胜利**——脚本败要照实播 |
+| `TutorialMode._apply_scripted_team_damage()` | 把 `team_damage_self/rival` 落进 `team_hp / enemy_team_hp`：6/11 保底留 1 点、13 回合敌方清零；法阵回春同序；`player_formation_hp / enemy_formation_hp` 镜像同步（结算正文读它们） |
+| `BattleArena._crystal_hp_ratio / team_hp_lbl` | 教程分母改 `TUTORIAL_HP`(10)；6/11 演出同样保底 1 点，与落账口径一致 |
+
+### 3. 13 回合结算界面：查看详情挤占 + 文字被挡
+
+**现象**：最终胜利屏「查看详情」与「返回主菜单」同在，正文（最终胜利及下面）被按钮和 result_menu 引导气泡整段盖住（截图 image11）。
+**改法**：`GameOverScreen` 在 `tutorial_result` 时**不出查看详情**（保留返回主菜单），标题/正文区整体上移（heading 0.24–0.46、正文 0.47–0.61），actions 不动；非教学结算保持原版。
+
+### 4. 点头像看奖励直接跳到「点击备战」（缺了等级奖励流程）
+
+**现象**：13 回合后点头像，直接进入备战引导（截图 image13）。
+**根因**：流程代码其实存在，但判据对回归/重玩账号是死的——后端 `award_tutorial()` 对**已 Lv2 账号**提前 return、不产生 `level_up_events`，`unseen_levels.has(2)` 恒假；测试机账号正是 Lv2。
+**改法**：弃用 unseen 判据，走游戏现有真实 UI 链：头像 → 玩家主页（**「等级奖励」页签高亮**）→ 成长之路面板（**「返回」高亮**）→ 点返回回大厅落到「点击备战」引导。新接线：`ProfileScreen.tutorial_level_tab_target() / tutorial_progression_opened` 信号、`ProgressionPanel.tutorial_back_target()`、`TutorialEntryGuide` 新增 `reward_tab / progression_back` 两个阶段；从头像页直接返回也会推进到备战引导（不再循环弹回资料页）。
+
+### 5. 种族界面：教学模式下只留「返回」+ 返回即结束引导
+
+**改法**：`PetScreen.tutorial_lock_page_input(true)` 递归关掉除 `_back_btn` 外所有按钮的点击（只改 `mouse_filter`，不置灰；**仅教程调用**），并随 `_refresh()` 重新套用；引导目标从神族卡改成**返回键**（神族卡 `set_extra_focus` 一起露出）；`Main._on_pet_back()` 在 `followup_step=="casual"` 时清空引导进度，回大厅不再弹「点休闲」提示与休闲按钮高亮。
+
+**协议成本：零**。全部是客户端表现 / 本地推演 / 引导接线，无 RPC 签名与配置变动。
+
+**门禁**：
+
+| 门禁 | 结果 |
+| --- | --- |
+| `tutorial_pvp_script_check`（**新增**） | **PASS 29/0** —— 计划默认原样、6/13 胜与 11 败在 4 档内必达、11 回合不被改写成胜、6/11 法阵保底 1 点、13 回合清零、PVE 不玩法阵、计划可清空 |
+| `tutorial_guide_chain_check`（**新增**） | **PASS 31/0** —— 引导链接线（等级奖励页签 / 成长之路返回 / 种族页锁输入 / 结算隐藏详情 / 水晶分母 / 第 11 回合跳过强制胜 / 跳过按钮进避让区） |
+| `tutorial_overlay_layout_check` | PASS 1002/0（含新增跳过按钮断言） |
+| `tutorial_seedling_3v3_check` | PASS 68/0 |
+| `tutorial_battle_result_check` | PASS 29/0 |
+| `tutorial_reward_ui_check` | PASS 12/0 |
+| `tutorial_entry_check` | PASS 15/0 |
+| `tutorial_overlay_no_input_block` | PASS 190/0 |
+| `prep_battle_loading_check` | PASS 137/0 |
+
+编译 `--headless --editor --quit` 零 error；`project.godot` sha 未变（`f5aa7a43…`）；跑门禁前备份、跑后还原了 `user://` 对局存档（门禁会真写 `glory_beta_004.save`）。
+
 
 ## 2026-10-18 晚二：备战不再弹战斗准备窗口（提交后直接进读条）
 

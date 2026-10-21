@@ -1296,9 +1296,10 @@ func _show_menu() -> void:
 				_menu.call("tutorial_prep_target"), "reward_prep")
 			return
 		"casual":
-			_attach_tutorial_followup_guide(_menu,
-				_menu.call("tutorial_casual_target"), "followup_casual")
-			return
+			# 10.19 教程反馈第 5 条：种族页看完点返回就结束教学引导。
+			# 这里只在「看过种族页后被杀进程」这类残留里走到 —— 清掉进度，
+			# 回普通大厅，不再弹「点休闲」的提示与休闲按钮高亮。
+			PlayerProfile.set_tutorial_followup_step("")
 	# 对局中被顶号时挂着的提示，回到主菜单这一刻才弹（设计文档第五节）。
 	# 公告：回主菜单时顺手刷新（有节流），有该弹的登录弹窗就弹（docs/公告系统设计.md）。
 	AnnouncementService.refresh()
@@ -1443,15 +1444,26 @@ func _on_replay_tutorial_requested() -> void:
 func _show_pet_screen() -> void:
 	_clear()
 	var pet_screen := _instantiate_screen("res://scenes/menu/PetScreen.tscn")
-	pet_screen.back_requested.connect(_show_menu)
+	pet_screen.back_requested.connect(_on_pet_back)
 	# 棋盘皮肤页上没买的那张点「去商城」。
 	pet_screen.shop_requested.connect(_show_shop_screen)
 	# 种族页点了没解锁的种族 -> 商城棋子页那一族。
 	pet_screen.unit_shop_requested.connect(_show_shop_units)
-	_page_back_route = _show_menu
+	# 真机返回键也要走同一套收口：否则系统返回会把 "casual" 的引导又弹回来。
+	_page_back_route = _on_pet_back
 	add_child(pet_screen)
 	if PlayerProfile.tutorial_followup_step in ["prep", "pet", "race"]:
 		_show_tutorial_prep_guide(pet_screen)
+
+
+# 10.19 教程反馈第 5 条：种族页点「返回」= 教学引导到此结束。
+# 原来回 _show_menu 时 followup 还是 "casual"，于是又弹「点休闲」的提示 + 休闲按钮高亮；
+# 现在清掉引导进度，回大厅就是普通大厅（返回键与系统返回都走这里）。
+func _on_pet_back() -> void:
+	if PlayerProfile.tutorial_followup_step in ["pet", "race", "casual"]:
+		PlayerProfile.set_tutorial_followup_step("")
+		_tutorial_followup_guide = null
+	_show_menu()
 
 
 func _show_tutorial_prep_guide(pet_screen: Control) -> void:
@@ -1486,10 +1498,20 @@ func _on_tutorial_races_opened(pet_screen: Control) -> void:
 		await pet_screen.unit_ownership_loaded
 	if not is_instance_valid(pet_screen) or not pet_screen.is_inside_tree():
 		return
-	# 10.19：看完种族还有最后一步 —— 回大厅打一局正常排队的休闲 · 青苗（见 _show_menu）。
+	# 10.19 教程反馈第 5 条：
+	#   ① 种族页在教学模式下只留「返回」可点（PetScreen.tutorial_lock_page_input，
+	#      只在教程里生效）；返回键本身成为引导目标 = 高亮；
+	#   ② 点返回即结束教学引导（见 _on_pet_back），不再弹「点休闲」的提示和高亮。
 	PlayerProfile.set_tutorial_followup_step("casual")
-	_attach_tutorial_followup_guide(pet_screen,
-		pet_screen.call("tutorial_god_target"), "god_progress")
+	pet_screen.call("tutorial_lock_page_input", true)
+	var back_btn: Control = null
+	if pet_screen.has_method("tutorial_back_target"):
+		back_btn = pet_screen.call("tutorial_back_target") as Control
+	_attach_tutorial_followup_guide(pet_screen, back_btn, "god_progress")
+	# 神族 1/8 的进度还在，让「返回」和那张卡一起露出来，玩家看得到要看的数。
+	var god := pet_screen.call("tutorial_god_target") as Control
+	if god != null and is_instance_valid(_tutorial_followup_guide):
+		_tutorial_followup_guide.call("set_extra_focus", god)
 
 
 # 商城棋子页集齐一族后点「去备战」：打开备战页的种族页签、看那一族。
@@ -2128,12 +2150,20 @@ func _show_profile_screen() -> void:
 		_show_menu()
 		return
 	profile.call("configure_self")
-	profile.back_requested.connect(_show_menu)
+	profile.back_requested.connect(_on_profile_back)
 	_page_back_route = _show_menu
 	add_child(profile)
 	if PlayerProfile.tutorial_followup_step in ["avatar", "reward"]:
 		PlayerProfile.set_tutorial_followup_step("reward")
 		_show_tutorial_level_reward(profile)
+
+
+# 教学引导里从头像页直接返回：跳过「看奖励」直接进备战引导。
+# 不这么接会死循环 —— _show_menu 看到 step=="reward" 又会把人送回这一页。
+func _on_profile_back() -> void:
+	if PlayerProfile.tutorial_followup_step in ["avatar", "reward"]:
+		PlayerProfile.set_tutorial_followup_step("prep")
+	_show_menu()
 
 
 func _attach_tutorial_followup_guide(owner: Control, target: Control,
@@ -2149,42 +2179,48 @@ func _attach_tutorial_followup_guide(owner: Control, target: Control,
 	_tutorial_followup_guide = guide
 
 
+# 10.19 教程反馈第 4 条：13 回合后点头像，原来直接跳到「点击备战」，
+# 中间少了「点开头像查看等级奖励」这一步。根因不是流程缺代码，而是判据对回归账号是死的：
+# 后端 award_tutorial() 对已 Lv2 账号提前 return，不产生 level_up_events，
+# unseen_levels 里永远没有 2 —— 测试机账号正是 Lv2，所以必然一路跳到备战。
+# 现在改走游戏里真实存在的 UI 链，不再依赖 unseen：
+#   点头像 → 玩家主页（「等级奖励」页签高亮）→ 成长之路（「返回」高亮）
+#   → 点返回 → 回大厅落到「点击备战」引导。
 func _show_tutorial_level_reward(profile: Control) -> void:
-	var response: Dictionary = await AccountManager.fetch_progression()
-	if not is_instance_valid(profile) or not profile.is_inside_tree():
+	if not is_instance_valid(profile) or not profile.has_method("tutorial_level_tab_target"):
 		return
-	if int(response.get("code", 0)) != 200:
-		DialogService.info({"title": "等级奖励", "body": "奖励暂时无法读取，请返回大厅后重试。",
-			"owner": profile})
+	var level_tab: Control = null
+	level_tab = profile.call("tutorial_level_tab_target") as Control
+	_attach_tutorial_followup_guide(profile, level_tab, "reward_tab")
+	if profile.has_signal("tutorial_progression_opened"):
+		profile.connect("tutorial_progression_opened", _on_tutorial_progression_opened,
+			CONNECT_ONE_SHOT)
+
+
+func _on_tutorial_progression_opened(panel: Control) -> void:
+	if not is_instance_valid(panel):
 		return
-	var state: Dictionary = response.get("body", {})
-	if int(state.get("level", 1)) < 2:
-		DialogService.info({"title": "等级奖励", "body": "等级尚未同步，请返回大厅后重试。",
-			"owner": profile})
+	if is_instance_valid(_tutorial_followup_guide):
+		_tutorial_followup_guide.queue_free()
+		_tutorial_followup_guide = null
+	var back_btn: Control = null
+	if panel.has_method("tutorial_back_target"):
+		back_btn = panel.call("tutorial_back_target") as Control
+	_attach_tutorial_followup_guide(panel, back_btn, "progression_back")
+	# 10.20 教程反馈第 4 条补：已获得的奖励（人族全套棋子 / 神侍）也要打亮。
+	# 用第二个洞，不跟「返回」合并 —— 合并出来的大矩形会把中间整片都点亮。
+	if is_instance_valid(_tutorial_followup_guide) and panel.has_method("tutorial_reward_target"):
+		var rewards := panel.call("tutorial_reward_target") as Control
+		if rewards != null:
+			_tutorial_followup_guide.call("set_second_focus", rewards)
+	panel.connect("dismissed", _on_tutorial_progression_dismissed, CONNECT_ONE_SHOT)
+
+
+func _on_tutorial_progression_dismissed() -> void:
+	# 「返回」= 奖励看完了：直接回大厅落到「点击备战」引导。
+	if not PlayerProfile.set_tutorial_followup_step("prep"):
 		return
-	if not (state.get("unseen_levels", []) as Array).has(2):
-		if PlayerProfile.set_tutorial_followup_step("prep"):
-			_show_menu()
-		return
-	var reward: Dictionary = {}
-	for raw in state.get("rewards", []):
-		if raw is Dictionary and int(raw.get("level", 0)) == 2:
-			reward = raw
-			break
-	if reward.is_empty():
-		return
-	var dialog_script := load("res://scenes/menu/LevelUpRewardDialog.gd") as GDScript
-	var dialog := dialog_script.new() as Control
-	dialog.call("configure", [2], [reward])
-	dialog.connect("claimed", _on_tutorial_reward_claimed)
-	ModalStack.push(dialog, {"id": TUTORIAL_REWARD_MODAL_ID, "owner": profile,
-		"priority": 100, "dismiss_on_backdrop": false, "persistent": true})
-	_attach_tutorial_followup_guide(dialog,
-		dialog.call("tutorial_reveal_target"), "reward_reveal")
-	dialog.connect("revealed", func() -> void:
-		if is_instance_valid(dialog):
-			_attach_tutorial_followup_guide(dialog,
-				dialog.call("tutorial_claim_target"), "reward_claim"))
+	_show_menu()
 
 
 func _on_tutorial_reward_claimed(_go_prep: bool) -> void:

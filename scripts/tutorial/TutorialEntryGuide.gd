@@ -11,6 +11,10 @@ const DogExplain := preload("res://assets/ui/tutorial/dog_explain.png")
 var _target: Control
 # 除了要点的目标，还要一起露出来给玩家看的区域（匹配确认时的 6 个头像）。
 var _extra_focus: Control
+# 第二个「保持亮度」的洞（10.20）：与 _extra_focus 不同，它**不与主目标合并**，
+# 而是单独开一个洞。用于成长之路「已获得的奖励那一排 + 返回键」两处同时高亮 ——
+# 合并成一个大矩形会把中间整片都点亮，看起来像遮罩没画。
+var _second_focus: Control
 var _phase := "menu"
 var _dim: ColorRect
 var _light
@@ -28,6 +32,29 @@ func configure(target: Control, phase: String) -> void:
 
 func set_extra_focus(control: Control) -> void:
 	_extra_focus = control
+
+
+# 10.20 教程反馈第 4 条补：同一屏里再打亮一处（成长之路的「已获得的奖励」）。
+func set_second_focus(control: Control) -> void:
+	_second_focus = control
+
+
+# 第二个洞每帧重算：奖励那一排会随滚动/重排移动，缓存位置会偏。
+func _update_second_hole(overlay_rect: Rect2, extent: Vector2) -> void:
+	var mat := _dim.material as ShaderMaterial
+	if mat == null:
+		return
+	if _second_focus == null or not is_instance_valid(_second_focus) \
+			or not _second_focus.is_visible_in_tree():
+		mat.set_shader_parameter("hole2_on", 0.0)
+		return
+	var rect := _second_focus.get_global_rect()
+	rect.position -= overlay_rect.position
+	rect = rect.grow(10.0)
+	mat.set_shader_parameter("hole2", Vector4(
+		rect.position.x / extent.x, rect.position.y / extent.y,
+		rect.size.x / extent.x, rect.size.y / extent.y))
+	mat.set_shader_parameter("hole2_on", 1.0)
 
 
 func _ready() -> void:
@@ -88,6 +115,7 @@ func _process(_delta: float) -> void:
 		focus.position.x / extent.x, focus.position.y / extent.y,
 		focus.size.x / extent.x, focus.size.y / extent.y))
 	(_dim.material as ShaderMaterial).set_shader_parameter("hole_on", 1.0)
+	_update_second_hole(overlay_rect, extent)
 	_bubble.size = Vector2(347, 112)
 	var safe := SafeArea.rect()
 	safe.position -= overlay_rect.position
@@ -142,6 +170,16 @@ func _update_phase() -> void:
 			_label.text = "You have 1 of 8 Divine pieces. Collect all 8 to use this race." if english else \
 				"神族已收集 1/8。集齐 8 枚，才能带神族出战。先收下奖励吧！"
 			_dog.texture = DogExplain
+		"reward_tab":
+			# 10.19 教程反馈第 4 条：头像 → 玩家主页 → 等级奖励 → 成长之路 → 返回。
+			_label.text = "Woof! Tap Level Rewards to see what Lv2 gave you." if english else \
+				"汪！点「等级奖励」，看看升到 Lv2 拿到了什么！"
+			_dog.texture = DogGuide
+		"progression_back":
+			# 10.20：奖励那一排与「返回」同时打亮，提示词把两件事都说清楚。
+			_label.text = "These are the rewards you earned: the full Human roster and the Divine priest. Tap Back when you're done!" if english else \
+				"这里是你已获得的奖励：人族全套棋子、神侍。看完点「返回」回大厅继续！"
+			_dog.texture = DogExplain
 		"reward_prep":
 			_label.text = "Divine is 1/8. Collect all 8 to use it. Now visit Prep to choose a pet and view your pieces." if english else \
 				"神族已收集 1/8，集齐 8 枚才能使用。现在点击备战，去选宠物、查看种族棋子！"
@@ -155,8 +193,9 @@ func _update_phase() -> void:
 				"宠物选好啦！点「种族」看看你收集的棋子。"
 			_dog.texture = DogGuide
 		"god_progress":
-			_label.text = "Human is ready. Divine is 1/8; collect the other 7 before selecting it for a match. Then head back to the lobby!" if english else \
-				"人族已经能用。神族现在是 1/8，集齐剩下 7 枚后才能选择出战。看完回大厅吧！"
+			# 10.19 教程反馈第 5 条：这一页只剩「返回」可点，提示词也指回它。
+			_label.text = "Human is ready. Divine is 1/8; collect the other 7 before selecting it for a match. Tap Back when you're done!" if english else \
+				"人族已经能用。神族现在是 1/8，集齐剩下 7 枚后才能选择出战。看完点「返回」回大厅吧！"
 			_dog.texture = DogExplain
 		"followup_casual":
 			_label.text = "Woof! You're all set. Tap Casual and play a real Seedling match!" if english else \

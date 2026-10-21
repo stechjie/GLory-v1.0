@@ -21,6 +21,21 @@ const TutorialFocusMaskShader := preload("res://shaders/tutorial_focus_mask.gdsh
 const GOLD_TEXT := "∞"
 const TUTORIAL_GOLD := 9999
 const TUTORIAL_HP := 10
+# 10.19 教程反馈第 2 条：第 6/11/13 回合是教学里唯一三场 PVP。
+# 脚本要求 6 胜、11 败、13 胜（敌军法阵清零），所以第 11 回合不允许被
+# coerce_victory 改写成胜利 —— 否则就是玩家反馈的「战败却显示胜利」。
+const SCRIPTED_LOSS_ROUNDS := [11]
+# 教程 3v3 的座位分工（与 BattleSimulator.prepare_team_state 的 ally/rival lanes 一致）：
+# 座位 0 = 玩家本人，座位 1/2 = 我方 AI 队友（dummy），座位 3/4/5 = 对手（dummy）。
+const ROSTER_ALLY_SLOTS := [1, 2]
+const ROSTER_RIVAL_SLOTS := [3, 4, 5]
+# 假想敌阵容调整的星级上限。**不能用 MAX_MERGE_STAR(3)**：BotPlayer 会用升级石做出
+# 4★（实测第 13 回合对手就有一只 4★），夹到 3 等于把 AI 练了半天的四星偷偷削掉。
+const ROSTER_MAX_STAR := 4
+# 青苗赛程的最后一回合（`GameState.FINAL_ROUND` 在 start() 里也是 13）。
+# 法阵允许扣到 0 的**唯一**一场就是这一场，别拿 GameState.FINAL_ROUND 现算 ——
+# 它可能被正式局（21 回合）覆写，教学里只认这一个数。
+const SCRIPT_FINAL_ROUND := 13
 # 9.25：萝卜教学在 Boss 后一次性送出的萝卜。够抽一次升级石（50）再雇两个佣兵。
 const TUTORIAL_CARROT_GIFT := 100
 # 萝卜营地面板的两个页签（CarrotCampPanelV3._show_page 的下标）。
@@ -117,6 +132,11 @@ const CANDIDATE_ORDER_PENALTY := 1.0
 # by tutorial_overlay_layout_check.
 const MAX_STICKY_OVERLAP_RATIO := 0.10
 const LAYOUT_GEOMETRY_EPS := 2.0
+# 「跳过教学」按钮外扩这么多像素后加入气泡避让区（10.19 教程反馈第 1 条）：
+# 按钮钉在左上角，几个步骤的目标也在那一带，气泡首选「目标上方」时
+# 上沿正好压住它（提交截图 image1/image4）。狗狗侧本来就躲它（权重 20），
+# 气泡侧漏了，补上；外扩是为了连「差几像素也算压住」的情况一起避开。
+const SKIP_BUBBLE_CLEAR_PAD := 8.0
 
 # 聚焦遮罩（2026-10-15 反馈问题 2）：**一整块**暗幕，洞由 shader 逐片元抠出来。
 #
@@ -660,6 +680,11 @@ func pve_enemy_count() -> int:
 func coerce_victory(result: Dictionary) -> void:
 	if result.is_empty():
 		return
+	# 10.19 教程反馈第 2 条：第 11 回合按脚本必须**失败**（敌方是玩家阵容的镜像升星），
+	# 这一场要把「失败」照实播出来。反馈里的「我方棋子战败却显示胜利」正是这里
+	# 把所有教学战斗一律改写成胜利造成的。其余回合（PVE 兜底、第 6/13 回合的必赢）照旧。
+	if GameState.round_index in SCRIPTED_LOSS_ROUNDS:
+		return
 	result["kind"] = battle_kind()
 	result["player_wins"] = true
 	result["is_draw"] = false
@@ -667,7 +692,44 @@ func coerce_victory(result: Dictionary) -> void:
 	result["enemy_alive"] = 0
 	result["enemy_hp_current"] = 0
 
+# 10.19 教程反馈第 2 条：法阵点数要跟着战斗真实扣。
+#
+# 双方伤害其实早就由 PrepScreen 的 stamp_team_round_damages() 盖进了 replay result
+# （PVP：败方扣胜方存活数），但教程分支从来没应用过 —— 水晶演出按它演了扣血，
+# 备战 HUD 却一直显示 10/10，打完还是 10/10，正是反馈里的两条现象。
+# 规则（用户 10-20 确认）：
+#   * 只对 PVP 生效：PVE / Boss 不玩法阵，那几场的「必赢」由 coerce_victory 保证；
+#   * 第 6 / 11 回合保底留 1 点：这两场是教学的一环，法阵提前归零会把流程截断；
+#   * 第 13 回合敌方扣完所有剩余点数（战后 after_battle 直接清零，见 START_PVP 分支）；
+#   * team_hp 与 formation_hp 同步：备战 HUD / 水晶读 team_hp，结算正文读 formation_hp。
+func _apply_scripted_team_damage(result: Dictionary) -> void:
+	if str(result.get("kind", "")) != "pvp":
+		return
+	var self_dmg := int(result.get("team_damage_self", -1))
+	var rival_dmg := int(result.get("team_damage_rival", -1))
+	if self_dmg < 0 or rival_dmg < 0:
+		# 旧包 / 旧断点里的回放没有盖戳：按胜负与存活数就地补一份，口径同 stamp。
+		if bool(result.get("player_wins", false)):
+			self_dmg = 0
+			rival_dmg = maxi(1, int(result.get("player_alive", 1)))
+		else:
+			self_dmg = maxi(1, int(result.get("enemy_alive", 1)))
+			rival_dmg = 0
+	var floor_hp := 1 if GameState.round_index < SCRIPT_FINAL_ROUND else 0
+	GameState.team_hp = maxi(floor_hp, GameState.team_hp - maxi(0, self_dmg))
+	GameState.enemy_team_hp = maxi(floor_hp, GameState.enemy_team_hp - maxi(0, rival_dmg))
+	# 法阵回春：与正式局同一顺序（先扣后回，活着才回，上限是教学血量）。
+	var heal_self := int(result.get("team_heal_self", 0))
+	var heal_rival := int(result.get("team_heal_rival", 0))
+	if GameState.team_hp > 0 and heal_self > 0:
+		GameState.team_hp = mini(TUTORIAL_HP, GameState.team_hp + heal_self)
+	if GameState.enemy_team_hp > 0 and heal_rival > 0:
+		GameState.enemy_team_hp = mini(TUTORIAL_HP, GameState.enemy_team_hp + heal_rival)
+	GameState.player_formation_hp = GameState.team_hp
+	GameState.enemy_formation_hp = GameState.enemy_team_hp
+
 func after_battle(result: Dictionary) -> void:
+	_apply_scripted_team_damage(result)
 	# 新回合换一批新卡：清空后由 PrepScreen._ready -> _roll_shop -> tutorial_shop_ids() 重摇；
 	# 下面各分支如果自己 _apply_shop() 了脚本商店，以分支为准。
 	GameState.reset_shop_refreshes()
@@ -1964,6 +2026,11 @@ func _bubble_position(target_rect: Rect2, dir: int, context: String = "") -> Vec
 		maxf(_bubble.size.y, BUBBLE_MIN_HEIGHT))
 	var safe := _safe_rect()
 	var keep_clear := _keep_clear_rects()
+	# 10.19 教程反馈第 1 条：「跳过教学」按钮钉在左上角，此前只有狗狗侧躲它，
+	# 气泡的 keep_clear 漏了这一项，几个步骤的气泡上沿直接压住按钮（截图 image1/4）。
+	# 补进来，权重与其它禁区同级（1.0/px²，目标遮挡 8.0/px² 永远优先）。
+	if _skip_btn != null and is_instance_valid(_skip_btn):
+		keep_clear.append(Rect2(_skip_btn.position, _skip_btn.size).grow(SKIP_BUBBLE_CLEAR_PAD))
 	if context == _layout_context and _sticky_position_is_valid(
 			_last_bubble_position, bubble_size, safe, target_rect, keep_clear):
 		_last_layout_reason = "sticky_valid"
@@ -2385,6 +2452,199 @@ func _start_treasure(ids: Array) -> void:
 	GameState.pending_treasure = {"active": true, "round": GameState.round_index,
 		"candidates": TreasureService.available_candidates(ids), "refresh_index": 0,
 		"remaining": RoundService.treasure_pick_count(GameState.round_index)}
+
+# --- 教程 PVP 双方假想敌阵容（10.19 教程反馈第 2 条）-------------------------
+# 假想敌平时由 BotPlayer 按真人经济推演，胜负不可控；教程要的是「6 胜、11 败、
+# 13 胜」的脚本，所以按**玩家当前棋盘**生成一份阵容计划，由
+# BattleSimShared._dummy_board_for_slot() / _dummy_mercs_for_slot() 落地：
+#   * 我方 AI 队友（座位 1/2）：第 0 档留 1 个 1 星，再往上清空 —— 胜负交给玩家自己；
+#   * 第 6/13 回合（脚本胜）：对手三路各 1 个 1 星；仍赢不了就把对手清空兜底；
+#   * 第 11 回合（脚本败）：对手三路 = 玩家棋盘镜像且星 +1（升级档再 +1，封顶 3 星），
+#     玩家自己的棋子越强，镜像也越强，所以「玩家三星」不会把这一场翻成胜。
+# 空计划 = 原样：普通对局，以及门禁里直接调 prepare_team_state 的路径完全不受影响。
+static var ai_roster_plan: Dictionary = {}
+
+func scripted_pvp_round() -> bool:
+	var kind := RoundService.schedule_kind_for_round(GameState.round_index)
+	return GameState.tutorial_mode and (kind == "pvp" or kind == "final")
+
+func script_round_expects_win() -> bool:
+	return not (GameState.round_index in SCRIPTED_LOSS_ROUNDS)
+
+func set_ai_roster_plan(notch: int) -> void:
+	if not scripted_pvp_round():
+		ai_roster_plan = {}
+		return
+	ai_roster_plan = {"round": GameState.round_index, "notch": maxi(0, notch)}
+
+func clear_ai_roster_plan() -> void:
+	ai_roster_plan = {}
+
+func _roster_plan_active() -> bool:
+	return not ai_roster_plan.is_empty() \
+		and int(ai_roster_plan.get("round", -1)) == GameState.round_index
+
+# 10.20 二次修正（用户反馈）：「不能让 AI 只剩一个棋子」。
+#
+# 现在的做法：**一兵不删**。每个假想敌（队友/对手）都保留 BotPlayer 按回合计出来的
+# 整副阵容（实测第 6/11/13 回合都是 7 人，星级 2~4 星、随回合自然变强），
+# 只按「玩家棋盘强度」在**星级**上做加减：
+#   * 第 6 / 13 回合（脚本胜）：玩家弱 ⇒ 对手收着打、队友补强；玩家强 ⇒ 队友少补；
+#   * 第 11 回合（脚本败）：对手加码、队友收着打；
+#   * 重推档位只加/减队友与对手的星级比例，不换人、不清场。
+func apply_ai_roster_board(board: Array, slot_idx: int) -> Array:
+	if not GameState.tutorial_mode or not _roster_plan_active():
+		return board
+	var base := _roster_power(board)
+	if base <= 0.0:
+		return board
+	if slot_idx in ROSTER_ALLY_SLOTS:
+		return _roster_rebalance_board(board, base * _roster_ally_bias(base))
+	if slot_idx in ROSTER_RIVAL_SLOTS:
+		return _roster_rebalance_board(board, base * _roster_rival_bias(base))
+	return board
+
+func apply_ai_roster_mercs(mercs: Array, slot_idx: int) -> Array:
+	if not GameState.tutorial_mode or not _roster_plan_active():
+		return mercs
+	# 教程 PVP 里假想敌的佣兵一律不参与：胜负只由棋盘决定，玩家看得懂。
+	# 玩家自己的佣兵（座位 0）不走这里，不受影响。
+	return []
+
+func _roster_empty_board() -> Array:
+	var out: Array = []
+	out.resize(GameConstants.CELL_COUNT)
+	out.fill(null)
+	return out
+
+# 棋盘强度口径：cost × 星²（1/4/9/16）。只用来比较强弱、定星级的加减档。
+func _roster_power(board: Array) -> float:
+	var total := 0.0
+	for cell in board:
+		if typeof(cell) != TYPE_DICTIONARY:
+			continue
+		var data := cell as Dictionary
+		var star := maxi(1, int(data.get("star", 1)))
+		total += float(maxi(1, _roster_unit_cost(data))) * float(star * star)
+	return total
+
+func _roster_notch() -> int:
+	return maxi(0, int(ai_roster_plan.get("notch", 0)))
+
+# 玩家棋盘相对「这一条 AI 基线」的强弱比。0.5 左右 = 玩家比 AI 少一半强度。
+func _roster_ratio(base: float) -> float:
+	return clampf(_roster_power(GameState.board_slots) / maxf(1.0, base), 0.0, 4.0)
+
+func _roster_rival_bias(base: float) -> float:
+	var ratio := _roster_ratio(base)
+	if script_round_expects_win():
+		# 玩家弱 ⇒ 对手收着打（最多让 28%）；玩家强 ⇒ 按基线正常打。
+		# 不删棋子、不降到 1 星以下，AI 看起来仍然是一支完整队伍。
+		return clampf(0.72 + 0.14 * ratio, 0.72, 0.96)
+	# 脚本败（第 11 回合必须输）：对手随玩家强度**大幅**加码，重推档位再顶一档。
+	# 10-20 二修：旧系数（1.02 + 0.06×ratio）对「4★ 人王」这种强棋盘不够狠，
+	# 实测会赢；现在比值每大 1 倍就多给 55% 强度，上限 2.6×（4★ 满编 + 补编队）。
+	return clampf(1.10 + 0.55 * ratio + 0.20 * float(_roster_notch()), 1.10, 2.60)
+
+func _roster_ally_bias(base: float) -> float:
+	var ratio := _roster_ratio(base)
+	if script_round_expects_win():
+		# 队友补到「三路总强度能压过对面」：玩家越弱补得越多，玩家越强补得越少
+		# （用户口径：第 6 回合队友变强、到后面玩家强了队友提升变小）。
+		# 重推档位只加队友，不再削对手 —— 对手已经收着打了，再削就是「不智能」。
+		var need := (3.0 * _roster_rival_bias(base) * 1.22 - ratio) * 0.5
+		return clampf(need + 0.20 * float(_roster_notch()), 0.60, 2.60)
+	# 脚本败：队友收着打，玩家越强收得越多（否则队友会替玩家把对面打穿）。
+	return clampf(0.85 - 0.12 * ratio - 0.08 * float(_roster_notch()), 0.40, 0.95)
+
+# 把一条 AI 棋盘调到目标强度：**只动星级**（必要时补编队人数），一枚都不删。
+# 升星从最便宜的棋子开始（尽量少的星数变化拿到尽量多的强度），
+# 降星从最贵的开始 —— 两边都保住「阵容还是一整队」的观感。
+func _roster_rebalance_board(board: Array, target: float) -> Array:
+	var out := _roster_empty_board()
+	for i in board.size():
+		var cell = board[i]
+		if cell is Dictionary and not (cell as Dictionary).is_empty():
+			# 原样拷贝：4★（升级石）也保留，别被 MAX_MERGE_STAR(3) 夹回 3 星。
+			out[i] = (cell as Dictionary).duplicate(true)
+	var guard := 0
+	while _roster_power(out) < target * 0.92 and guard < 48:
+		if not _roster_step_star(out, 1, false):
+			break
+		guard += 1
+	guard = 0
+	while _roster_power(out) > target * 1.12 and guard < 96:
+		if not _roster_step_star(out, -1, true):
+			break
+		guard += 1
+	# 星数顶满还不够（玩家特别强 / 脚本败要加码）：补编队人数，只往空格放，
+	# 复制最便宜的非唯一棋子 —— 只会让 AI 更像一支满编队伍，不会更少。
+	guard = 0
+	while _roster_power(out) < target * 0.92 and guard < 8:
+		if not _roster_add_copy(out):
+			break
+		guard += 1
+	return out
+
+func _roster_step_star(out: Array, delta: int, prefer_expensive: bool) -> bool:
+	var pick := -1
+	var best := 0.0
+	for i in out.size():
+		var cell = out[i]
+		if typeof(cell) != TYPE_DICTIONARY:
+			continue
+		var data := cell as Dictionary
+		var star := int(data.get("star", 1))
+		if delta > 0 and star >= ROSTER_MAX_STAR:
+			continue
+		if delta < 0 and star <= 1:
+			continue
+		var score := float(maxi(1, _roster_unit_cost(data))) * float(star)
+		if pick < 0 or (score > best if prefer_expensive else score < best):
+			pick = i
+			best = score
+	if pick < 0:
+		return false
+	var picked: Dictionary = out[pick]
+	picked["star"] = int(picked.get("star", 1)) + delta
+	return true
+
+func _roster_add_copy(out: Array) -> bool:
+	var free_slot := -1
+	for i in out.size():
+		if out[i] == null:
+			free_slot = i
+			break
+	if free_slot < 0:
+		return false
+	var source: Dictionary = {}
+	for cell in out:
+		if typeof(cell) != TYPE_DICTIONARY:
+			continue
+		var data := cell as Dictionary
+		if _roster_is_unique(data):
+			continue
+		if source.is_empty() or _roster_unit_cost(data) < _roster_unit_cost(source):
+			source = data
+	if source.is_empty():
+		return false
+	var copy: Dictionary = source.duplicate(true)
+	# uid 必须重铸：同 uid 会让 replay roster / piece_uid（人王死活认人）认错人。
+	copy["uid"] = GameState.mint_piece_uid()
+	out[free_slot] = copy
+	return true
+
+func _roster_is_unique(cell: Dictionary) -> bool:
+	if bool(cell.get("unique_on_board", false)):
+		return true
+	var def: Variant = cell.get("def", {})
+	return typeof(def) == TYPE_DICTIONARY and bool((def as Dictionary).get("unique_on_board", false))
+
+func _roster_unit_cost(cell: Variant) -> int:
+	if typeof(cell) != TYPE_DICTIONARY:
+		return 0
+	var def: Variant = (cell as Dictionary).get("def", {})
+	return int((def as Dictionary).get("cost", 0)) if typeof(def) == TYPE_DICTIONARY else 0
 
 func _tutorial_opponent_snapshot() -> Dictionary:
 	var board := []

@@ -1,0 +1,5 @@
+[gd_scene load_steps=3 format=3]
+[ext_resource type="PackedScene" path="res://assets/models/bosses/boss_mirror_lord_animated/boss_mirror_lord_animated.tscn" id="1"]
+[ext_resource type="Script" path="res://assets/models/enemies_refined/boss_mirror_lord/Refined.gd" id="2"]
+[node name="MirrorLordRefined" instance=ExtResource("1")]
+script=ExtResource("2")
