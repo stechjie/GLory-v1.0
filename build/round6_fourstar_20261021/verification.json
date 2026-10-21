@@ -1,0 +1,21 @@
+{
+  "bundle": "glory_server_p43_20261021_round6_fourstar.zip",
+  "sha256": "2426CB08D7292EF16665CC5EAE8037A6DCCC23C047A842720B0ACB285F7DE89A",
+  "protocol": 43,
+  "four_star_checks": 385,
+  "shop_checks": 6517,
+  "cold_start_verified": true,
+  "source_files_verified": [
+    "scripts/economy/ShopRoll.gd",
+    "scripts/autoload/NetworkService.gd",
+    "scripts/autoload/GameState.gd",
+    "scenes/prep/FourStarUpgradePanel.gd",
+    "scripts/economy/BotPlayer.gd",
+    "scripts/economy/LiveBotEconomy.gd",
+    "scenes/prep/PrepBoardController.gd",
+    "scripts/battle/BattleSimShared.gd",
+    "tools/four_star_upgrade_check.gd"
+  ],
+  "live_server_updated": false,
+  "note": "Built by make_server_zip.ps1 -SkipSmoke; exact ZIP extracted and independently cold-start checked with isolated APPDATA and disposable test credentials."
+}

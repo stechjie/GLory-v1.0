@@ -267,6 +267,10 @@ func apply_team_stone(stone_type: String) -> void:
 # 判定与执行分开：面板要能在不消耗石头的前提下问"这只能不能升"，
 # 好把按钮置灰并说明原因。两者读同一份条件，不会出现"按钮亮着但点了没反应"。
 
+## 价签、确认与实际扣费共用当前赛程的费用。
+func four_star_cost(unit_def: Dictionary) -> int:
+	return CarrotEconomyRules.seedling_four_star_gold(four_star_upgrade_count) if FINAL_ROUND == 13 else CarrotEconomyRules.four_star_gold(int(unit_def.get("tier", 0)))
+
 ## 这只棋子当前能否升四星。返回 {ok: bool, error: String, stone: String}。
 func four_star_check(cell: Variant) -> Dictionary:
 	if typeof(cell) != TYPE_DICTIONARY:
@@ -284,7 +288,7 @@ func four_star_check(cell: Variant) -> Dictionary:
 		return {"ok": false, "error": "bad_element", "stone": stone}
 	if int(team_upgrade_stones.get(stone, 0)) <= 0:
 		return {"ok": false, "error": "no_stone", "stone": stone}
-	var cost := CarrotEconomyRules.seedling_four_star_gold(four_star_upgrade_count) if FINAL_ROUND == 13 else CarrotEconomyRules.four_star_gold(int((c.get("def", {}) as Dictionary).get("tier", 0)))
+	var cost := four_star_cost(c.get("def", {}))
 	if cost < 0:
 		return {"ok": false, "error": "bad_tier", "stone": stone}
 	if gold < cost:

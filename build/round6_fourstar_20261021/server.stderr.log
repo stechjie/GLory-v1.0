@@ -1,0 +1,8 @@
+ERROR: Failed to read the root certificate store.
+   at: get_system_ca_certificates (platform/windows/os_windows.cpp:2582)
+ERROR: Parameter "p_mutex->mutex" is null.
+   at: godot_mbedtls_mutex_free (modules/mbedtls/register_types.cpp:54)
+ERROR: Parameter "p_mutex->mutex" is null.
+   at: godot_mbedtls_mutex_free (modules/mbedtls/register_types.cpp:54)
+ERROR: Parameter "p_mutex->mutex" is null.
+   at: godot_mbedtls_mutex_free (modules/mbedtls/register_types.cpp:54)

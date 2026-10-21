@@ -38,7 +38,9 @@ func _ready() -> void:
 		h.expect(receipt.ok and prep.gold == 0 and receipt.result.cost == cost and stones[d.element] == 1 and prep.roster[cell.uid].star == 4, "server_trusted_tier", str(d.id))
 		h.expect(not Ledger.apply(prep,"use_upgrade_stone",payload,ctx).ok and stones[d.element] == 1 and prep.gold == 0, "server_repeat", str(d.id))
 	_server_modes(units)
+	_capability_snapshots()
 	await _ui_and_visuals(units[0])
+	_seedling_price_ui(units[0])
 	_shared_stone_race(units[0])
 	var room: Dictionary = NetworkService._new_room()
 	var actions: Array = NetworkService.ECONOMY_ACTIONS.duplicate()
@@ -47,6 +49,79 @@ func _ready() -> void:
 	fields.sort()
 	print("FOUR_STAR_CONTRACT ", Marshalls.raw_to_base64((",".join(PackedStringArray(actions)) + "|" + ",".join(PackedStringArray(fields))).sha256_buffer()).substr(0,16))
 	h.finish(get_tree())
+
+func _capability_snapshots() -> void:
+	NetworkService.reset()
+	GameState.reset_run()
+	NetworkService.team_active = true
+	NetworkService.is_host = false
+	var saved_flags := ServerFlags._values.duplicate(true)
+	ServerFlags._values["economy_ledger_enabled"] = true
+	var room: Dictionary = NetworkService._new_room()
+	var prep: Dictionary = NetworkService._room_prep(room, 0)
+	prep.last_harvest_round = 6
+	var snapshot := NetworkService._build_economy_state(room, 0)
+	NetworkService._apply_carrot_state(snapshot)
+	h.expect(NetworkService.four_star_upgrade_available(), "snapshot_enables_upgrade", "完整备战快照确认新规则")
+	# Match the production ordering: next prep snapshot first, completed battle later.
+	room.round_index = 5
+	var replay := {"kind":"pve", "result":{"player_wins":true}}
+	var match_states: Dictionary = NetworkService._room_build_match_states(room, replay, replay.duplicate(true))
+	var settlement: Dictionary = match_states[0]
+	h.expect(int(settlement.get("four_star_cost_version", 0)) == Rules.FOUR_STAR_COST_VERSION,
+		"settlement_declares_version", "服务端战后快照也声明规则版本，兼容现有客户端")
+	settlement.erase("four_star_cost_version")
+	settlement.last_harvest_round = 5
+	NetworkService._apply_carrot_state(settlement)
+	h.expect(NetworkService.four_star_upgrade_available() and GameState.last_harvest_round == 6,
+		"late_settlement_preserves_version", "上一回合结算不得清空已确认的规则版本")
+	settlement.last_harvest_round = 6
+	NetworkService._apply_carrot_state(settlement)
+	NetworkService._apply_carrot_state({})
+	NetworkService._apply_carrot_state({"four_star_cost_version":0})
+	h.expect(NetworkService.four_star_upgrade_available(), "partial_state_preserves_version", "同回合部分状态、空状态与非权威状态不覆盖能力")
+	NetworkService._apply_carrot_state({"carrot_authoritative":true, "last_harvest_round":5, "four_star_cost_version":0})
+	h.expect(NetworkService.four_star_upgrade_available(), "stale_version_ignored", "过期快照不能覆盖版本")
+	NetworkService._apply_carrot_state({"carrot_authoritative":true, "four_star_cost_version":0})
+	h.expect(not NetworkService.four_star_upgrade_available(), "explicit_old_version_denied", "有效状态明确声明旧版本时仍禁止升级")
+	NetworkService._apply_carrot_state(snapshot)
+	NetworkService.reset()
+	NetworkService.team_active = true
+	NetworkService.is_host = false
+	NetworkService._apply_carrot_state(settlement)
+	h.expect(not NetworkService.four_star_upgrade_available(), "new_session_requires_version", "新会话缺少版本时不能继承上一局能力")
+	ServerFlags._values = saved_flags
+	NetworkService.reset()
+
+func _seedling_price_ui(d: Dictionary) -> void:
+	GameState.reset_run()
+	var saved_final_round := GameState.FINAL_ROUND
+	GameState.FINAL_ROUND = 13
+	GameState.gold = 2000
+	GameState.team_upgrade_stones = {"sky":5,"land":5,"ren":5}
+	var cell := {"uid":"seedling-price", "id":d.id, "star":3, "def":d.duplicate(true)}
+	GameState.board_slots[0] = cell
+	var panel := preload("res://scenes/prep/FourStarUpgradePanel.gd").new()
+	add_child(panel)
+	panel.open_for(cell, func(_uid): GameState.upgrade_cell_to_four_star(panel.selected_cell()))
+	for completed in [0, 1, 2]:
+		var expected_cost: int = [300, 500, 800][completed]
+		GameState.four_star_upgrade_count = completed
+		panel.refresh()
+		h.expect(panel.inventory.text.ends_with(" / %d" % expected_cost) and GameState.four_star_check(cell).cost == expected_cost,
+			"seedling_display_cost", str(completed))
+	GameState.four_star_upgrade_count = 0
+	panel._pressed()
+	GameState.four_star_upgrade_count = 1
+	panel.refresh()
+	h.expect(not panel.confirming and cell.star == 3, "price_change_cancels_confirmation", "价格变化必须重新确认")
+	GameState.gold = 500
+	panel._pressed()
+	panel._pressed()
+	h.expect(cell.star == 4 and GameState.gold == 0 and GameState.four_star_upgrade_count == 2,
+		"seedling_display_matches_payment", "面板确认费用与实际扣费一致")
+	GameState.FINAL_ROUND = saved_final_round
+	panel.queue_free()
 
 func _server_modes(units: Array) -> void:
 	var saved_flags := ServerFlags._values.duplicate(true)

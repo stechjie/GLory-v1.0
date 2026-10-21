@@ -1,0 +1,10 @@
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+[DEVICE_HARNESS] 未接管：命令行无 --device-baseline，且 user://device_harness.json 不存在
+[SERVER] ServerMain ready (headless, no UI assets required)
+[NET] server starting protocol=43 shard=0 port=8199 max_fps=30 dtls=on key=C:\Users\Leno\AppData\Local\Temp\glory_fix_smoke_15200c62/smoke-private.pem room_id_range=[100000,999999]
+[NET] server simulation scheduler budget_usec=12000 slice_usec=2000 active_limit=4
+[NET] battle card key loaded path=C:\Users\Leno\AppData\Local\Temp\glory_fix_smoke_15200c62/smoke-public.pem
+[NET] ⚠ 战报私钥不可用，本进程的对局都不会记历史：缺战报私钥 user://battle_report_key.pem —— 见 deploy/BATTLE_SERVER_KEY.md「战报私钥」，或用 --battle-report-key= 指定（对局照常，只是不记历史）
+[NET] voice not configured: 没有语音配置 user://livekit_voice.json（见 deploy/livekit/README.md），或用 --voice-key= 指定
+[NET] server started protocol=43 port=8199 epoch=1792563953 rooms=0

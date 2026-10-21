@@ -4538,6 +4538,7 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 			# 只判 has("carrots")，于是开关关掉时每次战后结算都会拿服务端那份没动过的
 			# 零值把客户端的萝卜/科技/消费总额/队伍石头**全部清掉**，且无从察觉。
 			"carrot_authoritative": carrot_economy_enabled(),
+			"four_star_cost_version": CarrotEconomy.FOUR_STAR_COST_VERSION,
 			"carrots": int(_room_prep(room, slot).get("carrots", 0)),
 			"harvest_tech_level": int(_room_prep(room, slot).get("harvest_tech_level", 0)),
 			"merc_carrots_spent_total": int(_room_prep(room, slot).get("merc_carrots_spent_total", 0)),
@@ -6985,7 +6986,6 @@ func _apply_server_shop(state: Dictionary) -> void:
 
 
 func _apply_carrot_state(state: Dictionary) -> void:
-	server_four_star_cost_version = int(state.get("four_star_cost_version", 0))
 	if state.is_empty() or not bool(state.get("carrot_authoritative", false)):
 		return
 	# 9.13 #5：挡掉**过期的**萝卜状态。
@@ -7001,6 +7001,10 @@ func _apply_carrot_state(state: Dictionary) -> void:
 	# 同一回合内的正当同步（room_state / 重连恢复）round 相等，不受影响。
 	if int(state.get("last_harvest_round", GameState.last_harvest_round)) < GameState.last_harvest_round:
 		return
+	# 战后 match_state 是部分状态，不带规则版本；不能把缺省字段当成旧服。
+	# 仅接受有效快照中明确声明的版本。reset() 仍会清零，旧服不会继承上一局能力。
+	if state.has("four_star_cost_version"):
+		server_four_star_cost_version = int(state["four_star_cost_version"])
 	GameState.carrots = maxi(0, int(state.get("carrots", GameState.carrots)))
 	GameState.harvest_tech_level = maxi(0, int(state.get("harvest_tech_level", GameState.harvest_tech_level)))
 	GameState.merc_carrots_spent_total = maxi(0, int(state.get("merc_carrots_spent_total", GameState.merc_carrots_spent_total)))

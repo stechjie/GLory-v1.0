@@ -125,7 +125,7 @@ func refresh() -> void:
 	if stone_notice_sent:
 		action.disabled = true
 		return
-	var cost := Rules.four_star_gold(int(d.get("tier", 0)))
+	var cost := GameState.four_star_cost(d)
 	var signature := "%s/%s/%d/%d" % [piece_uid, element, cost, int(cell.get("star", 0))]
 	if confirming and signature != confirm_signature:
 		confirming = false
@@ -185,7 +185,7 @@ func _pressed() -> void:
 		var cell := selected_cell()
 		var d: Dictionary = cell.get("def", {})
 		confirm_signature = "%s/%s/%d/%d" % [piece_uid, str(d.get("element", "")), \
-			Rules.four_star_gold(int(d.get("tier", 0))), int(cell.get("star", 0))]
+			GameState.four_star_cost(d), int(cell.get("star", 0))]
 		refresh()
 	elif submit.is_valid():
 		confirming = false
