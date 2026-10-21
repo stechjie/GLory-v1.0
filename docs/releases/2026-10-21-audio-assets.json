@@ -1,0 +1,355 @@
+{
+  "date": "2026-10-21",
+  "source": "assets1021棋子普攻音效、部分技能音效.zip",
+  "resource_folder": "1i_6HwJYGVXJWzMKtVO4x1vqQpg2GNffk",
+  "files": [
+    {
+      "path": "assets/audio/sfx/battle/mage_attribute_bolt.mp3",
+      "id": "1BjNH_kD7pqEk3h43luD7t5C4X0HYbpwd",
+      "size": 9927,
+      "sha256": "1e7af8e56520ae5e8571d1b7bfad686cba491a0a8e66ab23a6c974fff15b251a"
+    },
+    {
+      "path": "assets/audio/sfx/battle/mage_attribute_bolt.mp3.import",
+      "id": "136kT-iXe9F1hiE19CnUYJ1KBbp_qJSYE",
+      "size": 410,
+      "sha256": "72b09a335625c2491214de88eb99ca2540490b8b9f6134be8b8f5d90e2cc8f07"
+    },
+    {
+      "path": "assets/audio/sfx/battle/melee_metal.mp3",
+      "id": "1_vVfHzBNV6bNQuWpEoYxTUZA6C_h1_ac",
+      "size": 5015,
+      "sha256": "667c9d96c60d08e6cc574707b13d1e416b5d9040c3b9b17e02c26f150d6ee787"
+    },
+    {
+      "path": "assets/audio/sfx/battle/melee_metal.mp3.import",
+      "id": "12TijWKGQ2f0q3KLWQR-Zstty9Y6odkYt",
+      "size": 385,
+      "sha256": "c323374d4d67f5d1e2e20ac78bca36a791029f88c2d14088a0f1bdd451972718"
+    },
+    {
+      "path": "assets/audio/sfx/battle/melee_nonmetal.mp3",
+      "id": "19xs6y2G6vr_nyCUgp4l2RFoFs4CvqfB3",
+      "size": 3761,
+      "sha256": "d313b2a7821325df7f5af260be2da0bf8609f9207aa43f2e7f62ad279d958595"
+    },
+    {
+      "path": "assets/audio/sfx/battle/melee_nonmetal.mp3.import",
+      "id": "1TXMunNol2Z3XgDUv0i1nhmSz8vOP34Te",
+      "size": 395,
+      "sha256": "cb614d667c11a948c3b4484e0a9f8a80669512dd1da01dc0c55084e2a4e17a03"
+    },
+    {
+      "path": "assets/audio/sfx/battle/melee_unarmed.mp3",
+      "id": "17fS_BMRv1zE2tPASvij_GDXpdxCxmsop",
+      "size": 3134,
+      "sha256": "59a3ba16b093794d622f1357e0411960848e870652cc3c00f862f1dbfaf7c3a3"
+    },
+    {
+      "path": "assets/audio/sfx/battle/melee_unarmed.mp3.import",
+      "id": "1IYauCoWp37E-m7xi8Jv9YxOy9BBXY9hH",
+      "size": 392,
+      "sha256": "6da989afdfdeedd82087b28ed545c30bcf8c4ef2ff42a1aa471ed7fec0317315"
+    },
+    {
+      "path": "assets/audio/sfx/battle/merc_cancer_shell_skill.mp3",
+      "id": "16i90ioOQNFqc2Lhk9LGd5zWCHTIdgb6_",
+      "size": 15674,
+      "sha256": "936cb359aa9f3357078416a3ac8aad1aa90dd830817f13ea791ab6f8539e50cd"
+    },
+    {
+      "path": "assets/audio/sfx/battle/merc_cancer_shell_skill.mp3.import",
+      "id": "1OMdT2eZKHVG7zsu7OyksUIoNjj2uzBkD",
+      "size": 422,
+      "sha256": "ef25ac0b00fd11911f4ddc8df10c5df0acee8932a51766c92dbbb900810ec0a8"
+    },
+    {
+      "path": "assets/audio/sfx/battle/merc_leo_sun_skill.mp3",
+      "id": "1vHfZfedcwlC0c7aQVvcHa97sovP2MFMm",
+      "size": 16196,
+      "sha256": "a34fe63f74f36e3a138487f75687c3d5763d3921f12c12d9ccf97a6a156c7e91"
+    },
+    {
+      "path": "assets/audio/sfx/battle/merc_leo_sun_skill.mp3.import",
+      "id": "1xmt7LqQJVWv2ZLkvvXzrLq3UekoK92MF",
+      "size": 406,
+      "sha256": "7b64ffde24cca4a6ac59fd33899dac742d46426c6603715a2182ef9e9947b5ef"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_arrow.mp3",
+      "id": "1kgNcCxaVe-Pn7gvDgFJvh66_K48D-MqD",
+      "size": 5642,
+      "sha256": "ff4dc3cf4c900feb101a4fdd21989b89fe56eab68eef97a92bffb0f50db3df7c"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_arrow.mp3.import",
+      "id": "1p8VGlnb1rgkhbO_NZRq7xoiZp2jB15Yd",
+      "size": 382,
+      "sha256": "c673b66c71896c88d9d62e3e0b851ed539fad47e00d708563e3cbe5252f0b632"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_bone.mp3",
+      "id": "1PrkHYwJW_-aWWNqG3NU-AY0GZAQRY0DW",
+      "size": 5015,
+      "sha256": "c2f43acb1ca0057644b9042bc336ea943a995f54febef122c15ceed2149c634b"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_bone.mp3.import",
+      "id": "1F1z8LUmOXfn-_ao9huCas0jaCRdoNcBu",
+      "size": 380,
+      "sha256": "df369a8fdfe4307dbe34be64da4672fc4e42d23e1d63943a0f2820b235f7a731"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_dark_orb.mp3",
+      "id": "1W9fiXVHRzm_fvzUaz25yUkTC0X-9iUhW",
+      "size": 10658,
+      "sha256": "9a265d7311d39dc8caff14f98f78cf52561ac11222998041c37ebb4c89d53ffd"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_dark_orb.mp3.import",
+      "id": "1nkbL7LBVKVh8Cz1dbiHWQNtY4XuwgiTo",
+      "size": 392,
+      "sha256": "2f89631365cc1fb4a9c0cb2ca3b4ee1cb128f4021354c100b79ea0660c174a83"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_disc.mp3",
+      "id": "1NQmJAz-rUfIb2PA4j5pwFRSTVe0BBG1E",
+      "size": 6896,
+      "sha256": "2424612fca6a3ff25bbb0b638245eafcc7f231598a47438a3dbd754d3485988f"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_disc.mp3.import",
+      "id": "1MHOIf1nzfx2ieQC9_c75JbE3cMY4UT6G",
+      "size": 380,
+      "sha256": "39380d834ffec6481556e05aae157f3a1335e4d282c0e136d8b5c320cbe730a8"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_divine_blade.mp3",
+      "id": "1btyOxzpNCNRpHeyM3ng80Qpoi47oeI9E",
+      "size": 10971,
+      "sha256": "2aafe22982e51590d3b5641d61cacbdd8c024c78338e4a71c48f7368d9c8baa4"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_divine_blade.mp3.import",
+      "id": "1seYzEHpWi0fx7yENcxCwWh60ApjCkLtH",
+      "size": 403,
+      "sha256": "c67969c06b5a525556b0278a967905c1f5738e497462da9d11037fe97750c0e3"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_ember.mp3",
+      "id": "18bJyMhgNNhfAlRv8F7sqGdn0DbjxNLTE",
+      "size": 8777,
+      "sha256": "033aef1e00e831a99077289c36290c039bd65e74c827a69396a3dbf8b2627656"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_ember.mp3.import",
+      "id": "1Y-8P43jQ9kDwQyOEXZBVfUbfzIXja25y",
+      "size": 383,
+      "sha256": "30949f2cae8a9489e7289a0730826ebf4508fabbddaece1d5e571bed2e30f7c9"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_frost.mp3",
+      "id": "1pWzvtx3-mYTG0bnE1--07FWLWJU-nEmn",
+      "size": 5015,
+      "sha256": "d2a013e0527a2e887e77869c19ed071466dfa54fe516509143d850377ef0509d"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_frost.mp3.import",
+      "id": "1ooQh6SlbZP1F86Bm5axV_Bi9U-bXuQ21",
+      "size": 383,
+      "sha256": "2fc2f288c4764395f0bda207987bf586d5c5fa04d44f4f0c61b8a6d3cfe1d53d"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_holy.mp3",
+      "id": "1sP9ncwnHsbYkZ6Eazb28rGl_dGcSdxCt",
+      "size": 11911,
+      "sha256": "544e3898d7d89fc0fb9db6a710618a4b49041b9735072cbf40b12913e4dfce81"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_holy.mp3.import",
+      "id": "1R--k6BtzvOGYSGf6jMyO522UMvYnUHb5",
+      "size": 380,
+      "sha256": "f1bf8f660d35b82cd9c2eb3f0fa04a15a6db2c98db12ad176ac216c1a9f86250"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_javelin.mp3",
+      "id": "1hHpaUSIE6ZiRaH71fVlq000u7B82f-9Q",
+      "size": 8150,
+      "sha256": "3a143aa02cafd7cbf0659713193a934fa24783d4e8476dcd56b681139225ef4c"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_javelin.mp3.import",
+      "id": "1xNhGS0jmVOqu4XGS7lQ0J8qnCVs_uo-k",
+      "size": 389,
+      "sha256": "c325d0eb5e29cea7a11f62331d674f9cb67369679b05840ff9432543a2806106"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_light_lance.mp3",
+      "id": "1MeqsEYiHhFw68ome9QATa4UKvvkLdttF",
+      "size": 6896,
+      "sha256": "21d5994ce9f56a9b345e60f19b4afd75ce25914a5fceec0219c32a85dcf76af6"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_light_lance.mp3.import",
+      "id": "1kIXAtrXPFQMcoCFClmIO6lcFHht6Ydjt",
+      "size": 401,
+      "sha256": "dd63fe80c5d4f1097f2af6f909570dc3f2d5314a73397ecc580a4dd4ba258786"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_orb.mp3",
+      "id": "1Pt9G2MyibqjVubNz_3Ckke-6VVwxxgbr",
+      "size": 11284,
+      "sha256": "22eb688defa7591572d4fe478a3ade417f8516df43e4f6f86637d038896b71b5"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_orb.mp3.import",
+      "id": "1U11V3L76BVB1NA1UhRqx-o2vRzXM6Efn",
+      "size": 377,
+      "sha256": "f7d0f9593fc8d71cd77b0328a8d4fbf641a8579a0f6be830eafa01d949dbaf36"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_thorn.mp3",
+      "id": "1bPNoxMIbxJrCf4r-EkktO_F9vWfs52aj",
+      "size": 6269,
+      "sha256": "b6d44b2e5468e91363643c6e535bb3807d629826a30e221545fdc1687d8183f7"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_thorn.mp3.import",
+      "id": "1rDa3bL3SG7T0knMhUY7-JYMJ1sd-Qesk",
+      "size": 383,
+      "sha256": "d80bd3fd674f0f47ba9e0721eb60cb3ccc24f9b1f55e9fe514154bdc23a350cd"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_thunder.mp3",
+      "id": "1UtwuD_bJJVRQGRM3GwszFtjXQ0A1tgoW",
+      "size": 7837,
+      "sha256": "4a96a06cf56df0c92169ad81fce88e5da1aa5c3e56e83baebbb310b70b0ecb54"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_thunder.mp3.import",
+      "id": "1eslhXZzgmJDfuXDlZXi75ABbWzXneRoK",
+      "size": 388,
+      "sha256": "93dba1276e4a4bd939621546bfc71ad40d79a5742bca21283883389e5af38abb"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_wing.mp3",
+      "id": "1bv21nBEjwDo8l6hV-NLgNGJLDMa19LY-",
+      "size": 8150,
+      "sha256": "2b657d4d561f9b7718fecc98b3d2d4a00ae0efeb163af7ecf9f449f82d9e2528"
+    },
+    {
+      "path": "assets/audio/sfx/battle/proj_wing.mp3.import",
+      "id": "1JKs2nLEe4zbbhU3eHzCBFX41mnDGqVf-",
+      "size": 380,
+      "sha256": "8123385565ec49ef9f0c1d18d8d923603ee143ccbdd5e089b2cd1e60cdbd58c5"
+    },
+    {
+      "path": "assets/audio/sfx/battle/star4_crimson_skill.mp3",
+      "id": "1VMfZp0ustGJ-AuFpyC7kZVmVMgVvcRiw",
+      "size": 8359,
+      "sha256": "81cda46b88878b4cf10d657fb5d7b6c3ec113d82e63b700ea220656d2ffcdcfa"
+    },
+    {
+      "path": "assets/audio/sfx/battle/star4_crimson_skill.mp3.import",
+      "id": "1Gq3gGAsDdD4e6e0z84zZJ_-r5e84huF6",
+      "size": 410,
+      "sha256": "780b7320847737177d9ec46222b44b51b1b4f95fcabb2e4216a75c489627fe3f"
+    },
+    {
+      "path": "assets/audio/sfx/battle/star4_dancer_skill.mp3",
+      "id": "1bZs4X-H5LGYsB6K10rHtQfEkXjISSrcm",
+      "size": 13061,
+      "sha256": "65bd03b65d6233e6d1f6fad026997ac86031926c831ab34a747475c5afac2541"
+    },
+    {
+      "path": "assets/audio/sfx/battle/star4_dancer_skill.mp3.import",
+      "id": "1dxxojFEp17mN_bN0Bu0v8sBWTnM2xzBv",
+      "size": 406,
+      "sha256": "590d39bde4fc6dbe8b4be9db4c6688a98188384d89c066e285907723c7eb4279"
+    },
+    {
+      "path": "assets/audio/sfx/battle/star4_drumer_skill.mp3",
+      "id": "1h003tRA9UR9mNEr2qwRje-k3LfuoZtRQ",
+      "size": 19853,
+      "sha256": "a2aa0c8bdf0cdb7ef24c5b208207df7915da469701c354120a82a3994c508c25"
+    },
+    {
+      "path": "assets/audio/sfx/battle/star4_drumer_skill.mp3.import",
+      "id": "1XklIJT_1DJcxWN7vYdcVgW258kk8CWIJ",
+      "size": 406,
+      "sha256": "a54d94bdcbce3e3d7fd33f326133e02d8433bf6610908f5649fbc557b353cb44"
+    },
+    {
+      "path": "assets/audio/sfx/battle/star4_guard_skill.mp3",
+      "id": "103nXzoCOq2GDQbrIhNst2EoExqWWB-qr",
+      "size": 12539,
+      "sha256": "a33e34978dbdc9e997c1cbfbb91ee1865bc2c408c7d0487cae2d959d1cefcf7f"
+    },
+    {
+      "path": "assets/audio/sfx/battle/star4_guard_skill.mp3.import",
+      "id": "18KBr95VXDQcM2yxINfqtRtRPUk2f8GIP",
+      "size": 404,
+      "sha256": "6820f3c109e029c21a9a6e711454b1562bc66d711418de8ca4704855fc8b744b"
+    },
+    {
+      "path": "assets/audio/sfx/battle/star4_hunter_skill.mp3",
+      "id": "19HdulWJPBUUW5oPAy1bcngvM4P5X936Q",
+      "size": 7837,
+      "sha256": "d6aefe8eeed26d01d33c05e8885de6c38e5271ffa58e5cb627dcec8945a22cda"
+    },
+    {
+      "path": "assets/audio/sfx/battle/star4_hunter_skill.mp3.import",
+      "id": "1t6EV0wKElNk9j0EwYmdqRzQvfOCN7uOP",
+      "size": 407,
+      "sha256": "44a00f755cd67bcb6c4484f5136dcef72cb2cfa2049136601c1eed1bd2b646af"
+    },
+    {
+      "path": "assets/audio/sfx/battle/star4_icey_skill.mp3",
+      "id": "1ztiWlp6M1y_5tIdrmy0vIjf5lGiRa1Ja",
+      "size": 15151,
+      "sha256": "d5773304117ef2036bafd3d3a03c4d43b94f6cf1e5373a0a188c353cc6ecf2da"
+    },
+    {
+      "path": "assets/audio/sfx/battle/star4_icey_skill.mp3.import",
+      "id": "1bc-l4VpbO3xDm9DyzJBc0ZBh0-GwO075",
+      "size": 401,
+      "sha256": "93414eca7a29fccb12ad6ced9976a04fc64b3bdbad790c2c97a6b8f0c2642c55"
+    },
+    {
+      "path": "assets/audio/sfx/battle/star4_lattern_skill.mp3",
+      "id": "13O5Z2gL03AgprkyKd1cviffefhJWe0ay",
+      "size": 14629,
+      "sha256": "dc93e387f91a54bfb9442a27a7ccd775b756c6f410e3f007d11723fa0bf21bda"
+    },
+    {
+      "path": "assets/audio/sfx/battle/star4_lattern_skill.mp3.import",
+      "id": "1JYmmuQi3i4mylIHyO2gOWpCJ3fv-jH1I",
+      "size": 410,
+      "sha256": "2cbf76ddf5efce97faa2469c8dfb8af2bad3577176a3d1e14d2fa003cebc6f01"
+    },
+    {
+      "path": "assets/audio/sfx/battle/star4_queen_skill.mp3",
+      "id": "1DTexF0klTPPeO8PsEzigU-7yFl4RzYf_",
+      "size": 10971,
+      "sha256": "0ecb86c4b3bdcfad893ea804a789b4b44c65ec5beb65cf9c5c9a644d4f3043d2"
+    },
+    {
+      "path": "assets/audio/sfx/battle/star4_queen_skill.mp3.import",
+      "id": "1-xz6vtW4hi-J4MFE0Dmbq5oSy_lzdlyN",
+      "size": 403,
+      "sha256": "1a83ab49d9c277bd1316fa1a2b0dc72b26d9a6bd8874ee4b094527ade70afdc0"
+    },
+    {
+      "path": "assets/audio/sfx/battle/star4_skypierce_skill.mp3",
+      "id": "1mH7Ja4X5R5aE1gWS_QIZo7ecHeVY6GcZ",
+      "size": 12016,
+      "sha256": "1f271550c54555f4d843073e7ac7a2fdbebe62857f9a4a3d46808ba8efdd186e"
+    },
+    {
+      "path": "assets/audio/sfx/battle/star4_skypierce_skill.mp3.import",
+      "id": "1q2H4PqK_ga4sujj5uFeTZnk9jDcy_RUT",
+      "size": 416,
+      "sha256": "8da1f795fbf621902ff64c616213c3b3a93caef34000759ec355a0ee26ff4efb"
+    }
+  ]
+}
