@@ -1260,6 +1260,17 @@ static func _apply_opening_unit_skills(player: Array, enemy: Array, event_log: A
 				_grant_shield(f, maxi(1, int(round(float(f.max_hp) * float(d.get("start_shield_pct", 0.20))))))
 				f.taunt_active = true
 				f.taunt_radius = float(d.get("taunt_radius", 180.0))
+				# 10.21 审查批次：光之卫士的四星技能音。
+				#
+				# 派发点为什么在这里：`guardian_shield_taunt` **不在** `_tick_skills`
+				# 里（它是一次性开场被动，没有 `skill_ready` 上升沿），
+				# 也没有 proc / 真事件通道。这里补一条 `sfx_proc`，
+				# 由 BattleVfx._maybe_play_sfx_proc 消费 ——
+				# 门控（自身+友军+四星）在那里，与其它四星技能音同口径。
+				#
+				# ⚠️ 与 `left_neighbor_sacrifice` 的 elif 分支保持分开：那条是死侍的，
+				#    不要顺手把这条音也给它。
+				_emit_sfx_proc(state, "guardian_shield_taunt", f, f)
 			elif sid == "left_neighbor_sacrifice":
 				BattleSimSkills._apply_death_servant_aura(f, team_units, d)
 				# 3 星只绑左邻；4 星左右各绑一个（设计文档：绑定左邻是这只棋子唯一的

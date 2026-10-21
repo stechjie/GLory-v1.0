@@ -1,5 +1,104 @@
 # Glory Beta 0.04
 
+## 2026-10-21：战场音效全量接入（29 条）—— 普攻从「完全无声」到全链路有声
+
+135 条逐条审查后落地。**改动 = 7 个源文件 + 29 个音频素材 + 2 个新门禁**，
+`assets/audio/sfx/battle/` 从 37 个 mp3 增至 66 个。
+未真机验证、未同步 `GLory-v1.0`、未暂存/提交/推送。
+
+★ **起点是个硬事实：接入前 `BattleVfx` 里 grep `SfxService.play` 只剩技能 / 人王 / Boss 三支，
+普攻完全无声。** 审查表里那 57 行「上一批」素材（15 条普攻音）文件在 QA 目录、
+从没进过 `assets/` —— 不是没做音效，是做好了没接进去。故本次实际落库 **29 条**：
+
+- 普攻飞行声 12 条 + 近战命中声 3 条（上一批生成，**首次落库**）+ 人王金色剑 /
+  法师属性弹 / 雷怒核心雷弹 3 条新增；
+- 四星技能音 9 条：赤律族 8 子（赤卫 / 赤舞者 / 战鼓使 / 血猎者 / 破甲者 / 霜印使 /
+  穿云弩手 / 赤灯使）+ 光之卫士 + 痛苦女王 —— **这批棋子此前一条四星技能音都没有**。
+  其中破甲者**复用**已存在的 `star4_spike_proc`，不新做；
+- 佣兵技能音 2 条：甲壳守卫 `shell_guard` / 炎阳王者 `king_aura`；
+- 法师 1~3★ 破例给技能音（本作唯一例外 —— 惯例是「普通技能音只给四星」，
+  而法师 `no_basic_attack=true`，1~3★ 原本连一声都没有）。
+
+**派发按技能类型分四条路，塞错表 = 永远不响**（表都在 `ui/services/SfxService.gd`）：
+
+| 类型 | 表 | 键 | 条目 |
+|---|---|---|---|
+| 施法型 | `STAR4_SKILL_CUES` / `MERC_SKILL_CUES` | unit_id | dancer / Icey / lattern / cancer_shell / leo_sun |
+| 普攻第 N 次 | `STAR4_ATTACK_SKILL_CUES` | unit_id | dark_queen（`attack_count % 2`） |
+| 普攻触发 / 真事件 | `STAR4_PROC_SKILL_CUES` | skill_id | block_guard / stacking_def_break / current_hp_strike / line_pierce / team_random_stack / guardian_shield_taunt |
+| 普攻音 | `BASIC_RANGED_CUES` / `BASIC_MELEE_CUES` | unit_id | 32 个远程 + 43 个近战 |
+
+后两类里**有两条没有现成事件**，本批在模拟器补了 `sfx_proc` 发射点：
+`CrimsonCombat.gd`（战鼓使，每次普攻触发）+ `BattleSimulator.gd`
+（光之卫士，开场授盾+嘲讽那一次）。用 `sfx_proc` 而不是 `unit_skill_proc`，
+是因为后者派发完音效还会顺带放程序化特效 —— 加音效不该顺手变成加演出。
+
+**四项用户拍板**：① 人王四星战斗技能音**不做**（删 `STAR4_SKILL_CUES["human_king"]`，
+并加 `STAR4_SILENT_UNITS` 让它返回空串，而不是退回默认合成音）② 法师 1~3★
+**一条通用**（不按 fire/ice/thunder/poison 拆 4 条）③ 光之卫士斩击特效**修**
+④ 战斗层并发上限 **6**（PvE 7）。
+
+**混音四层**，参数集中在 `THROTTLE_MSEC_BY_CUE` / `VOLUME_DB_BY_CUE` 两张表：
+
+- **节流**：P2 技能 200ms / P5 普通技能 300ms / P6 近战命中 340ms / P7 飞行 400ms，
+  **随层级降低单调变长**（越不重要的越容易被节流；反过来只会把高价值事件自己那一下也吃掉）。
+  战鼓使单配 2600ms 当鼓点 —— 它每次普攻都触发，按 200ms 走就是「每打一下都响一声技能音」。
+- **音色配平**：整体 −3 dB 起，再按「亮/尖」程度 ±（灯烬 −1 / 箭矢与冰棱 −5）。
+  ★ 10-21 二次：实测「战斗时 BGM 完全盖住普攻音」⇒ 17 条普攻音整体 **再 +2 dB**，
+  同时把战斗 BGM 压到 **0.5 线性（−6 dB）**（`BattleUI.BATTLE_BGM_LINEAR`，
+  进战斗设、`_stop_battle_music` 还原）。根因是总线只有 Master + SFX 且**都是 0 dB**，
+  BGM 落 Master 为满幅，普攻音净下来低 7~9 dB —— 必须两头一起动，只抬音效会让整体过载。
+  **11 条技能音刻意不入表**，统一走 P2 默认 —— 加进来反而会把技能音压到跟普攻一个量级。
+- **归属**：自身 0 / 交战敌方 −2 / 友军 −4 / 其他敌方 −6 dB，与上面的 mix_db **相加**生效。
+  「交战」用**目标归属**判（这一击打的是不是我方单位）—— 棋盘一屏全览，距离衰减不可用，
+  这是唯一可靠的「跟我有关」判据。远程飞行声在「其他敌方」下**直接不出声**；
+  近战命中声仍出，只压到 −6（近战是贴着我方在打，和隔着半张地图的飞矢不是一回事）。
+- **并发上限**：战斗层**独立计数器**，`VOICE_COUNT`(8) 一动没动 —— 那个 8 是全局共享池
+  且被 `audio_sfx_check` 钉死（数 root 下 `GlorySfxVoice*` 节点、要求正好 8 个）。
+  技能音（P2）**刻意不走**这道闸门：拿一次技能音换一次普攻音是错的优先级。
+
+**「技能音替代普攻音」的 11 个单位**（用户 135 条备注里 11 次确认的同一条规则）：
+那一击若会出技能音就不播普攻音，**不是叠加**。判据 `_skill_cue_replaces_basic_attack()`
+只覆盖**能预判**的（取模 / 查表）；概率型（民兵 `attack_interrupt` 是 `randf()`）在出手那帧
+判不出来 —— 那种偶尔叠一声，比「为了不叠而永远不响普攻音」可接受得多。
+
+**光之卫士特效修复**（本批唯一动既有逻辑的地方）：专属晶体圣刃的贴图与实现
+（`VFXRaceBasicAttack3D._spawn_guardian_crystal_slash/hit`）**早就写了**，
+`MELEE_KIND_BY_UNIT["god_guard"]` 也早就写了，但玩家棋子被 `is_player_chess(uid)`
+的 return 挡死 ⇒ 死代码。三处**必须一起改**：
+`OgaChessVFXCatalog` 加 `PLAYER_PAINTED_MELEE_UNITS` 白名单 →
+`UnitSkillVFXComposer3D._basic_attack` 放行 → `BattleRenderWarmup` 预热条件同步
+（**漏了第三处，首次出手会现场编译 shader、首帧卡一下**）。
+刻意**不**放开整个 `MELEE_KIND_BY_UNIT` —— 那会连带给 dark_imp / dark_fear /
+dark_suc / dark_dragon / dark_doom 五个单位冒出通用斩击，超出「修光之卫士」的范围。
+
+**判据与变异**
+
+- 新增 `_qa_1018/sfx_wiring_probe.tscn` **163 PASS / 0 FAIL**：29 条 cue 常量与路径对得上、
+  57 行普攻路由逐条对、派发表逐条对、混音参数逐条对、法师无普攻音、人王四星已删。
+- 新增 `_qa_1018/sfx_playback_probe.tscn` **36 PASS / 0 FAIL**：29 条**真的能播**
+  （播放计数器 +1，不是「看着接上了」）、空串安全、并发上限真的拦得住、
+  节流真的把同 cue 连打 3 次压成 1 次。
+- 复跑既有门禁全绿：`battle_render_warmup` 5 / `star_burst` 45 / `four_star_values` 799；
+  `--headless --editor --quit` 零 SCRIPT ERROR。
+- ★ 探针里两个**必须保留**的处理（这个仓的既有坑，不是本次引入）：
+  ① 多等两帧 —— `_ensure_voices()` 用 `add_child.call_deferred` 挂播放器，
+  同帧 `play()` 会静默失败；② 显式 `PlayerProfile.set_presentation_toggle("ui_sound", true)`
+  —— headless 空档案会读到 false，`play()` 在第一道门就被挡掉。
+
+**自查出并修掉的三个问题**
+
+1. `set_battle_voice_cap()` 第一版会清空记账 ⇒ 调一次 cap 就把已响的全部清零、闸门失效
+   （探针 SEG3 抓到 `live_count_should_be_2 got=0`）。现改为只按真实到期时间清理。
+2. `CrimsonCombat.passive_attack()` 的 `return 0` 只缩进 1 tab，是**既有的缩进悬崖** ——
+   在它上面插注释后 Godot 报 `Expected expression for match pattern`。已移出 match 块。
+3. 删 `STAR4_SKILL_CUES["human_king"]` 后，`.get(uid, CUE_STAR4_DEFAULT)` 会**退回通用合成音**，
+   比不删更糟 ⇒ 用 `STAR4_SILENT_UNITS` 显式返空串 + `play()` 空串早退（不刷 warning）。
+
+★ 完整交接文档（含逐条「单位 / 什么时候响 / 文件路径」清单、全部行号锚点）
+在 `其他/_qa_sfx_battle_audit/接入报告_详细交接版.md`；
+每处改动代码里都有 `10.21 审查批次` 注释，`grep -n "10.21" <file>` 可一把捞出。
+
 
 ## 2026-10-20 怪物与 Boss 模型批量精修
 

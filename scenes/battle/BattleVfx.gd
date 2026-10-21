@@ -103,6 +103,11 @@ var _vfx_snap_b: Dictionary = {}
 var _vfx_snap_use_b := false
 var _vfx_seen_ids: Dictionary = {}
 
+# 10.21 审查批次：战斗层并发上限只在本场战斗第一次刷新时定一次。
+# 用这个标记而不是每帧都设，是因为 `set_battle_voice_cap()` 会清空计数器 ——
+# 每帧调等于上限永远不生效。
+var _battle_voice_cap_mode_ready := false
+
 func _refresh_visuals() -> void:
 	super._refresh_visuals()
 	_refresh_battle_vfx(_state)
@@ -115,6 +120,12 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 	# 不推进游标/播种标记，Go 撤下后的首帧仍会完整播放这些事件。
 	if _pvp_combat_waiting:
 		return
+	# 10.21 审查批次：按模式定战斗层并发上限。PvE 没有「友军 / 其他敌方」两个
+	# 归属，声源更少，上限比 PvP 宽一格（6 → 7）。见 SfxService.set_battle_voice_cap。
+	if not _battle_voice_cap_mode_ready:
+		_battle_voice_cap_mode_ready = true
+		var kind := str(state_snapshot.get("kind", "pve"))
+		SfxService.set_battle_voice_cap(7 if kind == "pve" else 6)
 	var current := _collect_vfx_units(state_snapshot)
 	_sync_persistent_unit_vfx(current)
 	_play_visual_events(state_snapshot,current)
@@ -539,9 +550,25 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 		# **佣兵升不到四星**（`EconomyLedger._use_upgrade_stone` 会拒），所以
 		# 它们不能并进上面那条 `_is_star4` 门 —— 并进去就是一条永远不响的音。
 		# 9.20 起门控与上面同一口径：自身 + 友军（敌方天然被排除）。
+		# 10.21 审查批次：甲壳守卫 `shell_guard` / 炎阳王者 `king_aura`
+		# 两条施法型佣兵技能音并入这里（表在 MERC_SKILL_CUES）。
 		var merc_cue := SfxService.merc_skill_cue_for(uid)
 		if not merc_cue.is_empty():
 			SfxService.play(merc_cue)
+		# 10.21 审查批次：**法师 1~3★ 的技能音。**
+		#
+		# 这是本作唯一的例外 —— 惯例是「普通技能音只给四星」，而法师
+		# `no_basic_attack = true`（模拟器 BattleSimulator.gd:847 直接 continue），
+		# 1~3★ 法师连普攻音都没有，于是**完全沉默**。用户审查后明确要求补。
+		#
+		# ⚠️ 与上面那条 `_is_star4` 分支**互斥**：4★ 法师用已存在的
+		#    `star4_mage_skill`（STAR4_SKILL_CUES），1~3★ 才走这一条。
+		#    所以判据必须是 `elif _owned` 这条**非四星**支路 —— 写在上面的
+		#    四星分支里会让低星永远不响，写在这里正好互补。
+		if not _is_star4(_sim_uid):
+			var low_cue := SfxService.low_star_skill_cue_for(uid)
+			if not low_cue.is_empty():
+				SfxService.play(low_cue)
 	# 9.22：boss 技能音 —— **只剩施法边沿这一条通道**。
 	#
 	# ★ **不做归属门控。** 用户口径：「boss 技能音效播放，我方队友都能听见」。
@@ -1751,8 +1778,98 @@ func cue_play_basic_attack(source_uid: String, target_uid: String, ranged: bool)
 	if str(source.get("race", "")) == _CRIMSON_CATALOG.RACE:
 		race = _CRIMSON_CATALOG.RACE
 	_play_race_basic_attack(attack, target, "ranged" if ranged else "melee", race, _vfx_prev_units)
+	_maybe_play_basic_attack_sfx(attack, source, ranged)
 	_play_attack_unit_procedural(attack, target, _vfx_prev_units)
 	return true
+
+
+# --- 10.21 审查批次：普攻音 -----------------------------------------------------
+#
+# 这是**整条战斗链里最缺的一环** —— 在此之前 `BattleVfx` 里一条普攻音都没有
+# （grep SfxService.play 只剩技能 / 人王 / Boss）。远程单位打出去只有「咻」的
+# 画面、没有声；15/21 只玩家近战棋子连斩击特效都没有，于是普攻完全无声。
+#
+# ## 三层闸门
+#
+# ① **表**（SfxService.BASIC_RANGED_CUES / BASIC_MELEE_CUES）：unit_id 查 cue。
+#    `ranged` 由调用方给（模拟器 `basic_ranged` / `basic_melee`），这里不重判 ——
+#    模拟器 BattleSimulator.gd:1119 的阈值（range > 1.0）与渲染侧
+#    BattleRenderWarmup.gd:47 的阈值（range > 1.5）**不一致**，人王（1.5）卡在中间。
+#    那是已知未修的问题，音效侧跟着模拟器走，见 SfxService 表里的说明。
+#
+# ② **归属**（`_basic_attack_ownership`）：我方 0 dB / 交战敌方 −2 dB /
+#    友军 −4 dB / 其他敌方 −6 dB。**远程飞行声在「其他敌方」下直接不出声**
+#    （SfxService.VOLUME_DB_BY_CUE 那段的 mute 规则）—— 那一格是给
+#    身位价值留的，不是给噪声留的。
+#
+# ③ **并发上限**（SfxService.play_battle）：战斗层自己的计数器，上限 6
+#    （PvE 7）。⚠️ 不是改 `VOICE_COUNT`（那个 8 被 audio_sfx_check 钉死）。
+#
+# ## 「技能音替代普攻音」的 11 个单位
+#
+# 用户审查里 11 条备注确认了同一条接线规则：**那一击若触发了技能音，
+# 就不播普攻音，不是叠加。** 判据是「这一击会不会出技能音」：
+#   · 普攻触发型四星技能（`_attack_skill_vfx_ready` 为真）→ 技能音即将由
+#     `_play_attack_unit_procedural` 播放，这里让位；
+#   · `STAR4_PROC_SKILL_CUES` / `MERC_PROC_SKILL_CUES` 命中的 skill_id → 同理。
+#
+# ⚠️ 这条让位只覆盖**能预判**的（取模 / 查表都成立）。概率型触发
+#    （民兵 `attack_interrupt` 是 randf()）在出手这一帧还判不出来 ——
+#    那种偶尔叠一声，比「为了不叠而永远不响普攻音」可接受得多。
+func _maybe_play_basic_attack_sfx(attack: Dictionary, source: Dictionary, ranged: bool) -> void:
+	var uid := str(attack.get("unit_id", ""))
+	var cue := SfxService.basic_attack_cue_for(uid, ranged)
+	if cue.is_empty():
+		return
+	# 「技能音替代普攻音」：这一击会出技能音就不出普攻音。
+	if _skill_cue_replaces_basic_attack(attack, uid):
+		return
+	var sim_uid := str(attack.get("id", ""))
+	var target_uid := str(attack.get("target_uid", ""))
+	var db := _basic_attack_ownership_db(sim_uid, target_uid)
+	# 远程飞行声在「其他敌方」下直接不出声（P7 mute 规则，见
+	# `优先级与混音策略.md` §10 与 runtime_policy.json 的 mute_if_ownership）。
+	# 近战命中声（P6）在这一格仍然出，只压到 −6 dB —— 近战是「贴着我方在打」，
+	# 和隔着半张地图的飞矢不是一回事。
+	if ranged and is_equal_approx(db, -6.0) and not _is_own_or_ally_unit(target_uid):
+		return
+	SfxService.play_battle(cue, db + SfxService.cue_volume_db(cue))
+
+
+# 「这一击会不会出技能音」= 普攻音要不要让位。
+# 两条判据都必须是**预判型**的（取模或查表），概率型不算。
+func _skill_cue_replaces_basic_attack(attack: Dictionary, uid: String) -> bool:
+	var sid := str(attack.get("skill_id", ""))
+	# ① 普攻触发型四星技能：弓箭手额外伤害 / 牧师治疗 / 极光射手真伤 /
+	#    痛苦女王同目标叠加。`_attack_skill_vfx_ready` 正是「这一击算不算触发」的判据。
+	if not SfxService.attack_skill_cue_for(uid).is_empty():
+		return _attack_skill_vfx_ready(attack)
+	# ② proc 型（赤卫格挡 / 破甲者破防 / 毒灵 / 飞灵 / 刺灵 / 魔童 / 血猎者 / 穿云弩手）：
+	#    按 skill_id 查表命中即让位 —— 这些技能本身就在普攻链上，
+	#    响技能音就够响了。
+	if sid.is_empty():
+		return false
+	return not SfxService.proc_skill_cue_for(sid).is_empty() or not SfxService.merc_proc_cue_for(sid).is_empty()
+
+
+# 普攻音的归属响度。返回 **−99.0 = 不出声**（远程飞行声在「其他敌方」下）。
+#
+# 四档（与 runtime_policy.json 的 ownership 一致）：
+#   自身 0 / 交战敌方 −2 / 友军 −4 / 其他敌方 −6
+# 其中「交战」用的是**伤害关系**而不是坐标：这一击打的是不是我方单位。
+# （棋盘一屏全览，距离衰减不可用；用目标归属判「跟我有关」是唯一可靠的替代。）
+func _basic_attack_ownership_db(sim_uid: String, target_uid: String) -> float:
+	if _is_local_owned_unit(sim_uid):
+		return 0.0
+	if _is_own_or_ally_unit(sim_uid):
+		# 友军：本地单机下 team_mode 恒真、local_slot 恒 0，自己没有友军可言；
+		# 走到这里基本就是 3v3 里的队友。
+		return -4.0
+	# 敌方：打的是不是我方单位？
+	if not target_uid.is_empty() and _is_own_or_ally_unit(target_uid):
+		return -2.0
+	# 其他敌方：远程飞行声在这一格直接不出声，近战命中声 −6 dB。
+	return -6.0
 
 
 func cue_spawn_hit_number(target_uid: String, amount: int, kind: String, crit: bool, is_skill: bool, race: String) -> bool:
@@ -2886,12 +3003,46 @@ static func _crimson_event_target(event: Dictionary) -> String:
 	return str(event.get("target_uid", ""))
 
 
+# 归组后的赤律**真事件**技能音。见 `_play_crimson_event_groups` 开头的说明。
+# 门控与其它四星技能音同口径（自身 + 友军 + 四星）。
+func _maybe_play_crimson_event_sfx(skill_id: String, groups: Dictionary, current: Dictionary) -> void:
+	if groups.is_empty():
+		return
+	var cue := SfxService.proc_skill_cue_for(skill_id)
+	if cue.is_empty():
+		return
+	for key: String in groups:
+		var group: Dictionary = groups[key]
+		var source_uid := str(group.get("source", ""))
+		if source_uid.is_empty():
+			continue
+		if not _is_own_or_ally_unit(source_uid) or not _is_star4(source_uid):
+			continue
+		# 只响一次：归组里同一个来源可能出现多组（不同 tick），这里取第一组就够。
+		# 想一次都不漏的话，节流表（P2 200ms）会替我们兜住。
+		SfxService.play(cue)
+		return
+
+
 func _play_crimson_proc(event: Dictionary, current: Dictionary) -> void:
 	var skill_id := str(event.get("skill_id", ""))
 	var source_uid := str(event.get("source_uid", ""))
 	var target_uid := _crimson_event_target(event)
 	var source := _vfx_unit_by_sim_uid(current, source_uid)
 	var target := _vfx_unit_by_sim_uid(current, target_uid)
+	# 10.21 审查批次：赤卫 `block_guard` / 破甲者 `stacking_def_break` 的四星技能音。
+	#
+	# 派发点为什么在这里：这两条的触发时刻是**模拟器判定成功的那一刻**
+	# （`unit_skill_proc`，DamageService:148 / CrimsonCombat:96），不是 `skill_ready`
+	# 上升沿 —— 它们压根不在 `_tick_skills` 里，走施法表会永远不响。
+	# 而本函数正好是那条事件的唯一消费端（BattleVfx:1503 按
+	# `_CRIMSON_CATALOG.PROC_SKILLS` 拦在这里），音挂在这里就等于「响了 = 打成了」。
+	#
+	# 门控与其它四星技能音同口径（自身 + 友军 + 四星）：赤卫自己 1~3 星时不响，
+	# 敌方赤卫也不响。
+	var cue := SfxService.proc_skill_cue_for(skill_id)
+	if not cue.is_empty() and _is_own_or_ally_unit(source_uid) and _is_star4(source_uid):
+		SfxService.play(cue)
 	match skill_id:
 		"block_guard":
 			# source = 格挡成功的赤卫，target = 被挡下的攻击者。
@@ -2924,6 +3075,16 @@ func _collect_crimson_event(groups: Dictionary, event: Dictionary, by_target: bo
 
 
 func _play_crimson_event_groups(hp_hits: Dictionary, pierces: Dictionary, current: Dictionary) -> void:
+	# 10.21 审查批次：血猎者 / 穿云弩手的四星技能音。
+	#
+	# 派发点为什么在这里：这两条是**真事件**，没有施法边沿（不在 `_tick_skills`），
+	# 也不走 proc 事件通道 —— 它们的 skill_id 是搭在 `hit_number` / `impact`
+	# 事件上过来的（BattleVfx:1513 / :1505 归组到本函数）。音挂在本函数
+	# 就等于「响了 = 这一击真的打出了百分比伤害 / 真的贯穿了」。
+	#
+	# 归组键里带 tick，所以同一次攻击只响一声，不会因为命中了多个目标而叠。
+	_maybe_play_crimson_event_sfx("current_hp_strike", hp_hits, current)
+	_maybe_play_crimson_event_sfx("line_pierce", pierces, current)
 	# 血猎者：同一击里 current_hp_strike 出现两次 = 四星斩杀那一下也打出来了。
 	for key: String in hp_hits:
 		var group: Dictionary = hp_hits[key]

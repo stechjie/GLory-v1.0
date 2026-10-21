@@ -228,6 +228,29 @@ static func projectile_for(unit_id: String) -> Dictionary:
 static func is_player_chess(unit_id: String) -> bool:
 	return unit_id in PLAYER_CHESS_UNITS
 
+# 10.21 审查批次：**已经画了专属近战斩击、但因为是玩家棋子而走不到的那些单位。**
+#
+# 背景：`UnitSkillVFXComposer3D._basic_attack` 的近战分支是
+#     melee_spec = melee_for(uid, race)   # 只查 MELEE_UNIT_RACE 那 5 个
+#     if not melee_spec.is_empty(): ... return
+#     if is_player_chess(uid): return     # ← 玩家棋子在这里被判「无特效」
+# 于是 `MELEE_KIND_BY_UNIT` 里给玩家棋子写的专属武器**全是死代码** —— 贴图画了、
+# 实现也写了（VFXRaceBasicAttack3D._spawn_*），就是永远调不到。
+#
+# 用户审查后要求修**光之卫士**一个（`guardian_crystal` 晶体圣刃，贴图与实现
+# 都在）。⚠️ **刻意不放开整个 `MELEE_KIND_BY_UNIT`** —— 那会连带让
+# dark_imp / dark_fear / dark_suc / dark_dragon / dark_doom 五个单位也冒出通用
+# 斩击，超出「修光之卫士」的范围，也违背本表「只给招牌武器」的原设计。
+#
+# 要再加单位就往这个数组里填，并在 VFXRaceBasicAttack3D 里确认有对应 spawn。
+const PLAYER_PAINTED_MELEE_UNITS: Array[String] = [
+	"god_guard",
+]
+
+# 该单位是否属于上面那批「画了专属近战斩击」的玩家棋子。
+static func has_painted_melee(unit_id: String) -> bool:
+	return unit_id in PLAYER_PAINTED_MELEE_UNITS
+
 static func melee_for(unit_id: String, _race: String) -> Dictionary:
 	var melee_race := str(MELEE_UNIT_RACE.get(unit_id, ""))
 	if melee_race.is_empty():

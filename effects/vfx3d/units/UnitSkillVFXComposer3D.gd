@@ -306,6 +306,20 @@ func _basic_attack(origin:Vector3,target:Vector3,race:String,mode:String,context
 				last_spawned=melee
 				melee.play_spec(origin,target,melee_spec,context)
 			return
+		# 10.21 审查批次：光之卫士的专属晶体圣刃。
+		#
+		# 它的贴图（guardian_crystal_slash/hit/shards.png）与实现
+		# （VFXRaceBasicAttack3D._spawn_guardian_crystal_slash/hit）**早就在**，
+		# `MELEE_KIND_BY_UNIT["god_guard"] = "guardian_crystal"` 也早就写了，
+		# 但下面那句 `is_player_chess(uid)` 的 return 让它永远调不到 —— 死代码。
+		#
+		# 这里只放行 `PLAYER_PAINTED_MELEE_UNITS` 里点名的单位（目前只有它一个）。
+		# **刻意不**放开整个 `MELEE_KIND_BY_UNIT`：那会连带给另外五个单位
+		# 冒出通用斩击，超出「修光之卫士」的范围。
+		if OGA_CHESS_CATALOG.has_painted_melee(uid):
+			var painted_profile:=_basic_profile_for(uid,race)
+			_spawn(VFX_RACE_BASIC_ATTACK,painted_profile,{"origin":origin,"target":target,"target_node":context.get("target_node"),"race":race,"mode":mode,"bolt_kind":_bolt_kind_for(uid),"melee_kind":_melee_kind_for(uid),"bolt_tex":""})
+			return
 		# Non-signature player melee pieces intentionally have no generic slash.
 		# Returning here also prevents the retired race effect from resurfacing.
 		if OGA_CHESS_CATALOG.is_player_chess(uid):
