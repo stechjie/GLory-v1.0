@@ -1,0 +1,49 @@
+{
+  "source_commit": "ec7a5319cec77236480d7ac6c45baa512e26dead",
+  "version": "0.0.27",
+  "battle_protocol": 43,
+  "base_id": "glory-20261021-refresh43-slim",
+  "android": {
+    "version_code": 40,
+    "bytes": 547057210,
+    "sha256": "7bd6ef66e412486701f3bbd201b603151de7e54f2dda0202b126a5acd1c08f1c",
+    "base_sha256": "f600f78eb2a0cea5f4032d704cef2f86d06a79e322d5bb196cda80c0a5a5f68d",
+    "drive_file_id": "19qnP6WQXTYhl43G5BFHFY7gpRPaPbJAk",
+    "drive_new_revision_uploaded": true
+  },
+  "ios": {
+    "build_number": 63,
+    "bytes": 542616690,
+    "sha256": "bccaad0cab35b333691223328321a82d4fd11ff02fce87c79ce6f7ba50b81c4d",
+    "base_sha256": "a9f3aedfbf97d8112fb9881353e79edae57339c40f62bb858d1f6cd064abf7d1",
+    "delivery": "Transporter delivered 2026-10-21 19:01 Asia/Shanghai",
+    "testflight_build_id": "0620b2ed-1aff-4b42-9d0e-d363fdac86e3",
+    "internal_test_group_id": "90dd8f53-b157-49c4-b899-8da72091b76a",
+    "internal_test_group_members": 10,
+    "internal_state": "IN_BETA_TESTING"
+  },
+  "server": {
+    "deployed": true,
+    "release": "/home/nins17121/Glory/releases/0.0.27-20261021-ec7a531",
+    "verified_at": "2026-10-21T10:53:56.809778+00:00"
+  },
+  "platform_delivery": "Check platform status and delivery evidence; signing/build alone does not imply availability.",
+  "device_gameplay_tested": false,
+  "verification": {
+    "source_resource_sync": "success; 3441 files; 0 errors; 0 downloads needed",
+    "signature_continuity": true,
+    "payload_matches_registered_baselines": true,
+    "linux_cold_start": true,
+    "runtime_load_probe": {
+      "checked": 5,
+      "errors": 0
+    },
+    "regression_assertions": {
+      "shop_roll_parity": 6517,
+      "four_star_upgrade": 385,
+      "battle_hit_feedback": 30,
+      "unit_planar_shadow": 42
+    },
+    "regression_caveat": "Shop assertions pass; QA scene transition emitted shutdown parse/resource diagnostics. Separate runtime loading of BattleScreen and referenced resources passed without engine errors."
+  }
+}
