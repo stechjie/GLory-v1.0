@@ -44,6 +44,19 @@ static var _streams: Dictionary = {}
 static var _player: AudioStreamPlayer
 static var _path := ""
 static var _installed := false
+# BGM 的**基础电平**（线性）。默认 1.0 = 满。
+#
+# 10-21 加：用户实测「战斗时 BGM 太响，完全盖住普攻音」。根因是结构性的 ——
+# 音频总线只有 Master + SFX 两条且**两条都是 0 dB**，而 BGM 落在 Master
+# 也是 1.0 线性；普攻音 cue 配平 −3~−7 dB 再叠归属 −2~−6 dB，净下来比 BGM
+# 低 7~9 dB（振幅 2~3 倍差）⇒ 短促的打击声必然被连续 BGM 盖住。
+#
+# 正解不是把音效一路往上顶（会整体过载），而是**在对局里把 BGM 压下来**：
+# 战斗期间 `set_base_linear(0.5)`（−6 dB），离开战斗恢复 1.0。
+#
+# ⚠️ 与语音 duck **必须是乘法关系**（见 `_sync_voice_volume`），
+#    否则两处各写各的 `volume_linear`，后写的那次会覆盖前者。
+static var _base_linear := 1.0
 # 「下一帧再同步一次」是否已经约过（见 _retry_sync_next_frame）。
 static var _retry_queued := false
 # 语音压低 BGM 的**额外判据源**（10.10）。对局 / 自定义房间的语音走 VoiceService
@@ -225,13 +238,30 @@ static func _voice_service_talking() -> bool:
 
 # Only the music player is attenuated; never the Master bus or remote voices.
 # Native status confirms capture actually started (permission/publish may fail).
+#
+# ★ 两个因素**相乘**，不互相覆盖：基础电平（战斗压低）× 语音 duck。
 static func _sync_voice_volume() -> void:
 	if _player == null or not is_instance_valid(_player):
 		return
 	var talking := _voice_service_talking()
 	if not talking and _talk_probe.is_valid():
 		talking = bool(_talk_probe.call())
-	_player.volume_linear = (1.0 / 6.0) if talking else 1.0
+	var duck := (1.0 / 6.0) if talking else 1.0
+	_player.volume_linear = _base_linear * duck
+
+
+# BGM 基础电平（线性）。战斗里传 0.5，退出战斗传 1.0。
+#
+# **只影响 BGM 自己**，不动 Master 也不动 SFX 总线 —— 语音 duck 仍然叠在上面。
+# 传 0 会静音（留给将来「BGM 音量滑杆」用），负数按 0 夹。
+static func set_base_linear(value: float) -> void:
+	_base_linear = clampf(value, 0.0, 2.0)
+	_sync_voice_volume()
+
+
+# 当前基础电平。给门禁与排障用（能断言「进战斗确实压了、退战斗确实还原」）。
+static func base_linear() -> float:
+	return _base_linear
 
 
 # 建播放器。**挂载一律走 `add_child.call_deferred`** —— 同 SfxService：

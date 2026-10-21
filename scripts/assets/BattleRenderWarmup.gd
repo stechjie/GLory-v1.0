@@ -66,7 +66,14 @@ static func collect_jobs(replays: Array) -> Array[Dictionary]:
 				var spec: Dictionary = CHESS.projectile_for(unit) if mode == "ranged" else CHESS.melee_for(unit, _visual_race(unit))
 				# Several player melee pieces intentionally only animate the model;
 				# their production composer returns without a VFX. Do not wait on it.
-				if not CHESS.is_player_chess(unit) or not spec.is_empty():
+				#
+				# 10.21 审查批次：光之卫士是**例外** —— composer 现在会为它 spawn
+				# 专属晶体圣刃（见 UnitSkillVFXComposer3D._basic_attack 的
+				# `has_painted_melee` 分支）。它 `is_player_chess` 为真、`melee_for`
+				# 又查不到 spec，按上面那句会被判「无特效」而跳过预热；
+				# 于是它第一次出手才现场编译 shader，首帧卡一下。
+				# ⇒ 与 composer 的放行名单保持一致。
+				if not CHESS.is_player_chess(unit) or not spec.is_empty() or CHESS.has_painted_melee(unit):
 					_append(jobs, seen, unit, "basic_attack_%s_%s" % [mode, _visual_race(unit)])
 			if skill == "random_attribute_bolt":
 				for element in ["fire", "ice", "thunder", "poison"]:

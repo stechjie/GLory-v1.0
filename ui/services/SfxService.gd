@@ -223,6 +223,67 @@ const CUE_STAR4_POISON_PROC := "star4_poison_proc"
 const CUE_STAR4_TITAN_PROC := "star4_titan_proc"
 const CUE_STAR4_MOTONG_PROC := "star4_motong_proc"
 
+# --- 10.21 战场音效全量审查批次（135 条逐条审查后落地）------------------------
+#
+# 与 9.19~9.23 那几批不同的两点，写在最前面：
+#
+# ① **普攻终于有声音了。** 此前 `BattleVfx` 里一条普攻音都没有 —— grep
+#    `SfxService.play` 只剩技能 / 人王 / Boss 三支。远程单位打出去只有「咻」的
+#    **画面**、没有声；近战连「画面」都没有（15/21 只玩家近战棋子无斩击特效）。
+#    本批补 12 条飞行声 + 3 条近战命中声，见 `BASIC_RANGED_CUES` /
+#    `BASIC_MELEE_CUES`。这两张表是**按 unit_id** 的，不是按 race ——
+#    同一个种族里神侍是光矛、神王是刀，音色本来就该分开。
+#
+# ② **法师 1~3★ 破例给技能音。** 本作惯例是「普通技能音只给四星」，而法师
+#    `no_basic_attack = true`（模拟器 BattleSimulator.gd:847 直接 continue），
+#    1~3★ 法师因此**完全沉默**。用户审查后明确要求补，见 `LOW_STAR_SKILL_CUES`。
+
+# 12 条远程飞行声（按弹体音色分，不按单位分 —— 多个单位共用一条）。
+const CUE_PROJ_ARROW := "proj_arrow"
+const CUE_PROJ_JAVELIN := "proj_javelin"
+const CUE_PROJ_ORB := "proj_orb"
+const CUE_PROJ_DARK_ORB := "proj_dark_orb"
+const CUE_PROJ_HOLY := "proj_holy"
+const CUE_PROJ_LIGHT_LANCE := "proj_light_lance"
+const CUE_PROJ_WING := "proj_wing"
+const CUE_PROJ_DISC := "proj_disc"
+const CUE_PROJ_FROST := "proj_frost"
+const CUE_PROJ_EMBER := "proj_ember"
+const CUE_PROJ_BONE := "proj_bone"
+const CUE_PROJ_THORN := "proj_thorn"
+const CUE_PROJ_THUNDER := "proj_thunder"
+
+# 3 条近战命中声（按材质分：金属 / 非金属 / 徒手）。
+const CUE_MELEE_METAL := "melee_metal"
+const CUE_MELEE_NONMETAL := "melee_nonmetal"
+const CUE_MELEE_UNARMED := "melee_unarmed"
+
+# 10.21 审查后新增的两条普攻音：
+#   * 人王 —— 用户判定属远程，弹道是「金色剑从目标落下」，自带落地撞击，
+#     所以比其它飞行声给得更响（mix_db −4 而不是 −7~−5）。
+#   * 法师 1~3★ —— 它没有普攻，这一条是它的**技能**音，见 LOW_STAR_SKILL_CUES。
+const CUE_PROJ_DIVINE_BLADE := "proj_divine_blade"
+const CUE_MAGE_ATTRIBUTE_BOLT := "mage_attribute_bolt"
+
+# 赤律族 8 子 + 光之卫士 + 痛苦女王的四星技能音。
+# ⚠️ 派发**不能**全部塞进 STAR4_SKILL_CUES：施法型 / 普攻触发型 / 普攻第 N 次 /
+# 真事件是四条不同的路，塞错表 = 永远不响（9.23 第五批就是这么错的）。
+# 逐条的落点见下面各表的注释。
+const CUE_STAR4_GUARD_SKILL := "star4_guard_skill"
+const CUE_STAR4_QUEEN_SKILL := "star4_queen_skill"
+const CUE_STAR4_CRIMSON_SKILL := "star4_crimson_skill"
+const CUE_STAR4_DANCER_SKILL := "star4_dancer_skill"
+const CUE_STAR4_DRUMER_SKILL := "star4_drumer_skill"
+const CUE_STAR4_HUNTER_SKILL := "star4_hunter_skill"
+const CUE_STAR4_ICEY_SKILL := "star4_icey_skill"
+const CUE_STAR4_LATTERN_SKILL := "star4_lattern_skill"
+const CUE_STAR4_SKYPIERCE_SKILL := "star4_skypierce_skill"
+
+# 两条佣兵技能音（甲壳守卫 `shell_guard` / 炎阳王者 `king_aura`）。
+# 两条都是**施法型**（`_tick_skills` 里有分支），按 unit_id 进 MERC_SKILL_CUES。
+const CUE_MERC_CANCER_SHELL_SKILL := "merc_cancer_shell_skill"
+const CUE_MERC_LEO_SUN_SKILL := "merc_leo_sun_skill"
+
 const CUES := {
 	CUE_UI_POPUP: "res://assets/audio/sfx/ui/popup.mp3",
 	CUE_UI_CONFIRM: "res://assets/audio/sfx/ui/button_confirm.mp3",
@@ -319,6 +380,40 @@ const CUES := {
 	CUE_STAR4_MOTONG_PROC: "res://assets/audio/sfx/battle/star4_motong_proc.mp3",
 	# 9.26 大厅宠物脚步声。素材放 lobby/ 下（其它四类是 ui/prep/battle/camp）。
 	CUE_PET_FOOTSTEP: "res://assets/audio/sfx/lobby/pet_footstep.wav",
+
+	# 10.21 战场音效全量审查批次。全部放 battle/ 下：都是战斗场景内的声音。
+	# 12 条飞行 + 3 条近战命中 + 人王金色剑 + 法师属性弹。
+	CUE_PROJ_ARROW: "res://assets/audio/sfx/battle/proj_arrow.mp3",
+	CUE_PROJ_JAVELIN: "res://assets/audio/sfx/battle/proj_javelin.mp3",
+	CUE_PROJ_ORB: "res://assets/audio/sfx/battle/proj_orb.mp3",
+	CUE_PROJ_DARK_ORB: "res://assets/audio/sfx/battle/proj_dark_orb.mp3",
+	CUE_PROJ_HOLY: "res://assets/audio/sfx/battle/proj_holy.mp3",
+	CUE_PROJ_LIGHT_LANCE: "res://assets/audio/sfx/battle/proj_light_lance.mp3",
+	CUE_PROJ_WING: "res://assets/audio/sfx/battle/proj_wing.mp3",
+	CUE_PROJ_DISC: "res://assets/audio/sfx/battle/proj_disc.mp3",
+	CUE_PROJ_FROST: "res://assets/audio/sfx/battle/proj_frost.mp3",
+	CUE_PROJ_EMBER: "res://assets/audio/sfx/battle/proj_ember.mp3",
+	CUE_PROJ_BONE: "res://assets/audio/sfx/battle/proj_bone.mp3",
+	CUE_PROJ_THORN: "res://assets/audio/sfx/battle/proj_thorn.mp3",
+	CUE_PROJ_THUNDER: "res://assets/audio/sfx/battle/proj_thunder.mp3",
+	CUE_MELEE_METAL: "res://assets/audio/sfx/battle/melee_metal.mp3",
+	CUE_MELEE_NONMETAL: "res://assets/audio/sfx/battle/melee_nonmetal.mp3",
+	CUE_MELEE_UNARMED: "res://assets/audio/sfx/battle/melee_unarmed.mp3",
+	CUE_PROJ_DIVINE_BLADE: "res://assets/audio/sfx/battle/proj_divine_blade.mp3",
+	CUE_MAGE_ATTRIBUTE_BOLT: "res://assets/audio/sfx/battle/mage_attribute_bolt.mp3",
+	# 赤律族 8 子 + 光之卫士 + 痛苦女王的四星技能音。
+	CUE_STAR4_GUARD_SKILL: "res://assets/audio/sfx/battle/star4_guard_skill.mp3",
+	CUE_STAR4_QUEEN_SKILL: "res://assets/audio/sfx/battle/star4_queen_skill.mp3",
+	CUE_STAR4_CRIMSON_SKILL: "res://assets/audio/sfx/battle/star4_crimson_skill.mp3",
+	CUE_STAR4_DANCER_SKILL: "res://assets/audio/sfx/battle/star4_dancer_skill.mp3",
+	CUE_STAR4_DRUMER_SKILL: "res://assets/audio/sfx/battle/star4_drumer_skill.mp3",
+	CUE_STAR4_HUNTER_SKILL: "res://assets/audio/sfx/battle/star4_hunter_skill.mp3",
+	CUE_STAR4_ICEY_SKILL: "res://assets/audio/sfx/battle/star4_icey_skill.mp3",
+	CUE_STAR4_LATTERN_SKILL: "res://assets/audio/sfx/battle/star4_lattern_skill.mp3",
+	CUE_STAR4_SKYPIERCE_SKILL: "res://assets/audio/sfx/battle/star4_skypierce_skill.mp3",
+	# 两条佣兵技能音。
+	CUE_MERC_CANCER_SHELL_SKILL: "res://assets/audio/sfx/battle/merc_cancer_shell_skill.mp3",
+	CUE_MERC_LEO_SUN_SKILL: "res://assets/audio/sfx/battle/merc_leo_sun_skill.mp3",
 }
 
 # 每条 cue 的最小重触发间隔（毫秒）。缺省是 RETRIGGER_GUARD_MSEC。
@@ -327,8 +422,60 @@ const CUES := {
 # 再有新信息 / 新申请才会再响。这是个「节流窗口」，不是去重 ——
 # 所以放在服务里按 cue 记时间戳，而不是散到「谁在监听消息」的那几处：
 # 散出去的结果是私聊一处、朋友申请另一处，两处各响一遍，10 秒内听两下。
+#
+# 10.21 战场音效批次：**节流窗口 = 事件层的冷却**，层级越低窗口越长
+# （越不重要的越容易被节流，而不是反过来 —— 高价值事件本来就稀少，
+#  再上长冷却只会把它自己的那一下也吃掉）。
+#
+#   P2 关键技能  200ms   P5 普通技能     300ms
+#   P6 近战命中  340ms   P7 投射物飞行   400ms
+#
+# 表在 `play()` 里与 `RETRIGGER_GUARD_MSEC`(40) 取 max，这里的 200~400 都大于 40。
 const THROTTLE_MSEC_BY_CUE := {
 	CUE_CHAT_ALERT: 10_000,
+	# P7 飞行声 400ms。一场混战里同时在飞的弹体远不止 12 条素材数得过来，
+	# 没有这道闸门同一个弹种会叠成一片噪声。
+	CUE_PROJ_ARROW: 400,
+	CUE_PROJ_JAVELIN: 400,
+	CUE_PROJ_ORB: 400,
+	CUE_PROJ_DARK_ORB: 400,
+	CUE_PROJ_HOLY: 400,
+	CUE_PROJ_LIGHT_LANCE: 400,
+	CUE_PROJ_WING: 400,
+	CUE_PROJ_DISC: 400,
+	CUE_PROJ_FROST: 400,
+	CUE_PROJ_EMBER: 400,
+	CUE_PROJ_BONE: 400,
+	CUE_PROJ_THORN: 400,
+	CUE_PROJ_THUNDER: 400,
+	CUE_PROJ_DIVINE_BLADE: 400,
+	# P6 近战命中 340ms。
+	CUE_MELEE_METAL: 340,
+	CUE_MELEE_NONMETAL: 340,
+	CUE_MELEE_UNARMED: 340,
+	# P5 法师 1~3★ 技能音 300ms（法师 skill_cd 2.5s，实际不会被这道闸门碰到，
+	# 留着是为了将来调 cd 时不用回头补表）。
+	CUE_MAGE_ATTRIBUTE_BOLT: 300,
+	# P2 关键技能 200ms。
+	CUE_STAR4_GUARD_SKILL: 200,
+	CUE_STAR4_QUEEN_SKILL: 200,
+	CUE_STAR4_CRIMSON_SKILL: 200,
+	CUE_STAR4_DANCER_SKILL: 200,
+	CUE_STAR4_HUNTER_SKILL: 200,
+	CUE_STAR4_ICEY_SKILL: 200,
+	CUE_STAR4_LATTERN_SKILL: 200,
+	CUE_STAR4_SKYPIERCE_SKILL: 200,
+	CUE_MERC_CANCER_SHELL_SKILL: 200,
+	CUE_MERC_LEO_SUN_SKILL: 200,
+	#
+	# ⚠️ 战鼓使的**唯一一处例外**，必须看清楚：
+	# `team_random_stack` 是**每次普攻都触发**（`CrimsonCombat.passive_attack`，
+	# 由 `BattleSimulator:1129` 在每次普攻造成伤害后调用），def 里没有 `skill_every`
+	# 可以取模。按 P2 的 200ms 走就是「战鼓使每打一下都响一声技能音」，
+	# 与「技能音是关键时刻的强调」这一整层设计相反。
+	# ⇒ 这里单独给一条 2.6s，让它读起来是**周期性鼓点**而不是连发。
+	# 想改鼓点密度就改这一个数字，别去动派发点。
+	CUE_STAR4_DRUMER_SKILL: 2600,
 }
 
 # 每条 cue 的音量偏移（dB）。缺省 0.0 —— 不写照旧。
@@ -340,8 +487,46 @@ const THROTTLE_MSEC_BY_CUE := {
 #
 # 表在 `play()` 里以**相加**的方式生效（见那里的注释），所以这既覆盖
 # 「调用方没传音量」的常规情况，也不会把调用方自己传的值吃掉。
+#
+# 10.21 战场音效批次：这 17 条普攻音的**音色自带配平**。
+#
+# 定标：整体按 −5 dB 起（混战实测里 gain 0.55 ≈ −5.2 dB），再按「亮 / 尖」程度
+# ± —— 越尖越容易穿透、也越累，压得越多。所以冰棱 / 箭矢压 7 dB，灯烬只压 3 dB。
+#
+# ⚠️ 这一档是**音色配平**，与调用方按归属传的 `volume_db` 是**相加**的（见 play()）。
+#    也就是说「我方的一记冰棱」= −7 + 0 = −7 dB，「远处敌方的一记冰棱」= 直接不出声。
 const VOLUME_DB_BY_CUE := {
+	# 10-21 整体 +2 dB（BGM 盖住音效）。用户实测「战斗时 BGM 太响、完全盖住普攻音」
+	# ⇒ 两头一起动：BGM 在对局里压到 0.5 线性（BattleUI.BATTLE_BGM_LINEAR），
+	#    这 17 条普攻音各 +2 dB。只抬音效不压 BGM 会让整体过载，别只改一边。
 	CUE_MERC_TAURUS_CHARGE_SKILL: 6.0,
+	# 12 条飞行声（P7）。
+	CUE_PROJ_ARROW: -5.0,
+	CUE_PROJ_JAVELIN: -3.0,
+	CUE_PROJ_ORB: -2.0,
+	CUE_PROJ_DARK_ORB: -3.0,
+	CUE_PROJ_HOLY: -2.0,
+	CUE_PROJ_LIGHT_LANCE: -3.0,
+	CUE_PROJ_WING: -3.0,
+	CUE_PROJ_DISC: -3.0,
+	CUE_PROJ_FROST: -5.0,
+	CUE_PROJ_EMBER: -1.0,
+	CUE_PROJ_BONE: -4.0,
+	CUE_PROJ_THORN: -4.0,
+	# 雷怒核心的雷弹不在上一批 15 条里（审查时新增），按「亮、尖」定 −5，10-21 提到 −3。
+	CUE_PROJ_THUNDER: -3.0,
+	# 人王的金色剑：核心单位且自带落地撞击，比其它飞行声给得更响（原 −4，10-21 提到 −2）。
+	CUE_PROJ_DIVINE_BLADE: -2.0,
+	# 3 条近战命中（P6）。
+	CUE_MELEE_METAL: -4.0,
+	CUE_MELEE_NONMETAL: -3.0,
+	CUE_MELEE_UNARMED: -2.0,
+	# 法师 1~3★ 技能音（P5）。
+	CUE_MAGE_ATTRIBUTE_BOLT: -4.0,
+	#
+	# 11 条技能音（9 四星 + 2 佣兵）**刻意不入这张表** —— 它们统一走 P2 层默认
+	# （不加 mix_db），与「四星 / 佣兵 / Boss 技能 = 关键技能」的分层一致。
+	# 加进来反而会把技能音压到跟普攻一个量级，那是本末倒置。
 }
 
 # 四星音效按棋子分流。9.17 起是 5 条（人王 / 神王·大天使共用 / 母灵 /
@@ -375,7 +560,17 @@ const STAR4_CUES := {
 # 见 9.19「合成音与战斗技能音分离」说明：合成走 STAR4_CUES（默认），
 # 技能走本表（star4_cue_for(unit_id, true)）。
 const STAR4_SKILL_CUES := {
-	"human_king": CUE_STAR4_HUMAN_KING,
+	# 🔴 10.21 审查后**删除** `human_king` 这一行。两条理由，缺一不可：
+	#   ① 用户驳回原话：「这是合成四星人王的声音，非战斗场景音」—— 它指向
+	#      `prep/star4_human_king.mp3`，是备战页**升星演出**音，接错了表。
+	#   ② 它还是一条**死条目**：人王技能 `unique_king_growth` 不在
+	#      `_tick_skills` 的 match 里，压根没有 `skill_ready` 上升沿，
+	#      `_play_skill_cast_vfx` 永远不会为它调到这里。
+	#   ⇒ 删掉是净清理，不影响任何现有表现。（人王四星不放战斗技能音，
+	#      与「通用 1-4 星」的用户口径一致。）
+	#
+	# ⚠️ 别把 `"human_king"` 加回来：`star4_cue_for("human_king", true)` 在
+	#    查不到时会退回 `CUE_STAR4_DEFAULT`（另一条合成音），比删掉更糟。
 	"god_archangel": CUE_STAR4_ARCHANGEL,
 	"god_king": CUE_STAR4_GOD_SKILL,
 	"undead_mother": CUE_STAR4_UNDEAD_MOTHER_SKILL,
@@ -402,6 +597,14 @@ const STAR4_SKILL_CUES := {
 	"undead_parasite": CUE_STAR4_PARASITE_SKILL,
 	"undead_bomb": CUE_STAR4_BOMB_SKILL,
 	"human_death_servant": CUE_STAR4_DEATH_SERVANT_SKILL,
+	# 10.21 审查批次：赤律族三条**施法型**四星技能音。
+	# 判据是 `CrimsonVFXCatalog.ACTIVE_SKILLS` —— 这三个 skill_id 在
+	# `BattleSimulator._tick_skills` 里都有分支，真的产生 `skill_ready` 上升沿，
+	# 所以走本表（与上面六家同一条派发路径）。
+	# 另外五家赤律子**不在**本表，见 STAR4_PROC_SKILL_CUES 那段的逐条说明。
+	"dancer": CUE_STAR4_DANCER_SKILL,
+	"Icey": CUE_STAR4_ICEY_SKILL,
+	"lattern": CUE_STAR4_LATTERN_SKILL,
 }
 
 # 9.19 第二批：**攻击触发型**的四星技能音。
@@ -415,6 +618,16 @@ const STAR4_ATTACK_SKILL_CUES := {
 	"human_archer": CUE_STAR4_ARCHER_SKILL,
 	"human_cleric": CUE_STAR4_CLERIC_SKILL,
 	"god_aurora": CUE_STAR4_AURORA_SKILL,
+	# 10.21 审查批次：痛苦女王 `same_target_damage_stack`。
+	# 它是「同目标伤害叠加」，`_attack_skill_vfx_ready()` 里已有
+	# `attack_count % 2 == 0` 这一条 —— 也就是**每第 2 次**普攻才算触发。
+	# 派发点同样是 BattleVfx._play_attack_unit_procedural，进本表即可。
+	"dark_queen": CUE_STAR4_QUEEN_SKILL,
+	#
+	# ⚠️ 战鼓使 `team_random_stack` **不在**本表 —— 虽然它也是「普攻触发」，
+	# 但 `_attack_skill_vfx_ready()` 里没有它这一支，挂本表会被判假而永远不响
+	# （而且那一步还同时管着**特效**，加进去会凭空多一层演出）。
+	# 它走 STAR4_PROC_SKILL_CUES 的 `sfx_proc` 通道，见那张表里的注释。
 }
 
 # 9.21：**「概率触发型」**四星技能音 —— 目前只有四星民兵一条。
@@ -443,6 +656,33 @@ const STAR4_PROC_SKILL_CUES := {
 	"poison_attack": CUE_STAR4_POISON_PROC,
 	"curse_attack": CUE_STAR4_MOTONG_PROC,
 	"poison_reflect_armor_stack": CUE_STAR4_TITAN_PROC,
+	#
+	# --- 10.21 审查批次：赤律族 5 家 + 光之卫士，共 6 条 ----------------------
+	#
+	# 这 6 条**都不是施法型**（`_tick_skills` 里没有它们），全部按 skill_id 走
+	# 「事件 → 本表」这条路。逐条的触发时刻与派发点：
+	#
+	#   block_guard            赤卫     `unit_skill_proc` 事件（DamageService:148，
+	#                                  只在**真的格挡成功**时补发）。
+	#                                  ⇒ 由 BattleVfx._play_crimson_proc 消费。
+	#   stacking_def_break     破甲者   `unit_skill_proc` 事件（CrimsonCombat:96）。
+	#                                  ⇒ 同上。
+	#   current_hp_strike      血猎者   真事件：`hit_number` 里 skill_id 命中，
+	#                                  BattleVfx:1513 归组 → _play_crimson_event_groups。
+	#   line_pierce            穿云弩手 真事件：`impact` 里 skill_id 命中，
+	#                                  BattleVfx:1505 归组 → _play_crimson_event_groups。
+	#   team_random_stack      战鼓使   `sfx_proc` 事件（本批在 CrimsonCombat 里补发）。
+	#   guardian_shield_taunt  光之卫士 `sfx_proc` 事件（本批在 BattleSimulator 开场那一段补发）。
+	#
+	# 后两条**没有现成事件**，是本批新补的发射点。用 `sfx_proc` 而不是
+	# `unit_skill_proc`，是因为后者在派发完音效后还会顺带放程序化特效
+	# （`_play_unit_procedural`）—— 加音效不该顺手变成加演出。
+	"block_guard": CUE_STAR4_CRIMSON_SKILL,
+	"stacking_def_break": CUE_STAR4_SPIKE_PROC,
+	"current_hp_strike": CUE_STAR4_HUNTER_SKILL,
+	"line_pierce": CUE_STAR4_SKYPIERCE_SKILL,
+	"team_random_stack": CUE_STAR4_DRUMER_SKILL,
+	"guardian_shield_taunt": CUE_STAR4_GUARD_SKILL,
 }
 
 # 9.22 第四批：**佣兵**的普攻触发型技能音。
@@ -557,6 +797,16 @@ const MERC_SKILL_CUES := {
 	"merc_capricorn_steel": CUE_MERC_CAPRICORN_STEEL_SKILL,
 	# 9.22 第四批：镜像刺客（`twin_strike`，施法型，走既有那条 skill_ready 路径）。
 	"merc_gemini_assassin": CUE_MERC_GEMINI_ASSASSIN_SKILL,
+	# 10.21 审查批次：甲壳守卫 `shell_guard` / 炎阳王者 `king_aura`。
+	# 两条都是**施法型**（`_tick_skills` 里有分支：BattleSimulator:1438 / :1462），
+	# 按 unit_id 进本表。
+	# ⚠️ 狂战先锋 `blood_rampage` **不在**本表 —— 它是普攻触发型，进本表会永远不响；
+	#   用户审查判「状态类，不设计」，本批也不做。
+	# ⚠️ 冥界执行者 `death_hunt` 同理（击杀才发，且事件里的 skill_id 是
+	#   `death_hunt_kill` 不是 `death_hunt`，键名写错一样永远不响）；用户判
+	#   「锁定目标机制类，不设计」。
+	"merc_cancer_shell": CUE_MERC_CANCER_SHELL_SKILL,
+	"merc_leo_sun": CUE_MERC_LEO_SUN_SKILL,
 }
 
 
@@ -596,6 +846,22 @@ static var _loop_start_count := 0
 # 冷启动那一刻 gold 从 0 变 100 不是一笔收支。
 static var _last_gold := 0
 static var _currency_ready := false
+
+# 10.21 战场音效批次：**战斗层自己的并发计数器**。
+#
+# 为什么不能直接调 `VOICE_COUNT`：那个 8 是**全局共享池**（UI / 备战 / 战斗共用一个池），
+# 而 `audio_sfx_check` 会数 root 下以 `GlorySfxVoice` 开头的节点、并要求**正好 8 个**
+# （见本文件顶部注释）。改它 = 门禁直接红。
+# ⇒ 上限 6（PvE 7）是池**之外**多出来的一层闸门：普攻音（P6/P7，数量最多、
+# 最容易叠成噪声）在播放前先数一次正在响的战斗层声音，满了就不出这一声。
+# 技能音（P2，稀少且重要）刻意**不**走这道闸门 —— 拿一次技能音去换一次
+# 普攻音是错的优先级。
+static var _battle_voice_cap := 6
+# 当前被计数器占着的路数（只统计走 play_battle() 的）。
+static var _battle_live := 0
+# 本帧已过期的记账时间表。AudioStreamPlayer 没有「播放完了」的回调可以挂，
+# 所以用「起播时刻 + 时长」估算，每帧扫一次把过期的踢掉。
+static var _battle_stamps: Array = []
 
 
 # --- 安装 -------------------------------------------------------------------
@@ -644,6 +910,10 @@ static func _watch_currency() -> void:
 # **返回值是给门禁和排障用的，不要拿它当业务判据。** 音效是表现，
 # 业务成不成功在调用它之前就已经定下来了。
 static func play(cue: String, volume_db := 0.0) -> bool:
+	if cue.is_empty():
+		# 10.21：`star4_cue_for` 对 STAR4_SILENT_UNITS（人王）返回空串。
+		# 空串是「这个单位刻意不发声」，不是「没登记」—— 不该刷 push_warning。
+		return false
 	if not Presentation.ui_sound_allowed():
 		return false
 	var path := resolved_cue_path(cue)
@@ -785,7 +1055,23 @@ static func stop_all() -> void:
 #   * is_skill = true：战斗里**自身棋子释放技能**时刻，指向 9.18 新素材
 #     （STAR4_SKILL_CUES）。门控「自身棋子」在调用方（BattleVfx）做，
 #     这里只负责按场景选对 cue。
+# 10.21 审查批次：**刻意不发声**的四星单位。
+#
+# 用户拍板「人王四星战斗技能音：不需要额外做（通用 1-4 星）」，而
+# `STAR4_SKILL_CUES` 里 human_king 原本指向 `prep/star4_human_king.mp3`
+# （备战页**升星演出**音，接错表）。删掉那一行之后，`star4_cue_for()` 的
+# `.get(unit_id, CUE_STAR4_DEFAULT)` 会**退回默认合成音** —— 那比原来更糟
+# （升星音变成了战斗技能音，且是通用音）。
+#
+# ⇒ 用这张名单把「查不到就静音」显式化。名单里只有人王一个；
+#    `star4_cue_for` 的调用方本来就要判空（见 `_play_skill_cast_vfx`）。
+const STAR4_SILENT_UNITS: Array[String] = [
+	"human_king",
+]
+
 static func star4_cue_for(unit_id: String, is_skill := false) -> String:
+	if unit_id in STAR4_SILENT_UNITS:
+		return ""
 	if is_skill:
 		return str(STAR4_SKILL_CUES.get(unit_id, CUE_STAR4_DEFAULT))
 	return str(STAR4_CUES.get(unit_id, CUE_STAR4_DEFAULT))
@@ -838,6 +1124,246 @@ static func boss_cast_edge_cue_for(boss_id: String) -> String:
 static func boss_event_action_for(skill_id: String) -> Dictionary:
 	var action: Variant = BOSS_EVENT_ACTIONS.get(skill_id, {})
 	return action if action is Dictionary else {}
+
+
+# --- 10.21 审查批次：1~3★ 技能音（本作唯一例外）--------------------------------
+#
+# **惯例是「普通技能音只给四星」。** 这张表是唯一的破例，理由写在下面。
+#
+# 法师（`human_mage`）`no_basic_attack = true`（模拟器 BattleSimulator.gd:847
+# 直接 continue），永远发不出普攻事件；而它的输出全部来自 `_tick_skills` 的
+# `random_attribute_bolt`。于是 1~3★ 法师**连一声都没有** —— 普攻没有、技能也没有。
+#
+# 用户审查后明确要求补，且选定「1 条通用，不按 fire/ice/thunder/poison 拆 4 条」
+# （拆 4 条会让密度明显上升，而 `random_attribute_bolt` 的 cd 只有 2.5s）。
+#
+# ⚠️ 派发点在 BattleVfx._play_skill_cast_vfx 的 `elif _owned`（**非四星**）支路，
+#    与 STAR4_SKILL_CUES 的四星分支互斥：4★ 法师用已存在的 `star4_mage_skill`。
+const LOW_STAR_SKILL_CUES := {
+	"human_mage": CUE_MAGE_ATTRIBUTE_BOLT,
+}
+
+
+# 入参是 unit_id。返回空串 = 这个单位没有配 1~3★ 技能音，调用方跳过。
+#
+# ⚠️ **不判星级**：星级判据在调用方（BattleVfx 已经为了区分佣兵分支在算
+#    `_is_star4`）。这里只做查表，与 `merc_skill_cue_for` 同款分工。
+static func low_star_skill_cue_for(unit_id: String) -> String:
+	return str(LOW_STAR_SKILL_CUES.get(unit_id, ""))
+
+
+# --- 10.21 审查批次：普攻音 ----------------------------------------------------
+#
+# 两张表都是 **unit_id -> cue**，刻意不按 race 拆（同一个种族里神侍是光矛、
+# 神王是刀，音色本来就该分开）。
+#
+# ⚠️ 键是 `def.id`（race_units.json 里的 id），不是显示名 ——
+#    `DataRegistry.canonicalize_unit_display_names()` 会按本地化覆写名字。
+#
+# ⚠️ 这两张表**不含**法师 `human_mage`：它 `no_basic_attack = true`，
+#    模拟器 BattleSimulator.gd:847 直接 continue，永远发不出 attack_start。
+
+# 12 条飞行声 + 人王（P7）。键 = 单位 id，值 = 飞行 cue。
+# 远程判据：模拟器 BattleSimulator.gd:1119 `range > 1.0` 判 basic_ranged。
+const BASIC_RANGED_CUES := {
+	"god_priest": CUE_PROJ_LIGHT_LANCE,
+	"god_priestess": CUE_PROJ_DISC,
+	"god_aurora": CUE_PROJ_LIGHT_LANCE,
+	"god_angel": CUE_PROJ_WING,
+	"god_archangel": CUE_PROJ_HOLY,
+	"dark_mage": CUE_PROJ_DARK_ORB,
+	"dark_queen": CUE_PROJ_THORN,
+	"human_archer": CUE_PROJ_ARROW,
+	"human_cleric": CUE_PROJ_ORB,
+	"undead_spike": CUE_PROJ_BONE,
+	"undead_mother": CUE_PROJ_JAVELIN,
+	"dancer": CUE_PROJ_DISC,
+	"hunter": CUE_PROJ_ARROW,
+	"Icey": CUE_PROJ_FROST,
+	"skypierce": CUE_PROJ_JAVELIN,
+	"lattern": CUE_PROJ_EMBER,
+	"boss_thunder_core": CUE_PROJ_THUNDER,
+	"boss_apocalypse": CUE_PROJ_JAVELIN,
+	"boss_meteor_caster": CUE_PROJ_ORB,
+	"boss_holy_priest": CUE_PROJ_HOLY,
+	"merc_sagittarius_rain": CUE_PROJ_ARROW,
+	"merc_pisces_bubble": CUE_PROJ_ORB,
+	"merc_virgo_heal": CUE_PROJ_HOLY,
+	"merc_aquarius_time": CUE_PROJ_ORB,
+	# 10.21 审查后新增：人王。用户判定属远程（range=1.5 卡在模拟阈值 1.0 与
+	# 渲染阈值 1.5 之间，模拟发 basic_ranged），弹道是「金色剑从目标落下」，
+	# 自带落地撞击。⚠️ 这个 mode 不一致是**已知未修**的问题，见
+	# `优先级与混音策略.md` §10。
+	"human_king": CUE_PROJ_DIVINE_BLADE,
+	# PvE 敌方（同样有普攻，也享有远程飞行声）。
+	#
+	# ⚠️ 这 7 条**不在 135 行审查表里** —— 那张表只覆盖「玩家棋子 + Boss + 佣兵」，
+	#   一条 PvE 都没有。这 7 条是接入时按渲染侧弹体类型外推的，之后补过一次
+	#   专项审查表（`PvE小怪普攻音_审查表.html`），16 只全部通过。
+	"pve_sky_wind_falcon": CUE_PROJ_ARROW,
+	"pve_ren_voodoo_witch": CUE_PROJ_ORB,
+	# 药毒医师：审查表行 16 定案。渲染弹体是 **dart（细小毒针）**，
+	# 原来配 `proj_javelin`（标枪）明显不合，改成 `proj_thorn`（尖刺）。
+	# 备选是 `proj_bone`（骨刺）—— 想换回来只改这一行，不牵动任何派发逻辑。
+	"pve_ren_poison_doctor": CUE_PROJ_THORN,
+	"pve_sky_hymn_spirit": CUE_PROJ_HOLY,
+	"pve_sky_star_butterfly": CUE_PROJ_HOLY,
+	"pve_sky_thunder_spirit": CUE_PROJ_THUNDER,
+	"pve_land_ancient_tree": CUE_PROJ_HOLY,
+}
+
+# 3 条近战命中声（P6），按材质分：金属 / 非金属 / 徒手。
+# 15 只玩家近战棋子此前**连斩击特效都没有**（OGA 目录刻意只给 5 只招牌武器），
+# 现在至少有声音了。
+const BASIC_MELEE_CUES := {
+	"god_arbiter": CUE_MELEE_METAL,
+	"god_king": CUE_MELEE_METAL,
+	"human_swordsman": CUE_MELEE_METAL,
+	"dark_scythe": CUE_MELEE_METAL,
+	"god_guard": CUE_MELEE_METAL,
+	"human_militia": CUE_MELEE_METAL,
+	"human_death_servant": CUE_MELEE_METAL,
+	"dark_doom": CUE_MELEE_METAL,
+	"armbreaker": CUE_MELEE_METAL,
+	"crimson": CUE_MELEE_NONMETAL,
+	"drumer": CUE_MELEE_NONMETAL,
+	"dark_imp": CUE_MELEE_NONMETAL,
+	"dark_fear": CUE_MELEE_NONMETAL,
+	"dark_dragon": CUE_MELEE_NONMETAL,
+	"undead_titan": CUE_MELEE_NONMETAL,
+	"undead_small": CUE_MELEE_UNARMED,
+	"undead_poison": CUE_MELEE_UNARMED,
+	"undead_parasite": CUE_MELEE_UNARMED,
+	"undead_fly": CUE_MELEE_UNARMED,
+	"undead_bomb": CUE_MELEE_UNARMED,
+	"human_merchant": CUE_MELEE_UNARMED,
+	"boss_blood_demon": CUE_MELEE_METAL,
+	"boss_twin_gate": CUE_MELEE_METAL,
+	"boss_mirror_lord": CUE_MELEE_NONMETAL,
+	"boss_rage_beast": CUE_MELEE_NONMETAL,
+	"boss_soul_devourer": CUE_MELEE_NONMETAL,
+	"merc_libra_judge": CUE_MELEE_METAL,
+	"merc_taurus_charge": CUE_MELEE_METAL,
+	"merc_gemini_assassin": CUE_MELEE_METAL,
+	"merc_aries_blood": CUE_MELEE_METAL,
+	"merc_capricorn_steel": CUE_MELEE_METAL,
+	"merc_scorpio_death": CUE_MELEE_METAL,
+	"merc_cancer_shell": CUE_MELEE_NONMETAL,
+	"merc_leo_sun": CUE_MELEE_NONMETAL,
+	#
+	# --- 10.21 补：PvE 小怪的近战普攻音 -------------------------------------
+	#
+	# 为什么单独补这一段：135 条审查表聚焦「玩家棋子 + Boss + 佣兵」，
+	# PvE 怪只列了 7 只**有弹道**的（range=4，已在上面的 BASIC_RANGED_CUES 里）。
+	# 剩下 9 只全是 `range = 1` 的近战怪，**从没进过表** ⇒ 普攻无声，
+	# 玩家感知是「怪在打我但没动静」（技能音/特效都正常，只有普攻那一击是哑的）。
+	#
+	# 材质判据按**武器 / 体表**，与那 34 只棋子/佣兵/Boss 同一条规则：
+	#   金属刃 · 盾甲   → CUE_MELEE_METAL
+	#   石岩 · 甲壳 · 虫壳 → CUE_MELEE_NONMETAL
+	#   爪 · 藤蔓 · 拳   → CUE_MELEE_UNARMED
+	"pve_ren_shadow_thief": CUE_MELEE_METAL,          # 影行盗徒：背刺匕首
+	"pve_ren_wandering_swordsman": CUE_MELEE_METAL,   # 流浪剑客：剑（反击斩）
+	"pve_sky_dome_guard": CUE_MELEE_METAL,            # 天穹守卫：盾甲（圣盾爆）
+	"pve_land_lava_golem": CUE_MELEE_NONMETAL,        # 熔岩傀儡：岩体（熔岩爆）
+	"pve_land_mountain_giant": CUE_MELEE_NONMETAL,    # 山岳巨人：石拳（地裂砸）
+	"pve_land_rock_beast": CUE_MELEE_NONMETAL,        # 岩甲兽：岩甲壳（震击）
+	"pve_land_vein_worm": CUE_MELEE_NONMETAL,         # 地脉虫：虫壳（掘地突袭）
+	"pve_sky_cloud_eagle": CUE_MELEE_UNARMED,         # 云羽鹰：爪喙（俯冲）
+	"pve_land_vine_guard": CUE_MELEE_UNARMED,         # 藤蔓守卫：藤蔓（缠绕，无武器）
+}
+
+# 远程判据由调用方给（模拟器的 basic_ranged / basic_melee），这里只查表。
+# 返回空串 = 这只单位没有配普攻音（法师 / 没登记的），调用方必须跳过。
+static func basic_attack_cue_for(unit_id: String, ranged: bool) -> String:
+	if unit_id.is_empty():
+		return ""
+	if ranged:
+		return str(BASIC_RANGED_CUES.get(unit_id, ""))
+	return str(BASIC_MELEE_CUES.get(unit_id, ""))
+
+
+# 10.21 审查批次：**战斗层并发上限**。
+#
+# 上一批 15 条普攻音接入后，同时发声的声源比原方案少很多（远程命中音与承受音
+# 被判「不设计」），所以上限从 5 放宽到 6 观察；PvE 没有友军/其他敌方两个归属，
+# 声源更少，给 7。
+#
+# ⚠️ **这不是在改 `VOICE_COUNT`。** 那个 8 是全局共享池且被 `audio_sfx_check`
+#    钉死（数 root 下 GlorySfxVoice* 节点、要求正好 8 个）。这里是池**之外**
+#    的一层计数器，只统计走 play_battle() 的战斗层声音。
+#
+# 用法：
+#   set_battle_voice_cap(6 / 7)   开局时按模式调一次
+#   play_battle(cue, db)          普攻音走这条（满了就放弃这一声）
+#   battle_live_count()           排障用
+static func set_battle_voice_cap(cap: int) -> void:
+	# ⚠️ **不要在这里清空记账。** 那是上一版的写法，后果是「调 cap 等于重置计数器」——
+	# 于是一次战斗中每调一次 cap，已经响着的普攻音就全部不计入上限，闸门失效。
+	# 记账只由 `_sweep_battle_stamps()`（按真实到期时间）清理。
+	_battle_voice_cap = maxi(0, cap)
+
+
+static func battle_voice_cap() -> int:
+	return _battle_voice_cap
+
+
+static func battle_live_count() -> int:
+	_sweep_battle_stamps()
+	return _battle_live
+
+
+# 播放一条**战斗层**音效，先过并发闸门。
+#
+# 与 play() 的差别只有一处：满了就不再播放。语义上「宁可少响一声，也不要
+# 把八路全占满」—— 普攻音是数量最多、也最不重要的那一层。
+#
+# ⚠️ 时间戳用 `Time.get_ticks_msec()`，与 play() 内部节流用的是同一个时钟，
+#    不要换成 `Engine.get_frames_drawn()` 之类的东西。
+static func play_battle(cue: String, volume_db := 0.0) -> bool:
+	if not _battle_cap_allows():
+		return false
+	var ok := play(cue, volume_db)
+	if ok:
+		_battle_stamps.append({"until": Time.get_ticks_msec() + _cue_duration_msec_guess(cue), "cue": cue})
+	return ok
+
+
+# 闸门判定 + 记账清理。抽出来是因为 battle_live_count() 也要清一次。
+static func _battle_cap_allows() -> bool:
+	if _battle_voice_cap <= 0:
+		# 0 = 不限。调试期可以用它把闸门整个关掉。
+		return true
+	_sweep_battle_stamps()
+	return _battle_live < _battle_voice_cap
+
+
+# 把过期的记账踢掉。
+static func _sweep_battle_stamps() -> void:
+	if _battle_stamps.is_empty():
+		_battle_live = 0
+		return
+	var now := Time.get_ticks_msec()
+	var kept: Array = []
+	for stamp in _battle_stamps:
+		if int(stamp.get("until", 0)) > now:
+			kept.append(stamp)
+	_battle_stamps = kept
+	_battle_live = kept.size()
+
+
+# 音效时长（毫秒）的粗估。只用于上面的记账过期，不做混音计算。
+# 从**真实音流**取 `get_length()`（`_stream_for` 会缓存，不重复 load），
+# 比写死一张时长表可靠 —— 表会随素材重做而过期，而重做之后没人会想起来改表。
+# 读不到流就退回 300ms（合成的普攻音多在 0.3~0.55s）。
+static func _cue_duration_msec_guess(cue: String) -> int:
+	var path := resolved_cue_path(cue)
+	if path.is_empty():
+		return 300
+	var stream := _stream_for(path)
+	if stream == null:
+		return 300
+	return int(maxf(0.1, stream.get_length()) * 1000.0)
 
 
 # 某条 cue 的音量偏移（dB），缺省 0.0。见 VOLUME_DB_BY_CUE。
