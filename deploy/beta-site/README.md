@@ -33,3 +33,9 @@ sudo python3 /已上传目录/install.py --domain glorytd-api.duckdns.org
 页面依据浏览器首选语言（设备/系统语言）自动显示简体中文、繁体中文或英文。`zh-Hant` 与 TW/HK/MO 使用繁体，`zh-Hans` 优先使用简体；其余中文使用简体，非中文使用英文。所有状态、安装说明与按钮同步翻译。
 
 反馈可提交给邀请主播，或点击官方 Discord 反馈群：https://discord.gg/vsVDcrwft 。
+
+## 2026-10-21 音效版
+
+Android 0.0.26 (39) 更新 29 条战场音效，仍使用协议 43。资源文件和导入配置已通过 Drive 原目录上传并逐文件回读校验；Git 中的 `docs/releases/2026-10-21-audio-assets.json` 记录每个资源的 ID 和哈希。
+
+iOS 0.0.26 (62) 上传后分配既有内测组并提交既有外测组审核。`ios.version` 只表示已获批、公开链接实际可安装的版本；`ios.pending_version` 表示仍在等待审核的新版本，避免将内测可用误报为外测可用。外测获批后更新 `ios.version` 并移除 `pending_version`。
