@@ -49,6 +49,8 @@ func _has_point(point: Vector2) -> bool:
 	return Rect2(center - Vector2(side, side) * 0.5, Vector2(side, side)).has_point(point)
 
 func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
+	if not formation_edit_allowed():
+		return false
 	if hud != null:
 		hud.set_standby_drop_hover(bench_index)
 	return PrepRules.can_drop_on_bench(bench_index, data)

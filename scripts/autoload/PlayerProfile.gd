@@ -101,6 +101,8 @@ var music_enabled := true
 # 与 speaker_enabled（放不放声音）是两件事：那个是硬开关（0 / 1），这个是连续量。
 # 裁决在 PresentationSettings.voice_volume()，执行在 VoiceService._apply_volumes()。
 var voice_volume := 1.0
+# Music and sound effects share this user gain; remote voice stays independent.
+var music_volume := 1.0
 var locale := "zh"
 var language_selected := false
 var onboarding_version := ONBOARDING_VERSION
@@ -161,6 +163,7 @@ func load_profile() -> void:
 	haptics_enabled = bool(data.get("haptics_enabled", true))
 	music_enabled = bool(data.get("music_enabled", true))
 	voice_volume = clampf(float(data.get("voice_volume", 1.0)), 0.0, 1.0)
+	music_volume = clampf(float(data.get("music_volume", 1.0)), 0.0, 1.0)
 	locale = str(data.get("locale", "zh"))
 	if not SUPPORTED_LOCALES.has(locale):
 		locale = "zh"
@@ -198,6 +201,7 @@ func save_profile() -> bool:
 		"haptics_enabled": haptics_enabled,
 		"music_enabled": music_enabled,
 		"voice_volume": voice_volume,
+		"music_volume": music_volume,
 		"locale": locale,
 		"language_selected": language_selected,
 		"onboarding_version": onboarding_version,
@@ -225,6 +229,7 @@ func _reset_defaults() -> void:
 	haptics_enabled = true
 	music_enabled = true
 	voice_volume = 1.0
+	music_volume = 1.0
 	locale = "zh"
 	language_selected = false
 	onboarding_version = ONBOARDING_VERSION
@@ -446,6 +451,15 @@ func set_board_readability_enabled(enabled: bool) -> void:
 #
 # 与别的演出设置不同，**值没变也要发信号**是不必要的 —— 但「滑块拖动中每帧都落盘」会写坏磁盘，
 # 所以这里仍然判等早退；调用方（设置页滑块）在拖动结束（value_changed 的 drag_ended）才提交。
+func set_music_volume(value: float) -> void:
+	var clamped := clampf(value, 0.0, 1.0)
+	if is_equal_approx(music_volume, clamped):
+		return
+	music_volume = clamped
+	save_profile()
+	presentation_settings_changed.emit()
+
+
 func set_voice_volume(value: float) -> void:
 	var clamped := clampf(value, 0.0, 1.0)
 	if is_equal_approx(voice_volume, clamped):

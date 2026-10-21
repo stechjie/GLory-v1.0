@@ -1011,6 +1011,7 @@ static func _voice_usable(voice: AudioStreamPlayer) -> bool:
 # 延迟一个空闲帧的代价是「App 第一帧内发出的音效会被丢掉」，实际为零：
 # 音效都由用户操作或业务事件触发，不可能与 `Main._ready()` 同帧。
 static func _ensure_voices() -> bool:
+	_bind_volume_setting()
 	if _voices.size() == VOICE_COUNT and _voices_are_alive():
 		return true
 	var tree := _tree()
@@ -1029,6 +1030,21 @@ static func _ensure_voices() -> bool:
 			tree.root.add_child.call_deferred(voice)
 		_voices.append(voice)
 	return true
+
+
+static func _bind_volume_setting() -> void:
+	if is_instance_valid(PlayerProfile) and not PlayerProfile.presentation_settings_changed.is_connected(_sync_music_volume):
+		PlayerProfile.presentation_settings_changed.connect(_sync_music_volume)
+	_sync_music_volume()
+
+
+static func _sync_music_volume() -> void:
+	# All game effects (including loops and pet footsteps) use SFX. Never scale Master.
+	var bus := AudioServer.get_bus_index(SFX_BUS)
+	if bus >= 0:
+		var level := Presentation.music_volume()
+		if not is_equal_approx(AudioServer.get_bus_volume_linear(bus), level):
+			AudioServer.set_bus_volume_linear(bus, level)
 
 
 static func _voices_are_alive() -> bool:
@@ -1489,6 +1505,7 @@ static func cue_length(cue: String) -> float:
 
 
 static func _ensure_loop_player() -> AudioStreamPlayer:
+	_bind_volume_setting()
 	if _loop_player != null and is_instance_valid(_loop_player) and _loop_player.is_inside_tree():
 		return _loop_player
 	var tree := _tree()
@@ -1637,6 +1654,8 @@ static func voices_ready() -> bool:
 # 所以这是 headless 退出时机与混音线程的竞态，不是本服务的泄漏；
 # 判断依据是它**不影响 CHECK_RESULT**（94 项照过），且产品路径根本不调本函数。
 static func shutdown() -> void:
+	if is_instance_valid(PlayerProfile) and PlayerProfile.presentation_settings_changed.is_connected(_sync_music_volume):
+		PlayerProfile.presentation_settings_changed.disconnect(_sync_music_volume)
 	var tree := _tree()
 	if tree != null and tree.process_frame.is_connected(_poll_currency):
 		tree.process_frame.disconnect(_poll_currency)

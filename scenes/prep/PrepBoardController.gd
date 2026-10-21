@@ -8,6 +8,8 @@ const RacePick := preload("res://scripts/units/RacePick.gd")
 const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
 const UnitGrowth := preload("res://scripts/units/UnitGrowth.gd")
 func _drop_on_board(board_index: int, data: Variant) -> void:
+	if not can_edit_formation():
+		return
 	_drop_consumed = true
 	_set_shop_sell_mode(false)
 	if typeof(data) != TYPE_DICTIONARY:
@@ -28,6 +30,8 @@ func _drop_on_board(board_index: int, data: Variant) -> void:
 				return
 			_move_or_merge_bench_to_board(int(d.get("index", -1)), board_index)
 func _drop_on_bench(bench_index: int, data: Variant) -> void:
+	if not can_edit_formation():
+		return
 	_drop_consumed = true
 	_set_shop_sell_mode(false)
 	if typeof(data) != TYPE_DICTIONARY:
@@ -76,6 +80,8 @@ func _can_drop_to_sell(data: Variant) -> bool:
 	return typeof(data) == TYPE_DICTIONARY and str((data as Dictionary).get("kind", "")) in ["board", "bench"]
 
 func _drop_to_sell(data: Variant) -> void:
+	if not can_edit_formation():
+		return
 	_drop_consumed = true
 	_set_shop_sell_mode(false)
 	if not _can_drop_to_sell(data):
@@ -93,6 +99,8 @@ func _drop_to_sell(data: Variant) -> void:
 			_sell_board_index(int(d.get("index", -1)))
 
 func _on_drag_started(payload: Dictionary) -> void:
+	if not can_edit_formation():
+		return
 	_active_drag_payload = payload.duplicate(true)
 	_drop_consumed = false
 	_set_shop_sell_mode(str(payload.get("kind", "")) in ["board", "bench"])
@@ -106,6 +114,9 @@ func _on_drag_started(payload: Dictionary) -> void:
 		TutorialMode.update_overlay()
 
 func _on_drag_ended() -> void:
+	if not can_edit_formation():
+		_finish_drag_state()
+		return
 	# Released without landing on a cell -> snap into the nearest valid cell.
 	if not _drop_consumed and not _active_drag_payload.is_empty():
 		var released_at := get_global_mouse_position()
@@ -178,6 +189,8 @@ func _finish_drag_state() -> void:
 		TutorialMode.update_overlay()
 
 func _snap_drop_to_nearest(global_pos: Vector2, payload: Dictionary) -> void:
+	if not can_edit_formation():
+		return
 	# Search board + bench cells for the nearest one that accepts this payload.
 	var best_dist := INF
 	var best_is_board := false
@@ -222,6 +235,8 @@ func _set_shop_sell_mode(enabled: bool) -> void:
 		_shop.sell_overlay.visible = enabled
 
 func _on_hire_mercenary(index: int) -> void:
+	if not can_edit_formation():
+		return
 	if not PrepRules.can_hire_mercenary(index):
 		return
 	var empty := PrepRules.first_empty_mercenary_slot()
@@ -231,6 +246,8 @@ func _on_hire_mercenary(index: int) -> void:
 	if GameState.tutorial_mode:
 		TutorialMode.sync()
 func _hire_mercenary_to_slot(index: int, mercenary_index: int) -> void:
+	if not can_edit_formation():
+		return
 	var mercs: Array = DataRegistry.get_table("mercenaries").get("mercenaries", [])
 	if index < 0 or index >= mercs.size():
 		return
@@ -448,6 +465,8 @@ func _execute_four_star_upgrade(where: String, index: int) -> void:
 	SaveManager.save_run()
 	_refresh_all()
 func _on_board_pressed(index: int) -> void:
+	if not can_edit_formation():
+		return
 	# 10.12 bug 文档第 4 条：轻点棋子**不再**选中，也**不再**触发挪动。
 	#
 	# 旧实现是「点 A 选中 → 点 B 把 A 挪过去」。而长按看属性跟业务 pressed 挂在
@@ -468,12 +487,16 @@ func _on_board_pressed(index: int) -> void:
 		_buy_or_merge_shop_to_board(_shop.selected, index)
 
 func _on_bench_pressed(index: int) -> void:
+	if not can_edit_formation():
+		return
 	# 同 _on_board_pressed：待命格轻点不再选中/挪动，只保留
 	# 「商店卡已选中 → 点待命格买入」这条针对商店卡片的链。
 	if _shop.selected >= 0:
 		_buy_or_merge_shop_to_bench(_shop.selected, index)
 
 func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
+	if not can_edit_formation():
+		return
 	# 9.13 #3：教学是纯本地流程，不存在「等别人」这回事。上一场对局的残留会话
 	# （team_active 还在、阶段停在 battle/result）不应把教学卡成等待状态。
 	if not GameState.tutorial_mode and NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_prep_confirmed(GameState.round_index):
@@ -565,6 +588,8 @@ func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 	_refresh_all()
 
 func _buy_or_merge_shop_to_bench(shop_index: int, bench_index: int) -> void:
+	if not can_edit_formation():
+		return
 	# 9.13 #3：教学是纯本地流程，不存在「等别人」这回事。上一场对局的残留会话
 	# （team_active 还在、阶段停在 battle/result）不应把教学卡成等待状态。
 	if not GameState.tutorial_mode and NetworkService.team_active and not NetworkService.is_host and not NetworkService.server_prep_confirmed(GameState.round_index):
@@ -657,6 +682,8 @@ func _would_exceed_board_limit(cell: Dictionary, ignore_index: int = -1) -> bool
 	return bool(d.get("unique_on_board", false)) and PrepRules.has_unique_board_unit(str(cell.get("id", "")), PrepRules.board_limit_for_def(d), ignore_index)
 
 func _move_or_merge_board(from_index: int, to_index: int) -> void:
+	if not can_edit_formation():
+		return
 	if from_index < 0 or from_index >= GameState.board_slots.size() or to_index < 0 or to_index >= GameState.board_slots.size():
 		_board_hud._selected_board = -1
 		return
@@ -709,6 +736,8 @@ func _move_or_merge_board(from_index: int, to_index: int) -> void:
 	_refresh_all()
 
 func _move_or_merge_board_to_bench(from_index: int, bench_index: int) -> void:
+	if not can_edit_formation():
+		return
 	if from_index < 0 or from_index >= GameState.board_slots.size() or bench_index < 0 or bench_index >= GameState.bench_slots.size():
 		_board_hud._selected_board = -1
 		return
@@ -740,6 +769,8 @@ func _move_or_merge_board_to_bench(from_index: int, bench_index: int) -> void:
 	_refresh_all()
 
 func _move_or_merge_bench_to_board(from_index: int, board_index: int) -> void:
+	if not can_edit_formation():
+		return
 	if GameState.tutorial_mode and TutorialMode.step == TutorialMode.Step.BUY_3:
 		_board_hud._selected_bench = -1
 		return
@@ -790,6 +821,8 @@ func _move_or_merge_bench_to_board(from_index: int, board_index: int) -> void:
 	_refresh_all()
 
 func _move_or_merge_bench(from_index: int, to_index: int) -> void:
+	if not can_edit_formation():
+		return
 	if from_index < 0 or from_index >= GameState.bench_slots.size() or to_index < 0 or to_index >= GameState.bench_slots.size():
 		_board_hud._selected_bench = -1
 		return
@@ -829,6 +862,8 @@ func _on_sell_selected() -> void:
 	_sell_board_index(_board_hud._selected_board)
 
 func _sell_board_index(index: int, confirmed: bool = false) -> void:
+	if not can_edit_formation():
+		return
 	if index < 0 or index >= GameState.board_slots.size() or GameState.board_slots[index] == null:
 		return
 	# 兜底门：无论是点击、拖拽还是四星二次确认回调，最后一只棋子都卖不掉。
@@ -854,6 +889,8 @@ func _sell_board_index(index: int, confirmed: bool = false) -> void:
 	_refresh_all()
 
 func _sell_bench_index(index: int, confirmed: bool = false) -> void:
+	if not can_edit_formation():
+		return
 	if index < 0 or index >= GameState.bench_slots.size() or GameState.bench_slots[index] == null:
 		return
 	# 同上：最后一只棋子不允许出售（兜底门，覆盖异步确认回调等所有调用路径）。

@@ -1024,6 +1024,7 @@ func _build_rest(root: VBoxContainer) -> void:
 		cell.screen = self
 		cell.hud = _board_hud
 		cell.drag_owner = self
+		cell.drag_allowed = can_edit_formation
 		var quad := _board_cell_quad(i, board_size)
 		var bounds := Rect2(quad[0], Vector2.ZERO)
 		for point in quad:
@@ -2682,6 +2683,7 @@ func _create_bench_portrait_card(index: int) -> BenchCellButton:
 	card.bench_index = index
 	card.screen = self
 	card.drag_owner = self
+	card.drag_allowed = can_edit_formation
 	card.custom_minimum_size = Vector2(80, 72)   # 仅投影生效前的占位；真正大小由 _realign_prep_standby_cells 设定
 	card.clip_contents = false   # 关裁剪：格子下方的名字/星级标签才不会被裁掉
 	card.text = ""
@@ -2739,6 +2741,7 @@ func _on_refresh_shop_control_pressed() -> void:
 func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragButton:
 	var card := DragButton.new()
 	card.drag_owner = self
+	card.drag_allowed = can_edit_formation
 	card.custom_minimum_size = Vector2(120, 120)
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card.size_flags_vertical = Control.SIZE_EXPAND_FILL

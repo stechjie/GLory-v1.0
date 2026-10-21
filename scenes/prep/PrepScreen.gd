@@ -453,6 +453,10 @@ func _emit_battle_request_once() -> void:
 	RaceRelationService.finalize_for_battle(GameState.board_slots, GameState.bench_slots)
 	_battle_launch_emitted = true
 	_battle_transition_running = true
+	# A drag may already be in flight when everyone readies or the timer expires.
+	if get_viewport().gui_is_dragging():
+		get_viewport().gui_cancel_drag()
+	_finish_drag_state()
 	GameState.clear_pending_battle_package()
 	_loaded_battle_scene = _cached_battle_scene if _battle_scene_path() == BATTLE_SCREEN_PATH else null
 	if _start_battle_button != null:
