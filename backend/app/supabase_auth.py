@@ -4,7 +4,8 @@
 PostgreSQL，不算）。换掉 Auth 提供方时要改的就只有这里 —— 这正是
 docs/账号系统RFC.md 第二节说的「这个选型不锁死什么」。
 
-只做两件事：开一个匿名会话、用 refresh token 换新的 access token。
+玩家这一侧做四件事：开匿名会话、用 refresh token 续期、用 Google / Apple 的身份证明
+登录、把 Google / Apple 绑到当前账号上（docs/三方登录设计.md）。
 凭证的存储、轮换、吊销全是 Supabase 的职责，我们一概不碰。
 
 ⚠️ 这里流过的全是凭证。任何日志、异常信息都**不准**带上 token 或 key ——
@@ -26,11 +27,19 @@ _TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 
 
 class AuthError(RuntimeError):
-    """Supabase Auth 拒绝了请求。message 已经脱敏，可以安全地进日志。"""
+    """Supabase Auth 拒绝了请求。message 已经脱敏，可以安全地进日志。
 
-    def __init__(self, message: str, status: int | None = None) -> None:
+    code 是 Supabase 回的 error_code（比如 identity_already_exists），路由靠它分辨该回什么。
+    """
+
+    def __init__(self, message: str, status: int | None = None, code: str = "") -> None:
         super().__init__(message)
         self.status = status
+        self.code = code
+
+
+# 能用身份证明（id_token）登录 / 绑定的登录方式。Steam 不在这里：Supabase 不认识它。
+ID_TOKEN_PROVIDERS = ("google", "apple")
 
 
 @dataclass(frozen=True)
@@ -54,6 +63,26 @@ def _redact(text: str, limit: int = 200) -> str:
     """
     flat = " ".join(text.split())
     return flat[:limit] + ("…" if len(flat) > limit else "")
+
+
+def _error_code(resp: httpx.Response) -> str:
+    """Supabase 的 error_code。老版本把它放在 code 里（有时是数字状态码，那种不算）。"""
+    try:
+        body = resp.json()
+    except ValueError:
+        return ""
+    if not isinstance(body, dict):
+        return ""
+    code = body.get("error_code") or body.get("code") or ""
+    return code if isinstance(code, str) else ""
+
+
+@dataclass(frozen=True)
+class LinkedIdentity:
+    """账号上绑着的一种登录方式。email 是原文，打码由路由层做。"""
+
+    provider: str
+    email: str
 
 
 class SupabaseAuth:
@@ -86,6 +115,11 @@ class SupabaseAuth:
             "Authorization": f"Bearer {self._key}",
             "Content-Type": "application/json",
         }
+
+    def _as_user(self, access_token: str) -> dict[str, str]:
+        """以玩家（或管理员）自己的身份调 Supabase：带他自己的 access token，不是任何密钥。"""
+        return {"apikey": self._key, "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"}
 
     @staticmethod
     def _to_session(payload: dict) -> Session:
@@ -153,10 +187,71 @@ class SupabaseAuth:
             )
         return self._to_session(resp.json())
 
+    async def _id_token_grant(self, headers: dict[str, str], body: dict, what: str) -> Session:
+        # 身份证明是凭证（一小时内能拿它登录），和 refresh token 一样绝不进错误信息。
+        async with self._client() as client:
+            resp = await client.post(f"{self._base}/auth/v1/token", headers=headers,
+                                     params={"grant_type": "id_token"}, json=body)
+        if resp.status_code >= 400:
+            raise AuthError(f"{what}被拒绝（HTTP {resp.status_code}）：{_redact(resp.text)}",
+                            resp.status_code, _error_code(resp))
+        return self._to_session(resp.json())
+
+    @staticmethod
+    def _id_token_body(provider: str, id_token: str, nonce: str | None) -> dict:
+        if provider not in ID_TOKEN_PROVIDERS:
+            raise AuthError(f"不支持的登录方式：{provider}")
+        body: dict = {"provider": provider, "id_token": id_token}
+        if nonce:
+            # Apple 要：客户端把 nonce 的 SHA-256 交给 Apple，原文交给这里，Supabase 核对两者。
+            body["nonce"] = nonce
+        return body
+
+    async def sign_in_with_id_token(self, provider: str, id_token: str, nonce: str | None = None) -> Session:
+        """用 Google / Apple 的身份证明登录。
+
+        这个 Google 从没出现过 → Supabase 新建一个用户（路由层再决定给不给建玩家）。
+        ⚠️ 邮箱和某个已有用户相同时，Supabase 会**自动把它挂到那个用户上**
+        （docs/三方登录设计.md 第七节第 4 条）。
+        """
+        return await self._id_token_grant(self._headers(), self._id_token_body(provider, id_token, nonce),
+                                          "用身份证明登录")
+
+    async def link_identity(self, access_token: str, provider: str, id_token: str,
+                            nonce: str | None = None) -> Session:
+        """把 Google / Apple 挂到 access_token 所属的那个用户上。用户编号不变。
+
+        返回的是一套**新**会话，调用方必须把新的 refresh token 交还给客户端。
+        已经属于别人时抛 AuthError，code 是 identity_already_exists 或 email_exists。
+        """
+        body = self._id_token_body(provider, id_token, nonce)
+        body["link_identity"] = True
+        return await self._id_token_grant(self._as_user(access_token), body, "绑定登录方式")
+
+    async def linked_identities(self, access_token: str) -> tuple[bool, list[LinkedIdentity]]:
+        """(是不是游客, 绑着的 Google / Apple)。
+
+        绑定接口回的 user.identities 是空数组（2026-10-22 实测），所以一律以这里为准。
+        """
+        async with self._client() as client:
+            resp = await client.get(f"{self._base}/auth/v1/user", headers=self._as_user(access_token))
+        if resp.status_code >= 400:
+            raise AuthError(f"读取登录方式被拒绝（HTTP {resp.status_code}）：{_redact(resp.text)}",
+                            resp.status_code, _error_code(resp))
+        user = resp.json()
+        linked = []
+        for identity in user.get("identities") or []:
+            provider = str(identity.get("provider") or "")
+            if provider not in ID_TOKEN_PROVIDERS:
+                continue
+            data = identity.get("identity_data") or {}
+            linked.append(LinkedIdentity(provider, str(identity.get("email") or data.get("email") or "")))
+        return bool(user.get("is_anonymous", False)), linked
+
 
 # --- 网页后台：邮箱密码 + 手机验证器（docs/运营后台设计.md 第四节）------------------------
 #
-# 只给管理员用。玩家从来不走这几条 —— 玩家是匿名账号。
+# 只给管理员用。玩家从来不走这几条 —— 玩家是游客号或 Google / Apple 账号，没有密码。
 # 这几个调用拿的都是**管理员自己的**会话令牌，不是 secret key。
 
 
@@ -210,10 +305,6 @@ def qr_data_uri(qr_code: str) -> str:
 
 
 class SupabaseAdminAuth(SupabaseAuth):
-    def _as_user(self, access_token: str) -> dict[str, str]:
-        return {"apikey": self._key, "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json"}
-
     async def _post_json(self, path: str, headers: dict, body: dict, what: str,
                          params: dict | None = None) -> dict:
         async with self._client() as client:

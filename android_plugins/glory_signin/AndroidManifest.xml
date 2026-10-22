@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  GlorySignIn: Sign in with Google over Credential Manager (docs/三方登录设计.md, section 6).
+
+  The meta-data name is how Godot 4 (plugin v2) finds the plugin class at startup.
+  No permissions: the app already has INTERNET, and Credential Manager needs nothing else.
+  No <uses-sdk> and no package attribute: AGP 8 takes them from build.gradle.kts.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <meta-data
+            android:name="org.godotengine.plugin.v2.GlorySignIn"
+            android:value="com.glory.signin.GlorySignInPlugin" />
+    </application>
+</manifest>

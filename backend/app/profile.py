@@ -242,11 +242,9 @@ async def delete_player(player_id: uuid.UUID) -> bool:
 
     登录方式删掉之后，这个 Auth 用户再来登录会被当成新玩家，回不到这个号。
 
-    ⚠️ **Supabase Auth 那边的用户刻意不删。**
-    今天全是匿名用户，那条记录里没有邮箱、没有任何可识别的个人数据。
-    删 auth 用户要用 secret key 调 admin API，会把 secret key 引进
-    supabase_auth.py —— 那个类的注释里明写着「不要在这里用 secret key」。
-    **接了 Google / Apple 登录之后这一条必须重新做**：那时 auth 用户里有邮箱。
+    Supabase Auth 那边的用户（绑过 Google / Apple 的有邮箱）由路由层接着删
+    （routes/profile.py 的 delete_me → supabase_admin.delete_user）。不放进这里：
+    那是一次外部调用，放不进这个数据库事务。
     """
     async with db.pool().acquire() as conn:
         return bool(await conn.fetchval("select erase_player($1)", player_id))

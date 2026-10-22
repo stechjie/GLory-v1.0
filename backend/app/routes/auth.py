@@ -3,21 +3,26 @@
     POST /v1/auth/anonymous   开一个新的匿名账号（只在客户端手上没有 refresh
                               token 时调用 —— 它天然不幂等，每次都建新玩家）
     POST /v1/auth/refresh     用 refresh token 换新会话（第二次及以后的启动走这条）
+    POST /v1/auth/provider    用 Google / Apple 登录（新装、换手机、切换账号）
+    POST /v1/auth/link        把 Google / Apple 绑到当前账号
+    GET  /v1/auth/identities  当前账号绑了哪些
 
-客户端的判断逻辑很简单，写在 AccountManager 里：
-    有 refresh token → refresh；失败或没有 → anonymous。
+客户端的判断逻辑写在 AccountManager 里：
+    有 refresh token → refresh；没有 → 玩家在启动页选游客（anonymous）或 Google / Apple（provider）。
+Google / Apple 的设计见 docs/三方登录设计.md。
 """
 
 from __future__ import annotations
 
 import logging
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Request, Depends, Header
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from app import bans, db, players, login_sessions, realtime
+from app import admin_auth, bans, db, players, login_sessions, realtime
 from app.config import get_settings
 from app.rate_limit import RateLimited, SlidingWindowLimiter
 from app.supabase_auth import AuthError, Session, SupabaseAuth
@@ -44,6 +49,11 @@ async def logout(claims: Annotated[Claims, Depends(current_claims)],
 _settings = get_settings()
 _anonymous_limiter = SlidingWindowLimiter(_settings.rate_limit_anonymous_per_hour, 3600.0)
 _refresh_limiter = SlidingWindowLimiter(_settings.rate_limit_refresh_per_hour, 3600.0)
+# /provider 和 /anonymous 一样会凭空造出新号，额度一样紧（各算各的）。
+_provider_limiter = SlidingWindowLimiter(_settings.rate_limit_anonymous_per_hour, 3600.0)
+# 绑定按玩家算。正常人一分钟点不了几次系统弹窗，这个数只挡客户端出 bug 时的狂点。
+LINK_PER_MINUTE = 6
+_link_limiter = SlidingWindowLimiter(LINK_PER_MINUTE, 60.0)
 
 
 # 可信反向代理。**只有从这些地址进来的请求，X-Forwarded-For 才作数。**
@@ -97,8 +107,12 @@ def _client_ip(request: Request) -> str:
 
 
 def _enforce(limiter: SlidingWindowLimiter, request: Request) -> None:
+    _enforce_key(limiter, _client_ip(request))
+
+
+def _enforce_key(limiter: SlidingWindowLimiter, key: str) -> None:
     try:
-        limiter.check(_client_ip(request))
+        limiter.check(key)
     except RateLimited as exc:
         raise HTTPException(
             status_code=429,
@@ -244,3 +258,129 @@ async def refresh(body: RefreshRequest, request: Request) -> SessionResponse:
         # 客户端还会拿同一张旧凭证来，那时还能接上。玩家一续期，存着的这张就作废了。
         await bans.hold_handoff(body.refresh_token, handoff.player_id, session.refresh_token)
     return response
+
+
+# --- Google / Apple（docs/三方登录设计.md）--------------------------------------------
+
+# Supabase 回这两种，意思都是「这个 Google / Apple 已经属于别的号」：
+#   identity_already_exists —— 这个 Google 本身绑在别的号上
+#   email_exists            —— 它的邮箱已经属于别的号（同一个人在两个号上分别绑了同邮箱的 Google 和 Apple）
+# 一律按「不合并」处理，客户端弹「切换到那个账号 / 取消」。
+IDENTITY_TAKEN_CODES = frozenset({"identity_already_exists", "email_exists"})
+IDENTITY_TAKEN = "identity_taken"
+
+
+class ProviderLoginRequest(BaseModel):
+    provider: Literal["google", "apple"]
+    # 身份证明本身。是凭证（一小时内能拿它登录），不进日志。
+    id_token: str = Field(min_length=1, max_length=8192)
+    # Apple 要：原文给这里，SHA-256 给 Apple。
+    nonce: str | None = Field(default=None, max_length=256)
+    # 同 /anonymous：新装时本机签的 id，只在这个 Google 第一次建号时用得上。
+    player_id: uuid.UUID | None = None
+
+
+class LinkRequest(BaseModel):
+    provider: Literal["google", "apple"]
+    id_token: str = Field(min_length=1, max_length=8192)
+    nonce: str | None = Field(default=None, max_length=256)
+
+
+class LinkedIdentityOut(BaseModel):
+    provider: str
+    email: str  # 打过码
+
+
+class IdentitiesResponse(BaseModel):
+    is_anonymous: bool
+    identities: list[LinkedIdentityOut]
+
+
+def mask_email(email: str) -> str:
+    """ab***@gmail.com。资料页只给看个大概：手机借给别人时，邮箱不该整个露出来。"""
+    name, at, domain = email.partition("@")
+    if not at:
+        return ""
+    return (name[:2] if len(name) > 2 else name[:1]) + "***@" + domain
+
+
+def _bearer(authorization: str) -> str:
+    # current_claims 已经验过这个头；这里只是把令牌取出来，原样交给 Supabase。
+    return authorization.partition(" ")[2].strip()
+
+
+def _id_token_failure(exc: AuthError) -> HTTPException:
+    """身份证明过期、无效、nonce 对不上 → Supabase 回 4xx → 400，客户端提示重试。其余算上游故障。"""
+    status = 400 if exc.status is not None and 400 <= exc.status < 500 else 502
+    return HTTPException(status_code=status, detail=str(exc))
+
+
+async def _require_player(claims: Claims) -> None:
+    # 被封的人在这里抛 AccountBanned → 403。必须在动 Supabase **之前**查：先绑上再拒绝就晚了。
+    if await players.get_by_auth_uid(claims.auth_uid) is None:
+        raise HTTPException(status_code=404, detail="该身份没有对应的玩家，请重新登录")
+
+
+@router.post("/provider", response_model=SessionResponse)
+async def provider_login(body: ProviderLoginRequest, request: Request) -> SessionResponse:
+    """用 Google / Apple 登录。绑过号的回到那个号；从没见过的 Google 用它开一个新号。"""
+    _enforce(_provider_limiter, request)
+    _require_db()
+    client = _auth_client()
+    try:
+        session = await client.sign_in_with_id_token(body.provider, body.id_token, body.nonce)
+    except AuthError as exc:
+        raise _id_token_failure(exc) from None
+    if await admin_auth.is_admin_account(uuid.UUID(session.auth_uid)):
+        raise HTTPException(status_code=403, detail="这是运营后台的管理员账号，不能用来登录游戏，请换一个账号")
+    return await _respond(session, body.player_id)
+
+
+@router.post("/link", response_model=SessionResponse)
+async def link(
+    body: LinkRequest,
+    claims: Annotated[Claims, Depends(current_claims)],
+    authorization: Annotated[str, Header()],
+    x_glory_session: Annotated[str, Header()],
+) -> SessionResponse | JSONResponse:
+    """把 Google / Apple 绑到当前账号。编号、宠物、钻石、段位都不变。
+
+    Supabase 绑完会发一套新凭证，照 /refresh 的格式回给客户端 —— **客户端必须存回新的那张**。
+    """
+    _enforce_key(_link_limiter, claims.auth_uid)
+    _require_db()
+    await _require_player(claims)
+    client = _auth_client()
+    try:
+        session = await client.link_identity(_bearer(authorization), body.provider, body.id_token, body.nonce)
+    except AuthError as exc:
+        if exc.code in IDENTITY_TAKEN_CODES:
+            # 不用 HTTPException：客户端要按 code 分辨，而 409 还有一种是 session_replaced。
+            return JSONResponse(status_code=409, content={
+                "code": IDENTITY_TAKEN, "detail": "这个账号已经绑定了另一个游戏账号"})
+        raise _id_token_failure(exc) from None
+    if session.auth_uid != claims.auth_uid:
+        # 不该发生：绑定只会挂到令牌所属的那个用户上。真发生了，就别把别人的会话交出去。
+        log.error("绑定后用户对不上 expected=%s got=%s", claims.auth_uid, session.auth_uid)
+        raise HTTPException(status_code=502, detail="绑定结果对不上当前账号")
+    response = await _respond(session, None, uuid.UUID(x_glory_session))
+    log.info("绑定登录方式 player_id=%s provider=%s", response.player_id, body.provider)
+    return response
+
+
+@router.get("/identities", response_model=IdentitiesResponse)
+async def identities(
+    claims: Annotated[Claims, Depends(current_claims)],
+    authorization: Annotated[str, Header()],
+) -> IdentitiesResponse:
+    """资料页「账号与登录」区块用。邮箱每次现查 Supabase，我们的数据库不存。"""
+    _require_db()
+    await _require_player(claims)
+    try:
+        anonymous, linked = await _auth_client().linked_identities(_bearer(authorization))
+    except AuthError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
+    return IdentitiesResponse(
+        is_anonymous=anonymous,
+        identities=[LinkedIdentityOut(provider=i.provider, email=mask_email(i.email)) for i in linked],
+    )

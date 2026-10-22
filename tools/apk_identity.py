@@ -43,6 +43,12 @@ VOICE_PLUGIN_CLASS = b"com/glory/voice/GloryVoicePlugin"
 # the Gradle build as a remote dependency. A bridge without LiveKit crashes on first use.
 LIVEKIT_CLASS = b"io/livekit/android/room/Room"
 VOICE_PERMISSION = "android.permission.RECORD_AUDIO"
+# Sign in with Google (the third-party login doc under docs/, section 6). Same failure mode as
+# voice: an APK without the GlorySignIn bridge installs and runs, the start screen just never
+# offers Google, and returning players on a new phone are pushed into a fresh guest account.
+SIGNIN_PLUGIN_CLASS = b"com/glory/signin/GlorySignInPlugin"
+# The bridge is compiled against Credential Manager without bundling it (export plugin dependency).
+CREDENTIALS_CLASS = b"androidx/credentials/CredentialManager"
 # LiveKit's own manifest brings these; the export plugin removes them (voice only).
 # CAMERA shows up on the Play listing; the media-projection foreground service needs its own
 # Play Console declaration.
@@ -300,6 +306,8 @@ def inspect_apk(apk: Path, aapt_request: str = "") -> Dict[str, Any]:
         dex_blobs = [archive.read(item.filename) for item in archive.infolist() if item.filename.endswith(".dex")]
         voice_plugin_present = any(VOICE_PLUGIN_CLASS in blob for blob in dex_blobs)
         livekit_present = any(LIVEKIT_CLASS in blob for blob in dex_blobs)
+        signin_plugin_present = any(SIGNIN_PLUGIN_CLASS in blob for blob in dex_blobs)
+        credentials_present = any(CREDENTIALS_CLASS in blob for blob in dex_blobs)
     build_info = json.loads(build_bytes.decode("utf-8-sig")) if build_bytes else {}
     manifest = json.loads(manifest_bytes.decode("utf-8-sig")) if manifest_bytes else {}
     bundle = json.loads(bundle_bytes.decode("utf-8-sig")) if bundle_bytes else {}
@@ -329,6 +337,8 @@ def inspect_apk(apk: Path, aapt_request: str = "") -> Dict[str, Any]:
         "android_manifest_error": manifest_error,
         "voice_plugin_present": voice_plugin_present,
         "livekit_present": livekit_present,
+        "signin_plugin_present": signin_plugin_present,
+        "credentials_present": credentials_present,
         "artifact_mapping_count": len(mappings),
         "artifact_mappings": mappings,
         "apk_entry_inventory_sha256": canonical_sha(entry_rows),
@@ -363,6 +373,10 @@ def verify_report(report: Dict[str, Any], expected: Optional[Dict[str, Any]]) ->
         failures.append("voice_plugin_absent")
     if not report.get("livekit_present"):
         failures.append("voice_livekit_absent")
+    if not report.get("signin_plugin_present"):
+        failures.append("signin_plugin_absent")
+    if not report.get("credentials_present"):
+        failures.append("signin_credentials_absent")
     if report.get("android_manifest_error"):
         failures.append(str(report["android_manifest_error"]))
     else:

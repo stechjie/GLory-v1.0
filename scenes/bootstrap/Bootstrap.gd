@@ -9,6 +9,7 @@ const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const AccountConfig := preload("res://scripts/account/AccountConfig.gd")
 const ServiceStatus := preload("res://scripts/account/ServiceStatus.gd")
+const SignInBridge := preload("res://scripts/account/SignInBridge.gd")
 
 const DEFAULT_MAIN_SCENE := "res://scenes/main/Main.tscn"
 const ERROR_MAIN_LOAD := "BOOT-MAIN-LOAD"
@@ -104,11 +105,21 @@ var _service_status: Dictionary = {}
 var _status_checked_at := -ENTRY_STATUS_POLL_SEC
 var _status_request: HTTPRequest
 
+# 新装时选登录方式（docs/三方登录设计.md 第一节）。代码里建，不进 .tscn：
+# 只有能用 Google / Apple 的设备才会看到，桌面版与门禁场景一辈子用不上它。
+var _choice_panel: VBoxContainer
+var _choice_guest: Button
+var _choice_google: Button
+var _choice_error: Label
+# 系统登录弹窗开着、或者正在拿身份证明换登录 —— 期间按钮不能再点。
+var _choice_busy := false
+
 
 func _ready() -> void:
 	theme = Theming.get_theme()
 	_retry_button.pressed.connect(retry)
 	_exit_button.pressed.connect(exit_app)
+	_build_choice_panel()
 	_apply_locale()
 	_set_phase(Phase.FIRST_FRAME, _tr_text("正在启动 Glory", "Starting Glory"),
 		_tr_text("正在显示轻量启动画面", "Presenting the lightweight startup screen"), 0.0)
@@ -346,6 +357,9 @@ func _drive_entry() -> void:
 	if not AccountManager.is_logged_in():
 		match AccountManager.state:
 			AccountManager.State.IDLE:
+				# 在等玩家选登录方式：什么都不自动做，选了才登。
+				if AccountManager.awaiting_choice:
+					return
 				AccountManager.login()
 			AccountManager.State.FAILED:
 				# 被封：自动重试只会一遍遍被拒。解封了玩家自己点「重试」。
@@ -419,6 +433,8 @@ func _entry_facts() -> Dictionary:
 		login = "logged_in"
 	elif AccountManager.state == AccountManager.State.FAILED:
 		login = "failed"
+	elif AccountManager.awaiting_choice and AccountManager.state == AccountManager.State.IDLE:
+		login = "choose"
 	return {
 		"login": login,
 		"banned": AccountManager.is_banned(),
@@ -457,6 +473,9 @@ static func entry_view(facts: Dictionary) -> Dictionary:
 				"retry_in": float(facts.get("login_retry_in", -1.0))}
 		"logged_in":
 			pass
+		"choose":
+			# 新装、能用 Google / Apple：等玩家点。不放行、不自动重试。
+			return {"state": "choose"}
 		_:
 			return {"state": "login"}
 	if bool(facts.get("admitted", false)):
@@ -481,11 +500,17 @@ static func entry_view(facts: Dictionary) -> Dictionary:
 
 func _show_entry(view: Dictionary) -> void:
 	_entry_state = str(view.get("state", ""))
+	# 放在最前：下面不认识的状态（比如 pass）会直接 return，面板也得跟着收起来。
+	_sync_choice_panel()
 	var actions := bool(view.get("actions", false))
 	var title := ""
 	var detail := ""
 	var error := ""
 	match _entry_state:
+		"choose":
+			title = _tr_text("选择登录方式", "Choose how to sign in")
+			detail = _tr_text("第一次在这台设备上玩，直接开始就行。\n在别的手机上玩过？用绑定过的账号登录，就能接着玩。",
+				"New here? Just start.\nPlayed on another phone? Sign in with the account you linked to carry on.")
 		"login":
 			title = _tr_text("正在登录", "Signing in")
 			detail = _tr_text("进入游戏前要先连上账号服务器", "Connecting to the account server before entering")
@@ -587,6 +612,81 @@ static func ban_text(info: Dictionary, english: bool, zone_bias_min: int = -9999
 
 func _entry_error(message: String, code: String) -> String:
 	return "%s\n%s" % [message, _tr_text("错误码：%s" % code, "Error code: %s" % code)]
+
+
+# --- 新装时选登录方式（docs/三方登录设计.md 第一节）----------------------------------
+
+func _build_choice_panel() -> void:
+	_choice_panel = VBoxContainer.new()
+	_choice_panel.name = "LoginChoice"
+	_choice_panel.visible = false
+	_choice_panel.add_theme_constant_override("separation", Tokens.GAP_M)
+	# 游客最大最显眼：大多数人是新玩家，一下就能开始。
+	_choice_guest = _choice_button(_tr_text("开始游戏（游客）", "Start playing (guest)"), &"GloryPrimary", 72)
+	_choice_guest.pressed.connect(_on_choice_guest)
+	_choice_panel.add_child(_choice_guest)
+	_choice_google = _choice_button(_tr_text("用 Google 登录", "Sign in with Google"), &"GloryGhost", 56)
+	_choice_google.pressed.connect(_on_choice_google)
+	_choice_panel.add_child(_choice_google)
+	_choice_error = Label.new()
+	_choice_error.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_choice_error.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_choice_error.add_theme_color_override("font_color", Color(1, 0.72, 0.72, 1))
+	_choice_error.add_theme_font_size_override("font_size", 17)
+	_choice_error.visible = false
+	_choice_panel.add_child(_choice_error)
+	var parent := _error_panel.get_parent()
+	parent.add_child(_choice_panel)
+	parent.move_child(_choice_panel, _error_panel.get_index() + 1)
+
+
+func _choice_button(text: String, variation: StringName, height: float) -> Button:
+	var button := Button.new()
+	button.text = text
+	button.theme_type_variation = variation
+	button.custom_minimum_size = Vector2(360, height)
+	button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	return button
+
+
+func _sync_choice_panel() -> void:
+	var choosing := _entry_state == "choose"
+	_choice_panel.visible = choosing
+	if not choosing:
+		return
+	# 每次重画时都现查：插件在不在、有没有 Google 服务，启动以后不会变，但查一次很便宜。
+	_choice_google.visible = SignInBridge.google_available()
+	_choice_guest.disabled = _choice_busy
+	_choice_google.disabled = _choice_busy
+	var error := AccountManager.choice_error
+	_choice_error.text = error
+	_choice_error.visible = not error.is_empty()
+
+
+func _on_choice_guest() -> void:
+	if _choice_busy:
+		return
+	AccountManager.login_as_guest()
+	_tick_entry(0.0, true)
+
+
+func _on_choice_google() -> void:
+	if _choice_busy:
+		return
+	_choice_busy = true
+	AccountManager.choice_error = ""
+	_sync_choice_panel()
+	var signed := await SignInBridge.sign_in_google(get_tree())
+	if not is_inside_tree():
+		return
+	if bool(signed.get("ok", false)):
+		# 失败时 AccountManager 自己回到「等玩家选」并写好 choice_error，这里不用管结果。
+		await AccountManager.login_with_provider("google", str(signed.get("id_token", "")), str(signed.get("nonce", "")))
+	elif not bool(signed.get("cancelled", false)):
+		AccountManager.choice_error = str(signed.get("error", ""))
+	_choice_busy = false
+	if is_inside_tree():
+		_tick_entry(0.0, true)
 
 
 # 读维护公告文件（scripts/account/ServiceStatus.gd 顶部）。只在进不去的时候、每 ENTRY_STATUS_POLL_SEC 读一次。

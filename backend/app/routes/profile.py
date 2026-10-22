@@ -25,7 +25,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel, Field
 
-from app import avatar_catalog, db, friends, players, profile, shop, text_guard
+from app import avatar_catalog, db, friends, players, profile, shop, supabase_admin, text_guard
 from app.jwt_verify import Claims
 from app.routes.me import current_claims, optional_claims
 
@@ -397,4 +397,11 @@ async def delete_me(
         log.warning("delete_me: player %s already erased", row.player_id)
     # 只记 player_id，不记昵称、好友码或任何资料内容 —— 那些正是玩家要删掉的东西。
     log.info("account deleted player_id=%s", row.player_id)
+    # 再删 Supabase 那边的用户：绑过 Google / Apple 的，邮箱在那里（docs/三方登录设计.md 第七节第 6 条）。
+    # 游戏资料已经删了，这一步失败也不回滚、不报错给玩家 —— 记下两个编号，管理员补删。
+    try:
+        await supabase_admin.delete_user(claims.auth_uid)
+    except supabase_admin.AdminUnavailable as exc:
+        log.error("注销后没删掉 Supabase 用户，需要手动补删 player_id=%s auth_uid=%s：%s",
+                  row.player_id, claims.auth_uid, exc)
     return {"deleted": True}

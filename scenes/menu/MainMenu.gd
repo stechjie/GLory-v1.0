@@ -43,6 +43,7 @@ func tutorial_prep_target() -> Control:
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
+const SignInBridge := preload("res://scripts/account/SignInBridge.gd")
 # 9.17：BGM 走常驻服务（播放器挂 root），音效走 SfxService 的播放器池。
 # 两者都不做 autoload，由 Main._ready() 各 install() 一次。
 const MusicService := preload("res://ui/services/MusicService.gd")
@@ -149,6 +150,9 @@ var _profile_frame_overlay: Control
 var _profile_frame_art: TextureRect
 var _profile_name_label: Label
 var _profile_sub_label: Label
+# 头像右上角的红点：游客号、并且这台设备能绑 Google / Apple 时亮，提醒去资料页绑定
+# （docs/三方登录设计.md 第一节：只亮红点，不弹窗）。绑上之后 identities_changed 会把它灭掉。
+var _profile_dot: Label
 var _account_level := 0
 var _coin_label: Label
 var _diamond_label: Label
@@ -218,6 +222,9 @@ func _ready() -> void:
 		AnnouncementService.changed.connect(_on_announcements_changed)
 	if not MailService.changed.is_connected(_on_mail_changed):
 		MailService.changed.connect(_on_mail_changed)
+	if not AccountManager.identities_changed.is_connected(_refresh_guest_dot):
+		AccountManager.identities_changed.connect(_refresh_guest_dot)
+	_refresh_guest_dot()
 	# 转屏（灵动岛换边）、切回前台时安全区会变，宽高不一定变。
 	if not SafeArea.changed.is_connected(_layout):
 		SafeArea.changed.connect(_layout)
@@ -250,6 +257,8 @@ func _exit_tree() -> void:
 		AnnouncementService.changed.disconnect(_on_announcements_changed)
 	if MailService.changed.is_connected(_on_mail_changed):
 		MailService.changed.disconnect(_on_mail_changed)
+	if AccountManager.identities_changed.is_connected(_refresh_guest_dot):
+		AccountManager.identities_changed.disconnect(_refresh_guest_dot)
 	if SafeArea.changed.is_connected(_layout):
 		SafeArea.changed.disconnect(_layout)
 
@@ -331,6 +340,11 @@ func _build() -> void:
 	# 等级/段位做出来之后再换回去，那时第二行才有真东西可放。
 	_profile_name_label = _add_label("", Vector2(200, 70), Vector2(330, 35), 24, "left")
 	_profile_sub_label = _add_label("", Vector2(200, 104), Vector2(330, 24), 18, "left")
+	# 压在头像右上角，同「朋友」「聊天」那两个红点的做法。hit 仍然放在最后。
+	_profile_dot = _add_label("●", Vector2(150, 30), Vector2(32, 32), 26, "left")
+	_profile_dot.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
+	_profile_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_profile_dot.visible = false
 	_tutorial_profile_target = _add_hit(Vector2(18, 12), Vector2(550, 178), _emit_profile, "left")
 	# 这两个数**曾经也是写死的假数据**（"89,450" / "2,350"），同上面名牌那两行。
 	# 现在接的是 GET /v1/me/wallet。拉到之前显示 "—" 而不是 0 ——
@@ -1150,6 +1164,15 @@ func _refresh_wallet() -> void:
 	var body: Dictionary = result.get("body", {})
 	_coin_label.text = Currency.comma(int(body.get("coin", 0)))
 	_diamond_label.text = Currency.comma(int(body.get("diamond", 0)))
+
+
+# 只看本机就能定（access token 里的 is_anonymous），不发请求。
+# 这台设备绑不了（电脑版、没有 Google 服务的手机）就不亮：亮了点进去也没有按钮可按。
+func _refresh_guest_dot() -> void:
+	if _profile_dot == null or not is_instance_valid(_profile_dot):
+		return
+	_profile_dot.visible = AccountManager.is_logged_in() and AccountManager.is_guest() \
+		and SignInBridge.any_available()
 
 
 func _refresh_login_dot() -> void:
