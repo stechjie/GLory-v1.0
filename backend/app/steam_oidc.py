@@ -106,7 +106,7 @@ def discovery() -> dict:
         "subject_types_supported": ["public"],
         "id_token_signing_alg_values_supported": [ALGORITHM],
         "scopes_supported": ["openid"],
-        "claims_supported": ["iss", "sub", "aud", "exp", "iat", "name"],
+        "claims_supported": ["iss", "sub", "aud", "exp", "iat", "name", "email", "email_verified"],
     }
 
 
@@ -114,8 +114,13 @@ def jwks() -> dict:
     return {"keys": [signing_key().public_jwk]}
 
 
-def mint(subject: str, *, name: str = "", now: float | None = None) -> str:
-    """给一个已经验证过的 SteamID 签身份证明。**只给账号服务器自己用**，不许出现在任何响应里。"""
+def mint(subject: str, *, name: str = "", email: str = "", now: float | None = None) -> str:
+    """给一个已经验证过的 SteamID 签身份证明。**只给账号服务器自己用**，不许出现在任何响应里。
+
+    email：Steam 本身不给邮箱。但 Supabase 往一个**没有邮箱的号**（游客）上绑登录方式时，会从新身份
+    拿邮箱回填，拿到空串就报 email_address_invalid（2026-10-23 第 0 步实测）。所以要带一个固定格式、
+    收不到信的假邮箱，并标成已验证 —— 标成未验证的话 Supabase 会去发确认信。具体写法见第 0 步的结论。
+    """
     if not subject:
         raise ValueError("subject 不能为空")
     key = signing_key()
@@ -129,4 +134,7 @@ def mint(subject: str, *, name: str = "", now: float | None = None) -> str:
     }
     if name:
         claims["name"] = name
+    if email:
+        claims["email"] = email
+        claims["email_verified"] = True
     return jwt.encode(claims, key.private_key, algorithm=ALGORITHM, headers={"kid": key.kid})

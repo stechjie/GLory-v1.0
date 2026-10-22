@@ -6,8 +6,8 @@
 
 前提：update.sh 已经跑过（有私钥、有签发方地址），Supabase 里已经登记了自定义提供方 custom:steam。
 
-用假的 SteamID（glorytest-随机串）验五件事：公开地址能取到、用证明登录会建号、再登一次回到同一个号、
-游客号能绑上、同一个 Steam 绑第二个号会被拒。**跑完自动删掉这次建的测试用户**（只删它自己建的那几个），
+用假的 SteamID（glorytest-随机串）验：公开地址能取到、用证明登录会建号、再登一次回到同一个号、
+同一个 Steam 绑第二个号会被拒，以及「游客号绑 Steam」要带哪种假邮箱 Supabase 才收（10-23 第 3 项的后续）。**跑完自动删掉这次建的测试用户**（只删它自己建的那几个），
 也不碰游戏数据库 —— 全程只和 Supabase 的登录服务打交道，游戏里不会多出玩家。
 """
 
@@ -62,8 +62,8 @@ def main() -> int:
     def err(body: dict) -> str:
         return f"{body.get('error_code') or body.get('code') or ''} {str(body.get('msg') or body.get('message') or '')[:160]}"
 
-    def sign_in(subject: str, jwt: str | None = None) -> tuple[int, dict]:
-        body = {"provider": PROVIDER, "id_token": steam_oidc.mint(subject, name="Glory Test")}
+    def sign_in(subject: str, jwt: str | None = None, email: str = "") -> tuple[int, dict]:
+        body = {"provider": PROVIDER, "id_token": steam_oidc.mint(subject, name="Glory Test", email=email)}
         if jwt:
             body["link_identity"] = True
         return call("POST", "/auth/v1/token?grant_type=id_token", body, jwt)
@@ -103,19 +103,58 @@ def main() -> int:
         uid = note(again) if st == 200 else ""
         report(st == 200 and uid == uid_a, "2. 再登一次回到同一个号", f"HTTP {st} 得到 {uid or err(again)}")
 
-        # 3. 游客号绑一个新的 Steam → 编号不变
-        st, guest = call("POST", "/auth/v1/signup", {})
-        if st != 200:
-            report(False, "3. 游客号绑 Steam", f"建游客号失败 HTTP {st} {err(guest)}")
-            return 1
-        uid_b = note(guest)
-        st, linked = sign_in(b_sub, guest["access_token"])
-        ok = st == 200 and str((linked.get("user") or {}).get("id")) == uid_b
-        report(ok and PROVIDER in providers_of(linked), "3. 游客号绑 Steam",
-               f"HTTP {st} {('编号不变，登录方式 %s' % providers_of(linked)) if ok else err(linked)}")
+        # 3. 游客号（没有邮箱）绑 Steam。不带邮箱时 Supabase 会拿空串回填邮箱、报 email_address_invalid
+        #    （10-23 实测），所以试两种「收不到信、但格式合法」的假邮箱，看它收哪一种。
+        host = iss.split("//", 1)[1].split("/", 1)[0]
+        guest_for_conflict = None
+        accepted: list[str] = []
+        variants = [
+            ("3a. 不带邮箱（已知会失败，看 Supabase 修没修）", lambda sub: ""),
+            ("3b. 假邮箱用自己的域名", lambda sub: f"steam-{sub}@{host}"),
+            ("3c. 假邮箱用保留域名 .invalid", lambda sub: f"steam-{sub}@steam.invalid"),
+        ]
+        for label, make_email in variants:
+            st, guest = call("POST", "/auth/v1/signup", {})
+            if st != 200:
+                report(False, label, f"建游客号失败 HTTP {st} {err(guest)}")
+                continue
+            uid_g = note(guest)
+            sub = "glorytest-" + secrets.token_hex(6)
+            email = make_email(sub)
+            st, linked = sign_in(sub, guest["access_token"], email)
+            user = linked.get("user") or {}
+            ok = st == 200 and str(user.get("id")) == uid_g and PROVIDER in providers_of(linked)
+            if not email:
+                # 只是记录现状：失败是预期的，不算没过。
+                print(("INFO " if not ok else "NOTE ") + label + " | " +
+                      (f"HTTP {st} {err(linked)}" if not ok else "居然成功了：Supabase 可能已经修了这个毛病"), flush=True)
+                continue
+            # 两种写法是在「试」：收一种就够，不收的那种不算没过，只记下来。
+            ok = ok and user.get("is_anonymous") is False
+            if ok:
+                accepted.append(email.split("@", 1)[1])
+                guest_for_conflict = guest_for_conflict or linked
+            print(("OK   " if ok else "NO   ") + label + " | HTTP " + str(st) + " " +
+                  (f"编号不变，邮箱 {user.get('email')}，is_anonymous={user.get('is_anonymous')}" if ok else err(linked)),
+                  flush=True)
+        report(bool(accepted), "3. 游客号能绑 Steam（至少收一种假邮箱）", f"Supabase 收的域名：{accepted or '一个都不收'}")
 
-        # 4. 已经属于 A 的 Steam 再绑到 B → 必须被拒
-        st, conflict = sign_in(a_sub, (linked if st == 200 else guest)["access_token"])
+        # 3d. 已经有邮箱的号（相当于绑过 Google 的手机号）绑一个不带邮箱的 Steam → 应该直接成功
+        st, owner = sign_in("glorytest-" + secrets.token_hex(6), None, f"steam-owner-{secrets.token_hex(4)}@{host}")
+        if st == 200:
+            note(owner)
+            st, linked = sign_in(b_sub, owner["access_token"])
+            same = st == 200 and str((linked.get("user") or {}).get("id")) == str(owner["user"]["id"])
+            report(same, "3d. 有邮箱的号绑不带邮箱的 Steam", f"HTTP {st} " + ("编号不变" if same else err(linked)))
+        else:
+            report(False, "3d. 有邮箱的号绑不带邮箱的 Steam", f"建号失败 HTTP {st} {err(owner)}")
+
+        # 4. 已经属于 A 的 Steam 再绑到别的号 → 必须被拒
+        target = guest_for_conflict or (owner if owner.get("access_token") else None)
+        if target is None:
+            report(False, "4. 冲突被拒", "前面没有一个能用的号，测不了")
+            return 1
+        st, conflict = sign_in(a_sub, target["access_token"])
         report(st != 200 and conflict.get("error_code") == "identity_already_exists", "4. 冲突被拒",
                f"HTTP {st} {err(conflict) if st != 200 else '居然成功了'}")
     finally:

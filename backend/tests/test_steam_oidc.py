@@ -77,6 +77,18 @@ def test_minted_token_verifies_with_the_public_jwks(configured) -> None:
     assert 0 < claims["exp"] - claims["iat"] <= 300
 
 
+def test_email_is_marked_verified(configured) -> None:
+    """不标已验证的话，Supabase 往游客号上绑时会去发确认信（那个邮箱收不到）。"""
+    keys = client.get("/oidc/steam/jwks.json").json()["keys"]
+    decode = lambda token: jwt.decode(token, jwt.PyJWK(keys[0]).key, algorithms=["ES256"],  # noqa: E731
+                                      audience="glory-steam", issuer=ISSUER)
+    with_email = decode(steam_oidc.mint("76561198000000001", email="steam-76561198000000001@api.example.com"))
+    assert with_email["email"] == "steam-76561198000000001@api.example.com"
+    assert with_email["email_verified"] is True
+    without = decode(steam_oidc.mint("76561198000000001"))
+    assert "email" not in without and "email_verified" not in without
+
+
 def test_token_expires(configured) -> None:
     keys = client.get("/oidc/steam/jwks.json").json()["keys"]
     old = steam_oidc.mint("76561198000000001", now=time.time() - 3600)
