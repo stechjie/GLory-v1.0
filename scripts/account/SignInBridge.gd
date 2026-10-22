@@ -82,9 +82,19 @@ static func sign_in_google(tree: SceneTree) -> Dictionary:
 				return {"ok": false, "error": "这台手机上还没有 Google 账号，请先在系统设置里添加"}
 			_:
 				# 插件给的原因只进日志（里面不会有身份证明），玩家看一句人话。
-				push_warning("[SIGNIN] Google 登录失败：%s" % str(result.get("error", result.get("state", ""))))
-				return {"ok": false, "error": "Google 登录失败，请稍后再试"}
+				var detail := str(result.get("error", result.get("state", "")))
+				push_warning("[SIGNIN] Google 登录失败：%s" % detail)
+				return {"ok": false, "error": failure_text(detail)}
 	return {"ok": false, "error": "Google 登录等待超时，请再试一次"}
+
+
+# 「这个安装包没在 Google 登记」单独说：它不是「稍后再试」能好的，而且只有测试包会碰到 ——
+# 编辑器一键出的调试包（包名、签名都对不上）就是这样（2026-10-22 真机踩到）。
+# 16 = Account reauth failed（签名指纹不对），28444 = Developer console is not set up correctly。
+static func failure_text(detail: String) -> String:
+	if detail.contains("[16]") or detail.contains("28444") or detail.contains("Developer console"):
+		return "这个安装包还不能用 Google 登录（包名或签名没在 Google 登记），请用正式包"
+	return "Google 登录失败，请稍后再试"
 
 
 static func _parse(raw: String) -> Dictionary:

@@ -218,6 +218,16 @@ func _case_sign_in_flows() -> void:
 	_h.expect(not bool(failed.get("ok", true)) and not str(failed.get("error", "")).contains("28444"),
 		"raw_error_shown", "插件的原始报错只进日志，玩家看一句人话")
 
+	# 2026-10-22 真机：包名 / 签名没在 Google 登记，选完账号 Google 报成「取消」（[16]），
+	# 当成玩家自己取消就一声不吭。插件现在把它报成 error，这里要说清楚是「这个包没登记」。
+	fake.replies = ['{"state":"error","error":"cancelled_by_google: [16] Account reauth failed."}']
+	var unregistered: Dictionary = await SignInBridge.sign_in_google(get_tree())
+	_h.expect(not bool(unregistered.get("cancelled", false)) and str(unregistered.get("error", "")).contains("登记"),
+		"unregistered_package_silent", "安装包没在 Google 登记时要明说，不能当成取消")
+	var kotlin := FileAccess.get_file_as_string(KOTLIN_PATH)
+	_h.expect(kotlin.contains("isUserCancel(e)) state(\"cancelled\") else failure("), "every_cancel_is_silent",
+		"Kotlin 桥接必须只把「玩家自己关掉弹窗」当取消，Google 报成取消的其他失败要交出 error")
+
 	fake.begin_result = -1
 	var unstarted: Dictionary = await SignInBridge.sign_in_google(get_tree())
 	_h.expect(not bool(unstarted.get("ok", true)), "begin_failure_ignored", "发不起来（-1）必须当失败")

@@ -120,14 +120,21 @@ class GlorySignInPlugin(godot: Godot) : GodotPlugin(godot) {
     }
 
     private fun fromError(e: GetCredentialException): JSONObject = when (e) {
-        // 玩家自己关掉了弹窗：不是错误，界面上什么都不用说。
-        is GetCredentialCancellationException -> state("cancelled")
+        // 只有玩家自己关掉弹窗才是真取消，界面上什么都不用说。
+        // 🔴 包名 / 签名指纹没在 Google 登记时，玩家选完账号，Google 也报成「取消」
+        // （"[16] Account reauth failed"）。2026-10-22 真机踩到：当成取消一声不吭，看起来就是「没反应」。
+        is GetCredentialCancellationException ->
+            if (isUserCancel(e)) state("cancelled") else failure("cancelled_by_google", e)
         // 手机上一个 Google 账号都没有。
         is NoCredentialException -> state("no_account")
         // 最常见的是签名指纹没登记（Google Cloud 里少了这个包的安卓客户端）：
         // 报错里会有 "Developer console is not set up correctly"。
         else -> failure(e.type, e)
     }
+
+    // Credential Manager 在玩家关掉弹窗时报的是 "activity is cancelled by the user."。
+    private fun isUserCancel(e: GetCredentialCancellationException): Boolean =
+        e.message?.contains("cancelled by the user", ignoreCase = true) == true
 
     private fun failure(kind: String, e: Exception): JSONObject =
         JSONObject().put("state", "error").put("error", "$kind: ${e.message ?: e.javaClass.simpleName}".take(300))
