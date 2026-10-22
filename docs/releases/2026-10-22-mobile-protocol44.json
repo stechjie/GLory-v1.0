@@ -48,7 +48,9 @@
     "payload_matches_baselines": true,
     "backend_tests_passed": 43,
     "site_tests_passed": 7,
-    "public_site": "Release configuration staged; see delivery evidence for public readback"
+    "public_site": "Verified public HTML/config/JS/QR hashes; APK HTTP 206 and exact 575604256-byte length; server full SHA256 matches signed APK",
+    "site_published": true,
+    "qr_entry": "https://glorytd-api.duckdns.org/beta/"
   },
   "device_gameplay_tested": false
 }
