@@ -45,7 +45,77 @@ const GUARD_SLOTS := [0, 2]
 # 他从中路压上去，登场那一下在画面正中央。
 const KING_SLOT := 5
 
-const SHOOTER_ID := "god_aurora"
+# —— 版本表 ——
+# 同一条节奏（BEATS）换一套阵容。BEATS 里上场的棋子和宝藏不写死 id，写「位置」：
+#   @front     第二波上场、站前排中间（ARBITER_SLOT）
+#   @flank     第三波上场的两个、站前排两侧（GUARD_SLOTS）
+#   @finisher  Boss 登场时上场的压轴棋子（KING_SLOT）
+#   @t0..@t3   第几个宝藏
+# 由 --variant 选哪一套。god 是第一版（极光射手），dark 是暗族版（用户 10-21 要的）。
+const VARIANTS := {
+	"god": {
+		"shooter": "god_aurora",
+		"front": "god_arbiter",
+		"flank": "god_guard",
+		"finisher": "god_king",
+		"monster": "pve_ren_shadow_thief",
+		"boss": "boss_rage_beast",
+		"monster_power": 1.0,
+		"boss_power": 1.0,
+		"count_scale": 1.0,
+		# 四件元素宝藏：集齐满足 has_set("element")，20% 攻击触发 180 范围元素爆发。
+		"treasures": [
+			["elem_toxic_spread", "剧毒蔓延"],
+			["elem_flame_shatter", "炎焰碎裂"],
+			["elem_frost_blade", "冰封霜刃"],
+			["elem_thunder_haste", "雷霆加速"],
+		],
+		"set_category": "element",
+		"set_logo": "4元素",
+		"card_decoys": ["god_priest", "god_angel", "god_archangel", "god_priestess", "god_guard"],
+		"treasure_decoys": ["def_iron_wall", "atk_blood_pact", "ctrl_shockwave", "def_life_monument", "ctrl_time_compress"],
+	},
+	# 暗族：暗影法师当主角 → 痛苦女王 → 偷袭者 → 黑龙压轴，雷怒核心当 Boss，
+	# 宝藏换成紫色那套「4控制」。
+	"dark": {
+		"shooter": "dark_mage",
+		"front": "dark_queen",
+		"flank": "dark_scythe",
+		"finisher": "dark_dragon",
+		# 雷鸣灵：远程、链式闪电，跟雷系 Boss 配成一套；不会瞬移，600hp 也不算肉。
+		"monster": "pve_sky_thunder_spirit",
+		"boss": "boss_thunder_core",
+		# 怪物强度：小怪 / Boss 的血量、攻击、技能伤害按这个比例缩。宣传片调参，跟游戏真实
+		# 数值无关。暗族这套打不过神族版同样的怪量：暗影法师是 1 阶（血 520 / 攻 48，极光
+		# 射手是 2 阶 720 / 77），偷袭者会闪去敌人后排、不替法师挡；按原强度实测雷鸣灵 /
+		# 流浪剑客 / 巫毒术士 / 星辉蝶 / 藤蔓守卫全都全灭。
+		# 用户第二轮要「Boss 活久一点、怪多一点更有打击感」。血量 / 攻击分开调之后：
+		#   怪数量 ×2，每只血 0.3、攻 0.25 —— 同屏更多、倒得更多，总压力和原来差不多；
+		#   Boss 血 6.5、攻 0.08 —— 从 45.5s 打到 58.7s（原来 0.5 / 0.6 一套只撑 6 秒）。
+		# 实测两个 4 星法师、两个偷袭者、黑龙都活到最后，痛苦女王 35s 在前排倒下。
+		# 小怪攻击是关键：0.3 时最后一批怪（狂暴阶段伤害翻倍）会在 50s 磨死一个法师，
+		# 跟 Boss 攻击调多低无关（阵亡日志对过）。
+		"monster_power": 0.3,
+		"monster_atk_power": 0.25,
+		"count_scale": 2.0,
+		"boss_power": 6.5,
+		"boss_atk_power": 0.08,
+		# 控制类一共 5 件，套装要 4 件。挑打中都有可见效果的四件
+		# （眩晕 / 流血 / 打断 / 减速）；时空压缩只改技能冷却，画面上看不出来，不用。
+		# 集齐满足 has_set("control")：普攻打出最后一击时刷新技能冷却 —— 技能放得更勤。
+		"treasures": [
+			["ctrl_shockwave", "震荡余波"],
+			["ctrl_corrosive_needle", "腐蚀毒针"],
+			["ctrl_interrupt_chain", "打断锁链"],
+			["ctrl_binding_weight", "束缚重压"],
+		],
+		"set_category": "control",
+		"set_logo": "4控制",
+		"card_decoys": ["dark_imp", "dark_fear", "dark_suc", "dark_doom", "dark_imp"],
+		# 陪衬卡不能是控制类，否则观众看不出「为什么偏偏选这张」。
+		"treasure_decoys": ["def_iron_wall", "atk_blood_pact", "elem_flame_shatter", "def_life_monument", "money_lucky_envelope"],
+	},
+}
 
 # 怪的出生点。默认 `_append_lane_monsters` 把怪放在 y≈205（紧贴中线），
 # 那样是「凭空出现在脸上」。往远端（低 y）挪，它们才会**走进来**，
@@ -61,6 +131,8 @@ const SPAWN_ROW_GAP := 30.0
 # 于是一批接一批连锁拉满，整张编排表被压扁成十几秒（实测第一版就是这样，
 # 编排只跑到 35.2 秒、第四波和 4 星根本没来）。
 const MIN_ALIVE_FLOOR := 1
+# Boss 还没到点、场上却快清空时补的那一小批（见 _fire_due_beats）。
+const FILLER_BATCH := 3
 
 const TICK := 0.1
 # 编排表最后一拍之后再跑这么久收尾（4 星射手清完最后一波 + Boss）。
@@ -72,18 +144,9 @@ const MAX_TICKS := 1500
 const SCREEN_WARMUP_FRAMES := 45
 const TAIL_FRAMES := 45
 
-# 四个元素宝藏，按右下角 logo 条点亮的顺序。图标文件按宝藏中文名命名
-# （assets/ui/treasure_logos/<name>.png），集齐 4 个 category=element
-# 就满足 TreasureService.has_set("element")（判据是 >= 4），
-# element 套装生效：20% 攻击触发、半径 180、敌人掉 10% 最大血。
-const ELEMENT_TREASURES := {
-	"elem_toxic_spread": "剧毒蔓延",
-	"elem_flame_shatter": "炎焰碎裂",
-	"elem_frost_blade": "冰封霜刃",
-	"elem_thunder_haste": "雷霆加速",
-}
+# 宝藏图标按宝藏中文名命名（assets/ui/treasure_logos/<name>.png）。哪四件、哪个套装
+# logo 见 VARIANTS；同一类别集齐 4 件就满足 TreasureService.has_set（判据是 >= 4）。
 const TREASURE_LOGO_DIR := "res://assets/ui/treasure_logos/"
-const ELEMENT_SET_LOGO := "4元素"
 # 底部居中那排的图标边长。够大到看清是什么元素，但不抢戏 ——
 # 它是收集进度，不是主角。
 # 按画面**短边**的比例算，不写死像素：横版 1080 高、竖版 1080 宽都按同一观感出。
@@ -125,28 +188,28 @@ const BEATS: Array = [
 	# —— 第二波：15 只怪，裁决者上前排 ——
 	{"t": 13.0, "op": "growth", "pve_completed": 1},
 	# 裁决者比 3 星晚 3 秒：每次部署的选卡演出约 2.6 秒，挨太近两组卡会叠在一起。
-	{"t": 15.0, "op": "unit", "id": "god_arbiter", "slot": ARBITER_SLOT, "star": 2},
+	{"t": 15.0, "op": "unit", "id": "@front", "slot": ARBITER_SLOT, "star": 2},
 	{"t": 13.5, "op": "monsters", "count": 4, "y": SPAWN_Y_NEAR},
 	{"t": 16.0, "op": "monsters", "count": 4, "y": SPAWN_Y_FAR},
 	{"t": 19.0, "op": "monsters", "count": 4, "y": SPAWN_Y_NEAR},
 	{"t": 22.0, "op": "monsters", "count": 3, "y": SPAWN_Y_FAR},
 
 	# —— 两个宝藏：毒 + 火 ——
-	{"t": 20.0, "op": "treasure", "id": "elem_toxic_spread"},
-	{"t": 24.0, "op": "treasure", "id": "elem_flame_shatter"},
+	{"t": 20.0, "op": "treasure", "id": "@t0"},
+	{"t": 24.0, "op": "treasure", "id": "@t1"},
 
 	# —— 第三波：22 只怪，前排补两个嘲讽卫士 ——
 	{"t": 27.0, "op": "growth", "pve_completed": 4},
-	{"t": 26.5, "op": "unit", "id": "god_guard", "slot": GUARD_SLOTS[0], "star": 2},
-	{"t": 26.5, "op": "unit", "id": "god_guard", "slot": GUARD_SLOTS[1], "star": 2},
+	{"t": 26.5, "op": "unit", "id": "@flank", "slot": GUARD_SLOTS[0], "star": 2},
+	{"t": 26.5, "op": "unit", "id": "@flank", "slot": GUARD_SLOTS[1], "star": 2},
 	{"t": 27.0, "op": "monsters", "count": 5, "y": SPAWN_Y_NEAR},
 	{"t": 30.0, "op": "monsters", "count": 5, "y": SPAWN_Y_FAR},
 	{"t": 33.0, "op": "monsters", "count": 6, "y": SPAWN_Y_NEAR},
 	{"t": 36.0, "op": "monsters", "count": 6, "y": SPAWN_Y_FAR},
 
 	# —— 集齐四元素：冰 + 雷 → element 套装亮 ——
-	{"t": 34.0, "op": "treasure", "id": "elem_frost_blade"},
-	{"t": 38.0, "op": "treasure", "id": "elem_thunder_haste"},
+	{"t": 34.0, "op": "treasure", "id": "@t2"},
+	{"t": 38.0, "op": "treasure", "id": "@t3"},
 
 	# —— 升 4 星 ——
 	{"t": 41.5, "op": "star", "star": 4},
@@ -160,7 +223,7 @@ const BEATS: Array = [
 	# 脆怪撑不过一秒就清空，最后一波还没摆完战斗就结束了。
 	{"t": 42.0, "op": "growth", "pve_completed": 6},
 	{"t": 42.0, "op": "monsters", "count": 7, "y": SPAWN_Y_NEAR},
-	{"t": 44.8, "op": "unit", "id": "god_king", "slot": KING_SLOT, "star": 2},
+	{"t": 44.8, "op": "unit", "id": "@finisher", "slot": KING_SLOT, "star": 2},
 	{"t": 44.0, "op": "monsters", "count": 7, "y": SPAWN_Y_FAR},
 	# Boss 排在最后一批怪**之前**：它得在场上还有怪的时候登场，
 	# 不然清场一快就轮不到它（上一版就是这么丢掉 Boss 的）。
@@ -175,10 +238,32 @@ var _seed := 20261020
 var _fps := 60
 var _realtime := false
 var _hud := false
-# 整场只用这一种怪。默认影行盗徒（480hp / def 4）：两个射手要打出「一直在清」的观感，
-# 回合自带的藤蔓守卫这类肉怪实测会把射手推平（wipeout）；按每波换熔岩傀儡 / 岩甲兽 /
-# 天穹守卫也试过，同样全灭。BEATS 里可以用 monster_type 拍子按波次另换。
-var _monster_id := "pve_ren_shadow_thief"
+# 整场只用这一种怪。不传 --monster 就用版本表里的。神族版是影行盗徒（480hp / def 4）：
+# 两个射手要打出「一直在清」的观感，回合自带的藤蔓守卫这类肉怪实测会把射手推平
+# （wipeout）；按每波换熔岩傀儡 / 岩甲兽 / 天穹守卫也试过，同样全灭。
+var _monster_id := ""
+# 当前版本（--variant），以及由它展开的阵容 / 宝藏。见 VARIANTS。
+var _variant := "god"
+var _shooter_id := ""
+var _roles: Dictionary = {}
+# 宝藏 id -> 中文名，按底部 logo 条的顺序（Dictionary 保留插入顺序）。
+var _treasures: Dictionary = {}
+var _treasure_order: Array = []
+var _set_category := ""
+var _set_logo := ""
+var _card_decoys: Array = []
+var _treasure_decoys: Array = []
+var _monster_power := 1.0
+var _boss_power := 1.0
+var _count_scale := 1.0
+# --monster-power 调参用；< 0 表示没给，用版本表里的。
+var _monster_power_cli := -1.0
+var _boss_power_cli := -1.0
+var _count_scale_cli := -1.0
+var _monster_atk_power := 1.0
+var _boss_atk_power := 1.0
+var _monster_atk_cli := -1.0
+var _boss_atk_cli := -1.0
 # 当前这一波用哪种怪（BEATS 里的 monster_type 拍子设）。空 = 按回合号挑模板。
 var _wave_monster_id := ""
 # 单位位置插值。**默认关**：用户对照自己实际玩的一局（桌面录屏逐帧量过）——游戏里
@@ -242,6 +327,51 @@ var _overlay_root: Control = null
 
 func _initialize() -> void:
 	_parse_arguments()
+	_apply_variant()
+
+
+func _apply_variant() -> void:
+	if not VARIANTS.has(_variant):
+		push_error("未知版本 '%s'。可选：%s" % [_variant, ", ".join(VARIANTS.keys())])
+		quit(1)
+		return
+	var v: Dictionary = VARIANTS[_variant]
+	_shooter_id = str(v["shooter"])
+	_roles = {"@front": str(v["front"]), "@flank": str(v["flank"]), "@finisher": str(v["finisher"])}
+	_treasures = {}
+	_treasure_order = []
+	for pair in v["treasures"]:
+		_treasures[str(pair[0])] = str(pair[1])
+		_treasure_order.append(str(pair[0]))
+	_set_category = str(v["set_category"])
+	_set_logo = str(v["set_logo"])
+	_card_decoys = (v["card_decoys"] as Array).duplicate()
+	_treasure_decoys = (v["treasure_decoys"] as Array).duplicate()
+	if _monster_power_cli < 0.0:
+		_monster_power = float(v.get("monster_power", 1.0))
+	else:
+		_monster_power = _monster_power_cli
+	_boss_power = float(v.get("boss_power", 1.0)) if _boss_power_cli < 0.0 else _boss_power_cli
+	# 攻击系数没单独给就跟血量系数一样（神族版两个都是 1.0）。
+	_monster_atk_power = float(v.get("monster_atk_power", _monster_power)) if _monster_atk_cli < 0.0 else _monster_atk_cli
+	_boss_atk_power = float(v.get("boss_atk_power", _boss_power)) if _boss_atk_cli < 0.0 else _boss_atk_cli
+	_count_scale = float(v.get("count_scale", 1.0)) if _count_scale_cli < 0.0 else _count_scale_cli
+	# 命令行显式给了 --monster / --boss 就听命令行的。
+	if _monster_id.is_empty():
+		_monster_id = str(v["monster"])
+	if _boss_id.is_empty():
+		_boss_id = str(v["boss"])
+	print("trailer_capture: 版本 %s —— 主角 %s，怪 %s 血×%.2f 攻×%.2f 量×%.2f，Boss %s 血×%.2f 攻×%.2f，宝藏 %s" % [
+		_variant, _shooter_id, _monster_id, _monster_power, _monster_atk_power, _count_scale,
+		_boss_id, _boss_power, _boss_atk_power, _set_logo])
+
+
+# BEATS 里的 @位置 → 这个版本的真实 id。
+func _resolve_id(id: String) -> String:
+	if id.begins_with("@t"):
+		var i := int(id.substr(2))
+		return str(_treasure_order[i]) if i >= 0 and i < _treasure_order.size() else ""
+	return str(_roles.get(id, id))
 	if _realtime:
 		Engine.max_fps = _fps
 
@@ -394,6 +524,8 @@ func _compute_choreographed_replay() -> Dictionary:
 	# 单游标会把它前面的升星 / 宝藏 / 上单位一起拖早（第一版就把裁决者从
 	# t=13 拖到了 t=12，宝藏同理 —— 编排的时间轴等于白写）。
 	var consumed: Dictionary = {}
+	# 我方阵亡记录（调参用：哪个棋子、第几秒、被谁打死）。升星换下来的旧单位不算。
+	var dead_logged: Dictionary = {}
 	var stop_after := _last_beat_time() + TAIL_SEC
 	var steps := 0
 	while not bool(state.get("finished", false)) and steps < MAX_TICKS:
@@ -406,6 +538,7 @@ func _compute_choreographed_replay() -> Dictionary:
 		state["next_sudden_death_tick"] = float(state.get("elapsed", 0.0)) + 1e9
 		_sim.call("step_state", state)
 		steps += 1
+		_log_player_deaths(state, dead_logged)
 		_sim.call("_replay_capture_roster", state, roster)
 		_sim.call("_replay_capture_frame", state, frames, frame_events)
 		if float(state.get("elapsed", 0.0)) >= stop_after and consumed.size() >= beats.size():
@@ -422,6 +555,25 @@ func _compute_choreographed_replay() -> Dictionary:
 			survivors.append("%s★%d" % [str(f.get("id", "?")), int(f.get("star", 1))])
 	print("  存活：%s" % ", ".join(survivors))
 	return _sim.call("_team_replay_payload", state, roster, frames, frame_events)
+
+
+func _log_player_deaths(state: Dictionary, logged: Dictionary) -> void:
+	for f: Dictionary in state.get("player", []):
+		var uid := str(f.get("uid", ""))
+		if bool(f.get("alive", false)) or logged.has(uid):
+			continue
+		logged[uid] = true
+		# 升星时旧单位被直接置 alive=false、hp=0，那不是阵亡。
+		if int(f.get("hp", 0)) == 0 and _is_replaced_uid(uid):
+			continue
+		print("  阵亡 t=%.1f：%s（%s）" % [float(state.get("elapsed", 0.0)), uid, str(f.get("id", "?"))])
+
+
+func _is_replaced_uid(uid: String) -> bool:
+	for cue: Dictionary in _deploy_cues:
+		if uid in (cue.get("old_uids", []) as Array):
+			return true
+	return false
 
 
 func _fire_due_beats(state: Dictionary, beats: Array, consumed: Dictionary) -> void:
@@ -448,6 +600,21 @@ func _fire_due_beats(state: Dictionary, beats: Array, consumed: Dictionary) -> v
 		var op := str((beats[i] as Dictionary).get("op", ""))
 		if op != "monsters" and op != "boss":
 			continue
+		# 下一个敌人是 Boss、但还没到点：**不提前放 Boss**，先补一小批同种小怪撑住场面，
+		# 让「升 4 星 → 压轴棋子落地 → Boss 登场」按原时间走。清场快的版本（暗族）原来会把
+		# 这三拍挤到同一个 tick，升星石和选卡在画面顶部叠在一起。
+		var due := float((beats[i] as Dictionary).get("t", 0.0))
+		if op == "boss" and due > float(state.get("elapsed", 0.0)) + 0.5:
+			_spawn_monsters(state, maxi(1, int(round(float(FILLER_BATCH) * _count_scale))), SPAWN_Y_FAR)
+			return
+		# Boss 被提前时，先把排在它前面、还没放的拍子（升 4 星、压轴棋子上场）放完：
+		# 压轴的顺序必须是「升 4 星 → 压轴棋子落地 → Boss 登场」。只提 Boss 的话，
+		# 清场快的版本会让 Boss 抢在 4 星和黑龙前面出来（暗族版实测 Boss 在 t=40 就登场）。
+		if op == "boss":
+			for j in i:
+				if not consumed.has(j):
+					consumed[j] = true
+					_apply_beat(state, beats[j] as Dictionary)
 		consumed[i] = true
 		_apply_beat(state, beats[i] as Dictionary)
 		return
@@ -461,15 +628,15 @@ func _apply_beat(state: Dictionary, beat: Dictionary) -> void:
 		"monster_type":
 			_wave_monster_id = str(beat.get("id", ""))
 		"monsters":
-			_spawn_monsters(state, int(beat.get("count", 1)), float(beat.get("y", SPAWN_Y_NEAR)))
+			_spawn_monsters(state, maxi(1, int(round(float(beat.get("count", 1)) * _count_scale))), float(beat.get("y", SPAWN_Y_NEAR)))
 		"boss":
 			_spawn_boss(state)
 		"star":
 			_upgrade_shooters(state, int(beat.get("star", 3)))
 		"unit":
-			_add_player_unit(state, str(beat.get("id", "")), int(beat.get("slot", 0)), int(beat.get("star", 1)))
+			_add_player_unit(state, _resolve_id(str(beat.get("id", ""))), int(beat.get("slot", 0)), int(beat.get("star", 1)))
 		"treasure":
-			_grant_treasure(state, str(beat.get("id", "")))
+			_grant_treasure(state, _resolve_id(str(beat.get("id", ""))))
 		_:
 			push_warning("未知的编排动作 '%s'" % op)
 
@@ -502,6 +669,7 @@ func _spawn_monsters(state: Dictionary, count: int, y: float) -> void:
 	var lane_x: float = float((_sim.get("TEAM_LANE_CENTERS") as Array)[LANE])
 	for n in batch.size():
 		var f: Dictionary = batch[n]
+		_scale_enemy(f, _monster_power, _monster_atk_power)
 		f.uid = "enemy_L%d_w%d_m%d" % [LANE, _spawn_serial, n]
 		# 每排 4 只横向铺开，排与排沿视线方向错开，不是一堵墙。
 		var dx := (float(n % 4) - 1.5) * 34.0
@@ -528,6 +696,24 @@ func _monster_template() -> Dictionary:
 	return _sim.call("_round_monster_template", int(_game_state.get("round_index")))
 
 
+# 按版本表的强度系数缩一只敌人。血量 / 攻击在 fighter 上，技能伤害读 fighter.def
+# （_append_lane_monsters 复制过一份 def，改它不影响共享表）。
+# 血量和攻击分开缩：「耐打」和「打人疼」是两回事。绑在一个系数上时，Boss 一加强就会
+# 打死主角（暗族版 Boss 1.0 打死一个法师、1.5 全灭），只能弱到几秒就死。
+# 攻击系数同时管技能伤害 / 溅射 —— 雷怒核心的 overload_counter 是挨 8 下反击一次
+# （300 + 180 范围溅射 200），血越厚挨打越多、反击越勤，这部分必须一起压。
+func _scale_enemy(f: Dictionary, hp_power: float, atk_power: float) -> void:
+	if not is_equal_approx(hp_power, 1.0):
+		f.max_hp = maxi(1, int(round(float(f.get("max_hp", 1)) * hp_power)))
+		f.hp = int(f.max_hp)
+	if not is_equal_approx(atk_power, 1.0):
+		f.atk = maxi(1, int(round(float(f.get("atk", 1)) * atk_power)))
+		var d: Dictionary = f.get("def", {})
+		for key in ["skill_damage", "splash_damage"]:
+			if d.has(key):
+				d[key] = maxi(1, int(round(float(d[key]) * atk_power)))
+
+
 func _spawn_boss(state: Dictionary) -> void:
 	var template: Dictionary = _sim.call("_round_boss_template", int(_game_state.get("round_index")))
 	if template.is_empty():
@@ -537,6 +723,7 @@ func _spawn_boss(state: Dictionary) -> void:
 	_sim.call("_append_lane_boss", batch, LANE, template)
 	for n in batch.size():
 		var f: Dictionary = batch[n]
+		_scale_enemy(f, _boss_power, _boss_atk_power)
 		f.uid = "enemy_L%d_boss%d" % [LANE, n]
 		f.pos = Vector2(f.pos.x, clampf(SPAWN_Y_FAR, 45.0, 475.0))
 		state.enemy.append(f)
@@ -554,7 +741,7 @@ func _upgrade_shooters(state: Dictionary, star: int) -> void:
 	var new_uids: Array = []
 	for slot in SHOOTER_SLOTS:
 		var old := _find_player_by_cell(state, slot)
-		var fresh := _make_player_fighter(SHOOTER_ID, slot, star)
+		var fresh := _make_player_fighter(_shooter_id, slot, star)
 		if fresh.is_empty():
 			continue
 		# 血量按比例带过去：满血复活会让「升级」变成「回血」，战斗压力整条断掉。
@@ -573,7 +760,7 @@ func _upgrade_shooters(state: Dictionary, star: int) -> void:
 		replaced += 1
 	# 1→2、2→3 走选卡（点一张射手卡 = 买到第三张合成）；4 星没有卡，走升星石。
 	var kind := "four" if star >= GameConstants.MAX_STAR else "star"
-	_record_deploy(state, kind, SHOOTER_ID, spawn_pos, old_uids, new_uids, star)
+	_record_deploy(state, kind, _shooter_id, spawn_pos, old_uids, new_uids, star)
 	print("  t=%.1f 射手升到 %d 星（换了 %d 个）" % [float(state.get("elapsed", 0.0)), star, replaced])
 
 
@@ -672,14 +859,14 @@ func _grant_treasure(state: Dictionary, tid: String) -> void:
 		"set_complete": owned.size() >= 4,
 	})
 	print("  t=%.1f 获得宝藏 %s（已收集 %d/4）" % [
-		float(state.get("elapsed", 0.0)), str(ELEMENT_TREASURES.get(tid, tid)), owned.size()])
+		float(state.get("elapsed", 0.0)), str(_treasures.get(tid, tid)), owned.size()])
 
 
 # 开场：两个 1 星极光射手在中路后排，第一批怪由编排表的 t=0 拍子放。
 func _build_opening_state() -> Dictionary:
 	var player: Array = []
 	for slot in SHOOTER_SLOTS:
-		var f := _make_player_fighter(SHOOTER_ID, slot, 1)
+		var f := _make_player_fighter(_shooter_id, slot, 1)
 		if f.is_empty():
 			continue
 		f.uid = "player_L%d_%d_s1" % [LANE, slot]
@@ -860,7 +1047,6 @@ func _ensure_overlay() -> Control:
 # 全是表现：不读、不改任何战斗数值。所有素材和特效都是游戏里现成的那几个，
 # 观感跟玩家在备战界面看到的一致。
 
-const DECOY_POOL := ["god_priest", "god_angel", "god_archangel", "god_priestess", "god_guard"]
 const CARD_FRAME_PATHS := {
 	1: "res://assets/ui/shop/card_frame_common.png",
 	2: "res://assets/ui/shop/card_frame_rare.png",
@@ -1157,7 +1343,7 @@ func _build_card_offer(cue: Dictionary, cue_index: int) -> void:
 	else:
 		layout = ["", picks[0], ""]
 	var decoys: Array = []
-	for d in DECOY_POOL:
+	for d in _card_decoys:
 		if not (d in picks):
 			decoys.append(d)
 	var decoy_i := cue_index
@@ -1191,7 +1377,6 @@ func _build_card_offer(cue: Dictionary, cue_index: int) -> void:
 # 整张石框卡、3:4）。点中元素宝藏，另两张退场，选中的飞到底部宝藏条它自己那一格，
 # 缩成 logo 落位 —— 落位那一帧正好是 _update_treasure_bar 把 logo 弹出来的那一帧。
 # 陪衬卡挑非元素宝藏，免得观众以为四元素是随便哪张都行。
-const TREASURE_DECOYS := ["def_iron_wall", "atk_blood_pact", "ctrl_shockwave", "def_life_monument", "ctrl_time_compress"]
 const TREASURE_CARD_DIR := "res://assets/ui/treasure_cards/"
 const TREASURE_CARD_HEIGHT_RATIO := 0.30
 
@@ -1204,9 +1389,9 @@ func _build_treasure_offer(cue: Dictionary, cue_index: int) -> void:
 	var gap := w * 0.12
 	var pick := str((cue["picks"] as Array)[0])
 	var layout: Array = [
-		TREASURE_DECOYS[cue_index % TREASURE_DECOYS.size()],
+		_treasure_decoys[cue_index % _treasure_decoys.size()],
 		pick,
-		TREASURE_DECOYS[(cue_index + 2) % TREASURE_DECOYS.size()],
+		_treasure_decoys[(cue_index + 2) % _treasure_decoys.size()],
 	]
 	var total_w := w * 3.0 + gap * 2.0
 	var x0 := (canvas.x - total_w) * 0.5
@@ -1239,8 +1424,8 @@ func _build_treasure_offer(cue: Dictionary, cue_index: int) -> void:
 
 
 func _treasure_name(tid: String) -> String:
-	if ELEMENT_TREASURES.has(tid):
-		return str(ELEMENT_TREASURES[tid])
+	if _treasures.has(tid):
+		return str(_treasures[tid])
 	var table: Dictionary = _data.call("get_table", "treasures")
 	for t: Dictionary in table.get("treasures", []):
 		if str(t.get("id", "")) == tid:
@@ -1420,7 +1605,7 @@ func _update_stone(cue: Dictionary, rel: float) -> void:
 
 
 func _shooter_element() -> String:
-	var e := str((_unit_defs().get(SHOOTER_ID, {}) as Dictionary).get("element", "sky"))
+	var e := str((_unit_defs().get(_shooter_id, {}) as Dictionary).get("element", "sky"))
 	return e if e in ["sky", "land", "ren"] else "sky"
 
 
@@ -1444,6 +1629,8 @@ func _update_landing(cue: Dictionary, rel: float) -> void:
 			_play_four_star_bursts(cue)
 		if kind == "star" or kind == "four":
 			_spawn_star_captions(cue)
+	if rel >= 0.0:
+		_flush_star_bursts(cue, rel)
 	_update_captions(cue, rel)
 	if rel > CAPTION_TICKS + 4 and (kind == "spawn" or rel > 30):
 		cue["done"] = true
@@ -1500,23 +1687,108 @@ func _trailer_summon_profile() -> Resource:
 	return p
 
 
-func _play_star_bursts(cue: Dictionary) -> void:
+# 升星迸发（PrepStarUpgradeBurst：大的白色四角星 + 一片青蓝 / 金色小星迸开）。
+#
+# 它的星星大小、散开距离、冒出的高度全按**备战**的棋子身高（UNIT_HEIGHT 0.32）和
+# 格子（CELL_SIZE 0.6）定。第一版照备战的做法按格距缩放 —— 战斗镜头远、格子小，
+# 星星缩成几个小点，成片里根本看不出升星（用户：「升星的特效要跟我弄出来」）。
+# 现在按**这个棋子的真实身高**（模型 meta model_height）缩放，星星落在头顶一带；
+# 再乘 STAR_BURST_BOOST，全场镜头下也看得清。
+# 同时补上备战升星的另外两样：模型压扁回弹（PrepBoardModels._squash_prep_model）和升级音效。
+const STAR_BURST_BOOST := 1.2
+const STAR_SQUASH := {2: 0.16, 3: 0.26, 4: 0.22}   # 同 PrepBoardModels.STAR_UPGRADE_SQUASH
+const STAR_SQUASH_SEC := 0.26                       # 同 PrepBoardModels.STAR_UPGRADE_SQUASH_SEC
+const STAR_UPGRADE_CUE := {2: "carrot_farm_upgrade", 3: "harvest_tech_upgrade"}
+
+
+# 落地那一帧只登记「待播」：新单位出现的这一帧，渲染层的模型往往还没建出来，
+# 当场去找模型会扑空，迸发和压扁整个被跳过（第二版实测就是这样，只剩脚下几圈白环）。
+# 之后每帧由 _flush_star_bursts 去找，找到就播；等太久还找不到就按战斗坐标兜底。
+# burst_star：迸发用哪一档颜色。-1 = 按这次升到的星级；4 星传 3（金色那档）。
+func _play_star_bursts(cue: Dictionary, burst_star := -1) -> void:
+	var star := int(cue["star"]) if burst_star < 0 else burst_star
+	cue["burst_pending"] = (cue["new_uids"] as Array).duplicate()
+	cue["burst_star"] = star
+	var sfx: GDScript = load("res://ui/services/SfxService.gd")
+	if sfx != null:
+		sfx.call("play", str(STAR_UPGRADE_CUE.get(mini(star, 3), "harvest_tech_upgrade")))
+
+
+const STAR_BURST_WAIT_TICKS := 10.0
+
+
+func _flush_star_bursts(cue: Dictionary, rel: float) -> void:
+	var pending: Array = cue.get("burst_pending", [])
+	if pending.is_empty():
+		return
 	var burst_script: GDScript = load(STAR_BURST_PATH)
 	var world := _screen.get("_battle_3d_world") as Node3D
 	if burst_script == null or world == null:
+		pending.clear()
 		return
-	# 迸发按「一个格子 = CELL_SIZE」设计，备战那边用真实格距缩放
-	# （PrepBoardModels._prep_effect_scale）。这里同理量战场上相邻两格的世界距离。
-	var a := _sim_to_world(Vector2(500.0, 420.0))
-	var b := _sim_to_world(Vector2(500.0 + 56.0, 420.0))
-	var cell := float(burst_script.get_script_constant_map().get("CELL_SIZE", 0.6))
-	var s := maxf(0.2, a.distance_to(b) / cell)
-	for p in cue["spawn_pos"]:
+	var prep_height := float(burst_script.get_script_constant_map().get("UNIT_HEIGHT", 0.32))
+	var star := int(cue.get("burst_star", 3))
+	var give_up := rel >= STAR_BURST_WAIT_TICKS
+	var done: Array = []
+	for i in pending.size():
+		var uid := str(pending[i])
+		var model := _model_for(uid)
+		if model == null and not give_up:
+			continue
+		var at: Vector3
+		var h := 0.5
+		if model != null:
+			at = model.global_position
+			h = float(model.get_meta("model_height", 0.5)) if model.has_meta("model_height") else 0.5
+		else:
+			# 兜底：模型一直没出来就按战斗坐标放，宁可位置略偏也不能没有升星。
+			var idx := (cue["new_uids"] as Array).find(uid)
+			var spots: Array = cue["spawn_pos"]
+			at = _sim_to_world(spots[idx] if idx >= 0 and idx < spots.size() else spots[0])
 		var burst: Node3D = burst_script.new()
 		world.add_child(burst)
-		burst.position = _sim_to_world(p)
-		burst.scale = Vector3.ONE * s
-		burst.call("play", int(cue["star"]))
+		burst.global_position = at
+		burst.scale = Vector3.ONE * maxf(0.5, h / prep_height) * STAR_BURST_BOOST
+		burst.call("play", star)
+		_fit_burst_to_battle(burst)
+		if model != null:
+			_squash_model(model, star)
+		print("  升星迸发：%s（%d 星档，身高 %.2f，%s）" % [uid, star, h, "模型" if model != null else "兜底坐标"])
+		done.append(uid)
+	for uid in done:
+		pending.erase(uid)
+
+
+# 迸发里每颗星是公告板面片。两处要为战场改（只改录制里生成的这几颗，不碰游戏文件）：
+# · Godot 的公告板材质默认**不吃父节点缩放**（billboard_keep_scale = false）—— 只放大
+#   burst 节点的话，散开位置变大了，星星本身还是备战尺寸，战斗镜头里就是几个小点。
+# · 原版是叠加混合（ADD），在备战深色石台上很亮；战场是亮黄绿草地，白 / 青叠上去
+#   直接融进背景。改普通混合（MIX），星星在草地上才有对比度。
+func _fit_burst_to_battle(burst: Node3D) -> void:
+	for child in burst.get_children():
+		var mesh := child as MeshInstance3D
+		if mesh == null:
+			continue
+		var mat := mesh.material_override as StandardMaterial3D
+		if mat == null:
+			continue
+		mat.billboard_keep_scale = true
+		mat.blend_mode = BaseMaterial3D.BLEND_MODE_MIX
+
+
+# 先压扁再回弹（TRANS_BACK 的过冲就是「弹」的来源），棋子像被「砸实」了一下。
+# 用 scale 而不是 position：位置每帧由渲染层 / 插值写，scale 没人动。
+func _squash_model(model: Node3D, star: int) -> void:
+	# 原始大小只记一次（同 PrepBoardModels）：连着压两次的话，第二次读到的 scale
+	# 已经是压扁过的，回弹完模型就永久变形了。
+	if not model.has_meta("star_squash_base"):
+		model.set_meta("star_squash_base", model.scale)
+	var base: Vector3 = model.get_meta("star_squash_base")
+	var amount := float(STAR_SQUASH.get(star, 0.2))
+	model.scale = Vector3(base.x * (1.0 + amount), base.y * (1.0 - amount), base.z * (1.0 + amount))
+	var tween := model.create_tween()
+	tween.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.tween_property(model, "scale", base, STAR_SQUASH_SEC)
 
 
 func _play_four_star_screen_fx(cue: Dictionary) -> void:
@@ -1548,10 +1820,8 @@ func _play_four_star_bursts(cue: Dictionary) -> void:
 		if aura != null:
 			aura.visible = true
 			aura.call("play_upgrade")
-	# 4 星同样补一次升星迸发（金色那档），和备战「三档手感一致」的决定对齐。
-	var four_as_three := cue.duplicate()
-	four_as_three["star"] = 3
-	_play_star_bursts(four_as_three)
+	# 4 星同样补一次升星迸发 + 压扁回弹（用金色 3 星那档），和备战「三档手感一致」对齐。
+	_play_star_bursts(cue, 3)
 
 
 # 换 uid 升星时，旧的那个在同一帧 alive=false —— 渲染层会给它放死亡淡出，
@@ -1659,8 +1929,8 @@ func _build_treasure_bar() -> void:
 	row.offset_bottom = -14.0
 	root_ctrl.add_child(row)
 
-	for tid in ELEMENT_TREASURES:
-		var node := _make_logo(str(ELEMENT_TREASURES[tid]), logo_size)
+	for tid in _treasures:
+		var node := _make_logo(str(_treasures[tid]), logo_size)
 		if node == null:
 			continue
 		# 拿到之前连位置都不占：visible=false 的子节点不参与 HBox 布局，
@@ -1670,7 +1940,7 @@ func _build_treasure_bar() -> void:
 		_logo_nodes[tid] = node
 
 	# 套装 logo 接在四个元素后面，集齐才出现。
-	_set_logo_node = _make_logo(ELEMENT_SET_LOGO, set_logo_size)
+	_set_logo_node = _make_logo(_set_logo, set_logo_size)
 	if _set_logo_node != null:
 		_set_logo_node.visible = false
 		row.add_child(_set_logo_node)
@@ -1736,7 +2006,7 @@ func _advance_set_fx(age: float) -> void:
 
 func _start_set_fx() -> void:
 	var fx_script: GDScript = load("res://scenes/prep/fx/LinkageFx.gd")
-	var logo := load(TREASURE_LOGO_DIR + ELEMENT_SET_LOGO + ".png") as Texture2D
+	var logo := load(TREASURE_LOGO_DIR + _set_logo + ".png") as Texture2D
 	if fx_script == null or logo == null:
 		push_warning("套装特效或图标缺失，跳过演出直接亮图标。")
 		_set_fx_state = 3
@@ -1746,7 +2016,7 @@ func _start_set_fx() -> void:
 		var node := _logo_nodes[tid] as Control
 		if node == null or not is_instance_valid(node) or not node.visible:
 			continue
-		sources.append({"rect": _screen_rect(node), "category": "element"})
+		sources.append({"rect": _screen_rect(node), "category": _set_category})
 	var fx: Control = fx_script.new()
 	_logo_layer.add_child(fx)
 	fx.connect("landed", func() -> void:
@@ -1763,7 +2033,7 @@ func _screen_rect(c: Control) -> Rect2:
 	return Rect2(xf.origin, c.size * xf.get_scale())
 
 
-# 横幅文案。套装名在 data/codex/treasure_text.json 的 sets.set_element 里
+# 横幅文案。套装名在 data/codex/treasure_text.json 的 sets.set_<类别> 里
 # （"4元素" / "4 Element"），外面再套 ui_set_fx_banner 这个句式 —— 和备战界面
 # 激活套装时打出来的那行字完全一样。
 func _set_banner_text() -> String:
@@ -1773,7 +2043,7 @@ func _set_banner_text() -> String:
 		var parsed = JSON.parse_string(file.get_as_text())
 		file.close()
 		if typeof(parsed) == TYPE_DICTIONARY:
-			var entry: Dictionary = (parsed as Dictionary).get("sets", {}).get("set_element", {})
+			var entry: Dictionary = (parsed as Dictionary).get("sets", {}).get("set_" + _set_category, {})
 			var key := "name_en" if _locale == "en" else "name"
 			if not str(entry.get(key, "")).is_empty():
 				name = str(entry[key])
@@ -1831,11 +2101,12 @@ func _write_manifest() -> void:
 	for cue: Dictionary in _treasure_cues:
 		cues.append({
 			"id": str(cue.get("id", "")),
-			"name": str(ELEMENT_TREASURES.get(str(cue.get("id", "")), "")),
+			"name": str(_treasures.get(str(cue.get("id", "")), "")),
 			"tick": int(cue.get("tick", 0)),
 		})
 	var manifest := {
 		"scene": "trailer",
+		"variant": _variant,
 		"realtime": _realtime,
 		"seed": _seed,
 		"fps": _fps,
@@ -1889,6 +2160,12 @@ func _parse_arguments() -> void:
 			"--seed": _seed = int(value)
 			"--fps": _fps = int(value)
 			"--locale": _locale = value
+			"--variant": _variant = value
+			"--monster-power": _monster_power_cli = float(value)
+			"--boss-power": _boss_power_cli = float(value)
+			"--count-scale": _count_scale_cli = float(value)
+			"--monster-atk": _monster_atk_cli = float(value)
+			"--boss-atk": _boss_atk_cli = float(value)
 			"--monster": _monster_id = value
 			"--boss": _boss_id = value
 			"--camera-size": _camera_size = float(value)

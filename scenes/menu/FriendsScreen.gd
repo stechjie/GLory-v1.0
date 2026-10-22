@@ -26,6 +26,8 @@ signal profile_requested(friend_code: String)
 # 一键加入好友所在的房间。Main 会先回主菜单再走已有的加入流程（那里才有
 # 「连接中」与失败提示），见 Main._join_room_by_id 的注释。
 signal join_room_requested(room_id: int)
+# 观战好友正在打的那一局（协议 44，2026-10-22）。走 Main 的观战流程，同「加入」一样先回主菜单。
+signal spectate_room_requested(room_id: int)
 # 私聊。带好友码 —— Main 用它开 ChatScreen 并定位到这个人。
 signal chat_requested(friend_code: String)
 
@@ -394,8 +396,19 @@ func _friend_row(entry: Dictionary) -> Control:
 
 	var room_value: Variant = entry.get("room_id")
 	var room_id := int(room_value) if room_value != null else 0
-	if room_id > 0:
+	# 好友正在对局里（in_match 已由账号服务器按对方的房间可见性过滤过）：「加入」必然被拒
+	#（room_started），换成「观战」。还在房间大厅里的照旧给「加入」。
+	if room_id > 0 and bool(entry.get("in_match", false)):
+		var watch := ACTION_BUTTON.instantiate() as Button
+		watch.name = "spectate"
+		watch.text = _text("观战", "Watch")
+		watch.custom_minimum_size = Vector2(92, Tokens.TOUCH_MIN)
+		_style_primary_button(watch)
+		watch.pressed.connect(func() -> void: spectate_room_requested.emit(room_id))
+		row.add_child(watch)
+	elif room_id > 0:
 		var join := ACTION_BUTTON.instantiate() as Button
+		join.name = "join"
 		join.text = _text("加入", "Join")
 		join.custom_minimum_size = Vector2(92, Tokens.TOUCH_MIN)
 		_style_primary_button(join)

@@ -132,7 +132,18 @@ async def roster_name(auth_uid: uuid.UUID) -> str | None:
     return None if name is None else str(name)
 
 
-_BAD_LOGIN = "账号或密码不对，或者这个账号不是管理员"
+async def is_admin_account(auth_uid: uuid.UUID) -> bool:
+    """在管理员名单里（停用的也算）。
+
+    管理员和玩家在同一个 Supabase 项目里，Supabase 又会按邮箱自动认人：
+    拿管理员邮箱点 Google 登录，登进来的就是管理员那个用户。游戏不能给它建玩家
+    （docs/三方登录设计.md 第七节第 4 条）。
+    """
+    async with db.pool().acquire() as conn:
+        return bool(await conn.fetchval("select exists(select 1 from admin_users where auth_uid = $1)", auth_uid))
+
+
+_BAD_LOGIN ="账号或密码不对，或者这个账号不是管理员"
 _UNREACHABLE = "连不上 Supabase（%s），稍后再试"
 
 

@@ -58,6 +58,11 @@ const DRAG_START_DISTANCE := 28.0
 
 var drag_payload: Dictionary = {}
 var drag_enabled := true
+var drag_allowed: Callable
+
+func formation_edit_allowed() -> bool:
+	return not drag_allowed.is_valid() or bool(drag_allowed.call())
+
 var drag_owner: Control
 
 # 本次手势的按下点（按钮局部坐标）、有没有按着、有没有已经起过拖、跟的是哪根手指。
@@ -148,7 +153,7 @@ func _reset_gesture() -> void:
 func _maybe_launch_drag(local_pos: Vector2) -> void:
 	if not _gesture_pressed or _gesture_drag_launched:
 		return
-	if disabled or not drag_enabled or drag_payload.is_empty():
+	if disabled or not drag_enabled or drag_payload.is_empty() or not formation_edit_allowed():
 		return
 	# ★ 10.12 第 4 条**返修**（用户口径）：「触发长按弹窗了不再有挪动了，只有按住进行
 	#   滑动才可挪动。」
@@ -174,6 +179,9 @@ func _maybe_launch_drag(local_pos: Vector2) -> void:
 
 
 func _launch_drag() -> void:
+	if not formation_edit_allowed():
+		_reset_gesture()
+		return
 	_gesture_drag_launched = true
 	# 下面这几条副作用与原 `_get_drag_data` 逐条对应，一条都不能少：
 	# 停长按表（不停的话拖到一半会弹出详情框挡住视线）、标记本次不算长按、通知宿主。

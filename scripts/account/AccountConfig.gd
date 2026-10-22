@@ -93,3 +93,10 @@ static func backend_url() -> String:
 
 static func endpoint(path: String) -> String:
 	return backend_url() + path
+
+# --- 用 Google 登录（docs/三方登录设计.md）--------------------------------------
+#
+# Google Cloud 项目 glory-login 里那个 **Web** 客户端的编号（不是安卓客户端的）。
+# 安卓拿到的身份证明 aud 就是它，Supabase 的 Google 设置里填的也是它。公开信息，不是密钥。
+# 安卓客户端（包名 + 签名指纹）只在 Google 那边登记，客户端代码里用不到。
+const GOOGLE_WEB_CLIENT_ID := "434401179227-ilomq9be809omabde230n88bbc1t0do8.apps.googleusercontent.com"

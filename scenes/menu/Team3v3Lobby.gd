@@ -334,6 +334,9 @@ func _stop_start_pulse() -> void:
 	_set_start_plate(Color(1, 1, 1, 1))
 
 func _seat_profile(index: int) -> Dictionary:
+	if _spectating():
+		var spec_profiles: Dictionary = NetworkService.spectate_state.get("seat_profiles", {})
+		return spec_profiles.get(index, spec_profiles.get(str(index), {}))
 	if index == _my_slot():
 		return AccountManager.profile
 	return NetworkService.team_seat_profiles.get(index, NetworkService.team_seat_profiles.get(str(index), {}))
@@ -452,6 +455,10 @@ func _ready() -> void:
 		NetworkService.team_lobby_changed.connect(_on_session_changed)
 	if not NetworkService.team_start_requested.is_connected(_on_team_start_requested):
 		NetworkService.team_start_requested.connect(_on_team_start_requested)
+	if not NetworkService.spectate_state_received.is_connected(_on_spectate_state):
+		NetworkService.spectate_state_received.connect(_on_spectate_state)
+	if not NetworkService.spectate_ended.is_connected(_on_spectate_ended):
+		NetworkService.spectate_ended.connect(_on_spectate_ended)
 	# 好友上线 / 换房间的推送（backend/app/presence.py）。下面那个 5 秒轮询仍然留着 ——
 	# 推送只覆盖上线，**下线没有事件可挂**（见 PartyLobby.FRIENDS_REFRESH_SEC 的说明）。
 	if not RealtimeService.message_received.is_connected(_on_presence_push):
@@ -558,7 +565,15 @@ func _exit_tree() -> void:
 func _online() -> bool:
 	return NetworkService.team_active
 
+# 观战者（协议 44）：没有座位，房间状态来自观战状态（NetworkService.spectate_state），
+# 不读 team_* 那批 —— 那是「本座位」的数据，观战者手里没有。
+func _spectating() -> bool:
+	return NetworkService.spectating
+
 func _states() -> Array:
+	if _spectating():
+		var spec_states: Array = NetworkService.spectate_state.get("slot_states", [])
+		return spec_states if spec_states.size() == 6 else ["empty", "empty", "empty", "empty", "empty", "empty"]
 	if _online() and NetworkService.team_slot_states.size() == 6:
 		return NetworkService.team_slot_states
 	if _online():
@@ -577,9 +592,14 @@ func _states() -> Array:
 # 改取 `_my_slot()` 后 s2='房主'。注意**不能用 _local_slot 直读**：_my_slot()
 # 才是「在线走服务端、离线走本地」这件事的唯一出口，绕过它会在联机局里读错。
 func _leader_slot() -> int:
+	if _spectating():
+		return int(NetworkService.spectate_state.get("leader_slot", 0))
 	return NetworkService.team_leader_slot if _online() else _my_slot()
 
 func _ready_arr() -> Array:
+	if _spectating():
+		var spec_ready: Array = NetworkService.spectate_state.get("ready", [])
+		return spec_ready if spec_ready.size() == 6 else [false, false, false, false, false, false]
 	if _online() and NetworkService.team_ready.size() == 6:
 		return NetworkService.team_ready
 	if _online():
@@ -587,6 +607,8 @@ func _ready_arr() -> Array:
 	return _slot_ready
 
 func _my_slot() -> int:
+	if _spectating():
+		return -1
 	return NetworkService.team_local_slot if _online() else _local_slot
 
 func _on_team_start_requested() -> void:
@@ -602,7 +624,7 @@ func _build() -> void:
 	add_child(bg)
 	# 左上返回、左下聊天框：锚定屏幕左边（edge="left"）
 	_add_texture(TEX_BACK, Vector2(80, 35), Vector2(143, 83), "left")
-	_add_hit(Vector2(80, 35), Vector2(143, 83), func(): back_requested.emit(), "left", "hit_back")
+	_add_hit(Vector2(80, 35), Vector2(143, 83), _on_back_pressed, "left", "hit_back")
 	_add_texture(TEX_TITLE, Vector2(599, 21), Vector2(475, 143))
 	# 10.01 反馈（第 3 条）：木牌上的三行字重排。
 	#   ① 原来第三行（状态行）的框底是 142 + 28 = 170，而木牌只到 y=164 —— 溢出 6px，
@@ -631,6 +653,7 @@ func _build() -> void:
 	friends_scroll.add_child(_friends_box)
 	_add_texture(TEX_CHAT, Vector2(80, 704), Vector2(430, 210), "left")
 	_build_chat_box()
+	_build_spectator_panel()
 	_add_texture(TEX_VS, Vector2(746, 427), Vector2(180, 85))
 
 	_slot_name_lbls.resize(6)
@@ -747,6 +770,10 @@ func _build_slot(index: int) -> void:
 	_slot_ai_btns[index] = ai_btn
 
 func _on_slot_pressed(index: int) -> void:
+	# 观战者点空位 = 坐下（只在大厅阶段，服务器也只在大厅收入座）。
+	if _spectating() and str(_states()[index]) == "empty":
+		_spectator_take_seat(index)
+		return
 	if str(_states()[index]) == "player":
 		if index != _my_slot():
 			_view_seat_profile(index)
@@ -928,6 +955,7 @@ func _refresh() -> void:
 		_host_hint_lbl.text = _start_hint_text()
 	if _selftest_btn != null:
 		_selftest_btn.visible = selftest_available() and not _online()
+	_refresh_spectators()
 
 
 # 第 4 条：把席位框换成玩家在大厅佩戴的头像框（10.01）。
@@ -1045,6 +1073,10 @@ func _slot_name(index: int, state: String, self_slot: bool) -> String:
 	return (base % SLOT_LABELS[index]) + (_room_text("（你）", " (You)") if self_slot else "")
 
 func _is_host_seat() -> bool:
+	# 观战者永远不是房主。can_control_room() 读的是 team_local_slot，上一个房间留下的
+	# 座位号还在的话，观战者会看到房主的 X / ±AI（spectator_lobby_check 抓到过）。
+	if _spectating():
+		return false
 	if _online():
 		return NetworkService.can_control_room()
 	return true
@@ -1548,7 +1580,14 @@ func _set_phrase_panel_visible(shown: bool) -> void:
 func _on_phrase_picked(phrase_id: int) -> void:
 	# 只发不显示。本地回显要等服务器广播回来 —— 服务器是唯一定序者，
 	# 本地抢先显示会让自己看到的顺序和别人不一样。见 NetworkService.team_send_phrase。
-	NetworkService.team_send_phrase(phrase_id)
+	# 观战者的话只发给观战者（服务器保证），游客不能发言。
+	if _spectating():
+		if not bool(NetworkService.spectate_state.get("can_chat", false)):
+			GloryToastScript.show_text(_room_text("游客只能观战，不能发言", "Guests can watch but not chat"))
+		else:
+			NetworkService.spectate_send_phrase(phrase_id)
+	else:
+		NetworkService.team_send_phrase(phrase_id)
 	# 发完收起，同备战期。面板压着敌方席位的一角，没理由让它一直开着。
 	_set_phrase_panel_visible(false)
 
@@ -1578,6 +1617,11 @@ func _open_text_input() -> void:
 		return
 	_set_phrase_panel_visible(false)
 	# 大厅只发全部（队伍还没定），所以不给范围按钮；语音同理，走同一个范围。
+	# 观战者：只有打字（不给语音留言），发到观战者频道。
+	if _spectating():
+		ChatInputBar.new().present(self, func(text: String) -> String:
+				return NetworkService.spectate_send_text(text), {})
+		return
 	ChatInputBar.new().present(self, func(text: String) -> String:
 			return NetworkService.team_send_text(text),
 		{"on_voice": func(clip: Dictionary) -> String:
@@ -1806,3 +1850,92 @@ func _draw_debug_layout() -> void:
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 13, red)
 		else:
 			_debug_layer.draw_rect(rect, black_soft, false, 1.0)
+
+
+# ── 观战（协议 44，2026-10-22 定稿）──────────────────────────────────
+#
+# 左侧观战列表：选手和观战者都看得到，最多 10 人，能往下拖（SpectatorListPanel）。
+# 房主多两样：每行一个 X（请出观战席）、标题下一个「关闭 / 开启观战」。
+# 观战者在大厅里看到的是同一个房间界面：座位、准备状态照常显示；点空位 = 坐下；
+# 右下角的开始 / 准备键换成「观战中」，不能按。
+#
+# 位置是用户在截图上圈的那块：返回键下方、语音键（y=636）上方。
+
+const SpectatorListPanel := preload("res://ui/components/SpectatorListPanel.gd")
+const SPECTATOR_PANEL_POS := Vector2(88, 140)
+const SPECTATOR_PANEL_SIZE := Vector2(330, 480)
+
+var _spectator_panel: SpectatorListPanel = null
+
+
+func _build_spectator_panel() -> void:
+	_spectator_panel = SpectatorListPanel.new()
+	_spectator_panel.name = "spectator_panel"
+	add_child(_spectator_panel)
+	_track(_spectator_panel, SPECTATOR_PANEL_POS, SPECTATOR_PANEL_SIZE, 0, "left")
+	_spectator_panel.kick_requested.connect(func(sid: int): NetworkService.team_spectate_kick(sid))
+	_spectator_panel.open_toggled.connect(func(open: bool): NetworkService.team_spectate_set_open(open))
+
+
+# 列表来源：选手看 room_state 里的那份，观战者看观战状态里的那份（服务器给的是同一份公开列表）。
+func _spectator_source() -> Dictionary:
+	if _spectating():
+		return NetworkService.spectate_state
+	return NetworkService.team_room_spectators
+
+
+func _refresh_spectators() -> void:
+	if _spectator_panel == null:
+		return
+	var source := _spectator_source()
+	# 离线房间（自测）没有观战这回事，整块不显示。
+	_spectator_panel.visible = _spectating() or _online()
+	_spectator_panel.update(source.get("spectators", []), bool(source.get("spectate_open", true)),
+		int(source.get("spectate_max", 10)), _is_host_seat() and not _spectating(),
+		int(NetworkService.spectate_sid) if _spectating() else -1)
+	if not _spectating():
+		return
+	# 观战者：开始 / 准备键不能按，只显示「观战中」。
+	if _start_lbl != null:
+		_start_lbl.text = _room_text("观战中", "Spectating")
+	if _start_btn != null:
+		_start_btn.disabled = true
+	_stop_start_pulse()
+	if _host_hint_lbl != null:
+		_host_hint_lbl.visible = true
+		_host_hint_lbl.text = _room_text("点空位可加入对局", "Tap an empty seat to join")
+	if _room_id_lbl != null and NetworkService.spectate_room_id > 0:
+		_room_id_lbl.text = _room_text("房间 ID：%d", "Room ID: %d") % NetworkService.spectate_room_id
+
+
+func _on_spectate_state(_state: Dictionary) -> void:
+	_refresh()
+
+
+# 被房主请出去 / 房主关了观战 / 房间关了：提示一句，回到主界面。
+func _on_spectate_ended(reason: String) -> void:
+	var text := _room_text("房间已关闭", "The room was closed")
+	match reason:
+		"spectate_kicked":
+			text = _room_text("你已被房主请出观战席", "The host removed you from spectating")
+		"spectate_closed":
+			text = _room_text("房主关闭了观战", "The host closed spectating")
+	GloryToastScript.show_text(text)
+	back_requested.emit()
+
+
+func _spectator_take_seat(index: int) -> void:
+	if str(NetworkService.spectate_state.get("phase", "lobby")) != "lobby":
+		GloryToastScript.show_text(_room_text("对局已开始，只能观战", "The match has started; spectating only"))
+		return
+	if str(_states()[index]) != "empty":
+		return
+	SfxService.play(SfxService.CUE_ROOM_SEAT_CHANGE)
+	# 走普通的「加入房间」：服务器那边入座时会先把这条连接从观战席上摘下来。
+	NetworkService.team_request_join_room(NetworkService.spectate_room_id)
+
+
+func _on_back_pressed() -> void:
+	if _spectating():
+		NetworkService.spectate_request_leave()
+	back_requested.emit()

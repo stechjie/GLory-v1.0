@@ -11,19 +11,33 @@ extends Node
 #      有 ──> POST /v1/auth/refresh
 #              成功 ──> 登录完成
 #              401  ──> 凭证已失效，清掉，往下走
-#      没有 ─> POST /v1/auth/anonymous（带上本机 player_id）
+#      没有 ─> 这台设备能用 Google / Apple 登录？
+#                能 ──> 停下来，等玩家在启动页选（awaiting_choice）：
+#                        游客 → login_as_guest() → POST /v1/auth/anonymous
+#                        Google → login_with_provider() → POST /v1/auth/provider
+#                不能 → POST /v1/auth/anonymous（带上本机 player_id）
 #
 # ⚠️ **绝不能反过来先试匿名注册。** /v1/auth/anonymous 天然不幂等，
 # 每调一次就在 Supabase 多一个用户、在 players 多一行 —— 玩家每次启动都会
 # 变成新玩家，进度看起来就没了。有凭证时必须走 refresh。
+#
+# Google / Apple 的设计见 docs/三方登录设计.md。
 
 const AccountConfig := preload("res://scripts/account/AccountConfig.gd")
+const SignInBridge := preload("res://scripts/account/SignInBridge.gd")
 
 signal login_started()
 signal login_succeeded(player_id: String, player_name: String)
 signal login_failed(reason: String)
 # 登出（含注销账号）。WebSocket 与私聊的客户端状态靠它收尾。
 signal logged_out()
+# 新装、本机没凭证、又能用 Google / Apple：login() 停在这里，等启动页让玩家选。
+signal login_choice_needed()
+# 换成了另一个账号（资料页「切换账号」、绑定冲突时「切换到那个账号」）。
+# Main 收到后回启动页，按新账号把进门那一套重新走一遍。
+signal account_switched()
+# 绑上了 Google / Apple。资料页的「账号与登录」与主菜单名牌的红点据此刷新。
+signal identities_changed()
 # 账号被封（登录时、游戏中都可能）。info = {"reason", "ends_at"}，ends_at 为 null 是永久。
 signal account_banned(info: Dictionary)
 
@@ -100,6 +114,13 @@ var _last_refresh_failed_at := 0.0
 # 那些是可以并发的，见 _request 顶部关于「每次自建 HTTPRequest」的说明。
 var _busy := false
 
+# 在等玩家选登录方式（见文件头的启动流程）。Bootstrap 据此显示三个按钮、不自动重试。
+var awaiting_choice := false
+# 玩家在启动页点了「开始游戏（游客）」。之后的 login() 不再停下来问。
+var _guest_chosen := false
+# 上一次 Google / Apple 登录失败的原因，启动页那几个按钮下面显示。
+var choice_error := ""
+
 
 func is_logged_in() -> bool:
 	return state == State.LOGGED_IN and not player_id.is_empty()
@@ -171,6 +192,16 @@ func login() -> void:
 				classify(int(refreshed.get("code", 0))))
 			return
 
+	# 新装（或凭证失效）：能用 Google / Apple 就先停下来问。换手机的老玩家要在这里找回旧号 ——
+	# 直接开游客号的话，他得先过完新手教学才找得到「切换账号」（docs/三方登录设计.md 第一节）。
+	if not _guest_chosen and SignInBridge.any_available():
+		awaiting_choice = true
+		state = State.IDLE
+		_busy = false
+		_emit_status()
+		login_choice_needed.emit()
+		return
+
 	var created := await _post("/v1/auth/anonymous", {"player_id": PlayerProfile.player_id})
 	if int(created.get("code", 0)) == 200:
 		_finish_success(created.get("body", {}))
@@ -203,11 +234,139 @@ func logout() -> void:
 	player_id = ""
 	player_name = ""
 	state = State.IDLE
+	# 下一次 login() 重新问一遍登录方式（注销之后、切换账号之后都该回到那三个按钮）。
+	_guest_chosen = false
+	awaiting_choice = false
+	choice_error = ""
 	# 资料缓存必须一起清。留着的话，下一个人在这台设备上登录后，
 	# 主菜单名牌会先画出上一个账号的昵称与好友码，直到第一次拉取回来。
 	profile = {}
 	profile_changed.emit(profile)
 	logged_out.emit()
+
+
+# --- Google / Apple（docs/三方登录设计.md）------------------------------------------
+
+# 后端回绑定冲突时的原因码（backend/app/routes/auth.py 的 IDENTITY_TAKEN，test_third_party_login 钉着）。
+const IDENTITY_TAKEN := "identity_taken"
+
+
+# 启动页「开始游戏（游客）」。
+func login_as_guest() -> void:
+	_guest_chosen = true
+	awaiting_choice = false
+	choice_error = ""
+	login()
+
+
+# 启动页「用 Google 登录」。绑过号的回到那个号；没见过的 Google 用它开一个新号。
+#
+# 失败时回到「等玩家选」，原因放进 choice_error，**不进 FAILED**：FAILED 那条路会自动退避重试，
+# 重试的是 login()，而 login() 又会停下来问 —— 界面会在两种状态之间来回跳。
+func login_with_provider(provider: String, id_token: String, nonce: String) -> Dictionary:
+	if _busy:
+		return {"code": 0, "error": "正在登录，请稍候"}
+	_busy = true
+	awaiting_choice = false
+	choice_error = ""
+	state = State.WORKING
+	last_error = ""
+	last_failure = Failure.NONE
+	login_started.emit()
+	var result := await _provider_post(provider, id_token, nonce, PlayerProfile.player_id)
+	if int(result.get("code", 0)) == 409:
+		# 同 login()：本机签的 player_id 撞号（只在这个 Google 第一次建号时用得上）。
+		PlayerProfile.reissue_player_id()
+		result = await _provider_post(provider, id_token, nonce, PlayerProfile.player_id)
+	if int(result.get("code", 0)) == 200:
+		_finish_success(result.get("body", {}))
+		return result
+	if bool(result.get("banned", false)):
+		ban_info = result.get("ban", {})
+		_finish_failure(str(result.get("error", "账号已被封禁")), Failure.BANNED)
+		account_banned.emit(ban_info)
+		return result
+	_busy = false
+	state = State.IDLE
+	awaiting_choice = true
+	choice_error = str(result.get("error", "登录失败，请重试"))
+	_emit_status()
+	login_choice_needed.emit()
+	return result
+
+
+# 资料页「切换账号」、绑定冲突时「切换到那个账号」。
+#
+# **先拿到新账号的登录，成功了才动本地** —— 反过来的话，新账号登不上时
+# 旧账号的凭证已经扔了，游客号就此丢失。成功后发 account_switched，Main 回启动页重新进门。
+func switch_with_provider(provider: String, id_token: String, nonce: String) -> Dictionary:
+	if _busy:
+		return {"code": 0, "error": "正在登录，请稍候"}
+	_busy = true
+	# 不带本机 player_id：它正被当前这个号用着，带上去只会撞号。
+	var result := await _provider_post(provider, id_token, nonce, "")
+	_busy = false
+	if int(result.get("code", 0)) != 200:
+		return result
+	logout()
+	PlayerProfile.reset_account_state()
+	_finish_success(result.get("body", {}))
+	account_switched.emit()
+	return result
+
+
+# 资料页「绑定 Google」。成功后编号、宠物、钻石、段位都不变，只是多了一种登录方式。
+# 冲突（这个 Google 已经属于别的号）时 result.reason == IDENTITY_TAKEN。
+func link_provider(provider: String, id_token: String, nonce: String) -> Dictionary:
+	var result := await _request(HTTPClient.METHOD_POST, "/v1/auth/link",
+		{"provider": provider, "id_token": id_token, "nonce": nonce}, true)
+	if int(result.get("code", 0)) != 200:
+		return result
+	# 后端回的是一套新凭证（Supabase 绑完就换），换法和续期一模一样。
+	if not _apply_refreshed_session(result.get("body", {})):
+		return {"code": 0, "error": "已经绑上了，但这台设备没能更新登录状态，请重启游戏"}
+	identities_changed.emit()
+	return result
+
+
+# {"is_anonymous": bool, "identities": [{"provider", "email"(打过码)}]}，在 result.body 里。
+func list_identities() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/auth/identities", null, true)
+
+
+# 当前登录的是不是游客号（没绑任何登录方式）。**只用来画红点和资料页那句话** ——
+# 从 access token 里读 is_anonymous、不验签：这里不做任何权限判断，服务端每次都自己验。
+func is_guest() -> bool:
+	return bool(token_claims(_access_token).get("is_anonymous", false))
+
+
+static func token_claims(token: String) -> Dictionary:
+	var parts := token.split(".")
+	if parts.size() < 2 or parts[1].is_empty():
+		return {}
+	var payload := parts[1].replace("-", "+").replace("_", "/")
+	# 先验字符：Marshalls 遇到坏输入会往引擎日志里打红字，查错的人会被它带偏。
+	var allowed := RegEx.create_from_string("^[A-Za-z0-9+/]+$")
+	if allowed.search(payload) == null:
+		return {}
+	while payload.length() % 4 != 0:
+		payload += "="
+	var raw := Marshalls.base64_to_raw(payload)
+	if raw.is_empty():
+		return {}
+	var json := JSON.new()
+	if json.parse(raw.get_string_from_utf8()) != OK or not (json.data is Dictionary):
+		return {}
+	return json.data
+
+
+func _provider_post(provider: String, id_token: String, nonce: String, proposed_player_id: String) -> Dictionary:
+	var payload := {"provider": provider, "id_token": id_token}
+	if not nonce.is_empty():
+		payload["nonce"] = nonce
+	if not proposed_player_id.is_empty():
+		payload["player_id"] = proposed_player_id
+	return await _post("/v1/auth/provider", payload)
 
 
 func _finish_success(body: Dictionary) -> void:
@@ -224,6 +383,10 @@ func _finish_success(body: Dictionary) -> void:
 	# 存回旧的等于下次刷新必失败。
 	if not refresh_token.is_empty() and not player_id.is_empty():
 		SaveManager.save_account_credentials(refresh_token, player_id)
+	# 登回的是一个玩过的老号（backend/app/routes/auth.py 的 onboarded）：不再从头教学。
+	# 放在 login_succeeded 之前 —— 启动页一放行，Main 就按本机的教学状态决定进教学还是主菜单。
+	if bool(body.get("onboarded", false)):
+		PlayerProfile.adopt_account_onboarded()
 
 	state = State.LOGGED_IN
 	last_failure = Failure.NONE
@@ -1281,7 +1444,11 @@ func _request(
 	# 拿不到 detail（响应体不是 JSON）时**不要把原文回显给玩家** ——
 	# 那可能是一整页 HTML 或一段服务器内部信息。只报状态码。
 	if body.has("detail"):
-		return {"code": code, "error": str(body["detail"])}
+		var failure := {"code": code, "error": str(body["detail"])}
+		# 机器读的原因码（比如绑定冲突的 identity_taken）。detail 是给人看的，别拿它做判断。
+		if body.get("code") is String:
+			failure["reason"] = body["code"]
+		return failure
 	if code >= 500:
 		return {"code": code, "error": "服务器出错了（HTTP %d），稍后再试" % code}
 	return {"code": code, "error": "请求失败（HTTP %d）" % code}

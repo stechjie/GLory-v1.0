@@ -37,6 +37,8 @@ var _presentation_labels: Dictionary = {}
 # 10.10 反馈第 4 条：语音音量滑块与它的标签。
 var _voice_label: Label
 var _voice_slider: HSlider
+var _music_label: Label
+var _music_slider: HSlider
 
 func _ready() -> void:
 	_build()
@@ -97,7 +99,7 @@ func _build() -> void:
 	columns.add_child(panel)
 	var right_column := VBoxContainer.new()
 	right_column.custom_minimum_size = Vector2(440, 0)
-	right_column.add_theme_constant_override("separation", 12)
+	right_column.add_theme_constant_override("separation", 10)
 	columns.add_child(right_column)
 
 	var title := Label.new()
@@ -243,15 +245,17 @@ func _build() -> void:
 	# 所以在游戏内再给语音一条独立音量。三条平台都生效（乘在每个远端队员的轨道音量上）。
 	#
 	# 放在演出开关这一列的最后，紧挨「背景音乐」：这两个音量就是玩家要分开调的一对。
-	var voice_row := HBoxContainer.new()
-	voice_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	voice_row.add_theme_constant_override("separation", 12)
-	panel.add_child(voice_row)
+	var audio_rows := GridContainer.new()
+	audio_rows.columns = 2
+	audio_rows.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	audio_rows.add_theme_constant_override("h_separation", 12)
+	audio_rows.add_theme_constant_override("v_separation", 8)
+	panel.add_child(audio_rows)
 
 	_voice_label = Label.new()
 	_voice_label.custom_minimum_size = Vector2(160, Tokens.TOUCH_MIN)
 	_voice_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	voice_row.add_child(_voice_label)
+	audio_rows.add_child(_voice_label)
 
 	_voice_slider = HSlider.new()
 	_voice_slider.min_value = 0.0
@@ -265,8 +269,25 @@ func _build() -> void:
 	_voice_slider.value_changed.connect(func(value: float):
 		PlayerProfile.set_voice_volume(value)
 		_refresh_voice_label())
-	voice_row.add_child(_voice_slider)
+	audio_rows.add_child(_voice_slider)
 	_refresh_voice_label()
+
+	_music_label = Label.new()
+	_music_label.custom_minimum_size = Vector2(160, Tokens.TOUCH_MIN)
+	_music_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	audio_rows.add_child(_music_label)
+	_music_slider = HSlider.new()
+	_music_slider.min_value = 0.0
+	_music_slider.max_value = 1.0
+	_music_slider.step = 0.05
+	_music_slider.value = PlayerProfile.music_volume
+	_music_slider.custom_minimum_size = Vector2(180, Tokens.TOUCH_MIN)
+	_music_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_music_slider.value_changed.connect(func(value: float):
+		PlayerProfile.set_music_volume(value)
+		_refresh_music_label())
+	audio_rows.add_child(_music_slider)
+	_refresh_music_label()
 
 	var sep2 := HSeparator.new()
 	layout.add_child(sep2)
@@ -330,6 +351,12 @@ func _refresh_quality_buttons() -> void:
 
 # 10.10 反馈第 4 条：语音音量滑块旁边那行「语音音量 80%」。
 # 只显示百分比、不显示 0 / 1 —— 玩家要的是「多大」，不是浮点数。
+func _refresh_music_label() -> void:
+	if not is_instance_valid(_music_label):
+		return
+	_music_label.text = "%s %d%%" % [tr("settings_music_volume"), roundi(PlayerProfile.music_volume * 100.0)]
+
+
 func _refresh_voice_label() -> void:
 	if _voice_label == null or not is_instance_valid(_voice_label):
 		return

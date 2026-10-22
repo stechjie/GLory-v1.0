@@ -7,7 +7,7 @@
         -> 之后一切游戏数据都用 player_id
 
 注意这里**只读，不建**。玩家不存在就是 404，不会顺手补一个 ——
-建账号只有 /v1/auth/anonymous 一条路，多一条就多一个可以绕开的入口。
+建账号只有 /v1/auth/anonymous 和 /v1/auth/provider 两条路，多一条就多一个可以绕开的入口。
 """
 
 from __future__ import annotations

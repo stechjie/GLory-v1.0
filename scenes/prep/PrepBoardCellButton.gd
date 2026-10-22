@@ -52,6 +52,8 @@ func _has_point(point: Vector2) -> bool:
 	return Rect2(minx, miny, maxx - minx, maxy - miny).grow(16.0).has_point(point)
 
 func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
+	if not formation_edit_allowed():
+		return false
 	# 拖放合法性是**规则**，不是宿主状态 —— 直接问 PrepRules，不必绕 screen。
 	# 原来这里是 screen.has_method("_can_drop_on_board") and screen._can_drop_on_board(...)，
 	# 那种写法有个隐患：方法一旦改名或删除，has_method 返回 false，

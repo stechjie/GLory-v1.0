@@ -157,6 +157,7 @@ static func _on_application_resumed() -> void:
 
 static func _on_settings_changed() -> void:
 	_sync()
+	_sync_voice_volume()
 
 
 # 让播放状态追上开关：开着就播、关了就暂停。
@@ -177,6 +178,8 @@ static func _sync() -> void:
 	if not _player.is_inside_tree():
 		_retry_sync_next_frame()
 		return
+	# Apply user gain before starting/restarting playback, including a saved 0%.
+	_sync_voice_volume()
 	var want := _allowed() and not _application_suspended
 	_player.stream_paused = not want
 	if want and not _player.playing:
@@ -247,7 +250,7 @@ static func _sync_voice_volume() -> void:
 	if not talking and _talk_probe.is_valid():
 		talking = bool(_talk_probe.call())
 	var duck := (1.0 / 6.0) if talking else 1.0
-	_player.volume_linear = _base_linear * duck
+	_player.volume_linear = _base_linear * duck * Presentation.music_volume()
 
 
 # BGM 基础电平（线性）。战斗里传 0.5，退出战斗传 1.0。

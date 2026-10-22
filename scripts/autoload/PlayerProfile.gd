@@ -101,6 +101,8 @@ var music_enabled := true
 # 与 speaker_enabled（放不放声音）是两件事：那个是硬开关（0 / 1），这个是连续量。
 # 裁决在 PresentationSettings.voice_volume()，执行在 VoiceService._apply_volumes()。
 var voice_volume := 1.0
+# Music and sound effects share this user gain; remote voice stays independent.
+var music_volume := 1.0
 var locale := "zh"
 var language_selected := false
 var onboarding_version := ONBOARDING_VERSION
@@ -161,6 +163,7 @@ func load_profile() -> void:
 	haptics_enabled = bool(data.get("haptics_enabled", true))
 	music_enabled = bool(data.get("music_enabled", true))
 	voice_volume = clampf(float(data.get("voice_volume", 1.0)), 0.0, 1.0)
+	music_volume = clampf(float(data.get("music_volume", 1.0)), 0.0, 1.0)
 	locale = str(data.get("locale", "zh"))
 	if not SUPPORTED_LOCALES.has(locale):
 		locale = "zh"
@@ -198,6 +201,7 @@ func save_profile() -> bool:
 		"haptics_enabled": haptics_enabled,
 		"music_enabled": music_enabled,
 		"voice_volume": voice_volume,
+		"music_volume": music_volume,
 		"locale": locale,
 		"language_selected": language_selected,
 		"onboarding_version": onboarding_version,
@@ -225,6 +229,7 @@ func _reset_defaults() -> void:
 	haptics_enabled = true
 	music_enabled = true
 	voice_volume = 1.0
+	music_volume = 1.0
 	locale = "zh"
 	language_selected = false
 	onboarding_version = ONBOARDING_VERSION
@@ -399,6 +404,26 @@ func complete_tutorial_with_followup() -> bool:
 	return false
 
 
+# 换手机 / 重装之后登回一个老号（账号服务器说这个号玩过：等级 ≥ 2 或者已经有宠物）。
+#
+# 教学进度只存在这台设备上，新设备上一律是「没开始」—— 不改的话，老玩家用 Google 登回来
+# 还得把新手教学从头过一遍（2026-10-22 真机反馈）。只改「还没开始」的：本机正在教学、
+# 或者已经完成 / 跳过的，都按本机的来，不打断。奖励不补：服务器那边早就按这个号的进度发过了。
+static func adopts_account_onboarding(status: String) -> bool:
+	return status in [ONBOARDING_NOT_STARTED, ONBOARDING_LEGACY_UNKNOWN]
+
+
+func adopt_account_onboarded() -> bool:
+	if not adopts_account_onboarding(onboarding_status):
+		return false
+	onboarding_version = ONBOARDING_VERSION
+	onboarding_status = ONBOARDING_COMPLETED
+	tutorial_reward_eligible = false
+	tutorial_followup_step = ""
+	tutorial_reward_pending = false
+	return save_profile()
+
+
 # 奖励同步失败：教程算完成（玩家可以去主页、不会再被拉回教程），奖励记成待补发。
 func defer_tutorial_reward() -> bool:
 	var previous_status := onboarding_status
@@ -446,6 +471,15 @@ func set_board_readability_enabled(enabled: bool) -> void:
 #
 # 与别的演出设置不同，**值没变也要发信号**是不必要的 —— 但「滑块拖动中每帧都落盘」会写坏磁盘，
 # 所以这里仍然判等早退；调用方（设置页滑块）在拖动结束（value_changed 的 drag_ended）才提交。
+func set_music_volume(value: float) -> void:
+	var clamped := clampf(value, 0.0, 1.0)
+	if is_equal_approx(music_volume, clamped):
+		return
+	music_volume = clamped
+	save_profile()
+	presentation_settings_changed.emit()
+
+
 func set_voice_volume(value: float) -> void:
 	var clamped := clampf(value, 0.0, 1.0)
 	if is_equal_approx(voice_volume, clamped):

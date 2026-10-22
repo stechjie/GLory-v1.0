@@ -122,6 +122,9 @@ def test_login_replaces_but_refresh_preserves_generation(pool, monkeypatch):
     async def lookup(*args):
         return SimpleNamespace(player_id=pid, player_name="test", created=False)
     monkeypatch.setattr(players, "resolve_or_create", lookup)
+    async def not_onboarded(_pid):
+        return False
+    monkeypatch.setattr(auth, "_onboarded", not_onboarded)  # 这里的假库只有 login_sessions 那张表
     hub = realtime.Hub()
     monkeypatch.setattr(realtime, "hub", lambda: hub)
     async def run():

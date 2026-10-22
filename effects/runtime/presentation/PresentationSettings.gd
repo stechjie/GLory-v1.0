@@ -90,6 +90,13 @@ static func music_allowed() -> bool:
 	return _toggle("music")
 
 
+# Music and all game sound effects share this gain; remote voice is separate.
+static func music_volume() -> float:
+	if not is_instance_valid(PlayerProfile):
+		return 1.0
+	return clampf(float(PlayerProfile.music_volume), 0.0, 1.0)
+
+
 # 10.10 反馈第 4 条：语音音量（0 ~ 1）。
 #
 # 手机上 BGM 与语音应该是**两条系统音量**（媒体 / 通话）：安卓侧原生已让语音走通话声道

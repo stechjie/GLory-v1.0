@@ -32,6 +32,7 @@ const ReportDialog := preload("res://ui/components/ReportDialog.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const PROFILE_BG_TEX := preload("res://assets/ui/profile/hall_of_glory.png")
 const RankedTiers := preload("res://scenes/menu/RankedTiers.gd")
+const SignInBridge := preload("res://scripts/account/SignInBridge.gd")
 
 signal back_requested
 # 10.19 教程反馈第 4 条：教学引导要看「成长之路」里的「返回」键，
@@ -66,6 +67,11 @@ var _win_rate_value: Label
 var _tier_icons: Array[TextureRect] = []
 var _overview_panel: Control
 var _settings_panel: Control
+# 「账号与登录」区块（_account_section）。
+var _account_note: Label
+var _account_rows: VBoxContainer
+var _link_google_btn: Button
+var _switch_btn: Button
 var _overview_tab: Button
 var _settings_tab: Button
 # 「等级奖励」页签：教学引导（10.19 第 4 条）要把它露出来并高亮。
@@ -245,7 +251,7 @@ func _build() -> void:
 		_settings_panel.add_theme_constant_override("separation", Tokens.GAP_M)
 		_settings_panel.alignment = BoxContainer.ALIGNMENT_CENTER
 		_body.add_child(_settings_panel)
-		_settings_panel.add_child(_column(400, [_name_section(), _bind_account_slot(), _privacy_section()]))
+		_settings_panel.add_child(_column(400, [_name_section(), _account_section(), _privacy_section()]))
 		_settings_panel.add_child(_column(440, [_bio_section()]))
 		_settings_panel.add_child(_column(340, [_danger_zone()]))
 		_select_profile_tab(false)
@@ -1077,14 +1083,195 @@ func _run_delete(code: String) -> void:
 	back_requested.emit()
 
 
-func _bind_account_slot() -> Control:
-	# 位置先留。功能（Google / Apple 登录）是下一批 —— 但这一页恰恰是第一个
-	# 让玩家产生「我不想丢」的东西，所以入口该从第一天就在这儿。
+# 「账号与登录」（docs/三方登录设计.md 第三节）。
+#
+# 游客号只存在这台设备上的一张凭证里，删游戏、换手机就找不回来 —— 这一页恰恰是第一个
+# 让玩家产生「我不想丢」的东西，所以入口在这儿（不放设定页：设定页在对局里也会弹出来）。
+# 第一期只能绑、不能解（10-22 拍板）；想连绑定一起去掉，就用下面的「注销账号」。
+func _account_section() -> Control:
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.GOLD_EDGE, Tokens.GAP_M))
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", Tokens.GAP_S)
+	panel.add_child(column)
+	column.add_child(_section_title(_text("账号与登录", "Account & sign-in")))
+
+	_account_note = Label.new()
+	_account_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_account_note.add_theme_font_size_override("font_size", Tokens.FONT_BODY - 4)
+	_account_note.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	_account_note.text = _text("正在读取…", "Loading…")
+	column.add_child(_account_note)
+
+	_account_rows = VBoxContainer.new()
+	_account_rows.add_theme_constant_override("separation", 4)
+	column.add_child(_account_rows)
+
+	_link_google_btn = _account_button(_text("绑定 Google", "Link Google"))
+	_link_google_btn.pressed.connect(_on_link_google)
+	column.add_child(_link_google_btn)
+	_switch_btn = _account_button(_text("切换账号", "Switch account"))
+	_switch_btn.pressed.connect(_on_switch_account)
+	column.add_child(_switch_btn)
+	_load_identities()
+	return panel
+
+
+func _account_button(label: String) -> Button:
 	var button := Button.new()
-	button.text = _text("绑定账号，防止换设备丢失（敬请期待）", "Link account (coming soon)")
-	button.disabled = true
+	button.text = label
 	button.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+	# 读到绑定情况之前不显示：先亮一个按钮再收起来会闪一下。
+	button.visible = false
 	return button
+
+
+func _load_identities() -> void:
+	var result: Dictionary = await AccountManager.list_identities()
+	if not is_inside_tree() or _account_note == null or not is_instance_valid(_account_note):
+		return
+	if int(result.get("code", 0)) != 200:
+		# 读不到绑定列表也照样能绑：先按本机令牌里的 is_anonymous 画。
+		_render_identities(AccountManager.is_guest(), [])
+		return
+	var body: Dictionary = result.get("body", {})
+	var items: Array = body.get("identities", []) if body.get("identities") is Array else []
+	_render_identities(bool(body.get("is_anonymous", false)), items)
+
+
+func _render_identities(guest: bool, identities: Array) -> void:
+	for child in _account_rows.get_children():
+		child.queue_free()
+	var has_google := false
+	for item in identities:
+		if not (item is Dictionary):
+			continue
+		var provider := str(item.get("provider", ""))
+		has_google = has_google or provider == "google"
+		var row := Label.new()
+		# 邮箱是后端打过码的（ab***@gmail.com），这里原样显示。
+		row.text = "%s · %s" % [_provider_name(provider), str(item.get("email", ""))]
+		row.add_theme_font_size_override("font_size", Tokens.FONT_BODY - 2)
+		_account_rows.add_child(row)
+	var can_sign_in := SignInBridge.any_available()
+	if guest:
+		_account_note.text = _text(
+			"游客账号：删除游戏或换手机后无法找回。绑定之后，换手机也能用同一个账号登录。",
+			"Guest account: it can't be recovered if you delete the game or change phones. Link an account to keep it.")
+		_account_note.add_theme_color_override("font_color", Tokens.GOLD)
+		if not can_sign_in:
+			_account_note.text += "\n" + _text("这台设备不能绑定，请在手机上操作。", "This device can't link accounts; use your phone.")
+	else:
+		_account_note.text = _text("换手机时，用下面绑定的账号登录就能接着玩。",
+			"On a new phone, sign in with an account linked below to carry on.")
+		_account_note.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	_link_google_btn.visible = SignInBridge.google_available() and not has_google
+	_switch_btn.visible = can_sign_in
+
+
+func _provider_name(provider: String) -> String:
+	match provider:
+		"google":
+			return "Google"
+		"apple":
+			return "Apple"
+	return provider
+
+
+func _on_link_google() -> void:
+	if _busy:
+		return
+	_busy = true
+	_set_status(_text("正在打开 Google 登录…", "Opening Google sign-in…"))
+	var signed: Dictionary = await SignInBridge.sign_in_google(get_tree())
+	if not is_inside_tree():
+		return
+	if not bool(signed.get("ok", false)):
+		_busy = false
+		_set_status("" if bool(signed.get("cancelled", false)) else str(signed.get("error", "")))
+		return
+	_set_status(_text("正在绑定…", "Linking…"))
+	var token := str(signed.get("id_token", ""))
+	var nonce := str(signed.get("nonce", ""))
+	var result: Dictionary = await AccountManager.link_provider("google", token, nonce)
+	_busy = false
+	if not is_inside_tree():
+		return
+	if int(result.get("code", 0)) == 200:
+		_set_status(_text("已绑定 Google", "Google linked"))
+		_load_identities()
+		return
+	if str(result.get("reason", "")) == AccountManager.IDENTITY_TAKEN:
+		_set_status("")
+		_confirm_switch_to_taken("google", token, nonce)
+		return
+	_set_status(_failure_text(result))
+
+
+# 这个 Google 已经属于别的号：**不合并，只能二选一**（10-18 拍板）。
+# 选切换，就拿刚才那张身份证明直接登录那个号（一小时内有效，不用再弹一次 Google）。
+func _confirm_switch_to_taken(provider: String, token: String, nonce: String) -> void:
+	DialogService.confirm({
+		"title": _text("这个 Google 账号已经绑定了另一个游戏账号", "This Google account is linked to another game account"),
+		"body": _switch_consequence(),
+		"intent": ConfirmDialog.Intent.DANGER,
+		"confirm_text": _text("切换到那个账号", "Switch to that account"),
+		"owner": self,
+		"on_result": func(answer: String) -> void:
+			if answer == ConfirmDialog.RESULT_CONFIRMED:
+				_run_switch(provider, token, nonce),
+	})
+
+
+func _on_switch_account() -> void:
+	if _busy:
+		return
+	DialogService.confirm({
+		"title": _text("切换账号", "Switch account"),
+		"body": _switch_consequence() + "\n" + _text("接下来会打开 Google 登录。", "Google sign-in opens next."),
+		# 游客切走就再也回不来：用 DANGER（暗红主按钮、默认焦点在取消）。
+		"intent": ConfirmDialog.Intent.DANGER if AccountManager.is_guest() else ConfirmDialog.Intent.NORMAL,
+		"confirm_text": _text("继续", "Continue"),
+		"owner": self,
+		"on_result": func(answer: String) -> void:
+			if answer == ConfirmDialog.RESULT_CONFIRMED:
+				_sign_in_and_switch(),
+	})
+
+
+func _switch_consequence() -> String:
+	if AccountManager.is_guest():
+		return _text("当前是游客账号：切换之后再也找不回，现在的进度会全部留不下来。",
+			"You're on a guest account: once you switch, it's gone for good along with its progress.")
+	return _text("当前账号不会被删除，以后用它绑定的登录方式还能登回来。",
+		"This account isn't deleted; you can sign back in with its linked sign-in later.")
+
+
+func _sign_in_and_switch() -> void:
+	if _busy:
+		return
+	_busy = true
+	_set_status(_text("正在打开 Google 登录…", "Opening Google sign-in…"))
+	var signed: Dictionary = await SignInBridge.sign_in_google(get_tree())
+	_busy = false
+	if not is_inside_tree():
+		return
+	if not bool(signed.get("ok", false)):
+		_set_status("" if bool(signed.get("cancelled", false)) else str(signed.get("error", "")))
+		return
+	_run_switch("google", str(signed.get("id_token", "")), str(signed.get("nonce", "")))
+
+
+func _run_switch(provider: String, token: String, nonce: String) -> void:
+	if _busy:
+		return
+	_busy = true
+	_set_status(_text("正在切换账号…", "Switching account…"))
+	var result: Dictionary = await AccountManager.switch_with_provider(provider, token, nonce)
+	_busy = false
+	# 成功时 Main 收到 account_switched 就回启动页了，这一页随之销毁，不用再画什么。
+	if int(result.get("code", 0)) != 200 and is_inside_tree():
+		_set_status(_failure_text(result))
 
 
 # --- 数据 ---------------------------------------------------------------------

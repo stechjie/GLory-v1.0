@@ -7,6 +7,7 @@ signal team_host_requested
 signal team_join_requested(address: String)
 signal team_room_create_requested
 signal team_room_join_requested(room_id: int)
+signal team_room_spectate_requested(room_id: int)  # 观战（协议 44）：房间列表的「观战」行、好友列表的「观战」键
 signal team_room_list_requested
 signal public_token_generate_requested
 signal public_token_resume_requested(token_id: String)
@@ -42,6 +43,7 @@ func tutorial_prep_target() -> Control:
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
+const SignInBridge := preload("res://scripts/account/SignInBridge.gd")
 # 9.17：BGM 走常驻服务（播放器挂 root），音效走 SfxService 的播放器池。
 # 两者都不做 autoload，由 Main._ready() 各 install() 一次。
 const MusicService := preload("res://ui/services/MusicService.gd")
@@ -148,6 +150,9 @@ var _profile_frame_overlay: Control
 var _profile_frame_art: TextureRect
 var _profile_name_label: Label
 var _profile_sub_label: Label
+# 头像右上角的红点：游客号、并且这台设备能绑 Google / Apple 时亮，提醒去资料页绑定
+# （docs/三方登录设计.md 第一节：只亮红点，不弹窗）。绑上之后 identities_changed 会把它灭掉。
+var _profile_dot: Label
 var _account_level := 0
 var _coin_label: Label
 var _diamond_label: Label
@@ -217,6 +222,9 @@ func _ready() -> void:
 		AnnouncementService.changed.connect(_on_announcements_changed)
 	if not MailService.changed.is_connected(_on_mail_changed):
 		MailService.changed.connect(_on_mail_changed)
+	if not AccountManager.identities_changed.is_connected(_refresh_guest_dot):
+		AccountManager.identities_changed.connect(_refresh_guest_dot)
+	_refresh_guest_dot()
 	# 转屏（灵动岛换边）、切回前台时安全区会变，宽高不一定变。
 	if not SafeArea.changed.is_connected(_layout):
 		SafeArea.changed.connect(_layout)
@@ -249,6 +257,8 @@ func _exit_tree() -> void:
 		AnnouncementService.changed.disconnect(_on_announcements_changed)
 	if MailService.changed.is_connected(_on_mail_changed):
 		MailService.changed.disconnect(_on_mail_changed)
+	if AccountManager.identities_changed.is_connected(_refresh_guest_dot):
+		AccountManager.identities_changed.disconnect(_refresh_guest_dot)
 	if SafeArea.changed.is_connected(_layout):
 		SafeArea.changed.disconnect(_layout)
 
@@ -330,6 +340,11 @@ func _build() -> void:
 	# 等级/段位做出来之后再换回去，那时第二行才有真东西可放。
 	_profile_name_label = _add_label("", Vector2(200, 70), Vector2(330, 35), 24, "left")
 	_profile_sub_label = _add_label("", Vector2(200, 104), Vector2(330, 24), 18, "left")
+	# 压在头像右上角，同「朋友」「聊天」那两个红点的做法。hit 仍然放在最后。
+	_profile_dot = _add_label("●", Vector2(150, 30), Vector2(32, 32), 26, "left")
+	_profile_dot.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
+	_profile_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_profile_dot.visible = false
 	_tutorial_profile_target = _add_hit(Vector2(18, 12), Vector2(550, 178), _emit_profile, "left")
 	# 这两个数**曾经也是写死的假数据**（"89,450" / "2,350"），同上面名牌那两行。
 	# 现在接的是 GET /v1/me/wallet。拉到之前显示 "—" 而不是 0 ——
@@ -745,6 +760,44 @@ func show_room_list(rooms: Array) -> void:
 		var full := max_players > 0 and players >= max_players
 		_room_list_box.add_child(_room_row(id, players, max_players, full))
 
+# 只能观战的房间（满员 / 已开局 / 匹配房），接在能加入的房间后面。
+# 服务器在同一条回复里给两类，NetworkService 拆成两个信号：show_room_list 先清空并画能加入的，
+# 这里紧接着补上观战行 —— 所以这里不清空，只追加。
+func show_spectate_rooms(rooms: Array) -> void:
+	if _room_list_box == null or rooms.is_empty():
+		return
+	if _room_scroll != null:
+		_room_scroll.visible = true
+	if _room_empty_box != null:
+		_room_empty_box.visible = false
+	for entry in rooms:
+		var d := entry as Dictionary
+		_room_list_box.add_child(_spectate_row(int(d.get("id", 0)), int(d.get("players", 0)),
+			int(d.get("max", 6)), int(d.get("spectators", 0))))
+
+func _spectate_row(room_id: int, players: int, max_players: int, spectators: int) -> Button:
+	var row := _dialog_button("", func(rid := room_id): team_room_spectate_requested.emit(rid), "room_row")
+	row.name = "spectate_row_%d" % room_id
+	row.custom_minimum_size = Vector2(0, ROOM_ROW_H)
+	var line := HBoxContainer.new()
+	line.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	line.offset_left = 16
+	line.offset_right = -16
+	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(line)
+	var name_label := _room_label(_menu_text("房间 %d", "Room %d") % room_id, ROOM_FONT_BODY, Tokens.MIST_ROW_NAME)
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	line.add_child(name_label)
+	line.add_child(_room_label("%d/%d" % [players, max_players], ROOM_FONT_BODY, Tokens.MIST_TEXT_MUTED))
+	var full := spectators >= 10
+	var spectate_label := _room_label("  " + _menu_text("观战 %d/10", "Spectate %d/10") % spectators,
+		ROOM_FONT_BODY, Tokens.MIST_TEXT_MUTED if full else Tokens.MIST_GOLD_BRIGHT)
+	line.add_child(spectate_label)
+	# 观战席满了：同满员房间那一行的样子，点不了（服务器也会拒 spectate_full）。
+	if full:
+		row.disabled = true
+	return row
+
 func show_room_error(reason: String) -> void:
 	if _room_status == null:
 		return
@@ -781,6 +834,12 @@ func _room_error_text(reason: String, typed_by_player: bool) -> String:
 			return _menu_text("房间已满", "Room is full")
 		"token_id_unknown":
 			return _menu_text("没有找到可恢复的 Token ID", "No resumable game for this Token ID")
+		"spectate_full":
+			return _menu_text("观战席已满", "Spectator seats are full")
+		"spectate_closed":
+			return _menu_text("该房间未开放观战", "Spectating is closed for this room")
+		"spectate_seated":
+			return _menu_text("你正在房间里，先离开才能观战", "Leave your room before spectating")
 	# 出战名片的各种失败（领不到、过期、验不过…）对玩家是同一件事。
 	# 具体原因在战斗服务器日志里（seat card rejected reason=…），不给玩家看代码。
 	if reason.begins_with("card_"):
@@ -1105,6 +1164,15 @@ func _refresh_wallet() -> void:
 	var body: Dictionary = result.get("body", {})
 	_coin_label.text = Currency.comma(int(body.get("coin", 0)))
 	_diamond_label.text = Currency.comma(int(body.get("diamond", 0)))
+
+
+# 只看本机就能定（access token 里的 is_anonymous），不发请求。
+# 这台设备绑不了（电脑版、没有 Google 服务的手机）就不亮：亮了点进去也没有按钮可按。
+func _refresh_guest_dot() -> void:
+	if _profile_dot == null or not is_instance_valid(_profile_dot):
+		return
+	_profile_dot.visible = AccountManager.is_logged_in() and AccountManager.is_guest() \
+		and SignInBridge.any_available()
 
 
 func _refresh_login_dot() -> void:

@@ -2,6 +2,11 @@ extends "res://scenes/prep/PrepBoardController.gd"
 
 signal startup_ready
 var startup_staged := false
+# 观战只读模式（协议 44，2026-10-22）：画面和选手完全一样（GameState 由 SpectatorSeat 装好），
+# 但**这一页自己会做的事一件都不做**：不采集萝卜、不摇商店、不写存档、不倒计时自动上阵、
+# 不交棋盘、不进战斗流程。点按全部被一层透明遮罩吃掉（商店 / 拖拽 / 出售都在它下面）。
+# 由 Main 在 add_child 之前设好。
+var spectator_view := false
 
 const BattleReplayUtil = preload("res://scripts/battle/BattleReplayUtil.gd")
 const BattleSim = preload("res://scripts/battle/BattleSimulator.gd")
@@ -49,6 +54,9 @@ var _battle_prepare_check_hook := Callable()
 var _battle_scene_path_for_check := ""
 
 func _ready() -> void:
+	if spectator_view:
+		await _ready_spectator()
+		return
 	# 回合采集是备战入口的幂等结算点。动画和面板重建不会再次发放。
 	#
 	# 「谁负责发放」必须与本作其余萝卜动作用**同一条判据**：只有「联机且不是房主」
@@ -169,6 +177,23 @@ func _ready() -> void:
 	_prefetch_battle_scene.call_deferred()
 	_warm_deployed_effects.call_deferred()
 
+# 观战：只建画面。和 _ready 的正常路径相比，留下的只有 _build / _refresh_all / 音乐 ——
+# 那几样是纯显示；其余每一行都会改 GameState、写盘或者发网络请求。
+func _ready_spectator() -> void:
+	_board_hud.setup_cell_styles()
+	await _build(startup_staged)
+	if not is_inside_tree():
+		return
+	_start_prep_music()
+	_refresh_all()
+	var shield := Control.new()
+	shield.name = "SpectatorInputShield"
+	shield.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shield.mouse_filter = Control.MOUSE_FILTER_STOP
+	shield.z_index = 4000
+	add_child(shield)
+	startup_ready.emit()
+
 func _start_prep_music() -> void:
 	# 下一回合是 PVP（含最终 PVP）时放专属音乐，否则放普通摆放音乐。
 	var next_kind := PrepRules.next_round_kind()
@@ -221,6 +246,8 @@ func _exit_tree() -> void:
 	release_tutorial_target_provider()
 
 func _on_team_round_start() -> void:
+	if spectator_view:
+		return
 	# All players readied -> launch this round's battle.
 	_auto_deploy_at_deadline()
 	RaceRelationService.finalize_for_battle(GameState.board_slots, GameState.bench_slots)
@@ -228,6 +255,8 @@ func _on_team_round_start() -> void:
 	_emit_battle_request_once()
 
 func _auto_deploy_at_deadline() -> void:
+	if spectator_view:
+		return
 	if GameState.tutorial_mode:
 		return
 	# ★ 10.12 第 6 条（用户追加口径）：离线自测没有倒计时，也就没有「到点自动上阵」。
@@ -453,6 +482,10 @@ func _emit_battle_request_once() -> void:
 	RaceRelationService.finalize_for_battle(GameState.board_slots, GameState.bench_slots)
 	_battle_launch_emitted = true
 	_battle_transition_running = true
+	# A drag may already be in flight when everyone readies or the timer expires.
+	if get_viewport().gui_is_dragging():
+		get_viewport().gui_cancel_drag()
+	_finish_drag_state()
 	GameState.clear_pending_battle_package()
 	_loaded_battle_scene = _cached_battle_scene if _battle_scene_path() == BATTLE_SCREEN_PATH else null
 	if _start_battle_button != null:

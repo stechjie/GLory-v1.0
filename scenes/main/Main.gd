@@ -219,6 +219,10 @@ func _ready() -> void:
 		NetworkService.resume_failed.connect(_on_resume_failed)
 	if not NetworkService.team_room_list_received.is_connected(_on_team_room_list_received):
 		NetworkService.team_room_list_received.connect(_on_team_room_list_received)
+	if not NetworkService.spectate_room_list_received.is_connected(_on_spectate_room_list_received):
+		NetworkService.spectate_room_list_received.connect(_on_spectate_room_list_received)
+	if not NetworkService.spectate_state_received.is_connected(_on_spectate_state_received):
+		NetworkService.spectate_state_received.connect(_on_spectate_state_received)
 	if not NetworkService.team_room_action_failed.is_connected(_on_team_room_action_failed):
 		NetworkService.team_room_action_failed.connect(_on_team_room_action_failed)
 	if not NetworkService.public_token_changed.is_connected(_on_public_token_changed):
@@ -1253,6 +1257,7 @@ func _show_menu() -> void:
 	_menu.team_join_requested.connect(_on_team_join_requested)
 	_menu.team_room_create_requested.connect(_on_team_room_create_requested)
 	_menu.team_room_join_requested.connect(_on_team_room_join_requested)
+	_menu.team_room_spectate_requested.connect(_on_team_room_spectate_requested)
 	_menu.team_room_list_requested.connect(_on_team_room_list_requested)
 	_menu.public_token_generate_requested.connect(_on_public_token_generate_requested)
 	_menu.public_token_resume_requested.connect(_on_public_token_resume_requested)
@@ -1613,6 +1618,10 @@ func _show_friends_screen() -> void:
 	screen.profile_requested.connect(_show_public_profile)
 	# 一键加入好友所在的房间。走已有的加入流程，不新造路径。
 	screen.join_room_requested.connect(_join_room_by_id)
+	# 好友在对局里：观战（协议 44）。同「加入」先回主菜单，连接中 / 失败提示挂在主菜单上。
+	screen.spectate_room_requested.connect(func(room_id: int) -> void:
+		_show_menu()
+		_start_spectate(room_id))
 	# 私聊。从好友列表进来的，返回回好友列表。
 	screen.chat_requested.connect(func(code: String) -> void: _show_chat_screen(code, true))
 	_page_back_route = _show_menu
@@ -1694,6 +1703,10 @@ func _install_realtime() -> void:
 		AccountManager.login_succeeded.connect(_on_realtime_login)
 	if not AccountManager.logged_out.is_connected(_on_realtime_logout):
 		AccountManager.logged_out.connect(_on_realtime_logout)
+	# 换成了另一个账号（资料页「切换账号」）：回启动页，按新账号把进门那一套重新走一遍 ——
+	# 宠物、出战种族、棋盘皮肤、名额都要按新账号重拉，主菜单上的旧缓存一样都不能留。
+	if not AccountManager.account_switched.is_connected(_on_account_switched):
+		AccountManager.account_switched.connect(_on_account_switched)
 	if not RealtimeService.kicked_by_other_device.is_connected(_on_realtime_kicked):
 		RealtimeService.kicked_by_other_device.connect(_on_realtime_kicked)
 	if not RealtimeService.service_state_changed.is_connected(_on_service_state):
@@ -1880,6 +1893,10 @@ func _on_realtime_logout() -> void:
 	AnnouncementService.reset()
 	MailService.reset()
 	_kicked_notice_pending = false
+
+
+func _on_account_switched() -> void:
+	_return_to_login("切换了账号")
 
 
 # 顶号立即终止游戏流程；启动页保留原因，只有玩家主动确认才能重新登录。
@@ -2671,6 +2688,8 @@ func _on_selftest_back() -> void:
 	_show_team3v3_lobby()
 
 func _on_lobby_back() -> void:
+	if _spectate_active:
+		_spectate_cleanup()
 	if _lobby_exit_requires_cancel():
 		DialogService.info({"owner": self, "body": "Please cancel ready first" if LocaleManager.get_locale() == "en" else "请先取消准备"})
 		return
@@ -2680,6 +2699,9 @@ func _on_lobby_back() -> void:
 	_show_menu()
 
 func _lobby_exit_requires_cancel() -> bool:
+	# 观战者：本机的 team_local_slot 借的是被看的那位选手的座位（显示用），他的「已准备」不是观战者的。
+	if NetworkService.spectating:
+		return false
 	if not NetworkService.team_active or NetworkService.can_control_room():
 		return false
 	var slot := NetworkService.team_local_slot
@@ -4254,3 +4276,283 @@ func _start_treasure_for_completed_round(completed_round: int) -> void:
 		"refresh_index": 0,
 		"remaining": RoundService.treasure_pick_count(completed_round),
 	}
+
+
+# ── 观战（协议 44，2026-10-22）────────────────────────────────────────
+#
+# 比「加入房间」那条轻：不占座、不拿重连凭证、不进 AsyncActionController 的那套请求身份 ——
+# 观战没有「重复点两次加入两次」的后果（服务器对同一连接重复进同一间直接返回原编号）。
+#   1. 连到房间所在的那台战斗服务器（房间号编着分片，同 _start_join_room_action）；
+#   2. 连上之后发观战请求；
+#   3. 收到第一份观战状态才切界面 —— 进不去（满了 / 关了）时失败原因走 _on_team_room_action_failed。
+# 大厅阶段进的是房间大厅（Team3v3Lobby 的观战模式）；开局之后的观战画面在第三步做。
+
+var _spectate_pending_room := 0
+
+
+func _on_team_room_spectate_requested(room_id: int) -> void:
+	_start_spectate(room_id)
+
+
+func _start_spectate(room_id: int) -> void:
+	if room_id <= 0:
+		return
+	_spectate_pending_room = room_id
+	if is_instance_valid(_menu):
+		_menu.show_connecting()
+	if not NetworkService.team_room_action_failed.is_connected(_on_spectate_refused):
+		NetworkService.team_room_action_failed.connect(_on_spectate_refused)
+	var port := NetworkConfig.port_of_room(room_id)
+	# 已经坐在某个房间里（team_local_slot >= 0）的连接不能直接观战（服务器会拒 spectate_seated），
+	# 先断开；连的是别的分片也要换连接。
+	if NetworkService.team_active and (NetworkService.remote_port != port or NetworkService.team_local_slot >= 0):
+		NetworkService.disconnect_session()
+	if NetworkService.team_active and NetworkService.state == NetworkService.SessionState.READY:
+		NetworkService.spectate_request_join(room_id)
+		return
+	if not NetworkService.team_join(NetworkService.DEFAULT_HOST, port):
+		_spectate_pending_room = 0
+		if is_instance_valid(_menu):
+			_menu.show_connection_error(NetworkService.last_error)
+		return
+	if not NetworkService.session_changed.is_connected(_on_spectate_session_changed):
+		NetworkService.session_changed.connect(_on_spectate_session_changed)
+
+
+func _on_spectate_session_changed() -> void:
+	if _spectate_pending_room <= 0:
+		NetworkService.session_changed.disconnect(_on_spectate_session_changed)
+		return
+	match NetworkService.state:
+		NetworkService.SessionState.READY:
+			NetworkService.session_changed.disconnect(_on_spectate_session_changed)
+			NetworkService.spectate_request_join(_spectate_pending_room)
+		NetworkService.SessionState.FAILED, NetworkService.SessionState.OFFLINE:
+			NetworkService.session_changed.disconnect(_on_spectate_session_changed)
+			_spectate_pending_room = 0
+			if is_instance_valid(_menu):
+				var message := NetworkService.last_error if NetworkService.last_error != "" else tr("net_err_connect_generic")
+				_menu.show_connection_error(message)
+
+
+# 每一份观战状态都过这里：第一份 = 进去了；之后按阶段切界面（第三步，2026-10-22）。
+#   大厅            → 房间大厅（Team3v3Lobby 的观战模式）
+#   第 1 回合备战   → 等待页（宠物跑进度条；还没有上一回合可看）
+#   之后的备战      → 选手的备战界面，只读，显示上一回合的阵容（延迟一回合）
+#   战斗 / 结算     → 回放到了就放（team_replay_received）；没到之前停在当前页
+#   打完最后一回合  → 结算页，按当前选中的选手
+func _on_spectate_state_received(state: Dictionary) -> void:
+	if _spectate_pending_room > 0:
+		_spectate_pending_room = 0
+		_spectate_active = true
+		_spectate_screen = ""
+		if not NetworkService.team_replay_received.is_connected(_on_spectate_replay_ready):
+			NetworkService.team_replay_received.connect(_on_spectate_replay_ready)
+		if not NetworkService.spectate_ended.is_connected(_on_spectate_ended_in_match):
+			NetworkService.spectate_ended.connect(_on_spectate_ended_in_match)
+		if not NetworkService.spectate_view_received.is_connected(_on_spectate_view_ready):
+			NetworkService.spectate_view_received.connect(_on_spectate_view_ready)
+	if not _spectate_active or not NetworkService.spectating:
+		return
+	_spectate_route(state)
+
+
+func _on_spectate_room_list_received(rooms: Array) -> void:
+	if is_instance_valid(_menu) and _menu.has_method("show_spectate_rooms"):
+		_menu.show_spectate_rooms(rooms)
+
+
+# 观战被拒（满了 / 房主关了 / 房间没了 / 自己还坐着）。从好友列表点进来时房间面板没开，
+# 原来那条 show_room_error 写不到任何地方，所以这里走 show_join_rejected（面板没开就弹提示）。
+func _on_spectate_refused(reason: String) -> void:
+	if _spectate_pending_room <= 0:
+		return
+	_spectate_pending_room = 0
+	if is_instance_valid(_menu) and _menu.has_method("show_join_rejected"):
+		_menu.show_join_rejected(reason)
+
+
+# ── 观战：对局内（第三步）─────────────────────────────────────────────
+const SpectatorSeat := preload("res://scripts/multiplayer/SpectatorSeat.gd")
+const SpectatorHudScript := preload("res://ui/components/SpectatorHud.gd")
+
+var _spectate_active := false
+var _spectate_screen := ""          # 现在显示的观战页：lobby / loading / prep:<回合>:<座位> / battle:<id>:<座位> / over
+var _spectate_replays := {}         # 本场两队回放：{"battle_id", "red", "blue"}
+var _spectator_hud: CanvasLayer = null
+
+
+func _spectate_route(state: Dictionary) -> void:
+	var phase := str(state.get("phase", ""))
+	if phase == "lobby":
+		if _spectate_screen != "lobby":
+			_spectate_screen = "lobby"
+			_show_team3v3_lobby()
+		return
+	if bool(state.get("run_over", false)) and _spectate_try_game_over():
+		return
+	# 回放正在放：不打断，播完 _on_spectate_battle_finished 再按最新状态走。
+	if _spectate_screen.begins_with("battle") and is_instance_valid(_battle):
+		return
+	if phase == "prep":
+		if NetworkService.spectate_view.is_empty():
+			_spectate_show_loading()
+		else:
+			_spectate_show_prep()
+	# 战斗 / 结算阶段：等回放（_on_spectate_replay_ready）。等待期间停在当前页 ——
+	# 第 1 回合就是那条进度条，之后是上一回合的阵容。
+	elif _spectate_screen == "" or _spectate_screen == "lobby":
+		_spectate_show_loading()
+
+
+func _spectate_show_loading() -> void:
+	if _spectate_screen == "loading":
+		return
+	_spectate_screen = "loading"
+	_clear()
+	_enter_match_flow()
+	add_child(preload("res://scenes/spectate/SpectatorLoading.gd").new())
+	_attach_spectator_hud()
+
+
+func _spectate_show_prep(force: bool = false) -> void:
+	var view := NetworkService.spectate_view
+	var slot := NetworkService.spectate_view_slot
+	var key := "prep:%d:%d" % [int(view.get("round", 0)), slot]
+	if _spectate_screen == key and not force:
+		return
+	_spectate_screen = key
+	_clear()
+	_enter_match_flow()
+	_set_chat_sound_suppressed(true)
+	SpectatorSeat.apply(view, NetworkService.spectate_state, slot)
+	_prep = _instantiate_screen("res://scenes/prep/PrepScreen.tscn")
+	_prep.spectator_view = true
+	add_child(_prep)
+	_attach_spectator_hud()
+
+
+func _on_spectate_view_ready(_view: Dictionary) -> void:
+	# 新一回合的阵容到了（战斗结果发布时）。正在放回放就别打断，播完会按最新状态切。
+	if _spectate_active and _spectate_screen.begins_with("prep") and str(NetworkService.spectate_state.get("phase", "")) == "prep":
+		_spectate_show_prep()
+
+
+# 回放到了：NetworkService 收下的是「红队视角 own、蓝队视角 rival」（服务器给观战者的约定）。
+func _on_spectate_replay_ready() -> void:
+	if not _spectate_active or not NetworkService.spectating:
+		return
+	_spectate_replays = {"battle_id": NetworkService.team_replay_battle_id,
+		"red": NetworkService.team_replay.duplicate(true), "blue": NetworkService.team_replay_rival.duplicate(true)}
+	_spectate_show_battle()
+
+
+func _spectate_show_battle() -> void:
+	if _spectate_replays.is_empty():
+		return
+	var slot := NetworkService.spectate_view_slot
+	_spectate_screen = "battle:%s:%d" % [str(_spectate_replays.get("battle_id", "")), slot]
+	_clear()
+	_enter_match_flow()
+	_set_chat_sound_suppressed(true)
+	var red: Dictionary = _spectate_replays.get("red", {})
+	var blue: Dictionary = _spectate_replays.get("blue", {})
+	var blue_side := GameConstants.team_of_slot(slot) == GameConstants.TEAM_BLUE
+	# 战斗界面读 team_replay（我方视角）/ team_replay_rival（对方视角），「我方」= 正在看的那位选手。
+	NetworkService.team_replay = blue if blue_side else red
+	NetworkService.team_replay_rival = red if blue_side else blue
+	if not NetworkService.spectate_view.is_empty():
+		SpectatorSeat.apply(NetworkService.spectate_view, NetworkService.spectate_state, slot)
+	GameState.round_index = int(NetworkService.spectate_state.get("battle_round", GameState.round_index))
+	GameState.set_pending_battle_package({"mode": "team_replay", "replay": NetworkService.team_replay})
+	_battle = _load_screen("res://scenes/battle/BattleScreen.tscn").instantiate()
+	_battle.battle_finished.connect(_on_spectate_battle_finished)
+	add_child(_battle)
+	_attach_spectator_hud()
+
+
+# 回放播完：按最新的观战状态走（下一回合备战 / 最终结算）。观战者不结算、不确认、不扣分。
+func _on_spectate_battle_finished(_result: Dictionary = {}) -> void:
+	if not _spectate_active:
+		return
+	_spectate_replays = {}
+	_spectate_screen = ""
+	_spectate_route(NetworkService.spectate_state)
+
+
+func _spectate_try_game_over() -> bool:
+	var match_state := NetworkService.spectate_match_state_for_view()
+	var settlement: Dictionary = match_state.get("final_settlement", {})
+	if settlement.is_empty() or _spectate_screen == "over":
+		return false
+	# 回放还没放完就别抢 —— 播完 _on_spectate_battle_finished 会再走到这里。
+	if _spectate_screen.begins_with("battle") and is_instance_valid(_battle):
+		return true
+	_spectate_screen = "over"
+	var local := settlement.duplicate(true)
+	local["local_team"] = GameConstants.team_of_slot(NetworkService.spectate_view_slot)
+	_show_game_over(local)
+	_attach_spectator_hud()
+	return true
+
+
+func _attach_spectator_hud() -> void:
+	if is_instance_valid(_spectator_hud) and _spectator_hud.get_parent() == self:
+		_spectator_hud.refresh()
+		return
+	_spectator_hud = SpectatorHudScript.new()
+	_spectator_hud.seat_selected.connect(_on_spectate_seat_selected)
+	_spectator_hud.leave_requested.connect(_spectate_leave)
+	add_child(_spectator_hud)
+
+
+func _on_spectate_seat_selected(slot: int) -> void:
+	if slot == NetworkService.spectate_view_slot:
+		return
+	NetworkService.spectate_select_slot(slot)
+	if _spectate_screen.begins_with("prep"):
+		_spectate_show_prep(true)
+	elif _spectate_screen.begins_with("battle"):
+		# 换队就换视角；同一队的三个人看的是同一场，换人只换「我」的高亮。从头放这一场。
+		_spectate_show_battle()
+	elif _spectate_screen == "over":
+		_spectate_screen = ""
+		_spectate_try_game_over()
+	elif is_instance_valid(_spectator_hud):
+		_spectator_hud.refresh()
+
+
+func _spectate_leave() -> void:
+	NetworkService.spectate_request_leave()
+	_spectate_cleanup()
+	NetworkService.disconnect_session()
+	_show_menu()
+
+
+func _on_spectate_ended_in_match(reason: String) -> void:
+	if not _spectate_active or _spectate_screen == "lobby":
+		return   # 大厅那页自己提示、自己回主界面（Team3v3Lobby._on_spectate_ended）
+	var en := LocaleManager.get_locale() == "en"
+	var text := "The room was closed" if en else "房间已关闭"
+	match reason:
+		"spectate_kicked":
+			text = "The host removed you from spectating" if en else "你已被房主请出观战席"
+		"spectate_closed":
+			text = "The host closed spectating" if en else "房主关闭了观战"
+	preload("res://ui/components/GloryToast.gd").show_text(text)
+	_spectate_cleanup()
+	NetworkService.disconnect_session()
+	_show_menu()
+
+
+# 离开观战：GameState 里装的是别人的阵容（显示用，没写盘），从存档读回自己的。
+func _spectate_cleanup() -> void:
+	_spectate_active = false
+	_spectate_screen = ""
+	_spectate_replays = {}
+	if is_instance_valid(_spectator_hud):
+		_spectator_hud.queue_free()
+	_spectator_hud = null
+	GameState.clear_pending_battle_package()
+	if not SaveManager.load_run():
+		GameState.team_mode = false

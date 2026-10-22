@@ -354,3 +354,8 @@ func _sync_prep_board_readability_geometry() -> void:
 
 func _sync_prep_board_readability_state() -> void:
 	pass
+
+
+# Locked from battle submission until recovery or scene handoff. Ready alone stays editable.
+func can_edit_formation() -> bool:
+	return not _battle_launch_emitted

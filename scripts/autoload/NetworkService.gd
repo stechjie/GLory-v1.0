@@ -664,6 +664,10 @@ var _reconnect_backoff: RefCounted = ReconnectBackoff.new()
 
 const RoomService := preload("res://scripts/multiplayer/RoomService.gd")
 var _room_service: RefCounted = RoomService.new()
+# 观战（规则见 SpectatorService.gd 顶部）。观战者**不进 _peer_room**，用这张单独的表：
+# peer_id -> 正在观战的 room_id。
+const SpectatorService := preload("res://scripts/multiplayer/SpectatorService.gd")
+var _peer_spectate: Dictionary = {}
 const ReconnectService := preload("res://scripts/multiplayer/ReconnectService.gd")
 var _reconnect_service: RefCounted = ReconnectService.new()
 const DedicatedServerService := preload("res://scripts/multiplayer/DedicatedServerService.gd")
@@ -1538,6 +1542,9 @@ func _room_close(room: Dictionary, reason: String) -> void:
 		if _peer_connected(int(peer_id)):
 			_rpc_team_room_closed.rpc_id(int(peer_id), reason)
 		_peer_room.erase(int(peer_id))
+	# 观战者同样要被告知，并且解除映射 —— 否则 _peer_spectate 指着一个已经没了的房间。
+	for peer_id in SpectatorService.peers(room):
+		_spectate_end(room, peer_id, "room_closed")
 
 # 策略已搬到 RoomService.cleanup_rooms()（D1 第 4 刀第 4 步）。
 # 留在这里的只有"发消息"：_room_close 要给还连着的 peer 发 room_closed，
@@ -2522,6 +2529,10 @@ func _build_room_state(room: Dictionary, slot: int) -> Dictionary:
 		"carrot_harvest_gains": _build_public_carrot_harvest_gains(room),
 		"ready": (room.get("ready", []) as Array).duplicate(),
 		"suspended": bool(room.get("suspended", false)),
+		# --- 观战（大厅左侧观战列表；只有公开身份）---
+		"spectators": SpectatorService.public_list(room),
+		"spectate_open": SpectatorService.is_open(room),
+		"spectate_max": SpectatorService.MAX_SPECTATORS,
 		# --- 本座位身份 ---
 		"my_slot": slot,
 		"my_races": _room_seat_races(room, slot) if slot >= 0 else [],
@@ -2663,6 +2674,10 @@ func _broadcast_room_lobby(room: Dictionary) -> void:
 	for peer_id in (room.get("peer_slot", {}) as Dictionary).keys():
 		if _peer_connected(int(peer_id)):
 			_send_room_state(room, int(peer_id), seq)
+	# 观战者拿的是另一份（_build_spectate_state，只有公开字段），同一个序号。
+	for peer_id in SpectatorService.peers(room):
+		if _peer_connected(peer_id):
+			_send_spectate_state(room, peer_id, seq)
 
 # --- 3v3 prep mercenary sync ------------------------------------------------
 # 备战阶段实时同步每个玩家已雇的佣兵 id 列表，供「队伍佣兵」弹窗展示。
@@ -2819,7 +2834,7 @@ func _rpc_team_chat_submit(phrase_id: int, team_only: bool) -> void:
 			return
 		# 转给 chat_recipients 算出来的人，**包括发送者** —— 他那条也要经服务器定序回来，
 		# 否则就回到了 team_send_phrase 注释里说的那个不一致状态。team_only 时敌方不在里面。
-		for peer_id in chat_recipients(room, slot, team_only):
+		for peer_id in chat_recipients(room, slot, team_only) + spectator_chat_recipients(room, team_only):
 			if _peer_connected(peer_id):
 				_rpc_team_chat.rpc_id(peer_id, slot, phrase_id, team_only)
 		return
@@ -2849,6 +2864,14 @@ static func chat_recipients(room: Dictionary, sender_slot: int, team_only: bool)
 		if chat_reaches(sender_slot, int(peer_slot[peer]), team_only):
 			out.append(int(peer))
 	return out
+
+# 选手的聊天转给观战者：**只转全体聊天**。队内聊天是战术讨论，观战者看得到的话，
+# 私下转告另一队就绕过了延迟一回合的保护。反方向（观战者 → 选手）根本没有通路：
+# 观战者的话只走 _rpc_spectate_chat_submit，收件人只有观战者。
+static func spectator_chat_recipients(room: Dictionary, team_only: bool) -> Array[int]:
+	if team_only:
+		return []
+	return SpectatorService.peers(room)
 
 static func chat_reaches(sender_slot: int, receiver_slot: int, team_only: bool) -> bool:
 	if sender_slot < 0 or sender_slot >= TEAM_SLOTS or receiver_slot < 0 or receiver_slot >= TEAM_SLOTS:
@@ -2935,7 +2958,7 @@ func _rpc_team_chat_text_submit(text: String, team_only: bool) -> void:
 		if clean.is_empty():
 			return
 		# 同短语：按范围转，包括发送者；team_only 时敌方不在里面。
-		for peer_id in chat_recipients(room, slot, team_only):
+		for peer_id in chat_recipients(room, slot, team_only) + spectator_chat_recipients(room, team_only):
 			if _peer_connected(peer_id):
 				_rpc_team_chat_text.rpc_id(peer_id, slot, clean, team_only)
 		return
@@ -3060,7 +3083,7 @@ func _rpc_team_chat_voice_submit(clip_id: String, media: String, seconds: float,
 		if safe.is_empty():
 			_net_log("voice clip rejected peer=%d (bad media shape)" % sender)
 			return
-		for peer_id in chat_recipients(room, slot, team_only):
+		for peer_id in chat_recipients(room, slot, team_only) + spectator_chat_recipients(room, team_only):
 			if _peer_connected(peer_id):
 				_rpc_team_chat_voice.rpc_id(peer_id, slot,
 					str(safe["clip_id"]), str(safe["media"]), float(safe["seconds"]), team_only)
@@ -3093,6 +3116,490 @@ func _host_send_voice(slot: int, clip: Dictionary, team_only: bool) -> void:
 	if chat_reaches(slot, team_local_slot, team_only):
 		team_chat_voice_received.emit(slot, clip, team_only)
 
+
+# --- 观战（协议 44，规则见 SpectatorService.gd 顶部）---------------------------
+#
+# 线上的形状：
+#   客户端 → 服务器   _rpc_spectate_join / _rpc_spectate_leave / _rpc_spectate_chat_submit
+#   房主   → 服务器   _rpc_spectate_kick / _rpc_spectate_set_open
+#   服务器 → 观战者   _rpc_spectate_state（公开状态，和 room_state 同一个序号）
+#                     _rpc_spectate_view（上一回合冻结的阵容，走 bulk 通道）
+#                     _rpc_spectate_match_states（本场各座位的结算，界面按选中的选手显示）
+#                     _rpc_spectate_chat / _rpc_spectate_ended
+#   战斗回放复用选手那条分块下发（_send_replay_to_peer），两队的都发：own = 红队，rival = 蓝队。
+#
+# 🔴 观战者能收到的东西只有三个出口：_build_spectate_state、SpectatorService.seat_view、
+# 结算。新加字段时先想清楚它是不是「公开的」，别顺手从 _build_room_state 抄 ——
+# 那份是按座位给的，里面有金币、账本、宝物候选和重连 token。
+
+signal spectate_room_list_received(rooms: Array)
+signal spectate_state_received(state: Dictionary)
+signal spectate_view_received(view: Dictionary)
+signal spectate_match_states_received(battle_id: String, states: Dictionary)
+signal spectate_chat_received(sid: int, identity: Dictionary, phrase_id: int, text: String)
+signal spectate_ended(reason: String)
+
+# 房间列表里「只能观战」那部分最多列多少间。匹配房也在里面，不封顶的话
+# 人一多这条回复会越来越大（列表请求本身是限流的，但单条回复不是）。
+const SPECTATE_LIST_MAX := 50
+
+# --- 客户端 ---
+
+var spectating := false
+var spectate_room_id := 0
+var spectate_sid := -1
+var spectate_state: Dictionary = {}
+var _spectate_seq := -1
+# 选手这边看到的观战列表（room_state 里那份），大厅左侧观战栏读它。
+var team_room_spectators: Dictionary = {}
+# 对局内观战（第三步）：上一回合冻结的阵容、各座位的结算、当前看的是哪个座位。
+signal spectate_view_slot_changed(slot: int)
+var spectate_view: Dictionary = {}
+var spectate_match_states: Dictionary = {}   # battle_id -> {slot: match_state}
+var spectate_view_slot := 0                  # 默认看红队第一个座位（2026-10-22 定）
+
+# 观战者「换一个选手看」。
+#
+# 🔴 观战者没有座位，可对局界面（备战 / 战斗 / 结算）到处用 team_local_slot 判「我方」。
+# 观战时把它设成**正在看的那个座位** —— 界面就和那位选手看到的一模一样（用户口径：不加不减）。
+# 这只改本机显示：观战连接在服务器上没有座位，借这个号发出去的任何选手请求都会被丢掉
+# （_room_for_peer 对观战者恒为空，见 SpectatorService 顶部）。
+func spectate_select_slot(slot: int) -> void:
+	if not spectating:
+		return
+	spectate_view_slot = clampi(slot, 0, TEAM_SLOTS - 1)
+	team_local_slot = spectate_view_slot
+	spectate_view_slot_changed.emit(spectate_view_slot)
+
+# 当前看的座位在本场的结算（界面按选中的选手显示）。
+func spectate_match_state_for_view() -> Dictionary:
+	var states: Dictionary = spectate_match_states.get(str(spectate_state.get("battle_id", "")), {})
+	return states.get(spectate_view_slot, states.get(str(spectate_view_slot), {}))
+
+# 进入观战。登录了就带名片（列表里显示名字头像、能发言）；拿不到名片就以游客身份进 ——
+# 游客只能看（2026-10-22 定）。所以这里**不像入座那样拿不到名片就放弃**。
+func spectate_request_join(room_id: int) -> void:
+	if not _can_send_room_request("spectate_join"):
+		return
+	var card := ""
+	if AccountManager.is_logged_in():
+		if seat_card_provider.is_valid():
+			card = str(await seat_card_provider.call())
+		else:
+			card = await AccountManager.fetch_battle_card()
+	if not _can_send_room_request("spectate_join"):
+		return
+	_rpc_spectate_join.rpc_id(1, room_id, card)
+
+func spectate_request_leave() -> void:
+	if not spectating:
+		return
+	_rpc_spectate_leave.rpc_id(1)
+	_spectate_reset()
+
+# 返回空串表示已发出；否则是给玩家看的原因（同 team_send_text）。
+func spectate_send_text(raw: String) -> String:
+	if not spectating:
+		return "观战中才能发送"
+	if not bool(spectate_state.get("can_chat", false)):
+		return "游客只能观战，不能发言"
+	var problem := ChatText.problem(raw)
+	if not problem.is_empty():
+		return problem
+	var now := Time.get_ticks_msec() / 1000.0
+	var wait := TEXT_SEND_MIN_INTERVAL_SEC - (now - _last_text_sent_at)
+	if wait > 0.0:
+		return "发得太快了，%d 秒后再发" % ceili(wait)
+	_last_text_sent_at = now
+	_rpc_spectate_chat_submit.rpc_id(1, -1, ChatText.clean(raw))
+	return ""
+
+func spectate_send_phrase(phrase_id: int) -> void:
+	if spectating and bool(spectate_state.get("can_chat", false)) and ChatPhrases.is_valid_id(phrase_id):
+		_rpc_spectate_chat_submit.rpc_id(1, phrase_id, "")
+
+# 房主：踢一个观战者 / 开关本房间观战。
+func team_spectate_kick(sid: int) -> void:
+	if team_active and team_local_slot >= 0:
+		_rpc_spectate_kick.rpc_id(1, sid)
+
+func team_spectate_set_open(open: bool) -> void:
+	if team_active and team_local_slot >= 0:
+		_rpc_spectate_set_open.rpc_id(1, open)
+
+func _spectate_reset() -> void:
+	if spectating:
+		team_local_slot = -1
+		team_room_id = 0
+	spectating = false
+	spectate_room_id = 0
+	spectate_sid = -1
+	spectate_state = {}
+	_spectate_seq = -1
+	spectate_view = {}
+	spectate_match_states = {}
+	spectate_view_slot = 0
+
+# --- 服务端：进出 ---
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_spectate_join(room_id: int, card: String = "") -> void:
+	if not _dedicated_server:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if not _rate_ok(sender, "spectate_join"):
+		return
+	_spectate_join(sender, room_id, card)
+
+# RPC 入口只取 sender、做限流；规则在这些普通函数里，tools/spectator_check 直接调。
+func _spectate_join(sender: int, room_id: int, card: String) -> void:
+	# 选手不能起身去观战（2026-10-22 定）。坐着的连接一律拒，不论是不是这个房间：
+	# 对局里的人去看别的房间，自己这局就没人在了；大厅里的人要观战，先离开房间。
+	if not _room_for_peer(sender).is_empty():
+		_spectate_fail(sender, "spectate_seated")
+		return
+	var room: Dictionary = _rooms.get(room_id, {})
+	if room.is_empty() or str(room.get("state", "")) == ROOM_CLOSED:
+		_spectate_fail(sender, "room_not_found")
+		return
+	# 名片可选：没有 = 游客。带了就必须是真的 —— 验不过说明客户端有问题，按原因拒，
+	# 不能悄悄降级成游客（那样改包的人可以拿一张假名片换一个假名字进列表）。
+	var identity := {}
+	if not card.is_empty():
+		var seat_card := _accept_seat_card(sender, card)
+		if seat_card.is_empty():
+			return
+		identity = public_seat_identity(BattleCard.profile_of(seat_card))
+	# 换房观战：先离开原来的观战席（同一条连接只能看一间）。
+	if int(_peer_spectate.get(sender, 0)) != room_id:
+		_spectate_detach(sender)
+	var result := SpectatorService.add(room, sender, identity, _now())
+	if not bool(result.get("ok", false)):
+		_spectate_fail(sender, str(result.get("reason", "spectate_failed")))
+		return
+	_peer_spectate[sender] = room_id
+	_peer_last_ping[sender] = _now()
+	_net_log("spectator joined room=%d peer=%d sid=%d guest=%s count=%d" % [
+		room_id, sender, int(result.get("sid", -1)), str(identity.is_empty()), SpectatorService.count(room)])
+	# 全房广播：选手大厅里的观战列表要多一行；新观战者自己也在这一轮里拿到第一份状态。
+	_broadcast_room_lobby(room)
+	# 补发：上一回合的阵容；正处在结算阶段的话，再补这一场的结算和回放（从头播）。
+	_spectate_send_round(room, sender)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_spectate_leave() -> void:
+	if not _dedicated_server:
+		return
+	_spectate_detach(multiplayer.get_remote_sender_id())
+
+# 把一条连接从观战席上摘下来（主动离开、掉线、坐下、换房都走这里）。
+# 房间还在就广播一次，让两边的观战列表少一行。返回是否真的摘了。
+func _spectate_detach(peer_id: int) -> bool:
+	if not _peer_spectate.has(peer_id):
+		return false
+	var room_id := int(_peer_spectate[peer_id])
+	_peer_spectate.erase(peer_id)
+	var room: Dictionary = _rooms.get(room_id, {})
+	if room.is_empty():
+		return true
+	if SpectatorService.remove_peer(room, peer_id).is_empty():
+		return true
+	_net_log("spectator left room=%d peer=%d count=%d" % [room_id, peer_id, SpectatorService.count(room)])
+	if str(room.get("state", "")) != ROOM_CLOSED:
+		_broadcast_room_lobby(room)
+	return true
+
+# 服务器请观战者离开（被踢、房主关了观战、房间关了）。**不广播** —— 调用方处理完一批再广播一次。
+func _spectate_end(room: Dictionary, peer_id: int, reason: String) -> void:
+	SpectatorService.remove_peer(room, peer_id)
+	_peer_spectate.erase(peer_id)
+	_replay_forget_peer(peer_id)
+	if _peer_connected(peer_id):
+		_spectate_notify_ended(peer_id, reason)
+	_net_log("spectator ended room=%d peer=%d reason=%s" % [int(room.get("id", 0)), peer_id, reason])
+
+# --- 服务端：房主管理 ---
+
+func _spectate_sender_is_leader(room: Dictionary, sender: int) -> bool:
+	return not room.is_empty() \
+		and int((room.get("peer_slot", {}) as Dictionary).get(sender, -1)) == int(room.get("leader_slot", 0))
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_spectate_kick(sid: int) -> void:
+	if not _dedicated_server:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if not _rate_ok(sender, "kick"):
+		return
+	_spectate_kick(sender, sid)
+
+func _spectate_kick(sender: int, sid: int) -> void:
+	var room := _room_for_peer(sender)
+	if not _spectate_sender_is_leader(room, sender):
+		return
+	var spectators := SpectatorService.list(room)
+	if not spectators.has(sid):
+		return
+	_spectate_end(room, int((spectators[sid] as Dictionary).get("peer", 0)), "spectate_kicked")
+	_broadcast_room_lobby(room)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_spectate_set_open(open: bool) -> void:
+	if not _dedicated_server:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if not _rate_ok(sender, "toggle_slot"):
+		return
+	_spectate_set_open(sender, open)
+
+func _spectate_set_open(sender: int, open: bool) -> void:
+	var room := _room_for_peer(sender)
+	if not _spectate_sender_is_leader(room, sender):
+		return
+	room[SpectatorService.KEY_OPEN] = open
+	# 关观战 = 现有观战者全部请出去。只挡新人不清旧人，房主会以为没人在看。
+	if not open:
+		for peer_id in SpectatorService.peers(room):
+			_spectate_end(room, peer_id, "spectate_closed")
+	_touch_room(room)
+	_broadcast_room_lobby(room)
+
+# --- 服务端：聊天（只在观战者之间）---
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_spectate_chat_submit(phrase_id: int, text: String) -> void:
+	if not _dedicated_server:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	# 软限、不计 strike，额度和选手聊天同一档（理由见 RateLimitService 的 chat_*）。
+	if not _rate_ok(sender, "chat_phrase" if text.is_empty() else "chat_text", false):
+		return
+	_spectate_chat(sender, phrase_id, text)
+
+func _spectate_chat(sender: int, phrase_id: int, text: String) -> void:
+	var room: Dictionary = _rooms.get(int(_peer_spectate.get(sender, 0)), {})
+	var entry := SpectatorService.entry_of_peer(room, sender)
+	# 游客不能发言（没有账号 = 举报和封禁都没有抓手）。客户端也挡了，这里是权威的那道。
+	if not SpectatorService.can_chat(entry):
+		return
+	var clean := ""
+	if phrase_id < 0:
+		clean = ChatText.clean(text)
+		if clean.is_empty():
+			return
+	elif not ChatPhrases.is_valid_id(phrase_id) or not text.is_empty():
+		return
+	var sid := SpectatorService.sid_of_peer(room, sender)
+	var identity: Dictionary = entry.get("identity", {})
+	# 🔴 收件人**只有观战者**（包括发送者自己，同选手聊天由服务器定序回来）。
+	# 选手不在里面 —— 观战者的话要是能到选手那里，延迟一回合就白做了。
+	for peer_id in SpectatorService.peers(room):
+		if _peer_connected(peer_id):
+			_spectate_deliver_chat(peer_id, sid, identity, phrase_id, clean)
+
+# --- 服务端：出口（单独成函数，门禁打桩用；线上就是一条 rpc_id）---
+
+func _spectate_deliver_view(peer_id: int, view: Dictionary) -> void:
+	_rpc_spectate_view.rpc_id(peer_id, view)
+
+func _spectate_deliver_match_states(peer_id: int, battle_id: String, states: Dictionary) -> void:
+	_rpc_spectate_match_states.rpc_id(peer_id, battle_id, states)
+
+func _spectate_fail(peer_id: int, reason: String) -> void:
+	_rpc_team_action_failed.rpc_id(peer_id, reason)
+
+func _spectate_notify_ended(peer_id: int, reason: String) -> void:
+	_rpc_spectate_ended.rpc_id(peer_id, reason)
+
+func _spectate_deliver_chat(peer_id: int, sid: int, identity: Dictionary, phrase_id: int, text: String) -> void:
+	_rpc_spectate_chat.rpc_id(peer_id, sid, identity, phrase_id, text)
+
+# --- 服务端：下发 ---
+
+func _build_spectate_state(room: Dictionary, sid: int) -> Dictionary:
+	var hp: Array = room.get("team_hp", [GameState.START_FORMATION_HP, GameState.START_FORMATION_HP])
+	# 回合号口径同 _build_room_state：结算阶段要报「即将开始的那一轮」。
+	var round_id := int(room.get("round_index", 1))
+	if str(room.get("state", "")) == ROOM_RESULT:
+		round_id = mini(round_id + 1, _room_final_round(room))
+	var replays: Dictionary = room.get("replay_packed", {})
+	var replay_available := not (replays.get("a", PackedByteArray()) as PackedByteArray).is_empty() \
+		and not (replays.get("b", PackedByteArray()) as PackedByteArray).is_empty()
+	var entry: Dictionary = SpectatorService.list(room).get(sid, {})
+	return {
+		# --- 房间（与选手同一批公开字段）---
+		"phase": str(room.get("state", ROOM_LOBBY)),
+		"prep_seconds_left": PrepDeadline.remaining(room, _now()),
+		"round_id": round_id,
+		"ruleset": str(room.get("ruleset", "normal")),
+		"final_round": _room_final_round(room),
+		"battle_id": str(room.get("battle_id", "")),
+		"battle_round": int(room.get("round_index", 1)),
+		# 预载资源清单只在战斗计算期间有：那时所有棋盘都已锁定，提前给不泄露任何东西。
+		"asset_prefetch": room.get("asset_prefetch", {}) if bool(room.get("replay_pending", false)) else {},
+		"replay_pending": str(room.get("state", "")) == ROOM_BATTLE or bool(room.get("replay_pending", false)),
+		"replay_available": replay_available,
+		"replay_error": str(room.get("replay_error", "")),
+		"leader_slot": int(room.get("leader_slot", 0)),
+		"slot_states": (room.get("slot_states", []) as Array).duplicate(),
+		"seat_profiles": (room.get("seat_profiles", {}) as Dictionary).duplicate(true),
+		"seat_pets": _build_public_seat_pets(room),
+		"ready": (room.get("ready", []) as Array).duplicate(),
+		"suspended": bool(room.get("suspended", false)),
+		"run_over": bool(room.get("run_over", false)),
+		# 两队都给：观战者没有「己方」，界面按当前选中的选手决定哪边是己方。
+		"team_hp": [int(hp[0]), int(hp[1])],
+		"team_loss_streak": (room.get("team_loss_streak", [0, 0]) as Array).duplicate(),
+		"pve_completed": int(room.get("pve_completed", 0)),
+		"boss_completed": int(room.get("boss_completed", 0)),
+		# --- 观战 ---
+		"spectators": SpectatorService.public_list(room),
+		"spectate_open": SpectatorService.is_open(room),
+		"spectate_max": SpectatorService.MAX_SPECTATORS,
+		"view_round": int(SpectatorService.current_view(room).get("round", 0)),
+		# --- 本观战者 ---
+		"my_sid": sid,
+		"can_chat": SpectatorService.can_chat(entry),
+	}
+
+func _send_spectate_state(room: Dictionary, peer_id: int, seq: int) -> void:
+	var sid := SpectatorService.sid_of_peer(room, peer_id)
+	if sid < 0:
+		return
+	_rpc_spectate_state.rpc_id(peer_id, {
+		"protocol": NetworkConfig.NETWORK_PROTOCOL_VERSION,
+		"server_epoch": _server_epoch,
+		"room_id": int(room.get("id", 0)),
+		"state_seq": seq,
+		"message_type": "spectate_state",
+		"payload": _build_spectate_state(room, sid),
+	})
+
+# 一回合的观战数据：冻结的上一回合阵容；正处在结算阶段就再加本场的结算与回放。
+# 战斗发布时对所有观战者调一次；中途进来的观战者进门时调一次（回放从头播）。
+func _spectate_send_round(room: Dictionary, peer_id: int) -> void:
+	if not _peer_connected(peer_id):
+		return
+	var view := SpectatorService.current_view(room)
+	if not view.is_empty():
+		_spectate_deliver_view(peer_id, view)
+	if str(room.get("state", "")) != ROOM_RESULT:
+		return
+	var battle_id := str(room.get("battle_id", ""))
+	var match_states: Dictionary = room.get("last_match_state", {})
+	if not match_states.is_empty():
+		_spectate_deliver_match_states(peer_id, battle_id, match_states)
+	var packed: Dictionary = room.get("replay_packed", {})
+	var packed_a: PackedByteArray = packed.get("a", PackedByteArray())
+	var packed_b: PackedByteArray = packed.get("b", PackedByteArray())
+	if not packed_a.is_empty() and not packed_b.is_empty():
+		_send_replay_to_peer(peer_id, battle_id, packed_a, packed_b)
+
+# 房间列表 = 能坐下的（形状不变，加 joinable 标记）+ 只能观战的（满员 / 已开局 / 匹配房）。
+func _room_list_with_spectate() -> Array:
+	var out: Array = []
+	var listed := {}
+	for entry in _public_room_list():
+		var row: Dictionary = (entry as Dictionary).duplicate()
+		var room: Dictionary = _rooms.get(int(row.get("id", 0)), {})
+		row["joinable"] = true
+		row["spectate_open"] = SpectatorService.is_open(room)
+		row["spectators"] = SpectatorService.count(room)
+		out.append(row)
+		listed[int(row.get("id", 0))] = true
+	var spectate_rows: Array = []
+	for room in _rooms.values():
+		var rid := int(room.get("id", 0))
+		if listed.has(rid) or str(room.get("state", "")) == ROOM_CLOSED:
+			continue
+		# 关了观战的、等原班人马回来的（suspended）、一个真人都没有的，都不列。
+		if not SpectatorService.is_open(room) or bool(room.get("suspended", false)) \
+				or _room_player_count(room) <= 0:
+			continue
+		spectate_rows.append({
+			"id": rid,
+			"players": _room_player_count(room),
+			"max": TEAM_SLOTS,
+			"state": str(room.get("state", ROOM_LOBBY)),
+			"joinable": false,
+			"spectate_open": true,
+			"spectators": SpectatorService.count(room),
+		})
+	spectate_rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a.get("id", 0)) < int(b.get("id", 0)))
+	return out + spectate_rows.slice(0, SPECTATE_LIST_MAX)
+
+# --- 客户端：接收 ---
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_spectate_state(envelope: Dictionary) -> void:
+	if int(envelope.get("protocol", -1)) != NetworkConfig.NETWORK_PROTOCOL_VERSION:
+		return
+	var room_id := int(envelope.get("room_id", 0))
+	var seq := int(envelope.get("state_seq", -1))
+	# 迟到包：同一间房里序号只升不降（同 room_state 的 E2 信封）。
+	if room_id == spectate_room_id and seq <= _spectate_seq:
+		return
+	var payload: Dictionary = envelope.get("payload", {})
+	spectating = true
+	spectate_room_id = room_id
+	spectate_sid = int(payload.get("my_sid", -1))
+	spectate_state = payload
+	_spectate_seq = seq
+	# 对局界面（备战 / 战斗 / 结算）读的是 team_* 这一批，观战时用公开字段喂它们。
+	# team_room_id / server_round_index / server_phase 同时是回放分块的准入条件（_replay_battle_can_buffer）。
+	team_room_id = room_id
+	team_slot_states = (payload.get("slot_states", []) as Array).duplicate()
+	team_ready = (payload.get("ready", []) as Array).duplicate()
+	team_seat_profiles = (payload.get("seat_profiles", {}) as Dictionary).duplicate(true)
+	team_leader_slot = int(payload.get("leader_slot", 0))
+	server_round_index = int(payload.get("round_id", 0))
+	server_phase = str(payload.get("phase", ""))
+	team_local_slot = spectate_view_slot
+	var battle_id := str(payload.get("battle_id", ""))
+	if not battle_id.is_empty():
+		_set_current_replay_battle(battle_id)
+	spectate_state_received.emit(payload)
+
+@rpc("authority", "call_remote", "reliable", NetworkConfig.CH_BULK)
+func _rpc_spectate_view(view: Dictionary) -> void:
+	spectate_view = view.duplicate(true)
+	spectate_view_received.emit(view)
+
+@rpc("authority", "call_remote", "reliable", NetworkConfig.CH_BULK)
+func _rpc_spectate_match_states(battle_id: String, states: Dictionary) -> void:
+	# 只留本场（结算阶段一场一份）。
+	spectate_match_states = {battle_id: states.duplicate(true)}
+	spectate_match_states_received.emit(battle_id, states)
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_spectate_chat(sid: int, identity: Dictionary, phrase_id: int, text: String) -> void:
+	# 收到的一样要校验（同 _rpc_team_chat_text）。
+	if phrase_id >= 0:
+		if not ChatPhrases.is_valid_id(phrase_id):
+			return
+		spectate_chat_received.emit(sid, identity, phrase_id, "")
+		_log_spectate_chat(sid, identity, phrase_id, "")
+		return
+	var clean := ChatText.clean(text)
+	if not clean.is_empty():
+		spectate_chat_received.emit(sid, identity, -1, clean)
+		_log_spectate_chat(sid, identity, -1, clean)
+
+# 观战者之间的聊天也进同一份聊天记录（大厅聊天框、翻记录都读它），带 spectator 标记。
+func _log_spectate_chat(sid: int, identity: Dictionary, phrase_id: int, text: String) -> void:
+	var guest_name := "Spectator" if LocaleManager.get_locale() == "en" else "观战者"
+	var name := str(identity.get("player_name", ""))
+	room_chat_log.add(spectate_room_id, {
+		"slot": -1, "who": "spec:%d" % sid, "name": name if not name.is_empty() else guest_name,
+		"mine": sid == spectate_sid, "enemy": false, "team_only": false, "spectator": true,
+		"phrase_id": maxi(phrase_id, 0), "text": text, "round": _chat_log_round(),
+	})
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_spectate_ended(reason: String) -> void:
+	_spectate_reset()
+	spectate_ended.emit(reason)
+
 # --- 房间 / 对局聊天记录（2026-09-27）-------------------------------------------------
 #
 # 上面两个信号每收到一条就记进 room_chat_log（见 RoomChatLog.gd 顶部）。界面**只听记录的
@@ -3113,6 +3620,11 @@ func _log_team_voice(slot: int, clip: Dictionary, team_only: bool) -> void:
 
 func _log_team_chat(slot: int, phrase_id: int, text: String, team_only: bool,
 		voice: Dictionary = {}) -> void:
+	# 观战者收到的选手聊天（服务器只转全体聊天）：没有座位、没有「己方」，按观战状态里的座位身份记。
+	if spectating:
+		room_chat_log.add(spectate_room_id, RoomChatLog.make_entry(slot, phrase_id, text, false, -1,
+			spectate_state.get("seat_profiles", {}), {}, _chat_log_round(), LocaleManager.get_locale() == "en", voice))
+		return
 	room_chat_log.add(team_room_id, RoomChatLog.make_entry(slot, phrase_id, text, team_only,
 		team_local_slot, team_seat_profiles, AccountManager.profile, _chat_log_round(),
 		LocaleManager.get_locale() == "en", voice))
@@ -4273,6 +4785,12 @@ func _room_publish_replays(room: Dictionary, job: RefCounted) -> void:
 				packed_a if slot < 3 else packed_b, packed_b if slot < 3 else packed_a)
 		_net_log("match_state/replay sent room=%d round=%d peer=%d slot=%d" % [
 			job.room_id, job.round_index, int(peer_id), slot])
+	# 观战：这一场打完、回放已经发给选手，阵容这时才算「公开」。冻结下来，
+	# 整个下一回合备战期观战者看的都是这一份（延迟一回合，见 SpectatorService 顶部）。
+	SpectatorService.freeze_view(room, int(job.round_index), str(room.get("battle_id", "")),
+		room.get("battle_loadouts", {}))
+	for peer_id in SpectatorService.peers(room):
+		_spectate_send_round(room, peer_id)
 	room.boards = {}
 
 # 影子审计：只记录、不拦截。上线前必须先知道自己的误判率——直接开拦截会把
@@ -5097,6 +5615,8 @@ func reset_peer_only() -> void:
 	_replay_transfer.retain_inflight_battle("")
 
 func reset() -> void:
+	_spectate_reset()
+	team_room_spectators = {}
 	_match_check_generation += 1
 	_match_check_busy = false
 	_match_check_id = ""
@@ -5385,7 +5905,7 @@ func _rpc_team_room_list_request() -> void:
 	var sender := multiplayer.get_remote_sender_id()
 	if not _rate_ok(sender, "room_list"):
 		return
-	_rpc_team_room_list.rpc_id(sender, _public_room_list())
+	_rpc_team_room_list.rpc_id(sender, _room_list_with_spectate())
 
 @rpc("any_peer", "call_remote", "reliable")
 func _rpc_team_create_room(public_id: String = "", card: String = "") -> void:
@@ -5827,6 +6347,16 @@ func _reap_zombie_peers() -> void:
 		# ENet heartbeat disconnects can omit peer_disconnected. This sweep must
 		# preserve exactly the same recovery rights as the normal callback.
 		_room_reserve_peer(room, pid)
+	# 观战者的僵尸连接同理：不清的话会一直占着 10 个观战位中的一个。
+	for peer_key in _peer_spectate.keys():
+		var spid := int(peer_key)
+		if _peer_connected(spid):
+			continue
+		_net_log("zombie spectator reaped peer=%d" % spid)
+		_peer_last_ping.erase(spid)
+		_peer_connected_at.erase(spid)
+		_rate_forget(spid)
+		_spectate_detach(spid)
 
 # 战斗收集阶段看门狗：某 player 槽超时没交棋盘（客户端卡死/重连落备战/半开连接
 # 等任何原因），有缓存棋盘就代交、没有就转 AI——保证一个人永远卡不住整个房间。
@@ -6050,6 +6580,10 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 	var payload: Dictionary = envelope.get("payload", {}) as Dictionary
 	if payload.is_empty():
 		return
+	# 观战者坐下了（大厅点空位）：从这一份起就是选手。先清掉观战身份 —— 观战时借用的座位号、
+	# 房间号要让位给下面这份真正的座位状态。
+	if spectating:
+		_spectate_reset()
 	# 判定在 MatchStateService。它刻意与"提交"分开：下面还有别的检查
 	# （重连期间不许覆盖手里的 token），那些失败时不能把已应用位置往前推。
 	if not _match_state.should_apply(epoch, seq):
@@ -6095,6 +6629,9 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 		if str(payload.get("phase", "")) == ROOM_PREP:
 			GameState.team_hp = incoming_team_hp
 	team_seat_profiles = (payload.get("seat_profiles", {}) as Dictionary).duplicate(true)
+	# 观战列表（协议 44）：大厅左侧那一栏。只有公开身份，选手和观战者看到的是同一份。
+	team_room_spectators = {"spectators": (payload.get("spectators", []) as Array).duplicate(true),
+		"spectate_open": bool(payload.get("spectate_open", true)), "spectate_max": int(payload.get("spectate_max", 10))}
 	team_ready = (payload.get("ready", []) as Array).duplicate()
 	server_round_index = int(payload.get("round_id", 0))
 	server_phase = str(payload.get("phase", ""))
@@ -6334,6 +6871,8 @@ func _on_peer_disconnected(id: int) -> void:
 	var short_token := str(_peer_public_token.get(id, ""))
 	if not short_token.is_empty():
 		_peer_public_token.erase(id)
+	# 观战者没有座位可保留：掉线就是离开，客户端重进观战即可（服务器重启同理）。
+	_spectate_detach(id)
 	if team_active:
 		if _dedicated_server:
 			var room := _room_for_peer(id)
@@ -6545,6 +7084,9 @@ func _assign_peer_to_room(peer_id: int, room: Dictionary = {}, public_id: String
 	if slot < 0:
 		_rpc_team_action_failed.rpc_id(peer_id, "room_full")
 		return
+	# 观战者坐下（大厅阶段点空位，走的就是普通的加入房间）：先离开观战席，
+	# 同一条连接不能既是观战者又是选手 —— 否则他会同时收到两份状态、还占着一个观战位。
+	_spectate_detach(peer_id)
 	var states: Array = room.get("slot_states", [])
 	var ready: Array = room.get("ready", [])
 	var peer_slot: Dictionary = room.get("peer_slot", {})
@@ -7788,7 +8330,20 @@ func _rpc_public_token_created(token_id: String) -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func _rpc_team_room_list(rooms: Array) -> void:
-	team_room_list_received.emit(rooms)
+	# 同一份列表里混着两类房间（协议 44）：能坐下的、只能观战的（满员 / 已开局）。
+	# 原来的信号只给能坐下的，形状与以前完全一样 —— 现有房间列表界面一行不用改；
+	# 只能观战的走新信号，由观战入口去接。
+	var joinable: Array = []
+	var spectate_only: Array = []
+	for entry in rooms:
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		if bool((entry as Dictionary).get("joinable", true)):
+			joinable.append(entry)
+		else:
+			spectate_only.append(entry)
+	team_room_list_received.emit(joinable)
+	spectate_room_list_received.emit(spectate_only)
 
 @rpc("authority", "call_remote", "reliable")
 func _rpc_team_action_failed(reason: String) -> void:

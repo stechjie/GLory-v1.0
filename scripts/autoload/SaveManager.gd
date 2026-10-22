@@ -247,6 +247,10 @@ func clear_public_token() -> void:
 func save_run() -> void:
 	if GameState.tutorial_mode:
 		return
+	# 观战（协议 44）：观战时 GameState 里装的是**被看的那位选手**的阵容（显示用），
+	# 写进去就成了观战者自己的存档。观战期间一律不写。
+	if NetworkService.spectating:
+		return
 	if _save_pending:
 		return
 	_save_pending = true
@@ -262,6 +266,9 @@ func _flush_pending_save() -> void:
 	if not _save_pending:
 		return
 	_save_pending = false
+	# 观战开始前排上的那次写盘，落地时 GameState 可能已经换成别人的阵容了（同 save_run 的守卫）。
+	if NetworkService.spectating:
+		return
 	_write_now()
 
 func _write_now() -> void:

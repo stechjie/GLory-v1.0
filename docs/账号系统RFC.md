@@ -176,6 +176,11 @@ player_mercenaries / player_treasures / player_rank / match_players
 玩家之后要绑邮箱时，Supabase 的匿名用户可**原地升级**成正式账号且 auth uid 不变，
 所以 `player_identities` 连新增一行都不用，进度天然延续。
 
+> **2026-10-22 修订：Google / Apple 也是这样做的**（`docs/三方登录设计.md`）。
+> 它们原地挂在同一个 Supabase 用户上，以 Supabase 为准，**不往 `player_identities` 抄 `('google', …)` 行**
+> —— 两处记同一件事，迟早对不上。`player_identities` 里的 `google` / `apple` 两个取值因此用不上；
+> 它留给 Supabase 不认识的登录方式，也就是第二期的 Steam。上面表格里 `google` 那一行是早期设想。
+
 ### `player_id` 不是什么
 
 - 不是 `SessionContext.session_token` —— 那是一局一换的重连凭证，不是身份
