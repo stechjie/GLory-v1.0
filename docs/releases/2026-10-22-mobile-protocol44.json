@@ -1,0 +1,54 @@
+{
+  "source_commit": "ff63737c48ec604131af55a070f6c9fecdedac5b",
+  "version": "0.0.28",
+  "battle_protocol": 44,
+  "base_id": "glory-20261022-protocol44-slim",
+  "android": {
+    "version_code": 41,
+    "bytes": 575604256,
+    "sha256": "77c2ec78594c0ab241c52609cd901ff6542712495f2a91097b8f940380626283",
+    "base_sha256": "7cacfd749bb2ea35afc29e69fca3fb7548124ab4ed0d08df791b06cc5a3198c3",
+    "drive_file_id": "19qnP6WQXTYhl43G5BFHFY7gpRPaPbJAk",
+    "drive_new_revision_uploaded": true,
+    "server_download_sha256_verified": true
+  },
+  "ios": {
+    "build_number": 64,
+    "bytes": 569339212,
+    "sha256": "f9d40b718a8f106b6849ec1f387cf0705a398b4d8780fcb8594a2fb4bd146144",
+    "base_sha256": "6026a217533afa6bcc8bf572910a8515ab4cb58c47d7c9d580bb6a4c52443de6",
+    "delivery": "Transporter delivered 2026-10-22 20:49 Asia/Shanghai",
+    "testflight_build_id": "627b14a0-3316-4363-b5d7-168226492020",
+    "internal_test_group_id": "90dd8f53-b157-49c4-b899-8da72091b76a",
+    "internal_test_group_members": 10,
+    "internal_state": "IN_BETA_TESTING",
+    "external_test_group_id": "77fbf129-88aa-4489-98a0-658698cd4fcf",
+    "external_state": "WAITING_FOR_REVIEW",
+    "auto_notify_testers": true
+  },
+  "server": {
+    "already_current": true,
+    "restarted_this_delivery": false,
+    "release": "/home/nins17121/Glory/releases/glory_server_p44-1022-1031",
+    "runtime_files_compared": 671,
+    "runtime_differences": 0,
+    "backend_difference": "Only patch route diagnostic logging differs; preserve live code",
+    "services": [
+      "glory-server:active",
+      "glory-backend:active",
+      "caddy:active"
+    ],
+    "health": "ok",
+    "client_baselines_registered": true,
+    "includes_patch_seq": 4
+  },
+  "verification": {
+    "resource_sync": "success; 3441 files; no downloads needed; zero errors",
+    "signatures": true,
+    "payload_matches_baselines": true,
+    "backend_tests_passed": 43,
+    "site_tests_passed": 7,
+    "public_site": "Release configuration staged; see delivery evidence for public readback"
+  },
+  "device_gameplay_tested": false
+}

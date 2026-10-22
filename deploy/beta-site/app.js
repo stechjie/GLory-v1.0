@@ -51,7 +51,7 @@ async function start() {
     enable('android-link', d.android, config.android?.mode === 'apk' ? t.apkButton : t.androidButton);
     byId('ios-version').textContent = config.ios?.version ? `${t.version} ${config.ios.version}` : '';
     byId('ios-release-status').hidden = config.ios?.ready === true && !config.ios?.pending_version;
-    byId('ios-release-status').textContent = config.ios?.pending_version ? `${t.iosReviewPending} ${config.ios.pending_version}` : t.iosAvailability;
+    byId('ios-release-status').textContent = config.ios?.ready === true && config.ios?.pending_version ? `${t.iosReviewPending} ${config.ios.pending_version}` : t.iosAvailability;
     const a = config.android || {};
     byId('android-version').textContent = [a.version ? `${t.version} ${a.version}` : '', a.size_label || ''].filter(Boolean).join(' · ');
     byId('android-release-status').hidden = config.android?.ready === true;
