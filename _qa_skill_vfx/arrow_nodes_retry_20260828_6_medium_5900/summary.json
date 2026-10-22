@@ -1,0 +1,950 @@
+{
+  "battle_result": {
+    "bonus_gold": 0,
+    "elapsed": 27.3000000000001,
+    "element_damage_by_slot": {
+      "4": 2423
+    },
+    "enemy_alive": 3,
+    "enemy_hp_current": 5304,
+    "enemy_hp_max": 38880,
+    "enemy_kill_gold": 650,
+    "enemy_kills": [
+      {
+        "killer": "dark_scythe",
+        "reward": 80,
+        "victim": "merc_sagittarius_rain"
+      },
+      {
+        "killer": "dark_scythe",
+        "reward": 50,
+        "victim": "human_mage"
+      },
+      {
+        "killer": "undead_spike",
+        "reward": 50,
+        "victim": "god_guard"
+      },
+      {
+        "killer": "dark_dragon",
+        "reward": 60,
+        "victim": "human_king"
+      },
+      {
+        "killer": "dark_dragon",
+        "reward": 50,
+        "victim": "human_archer"
+      },
+      {
+        "killer": "dark_doom",
+        "reward": 50,
+        "victim": "god_aurora"
+      },
+      {
+        "killer": "undead_fly",
+        "reward": 50,
+        "victim": "human_cleric"
+      },
+      {
+        "killer": "dark_mage",
+        "reward": 50,
+        "victim": "human_swordsman"
+      },
+      {
+        "killer": "undead_fly",
+        "reward": 60,
+        "victim": "god_archangel"
+      },
+      {
+        "killer": "dark_dragon",
+        "reward": 50,
+        "victim": "god_arbiter"
+      },
+      {
+        "killer": "dark_doom",
+        "reward": 40,
+        "victim": "god_priestess"
+      },
+      {
+        "killer": "undead_titan",
+        "reward": 60,
+        "victim": "god_king"
+      }
+    ],
+    "enemy_power": 7626.0,
+    "is_draw": false,
+    "kill_gold_by_slot": {
+      "0": 100,
+      "1": 325,
+      "2": 25,
+      "3": 315,
+      "4": 125,
+      "5": 210
+    },
+    "kind": "pvp",
+    "king_outcomes": [],
+    "log": [
+      "3v3 PVP：我方 13 个单位，敌方 12 个单位。",
+      "光之卫士：开战护盾与周围嘲讽已生效。",
+      "末日守卫 连接并策反 民兵。",
+      "击杀：神王 > 自爆灵，奖励 50 金。",
+      "击杀：光之卫士 > 毒灵，奖励 40 金。",
+      "击杀：偷袭者 > 星轨猎人，奖励 80 金。",
+      "击杀：偷袭者 > 法师，奖励 50 金。",
+      "击杀：刺灵 > 光之卫士，奖励 50 金。",
+      "击杀：黑龙 > 人王，奖励 60 金。",
+      "击杀：黑龙 > 弓箭手，奖励 50 金。",
+      "击杀：末日守卫 > 极光射手，奖励 50 金。",
+      "击杀：裁决者 > 刺灵，奖励 50 金。",
+      "击杀：飞灵 > 牧师，奖励 50 金。",
+      "击杀：暗影法师 > 剑士，奖励 50 金。",
+      "击杀：裁决者 > 母灵，奖励 60 金。",
+      "击杀：神王 > 魅魔，奖励 50 金。",
+      "击杀：裁决者 > 偷袭者，奖励 50 金。",
+      "击杀：飞灵 > 大天使，奖励 60 金。",
+      "击杀：黑龙 > 裁决者，奖励 50 金。",
+      "击杀：神王 > 飞灵，奖励 50 金。",
+      "击杀：神王 > 黑龙，奖励 60 金。",
+      "击杀：神王 > 暗影法师，奖励 40 金。",
+      "击杀：末日守卫 > 大祭司，奖励 40 金。",
+      "击杀：巨甲灵 > 神王，奖励 60 金。"
+    ],
+    "player_alive": 0,
+    "player_hp_current": 0,
+    "player_hp_max": 37366,
+    "player_kill_gold": 450,
+    "player_kills": [
+      {
+        "killer": "god_king",
+        "reward": 50,
+        "victim": "undead_bomb"
+      },
+      {
+        "killer": "god_guard",
+        "reward": 40,
+        "victim": "undead_poison"
+      },
+      {
+        "killer": "god_arbiter",
+        "reward": 50,
+        "victim": "undead_spike"
+      },
+      {
+        "killer": "god_arbiter",
+        "reward": 60,
+        "victim": "undead_mother"
+      },
+      {
+        "killer": "god_king",
+        "reward": 50,
+        "victim": "dark_suc"
+      },
+      {
+        "killer": "god_arbiter",
+        "reward": 50,
+        "victim": "dark_scythe"
+      },
+      {
+        "killer": "god_king",
+        "reward": 50,
+        "victim": "undead_fly"
+      },
+      {
+        "killer": "god_king",
+        "reward": 60,
+        "victim": "dark_dragon"
+      },
+      {
+        "killer": "god_king",
+        "reward": 40,
+        "victim": "dark_mage"
+      }
+    ],
+    "player_power": 0.0,
+    "player_wins": false,
+    "reason": "wipeout",
+    "team_heal_ally": 0,
+    "team_heal_rival": 0,
+    "unit_stats": {
+      "enemy_L0_0": {
+        "buffs": {},
+        "damage_dealt": 8008,
+        "damage_taken": 5400,
+        "debuffs": {
+          "stun": 10.0
+        },
+        "group": "enemy",
+        "healing_done": 0,
+        "id": "dark_dragon",
+        "is_mercenary": false,
+        "king_growth_stacks": 0,
+        "lane": 0,
+        "name": "黑龙",
+        "name_en": "Blackwyrm",
+        "owner_slot": 3,
+        "position": "棋盘1",
+        "skill_stacks": 0,
+        "slot": 0,
+        "star": 3,
+        "team": "enemy"
+      },
+      "enemy_L0_1": {
+        "buffs": {},
+        "damage_dealt": 1307,
+        "damage_taken": 2580,
+        "debuffs": {
+          "stun": 4.5
+        },
+        "group": "enemy",
+        "healing_done": 0,
+        "id": "dark_suc",
+        "is_mercenary": false,
+        "king_growth_stacks": 0,
+        "lane": 0,
+        "name": "魅魔",
+        "name_en": "Succubus",
+        "owner_slot": 3,
+        "position": "棋盘2",
+        "skill_stacks": 0,
+        "slot": 1,
+        "star": 3,
+        "team": "enemy"
+      },
+      "enemy_L0_2": {
+        "buffs": {},
+        "damage_dealt": 4177,
+        "damage_taken": 2340,
+        "debuffs": {},
+        "group": "enemy",
+        "healing_done": 0,
+        "id": "dark_scythe",
+        "is_mercenary": false,
+        "king_growth_stacks": 0,
+        "lane": 0,
+        "name": "偷袭者",
+        "name_en": "Ambusher",
+        "owner_slot": 3,
+        "position": "棋盘3",
+        "skill_stacks": 0,
+        "slot": 2,
+        "star": 3,
+        "team": "enemy"
+      },
+      "enemy_L0_3": {
+        "buffs": {},
+        "damage_dealt": 3111,
+        "damage_taken": 1560,
+        "debuffs": {
+          "silence": 15.0
+        },
+        "group": "enemy",
+        "healing_done": 0,
+        "id": "dark_mage",
+        "is_mercenary": false,
+        "king_growth_stacks": 0,
+        "lane": 0,
+        "name": "暗影法师",
+        "name_en": "Hexmage",
+        "owner_slot": 3,
+        "position": "棋盘4",
+        "skill_stacks": 0,
+        "slot": 3,
+        "star": 3,
+        "team": "enemy"
+      },
+      "enemy_L1_0": {
+        "buffs": {},
+        "damage_dealt": 2350,
+        "damage_taken": 4800,
+        "debuffs": {},
+        "group": "enemy",
+        "healing_done": 0,
+        "id": "undead_mother",
+        "is_mercenary": false,
+        "king_growth_stacks": 0,
+        "lane": 1,
+        "name": "母灵",
+        "name_en": "Matron",
+        "owner_slot": 4,
+        "position": "棋盘1",
+        "skill_stacks": 0,
+        "slot": 0,
+        "star": 3,
+        "team": "enemy"
+      },
+      "enemy_L1_1": {
+        "buffs": {},
+        "damage_dealt": 1515,
+        "damage_taken": 2400,
+        "debuffs": {
+          "defense_down": 18.0
+        },
+        "group": "enemy",
+        "healing_done": 0,
+        "id": "undead_spike",
+        "is_mercenary": false,
+        "king_growth_stacks": 0,
+        "lane": 1,
+        "name": "刺灵",
+        "name_en": "Spike Wisp",
+        "owner_slot": 4,
+        "position": "棋盘2",
+        "skill_stacks": 0,
+        "slot": 1,
+        "star": 3,
+        "team": "enemy"
+      },
+      "enemy_L1_2": {
+        "buffs": {},
+        "damage_dealt": 287,
+        "damage_taken": 1800,
+        "debuffs": {},
+        "group": "enemy",
+        "healing_done": 0,
+        "id": "undead_bomb",
+        "is_mercenary": false,
+        "king_growth_stacks": 0,
+        "lane": 1,
+        "name": "自爆灵",
+        "name_en": "Bomb Wisp",
+        "owner_slot": 4,
+        "position": "棋盘3",
+        "skill_stacks": 0,
+        "slot": 2,
+        "star": 3,
+        "team": "enemy"
+      },
+      "enemy_L1_3": {
+        "buffs": {},
+        "damage_dealt": 1286,
+        "damage_taken": 1980,
+        "debuffs": {
+          "poison": 6.9
+        },
+        "group": "enemy",
+        "healing_done": 0,
+        "id": "undead_poison",
+        "is_mercenary": false,
+        "king_growth_stacks": 0,
+        "lane": 1,
+        "name": "毒灵",
+        "name_en": "Venom",
+        "owner_slot": 4,
+        "position": "棋盘4",
+        "skill_stacks": 0,
+        "slot": 3,
+        "star": 3,
+        "team": "enemy"
+      },
+      "enemy_L2_0": {
+        "buffs": {},
+        "damage_dealt": 3031,
+        "damage_taken": 3175,
+        "debuffs": {},
+        "group": "enemy",
+        "healing_done": 0,
+        "id": "dark_doom",
+        "is_mercenary": false,
+        "king_growth_stacks": 0,
+        "lane": 2,
+        "name": "末日守卫",
+        "name_en": "Doom Guard",
+        "owner_slot": 5,
+        "position": "棋盘1",
+        "skill_stacks": 0,
+        "slot": 0,
+        "star": 3,
+        "team": "enemy"
+      },
+      "enemy_L2_1": {
+        "buffs": {},
+        "damage_dealt": 1481,
+        "damage_taken": 1219,
+        "debuffs": {
+          "fear": 10.0
+        },
+        "group": "enemy",
+        "healing_done": 0,
+        "id": "dark_fear",
+        "is_mercenary": false,
+        "king_growth_stacks": 0,
+        "lane": 2,
+        "name": "恐惧魔",
+        "name_en": "Fear Demon",
+        "owner_slot": 5,
+        "position": "棋盘2",
+        "skill_stacks": 0,
+        "slot": 1,
+        "star": 3,
+        "team": "enemy"
+      },
+      "enemy_L2_2": {
+        "buffs": {},
+        "damage_dealt": 3238,
+        "damage_taken": 2242,
+        "debuffs": {
+          "poison": 22.4
+        },
+        "group": "enemy",
+        "healing_done": 0,
+        "id": "undead_titan",
+        "is_mercenary": false,
+        "king_growth_stacks": 0,
+        "lane": 2,
+        "name": "巨甲灵",
+        "name_en": "Titan Wisp",
+        "owner_slot": 5,
+        "position": "棋盘3",
+        "skill_stacks": 10,
+        "slot": 2,
+        "star": 3,
+        "team": "enemy"
+      },
+      "enemy_L2_3": {
+        "buffs": {},
+        "damage_dealt": 6395,
+        "damage_taken": 2280,
+        "debuffs": {
+          "poison": 43.0
+        },
+        "group": "enemy",
+        "healing_done": 0,
+        "id": "undead_fly",
+        "is_mercenary": false,
+        "king_growth_stacks": 0,
+        "lane": 2,
+        "name": "飞灵",
+        "name_en": "Fly Wisp",
+        "owner_slot": 5,
+        "position": "棋盘4",
+        "skill_stacks": 0,
+        "slot": 3,
+        "star": 3,
+        "team": "enemy"
+      },
+      "player_L0_0": {
+        "buffs": {},
+        "damage_dealt": 700,
+        "damage_taken": 2160,
+        "debuffs": {},
+        "group": "player",
+        "healing_done": 0,
+        "id": "human_king",
+        "is_mercenary": false,
+        "king_growth_stacks": 0,
+        "lane": 0,
+        "name": "人王",
+        "name_en": "Human King",
+        "owner_slot": 0,
+        "position": "棋盘1",
+        "skill_stacks": 0,
+        "slot": 0,
+        "star": 3,
+        "team": "player"
+      },
+      "player_L0_1": {
+        "buffs": {},
+        "damage_dealt": 1331,
+        "damage_taken": 3360,
+        "debuffs": {
+          "stun": 3.0
+        },
+        "group": "player",
+        "healing_done": 0,
+        "id": "human_swordsman",
+        "is_mercenary": false,
+        "king_growth_stacks": 0,
+        "lane": 0,
+        "name": "剑士",
+        "name_en": "Swordsman",
+        "owner_slot": 0,
+        "position": "棋盘2",
+        "skill_stacks": 0,
+        "slot": 1,
+        "star": 3,
+        "team": "player"
+      },
+      "player_L0_2": {
+        "buffs": {},
+        "damage_dealt": 2157,
+        "damage_taken": 2280,
+        "debuffs": {},
+        "group": "player",
+        "healing_done": 0,
+        "id": "human_archer",
+        "is_mercenary": false,
+        "king_growth_stacks": 0,
+        "lane": 0,
+        "name": "弓箭手",
+        "name_en": "Archer",
+        "owner_slot": 0,
+        "position": "棋盘3",
+        "skill_stacks": 0,
+        "slot": 2,
+        "star": 3,
+        "team": "player"
+      },
+      "player_L0_3": {
+        "buffs": {},
+        "damage_dealt": 1710,
+        "damage_taken": 2160,
+        "debuffs": {
+          "ice_affected": 1.5,
+          "interrupt": 1.0,
+          "poison": 4.0,
+          "slow": 1.5
+        },
+        "group": "player",
+        "healing_done": 0,
+        "id": "human_mage",
+        "is_mercenary": false,
+        "king_growth_stacks": 0,
+        "lane": 0,
+        "name": "法师",
+        "name_en": "Mage",
+        "owner_slot": 0,
+        "position": "棋盘4",
+        "skill_stacks": 0,
+        "slot": 3,
+        "star": 3,
+        "team": "player"
+      },
+      "player_L0_merc0": {
+        "buffs": {},
+        "damage_dealt": 883,
+        "damage_taken": 1666,
+        "debuffs": {},
+        "group": "player",
+        "healing_done": 0,
+        "id": "merc_sagittarius_rain",
+        "is_mercenary": true,
+        "king_growth_stacks": 0,
+        "lane": 0,
+        "name": "星轨猎人",
+        "name_en": "Star Hunter",
+        "owner_slot": 0,
+        "position": "我方佣兵1",
+        "skill_stacks": 0,
+        "slot": 16,
+        "star": 1,
+        "team": "player"
+      },
+      "player_L1_0": {
+        "buffs": {},
+        "damage_dealt": 11115,
+        "damage_taken": 5400,
+        "debuffs": {},
+        "group": "player",
+        "healing_done": 0,
+        "id": "god_king",
+        "is_mercenary": false,
+        "king_growth_stacks": 0,
+        "lane": 1,
+        "name": "神王",
+        "name_en": "God King",
+        "owner_slot": 1,
+        "position": "棋盘1",
+        "skill_stacks": 0,
+        "slot": 0,
+        "star": 3,
+        "team": "player"
+      },
+      "player_L1_1": {
+        "buffs": {},
+        "damage_dealt": 687,
+        "damage_taken": 4560,
+        "debuffs": {},
+        "group": "player",
+        "healing_done": 0,
+        "id": "god_guard",
+        "is_mercenary": false,
+        "king_growth_stacks": 0,
+        "lane": 1,
+        "name": "光之卫士",
+        "name_en": "Lightguard",
+        "owner_slot": 1,
+        "position": "棋盘2",
+        "skill_stacks": 0,
+        "slot": 1,
+        "star": 3,
+        "team": "player"
+      },
+      "player_L1_2": {
+        "buffs": {},
+        "damage_dealt": 5764,
+        "damage_taken": 3120,
+        "debuffs": {},
+        "group": "player",
+        "healing_done": 0,
+        "id": "god_arbiter",
+        "is_mercenary": false,
+        "king_growth_stacks": 0,
+        "lane": 1,
+        "name": "裁决者",
+        "name_en": "Arbiter",
+        "owner_slot": 1,
+        "position": "棋盘3",
+        "skill_stacks": 5,
+        "slot": 2,
+        "star": 3,
+        "team": "player"
+      },
+      "player_L1_3": {
+        "buffs": {},
+        "damage_dealt": 1287,
+        "damage_taken": 1800,
+        "debuffs": {},
+        "group": "player",
+        "healing_done": 0,
+        "id": "god_priestess",
+        "is_mercenary": false,
+        "king_growth_stacks": 0,
+        "lane": 1,
+        "name": "大祭司",
+        "name_en": "Priestess",
+        "owner_slot": 1,
+        "position": "棋盘4",
+        "skill_stacks": 0,
+        "slot": 3,
+        "star": 3,
+        "team": "player"
+      },
+      "player_L2_0": {
+        "buffs": {
+          "damage_reduction": 24.0
+        },
+        "damage_dealt": 2523,
+        "damage_taken": 6120,
+        "debuffs": {},
+        "group": "player",
+        "healing_done": 0,
+        "id": "god_archangel",
+        "is_mercenary": false,
+        "king_growth_stacks": 0,
+        "lane": 2,
+        "name": "大天使",
+        "name_en": "Archangel",
+        "owner_slot": 2,
+        "position": "棋盘1",
+        "skill_stacks": 0,
+        "slot": 0,
+        "star": 3,
+        "team": "player"
+      },
+      "player_L2_1": {
+        "buffs": {},
+        "damage_dealt": 713,
+        "damage_taken": 1800,
+        "debuffs": {
+          "interrupt": 2.0
+        },
+        "group": "player",
+        "healing_done": 0,
+        "id": "human_militia",
+        "is_mercenary": false,
+        "king_growth_stacks": 0,
+        "lane": 2,
+        "name": "民兵",
+        "name_en": "Militia",
+        "owner_slot": 2,
+        "position": "棋盘2",
+        "skill_stacks": 0,
+        "slot": 1,
+        "star": 3,
+        "team": "player"
+      },
+      "player_L2_2": {
+        "buffs": {},
+        "damage_dealt": 1900,
+        "damage_taken": 2376,
+        "debuffs": {},
+        "group": "player",
+        "healing_done": 0,
+        "id": "god_aurora",
+        "is_mercenary": false,
+        "king_growth_stacks": 0,
+        "lane": 2,
+        "name": "极光射手",
+        "name_en": "Aurora",
+        "owner_slot": 2,
+        "position": "棋盘3",
+        "skill_stacks": 0,
+        "slot": 2,
+        "star": 3,
+        "team": "player"
+      },
+      "player_L2_3": {
+        "buffs": {},
+        "damage_dealt": 1719,
+        "damage_taken": 4320,
+        "debuffs": {},
+        "group": "player",
+        "healing_done": 1956,
+        "id": "human_cleric",
+        "is_mercenary": false,
+        "king_growth_stacks": 0,
+        "lane": 2,
+        "name": "牧师",
+        "name_en": "Cleric",
+        "owner_slot": 2,
+        "position": "棋盘4",
+        "skill_stacks": 0,
+        "slot": 3,
+        "star": 3,
+        "team": "player"
+      }
+    }
+  },
+  "director_receipt_keys": 1178,
+  "focus": {
+    "first_dead_tick": 56,
+    "first_seen_tick": 0,
+    "first_skill_ready": 3.0,
+    "rise_recorded_targets": [
+      {
+        "target_uids": "enemy_L0_2,enemy_L0_0,enemy_L0_1,enemy_L0_3",
+        "tick": 30
+      }
+    ],
+    "rise_ticks": [
+      30
+    ],
+    "skill_id": "arrow_rain",
+    "skill_ready_rises": 1,
+    "source_uid": "player_L0_merc0",
+    "unit_id": "merc_sagittarius_rain"
+  },
+  "focus_vfx_nodes": [
+    {
+      "impacts": 0,
+      "replay_frame": 25,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 26,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 27,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 28,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 29,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 30,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 31,
+      "shafts": 1
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 32,
+      "shafts": 1
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 33,
+      "shafts": 1
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 34,
+      "shafts": 1
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 35,
+      "shafts": 1
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 36,
+      "shafts": 1
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 37,
+      "shafts": 1
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 38,
+      "shafts": 1
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 39,
+      "shafts": 1
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 40,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 41,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 42,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 43,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 44,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 45,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 46,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 47,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 48,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 49,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 50,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 51,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 52,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 53,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 54,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 55,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 56,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 57,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 58,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 59,
+      "shafts": 0
+    },
+    {
+      "impacts": 0,
+      "replay_frame": 60,
+      "shafts": 0
+    }
+  ],
+  "frames_over_100ms": 3,
+  "frames_over_50ms": 3,
+  "headless": false,
+  "label": "arrow_nodes_retry",
+  "limits": [
+    "Director started/completed does not prove a pixel was visible.",
+    "skill_ready rise is a candidate, not a successful cast.",
+    "Spawned scene nodes do not prove a visible pixel or distinguish overdraw.",
+    "Desktop and headless frame times are not Android device performance."
+  ],
+  "max_wall_ms": 394.419,
+  "mercenary_id": "merc_sagittarius_rain",
+  "p50_wall_ms": 8.38,
+  "p95_wall_ms": 10.798,
+  "p99_wall_ms": 12.597,
+  "quality_tier": "MEDIUM",
+  "replay_frames": 274,
+  "replay_payload_sha256": "51f8632a3f703c9f1c387777318b95409895784be2831b1003e0ca9372ec5c9f",
+  "replay_simulation_sha256": "0fd62ea1ba85fad89bdf61033e90277e51f76f50ad8e8356b2cc624aee8784bd",
+  "round": 6,
+  "sampled_frames": 3983,
+  "screenshots": [
+    {
+      "actual_replay_frame": 32,
+      "path": "C:/Users/Leno/Desktop/Beta 0.04/_qa_skill_vfx/arrow_nodes_retry_20260828_6_medium_5900/frame_032.png",
+      "requested_replay_frame": 32,
+      "status": 0
+    },
+    {
+      "actual_replay_frame": 35,
+      "path": "C:/Users/Leno/Desktop/Beta 0.04/_qa_skill_vfx/arrow_nodes_retry_20260828_6_medium_5900/frame_035.png",
+      "requested_replay_frame": 35,
+      "status": 0
+    },
+    {
+      "actual_replay_frame": 40,
+      "path": "C:/Users/Leno/Desktop/Beta 0.04/_qa_skill_vfx/arrow_nodes_retry_20260828_6_medium_5900/frame_040.png",
+      "requested_replay_frame": 40,
+      "status": 0
+    }
+  ],
+  "seed": 20260828,
+  "setup_ms": 17762,
+  "skill_cast_events": 0,
+  "skill_ready_rise_candidates_not_proven_casts": 60,
+  "status": "ok",
+  "tracked_replay_events": 746,
+  "unit_skill_proc_events": 2,
+  "warnings": [
+    "compute_ms=516.45 (excluded from playback frame samples)"
+  ]
+}

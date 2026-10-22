@@ -17,6 +17,9 @@
 # 原始帧由 promo_encode.ps1 删掉，除非传 -KeepFrames。
 
 param(
+    # 阵容版本，见 trailer_capture.gd 的 VARIANTS：god = 极光射手版，dark = 暗族版。
+    [ValidateSet("god", "dark")]
+    [string]$Variant = "god",
     [int]$Fps = 60,
     # --quit-after 的安全上限。编排约 55 秒，模型预热和收尾需另留余量。
     # 前导帧会按 manifest 的 start_frame 裁掉。
@@ -94,7 +97,8 @@ if ($Smoke) {
 }
 
 $orientation = if ($Vertical) { "vertical" } else { "landscape" }
-$takeName = "trailer_waves_$orientation"
+# 神族版保持原来的文件名（已经发出去的片子都叫这个），其余版本带上版本名。
+$takeName = if ($Variant -eq "god") { "trailer_waves_$orientation" } else { "trailer_${Variant}_$orientation" }
 if ($Smoke) { $takeName = "smoke_$takeName" }
 if ($Realtime) { $takeName = "realtime_$takeName" }
 
@@ -108,6 +112,7 @@ New-Item -ItemType Directory -Force -Path $framesDir | Out-Null
 
 $userArgs = @(
     "--out", $framesDir,
+    "--variant", $Variant,
     "--seed", $Seed,
     "--fps", $Fps,
     "--locale", $Locale,

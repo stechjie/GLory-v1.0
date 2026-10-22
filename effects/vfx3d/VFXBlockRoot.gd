@@ -44,9 +44,13 @@ var vfx_brightness := 1.0
 # 同屏 VFX 块的并发计数。3D 这条路以前完全没有上限（VFXManager 的池和
 # EFFECT_CAPS 只管 2D 老路径），一个 AoE 回合能一次生成几十组节点。
 static var _active_blocks := 0
+static var _cap_denials := 0
 
 static func active_block_count() -> int:
 	return _active_blocks
+
+static func cap_denial_count() -> int:
+	return _cap_denials
 
 # 生成前的闸门。超限直接不生成——密集回合里少一两个命中闪光玩家看不出来，
 # 但帧率保得住。这和 VFXManager 对 2D 特效的做法是同一个策略。
@@ -67,7 +71,10 @@ static func can_spawn_block(priority: String = "") -> bool:
 # Boss 大招等）。这些不该在 6v6 特效密集的回合里被当成普通命中闪光丢掉——
 # 上限是用来砍廉价高频特效的，不是砍招牌演出的。
 static func spawn_block(script: Script, parent: Node, force := false) -> Node3D:
-	if (not force and not can_spawn_block()) or parent == null or not is_instance_valid(parent):
+	if parent == null or not is_instance_valid(parent):
+		return null
+	if not force and not can_spawn_block():
+		_cap_denials += 1
 		return null
 	var block := script.new() as Node3D
 	if block == null:

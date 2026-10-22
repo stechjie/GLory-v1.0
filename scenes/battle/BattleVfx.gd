@@ -1,5 +1,9 @@
 extends "res://scenes/battle/BattleRenderer.gd"
 
+# Diagnostic receipt for the arrow-rain snapshot route. A created core node is
+# not proof that its pixels were visible; the isolated review scene checks that.
+signal skill_visual_submitted(source_uid: String, skill_id: String, target_count: int, core_node_created: bool)
+
 const RANGED_ATTACK_MIN_RANGE_PX := 135.0
 const _SkillVFXConfig := preload("res://effects/SkillVFXConfig.gd")
 # 9.19：人王奖励判定要读「还能不能再长」，与战后真正长的那一步（Main →
@@ -995,6 +999,9 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 			struck.append(event.get("world_foot",Vector3.ZERO))
 		context["targets"]=struck
 	var spawned:=_play_unit_procedural(sid,origin,target_world,context)
+	if sid=="arrow_rain":
+		skill_visual_submitted.emit(str(unit.get("sim_uid","")),sid,
+			(context.get("targets",[]) as Array).size(),spawned!=null)
 	if sid=="shared_hp_link" and spawned!=null:
 		_persistent_unit_vfx[str(unit.get("id",""))]={"node":spawned,"target_uid":str(unit.get("skill_target_uid",""))}
 

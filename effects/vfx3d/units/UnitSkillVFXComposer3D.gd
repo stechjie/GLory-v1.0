@@ -1820,19 +1820,31 @@ func _arrow_rain(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var th := _uh(context)
 	var targets:Array=_capped_targets(context.get("targets",[]))
 	if targets.is_empty():return
+	# One shaft identifies the cast even when ambient effects fill the block budget.
+	# The remaining shafts are decoration; hits are created at impact time so
+	# waiting effects do not occupy blocks for the preceding 0.58 seconds.
+	var primary:=_block_forced(VFX_PAINTED) as VFXBossTextureLayer3D
+	if primary!=null:
+		last_spawned=primary
+		_play_arrow_rain_shaft(primary,targets[0],th,0)
 	for i in range(targets.size()):
 		var value:Vector3=targets[i]
-		var arrow:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 		var delay:=float(i)*.06
-		var tw:=create_tween();tw.tween_interval(delay);tw.tween_callback(func():
-			if is_instance_valid(arrow):
-				arrow.play_layer("res://assets/vfx/skills/merc_sagittarius_rain/rain_arrow_v3.png",{"name":"ArrowRain_Shaft","from":_lvl_foot(value,th,LEVEL_SKY),"to":_lvl_foot(value,th,LEVEL_LOW),"size":Vector2(.92,1.48),"duration":.76,"travel_ratio":.76,"start_scale":.40,"peak_scale":1.0,"end_scale":.90,"dark_tint":Color(.015,.06,.18),"body_tint":Color(.28,.58,.94),"core_tint":Color(.86,.98,1.0),"seed":20.0+float(i),"flow_strength":.016,"opacity":.96})
+		if i>0:
+			_after(delay,func():
+				if not is_inside_tree():return
+				var arrow:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+				if arrow!=null:_play_arrow_rain_shaft(arrow,value,th,i)
+			)
+		_after(delay+.58,func():
+			if not is_inside_tree():return
+			var impact:=_block_forced(VFX_PAINTED) as VFXBossTextureLayer3D
+			if impact!=null:
+				impact.play_layer("res://assets/vfx/skills/human_militia/human_militia_hit_dust_pop.png",{"name":"ArrowRain_Impact","position":_lvl_foot(value,th,LEVEL_LOW),"size":Vector2(1.18,1.10),"duration":.56,"start_scale":.24,"peak_scale":1.0,"end_scale":1.06,"dark_tint":Color(.03,.08,.16),"body_tint":Color(.10,.42,.86),"core_tint":Color(.78,.96,1.0),"seed":24.0+float(i),"flow_strength":.018,"opacity":1.0})
 		)
-		var impact:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
-		var hit_tw:=create_tween();hit_tw.tween_interval(delay+.58);hit_tw.tween_callback(func():
-			if is_instance_valid(impact):
-				impact.play_layer("res://assets/vfx/skills/human_militia/human_militia_hit_dust_pop.png",{"name":"ArrowRain_Impact","position":_lvl_foot(value,th,LEVEL_FOOT,0.0),"size":Vector2(.96,.96),"duration":.56,"start_scale":.16,"peak_scale":.92,"end_scale":1.06,"dark_tint":Color(.03,.08,.16),"body_tint":Color(.10,.42,.86),"core_tint":Color(.78,.96,1.0),"seed":24.0+float(i),"flow_strength":.018,"opacity":.94})
-		)
+
+func _play_arrow_rain_shaft(arrow:VFXBossTextureLayer3D,value:Vector3,th:float,index:int)->void:
+	arrow.play_layer("res://assets/vfx/skills/merc_sagittarius_rain/rain_arrow_v3.png",{"name":"ArrowRain_Shaft","from":_lvl_foot(value,th,LEVEL_SKY),"to":_lvl_foot(value,th,LEVEL_LOW),"size":Vector2(.92,1.48),"duration":.76,"travel_ratio":.76,"start_scale":.40,"peak_scale":1.0,"end_scale":.90,"dark_tint":Color(.015,.06,.18),"body_tint":Color(.28,.58,.94),"core_tint":Color(.86,.98,1.0),"seed":20.0+float(index),"flow_strength":.016,"opacity":.96})
 
 func _blood_rampage(origin:Vector3,context:Dictionary={})->void:
 	var oh := UNIT_HEIGHT_FALLBACK
