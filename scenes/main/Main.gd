@@ -2819,6 +2819,9 @@ func _on_settlement_returned(ok: bool) -> void:
 		return
 	SaveManager.clear_reconnect()
 	GameState.reset_run()
+	if NetworkService.spectating:
+		_spectate_screen = "lobby"
+		_spectate_replays = {}
 	_set_chat_sound_suppressed(false)
 	_show_team3v3_lobby()
 
@@ -3683,6 +3686,9 @@ func _on_team_room_list_received(rooms: Array) -> void:
 			_menu.show_room_list(rooms)
 
 func _on_team_room_action_failed(reason: String) -> void:
+	if reason == "spectate_full" and _in_room_lobby:
+		preload("res://ui/components/GloryToast.gd").show_text("The number of spectators is full" if LocaleManager.get_locale() == "en" else "观战人数已满")
+		return
 	if not _public_token_request_id.is_empty() \
 			and AsyncActionController.is_current(_public_token_request_id):
 		AsyncActionController.fail(_public_token_request_id, "TOKEN_REQUEST_FAILED", true)
@@ -4335,17 +4341,18 @@ func _on_spectate_session_changed() -> void:
 				_menu.show_connection_error(message)
 
 
-# 每一份观战状态都过这里：第一份 = 进去了；之后按阶段切界面（第三步，2026-10-22）。
-#   大厅            → 房间大厅（Team3v3Lobby 的观战模式）
-#   第 1 回合备战   → 等待页（宠物跑进度条；还没有上一回合可看）
-#   之后的备战      → 选手的备战界面，只读，显示上一回合的阵容（延迟一回合）
-#   战斗 / 结算     → 回放到了就放（team_replay_received）；没到之前停在当前页
-#   打完最后一回合  → 结算页，按当前选中的选手
+# 观战状态负责路由：大厅 → 队伍选择 → 当回合战斗回放 → 最终结算。
+# 选手进入下一轮备战时强制回到队伍选择，不等待观战者的播放进度。
 func _on_spectate_state_received(state: Dictionary) -> void:
-	if _spectate_pending_room > 0:
+	if NetworkService.spectating and not _spectate_active:
+		if not _join_room_request_id.is_empty():
+			AsyncActionController.succeed(_join_room_request_id)
 		_spectate_pending_room = 0
 		_spectate_active = true
+		_spectate_returned_to_room = false
 		_spectate_screen = ""
+		if not NetworkService.spectate_match_states_received.is_connected(_on_spectate_matches_ready):
+			NetworkService.spectate_match_states_received.connect(_on_spectate_matches_ready)
 		if not NetworkService.team_replay_received.is_connected(_on_spectate_replay_ready):
 			NetworkService.team_replay_received.connect(_on_spectate_replay_ready)
 		if not NetworkService.spectate_ended.is_connected(_on_spectate_ended_in_match):
@@ -4378,6 +4385,9 @@ const SpectatorHudScript := preload("res://ui/components/SpectatorHud.gd")
 
 var _spectate_active := false
 var _spectate_screen := ""          # 现在显示的观战页：lobby / loading / prep:<回合>:<座位> / battle:<id>:<座位> / over
+var _spectate_returned_to_room := false
+var _spectate_last_battle := ""
+var _spectate_completed_battle := ""
 var _spectate_replays := {}         # 本场两队回放：{"battle_id", "red", "blue"}
 var _spectator_hud: CanvasLayer = null
 
@@ -4385,23 +4395,29 @@ var _spectator_hud: CanvasLayer = null
 func _spectate_route(state: Dictionary) -> void:
 	var phase := str(state.get("phase", ""))
 	if phase == "lobby":
+		_spectate_returned_to_room = false
 		if _spectate_screen != "lobby":
 			_spectate_screen = "lobby"
 			_show_team3v3_lobby()
 		return
+	if _spectate_returned_to_room:
+		return
+	if _spectate_screen == "over":
+		return
 	if bool(state.get("run_over", false)) and _spectate_try_game_over():
 		return
-	# 回放正在放：不打断，播完 _on_spectate_battle_finished 再按最新状态走。
+	# Player progression is authoritative: a slow spectator must never hold the next preparation.
+	if phase == "prep":
+		var parts := str(_spectate_replays.get("battle_id", "")).split(":")
+		if parts.size() == 3 and int(parts[1]) < int(state.get("round_id", 1)):
+			_spectate_replays = {}
+		_spectate_show_loading()
+		return
 	if _spectate_screen.begins_with("battle") and is_instance_valid(_battle):
 		return
-	if phase == "prep":
-		if NetworkService.spectate_view.is_empty():
-			_spectate_show_loading()
-		else:
-			_spectate_show_prep()
-	# 战斗 / 结算阶段：等回放（_on_spectate_replay_ready）。等待期间停在当前页 ——
-	# 第 1 回合就是那条进度条，之后是上一回合的阵容。
-	elif _spectate_screen == "" or _spectate_screen == "lobby":
+	if not _spectate_replays.is_empty():
+		_spectate_show_battle()
+	else:
 		_spectate_show_loading()
 
 
@@ -4440,11 +4456,15 @@ func _on_spectate_view_ready(_view: Dictionary) -> void:
 
 # 回放到了：NetworkService 收下的是「红队视角 own、蓝队视角 rival」（服务器给观战者的约定）。
 func _on_spectate_replay_ready() -> void:
-	if not _spectate_active or not NetworkService.spectating:
+	if not _spectate_active or not NetworkService.spectating or _spectate_returned_to_room or _spectate_screen == "over":
 		return
+	if NetworkService.team_replay_battle_id == _spectate_last_battle:
+		return
+	_spectate_last_battle = NetworkService.team_replay_battle_id
 	_spectate_replays = {"battle_id": NetworkService.team_replay_battle_id,
 		"red": NetworkService.team_replay.duplicate(true), "blue": NetworkService.team_replay_rival.duplicate(true)}
-	_spectate_show_battle()
+	if str(NetworkService.spectate_state.get("phase", "")) != "prep":
+		_spectate_show_battle()
 
 
 func _spectate_show_battle() -> void:
@@ -4475,21 +4495,37 @@ func _spectate_show_battle() -> void:
 func _on_spectate_battle_finished(_result: Dictionary = {}) -> void:
 	if not _spectate_active:
 		return
+	_spectate_completed_battle = str(_spectate_replays.get("battle_id", ""))
 	_spectate_replays = {}
+	# Keep the final battle frame until players advance; spectators never ACK results.
+	if str(NetworkService.spectate_state.get("phase", "")) == "result" and is_instance_valid(_battle):
+		if _battle.has_method("show_settlement_waiting"):
+			_battle.show_settlement_waiting()
+		if bool(NetworkService.spectate_state.get("run_over", false)):
+			_spectate_try_game_over()
+		return
 	_spectate_screen = ""
 	_spectate_route(NetworkService.spectate_state)
 
+
+func _on_spectate_matches_ready(_id: String, _states: Dictionary) -> void:
+	if _spectate_active and not _spectate_returned_to_room and bool(NetworkService.spectate_state.get("run_over", false)):
+		_spectate_try_game_over()
 
 func _spectate_try_game_over() -> bool:
 	var match_state := NetworkService.spectate_match_state_for_view()
 	var settlement: Dictionary = match_state.get("final_settlement", {})
 	if settlement.is_empty() or _spectate_screen == "over":
 		return false
+	# Result metadata can arrive before bulk replay chunks. Play the final battle first.
+	if bool(NetworkService.spectate_state.get("replay_available", false)) and _spectate_completed_battle != str(NetworkService.spectate_state.get("battle_id", "")):
+		return false
 	# 回放还没放完就别抢 —— 播完 _on_spectate_battle_finished 会再走到这里。
-	if _spectate_screen.begins_with("battle") and is_instance_valid(_battle):
+	if _spectate_screen.begins_with("battle") and is_instance_valid(_battle) and _spectate_completed_battle != str(NetworkService.spectate_state.get("battle_id", "")):
 		return true
 	_spectate_screen = "over"
 	var local := settlement.duplicate(true)
+	local["can_return_room"] = true
 	local["local_team"] = GameConstants.team_of_slot(NetworkService.spectate_view_slot)
 	_show_game_over(local)
 	_attach_spectator_hud()
@@ -4501,17 +4537,22 @@ func _attach_spectator_hud() -> void:
 		_spectator_hud.refresh()
 		return
 	_spectator_hud = SpectatorHudScript.new()
+	_spectator_hud.waiting = _spectate_screen == "loading"
 	_spectator_hud.seat_selected.connect(_on_spectate_seat_selected)
 	_spectator_hud.leave_requested.connect(_spectate_leave)
 	add_child(_spectator_hud)
 
 
 func _on_spectate_seat_selected(slot: int) -> void:
+	if str(NetworkService.spectate_state.get("phase", "")) != "prep" or bool(NetworkService.spectate_state.get("replay_pending", false)):
+		return
 	if slot == NetworkService.spectate_view_slot:
 		return
 	NetworkService.spectate_select_slot(slot)
-	if _spectate_screen.begins_with("prep"):
-		_spectate_show_prep(true)
+	if _spectate_screen == "loading":
+		_spectator_hud.refresh()
+	elif _spectate_screen.begins_with("prep"):
+		_spectate_show_loading()
 	elif _spectate_screen.begins_with("battle"):
 		# 换队就换视角；同一队的三个人看的是同一场，换人只换「我」的高亮。从头放这一场。
 		_spectate_show_battle()
@@ -4548,6 +4589,8 @@ func _on_spectate_ended_in_match(reason: String) -> void:
 # 离开观战：GameState 里装的是别人的阵容（显示用，没写盘），从存档读回自己的。
 func _spectate_cleanup() -> void:
 	_spectate_active = false
+	_spectate_last_battle = ""
+	_spectate_completed_battle = ""
 	_spectate_screen = ""
 	_spectate_replays = {}
 	if is_instance_valid(_spectator_hud):

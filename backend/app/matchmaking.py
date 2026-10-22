@@ -117,7 +117,7 @@ MESSAGE_TYPE = "match"
 #
 #   · 分队：按排队先后往 A 队装（装得下整队才装），A 队满了再装 B 队 ——
 #     1~3 个真人一定同一队对 AI；4~5 个真人时一队满员真人，剩下的去另一队。
-#   · 只有一个真人：不弹确认框，直接推 ready（一个人对 AI，没有「别人挂机」这回事）。
+#   · AI 补位也必须确认；真人手动确认，AI 在 0.5~5 秒内陆续确认。
 #   · AI 的昵称 / 头像在这里随机定好，写进确认框的名单和出战名片（ai_seats），
 #     战斗服务器照名片放 AI、立刻开局 —— 三处看到的是同一个名字。
 #
@@ -147,7 +147,8 @@ def ai_identities(free: list[tuple[int, int]], rng: random.Random,
     pool = list(avatars if avatars is not None else _ai_avatar_pool())
     names = rng.sample(AI_NAMES, len(free))
     return [{"slot": team * TEAM_SIDE_SIZE + seat, "team": team, "seat": seat,
-             "name": name, "avatar": rng.choice(pool) if pool else ""}
+             "name": name, "avatar": rng.choice(pool) if pool else "",
+             "avatar_frame": "preset:" + rng.choice(["frame_default"] + [f"avatar_frame_shop_{i:02d}" for i in range(1, 7)])}
             for (team, seat), name in zip(free, names, strict=True)]
 
 Send = Callable[[uuid.UUID, dict], Awaitable[int]]
@@ -282,6 +283,11 @@ class _Pending:
     parties: list[_Waiter] = field(default_factory=list)
     # AI 补位的座位（见文件里「人少时 AI 补位」那节）。普通满员桌是空的。
     ai_seats: list[dict] = field(default_factory=list)
+    ai_confirm_at: dict[int, float] = field(default_factory=dict)
+    ai_confirmed: set[int] = field(default_factory=set)
+
+    def all_confirmed(self) -> bool:
+        return all(m.accepted for m in self.members) and len(self.ai_confirmed) == len(self.ai_seats)
 
     def member(self, player_id: uuid.UUID) -> _Member | None:
         for m in self.members:
@@ -298,8 +304,8 @@ class _Pending:
         return found_message(
             self.match_uid, self.mode, accept_sec,
             accepted=member is not None and member.accepted,
-            accepted_count=sum(1 for m in self.members if m.accepted),
-            total=len(self.members),
+            accepted_count=sum(1 for m in self.members if m.accepted) + len(self.ai_confirmed),
+            total=len(self.members) + len(self.ai_seats),
             seats=self.seat_roster(player_id),
         )
 
@@ -328,7 +334,7 @@ class _Pending:
                 "team": int(ai["team"]), "seat": int(ai["seat"]),
                 "name": str(ai["name"]),
                 "avatar": ("preset:%s" % ai["avatar"]) if ai["avatar"] else "",
-                "avatar_frame": "", "accepted": True, "me": False, "ai": True,
+                "avatar_frame": str(ai.get("avatar_frame", "")), "accepted": int(ai["slot"]) in self.ai_confirmed, "me": False, "ai": True,
             })
         out.sort(key=lambda s: (s["team"], s["seat"]))
         return out
@@ -524,7 +530,7 @@ class Matchmaker:
         if member is None:
             return idle_message("no_pending_match")
         member.accepted = True
-        if all(m.accepted for m in pending.members):
+        if pending.all_confirmed():
             self._finalise(pending)
             return ready_message(pending.match_uid, pending.mode, member.team)
         return pending.found_for(player_id, max(0.0, pending.deadline - self._now()))
@@ -572,6 +578,17 @@ class Matchmaker:
     async def tick(self) -> None:
         now = self._now()
         messages: list[tuple[uuid.UUID, dict]] = []
+        for pending in list(self._pending.values()):
+            if now >= pending.deadline:
+                continue  # Expiration must win over overdue AI confirmations.
+            updated = {slot for slot, at in pending.ai_confirm_at.items() if at <= now} - pending.ai_confirmed
+            if not updated:
+                continue
+            pending.ai_confirmed.update(updated)
+            if pending.all_confirmed():
+                self._finalise(pending)
+            else:
+                messages.extend((m.player_id, pending.found_for(m.player_id, max(0.0, pending.deadline - now))) for m in pending.members)
         self._expire_stale(now, messages)
         for mode in OPEN_MODES:
             # 排位**只在窗口内凑新的一桌**（19:00–23:00，docs/排位系统设计.md 第二节）。
@@ -792,7 +809,7 @@ class Matchmaker:
     def _form_with_ai(self, players: list[uuid.UUID], teams: list[int], parties: list[_Waiter],
                       lineups: dict[uuid.UUID, list[str]],
                       mode: str, now: float) -> list[tuple[uuid.UUID, dict]]:
-        """开一桌 AI 补位的对局。只有一个真人时跳过确认框直接 ready。"""
+        """开一桌 AI 补位的对局；所有真人手动确认，AI 在五秒内陆续确认。"""
         match_uid = new_match_uid()
         seats = allocate_seats(players, teams, parties)
         profiles = self._public_profiles(players)
@@ -809,11 +826,7 @@ class Matchmaker:
             self._pending_of[member.player_id] = match_uid
         log.info("AI 补位开桌 match=%s mode=%s players=%d ai=%d",
                  match_uid, mode, len(members), len(free))
-        if len(members) == 1:
-            # 一个人对 AI：没有「等别人确认」这回事，直接 ready（_finalise 自己推）。
-            members[0].accepted = True
-            self._finalise(pending)
-            return []
+        pending.ai_confirm_at = {int(ai["slot"]): now + self._rng.uniform(0.5, 5.0) for ai in pending.ai_seats}
         return [(m.player_id, pending.found_for(m.player_id, ACCEPT_TIMEOUT_SEC)) for m in members]
 
     def _expire_stale(self, now: float, messages: list[tuple[uuid.UUID, dict]]) -> None:

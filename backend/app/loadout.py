@@ -347,7 +347,7 @@ def card_payload(
         # （BattleCard.gd，2048），最大名片已经 1673。五个带键名的对象会顶破它，
         # 表现是 AI 补位的对局谁都进不去。test_card_with_five_ai_seats_still_fits 量着。
         if ai_seats:
-            payload["ai"] = [[int(ai["slot"]), str(ai["name"])[:16], str(ai.get("avatar", ""))[:16]]
+            payload["ai"] = [[int(ai["slot"]), str(ai["name"])[:16], str(ai.get("avatar", ""))[:16], str(ai.get("avatar_frame", ""))[:64]]
                              for ai in ai_seats if 0 <= int(ai.get("slot", -1)) < 6]
     if patch_version is not None:
         payload["patch"] = dict(patch_version)

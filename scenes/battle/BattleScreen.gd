@@ -1034,7 +1034,7 @@ const VOICE_BTN_STEP := 64.0
 var _voice_controls: VoiceControls = null
 
 func _setup_voice_controls() -> void:
-	if _voice_controls != null or not NetworkService.team_active:
+	if _voice_controls != null or not NetworkService.team_active or NetworkService.spectating:
 		return
 	_voice_controls = VoiceControls.new()
 	# 9.20 bug 文档第 3 条：战斗界面也要能切语音档位。

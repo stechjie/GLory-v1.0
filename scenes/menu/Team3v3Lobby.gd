@@ -142,37 +142,32 @@ func _friend_room_id(entry: Dictionary) -> int:
 # **恰好 3**，棘轮只许降不许涨，多一个就 count_increased 红。所以这里改走
 # 手工点击区（同 _add_hit 的思路；但 _add_hit 走 _placed 布局、由 _layout 定位，
 # 而这一行挂在滚动容器里，由容器排版，不能混用）。
-func _online_friend_row(entry: Dictionary) -> Label:
-	var code := str(entry.get("friend_code", ""))
+func _online_friend_row(entry: Dictionary) -> Control:
+	var row := HBoxContainer.new()
+	row.custom_minimum_size = Vector2(0, 40)
+	row.add_theme_constant_override("separation", 6)
+	var avatar := TextureRect.new()
+	avatar.custom_minimum_size = Vector2(36, 36)
+	avatar.texture = AvatarCatalog.texture_for(str(entry.get("avatar", AvatarCatalog.default_avatar())), true)
+	avatar.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	avatar.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(avatar)
 	var label := Label.new()
-	# 10.06 反馈第 2 条：朋友列表**只显示昵称**，不再挂着 `#好友码`。
-	# code 仍然要留着 —— 邀请是按它发消息的（_on_invite_friend），只是不给玩家看见。
-	label.text = AccountManager.display_name(str(entry.get("player_name", "")), code, false)
-	# 9.14 反馈：「朋友列表」里的朋友 ID 要贴在框框里边、向左对齐。label 默认就是
-	# 左对齐，真正的毛病是列表容器压到了木框上（见 _build() 里 friends_scroll 的
-	# 位置说明）—— 两处一起改才看得出来。这里显式写上左对齐，免得将来换主题
-	# 把 Label 的默认对齐改掉时又悄悄居中。
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	label.text = AccountManager.display_name(str(entry.get("player_name", "")), str(entry.get("friend_code", "")), false)
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	# 好友名写在羊皮纸里：深色正文已经有足够对比，不再加浅色粗描边。
-	# 旧版白字 + 2px 深边在 14px 下笔画几乎一样粗，看起来像失焦。
-	label.add_theme_color_override("font_color", Tokens.PARCHMENT_EDGE)
-	label.add_theme_constant_override("outline_size", 0)
-	label.add_theme_font_size_override("font_size", 15)
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	label.tooltip_text = _room_text("点击邀请 %s 进入房间" % label.text,
-		"Tap to invite %s" % label.text)
-	# 可点：只有 STOP 才收得到 gui_input（IGNORE/PASS 都会漏给下面的滚动容器）。
-	label.mouse_filter = Control.MOUSE_FILTER_STOP
-	label.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	# 好友此刻的房间号要**在这一帧取好**再进闭包：闭包只捕获值，
-	# 等真点到时 entry 可能已经被下一轮列表刷新换掉了（10.11 第 6 条 i 要用它判同房）。
-	var friend_room := _friend_room_id(entry)
-	label.gui_input.connect(func(event: InputEvent) -> void:
-		var mb := event as InputEventMouseButton
-		if mb != null and mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
-			_on_invite_friend(code, label, friend_room))
-	return label
+	label.add_theme_color_override("font_color", Tokens.PARCHMENT_EDGE)
+	label.add_theme_font_size_override("font_size", 15)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(label)
+	row.mouse_filter = Control.MOUSE_FILTER_STOP
+	row.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	row.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			_on_invite_friend(str(entry.get("friend_code", "")), row, _friend_room_id(entry)))
+	return row
 
 
 # 点好友名 → 发一条房间邀请（要求 2/4）。这一下**只发消息**，不改自己的房间状态；
@@ -1873,6 +1868,12 @@ func _build_spectator_panel() -> void:
 	_spectator_panel.name = "spectator_panel"
 	add_child(_spectator_panel)
 	_track(_spectator_panel, SPECTATOR_PANEL_POS, SPECTATOR_PANEL_SIZE, 0, "left")
+	_spectator_panel.join_requested.connect(func():
+		var source := _spectator_source()
+		if (source.get("spectators", []) as Array).size() >= int(source.get("spectate_max", 10)):
+			GloryToastScript.show_text(_room_text("观战人数已满", "The number of spectators is full"))
+		else:
+			NetworkService.spectate_request_join(NetworkService.team_room_id))
 	_spectator_panel.kick_requested.connect(func(sid: int): NetworkService.team_spectate_kick(sid))
 	_spectator_panel.open_toggled.connect(func(open: bool): NetworkService.team_spectate_set_open(open))
 

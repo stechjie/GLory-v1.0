@@ -9,10 +9,12 @@ extends Control
 #
 # 尺寸按参考画布（330 × 480）写；大厅用 _track 整体缩放这块，字号在 resized 里按比例跟着缩。
 
+signal join_requested
 signal kick_requested(sid: int)
 signal open_toggled(open: bool)
 
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
+const Voice := preload("res://ui/components/VoiceControls.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 const TEX_PANEL := preload("res://assets/ui/room_v2/friends.png")
@@ -22,6 +24,7 @@ const ROW_H := 46.0
 const AVATAR := 36.0
 const INK := Color(0.47, 0.28, 0.08)
 
+var _join: Button
 var _title: Label
 var _toggle: Button
 var _empty: Label
@@ -60,6 +63,16 @@ func _ready() -> void:
 	_toggle.add_theme_stylebox_override("focus", _pill(0.82))
 	_toggle.pressed.connect(func(): open_toggled.emit(not _open))
 	add_child(_toggle)
+	_join = Button.new()
+	_join.name = "JoinSpectators"
+	_join.text = "+"
+	_join.add_theme_color_override("font_color", INK)
+	var circle := _pill(0.88)
+	circle.set_corner_radius_all(24)
+	for state in ["normal", "hover", "pressed", "focus"]:
+		_join.add_theme_stylebox_override(state, circle)
+	_join.pressed.connect(func(): join_requested.emit())
+	add_child(_join)
 	_scroll = TouchScrollContainer.new()
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	add_child(_scroll)
@@ -102,12 +115,16 @@ func _relayout() -> void:
 	_title.position = Vector2(inner.position.x, inner.position.y)
 	_title.size = Vector2(inner.size.x, 40 * k)
 	_title.add_theme_font_size_override("font_size", maxi(13, roundi(24 * k)))
+	_join.visible = _my_sid < 0 and _open
+	_join.position = Vector2(size.x * 0.5 - 20 * k, inner.position.y + 39 * k)
+	_join.size = Vector2(40, 40) * k
+	_join.add_theme_font_size_override("font_size", maxi(16, roundi(24*k)))
 	_toggle.visible = _is_host
-	_toggle.position = Vector2(inner.position.x + inner.size.x * 0.15, inner.position.y + 42 * k)
+	_toggle.position = Vector2(inner.position.x + inner.size.x * 0.15, inner.position.y + 82 * k)
 	_toggle.size = Vector2(inner.size.x * 0.70, 32 * k)
 	_toggle.add_theme_font_size_override("font_size", maxi(13, roundi(17 * k)))
 	# 标题木牌的图案比标题框往下多伸出一截（约 60），列表从它下面开始，否则第一行被压住。
-	var list_top := inner.position.y + (82 if _is_host else 62) * k
+	var list_top := inner.position.y + (122 if _is_host else 84) * k
 	_scroll.position = Vector2(inner.position.x, list_top)
 	_scroll.size = Vector2(inner.size.x, inner.end.y - list_top)
 	_empty.position = _scroll.position
@@ -143,6 +160,8 @@ func _make_row(entry: Dictionary) -> Control:
 	avatar.texture = AvatarCatalog.texture_for(str(identity.get("avatar", AvatarCatalog.default_avatar())), true)
 	avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(avatar)
+	Voice.attach_speaking_mic(avatar)
+	row.set_meta("spectator_entry", entry)
 	var name_lbl := Label.new()
 	name_lbl.name = "name"
 	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -170,6 +189,13 @@ func _make_row(entry: Dictionary) -> Control:
 		kick.pressed.connect(func(): kick_requested.emit(sid))
 		row.add_child(kick)
 	return row
+
+
+func _process(_delta: float) -> void:
+	if _rows == null:
+		return
+	for row in _rows.get_children():
+		Voice.show_speaking_mic(row.get_node_or_null("avatar"), VoiceService.spectator_speaking(row.get_meta("spectator_entry", {})))
 
 
 func _size_row(row: Control, k: float) -> void:
