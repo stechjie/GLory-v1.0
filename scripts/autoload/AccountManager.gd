@@ -383,6 +383,10 @@ func _finish_success(body: Dictionary) -> void:
 	# 存回旧的等于下次刷新必失败。
 	if not refresh_token.is_empty() and not player_id.is_empty():
 		SaveManager.save_account_credentials(refresh_token, player_id)
+	# 登回的是一个玩过的老号（backend/app/routes/auth.py 的 onboarded）：不再从头教学。
+	# 放在 login_succeeded 之前 —— 启动页一放行，Main 就按本机的教学状态决定进教学还是主菜单。
+	if bool(body.get("onboarded", false)):
+		PlayerProfile.adopt_account_onboarded()
 
 	state = State.LOGGED_IN
 	last_failure = Failure.NONE

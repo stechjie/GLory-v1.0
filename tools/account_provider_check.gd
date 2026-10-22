@@ -73,6 +73,7 @@ func _ready() -> void:
 	await _case_sign_in_flows()
 	_case_token_claims()
 	_case_entry_view_choose()
+	_case_returning_account_skips_tutorial()
 	_backup_existing()
 	_case_login_stops_for_choice()
 	_restore_existing()
@@ -258,6 +259,26 @@ func _case_entry_view_choose() -> void:
 		"banned_hidden_by_choose", "被封压过一切")
 	_h.expect(str(Bootstrap.entry_view({"login": "choose", "kicked": true}).get("state", "")) == "kicked",
 		"kicked_hidden_by_choose", "被顶号压过一切")
+
+
+# 换手机登回老号不再重过教学（2026-10-22）。只判状态，不真改档案：
+# adopt_account_onboarded 会写 user://profile.json，那是开发者本机的真档。
+func _case_returning_account_skips_tutorial() -> void:
+	var P := PlayerProfile
+	_h.expect(P.adopts_account_onboarding(P.ONBOARDING_NOT_STARTED)
+			and P.adopts_account_onboarding(P.ONBOARDING_LEGACY_UNKNOWN), "returning_player_retutored",
+		"新设备上（教学还没开始）登回老号，必须直接算教学完成")
+	_h.expect(not P.adopts_account_onboarding(P.ONBOARDING_IN_PROGRESS), "tutorial_interrupted",
+		"本机正在教学（比如「重新体验教学」）时不能被登录打断")
+	_h.expect(not P.adopts_account_onboarding(P.ONBOARDING_SKIPPED)
+			and not P.adopts_account_onboarding(P.ONBOARDING_COMPLETED), "finished_state_overwritten",
+		"已经完成 / 跳过的不用动")
+	var account := FileAccess.get_file_as_string("res://scripts/autoload/AccountManager.gd")
+	var success_at := account.find("func _finish_success(")
+	var adopt_at := account.find("PlayerProfile.adopt_account_onboarded()", success_at)
+	var emit_at := account.find("login_succeeded.emit(", success_at)
+	_h.expect(success_at >= 0 and adopt_at > success_at and emit_at > adopt_at, "onboarded_applied_too_late",
+		"登录成功时要在 login_succeeded 之前采纳 onboarded：启动页一放行，Main 就按本机教学状态选路")
 
 
 # --- 新装时 login() 要停下来问 --------------------------------------------------------

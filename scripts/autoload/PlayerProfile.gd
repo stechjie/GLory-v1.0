@@ -404,6 +404,26 @@ func complete_tutorial_with_followup() -> bool:
 	return false
 
 
+# 换手机 / 重装之后登回一个老号（账号服务器说这个号玩过：等级 ≥ 2 或者已经有宠物）。
+#
+# 教学进度只存在这台设备上，新设备上一律是「没开始」—— 不改的话，老玩家用 Google 登回来
+# 还得把新手教学从头过一遍（2026-10-22 真机反馈）。只改「还没开始」的：本机正在教学、
+# 或者已经完成 / 跳过的，都按本机的来，不打断。奖励不补：服务器那边早就按这个号的进度发过了。
+static func adopts_account_onboarding(status: String) -> bool:
+	return status in [ONBOARDING_NOT_STARTED, ONBOARDING_LEGACY_UNKNOWN]
+
+
+func adopt_account_onboarded() -> bool:
+	if not adopts_account_onboarding(onboarding_status):
+		return false
+	onboarding_version = ONBOARDING_VERSION
+	onboarding_status = ONBOARDING_COMPLETED
+	tutorial_reward_eligible = false
+	tutorial_followup_step = ""
+	tutorial_reward_pending = false
+	return save_profile()
+
+
 # 奖励同步失败：教程算完成（玩家可以去主页、不会再被拉回教程），奖励记成待补发。
 func defer_tutorial_reward() -> bool:
 	var previous_status := onboarding_status

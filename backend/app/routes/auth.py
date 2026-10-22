@@ -22,7 +22,7 @@ from fastapi import APIRouter, HTTPException, Request, Depends, Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from app import admin_auth, bans, db, players, login_sessions, realtime
+from app import admin_auth, bans, db, players, login_sessions, realtime, shop
 from app.config import get_settings
 from app.rate_limit import RateLimited, SlidingWindowLimiter
 from app.supabase_auth import AuthError, Session, SupabaseAuth
@@ -143,6 +143,10 @@ class SessionResponse(BaseModel):
     refresh_token: str
     expires_in: int
     session_id: str
+    # 这个号以前玩过（等级 ≥ 2 或者已经有宠物）。教学进度只存在手机本地，
+    # 换手机 / 重装后登回老号时，客户端据此跳过新手教学（docs/三方登录设计.md）。
+    # 只在开新的登录会话时算；续期（带 session_id）不算，恒为 false —— 客户端只在登录时看它。
+    onboarded: bool = False
 
 
 def _auth_client() -> SupabaseAuth:
@@ -162,6 +166,27 @@ def _require_db() -> None:
             status_code=503,
             detail="数据库未配置：backend/.env 里的 GLORY_DATABASE_URL 是空的",
         )
+
+
+async def _onboarded(player_id: uuid.UUID) -> bool:
+    """这个号以前玩过没有：等级 ≥ 2，或者已经有宠物（2026-10-22 拍板）。
+
+    查不到（等级表还没建、宠物表读不出来、连接池出状况）就当没玩过 —— 最坏是多看一遍教学，
+    **绝不能因为这个让登录失败**，所以两处都接住一切异常。
+    """
+    try:
+        async with db.pool().acquire() as conn:
+            level = await conn.fetchval(
+                "select level from player_progression where player_id = $1", player_id)
+        if level is not None and int(level) >= 2:
+            return True
+    except Exception as exc:
+        log.warning("读等级失败，按没玩过处理 player_id=%s：%s", player_id, type(exc).__name__)
+    try:
+        return bool((await shop.read_pets(player_id)).owned)
+    except Exception as exc:  # 宠物表（data/pets/pets.json）读不出来也不能挡住登录
+        log.warning("读宠物失败，按没玩过处理 player_id=%s：%s", player_id, type(exc).__name__)
+        return False
 
 
 async def _respond(session: Session, proposed: uuid.UUID | None, existing: uuid.UUID | None = None) -> SessionResponse:
@@ -191,6 +216,7 @@ async def _respond(session: Session, proposed: uuid.UUID | None, existing: uuid.
             sid = await login_sessions.issue(session.auth_uid)
             await realtime.hub().disconnect_player(player.player_id, realtime.CLOSE_KICKED,
                                                    {"t": "kicked", "reason": "another_device"})
+    onboarded = existing is None and not player.created and await _onboarded(player.player_id)
     return SessionResponse(
         player_id=player.player_id,
         player_name=player.player_name,
@@ -199,6 +225,7 @@ async def _respond(session: Session, proposed: uuid.UUID | None, existing: uuid.
         refresh_token=session.refresh_token,
         expires_in=session.expires_in,
         session_id=sid,
+        onboarded=onboarded,
     )
 
 

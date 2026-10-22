@@ -321,3 +321,110 @@ def test_delete_me_removes_the_supabase_user(monkeypatch, fails: bool) -> None:
     out = asyncio.run(profile_routes.delete_me(profile_routes.DeleteRequest(friend_code="abcd2345"), CLAIMS))
     assert out == {"deleted": True}
     assert deleted == [UID]
+
+
+# --- 换手机登回老号不再重过教学（10-22：等级 ≥ 2 或者已经有宠物）---------------------------
+
+
+class _LevelPool:
+    def __init__(self, level=None, error: Exception | None = None) -> None:
+        self.level = level
+        self.error = error
+
+    def acquire(self):
+        pool = self
+
+        class _Conn:
+            async def fetchval(self, _sql, _pid):
+                if pool.error:
+                    raise pool.error
+                return pool.level
+
+        class _Ctx:
+            async def __aenter__(self):
+                return _Conn()
+
+            async def __aexit__(self, *exc):
+                return False
+
+        return _Ctx()
+
+
+def _onboarded(monkeypatch, *, level=None, level_error=None, pets=(), pets_error=None) -> bool:
+    from app import shop
+
+    async def read_pets(_pid):
+        if pets_error:
+            raise pets_error
+        return SimpleNamespace(owned=list(pets))
+
+    monkeypatch.setattr(db, "pool", lambda: _LevelPool(level, level_error))
+    monkeypatch.setattr(shop, "read_pets", read_pets)
+    return asyncio.run(auth._onboarded(uuid.uuid4()))
+
+
+def test_onboarded_by_level(monkeypatch) -> None:
+    assert _onboarded(monkeypatch, level=2) is True
+    assert _onboarded(monkeypatch, level=7) is True
+
+
+def test_onboarded_by_pets(monkeypatch) -> None:
+    """跳过了教学、但选过初始宠物的人也算玩过（他就是从三选一那一步进主菜单的）。"""
+    assert _onboarded(monkeypatch, level=1, pets=["pet_cat"]) is True
+    assert _onboarded(monkeypatch, level=None, pets=["pet_cat"]) is True
+
+
+def test_brand_new_account_is_not_onboarded(monkeypatch) -> None:
+    assert _onboarded(monkeypatch, level=1) is False
+    assert _onboarded(monkeypatch, level=None) is False
+
+
+def test_onboarded_never_breaks_login(monkeypatch) -> None:
+    """等级表还没建（迁移没跑）、宠物表读不出来：按没玩过处理，最坏多看一遍教学，登录照常。"""
+    import asyncpg
+
+    missing = asyncpg.exceptions.UndefinedTableError("relation does not exist")
+    assert _onboarded(monkeypatch, level_error=missing, pets=["pet_cat"]) is True
+    assert _onboarded(monkeypatch, level_error=missing) is False
+    assert _onboarded(monkeypatch, level=1, pets_error=FileNotFoundError("pets.json")) is False
+    # 连接池本身出状况（db.NotConfigured 不是 PostgresError）也一样不能挡住登录。
+    assert _onboarded(monkeypatch, level_error=db.NotConfigured("no pool"), pets=["pet_cat"]) is True
+
+
+@pytest.mark.parametrize("created,existing,expected", [
+    (False, None, True),        # 登回老号：要告诉客户端
+    (True, None, False),        # 刚建的号：不用查
+    (False, uuid.uuid4(), False),  # 续期：客户端不看它，也不多查两次库
+])
+def test_respond_reports_onboarded_only_on_new_logins(monkeypatch, created, existing, expected) -> None:
+    from app import login_sessions, realtime
+
+    pid = uuid.uuid4()
+    asked: list[uuid.UUID] = []
+
+    async def resolve(*_args):
+        return SimpleNamespace(player_id=pid, player_name="p", created=created)
+
+    async def onboarded(player_id):
+        asked.append(player_id)
+        return True
+
+    async def issue(_uid):
+        return str(uuid.uuid4())
+
+    async def require(_uid, _sid):
+        return None
+
+    class _Hub:
+        async def disconnect_player(self, *_args):
+            return None
+
+    monkeypatch.setattr(players, "resolve_or_create", resolve)
+    monkeypatch.setattr(auth, "_onboarded", onboarded)
+    monkeypatch.setattr(login_sessions, "issue", issue)
+    monkeypatch.setattr(login_sessions, "require", require)
+    monkeypatch.setattr(login_sessions, "ownership_lock", asyncio.Lock())
+    monkeypatch.setattr(realtime, "hub", lambda: _Hub())
+    out = asyncio.run(auth._respond(Session(UID, "a", "r", 3600), None, existing))
+    assert out.onboarded is expected
+    assert asked == ([pid] if expected else [])
