@@ -41,12 +41,17 @@ def main():
             # Dexes that carry the voice bridge and LiveKit, the way a Gradle export produces them.
             archive.writestr("classes.dex", b"dex\n035\x00...Lcom/glory/voice/GloryVoicePlugin;...")
             archive.writestr("classes2.dex", b"dex\n035\x00...Lio/livekit/android/room/Room;...")
+            # And the Google sign-in bridge with Credential Manager.
+            archive.writestr("classes3.dex",
+                             b"dex\n035\x00...Lcom/glory/signin/GlorySignInPlugin;...Landroidx/credentials/CredentialManager;...")
 
         report = identity.inspect_apk(apk)
         assert report["artifact_mapping_count"] == 1
         assert report["artifact_mappings"][0]["source"] == "res://example.png"
         assert report["voice_plugin_present"] is True
         assert report["livekit_present"] is True
+        assert report["signin_plugin_present"] is True
+        assert report["credentials_present"] is True
         report["android_manifest_error"] = ""
         report["android_manifest"] = {
             "package_id": "glory.beta001", "version_code": 5, "version_name": "",
@@ -66,6 +71,11 @@ def main():
         # The bridge without LiveKit (export plugin lost its dependency): crashes on first use.
         no_livekit = dict(report, livekit_present=False)
         assert "voice_livekit_absent" in identity.verify_report(no_livekit, build)
+        # Without the sign-in bridge the start screen silently stops offering Google.
+        no_signin = dict(report, signin_plugin_present=False)
+        assert "signin_plugin_absent" in identity.verify_report(no_signin, build)
+        no_credentials = dict(report, credentials_present=False)
+        assert "signin_credentials_absent" in identity.verify_report(no_credentials, build)
         # LiveKit's camera / screen-capture permissions must have been removed by the export plugin.
         camera = dict(report, android_manifest=dict(report["android_manifest"],
                       permissions=report["android_manifest"]["permissions"] + ["android.permission.CAMERA"]))
@@ -85,7 +95,7 @@ def main():
         assert "android_manifest_version_code_mismatch" in failures
         identity.write_json(report_path, report)
         assert report_path.is_file()
-    print("APK_IDENTITY_SELFTEST status=PASS checked=11")
+    print("APK_IDENTITY_SELFTEST status=PASS checked=15")
 
 
 if __name__ == "__main__":

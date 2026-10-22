@@ -1694,6 +1694,10 @@ func _install_realtime() -> void:
 		AccountManager.login_succeeded.connect(_on_realtime_login)
 	if not AccountManager.logged_out.is_connected(_on_realtime_logout):
 		AccountManager.logged_out.connect(_on_realtime_logout)
+	# 换成了另一个账号（资料页「切换账号」）：回启动页，按新账号把进门那一套重新走一遍 ——
+	# 宠物、出战种族、棋盘皮肤、名额都要按新账号重拉，主菜单上的旧缓存一样都不能留。
+	if not AccountManager.account_switched.is_connected(_on_account_switched):
+		AccountManager.account_switched.connect(_on_account_switched)
 	if not RealtimeService.kicked_by_other_device.is_connected(_on_realtime_kicked):
 		RealtimeService.kicked_by_other_device.connect(_on_realtime_kicked)
 	if not RealtimeService.service_state_changed.is_connected(_on_service_state):
@@ -1880,6 +1884,10 @@ func _on_realtime_logout() -> void:
 	AnnouncementService.reset()
 	MailService.reset()
 	_kicked_notice_pending = false
+
+
+func _on_account_switched() -> void:
+	_return_to_login("切换了账号")
 
 
 # 顶号立即终止游戏流程；启动页保留原因，只有玩家主动确认才能重新登录。
