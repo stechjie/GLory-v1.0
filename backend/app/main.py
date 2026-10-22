@@ -46,6 +46,7 @@ from app.routes import profile as profile_routes
 from app.routes import progression as progression_routes
 from app.routes import reports as report_routes
 from app.routes import shop as shop_routes
+from app.routes import steam_oidc as steam_oidc_routes
 from app.routes import seven_day_login as seven_day_login_routes
 from app.routes import voice_clips as voice_clip_routes
 from app.routes import world as world_routes
@@ -256,6 +257,7 @@ async def admin_rejected(_request: Request, exc: admin.AdminRejected) -> JSONRes
 
 
 app.include_router(auth_routes.router)
+app.include_router(steam_oidc_routes.router)
 app.include_router(me_routes.router)
 app.include_router(profile_routes.router)
 app.include_router(progression_routes.router)
