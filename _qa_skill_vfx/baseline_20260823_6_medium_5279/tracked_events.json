@@ -1,0 +1,7668 @@
+[
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:0:0",
+    "skill_id": "guardian_shield_taunt",
+    "source_uid": "player_L1_1",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 0,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:0:1",
+    "skill_id": "random_ally_damage_reduction",
+    "source_uid": "player_L2_0",
+    "target_uids": [],
+    "tick": 0,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:0:2",
+    "skill_id": "defense_down_attack",
+    "source_uid": "enemy_L1_1",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 0,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:2:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_0",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 2,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:2:4",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_1",
+    "target_uids": [
+      "player_L2_1"
+    ],
+    "tick": 2,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:3:0",
+    "skill_id": "judgement_strike",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_2"
+    ],
+    "tick": 3,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:3:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_1",
+    "target_uids": [
+      "enemy_L1_2"
+    ],
+    "tick": 3,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:3:3",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_1",
+    "target_uids": [
+      "enemy_L1_2"
+    ],
+    "tick": 3,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:3:5",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_2"
+    ],
+    "tick": 3,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:3:6",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_2"
+    ],
+    "tick": 3,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:3:8",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L1_2",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 3,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:4:0",
+    "skill_id": "black_hole",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L0_0"
+    ],
+    "tick": 4,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:4:1",
+    "skill_id": "black_hole",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 4,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:4:2",
+    "skill_id": "black_hole",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L0_2"
+    ],
+    "tick": 4,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:4:3",
+    "skill_id": "black_hole",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L0_3"
+    ],
+    "tick": 4,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:4:4",
+    "skill_id": "black_hole",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L0_merc0"
+    ],
+    "tick": 4,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:4:5",
+    "skill_id": "black_hole",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [],
+    "tick": 4,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:4:7",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L0_0"
+    ],
+    "tick": 4,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:4:8",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L0_0"
+    ],
+    "tick": 4,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:4:10",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_2",
+    "target_uids": [
+      "player_L0_3"
+    ],
+    "tick": 4,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:4:11",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_2",
+    "target_uids": [
+      "player_L0_3"
+    ],
+    "tick": 4,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:4:13",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 4,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:4:14",
+    "skill_id": "poison_attack",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 4,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:5:0",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_2"
+    ],
+    "tick": 5,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:5:1",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_3"
+    ],
+    "tick": 5,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:5:2",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [],
+    "tick": 5,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:5:3",
+    "skill_id": "blink_low_def_backline",
+    "source_uid": "enemy_L0_2",
+    "target_uids": [
+      "player_L0_merc0"
+    ],
+    "tick": 5,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:5:4",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 5,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:5:6",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 5,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:5:8",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 5,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:5:10",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 5,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:9:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 9,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:9:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 9,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:9:4",
+    "skill_id": "poison_reflect_armor_stack",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 9,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:10:0",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 10,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:10:1",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 10,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:10:2",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_2"
+    ],
+    "tick": 10,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:10:3",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_3"
+    ],
+    "tick": 10,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:10:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_1",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 10,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:10:7",
+    "skill_id": "defense_down_attack",
+    "source_uid": "enemy_L1_1",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 10,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:11:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 11,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:11:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 11,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:11:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 11,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:11:7",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 11,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:12:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L1_3"
+    ],
+    "tick": 12,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:12:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L1_3"
+    ],
+    "tick": 12,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:12:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 12,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:12:8",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_2",
+    "target_uids": [
+      "player_L0_merc0"
+    ],
+    "tick": 12,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:12:9",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_2",
+    "target_uids": [
+      "player_L0_merc0"
+    ],
+    "tick": 12,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:12:12",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L0_3"
+    ],
+    "tick": 12,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:12:13",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L0_3"
+    ],
+    "tick": 12,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:13:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_0",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 13,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:13:4",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 13,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:13:5",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 13,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:13:6",
+    "skill_id": "poison_attack",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 13,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:14:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_2"
+    ],
+    "tick": 14,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:14:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_2"
+    ],
+    "tick": 14,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:15:0",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 15,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:15:1",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 15,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:15:2",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_2"
+    ],
+    "tick": 15,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:15:3",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_3"
+    ],
+    "tick": 15,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:15:4",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 15,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:15:7",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_2",
+    "target_uids": [
+      "enemy_L0_2"
+    ],
+    "tick": 15,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:15:8",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_2",
+    "target_uids": [
+      "enemy_L0_2"
+    ],
+    "tick": 15,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:15:11",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_merc0",
+    "target_uids": [
+      "enemy_L0_1"
+    ],
+    "tick": 15,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:15:12",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_merc0",
+    "target_uids": [
+      "enemy_L0_1"
+    ],
+    "tick": 15,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:15:14",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 15,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:15:15",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 15,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:16:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L0_1",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 16,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:16:3",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L0_0"
+    ],
+    "tick": 16,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:16:4",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L0_0"
+    ],
+    "tick": 16,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:17:0",
+    "skill_id": "front_cone_stun",
+    "source_uid": "player_L0_1",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 17,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:17:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 17,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:17:3",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 17,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:17:5",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_1",
+    "target_uids": [
+      "enemy_L1_2"
+    ],
+    "tick": 17,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:17:6",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_1",
+    "target_uids": [
+      "enemy_L1_2"
+    ],
+    "tick": 17,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:17:8",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 17,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:17:9",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 17,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:18:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 18,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:18:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 18,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:18:4",
+    "skill_id": "poison_reflect_armor_stack",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 18,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:18:6",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L1_2",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 18,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:18:7",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L1_2",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 18,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:18:9",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 18,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:18:10",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 18,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:19:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_0",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 19,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:19:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_0",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 19,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:19:5",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L1_3",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 19,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:19:6",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L1_3",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 19,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:19:7",
+    "skill_id": "poison_attack",
+    "source_uid": "enemy_L1_3",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 19,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:20:0",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 20,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:20:1",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 20,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:20:2",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_2"
+    ],
+    "tick": 20,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:20:4",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_3"
+    ],
+    "tick": 20,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:20:6",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_2",
+    "target_uids": [
+      "player_L0_merc0"
+    ],
+    "tick": 20,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:20:7",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_2",
+    "target_uids": [
+      "player_L0_merc0"
+    ],
+    "tick": 20,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:20:10",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_1",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 20,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:20:11",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_1",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 20,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:20:12",
+    "skill_id": "defense_down_attack",
+    "source_uid": "enemy_L1_1",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 20,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:20:13",
+    "skill_id": "death_poison_explosion",
+    "source_uid": "",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 20,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:20:14",
+    "skill_id": "death_poison_explosion",
+    "source_uid": "",
+    "target_uids": [
+      "player_L1_2"
+    ],
+    "tick": 20,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:20:15",
+    "skill_id": "death_poison_explosion",
+    "source_uid": "",
+    "target_uids": [
+      "player_L1_3"
+    ],
+    "tick": 20,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:21:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 21,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:21:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 21,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:22:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 22,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:22:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 22,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:22:5",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 22,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:22:6",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 22,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:22:7",
+    "skill_id": "poison_attack",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 22,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:23:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_merc0",
+    "target_uids": [
+      "enemy_L0_1"
+    ],
+    "tick": 23,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:23:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_merc0",
+    "target_uids": [
+      "enemy_L0_1"
+    ],
+    "tick": 23,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:24:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_2",
+    "target_uids": [
+      "enemy_L0_2"
+    ],
+    "tick": 24,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:24:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_2",
+    "target_uids": [
+      "enemy_L0_2"
+    ],
+    "tick": 24,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:24:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L1_3"
+    ],
+    "tick": 24,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:24:7",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L1_3"
+    ],
+    "tick": 24,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:24:10",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 24,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:24:11",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 24,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:24:14",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L0_3"
+    ],
+    "tick": 24,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:24:15",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L0_3"
+    ],
+    "tick": 24,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:25:0",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 25,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:25:1",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 25,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:25:2",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_3"
+    ],
+    "tick": 25,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:25:3",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 25,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:25:5",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_3"
+    ],
+    "tick": 25,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:25:6",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_3"
+    ],
+    "tick": 25,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:26:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_0",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 26,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:26:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_0",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 26,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:26:5",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 26,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:26:6",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 26,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:27:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 27,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:27:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 27,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:27:4",
+    "skill_id": "poison_reflect_armor_stack",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 27,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:28:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L0_1",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 28,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:28:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L0_1",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 28,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:28:4",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L0_0"
+    ],
+    "tick": 28,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:28:5",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L0_0"
+    ],
+    "tick": 28,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:28:7",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_2",
+    "target_uids": [
+      "player_L0_merc0"
+    ],
+    "tick": 28,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:28:8",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_2",
+    "target_uids": [
+      "player_L0_merc0"
+    ],
+    "tick": 28,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:28:11",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 28,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:28:12",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 28,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:29:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 29,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:29:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 29,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:29:4",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L1_3",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 29,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:29:5",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L1_3",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 29,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:29:6",
+    "skill_id": "poison_attack",
+    "source_uid": "enemy_L1_3",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 29,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:29:8",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 29,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:29:9",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 29,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:30:0",
+    "skill_id": "random_attribute_bolt",
+    "source_uid": "player_L0_3",
+    "target_uids": [
+      "enemy_L0_2"
+    ],
+    "tick": 30,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:30:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_1",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 30,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:30:4",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_1",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 30,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:30:5",
+    "skill_id": "defense_down_attack",
+    "source_uid": "enemy_L1_1",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 30,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:31:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_1",
+    "target_uids": [
+      "enemy_L1_3"
+    ],
+    "tick": 31,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:31:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_1",
+    "target_uids": [
+      "enemy_L1_3"
+    ],
+    "tick": 31,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:31:5",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 31,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:31:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 31,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:31:8",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 31,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:31:9",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 31,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:31:11",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 31,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:31:12",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 31,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:31:13",
+    "skill_id": "poison_attack",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 31,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:33:0",
+    "skill_id": "judgement_strike",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_3"
+    ],
+    "tick": 33,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:33:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_2",
+    "target_uids": [
+      "enemy_L0_2"
+    ],
+    "tick": 33,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:33:4",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_2",
+    "target_uids": [
+      "enemy_L0_2"
+    ],
+    "tick": 33,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:33:7",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 33,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:33:8",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 33,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:35:0",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 35,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:36:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_0",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 36,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:36:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_0",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 36,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:36:5",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_3"
+    ],
+    "tick": 36,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:36:6",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_3"
+    ],
+    "tick": 36,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:36:10",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 36,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:36:11",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 36,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:36:14",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 36,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:36:15",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 36,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:36:18",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 36,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:36:19",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 36,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:36:20",
+    "skill_id": "poison_reflect_armor_stack",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 36,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:36:22",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_2",
+    "target_uids": [
+      "player_L0_2"
+    ],
+    "tick": 36,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:36:23",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_2",
+    "target_uids": [
+      "player_L0_2"
+    ],
+    "tick": 36,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:36:26",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L0_3"
+    ],
+    "tick": 36,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:36:27",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L0_3"
+    ],
+    "tick": 36,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:37:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 37,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:37:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 37,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:38:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 38,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:38:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 38,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:39:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_0",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 39,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:39:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_0",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 39,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:40:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L0_1",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 40,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:40:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L0_1",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 40,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:40:4",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L0_0"
+    ],
+    "tick": 40,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:40:5",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L0_0"
+    ],
+    "tick": 40,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:40:8",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_1",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 40,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:40:9",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_1",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 40,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:40:10",
+    "skill_id": "defense_down_attack",
+    "source_uid": "enemy_L1_1",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 40,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:40:12",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 40,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:40:13",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 40,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:40:14",
+    "skill_id": "poison_attack",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 40,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:41:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 41,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:41:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 41,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:41:5",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 41,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:41:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 41,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:41:8",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 41,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:41:9",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 41,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:42:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_2",
+    "target_uids": [
+      "enemy_L0_2"
+    ],
+    "tick": 42,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:42:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_2",
+    "target_uids": [
+      "enemy_L0_2"
+    ],
+    "tick": 42,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:44:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 44,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:44:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 44,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:44:4",
+    "skill_id": "heal",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 44,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:44:5",
+    "skill_id": "heal",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 44,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:44:6",
+    "skill_id": "heal",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 44,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:44:8",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 44,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:44:9",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 44,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:45:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_1",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 45,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:45:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_1",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 45,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:45:5",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 45,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:45:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 45,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:45:7",
+    "skill_id": "poison_reflect_armor_stack",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 45,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:46:0",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 46,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:47:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 47,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:47:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 47,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:48:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 48,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:48:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 48,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:48:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 48,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:48:7",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 48,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:48:9",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_2",
+    "target_uids": [
+      "player_L0_2"
+    ],
+    "tick": 48,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:48:10",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_2",
+    "target_uids": [
+      "player_L0_2"
+    ],
+    "tick": 48,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:48:13",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L0_3"
+    ],
+    "tick": 48,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:48:14",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L0_3"
+    ],
+    "tick": 48,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:48:16",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 48,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:48:17",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 48,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:49:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 49,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:49:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 49,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:49:3",
+    "skill_id": "poison_attack",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 49,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:49:5",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 49,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:49:6",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 49,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:50:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_1",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 50,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:50:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_1",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 50,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:50:4",
+    "skill_id": "defense_down_attack",
+    "source_uid": "enemy_L1_1",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 50,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:51:0",
+    "skill_id": "stun",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 51,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:51:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_2",
+    "target_uids": [
+      "enemy_L0_2"
+    ],
+    "tick": 51,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:51:4",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_2",
+    "target_uids": [
+      "enemy_L0_2"
+    ],
+    "tick": 51,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:52:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L0_0"
+    ],
+    "tick": 52,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:52:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L0_0"
+    ],
+    "tick": 52,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:52:5",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 52,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:52:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 52,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:52:9",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_0",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 52,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:52:10",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_0",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 52,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:53:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_0",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 53,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:53:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_0",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 53,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:53:5",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 53,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:53:6",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 53,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:53:8",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 53,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:53:9",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 53,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:54:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 54,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:54:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 54,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:54:4",
+    "skill_id": "poison_reflect_armor_stack",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 54,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:55:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 55,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:55:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 55,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:56:0",
+    "skill_id": "random_attribute_bolt",
+    "source_uid": "player_L0_3",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 56,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:56:1",
+    "skill_id": "blink_low_def_backline",
+    "source_uid": "enemy_L0_2",
+    "target_uids": [
+      "player_L0_3"
+    ],
+    "tick": 56,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:56:3",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_2",
+    "target_uids": [
+      "player_L0_3"
+    ],
+    "tick": 56,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:56:4",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_2",
+    "target_uids": [
+      "player_L0_3"
+    ],
+    "tick": 56,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:57:0",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 57,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:57:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 57,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:57:3",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 57,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:58:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 58,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:58:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 58,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:58:4",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 58,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:58:5",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 58,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:58:6",
+    "skill_id": "poison_attack",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 58,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:59:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_1",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 59,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:59:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_1",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 59,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:59:4",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 59,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:59:5",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 59,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:60:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_2",
+    "target_uids": [
+      "enemy_L0_2"
+    ],
+    "tick": 60,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:60:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_2",
+    "target_uids": [
+      "enemy_L0_2"
+    ],
+    "tick": 60,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:60:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 60,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:60:7",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 60,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:60:10",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 60,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:60:11",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 60,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:60:14",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L0_2"
+    ],
+    "tick": 60,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:60:15",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L0_2"
+    ],
+    "tick": 60,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:60:18",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_1",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 60,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:60:19",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_1",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 60,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:60:20",
+    "skill_id": "defense_down_attack",
+    "source_uid": "enemy_L1_1",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 60,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:60:22",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 60,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:60:23",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 60,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:61:0",
+    "skill_id": "random_ally_damage_reduction",
+    "source_uid": "player_L2_0",
+    "target_uids": [],
+    "tick": 61,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:61:1",
+    "skill_id": "silence_bolt",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L0_2"
+    ],
+    "tick": 61,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:63:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 63,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:63:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 63,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:63:4",
+    "skill_id": "poison_reflect_armor_stack",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 63,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:63:7",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 63,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:63:8",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 63,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:64:0",
+    "skill_id": "judgement_strike",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 64,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:64:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L0_0"
+    ],
+    "tick": 64,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:64:3",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L0_0"
+    ],
+    "tick": 64,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:64:5",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_2",
+    "target_uids": [
+      "player_L0_2"
+    ],
+    "tick": 64,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:64:6",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_2",
+    "target_uids": [
+      "player_L0_2"
+    ],
+    "tick": 64,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:65:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 65,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:65:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 65,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:65:5",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_0",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 65,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:65:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_0",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 65,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:65:8",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 65,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:65:9",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 65,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:66:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L0_1",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 66,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:66:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L0_1",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 66,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:66:5",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 66,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:66:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 66,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:67:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 67,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:67:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 67,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:67:3",
+    "skill_id": "poison_attack",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 67,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:68:0",
+    "skill_id": "front_cone_stun",
+    "source_uid": "player_L0_1",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 68,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:69:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_2",
+    "target_uids": [
+      "enemy_L0_2"
+    ],
+    "tick": 69,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:69:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_2",
+    "target_uids": [
+      "enemy_L0_2"
+    ],
+    "tick": 69,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:69:6",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 69,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:69:7",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 69,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:70:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_0",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 70,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:70:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_0",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 70,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:70:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_1",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 70,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:70:7",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_1",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 70,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:70:8",
+    "skill_id": "defense_down_attack",
+    "source_uid": "enemy_L1_1",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 70,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:72:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 72,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:72:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 72,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:72:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 72,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:72:7",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 72,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:72:8",
+    "skill_id": "poison_reflect_armor_stack",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 72,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:72:11",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L0_2"
+    ],
+    "tick": 72,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:72:12",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L0_2"
+    ],
+    "tick": 72,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:73:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_1",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 73,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:73:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_1",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 73,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:74:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 74,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:74:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 74,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:76:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 76,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:76:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 76,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:76:3",
+    "skill_id": "poison_attack",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 76,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:77:0",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 77,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:77:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 77,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:77:3",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 77,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:77:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 77,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:77:7",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 77,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:77:9",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 77,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:77:10",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 77,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:77:12",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 77,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:77:13",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 77,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:78:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L0_1",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 78,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:78:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L0_1",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 78,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:78:5",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_2",
+    "target_uids": [
+      "enemy_L0_3"
+    ],
+    "tick": 78,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:78:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L0_2",
+    "target_uids": [
+      "enemy_L0_3"
+    ],
+    "tick": 78,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:78:9",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_0",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 78,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:78:10",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_0",
+    "target_uids": [
+      "player_L1_1"
+    ],
+    "tick": 78,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:79:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L0_0"
+    ],
+    "tick": 79,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:79:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L0_0"
+    ],
+    "tick": 79,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:80:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 80,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:80:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 80,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:80:5",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_1",
+    "target_uids": [
+      "player_L1_2"
+    ],
+    "tick": 80,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:80:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_1",
+    "target_uids": [
+      "player_L1_2"
+    ],
+    "tick": 80,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:80:7",
+    "skill_id": "defense_down_attack",
+    "source_uid": "enemy_L1_1",
+    "target_uids": [
+      "player_L1_2"
+    ],
+    "tick": 80,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:81:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 81,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:81:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 81,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:81:4",
+    "skill_id": "poison_reflect_armor_stack",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 81,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:84:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 84,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:84:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 84,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:84:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 84,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:84:7",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 84,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:84:10",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L0_2"
+    ],
+    "tick": 84,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:84:11",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L0_2"
+    ],
+    "tick": 84,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:84:14",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 84,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:84:15",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 84,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:85:0",
+    "skill_id": "black_hole",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 85,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:85:1",
+    "skill_id": "black_hole",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [],
+    "tick": 85,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:85:4",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 85,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:85:5",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 85,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:85:7",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 85,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:85:8",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 85,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:85:9",
+    "skill_id": "poison_attack",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 85,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:86:0",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 86,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:86:1",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_1"
+    ],
+    "tick": 86,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:86:3",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [],
+    "tick": 86,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:88:0",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 88,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:88:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 88,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:88:4",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 88,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:89:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 89,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:89:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 89,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:89:4",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 89,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:89:5",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 89,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:90:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 90,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:90:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 90,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:90:4",
+    "skill_id": "poison_reflect_armor_stack",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 90,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:90:6",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 90,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:90:7",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_2"
+    ],
+    "tick": 90,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:91:0",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 91,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:91:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 91,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:91:3",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 91,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:91:5",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 91,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:91:6",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 91,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:91:9",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_0",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 91,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:91:10",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_0",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 91,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:94:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 94,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:94:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 94,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:94:3",
+    "skill_id": "poison_attack",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 94,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:95:0",
+    "skill_id": "judgement_strike",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 95,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:95:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 95,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:95:4",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 95,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:95:6",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 95,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:95:7",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 95,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:96:0",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 96,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:96:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L0_1",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 96,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:96:3",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L0_1",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 96,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:96:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 96,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:96:7",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 96,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:96:10",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 96,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:96:11",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 96,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:96:14",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 96,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:96:15",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 96,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:99:0",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 99,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:99:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 99,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:99:4",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 99,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:99:5",
+    "skill_id": "heal",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 99,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:99:6",
+    "skill_id": "heal",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 99,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:101:0",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 101,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:101:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 101,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:101:3",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 101,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:101:5",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 101,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:101:6",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 101,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:102:0",
+    "skill_id": "stun",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 102,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:102:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 102,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:102:3",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 102,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:103:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 103,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:103:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L0_1"
+    ],
+    "tick": 103,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:103:5",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 103,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:103:6",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 103,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:103:8",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 103,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:103:9",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 103,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:103:10",
+    "skill_id": "poison_attack",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 103,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:104:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_0",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 104,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:104:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_0",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 104,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:106:0",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 106,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:106:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 106,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:106:4",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 106,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:106:6",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 106,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:106:7",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 106,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:108:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 108,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:108:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 108,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:108:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 108,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:108:7",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 108,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:110:0",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 110,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:110:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 110,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:110:4",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 110,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:112:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 112,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:112:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 112,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:112:3",
+    "skill_id": "poison_attack",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 112,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:113:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 113,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:113:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 113,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:113:4",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 113,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:113:5",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 113,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:113:7",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 113,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:113:8",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 113,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:116:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L1_3"
+    ],
+    "tick": 116,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:116:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L1_3"
+    ],
+    "tick": 116,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:116:5",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 116,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:116:6",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 116,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:117:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 117,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:117:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 117,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:117:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_0",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 117,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:117:7",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_0",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 117,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:117:9",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 117,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:117:10",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 117,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:120:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 120,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:120:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 120,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:120:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 120,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:120:7",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 120,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:121:0",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 121,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:121:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 121,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:121:4",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 121,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:121:6",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 121,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:121:7",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 121,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:121:9",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 121,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:121:10",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 121,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:121:11",
+    "skill_id": "poison_attack",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 121,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:122:0",
+    "skill_id": "random_ally_damage_reduction",
+    "source_uid": "player_L2_0",
+    "target_uids": [],
+    "tick": 122,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:122:1",
+    "skill_id": "silence_bolt",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 122,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:124:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 124,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:124:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 124,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:125:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 125,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:125:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 125,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:125:4",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 125,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:125:5",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 125,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:126:0",
+    "skill_id": "judgement_strike",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 126,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:127:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L1_3"
+    ],
+    "tick": 127,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:127:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L1_3"
+    ],
+    "tick": 127,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:128:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 128,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:128:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 128,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:128:5",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 128,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:128:6",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 128,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:129:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 129,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:129:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 129,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:130:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_0",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 130,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:130:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L1_0",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 130,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:130:5",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 130,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:130:6",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 130,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:130:7",
+    "skill_id": "poison_attack",
+    "source_uid": "enemy_L2_3",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 130,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:132:0",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 132,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:132:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 132,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:132:4",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 132,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:132:7",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 132,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:132:8",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_3",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 132,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:132:11",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 132,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:132:12",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 132,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:133:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 133,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:133:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 133,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:134:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 134,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:134:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L1_0"
+    ],
+    "tick": 134,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:137:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L0_1"
+    ],
+    "tick": 137,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:137:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L0_1"
+    ],
+    "tick": 137,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:137:4",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 137,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:137:5",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_3"
+    ],
+    "tick": 137,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:138:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L1_3"
+    ],
+    "tick": 138,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:138:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L1_3"
+    ],
+    "tick": 138,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:139:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 139,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:139:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 139,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:139:5",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 139,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:139:6",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 139,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:143:0",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 143,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:144:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L0_1"
+    ],
+    "tick": 144,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:144:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L0_1"
+    ],
+    "tick": 144,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:144:5",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L0_1"
+    ],
+    "tick": 144,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:144:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L0_1"
+    ],
+    "tick": 144,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:144:9",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 144,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:144:10",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 144,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:145:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 145,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:145:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 145,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:145:4",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 145,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:145:5",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 145,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:149:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L0_1"
+    ],
+    "tick": 149,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:149:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L0_1"
+    ],
+    "tick": 149,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:149:5",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L1_3"
+    ],
+    "tick": 149,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:149:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L1_3"
+    ],
+    "tick": 149,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:149:8",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 149,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:149:9",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 149,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:153:0",
+    "skill_id": "stun",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 153,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:154:0",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 154,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:154:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L0_1"
+    ],
+    "tick": 154,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:154:3",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L0_1"
+    ],
+    "tick": 154,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:156:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L0_1"
+    ],
+    "tick": 156,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:156:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L1_3",
+    "target_uids": [
+      "enemy_L0_1"
+    ],
+    "tick": 156,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:156:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 156,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:156:7",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 156,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:157:0",
+    "skill_id": "judgement_strike",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L0_1"
+    ],
+    "tick": 157,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:157:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 157,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:157:3",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 157,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:158:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 158,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:158:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 158,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:160:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L1_3"
+    ],
+    "tick": 160,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:160:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L1_3"
+    ],
+    "tick": 160,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:161:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 161,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:161:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 161,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:162:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 162,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:162:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 162,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:164:0",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 164,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:164:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L0_1"
+    ],
+    "tick": 164,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:164:3",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L0_1"
+    ],
+    "tick": 164,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:166:0",
+    "skill_id": "black_hole",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 166,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:166:1",
+    "skill_id": "black_hole",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L1_2"
+    ],
+    "tick": 166,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:166:2",
+    "skill_id": "black_hole",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L1_3"
+    ],
+    "tick": 166,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:166:4",
+    "skill_id": "black_hole",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [],
+    "tick": 166,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:168:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 168,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:168:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 168,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:169:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 169,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:169:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 169,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:170:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L1_2"
+    ],
+    "tick": 170,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:170:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_1",
+    "target_uids": [
+      "player_L1_2"
+    ],
+    "tick": 170,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:171:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 171,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:171:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 171,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:172:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 172,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:172:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 172,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:173:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 173,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:173:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 173,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:174:0",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 174,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:177:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 177,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:177:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 177,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:177:4",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L0_1"
+    ],
+    "tick": 177,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:177:5",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L0_1"
+    ],
+    "tick": 177,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:178:0",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 178,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:178:1",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L0_3"
+    ],
+    "tick": 178,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:178:2",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 178,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:178:3",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 178,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:178:4",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 178,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:178:5",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [],
+    "tick": 178,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:180:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 180,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:180:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 180,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:181:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 181,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:181:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 181,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:182:0",
+    "skill_id": "random_ally_damage_reduction",
+    "source_uid": "player_L2_0",
+    "target_uids": [],
+    "tick": 182,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:182:1",
+    "skill_id": "silence_bolt",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 182,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:182:4",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 182,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:182:5",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 182,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:183:0",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 183,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:183:1",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L0_3"
+    ],
+    "tick": 183,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:183:2",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 183,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:183:3",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L2_1"
+    ],
+    "tick": 183,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:183:4",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 183,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:183:5",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 183,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:184:0",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 184,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:184:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 184,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:184:3",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 184,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:185:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 185,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:185:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 185,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:187:0",
+    "skill_id": "judgement_strike",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 187,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:187:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 187,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:187:3",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 187,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:188:0",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 188,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:188:1",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L0_3"
+    ],
+    "tick": 188,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:188:2",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 188,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:188:3",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L2_1"
+    ],
+    "tick": 188,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:188:4",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 188,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:188:5",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 188,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:189:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 189,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:189:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 189,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:192:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 192,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:192:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 192,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:192:6",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 192,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:192:7",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 192,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:193:0",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 193,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:193:1",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L0_3"
+    ],
+    "tick": 193,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:193:2",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 193,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:193:3",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L2_1"
+    ],
+    "tick": 193,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:193:4",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 193,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:193:5",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 193,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:193:7",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 193,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:193:8",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 193,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:194:0",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 194,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:197:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 197,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:197:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 197,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:197:4",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 197,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:197:5",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 197,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:197:7",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 197,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:197:8",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 197,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:198:0",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 198,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:198:1",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L0_3"
+    ],
+    "tick": 198,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:198:2",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 198,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:198:3",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L2_1"
+    ],
+    "tick": 198,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:198:4",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 198,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:198:5",
+    "skill_id": "global_divine_blast",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L2_3"
+    ],
+    "tick": 198,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:201:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 201,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:201:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_0",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 201,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:202:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 202,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:202:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 202,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:204:0",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 204,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:204:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 204,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:204:4",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L1_0"
+    ],
+    "tick": 204,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:205:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L1_2"
+    ],
+    "tick": 205,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:205:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L0_0",
+    "target_uids": [
+      "player_L1_2"
+    ],
+    "tick": 205,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:207:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 207,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:207:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 207,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:209:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 209,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:209:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 209,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:210:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 210,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:210:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 210,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:212:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 212,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:212:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 212,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:214:0",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 214,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:216:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L1_2"
+    ],
+    "tick": 216,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:216:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "enemy_L0_3",
+    "target_uids": [
+      "player_L1_2"
+    ],
+    "tick": 216,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:217:0",
+    "skill_id": "judgement_strike",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L0_0"
+    ],
+    "tick": 217,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:221:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L0_3"
+    ],
+    "tick": 221,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:221:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L0_3"
+    ],
+    "tick": 221,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:221:5",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 221,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:221:6",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 221,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:222:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 222,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:222:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 222,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:223:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 223,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:223:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 223,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:224:0",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 224,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:232:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 232,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:232:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 232,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:233:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 233,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:233:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 233,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:234:0",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 234,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:236:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 236,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:236:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 236,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:242:0",
+    "skill_id": "random_ally_damage_reduction",
+    "source_uid": "player_L2_0",
+    "target_uids": [],
+    "tick": 242,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:242:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 242,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:242:4",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 242,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:244:0",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 244,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:245:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 245,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:245:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 245,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:249:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 249,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:249:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 249,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:251:0",
+    "skill_id": "judgement_strike",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_1"
+    ],
+    "tick": 251,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:251:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_1"
+    ],
+    "tick": 251,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:251:3",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_1"
+    ],
+    "tick": 251,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:252:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 252,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:252:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 252,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:254:0",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 254,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:257:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 257,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:257:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 257,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:261:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_1"
+    ],
+    "tick": 261,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:261:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_1"
+    ],
+    "tick": 261,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:262:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 262,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:262:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 262,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:262:5",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 262,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:262:6",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 262,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:264:0",
+    "skill_id": "shared_hp_link",
+    "source_uid": "enemy_L2_0",
+    "target_uids": [],
+    "tick": 264,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:269:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 269,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:269:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 269,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:271:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_1"
+    ],
+    "tick": 271,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:271:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_1"
+    ],
+    "tick": 271,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:272:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 272,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:272:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_0"
+    ],
+    "tick": 272,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:273:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 273,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:273:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 273,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:281:0",
+    "skill_id": "judgement_strike",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_1"
+    ],
+    "tick": 281,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:281:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_1"
+    ],
+    "tick": 281,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:281:3",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_1"
+    ],
+    "tick": 281,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:281:5",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 281,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:281:6",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 281,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:284:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 284,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:284:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_1",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 284,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:291:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_1"
+    ],
+    "tick": 291,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:291:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_1"
+    ],
+    "tick": 291,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:293:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 293,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:293:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 293,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:293:4",
+    "skill_id": "poison_reflect_armor_stack",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 293,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:293:6",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 293,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:293:7",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 293,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:301:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 301,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:301:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 301,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:301:3",
+    "skill_id": "poison_reflect_armor_stack",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L1_2"
+    ],
+    "tick": 301,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:302:0",
+    "skill_id": "random_ally_damage_reduction",
+    "source_uid": "player_L2_0",
+    "target_uids": [],
+    "tick": 302,
+    "type": "skill_shake"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:303:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 303,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:303:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 303,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:303:4",
+    "skill_id": "poison_reflect_armor_stack",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 303,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:305:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 305,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:305:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 305,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:311:0",
+    "skill_id": "judgement_strike",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 311,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:311:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 311,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:311:3",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 311,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:311:4",
+    "skill_id": "poison_reflect_armor_stack",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L1_2"
+    ],
+    "tick": 311,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:313:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 313,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:313:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 313,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:313:4",
+    "skill_id": "poison_reflect_armor_stack",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 313,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:317:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 317,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:317:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 317,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:321:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 321,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:321:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 321,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:321:3",
+    "skill_id": "poison_reflect_armor_stack",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L1_2"
+    ],
+    "tick": 321,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:323:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 323,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:323:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 323,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:323:4",
+    "skill_id": "poison_reflect_armor_stack",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 323,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:329:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 329,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:329:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 329,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:331:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 331,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:331:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 331,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:331:3",
+    "skill_id": "poison_reflect_armor_stack",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L1_2"
+    ],
+    "tick": 331,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:333:2",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 333,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:333:3",
+    "skill_id": "basic_ranged",
+    "source_uid": "player_L2_0",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 333,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:333:4",
+    "skill_id": "poison_reflect_armor_stack",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 333,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:341:0",
+    "skill_id": "judgement_strike",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 341,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:341:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 341,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:341:3",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 341,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:341:4",
+    "skill_id": "poison_reflect_armor_stack",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L1_2"
+    ],
+    "tick": 341,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:341:6",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 341,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:341:7",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L2_0"
+    ],
+    "tick": 341,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:351:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 351,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:351:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 351,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:351:3",
+    "skill_id": "poison_reflect_armor_stack",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L1_2"
+    ],
+    "tick": 351,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:353:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L1_2"
+    ],
+    "tick": 353,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:353:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L1_2"
+    ],
+    "tick": 353,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:361:1",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 361,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:361:2",
+    "skill_id": "basic_melee",
+    "source_uid": "player_L1_2",
+    "target_uids": [
+      "enemy_L2_2"
+    ],
+    "tick": 361,
+    "type": "hit_number"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:361:3",
+    "skill_id": "poison_reflect_armor_stack",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L1_2"
+    ],
+    "tick": 361,
+    "type": "sfx_proc"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:365:1",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L1_2"
+    ],
+    "tick": 365,
+    "type": "impact"
+  },
+  {
+    "event_key": "skill_vfx_review:20260823:6:merc_sagittarius_rain:team0:365:2",
+    "skill_id": "basic_melee",
+    "source_uid": "enemy_L2_2",
+    "target_uids": [
+      "player_L1_2"
+    ],
+    "tick": 365,
+    "type": "hit_number"
+  }
+]

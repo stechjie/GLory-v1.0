@@ -1,0 +1,362 @@
+[
+  {
+    "previous_skill_ready": 0.0,
+    "skill_ready": 3.3,
+    "source_uid": "player_L1_2",
+    "tick": 3
+  },
+  {
+    "previous_skill_ready": 0.0,
+    "skill_ready": 6.3,
+    "source_uid": "enemy_L2_1",
+    "tick": 3
+  },
+  {
+    "previous_skill_ready": 0.0,
+    "skill_ready": 8.4,
+    "source_uid": "enemy_L0_0",
+    "tick": 4
+  },
+  {
+    "previous_skill_ready": 0.0,
+    "skill_ready": 8.5,
+    "source_uid": "player_L1_0",
+    "tick": 5
+  },
+  {
+    "previous_skill_ready": 0.0,
+    "skill_ready": 5.5,
+    "source_uid": "enemy_L0_2",
+    "tick": 5
+  },
+  {
+    "previous_skill_ready": 0.0,
+    "skill_ready": 1.5,
+    "source_uid": "enemy_L2_0",
+    "tick": 5
+  },
+  {
+    "previous_skill_ready": 1.5,
+    "skill_ready": 2.5,
+    "source_uid": "enemy_L2_0",
+    "tick": 15
+  },
+  {
+    "previous_skill_ready": 0.0,
+    "skill_ready": 6.7,
+    "source_uid": "player_L0_1",
+    "tick": 17
+  },
+  {
+    "previous_skill_ready": 2.5,
+    "skill_ready": 3.5,
+    "source_uid": "enemy_L2_0",
+    "tick": 25
+  },
+  {
+    "previous_skill_ready": 2.5,
+    "skill_ready": 5.5,
+    "source_uid": "player_L0_3",
+    "tick": 30
+  },
+  {
+    "previous_skill_ready": 3.0,
+    "skill_ready": 6.0,
+    "source_uid": "player_L0_merc0",
+    "tick": 30
+  },
+  {
+    "previous_skill_ready": 3.3,
+    "skill_ready": 6.3,
+    "source_uid": "player_L1_2",
+    "tick": 33
+  },
+  {
+    "previous_skill_ready": 3.5,
+    "skill_ready": 4.5,
+    "source_uid": "enemy_L2_0",
+    "tick": 35
+  },
+  {
+    "previous_skill_ready": 4.5,
+    "skill_ready": 5.6,
+    "source_uid": "enemy_L2_0",
+    "tick": 46
+  },
+  {
+    "previous_skill_ready": 5.0,
+    "skill_ready": 10.1,
+    "source_uid": "enemy_L0_1",
+    "tick": 51
+  },
+  {
+    "previous_skill_ready": 5.5,
+    "skill_ready": 8.1,
+    "source_uid": "player_L0_3",
+    "tick": 56
+  },
+  {
+    "previous_skill_ready": 5.6,
+    "skill_ready": 6.7,
+    "source_uid": "enemy_L2_0",
+    "tick": 57
+  },
+  {
+    "previous_skill_ready": 5.6,
+    "skill_ready": 10.8,
+    "source_uid": "enemy_L0_2",
+    "tick": 58
+  },
+  {
+    "previous_skill_ready": 6.0,
+    "skill_ready": 12.1,
+    "source_uid": "player_L1_3",
+    "tick": 61
+  },
+  {
+    "previous_skill_ready": 6.0,
+    "skill_ready": 12.1,
+    "source_uid": "player_L2_0",
+    "tick": 61
+  },
+  {
+    "previous_skill_ready": 6.0,
+    "skill_ready": 12.1,
+    "source_uid": "enemy_L0_3",
+    "tick": 61
+  },
+  {
+    "previous_skill_ready": 6.3,
+    "skill_ready": 9.39999999999999,
+    "source_uid": "player_L1_2",
+    "tick": 64
+  },
+  {
+    "previous_skill_ready": 6.3,
+    "skill_ready": 12.4,
+    "source_uid": "enemy_L2_1",
+    "tick": 64
+  },
+  {
+    "previous_skill_ready": 6.7,
+    "skill_ready": 11.8,
+    "source_uid": "player_L0_1",
+    "tick": 68
+  },
+  {
+    "previous_skill_ready": 6.7,
+    "skill_ready": 8.69999999999999,
+    "source_uid": "enemy_L2_0",
+    "tick": 77
+  },
+  {
+    "previous_skill_ready": 8.4,
+    "skill_ready": 16.5,
+    "source_uid": "enemy_L0_0",
+    "tick": 85
+  },
+  {
+    "previous_skill_ready": 8.5,
+    "skill_ready": 16.6,
+    "source_uid": "player_L1_0",
+    "tick": 86
+  },
+  {
+    "previous_skill_ready": 8.69999999999999,
+    "skill_ready": 9.79999999999998,
+    "source_uid": "enemy_L2_0",
+    "tick": 88
+  },
+  {
+    "previous_skill_ready": 9.39999999999999,
+    "skill_ready": 12.7,
+    "source_uid": "player_L1_2",
+    "tick": 97
+  },
+  {
+    "previous_skill_ready": 9.79999999999998,
+    "skill_ready": 10.9,
+    "source_uid": "enemy_L2_0",
+    "tick": 99
+  },
+  {
+    "previous_skill_ready": 10.1,
+    "skill_ready": 15.2,
+    "source_uid": "enemy_L0_1",
+    "tick": 102
+  },
+  {
+    "previous_skill_ready": 10.8,
+    "skill_ready": 15.9,
+    "source_uid": "enemy_L0_2",
+    "tick": 109
+  },
+  {
+    "previous_skill_ready": 10.9,
+    "skill_ready": 12.0,
+    "source_uid": "enemy_L2_0",
+    "tick": 110
+  },
+  {
+    "previous_skill_ready": 11.8,
+    "skill_ready": 16.9,
+    "source_uid": "player_L0_1",
+    "tick": 119
+  },
+  {
+    "previous_skill_ready": 12.0,
+    "skill_ready": 13.1,
+    "source_uid": "enemy_L2_0",
+    "tick": 121
+  },
+  {
+    "previous_skill_ready": 12.1,
+    "skill_ready": 18.2,
+    "source_uid": "player_L1_3",
+    "tick": 122
+  },
+  {
+    "previous_skill_ready": 12.1,
+    "skill_ready": 18.2,
+    "source_uid": "player_L2_0",
+    "tick": 122
+  },
+  {
+    "previous_skill_ready": 12.1,
+    "skill_ready": 18.2,
+    "source_uid": "enemy_L0_3",
+    "tick": 122
+  },
+  {
+    "previous_skill_ready": 12.7,
+    "skill_ready": 15.8,
+    "source_uid": "player_L1_2",
+    "tick": 128
+  },
+  {
+    "previous_skill_ready": 13.1,
+    "skill_ready": 14.2,
+    "source_uid": "enemy_L2_0",
+    "tick": 132
+  },
+  {
+    "previous_skill_ready": 12.4,
+    "skill_ready": 20.2,
+    "source_uid": "enemy_L2_1",
+    "tick": 142
+  },
+  {
+    "previous_skill_ready": 14.2,
+    "skill_ready": 15.3,
+    "source_uid": "enemy_L2_0",
+    "tick": 143
+  },
+  {
+    "previous_skill_ready": 15.3,
+    "skill_ready": 16.4,
+    "source_uid": "enemy_L2_0",
+    "tick": 154
+  },
+  {
+    "previous_skill_ready": 15.8,
+    "skill_ready": 18.9,
+    "source_uid": "player_L1_2",
+    "tick": 159
+  },
+  {
+    "previous_skill_ready": 16.4,
+    "skill_ready": 17.4,
+    "source_uid": "enemy_L2_0",
+    "tick": 164
+  },
+  {
+    "previous_skill_ready": 16.5,
+    "skill_ready": 24.6,
+    "source_uid": "enemy_L0_0",
+    "tick": 166
+  },
+  {
+    "previous_skill_ready": 17.4,
+    "skill_ready": 18.4,
+    "source_uid": "enemy_L2_0",
+    "tick": 174
+  },
+  {
+    "previous_skill_ready": 16.6,
+    "skill_ready": 25.7,
+    "source_uid": "player_L1_0",
+    "tick": 177
+  },
+  {
+    "previous_skill_ready": 18.2,
+    "skill_ready": 24.2,
+    "source_uid": "player_L1_3",
+    "tick": 182
+  },
+  {
+    "previous_skill_ready": 18.2,
+    "skill_ready": 24.2,
+    "source_uid": "player_L2_0",
+    "tick": 182
+  },
+  {
+    "previous_skill_ready": 18.2,
+    "skill_ready": 24.2,
+    "source_uid": "enemy_L0_3",
+    "tick": 182
+  },
+  {
+    "previous_skill_ready": 18.4,
+    "skill_ready": 19.4,
+    "source_uid": "enemy_L2_0",
+    "tick": 184
+  },
+  {
+    "previous_skill_ready": 20.2,
+    "skill_ready": 27.1,
+    "source_uid": "enemy_L2_1",
+    "tick": 211
+  },
+  {
+    "previous_skill_ready": 19.4,
+    "skill_ready": 24.4000000000001,
+    "source_uid": "enemy_L2_0",
+    "tick": 234
+  },
+  {
+    "previous_skill_ready": 24.2,
+    "skill_ready": 30.2000000000001,
+    "source_uid": "player_L1_3",
+    "tick": 242
+  },
+  {
+    "previous_skill_ready": 24.2,
+    "skill_ready": 30.2000000000001,
+    "source_uid": "enemy_L0_3",
+    "tick": 242
+  },
+  {
+    "previous_skill_ready": 24.4000000000001,
+    "skill_ready": 25.4000000000001,
+    "source_uid": "enemy_L2_0",
+    "tick": 244
+  },
+  {
+    "previous_skill_ready": 25.4000000000001,
+    "skill_ready": 26.4000000000001,
+    "source_uid": "enemy_L2_0",
+    "tick": 254
+  },
+  {
+    "previous_skill_ready": 26.4000000000001,
+    "skill_ready": 28.0000000000001,
+    "source_uid": "enemy_L2_0",
+    "tick": 270
+  },
+  {
+    "previous_skill_ready": 27.1,
+    "skill_ready": 33.1000000000001,
+    "source_uid": "enemy_L2_1",
+    "tick": 271
+  }
+]
