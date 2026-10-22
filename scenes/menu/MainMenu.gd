@@ -7,6 +7,7 @@ signal team_host_requested
 signal team_join_requested(address: String)
 signal team_room_create_requested
 signal team_room_join_requested(room_id: int)
+signal team_room_spectate_requested(room_id: int)  # 观战（协议 44）：房间列表的「观战」行、好友列表的「观战」键
 signal team_room_list_requested
 signal public_token_generate_requested
 signal public_token_resume_requested(token_id: String)
@@ -745,6 +746,44 @@ func show_room_list(rooms: Array) -> void:
 		var full := max_players > 0 and players >= max_players
 		_room_list_box.add_child(_room_row(id, players, max_players, full))
 
+# 只能观战的房间（满员 / 已开局 / 匹配房），接在能加入的房间后面。
+# 服务器在同一条回复里给两类，NetworkService 拆成两个信号：show_room_list 先清空并画能加入的，
+# 这里紧接着补上观战行 —— 所以这里不清空，只追加。
+func show_spectate_rooms(rooms: Array) -> void:
+	if _room_list_box == null or rooms.is_empty():
+		return
+	if _room_scroll != null:
+		_room_scroll.visible = true
+	if _room_empty_box != null:
+		_room_empty_box.visible = false
+	for entry in rooms:
+		var d := entry as Dictionary
+		_room_list_box.add_child(_spectate_row(int(d.get("id", 0)), int(d.get("players", 0)),
+			int(d.get("max", 6)), int(d.get("spectators", 0))))
+
+func _spectate_row(room_id: int, players: int, max_players: int, spectators: int) -> Button:
+	var row := _dialog_button("", func(rid := room_id): team_room_spectate_requested.emit(rid), "room_row")
+	row.name = "spectate_row_%d" % room_id
+	row.custom_minimum_size = Vector2(0, ROOM_ROW_H)
+	var line := HBoxContainer.new()
+	line.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	line.offset_left = 16
+	line.offset_right = -16
+	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(line)
+	var name_label := _room_label(_menu_text("房间 %d", "Room %d") % room_id, ROOM_FONT_BODY, Tokens.MIST_ROW_NAME)
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	line.add_child(name_label)
+	line.add_child(_room_label("%d/%d" % [players, max_players], ROOM_FONT_BODY, Tokens.MIST_TEXT_MUTED))
+	var full := spectators >= 10
+	var spectate_label := _room_label("  " + _menu_text("观战 %d/10", "Spectate %d/10") % spectators,
+		ROOM_FONT_BODY, Tokens.MIST_TEXT_MUTED if full else Tokens.MIST_GOLD_BRIGHT)
+	line.add_child(spectate_label)
+	# 观战席满了：同满员房间那一行的样子，点不了（服务器也会拒 spectate_full）。
+	if full:
+		row.disabled = true
+	return row
+
 func show_room_error(reason: String) -> void:
 	if _room_status == null:
 		return
@@ -781,6 +820,12 @@ func _room_error_text(reason: String, typed_by_player: bool) -> String:
 			return _menu_text("房间已满", "Room is full")
 		"token_id_unknown":
 			return _menu_text("没有找到可恢复的 Token ID", "No resumable game for this Token ID")
+		"spectate_full":
+			return _menu_text("观战席已满", "Spectator seats are full")
+		"spectate_closed":
+			return _menu_text("该房间未开放观战", "Spectating is closed for this room")
+		"spectate_seated":
+			return _menu_text("你正在房间里，先离开才能观战", "Leave your room before spectating")
 	# 出战名片的各种失败（领不到、过期、验不过…）对玩家是同一件事。
 	# 具体原因在战斗服务器日志里（seat card rejected reason=…），不给玩家看代码。
 	if reason.begins_with("card_"):

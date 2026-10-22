@@ -26,6 +26,8 @@ const WINDOW_SEC := 10.0
 const LIMITS := {
 	"create_room": 3,
 	"join_room": 6,
+	# 进观战（协议 44）。和入座同一档：每次都可能带一张名片要验签，验签是这条路上最贵的一步。
+	"spectate_join": 6,
 	"room_list": 10,
 	"public_token": 3,
 	"public_resume": 5,

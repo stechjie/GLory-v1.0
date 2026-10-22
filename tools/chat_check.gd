@@ -60,9 +60,11 @@ const EXPECTED_IDS := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 # **改 @rpc 的人必须把这三行一起改**，不然下一次又是白绿。
 # 2026-10-11 语音留言：加 `_rpc_team_chat_voice_submit` / `_rpc_team_chat_voice`
 # → 65 -> 67、协议 40 -> 41、指纹变了。
-const PINNED_RPC_COUNT := 67
-const PINNED_RPC_PROTOCOL := 42
-const PINNED_RPC_SIGNATURES := "fa2e5e2003cfb90b"
+# 2026-10-22 观战席位：加 10 条 `_rpc_spectate_*`（SpectatorService.gd）→ 67 -> 77、协议 -> 44、指纹变了。
+# 协议号钉子之前停在 42（43 那次没跟），这次一起跟回来。
+const PINNED_RPC_COUNT := 77
+const PINNED_RPC_PROTOCOL := 44
+const PINNED_RPC_SIGNATURES := "5b704b8c459566a4"
 
 var _h: CheckHarness
 

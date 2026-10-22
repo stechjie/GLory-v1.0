@@ -30,6 +30,9 @@ static func team_board_submission(board_slots: Array, mercenary_slots: Array = [
 		"prep_income_total": GameState.prep_income_total,
 		"gold_spent_this_round": GameState.gold_spent_this_round,
 		"board": _minimal_slots(board_slots, false),
+		# 备战区（协议 44）：只给观战看，战斗不读它。直接取 GameState，
+		# 这样十来个调用点（含 tools/ 里的门禁）一个都不用改签名。
+		"bench": _minimal_slots(GameState.bench_slots, false),
 		"mercenaries": _minimal_slots(mercenary_slots, true),
 		"treasures": _sanitize_treasure_ids(GameState.owned_treasures),
 		"syn": SynergyService.current_player_flags(),
@@ -66,6 +69,7 @@ static func validate_team_snapshot(snapshot: Variant, expected_round: int) -> Di
 	if not bool(treasures_result.get("ok", false)):
 		return treasures_result
 	var clean_board: Array = board_result.get("slots", _empty_board())
+	var clean_bench := _validate_bench(d.get("bench", []), maxi(0, round_id - 1))
 	return {
 		"ok": true,
 		"snapshot": {
@@ -76,6 +80,7 @@ static func validate_team_snapshot(snapshot: Variant, expected_round: int) -> Di
 			"prep_income_total": clampi(int(d.get("prep_income_total", 0)), 0, 1000000000),
 			"gold_spent_this_round": bool(d.get("gold_spent_this_round", false)),
 			"board": clean_board,
+			"bench": clean_bench,
 			"mercenaries": merc_result.get("slots", []),
 			"treasures": treasures_result.get("treasures", []),
 			# 客户端提交的 syn 一律丢弃，由服务端从已校验的棋盘重建。
@@ -307,6 +312,23 @@ static func _validate_slots(value: Variant, mercenary: bool, max_slots: int, max
 			UnitGrowth.sanitize_into(clean, d, max_battles)
 			out[slot] = clean
 	return {"ok": true, "slots": out}
+
+# 备战区：校验规则与棋盘相同（同一个 _validate_slots），只是格子数是 BENCH_SLOTS。
+#
+# 与棋盘不同，**不合法时丢掉备战区、不拒整份提交**：它只给观战显示用，战斗不读。
+# 因为显示用的字段坏了就让一个人这回合交不了棋盘，代价完全不对等。
+# 缺这个字段（旧形状的快照、门禁里手搓的快照）同样当成空备战区。
+# SNAPSHOT_VERSION 因此不用顶 —— 已有字段的含义一个都没变（顶版本号是为了那种情况）。
+static func _validate_bench(value: Variant, max_battles: int) -> Array:
+	var empty := []
+	empty.resize(GameState.BENCH_SLOTS)
+	empty.fill(null)
+	if typeof(value) != TYPE_ARRAY or (value as Array).is_empty():
+		return empty
+	var result := _validate_slots(value, false, GameState.BENCH_SLOTS, max_battles)
+	if not bool(result.get("ok", false)):
+		return empty
+	return (result.get("slots", []) as Array).slice(0, GameState.BENCH_SLOTS)
 
 static func _trusted_def(id: String, mercenary: bool) -> Dictionary:
 	if id.is_empty():

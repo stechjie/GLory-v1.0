@@ -48,7 +48,8 @@ const MY_SLOT := 0
 # 从这里**看不出**是哪一次顶号带上去的（协议号那段时间顶了九次，大概率有一次覆盖了它）——
 # 能确定的只有「这条门禁那段时间没在干活」。两个数一起跟到现在的值，断言重新生效。
 # tools/chat_check.gd 的同一套钉子也落后了九个版本（58/31，实际 65），见那边的注释。
-const PINNED_PROTOCOL := 43
+# 2026-10-22 跟到 44（观战席位：加 10 条观战 RPC、快照多一个只显示用的备战区；经济契约没变，指纹不动）。
+const PINNED_PROTOCOL := 44
 const PINNED_CONTRACT := "06Ci0EyHbMMODjyz"
 
 var _h: CheckHarness
