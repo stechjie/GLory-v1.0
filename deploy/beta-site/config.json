@@ -1,16 +1,16 @@
 {
   "ios": {
-    "ready": false,
+    "ready": true,
     "url": "https://testflight.apple.com/join/W2p1ukJp",
-    "version": "",
-    "pending_version": "0.0.28 (64)"
+    "version": "0.0.28 (64)",
+    "pending_version": "0.0.29 (65)"
   },
   "android": {
     "ready": true,
     "mode": "apk",
-    "url": "https://glorytd-api.duckdns.org/beta/downloads/Glory-0.0.28-41-android.apk",
-    "version": "0.0.28 (41)",
-    "size_bytes": 575604256,
+    "url": "https://glorytd-api.duckdns.org/beta/downloads/Glory-0.0.29-42-android.apk",
+    "version": "0.0.29 (42)",
+    "size_bytes": 575612448,
     "size_label": "548.9 MiB"
   }
 }
