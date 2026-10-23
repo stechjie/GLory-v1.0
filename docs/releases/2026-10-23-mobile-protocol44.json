@@ -1,0 +1,74 @@
+{
+  "source_commit": "8a5802d6d905d5186e9dca38ea818ba117b61bc3",
+  "version": "0.0.29",
+  "battle_protocol": 44,
+  "base_id": "glory-20261023-protocol44-slim",
+  "android": {
+    "version_code": 42,
+    "bytes": 575612448,
+    "sha256": "7638d847886c25e68b6eaf419fd9f023c37e2eddd99f0a1d9dd4a7ac53f8f9fe",
+    "base_sha256": "04bb57b5f43b6e681448ee0cfa56b7de1f9f3970ac050b4954a4a08d9d108fe5",
+    "drive_file_id": "19qnP6WQXTYhl43G5BFHFY7gpRPaPbJAk",
+    "drive_new_revision_uploaded": true,
+    "server_download_sha256_verified": true
+  },
+  "ios": {
+    "build_number": 65,
+    "bytes": 569339445,
+    "sha256": "48b9b2c0af7d9feb39ed20a092223b28508cf61f46a27bd08c4f9ebf78338ebf",
+    "base_sha256": "9022130804c36c3cd2e17057f87c74091e012d1adcd2a4c2b56d2bf53d012db0",
+    "internal_test_group_id": "90dd8f53-b157-49c4-b899-8da72091b76a",
+    "external_test_group_id": "77fbf129-88aa-4489-98a0-658698cd4fcf",
+    "delivery": "Transporter delivered 2026-10-23 20:49 Asia/Shanghai",
+    "testflight_build_id": "64463aed-a218-4259-bf80-1a0963048897",
+    "external_state": "WAITING_FOR_REVIEW",
+    "external_test_group_members": 18,
+    "auto_notify_testers": true,
+    "internal_state": "IN_BETA_TESTING",
+    "internal_test_group_members": 10,
+    "public_approved_version": "0.0.28 (64)",
+    "pending_public_version": "0.0.29 (65)"
+  },
+  "server": {
+    "deployed": true,
+    "release": "/home/nins17121/Glory/releases/0.0.29-20261023-8a5802d",
+    "old_pid": 105727,
+    "new_pid": 108399,
+    "source_tree_sha256": "826f276fc6698ade8573b2399f52e0de48e0938d7ac6dab593541c8e4bb6ba80",
+    "idle_checks": [
+      {
+        "battle_connections": 0,
+        "account_online": 0,
+        "room_count": 0,
+        "at": "2026-10-23T12:40:17.948619+00:00"
+      },
+      {
+        "battle_connections": 0,
+        "account_online": 0,
+        "room_count": 0,
+        "at": "2026-10-23T12:40:21.364371+00:00"
+      }
+    ],
+    "backend_changed": false,
+    "cold_start_passed": true,
+    "health": "ok",
+    "verified_at": "2026-10-23T12:40:29.023844+00:00",
+    "rollback_directory": "/var/backups/glory/server-20261023-8a5802d"
+  },
+  "verification": {
+    "resource_sync": "success; 3441 files; 0 downloaded; 359 checked; 3082 skipped; 0 errors",
+    "backend_tests_passed": 41,
+    "site_tests_passed": 7,
+    "signatures": true,
+    "payload_matches_registered_baselines": true,
+    "public_patch_check": {
+      "android": "none, required_patch_seq 0",
+      "ios": "none, required_patch_seq 0"
+    },
+    "public_site": true,
+    "public_apk": "HTTP 206; exact length 575612448; complete server SHA256 matches signed APK",
+    "qr_sha256": "8f06b9ffe436ded23822bc49bced52c5cb89535a253489e74080bde0e2b6807a"
+  },
+  "balance_workbook_caveat": "Upstream final status.xlsx has conflicting skill text and numeric columns for undead_bomb. No regeneration performed. Server and both clients package the same committed runtime JSON.",
+  "device_gameplay_tested": false
+}
