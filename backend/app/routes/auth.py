@@ -6,6 +6,8 @@
     POST /v1/auth/provider    用 Google / Apple 登录（新装、换手机、切换账号）
     POST /v1/auth/link        把 Google / Apple 绑到当前账号
     GET  /v1/auth/identities  当前账号绑了哪些
+    POST /v1/auth/steam       用 Steam 登录（电脑版；交 Steam 票，不交身份证明）
+    POST /v1/auth/steam/link-code[/status|/preview|/confirm]  电脑出 6 位码、手机确认关联
 
 客户端的判断逻辑写在 AccountManager 里：
     有 refresh token → refresh；没有 → 玩家在启动页选游客（anonymous）或 Google / Apple（provider）。
@@ -15,6 +17,7 @@ Google / Apple 的设计见 docs/三方登录设计.md。
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from typing import Annotated, Literal
 
@@ -22,10 +25,10 @@ from fastapi import APIRouter, HTTPException, Request, Depends, Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from app import admin_auth, bans, db, players, login_sessions, realtime, shop
+from app import admin_auth, bans, db, players, login_sessions, realtime, shop, steam, steam_link, steam_oidc
 from app.config import get_settings
 from app.rate_limit import RateLimited, SlidingWindowLimiter
-from app.supabase_auth import AuthError, Session, SupabaseAuth
+from app.supabase_auth import STEAM_PROVIDER, AuthError, Session, SupabaseAuth
 from app.routes.me import current_claims
 from app.jwt_verify import Claims
 
@@ -54,6 +57,13 @@ _provider_limiter = SlidingWindowLimiter(_settings.rate_limit_anonymous_per_hour
 # 绑定按玩家算。正常人一分钟点不了几次系统弹窗，这个数只挡客户端出 bug 时的狂点。
 LINK_PER_MINUTE = 6
 _link_limiter = SlidingWindowLimiter(LINK_PER_MINUTE, 60.0)
+# 关联码：电脑出码按 IP 限；手机输码按玩家限（防猜码：6 位码 5 分钟内最多试几十次）；电脑轮询按 IP 宽松限。
+LINK_CODE_ISSUE_PER_HOUR = 20
+_link_code_issue_limiter = SlidingWindowLimiter(LINK_CODE_ISSUE_PER_HOUR, 3600.0)
+LINK_CODE_TRY_PER_MINUTE = 10
+_link_code_try_limiter = SlidingWindowLimiter(LINK_CODE_TRY_PER_MINUTE, 60.0)
+LINK_CODE_POLL_PER_MINUTE = 120
+_link_code_poll_limiter = SlidingWindowLimiter(LINK_CODE_POLL_PER_MINUTE, 60.0)
 
 
 # 可信反向代理。**只有从这些地址进来的请求，X-Forwarded-For 才作数。**
@@ -314,8 +324,9 @@ class LinkRequest(BaseModel):
 
 
 class LinkedIdentityOut(BaseModel):
-    provider: str
-    email: str  # 打过码
+    provider: str  # google / apple / steam
+    email: str  # 打过码；Steam 恒为空（那边只有 steam.invalid 的占位，不给人看）
+    name: str = ""  # Steam 昵称
 
 
 class IdentitiesResponse(BaseModel):
@@ -409,5 +420,164 @@ async def identities(
         raise HTTPException(status_code=502, detail=str(exc)) from None
     return IdentitiesResponse(
         is_anonymous=anonymous,
-        identities=[LinkedIdentityOut(provider=i.provider, email=mask_email(i.email)) for i in linked],
+        identities=[_identity_out(i) for i in linked],
     )
+
+
+def _identity_out(identity) -> LinkedIdentityOut:
+    if identity.provider == STEAM_PROVIDER:
+        return LinkedIdentityOut(provider="steam", email="", name=identity.name)
+    return LinkedIdentityOut(provider=identity.provider, email=mask_email(identity.email))
+
+
+# --- Steam（docs/三方登录设计.md 第八节）----------------------------------------------
+#
+# 电脑上的游戏交 Steam 票，账号服务器验完自己签身份证明（app/steam_oidc.py），交给 Supabase 的 custom:steam。
+# 证明只在这一个请求里转一手，绝不回给客户端。
+
+
+class SteamLoginRequest(BaseModel):
+    # GetAuthTicketForWebApi 拿到的票，十六进制。是凭证（能拿它登录），不进日志。
+    ticket: str = Field(min_length=16, max_length=8192)
+    # 同 /anonymous：新玩家第一次用 Steam 开号时用本机签的 id。
+    player_id: uuid.UUID | None = None
+
+
+async def _verified_steam(ticket: str) -> tuple[steam.SteamUser, str]:
+    """验票 + 查昵称。票不对 400，服务器没配好 / 连不上 Steam 503。"""
+    try:
+        user = await steam.authenticate_ticket(ticket)
+    except steam.SteamRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    except steam.SteamUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    return user, await steam.persona_name(user.steam_id)
+
+
+def _steam_token(user: steam.SteamUser, name: str) -> str:
+    try:
+        return steam_oidc.mint(user.steam_id, name=name, email=steam.placeholder_email(user.steam_id))
+    except steam_oidc.NotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+
+
+@router.post("/steam", response_model=SessionResponse)
+async def steam_login(body: SteamLoginRequest, request: Request) -> SessionResponse:
+    """用 Steam 登录。这个 Steam 绑过号（自己开的、或者从手机关联过来的）就回那个号；没见过就开一个新号。"""
+    _enforce(_provider_limiter, request)
+    _require_db()
+    user, name = await _verified_steam(body.ticket)
+    client = _auth_client()
+    try:
+        session = await client.sign_in_with_id_token(STEAM_PROVIDER, _steam_token(user, name))
+    except AuthError as exc:
+        raise _id_token_failure(exc) from None
+    if await admin_auth.is_admin_account(uuid.UUID(session.auth_uid)):
+        raise HTTPException(status_code=403, detail="这是运营后台的管理员账号，不能用来登录游戏，请换一个账号")
+    response = await _respond(session, body.player_id)
+    log.info("Steam 登录 player_id=%s created=%s", response.player_id, response.created)
+    return response
+
+
+# --- 电脑关联手机号的 6 位码（app/steam_link.py）-------------------------------------------
+
+
+class LinkCodeIssueRequest(BaseModel):
+    ticket: str = Field(min_length=16, max_length=8192)
+
+
+class LinkCodeIssued(BaseModel):
+    code: str
+    # 电脑拿它来问结果。不是登录凭证 —— 关联成功以后电脑还是要用 Steam 票登录。
+    poll_token: str
+    expires_in: int
+    name: str  # Steam 昵称，电脑上显示「你正在用 XXX 关联」
+
+
+class LinkCodeStatusRequest(BaseModel):
+    poll_token: str = Field(min_length=8, max_length=128)
+
+
+class LinkCodeRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=6, pattern=r"^[0-9]{6}$")
+
+
+class LinkCodePreview(BaseModel):
+    name: str
+    expires_in: int
+
+
+_BAD_CODE = "码不对或者已经过期，请在电脑上重新获取"
+
+
+@router.post("/steam/link-code", response_model=LinkCodeIssued)
+async def steam_link_code(body: LinkCodeIssueRequest, request: Request) -> LinkCodeIssued:
+    """电脑：「我在手机上玩过」。交 Steam 票，拿一个 6 位码去手机上输入。"""
+    _enforce(_link_code_issue_limiter, request)
+    user, name = await _verified_steam(body.ticket)
+    item = steam_link.issue(user.steam_id, name)
+    return LinkCodeIssued(code=item.code, poll_token=item.poll_token,
+                          expires_in=int(steam_link.CODE_TTL_SEC), name=name)
+
+
+@router.post("/steam/link-code/status")
+async def steam_link_code_status(body: LinkCodeStatusRequest, request: Request) -> dict:
+    """电脑轮询：pending 等手机确认 / linked 可以用 Steam 登录了 / taken 这个 Steam 已经有号 / expired。"""
+    _enforce(_link_code_poll_limiter, request)
+    return {"state": steam_link.status(body.poll_token)}
+
+
+@router.post("/steam/link-code/preview", response_model=LinkCodePreview)
+async def steam_link_code_preview(
+    body: LinkCodeRequest,
+    claims: Annotated[Claims, Depends(current_claims)],
+) -> LinkCodePreview:
+    """手机输完码：先给玩家看这是谁的 Steam，确认了才绑。防止被人骗着把自己的号关联到别人的 Steam。"""
+    _enforce_key(_link_code_try_limiter, claims.auth_uid)
+    _require_db()
+    await _require_player(claims)
+    item = steam_link.pending(body.code)
+    if item is None:
+        raise HTTPException(status_code=404, detail=_BAD_CODE)
+    return LinkCodePreview(name=item.name, expires_in=max(0, int(item.expires_at - time.time())))
+
+
+@router.post("/steam/link-code/confirm", response_model=SessionResponse)
+async def steam_link_code_confirm(
+    body: LinkCodeRequest,
+    claims: Annotated[Claims, Depends(current_claims)],
+    authorization: Annotated[str, Header()],
+    x_glory_session: Annotated[str, Header()],
+) -> SessionResponse | JSONResponse:
+    """手机确认关联：把电脑那个 Steam 绑到手机这个号上。之后电脑用 Steam 登录就进这个号。
+
+    和 /link 一样，Supabase 绑完会发一套新凭证，照 /refresh 的格式回给手机 —— 手机必须存回新的那张。
+    """
+    _enforce_key(_link_code_try_limiter, claims.auth_uid)
+    _require_db()
+    await _require_player(claims)
+    item = steam_link.pending(body.code)
+    if item is None:
+        raise HTTPException(status_code=404, detail=_BAD_CODE)
+    item.state = steam_link.LINKING
+    try:
+        token = _steam_token(steam.SteamUser(item.steam_id, item.steam_id), item.name)
+        session = await _auth_client().link_identity(_bearer(authorization), STEAM_PROVIDER, token)
+    except AuthError as exc:
+        if exc.code in IDENTITY_TAKEN_CODES:
+            item.state = steam_link.TAKEN
+            return JSONResponse(status_code=409, content={
+                "code": IDENTITY_TAKEN, "detail": "这个 Steam 已经绑定了另一个游戏账号"})
+        item.state = steam_link.PENDING  # 别的失败（网络、Supabase 出错）：码还能再试
+        raise _id_token_failure(exc) from None
+    except BaseException:
+        item.state = steam_link.PENDING
+        raise
+    if session.auth_uid != claims.auth_uid:
+        item.state = steam_link.PENDING
+        log.error("关联 Steam 后用户对不上 expected=%s got=%s", claims.auth_uid, session.auth_uid)
+        raise HTTPException(status_code=502, detail="关联结果对不上当前账号")
+    item.state = steam_link.LINKED
+    response = await _respond(session, None, uuid.UUID(x_glory_session))
+    log.info("手机关联了 Steam player_id=%s", response.player_id)
+    return response

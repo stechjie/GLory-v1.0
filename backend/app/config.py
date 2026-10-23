@@ -180,6 +180,15 @@ class Settings(BaseSettings):
     # 身份证明里的 aud。和 Supabase 里那个自定义提供方的 Client ID 一致即可，不是密钥。
     steam_oidc_client_id: str = "glory-steam"
 
+    # Steam 上的 App ID（Steamworks 后台的 Glory，公开数字）。验票时要带上。
+    steam_app_id: int = 4919850
+    # ⛔ 发行商 Web API 密钥（Steamworks → Users & Permissions → Manage Groups → 组页面 → Create WebAPI Key）。
+    # 和 secret key 同级：只放服务器的 backend.env，绝不进 git、APK、聊天。空 = Steam 登录回 503。
+    steam_web_api_key: str = ""
+    # 游戏向 Steam 要票时填的 identity（GetAuthTicketForWebApi 的参数），两边必须一字不差。
+    # Steam 只放行用同一个 identity 开出来的票，别的服务拿到这张票也用不了。
+    steam_ticket_identity: str = "glory-account"
+
     @property
     def is_dev(self) -> bool:
         return self.environment != "prod"
