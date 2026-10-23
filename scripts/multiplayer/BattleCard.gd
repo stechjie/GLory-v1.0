@@ -268,8 +268,9 @@ static func _clean_ai_seats(raw: Variant) -> Array:
 		if slot < 0 or slot > 5 or seen.has(slot):
 			continue
 		seen[slot] = true
+		var frame := str(row[3]).left(64) if row.size() >= 4 and typeof(row[3]) == TYPE_STRING else ""
 		out.append({"slot": slot, "name": str(row[1]).strip_edges().left(MAX_AI_NAME),
-			"avatar": str(row[2]).left(MAX_AI_AVATAR)})
+			"avatar": str(row[2]).left(MAX_AI_AVATAR), "avatar_frame": frame})
 		if out.size() >= 5:
 			break
 	return out

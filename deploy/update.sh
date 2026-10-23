@@ -73,6 +73,43 @@ sync_party_voice() {
 	echo "组队房语音：$target"
 }
 
+# Steam 登录：账号服务器自己签 Steam 身份证明（backend/app/steam_oidc.py，docs/三方登录设计.md 第八节）。
+# 没有私钥就生成一把；签发方地址从 Caddyfile 的域名推出来。两样都写进 backend.env。
+# 推不出来就说清楚、继续更新：Steam 登录不该挡住整个后端的更新。
+set_backend_env() {
+	local key="$1" value="$2" env_file="$BASE/backend.env"
+	if grep -q "^$key=" "$env_file" 2>/dev/null; then
+		sed -i "s|^$key=.*|$key=$value|" "$env_file"
+	else
+		# 先补换行，理由同 sync_party_voice。
+		[[ -s "$env_file" && -n "$(tail -c1 "$env_file")" ]] && echo >> "$env_file"
+		echo "$key=$value" >> "$env_file"
+	fi
+}
+
+sync_steam_oidc() {
+	local key_file="$BASE/steam_oidc_key.pem" domain
+	if [[ ! -f "$key_file" ]]; then
+		if ! "$VENV/bin/python" "$REPO/deploy/make_steam_oidc_key.py" "$key_file" --owner "$SERVICE_USER"; then
+			echo "⚠️  Steam 登录的签名私钥没生成出来，Steam 登录暂时不可用。"
+			return 0
+		fi
+	fi
+	set_backend_env GLORY_STEAM_OIDC_KEY_FILE "$key_file"
+	# Caddyfile 里账号服务器那个站点块的第一行就是域名（deploy/Caddyfile 的 GLORY_API_DOMAIN_PLACEHOLDER）。
+	# `|| true`：找不到时 grep 返回 1，在 set -e + pipefail 下会让整个脚本直接退出。
+	domain="$(grep -m1 -E '^[A-Za-z0-9.-]+\.[A-Za-z]{2,}[[:space:]]*\{' /etc/caddy/Caddyfile 2>/dev/null | awk '{print $1}' || true)"
+	if [[ -z "$domain" ]]; then
+		if ! grep -q '^GLORY_STEAM_OIDC_ISSUER=' "$BASE/backend.env" 2>/dev/null; then
+			echo "⚠️  从 /etc/caddy/Caddyfile 读不出域名，Steam 登录没配签发方地址。手动在 $BASE/backend.env 加一行："
+			echo "   GLORY_STEAM_OIDC_ISSUER=https://你的域名/oidc/steam"
+		fi
+		return 0
+	fi
+	set_backend_env GLORY_STEAM_OIDC_ISSUER "https://$domain/oidc/steam"
+	echo "Steam 签发方：https://$domain/oidc/steam"
+}
+
 main() {
 	[[ $EUID -eq 0 ]] || { echo "请用 sudo 运行" >&2; exit 1; }
 	[[ -d "$SRC/backend" ]] || { echo "$SRC 下没有 backend/，先跑 bootstrap.sh" >&2; exit 1; }
@@ -161,6 +198,9 @@ main() {
 
 	say "组队房语音配置"
 	sync_party_voice
+
+	say "Steam 登录签发方"
+	sync_steam_oidc
 
 	say "重启"
 	systemctl restart glory-backend

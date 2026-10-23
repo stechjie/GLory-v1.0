@@ -100,6 +100,7 @@ var _room_name := ""
 # 最近一次拿到的钥匙：{url, token, room, at_msec}。换档重进时再用，见 TOKEN_REUSE_SEC。
 var _token_cache: Dictionary = {}
 var _mic_on := false          # 已让桥接开麦
+var _requested_scope := ""
 var _awaiting_token := false
 var _awaiting_sec := 0.0
 var _retry_index := 0
@@ -176,7 +177,7 @@ func unsupported_reason() -> String:
 
 
 func in_room() -> bool:
-	return NetworkService.team_active and int(NetworkService.team_local_slot) >= 0
+	return NetworkService.team_active and (NetworkService.spectating or int(NetworkService.team_local_slot) >= 0)
 
 
 # 界面按钮：关 → 只听 → 开麦 → 关。返回空串 = 已切换（或在等系统权限弹窗）；否则是给玩家看的原因。
@@ -301,10 +302,17 @@ func speaking_slots() -> Array[int]:
 
 # 这个座位的人此刻在不在说话 —— 头像上的小麦克风用（VoiceControls.show_speaking_mic）。
 # 自己：开着麦、桥接说在说；别人：在说话名单里、没被我屏蔽（屏蔽了我也听不到，不该亮）。
+func spectator_speaking(entry: Dictionary) -> bool:
+	var sid := int(entry.get("sid", -1))
+	if NetworkService.spectating and sid == NetworkService.spectate_sid:
+		return mode == Mode.TALK and bool(status().get("self_speaking", false))
+	var identity := NetworkService.spectator_voice_identity(entry, sid)
+	return (status().get("speaking", []) as Array).has(identity)
+
 func slot_speaking(slot: int) -> bool:
 	if not _joined or slot < 0:
 		return false
-	if slot == int(NetworkService.team_local_slot):
+	if slot == int(NetworkService.team_local_slot) and not NetworkService.spectating:
 		return mode == Mode.TALK and bool(status().get("self_speaking", false))
 	return speaking_slots().has(slot) and not is_muted(slot)
 
@@ -485,7 +493,7 @@ func _apply_audience() -> void:
 
 # 我的麦克风此刻是不是对全房间开放：自己选了「所有人」，或者在自定义房间开局前的大厅里。
 func open_to_room() -> bool:
-	return audience == Audience.ALL or lobby_open_to_room()
+	return NetworkService.spectating or audience == Audience.ALL or lobby_open_to_room()
 
 
 # 用户 10-08 定（B 方案）：**自定义房间开局前**，全房间的人互相都听得到；开局后才按「队友 / 所有人」分。
@@ -599,7 +607,7 @@ func _on_voice_token(url: String, token: String, room_name: String, error: Strin
 
 
 func _is_current_room(room_name: String) -> bool:
-	return room_name.begins_with("g%d-" % int(NetworkService.team_room_id)) and room_name.ends_with("-all")
+	return room_name.begins_with("g%d-" % int(NetworkService.team_room_id)) and room_name.ends_with("-spectators" if NetworkService.spectating and NetworkService.server_phase != NetworkService.ROOM_LOBBY else "-all")
 
 
 # 让桥接按当前档位进房。clear_error：拿新钥匙进房时清掉旧的出错原因；换档重进时保留（例如「麦克风被占用」要留给玩家看）。
@@ -663,6 +671,14 @@ func _sync() -> String:
 	if mode == Mode.OFF:
 		_leave()
 		return ""
+	if _awaiting_token and _requested_scope != _voice_scope():
+		_awaiting_token = false
+		_retry_in = 0.0
+	if _joined and not _is_current_room(_room_name):
+		_leave()
+		_token_cache = {}
+		_retry_in = 0.0
+		_retry_index = 0
 	if not in_room():
 		return ""   # 重连、切场景的那一两秒：不动，等回来或等 LEAVE_GRACE_SEC 到点
 	# 换座（含跨队）在这里什么都不做：两队共用一个语音房间，连接不动；
@@ -699,7 +715,12 @@ func _sync_and_fallback() -> void:
 	mode_changed.emit(mode)
 
 
+func _voice_scope() -> String:
+	return "%d:%s" % [NetworkService.team_room_id, "spectators" if NetworkService.spectating and NetworkService.server_phase != NetworkService.ROOM_LOBBY else "all"]
+
+
 func _request_token() -> void:
+	_requested_scope = _voice_scope()
 	_awaiting_token = true
 	_awaiting_sec = 0.0
 	var sent := bool(token_requester.call()) if token_requester.is_valid() else NetworkService.team_request_voice_token()

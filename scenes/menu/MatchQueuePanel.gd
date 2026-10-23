@@ -51,6 +51,7 @@ var _tutorial_ai := false
 var _state := "idle"
 var _accept_deadline := 0.0
 var _poll_timer := 0.0
+var _queue_started_msec := 0
 var _busy := false
 
 var _title: Label
@@ -221,6 +222,9 @@ func _on_realtime_message(payload: Dictionary) -> void:
 
 
 func _process(delta: float) -> void:
+	if _state == "queued":
+		var elapsed := maxi(1, int((Time.get_ticks_msec() - _queue_started_msec) / 1000) + 1)
+		_set_detail(_text("预计等待时间50s", "Estimated wait: 50s") + "\n%d..." % elapsed)
 	if _state == "found" and _accept_deadline > 0.0:
 		var left := maxi(0, int(ceil(_accept_deadline - Time.get_ticks_msec() / 1000.0)))
 		# 10.10 bug 第 6 条：标题改成「匹配成功。确认倒计时：N」。
@@ -286,9 +290,9 @@ func _apply(state: Dictionary) -> void:
 	match next:
 		"queued":
 			_title.text = _text("匹配中…", "Searching…")
-			var position := int(state.get("position", 0))
-			_set_detail(_text("队列位置 %d · %s" % [position, _mode_word()],
-				"Queue position %d · %s" % [position, _mode_word()]))
+			if previous != "queued":
+				_queue_started_msec = Time.get_ticks_msec()
+			_set_detail(_text("预计等待时间50s", "Estimated wait: 50s") + "\n1...")
 			_accept_btn.visible = false
 			_accept_btn.disabled = false
 			_roster.visible = false

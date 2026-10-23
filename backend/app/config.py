@@ -165,6 +165,30 @@ class Settings(BaseSettings):
     # 空 = 不读，一切照旧（退回启发式）。
     battle_match_roster_file: str = ""
 
+    # --- Steam 登录（app/steam_oidc.py，docs/三方登录设计.md 第八节）-------------------
+    #
+    # Supabase 不认识 Steam。账号服务器验完 Steam 的票之后，自己签一张短时的身份证明，
+    # 交给 Supabase 里登记的自定义提供方 custom:steam —— Steam 就和 Google 走同一条路。
+    #
+    # 签名私钥（EC P-256，PEM）。由 deploy/update.sh 第一次跑时用 deploy/make_steam_oidc_key.py
+    # 生成到 /opt/glory/steam_oidc_key.pem 并写进 backend.env。**可以重新生成**：身份证明签完
+    # 当场就用掉，换钥匙不影响任何已登录的人。空 = 没配置，签发方的公开地址回 503。
+    steam_oidc_key_file: str = ""
+    # 签发方地址，必须和 Supabase 里登记的 Issuer 一字不差，形如 https://glorytd-api.duckdns.org/oidc/steam。
+    # update.sh 从 Caddyfile 的域名推出来写进 backend.env。
+    steam_oidc_issuer: str = ""
+    # 身份证明里的 aud。和 Supabase 里那个自定义提供方的 Client ID 一致即可，不是密钥。
+    steam_oidc_client_id: str = "glory-steam"
+
+    # Steam 上的 App ID（Steamworks 后台的 Glory，公开数字）。验票时要带上。
+    steam_app_id: int = 4919850
+    # ⛔ 发行商 Web API 密钥（Steamworks → Users & Permissions → Manage Groups → 组页面 → Create WebAPI Key）。
+    # 和 secret key 同级：只放服务器的 backend.env，绝不进 git、APK、聊天。空 = Steam 登录回 503。
+    steam_web_api_key: str = ""
+    # 游戏向 Steam 要票时填的 identity（GetAuthTicketForWebApi 的参数），两边必须一字不差。
+    # Steam 只放行用同一个 identity 开出来的票，别的服务拿到这张票也用不了。
+    steam_ticket_identity: str = "glory-account"
+
     @property
     def is_dev(self) -> bool:
         return self.environment != "prod"

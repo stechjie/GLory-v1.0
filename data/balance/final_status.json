@@ -883,7 +883,7 @@
       "skill_id": "poison_attack",
       "skill_name_cn": "毒击",
       "skill_cn_1to3": "毒击：普通攻击附带中毒，每秒造成目标最大生命3%伤害，持续4.0秒；灵4毒伤x2。",
-      "skill_cn_4": "毒击：普通攻击附带中毒，每秒造成目标最大生命6%伤害，持续6.0秒；最多2层，分别扣血。",
+      "skill_cn_4": "毒击：普通攻击附带中毒，每秒造成目标最大生命6%伤害，持续10.0秒；最多2层，分别扣血。",
       "skill_en_1to3": "Poison Strike: Normal attacks apply poison — 3% max HP per second for 4.0s. Up to 2 stacks tick separately.",
       "skill_raw_params": "poison_duration = 4\npoison_pct_max_hp = 0.03",
       "star4_changes": "poison_duration: 4 → 6\npoison_pct_max_hp: 0.03 → 0.06",

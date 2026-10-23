@@ -409,8 +409,11 @@ func _build() -> void:
 	_add_texture(TEX_NEWS, Vector2(1380, 400), Vector2(270, 250), "right")
 	_add_label(_menu_text("公告 / 活动", "News / Events"), Vector2(1380, 407), Vector2(270, 34), 22, "right")
 	# 9.27：公告图标内显示最新公告标题。
-	_news_title = _add_label("", Vector2(1390, 445), Vector2(250, 180), 18, "right")
+	_news_title = _add_label("", Vector2(1404, 452), Vector2(204, 157), 18, "right")
 	_news_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_news_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_news_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_news_title.clip_text = true
 	_news_title.visible = false
 	# 有没看过的公告时亮红点，同聊天那个。hit 仍然放在最后。
 	_news_dot = _add_label("●", Vector2(1612, 404), Vector2(32, 32), 26, "right")
@@ -830,12 +833,14 @@ func _room_error_text(reason: String, typed_by_player: bool) -> String:
 			return _menu_text("房间已关闭", "This room has closed")
 		"room_started":
 			return _menu_text("房间已开局", "This match has already started")
+		"seat_busy":
+			return _menu_text("原座位正在恢复，请稍后重试", "Your seat is reconnecting. Please retry shortly.")
 		"room_full":
 			return _menu_text("房间已满", "Room is full")
 		"token_id_unknown":
 			return _menu_text("没有找到可恢复的 Token ID", "No resumable game for this Token ID")
 		"spectate_full":
-			return _menu_text("观战席已满", "Spectator seats are full")
+			return _menu_text("观战人数已满", "The number of spectators is full")
 		"spectate_closed":
 			return _menu_text("该房间未开放观战", "Spectating is closed for this room")
 		"spectate_seated":

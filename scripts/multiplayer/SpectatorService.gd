@@ -72,7 +72,7 @@ static func entry_of_peer(room: Dictionary, peer_id: int) -> Dictionary:
 #
 # 返回 {"ok": true, "sid": int} 或 {"ok": false, "reason": String}。
 # reason 原样回给客户端（_rpc_team_action_failed），客户端按码翻译文案。
-static func add(room: Dictionary, peer_id: int, identity: Dictionary, now: float) -> Dictionary:
+static func add(room: Dictionary, peer_id: int, identity: Dictionary, now: float, account_pid: String = "") -> Dictionary:
 	if room.is_empty():
 		return {"ok": false, "reason": "room_not_found"}
 	if not is_open(room):
@@ -86,6 +86,7 @@ static func add(room: Dictionary, peer_id: int, identity: Dictionary, now: float
 	room[KEY_NEXT_SID] = sid + 1
 	var spectators := list(room)
 	spectators[sid] = {
+		"account_pid": account_pid,  # Private server identity, never included in public_list.
 		"peer": peer_id,
 		"identity": identity.duplicate(true),
 		"guest": identity.is_empty(),

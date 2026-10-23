@@ -38,8 +38,11 @@ class AuthError(RuntimeError):
         self.code = code
 
 
-# 能用身份证明（id_token）登录 / 绑定的登录方式。Steam 不在这里：Supabase 不认识它。
+# 客户端能直接交身份证明（id_token）的登录方式。
 ID_TOKEN_PROVIDERS = ("google", "apple")
+# Steam：Supabase 本来不认识它。证明由账号服务器验完 Steam 票之后自己签（app/steam_oidc.py），
+# 交给 Supabase 里登记的自定义提供方。**客户端不能直接用这个名字**（路由层只放行上面两种）。
+STEAM_PROVIDER = "custom:steam"
 
 
 @dataclass(frozen=True)
@@ -79,10 +82,14 @@ def _error_code(resp: httpx.Response) -> str:
 
 @dataclass(frozen=True)
 class LinkedIdentity:
-    """账号上绑着的一种登录方式。email 是原文，打码由路由层做。"""
+    """账号上绑着的一种登录方式。email 是原文，打码由路由层做。
+
+    name：Steam 的昵称（签证明时写进去的）。Steam 的 email 是 steam-<id>@steam.invalid 那种占位，不给人看。
+    """
 
     provider: str
     email: str
+    name: str = ""
 
 
 class SupabaseAuth:
@@ -199,7 +206,7 @@ class SupabaseAuth:
 
     @staticmethod
     def _id_token_body(provider: str, id_token: str, nonce: str | None) -> dict:
-        if provider not in ID_TOKEN_PROVIDERS:
+        if provider not in ID_TOKEN_PROVIDERS and provider != STEAM_PROVIDER:
             raise AuthError(f"不支持的登录方式：{provider}")
         body: dict = {"provider": provider, "id_token": id_token}
         if nonce:
@@ -242,10 +249,11 @@ class SupabaseAuth:
         linked = []
         for identity in user.get("identities") or []:
             provider = str(identity.get("provider") or "")
-            if provider not in ID_TOKEN_PROVIDERS:
+            if provider not in ID_TOKEN_PROVIDERS and provider != STEAM_PROVIDER:
                 continue
             data = identity.get("identity_data") or {}
-            linked.append(LinkedIdentity(provider, str(identity.get("email") or data.get("email") or "")))
+            name = str(data.get("name") or data.get("full_name") or "")
+            linked.append(LinkedIdentity(provider, str(identity.get("email") or data.get("email") or ""), name))
         return bool(user.get("is_anonymous", False)), linked
 
 

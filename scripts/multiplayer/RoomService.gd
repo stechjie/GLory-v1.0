@@ -491,6 +491,10 @@ func cleanup_rooms(close_fn: Callable, begin_next_prep_fn: Callable) -> void:
 		var state_name := str(room.get("state", room_lobby))
 		var suspend_grace := suspend_grace_sec(room)
 		var online_count := room_online_count(room)
+		# Lobby spectators can take an empty seat; keep their room alive.
+		# During a match only players govern progress and suspension.
+		if state_name == room_lobby:
+			online_count += (room.get("spectators", {}) as Dictionary).size()
 		var match_over := bool(room.get("run_over", false))
 		if online_count <= 0:
 			if float(room.get("empty_since", 0.0)) <= 0.0:
