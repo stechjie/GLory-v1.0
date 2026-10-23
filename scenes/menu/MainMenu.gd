@@ -833,6 +833,8 @@ func _room_error_text(reason: String, typed_by_player: bool) -> String:
 			return _menu_text("房间已关闭", "This room has closed")
 		"room_started":
 			return _menu_text("房间已开局", "This match has already started")
+		"seat_busy":
+			return _menu_text("原座位正在恢复，请稍后重试", "Your seat is reconnecting. Please retry shortly.")
 		"room_full":
 			return _menu_text("房间已满", "Room is full")
 		"token_id_unknown":

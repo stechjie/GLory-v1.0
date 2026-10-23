@@ -909,6 +909,8 @@ func _refresh() -> void:
 			"player":
 				# 使用当前房主席位，兼容换位及房主迁移。
 				status_lbl.text = _room_text("房主", "Host") if i == _leader_slot() else (_room_text("准备", "Ready") if bool(ready_arr[i]) else _room_text("未准备", "Not ready"))
+				if _seat_reconnecting(i):
+					status_lbl.text = _room_text("重连中", "Reconnecting")
 			"dummy":
 				status_lbl.text = _room_text("假想敌", "AI")
 			_:
@@ -948,6 +950,7 @@ func _refresh() -> void:
 	if _host_hint_lbl != null:
 		_host_hint_lbl.visible = is_host_seat
 		_host_hint_lbl.text = _start_hint_text()
+		_host_hint_lbl.tooltip_text = _room_text("等待玩家返回，或点击其头像右上角 X 请出该玩家。", "Wait for the player, or use X beside their portrait to remove them.") if not _start_block_reason(true).is_empty() else ""
 	if _selftest_btn != null:
 		_selftest_btn.visible = selftest_available() and not _online()
 	_refresh_spectators()
@@ -1078,6 +1081,11 @@ func _is_host_seat() -> bool:
 
 # 返回不能开始的原因（空字符串=可以开始）。房主不再免检：所有 player 座位都要 ready。
 # host_ready=true 表示"把本地房主座位视为已准备"（房主按开始游戏即自动 ready）。
+func _seat_reconnecting(slot: int) -> bool:
+	var slots: Array = NetworkService.spectate_state.get("reconnecting_slots", []) if _spectating() else NetworkService.team_reconnecting_slots
+	return _online() and slots.has(slot)
+
+
 func _start_block_reason(host_ready: bool) -> String:
 	var states := _states()
 	var ready_arr: Array = _ready_arr().duplicate()
@@ -1086,6 +1094,9 @@ func _start_block_reason(host_ready: bool) -> String:
 		ready_arr[leader] = true
 	if _online() and (states.size() < 6 or ready_arr.size() < 6):
 		return _room_text("房间状态同步中", "Room state syncing")
+	for slot in states.size():
+		if _seat_reconnecting(slot):
+			return _room_text("有玩家正在重连", "Player reconnecting")
 	if states.has("settling"):
 		return _room_text("等待结算中的玩家返回", "Waiting for players to return from results")
 	var side_a := 0

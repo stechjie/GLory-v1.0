@@ -510,6 +510,10 @@ func _apply_ai_handover(eco: Dictionary) -> void:
 
 
 func _on_resume_completed(payload: Dictionary) -> void:
+	# Signed-account seat recovery can originate from Join or Spectate.
+	_spectate_pending_room = 0
+	_spectate_active = false
+	_spectate_replays = {}
 	if _short_code_resume_ignore_late_result:
 		_short_code_resume_ignore_late_result = false
 		return
