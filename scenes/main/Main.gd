@@ -4119,6 +4119,12 @@ func _retry_pending_tutorial_reward() -> void:
 
 func _on_battle_finished(result: Dictionary = {}) -> void:
 	if GameState.tutorial_mode:
+		if result.has("error"):
+			# A preparation/playback failure is not a completed tutorial round.
+			_show_prep()
+			DialogService.info({"owner": self, "body": _startup_text(
+				"本回合战斗准备未完成，请重试。", "This battle could not be prepared. Please retry.")})
+			return
 		# 人王战后成长 / 阵亡移除与正式局同一处实现，教学里讲的规则才是真的。
 		_apply_post_battle_unit_outcomes(result)
 		GameState.battle_history.append(result)
@@ -4537,6 +4543,9 @@ func _spectate_try_game_over() -> bool:
 
 
 func _attach_spectator_hud() -> void:
+	# Settlement owns the full viewport; observer portraits must not cover its actions.
+	if _spectate_screen == "over":
+		return
 	if is_instance_valid(_spectator_hud) and _spectator_hud.get_parent() == self:
 		_spectator_hud.refresh()
 		return

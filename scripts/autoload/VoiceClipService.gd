@@ -330,7 +330,7 @@ func _upload(scope: String, wav: PackedByteArray) -> Dictionary:
 			RealtimeService._mark_kicked()
 			return {"ok": false, "error": _text("你的账号在其他设备登录", "Signed in on another device")}
 		# 服务端的 detail 是给玩家看的中文（配额、太短、太长、没装 ffmpeg…），直接用。
-		return {"ok": false, "error": str(body.get("detail", _text("语音发送失败", "Voice message failed")))}
+		return {"ok": false, "error": AccountManager.localized_error(str(body.get("detail", _text("语音发送失败", "Voice message failed"))))}
 	return {
 		"ok": true,
 		"clip_id": str(body.get("clip_id", "")),

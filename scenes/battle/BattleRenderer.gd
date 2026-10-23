@@ -1104,14 +1104,11 @@ func _setup_animation_tracking_meta(pivot: Node3D, unit_def: Dictionary, f: Dict
 # 又不会把边上的幸存者挤出画面。
 const VICTORY_CAMERA_TIGHTEN := 0.94
 const VICTORY_CAMERA_SEC := 0.45
-const VICTORY_SHAKE_STRENGTH := 2.2
-const VICTORY_SHAKE_SEC := 0.16
 
 
 func play_victory_finish() -> void:
 	_freeze_surviving_actors()
 	_tighten_battle_camera()
-	VFXManager.play_screen_shake(VICTORY_SHAKE_STRENGTH, VICTORY_SHAKE_SEC)
 
 
 # 幸存者定格：停在当前姿势，不再继续 idle 循环。

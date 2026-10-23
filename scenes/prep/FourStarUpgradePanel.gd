@@ -48,7 +48,7 @@ func _ready() -> void:
 	add_child(reason)
 	var actions := HBoxContainer.new()
 	cancel = Button.new()
-	cancel.text = "返回 / Back"
+	cancel.text = "Back" if LocaleManager.get_locale() == "en" else "返回"
 	cancel.custom_minimum_size = Vector2(100, 48)
 	cancel.pressed.connect(func(): confirming = false; refresh())
 	actions.add_child(cancel)

@@ -75,7 +75,7 @@ static func migrate_profile(payload: Dictionary) -> Dictionary:
 			# state. Those are not proof. Legacy accounts keep the old behaviour (show
 			# language, then resume/start tutorial) once, and become explicit thereafter.
 			if not out.has("locale"):
-				out["locale"] = "zh"
+				out["locale"] = "en"
 			if not out.has("language_selected"):
 				out["language_selected"] = false
 			if not out.has("onboarding_version"):

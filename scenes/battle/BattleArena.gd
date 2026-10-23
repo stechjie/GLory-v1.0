@@ -888,7 +888,7 @@ func _add_crystal_cluster_parts(cluster_root: Node3D, packed: PackedScene, is_re
 # 是以本地玩家为中心存的（team_hp = 我队，enemy_team_hp = 对面），所以先把绝对队伍
 # 翻译成"是不是我这一队"再取数。
 func _crystal_hp_ratio(losing_team: int, result: Dictionary = {}) -> float:
-	var local_team := GameConstants.team_of_slot(NetworkService.team_local_slot)
+	var local_team := _crystal_local_team()
 	var loser_is_local := losing_team == local_team
 	var hp := float(GameState.team_hp if loser_is_local else GameState.enemy_team_hp) if GameState.team_mode else float(GameState.player_formation_hp if loser_is_local else GameState.enemy_formation_hp)
 	if not result.is_empty():
@@ -899,10 +899,6 @@ func _crystal_hp_ratio(losing_team: int, result: Dictionary = {}) -> float:
 			# 没盖伤害戳时退回"赢家存活数"，跟 stamp_team_round_damages 的 PvP 口径一致。
 			var winner_alive_key := "player_alive" if bool(result.get("player_wins", false)) else "enemy_alive"
 			hp -= float(result.get(winner_alive_key, 1))
-		if GameState.tutorial_mode and GameState.round_index < TutorialMode.SCRIPT_FINAL_ROUND:
-			# 教学第 6/11 回合法阵不能扣完（after_battle 落账时也保底留 1），
-			# 演出这里跟落账口径一致，否则水晶先归零、HUD 又变回 1/10。
-			hp = maxf(1.0, hp)
 	# 10.19 教程反馈第 2 条：教学血量是 10，不是 50 —— 分母用错会把「扣 1 点」
 	# 演成「直接归零」（截图里「团队法阵 HP 10/50」就是这条）。
 	var max_hp := float(TutorialMode.TUTORIAL_HP) if GameState.tutorial_mode \
@@ -998,6 +994,7 @@ func _make_crystal_hp_label(current: int, maximum: int, color: Color) -> void:
 	_arena.add_child(label)
 	_crystal_hp_label = label
 	_refresh_crystal_hp_text()
+	_update_crystal_hp_label()
 
 func _refresh_crystal_hp_text() -> void:
 	if _crystal_hp_label == null or not is_instance_valid(_crystal_hp_label):
@@ -1025,8 +1022,11 @@ func _clear_crystal_hp_label() -> void:
 
 # 一发彩带命中：扣 1 点血、抖一下、闪一下。
 func _apply_crystal_hit(is_red_team: bool) -> void:
-	_crystal_hp_current = maxi(0, _crystal_hp_current - 1)
+	var dealt := mini(1, _crystal_hp_current)
+	_crystal_hp_current = maxi(0, _crystal_hp_current - dealt)
 	_refresh_crystal_hp_text()
+	if dealt > 0:
+		_show_crystal_damage_number(dealt)
 	# 晶体抖动不走 VFXManager，得单独接同一个系数，否则"关掉屏震"会漏掉这一处。
 	_crystal_shake = CRYSTAL_SHAKE_IMPULSE * PresentationSettings.screen_shake_scale()
 	if _crystal_hp_label != null and is_instance_valid(_crystal_hp_label):
@@ -1197,3 +1197,29 @@ func _transformed_aabb(box: AABB, transform: Transform3D) -> AABB:
 	for i in range(1, corners.size()):
 		out = out.expand(transform * corners[i])
 	return out
+
+
+func _show_crystal_damage_number(amount: int) -> void:
+	if _arena == null or _crystal_hp_label == null or not is_instance_valid(_crystal_hp_label):
+		return
+	var label := Label.new()
+	label.name = "CrystalDamageNumber"
+	label.text = "-%d" % amount
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.size = CRYSTAL_HP_LABEL_SIZE
+	label.position = _crystal_hp_label.position + Vector2(0, -40)
+	label.z_index = 81
+	label.add_theme_font_size_override("font_size", 36)
+	label.add_theme_color_override("font_color", Color("ffb55a"))
+	label.add_theme_color_override("font_outline_color", Color("26140d"))
+	label.add_theme_constant_override("outline_size", 6)
+	_arena.add_child(label)
+	var tween := create_tween().set_parallel(true)
+	tween.tween_property(label, "position:y", label.position.y - 36, 0.65)
+	tween.tween_property(label, "modulate:a", 0.0, 0.65)
+	tween.chain().tween_callback(label.queue_free)
+
+
+func _crystal_local_team() -> int:
+	return GameConstants.team_of_slot(NetworkService.team_local_slot) if NetworkService.team_active else GameConstants.TEAM_RED

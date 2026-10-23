@@ -526,11 +526,11 @@ func _process(delta: float) -> void:
 		return
 	if pending == 0:
 		print("[ASSET] 大厅预载完成：缓存 %d 个场景" % BattleAssetService.cached_count())
-		_asset_lbl.text = "资源已就绪"
+		_asset_lbl.text = _room_text("资源已就绪", "Assets ready")
 		set_process(false)
 		return
 	var done := maxi(0, _asset_total - pending)
-	_asset_lbl.text = "资源载入 %d%%" % int(round(100.0 * float(done) / maxf(1.0, float(_asset_total))))
+	_asset_lbl.text = _room_text("资源载入 %d%%", "Loading assets %d%%") % int(round(100.0 * float(done) / maxf(1.0, float(_asset_total))))
 
 func _start_menu_music() -> void:
 	# 9.17 第二批：改走常驻 MusicService（播放器挂 root，不随页面释放）。
@@ -1578,6 +1578,12 @@ func _toggle_phrase_panel() -> void:
 func _set_phrase_panel_visible(shown: bool) -> void:
 	if _phrase_panel == null or not is_instance_valid(_phrase_panel):
 		return
+	# Godot GUI picking follows reverse sibling order, independently of z_index.
+	# Raise the actual input nodes above the later-created spectator scroll panel.
+	if shown:
+		move_child(_phrase_panel, -1)
+		for btn in _phrase_buttons:
+			move_child(btn, -1)
 	_phrase_panel.visible = shown
 	for btn in _phrase_buttons:
 		btn.visible = shown

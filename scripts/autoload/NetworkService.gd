@@ -3335,6 +3335,10 @@ func _spectate_join(sender: int, room_id: int, card: String) -> void:
 	if room.is_empty() or str(room.get("state", "")) == ROOM_CLOSED:
 		_spectate_fail(sender, "room_not_found")
 		return
+	# Completed rooms are retained for existing viewers, not new room discovery.
+	if bool(room.get("run_over", false)) and SpectatorService.sid_of_peer(room, sender) < 0:
+		_spectate_fail(sender, "room_not_found")
+		return
 	# 名片可选：没有 = 游客。带了就必须是真的 —— 验不过说明客户端有问题，按原因拒，
 	# 不能悄悄降级成游客（那样改包的人可以拿一张假名片换一个假名字进列表）。
 	var identity := {}
@@ -3348,6 +3352,10 @@ func _spectate_join(sender: int, room_id: int, card: String) -> void:
 		if seated_room.is_empty() and _restore_account_seat(sender, room, account_pid) >= 0:
 			return
 	_remove_account_spectators(room, account_pid, str(identity.get("friend_code", "")), sender)
+	var associated := _listed_spectator_peers(room)
+	if not associated.has(sender) and associated.size() >= SpectatorService.MAX_SPECTATORS:
+		_spectate_fail(sender, "spectate_full")
+		return
 	# 换房观战：先离开原来的观战席（同一条连接只能看一间）。
 	if int(_peer_spectate.get(sender, 0)) != room_id:
 		_spectate_detach(sender)
@@ -3582,6 +3590,27 @@ func _spectate_send_round(room: Dictionary, peer_id: int) -> void:
 		_send_replay_to_peer(peer_id, battle_id, packed_a, packed_b)
 
 # 房间列表 = 能坐下的（形状不变，加 joinable 标记）+ 只能观战的（满员 / 已开局 / 匹配房）。
+# A finished room keeps settlement viewers until they explicitly return.
+# Public discovery shows only the continuation; count both groups there, once per
+# connection. Follow the trusted source link with cycle protection across rematches.
+func _listed_spectator_peers(room: Dictionary) -> Dictionary:
+	var result := {}
+	var visited := {}
+	var current := room
+	while not current.is_empty():
+		var rid := int(current.get("id", 0))
+		if visited.has(rid):
+			break
+		visited[rid] = true
+		for peer_id in SpectatorService.peers(current):
+			result[peer_id] = true
+		var source: Dictionary = _rooms.get(int(current.get("settlement_source", 0)), {})
+		if source.is_empty() or not bool(source.get("run_over", false)) or int(source.get("rematch_room_id", 0)) != rid:
+			break
+		current = source
+	return result
+
+
 func _room_list_with_spectate() -> Array:
 	var out: Array = []
 	var listed := {}
@@ -3590,13 +3619,13 @@ func _room_list_with_spectate() -> Array:
 		var room: Dictionary = _rooms.get(int(row.get("id", 0)), {})
 		row["joinable"] = true
 		row["spectate_open"] = SpectatorService.is_open(room)
-		row["spectators"] = SpectatorService.count(room)
+		row["spectators"] = _listed_spectator_peers(room).size()
 		out.append(row)
 		listed[int(row.get("id", 0))] = true
 	var spectate_rows: Array = []
 	for room in _rooms.values():
 		var rid := int(room.get("id", 0))
-		if listed.has(rid) or str(room.get("state", "")) == ROOM_CLOSED:
+		if listed.has(rid) or bool(room.get("run_over", false)) or str(room.get("state", "")) == ROOM_CLOSED:
 			continue
 		# 关了观战的、等原班人马回来的（suspended）、一个真人都没有的，都不列。
 		if not SpectatorService.is_open(room) or bool(room.get("suspended", false)) \
@@ -3609,7 +3638,7 @@ func _room_list_with_spectate() -> Array:
 			"state": str(room.get("state", ROOM_LOBBY)),
 			"joinable": false,
 			"spectate_open": true,
-			"spectators": SpectatorService.count(room),
+			"spectators": _listed_spectator_peers(room).size(),
 		})
 	spectate_rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a.get("id", 0)) < int(b.get("id", 0)))
 	return out + spectate_rows.slice(0, SPECTATE_LIST_MAX)
@@ -8754,8 +8783,9 @@ func _return_spectator_to_settlement_room(peer_id: int) -> Dictionary:
 	var target := _settlement_target(old)
 	if target.is_empty() or str(target.get("state", "")) != ROOM_LOBBY:
 		return {}
-	var identity: Dictionary = SpectatorService.entry_of_peer(old, peer_id).get("identity", {})
-	var added := SpectatorService.add(target, peer_id, identity, _now())
+	var entry := SpectatorService.entry_of_peer(old, peer_id)
+	var identity: Dictionary = entry.get("identity", {})
+	var added := SpectatorService.add(target, peer_id, identity, _now(), str(entry.get("account_pid", "")))
 	if not bool(added.get("ok", false)):
 		return {}
 	_spectate_detach(peer_id)

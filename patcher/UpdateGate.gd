@@ -16,7 +16,28 @@ var _download_started := 0
 var _committed := false
 
 
+var _locale := "en"
+
+
+# Launcher runs before business autoloads are mounted. Read only the saved preference.
+func _read_locale() -> String:
+	for path in ["user://profile.json", "user://profile.json.bak"]:
+		if not FileAccess.file_exists(path):
+			continue
+		var parser := JSON.new()
+		if parser.parse(FileAccess.get_file_as_string(path)) != OK or not parser.data is Dictionary:
+			continue
+		var saved := str(parser.data.get("locale", "en"))
+		return saved if saved in ["zh", "en"] else "en"
+	return "en"
+
+
+func _text(zh: String, en: String) -> String:
+	return zh if _locale == "zh" else en
+
+
 func _ready() -> void:
+	_locale = _read_locale()
 	_build_ui()
 	_run()
 
@@ -75,7 +96,7 @@ func _build_ui() -> void:
 	_amount.add_theme_color_override("font_color", Color("8394a8"))
 	column.add_child(_amount)
 	_retry = Button.new()
-	_retry.text = "重新连接"
+	_retry.text = _text("重新连接", "Reconnect")
 	_retry.custom_minimum_size.y = 48
 	_retry.visible = false
 	_retry.pressed.connect(_run)
@@ -99,13 +120,13 @@ func _process(_delta: float) -> void:
 func _fail(message: String) -> void:
 	_download_size = 0
 	_busy = false
-	_title.text = "更新尚未完成"
+	_title.text = _text("更新尚未完成", "Update incomplete")
 	_detail.text = message
 	# Resource packs and initialized scripts cannot be safely unloaded in-process.
 	_retry.visible = not _committed
 	if _committed:
-		_detail.text += " 请退出并重新启动游戏。"
-	_amount.text = "完成更新后即可进入游戏"
+		_detail.text += _text(" 请退出并重新启动游戏。", " Please close and restart the game.")
+	_amount.text = _text("完成更新后即可进入游戏", "You can enter the game after the update.")
 
 
 func _read_json(path: String) -> Dictionary:
@@ -143,21 +164,21 @@ func _run() -> void:
 		return
 	_busy = true
 	_retry.visible = false
-	_title.text = "正在连接远征大厅"
-	_detail.text = "检查游戏版本…"
+	_title.text = _text("正在连接远征大厅", "Connecting to the expedition lobby")
+	_detail.text = _text("检查游戏版本…", "Checking game version…")
 	_amount.text = ""
 	_progress.value = 0
 	_boot = _read_json("res://patcher/boot.json")
 	for key in ["backend_url", "channel", "platform", "base_id", "autoloads", "main_scene", "firebase_host"]:
 		if not _boot.has(key):
-			_fail("安装包缺少更新配置，请安装完整的新版本。")
+			_fail(_text("安装包缺少更新配置，请安装完整的新版本。", "Update configuration is missing. Please install the latest full game."))
 			return
 	if not str(_boot.backend_url).begins_with("https://"):
-		_fail("更新服务地址无效。")
+		_fail(_text("更新服务地址无效。", "Invalid update service address."))
 		return
 	_directory = "user://patches/" + str(_boot.channel) + "/" + str(_boot.platform) + "/" + str(_boot.base_id)
 	if DirAccess.make_dir_recursive_absolute(_directory) != OK:
-		_fail("无法创建更新目录，请检查设备存储空间。")
+		_fail(_text("无法创建更新目录，请检查设备存储空间。", "Unable to create the update folder. Please check your free storage."))
 		return
 	var active := _read_json(_directory + "/active.json")
 	var installed := int(active.get("seq", 0))
@@ -168,79 +189,79 @@ func _run() -> void:
 			active = {}
 	var manifest: Dictionary = await _check(installed)
 	if manifest.is_empty():
-		_fail("暂时无法确认最新版本，请检查网络后重试。")
+		_fail(_text("暂时无法确认最新版本，请检查网络后重试。", "Unable to check the latest version. Check your connection and retry."))
 		return
 	var action := str(manifest.get("action", ""))
 	if action == "store_update":
-		_fail("此版本需要更新完整安装包，请前往原下载渠道更新游戏。")
+		_fail(_text("此版本需要更新完整安装包，请前往原下载渠道更新游戏。", "A full game update is required. Please update from your original download source."))
 		return
 	if action == "reset_to_base":
 		active = {}
 	elif action == "download":
 		var artifact = manifest.get("artifact")
 		if not artifact is Dictionary or not _valid_artifact(artifact):
-			_fail("更新文件信息无效，请稍后重试。")
+			_fail(_text("更新文件信息无效，请稍后重试。", "Invalid update information. Please try again later."))
 			return
 		var digest: String = artifact.sha256
 		var target := _directory + "/" + digest + ".zip"
-		_title.text = "准备新的远征"
-		_detail.text = "正在下载游戏更新，请保持网络连接。"
+		_title.text = _text("准备新的远征", "Preparing a new expedition")
+		_detail.text = _text("正在下载游戏更新，请保持网络连接。", "Downloading game update. Please stay connected.")
 		if not _matches_file(target, digest):
 			_request.body_size_limit = int(artifact.size)
 			_request.download_file = target + ".part"
 			_download_size = int(artifact.size)
 			_download_started = Time.get_ticks_msec()
 			if _request.request(str(artifact.url)) != OK:
-				_fail("无法开始下载，请重试。")
+				_fail(_text("无法开始下载，请重试。", "Unable to start the download. Please retry."))
 				return
 			var response: Array = await _request.request_completed
 			_download_size = 0
 			if response[0] != HTTPRequest.RESULT_SUCCESS or response[1] != 200:
-				_fail("下载未完成，请检查网络和可用存储空间后重试。")
+				_fail(_text("下载未完成，请检查网络和可用存储空间后重试。", "Download incomplete. Check your connection and free storage, then retry."))
 				return
-			_detail.text = "下载完成，正在校验文件…"
+			_detail.text = _text("下载完成，正在校验文件…", "Download complete. Verifying files…")
 			await get_tree().process_frame
 			var downloaded := FileAccess.open(target + ".part", FileAccess.READ)
 			if downloaded == null or downloaded.get_length() != int(artifact.size):
-				_fail("更新文件大小不符，请重新下载。")
+				_fail(_text("更新文件大小不符，请重新下载。", "Update file size mismatch. Please download again."))
 				return
 			downloaded.close()
 			if FileAccess.get_sha256(target + ".part") != digest:
-				_fail("更新文件校验失败，请重新下载。")
+				_fail(_text("更新文件校验失败，请重新下载。", "Update verification failed. Please download again."))
 				return
 			if DirAccess.rename_absolute(target + ".part", target) != OK:
-				_fail("无法保存更新，请检查设备存储空间。")
+				_fail(_text("无法保存更新，请检查设备存储空间。", "Unable to save the update. Please check your free storage."))
 				return
 		# Publication may have changed during download. Never boot a stale candidate.
 		var candidate_seq := int(manifest.required_patch_seq)
 		var latest: Dictionary = await _check(candidate_seq)
 		if latest.is_empty() or latest.get("action") != "none" or int(latest.get("required_patch_seq", -1)) != candidate_seq:
-			_fail("游戏版本刚刚更新，请重试以获取最新版本。")
+			_fail(_text("游戏版本刚刚更新，请重试以获取最新版本。", "A new game version is available. Please retry to get the latest version."))
 			return
 		manifest = latest
 		active = {"seq": candidate_seq, "sha256": digest}
 	elif action != "none":
-		_fail("暂时无法确认更新状态，请稍后重试。")
+		_fail(_text("暂时无法确认更新状态，请稍后重试。", "Unable to check the update status. Please try again later."))
 		return
 	var state_file := FileAccess.open(_directory + "/active.json.tmp", FileAccess.WRITE)
 	if state_file == null:
-		_fail("无法保存版本状态，请检查存储空间。")
+		_fail(_text("无法保存版本状态，请检查存储空间。", "Unable to save the version state. Please check your free storage."))
 		return
 	state_file.store_string(JSON.stringify(active))
 	state_file.close()
 	if DirAccess.rename_absolute(_directory + "/active.json.tmp", _directory + "/active.json") != OK:
-		_fail("无法保存版本状态，请重新启动游戏。")
+		_fail(_text("无法保存版本状态，请重新启动游戏。", "Unable to save the version state. Please restart the game."))
 		return
 	# Finish all retryable filesystem/network work before changing resource state.
 	_committed = true
 	if not active.is_empty():
 		if not ProjectSettings.load_resource_pack(_directory + "/" + str(active.sha256) + ".zip", true):
-			_fail("无法加载更新文件。")
+			_fail(_text("无法加载更新文件。", "Unable to load the update files."))
 			return
 	ProjectSettings.set_meta("glory_patch_snapshot", manifest)
 	_progress.value = 100
-	_title.text = "一切就绪"
-	_detail.text = "正在进入远征大厅…"
+	_title.text = _text("一切就绪", "Ready to play")
+	_detail.text = _text("正在进入远征大厅…", "Entering the expedition lobby…")
 	_amount.text = ""
 	await get_tree().process_frame
 	_start_business()
@@ -273,7 +294,7 @@ func _start_business() -> void:
 	for entry in _boot.autoloads:
 		var node := get_tree().root.get_node_or_null(NodePath(str(entry.name)))
 		if node == null or node.get_script() != null:
-			_fail("启动服务状态异常，请重新启动游戏。")
+			_fail(_text("启动服务状态异常，请重新启动游戏。", "Startup services are unavailable. Please restart the game."))
 			return
 		nodes.append(node)
 		ProjectSettings.set_setting("autoload/" + str(entry.name), "*" + str(entry.path))
@@ -282,7 +303,7 @@ func _start_business() -> void:
 	for index in range(nodes.size()):
 		var script = load(str(_boot.autoloads[index].path))
 		if script == null or not script.can_instantiate():
-			_fail("更新后的服务无法加载，请重新启动游戏。")
+			_fail(_text("更新后的服务无法加载，请重新启动游戏。", "Unable to load the updated services. Please restart the game."))
 			return
 		nodes[index].set_script(script)
 		nodes[index].request_ready()
@@ -292,4 +313,4 @@ func _start_business() -> void:
 	hotfix_agent.name = "GloryHotfixAgent"
 	get_tree().root.add_child(hotfix_agent)
 	if get_tree().change_scene_to_file(str(_boot.main_scene)) != OK:
-		_fail("无法进入游戏，请重新启动。")
+		_fail(_text("无法进入游戏，请重新启动。", "Unable to enter the game. Please restart."))

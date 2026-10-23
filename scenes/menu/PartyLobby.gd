@@ -361,10 +361,15 @@ func _build() -> void:
 	_seat_layer.size = Vector2(922, 237)
 	_seat_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_canvas.add_child(_seat_layer)
-	# 开始键下面一行，比开始键宽：长一点的提示（某某取消了排队 / 某某没接受对局）一行放得下。
-	_notice = _label(_canvas, "", Vector2(566, 899), Vector2(540, 36), 18, CREAM)
+	# 提示放在开始键上方，预留三行英文高度，避开聊天框和底部语音状态。
+	_notice = _label(_canvas, "", Vector2(566, 668), Vector2(600, 80), 18, CREAM)
 	_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_notice.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_notice.max_lines_visible = 3
+	_notice.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_notice.clip_text = true
+	_notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_action = _button(_canvas, _text("开始匹配", "START MATCH"), Vector2(656, 756), ACTION_SIZE)
 	_action.pressed.connect(_act)
 
@@ -1565,8 +1570,7 @@ func _refresh_speaking() -> void:
 	for code in _seat_frames:
 		var talking := speaking.has(code) or (str(code) == me and bool(_party_voice.self_speaking()))
 		VoiceControls.show_speaking_mic(_seat_frames[code], talking)
-	if _voice_status != null:
-		_voice_status.text = str(_party_voice.last_error())
+	_refresh_voice_status()
 	if _speaker_hold_started >= 0 and not _speaker_hold_opened \
 			and Time.get_ticks_msec() - _speaker_hold_started >= SPEAKER_HOLD_MSEC:
 		_speaker_hold_opened = true
@@ -2248,3 +2252,11 @@ func _is_en() -> bool:
 
 func _text(zh: String, en: String) -> String:
 	return en if _is_en() else zh
+
+
+func _refresh_voice_status() -> void:
+	if _voice_status == null:
+		return
+	var error := str(_party_voice.last_error())
+	_voice_status.text = "" if error.is_empty() else _text("队伍语音暂不可用", "Party voice unavailable")
+	_voice_status.tooltip_text = error

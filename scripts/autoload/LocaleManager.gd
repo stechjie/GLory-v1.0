@@ -2,7 +2,7 @@ extends Node
 
 signal locale_changed(locale: String)
 
-const DEFAULT_LOCALE := "zh"
+const DEFAULT_LOCALE := "en"
 
 func _ready() -> void:
 	_register_translations()

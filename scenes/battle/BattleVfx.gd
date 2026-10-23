@@ -17,6 +17,7 @@ const _HIT_FEEDBACK := preload("res://effects/runtime/presentation/BattleHitFeed
 var _vfx_prev_units: Dictionary = {}
 var _vfx_seeded: bool = false
 var _vfx_visual_event_index := 0
+var _camera_shake_policy = preload("res://scripts/battle/BattleCameraShakePolicy.gd").new()
 var _persistent_unit_vfx: Dictionary = {}
 var _blood_rework_vfx: Dictionary = {}
 # 9.24 #7（订正）：**取消了「血条染契约色」的做法。**
@@ -1527,12 +1528,13 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 		_vfx_visual_event_index += 1
 		if typeof(event) != TYPE_DICTIONARY:
 			continue
+		if _camera_shake_policy.is_candidate(event):
+			var shake_uid := str(event.get("source_uid", ""))
+			if _camera_shake_policy.accepts(event, _state_unit_for(shake_uid), _is_local_owned_unit(shake_uid)):
+				_screen_shake(6.5, 0.20)
+		# Cast-only legacy events intentionally do not shake the camera.
 		if str(event.get("type", "")) == "skill_shake":
-			# 10.18：陨星 0.68 秒后才落地、灭世蓄力 2 秒后才落下，施法那一下不震，
-			# 改由 BossSkillVFXComposer3D 在真正落下时给屏震 + 卡帧。
-			var shake_source := _vfx_unit_by_sim_uid(current, str(event.get("source_uid", "")))
-			if not str(shake_source.get("skill_id", "")) in _DELAYED_IMPACT_BOSS_SKILLS:
-				_screen_shake(float(event.get("strength", 6.5)), float(event.get("duration", 0.2)))
+			pass
 		elif str(event.get("type", "")) == "buff_apply" and str(event.get("skill_id", "")) in ["bubble_dream_heal", "holy_song_cleanse"]:
 			var merc_source := _vfx_unit_by_sim_uid(current, str(event.get("source_uid", "")))
 			var merc_target := _vfx_unit_by_sim_uid(current, str(event.get("target_uid", "")))
@@ -1924,12 +1926,10 @@ func cue_spawn_hit_number(target_uid: String, amount: int, kind: String, crit: b
 	return true
 
 
-# 10.21：受击反馈（闪白 / 后仰压扁 / 局部顿帧 / 技能屏震），和伤害数字同一拍。
+# 10.21：受击反馈（闪白 / 后仰压扁 / 局部顿帧），和伤害数字同一拍。
 # 普攻的攻击者从 cue_play_basic_attack 记下的「最近一次谁打了它」取，用来定后仰方向和
 # 暴击时让攻击者一起顿帧；技能取不到攻击者就按向后仰。
 const HIT_ATTACKER_MEMORY_MSEC := 1500
-const SKILL_HIT_SHAKE_STRENGTH := 4.5
-const SKILL_HIT_SHAKE_SEC := 0.16
 var _last_basic_attacker: Dictionary = {}   # target_uid -> {"uid": source_uid, "msec": int}
 
 func _play_hit_reaction(target_uid: String, kind: String, amount: int, crit: bool, is_skill: bool) -> void:
@@ -1946,16 +1946,13 @@ func _play_hit_reaction(target_uid: String, kind: String, amount: int, crit: boo
 			attacker = found
 	var tier := "skill" if is_skill else ("crit" if crit else "basic")
 	_HIT_FEEDBACK.play(victim, attacker, tier, PresentationSettings.flash_allowed(), PresentationSettings.hit_stop_allowed())
-	# 普攻 / 暴击的屏震由 impact 那一拍的 cue_play_impact_feedback 负责（暴击只乘系数），
-	# 这里只给技能命中补一下：skill_shake 事件只有少数技能会发。
-	if is_skill:
-		_screen_shake(SKILL_HIT_SHAKE_STRENGTH, SKILL_HIT_SHAKE_SEC)
+	# Camera shake is owned by the damage-event policy, once per activation.
 
 
 # Death had no visual at all before D4: the renderer simply freed the model on the
 # next refresh. Taking ownership of the actor lets it sink and fade instead of
 # blinking out (checklist section 6: never just disappear).
-# --- V2 P1-05 第 1 条：普攻的前冲/后坐 + 命中的单次小屏震 ----------------------
+# --- V2 P1-05 第 1 条：普攻的前冲/后坐 ----------------------
 #
 # 位移打在 **ActorRoot** 上而不是 actor 本身：_position_3d_model_node() 每帧都会
 # 用模拟位置重写 actor.position，动它一定会被覆盖掉。ActorRoot 是它的子节点，
@@ -1966,10 +1963,6 @@ const ATTACK_LUNGE_BACK_SEC := 0.13
 # 远程是后坐不是前冲：出手方向相反、幅度更小。
 const RANGED_RECOIL_FACTOR := -0.55
 
-# 命中的小屏震。"小"是认真的：一场战斗里普攻的数量远多于技能，
-# 这个值和 skill_shake 默认的 6.5 差一个量级。
-const IMPACT_SHAKE_STRENGTH := 1.6
-const IMPACT_SHAKE_SEC := 0.09
 
 # V2 原话："暴击只放大 20%-35%，不堆全屏闪白"。
 # 所以暴击的强调就是把同一套演出乘上这个系数，而不是另加一层全屏效果。
@@ -2063,13 +2056,10 @@ func _lunge_direction(actor: Node3D, target_uid: String) -> Vector3:
 	return delta.normalized()
 
 
-# 命中反馈：一次小屏震。暴击不另加东西，只把同一次震动乘 CRIT_EMPHASIS_SCALE。
-#
-# 不需要在这里做"只震一次"的去重：VFXManager.play_screen_shake 用 maxf 取强度，
-# 同一帧里多个命中不会叠加成一次大震。
-func cue_play_impact_feedback(_target_uid: String, crit: bool) -> void:
-	var strength := IMPACT_SHAKE_STRENGTH * (CRIT_EMPHASIS_SCALE if crit else 1.0)
-	_screen_shake(strength, IMPACT_SHAKE_SEC)
+# Legacy impact callback retained for the presentation adapter beat contract.
+func cue_play_impact_feedback(_target_uid: String, _crit: bool) -> void:
+	# Basic/critical impacts retain their local actor feedback only.
+	pass
 
 # 9.24 #1：远程普攻弹道的飞行时长（与 VFXRaceBasicAttack3D._play_ranged 同公式）。
 # LegacyBattleVfxAdapter 用它把 impact / 命中数字 推迟到弹体真正落地那一刻才播放，
@@ -2336,7 +2326,6 @@ var _phoenix_rise_played: Dictionary = {}
 var _blood_rage_entered: Dictionary = {}
 # 暴走后常驻的红色粒子气（sim_uid -> 节点），Boss 死亡 / 消失时释放。
 var _blood_qi_vfx: Dictionary = {}
-const _DELAYED_IMPACT_BOSS_SKILLS := ["element_meteor", "apocalypse_charge"]
 
 
 # 暴走期间模型本身罩一层血红光（与母灵处决 / 凤凰鬼魂同一个覆盖着色器），按心跳节奏起伏：

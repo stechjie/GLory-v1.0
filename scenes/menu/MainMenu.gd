@@ -154,6 +154,10 @@ var _profile_sub_label: Label
 # （docs/三方登录设计.md 第一节：只亮红点，不弹窗）。绑上之后 identities_changed 会把它灭掉。
 var _profile_dot: Label
 var _account_level := 0
+var _account_xp_progress := 0
+var _account_xp_required := 0
+var _profile_xp_fill: ColorRect
+var _profile_xp_bar: Control
 var _coin_label: Label
 var _diamond_label: Label
 # 「聊天」图标右上角的未读红点。显隐只跟 ChatService 走（状态只有一份）。
@@ -339,6 +343,14 @@ func _build() -> void:
 	# 所以第二行现在放注册天数 —— 有真实来源，且比精确注册日期少泄漏一点。
 	# 等级/段位做出来之后再换回去，那时第二行才有真东西可放。
 	_profile_name_label = _add_label("", Vector2(200, 70), Vector2(330, 35), 24, "left")
+	_profile_xp_bar = _add_container(Vector2(200, 104), Vector2(330, 24), "left")
+	_profile_xp_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_profile_xp_bar.clip_contents = true
+	_profile_xp_fill = ColorRect.new()
+	_profile_xp_fill.color = Color(1.0, 0.78, 0.18, 0.36)
+	_profile_xp_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_profile_xp_fill.anchor_bottom = 1.0
+	_profile_xp_bar.add_child(_profile_xp_fill)
 	_profile_sub_label = _add_label("", Vector2(200, 104), Vector2(330, 24), 18, "left")
 	# 压在头像右上角，同「朋友」「聊天」那两个红点的做法。hit 仍然放在最后。
 	_profile_dot = _add_label("●", Vector2(150, 30), Vector2(32, 32), 26, "left")
@@ -1050,6 +1062,7 @@ func _refresh_profile_plate() -> void:
 		# 头像同理：宁可空着露出框里的深棕底，也不要先画一个默认头像再跳变。
 		_profile_name_label.text = _menu_text("玩家", "Player")
 		_profile_sub_label.text = "—"
+		_profile_xp_bar.hide()
 		if _profile_portrait != null and is_instance_valid(_profile_portrait):
 			_profile_portrait.texture = null
 		_profile_base_frame.visible = true
@@ -1069,11 +1082,13 @@ func _refresh_profile_plate() -> void:
 			_profile_frame_art.texture = AvatarCatalog.frame_texture_for(
 				str(profile.get("avatar_frame", "")))
 			_place_profile_frame(frame_id)
+	_profile_xp_bar.visible = _account_level > 0
+	_profile_xp_fill.anchor_right = clampf(float(_account_xp_progress) / maxf(1.0, _account_xp_required), 0.0, 1.0) if _account_xp_required > 0 else 1.0
 	# 10.04 bug 文档第 5 条：大厅左上角资料卡只显示昵称（隐藏 #好友码）。
 	_profile_name_label.text = AccountManager.display_name(
 		str(profile.get("player_name", "")), str(profile.get("friend_code", "")), false)
 	if _account_level > 0:
-		_profile_sub_label.text = _menu_text("等级 %d" % _account_level, "Level %d" % _account_level)
+		_profile_sub_label.text = (_menu_text("等级%d %d/%d", "Level %d %d/%d") % [_account_level, _account_xp_progress, _account_xp_required]) if _account_xp_required > 0 else (_menu_text("等级%d 已满级", "Level %d MAX") % _account_level)
 	else:
 		var days := int(profile.get("days_since_created", 1))
 		_profile_sub_label.text = _menu_text("第 %d 天" % days, "Day %d" % days)
@@ -1127,8 +1142,7 @@ func _refresh_progression() -> void:
 	if not is_inside_tree() or int(response.get("code", 0)) != 200:
 		return
 	var state: Dictionary = response.get("body", {})
-	_account_level = int(state.get("level", 1))
-	_refresh_profile_plate()
+	_apply_profile_progression(state)
 	var pending: Array = state.get("unseen_levels", [])
 	if not PlayerProfile.tutorial_followup_step.is_empty():
 		return
@@ -1729,3 +1743,12 @@ func _draw_debug_layout() -> void:
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 13, red)
 		else:
 			_debug_layer.draw_rect(rect, black_soft, false, 1.0)
+
+
+func _apply_profile_progression(state: Dictionary) -> void:
+	_account_level = int(state.get("level", 1))
+	_account_xp_progress = maxi(0, int(state.get("xp", 0)) - int(state.get("level_xp", 0)))
+	_account_xp_required = maxi(0, int(state.get("next_xp", 0)) - int(state.get("level_xp", 0))) if state.get("next_xp") != null else 0
+	if _account_xp_required > 0:
+		_account_xp_progress = mini(_account_xp_progress, _account_xp_required)
+	_refresh_profile_plate()

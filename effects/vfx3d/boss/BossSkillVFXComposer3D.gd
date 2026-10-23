@@ -254,10 +254,9 @@ func _clear_apocalypse_warns(boss_at: Vector3) -> void:
 
 # ── 共用 ────────────────────────────────────────────────────────────────
 
-# 命中那一拍的屏震 + 卡帧（施法那一刻的屏震由模拟器的 skill_shake 给；落点有延迟的
-# 陨星 / 灭世在 BattleVfx 那边跳过了施法屏震，改由这里在真正落下时给）。
+# 特效命中保留卡帧；屏震统一按真实伤害/狂暴事件处理，计时器不再震动画面。
 # VFXManager 是 autoload，按名字取（--script 跑截帧工具时可能不在）。
-func _impact_feedback(strength: float, duration: float, hitstop: float) -> void:
+func _impact_feedback(_strength: float, _duration: float, hitstop: float) -> void:
 	if not is_inside_tree():
 		return
 	var manager := get_tree().root.get_node_or_null("VFXManager")
@@ -265,8 +264,7 @@ func _impact_feedback(strength: float, duration: float, hitstop: float) -> void:
 		return
 	if hitstop > 0.0 and manager.has_method("play_hitstop"):
 		manager.call("play_hitstop", hitstop)
-	if manager.has_method("play_screen_shake"):
-		manager.call("play_screen_shake", strength, duration)
+	# Camera motion is driven by confirmed damage/rage events, never by VFX timers.
 
 func _after(seconds: float, fn: Callable) -> void:
 	if not is_inside_tree():

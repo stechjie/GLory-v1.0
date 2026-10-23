@@ -265,7 +265,7 @@ func login_as_guest() -> void:
 # 重试的是 login()，而 login() 又会停下来问 —— 界面会在两种状态之间来回跳。
 func login_with_provider(provider: String, id_token: String, nonce: String) -> Dictionary:
 	if _busy:
-		return {"code": 0, "error": "正在登录，请稍候"}
+		return {"code": 0, "error": localized_error("正在登录，请稍候")}
 	_busy = true
 	awaiting_choice = false
 	choice_error = ""
@@ -301,7 +301,7 @@ func login_with_provider(provider: String, id_token: String, nonce: String) -> D
 # 旧账号的凭证已经扔了，游客号就此丢失。成功后发 account_switched，Main 回启动页重新进门。
 func switch_with_provider(provider: String, id_token: String, nonce: String) -> Dictionary:
 	if _busy:
-		return {"code": 0, "error": "正在登录，请稍候"}
+		return {"code": 0, "error": localized_error("正在登录，请稍候")}
 	_busy = true
 	# 不带本机 player_id：它正被当前这个号用着，带上去只会撞号。
 	var result := await _provider_post(provider, id_token, nonce, "")
@@ -324,7 +324,7 @@ func link_provider(provider: String, id_token: String, nonce: String) -> Diction
 		return result
 	# 后端回的是一套新凭证（Supabase 绑完就换），换法和续期一模一样。
 	if not _apply_refreshed_session(result.get("body", {})):
-		return {"code": 0, "error": "已经绑上了，但这台设备没能更新登录状态，请重启游戏"}
+		return {"code": 0, "error": localized_error("已经绑上了，但这台设备没能更新登录状态，请重启游戏")}
 	identities_changed.emit()
 	return result
 
@@ -649,7 +649,7 @@ func fetch_public_profile(friend_code: String) -> Dictionary:
 	var code := friend_code.strip_edges().to_upper()
 	if code.length() != 8:
 		# 本地就能判的失败，不必往返。用 404 让调用方的处理路径和「查无此人」一致。
-		return {"code": 404, "error": "好友码是 8 位"}
+		return {"code": 404, "error": localized_error("好友码是 8 位")}
 	# **登录了就带上令牌**，好换回 relation 字段（「加好友 / 已是好友 / 待通过」）。
 	# 没登录就照旧匿名请求 —— 这个接口本来就不要求登录，
 	# 而 _request 在 authed=true 且没有令牌时会直接返回 401、根本不发请求。
@@ -1359,7 +1359,7 @@ func _request(
 		if _access_token.is_empty():
 			# 本地就能判定的失败，不必往返一次。用 401 是为了让调用方的
 			# 处理路径与「服务端说令牌无效」完全一致。
-			return {"code": 401, "error": "尚未登录"}
+			return {"code": 401, "error": localized_error("尚未登录")}
 		headers.append("Authorization: Bearer %s" % _access_token)
 
 	var http := HTTPRequest.new()
@@ -1374,7 +1374,7 @@ func _request(
 	var err := http.request(url, headers, method, body_text)
 	if err != OK:
 		http.queue_free()
-		return {"code": 0, "error": "请求发不出去（%s）" % error_string(err)}
+		return {"code": 0, "error": localized_error("请求发不出去（%s）" % error_string(err))}
 
 	var result: Array = await http.request_completed
 	if request_generation != _session_generation:
@@ -1394,7 +1394,7 @@ func _request(
 
 	if outcome != HTTPRequest.RESULT_SUCCESS:
 		# 连不上后端最常见：本机没起服务、真机上填了 127.0.0.1、明文被 Android 拦。
-		return {"code": 0, "error": "连不上账号服务器（result=%d）" % outcome}
+		return {"code": 0, "error": localized_error("连不上账号服务器（result=%d）" % outcome)}
 
 	# ⚠️ **不是所有响应体都是 JSON。**
 	#
@@ -1424,7 +1424,7 @@ func _request(
 
 	if code == 409 and str(body.get("detail", "")) == "session_replaced":
 		RealtimeService._mark_kicked()
-		return {"code": 409, "error": "你的账号在其他设备登录"}
+		return {"code": 409, "error": localized_error("你的账号在其他设备登录")}
 	# 401 且这一趟还没重试过：令牌被提前吊销、或者本机时钟不准。续一次、重试一次。
 	# 服务端的 401 出在令牌校验那一步，业务逻辑还没跑 —— 所以连 POST 重试也是安全的。
 	if code == 401 and authed and allow_refresh:
@@ -1438,23 +1438,27 @@ func _request(
 		var ban: Dictionary = body.get("ban", {}) if body.get("ban") is Dictionary else {}
 		if authed:
 			note_banned(ban)
-		return {"code": code, "error": str(body.get("detail", "账号已被封禁")), "banned": true, "ban": ban}
+		return {"code": code, "error": localized_error(str(body.get("detail", "账号已被封禁"))), "banned": true, "ban": ban}
 
 	# 后端的 detail 已经脱敏（backend 那边有测试钉着不含 token），可以直接显示。
 	# 拿不到 detail（响应体不是 JSON）时**不要把原文回显给玩家** ——
 	# 那可能是一整页 HTML 或一段服务器内部信息。只报状态码。
 	if body.has("detail"):
-		var failure := {"code": code, "error": str(body["detail"])}
+		var failure := {"code": code, "error": localized_error(str(body["detail"]))}
 		# 机器读的原因码（比如绑定冲突的 identity_taken）。detail 是给人看的，别拿它做判断。
 		if body.get("code") is String:
 			failure["reason"] = body["code"]
 		return failure
 	if code >= 500:
-		return {"code": code, "error": "服务器出错了（HTTP %d），稍后再试" % code}
-	return {"code": code, "error": "请求失败（HTTP %d）" % code}
+		return {"code": code, "error": localized_error("服务器出错了（HTTP %d），稍后再试" % code)}
+	return {"code": code, "error": localized_error("请求失败（HTTP %d）" % code)}
 
 
 # 登录那两个调用的薄封装。保留它是为了让登录路径一个字都不用改 ——
 # 那段有 refresh/anonymous 的顺序纪律，不该在重构 HTTP 层时被顺手动到。
 func _post(path: String, payload: Dictionary) -> Dictionary:
 	return await _request(HTTPClient.METHOD_POST, path, payload, false)
+
+
+func localized_error(message: String) -> String:
+	return preload("res://scripts/account/AccountErrorText.gd").localize(message, LocaleManager.get_locale())
