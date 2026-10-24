@@ -10,7 +10,7 @@ import shutil
 import subprocess
 from urllib.parse import urlsplit
 
-FILES = ('index.html', 'style.css', 'app.js', 'routing.mjs', 'i18n.mjs', 'config.json', 'invite-qr.png')
+FILES = ('index.html', 'style.css', 'app.js', 'routing.mjs', 'i18n.mjs', 'config.json', 'invite-qr.png', 'privacy.html', 'privacy-en.html', 'support.html', 'delete-account.html', 'legal.css')
 MARKER = '\t# GLory beta invitation page\n\timport /etc/caddy/glory-beta.caddy\n'
 SNIPPET = '''redir /beta /beta/ 302
 handle_path /beta/* {
