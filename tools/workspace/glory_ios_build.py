@@ -341,7 +341,11 @@ def write_preset(stage, method, profile, cert, version, number):
                "application/provisioning_profile_specifier_release": profile["UUID"],
                "application/short_version": version, "application/version": number,
                "icons/icon_1024x1024": "res://app_icon.png",
-               "privacy/microphone_usage_description": "用于队伍语音聊天，仅在您主动开启麦克风时录音。",
+               # Godot's template links camera/photo APIs even though gameplay never requests them.
+               # Keep these declarations explicit to avoid App Store warning ITMS-90738.
+               "privacy/camera_usage_description": "Camera access is not required to play GLory. The game does not take photos or record video.",
+               "privacy/photolibrary_usage_description": "Photo library access is not required to play GLory. The game does not read or upload your photo library.",
+               "privacy/microphone_usage_description": "Allow microphone access when you choose to send a voice message or join voice chat. Microphone access is optional for gameplay.",
                "application/targeted_device_family": 2, "application/min_ios_version": "15.0"}
     render = lambda values: "\n".join(f"{key}={json.dumps(value, ensure_ascii=False)}" for key, value in values.items())
     (stage / "export_presets.cfg").write_text("[preset.0]\n\n" + render(header) + "\n\n[preset.0.options]\n\n" + render(options) + "\n")
@@ -400,6 +404,9 @@ def verify_ipa(ipa, directory, method, profile, cert, version, number, identity,
     info = plistlib.loads((app / "Info.plist").read_bytes())
     if (info.get("CFBundleIdentifier"), info.get("CFBundleShortVersionString"), info.get("CFBundleVersion")) != (BUNDLE, version, number):
         raise RuntimeError("IPA 的 Bundle ID、营销版本或 build number 与本次配置不一致。")
+    for key in ("NSCameraUsageDescription", "NSPhotoLibraryUsageDescription", "NSMicrophoneUsageDescription"):
+        if not str(info.get(key, "")).strip():
+            raise RuntimeError(f"IPA 的权限用途声明为空：{key}")
     voice = app / "Frameworks/GloryVoice.framework/GloryVoice"
     if not voice.is_file():
         raise RuntimeError("IPA 缺少必需的 iOS 音频/语音扩展 GloryVoice.framework。")

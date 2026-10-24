@@ -174,7 +174,7 @@ class IOSBuildTests(unittest.TestCase):
         cert = {"sha1": hashlib.sha1(leaf).hexdigest().upper()}
         identity = {"build_number": "2"}
         info = {"CFBundleIdentifier": ios.BUNDLE, "CFBundleShortVersionString": "0.0.4", "CFBundleVersion": "2",
-                "CFBundleExecutable": "Fixture", "CFBundleSupportedPlatforms": ["iPhoneOS"], "NSMicrophoneUsageDescription": "Voice"}
+                "CFBundleExecutable": "Fixture", "CFBundleSupportedPlatforms": ["iPhoneOS"], "NSMicrophoneUsageDescription": "Voice", "NSCameraUsageDescription": "No camera capture", "NSPhotoLibraryUsageDescription": "No photo library access"}
         with zipfile.ZipFile(ipa, "w") as archive:
             for name, data in {"Info.plist": plistlib.dumps(info), "Fixture": b"arm64 fixture",
                                "Fixture.pck": b"pck fixture", "embedded.mobileprovision": b"profile fixture",
