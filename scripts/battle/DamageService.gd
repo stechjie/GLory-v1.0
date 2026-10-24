@@ -33,6 +33,7 @@ static var _hit_is_crit := false
 # numbers on the renderer side.
 static var _hit_source_race := ""
 static var _hit_skill_id := ""
+static var _hit_shake_group := ""
 # 10.18：宝藏反应伤害（元素四件套 / 自爆灵爆炸 / 亡魂反击）用的表现来源。只进 hit_number
 # 事件给特效定位（亡魂从谁身上飞出、毒爆以谁为中心），**不**参与伤害统计归属。
 static var _hit_fx_source_uid := ""
@@ -44,7 +45,8 @@ const HIT_KIND_TREASURE := "treasure"
 static func current_battle_elapsed() -> float:
 	return float(_stat_state.get("elapsed", 0.0))
 
-static func set_hit_context(kind: String, is_crit: bool = false, source_race: String = "", skill_id: String = "") -> void:
+static func set_hit_context(kind: String, is_crit: bool = false, source_race: String = "", skill_id: String = "", shake_group: String = "") -> void:
+	_hit_shake_group = shake_group
 	_hit_kind = kind
 	_hit_is_crit = is_crit
 	_hit_source_race = source_race
@@ -56,7 +58,8 @@ static func set_hit_context(kind: String, is_crit: bool = false, source_race: St
 # 例如 "treasure_fire" / "treasure_blood" / "treasure_toxic"。空串 = 宝藏伤害的默认技能色。
 static func push_treasure_hit_context(skill_id: String, fx_source_uid: String = "", number_tone: String = "") -> Dictionary:
 	var saved := {"kind": _hit_kind, "crit": _hit_is_crit, "race": _hit_source_race,
-		"skill_id": _hit_skill_id, "fx_source": _hit_fx_source_uid}
+		"skill_id": _hit_skill_id, "fx_source": _hit_fx_source_uid, "shake_group": _hit_shake_group}
+	_hit_shake_group = ""
 	_hit_kind = HIT_KIND_TREASURE
 	_hit_is_crit = false
 	_hit_source_race = number_tone
@@ -65,6 +68,7 @@ static func push_treasure_hit_context(skill_id: String, fx_source_uid: String = 
 	return saved
 
 static func restore_hit_context(saved: Dictionary) -> void:
+	_hit_shake_group = str(saved.get("shake_group", ""))
 	_hit_kind = str(saved.get("kind", ""))
 	_hit_is_crit = bool(saved.get("crit", false))
 	_hit_source_race = str(saved.get("race", ""))
@@ -72,6 +76,7 @@ static func restore_hit_context(saved: Dictionary) -> void:
 	_hit_fx_source_uid = str(saved.get("fx_source", ""))
 
 static func clear_hit_context() -> void:
+	_hit_shake_group = ""
 	_hit_fx_source_uid = ""
 	_hit_kind = ""
 	_hit_is_crit = false
@@ -93,6 +98,7 @@ static func _maybe_emit_hit_number(target: Dictionary, hp_damage: int) -> void:
 	var event := {
 		"type": "hit_number",
 		"kind": "dmg",
+		"shake_group": _hit_shake_group if not _hit_shake_group.is_empty() else str(current_battle_elapsed()),
 		"crit": _hit_is_crit,
 		# 宝藏伤害按技能伤害的样式显示数字。
 		"skill": _hit_kind == "skill" or _hit_kind == HIT_KIND_TREASURE,
@@ -275,6 +281,7 @@ static func set_stat_source_uid(source_uid: String) -> void:
 	_stat_source_uid = source_uid
 
 static func clear_stat_context() -> void:
+	_hit_shake_group = ""
 	_stat_source_uid = ""
 	_element_owner_slot = -1
 	# Reset the hit tag too: this is called at every attack/skill/status boundary,
@@ -539,3 +546,17 @@ static func _try_sacrifice_revive(target: Dictionary) -> bool:
 	guard.erase("guard_target_uid")
 	return true
 
+
+
+# For delayed/execute paths whose combat hit context must remain unchanged.
+# Presentation metadata must never change dodge, block, RNG or damage resolution.
+static func emit_confirmed_skill_damage(state: Dictionary, source: Dictionary, target: Dictionary, amount: int, skill_id: String) -> void:
+	if amount <= 0 or float(state.get("elapsed", 0.0)) <= 0.0:
+		return
+	if not state.has("visual_events"):
+		state.visual_events = []
+	state.visual_events.append({
+		"type": "skill_damage", "source_uid": str(source.get("uid", "")),
+		"target_uid": str(target.get("uid", "")), "target_uids": [str(target.get("uid", ""))],
+		"skill_id": skill_id, "amount": amount, "time": float(state.get("elapsed", 0.0)),
+	})

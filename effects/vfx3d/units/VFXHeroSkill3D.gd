@@ -813,8 +813,6 @@ const SOUL_HOLD_SEC := 1.0
 # 光波命中那一拍的卡帧和屏震。Boss 是硬吃一记，给得更重。
 const SOUL_HIT_STOP_SEC := 0.08
 const SOUL_HIT_STOP_BOSS_SEC := 0.11
-const SOUL_HIT_SHAKE := 4.2
-const SOUL_HIT_SHAKE_SEC := 0.14
 
 func _book_victim(target: Vector3, context: Dictionary, heavy: bool, book_at: Vector3, head_ref: WeakRef, head_base: Vector3, leaves: Array[Node3D]) -> void:
 	var th := height_of(context, "target_height")
@@ -919,7 +917,7 @@ func _soul_body_release(foot: Vector3, th: float, ref: WeakRef, base: Vector3, s
 		show_with(cloud, 1.0))
 
 
-# 命中那一拍：卡帧 + 屏震。VFXManager 是 autoload，按名字从根节点取 —— 截帧工具用
+# 命中那一拍保留卡帧；屏震统一由确认伤害事件门控。VFXManager 是 autoload，按名字从根节点取 —— 截帧工具用
 # --script 跑时 autoload 可能不在，直接写标识符会让整个模块编译失败（见 VFXBlockRoot.vfx_texture）。
 # 两个入口都过 PresentationSettings 的无障碍开关。
 func _hit_feedback(at_time: float, hit_stop_sec: float) -> void:
@@ -933,8 +931,8 @@ func _hit_feedback(at_time: float, hit_stop_sec: float) -> void:
 			return
 		if manager.has_method("play_hitstop"):
 			manager.call("play_hitstop", hit_stop_sec)
-		if manager.has_method("play_screen_shake"):
-			manager.call("play_screen_shake", SOUL_HIT_SHAKE, SOUL_HIT_SHAKE_SEC))
+		# Camera shake comes only from confirmed, ownership-filtered battle events.
+	)
 
 
 # 书翻开后从书里射出一道弧形魂光波（新月形光刃 + 拖尾光束 + 粒子），飞到目标身上

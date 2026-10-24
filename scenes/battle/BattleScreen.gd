@@ -160,10 +160,19 @@ func _ready() -> void:
 		_battle_setup_ready = true
 		if not NetworkService.team_active:
 			# 分帧计算：算的过程中玩家可能退出战斗界面，await 回来必须先确认还在树上。
-			var local_a: Dictionary = await BattleSim.compute_team_replay_async(0)
+			var local_a: Dictionary
+			if TutorialMode.scripted_pvp_round():
+				local_a = await preload("res://scripts/tutorial/TutorialBattleDirector.gd").prepare(
+					func() -> bool: return is_inside_tree() and not _finished)
+			else:
+				local_a = await BattleSim.compute_team_replay_async(0)
 			if not is_inside_tree():
 				return
+			if local_a.is_empty():
+				_fail_team_replay("tutorial_roster_balance")
+				return
 			var local_b: Dictionary = await BattleSim.compute_team_replay_async(1)
+			TutorialMode.clear_ai_roster_plan()
 			if not is_inside_tree():
 				return
 			BattleSim.stamp_team_round_damages(local_a, local_b)
@@ -1142,6 +1151,7 @@ func _switch_active_replay(replay: Dictionary) -> void:
 	_replay_events_applied = -1
 	_state["visual_events"] = []
 	_vfx_visual_event_index = 0
+	_camera_shake_policy.reset()
 	_spectate_done = false
 	_load_replay_roster(replay)
 	_begin_presentation_replay(replay)
@@ -1198,6 +1208,7 @@ func _reseat_vfx_diff_for_new_battle() -> void:
 	_vfx_prev_units = {}
 	_vfx_seeded = false
 	_vfx_visual_event_index = 0
+	_camera_shake_policy.reset()
 	_parasite_spawn_announced.clear()
 
 func show_settlement_waiting() -> void:

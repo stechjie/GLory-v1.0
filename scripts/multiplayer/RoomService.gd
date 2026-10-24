@@ -417,6 +417,8 @@ func public_room_list() -> Array:
 	var team_slots := int(_cfg.get("team_slots", 6))
 	var out: Array = []
 	for room in rooms.values():
+		if bool(room.get("run_over", false)):
+			continue
 		if str(room.get("state", "")) != room_lobby or room_next_free_slot(room) < 0:
 			continue
 		# suspended 的房间正在等原班人马回来，不该被路人加入（B11）

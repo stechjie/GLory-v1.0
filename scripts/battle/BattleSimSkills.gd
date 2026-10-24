@@ -166,6 +166,7 @@ static func _queue_god_king_damage(state: Dictionary, caster: Dictionary, target
 		"source_race": str(d.get("race", "god")),
 		"target_uid": str(target.get("uid", "")),
 		"skill_id": "global_divine_blast",
+		"shake_group": str(state.get("elapsed", 0.0)),
 		"chunks": chunks.slice(1),
 		"interval_ticks": interval_ticks,
 		"ticks_until_next": interval_ticks,
@@ -202,7 +203,7 @@ static func tick_pending_skill_damage(state: Dictionary) -> void:
 		if chunks.is_empty():
 			continue
 		DamageService.begin_stat_source_uid(state, str(entry.get("source_uid", "")))
-		DamageService.set_hit_context("skill", false, str(entry.get("source_race", "god")), str(entry.get("skill_id", "global_divine_blast")))
+		DamageService.set_hit_context("skill", false, str(entry.get("source_race", "god")), str(entry.get("skill_id", "global_divine_blast")), str(entry.get("shake_group", "")))
 		var revived_before := bool(target.get("sacrifice_revive_used", false))
 		DamageService.apply_damage(target, int(chunks[0]), false, true)
 		DamageService.clear_stat_context()

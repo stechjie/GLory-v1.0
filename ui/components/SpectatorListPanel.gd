@@ -125,8 +125,8 @@ func _relayout() -> void:
 	_toggle.add_theme_font_size_override("font_size", maxi(13, roundi(17 * k)))
 	# 标题木牌的图案比标题框往下多伸出一截（约 60），列表从它下面开始，否则第一行被压住。
 	var list_top := inner.position.y + (122 if _is_host else 84) * k
-	_scroll.position = Vector2(inner.position.x, list_top)
-	_scroll.size = Vector2(inner.size.x, inner.end.y - list_top)
+	_scroll.position = Vector2(inner.position.x + 12 * k, list_top)
+	_scroll.size = Vector2(inner.size.x - 12 * k, inner.end.y - list_top)
 	_empty.position = _scroll.position
 	_empty.size = Vector2(_scroll.size.x, 80 * k)
 	_empty.add_theme_font_size_override("font_size", maxi(13, roundi(18 * k)))

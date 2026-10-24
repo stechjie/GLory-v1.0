@@ -74,7 +74,7 @@ func _setup(clip_id: String, media: String, seconds: float, mine: bool,
 	# 已发送时不画任何东西，画面与改动前完全一致。
 	if _state != "sent":
 		_status = Label.new()
-		_status.text = "未发送" if _state == "failed" else "••• 发送中"
+		_refresh_status_text()
 		_status.add_theme_color_override("font_color",
 			Tokens.DANGER_HOVER if _state == "failed" else Tokens.TEXT_DISABLED)
 		_status.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
@@ -89,6 +89,7 @@ func _setup(clip_id: String, media: String, seconds: float, mine: bool,
 
 
 func _ready() -> void:
+	LocaleManager.locale_changed.connect(_refresh_status_text)
 	if not VoiceClipService.playback_changed.is_connected(_on_playback_changed):
 		VoiceClipService.playback_changed.connect(_on_playback_changed)
 	_refresh()
@@ -115,3 +116,10 @@ func _refresh() -> void:
 	if _button == null or not is_instance_valid(_button):
 		return
 	_button.text = STOP_GLYPH if VoiceClipService.is_playing(_clip_id) else PLAY_GLYPH
+
+
+func _refresh_status_text(_locale: String = "") -> void:
+	if _status == null:
+		return
+	var english := LocaleManager.get_locale() == "en"
+	_status.text = ("Not sent" if english else "未发送") if _state == "failed" else ("••• Sending" if english else "••• 发送中")

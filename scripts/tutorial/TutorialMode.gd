@@ -658,33 +658,13 @@ func battle_kind() -> String:
 func pve_enemy_count() -> int:
 	return 4 if step == Step.START_PVE_2 else 3
 
-# 教程战斗强制胜利（10.16 bug 第 1 条，第 1 层兜底）。
-#
-# 调用点是 BattleResult._finish_simulation() —— 拿到结果之后、任何演出之前。
-# 那里是本地模拟路的唯一收口点（BattleUI._finish_simulation 只是 pass 占位，
-# BattleResult 才是真身；BattleScreen._process 的 finished 分支与 _skip_animation
-# 两条路都汇到它），所以「教程战斗必为胜」由这一处保证，不依赖调用方做对。
-#
-# 为什么需要它：教程是叙事流程，胜负只由步骤推进表达，战斗本身只是过场。而本地
-# 模拟按真实规则判胜负，下面这几条路都会给出「失败 / 平局」：
-#   * 空棋盘开局：prepare_tutorial_state 的 no_player_units 强制判负
-#     （重启教程 / 断点恢复后棋盘被清空、旁路开战都会走到）；
-#   * 双方全灭 → double_ko 平局；
-#   * 超时按剩余战力比较 → 1 星棋子可能打不完 80HP 的小怪。
-# 原来只有本文件 after_battle() 的 START_PVP 分支改写过结果，且那发生在
-# battle_finished 之后 —— 结算字幕（BattleResult._show_result_overlay）早把那句
-# 「失败」播完了，玩家先看到失败、再被拽回备战，正是本次反馈的视频现象。
-#
-# 只改结果字典，**不动 GameState.enemy_formation_hp**：备战界面的敌方法阵血量在
-# 教程中途要保持 10/10（START_PVP 通关时由 after_battle() 自己置 0）。
+# Legacy early PvE safeguard. Scripted PvP must keep its verified real result.
 func coerce_victory(result: Dictionary) -> void:
 	if result.is_empty():
 		return
-	# 10.19 教程反馈第 2 条：第 11 回合按脚本必须**失败**（敌方是玩家阵容的镜像升星），
-	# 这一场要把「失败」照实播出来。反馈里的「我方棋子战败却显示胜利」正是这里
-	# 把所有教学战斗一律改写成胜利造成的。其余回合（PVE 兜底、第 6/13 回合的必赢）照旧。
-	if GameState.round_index in SCRIPTED_LOSS_ROUNDS:
-		return
+	# Never turn a PvP defeat into a victory after the visible battle.
+	if scripted_pvp_round():
+		return # PvP outcomes are validated before playback, never rewritten here.
 	result["kind"] = battle_kind()
 	result["player_wins"] = true
 	result["is_draw"] = false
@@ -699,7 +679,7 @@ func coerce_victory(result: Dictionary) -> void:
 # 备战 HUD 却一直显示 10/10，打完还是 10/10，正是反馈里的两条现象。
 # 规则（用户 10-20 确认）：
 #   * 只对 PVP 生效：PVE / Boss 不玩法阵，那几场的「必赢」由 coerce_victory 保证；
-#   * 第 6 / 11 回合保底留 1 点：这两场是教学的一环，法阵提前归零会把流程截断；
+#   * 第 6 / 11 回合在开战前验证真实伤害小于败方当前血量；落账不做留 1 点裁剪；
 #   * 第 13 回合敌方扣完所有剩余点数（战后 after_battle 直接清零，见 START_PVP 分支）；
 #   * team_hp 与 formation_hp 同步：备战 HUD / 水晶读 team_hp，结算正文读 formation_hp。
 func _apply_scripted_team_damage(result: Dictionary) -> void:
@@ -715,7 +695,7 @@ func _apply_scripted_team_damage(result: Dictionary) -> void:
 		else:
 			self_dmg = maxi(1, int(result.get("enemy_alive", 1)))
 			rival_dmg = 0
-	var floor_hp := 1 if GameState.round_index < SCRIPT_FINAL_ROUND else 0
+	var floor_hp := 0 # Nonlethal damage is guaranteed by the preflight battle, not clamped here.
 	GameState.team_hp = maxi(floor_hp, GameState.team_hp - maxi(0, self_dmg))
 	GameState.enemy_team_hp = maxi(floor_hp, GameState.enemy_team_hp - maxi(0, rival_dmg))
 	# 法阵回春：与正式局同一顺序（先扣后回，活着才回，上限是教学血量）。
@@ -2453,15 +2433,10 @@ func _start_treasure(ids: Array) -> void:
 		"candidates": TreasureService.available_candidates(ids), "refresh_index": 0,
 		"remaining": RoundService.treasure_pick_count(GameState.round_index)}
 
-# --- 教程 PVP 双方假想敌阵容（10.19 教程反馈第 2 条）-------------------------
-# 假想敌平时由 BotPlayer 按真人经济推演，胜负不可控；教程要的是「6 胜、11 败、
-# 13 胜」的脚本，所以按**玩家当前棋盘**生成一份阵容计划，由
-# BattleSimShared._dummy_board_for_slot() / _dummy_mercs_for_slot() 落地：
-#   * 我方 AI 队友（座位 1/2）：第 0 档留 1 个 1 星，再往上清空 —— 胜负交给玩家自己；
-#   * 第 6/13 回合（脚本胜）：对手三路各 1 个 1 星；仍赢不了就把对手清空兜底；
-#   * 第 11 回合（脚本败）：对手三路 = 玩家棋盘镜像且星 +1（升级档再 +1，封顶 3 星），
-#     玩家自己的棋子越强，镜像也越强，所以「玩家三星」不会把这一场翻成胜。
-# 空计划 = 原样：普通对局，以及门禁里直接调 prepare_team_state 的路径完全不受影响。
+# --- 教程 PVP 阵容计划 -----------------------------------------------
+# Preserve BotPlayer formations, adjust AI stars and combat strength around the
+# player roster, then require an actual wipeout and a nonlethal damage budget.
+# Empty plans leave ordinary games unchanged.
 static var ai_roster_plan: Dictionary = {}
 
 func scripted_pvp_round() -> bool:
@@ -2471,11 +2446,11 @@ func scripted_pvp_round() -> bool:
 func script_round_expects_win() -> bool:
 	return not (GameState.round_index in SCRIPTED_LOSS_ROUNDS)
 
-func set_ai_roster_plan(notch: int) -> void:
+func set_ai_roster_plan(notch: int, balance: float = 0.0, pressure: float = 1.0) -> void:
 	if not scripted_pvp_round():
 		ai_roster_plan = {}
 		return
-	ai_roster_plan = {"round": GameState.round_index, "notch": maxi(0, notch)}
+	ai_roster_plan = {"round": GameState.round_index, "notch": maxi(0, notch), "balance": balance, "pressure": pressure}
 
 func clear_ai_roster_plan() -> void:
 	ai_roster_plan = {}
@@ -2993,3 +2968,20 @@ func _ensure_four_star_path() -> void:
 
 func _t(zh: String, en: String) -> String:
 	return en if LocaleManager.get_locale() == "en" else zh
+
+
+# Tutorial-only simulation tuning; never edits the player's board, inventory or stars.
+# Applied before opening skills so HP/shields/base snapshots share the same values.
+func apply_scripted_fighter_strength(fighters: Array) -> void:
+	if not GameState.tutorial_mode or NetworkService.team_active or not _roster_plan_active():
+		return
+	var balance := float(ai_roster_plan.get("balance", 0.0))
+	var pressure := float(ai_roster_plan.get("pressure", 1.0))
+	for fighter: Dictionary in fighters:
+		var slot := int(fighter.get("owner_slot", -1))
+		if not slot in ROSTER_ALLY_SLOTS and not slot in ROSTER_RIVAL_SLOTS:
+			continue
+		var power := exp(balance if slot in ROSTER_ALLY_SLOTS else -balance)
+		fighter.max_hp = maxi(1, roundi(float(fighter.max_hp) * power / pressure))
+		fighter.hp = fighter.max_hp
+		fighter.atk = maxi(1, roundi(float(fighter.atk) * power * pressure))

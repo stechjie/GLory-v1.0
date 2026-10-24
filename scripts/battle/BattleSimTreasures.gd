@@ -563,14 +563,16 @@ static func _mother_execute_on(state: Dictionary, candidates: Array, mother: Dic
 	if target.is_empty():
 		return
 	if bool(target.get("def", {}).get("is_boss", false)):
-		DamageService.apply_damage(target, maxi(1, int(round(float(target.max_hp) * float((mother.get("def", {}) as Dictionary).get("boss_max_hp_damage", 0.20))))), true)
+		var dealt := DamageService.apply_damage(target, maxi(1, int(round(float(target.max_hp) * float((mother.get("def", {}) as Dictionary).get("boss_max_hp_damage", 0.20))))), true)
+		DamageService.emit_confirmed_skill_damage(state, mother, target, dealt, "unique_death_execute")
 		return
 	target.mother_execute_kill = true
 	# Preserve the real Mother Wisp as the lethal damage source so the VFX
 	# dispatcher can resolve the caster after the victim is removed.
 	var previous_source_uid := DamageService.current_stat_source_uid()
 	DamageService.set_stat_source_uid(str(mother.get("uid", "")))
-	DamageService.apply_damage(target, int(target.hp), true)
+	var dealt := DamageService.apply_damage(target, int(target.hp), true)
+	DamageService.emit_confirmed_skill_damage(state, mother, target, dealt, "unique_death_execute")
 	DamageService.set_stat_source_uid(previous_source_uid)
 
 # 从候选里挑一个处决目标：先取抽中的星级，没有就往相邻星级退，

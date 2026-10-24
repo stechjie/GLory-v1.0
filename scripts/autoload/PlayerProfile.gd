@@ -103,7 +103,7 @@ var music_enabled := true
 var voice_volume := 1.0
 # Music and sound effects share this user gain; remote voice stays independent.
 var music_volume := 1.0
-var locale := "zh"
+var locale := "en"
 var language_selected := false
 var onboarding_version := ONBOARDING_VERSION
 var onboarding_status := ONBOARDING_NOT_STARTED
@@ -164,9 +164,9 @@ func load_profile() -> void:
 	music_enabled = bool(data.get("music_enabled", true))
 	voice_volume = clampf(float(data.get("voice_volume", 1.0)), 0.0, 1.0)
 	music_volume = clampf(float(data.get("music_volume", 1.0)), 0.0, 1.0)
-	locale = str(data.get("locale", "zh"))
+	locale = str(data.get("locale", "en"))
 	if not SUPPORTED_LOCALES.has(locale):
-		locale = "zh"
+		locale = "en"
 	language_selected = bool(data.get("language_selected", false))
 	onboarding_version = int(data.get("onboarding_version", ONBOARDING_VERSION))
 	onboarding_status = _normalise_onboarding_status(
@@ -230,7 +230,7 @@ func _reset_defaults() -> void:
 	music_enabled = true
 	voice_volume = 1.0
 	music_volume = 1.0
-	locale = "zh"
+	locale = "en"
 	language_selected = false
 	onboarding_version = ONBOARDING_VERSION
 	onboarding_status = ONBOARDING_NOT_STARTED

@@ -86,7 +86,7 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 		ally_slots = [0, 1, 2] if my_team == 0 else [3, 4, 5]
 		rival_slots = [3, 4, 5] if my_team == 0 else [0, 1, 2]
 		seed_parts = [NetworkService.shared_seed, GameState.round_index, my_team]
-	if NetworkService.team_active:
+	if NetworkService.team_active or (GameState.tutorial_mode and TutorialMode._roster_plan_active()):
 		RngService.seed_from_parts(seed_parts)
 	else:
 		RngService.rng.randomize()
@@ -176,6 +176,7 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 			owner_syn_by_key["enemy_%d" % lane] = rival_ctx[lane].syn
 	state.owner_syn_by_key = owner_syn_by_key
 	state.owner_state = {}
+	TutorialMode.apply_scripted_fighter_strength(player + enemy)
 	_finalize_team_opening(state)
 	return state
 
@@ -1779,6 +1780,7 @@ static func _process_boss_charges(state: Dictionary) -> void:
 			if bool(o.get("alive", false)) and _can_target(caster, o, opponents):
 				var charged := DamageService.apply_damage(o, maxi(1, int(round(float(caster.atk) * float(caster.get("apocalypse_damage_atk_pct", 2.5))))), bool(caster.get("apocalypse_ignore_def", true)))
 				if charged > 0:
+					DamageService.emit_confirmed_skill_damage(state, caster, o, charged, "apocalypse_charge")
 					hit_any = true
 		DamageService.clear_stat_context()
 		state.log.append(TranslationServer.translate("log_arbiter_charged"))

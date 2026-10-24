@@ -475,7 +475,7 @@ func build_popup(body: HBoxContainer, center_host: Control) -> void:
 # 这些容器以参数传入（段内只读，不重新赋值）。
 func build_hand_cards(body: HBoxContainer, center_host: Control) -> void:
 	for i in GameState.SHOP_UNIT_SLOTS:
-		var slot := DragButton.new()
+		var slot := preload("res://scenes/prep/PrepShopCardButton.gd").new()
 		slot.drag_owner = self
 		slot.custom_minimum_size = SHOP_CARD_SIZE
 		slot.size_flags_horizontal = Control.SIZE_SHRINK_CENTER

@@ -12,17 +12,7 @@ func _finish_simulation() -> void:
 	# 本地模拟即结果。组队联机不走这里——那条路播的是服务器下发的权威 replay，
 	# 结算取 match_state（见 Main._on_network_match_state_received）。
 	_result = BattleSim.result_from_state(_state)
-	# 10.16 bug 第 1 条（第 1 层兜底）：教程战斗的胜负**不由模拟结果决定**，步骤推进
-	# 才是叙事本身。而本地模拟会按真实规则判胜负，下面这几条路都会给出「失败/平局」：
-	#   * 空棋盘开局：prepare_tutorial_state 的 no_player_units 强制判负
-	#     （重启教程 / 断点恢复后棋盘被清空、旁路开战都会走到）；
-	#   * 双方全灭 → double_ko 平局；
-	#   * 超时按剩余战力比较 → 1 星棋子可能打不完 80HP 的小怪。
-	# TutorialMode.after_battle() 原来只在 START_PVP 一处改写过结果，而那时
-	# _emit_finished() 的字幕早已播完（顺序是：结果 → 水晶演出 → 字幕 → 停留 →
-	# battle_finished），玩家先看到「失败」再被拽回备战 —— 正是本次反馈的视频现象。
-	# 所以改写在**拿到结果之后、任何演出之前**完成，字幕 / 胜负音 / 水晶演出 /
-	# battle_finished 信号读到的就是同一份胜利结果。
+	# Early PvE legacy safeguard excludes scripted PvP; preserve the actual outcome.
 	if GameState.tutorial_mode:
 		TutorialMode.coerce_victory(_result)
 	_refresh_summary()
@@ -113,7 +103,7 @@ func _crystal_demo_losing_team(result: Dictionary) -> int:
 	# PvE / Boss：敌方是怪物，没有水晶也不扣任何队伍血量，所以只有我方被打穿时才演。
 	if player_wins:
 		return -1
-	return GameConstants.team_of_slot(NetworkService.team_local_slot)
+	return _crystal_local_team()
 
 # 赢的那一方才发起攻击。战斗打到全灭为止，所以另一方必然没有存活单位。
 # 伤害公式（BattleSimulator.stamp_team_round_damages / _team_replay_self_damage）
@@ -196,14 +186,14 @@ func _play_crystal_attack_sequence(result: Dictionary) -> void:
 		return
 	_demo_crystal_floating = true
 
-	# 起始血量由「战后血量 + 飘带数」倒推，而不是直接读演出前的血量：伤害恒等于
-	# 赢方存活数，两者本该相同，但倒推能保证扣完最后一发之后的数字一定等于结算
-	# 面板和下一回合用的那个值——终点对齐比起点对齐重要。
-	# （战斗场景还在时 match_state 不会被应用，见 Main._on_network_match_state_received，
-	#  所以此刻 GameState 里的血量仍是战前值。）
-	var hp_max := int(GameState.START_FORMATION_HP)
+	# Use the actual pre-settlement HP and the same maximum as the ratio.
+	# Every surviving attacker deals one real point; tutorial preparation bounded it.
+	var hp_max := TutorialMode.TUTORIAL_HP if GameState.tutorial_mode else int(GameState.START_FORMATION_HP)
 	var hp_after := int(round(_crystal_hp_ratio(losing_team, result) * float(hp_max)))
-	var hp_before: int = clampi(hp_after + attackers.size(), 0, hp_max)
+	var hp_before: int = GameState.team_hp if losing_team == _crystal_local_team() else GameState.enemy_team_hp
+	hp_before = clampi(hp_before, 0, hp_max)
+	if GameState.tutorial_mode and hp_before - hp_after != attackers.size():
+		push_warning("Tutorial crystal damage does not match surviving attackers.")
 	_make_crystal_hp_label(hp_before, hp_max, crystal_color)
 	await get_tree().create_timer(0.18).timeout
 	if not is_inside_tree():
@@ -222,7 +212,7 @@ func _play_crystal_attack_sequence(result: Dictionary) -> void:
 	#
 	# 循环而不是逐发播：`gap` 很密（人多时是连射），逐发播会互相切断成
 	# 一串断音；而这条音的语义就是「正在被打」—— 起于第一发、止于末发。
-	var our_crystal := losing_team == GameConstants.team_of_slot(NetworkService.team_local_slot)
+	var our_crystal := losing_team == _crystal_local_team()
 	var hit_loop := our_crystal and SfxService.start_loop(SfxService.CUE_FORMATION_HIT)
 	# 9.18：敌方法阵受击（我方打敌水晶）循环音。判据取反于己方那条 —— 被攻击的是
 	# 敌方水晶 = 我方棋子在输出，仍属「自身棋子造成」，符合用户的战斗音效约束。

@@ -22,6 +22,7 @@ const KNOWN_TYPES := {
 	"skill_cast": true,
 	"unit_skill_proc": true,
 	"skill_shake": true,
+	"skill_damage": true,
 	"mother_execute": true,
 	"buff_apply": true,
 	"summon": true,

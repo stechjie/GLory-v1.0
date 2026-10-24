@@ -37,7 +37,7 @@ static func _toggle(key: String) -> bool:
 
 # 屏震幅度系数。0 表示完全不震。
 static func screen_shake_scale() -> float:
-	if not _toggle("screen_shake"):
+	if not _toggle("screen_shake") or _toggle("reduced_motion"):
 		return 0.0
 	return LOW_TIER_SHAKE_SCALE if _low_tier() else 1.0
 
