@@ -47,6 +47,14 @@ python3 -m unittest discover -s tools -p test_glory_ios_build.py -q
 
 修改扫描器后需重新构建并校验实际包内容；不能只检查源目录资源存在。AAB 是 Google Play 的独立产物，仍使用 `build_aab.sh`，本入口约定不将 APK 当作 AAB。
 
+AAB 同样在隔离 stage 中应用上述依赖精简策略，保留全部设备架构和语音依赖。可显式指定版本并获取本次签名产物，避免上传过期文件：
+
+```bash
+./tools/build_aab.sh --version 1.0.0 --version-code 44 --result-file /path/to/aab-result.json
+```
+
+版本号仅为示例，实际构建前须核对 Play Console 的版本代码。结果包含签名文件路径、哈希、精简清单和验证报告；构建不自动上传或提交审核。
+
 ## 2026-10-12 验证结果
 
 同一份最新代码/资源，APK 606,336,442 → 547,916,446 字节（减少 9.63%），IPA 572,237,271 → 513,969,651 字节（减少 10.18%）。排除 205 个无引用美术源路径；对应导出内容体积以最终包为准。

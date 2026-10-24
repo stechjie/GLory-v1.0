@@ -34,6 +34,8 @@ def main():
     p.add_argument('--sync', action='store_true', help='Update GitHub and Drive before building')
     p.add_argument('--patch-config', type=Path, help='Install the immutable update launcher in the staging copy')
     p.add_argument('--version-code', type=int, help='Override Android versionCode in the isolated build only')
+    p.add_argument('--version', help='Override Android versionName in the isolated build only')
+    p.add_argument('--result-file', type=Path, help='Write the exact build result to this JSON file')
     p.add_argument('--alias', help='Private-key alias in the release keystore')
     p.add_argument('--keystore', type=Path, default=b.ROOT/'build/aab/.signing/glory-release.keystore')
     a = p.parse_args()
@@ -95,6 +97,8 @@ def main():
             baseline.update(application=str(target), application_sha256=result['sha256'])
             b.json_write(manifest, baseline)
         b.json_write(out/'latest-release.json', result)
+        if a.result_file:
+            b.json_write(a.result_file, result)
         print('SIGNED AAB:', target, flush=True)
         return
     stamp = dt.datetime.now().strftime('%Y%m%d-%H%M%S')
@@ -129,6 +133,8 @@ def main():
             text += f'{key}={value}\n'
         if a.version_code is not None:
             text = re.sub(r'^version/code=\d+', f'version/code={a.version_code}', text, flags=re.M)
+        if a.version is not None:
+            text = re.sub(r'^version/name="[^"]*"', lambda _: 'version/name=' + json.dumps(a.version), text, flags=re.M)
         cfg.write_text(text)
         cfg.chmod(0o600)
         if a.patch_config:
@@ -149,6 +155,9 @@ def main():
         imported=b.logged_process([engine,'--headless','--path',stage,'--import'],log/'import.log',child,strict=False)
         materials=b.verify_model_materials(engine,stage,log,child)
         b.verify_import_diagnostics(imported,stage,log,materials)
+        import glory_slim
+        slim = glory_slim.apply(stage, engine, log)
+        print(f"Slim dependency scan: excluded {len(slim['removed_source_paths'])} unreferenced resource paths", flush=True)
         aab=out/f'Glory-{version}-{code}-{stamp}-unsigned.aab'
         command=[engine,'--headless','--path',stage]
         if not (stage/'android/build/config.gradle').exists():
@@ -164,16 +173,20 @@ def main():
             dex=[z.read(n) for n in names if n.endswith('.dex')]
             for required in (b'com/glory/voice/GloryVoicePlugin',b'io/livekit/android/room/Room'):
                 if not any(required in data for data in dex):raise RuntimeError('Missing voice dependency')
-        result=dict(identity,aab=str(aab),signed=False,sha256=b.digest(aab),bytes=aab.stat().st_size,logs=str(log),device_tested=False,play_uploaded=False)
+        result=dict(identity,aab=str(aab),signed=False,sha256=b.digest(aab),bytes=aab.stat().st_size,logs=str(log),device_tested=False,play_uploaded=False,slim=slim)
         if a.patch_config:
             result['patch_base'] = b.retain_patch_base(stage, engine, 'Google Play Release', 'android', a.patch_config,
                 out / (aab.stem + '-patch-base'), aab)
         b.json_write(out/'latest-unsigned.json',result)
+        if a.unsigned and a.result_file:
+            b.json_write(a.result_file, result)
         print('UNSIGNED AAB:',aab,flush=True)
         if not a.unsigned:
             command = [sys.executable, str(Path(__file__).resolve()), '--sign', str(aab), '--keystore', str(a.keystore)]
             if a.alias:
                 command += ['--alias', a.alias]
+            if a.result_file:
+                command += ['--result-file', str(a.result_file)]
             subprocess.run(command, check=True)
 
 if __name__=='__main__':main()
