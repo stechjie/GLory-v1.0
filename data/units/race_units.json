@@ -562,7 +562,7 @@
                       "tier":  2,
                       "cost":  30,
                       "hp":  840,
-                      "atk":  57,
+                      "atk":  67,
                       "def":  7,
                       "attack_speed":  0.90,
                       "range":  1,
@@ -581,7 +581,7 @@
                       "id":  "undead_spike",
                       "star4":  {
                           "duration":  8,
-                          "def_down_pct":  0.6
+                          "def_down_pct":  1.0
                       },
                       "name":  "刺灵",
                       "race":  "undead",
@@ -645,9 +645,9 @@
                       "element":  "ren",
                       "tier":  2,
                       "cost":  30,
-                      "hp":  600,
+                      "hp":  1200,
                       "atk":  145,
-                      "def":  0,
+                      "def":  10,
                       "attack_speed":  0.70,
                       "range":  1,
                       "move_speed":  3.0,
