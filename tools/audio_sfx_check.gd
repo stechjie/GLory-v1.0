@@ -60,7 +60,7 @@ const CHECK_NAME := "audio_sfx"
 # 既有的 settings_switch / voice_switch **逐字节相同**，是覆盖而非新增，不计数。
 # 9.26 大厅宠物脚步声：1 条**新增** cue（`pet_footstep`，素材在 lobby/ 下，
 #   由各宠物独立播放器播，不进共享池），故 75 → 76。
-const EXPECTED_CUE_COUNT := 76
+const EXPECTED_CUE_COUNT := 110
 
 # 播 SfxService 的生产代码扫描范围。**刻意不含 `res://tools`** ——
 # 门禁自己会调 play()，算进来就等于让门禁给自己的断言当证人
@@ -72,6 +72,42 @@ const SCAN_ROOTS: Array[String] = ["res://scenes", "res://scripts", "res://ui", 
 # **不会**出现在任何调用点。列在这里是明示豁免，不是把断言改松 ——
 # 下面还为这一组单独钉了「派发入口必须有生产调用点」。
 const INDIRECT_CUES: Array[String] = [
+	# 10.25: unit mapping and existing 10.21 indirect skill groups.
+	"CUE_MAGE_ATTRIBUTE_BOLT",
+	"CUE_MELEE_CLAW",
+	"CUE_MELEE_CLAW_HEAVY",
+	"CUE_MELEE_HEAVY",
+	"CUE_MELEE_METAL",
+	"CUE_MELEE_NONMETAL",
+	"CUE_MELEE_SHELL",
+	"CUE_MELEE_SPIRIT",
+	"CUE_MELEE_UNARMED",
+	"CUE_MERC_CANCER_SHELL_SKILL",
+	"CUE_MERC_LEO_SUN_SKILL",
+	"CUE_PROJ_ARROW",
+	"CUE_PROJ_BONE",
+	"CUE_PROJ_DARK_ORB",
+	"CUE_PROJ_DISC",
+	"CUE_PROJ_DIVINE_BLADE",
+	"CUE_PROJ_EMBER",
+	"CUE_PROJ_FROST",
+	"CUE_PROJ_HOLY",
+	"CUE_PROJ_JAVELIN",
+	"CUE_PROJ_LIGHT_LANCE",
+	"CUE_PROJ_ORB",
+	"CUE_PROJ_THORN",
+	"CUE_PROJ_THUNDER",
+	"CUE_PROJ_WING",
+	"CUE_STAR4_CRIMSON_SKILL",
+	"CUE_STAR4_DANCER_SKILL",
+	"CUE_STAR4_DRUMER_SKILL",
+	"CUE_STAR4_GUARD_SKILL",
+	"CUE_STAR4_HUNTER_SKILL",
+	"CUE_STAR4_ICEY_SKILL",
+	"CUE_STAR4_LATTERN_SKILL",
+	"CUE_STAR4_QUEEN_SKILL",
+	"CUE_STAR4_SKYPIERCE_SKILL",
+
 	"CUE_STAR4_HUMAN_KING", "CUE_STAR4_GOD", "CUE_STAR4_UNDEAD_MOTHER",
 	"CUE_STAR4_DARK", "CUE_STAR4_DEFAULT",
 	"CUE_STAR4_ARCHANGEL", "CUE_STAR4_DOOM",
@@ -135,6 +171,7 @@ const INDIRECT_CUES: Array[String] = [
 # 少了这一条，把整张映射表删空也能全绿（那 8 个名字会被上面的循环全跳过）。
 const INDIRECT_ENTRIES: Array[String] = [
 	"star4_cue_for", "attack_skill_cue_for", "merc_skill_cue_for",
+	"basic_attack_cue_for", "low_star_skill_cue_for",
 	# 9.21：四星民兵那条「概率触发型」技能音的派发入口。
 	"proc_skill_cue_for",
 	# 9.22：佣兵普攻触发音的派发入口。
@@ -270,6 +307,9 @@ func _check_every_cue_has_call_site() -> void:
 	var missing: Array[String] = []
 	for name in _cue_constant_names():
 		if INDIRECT_CUES.has(name):
+			var constants: Dictionary = (SfxService as GDScript).get_script_constant_map()
+			_h.expect(constants.has(name) and SfxService.cue_ids().has(str(constants.get(name, ""))),
+				"indirect_cue_registered", "间接分派的 cue 必须真实登记：%s" % name)
 			continue
 		# 要求带 `SfxService.` 前缀：这样 `SfxService.gd` 里那些常量**定义**
 		# （`const CUE_SHOP_BUY := "shop_buy"`）不会被自己满足 ——

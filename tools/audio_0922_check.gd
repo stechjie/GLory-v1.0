@@ -261,7 +261,7 @@ func _check_boss_dispatch_ungated(h) -> void:
 
 	h.expect(body.contains("SfxService.boss_cast_edge_cue_for(uid)"), "vfx_boss_dispatch_missing",
 		"BattleVfx 里没有 boss_cast_edge_cue_for 的调用点 —— 圣愈祭司 / 天罚投星者的技能音永远不响")
-	h.expect(body.contains("SfxService.play(boss_cue)"), "vfx_boss_play_missing",
+	h.expect(body.contains("SfxService.play(boss_cue,"), "vfx_boss_play_missing",
 		"BattleVfx 取到 boss_cue 之后没有 play() —— 一条永远不会响的音")
 
 	# ★ 9.23 第五批主判据：施法边沿**不能**再拿 `boss_skill_cue_for()` 当派发表。
@@ -285,7 +285,7 @@ func _check_boss_dispatch_ungated(h) -> void:
 boss 固定是敌方单位，进 `_owned` 分支就是永远不响" % boss_indent)
 	# 反向对照：四星技能音**应该**在门控里（缩进更深）。少了这条，
 	# 「缩进 1」在整段被压平的文件里也会通过。
-	var star4_indent := _indent_of(body, "SfxService.play(SfxService.star4_cue_for(uid, true))")
+	var star4_indent := _indent_of(body, "SfxService.play(SfxService.star4_cue_for(uid, true),")
 	h.expect(star4_indent > 1, "vfx_star4_not_gated",
 		"四星技能音跑到函数体层级了（缩进 %d）—— 归属门控被拆掉了" % star4_indent)
 
@@ -376,7 +376,7 @@ func _check_volume_override(h) -> void:
 	var sfx := _src("res://ui/services/SfxService.gd")
 	h.expect(sfx.contains("volume_db + cue_volume_db(cue)"), "volume_override_not_applied",
 		"SfxService.play() 没有把 cue 级音量加进 voice.volume_db —— 音量表是个摆设")
-	var assign_at := sfx.find("voice.volume_db = volume_db + cue_volume_db(cue)")
+	var assign_at := sfx.find("voice.volume_db = base_db")
 	var play_at := sfx.find("voice.play()", maxi(assign_at, 0))
 	h.expect(assign_at >= 0 and play_at > assign_at, "volume_assign_order_wrong",
 		"音量赋值没有排在 voice.play() 之前 —— 这一声还是按旧音量走")
@@ -590,7 +590,7 @@ func _check_boss_diff_triggers(h) -> void:
 		return
 	var consume_end := vfx.find("\nfunc ", consume_at + 10)
 	var consume_body := vfx.substr(consume_at, (consume_end - consume_at) if consume_end > 0 else 2000)
-	h.expect(consume_body.contains("SfxService.play(cue)"), "boss_event_consumer_no_play",
+	h.expect(consume_body.contains("SfxService.play(cue,"), "boss_event_consumer_no_play",
 		"boss 真事件的消费支里没有 play() —— 一条永远不会响的音")
 	h.expect(not consume_body.contains("_is_own_or_ally_unit"), "boss_event_consumer_gated",
 		"boss 真事件的消费支里出现了 `_is_own_or_ally_unit` —— boss 固定是敌方单位，\

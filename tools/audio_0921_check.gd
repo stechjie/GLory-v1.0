@@ -192,7 +192,7 @@ func _check_final_round_intro_order(h) -> void:
 	# 场景里的调用点 + 判据
 	h.expect(screen.contains("_begin_final_round_intro()"), "screen_no_final_intro",
 		"BattleScreen 没有调 _begin_final_round_intro()")
-	var eff_at := screen.find('if _effective_kind() == "final":')
+	var eff_at := screen.find('if _effective_kind() in ["pvp", "final"]:')
 	h.expect(eff_at >= 0, "screen_final_kind_branch_missing",
 		"BattleScreen 里没有 final 分支来触发开局音")
 
@@ -221,7 +221,7 @@ func _check_merc_and_militia_dispatch(h) -> void:
 	# 只判「有没有 proc_skill_cue_for」的实现照旧全绿，而产品里一声不响。
 	h.expect(vfx.contains("SfxService.play(proc_cue)"), "vfx_proc_play_missing",
 		"BattleVfx 取到 proc_cue 之后没有 play() —— 一条永远不会响的音")
-	h.expect(vfx.contains("SfxService.play(merc_cue)"), "vfx_merc_play_missing",
+	h.expect(vfx.contains("SfxService.play(merc_cue,"), "vfx_merc_play_missing",
 		"BattleVfx 取到 merc_cue 之后没有 play() —— 一条永远不会响的音")
 
 	# 民兵那条必须在 unit_skill_proc 分支里（真正触发的那一刻），不是普攻节拍分支。

@@ -165,7 +165,7 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 	if not _battle_voice_cap_mode_ready:
 		_battle_voice_cap_mode_ready = true
 		var kind := str(state_snapshot.get("kind", "pve"))
-		SfxService.set_battle_voice_cap(7 if kind == "pve" else 6)
+		SfxService.set_battle_voice_cap(7 if kind in ["pve", "boss"] else 6)
 	var current := _collect_vfx_units(state_snapshot)
 	_sync_persistent_unit_vfx(current)
 	_play_visual_events(state_snapshot,current)
@@ -582,9 +582,9 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 			# （SilenceSeal 层 delay=0.28s），不再在施法瞬间响。其余四星技能音
 			# 仍在施法边沿立刻播放。
 			if sid == "silence_bolt":
-				_play_sfx_delayed(SfxService.star4_cue_for(uid, true), cue_silence_hit_delay(_sim_uid, str(unit.get("skill_target_uid", ""))))
+				_play_sfx_delayed(SfxService.star4_cue_for(uid, true), cue_silence_hit_delay(_sim_uid, str(unit.get("skill_target_uid", ""))), _basic_attack_ownership_db(_sim_uid, ""))
 			else:
-				SfxService.play(SfxService.star4_cue_for(uid, true))
+				SfxService.play(SfxService.star4_cue_for(uid, true), _basic_attack_ownership_db(_sim_uid, ""))
 	elif _owned:
 		# 9.19 第二批：佣兵专属技能音（星轨猎人 / 泡沫术士 / 圣愈修女）。
 		# **佣兵升不到四星**（`EconomyLedger._use_upgrade_stone` 会拒），所以
@@ -594,7 +594,7 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 		# 两条施法型佣兵技能音并入这里（表在 MERC_SKILL_CUES）。
 		var merc_cue := SfxService.merc_skill_cue_for(uid)
 		if not merc_cue.is_empty():
-			SfxService.play(merc_cue)
+			SfxService.play(merc_cue, _basic_attack_ownership_db(_sim_uid, ""))
 		# 10.21 审查批次：**法师 1~3★ 的技能音。**
 		#
 		# 这是本作唯一的例外 —— 惯例是「普通技能音只给四星」，而法师
@@ -608,7 +608,7 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 		if not _is_star4(_sim_uid):
 			var low_cue := SfxService.low_star_skill_cue_for(uid)
 			if not low_cue.is_empty():
-				SfxService.play(low_cue)
+				SfxService.play(low_cue, _basic_attack_ownership_db(_sim_uid, ""))
 	# 9.22：boss 技能音 —— **只剩施法边沿这一条通道**。
 	#
 	# ★ **不做归属门控。** 用户口径：「boss 技能音效播放，我方队友都能听见」。
@@ -633,7 +633,7 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 	#   本文件的 `_maybe_play_boss_skill_proc()` 消费（理由见那张表上面的注释）。
 	var boss_cue := SfxService.boss_cast_edge_cue_for(uid)
 	if not boss_cue.is_empty():
-		SfxService.play(boss_cue)
+		SfxService.play(boss_cue, _basic_attack_ownership_db(_sim_uid, ""))
 	var texture_pos: Vector2 = unit.get("cast_pos", Vector2.ZERO)
 	var should_play_texture := true
 	var procedural_played := false
@@ -1333,8 +1333,7 @@ func _attack_skill_vfx_ready(attack: Dictionary) -> bool:
 func _play_attack_unit_procedural(attack:Dictionary,target:Dictionary,current:Dictionary)->void:
 	if not _attack_skill_vfx_ready(attack):return
 	# 9.19：走到这里就说明**这一次普攻真的触发了技能**（上面那一步判的就是
-	# `attack_count % every`），所以技能音挂在这里，而不是每一次普攻都响。
-	_maybe_play_attack_skill_sfx(attack)
+	# `attack_count % every`）。10.25 起这里只管特效，音效由 Director 的独立时机播放。
 	var sid:=str(attack.get("skill_id",""))
 	var origin:Vector3=attack.get("world_cast",Vector3.ZERO)
 	var target_world:Vector3=target.get("world_hit",target.get("world_foot",Vector3.ZERO))
@@ -1361,15 +1360,6 @@ func _play_attack_unit_procedural(attack:Dictionary,target:Dictionary,current:Di
 #
 # 判据用 `def.id` 而不是名字：名字会被 `DataRegistry.canonicalize_unit_display_names()`
 # 按本地化覆写，id 永远稳定。
-func _maybe_play_attack_skill_sfx(attack: Dictionary) -> void:
-	var unit_id := str(attack.get("unit_id", attack.get("source_id", "")))
-	var cue := SfxService.attack_skill_cue_for(unit_id)
-	if cue.is_empty():
-		return
-	var sim_uid := str(attack.get("id", ""))
-	if not _is_own_or_ally_unit(sim_uid) or not _is_star4(sim_uid):
-		return
-	SfxService.play(cue)
 
 
 # --- 9.22：四星「普攻附状态」型 + 佣兵「普攻增伤」型的技能音 -------------------
@@ -1387,6 +1377,8 @@ func _maybe_play_attack_skill_sfx(attack: Dictionary) -> void:
 # `source_uid` 恒为「触发技能的那只棋子」：巨甲灵那条填的是巨甲灵自己
 # （反弹是它的技能，不是打它的那只攻击者的），这样归属门控才判得对。
 func _maybe_play_sfx_proc(event: Dictionary) -> void:
+	if bool(event.get("_attack_audio_managed", false)):
+		return
 	var skill_id := str(event.get("skill_id", ""))
 	var source_uid := str(event.get("source_uid", ""))
 	if skill_id.is_empty() or source_uid.is_empty():
@@ -1396,11 +1388,11 @@ func _maybe_play_sfx_proc(event: Dictionary) -> void:
 	var cue := SfxService.proc_skill_cue_for(skill_id)
 	if not cue.is_empty():
 		if _is_star4(source_uid):
-			SfxService.play(cue)
+			SfxService.play(cue, _basic_attack_ownership_db(source_uid, ""))
 		return
 	var merc_cue := SfxService.merc_proc_cue_for(skill_id)
 	if not merc_cue.is_empty():
-		SfxService.play(merc_cue)
+		SfxService.play(merc_cue, _basic_attack_ownership_db(source_uid, ""))
 
 
 # --- 9.23 第五批：boss 技能音的**真事件**通道（消费端）--------------------------
@@ -1438,7 +1430,7 @@ func _maybe_play_boss_skill_proc(event: Dictionary) -> bool:
 		SfxService.stop_cue(stop_cue)
 	var cue := str(action.get("cue", ""))
 	if not cue.is_empty():
-		SfxService.play(cue)
+		SfxService.play(cue, _basic_attack_ownership_db(str(event.get("source_uid", "")), ""))
 	return true
 
 
@@ -1495,7 +1487,7 @@ func _maybe_play_parasite_skill_sfx(clone: Dictionary) -> void:
 			var sim_uid := str(f.get("uid", ""))
 			if not _is_own_or_ally_unit(sim_uid) or not _is_star4(sim_uid):
 				continue
-			SfxService.play(SfxService.star4_cue_for("undead_parasite", true))
+			SfxService.play(SfxService.star4_cue_for("undead_parasite", true), _basic_attack_ownership_db(sim_uid, ""))
 			return
 
 
@@ -1504,7 +1496,7 @@ func _maybe_play_parasite_skill_sfx(clone: Dictionary) -> void:
 func _maybe_play_bomb_skill_sfx(sim_uid: String) -> void:
 	if not _is_own_or_ally_unit(sim_uid) or not _is_star4(sim_uid):
 		return
-	SfxService.play(SfxService.star4_cue_for("undead_bomb", true))
+	SfxService.play(SfxService.star4_cue_for("undead_bomb", true), _basic_attack_ownership_db(sim_uid, ""))
 
 
 # 死侍：绑定生效那一下。调用点已经保证了「绑到了人才走到这里」，
@@ -1512,7 +1504,7 @@ func _maybe_play_bomb_skill_sfx(sim_uid: String) -> void:
 func _maybe_play_death_servant_bind_sfx(sim_uid: String) -> void:
 	if not _is_own_or_ally_unit(sim_uid) or not _is_star4(sim_uid):
 		return
-	SfxService.play(SfxService.star4_cue_for("human_death_servant", true))
+	SfxService.play(SfxService.star4_cue_for("human_death_servant", true), _basic_attack_ownership_db(sim_uid, ""))
 
 func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 	var events: Array = state_snapshot.get("visual_events", [])
@@ -1551,7 +1543,7 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 				# 9.20 起门控放宽为「自身 + 友军」（原为仅自身）。
 				var _msim := str(event.get("source_uid", ""))
 				if _is_own_or_ally_unit(_msim) and _is_star4(_msim):
-					SfxService.play(SfxService.star4_cue_for("undead_mother", true))
+					SfxService.play(SfxService.star4_cue_for("undead_mother", true), _basic_attack_ownership_db(_msim, ""))
 				var victim_uid:=str(event.get("target_uid",""))
 				var victim:=_vfx_unit_by_sim_uid(current,victim_uid)
 				# 处决当帧目标已经倒下：本帧快照里可能已没有它，退回上一帧的位置（吸魂从它最后站的地方升起）。
@@ -1596,7 +1588,7 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 			# 才补这条 unit_skill_proc 事件 —— 所以挂在这里就等于「响了 = 打成了」，
 			# 不需要另外判模。门控与其它四星技能音同口径（自身 + 友军 + 四星）。
 			var proc_cue := SfxService.proc_skill_cue_for(skill_id)
-			if not proc_cue.is_empty():
+			if not proc_cue.is_empty() and not bool(event.get("_attack_audio_managed", false)):
 				var proc_uid := str(event.get("source_uid", ""))
 				if _is_own_or_ally_unit(proc_uid) and _is_star4(proc_uid):
 					SfxService.play(proc_cue)
@@ -1823,78 +1815,49 @@ func cue_play_basic_attack(source_uid: String, target_uid: String, ranged: bool)
 	if str(source.get("race", "")) == _CRIMSON_CATALOG.RACE:
 		race = _CRIMSON_CATALOG.RACE
 	_play_race_basic_attack(attack, target, "ranged" if ranged else "melee", race, _vfx_prev_units)
-	_maybe_play_basic_attack_sfx(attack, source, ranged)
 	_play_attack_unit_procedural(attack, target, _vfx_prev_units)
 	return true
 
 
-# --- 10.21 审查批次：普攻音 -----------------------------------------------------
-#
-# 这是**整条战斗链里最缺的一环** —— 在此之前 `BattleVfx` 里一条普攻音都没有
-# （grep SfxService.play 只剩技能 / 人王 / Boss）。远程单位打出去只有「咻」的
-# 画面、没有声；15/21 只玩家近战棋子连斩击特效都没有，于是普攻完全无声。
-#
-# ## 三层闸门
-#
-# ① **表**（SfxService.BASIC_RANGED_CUES / BASIC_MELEE_CUES）：unit_id 查 cue。
-#    `ranged` 由调用方给（模拟器 `basic_ranged` / `basic_melee`），这里不重判 ——
-#    模拟器 BattleSimulator.gd:1119 的阈值（range > 1.0）与渲染侧
-#    BattleRenderWarmup.gd:47 的阈值（range > 1.5）**不一致**，人王（1.5）卡在中间。
-#    那是已知未修的问题，音效侧跟着模拟器走，见 SfxService 表里的说明。
-#
-# ② **归属**（`_basic_attack_ownership`）：我方 0 dB / 交战敌方 −2 dB /
-#    友军 −4 dB / 其他敌方 −6 dB。**远程飞行声在「其他敌方」下直接不出声**
-#    （SfxService.VOLUME_DB_BY_CUE 那段的 mute 规则）—— 那一格是给
-#    身位价值留的，不是给噪声留的。
-#
-# ③ **并发上限**（SfxService.play_battle）：战斗层自己的计数器，上限 6
-#    （PvE 7）。⚠️ 不是改 `VOICE_COUNT`（那个 8 被 audio_sfx_check 钉死）。
-#
-# ## 「技能音替代普攻音」的 11 个单位
-#
-# 用户审查里 11 条备注确认了同一条接线规则：**那一击若触发了技能音，
-# 就不播普攻音，不是叠加。** 判据是「这一击会不会出技能音」：
-#   · 普攻触发型四星技能（`_attack_skill_vfx_ready` 为真）→ 技能音即将由
-#     `_play_attack_unit_procedural` 播放，这里让位；
-#   · `STAR4_PROC_SKILL_CUES` / `MERC_PROC_SKILL_CUES` 命中的 skill_id → 同理。
-#
-# ⚠️ 这条让位只覆盖**能预判**的（取模 / 查表都成立）。概率型触发
-#    （民兵 `attack_interrupt` 是 randf()）在出手这一帧还判不出来 ——
-#    那种偶尔叠一声，比「为了不叠而永远不响普攻音」可接受得多。
-func _maybe_play_basic_attack_sfx(attack: Dictionary, source: Dictionary, ranged: bool) -> void:
-	var uid := str(attack.get("unit_id", ""))
-	var cue := SfxService.basic_attack_cue_for(uid, ranged)
-	if cue.is_empty():
-		return
-	# 「技能音替代普攻音」：这一击会出技能音就不出普攻音。
-	if _skill_cue_replaces_basic_attack(attack, uid):
-		return
-	var sim_uid := str(attack.get("id", ""))
-	var target_uid := str(attack.get("target_uid", ""))
-	var db := _basic_attack_ownership_db(sim_uid, target_uid)
-	# 远程飞行声在「其他敌方」下直接不出声（P7 mute 规则，见
-	# `优先级与混音策略.md` §10 与 runtime_policy.json 的 mute_if_ownership）。
-	# 近战命中声（P6）在这一格仍然出，只压到 −6 dB —— 近战是「贴着我方在打」，
-	# 和隔着半张地图的飞矢不是一回事。
-	if ranged and is_equal_approx(db, -6.0) and not _is_own_or_ally_unit(target_uid):
-		return
-	SfxService.play_battle(cue, db + SfxService.cue_volume_db(cue))
-
-
-# 「这一击会不会出技能音」= 普攻音要不要让位。
-# 两条判据都必须是**预判型**的（取模或查表），概率型不算。
-func _skill_cue_replaces_basic_attack(attack: Dictionary, uid: String) -> bool:
-	var sid := str(attack.get("skill_id", ""))
-	# ① 普攻触发型四星技能：弓箭手额外伤害 / 牧师治疗 / 极光射手真伤 /
-	#    痛苦女王同目标叠加。`_attack_skill_vfx_ready` 正是「这一击算不算触发」的判据。
-	if not SfxService.attack_skill_cue_for(uid).is_empty():
-		return _attack_skill_vfx_ready(attack)
-	# ② proc 型（赤卫格挡 / 破甲者破防 / 毒灵 / 飞灵 / 刺灵 / 魔童 / 血猎者 / 穿云弩手）：
-	#    按 skill_id 查表命中即让位 —— 这些技能本身就在普攻链上，
-	#    响技能音就够响了。
-	if sid.is_empty():
+# 10.25: one decision per recorded attack, presented on its own Director beat.
+func cue_play_attack_audio(event: Dictionary, stage: String) -> bool:
+	var plan: Dictionary = event.get("_attack_audio", {})
+	if plan.is_empty():
 		return false
-	return not SfxService.proc_skill_cue_for(sid).is_empty() or not SfxService.merc_proc_cue_for(sid).is_empty()
+	if stage == "impact":
+		for reaction: Dictionary in plan.get("reactions", []):
+			var reacting_uid := str(reaction.get("source_uid", ""))
+			if _is_own_or_ally_unit(reacting_uid):
+				SfxService.play_battle(str(reaction.get("cue", "")), _basic_attack_ownership_db(reacting_uid, str(reaction.get("target_uid", ""))), 2)
+	var cue := str(plan.get("cue", ""))
+	var source_uid := str(event.get("source_uid", ""))
+	var target_uid := str(plan.get("target_uid", ""))
+	var is_skill := bool(plan.get("skill", false))
+	var expected_stage := str(plan.get("stage", ""))
+	# Preserve the existing ownership gate for dedicated skill assets.
+	# An inaudible enemy skill must not erase that enemy's ordinary attack sound.
+	if (is_skill or bool(plan.get("cast_replacement", false))) and not _is_own_or_ally_unit(source_uid):
+		is_skill = false
+		cue = SfxService.basic_attack_cue_for(str(plan.get("unit_id", "")), bool(plan.get("ranged", false)))
+		expected_stage = "projectile_spawn" if bool(plan.get("ranged", false)) else "impact"
+	if cue.is_empty() or expected_stage != stage:
+		return false
+	var db := _basic_attack_ownership_db(source_uid, target_uid)
+	if not is_skill and stage == "projectile_spawn" and is_equal_approx(db, -6.0):
+		return false
+	var tier := 2 if is_skill else SfxService.cue_priority(cue)
+	if not is_skill and stage == "impact" and bool(plan.get("high_value", false)):
+		tier = 3
+	var weight := 0
+	if tier in [6, 7]:
+		var unit := _state_unit_for(source_uid)
+		var definition: Dictionary = unit.get("def", {})
+		var star := int(unit.get("star", 1))
+		var unit_tier := int(definition.get("tier", 1))
+		if star < 4 and unit_tier < 3 and int(definition.get("cost", 0)) < 100:
+			weight = 2 if star == 1 and unit_tier == 1 else 1
+	# cue mix level is added exactly once, inside SfxService.play.
+	return SfxService.play_battle(cue, db, tier, weight)
 
 
 # 普攻音的归属响度。返回 **−99.0 = 不出声**（远程飞行声在「其他敌方」下）。
@@ -1910,6 +1873,8 @@ func _basic_attack_ownership_db(sim_uid: String, target_uid: String) -> float:
 		# 友军：本地单机下 team_mode 恒真、local_slot 恒 0，自己没有友军可言；
 		# 走到这里基本就是 3v3 里的队友。
 		return -4.0
+	if str(_state.get("kind", "")) in ["pve", "boss"]:
+		return -3.0
 	# 敌方：打的是不是我方单位？
 	if not target_uid.is_empty() and _is_own_or_ally_unit(target_uid):
 		return -2.0
@@ -2088,15 +2053,15 @@ func cue_ranged_flight_time(source_uid: String, target_uid: String) -> float:
 
 # 9.24 #4：把一条 cue 延后 delay 秒再播（用于把命中音对齐弹体落地 / 封印落点）。
 # 纯表现层：只延后播放时刻，不改任何模拟结算。
-func _play_sfx_delayed(cue: String, delay: float) -> void:
+func _play_sfx_delayed(cue: String, delay: float, volume_db := 0.0) -> void:
 	if cue.is_empty():
 		return
 	if delay <= 0.0 or not is_inside_tree():
-		SfxService.play(cue)
+		SfxService.play(cue, volume_db)
 		return
 	await get_tree().create_timer(delay).timeout
 	if is_inside_tree():
-		SfxService.play(cue)
+		SfxService.play(cue, volume_db)
 
 # 9.24 #4：沉默箭弹体的飞行时长（与 VFXFlipbookProjectile3D 同公式：dist/speed 限幅，
 # speed 取 OgaSkillVFXCatalog「silence」条目的 9.0）。命中音据此对齐箭体落地那一刻。
@@ -3082,23 +3047,9 @@ static func _crimson_event_target(event: Dictionary) -> String:
 
 # 归组后的赤律**真事件**技能音。见 `_play_crimson_event_groups` 开头的说明。
 # 门控与其它四星技能音同口径（自身 + 友军 + 四星）。
-func _maybe_play_crimson_event_sfx(skill_id: String, groups: Dictionary, current: Dictionary) -> void:
-	if groups.is_empty():
-		return
-	var cue := SfxService.proc_skill_cue_for(skill_id)
-	if cue.is_empty():
-		return
-	for key: String in groups:
-		var group: Dictionary = groups[key]
-		var source_uid := str(group.get("source", ""))
-		if source_uid.is_empty():
-			continue
-		if not _is_own_or_ally_unit(source_uid) or not _is_star4(source_uid):
-			continue
-		# 只响一次：归组里同一个来源可能出现多组（不同 tick），这里取第一组就够。
-		# 想一次都不漏的话，节流表（P2 200ms）会替我们兜住。
-		SfxService.play(cue)
-		return
+func _maybe_play_crimson_event_sfx(_skill_id: String, _groups: Dictionary, _current: Dictionary) -> void:
+	# Audio belongs to the associated basic impact, not the early grouped VFX.
+	pass
 
 
 func _play_crimson_proc(event: Dictionary, current: Dictionary) -> void:
@@ -3118,8 +3069,8 @@ func _play_crimson_proc(event: Dictionary, current: Dictionary) -> void:
 	# 门控与其它四星技能音同口径（自身 + 友军 + 四星）：赤卫自己 1~3 星时不响，
 	# 敌方赤卫也不响。
 	var cue := SfxService.proc_skill_cue_for(skill_id)
-	if not cue.is_empty() and _is_own_or_ally_unit(source_uid) and _is_star4(source_uid):
-		SfxService.play(cue)
+	if not bool(event.get("_attack_audio_managed", false)) and not cue.is_empty() and _is_own_or_ally_unit(source_uid) and _is_star4(source_uid):
+		SfxService.play(cue, _basic_attack_ownership_db(source_uid, ""))
 	match skill_id:
 		"block_guard":
 			# source = 格挡成功的赤卫，target = 被挡下的攻击者。
