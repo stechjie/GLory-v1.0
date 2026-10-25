@@ -3,7 +3,7 @@ extends RefCounted
 static func duration(round_index: int, ruleset: String = "normal") -> float:
 	if ruleset == "seedling":
 		return 80.0 if round_index in [5, 9, 13] else 60.0
-	return 50.0 if RoundService.schedule_kind_for_round(round_index) in ["pvp", "final"] else 35.0
+	return 60.0 if RoundService.schedule_kind_for_round(round_index) in ["pvp", "final"] else 45.0
 
 static func remaining(room: Dictionary, now: float) -> float:
 	if str(room.get("state", "")) != "prep":
