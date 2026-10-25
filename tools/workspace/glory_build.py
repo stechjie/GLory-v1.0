@@ -881,6 +881,9 @@ def main():
                              if f'name="{preset}"' in m[2])
             options = re.search(r'(?ms)^\[preset\.' + preset_id + r'\.options\]\n(.*?)(?=^\[|\Z)', text)
             values = {"gradle_build/export_format": "0", "package/signed": "true" if args.debug else "false"}
+            # The editor's default Android preset only enables ARM64. Shipping
+            # APKs must retain both ARM variants, as required by AGENTS.md.
+            values.update({"architectures/armeabi-v7a": "true", "architectures/arm64-v8a": "true"})
             if args.version is not None:
                 values["version/name"] = json.dumps(args.version)
             if args.version_code is not None:
