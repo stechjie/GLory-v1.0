@@ -122,6 +122,8 @@ var _spectate_done := false
 # Battle scene had none before this; see bug report 9.9bug提交及修复08 #8.
 var _fps_label: Label
 var _fps_accum := 0.0
+var _attack_audio_planner := preload("res://ui/services/BattleAttackAudioPlanner.gd").new()
+
 var _presentation_director: RefCounted = BattlePresentationDirectorScript.new()
 # D4: migration-period adapter. It only plays cues for units in
 # BattlePresentationSlice; everything else is completed immediately and keeps
@@ -245,6 +247,7 @@ func _ready() -> void:
 	await _prepare_battle_models()
 func _exit_tree() -> void:
 	_presentation_director.dispose()
+	SfxService.stop_battle_audio()
 	if _voice_controls != null:
 		_voice_controls.teardown()
 	_stop_battle_music()
@@ -1298,7 +1301,8 @@ func _apply_replay_frame(i: int) -> void:
 		var ve: Array = _state.get("visual_events", [])
 		for j in range(_replay_events_applied + 1, i + 1):
 			if j >= 0 and j < frame_events.size() and frame_events[j] is Array:
-				var tick_events: Array = frame_events[j]
+				var tick_frame: Array = frames[j] if j < frames.size() and frames[j] is Array else []
+				var tick_events: Array = _attack_audio_planner.prepare_tick(frame_events[j], _replay_by_uid, tick_frame)
 				# D2 dual route: Director becomes the bounded scheduler while the old
 				# BattleVfx array remains a compatibility bridge until D6 migration.
 				# Claim dying bodies before the Director queues the tick: the next
@@ -1652,6 +1656,8 @@ func _await_presentation_drained() -> void:
 
 
 func _begin_presentation_replay(replay: Dictionary) -> void:
+	_attack_audio_planner = preload("res://ui/services/BattleAttackAudioPlanner.gd").new()
+	SfxService.stop_battle_audio()
 	# Resolver/budget/real adapters intentionally remain null in D2. The existing
 	# UnitActorRegistry is passed now so D3 can add anchors without changing the
 	# BattleScreen ownership boundary.

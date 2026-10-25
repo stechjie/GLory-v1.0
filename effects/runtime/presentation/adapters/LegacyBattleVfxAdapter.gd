@@ -80,9 +80,11 @@ func play_cue(event: Dictionary, completion: Callable, playback_speed: float) ->
 			# V2 P1-05 第 1 条：命中要有一次小屏震；暴击只把它乘 20%-35%，
 			# 不另加全屏效果。is_crit 由 DamageService.emit_impact() 带过来。
 			if _defer_flight_tail(event, completion, func() -> void:
+				_present_attack_audio(event, "impact")
 				_host.call("cue_play_impact_feedback", _first_target(event),
 					bool(event.get("is_crit", false)))):
 				return true
+			_present_attack_audio(event, "impact")
 			_host.call("cue_play_impact_feedback", _first_target(event), bool(event.get("is_crit", false)))
 			return _finish_after(_beat_seconds(event, IMPACT_SEC) / speed, completion, "impact")
 		"hit_number":
@@ -125,6 +127,7 @@ func reset_stats() -> void:
 
 
 func _play_attack_start(event: Dictionary, source_uid: String, completion: Callable, speed: float) -> bool:
+	_present_attack_audio(event, "attack_start")
 	_source_flights[source_uid] = {
 		"attack_key": str(event.get("event_key", "")),
 		"tick": int(event.get("tick", -1)), "deadline_usec": 0,
@@ -143,6 +146,7 @@ func _play_attack_start(event: Dictionary, source_uid: String, completion: Calla
 
 
 func _play_projectile(event: Dictionary, source_uid: String, completion: Callable, speed: float) -> bool:
+	_present_attack_audio(event, "projectile_spawn")
 	_with_cue_priority(event, func() -> void:
 		_host.call("cue_play_basic_attack", source_uid, _first_target(event), true))
 	_count("projectile_spawn")
@@ -272,3 +276,8 @@ func _host_ready() -> bool:
 
 func _count(event_type: String) -> void:
 	_played_by_type[event_type] = int(_played_by_type.get(event_type, 0)) + 1
+
+
+func _present_attack_audio(event: Dictionary, stage: String) -> void:
+	if _host_ready() and _host.has_method("cue_play_attack_audio"):
+		_host.call("cue_play_attack_audio", event, stage)

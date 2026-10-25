@@ -45,6 +45,8 @@ extends RefCounted
 # 另有一道 `RETRIGGER_GUARD_MSEC` 兜底：同一 cue 在 40 ms 内只发一次。
 # 它挡的是「同一帧里多条路径都判定成功」，不替代上面的结构性保证。
 
+const Approved := preload("res://ui/services/ApprovedBattleAudio.gd")
+
 const Presentation := preload("res://effects/runtime/presentation/PresentationSettings.gd")
 
 const SFX_BUS := "SFX"
@@ -254,6 +256,12 @@ const CUE_PROJ_THORN := "proj_thorn"
 const CUE_PROJ_THUNDER := "proj_thunder"
 
 # 3 条近战命中声（按材质分：金属 / 非金属 / 徒手）。
+const CUE_MELEE_HEAVY := "melee_heavy"
+const CUE_MELEE_CLAW := "melee_claw"
+const CUE_MELEE_CLAW_HEAVY := "melee_claw_heavy"
+const CUE_MELEE_SHELL := "melee_shell"
+const CUE_MELEE_SPIRIT := "melee_spirit"
+
 const CUE_MELEE_METAL := "melee_metal"
 const CUE_MELEE_NONMETAL := "melee_nonmetal"
 const CUE_MELEE_UNARMED := "melee_unarmed"
@@ -285,6 +293,12 @@ const CUE_MERC_CANCER_SHELL_SKILL := "merc_cancer_shell_skill"
 const CUE_MERC_LEO_SUN_SKILL := "merc_leo_sun_skill"
 
 const CUES := {
+	CUE_MELEE_HEAVY: "res://assets/audio/sfx/approved_20261025/metal_heavy_A.wav",
+	CUE_MELEE_CLAW: "res://assets/audio/sfx/approved_20261025/claw_A.wav",
+	CUE_MELEE_CLAW_HEAVY: "res://assets/audio/sfx/approved_20261025/claw_heavy_A.wav",
+	CUE_MELEE_SHELL: "res://assets/audio/sfx/approved_20261025/shell_A.wav",
+	CUE_MELEE_SPIRIT: "res://assets/audio/sfx/approved_20261025/spirit_A.wav",
+
 	CUE_UI_POPUP: "res://assets/audio/sfx/ui/popup.mp3",
 	CUE_UI_CONFIRM: "res://assets/audio/sfx/ui/button_confirm.mp3",
 	CUE_UI_REJECT: "res://assets/audio/sfx/ui/button_reject.mp3",
@@ -299,7 +313,7 @@ const CUES := {
 	CUE_STAR4_GOD: "res://assets/audio/sfx/prep/star4_god.mp3",
 	CUE_STAR4_UNDEAD_MOTHER: "res://assets/audio/sfx/prep/star4_undead_mother.mp3",
 	CUE_STAR4_DARK: "res://assets/audio/sfx/prep/star4_dark.mp3",
-	CUE_STAR4_DEFAULT: "res://assets/audio/sfx/prep/star4_default.mp3",
+	CUE_STAR4_DEFAULT: "res://assets/audio/sfx/approved_20261025/merge4_A.wav",
 	CUE_STAR4_ARCHANGEL: "res://assets/audio/sfx/prep/star4_archangel.mp3",
 	CUE_STAR4_DOOM: "res://assets/audio/sfx/prep/star4_doom.mp3",
 	CUE_STAR4_GOD_SKILL: "res://assets/audio/sfx/prep/star4_god_skill.mp3",
@@ -383,34 +397,34 @@ const CUES := {
 
 	# 10.21 战场音效全量审查批次。全部放 battle/ 下：都是战斗场景内的声音。
 	# 12 条飞行 + 3 条近战命中 + 人王金色剑 + 法师属性弹。
-	CUE_PROJ_ARROW: "res://assets/audio/sfx/battle/proj_arrow.mp3",
-	CUE_PROJ_JAVELIN: "res://assets/audio/sfx/battle/proj_javelin.mp3",
-	CUE_PROJ_ORB: "res://assets/audio/sfx/battle/proj_orb.mp3",
-	CUE_PROJ_DARK_ORB: "res://assets/audio/sfx/battle/proj_dark_orb.mp3",
-	CUE_PROJ_HOLY: "res://assets/audio/sfx/battle/proj_holy.mp3",
-	CUE_PROJ_LIGHT_LANCE: "res://assets/audio/sfx/battle/proj_light_lance.mp3",
-	CUE_PROJ_WING: "res://assets/audio/sfx/battle/proj_wing.mp3",
-	CUE_PROJ_DISC: "res://assets/audio/sfx/battle/proj_disc.mp3",
-	CUE_PROJ_FROST: "res://assets/audio/sfx/battle/proj_frost.mp3",
-	CUE_PROJ_EMBER: "res://assets/audio/sfx/battle/proj_ember.mp3",
-	CUE_PROJ_BONE: "res://assets/audio/sfx/battle/proj_bone.mp3",
-	CUE_PROJ_THORN: "res://assets/audio/sfx/battle/proj_thorn.mp3",
-	CUE_PROJ_THUNDER: "res://assets/audio/sfx/battle/proj_thunder.mp3",
-	CUE_MELEE_METAL: "res://assets/audio/sfx/battle/melee_metal.mp3",
-	CUE_MELEE_NONMETAL: "res://assets/audio/sfx/battle/melee_nonmetal.mp3",
-	CUE_MELEE_UNARMED: "res://assets/audio/sfx/battle/melee_unarmed.mp3",
-	CUE_PROJ_DIVINE_BLADE: "res://assets/audio/sfx/battle/proj_divine_blade.mp3",
+	CUE_PROJ_ARROW: "res://assets/audio/sfx/approved_20261025/arrow_A.wav",
+	CUE_PROJ_JAVELIN: "res://assets/audio/sfx/approved_20261025/javelin_A.wav",
+	CUE_PROJ_ORB: "res://assets/audio/sfx/approved_20261025/orb_A.wav",
+	CUE_PROJ_DARK_ORB: "res://assets/audio/sfx/approved_20261025/orb_dark_A.wav",
+	CUE_PROJ_HOLY: "res://assets/audio/sfx/approved_20261025/orb_holy_A.wav",
+	CUE_PROJ_LIGHT_LANCE: "res://assets/audio/sfx/approved_20261025/lance_A.wav",
+	CUE_PROJ_WING: "res://assets/audio/sfx/approved_20261025/feather_A.wav",
+	CUE_PROJ_DISC: "res://assets/audio/sfx/approved_20261025/petal_A.wav",
+	CUE_PROJ_FROST: "res://assets/audio/sfx/approved_20261025/frost_A.wav",
+	CUE_PROJ_EMBER: "res://assets/audio/sfx/approved_20261025/ember_A.wav",
+	CUE_PROJ_BONE: "res://assets/audio/sfx/approved_20261025/needle_A.wav",
+	CUE_PROJ_THORN: "res://assets/audio/sfx/approved_20261025/lance_A.wav",
+	CUE_PROJ_THUNDER: "res://assets/audio/sfx/approved_20261025/thunder_A.wav",
+	CUE_MELEE_METAL: "res://assets/audio/sfx/approved_20261025/metal_A.wav",
+	CUE_MELEE_NONMETAL: "res://assets/audio/sfx/approved_20261025/wood_A.wav",
+	CUE_MELEE_UNARMED: "res://assets/audio/sfx/approved_20261025/punch_A.wav",
+	CUE_PROJ_DIVINE_BLADE: "res://assets/audio/sfx/approved_20261025/divine_A.wav",
 	CUE_MAGE_ATTRIBUTE_BOLT: "res://assets/audio/sfx/battle/mage_attribute_bolt.mp3",
 	# 赤律族 8 子 + 光之卫士 + 痛苦女王的四星技能音。
 	CUE_STAR4_GUARD_SKILL: "res://assets/audio/sfx/battle/star4_guard_skill.mp3",
-	CUE_STAR4_QUEEN_SKILL: "res://assets/audio/sfx/battle/star4_queen_skill.mp3",
+	CUE_STAR4_QUEEN_SKILL: "res://assets/audio/sfx/approved_20261025/queen_skill_A.wav",
 	CUE_STAR4_CRIMSON_SKILL: "res://assets/audio/sfx/battle/star4_crimson_skill.mp3",
-	CUE_STAR4_DANCER_SKILL: "res://assets/audio/sfx/battle/star4_dancer_skill.mp3",
+	CUE_STAR4_DANCER_SKILL: "res://assets/audio/sfx/approved_20261025/dancer_skill_A.wav",
 	CUE_STAR4_DRUMER_SKILL: "res://assets/audio/sfx/battle/star4_drumer_skill.mp3",
-	CUE_STAR4_HUNTER_SKILL: "res://assets/audio/sfx/battle/star4_hunter_skill.mp3",
-	CUE_STAR4_ICEY_SKILL: "res://assets/audio/sfx/battle/star4_icey_skill.mp3",
+	CUE_STAR4_HUNTER_SKILL: "res://assets/audio/sfx/approved_20261025/hunter_skill_A.wav",
+	CUE_STAR4_ICEY_SKILL: "res://assets/audio/sfx/approved_20261025/icey_skill_A.wav",
 	CUE_STAR4_LATTERN_SKILL: "res://assets/audio/sfx/battle/star4_lattern_skill.mp3",
-	CUE_STAR4_SKYPIERCE_SKILL: "res://assets/audio/sfx/battle/star4_skypierce_skill.mp3",
+	CUE_STAR4_SKYPIERCE_SKILL: "res://assets/audio/sfx/approved_20261025/skypierce_skill_A.wav",
 	# 两条佣兵技能音。
 	CUE_MERC_CANCER_SHELL_SKILL: "res://assets/audio/sfx/battle/merc_cancer_shell_skill.mp3",
 	CUE_MERC_LEO_SUN_SKILL: "res://assets/audio/sfx/battle/merc_leo_sun_skill.mp3",
@@ -827,6 +841,9 @@ static var _next_voice := 0
 # path -> AudioStream。load() 本身有资源缓存，这里再存一份是为了改完 loop 标志后
 # 不必每次重新取 —— 改过的实例不会回写缓存，不存就会每次重算一遍。
 static var _streams: Dictionary = {}
+static var _variant_index: Dictionary = {}
+static var _recent_by_cue: Dictionary = {}
+static var _ducks: Array = []
 static var _last_play_msec: Dictionary = {}
 static var _play_counts: Dictionary = {}
 static var _watching := false
@@ -847,21 +864,11 @@ static var _loop_start_count := 0
 static var _last_gold := 0
 static var _currency_ready := false
 
-# 10.21 战场音效批次：**战斗层自己的并发计数器**。
-#
-# 为什么不能直接调 `VOICE_COUNT`：那个 8 是**全局共享池**（UI / 备战 / 战斗共用一个池），
-# 而 `audio_sfx_check` 会数 root 下以 `GlorySfxVoice` 开头的节点、并要求**正好 8 个**
-# （见本文件顶部注释）。改它 = 门禁直接红。
-# ⇒ 上限 6（PvE 7）是池**之外**多出来的一层闸门：普攻音（P6/P7，数量最多、
-# 最容易叠成噪声）在播放前先数一次正在响的战斗层声音，满了就不出这一声。
-# 技能音（P2，稀少且重要）刻意**不**走这道闸门 —— 拿一次技能音去换一次
-# 普攻音是错的优先级。
+# Battle limit is separate from the eight shared voices; count actual playing nodes.
 static var _battle_voice_cap := 6
 # 当前被计数器占着的路数（只统计走 play_battle() 的）。
-static var _battle_live := 0
 # 本帧已过期的记账时间表。AudioStreamPlayer 没有「播放完了」的回调可以挂，
 # 所以用「起播时刻 + 时长」估算，每帧扫一次把过期的踢掉。
-static var _battle_stamps: Array = []
 
 
 # --- 安装 -------------------------------------------------------------------
@@ -909,7 +916,7 @@ static func _watch_currency() -> void:
 #
 # **返回值是给门禁和排障用的，不要拿它当业务判据。** 音效是表现，
 # 业务成不成功在调用它之前就已经定下来了。
-static func play(cue: String, volume_db := 0.0) -> bool:
+static func play(cue: String, volume_db := 0.0, priority_override := -1, unit_weight := 0) -> bool:
 	if cue.is_empty():
 		# 10.21：`star4_cue_for` 对 STAR4_SILENT_UNITS（人王）返回空串。
 		# 空串是「这个单位刻意不发声」，不是「没登记」—— 不该刷 push_warning。
@@ -917,6 +924,9 @@ static func play(cue: String, volume_db := 0.0) -> bool:
 	if not Presentation.ui_sound_allowed():
 		return false
 	var path := resolved_cue_path(cue)
+	if Approved.VARIANTS.has(cue):
+		var paths: Array = Approved.VARIANTS[cue]
+		path = str(paths[int(_variant_index.get(cue, 0)) % paths.size()])
 	if path.is_empty():
 		push_warning("SfxService.play: 未登记的 cue %s" % cue)
 		return false
@@ -924,17 +934,29 @@ static func play(cue: String, volume_db := 0.0) -> bool:
 	# 每条 cue 的窗口取「40 ms 重触发保护」与「本 cue 自己的节流」里更长的那个。
 	# 默认那条 40 ms 挡的是「同一帧里多条路径都判定成功」；chat_alert 的 10 s
 	# 挡的是「10 秒内收到一串消息只提醒一次」（见 THROTTLE_MSEC_BY_CUE）。
+	var tier := cue_priority(cue) if priority_override < 0 else priority_override
+	var battle := tier >= 0
 	var guard := maxi(RETRIGGER_GUARD_MSEC, int(THROTTLE_MSEC_BY_CUE.get(cue, 0)))
+	if battle:
+		guard = [0, 0, 200, 220, 240, 300, 340, 400][clampi(tier, 0, 7)]
+		if cue == CUE_STAR4_DRUMER_SKILL:
+			guard = 2600
 	if now - int(_last_play_msec.get(cue, -guard)) < guard:
 		return false
 
 	var stream := _stream_for(path)
 	if stream == null:
 		return false
-	var voice := _take_voice()
+	var recent: Array = _recent_by_cue.get(cue, [])
+	recent = recent.filter(func(t: int) -> bool: return now - t < 600)
+	if battle and tier >= 2 and recent.size() >= 2:
+		return false
+	var voice := _take_priority_voice(tier, volume_db, battle, cue, unit_weight)
 	if voice == null:
 		return false
 	_last_play_msec[cue] = now
+	_variant_index[cue] = int(_variant_index.get(cue, 0)) + 1
+	_recent_by_cue[cue] = recent + [now]
 	_play_counts[cue] = int(_play_counts.get(cue, 0)) + 1
 	voice.stream = stream
 	voice.set_meta("sfx_cue", cue)
@@ -943,8 +965,18 @@ static func play(cue: String, volume_db := 0.0) -> bool:
 	# 放在这里而不是散到各调用点，是为了让「抬音量」这件事无法被漏掉 ——
 	# 9.22 黄金重骑那一声就是典型：素材没问题，是被 BGM 压住了，
 	# 只要有一个调用点忘了带音量参数，声音就还是听不见。
-	voice.volume_db = volume_db + cue_volume_db(cue)
+	var repeat_db := -3.0 if battle and tier >= 2 and recent.size() == 1 else 0.0
+	var base_db := volume_db + cue_volume_db(cue) + repeat_db - float(unit_weight) * 1.5
+	voice.set_meta("sfx_priority", tier if battle else 0)
+	voice.set_meta("sfx_battle", battle)
+	voice.set_meta("sfx_rank", (tier if battle else 0) * 10000 + int(maxf(0.0, -volume_db) * 100.0) + unit_weight)
+	voice.set_meta("sfx_started", now)
+	voice.set_meta("sfx_base_db", base_db)
+	voice.volume_db = base_db
 	voice.play()
+	if battle and tier <= 1:
+		_ducks.append({"until": now + (300 if tier == 0 else 250), "tier": tier, "db": -5.0 if tier == 0 else -4.0})
+	_update_ducking()
 	return true
 
 
@@ -965,22 +997,79 @@ static func _stream_for(path: String) -> AudioStream:
 	return stream
 
 
-# 轮转发声：挑一个空闲的；都在响就抢最老的那一路。
-# 用池而不是单播放器，是因为 AOE 多杀、连点按钮这些场景天生要叠音。
-static func _take_voice() -> AudioStreamPlayer:
+# Event tier wins before ownership. UI keeps a reserved, non-battle slot.
+static func cue_priority(cue: String) -> int:
+	if cue in [CUE_BATTLE_VICTORY, CUE_BATTLE_DEFEAT, CUE_BOSS_APPEAR, CUE_FINAL_ROUND_PVP_INTRO]:
+		return 0
+	if cue == CUE_HUMAN_KING_DEATH:
+		return 1
+	if cue in [CUE_FORMATION_HIT, CUE_ENEMY_FORMATION_HIT]:
+		return 4
+	if cue == CUE_MAGE_ATTRIBUTE_BOLT:
+		return 5
+	if cue.begins_with("melee_"):
+		return 6
+	if cue.begins_with("proj_"):
+		return 7
+	if cue in STAR4_CUES.values() or cue == CUE_STAR4_DEFAULT:
+		return -1
+	if cue.begins_with("star4_") or cue.begins_with("merc_") and cue.ends_with("_skill") or cue.begins_with("boss_") or cue == CUE_MERC_LIBRA_JUDGE_PROC:
+		return 2
+	return -1
+
+
+static func _take_priority_voice(tier: int, ownership_db: float, battle: bool, cue: String, unit_weight: int) -> AudioStreamPlayer:
 	if not _ensure_voices():
 		return null
-	for i in VOICE_COUNT:
-		var idx := (_next_voice + i) % VOICE_COUNT
-		var voice: AudioStreamPlayer = _voices[idx]
+	var live := 0
+	var same := 0
+	var idle: AudioStreamPlayer = null
+	var weakest: AudioStreamPlayer = null
+	var worst_rank := -1
+	var oldest := 9223372036854775807
+	var new_rank := (tier if battle else 0) * 10000 + int(maxf(0.0, -ownership_db) * 100.0) + unit_weight
+	for voice in _voices:
 		if not _voice_usable(voice):
 			continue
 		if not voice.playing:
-			_next_voice = (idx + 1) % VOICE_COUNT
-			return voice
-	var fallback: AudioStreamPlayer = _voices[_next_voice]
-	_next_voice = (_next_voice + 1) % VOICE_COUNT
-	return fallback if _voice_usable(fallback) else null
+			if idle == null:
+				idle = voice
+			continue
+		var voice_battle := bool(voice.get_meta("sfx_battle", false))
+		if voice_battle:
+			live += 1
+		if str(voice.get_meta("sfx_cue", "")) == cue:
+			same += 1
+		# Battle audio must not steal a UI voice even at the same tier.
+		if battle and not voice_battle:
+			continue
+		var rank := int(voice.get_meta("sfx_rank", 0))
+		var started := int(voice.get_meta("sfx_started", 0))
+		if rank > worst_rank or rank == worst_rank and started < oldest:
+			weakest = voice
+			worst_rank = rank
+			oldest = started
+	if battle and tier >= 2 and same >= 2:
+		return null
+	if idle != null and (not battle or _battle_voice_cap <= 0 or live < _battle_voice_cap):
+		return idle
+	if weakest != null and new_rank <= worst_rank:
+		weakest.stop()
+		return weakest
+	return null
+
+
+static func _update_ducking() -> void:
+	var now := Time.get_ticks_msec()
+	_ducks = _ducks.filter(func(d: Dictionary) -> bool: return int(d.until) > now)
+	for voice in _voices:
+		if not is_instance_valid(voice) or not voice.playing or not bool(voice.get_meta("sfx_battle", false)):
+			continue
+		var duck_db := 0.0
+		for duck: Dictionary in _ducks:
+			if int(voice.get_meta("sfx_priority", 7)) > int(duck.tier):
+				duck_db = minf(duck_db, float(duck.db))
+		voice.volume_db = float(voice.get_meta("sfx_base_db", 0.0)) + duck_db
 
 
 # 能不能拿来播。**「在树里」这一条不能省。**
@@ -1033,6 +1122,9 @@ static func _ensure_voices() -> bool:
 
 
 static func _bind_volume_setting() -> void:
+	var tree := _tree()
+	if tree != null and not tree.process_frame.is_connected(_update_ducking):
+		tree.process_frame.connect(_update_ducking)
 	if is_instance_valid(PlayerProfile) and not PlayerProfile.presentation_settings_changed.is_connected(_sync_music_volume):
 		PlayerProfile.presentation_settings_changed.connect(_sync_music_volume)
 	_sync_music_volume()
@@ -1064,6 +1156,15 @@ static func stop_all() -> void:
 		if voice != null and is_instance_valid(voice):
 			voice.stop()
 	stop_loop()
+	_ducks.clear()
+
+
+static func stop_battle_audio() -> void:
+	for voice in _voices:
+		if is_instance_valid(voice) and bool(voice.get_meta("sfx_battle", false)):
+			voice.stop()
+	_recent_by_cue.clear()
+	_ducks.clear()
 
 
 # 四星音按棋子分流。9.19 起区分两种场景：
@@ -1086,10 +1187,10 @@ const STAR4_SILENT_UNITS: Array[String] = [
 ]
 
 static func star4_cue_for(unit_id: String, is_skill := false) -> String:
-	if unit_id in STAR4_SILENT_UNITS:
+	if is_skill and unit_id in STAR4_SILENT_UNITS:
 		return ""
 	if is_skill:
-		return str(STAR4_SKILL_CUES.get(unit_id, CUE_STAR4_DEFAULT))
+		return str(STAR4_SKILL_CUES.get(unit_id, ""))
 	return str(STAR4_CUES.get(unit_id, CUE_STAR4_DEFAULT))
 
 
@@ -1179,144 +1280,15 @@ static func low_star_skill_cue_for(unit_id: String) -> String:
 # ⚠️ 这两张表**不含**法师 `human_mage`：它 `no_basic_attack = true`，
 #    模拟器 BattleSimulator.gd:847 直接 continue，永远发不出 attack_start。
 
-# 12 条飞行声 + 人王（P7）。键 = 单位 id，值 = 飞行 cue。
-# 远程判据：模拟器 BattleSimulator.gd:1119 `range > 1.0` 判 basic_ranged。
-const BASIC_RANGED_CUES := {
-	"god_priest": CUE_PROJ_LIGHT_LANCE,
-	"god_priestess": CUE_PROJ_DISC,
-	"god_aurora": CUE_PROJ_LIGHT_LANCE,
-	"god_angel": CUE_PROJ_WING,
-	"god_archangel": CUE_PROJ_HOLY,
-	"dark_mage": CUE_PROJ_DARK_ORB,
-	"dark_queen": CUE_PROJ_THORN,
-	"human_archer": CUE_PROJ_ARROW,
-	"human_cleric": CUE_PROJ_ORB,
-	"undead_spike": CUE_PROJ_BONE,
-	"undead_mother": CUE_PROJ_JAVELIN,
-	"dancer": CUE_PROJ_DISC,
-	"hunter": CUE_PROJ_ARROW,
-	"Icey": CUE_PROJ_FROST,
-	"skypierce": CUE_PROJ_JAVELIN,
-	"lattern": CUE_PROJ_EMBER,
-	"boss_thunder_core": CUE_PROJ_THUNDER,
-	"boss_apocalypse": CUE_PROJ_JAVELIN,
-	"boss_meteor_caster": CUE_PROJ_ORB,
-	"boss_holy_priest": CUE_PROJ_HOLY,
-	"merc_sagittarius_rain": CUE_PROJ_ARROW,
-	"merc_pisces_bubble": CUE_PROJ_ORB,
-	"merc_virgo_heal": CUE_PROJ_HOLY,
-	"merc_aquarius_time": CUE_PROJ_ORB,
-	# 10.21 审查后新增：人王。用户判定属远程（range=1.5 卡在模拟阈值 1.0 与
-	# 渲染阈值 1.5 之间，模拟发 basic_ranged），弹道是「金色剑从目标落下」，
-	# 自带落地撞击。⚠️ 这个 mode 不一致是**已知未修**的问题，见
-	# `优先级与混音策略.md` §10。
-	"human_king": CUE_PROJ_DIVINE_BLADE,
-	# PvE 敌方（同样有普攻，也享有远程飞行声）。
-	#
-	# ⚠️ 这 7 条**不在 135 行审查表里** —— 那张表只覆盖「玩家棋子 + Boss + 佣兵」，
-	#   一条 PvE 都没有。这 7 条是接入时按渲染侧弹体类型外推的，之后补过一次
-	#   专项审查表（`PvE小怪普攻音_审查表.html`），16 只全部通过。
-	"pve_sky_wind_falcon": CUE_PROJ_ARROW,
-	"pve_ren_voodoo_witch": CUE_PROJ_ORB,
-	# 药毒医师：审查表行 16 定案。渲染弹体是 **dart（细小毒针）**，
-	# 原来配 `proj_javelin`（标枪）明显不合，改成 `proj_thorn`（尖刺）。
-	# 备选是 `proj_bone`（骨刺）—— 想换回来只改这一行，不牵动任何派发逻辑。
-	"pve_ren_poison_doctor": CUE_PROJ_THORN,
-	"pve_sky_hymn_spirit": CUE_PROJ_HOLY,
-	"pve_sky_star_butterfly": CUE_PROJ_HOLY,
-	"pve_sky_thunder_spirit": CUE_PROJ_THUNDER,
-	"pve_land_ancient_tree": CUE_PROJ_HOLY,
-}
-
-# 3 条近战命中声（P6），按材质分：金属 / 非金属 / 徒手。
-# 15 只玩家近战棋子此前**连斩击特效都没有**（OGA 目录刻意只给 5 只招牌武器），
-# 现在至少有声音了。
-const BASIC_MELEE_CUES := {
-	"god_arbiter": CUE_MELEE_METAL,
-	"god_king": CUE_MELEE_METAL,
-	"human_swordsman": CUE_MELEE_METAL,
-	"dark_scythe": CUE_MELEE_METAL,
-	"god_guard": CUE_MELEE_METAL,
-	"human_militia": CUE_MELEE_METAL,
-	"human_death_servant": CUE_MELEE_METAL,
-	"dark_doom": CUE_MELEE_METAL,
-	"armbreaker": CUE_MELEE_METAL,
-	"crimson": CUE_MELEE_NONMETAL,
-	"drumer": CUE_MELEE_NONMETAL,
-	"dark_imp": CUE_MELEE_NONMETAL,
-	"dark_fear": CUE_MELEE_NONMETAL,
-	"dark_dragon": CUE_MELEE_NONMETAL,
-	"undead_titan": CUE_MELEE_NONMETAL,
-	"undead_small": CUE_MELEE_UNARMED,
-	"undead_poison": CUE_MELEE_UNARMED,
-	"undead_parasite": CUE_MELEE_UNARMED,
-	"undead_fly": CUE_MELEE_UNARMED,
-	"undead_bomb": CUE_MELEE_UNARMED,
-	"human_merchant": CUE_MELEE_UNARMED,
-	"boss_blood_demon": CUE_MELEE_METAL,
-	"boss_twin_gate": CUE_MELEE_METAL,
-	"boss_mirror_lord": CUE_MELEE_NONMETAL,
-	"boss_rage_beast": CUE_MELEE_NONMETAL,
-	"boss_soul_devourer": CUE_MELEE_NONMETAL,
-	"merc_libra_judge": CUE_MELEE_METAL,
-	"merc_taurus_charge": CUE_MELEE_METAL,
-	"merc_gemini_assassin": CUE_MELEE_METAL,
-	"merc_aries_blood": CUE_MELEE_METAL,
-	"merc_capricorn_steel": CUE_MELEE_METAL,
-	"merc_scorpio_death": CUE_MELEE_METAL,
-	"merc_cancer_shell": CUE_MELEE_NONMETAL,
-	"merc_leo_sun": CUE_MELEE_NONMETAL,
-	#
-	# --- 10.21 补：PvE 小怪的近战普攻音 -------------------------------------
-	#
-	# 为什么单独补这一段：135 条审查表聚焦「玩家棋子 + Boss + 佣兵」，
-	# PvE 怪只列了 7 只**有弹道**的（range=4，已在上面的 BASIC_RANGED_CUES 里）。
-	# 剩下 9 只全是 `range = 1` 的近战怪，**从没进过表** ⇒ 普攻无声，
-	# 玩家感知是「怪在打我但没动静」（技能音/特效都正常，只有普攻那一击是哑的）。
-	#
-	# 材质判据按**武器 / 体表**，与那 34 只棋子/佣兵/Boss 同一条规则：
-	#   金属刃 · 盾甲   → CUE_MELEE_METAL
-	#   石岩 · 甲壳 · 虫壳 → CUE_MELEE_NONMETAL
-	#   爪 · 藤蔓 · 拳   → CUE_MELEE_UNARMED
-	"pve_ren_shadow_thief": CUE_MELEE_METAL,          # 影行盗徒：背刺匕首
-	"pve_ren_wandering_swordsman": CUE_MELEE_METAL,   # 流浪剑客：剑（反击斩）
-	"pve_sky_dome_guard": CUE_MELEE_METAL,            # 天穹守卫：盾甲（圣盾爆）
-	"pve_land_lava_golem": CUE_MELEE_NONMETAL,        # 熔岩傀儡：岩体（熔岩爆）
-	"pve_land_mountain_giant": CUE_MELEE_NONMETAL,    # 山岳巨人：石拳（地裂砸）
-	"pve_land_rock_beast": CUE_MELEE_NONMETAL,        # 岩甲兽：岩甲壳（震击）
-	"pve_land_vein_worm": CUE_MELEE_NONMETAL,         # 地脉虫：虫壳（掘地突袭）
-	"pve_sky_cloud_eagle": CUE_MELEE_UNARMED,         # 云羽鹰：爪喙（俯冲）
-	"pve_land_vine_guard": CUE_MELEE_UNARMED,         # 藤蔓守卫：藤蔓（缠绕，无武器）
-}
-
-# 远程判据由调用方给（模拟器的 basic_ranged / basic_melee），这里只查表。
-# 返回空串 = 这只单位没有配普攻音（法师 / 没登记的），调用方必须跳过。
-static func basic_attack_cue_for(unit_id: String, ranged: bool) -> String:
-	if unit_id.is_empty():
-		return ""
-	if ranged:
-		return str(BASIC_RANGED_CUES.get(unit_id, ""))
-	return str(BASIC_MELEE_CUES.get(unit_id, ""))
+# The approved 77-unit map owns both material and attack type.
+# The simulation ranged flag remains accepted for existing callers.
+static func basic_attack_cue_for(unit_id: String, _ranged: bool) -> String:
+	return str(Approved.BASIC_CUES.get(unit_id, ""))
 
 
-# 10.21 审查批次：**战斗层并发上限**。
-#
-# 上一批 15 条普攻音接入后，同时发声的声源比原方案少很多（远程命中音与承受音
-# 被判「不设计」），所以上限从 5 放宽到 6 观察；PvE 没有友军/其他敌方两个归属，
-# 声源更少，给 7。
-#
-# ⚠️ **这不是在改 `VOICE_COUNT`。** 那个 8 是全局共享池且被 `audio_sfx_check`
-#    钉死（数 root 下 GlorySfxVoice* 节点、要求正好 8 个）。这里是池**之外**
-#    的一层计数器，只统计走 play_battle() 的战斗层声音。
-#
-# 用法：
-#   set_battle_voice_cap(6 / 7)   开局时按模式调一次
-#   play_battle(cue, db)          普攻音走这条（满了就放弃这一声）
-#   battle_live_count()           排障用
+# PvP permits six battle voices, PvE seven. Critical events may preempt a
+# weaker voice; changing the cap never erases an already playing voice.
 static func set_battle_voice_cap(cap: int) -> void:
-	# ⚠️ **不要在这里清空记账。** 那是上一版的写法，后果是「调 cap 等于重置计数器」——
-	# 于是一次战斗中每调一次 cap，已经响着的普攻音就全部不计入上限，闸门失效。
-	# 记账只由 `_sweep_battle_stamps()`（按真实到期时间）清理。
 	_battle_voice_cap = maxi(0, cap)
 
 
@@ -1325,65 +1297,22 @@ static func battle_voice_cap() -> int:
 
 
 static func battle_live_count() -> int:
-	_sweep_battle_stamps()
-	return _battle_live
+	var count := 0
+	for voice in _voices:
+		if is_instance_valid(voice) and voice.playing and bool(voice.get_meta("sfx_battle", false)):
+			count += 1
+	return count
 
 
-# 播放一条**战斗层**音效，先过并发闸门。
-#
-# 与 play() 的差别只有一处：满了就不再播放。语义上「宁可少响一声，也不要
-# 把八路全占满」—— 普攻音是数量最多、也最不重要的那一层。
-#
-# ⚠️ 时间戳用 `Time.get_ticks_msec()`，与 play() 内部节流用的是同一个时钟，
-#    不要换成 `Engine.get_frames_drawn()` 之类的东西。
-static func play_battle(cue: String, volume_db := 0.0) -> bool:
-	if not _battle_cap_allows():
-		return false
-	var ok := play(cue, volume_db)
-	if ok:
-		_battle_stamps.append({"until": Time.get_ticks_msec() + _cue_duration_msec_guess(cue), "cue": cue})
-	return ok
-
-
-# 闸门判定 + 记账清理。抽出来是因为 battle_live_count() 也要清一次。
-static func _battle_cap_allows() -> bool:
-	if _battle_voice_cap <= 0:
-		# 0 = 不限。调试期可以用它把闸门整个关掉。
-		return true
-	_sweep_battle_stamps()
-	return _battle_live < _battle_voice_cap
-
-
-# 把过期的记账踢掉。
-static func _sweep_battle_stamps() -> void:
-	if _battle_stamps.is_empty():
-		_battle_live = 0
-		return
-	var now := Time.get_ticks_msec()
-	var kept: Array = []
-	for stamp in _battle_stamps:
-		if int(stamp.get("until", 0)) > now:
-			kept.append(stamp)
-	_battle_stamps = kept
-	_battle_live = kept.size()
-
-
-# 音效时长（毫秒）的粗估。只用于上面的记账过期，不做混音计算。
-# 从**真实音流**取 `get_length()`（`_stream_for` 会缓存，不重复 load），
-# 比写死一张时长表可靠 —— 表会随素材重做而过期，而重做之后没人会想起来改表。
-# 读不到流就退回 300ms（合成的普攻音多在 0.3~0.55s）。
-static func _cue_duration_msec_guess(cue: String) -> int:
-	var path := resolved_cue_path(cue)
-	if path.is_empty():
-		return 300
-	var stream := _stream_for(path)
-	if stream == null:
-		return 300
-	return int(maxf(0.1, stream.get_length()) * 1000.0)
+# Attacks supply an explicit event tier and same-owner unit value.
+static func play_battle(cue: String, volume_db := 0.0, priority_override := -1, unit_weight := 0) -> bool:
+	return play(cue, volume_db, priority_override, unit_weight)
 
 
 # 某条 cue 的音量偏移（dB），缺省 0.0。见 VOLUME_DB_BY_CUE。
 static func cue_volume_db(cue: String) -> float:
+	if cue in [CUE_MELEE_HEAVY, CUE_MELEE_CLAW, CUE_MELEE_CLAW_HEAVY, CUE_MELEE_SHELL, CUE_MELEE_SPIRIT]:
+		return -3.0
 	return float(VOLUME_DB_BY_CUE.get(cue, 0.0))
 
 
@@ -1619,6 +1548,7 @@ static func cue_ids() -> Array:
 static func reset_counters_for_check() -> void:
 	_play_counts.clear()
 	_last_play_msec.clear()
+	_recent_by_cue.clear()
 	_loop_start_count = 0
 
 
@@ -1659,6 +1589,8 @@ static func shutdown() -> void:
 	var tree := _tree()
 	if tree != null and tree.process_frame.is_connected(_poll_currency):
 		tree.process_frame.disconnect(_poll_currency)
+	if tree != null and tree.process_frame.is_connected(_update_ducking):
+		tree.process_frame.disconnect(_update_ducking)
 	_watching = false
 	_currency_ready = false
 	# 整批 stop 完再整批 free，不要 stop 一个 free 一个。
@@ -1685,5 +1617,8 @@ static func shutdown() -> void:
 	_loop_streams.clear()
 	_voices.clear()
 	_streams.clear()
+	_recent_by_cue.clear()
+	_variant_index.clear()
+	_ducks.clear()
 	_last_play_msec.clear()
 	_play_counts.clear()
