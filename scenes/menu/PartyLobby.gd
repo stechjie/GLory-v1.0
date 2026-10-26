@@ -938,7 +938,7 @@ func _load_room() -> void:
 		_apply((result.get("body", {}) as Dictionary).get("state", {}))
 		if invite_error != "":
 			_show_sticky_notice(invite_error)
-	elif _local_only:
+	else:
 		if int(result.get("code", 0)) == 404 and str(result.get("error", "")) == "Not Found":
 			_load_error = _text("组队服务未更新（404）", "Party service unavailable (404)")
 		else:
@@ -949,6 +949,9 @@ func _load_room() -> void:
 # 没有邀请（或邀请进不去）时：已经在队伍里就用那个队伍，没有就建一个；
 # 自己一个人的队伍模式不对就顺手改成这次进来的模式。
 func _fetch_or_create_party() -> Dictionary:
+	var reconciled: Dictionary = await AccountManager.reconcile_finished_assignment()
+	if int(reconciled.get("code", 0)) != 200:
+		return reconciled
 	var result: Dictionary = await AccountManager.fetch_party()
 	if int(result.get("code", 0)) != 200:
 		return result

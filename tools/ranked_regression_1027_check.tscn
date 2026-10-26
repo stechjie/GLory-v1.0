@@ -1,0 +1,4 @@
+[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://tools/ranked_regression_1027_check.gd" id="1"]
+[node name="RankedRegression1027" type="Node"]
+script = ExtResource("1")

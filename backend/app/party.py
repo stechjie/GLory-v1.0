@@ -452,6 +452,11 @@ class Parties:
             for pid in room.members:
                 self._member_room.pop(pid, None)
 
+    def finish_match(self, match_uid: str) -> None:
+        for room in self._rooms.values():
+            if room.in_match == match_uid:
+                self.clear_in_match(room)
+
     def clear_in_match(self, room: Room) -> None:
         """这一局的房间记录用完了（玩家重开一局 / 正常退房前的收尾）。
 

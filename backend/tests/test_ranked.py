@@ -46,6 +46,16 @@ def _isolate_xp_awards(monkeypatch):
     monkeypatch.setattr(ranked.progression, "award_match", award_match)
 
 
+@pytest.fixture(autouse=True)
+def actual_window_rules(monkeypatch):
+    from app.config import get_settings
+    monkeypatch.setenv("GLORY_RANKED_ALL_DAY", "false")
+    monkeypatch.setenv("GLORY_RANKED_WINDOW_ALWAYS_OPEN", "false")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
 # --- 段位是分数的切片 -------------------------------------------------------------
 
 
@@ -255,6 +265,8 @@ class _FakeConn:
         return []
 
     async def fetchrow(self, sql, *args):
+        if "player_progression" in sql:
+            return {"xp": 0, "level": 1}
         if "from player_wallets" in sql:
             return {"diamond_paid": 0, "diamond_free": 0, "coin": 0}
         if "player_credit" in sql:

@@ -263,6 +263,17 @@ async def seedling_races(player_id: uuid.UUID, chosen: list[str] | None) -> list
     return validate_seedling_races(available, chosen)
 
 
+async def require_ranked_races(player_id: uuid.UUID, normal: bool = False) -> None:
+    validate_ranked_races((await build_loadout(player_id)).races, normal)
+
+
+def validate_ranked_races(races: list[str], normal: bool = False) -> None:
+    if normal and len(races) < 4:
+        raise LoadoutRejected("ranked_need_four_races", "突破后排位模式需在备战区携带至少4个已解锁种族。")
+    if len(races) < 3:
+        raise LoadoutRejected("need_three_races", "排位模式需在备战区携带至少3个已解锁种族。")
+
+
 async def require_normal_races(player_id: uuid.UUID) -> None:
     """A 21-round casual match needs four currently usable prep races."""
     validate_normal_races((await build_loadout(player_id)).races)
@@ -410,6 +421,8 @@ async def issue_card(player_id: uuid.UUID, match_uid: str = "", team: int = -1,
             profile, races=await seedling_races(player_id, seedling_lineup))
     elif mode == "casual_normal" and match_uid:
         validate_normal_races(profile.races)
+    if mode.startswith("ranked") and match_uid:
+        validate_ranked_races(profile.races, mode == "ranked_normal")
     return sign(card_payload(profile, match_uid=match_uid,
                              team=team, mode=mode, seat=seat, patch_version=patch_version,
                              ai_seats=ai_seats))

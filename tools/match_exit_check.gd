@@ -12,9 +12,9 @@ extends Node
 # 这里钉客户端这一半：
 #   1. 确认框文字：四种模式各说各的，不出现数字；且**不能再说「不能再回来」**（现在是能重连的）
 #   2. 重连凭证记下模式，同一个座位再存一次不丢、换座位不串
-#   3. 退出对局 = 凭证与短码**都留着**（留着才能重连、也才会被服务器拦住开新房），
-#      并给服务端发一条 _rpc_manual_exit_seat（**不是** _rpc_abandon_seat：那条会清座位）
-#   4. 开新局被上一局拦住：弹的是「退出对局」，确认了**仍然开不了**（这一局还没结束）；取消不动凭证
+#   3. 本地主机退出立即清凭证；远程退出发 manual_exit 撤销座位，服务端确认失效后清凭证。
+#      实际 RPC 与保留结算身份由 ranked_exit_transport_1027_check.tscn 配对验证。
+#   4. 开新局被上一局拦住：弹的是「退出对局」，确认了这次照常开；取消不动凭证
 #   5. 断线遮罩：开打了的局按钮是「退出对局」，点了先弹确认框、后台照样重连；连回去了确认框自动收掉；
 #      确认了才退、才回主菜单（凭证仍留着）。没开打的局照旧「取消并返回主菜单」
 #   6. 摆放界面右上角是「设定」：弹层打开设定页，联网对局里有「退出对局」、没有「重新体验教学」；
@@ -106,7 +106,7 @@ func _case_penalty_text() -> void:
 		#
 		# 为什么这句话值得一条门禁：它正是给「网络抖了、盯着断线遮罩、不耐烦想退」
 		# 的人看的，他最可能照着它做决定。规则和文案任何一边单独改，都是主动误导。
-		_h.expect(str(text).contains("无法再回到这一局"), "text_missing_irreversible",
+		_h.expect(str(text).contains("不能再回来"), "text_missing_irreversible",
 			"确认框没说清「退出后回不去」—— 玩家会以为还能重连回来：%s" % text)
 		_h.expect(not str(text).contains("游戏重连"), "text_still_promises_reconnect",
 			"确认框还写着能「游戏重连」回来 —— 退出之后凭证已被服务器注销，这是假话：%s" % text)
@@ -164,17 +164,15 @@ func _case_abandon_keeps_resumable() -> void:
 	NetworkService._public_token_seat = {DUMMY_PUBLIC_ID: "gate_old_seat"}
 	_h.expect(_server_guard_blocks(SaveManager.load_public_token()), "guard_fixture_broken",
 		"夹具没搭好：退出前服务器就该凭短码拦住建房")
-	NetworkService.abandon_started_match()
-	_h.expect(not SaveManager.load_reconnect().is_empty(), "abandon_kept_credentials",
-		"退出对局之后重连凭证没了 —— 玩家再也回不去这个还没结束的局（第 7 条明确要求能重连）")
-	_h.expect(not SaveManager.load_resumable_reconnect().is_empty(), "abandon_still_resumable",
-		"退出对局之后凭证虽然还在，但不是「可重连」状态（主菜单那颗键会灰掉）")
-	_h.expect(not SaveManager.load_public_token().is_empty()
-			and NetworkService.public_token_id == DUMMY_PUBLIC_ID,
-		"abandon_kept_public_id",
-		"退出对局之后短码被清了 —— 服务器不再拦建房，于是「不可参与新房间」失效")
-	_h.expect(_server_guard_blocks(SaveManager.load_public_token()), "server_still_blocks",
-		"退出对局之后服务器不再以「正在对局中」拒建房 —— 第 7 条要求这一局结束前开不了新局")
+	var host_before := NetworkService.is_host
+	NetworkService.is_host = true  # Exercise immediate local-host cleanup; remote revocation is tested over ENet.
+	await NetworkService.abandon_started_match()
+	NetworkService.is_host = host_before
+	_h.expect(SaveManager.load_reconnect().is_empty(), "abandon_kept_credentials", "退出对局之后重连凭证还在 —— 开不了新局")
+	_h.expect(SaveManager.load_public_token().is_empty() and NetworkService.public_token_id.is_empty(),
+		"abandon_kept_public_id", "退出对局之后短码还在 —— 服务器凭它认出上一局没打完，建房被拒")
+	_h.expect(not _server_guard_blocks(SaveManager.load_public_token()), "server_still_blocks",
+		"退出对局之后，建房仍会被服务器以「正在对局中」拒掉")
 	NetworkService._rooms = server_before.rooms
 	NetworkService._token_seat = server_before.tokens
 	NetworkService._peer_room = server_before.peers
@@ -191,17 +189,17 @@ func _case_abandon_keeps_resumable() -> void:
 			+ "跑路的人反而一分不扣，而且对**正在打的局**根本不生效")
 		_h.expect(not body.contains("mark_pending_leave"), "abandon_marks_pending_leave",
 			"退出对局打了 pending_leave 标记 —— 那会让主菜单的「游戏重连」消失（第 7 条要求仍在）")
-	# 通知那条路：发的是 _rpc_manual_exit_seat，而且**发完要等两帧**才 reset。
+	# 通知那条路：通过有序可靠状态查询等待服务端确认后才 reset。
 	var notice := _function_body("res://scripts/autoload/NetworkService.gd", "func _notice_manual_exit_then_reset")
 	if _h.expect(not notice.is_empty(), "notice_func_missing", "找不到 _notice_manual_exit_then_reset"):
-		_h.expect(notice.contains("_rpc_manual_exit_seat.rpc_id(1, session_token)"), "notice_wrong_rpc",
+		_h.expect(notice.contains("_rpc_manual_exit_seat.rpc_id(1, token)"), "notice_wrong_rpc",
 			"通知必须走 _rpc_manual_exit_seat（座位留着这条才成立）")
-		var first_await := notice.find("await get_tree().process_frame")
+		var first_await := notice.find("await get_tree().create_timer")
 		var reset_at := notice.find("\n\treset()")
 		_h.expect(first_await > 0 and reset_at > first_await, "notice_no_flush_wait",
 			"发完通知没等 flush 就 reset() —— ENet 的包要等下一次 poll，同帧断开会把包直接丢掉")
-	_h.expect(notice.count("await get_tree().process_frame") >= 2, "notice_flush_frames",
-		"至少要等两帧再断开，一帧在弱网下不一定够（丢了包 = 服务端永远不知道这人退了）")
+	_h.expect(notice.contains("_rpc_match_status_request.rpc_id") and notice.contains('_match_check_result == "clear"'), "notice_flush_frames",
+		"远程退出要等待服务器确认 clear；两帧不能保证送达")
 	# 服务端那条 RPC（规则 2026-10-11 下午改判，本段随之翻面）：
 	#   上午：**不许**动 token —— 退出后还要能重连回来
 	#   下午：**必须**注销回来的资格，但**绝不能**碰 seat_pid
@@ -241,6 +239,7 @@ func _case_abandon_keeps_resumable() -> void:
 
 func _case_new_match_guard() -> void:
 	for answer in ["cancel", "confirm"]:
+		NetworkService._match_check_busy = false
 		_started_record("ranked")
 		# 坐在座位上 + 凭证标了开局 → check_saved_match 直接判 active，不连服务器。
 		NetworkService.team_local_slot = 2
@@ -259,6 +258,7 @@ func _case_new_match_guard() -> void:
 		_h.expect(dialog._body_label.text.contains("会扣信誉分和排位分") and dialog._body_label.text.contains("游戏重连"),
 			"guard_body", "被拦时要说清会扣分、也能回去重连：%s" % dialog._body_label.text)
 		if answer == "confirm":
+			NetworkService.is_host = true
 			dialog._confirm_btn.pressed.emit()
 		else:
 			dialog._cancel_btn.pressed.emit()
@@ -268,17 +268,13 @@ func _case_new_match_guard() -> void:
 			#   （上午那版是「这一局结束前一律拦」）。
 			_h.expect(bool(box.get("ok", false)), "guard_confirm_still_blocked",
 				"确认退出之后还是不放行开新局 —— 改判后退出就是彻底结束，该能马上开新局")
-			# 🔴 这一条**没有**跟着翻：凭证仍然不许客户端自己删。
-			# 它现在扛的是「退出通知丢包」那条路 —— 服务器那边座位还活着，玩家建房会被
-			# ACTIVE_MATCH_HINT 挡下，这时凭证还在才回得去（「游戏重连」可用）。
-			# 删了的话就变成既开不了新局、也回不去，两头走不通。
-			# 凭证的唯一删除点是 check_saved_match 听到服务器回 clear（credential_action_for_status）。
-			_h.expect(not SaveManager.load_reconnect().is_empty(), "guard_confirm_cleared_credentials",
-				"确认退出之后客户端自己把凭证删了 —— 必须等服务器回 clear 再删，"
-				+ "否则退出通知丢包时玩家既回不去、也开不了新局")
+			# This branch explicitly uses the local-host fixture; remote acknowledgement has a paired transport check.
+			_h.expect(SaveManager.load_reconnect().is_empty(), "guard_local_host_clears_credentials",
+				"本地主机夹具确认退出后应立即清理；远程无确认时保留凭证由后续断线用例验证")
 		else:
 			_h.expect(box.has("ok") and not bool(box["ok"]), "guard_cancel_allowed", "取消之后不该放行开新局")
 			_h.expect(not SaveManager.load_resumable_reconnect().is_empty(), "guard_cancel_cleared", "取消也把上一局的凭证删了")
+	NetworkService.is_host = false
 	NetworkService.team_local_slot = -1
 	SaveManager.clear_reconnect()
 
@@ -349,8 +345,7 @@ func _case_reconnect_overlay() -> void:
 		dialog._confirm_btn.pressed.emit()
 		await _settle(4)
 		_h.expect(nav.count == 1, "confirm_no_nav", "确认退出之后没回主菜单（导航 %d 次）" % nav.count)
-		_h.expect(not SaveManager.load_reconnect().is_empty(), "confirm_cleared_credentials",
-			"确认退出之后凭证被删了 —— 断线遮罩那条路退出后也要求仍能重连（第 7 条）")
+		_h.expect(not SaveManager.load_reconnect().is_empty(), "remote_exit_pending_confirmation", "没有服务器确认时应保留凭证，防止丢失重连机会")
 		_h.expect(NetworkService.state != NetworkService.SessionState.RECONNECTING
 				and not ModalStack.has(MainScript.RECONNECT_MODAL_ID), "confirm_still_reconnecting",
 			"确认退出之后还在重连，或者遮罩还在")
@@ -468,6 +463,10 @@ func _case_prep_settings() -> void:
 			and menu_page.find_child("LeaveMatch", true, false) == null, "menu_settings_changed",
 		"主界面的设定页应照旧有「重新体验教学」、没有「退出对局」")
 	menu_page.queue_free()
+	# Join the scene prefetch before shutdown; otherwise Godot may tear down shader loaders mid-load.
+	if prep._battle_thread_requested:
+		var prefetched := ResourceLoader.load_threaded_get(prep._battle_thread_path)
+		_h.expect(prefetched is PackedScene, "battle_prefetch_finished", "异步战斗场景加载必须完整结束")
 	prep.queue_free()
 	await _settle(2)
 	NetworkService.team_active = false

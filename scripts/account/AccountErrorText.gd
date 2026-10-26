@@ -1,6 +1,15 @@
 extends RefCounted
 ## Server error display text. Machine reason codes and server content stay intact.
 const EN := {
+ "排位每天 19:00 - 23:00 开放": "Ranked is open daily from 19:00 to 23:00.",
+ "你被暂时禁止排队，稍后再试": "You are temporarily suspended from matchmaking. Please try again later.",
+ "信誉分过低，暂时不能排这个模式": "Your reputation is too low to queue for this mode.",
+ "你的排位资格已被暂停": "Your Ranked eligibility has been suspended.",
+ "服务器正在维护，暂时不能开始新对局": "The server is under maintenance. New matches are temporarily unavailable.",
+ "排位功能暂时关闭": "Ranked is temporarily disabled.",
+ "服务状态暂时确认不了，请稍后再试": "Unable to confirm the service status. Please try again later.",
+ "现在不能开始新对局": "You cannot start a new match right now.",
+ "现在不能排这个模式": "You cannot queue for this mode right now.",
  "正在登录，请稍候": "Signing in. Please wait.",
  "已经绑上了，但这台设备没能更新登录状态，请重启游戏": "Your account was linked, but this device could not refresh the session. Please restart the game.",
  "好友码是 8 位": "Friend codes contain eight characters.",
@@ -134,6 +143,12 @@ const EN := {
  "说得太短了，按住多说一会儿": "Too short — hold and speak a bit longer",
  "请先取消匹配": "Cancel matchmaking first.",
  "请先在备战区选择种族": "Select your races in preparation first.",
+ "排位模式需在备战区携带至少3个已解锁种族。": "Ranked requires at least 3 unlocked races equipped in Prep.",
+ "突破后排位模式需在备战区携带至少4个已解锁种族。": "Post-breakthrough Ranked requires at least 4 unlocked races equipped in Prep.",
+ "上一局还没结束，请先游戏重连或退出对局。": "Your previous match is still running. Reconnect or leave it first.",
+ "无法退出原队伍，请重试": "Unable to leave your previous party. Please retry.",
+ "现在不能开始匹配": "Matchmaking is currently unavailable.",
+ "暂时无法确认对局状态，请检查网络后重试": "Unable to confirm the match status. Check your connection and retry.",
  "请先结束当前匹配": "Finish your current match first.",
  "请求冲突，请重试": "Request conflict. Please retry.",
  "请求发不出去（%s）": "Unable to send the request (%s).",

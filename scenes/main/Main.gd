@@ -452,7 +452,7 @@ func _on_exit_match_result(result: String, _request_id: String) -> void:
 	_exit_dialog_from_reconnect = false
 	if result != ConfirmDialog.RESULT_CONFIRMED:
 		return
-	NetworkService.abandon_started_match()
+	await NetworkService.abandon_started_match()
 	GameState.team_mode = false
 	_hide_reconnect_overlay()
 	# 同「取消并返回主菜单」那条：门禁在 debug 构建里把回主菜单这一步换成计数。
@@ -1645,6 +1645,12 @@ func _show_friends_screen() -> void:
 # 比为了不跳屏而复制一套连接中/错误 UI 划算。
 func _join_room_by_id(room_id: int) -> void:
 	if room_id <= 0:
+		return
+	var released: Dictionary = await AccountManager.prepare_custom_room()
+	if int(released.get("code", 0)) != 200:
+		DialogService.info({"request_id": "leave_party_before_custom", "owner": self,
+			"title": "Notice" if LocaleManager.get_locale().begins_with("en") else "提示",
+			"body": str(released.get("error", AccountManager.localized_error("无法退出原队伍，请重试")))})
 		return
 	_show_menu()
 	_start_join_room_action(room_id)

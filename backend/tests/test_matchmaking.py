@@ -32,6 +32,7 @@ from fastapi.testclient import TestClient
 
 from app import db, loadout, matchmaking, players
 from app import service_control
+_REAL_SERVICE_READ = service_control.read
 from app.config import get_settings
 from app.jwt_verify import Claims, TokenError
 from app.main import app
@@ -521,7 +522,7 @@ def test_both_modes_are_open_now() -> None:
     排位还要过时间窗口和信誉分闸（backend/tests/test_ranked.py 那一组）。
     """
     assert matchmaking.OPEN_MODES == matchmaking.KNOWN_MODES == {
-        matchmaking.CASUAL, matchmaking.RANKED}
+        matchmaking.CASUAL, matchmaking.CASUAL_NORMAL, matchmaking.RANKED, matchmaking.RANKED_NORMAL}
 
 
 def test_match_size_matches_the_battle_server() -> None:
@@ -556,6 +557,9 @@ class _GateConn:
 
     async def fetchrow(self, sql, *args):
         return {"score": 100, "banned_until": None}
+
+    async def fetchval(self, sql, *args):
+        return 4 if "player_entitlements" in sql else 0
 
 
 class _GatePool:
@@ -601,6 +605,8 @@ def wired(monkeypatch: pytest.MonkeyPatch):
     get_settings.cache_clear()
     monkeypatch.setattr(db, "is_connected", lambda: True)
     monkeypatch.setattr(me_routes, "get_verifier", _FakeVerifier)
+    from http_fixture_support import isolate_http_services
+    isolate_http_services(monkeypatch, app)
 
     async def _lookup(auth_uid: str):
         return _FakePlayer(PLAYER_A, "阿甲", "AAAA2222") if auth_uid == "auth-a" else None
@@ -609,6 +615,8 @@ def wired(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(db, "pool", _GatePool)
     # service_control 有 3 秒缓存：不清的话上一个用例读到的状态会漏到下一个用例。
     service_control.reset()
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr(loadout, "seedling_races", AsyncMock(return_value=["human", "god", "dark"]))
     # 每个用例一个干净的匹配器，别让上一个用例的队列漏过来。
     matchmaking.install(matchmaking.Matchmaker(_Recorder()))
     loadout_routes._card_limiter.reset()
@@ -627,7 +635,8 @@ def test_queue_requires_login(wired) -> None:
     assert TestClient(app).post("/v1/match/queue", json={"mode": "casual"}).status_code == 401
 
 
-def test_ranked_queue_outside_the_window_says_why(wired, monkeypatch) -> None:
+@pytest.mark.parametrize("opened", [False, True])
+def test_ranked_queue_outside_the_window_says_why(wired, monkeypatch, opened) -> None:
     """🔴 排在一条永远凑不齐的队里，是最让人摸不着头脑的一种失败。
 
     窗口外要明说「19:00 - 23:00 开放」，不能默默排着。
@@ -637,10 +646,10 @@ def test_ranked_queue_outside_the_window_says_why(wired, monkeypatch) -> None:
 
     from app import ranked as _ranked
 
-    monkeypatch.setenv("GLORY_RANKED_ALL_DAY", "false")
-    get_settings.cache_clear()
-
-    inside = _ranked.window_state()["accepting"]
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr(_ranked, "accepting_now", lambda *args: opened)
+    monkeypatch.setattr(loadout, "require_ranked_races", AsyncMock(return_value=None))
+    inside = opened
     with TestClient(app) as client:
         r = client.post("/v1/match/queue", json={"mode": "ranked"},
                         headers={"Authorization": "Bearer token-a"})
@@ -692,7 +701,7 @@ def test_card_carries_the_assignment_after_everyone_accepts(wired, monkeypatch, 
     """
     captured: dict = {}
 
-    async def _card(pid, match_uid="", team=-1, mode="", seat=-1):
+    async def _card(pid, match_uid="", team=-1, mode="", seat=-1, **_kwargs):
         captured["match_uid"] = match_uid
         captured["team"] = team
         captured["mode"] = mode
@@ -716,7 +725,7 @@ def test_card_carries_the_assignment_after_everyone_accepts(wired, monkeypatch, 
 def test_card_without_assignment_asks_for_no_match(wired, monkeypatch) -> None:
     captured: dict = {}
 
-    async def _card(pid, match_uid="", team=-1, mode="", seat=-1):
+    async def _card(pid, match_uid="", team=-1, mode="", seat=-1, **_kwargs):
         captured["match_uid"] = match_uid
         captured["team"] = team
         captured["mode"] = mode
@@ -750,6 +759,7 @@ def _switch(monkeypatch, *, maintenance=False, matchmaking_on=True, in_match=())
 
     monkeypatch.setattr(_GatePool, "fetchrow", _fetchrow, raising=False)
     monkeypatch.setattr(_GatePool, "fetch", _fetch, raising=False)
+    monkeypatch.setattr(service_control, "read", _REAL_SERVICE_READ)
     service_control.reset()
 
 
@@ -914,9 +924,14 @@ async def test_lonely_player_gets_an_ai_match_after_ten_seconds_without_confirm(
     clock.advance(1)
     await maker.tick()
     await _drain_background()
-    # 一个人对 AI：不弹确认框，直接 ready。
+    # Current AI-fill flow confirms both human and staggered AI seats.
+    assert maker.state_of(me)["state"] == "found"
+    maker.accept(me)
+    clock.advance(5)
+    await maker.tick()
+    await _drain_background()
     assert maker.state_of(me)["state"] == "ready"
-    assert "found" not in rec.states_for(me)
+    assert "found" in rec.states_for(me)
     assert rec.last_for(me)["state"] == "ready"
     assignment = maker.assignment_for(me)
     assert assignment is not None and assignment.mode == matchmaking.RANKED
@@ -943,7 +958,11 @@ async def test_two_humans_sit_on_the_same_team_and_must_confirm() -> None:
     ais = [s for s in seats if s.get("ai")]
     assert len(humans) == 2 and len(ais) == 4
     assert {s["team"] for s in humans} == {0}, "1~3 个真人坐同一队"
-    assert all(s["accepted"] for s in ais) and all(s["name"] for s in ais)
+    assert all(s["name"] for s in ais)
+    clock.advance(5)
+    await maker.tick()
+    await _drain_background()
+    assert all(s["accepted"] for s in rec.last_for(a)["seats"] if s.get("ai"))
     maker.accept(a)
     assert maker.state_of(b)["state"] == "found"
     maker.accept(b)
@@ -999,13 +1018,18 @@ async def test_ai_fill_keeps_modes_apart() -> None:
     clock.advance(10)
     await maker.tick()
     await _drain_background()
+    maker.accept(casual)
+    maker.accept(ranked_player)
+    clock.advance(5)
+    await maker.tick()
+    await _drain_background()
     assert maker.assignment_for(casual).match_uid != maker.assignment_for(ranked_player).match_uid
 
 
 def test_card_carries_ai_seats_as_compact_arrays() -> None:
     ai = [{"slot": 1, "team": 0, "seat": 1, "name": "小麦田", "avatar": "avatar_005"}]
     payload = loadout.card_payload(_loadout(), match_uid="a" * 32, team=0, ai_seats=ai)
-    assert payload["ai"] == [[1, "小麦田", "avatar_005"]]
+    assert payload["ai"] == [[1, "小麦田", "avatar_005", ""]]
     assert "ai" not in loadout.card_payload(_loadout(), match_uid="a" * 32, team=0)
 
 

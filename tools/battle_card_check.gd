@@ -283,7 +283,7 @@ func _case_seat_stores_card() -> void:
 func _case_seat_rejects_bad_content() -> void:
 	var ns := NetworkService
 	var room := _lobby_room()
-	ns._assign_peer_to_room(OTHER_PEER, room, "", _seat_card("pet_does_not_exist", ["god", "dark"]))
+	ns._assign_peer_to_room(OTHER_PEER, room, "", _seat_card("pet_does_not_exist", ["god", "race_does_not_exist"]))
 	var slot := _slot_of(room, OTHER_PEER)
 	_h.expect(ns._room_seat_pet(room, slot) == "", "seat_unknown_pet",
 		"宠物表里没有的宠物被写进了座位：%s" % ns._room_seat_pet(room, slot))
@@ -424,7 +424,9 @@ func _case_request_needs_card() -> void:
 	_h.expect(ns._room_seat_pet(room_a, slot_a) == CARD_PET, "create_card_not_on_seat",
 		"建房后座位上没有名片宠物：%s" % ns._room_seat_pet(room_a, slot_a))
 	var room_b := _lobby_room()
-	ns._assign_peer_to_room(OTHER_PEER, room_b, "", _seat_card())
+	var other_card := _seat_card()
+	other_card["pid"] = "another-player"
+	ns._assign_peer_to_room(OTHER_PEER, room_b, "", other_card)
 	for bad in ["", _signed({}, _other_key), "garbage"]:
 		ns._rate_forget(SENDER)
 		ns._rpc_team_join_room(int(room_b.id), "", bad)

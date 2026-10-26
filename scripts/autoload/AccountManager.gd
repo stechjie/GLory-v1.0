@@ -869,6 +869,38 @@ func fetch_match_state() -> Dictionary:
 
 
 # 确认。**重复确认不是错误** —— 弱网下客户端会重发，玩家也会点两下。
+func release_match_assignment(match_uid: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/match/release",
+		{"match_uid": match_uid}, true)
+
+
+# Allocation is not a battle credential. Reconcile only after the battle layer
+# confirms a terminal result or that the saved seat no longer exists.
+func reconcile_finished_assignment() -> Dictionary:
+	var result: Dictionary = await fetch_match_state()
+	if int(result.get("code", 0)) != 200:
+		return result
+	var snapshot: Dictionary = (result.get("body", {}) as Dictionary).get("state", {})
+	if str(snapshot.get("state", "")) != "ready":
+		return result
+	var terminal := bool(NetworkService.latest_match_state.get("run_over", false))
+	if not terminal:
+		var status := await NetworkService.check_saved_match()
+		if status != "clear":
+			return {"code": 409, "error": localized_error("上一局还没结束，请先游戏重连或退出对局。" if status == "active" or status == "lobby" else "暂时无法确认对局状态，请检查网络后重试")}
+	return await release_match_assignment(str(snapshot.get("match_uid", "")))
+
+
+func prepare_custom_room() -> Dictionary:
+	if not is_logged_in():
+		return {"code": 200}
+	var checked := await reconcile_finished_assignment()
+	if int(checked.get("code", 0)) != 200:
+		return checked
+	# DELETE party also cancels its queued/pending group before leaving.
+	return await leave_party()
+
+
 func accept_match() -> Dictionary:
 	return await _request(HTTPClient.METHOD_POST, "/v1/match/accept", null, true)
 

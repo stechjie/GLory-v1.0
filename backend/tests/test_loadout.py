@@ -45,7 +45,7 @@ CARD_GD = (REPO / "scripts" / "multiplayer" / "BattleCard.gd").read_text(encodin
 SERVICE = (REPO / "deploy" / "glory-backend.service").read_text(encoding="utf-8")
 
 PLAYER_A = uuid.UUID("11111111-1111-1111-1111-111111111111")
-SOLD_PET = shop.items()[0].grants            # 商品目录里的宠物（必须归属）
+SOLD_PET = next(item.grants for item in shop.items() if shop.is_pet(item.grants))            # 商品目录里的宠物（必须归属）
 FREE_AVATAR = avatar_catalog.default_avatar()  # 不在目录里 = 免费
 
 
@@ -427,6 +427,8 @@ def wired(monkeypatch: pytest.MonkeyPatch):
     get_settings.cache_clear()
     monkeypatch.setattr(db, "is_connected", lambda: True)
     monkeypatch.setattr(me_routes, "get_verifier", _FakeVerifier)
+    from http_fixture_support import isolate_http_services
+    isolate_http_services(monkeypatch, app)
 
     async def _lookup(auth_uid: str):
         return _FakePlayer(PLAYER_A, "阿甲", "AAAA2222") if auth_uid == "auth-a" else None

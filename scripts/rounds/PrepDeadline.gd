@@ -1,15 +1,26 @@
 extends RefCounted
 
-static func duration(round_index: int, ruleset: String = "normal") -> float:
+static func duration(round_index: int, ruleset: String = "normal", mode: String = "") -> float:
+	# A 13-round ranked match shares the schedule, not Seedling prep timing.
+	if ruleset == "seedling" and not mode.begins_with("ranked"):
+		return 60.0
+	# Dedicated servers host both schedules at once; never read GameState.FINAL_ROUND here.
+	var schedule: Dictionary = DataRegistry.get_table("rounds")
 	if ruleset == "seedling":
-		return 80.0 if round_index in [5, 9, 13] else 60.0
-	return 60.0 if RoundService.schedule_kind_for_round(round_index) in ["pvp", "final"] else 45.0
+		schedule = schedule.get("seedling", {})
+	var final_round := int(schedule.get("final_round", 13 if ruleset == "seedling" else 21))
+	if round_index == final_round:
+		return 60.0
+	for value in schedule.get("pvp_rounds", []):
+		if int(value) == round_index:
+			return 60.0
+	return 45.0
 
 static func remaining(room: Dictionary, now: float) -> float:
 	if str(room.get("state", "")) != "prep":
 		return -1.0
 	return maxf(0.0, duration(int(room.get("round_index", 1)),
-		str(room.get("ruleset", "normal"))) - (now - float(room.get("state_started_at", now))))
+		str(room.get("ruleset", "normal")), str(room.get("mode", "custom"))) - (now - float(room.get("state_started_at", now))))
 
 # Mutates only the supplied slots after all checks succeed. No free units or
 # negative gold when a player has spent everything on refreshes/technology.

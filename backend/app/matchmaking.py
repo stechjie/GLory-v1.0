@@ -474,7 +474,9 @@ class Matchmaker:
         if match_uid is not None:
             # 拆桌的消息要**马上推给另外五个人**（原来算出来就丢了，他们要等轮询才知道）。
             self._push(self._dissolve(self._pending[match_uid], declined_by=player_id))
-        return idle_message()
+        # A reservation already issued to this player is not a queued waiter.
+        # Do not claim idle while state_of() still reports ready.
+        return self.state_of(player_id)
 
     def on_disconnect(self, player_id: uuid.UUID) -> None:
         """WS 断了。**不立刻踢出队列** —— 手机切后台是常态不是异常。
@@ -572,6 +574,23 @@ class Matchmaker:
 
     def clear_assignment(self, player_id: uuid.UUID) -> None:
         self._assignments.pop(player_id, None)
+
+    def release_assignment(self, player_id: uuid.UUID, match_uid: str) -> bool:
+        assignment = self._assignments.get(player_id)
+        if assignment is None or assignment.match_uid != match_uid:
+            return False
+        self._assignments.pop(player_id, None)
+        room = party.current().of(player_id)
+        if room is not None and room.members == [player_id] and room.in_match == match_uid:
+            party.current().clear_in_match(room)
+        return True
+
+    def finish_match(self, match_uid: str) -> None:
+        # Called only after a verified report has been committed or deduplicated.
+        for pid, assignment in list(self._assignments.items()):
+            if assignment.match_uid == match_uid:
+                self._assignments.pop(pid, None)
+        party.current().finish_match(match_uid)
 
     # --- 匹配循环 ---------------------------------------------------------------
 

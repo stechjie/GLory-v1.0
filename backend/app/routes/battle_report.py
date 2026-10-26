@@ -31,7 +31,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app import battle_report, db, players, ranked
+from app import matchmaking, battle_report, db, players, ranked
 from app.jwt_verify import Claims
 from app.rate_limit import RateLimited, SlidingWindowLimiter
 from app.routes.me import current_claims
@@ -133,6 +133,9 @@ async def submit_report(
         ) from None
 
     recorded = await battle_report.record(report)
+    # Verification plus successful DB commit/deduplication is the terminal event.
+    # Match by ID so delayed reports never clear a player's newer assignment.
+    matchmaking.current().finish_match(report["match_uid"])
     if recorded:
         log.info(
             "记下一局 match=%s mode=%s rounds=%d outcome=%s by=%s",
