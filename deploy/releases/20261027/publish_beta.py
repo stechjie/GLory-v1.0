@@ -1,4 +1,4 @@
-import hashlib,json,os,shutil,time,urllib.request
+import hashlib,json,os,shutil,sys,time,urllib.request
 from pathlib import Path
 root=Path('/opt/glory/public/beta')
 expected='e3e01b4263c47dc39d32a0e7486951cf343553f5aa5ada2ebc95ae286bc88122'
@@ -7,9 +7,13 @@ assert shutil.disk_usage(root).free > size*2, 'Not enough staging space'
 downloads=root/'downloads'; downloads.mkdir(exist_ok=True)
 tmp=downloads/('Glory-1.0.2-46-android.apk.part-'+str(os.getpid()))
 url='https://drive.usercontent.google.com/download?id=19qnP6WQXTYhl43G5BFHFY7gpRPaPbJAk&export=download&confirm=t'
+if len(sys.argv)>1:
+ url=sys.argv[1]
+ assert url.startswith('https://'), 'HTTPS transfer required'
 h=hashlib.sha256(); n=0
 with urllib.request.urlopen(url,timeout=60) as r:
- assert 'attachment' in r.headers.get('Content-Disposition','').lower(), 'Drive did not return an attachment'
+ if len(sys.argv)==1:
+  assert 'attachment' in r.headers.get('Content-Disposition','').lower(), 'Drive did not return an attachment'
  with tmp.open('wb') as f:
   while True:
    block=r.read(1024*1024)
