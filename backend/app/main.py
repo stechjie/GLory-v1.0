@@ -36,6 +36,7 @@ from app.routes import chat as chat_routes
 from app.routes import debug as debug_routes
 from app.routes import events as event_routes
 from app.routes import friends as friends_routes
+from app.routes import iap as iap_routes
 from app.routes import loadout as loadout_routes
 from app.routes import mail as mail_routes
 from app.routes import matchmaking as matchmaking_routes
@@ -269,6 +270,8 @@ app.include_router(world_routes.router)
 app.include_router(report_routes.router)
 app.include_router(announcement_routes.router)
 app.include_router(shop_routes.router)
+# 充值（docs/充值系统设计.md）。每个平台的开关默认关，关着时建单回 503。
+app.include_router(iap_routes.router)
 app.include_router(seven_day_login_routes.router)
 app.include_router(loadout_routes.router)
 app.include_router(mail_routes.router)

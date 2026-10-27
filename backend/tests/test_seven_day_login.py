@@ -45,7 +45,7 @@ class _Conn:
 
     async def fetchrow(self, sql, *_args):
         if "player_wallets" in sql:
-            return {"diamond_paid": 0, "diamond_free": 0, "coin": 0}
+            return {"diamond_paid": 0, "diamond_free": 0, "coin": 0, "diamond_debt": 0}
         return None
 
     async def execute(self, sql, *args):

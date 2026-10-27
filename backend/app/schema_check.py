@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import logging
 
-from app import db, friends, presence, ranked, sanctions, service_control
+from app import db, friends, iap, presence, ranked, sanctions, service_control, shop
 
 log = logging.getLogger("glory.schema")
 
@@ -59,6 +59,11 @@ _PREPARED: list[tuple[str, str]] = [
     # 人工处罚（036）。这条 prepare 得过不代表能用 —— 它只校验列名，
     # 而 036 真正改的是 check 约束（见下面的探针）。
     ("sanctions._LIVE_SANCTION", sanctions._LIVE_SANCTION),
+    # 钱包（040 加了 diamond_debt）。这条挂了不只是充值：商城、抽宠物、邮件领取、七日登录、
+    # 升级奖励**一起 500** —— 它们都经过 shop._lock_wallet。
+    ("shop.LOCK_WALLET", shop.LOCK_WALLET),
+    # 真钱订单（040）。挂了的症状是玩家付了钱、confirm 500、钻石不到账。
+    ("iap.LOCK_ORDER", iap.LOCK_ORDER),
 ]
 
 # 第二类：prepare 看不见的东西。只收「不是加列」的迁移，一条迁移一行。
@@ -96,6 +101,13 @@ _PROBES: list[tuple[str, str, str]] = [
         "036 unmute_player 带 scope 参数",
         "select 1 from pg_proc where proname = 'unmute_player' and pronargs = 4",
         "🔴 解除世界频道禁言会**连带解除禁语音和禁排位**（旧版函数不分 scope 全撤）",
+    ),
+    (
+        "040 wallet_ledger.currency 放行 diamond_debt",
+        "select 1 from pg_constraint"
+        " where conname = 'wallet_ledger_currency'"
+        "   and pg_get_constraintdef(oid) like '%diamond_debt%'",
+        "退款扣不回的钻石记不进欠账：退款那一笔整个失败（同 030 的毛病：约束拦在 insert 那一刻）",
     ),
     (
         "031 one_time_grants 表",

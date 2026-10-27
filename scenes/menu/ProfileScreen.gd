@@ -72,6 +72,10 @@ var _account_note: Label
 var _account_rows: VBoxContainer
 var _link_google_btn: Button
 var _switch_btn: Button
+# 「关联电脑」：输入电脑（Steam 版）上显示的 6 位码（docs/三方登录设计.md 第八节）。
+var _link_pc_btn: Button
+var _link_pc_row: HBoxContainer
+var _link_pc_edit: LineEdit
 var _overview_tab: Button
 var _settings_tab: Button
 # 「等级奖励」页签：教学引导（10.19 第 4 条）要把它露出来并高亮。
@@ -1110,6 +1114,29 @@ func _account_section() -> Control:
 	_link_google_btn = _account_button(_text("绑定 Google", "Link Google"))
 	_link_google_btn.pressed.connect(_on_link_google)
 	column.add_child(_link_google_btn)
+	_link_pc_btn = _account_button(_text("关联电脑（Steam 版）", "Link PC (Steam)"))
+	_link_pc_btn.pressed.connect(func() -> void:
+		_link_pc_row.visible = not _link_pc_row.visible
+		if _link_pc_row.visible:
+			_link_pc_edit.grab_focus())
+	column.add_child(_link_pc_btn)
+	_link_pc_row = HBoxContainer.new()
+	_link_pc_row.visible = false
+	_link_pc_row.add_theme_constant_override("separation", Tokens.GAP_S)
+	_link_pc_edit = LineEdit.new()
+	_link_pc_edit.max_length = 7  # 电脑上显示成「123 456」，允许带那个空格
+	_link_pc_edit.placeholder_text = _text("电脑上显示的 6 位码", "6-digit code on the PC")
+	_link_pc_edit.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_NUMBER
+	_link_pc_edit.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+	_link_pc_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_link_pc_edit.text_submitted.connect(func(_t: String) -> void: _on_link_pc_submit())
+	_link_pc_row.add_child(_link_pc_edit)
+	var submit := Button.new()
+	submit.text = _text("下一步", "Next")
+	submit.custom_minimum_size = Vector2(110, Tokens.TOUCH_MIN)
+	submit.pressed.connect(_on_link_pc_submit)
+	_link_pc_row.add_child(submit)
+	column.add_child(_link_pc_row)
 	_switch_btn = _account_button(_text("切换账号", "Switch account"))
 	_switch_btn.pressed.connect(_on_switch_account)
 	column.add_child(_switch_btn)
@@ -1143,14 +1170,17 @@ func _render_identities(guest: bool, identities: Array) -> void:
 	for child in _account_rows.get_children():
 		child.queue_free()
 	var has_google := false
+	var has_steam := false
 	for item in identities:
 		if not (item is Dictionary):
 			continue
 		var provider := str(item.get("provider", ""))
 		has_google = has_google or provider == "google"
+		has_steam = has_steam or provider == "steam"
 		var row := Label.new()
-		# 邮箱是后端打过码的（ab***@gmail.com），这里原样显示。
-		row.text = "%s · %s" % [_provider_name(provider), str(item.get("email", ""))]
+		# 邮箱是后端打过码的（ab***@gmail.com），这里原样显示。Steam 没有邮箱，显示 Steam 昵称。
+		var detail := str(item.get("email", "")) if provider != "steam" else str(item.get("name", ""))
+		row.text = "%s · %s" % [_provider_name(provider), detail] if not detail.is_empty() else _provider_name(provider)
 		row.add_theme_font_size_override("font_size", Tokens.FONT_BODY - 2)
 		_account_rows.add_child(row)
 	var can_sign_in := SignInBridge.any_available()
@@ -1167,6 +1197,10 @@ func _render_identities(guest: bool, identities: Array) -> void:
 		_account_note.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
 	_link_google_btn.visible = SignInBridge.google_available() and not has_google
 	_switch_btn.visible = can_sign_in
+	# 在电脑（Steam 版）上自己就是 Steam，不用关联；已经关联过的也不再出。
+	_link_pc_btn.visible = not AccountManager.is_steam_build() and not has_steam
+	if not _link_pc_btn.visible:
+		_link_pc_row.visible = false
 
 
 func _provider_name(provider: String) -> String:
@@ -1175,7 +1209,68 @@ func _provider_name(provider: String) -> String:
 			return "Google"
 		"apple":
 			return "Apple"
+		"steam":
+			return "Steam"
 	return provider
+
+
+# 手机输入电脑上的码 → 先看是谁的 Steam → 玩家确认才关联。
+# 先看名字这一步不能省：防止被人骗着输入他电脑上的码，把自己的号送给别人的 Steam。
+func _on_link_pc_submit() -> void:
+	if _busy:
+		return
+	var code := _link_pc_edit.text.replace(" ", "").strip_edges()
+	if code.length() != 6 or not code.is_valid_int():
+		_set_status(_text("请输入电脑上显示的 6 位数字", "Enter the 6-digit code shown on the PC"))
+		return
+	_busy = true
+	_set_status(_text("正在查询…", "Checking…"))
+	var preview: Dictionary = await AccountManager.steam_link_preview(code)
+	_busy = false
+	if not is_inside_tree():
+		return
+	if int(preview.get("code", 0)) != 200:
+		_set_status(_failure_text(preview))
+		return
+	_set_status("")
+	var steam_name := str((preview.get("body", {}) as Dictionary).get("name", ""))
+	if steam_name.is_empty():
+		steam_name = _text("（Steam 没给昵称）", "(no Steam name)")
+	DialogService.confirm({
+		"title": _text("关联电脑", "Link PC"),
+		"body": _text(
+			"要把这个账号关联到 Steam 用户「%s」吗？\n关联后，在那台电脑上用 Steam 打开 Glory 就会进入这个账号。\n不认识这个名字就取消。" % steam_name,
+			"Link this account to the Steam user \"%s\"?\nAfter that, opening Glory with Steam on that PC enters this account.\nCancel if you don't recognise the name." % steam_name),
+		"intent": ConfirmDialog.Intent.NORMAL,
+		"confirm_text": _text("关联", "Link"),
+		"owner": self,
+		"on_result": func(answer: String) -> void:
+			if answer == ConfirmDialog.RESULT_CONFIRMED:
+				_run_link_pc(code),
+	})
+
+
+func _run_link_pc(code: String) -> void:
+	if _busy:
+		return
+	_busy = true
+	_set_status(_text("正在关联…", "Linking…"))
+	var result: Dictionary = await AccountManager.steam_link_confirm(code)
+	_busy = false
+	if not is_inside_tree():
+		return
+	if int(result.get("code", 0)) == 200:
+		_link_pc_edit.text = ""
+		_link_pc_row.visible = false
+		_set_status(_text("已关联。电脑上会自动进入这个账号。", "Linked. The PC will enter this account automatically."))
+		_load_identities()
+		return
+	if str(result.get("reason", "")) == AccountManager.IDENTITY_TAKEN:
+		# 不合并（10-18 拍板）。
+		_set_status(_text("这个 Steam 已经有自己的游戏账号，不能再关联到这个号。",
+			"That Steam account already has its own game account and can't be linked here."))
+		return
+	_set_status(_failure_text(result))
 
 
 func _on_link_google() -> void:

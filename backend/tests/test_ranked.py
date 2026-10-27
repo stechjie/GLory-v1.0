@@ -268,7 +268,7 @@ class _FakeConn:
         if "player_progression" in sql:
             return {"xp": 0, "level": 1}
         if "from player_wallets" in sql:
-            return {"diamond_paid": 0, "diamond_free": 0, "coin": 0}
+            return {"diamond_paid": 0, "diamond_free": 0, "coin": 0, "diamond_debt": 0}
         if "player_credit" in sql:
             # Production settles daily credit in UTC, including before 08:00
             # on a UTC+8 test runner. A local date triggers an unrelated grant.

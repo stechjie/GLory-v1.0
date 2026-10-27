@@ -12,12 +12,13 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import json
+import pathlib
 import uuid
 
 import asyncpg
 import pytest
 
-from app import bans, battle_report, db, mail, players, profile, shop
+from app import bans, battle_report, db, iap, mail, players, profile, schema_check, shop
 from pg_harness import auth_uid_of, new_player, requires_pg, run_with_db
 
 pytestmark = requires_pg
@@ -387,5 +388,157 @@ def test_erase_player_removes_identity_and_social_but_keeps_the_books() -> None:
             assert await conn.fetchval("select deleted_at from players where player_id = $1", friend) is None
         # 登录方式没了：这个 Auth 用户查不到这个号。
         assert await players.get_by_auth_uid(auth_uid_of(p)) is None
+
+    run_with_db(body)
+
+
+# --- 040 充值：入账、退款、欠账 🔴 ------------------------------------------------------
+
+
+async def _iap_order(conn: asyncpg.Connection, player_id: uuid.UUID, product_id: str = "diamond_pack_3") -> uuid.UUID:
+    """直接写一张待付款的 Google 单（建单那一步要看 .env 开关，这里只测入账之后的事）。"""
+    order_id = uuid.uuid4()
+    await conn.execute(
+        "insert into iap_orders (order_id, player_id, client_order_id, platform, product_id)"
+        " values ($1, $2, $3, 'google', $4)", order_id, player_id, uuid.uuid4(), product_id)
+    return order_id
+
+
+def _proof(order_id: uuid.UUID, external: str, environment: str = iap.PRODUCTION) -> iap.Proof:
+    return iap.Proof(platform="google", order_id=order_id, product_id="diamond_pack_3",
+                     external_id=external, environment=environment, purchase_token="tok-" + external)
+
+
+async def _ledger_matches_wallet(conn: asyncpg.Connection, player_id: uuid.UUID) -> None:
+    """钱包几列是流水的缓存（009 的注释）：每一列都必须等于那一列流水的总和。"""
+    wallet = await shop.read_wallet_in(conn, player_id)
+    for column in shop.COLUMNS:
+        total = await conn.fetchval(
+            "select coalesce(sum(delta), 0) from wallet_ledger where player_id = $1 and currency = $2",
+            player_id, column)
+        assert total == getattr(wallet, column), column
+
+
+def test_iap_credit_refund_into_debt_and_repayment() -> None:
+    """一整条：首充双倍入账 → 花掉 → 退款扣不回的记欠账 → 欠账时花不了 → 邮件先还欠账。"""
+
+    async def body() -> None:
+        async with db.pool().acquire() as conn:
+            p = await new_player(conn, created_days_ago=1)
+            first = await _iap_order(conn, p)
+        outcome = await iap.credit(_proof(first, "ext-1"))
+        assert outcome.order.first_bonus and outcome.wallet == shop.Wallet(500, 500, 0, 0)
+        # 重放：一分钱不动。
+        again = await iap.credit(_proof(first, "ext-1"))
+        assert again.replayed and again.wallet == shop.Wallet(500, 500, 0, 0)
+
+        async with db.pool().acquire() as conn:
+            async with conn.transaction():
+                wallet = await shop._lock_wallet(conn, p)
+                await shop._apply(conn, p, wallet, {"diamond_free": -500, "diamond_paid": -300}, "pet_draw", None)
+
+        refunded = await iap.refund("google", "ext-1", "voided")
+        assert refunded.order.status == "refunded"
+        assert refunded.wallet == shop.Wallet(0, 0, 0, 800) and refunded.wallet.diamond == -800
+        assert (await iap.refund("google", "ext-1", "voided")).replayed, "通知重复推不重复扣"
+
+        async with db.pool().acquire() as conn:
+            mail_id = await _send_mail(conn, p, diamond=300)
+            async with conn.transaction():
+                await mail._claim_locked(conn, p, await mail._visible(conn, p, mail_id))
+            assert await shop.read_wallet_in(conn, p) == shop.Wallet(0, 0, 0, 500), "邮件的钻石先还欠账"
+            await _ledger_matches_wallet(conn, p)
+            # 第二次买这一档：没有首充了，基础 500 全拿去还欠账，加送 60 进余额。
+            second = await _iap_order(conn, p)
+        outcome = await iap.credit(_proof(second, "ext-2"))
+        assert not outcome.order.first_bonus
+        assert outcome.wallet == shop.Wallet(0, 60, 0, 0)
+        async with db.pool().acquire() as conn:
+            await _ledger_matches_wallet(conn, p)
+
+    run_with_db(body)
+
+
+def test_debt_and_balance_cannot_coexist() -> None:
+    """040 的 wallet_debt_exclusive：settle_debt 写错时宁可整笔失败，也不能「欠着 300 又有 500」。"""
+
+    async def body() -> None:
+        async with db.pool().acquire() as conn:
+            p = await new_player(conn)
+            await conn.execute("insert into player_wallets (player_id, diamond_debt) values ($1, 300)", p)
+            with pytest.raises(asyncpg.CheckViolationError):
+                await conn.execute("update player_wallets set diamond_free = 10 where player_id = $1", p)
+            with pytest.raises(asyncpg.CheckViolationError):
+                await conn.execute("update player_wallets set diamond_debt = -1 where player_id = $1", p)
+
+    run_with_db(body)
+
+
+def test_two_orders_of_the_same_tier_at_once_double_only_once() -> None:
+    async def body() -> None:
+        async with db.pool().acquire() as conn:
+            p = await new_player(conn)
+            a, b = await _iap_order(conn, p), await _iap_order(conn, p)
+        results = await asyncio.gather(iap.credit(_proof(a, "ext-a")), iap.credit(_proof(b, "ext-b")))
+        assert sorted(r.order.first_bonus for r in results) == [False, True]
+        async with db.pool().acquire() as conn:
+            assert (await shop.read_wallet_in(conn, p)).diamond == 500 + 500 + 500 + 60
+            await _ledger_matches_wallet(conn, p)
+
+    run_with_db(body)
+
+
+def test_one_payment_cannot_land_on_two_orders() -> None:
+    async def body() -> None:
+        async with db.pool().acquire() as conn:
+            p = await new_player(conn)
+            a, b = await _iap_order(conn, p), await _iap_order(conn, p)
+        await iap.credit(_proof(a, "same"))
+        with pytest.raises(iap.IapRejected) as exc:
+            await iap.credit(_proof(b, "same"))
+        assert exc.value.code == "proof_reused"
+        async with db.pool().acquire() as conn:
+            # 应用层那道漏了也还有唯一索引。
+            with pytest.raises(asyncpg.UniqueViolationError):
+                await conn.execute("update iap_orders set external_id = 'same' where order_id = $1", b)
+
+    run_with_db(body)
+
+
+def test_test_orders_go_free_and_stop_after_one_a_day() -> None:
+    async def body() -> None:
+        async with db.pool().acquire() as conn:
+            p = await new_player(conn)
+            a, b = await _iap_order(conn, p), await _iap_order(conn, p)
+        first = await iap.credit(_proof(a, "t-a", iap.SANDBOX))
+        assert first.wallet == shop.Wallet(0, 1000, 0, 0)
+        second = await iap.credit(_proof(b, "t-b", iap.SANDBOX))
+        assert second.order.status == "cancelled" and second.order.note == "test_daily_limit"
+        async with db.pool().acquire() as conn:
+            assert await conn.fetchval("select count(*) from iap_first_bonus where player_id = $1", p) == 0
+            await _ledger_matches_wallet(conn, p)
+
+    run_with_db(body)
+
+
+def test_iap_migration_can_be_run_twice() -> None:
+    """040 是手工在 Supabase 里跑的，跑两遍（或者跑到一半重跑）不能报错、也不能动已有数据。"""
+
+    async def body() -> None:
+        sql = (pathlib.Path(__file__).resolve().parents[2] / "database" / "040_iap.sql").read_text(encoding="utf-8")
+        async with db.pool().acquire() as conn:
+            p = await new_player(conn)
+            order = await _iap_order(conn, p)
+            await conn.execute(sql)
+            assert await conn.fetchval("select count(*) from iap_orders where order_id = $1", order) == 1
+
+    run_with_db(body)
+
+
+def test_startup_schema_check_is_clean_on_a_fully_migrated_database() -> None:
+    """自检里新加的语句与探针在跑完全部迁移的库上必须全过 —— 否则部署后它会天天喊假警报。"""
+
+    async def body() -> None:
+        assert await schema_check.verify() == []
 
     run_with_db(body)

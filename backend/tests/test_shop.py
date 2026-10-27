@@ -45,6 +45,8 @@ from app.routes import shop as shop_routes
 REPO = pathlib.Path(__file__).resolve().parents[2]
 SQL_009 = (REPO / "database" / "009_wallet.sql").read_text(encoding="utf-8")
 SQL_010 = (REPO / "database" / "010_shop.sql").read_text(encoding="utf-8")
+# 040 加了欠账列，并重定义了流水 currency 的 check（docs/充值系统设计.md 第三节）。
+SQL_040 = (REPO / "database" / "040_iap.sql").read_text(encoding="utf-8")
 UPDATE_SH = (REPO / "deploy" / "update.sh").read_text(encoding="utf-8")
 
 PLAYER_A = uuid.UUID("11111111-1111-1111-1111-111111111111")
@@ -62,6 +64,7 @@ def _sql_code(sql: str) -> str:
 
 SQL_009_CODE = _sql_code(SQL_009)
 SQL_010_CODE = _sql_code(SQL_010)
+SQL_040_CODE = _sql_code(SQL_040)
 
 
 # --- 假数据库 -----------------------------------------------------------------
@@ -157,11 +160,11 @@ def wire_db(monkeypatch: pytest.MonkeyPatch, responses: list[tuple[str, object]]
     return conn
 
 
-WALLET_ROW = {"diamond_paid": 0, "diamond_free": 0, "coin": 0}
+WALLET_ROW = {"diamond_paid": 0, "diamond_free": 0, "coin": 0, "diamond_debt": 0}
 
 
 def wallet_row(paid: int = 0, free: int = 0, coin: int = 0) -> dict:
-    return {"diamond_paid": paid, "diamond_free": free, "coin": coin}
+    return {"diamond_paid": paid, "diamond_free": free, "coin": coin, "diamond_debt": 0}
 
 
 # --- 目录 ---------------------------------------------------------------------
@@ -282,12 +285,10 @@ def test_ledger_currency_values_are_the_wallet_columns_not_the_currencies() -> N
     一笔钻石消费可能跨两列，就要写两条流水、各自带那一列的 balance_after。
     记成货币名的话，对账时没法定位到具体哪一列。
     """
-    assert set(shop.COLUMNS) == {"diamond_paid", "diamond_free", "coin"}
+    assert set(shop.COLUMNS) == {"diamond_paid", "diamond_free", "coin", "diamond_debt"}
     assert set(shop.CURRENCIES) == {"diamond", "coin"}
-    for column in shop.COLUMNS:
-        assert "'%s'" % column in SQL_009_CODE
-    # 货币名 diamond 不是合法的流水 currency —— 它不对应任何一列。
-    assert "check (currency in ('diamond_paid', 'diamond_free', 'coin'))" in SQL_009_CODE
+    # 货币名 diamond 不是合法的流水 currency —— 它不对应任何一列。现行的 check 是 040 重定义的那条。
+    assert "check (currency in ('diamond_paid', 'diamond_free', 'coin', 'diamond_debt'))" in SQL_040_CODE
 
 
 def test_apply_validates_the_ledger_source() -> None:
@@ -655,9 +656,14 @@ def test_wallet_balances_cannot_go_negative() -> None:
 
 
 def test_ledger_currency_matches_wallet_columns() -> None:
-    """流水的 currency 只能是钱包那三列。写错列名不报错，只会永远对不上账。"""
+    """流水的 currency 只能是钱包那几列。写错列名不报错，只会永远对不上账。
+
+    钱包多一列（040 的 diamond_debt）就要同时放行一个名字：漏了的话，第一次写那一列的流水
+    （退款记欠账）会被约束整个拒掉。
+    """
+    check = SQL_040_CODE.split("add constraint wallet_ledger_currency", 1)[1].split(";", 1)[0]
     for column in shop.COLUMNS:
-        assert "'%s'" % column in SQL_009_CODE
+        assert "'%s'" % column in check
 
 
 def test_ledger_source_has_no_database_check() -> None:
@@ -707,13 +713,6 @@ def test_order_status_has_no_rejected() -> None:
 
 def test_order_idempotency_key_is_unique_per_player() -> None:
     assert "unique (player_id, client_order_id)" in SQL_010_CODE
-
-
-def test_external_id_is_unique_for_rtdn_dedup() -> None:
-    """Google 的 RTDN 会重复推同一笔。第一版这个索引是空的，
-    它在这里是为了接充值时不用动一张已经有真实数据的表。"""
-    assert "create unique index shop_orders_external" in SQL_010_CODE
-    assert "external_id is not null" in SQL_010_CODE
 
 
 def test_entitlement_primary_key_allows_regrant_after_refund() -> None:

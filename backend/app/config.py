@@ -189,6 +189,32 @@ class Settings(BaseSettings):
     # Steam 只放行用同一个 identity 开出来的票，别的服务拿到这张票也用不了。
     steam_ticket_identity: str = "glory-account"
 
+    # --- 充值（app/iap.py，docs/充值系统设计.md）----------------------------------------
+    #
+    # 每个平台一个开关，默认关。🔴 **关掉只挡「建新单」**：confirm、平台通知、定时对账一律照常 ——
+    # 不然已经付了钱的单就卡死在半路。出了问题先关开关、重启账号服务器，不用出包。
+    iap_google_enabled: bool = False
+    iap_apple_enabled: bool = False
+    iap_steam_enabled: bool = False
+
+    # Play Console 里那个 App 的包名。
+    google_play_package: str = "com.glory.game.google"
+    # ⛔ Google Cloud 服务账号 glory-play-billing 的 JSON 密钥文件（里面有私钥）。
+    # 放 /opt/glory/，只放服务器，绝不进 git、聊天。这个服务账号要在 Play Console 的
+    # 「用户和权限」里给「查看财务数据」和「管理订单」。空 = Google 核实回 503。
+    google_play_service_account_file: str = ""
+
+    # iOS 的 bundle id（tools/workspace/glory_ios_build.py 的 BUNDLE）。签名交易里的必须是它。
+    apple_bundle_id: str = "com.superforge.glory"
+    # Apple Root CA - G3 证书文件（https://www.apple.com/certificateauthority/AppleRootCA-G3.cer，
+    # DER 或 PEM 都行）。验签名交易时钉住它：证书链必须一路签到这一张。公开文件，不是密钥。
+    # 空 = Apple 核实回 503。
+    apple_root_cert_file: str = ""
+
+    # 走 Steam 沙盒（ISteamMicroTxnSandbox，不扣钱）的测试员 Steam 编号，逗号分隔。
+    # 这些人下的单记成测试单（docs/充值系统设计.md 第八节）。
+    steam_sandbox_steam_ids: str = ""
+
     @property
     def is_dev(self) -> bool:
         return self.environment != "prod"

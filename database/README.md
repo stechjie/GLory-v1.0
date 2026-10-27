@@ -70,7 +70,7 @@ Supabase Dashboard → SQL Editor，按编号顺序逐个执行。
 | `007_chat.sql` | 好友私聊。会话 / 消息 / 已读游标。仍是好友时每对只存最近 200 条；删好友后再留 30 天 |
 | `008_announcements.sql` | 公告。**管理员在 Supabase 后台直接改行**（这一张是例外，见文件头）；账号服务器只写 problem 列。撤下不删 |
 | `009_wallet.sql` | 账号钱包与流水。钻石**分付费 / 赠送两列**、黄金一列；流水只追加。附 `grant_diamonds()`，手工发放的唯一入口 |
-| `010_shop.sql` | 商城归属与订单。归属存**内容 id**不存商品 id；订单幂等键 `(player_id, client_order_id)`；`external_id` 唯一索引留给充值去重 |
+| `010_shop.sql` | 商城归属与订单。归属存**内容 id**不存商品 id；订单幂等键 `(player_id, client_order_id)`。原来给充值留的 `external_id` 与唯一索引已被 `040` 删掉（充值另开了 `iap_orders`） |
 | `011_loadout.sql` | 出战种族搬到账号服务器（`players.selected_races`）。出战名片要给它盖章，账号服务器得先知道它。只管格式，「必须几个」归战斗服务器 |
 | `012_mail.sql` | 系统邮件。一封群发只存一行，读 / 领 / 删才在 `mail_states` 落行；`wallet_ledger` 加 `mail_id`。附 `send_mail()` / `send_mail_all()` / `withdraw_mail()`，**管理员只走这三个函数**。邮件行不删 |
 | `013_match_history.sql` | 对局历史。战斗服务器签名的战报，按 `match_uid` 去重；一局六个座位 |
@@ -94,6 +94,7 @@ Supabase Dashboard → SQL Editor，按编号顺序逐个执行。
 | `031_crimson_grandfather.sql` | 赤律族改成「商城集齐 8 个棋子解锁」：给**第一次执行时已存在**的账号补发种族 + 8 个棋子（source = grant）。`one_time_grants` 记一笔，重跑整段跳过，不会白送给之后的新玩家。**必须先于新的 `data/shop.json` 部署** |
 | `037_progression.sql` | 账号等级与升级事件、森卫突破标记；旧账号的一次性种族补发。先按编号执行 `032`–`036`，再运行本迁移，最后部署新商城目录与服务端。重跑不会给新账号补发旧种族。 |
 | `038_ranked_tier_floors.sql` | 段位门槛改成每段上限 100 / 200 / 400 / 800 / 1600（初誓 0–99 … 荣耀之冠 800 起）：重定义 `settle_season()` 归档那段 case（其余同 028）；把 037 按旧门槛写死的星铸保底 300 改成 200，并给 200 分以上的人补记突破。玩家平时看到的段位由 `ranked.TIER_FLOORS` 现算、更新账号服务器就变；**这个文件管赛季结算发奖与保底，必须在 `037_progression.sql` 之后、更新账号服务器之前跑**。可重复执行，不用重启 |
+| `040_iap.sql` | 充值（真钱买钻石）：`player_wallets.diamond_debt`（欠账，有欠账时付费 / 赠送两列一定是 0）、流水 currency 放行 `diamond_debt`；`iap_orders`（真钱订单，幂等键 `(player_id, client_order_id)`、去重键 `(platform, external_id)`，永不裁剪）；`iap_first_bonus`（首充资格）；删掉 010 在 `shop_orders` 上的充值预留。🔴 **必须在更新账号服务器之前跑**：新代码读钱包就要 `diamond_debt`，漏跑的话商城、抽宠物、邮件领取、七日登录一起 500。跑完重启账号服务器。可重复执行。039 编号留给图鉴同步（还在 worktree 里没提交）。设计见 `docs/充值系统设计.md` |
 
 **真库测试**：`backend/tests/pg_harness.py` 能在本机 PostgreSQL 上把这里全部文件跑一遍再测（设 `GLORY_TEST_PG`，只许本机）。
 见 `docs/运营后台设计.md` 第七节。
