@@ -60,6 +60,7 @@ from dataclasses import dataclass, field
 
 from app import party, ranked
 from app.party_match_selection import select as select_party_seats
+from app.ranked_team_queue import RankedTeamQueue, QueuedEntry
 
 log = logging.getLogger("glory.matchmaking")
 
@@ -121,7 +122,9 @@ MESSAGE_TYPE = "match"
 #   · AI 的昵称 / 头像在这里随机定好，写进确认框的名单和出战名片（ai_seats），
 #     战斗服务器照名片放 AI、立刻开局 —— 三处看到的是同一个名字。
 #
-# 开关在配置里（GLORY_MATCH_AI_FILL / GLORY_MATCH_AI_FILL_AFTER_SEC）：人多了可以关。
+# 排位改用 RankedTeamQueue：先组队，30 秒时按各队最早成员计时补齐。
+# 上述六人拼桌与 GLORY_MATCH_AI_FILL_AFTER_SEC 只继续用于休闲。
+# GLORY_MATCH_AI_FILL 仍控制是否启用 AI 补位。
 AI_NAMES = (
     "小麦田", "风之旅人", "橘子汽水", "夜行猫", "星河", "糯米团", "晚风", "青柠",
     "山海", "木鱼", "跳跳糖", "云朵", "北极熊", "柚子", "阿福", "薄荷",
@@ -249,6 +252,7 @@ class _Waiter:
     party: list[uuid.UUID] = field(default_factory=list)
     # 匹配分。casual 不用（全是 0），ranked 接第 5 步的分数。
     rating: int = 0
+    queue_order: int = 0
     # 组队房里各人选的位置（0~2，10-08）。进对局时按它坐（_allocate_seats）；单排没有。
     seats: dict[uuid.UUID, int] = field(default_factory=dict)
     seedling_races: dict[uuid.UUID, list[str]] = field(default_factory=dict)
@@ -285,6 +289,8 @@ class _Pending:
     ai_seats: list[dict] = field(default_factory=list)
     ai_confirm_at: dict[int, float] = field(default_factory=dict)
     ai_confirmed: set[int] = field(default_factory=set)
+    ranked_sides: list[list[QueuedEntry]] = field(default_factory=list)
+    queued_solos: dict[uuid.UUID, _Waiter] = field(default_factory=dict)
 
     def all_confirmed(self) -> bool:
         return all(m.accepted for m in self.members) and len(self.ai_confirmed) == len(self.ai_seats)
@@ -385,6 +391,8 @@ class Matchmaker:
         self._pending_of: dict[uuid.UUID, str] = {}
         self._pending: dict[str, _Pending] = {}
         self._assignments: dict[uuid.UUID, Assignment] = {}
+        self._ranked_team_queues = {mode: RankedTeamQueue() for mode in (RANKED, RANKED_NORMAL)}
+        self._queue_serial = 0
         self._next_position_push = now()
         # 没按准备的人，等下一轮 tick 去扣信誉分。
         #
@@ -421,7 +429,9 @@ class Matchmaker:
             return queued_message(self.position_of(player_id, mode), mode)
 
         lineup = {player_id: list(seedling_races)} if seedling_races is not None else {}
+        self._queue_serial += 1
         queue[player_id] = _Waiter(mode=mode, joined_at=self._now(), party=[player_id],
+                                   queue_order=self._queue_serial,
                                    seedling_races=lineup)
         position = len(queue)
         queue[player_id].sent_position = position
@@ -439,8 +449,9 @@ class Matchmaker:
             raise ValueError("有队员已经在匹配中")
         leader = players[0]
         score = ratings or {}
+        self._queue_serial += 1
         self._party_queues[mode][leader] = _Waiter(
-            mode=mode, joined_at=self._now(), party=players.copy(),
+            mode=mode, joined_at=self._now(), party=players.copy(), queue_order=self._queue_serial,
             rating=sum(int(score.get(pid, 0)) for pid in players),
             seats={pid: int(seat) for pid, seat in (seats or {}).items() if pid in players},
             seedling_races={pid: list(races) for pid, races in (seedling_races or {}).items()
@@ -614,6 +625,9 @@ class Matchmaker:
             # 已经开打的局不受影响 —— 00:00 关的是队列，不是对局。
             if mode.startswith("ranked") and not ranked.accepting_now():
                 continue
+            if mode.startswith("ranked"):
+                messages.extend(self._match_ranked_teams(mode, now))
+                continue
             while True:
                 party_seats = self._take_party_match(mode)
                 if party_seats is None:
@@ -669,6 +683,48 @@ class Matchmaker:
         except Exception:  # noqa: BLE001 - 一条发不出去不该让整轮 tick 挂掉
             log.warning("匹配消息发不出去 player=%s", player_id, exc_info=True)
             return 0
+
+    def _match_ranked_teams(self, mode: str, now: float) -> list[tuple[uuid.UUID, dict]]:
+        coordinator = self._ranked_team_queues[mode]
+        entries = [QueuedEntry(pid, waiter, False) for pid, waiter in self._queues[mode].items()
+                   if waiter.dropped_at <= 0.0]
+        entries.extend(QueuedEntry(leader, waiter, True)
+                       for leader, waiter in self._party_queues[mode].items()
+                       if waiter.dropped_at <= 0.0 and not any(
+                           pid in self._party_disconnected for pid in waiter.party))
+        coordinator.refresh(entries)
+        messages: list[tuple[uuid.UUID, dict]] = []
+        for a, b in coordinator.take_pairs(now, self._ai_fill_after is not None):
+            sides = [a.entries, b.entries if b is not None else []]
+            players: list[uuid.UUID] = []
+            teams: list[int] = []
+            parties: list[_Waiter] = []
+            solos: dict[uuid.UUID, _Waiter] = {}
+            lineups: dict[uuid.UUID, list[str]] = {}
+            for team, side in enumerate(sides):
+                for entry in side:
+                    queue = self._party_queues[mode] if entry.grouped else self._queues[mode]
+                    waiter = queue.pop(entry.key)
+                    lineups.update(waiter.seedling_races)
+                    if entry.grouped:
+                        parties.append(waiter)
+                        for pid in waiter.party:
+                            self._party_of.pop(pid, None)
+                            self._party_disconnected.discard(pid)
+                    else:
+                        solos[entry.key] = waiter
+                    players.extend(waiter.party)
+                    teams.extend([team] * len(waiter.party))
+            if len(players) < MATCH_SIZE:
+                self._form_with_ai(players, teams, parties, lineups, mode, now)
+            else:
+                self._form_party(players, teams, parties, lineups, mode, now)
+            pending = self._pending[self._pending_of[players[0]]]
+            pending.ranked_sides = sides
+            pending.queued_solos = solos
+            messages.extend((m.player_id, pending.found_for(m.player_id, ACCEPT_TIMEOUT_SEC))
+                            for m in pending.members)
+        return messages
 
     def _take_party_match(self, mode: str) -> tuple[list[uuid.UUID], list[int], list[_Waiter], dict[uuid.UUID, list[str]]] | None:
         rooms = self._party_queues[mode]
@@ -933,13 +989,16 @@ class Matchmaker:
                 out.append((member.player_id, idle_message("declined")))
                 continue
             # 插到队首：OrderedDict 没有「插到开头」，所以先加再 move_to_end(last=False)。
-            queue[member.player_id] = _Waiter(
+            queue[member.player_id] = pending.queued_solos.get(member.player_id) or _Waiter(
                 mode=pending.mode, joined_at=self._now(), party=[member.player_id],
                 seedling_races={member.player_id: list(member.seedling_races)}
                     if member.seedling_races else {})
+            queue[member.player_id].dropped_at = 0.0
             queue.move_to_end(member.player_id, last=False)
             out.append((member.player_id, queued_message(
                 self.position_of(member.player_id, pending.mode), pending.mode)))
+        if pending.ranked_sides:
+            self._ranked_team_queues[pending.mode].restore(pending.ranked_sides)
         log.info("对局解散 match=%s 拒绝/超时 %d 人", pending.match_uid, len(bad))
         return out
 

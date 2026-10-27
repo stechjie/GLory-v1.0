@@ -263,7 +263,9 @@ async def settle(conn, report: dict) -> None:
         await _settle_casual(conn, report, seats)
     if report["mode"] != "custom":
         for seat in seats:
-            if not seat["online_at_end"]:
+            # A voided room is not a completed draw, even if an older seat flag
+            # still says online. The reason is covered by the battle signature.
+            if not seat["online_at_end"] or report.get("end_reason") == "no_live_human":
                 continue
             result = result_for_seat(report["outcome"], seat)
             await progression.award_match(

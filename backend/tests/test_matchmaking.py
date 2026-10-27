@@ -914,13 +914,13 @@ async def test_ai_fill_is_off_unless_configured(mm) -> None:
 
 
 @pytest.mark.anyio
-async def test_lonely_player_gets_an_ai_match_after_ten_seconds_without_confirm() -> None:
+async def test_lonely_ranked_player_gets_an_ai_match_at_thirty_seconds_with_confirmation() -> None:
     maker, rec, clock = _ai_mm()
     me = _players(1)[0]
     maker.join(me, matchmaking.RANKED)
-    clock.advance(9)
+    clock.advance(29)
     await maker.tick()
-    assert maker.state_of(me)["state"] == "queued", "不到 10 秒不开桌"
+    assert maker.state_of(me)["state"] == "queued", "排位不到30秒不补AI"
     clock.advance(1)
     await maker.tick()
     await _drain_background()
@@ -1018,7 +1018,15 @@ async def test_ai_fill_keeps_modes_apart() -> None:
     clock.advance(10)
     await maker.tick()
     await _drain_background()
+    assert maker.state_of(casual)["state"] == "found"
+    assert maker.state_of(ranked_player)["state"] == "queued"
     maker.accept(casual)
+    clock.advance(5)
+    await maker.tick()
+    assert maker.assignment_for(casual) is not None
+    clock.advance(15)
+    await maker.tick()
+    assert maker.state_of(ranked_player)["state"] == "found"
     maker.accept(ranked_player)
     clock.advance(5)
     await maker.tick()

@@ -49,6 +49,8 @@ func _ready() -> void:
 	_check_match_uid()
 	_check_key_loading()
 	_check_build_shape()
+	_expect(BattleReport.build({"end_reason": "no_live_human"}).get("end_reason"), "no_live_human", "提前结束原因进入签名载荷")
+	_expect(BattleReport.build({}).get("end_reason"), "", "正常旧上下文的结束原因缺省为空")
 	_check_settlement()
 	_check_caps()
 	_check_sign_roundtrip()

@@ -2351,7 +2351,7 @@ func _show_ranked_queue() -> void:
 	_show_party_lobby("ranked")
 
 
-func _show_party_lobby(mode: String, invite_id: String = "") -> void:
+func _show_party_lobby(mode: String, invite_id: String = "", restore_existing: bool = false) -> void:
 	VoiceService.set_mode(VoiceService.Mode.OFF)
 	_clear()
 	# ★ 10.11 第 6 条 j：房间大厅里要能弹邀请气泡（`_clear()` 刚把它清成 false）。
@@ -2362,7 +2362,7 @@ func _show_party_lobby(mode: String, invite_id: String = "") -> void:
 	if lobby == null:
 		_show_menu()
 		return
-	lobby.call("configure", mode, invite_id)
+	lobby.call("configure", mode, invite_id, restore_existing)
 	lobby.connect("back_requested", _show_menu)
 	lobby.connect("queue_started", _show_party_queue)
 	# ★★ 10.07h 第 9(6) 条：队里**任意成员**取消排队 → 立刻关掉「匹配中」弹窗。
@@ -2814,9 +2814,16 @@ func _show_final_settlement() -> void:
 # _show_party_lobby → _clear() 会顺手把对局的静音闩（ChatService.in_match）落下。
 func _return_to_party_room() -> void:
 	var mode := str(_final_settlement_data.get("mode", "ranked"))
-	_show_party_lobby(mode if not mode.is_empty() else "ranked")
+	# This finished battle no longer owns transport or a reconnect seat.
+	SaveManager.clear_reconnect()
+	NetworkService.reset()
+	GameState.team_mode = false
+	_show_party_lobby(mode if not mode.is_empty() else "ranked", "", true)
 
 func _return_from_settlement() -> void:
+	if str(_final_settlement_data.get("mode", "")) in ["ranked", "casual"]:
+		_return_to_party_room()
+		return
 	if not NetworkService.settlement_returned.is_connected(_on_settlement_returned):
 		NetworkService.settlement_returned.connect(_on_settlement_returned)
 	NetworkService.request_settlement_return()

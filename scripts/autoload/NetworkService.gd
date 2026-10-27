@@ -5282,8 +5282,11 @@ func _room_report_ctx(room: Dictionary, rounds: int, outcome: int, hp_a: int, hp
 	# 结束那一刻谁还连着。**这就是排位的跑路判定线** —— 不是「有没有转过 AI」
 	# （座位断线 20 秒就转 AI，但转了之后 _resume_seat 还能回来）。
 	var online_slots := {}
+	var manual: Dictionary = room.get("manual_exit_slots", {})
 	for peer_id in (room.get("peer_slot", {}) as Dictionary).keys():
-		online_slots[int((room.get("peer_slot", {}) as Dictionary)[peer_id])] = true
+		var slot := int((room.get("peer_slot", {}) as Dictionary)[peer_id])
+		if not manual.has(slot) and _peer_connected(int(peer_id)):
+			online_slots[slot] = true
 
 	var seats := []
 	for slot in TEAM_SLOTS:
@@ -5329,6 +5332,7 @@ func _room_report_ctx(room: Dictionary, rounds: int, outcome: int, hp_a: int, hp
 		"allies": final_data.get("allies", []),
 		"stats": final_data.get("stats", []),
 		"settlement_kind": final_data.get("kind", ""),
+		"end_reason": str(final_data.get("end_reason", "")),
 	}
 
 # 专用服务器的权威结算：与本地/房主的 Main._on_team_battle_finished 共用

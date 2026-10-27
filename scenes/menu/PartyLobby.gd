@@ -124,6 +124,7 @@ const START_BRIGHT := Color(1.22, 1.16, 1.0, 1.0)
 const START_DIM := Color(0.78, 0.76, 0.70, 1.0)
 
 var _initial_mode := "casual"
+var _restore_existing_party := false
 var _invite_id := ""
 var _preview := ""
 var _tutorial_mode_chosen := false
@@ -202,9 +203,10 @@ var _seat_frames: Dictionary = {}
 var _start_tween: Tween
 
 
-func configure(mode: String, invite_id: String = "") -> void:
+func configure(mode: String, invite_id: String = "", restore_existing: bool = false) -> void:
 	_initial_mode = mode
 	_invite_id = invite_id
+	_restore_existing_party = restore_existing
 
 
 func configure_preview(role: String) -> void:
@@ -958,11 +960,15 @@ func _fetch_or_create_party() -> Dictionary:
 	var state: Dictionary = (result.get("body", {}) as Dictionary).get("state", {})
 	if str(state.get("state", "")) != "room":
 		return await AccountManager.create_party(_initial_mode)
-	if str(state.get("mode", "")) != _initial_mode and str(state.get("host_code", "")) == _my_code() \
-			and (state.get("members", []) as Array).size() == 1 and not bool(state.get("queued", false)):
+	if _should_align_existing_mode(state):
 		return await AccountManager.set_party_mode(_initial_mode)
 	return result
 
+
+func _should_align_existing_mode(state: Dictionary) -> bool:
+	return not _restore_existing_party and str(state.get("mode", "")) != _initial_mode \
+		and str(state.get("host_code", "")) == _my_code() \
+		and (state.get("members", []) as Array).size() == 1 and not bool(state.get("queued", false))
 
 func _load_friends() -> void:
 	# 并发守卫：5 秒一拍的轮询 + 推送触发的立即重拉，遇上慢网会叠在一起。

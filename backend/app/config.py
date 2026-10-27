@@ -139,8 +139,8 @@ class Settings(BaseSettings):
 
     # --- 人少时 AI 补位（app/matchmaking.py「人少时 AI 补位」那节）--------------
     #
-    # True = 等得最久的人满 match_ai_fill_after_sec 秒还凑不满 6 个真人，就用 AI 补满开局。
-    # 休闲与排位都适用。人多了可以关掉，或把时限调长。
+    # Enables AI fill for both queues. Casual uses match_ai_fill_after_sec;
+    # Ranked forms teams first and uses its independent 30-second deadline.
     match_ai_fill: bool = True
     match_ai_fill_after_sec: float = 10.0
 
