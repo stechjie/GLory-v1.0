@@ -1,0 +1,208 @@
+{
+  "version": "1.0.2",
+  "source_commit": "ee6d4f6a9c97b6e545f8058408c4cb618c420db0",
+  "upstream_commit": "d65e1775d2b2d0fd61485aecd6643f5007c7ac97",
+  "sync": {
+    "status": "success",
+    "remote_files": 3603,
+    "checked": 521,
+    "skipped": 3082,
+    "errors": []
+  },
+  "android": {
+    "apk": "/Volumes/repository/github/GLory/build/apk/Glory-release-slim-20261027-181905-ee6d4f6a.apk",
+    "apk_bytes": 606029185,
+    "apk_sha256": "e3e01b4263c47dc39d32a0e7486951cf343553f5aa5ada2ebc95ae286bc88122",
+    "patch_base": {
+      "archive": "/Volumes/repository/github/GLory/build/apk/Glory-release-slim-20261027-181905-ee6d4f6a-patch-base/base.zip",
+      "manifest": "/Volumes/repository/github/GLory/build/apk/Glory-release-slim-20261027-181905-ee6d4f6a-patch-base/base.export.json",
+      "sha256": "1d09eda9534f694f1ec20d60c80566d84b7041203e6374a4a8ecc129e79493b6",
+      "base_id": "glory-20261027-protocol44-slim",
+      "debug": false,
+      "payload_verification": {
+        "identical_base_files": 5773,
+        "platform": "android",
+        "payload_matches_baseline": true
+      },
+      "online_registration": {
+        "includes_seq": 4,
+        "action": "none",
+        "required_patch_seq": 0,
+        "older_bases_preserved": true
+      }
+    },
+    "asset_inventory_sha256": "080b8e499ab5b8cc844a108ca004c654993d8e3426e9548d66c3ecf243aca3be",
+    "version_code": 46,
+    "transport_delta": {
+      "bytes": 7784515,
+      "local_reconstruction_verified": true,
+      "exact_signed_apk": true,
+      "server_reconstruction_verified": true
+    }
+  },
+  "ios": {
+    "ipa": "/Volumes/repository/github/GLory/build/ipa/Glory-app-store-20261027-181823-494604-ee6d4f6a.ipa",
+    "ipa_bytes": 561942585,
+    "ipa_sha256": "f675b75b2496f4168fd132408bcf0d4c4f8dbdb78c63e95d7be6b8f3547bff26",
+    "build_number": "70",
+    "asset_inventory_sha256": "080b8e499ab5b8cc844a108ca004c654993d8e3426e9548d66c3ecf243aca3be",
+    "validation": {
+      "zip_crc": true,
+      "codesign": true,
+      "arm64": true,
+      "embedded_profile_uuid": "19d26700-0dbc-4797-b5ec-84d3bd29c6fd",
+      "allowed_device_udids": [],
+      "pck_identity": true
+    }
+  },
+  "checks": {
+    "new_backend_regressions_passed": 386,
+    "additional_backend_passed": 184,
+    "old_shop_test_failures": 2,
+    "old_shop_failure_reason": "tests assume only eight crimson unit entries; deployed catalogue already includes other races; unchanged shop.json hash ec4fa99be66ffee93373f7d5b74b06b067f29432a07fc5b2b83f8cb69583e63e",
+    "build_tool_tests_passed": 17,
+    "site_tests_passed": 7,
+    "exported_android_client_compiles": true,
+    "physical_device_tested": false
+  },
+  "workbook_gate": "pre-existing undead_bomb description error; committed runtime balance data preserved",
+  "server": {
+    "status": "deployed",
+    "commit": "940e1ec6dec760a00d1bc40f6e41c1c8dd621b54",
+    "protocol": 44,
+    "new_pid": "136639",
+    "backend_pid": "135689",
+    "idle_checks": "two zero-online zero-connections zero-rooms checks; see server deployment evidence",
+    "schema_migration_036": "backed up and applied transactionally; schema errors empty",
+    "services": "glory-server glory-backend livekit caddy active",
+    "public_health": "ok",
+    "cold_start_seconds": 8.057,
+    "backup_free_bytes_after": 4180353024,
+    "backup_duplicate_bytes_saved": 3429826238,
+    "rollback_directory": "/var/backups/glory/server-20261027-940e1ec"
+  },
+  "distribution": {
+    "android": "published signed APK; exact server SHA256 verified",
+    "testflight": "delivered and processed",
+    "internal": "testing in existing group with 10 testers",
+    "external": "waiting for review in existing Glory tester group with 21 testers",
+    "qr": "published and public HTTP verified",
+    "testflight_build_id": "ecc1bb74-c125-403d-84e6-3badb06ca6c2",
+    "testflight_delivered_at": "2026-10-27 18:56 Asia/Shanghai",
+    "external_last_verified": "2026-10-27 20:22 Asia/Shanghai",
+    "beta_url": "https://glorytd-api.duckdns.org/beta/",
+    "qr_url": "https://glorytd-api.duckdns.org/beta/invite-qr.png",
+    "public_ios_available": "1.0.1 (68)",
+    "latest_ios_external": "1.0.2 (70) waiting for review",
+    "drive_backup": "web upload still in progress; public Android download uses verified server APK"
+  },
+  "public_verification": {
+    "config.json": {
+      "status": 200,
+      "bytes": 394,
+      "sha256": "d7478d6cce1bc5230bd0748f4f11d2991ea17aa0c6648798865968b4ca14e81d",
+      "headers": {
+        "Accept-Ranges": "bytes",
+        "Alt-Svc": "h3=\":443\"; ma=2592000",
+        "Cache-Control": "no-store",
+        "Content-Length": "394",
+        "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+        "Content-Type": "application/json",
+        "Etag": "\"dmfmo0djjkzgay\"",
+        "Last-Modified": "Tue, 27 Oct 2026 12:43:00 GMT",
+        "Referrer-Policy": "no-referrer",
+        "Strict-Transport-Security": "max-age=31536000",
+        "Vary": "Accept-Encoding",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Date": "Tue, 27 Oct 2026 12:44:43 GMT",
+        "Connection": "close"
+      }
+    },
+    "qr.png": {
+      "status": 200,
+      "bytes": 50782,
+      "sha256": "8f06b9ffe436ded23822bc49bced52c5cb89535a253489e74080bde0e2b6807a",
+      "headers": {
+        "Accept-Ranges": "bytes",
+        "Alt-Svc": "h3=\":443\"; ma=2592000",
+        "Cache-Control": "no-store",
+        "Content-Length": "50782",
+        "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+        "Content-Type": "image/png",
+        "Etag": "\"dma8f7x0vg0p136m\"",
+        "Last-Modified": "Wed, 21 Oct 2026 04:29:56 GMT",
+        "Referrer-Policy": "no-referrer",
+        "Strict-Transport-Security": "max-age=31536000",
+        "Vary": "Accept-Encoding",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Date": "Tue, 27 Oct 2026 12:44:44 GMT",
+        "Connection": "close"
+      }
+    },
+    "health.json": {
+      "status": 200,
+      "bytes": 74,
+      "sha256": "e0cd147c6172eb73d221faa141ca0e818a7df87610cb739e04cc6e97928c3eae",
+      "headers": {
+        "Alt-Svc": "h3=\":443\"; ma=2592000",
+        "Content-Length": "74",
+        "Content-Type": "application/json",
+        "Date": "Tue, 27 Oct 2026 12:44:39 GMT",
+        "Referrer-Policy": "no-referrer",
+        "Strict-Transport-Security": "max-age=31536000",
+        "Via": "1.1 Caddy",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Connection": "close"
+      }
+    },
+    "apk-range.bin": {
+      "status": 206,
+      "bytes": 1048576,
+      "sha256": "fe0667d90141cda3f6118e23303902a2429b2ddaa1064ca123448d25908f0b91",
+      "headers": {
+        "Accept-Ranges": "bytes",
+        "Alt-Svc": "h3=\":443\"; ma=2592000",
+        "Cache-Control": "no-store",
+        "Content-Length": "1048576",
+        "Content-Range": "bytes 0-1048575/606029185",
+        "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+        "Content-Type": "application/vnd.android.package-archive",
+        "Etag": "\"dmfmnwvn76dya0tb41\"",
+        "Last-Modified": "Tue, 27 Oct 2026 12:42:53 GMT",
+        "Referrer-Policy": "no-referrer",
+        "Strict-Transport-Security": "max-age=31536000",
+        "Vary": "Accept-Encoding",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Date": "Tue, 27 Oct 2026 12:44:40 GMT",
+        "Connection": "close"
+      }
+    },
+    "page.html": {
+      "status": 200,
+      "bytes": 2970,
+      "sha256": "798f4ffe2e49100ff670d1512a3b32afccfa8f5f2279a32e7b0344e5c51bed39",
+      "headers": {
+        "Accept-Ranges": "bytes",
+        "Alt-Svc": "h3=\":443\"; ma=2592000",
+        "Cache-Control": "no-store",
+        "Content-Length": "2970",
+        "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+        "Content-Type": "text/html; charset=utf-8",
+        "Etag": "\"dma8f7t35vls2ai\"",
+        "Last-Modified": "Wed, 21 Oct 2026 04:29:56 GMT",
+        "Referrer-Policy": "no-referrer",
+        "Strict-Transport-Security": "max-age=31536000",
+        "Vary": "Accept-Encoding",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Date": "Tue, 27 Oct 2026 12:44:40 GMT",
+        "Connection": "close"
+      }
+    }
+  },
+  "published_at": "2026-10-27T20:46:46.803797+08:00"
+}
