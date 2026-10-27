@@ -528,6 +528,9 @@ def export_preset(stage, wanted):
                             "backend/*", "work/*", "build/*", "logs/*", "docs/*", "deploy/*", "delivery/*", "prechange_backups/*", "effects/preview/*", "*.pem", "*.key", ".env*",
                             "scenes/debug/*", "effects/vfx3d/experimental/*", "addons/effekseer/*",
                             "addons/glory_voice/glory_voice.gdextension",
+                            # Steam is desktop-only; exclude its extension descriptor too,
+                            # so mobile startup cannot attempt to load an unsupported library.
+                            "addons/godotsteam/*",
                             # Unreferenced vendor demo points to an undelivered shield_02 scene.
                             # The rest of binbun_reference is required by real battle VFX.
                             "effects/vfx3d/vfxv2/binbun_reference/assets/BinbunVFX_Vol2/BattleFX/battle_fx_scene_free.tscn"]),
