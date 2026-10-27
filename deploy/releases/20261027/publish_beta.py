@@ -9,7 +9,10 @@ tmp=downloads/('Glory-1.0.2-46-android.apk.part-'+str(os.getpid()))
 url='https://drive.usercontent.google.com/download?id=19qnP6WQXTYhl43G5BFHFY7gpRPaPbJAk&export=download&confirm=t'
 if len(sys.argv)>1:
  url=sys.argv[1]
- assert url.startswith('https://'), 'HTTPS transfer required'
+ if url=='--existing':
+  url=(downloads/'Glory-1.0.2-46-android.apk').as_uri()
+ else:
+  assert url.startswith('https://'), 'HTTPS transfer required'
 h=hashlib.sha256(); n=0
 with urllib.request.urlopen(url,timeout=60) as r:
  if len(sys.argv)==1:
