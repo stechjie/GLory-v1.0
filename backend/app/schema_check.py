@@ -70,6 +70,14 @@ _PREPARED: list[tuple[str, str]] = [
 #   sql 回一行 = 在；回零行 = 缺。
 _PROBES: list[tuple[str, str, str]] = [
     (
+        "041 ranked_reward_receipts.coin supports 20 coins",
+        "select 1 from pg_constraint"
+        " where conrelid = to_regclass('public.ranked_reward_receipts')"
+        "   and conname = 'ranked_reward_receipts_coin_check'"
+        "   and pg_get_constraintdef(oid) like '%<= 20%'",
+        "排位胜利奖励16至20金币会被旧约束拒绝，整场积分、金币和经验一起回滚",
+    ),
+    (
         "037 等级、升级事件与森卫突破",
         "select 1 where to_regclass('public.player_progression') is not null"
         " and to_regclass('public.level_up_events') is not null"
