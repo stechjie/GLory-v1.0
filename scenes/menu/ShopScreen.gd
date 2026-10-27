@@ -103,7 +103,6 @@ var _active_category := CATEGORY_PETS
 var _selected_item_id := ""
 var _active_pet := ""
 var _login_state: Dictionary = {}
-var _diamond_products: Array = []
 # 棋子页当前看的种族。空 = 第一个在卖的。
 var _unit_race := ""
 
@@ -138,9 +137,6 @@ var _dim: ColorRect
 func _ready() -> void:
 	theme = Theming.get_theme()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var products_data: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://data/diamond_products.json"))
-	if products_data is Dictionary:
-		_diamond_products = (products_data as Dictionary).get("products", [])
 	_build()
 	_render()
 	# 开发截图场景会在进树前灌固定目录与余额；不发网络请求，保证视觉回归图稳定。
@@ -694,54 +690,30 @@ func _section_title(title_text: String, subtitle: String) -> void:
 	_special_content.add_child(sub)
 
 
+# 档位、价格、付款都在钻石宝库（DiamondStoreDialog，docs/充值系统设计.md 第九节）。这一页只放入口 ——
+# 两处各画一套档位卡，迟早一处显示首充、一处不显示。
 func _render_diamonds() -> void:
 	_section_title(_t("钻石宝库", "Diamond vault"), _t(
-		"钻石将通过应用商店安全购买；当地价格与付款功能接入平台后显示。",
-		"Diamonds will be sold through the platform store. Local prices appear when billing is connected."))
-	var row := HBoxContainer.new()
-	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	row.add_theme_constant_override("separation", Tokens.GAP_S)
-	_special_content.add_child(row)
-	for raw in _diamond_products:
-		var product := raw as Dictionary
-		var card := PanelContainer.new()
-		card.custom_minimum_size = Vector2(185, 220)
-		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		card.add_theme_stylebox_override("panel", Tokens.panel_box(
-			Tokens.SURFACE_RAISED, Tokens.GOLD_PRESSED, Tokens.GAP_S))
-		row.add_child(card)
-		var col := VBoxContainer.new()
-		col.alignment = BoxContainer.ALIGNMENT_CENTER
-		col.add_theme_constant_override("separation", Tokens.GAP_S)
-		card.add_child(col)
-		var icon := TextureRect.new()
-		icon.texture = Currency.icon("diamond")
-		icon.custom_minimum_size = Vector2(64, 64)
-		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		col.add_child(icon)
-		var amount := Label.new()
-		amount.text = Currency.comma(int(product.get("diamond", 0)))
-		amount.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		amount.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
-		amount.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
-		col.add_child(amount)
-		var caption := Label.new()
-		caption.text = _t("钻石", "Diamonds")
-		caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		caption.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
-		col.add_child(caption)
-		var button: Button = ACTION_BUTTON.instantiate()
-		button.text = _t("即将开放", "Coming soon")
-		button.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
-		button.disabled = true
-		col.add_child(button)
-	var foot := Label.new()
-	foot.text = _t("充值成功后由服务器发放钻石；当前页面不收取费用。",
-		"Diamonds are credited by the server after a verified purchase. No payment is taken here yet.")
-	foot.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	foot.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
-	_special_content.add_child(foot)
+		"钻石通过应用商店购买，每档第一次购买双倍；服务器确认后到账。",
+		"Diamonds are bought through the platform store; the first purchase of each bundle is doubled."))
+	var center := CenterContainer.new()
+	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_special_content.add_child(center)
+	var col := VBoxContainer.new()
+	col.alignment = BoxContainer.ALIGNMENT_CENTER
+	col.add_theme_constant_override("separation", Tokens.GAP_M)
+	center.add_child(col)
+	var icon := TextureRect.new()
+	icon.texture = Currency.icon("diamond")
+	icon.custom_minimum_size = Vector2(96, 96)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	col.add_child(icon)
+	var button: Button = ACTION_BUTTON.instantiate()
+	button.text = _t("打开钻石宝库", "Open diamond vault")
+	button.custom_minimum_size = Vector2(280, Tokens.TOUCH_MIN)
+	button.pressed.connect(func() -> void: diamond_store_requested.emit())
+	col.add_child(button)
 
 
 func _render_appearance() -> void:

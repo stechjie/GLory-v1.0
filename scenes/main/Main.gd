@@ -199,6 +199,9 @@ var _back_exit_armed_until := 0.0
 # 同一处设它，_clear() 清掉。空 = 这一页没有页内出口（主菜单、战斗中、
 # 初始宠物强制三选一），返回键继续往下走到二次确认退出。
 var _page_back_route := Callable()
+# 钻石宝库（docs/充值系统设计.md 第九节）盖在当前页面上。它自己管遮罩、不进 ModalStack，
+# 所以返回键要单独先关它（_on_back_requested）。
+var _diamond_store: Control = null
 
 func _ready() -> void:
 	# Idempotent on purpose: the DataRegistry autoload has already loaded by now, and
@@ -1151,6 +1154,9 @@ func _notification(what: int) -> void:
 			# 切后台：教程断点必须落盘。主存档由 SaveManager 自己的 _notification 负责。
 			if TutorialMode.active:
 				TutorialMode.save_checkpoint(true)
+		NOTIFICATION_APPLICATION_RESUMED:
+			# 回到前台（包括 Google 付款页关掉之后）：付了钱还没处理完的付款交给服务器。
+			AccountManager.recover_purchases()
 
 
 # 用 _unhandled_input 而不是 _input：LineEdit 这类控件要先有机会吃掉自己的
@@ -1171,6 +1177,11 @@ func _on_back_requested() -> void:
 		return
 	# 1. 最上层 modal（重连提示、宝藏三选一、佣兵层、确认框都在这里）
 	if ModalStack.handle_back_request():
+		return
+	# 1.5 钻石宝库（不在 ModalStack 里，见 _diamond_store 的注释）
+	if _diamond_store != null and is_instance_valid(_diamond_store):
+		_diamond_store.queue_free()
+		_diamond_store = null
 		return
 	# 2. 当前页面自己的面板（备战页的商店 / 佣兵 / 组队检阅台）
 	if _prep != null and is_instance_valid(_prep) and _prep is PrepScreenScript:
@@ -1281,6 +1292,10 @@ func _show_menu() -> void:
 	_menu.shop_requested.connect(_show_shop_screen)
 	_menu.bag_requested.connect(_show_bag_screen)
 	_menu.mail_requested.connect(_show_mail_screen)
+	_menu.diamond_shop_requested.connect(_show_diamond_store)
+	# 付了钱还没处理完的付款交给服务器（docs/充值系统设计.md 第六节）。每次进主菜单都看一眼：
+	# 只查本机的 Google 付款记录，没有就什么都不发。不做进门条件。
+	AccountManager.recover_purchases()
 	add_child(_menu)
 	_show_kicked_notice_if_pending()
 	if PlayerProfile.tutorial_reward_pending:
@@ -1577,12 +1592,26 @@ func _show_shop_screen() -> void:
 		return
 	screen.back_requested.connect(_show_menu)
 	screen.prep_races_requested.connect(_show_pet_screen_races)
+	screen.diamond_store_requested.connect(func() -> void: _show_diamond_store(screen._reload))
 	screen.pet_draw_requested.connect(func() -> void:
 		var dialog: Control = (load("res://scenes/menu/PetDrawDialog.gd") as GDScript).new()
 		dialog.draw_finished.connect(screen._reload)
 		screen.add_child(dialog))
 	_page_back_route = _show_menu
 	add_child(screen)
+
+
+# 钻石宝库：盖在当前页面上。买到了就刷新底下那一页的余额（主菜单的钱包条 / 商城页）。
+func _show_diamond_store(after_purchase: Callable = Callable()) -> void:
+	if _diamond_store != null and is_instance_valid(_diamond_store):
+		return
+	_diamond_store = (load("res://scenes/menu/DiamondStoreDialog.tscn") as PackedScene).instantiate()
+	_diamond_store.balance_changed.connect(func(_diamond: int) -> void:
+		if after_purchase.is_valid():
+			after_purchase.call()
+		if _menu != null and is_instance_valid(_menu) and _menu.is_inside_tree():
+			_menu.call("_refresh_wallet"))
+	add_child(_diamond_store)
 
 
 func _show_bag_screen() -> void:

@@ -53,10 +53,6 @@ PLATFORMS = ("google", "apple", "steam")
 PRODUCTION = "production"
 SANDBOX = "sandbox"
 
-# 测试单每个号 24 小时最多入账几张（docs/充值系统设计.md 第八节）。
-# TestFlight 上的人买东西不花钱，又连着正式服 —— 不设上限就能无限白拿钻石。
-TEST_ORDERS_PER_DAY = 1
-
 _PRODUCT_ID_RE = re.compile(r"^[a-z0-9_]{1,64}$")
 _CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
 
@@ -158,6 +154,14 @@ def platform_open(platform: str) -> bool:
             "steam": s.iap_steam_enabled}.get(platform, False)
 
 
+def test_orders_per_day() -> int:
+    """测试单每个号 24 小时最多入账几张（.env，默认 1；docs/充值系统设计.md 第八节）。
+
+    TestFlight 上的人买东西不花钱，又连着正式服 —— 不设上限就能无限白拿钻石。只在自己测流程时调大。
+    """
+    return max(0, int(get_settings().iap_test_orders_per_day))
+
+
 def steam_sandbox_ids() -> frozenset[str]:
     """走 Steam 沙盒的测试员 Steam 编号（.env 里逗号分隔）。"""
     raw = get_settings().steam_sandbox_steam_ids
@@ -238,15 +242,19 @@ async def create_order(
     environment: str | None = None,
     price_amount: int | None = None,
     price_currency: str | None = None,
+    even_if_closed: bool = False,
 ) -> tuple[Order, bool]:
     """建一张待付款的单。返回 (单, 是不是这次新建的)。
 
     同一个 client_order_id 再来一次拿回同一张单（弱网重试）；换了平台或档位 = 客户端有 bug
     或者有人在试探，拒绝。Steam 的 steam_id / 环境 / 价格在这里就定了，另外两家要等核实。
+
+    even_if_closed 只给服务器上跑的运营脚本用（deploy/check_iap_steam.py：开关还关着时先走一遍沙盒）。
+    🔴 路由层绝不传它 —— 开关是给玩家关门的。
     """
     if platform not in PLATFORMS:
         raise IapRejected("unknown_platform", "不认识这个平台")
-    if not platform_open(platform):
+    if not even_if_closed and not platform_open(platform):
         raise IapRejected("iap_closed", "充值暂未开放")
     item = product(product_id)
     if not item.enabled:
@@ -390,7 +398,7 @@ async def credit(proof: Proof) -> Outcome:
                     "select count(*) from iap_orders where player_id = $1 and environment = 'sandbox'"
                     " and status in ('credited', 'refunded') and credited_at > now() - interval '24 hours'",
                     order.player_id)
-                if int(recent or 0) >= TEST_ORDERS_PER_DAY:
+                if int(recent or 0) >= test_orders_per_day():
                     row = await conn.fetchrow(
                         "update iap_orders set status = 'cancelled', environment = $2, external_id = $3,"
                         " purchase_token = $4, note = 'test_daily_limit' where order_id = $1"
@@ -467,6 +475,78 @@ async def refund(platform: str, external_id: str, note: str) -> Outcome | None:
     log.warning("充值退款扣回 order=%s player=%s platform=%s 扣付费=%d 扣赠送=%d 记欠账=%d note=%s",
                 order.order_id, order.player_id, platform, from_paid, from_free, debt, note)
     return Outcome(order, after)
+
+
+# --- 定时对账要的查询（app/iap_sync.py）----------------------------------------
+
+
+async def pending_orders(platform: str, max_age_sec: int) -> list[Order]:
+    """这个平台还在待付款、而且是最近 max_age_sec 秒内建的单（最老的在前，一轮最多 200 张）。"""
+    async with db.pool().acquire() as conn:
+        rows = await conn.fetch(
+            "select " + _ORDER_COLUMNS + " from iap_orders where platform = $1 and status = 'pending'"
+            " and created_at > now() - make_interval(secs => $2) order by created_at limit 200",
+            platform, max_age_sec)
+    return [_order_of(r) for r in rows]
+
+
+async def unconsumed_google_orders(max_age_sec: int) -> list[Order]:
+    """入了账（或测试单超上限被取消）、还没消耗的 Google 单。
+
+    🔴 Google 3 天内收不到确认就自动退款，所以只看最近 max_age_sec 秒的 —— 再老的补了也没用。
+    """
+    async with db.pool().acquire() as conn:
+        rows = await conn.fetch(
+            "select " + _ORDER_COLUMNS + " from iap_orders where platform = 'google'"
+            " and consumed_at is null and purchase_token is not null"
+            " and (status = 'credited' or note = 'test_daily_limit')"
+            " and created_at > now() - make_interval(secs => $1) order by created_at limit 200",
+            max_age_sec)
+    return [_order_of(r) for r in rows]
+
+
+# --- 后台入账 / 退款之后的通知邮件 ------------------------------------------------
+#
+# 平台通知、定时对账替玩家入了账（或扣回了退款）时，玩家多半不在游戏里，回来只看到钻石变了。
+# 发一封**不带附件**的系统邮件说清楚是哪来的（docs/充值系统设计.md 第六、七节）。
+#
+# 🔴 绝不能用邮件附件补钻石：附件领取进的是赠送列（mail.py），付费口径就脏了。
+# 钱在 credit() / refund() 里已经入了，邮件只是告诉他。
+
+
+async def mail_notice(outcome: Outcome) -> None:
+    """按这张单现在的状态发一封说明邮件。只认 credited / refunded，别的状态不发。
+
+    **不抛异常**：钱已经动完了，邮件发不出去只是少一句话，不能让调用方把这笔当成失败去重试。
+    """
+    order = outcome.order
+    total = order.diamond_paid + order.diamond_free
+    ref = "#%d" % order.order_no
+    if order.status == "credited":
+        title = ("充值到账", "Top-up received")
+        body_zh = "你购买的钻石已到账：%d 钻%s。订单 %s。" % (
+            total, "（含首充赠送）" if order.first_bonus else "", ref)
+        body_en = "%d diamonds have been added to your account%s. Order %s." % (
+            total, " (first top-up bonus included)" if order.first_bonus else "", ref)
+    elif order.status == "refunded":
+        title = ("充值已退款", "Top-up refunded")
+        debt = outcome.wallet.diamond_debt
+        body_zh = "订单 %s 已退款，这笔充值给的 %d 钻已扣回。" % (ref, total)
+        body_en = "Order %s was refunded, and the %d diamonds it gave have been taken back." % (ref, total)
+        if debt:
+            body_zh += "余额不够扣的部分记为欠账，目前欠 %d 钻；之后获得的钻石会先抵欠账。" % debt
+            body_en += " The part your balance could not cover is owed: %d diamonds. Diamonds you get later repay it first." % debt
+    else:
+        return
+    try:
+        async with db.pool().acquire() as conn:
+            await conn.execute(
+                "insert into mails (player_id, title_zh, body_zh, title_en, body_en, actor, note)"
+                " values ($1, $2, $3, $4, $5, 'iap', $6)",
+                order.player_id, title[0], body_zh, title[1], body_en,
+                "iap %s %s" % (order.status, order.order_id))
+    except Exception:  # noqa: BLE001 - 见 docstring
+        log.exception("充值通知邮件没发出去 order=%s", order.order_id)
 
 
 # --- 目录给客户端 ---------------------------------------------------------------

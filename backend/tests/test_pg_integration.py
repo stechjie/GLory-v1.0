@@ -535,6 +535,44 @@ def test_iap_migration_can_be_run_twice() -> None:
     run_with_db(body)
 
 
+def test_iap_sweep_queries_and_notice_mail_on_a_real_database() -> None:
+    """第 2 步的三条新语句：扫待付款、扫没消耗、写说明邮件（mails 的约束是真的）。"""
+
+    async def body() -> None:
+        async with db.pool().acquire() as conn:
+            p = await new_player(conn, created_days_ago=1)
+            steam_pending = uuid.uuid4()
+            await conn.execute(
+                "insert into iap_orders (order_id, player_id, client_order_id, platform, product_id, steam_id,"
+                " environment) values ($1, $2, $3, 'steam', 'diamond_pack_1', '76561198000000042', 'production')",
+                steam_pending, p, uuid.uuid4())
+            old = uuid.uuid4()
+            await conn.execute(
+                "insert into iap_orders (order_id, player_id, client_order_id, platform, product_id, created_at)"
+                " values ($1, $2, $3, 'steam', 'diamond_pack_1', now() - interval '3 days')", old, p, uuid.uuid4())
+            google = await _iap_order(conn, p)
+        assert [o.order_id for o in await iap.pending_orders("steam", 86400)] == [steam_pending]
+
+        outcome = await iap.credit(_proof(google, "ext-g"))
+        assert [o.order_id for o in await iap.unconsumed_google_orders(3 * 86400)] == [google]
+        await iap.mark_consumed(google)
+        assert await iap.unconsumed_google_orders(3 * 86400) == []
+
+        await iap.mail_notice(outcome)
+        refunded = await iap.refund("google", "ext-g", "google_voided")
+        await iap.mail_notice(refunded)
+        async with db.pool().acquire() as conn:
+            rows = await conn.fetch("select title_zh, diamond, coin, items, actor from mails where player_id = $1"
+                                    " order by mail_id", p)
+            assert [(r["title_zh"], r["diamond"], r["coin"], list(r["items"]), r["actor"]) for r in rows] == [
+                ("充值到账", 0, 0, [], "iap"), ("充值已退款", 0, 0, [], "iap")], "说明邮件不带任何附件"
+            # 邮差会把它推给在线的人（同其它系统邮件）。
+            ours = {int(r["mail_id"]) for r in await conn.fetch("select mail_id from mails where player_id = $1", p)}
+            assert ours <= {row.mail_id for row in await mail.load_scan(0)}
+
+    run_with_db(body)
+
+
 def test_startup_schema_check_is_clean_on_a_fully_migrated_database() -> None:
     """自检里新加的语句与探针在跑完全部迁移的库上必须全过 —— 否则部署后它会天天喊假警报。"""
 

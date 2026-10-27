@@ -23,8 +23,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import (admin, admission, analytics, announcements, bans, db, mail, maintenance, matchmaking, party,
-                 realtime, schema_check, seasons, single_instance, voice_clips, world_chat)
+from app import (admin, admission, analytics, announcements, bans, db, iap_sync, mail, maintenance, matchmaking,
+                 party, realtime, schema_check, seasons, single_instance, voice_clips, world_chat)
 from app.config import get_settings
 from app import patch_service, patch_gate
 from app.routes import patches as patch_routes
@@ -174,6 +174,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # 语音消息的文件清理（app/voice_clips.py）：每小时清过期登记行，再删没人引用的文件。
     # 公告图片是永久留着的，语音不能 —— 没有这个循环，媒体目录只增不减。
     voice_sweeper = asyncio.create_task(voice_clips.sweep_loop(cfg.media_dir))
+    # 充值对账（app/iap_sync.py）：每分钟推一遍 Steam 待付款的单，每 10 分钟查退款、补 Google 消耗。
+    # 没配好的平台整段跳过。游标在内存里，重启后从 30 天前重查（退款幂等）。
+    reconciler = asyncio.create_task(iap_sync.loop())
     try:
         if patch_service.current() is not None:
             patch_service.current().restore_runtime()
@@ -187,7 +190,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         # battle_patches 可能是 None（没有可用补丁时不建任务），所以下面留着 None 守卫；
         # voice_sweeper 一定不是 None，放同一个元组里是安全的。
         for task in (sweeper, cleaner, admitter, notices, postman, matcher, seasonal, banhammer,
-                     counter, battle_patches, voice_sweeper):
+                     counter, battle_patches, voice_sweeper, reconciler):
             if task is None:
                 continue
             task.cancel()
@@ -272,6 +275,7 @@ app.include_router(announcement_routes.router)
 app.include_router(shop_routes.router)
 # 充值（docs/充值系统设计.md）。每个平台的开关默认关，关着时建单回 503。
 app.include_router(iap_routes.router)
+app.include_router(iap_routes.notify_router)
 app.include_router(seven_day_login_routes.router)
 app.include_router(loadout_routes.router)
 app.include_router(mail_routes.router)

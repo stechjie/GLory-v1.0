@@ -26,6 +26,7 @@ Google 把它们原样存在这笔付款上，我们查单时读回来比对。�
 
 from __future__ import annotations
 
+import base64
 import dataclasses
 import hashlib
 import json
@@ -86,10 +87,11 @@ _access: tuple[str, float] | None = None
 
 
 def reset() -> None:
-    """测试用：清掉缓存的服务账号与访问令牌。"""
-    global _sa_cache, _access
+    """测试用：清掉缓存的服务账号、访问令牌和推送公钥。"""
+    global _sa_cache, _access, _certs
     _sa_cache = None
     _access = None
+    _certs = None
 
 
 def _service_account() -> dict:
@@ -198,15 +200,19 @@ async def consume(product_id: str, token: str,
 
 async def confirm(order: iap.Order, token: str,
                   transport: httpx.AsyncBaseTransport | None = None) -> iap.Outcome:
-    """核实 + 入账 + 消耗。客户端 confirm 和（第 2 步的）实时通知都走这里。"""
+    """核实 + 入账 + 消耗。客户端交凭证走这里；实时通知走 on_purchase_notice，最后是同一段 _settle。"""
     if order.platform != "google":
         raise iap.IapRejected("wrong_platform", "这张单不是 Google Play 的")
-    purchase = await get_purchase(order.product_id, token, transport)
+    return await _settle(order, token, await get_purchase(order.product_id, token, transport), transport)
+
+
+async def _settle(order: iap.Order, token: str, purchase: Purchase,
+                  transport: httpx.AsyncBaseTransport | None) -> iap.Outcome:
     if purchase.profile_id != str(order.order_id) or purchase.account_id != account_tag(order.player_id):
         log.warning("Google 凭证上的订单号 / 玩家对不上 order=%s", order.order_id)
         raise iap.IapRejected("proof_mismatch", "付款凭证和这张单对不上")
     if purchase.state == PENDING:
-        # 便利店付现金这类：钱还没到。不入账，等玩家付完（第 2 步的实时通知会来）。
+        # 便利店付现金这类：钱还没到。不入账，等玩家付完（实时通知会来）。
         return await iap.outcome_of(order.order_id)
     if purchase.state == CANCELED:
         return await iap.cancel(order.order_id, "google_canceled")
@@ -226,3 +232,152 @@ async def confirm(order: iap.Order, token: str,
         if purchase.consumed or await consume(order.product_id, token, transport):
             await iap.mark_consumed(order.order_id)
     return outcome
+
+
+# --- 实时通知（RTDN，Pub/Sub 推送到 /iap/google/rtdn）----------------------------------
+#
+# 玩家付完钱就关了游戏、客户端永远不来交凭证 —— 这一路替他入账。退款也从这里来。
+# 推送地址是公开的，所以先验身份：Pub/Sub 在 Authorization 头里带一张 Google 签的身份令牌，
+# 签发方是 Google、受众和服务账号邮箱都要是我们在推送订阅里配的那两个（.env）。
+
+CERTS_URL = "https://www.googleapis.com/oauth2/v3/certs"
+_ISSUERS = ("accounts.google.com", "https://accounts.google.com")
+_CERTS_TTL = 3600.0
+_MIN_REFETCH = 60.0
+_certs: tuple[dict[str, jwt.PyJWK], float] | None = None
+
+
+async def _push_key(kid: str, transport: httpx.AsyncBaseTransport | None) -> jwt.PyJWK:
+    global _certs
+    now = time.monotonic()
+    age = now - _certs[1] if _certs is not None else float("inf")
+    if _certs is None or age > _CERTS_TTL or (kid not in _certs[0] and age > _MIN_REFETCH):
+        try:
+            async with httpx.AsyncClient(timeout=_TIMEOUT, transport=transport) as client:
+                resp = await client.get(CERTS_URL)
+            keys = jwt.PyJWKSet.from_dict(resp.json()).keys
+        except (httpx.HTTPError, ValueError, jwt.PyJWTError):
+            raise GoogleUnavailable("拉不到 Google 的公钥") from None
+        _certs = ({k.key_id: k for k in keys if k.key_id}, now)
+    found = _certs[0].get(kid)
+    if found is None:
+        raise GoogleRejected("推送令牌的签名密钥不是 Google 的")
+    return found
+
+
+async def verify_push(authorization: str | None,
+                      transport: httpx.AsyncBaseTransport | None = None) -> None:
+    """不是我们配的那个推送订阅发来的就抛 GoogleRejected。"""
+    s = get_settings()
+    account, audience = s.google_rtdn_service_account.strip(), s.google_rtdn_audience.strip()
+    if not account or not audience:
+        raise GoogleUnavailable(
+            "服务器没配 Google 实时通知的推送身份（GLORY_GOOGLE_RTDN_SERVICE_ACCOUNT / GLORY_GOOGLE_RTDN_AUDIENCE）")
+    scheme, _, token = (authorization or "").partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        raise GoogleRejected("实时通知没带身份令牌")
+    try:
+        header = jwt.get_unverified_header(token.strip())
+    except jwt.PyJWTError:
+        raise GoogleRejected("实时通知的身份令牌格式不对") from None
+    # 只认 RS256，同 jwt_verify.ALLOWED_ALGORITHMS 那段说的 algorithm confusion。
+    if header.get("alg") != "RS256" or not header.get("kid"):
+        raise GoogleRejected("实时通知的身份令牌算法不对")
+    key = await _push_key(str(header["kid"]), transport)
+    try:
+        claims = jwt.decode(token.strip(), key=key.key, algorithms=["RS256"], audience=audience,
+                            options={"require": ["exp", "iat", "iss", "aud", "email"]})
+    except jwt.PyJWTError as exc:
+        raise GoogleRejected("实时通知的身份令牌不对（%s）" % type(exc).__name__) from None
+    if claims.get("iss") not in _ISSUERS:
+        raise GoogleRejected("实时通知的身份令牌不是 Google 签的")
+    if claims.get("email") != account or claims.get("email_verified") is not True:
+        raise GoogleRejected("实时通知不是我们配的那个推送订阅发来的")
+
+
+@dataclasses.dataclass(frozen=True)
+class Notice:
+    kind: str           # purchased / canceled / voided / test / ignored
+    token: str = ""
+    product_id: str = ""
+
+
+def parse_rtdn(body: dict) -> Notice:
+    """拆 Pub/Sub 推来的那一层和里面的 RTDN。看不懂的抛 ValueError（路由层确认收到并记日志，不让它一直重推）。"""
+    data = json.loads(base64.b64decode(str(body["message"]["data"])))
+    if data.get("packageName") != get_settings().google_play_package:
+        return Notice("ignored")
+    if "testNotification" in data:
+        return Notice("test")
+    one = data.get("oneTimeProductNotification")
+    if one:
+        kind = {1: "purchased", 2: "canceled"}.get(int(one.get("notificationType") or 0), "ignored")
+        return Notice(kind, str(one.get("purchaseToken") or ""), str(one.get("sku") or ""))
+    voided = data.get("voidedPurchaseNotification")
+    if voided:
+        # productType 1 是订阅，我们不卖；2 是一次性商品。
+        if int(voided.get("productType") or 0) != 2:
+            return Notice("ignored")
+        return Notice("voided", str(voided.get("purchaseToken") or ""))
+    return Notice("ignored")  # 订阅类通知
+
+
+async def on_purchase_notice(product_id: str, token: str,
+                             transport: httpx.AsyncBaseTransport | None = None) -> iap.Outcome | None:
+    """「已购买」/「待付款被取消」通知。按付款上的混淆订单号找到我们的单再走 _settle。
+
+    返回 None = 这笔付款不是从我们的建单接口来的（没有订单号、或者订单号查不到），只记日志。
+    """
+    purchase = await get_purchase(product_id, token, transport)
+    try:
+        order_id = uuid.UUID(purchase.profile_id)
+    except ValueError:
+        log.warning("Google 通知的付款上没有我们的订单号 product=%s", product_id)
+        return None
+    order = await iap.order_by_id(order_id)
+    if order is None or order.platform != "google" or order.product_id != product_id:
+        log.warning("Google 通知找不到对应的单 order=%s product=%s", order_id, product_id)
+        return None
+    return await _settle(order, token, purchase, transport)
+
+
+@dataclasses.dataclass(frozen=True)
+class Voided:
+    token: str
+    voided_ms: int
+
+
+async def voided_since(start_ms: int, transport: httpx.AsyncBaseTransport | None = None) -> list[Voided]:
+    """Voided Purchases API：start_ms 之后被作废（退款、拒付、撤销）的一次性购买。实时通知丢了靠它补。
+
+    Google 只给最近 30 天，调用方自己别传更早的。翻页最多 20 页，防一个坏游标把循环卡死。
+    """
+    global _access
+    out: list[Voided] = []
+    page = ""
+    url = "%s/%s/purchases/voidedpurchases" % (API, get_settings().google_play_package)
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT, transport=transport) as client:
+            for _ in range(20):
+                params = {"startTime": str(start_ms), "type": "0", "maxResults": "1000"}
+                if page:
+                    params["token"] = page
+                resp = await client.get(url, params=params,
+                                        headers={"Authorization": "Bearer " + await _access_token(client)})
+                if resp.status_code in (401, 403):
+                    _access = None
+                    raise GoogleUnavailable("Google 拒绝了服务账号（HTTP %d）" % resp.status_code)
+                if resp.status_code >= 400:
+                    raise GoogleUnavailable("查作废购买出错（HTTP %d）" % resp.status_code)
+                body = resp.json()
+                for row in body.get("voidedPurchases") or []:
+                    if row.get("purchaseToken"):
+                        out.append(Voided(str(row["purchaseToken"]), int(row.get("voidedTimeMillis") or 0)))
+                page = str((body.get("tokenPagination") or {}).get("nextPageToken") or "")
+                if not page:
+                    break
+    except httpx.HTTPError as exc:
+        raise GoogleUnavailable("连不上 Google（%s）" % type(exc).__name__) from None
+    except (ValueError, TypeError, AttributeError):
+        raise GoogleUnavailable("Google 回的作废列表看不懂") from None
+    return out

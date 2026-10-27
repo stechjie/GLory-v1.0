@@ -68,7 +68,7 @@ window/handheld/orientation="landscape"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/glory_signin/plugin.cfg", "res://addons/glory_voice/plugin.cfg")
+enabled=PackedStringArray("res://addons/glory_billing/plugin.cfg", "res://addons/glory_signin/plugin.cfg", "res://addons/glory_voice/plugin.cfg")
 
 [rendering]
 

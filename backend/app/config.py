@@ -203,6 +203,11 @@ class Settings(BaseSettings):
     # 放 /opt/glory/，只放服务器，绝不进 git、聊天。这个服务账号要在 Play Console 的
     # 「用户和权限」里给「查看财务数据」和「管理订单」。空 = Google 核实回 503。
     google_play_service_account_file: str = ""
+    # Google 实时通知（Pub/Sub 推送到 /iap/google/rtdn）的身份：推送订阅里「启用身份验证」时选的
+    # 服务账号邮箱，和填的「受众」（没填的话 Google 用推送地址本身）。两样都对上才认，
+    # 不然谁都能往这个公开地址 POST 一条「已退款」。任一空着 = 推送回 503（Pub/Sub 会一直重试，配好后自动补上）。
+    google_rtdn_service_account: str = ""
+    google_rtdn_audience: str = ""
 
     # iOS 的 bundle id（tools/workspace/glory_ios_build.py 的 BUNDLE）。签名交易里的必须是它。
     apple_bundle_id: str = "com.superforge.glory"
@@ -214,6 +219,11 @@ class Settings(BaseSettings):
     # 走 Steam 沙盒（ISteamMicroTxnSandbox，不扣钱）的测试员 Steam 编号，逗号分隔。
     # 这些人下的单记成测试单（docs/充值系统设计.md 第八节）。
     steam_sandbox_steam_ids: str = ""
+
+    # 测试单（许可测试员、TestFlight、Apple 审核员、Steam 沙盒）每个号 24 小时内最多入账几张。
+    # 🔴 **正式上线前必须是 1。** TestFlight 上的人买东西不花钱，又连着正式服 —— 调大就是让他们多白拿。
+    # 只在自己测充值流程、要连着买好几次的那几天调大，测完改回来、重启账号服务器。
+    iap_test_orders_per_day: int = 1
 
     @property
     def is_dev(self) -> bool:

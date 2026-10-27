@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import dataclasses
 import datetime as dt
 import json
 import pathlib
@@ -34,7 +35,8 @@ from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.x509.oid import NameOID
 from fastapi.testclient import TestClient
 
-from app import db, iap, iap_apple, iap_google, iap_steam, login_sessions, players, schema_check, shop, steam
+from app import (db, iap, iap_apple, iap_google, iap_steam, iap_sync, login_sessions, players, schema_check, shop,
+                 steam)
 from app.config import get_settings
 from app.jwt_verify import Claims, TokenError
 from app.main import app
@@ -54,6 +56,8 @@ NOW = dt.datetime(2026, 10, 27, 12, 0, tzinfo=dt.timezone.utc)
 TOKEN = "gpa-token." + "a" * 60
 STEAM_ID = "76561198000000042"
 KEY = "SECRETPUBLISHERKEY0123456789ABCD"
+PUSH_ACCOUNT = "glory-play-billing@demo.iam.gserviceaccount.com"
+PUSH_AUDIENCE = "https://glorytd-api.duckdns.org/iap/google/rtdn"
 
 # data/iap_products.json 的第 3 档：基础 500、平时加送 60。用真目录，目录改了这些用例会提醒。
 PACK = "diamond_pack_3"
@@ -66,6 +70,8 @@ def _settings(**overrides) -> SimpleNamespace:
         apple_bundle_id="com.superforge.glory", apple_root_cert_file="",
         steam_sandbox_steam_ids="", steam_web_api_key=KEY, steam_app_id=4919850,
         steam_ticket_identity="glory-account",
+        google_rtdn_service_account=PUSH_ACCOUNT, google_rtdn_audience=PUSH_AUDIENCE,
+        iap_test_orders_per_day=1,
     )
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -74,7 +80,7 @@ def _settings(**overrides) -> SimpleNamespace:
 @pytest.fixture(autouse=True)
 def _iap_settings(monkeypatch: pytest.MonkeyPatch):
     holder = {"s": _settings()}
-    for module in (iap, iap_google, iap_apple, iap_steam, steam):
+    for module in (iap, iap_google, iap_apple, iap_steam, iap_sync, steam):
         monkeypatch.setattr(module, "get_settings", lambda: holder["s"])
     iap_google.reset()
     iap_apple.reset()
@@ -464,8 +470,18 @@ def test_second_test_order_within_a_day_is_cancelled_without_money(monkeypatch) 
     assert not conn.ledger() and conn.wallet_update() is None
 
 
-def test_test_orders_per_day_is_one() -> None:
-    assert iap.TEST_ORDERS_PER_DAY == 1
+def test_test_orders_per_day_defaults_to_one() -> None:
+    """🔴 正式上线时必须是 1。默认值就是线上值：.env 里忘了写这一项也不会放大。"""
+    from app.config import Settings
+    assert Settings.model_fields["iap_test_orders_per_day"].default == 1
+
+
+def test_raised_test_limit_lets_testers_buy_again(monkeypatch, _iap_settings) -> None:
+    """测流程那几天调大：同一个号 24 小时内第二张测试单照常入账。"""
+    _iap_settings["s"] = _settings(iap_test_orders_per_day=3)
+    conn, _ = wire(monkeypatch, credit_db(recent_tests=1))
+    outcome = asyncio.run(iap.credit(proof(environment=iap.SANDBOX)))
+    assert outcome.order.status == "credited" and conn.ledger() == [("diamond_free", 1000, "iap_test")]
 
 
 # --- 退款 ---------------------------------------------------------------------
@@ -843,6 +859,38 @@ def test_steam_begin_request_shape(monkeypatch) -> None:
     assert insert[6:9] == (iap.PRODUCTION, 5000, "MYR"), "环境和价格下单时就定了"
 
 
+def test_steam_browser_order_asks_with_ip_and_returns_the_url(monkeypatch, _iap_settings) -> None:
+    """usersession=web：沙盒检查脚本、以及以后 overlay 弹不出来时的退路。开关关着也能用（只给服务器脚本）。"""
+    _iap_settings["s"] = _settings(iap_steam_enabled=False)
+    wire(monkeypatch, [("insert into iap_orders", steam_order(external_id=None)),
+                       ("from iap_orders where order_id = $1", steam_order()),
+                       ("from player_wallets where player_id = $1", wallet_row())])
+    seen: list[httpx.Request] = []
+
+    def handler(request):
+        if request.url.path.endswith("/InitTxn/v3/"):
+            seen.append(request)
+            return httpx.Response(200, json={"response": {"result": "OK", "params": {
+                "orderid": "42", "transid": "9001", "steamurl": "https://store.steampowered.com/checkout/approvetxn/9001"}}})
+        seen.append(request)
+        return steam_handler([])(request)
+
+    outcome, url = asyncio.run(iap_steam.begin_in_browser(
+        PLAYER, CLIENT, PACK, STEAM_ID, "en", "203.0.113.7", even_if_closed=True,
+        transport=httpx.MockTransport(handler)))
+    assert url.endswith("/approvetxn/9001") and outcome.order.status == "pending"
+    info = next(r for r in seen if r.url.path.endswith("/GetUserInfo/v2/"))
+    assert info.url.params["ipaddress"] == "203.0.113.7"
+    init = next(r for r in seen if r.url.path.endswith("/InitTxn/v3/"))
+    form = dict(x.split("=", 1) for x in init.content.decode().split("&"))
+    assert form["usersession"] == "web" and form["ipaddress"] == "203.0.113.7"
+
+
+def test_player_routes_never_bypass_the_switch() -> None:
+    """even_if_closed 只给服务器上的运营脚本。玩家走的路由里出现它 = 开关形同虚设。"""
+    assert "even_if_closed" not in (REPO / "backend" / "app" / "routes" / "iap.py").read_text(encoding="utf-8")
+
+
 def test_steam_wallet_in_another_currency_pays_in_usd(monkeypatch) -> None:
     conn, _ = wire(monkeypatch, [("insert into iap_orders", steam_order(external_id=None)),
                                  ("from iap_orders where order_id = $1", steam_order()),
@@ -1120,8 +1168,547 @@ def test_deploy_copies_the_catalog() -> None:
     assert "iap_products.json" in (REPO / "deploy" / "update.sh").read_text(encoding="utf-8")
 
 
+def test_pet_draw_odds_shown_to_players_match_the_server() -> None:
+    """🔴 钻石能用钱买之后，Google 和 Apple 都要求抽之前公示概率（docs/充值系统设计.md 第九、十三节）。
+
+    公示文字在 scenes/menu/PetDrawDialog.gd 里是写死的，真规则在 backend/app/pet_draw.py。
+    改了一边忘了另一边，商店审核看到的就是一个假概率。
+    """
+    from app import pet_draw
+    dialog = (REPO / "scenes" / "menu" / "PetDrawDialog.gd").read_text(encoding="utf-8")
+    draw_py = (REPO / "backend" / "app" / "pet_draw.py").read_text(encoding="utf-8")
+    shop_routes_py = (REPO / "backend" / "app" / "routes" / "shop.py").read_text(encoding="utf-8")
+    assert "secrets.randbelow(10) == 0" in draw_py and "chance_percent=10" in shop_routes_py, "抽中概率改了，公示也要改"
+    assert "每抽消耗 %d 钻石" % pet_draw.PRICE in dialog and "%d gems per draw" % pet_draw.PRICE in dialog
+    assert "概率 10%" in dialog and "10% pet chance" in dialog
+    assert "第 %d 抽必得" % pet_draw.PITY_LIMIT in dialog and "draw %d guarantees" % pet_draw.PITY_LIMIT in dialog
+    assert "%d 金币" % pet_draw.MISS_COIN in dialog and "%d coins" % pet_draw.MISS_COIN in dialog
+    assert "保底命中才清零" in dialog, "能量只有保底那一抽才清零（pet_draw.draw 的 after_energy）"
+
+
 def test_startup_check_prepares_the_wallet_and_order_statements() -> None:
     """040 漏跑时商城、抽宠物、邮件领取会一起 500 —— 要在部署那一刻就喊出来。"""
     names = {name for name, _ in schema_check._PREPARED}
     assert {"shop.LOCK_WALLET", "iap.LOCK_ORDER"} <= names
     assert any("040" in label for label, _sql, _hurts in schema_check._PROBES)
+
+
+# =====================================================================================
+# 第 2 步：平台通知、定时对账、到账 / 退款说明邮件
+# =====================================================================================
+
+
+# --- 说明邮件 -------------------------------------------------------------------
+
+
+def _mail_args(conn: FakeConn) -> tuple:
+    return next(a for q, a in zip(conn.queries, conn.args) if q.startswith("insert into mails"))
+
+
+def test_credit_notice_mail_has_no_attachment(monkeypatch) -> None:
+    """🔴 钱在 credit() 里已经进了付费列。邮件只说一句话 —— 带附件的话会再发一次、而且进赠送列。"""
+    conn, _ = wire(monkeypatch, [])
+    order = iap._order_of(order_row(status="credited", diamond_paid=500, diamond_free=500, first_bonus=True))
+    asyncio.run(iap.mail_notice(iap.Outcome(order, shop.Wallet(500, 500, 0))))
+    columns = next(q for q in conn.queries if q.startswith("insert into mails")).split("values")[0]
+    assert "diamond" not in columns and "items" not in columns and "coin" not in columns
+    player, title_zh, body_zh, _title_en, body_en, note = _mail_args(conn)
+    assert player == PLAYER and title_zh == "充值到账"
+    assert "1000" in body_zh and "首充" in body_zh and "#42" in body_zh and "1000" in body_en
+    assert str(ORDER) in note
+
+
+def test_refund_notice_mail_mentions_debt(monkeypatch) -> None:
+    conn, _ = wire(monkeypatch, [])
+    order = iap._order_of(dict(CREDITED, status="refunded", refunded_at=NOW))
+    asyncio.run(iap.mail_notice(iap.Outcome(order, shop.Wallet(0, 0, 0, 300))))
+    _p, title_zh, body_zh, _t, body_en, _n = _mail_args(conn)
+    assert title_zh == "充值已退款" and "1000" in body_zh and "欠 300" in body_zh and "300" in body_en
+
+
+def test_notice_mail_skips_other_states_and_never_raises(monkeypatch) -> None:
+    conn, _ = wire(monkeypatch, [])
+    asyncio.run(iap.mail_notice(iap.Outcome(iap._order_of(order_row()), shop.EMPTY_WALLET)))
+    assert not conn.queries
+
+    class Broken:
+        def acquire(self):
+            raise RuntimeError("库挂了")
+
+    monkeypatch.setattr(db, "pool", lambda: Broken())
+    asyncio.run(iap.mail_notice(iap.Outcome(iap._order_of(order_row(status="credited")), shop.EMPTY_WALLET)))
+
+
+# --- Google 推送身份 --------------------------------------------------------------
+
+
+@pytest.fixture
+def push_key():
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    jwk = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(key.public_key()))
+    jwk.update({"kid": "push-1", "alg": "RS256", "use": "sig"})
+    return key, {"keys": [jwk]}
+
+
+def push_token(key, **overrides) -> str:
+    now = int(dt.datetime.now(dt.timezone.utc).timestamp())
+    claims = {"iss": "https://accounts.google.com", "aud": PUSH_AUDIENCE, "email": PUSH_ACCOUNT,
+              "email_verified": True, "iat": now, "exp": now + 3600, "sub": "1234"}
+    claims.update(overrides)
+    claims = {k: v for k, v in claims.items() if v is not None}
+    return jwt.encode(claims, key, algorithm="RS256", headers={"kid": "push-1"})
+
+
+def certs_transport(jwks: dict, seen: list | None = None) -> httpx.MockTransport:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if seen is not None:
+            seen.append(request)
+        assert str(request.url) == iap_google.CERTS_URL
+        return httpx.Response(200, json=jwks)
+    return httpx.MockTransport(handler)
+
+
+def test_push_from_our_subscription_is_accepted(push_key) -> None:
+    key, jwks = push_key
+    asyncio.run(iap_google.verify_push("Bearer " + push_token(key), certs_transport(jwks)))
+
+
+@pytest.mark.parametrize("claims", [
+    {"aud": "https://someone-else.example/rtdn"},
+    {"email": "attacker@evil.iam.gserviceaccount.com"},
+    {"email_verified": False},
+    {"iss": "https://evil.example"},
+    {"email": None},
+    {"exp": 1000},
+])
+def test_push_with_wrong_identity_is_refused(push_key, claims) -> None:
+    key, jwks = push_key
+    with pytest.raises(iap_google.GoogleRejected):
+        asyncio.run(iap_google.verify_push("Bearer " + push_token(key, **claims), certs_transport(jwks)))
+
+
+def test_push_signed_by_another_key_or_algorithm_is_refused(push_key) -> None:
+    _key, jwks = push_key
+    other = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    with pytest.raises(iap_google.GoogleRejected):
+        asyncio.run(iap_google.verify_push("Bearer " + push_token(other), certs_transport(jwks)))
+    hs = jwt.encode({"iss": "https://accounts.google.com", "aud": PUSH_AUDIENCE, "email": PUSH_ACCOUNT},
+                    "shared-secret-shared-secret-shared", algorithm="HS256", headers={"kid": "push-1"})
+    with pytest.raises(iap_google.GoogleRejected, match="算法"):
+        asyncio.run(iap_google.verify_push("Bearer " + hs, certs_transport(jwks)))
+    with pytest.raises(iap_google.GoogleRejected):
+        asyncio.run(iap_google.verify_push(None, certs_transport(jwks)))
+
+
+def test_push_without_configured_identity_is_ours(_iap_settings, push_key) -> None:
+    """没配就 503：Pub/Sub 会一直重推，配好之后自动补上 —— 不能 2xx 把通知吞了。"""
+    key, jwks = push_key
+    _iap_settings["s"] = _settings(google_rtdn_audience="")
+    with pytest.raises(iap_google.GoogleUnavailable, match="RTDN"):
+        asyncio.run(iap_google.verify_push("Bearer " + push_token(key), certs_transport(jwks)))
+
+
+def test_push_certs_are_cached(push_key) -> None:
+    key, jwks = push_key
+    seen: list[httpx.Request] = []
+    for _ in range(3):
+        asyncio.run(iap_google.verify_push("Bearer " + push_token(key), certs_transport(jwks, seen)))
+    assert len(seen) == 1
+
+
+# --- RTDN 内容 -----------------------------------------------------------------
+
+
+def rtdn(data: dict) -> dict:
+    return {"message": {"data": base64.b64encode(json.dumps(data).encode()).decode(), "messageId": "1"},
+            "subscription": "projects/p/subscriptions/play-billing-rtdn-push"}
+
+
+def one_time(kind: int, package: str = "com.glory.game.google") -> dict:
+    return rtdn({"version": "1.0", "packageName": package, "eventTimeMillis": "1",
+                 "oneTimeProductNotification": {"version": "1.0", "notificationType": kind,
+                                                "purchaseToken": TOKEN, "sku": PACK}})
+
+
+def voided(product_type: int = 2) -> dict:
+    return rtdn({"version": "1.0", "packageName": "com.glory.game.google", "eventTimeMillis": "1",
+                 "voidedPurchaseNotification": {"purchaseToken": TOKEN, "orderId": "GPA.1",
+                                                "productType": product_type, "refundType": 1}})
+
+
+@pytest.mark.parametrize("body, kind", [
+    (one_time(1), "purchased"),
+    (one_time(2), "canceled"),
+    (one_time(1, package="com.other.app"), "ignored"),
+    (voided(), "voided"),
+    (voided(product_type=1), "ignored"),
+    (rtdn({"version": "1.0", "packageName": "com.glory.game.google", "testNotification": {"version": "1.0"}}), "test"),
+    (rtdn({"version": "1.0", "packageName": "com.glory.game.google", "subscriptionNotification": {}}), "ignored"),
+])
+def test_rtdn_kinds(body, kind) -> None:
+    notice = iap_google.parse_rtdn(body)
+    assert notice.kind == kind
+    if kind in ("purchased", "canceled"):
+        assert (notice.token, notice.product_id) == (TOKEN, PACK)
+
+
+def test_purchase_notice_finds_the_order_by_its_obfuscated_id(monkeypatch, google_key) -> None:
+    """玩家付完就关了游戏：通知按付款上的订单号找到单，照样入账、消耗。"""
+    wire(monkeypatch, [("from iap_orders where order_id = $1 for update", order_row()),
+                       ("from iap_orders where order_id = $1", order_row())]
+         + credit_db() + [("update iap_orders set consumed_at", None)])
+    seen: list[httpx.Request] = []
+    outcome = asyncio.run(iap_google.on_purchase_notice(PACK, TOKEN, httpx.MockTransport(
+        google_handler(google_purchase(), seen))))
+    assert outcome.order.status == "credited" and not outcome.replayed
+    assert seen[-1].url.path.endswith(":consume")
+
+
+@pytest.mark.parametrize("profile", [None, "not-a-uuid"])
+def test_purchase_notice_without_our_order_id_is_dropped(monkeypatch, google_key, profile) -> None:
+    conn, _ = wire(monkeypatch, [])
+    outcome = asyncio.run(iap_google.on_purchase_notice(PACK, TOKEN, httpx.MockTransport(
+        google_handler(google_purchase(obfuscatedExternalProfileId=profile), []))))
+    assert outcome is None and not conn.ledger()
+
+
+def test_purchase_notice_for_a_missing_order_is_dropped(monkeypatch, google_key) -> None:
+    conn, _ = wire(monkeypatch, [("from iap_orders where order_id = $1", None)])
+    outcome = asyncio.run(iap_google.on_purchase_notice(PACK, TOKEN, httpx.MockTransport(
+        google_handler(google_purchase(), []))))
+    assert outcome is None and not conn.ledger()
+
+
+# --- RTDN 接口 -----------------------------------------------------------------
+
+
+@pytest.fixture
+def trusted_push(monkeypatch):
+    async def ok(_authorization, transport=None):
+        return None
+    monkeypatch.setattr(iap_google, "verify_push", ok)
+    iap_routes._notify_limiter.reset()
+
+
+def test_rtdn_without_valid_identity_is_401(client, monkeypatch) -> None:
+    async def bad(_authorization, transport=None):
+        raise iap_google.GoogleRejected("不对")
+    monkeypatch.setattr(iap_google, "verify_push", bad)
+    iap_routes._notify_limiter.reset()
+    assert client.post("/iap/google/rtdn", json=one_time(1)).status_code == 401
+
+
+def test_rtdn_path_skips_the_client_version_gate(client, trusted_push) -> None:
+    """Pub/Sub 不带游戏的版本头。挂在 /v1 下的话会被补丁版本检查当成旧客户端挡掉。"""
+    assert not iap_routes.notify_router.prefix.startswith("/v1")
+    r = client.post("/iap/google/rtdn", json=rtdn({"version": "1.0", "packageName": "com.glory.game.google",
+                                                    "testNotification": {"version": "1.0"}}))
+    assert r.status_code == 204
+
+
+def test_rtdn_garbage_is_acknowledged_not_retried(client, trusted_push) -> None:
+    assert client.post("/iap/google/rtdn", json={"message": {"data": "!!!not base64 json"}}).status_code == 204
+
+
+def test_rtdn_purchase_credits_and_mails(monkeypatch, client, trusted_push) -> None:
+    done = iap.Outcome(iap._order_of(order_row(status="credited", diamond_paid=500, diamond_free=500)),
+                       shop.Wallet(500, 500, 0))
+    mailed: list = []
+
+    async def notice(product_id, token, transport=None):
+        assert (product_id, token) == (PACK, TOKEN)
+        return done
+
+    async def mail(outcome):
+        mailed.append(outcome)
+
+    monkeypatch.setattr(iap_google, "on_purchase_notice", notice)
+    monkeypatch.setattr(iap, "mail_notice", mail)
+    assert client.post("/iap/google/rtdn", json=one_time(1)).status_code == 204
+    assert mailed == [done]
+
+
+def test_rtdn_replayed_purchase_sends_no_second_mail(monkeypatch, client, trusted_push) -> None:
+    done = iap.Outcome(iap._order_of(order_row(status="credited")), shop.EMPTY_WALLET, replayed=True)
+    mailed: list = []
+
+    async def notice(*_a, **_k):
+        return done
+
+    async def mail(outcome):
+        mailed.append(outcome)
+
+    monkeypatch.setattr(iap_google, "on_purchase_notice", notice)
+    monkeypatch.setattr(iap, "mail_notice", mail)
+    assert client.post("/iap/google/rtdn", json=one_time(1)).status_code == 204
+    assert mailed == []
+
+
+def test_rtdn_voided_claws_back_by_token_hash(monkeypatch, client, trusted_push) -> None:
+    calls: list = []
+    refunded = iap.Outcome(iap._order_of(dict(CREDITED, status="refunded", refunded_at=NOW)), shop.EMPTY_WALLET)
+
+    async def refund(platform, external_id, note):
+        calls.append((platform, external_id, note))
+        return refunded
+
+    async def mail(_outcome):
+        calls.append("mail")
+
+    monkeypatch.setattr(iap, "refund", refund)
+    monkeypatch.setattr(iap, "mail_notice", mail)
+    assert client.post("/iap/google/rtdn", json=voided()).status_code == 204
+    assert calls == [("google", iap_google.token_key(TOKEN), "google_voided"), "mail"]
+
+
+def test_rtdn_platform_outage_is_503_so_pubsub_retries(monkeypatch, client, trusted_push) -> None:
+    async def down(*_a, **_k):
+        raise iap_google.GoogleUnavailable("连不上")
+    monkeypatch.setattr(iap_google, "on_purchase_notice", down)
+    assert client.post("/iap/google/rtdn", json=one_time(1)).status_code == 503
+
+
+# --- Apple 服务器通知 -----------------------------------------------------------
+
+
+def apple_notice(chain: AppleChain, kind: str = "REFUND", *, bundle: str = "com.superforge.glory",
+                 tx: str | None = None) -> str:
+    x5c = [base64.b64encode(c.public_bytes(serialization.Encoding.DER)).decode()
+           for c in (chain.leaf, chain.mid, chain.root)]
+    payload = {"notificationType": kind, "notificationUUID": "uuid-1", "version": "2.0",
+               "signedDate": int(dt.datetime(2026, 10, 27, tzinfo=dt.timezone.utc).timestamp() * 1000),
+               "data": {"bundleId": bundle, "environment": "Production",
+                        "signedTransactionInfo": tx if tx is not None else chain.sign()}}
+    return jwt.encode(payload, chain.leaf_key, algorithm="ES256", headers={"x5c": x5c})
+
+
+def test_apple_refund_notification_claws_back_by_transaction_id(monkeypatch, apple) -> None:
+    calls: list = []
+
+    async def refund(platform, external_id, note):
+        calls.append((platform, external_id, note))
+        return None
+
+    monkeypatch.setattr(iap, "refund", refund)
+    what, _outcome = asyncio.run(iap_apple.on_notification(apple_notice(apple)))
+    assert what == "refund" and calls == [("apple", "2000000123", "apple_refund")]
+
+
+def test_apple_refund_reversed_moves_no_money(monkeypatch, apple) -> None:
+    async def refund(*_a):
+        raise AssertionError("退款撤销不该再扣一次")
+    monkeypatch.setattr(iap, "refund", refund)
+    assert asyncio.run(iap_apple.on_notification(apple_notice(apple, "REFUND_REVERSED")))[0] == "refund_reversed"
+    assert asyncio.run(iap_apple.on_notification(apple_notice(apple, "CONSUMPTION_REQUEST")))[0] == "ignored"
+
+
+def test_apple_notification_for_another_app_is_refused(apple) -> None:
+    with pytest.raises(iap_apple.AppleRejected, match="不是这个 App"):
+        iap_apple.verify_notification(apple_notice(apple, bundle="com.example.other"))
+
+
+def test_apple_notification_with_a_forged_inner_transaction_is_refused(tmp_path, _iap_settings) -> None:
+    """外层是真的、里面的交易是别人签的：两层都要验，不能只验外层。"""
+    (tmp_path / "ours").mkdir()
+    (tmp_path / "forged").mkdir()
+    ours, forged = AppleChain(tmp_path / "ours"), AppleChain(tmp_path / "forged")
+    _iap_settings["s"] = _settings(apple_root_cert_file=str(ours.root_path))
+    with pytest.raises(iap_apple.AppleRejected, match="证书链"):
+        iap_apple.verify_notification(apple_notice(ours, tx=forged.sign()))
+
+
+def test_apple_notification_endpoint(monkeypatch, client, apple) -> None:
+    iap_routes._notify_limiter.reset()
+    mailed: list = []
+    refunded = iap.Outcome(iap._order_of(dict(CREDITED, platform="apple", status="refunded", refunded_at=NOW)),
+                           shop.EMPTY_WALLET)
+
+    async def refund(*_a):
+        return refunded
+
+    async def mail(outcome):
+        mailed.append(outcome)
+
+    monkeypatch.setattr(iap, "refund", refund)
+    monkeypatch.setattr(iap, "mail_notice", mail)
+    r = client.post("/iap/apple/notifications", json={"signedPayload": apple_notice(apple)})
+    assert r.status_code == 200 and mailed == [refunded]
+    head, body, sig = apple_notice(apple).split(".")
+    r = client.post("/iap/apple/notifications", json={"signedPayload": ".".join((head, body + "x", sig))})
+    assert r.status_code == 400
+
+
+# --- 定时对账 -------------------------------------------------------------------
+
+
+def test_steam_report_parsing() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/ISteamMicroTxn/GetReport/v5/", "只问正式接口"
+        assert request.url.params["type"] == "GAMESALES" and request.url.params["time"] == "2026-10-01T00:00:00Z"
+        return httpx.Response(200, json={"response": {"result": "OK", "params": {"count": 2, "orders": [
+            {"orderid": "42", "transid": "9001", "status": "Refunded", "time": "2026-10-27T01:00:00Z"},
+            {"orderid": "bad"},
+        ]}}})
+    rows = asyncio.run(iap_steam.report("2026-10-01T00:00:00Z", httpx.MockTransport(handler)))
+    assert rows == [iap_steam.ReportRow(42, "9001", "Refunded", "2026-10-27T01:00:00Z")]
+
+
+@pytest.fixture
+def sync_calls(monkeypatch):
+    """把定时对账用到的 iap 函数换成记账的替身。"""
+    calls: list = []
+
+    async def cancel(order_id, note):
+        calls.append(("cancel", order_id, note))
+
+    async def mail(outcome):
+        calls.append(("mail", outcome.order.order_id))
+
+    async def mark(order_id):
+        calls.append(("consumed", order_id))
+
+    monkeypatch.setattr(iap, "cancel", cancel)
+    monkeypatch.setattr(iap, "mail_notice", mail)
+    monkeypatch.setattr(iap, "mark_consumed", mark)
+    return calls
+
+
+def _aged(minutes: int, **overrides) -> iap.Order:
+    return iap._order_of(steam_order(order_id=uuid.uuid4(), created_at=NOW - dt.timedelta(minutes=minutes),
+                                     **overrides))
+
+
+def test_steam_sweep(monkeypatch, sync_calls) -> None:
+    lost = _aged(11, external_id=None)
+    starting = _aged(2, external_id=None)
+    approved = _aged(5)
+    stale = _aged(61)
+    waiting = _aged(30)
+    broken = _aged(5)
+
+    async def pending(platform, max_age):
+        assert platform == "steam"
+        return [lost, starting, approved, stale, waiting, broken]
+
+    async def settle(order, declined=False, transport=None):
+        if order is broken:
+            raise steam.SteamUnavailable("连不上")
+        status = "credited" if order is approved else "pending"
+        return iap.Outcome(dataclasses.replace(order, status=status), shop.EMPTY_WALLET)
+
+    monkeypatch.setattr(iap, "pending_orders", pending)
+    monkeypatch.setattr(iap_steam, "settle", settle)
+    assert asyncio.run(iap_sync.sweep_steam(NOW)) == 1
+    assert sync_calls == [
+        ("cancel", lost.order_id, "steam_init_lost"),
+        ("mail", approved.order_id),
+        ("cancel", stale.order_id, "steam_timeout"),
+    ], "下单还在路上的、半小时内还在等的不动；一张出错不耽误后面的"
+
+
+def test_steam_refund_report_claws_back_and_advances(monkeypatch, sync_calls) -> None:
+    pages = [[iap_steam.ReportRow(42, "9001", "Refunded", "2026-10-27T01:00:00Z"),
+              iap_steam.ReportRow(43, "9002", "Succeeded", "2026-10-27T02:00:00Z"),
+              iap_steam.ReportRow(44, "9003", "PartialRefund", "2026-10-27T03:00:00Z"),
+              iap_steam.ReportRow(45, "9004", "Chargedback", "2026-10-27T00:30:00Z")]]
+    refunds: list = []
+
+    async def report(since, transport=None):
+        return pages.pop(0) if pages else []
+
+    async def refund(platform, external_id, note):
+        refunds.append((external_id, note))
+        return iap.Outcome(iap._order_of(dict(CREDITED, status="refunded", refunded_at=NOW)), shop.EMPTY_WALLET)
+
+    monkeypatch.setattr(iap_steam, "report", report)
+    monkeypatch.setattr(iap, "refund", refund)
+    cursors = iap_sync.fresh_cursors(NOW)
+    assert asyncio.run(iap_sync.steam_refunds(cursors)) == 2
+    assert refunds == [("9001", "steam_refunded"), ("9004", "steam_chargedback")], "部分退款只记日志"
+    assert cursors.steam_since == "2026-10-27T03:00:00Z"
+
+
+def test_google_consume_retries_unconsumed(monkeypatch, sync_calls, google_key) -> None:
+    order = iap._order_of(order_row(status="credited", purchase_token=TOKEN, credited_at=NOW))
+
+    async def unconsumed(max_age):
+        assert max_age == 3 * 86400, "超过 3 天 Google 已经自动退款了，补了也没用"
+        return [order]
+
+    async def consume(product_id, token, transport=None):
+        return token == TOKEN
+
+    monkeypatch.setattr(iap, "unconsumed_google_orders", unconsumed)
+    monkeypatch.setattr(iap_google, "consume", consume)
+    assert asyncio.run(iap_sync.google_consume()) == 1
+    assert sync_calls == [("consumed", order.order_id)]
+
+
+def test_google_voided_claws_back_and_never_asks_older_than_30_days(monkeypatch, sync_calls, google_key) -> None:
+    asked: list = []
+    refunds: list = []
+
+    async def voided_since(start_ms, transport=None):
+        asked.append(start_ms)
+        return [iap_google.Voided(TOKEN, int(NOW.timestamp() * 1000))]
+
+    async def refund(platform, external_id, note):
+        refunds.append((platform, external_id))
+        return None
+
+    monkeypatch.setattr(iap_google, "voided_since", voided_since)
+    monkeypatch.setattr(iap, "refund", refund)
+    cursors = iap_sync.Cursors(steam_since="", google_since_ms=0)  # 很久没跑过
+    asyncio.run(iap_sync.google_voided(cursors, NOW))
+    assert asked[0] >= int((NOW - dt.timedelta(days=30)).timestamp() * 1000)
+    assert refunds == [("google", iap_google.token_key(TOKEN))]
+    assert cursors.google_since_ms == int(NOW.timestamp() * 1000)
+
+
+def test_unconfigured_platforms_are_skipped_quietly(monkeypatch, _iap_settings) -> None:
+    _iap_settings["s"] = _settings(steam_web_api_key="", google_play_service_account_file="")
+
+    async def boom(*_a, **_k):
+        raise AssertionError("没配好的平台不该去问")
+
+    for module, name in ((iap, "pending_orders"), (iap, "unconsumed_google_orders"),
+                         (iap_steam, "report"), (iap_google, "voided_since")):
+        monkeypatch.setattr(module, name, boom)
+    cursors = iap_sync.fresh_cursors(NOW)
+    assert asyncio.run(iap_sync.sweep_steam(NOW)) == 0
+    assert asyncio.run(iap_sync.steam_refunds(cursors)) == 0
+    assert asyncio.run(iap_sync.google_consume()) == 0
+    assert asyncio.run(iap_sync.google_voided(cursors, NOW)) == 0
+
+
+def test_tick_runs_slow_jobs_every_tenth_round_and_survives_failures(monkeypatch) -> None:
+    ran: list = []
+
+    def job(name, fail=False):
+        async def run(*_a, **_k):
+            ran.append(name)
+            if fail:
+                raise RuntimeError(name)
+            return 0
+        return run
+
+    monkeypatch.setattr(iap_sync, "sweep_steam", job("sweep", fail=True))
+    monkeypatch.setattr(iap_sync, "steam_refunds", job("steam_refunds", fail=True))
+    monkeypatch.setattr(iap_sync, "google_consume", job("consume"))
+    monkeypatch.setattr(iap_sync, "google_voided", job("voided"))
+    cursors = iap_sync.fresh_cursors(NOW)
+    asyncio.run(iap_sync.tick(cursors, 1))
+    assert ran == ["sweep", "steam_refunds", "consume", "voided"], "启动后第一圈就对一次账；一样出错不挡后面的"
+    ran.clear()
+    asyncio.run(iap_sync.tick(cursors, 2))
+    assert ran == ["sweep"]
+    ran.clear()
+    asyncio.run(iap_sync.tick(cursors, 11))
+    assert ran == ["sweep", "steam_refunds", "consume", "voided"]
+
+
+def test_reconciler_is_started_and_stopped_with_the_server() -> None:
+    main_py = (REPO / "backend" / "app" / "main.py").read_text(encoding="utf-8")
+    assert "reconciler = asyncio.create_task(iap_sync.loop())" in main_py
+    assert "voice_sweeper, reconciler)" in main_py, "停服时要一起取消"
+    assert "app.include_router(iap_routes.notify_router)" in main_py

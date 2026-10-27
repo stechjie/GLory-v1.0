@@ -7,6 +7,11 @@
     POST /v1/iap/steam/confirm         overlay 回调之后来查
     GET  /v1/iap/orders/{order_id}     查单（「处理中」时轮询）
 
+平台推过来的（不在 /v1 下，同 /oidc/steam，避开客户端版本检查；不收玩家令牌，各自验平台的签名）：
+
+    POST /iap/google/rtdn              Google 实时通知（Pub/Sub 推送）
+    POST /iap/apple/notifications      Apple 服务器通知 V2
+
 ## 客户端看到的三种结果
 
     status = credited    已到账（diamond 是新余额）
@@ -23,7 +28,7 @@ import logging
 import uuid
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from app import db, iap, iap_apple, iap_google, iap_steam, players, steam
@@ -279,3 +284,82 @@ async def read_order(
     """只读数据库，不连平台 —— 「处理中」时客户端会每隔几秒问一次。"""
     me = await _me(claims)
     return _out(await _run(iap.read_order(me.player_id, order_id)))
+
+
+# --- 平台推过来的通知 ----------------------------------------------------------------
+#
+# 回什么状态码决定平台会不会重推，所以分三种：
+#   · 不是平台发来的（验不过签名 / 身份）         401 / 400
+#   · 我们这边暂时做不了（没配好、连不上、库出错） 503 / 500 —— 让它重推，配好后自动补上
+#   · 看不懂、不是我们的单、已经处理过            2xx —— 重推也没用，确认收到、记日志
+#
+# 地址是公开的、不要登录，限一个总量挡住刷接口（验签名要算几次 ECDSA / RSA）。
+
+notify_router = APIRouter(prefix="/iap", tags=["iap"])
+_notify_limiter = SlidingWindowLimiter(300, 60.0)
+
+
+def _notify_limit(platform: str) -> None:
+    try:
+        _notify_limiter.check(platform)
+    except RateLimited as exc:
+        raise HTTPException(status_code=429, detail="太多了", headers={"Retry-After": str(exc.retry_after)}) from None
+
+
+@notify_router.post("/google/rtdn", status_code=204)
+async def google_rtdn(request: Request, authorization: Annotated[str | None, Header()] = None) -> Response:
+    """Google 实时通知。Pub/Sub 收到 2xx 才算送达，别的会退避重推（订阅默认留 7 天）。"""
+    _notify_limit("google")
+    try:
+        await iap_google.verify_push(authorization)
+    except iap_google.GoogleRejected as exc:
+        log.warning("Google 实时通知身份不对：%s", exc)
+        raise HTTPException(status_code=401, detail="不是 Google 推来的") from None
+    except iap_google.GoogleUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    try:
+        notice = iap_google.parse_rtdn(await request.json())
+    except (ValueError, KeyError, TypeError, AttributeError):
+        log.warning("Google 实时通知看不懂，确认收到后丢掉")
+        return Response(status_code=204)
+
+    outcome = None
+    try:
+        if notice.kind in ("purchased", "canceled") and notice.token:
+            outcome = await iap_google.on_purchase_notice(notice.product_id, notice.token)
+            if outcome is not None and (outcome.order.status != "credited" or outcome.replayed):
+                outcome = None  # 只有这一次真的入了账才发到账邮件
+        elif notice.kind == "voided" and notice.token:
+            outcome = await iap.refund("google", iap_google.token_key(notice.token), "google_voided")
+            if outcome is not None and outcome.replayed:
+                outcome = None
+        elif notice.kind == "test":
+            log.info("收到 Google 实时通知的测试消息：推送通道是通的")
+    except (iap_google.GoogleRejected, iap.IapRejected) as exc:
+        log.warning("Google 实时通知处理不了，确认收到后丢掉：%s", exc)
+        return Response(status_code=204)
+    except iap_google.GoogleUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    if outcome is not None:
+        await iap.mail_notice(outcome)
+    return Response(status_code=204)
+
+
+class AppleNotificationBody(BaseModel):
+    signedPayload: str = Field(min_length=32, max_length=65536)  # noqa: N815 - Apple 定的字段名
+
+
+@notify_router.post("/apple/notifications")
+async def apple_notifications(body: AppleNotificationBody) -> Response:
+    """Apple 服务器通知 V2。Apple 收到 200 才算送达，别的会隔一段时间重试几次。"""
+    _notify_limit("apple")
+    try:
+        _what, outcome = await iap_apple.on_notification(body.signedPayload)
+    except iap_apple.AppleRejected as exc:
+        log.warning("Apple 服务器通知验不过：%s", exc)
+        raise HTTPException(status_code=400, detail="不是 Apple 签的") from None
+    except iap_apple.AppleUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+    if outcome is not None and not outcome.replayed:
+        await iap.mail_notice(outcome)
+    return Response(status_code=200)

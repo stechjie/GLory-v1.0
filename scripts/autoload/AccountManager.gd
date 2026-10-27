@@ -26,6 +26,7 @@ extends Node
 const AccountConfig := preload("res://scripts/account/AccountConfig.gd")
 const SignInBridge := preload("res://scripts/account/SignInBridge.gd")
 const SteamBridge := preload("res://scripts/account/SteamBridge.gd")
+const BillingBridge := preload("res://scripts/account/BillingBridge.gd")
 
 signal login_started()
 signal login_succeeded(player_id: String, player_name: String)
@@ -1277,6 +1278,44 @@ func set_active_pet(pet_id: String) -> Dictionary:
 func pick_starter_pet(client_order_id: String, pet_id: String) -> Dictionary:
 	return await _request(HTTPClient.METHOD_POST, "/v1/me/pets/starter",
 		{"client_order_id": client_order_id, "pet_id": pet_id}, true)
+
+
+# --- 充值（docs/充值系统设计.md）------------------------------------------------
+#
+# 客户端只发意图：买哪一档。钻石数从服务器目录取，价格从平台取，到没到账只认服务器答复的 status
+# （credited / pending / cancelled）。
+#
+# 🔴 503、断网、超时 = 「处理中」，**不是失败**：钱多半已经扣了，只是这一趟没核实完
+# （商店刷新超时那次的教训）。下次启动 recover_purchases 会再交一次。
+
+
+# {"open", "products": [{id, diamond, bonus, first_bonus}], "diamond", "coin", "debt"}。
+func fetch_iap_catalog(platform: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/iap/catalog?platform=" + platform.uri_encode(), null, true)
+
+
+# 同 place_shop_order：重试同一笔时 client_order_id 原样复用，服务器回同一张单。
+# 回的 order_id 付款时塞进 obfuscatedProfileId，obfuscated_account_id 塞进 obfuscatedAccountId。
+func create_iap_order(client_order_id: String, platform: String, product_id: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/iap/orders",
+		{"client_order_id": client_order_id, "platform": platform, "product_id": product_id}, true)
+
+
+func confirm_google_purchase(order_id: String, purchase_token: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/iap/google/confirm",
+		{"order_id": order_id, "purchase_token": purchase_token}, true)
+
+
+# 只读数据库，不连平台。「处理中」时每隔几秒问一次。
+func fetch_iap_order(order_id: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/iap/orders/" + order_id.uri_encode(), null, true)
+
+
+# 启动、回到前台时调（Main）：把付了钱、还没处理完的付款交给服务器（BillingBridge.recover）。
+func recover_purchases() -> void:
+	if not is_logged_in() or BillingBridge.platform() != "google":
+		return
+	await BillingBridge.recover(get_tree(), confirm_google_purchase)
 
 
 # --- 出战配置与出战名片（docs/商城系统设计.md 第五节）----------------------------

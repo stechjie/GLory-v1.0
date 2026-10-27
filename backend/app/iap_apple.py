@@ -107,8 +107,8 @@ def _has(cert: x509.Certificate, oid: x509.ObjectIdentifier) -> bool:
         return False
 
 
-def verify(jws: str) -> Transaction:
-    """验签名交易。通过了才返回；任何一步不对都抛 AppleRejected。"""
+def _verified(jws: str) -> dict:
+    """验证书链和签名，返回 payload。签名交易和服务器通知是同一种 JWS，都走这里。"""
     root = _pinned_root()
     try:
         header = jwt.get_unverified_header(jws)
@@ -135,11 +135,15 @@ def verify(jws: str) -> Transaction:
         raise AppleRejected("签名交易的证书不是 App Store 的")
 
     try:
-        payload = jwt.decode(jws, key=leaf.public_key(), algorithms=["ES256"],
-                             options={"verify_aud": False, "verify_iss": False})
+        return jwt.decode(jws, key=leaf.public_key(), algorithms=["ES256"],
+                          options={"verify_aud": False, "verify_iss": False})
     except jwt.PyJWTError:
         raise AppleRejected("签名交易的签名不对") from None
 
+
+def verify(jws: str) -> Transaction:
+    """验签名交易。通过了才返回；任何一步不对都抛 AppleRejected。"""
+    payload = _verified(jws)
     bundle = str(payload.get("bundleId") or "")
     if bundle != get_settings().apple_bundle_id:
         raise AppleRejected("签名交易不是这个 App 的")
@@ -183,3 +187,45 @@ async def confirm(order: iap.Order, jws: str) -> iap.Outcome:
         price_amount=tx.price // 10 if two_decimal else None,
         price_currency=tx.currency if two_decimal else None,
     ))
+
+
+# --- 服务器通知 V2（App Store Connect 里填的 /iap/apple/notifications）-------------------
+#
+# Apple POST 过来 {"signedPayload": <JWS>}。外层和里面的 signedTransactionInfo 都是 Apple 签的 JWS，
+# 两层都走 _verified（同一套证书链检查）。第一期只自动处理 REFUND；
+# REFUND_REVERSED（退款又撤销了）只记日志、交运营后台；CONSUMPTION_REQUEST（问用掉多少）不回。
+
+@dataclasses.dataclass(frozen=True)
+class Notification:
+    type: str
+    subtype: str
+    uuid: str
+    transaction: Transaction | None
+
+
+def verify_notification(signed_payload: str) -> Notification:
+    payload = _verified(signed_payload)
+    data = payload.get("data") or {}
+    if str(data.get("bundleId") or "") != get_settings().apple_bundle_id:
+        raise AppleRejected("服务器通知不是这个 App 的")
+    signed_tx = data.get("signedTransactionInfo")
+    return Notification(
+        type=str(payload.get("notificationType") or ""),
+        subtype=str(payload.get("subtype") or ""),
+        uuid=str(payload.get("notificationUUID") or ""),
+        transaction=verify(str(signed_tx)) if signed_tx else None,
+    )
+
+
+async def on_notification(signed_payload: str) -> tuple[str, iap.Outcome | None]:
+    """处理一条服务器通知。返回 (做了什么, 退款后的单)。验不过抛 AppleRejected。"""
+    notice = verify_notification(signed_payload)
+    tx = notice.transaction
+    if notice.type == "REFUND" and tx is not None:
+        outcome = await iap.refund("apple", tx.transaction_id, "apple_refund")
+        return "refund", outcome
+    if notice.type == "REFUND_REVERSED" and tx is not None:
+        # 退款被撤销了（钱又回到我们这）。自动补回钻石容易和欠账、首充搅在一起，第一期交人看。
+        log.warning("Apple 退款被撤销，需要人工处理 transaction=%s notification=%s", tx.transaction_id, notice.uuid)
+        return "refund_reversed", None
+    return "ignored", None

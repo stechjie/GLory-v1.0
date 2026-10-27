@@ -79,10 +79,13 @@ async def _call(method: str, name: str, params: dict[str, str], sandbox: bool,
     return body.get("params") or {}
 
 
-async def user_currency(steam_id: str, sandbox: bool,
-                        transport: httpx.AsyncBaseTransport | None = None) -> str:
-    """玩家 Steam 钱包的币种（GetUserInfo）。"""
-    params = await _call("GET", "GetUserInfo/v2", {"steamid": steam_id}, sandbox, transport)
+async def user_currency(steam_id: str, sandbox: bool, transport: httpx.AsyncBaseTransport | None = None,
+                        ipaddress: str | None = None) -> str:
+    """玩家 Steam 钱包的币种（GetUserInfo）。浏览器确认那种单要带玩家的公网 IP（Steam 的要求）。"""
+    query = {"steamid": steam_id}
+    if ipaddress:
+        query["ipaddress"] = ipaddress
+    params = await _call("GET", "GetUserInfo/v2", query, sandbox, transport)
     return str(params.get("currency") or "")
 
 
@@ -108,30 +111,53 @@ async def begin(player_id: uuid.UUID, client_order_id: uuid.UUID, product_id: st
     steam_id 必须是调用方**验过票**、并核对过绑在这个号上的那个（routes/iap.py 做）。
     弱网重试带同一个 client_order_id：已经下过 Steam 单的直接回原单，不再下第二次。
     """
+    outcome, _url = await _begin(player_id, client_order_id, product_id, steam_id, language, None,
+                                 even_if_closed=False, transport=transport)
+    return outcome
+
+
+async def begin_in_browser(player_id: uuid.UUID, client_order_id: uuid.UUID, product_id: str, steam_id: str,
+                           language: str, ipaddress: str, *, even_if_closed: bool = False,
+                           transport: httpx.AsyncBaseTransport | None = None) -> tuple[iap.Outcome, str]:
+    """同 begin，但让玩家在浏览器里确认（usersession=web）。返回 (单, 要打开的 Steam 网址)。
+
+    两处用：deploy/check_iap_steam.py 不经过游戏走一遍沙盒；以后游戏里 overlay 弹不出来时的退路
+    （docs/充值系统设计.md 第五节）。ipaddress 是玩家的公网 IP —— Steam 对这种单要求带上。
+    重试拿回原单时网址是空串（Steam 只在下单那一次给）。
+    """
+    return await _begin(player_id, client_order_id, product_id, steam_id, language, ipaddress,
+                        even_if_closed=even_if_closed, transport=transport)
+
+
+async def _begin(player_id: uuid.UUID, client_order_id: uuid.UUID, product_id: str, steam_id: str,
+                 language: str, web_ip: str | None, *, even_if_closed: bool,
+                 transport: httpx.AsyncBaseTransport | None) -> tuple[iap.Outcome, str]:
     sandbox = steam_id in iap.steam_sandbox_ids()
     item = iap.product(product_id)
-    currency, amount = pick_price(item, await user_currency(steam_id, sandbox, transport))
+    currency, amount = pick_price(item, await user_currency(steam_id, sandbox, transport, web_ip))
     order, _created = await iap.create_order(
         player_id, client_order_id, "steam", product_id, steam_id=steam_id,
         environment=iap.SANDBOX if sandbox else iap.PRODUCTION,
-        price_amount=amount, price_currency=currency)
+        price_amount=amount, price_currency=currency, even_if_closed=even_if_closed)
     if order.status != "pending" or order.external_id is not None:
-        return await iap.outcome_of(order.order_id)
+        return await iap.outcome_of(order.order_id), ""
     sandbox = order.environment == iap.SANDBOX  # 重试时以第一次建单时定的为准
+    session = {"usersession": "web", "ipaddress": web_ip} if web_ip else {"usersession": "client"}
     try:
         params = await _call("POST", "InitTxn/v3", {
             "orderid": str(order.order_no), "steamid": order.steam_id or steam_id,
             "itemcount": "1", "language": language, "currency": order.price_currency or currency,
-            "usersession": "client",
+            **session,
             "itemid[0]": str(item.tier), "qty[0]": "1",
             "amount[0]": str(order.price_amount if order.price_amount is not None else amount),
             "description[0]": "%d Diamonds" % item.diamond, "category[0]": "Diamonds",
         }, sandbox, transport)
         transid = str(params.get("transid") or "")
+        steamurl = str(params.get("steamurl") or "")
     except SteamTxnFailed as exc:
         # 可能是上一次其实下成功了、只是回执丢了，这次撞了同一个 orderid —— 问一下。
         try:
-            transid = (await query_txn(order.order_no, sandbox, transport)).transid
+            transid, steamurl = (await query_txn(order.order_no, sandbox, transport)).transid, ""
         except SteamTxnFailed:
             await iap.cancel(order.order_id, "steam_init_failed:%d" % exc.code)
             log.warning("Steam 下单失败 order=%s code=%d %s", order.order_id, exc.code, exc)
@@ -139,9 +165,9 @@ async def begin(player_id: uuid.UUID, client_order_id: uuid.UUID, product_id: st
     if not transid:
         raise steam.SteamUnavailable("Steam 下单没回 transid")
     await iap.mark_steam_txn(order.order_id, transid)
-    log.info("Steam 下单 order=%s player=%s product=%s %s=%s sandbox=%s",
-             order.order_id, player_id, product_id, order.price_currency, order.price_amount, sandbox)
-    return await iap.outcome_of(order.order_id)
+    log.info("Steam 下单 order=%s player=%s product=%s %s=%s sandbox=%s web=%s",
+             order.order_id, player_id, product_id, order.price_currency, order.price_amount, sandbox, bool(web_ip))
+    return await iap.outcome_of(order.order_id), steamurl
 
 
 async def settle(order: iap.Order, declined: bool = False,
@@ -184,3 +210,34 @@ async def settle(order: iap.Order, declined: bool = False,
         return await iap.outcome_of(order.order_id)
     # Failed，或者还没入账就被退了 / 拒付了：这张单从没给过钻石，取消即可。
     return await iap.cancel(order.order_id, ("steam_" + status.lower())[:200])
+
+
+# --- 退款与拒付（GetReport）-------------------------------------------------------
+#
+# Steam 不推送，要我们自己问。文档要求至少每天一次；app/iap_sync.py 每 10 分钟一次。
+# 只问正式接口：沙盒单没花钱，不会有退款。
+
+# 这些状态 = 钱退回去了，入过账的要扣回。
+REVERSED = frozenset({"Refunded", "Chargedback", "RefundedSuspectedFraud", "RefundedFriendlyFraud"})
+
+
+@dataclasses.dataclass(frozen=True)
+class ReportRow:
+    order_no: int
+    transid: str
+    status: str
+    time: str        # RFC 3339，这一行最后一次变化的时间；下一次从这里往后问
+
+
+async def report(since: str, transport: httpx.AsyncBaseTransport | None = None) -> list[ReportRow]:
+    """since（RFC 3339 UTC）之后有变化的单。每次最多 1000 行，调用方用最后一行的 time 接着问。"""
+    params = await _call("GET", "GetReport/v5", {"type": "GAMESALES", "time": since, "maxresults": "1000"},
+                         False, transport)
+    rows = []
+    for raw in params.get("orders") or []:
+        try:
+            rows.append(ReportRow(order_no=int(raw.get("orderid")), transid=str(raw.get("transid") or ""),
+                                  status=str(raw.get("status") or ""), time=str(raw.get("time") or "")))
+        except (TypeError, ValueError):
+            log.warning("Steam 报表里有一行看不懂，跳过")
+    return rows
