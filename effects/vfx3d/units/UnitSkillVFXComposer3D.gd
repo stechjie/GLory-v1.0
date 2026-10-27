@@ -1982,6 +1982,15 @@ func _dive_backline(origin:Vector3,target:Vector3,context:Dictionary)->void:
 func _sky_heal(origin:Vector3,context:Dictionary)->void:
 	var th := _uh(context)
 	var oh := _uh(context,"origin_height")
+	if not VFXQualityBudget.allow_dynamic_light():
+		# LOW disables OmniLight3D, so a light-only heal had no visible cue.
+		# Reuse Glory's existing shadowless quad flash; keep one cast marker even
+		# when the normal effect budget is full.
+		var marker:=_profile(Color(.06,.10,.14),Color(.42,.76,.92),Color(.92,1.0,1.0),.72,.46,2.8,0)
+		_spawn_forced(VFX_IMPACT_FLASH,marker,{"target":_lvl(origin,oh,LEVEL_FOOT,0.0)})
+		for value in _capped_targets(context.get("targets",[])):
+			_spawn(VFX_IMPACT_FLASH,marker,{"target":value})
+		return
 	var p:=_profile(Color(.06,.10,.14),Color(.42,.76,.92),Color(.92,1.0,1.0),.34,.52,2.8,7)
 	_spawn(VFX_LIGHT_PULSE,p,{"target":_lvl(origin,oh,LEVEL_BODY)})
 	for value in _capped_targets(context.get("targets",[])):
