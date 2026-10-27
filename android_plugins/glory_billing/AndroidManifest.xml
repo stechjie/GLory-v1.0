@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  GloryBilling: Google Play Billing for diamond packs (the top-up design doc under docs/, section 9).
+
+  The meta-data name is how Godot 4 (plugin v2) finds the plugin class at startup.
+  No permissions here: the Play Billing Library's own manifest adds com.android.vending.BILLING
+  when Gradle merges it into the APK (the export plugin hands that library to Gradle).
+  No <uses-sdk> and no package attribute: AGP 8 takes them from build.gradle.kts.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <meta-data
+            android:name="org.godotengine.plugin.v2.GloryBilling"
+            android:value="com.glory.billing.GloryBillingPlugin" />
+    </application>
+</manifest>

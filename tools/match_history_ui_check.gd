@@ -45,6 +45,7 @@ var _h: CheckHarness
 
 
 func _ready() -> void:
+	LocaleManager.set_locale("zh")
 	_h = CheckHarness.new(CHECK_NAME)
 	await _case_summary_never_says_percentage()
 	await _case_outcome_is_per_seat()
@@ -329,7 +330,7 @@ func _case_detail_opens_settlement_panel() -> void:
 		var texts := _texts(content as Node)
 		_h.expect(texts.has("关闭") and not texts.has("返回主菜单"), "detail_close_text",
 			"历史里那颗按钮应该叫「关闭」，不是「返回主菜单」")
-		_h.expect(texts.any(func(t): return t.contains("暗黑巨龙")), "detail_stats_missing",
+		_h.expect(texts.any(func(t): return t.contains(DataRegistry.unit_display_name({"id":"dark_dragon"}, false))), "detail_stats_missing",
 			"统计面板里没有最后一战的棋子")
 		var close := _button_with_text(content as Node, "关闭")
 		if close != null:
@@ -441,12 +442,10 @@ func _case_no_hand_rolled_buttons() -> void:
 # 直接扫全文会把「注释里解释为什么不许写 X」也算成违规。
 func _code(path: String) -> String:
 	var kept: Array[String] = []
-	for line in FileAccess.get_file_as_string(path).split("
-"):
+	for line in FileAccess.get_file_as_string(path).split("\n"):
 		if not str(line).strip_edges().begins_with("#"):
 			kept.append(str(line))
-	return "
-".join(kept)
+	return "\n".join(kept)
 
 
 func _texts(root: Node) -> Array:

@@ -13,7 +13,9 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	z_index = 90
-	_deadline = Time.get_ticks_msec() / 1000.0 + Deadline.duration(GameState.round_index)
+	var ruleset := "seedling" if GameState.FINAL_ROUND == 13 else "normal"
+	_deadline = Time.get_ticks_msec() / 1000.0 + Deadline.duration(
+		GameState.round_index, ruleset, NetworkService.match_mode)
 	_cue = Label.new()
 	_cue.name = "FinalSeconds"
 	_cue.mouse_filter = Control.MOUSE_FILTER_IGNORE

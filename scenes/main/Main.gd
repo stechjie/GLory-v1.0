@@ -199,6 +199,9 @@ var _back_exit_armed_until := 0.0
 # 同一处设它，_clear() 清掉。空 = 这一页没有页内出口（主菜单、战斗中、
 # 初始宠物强制三选一），返回键继续往下走到二次确认退出。
 var _page_back_route := Callable()
+# 钻石宝库（docs/充值系统设计.md 第九节）盖在当前页面上。它自己管遮罩、不进 ModalStack，
+# 所以返回键要单独先关它（_on_back_requested）。
+var _diamond_store: Control = null
 
 func _ready() -> void:
 	# Idempotent on purpose: the DataRegistry autoload has already loaded by now, and
@@ -452,7 +455,7 @@ func _on_exit_match_result(result: String, _request_id: String) -> void:
 	_exit_dialog_from_reconnect = false
 	if result != ConfirmDialog.RESULT_CONFIRMED:
 		return
-	NetworkService.abandon_started_match()
+	await NetworkService.abandon_started_match()
 	GameState.team_mode = false
 	_hide_reconnect_overlay()
 	# 同「取消并返回主菜单」那条：门禁在 debug 构建里把回主菜单这一步换成计数。
@@ -1151,6 +1154,9 @@ func _notification(what: int) -> void:
 			# 切后台：教程断点必须落盘。主存档由 SaveManager 自己的 _notification 负责。
 			if TutorialMode.active:
 				TutorialMode.save_checkpoint(true)
+		NOTIFICATION_APPLICATION_RESUMED:
+			# 回到前台（包括 Google 付款页关掉之后）：付了钱还没处理完的付款交给服务器。
+			AccountManager.recover_purchases()
 
 
 # 用 _unhandled_input 而不是 _input：LineEdit 这类控件要先有机会吃掉自己的
@@ -1171,6 +1177,11 @@ func _on_back_requested() -> void:
 		return
 	# 1. 最上层 modal（重连提示、宝藏三选一、佣兵层、确认框都在这里）
 	if ModalStack.handle_back_request():
+		return
+	# 1.5 钻石宝库（不在 ModalStack 里，见 _diamond_store 的注释）
+	if _diamond_store != null and is_instance_valid(_diamond_store):
+		_diamond_store.queue_free()
+		_diamond_store = null
 		return
 	# 2. 当前页面自己的面板（备战页的商店 / 佣兵 / 组队检阅台）
 	if _prep != null and is_instance_valid(_prep) and _prep is PrepScreenScript:
@@ -1281,6 +1292,10 @@ func _show_menu() -> void:
 	_menu.shop_requested.connect(_show_shop_screen)
 	_menu.bag_requested.connect(_show_bag_screen)
 	_menu.mail_requested.connect(_show_mail_screen)
+	_menu.diamond_shop_requested.connect(_show_diamond_store)
+	# 付了钱还没处理完的付款交给服务器（docs/充值系统设计.md 第六节）。每次进主菜单都看一眼：
+	# 只查本机的 Google 付款记录，没有就什么都不发。不做进门条件。
+	AccountManager.recover_purchases()
 	add_child(_menu)
 	_show_kicked_notice_if_pending()
 	if PlayerProfile.tutorial_reward_pending:
@@ -1577,12 +1592,26 @@ func _show_shop_screen() -> void:
 		return
 	screen.back_requested.connect(_show_menu)
 	screen.prep_races_requested.connect(_show_pet_screen_races)
+	screen.diamond_store_requested.connect(func() -> void: _show_diamond_store(screen._reload))
 	screen.pet_draw_requested.connect(func() -> void:
 		var dialog: Control = (load("res://scenes/menu/PetDrawDialog.gd") as GDScript).new()
 		dialog.draw_finished.connect(screen._reload)
 		screen.add_child(dialog))
 	_page_back_route = _show_menu
 	add_child(screen)
+
+
+# 钻石宝库：盖在当前页面上。买到了就刷新底下那一页的余额（主菜单的钱包条 / 商城页）。
+func _show_diamond_store(after_purchase: Callable = Callable()) -> void:
+	if _diamond_store != null and is_instance_valid(_diamond_store):
+		return
+	_diamond_store = (load("res://scenes/menu/DiamondStoreDialog.tscn") as PackedScene).instantiate()
+	_diamond_store.balance_changed.connect(func(_diamond: int) -> void:
+		if after_purchase.is_valid():
+			after_purchase.call()
+		if _menu != null and is_instance_valid(_menu) and _menu.is_inside_tree():
+			_menu.call("_refresh_wallet"))
+	add_child(_diamond_store)
 
 
 func _show_bag_screen() -> void:
@@ -1645,6 +1674,12 @@ func _show_friends_screen() -> void:
 # 比为了不跳屏而复制一套连接中/错误 UI 划算。
 func _join_room_by_id(room_id: int) -> void:
 	if room_id <= 0:
+		return
+	var released: Dictionary = await AccountManager.prepare_custom_room()
+	if int(released.get("code", 0)) != 200:
+		DialogService.info({"request_id": "leave_party_before_custom", "owner": self,
+			"title": "Notice" if LocaleManager.get_locale().begins_with("en") else "提示",
+			"body": str(released.get("error", AccountManager.localized_error("无法退出原队伍，请重试")))})
 		return
 	_show_menu()
 	_start_join_room_action(room_id)
@@ -2345,7 +2380,7 @@ func _show_ranked_queue() -> void:
 	_show_party_lobby("ranked")
 
 
-func _show_party_lobby(mode: String, invite_id: String = "") -> void:
+func _show_party_lobby(mode: String, invite_id: String = "", restore_existing: bool = false) -> void:
 	VoiceService.set_mode(VoiceService.Mode.OFF)
 	_clear()
 	# ★ 10.11 第 6 条 j：房间大厅里要能弹邀请气泡（`_clear()` 刚把它清成 false）。
@@ -2356,7 +2391,7 @@ func _show_party_lobby(mode: String, invite_id: String = "") -> void:
 	if lobby == null:
 		_show_menu()
 		return
-	lobby.call("configure", mode, invite_id)
+	lobby.call("configure", mode, invite_id, restore_existing)
 	lobby.connect("back_requested", _show_menu)
 	lobby.connect("queue_started", _show_party_queue)
 	# ★★ 10.07h 第 9(6) 条：队里**任意成员**取消排队 → 立刻关掉「匹配中」弹窗。
@@ -2417,6 +2452,8 @@ func _show_match_queue(mode: String, party_queue: bool = false, party_host: bool
 		# 🔴 **不许点背景关掉。** 确认框那 30 秒里误触一下背景就等于拒绝，
 		# 而拒绝会把自己移出队列、还拆掉另外五个人那一桌。
 		"dismiss_on_backdrop": false,
+		# Escape/Back must not remove the match listener without a server cancel.
+		"persistent": true,
 	})
 
 
@@ -2808,9 +2845,16 @@ func _show_final_settlement() -> void:
 # _show_party_lobby → _clear() 会顺手把对局的静音闩（ChatService.in_match）落下。
 func _return_to_party_room() -> void:
 	var mode := str(_final_settlement_data.get("mode", "ranked"))
-	_show_party_lobby(mode if not mode.is_empty() else "ranked")
+	# This finished battle no longer owns transport or a reconnect seat.
+	SaveManager.clear_reconnect()
+	NetworkService.reset()
+	GameState.team_mode = false
+	_show_party_lobby(mode if not mode.is_empty() else "ranked", "", true)
 
 func _return_from_settlement() -> void:
+	if str(_final_settlement_data.get("mode", "")) in ["ranked", "casual"]:
+		_return_to_party_room()
+		return
 	if not NetworkService.settlement_returned.is_connected(_on_settlement_returned):
 		NetworkService.settlement_returned.connect(_on_settlement_returned)
 	NetworkService.request_settlement_return()

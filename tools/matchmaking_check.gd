@@ -36,16 +36,26 @@ const CHECK_NAME := "matchmaking"
 const MATCH_A := "aaaaaaaabbbbbbbbccccccccdddddddd"
 const MATCH_B := "11111111222222223333333344444444"
 
+class OnlineFixture extends "res://scripts/autoload/NetworkService.gd":
+	# These unit fixtures inject peers without transport; actual transport has its own checks.
+	func _room_reconnecting_slots(_room: Dictionary) -> Array[int]:
+		return []
+var server: OnlineFixture
+var _card_sequence := 0
+
 var _h: CheckHarness
 var _key: CryptoKey
 var _pem := ""
 
 
 func _ready() -> void:
+	server = OnlineFixture.new()
+	add_child(server)
+	server.set_process(false)
 	_h = CheckHarness.new(CHECK_NAME)
 	_key = TestKeys.generate()
 	_pem = TestKeys.public_pem(_key)
-	NetworkService.enter_test_server_mode()
+	server.enter_test_server_mode()
 
 	_case_card_fields()
 	_case_team_slots()
@@ -70,13 +80,14 @@ func _card(overrides: Dictionary) -> Dictionary:
 	return got.get("card", {})
 
 
-func _matched_card(match_uid: String, team: int, pid: String = "player-x") -> Dictionary:
-	return _card({"match": match_uid, "team": team, "pid": pid})
+func _matched_card(match_uid: String, team: int, pid: String = "") -> Dictionary:
+	_card_sequence += 1
+	return _card({"match":match_uid,"team":team,"pid":pid if not pid.is_empty() else "test-player-%d" % _card_sequence})
 
 
 func _drop(room: Dictionary) -> void:
-	NetworkService._room_close(room, "check_done")
-	NetworkService._rooms.erase(int(room.get("id", 0)))
+	server._room_close(room, "check_done")
+	server._rooms.erase(int(room.get("id", 0)))
 
 
 # --- 1. 名片上的两个字段 ---------------------------------------------------------
@@ -106,8 +117,8 @@ func _case_card_fields() -> void:
 # --- 2. 按队伍找空位 -------------------------------------------------------------
 
 func _case_team_slots() -> void:
-	var room: Dictionary = NetworkService._new_room()
-	var svc = NetworkService._room_service
+	var room: Dictionary = server._new_room()
+	var svc = server._room_service
 	_eq(int(svc.room_next_free_slot_on_team(room, 0)), 0, "team_a_first_slot", "A 队从 0 号位开始")
 	_eq(int(svc.room_next_free_slot_on_team(room, 1)), 3, "team_b_first_slot", "B 队从 3 号位开始")
 
@@ -124,7 +135,7 @@ func _case_team_slots() -> void:
 # --- 3. 会合：谁先到谁建房，后到的进同一间 ------------------------------------------
 
 func _case_rendezvous() -> void:
-	var first: Dictionary = NetworkService._matched_room_for(MATCH_A)
+	var first: Dictionary = server._matched_room_for(MATCH_A)
 	_eq(first.is_empty(), false, "first_creates_room", "第一个人应该建出房间")
 	_eq(bool(first.get("matched", false)), true, "room_is_marked_matched",
 		"匹配房间要带 matched 标记（房间列表靠它排除）")
@@ -132,16 +143,16 @@ func _case_rendezvous() -> void:
 		"🔴 会合键就是这一局的 match_uid，不该另摇一个")
 	_eq(str(first.get("mode", "")), "casual", "room_mode_is_casual", "匹配房间的 mode 要写上")
 
-	var second: Dictionary = NetworkService._matched_room_for(MATCH_A)
+	var second: Dictionary = server._matched_room_for(MATCH_A)
 	_eq(int(second.get("id", 0)), int(first.get("id", 0)), "same_key_same_room",
 		"🔴 同一个会合键必须进同一间房 —— 认错亲 = 六个人各开一间空房")
 
-	var other: Dictionary = NetworkService._matched_room_for(MATCH_B, "ranked")
+	var other: Dictionary = server._matched_room_for(MATCH_B, "ranked")
 	_eq(int(other.get("id", 0)) != int(first.get("id", 0)), true, "different_key_different_room",
 		"不同会合键不能混进同一间")
 	_eq(str(other.get("mode", "")), "ranked", "ranked_mode_reaches_room",
 		"排位房间必须保留账号服务器签发的 ranked 模式")
-	_eq(NetworkService._matched_room_for(MATCH_B, "casual").is_empty(), true,
+	_eq(server._matched_room_for(MATCH_B, "casual").is_empty(), true,
 		"mode_mismatch_rejected", "同一个会合键不能把排位玩家和休闲玩家混进一间房")
 	_drop(first)
 	_drop(other)
@@ -150,12 +161,12 @@ func _case_rendezvous() -> void:
 # --- 4. 按名片上的 team 落座 ------------------------------------------------------
 
 func _case_seating_follows_the_card() -> void:
-	var room: Dictionary = NetworkService._matched_room_for(MATCH_A)
-	var svc = NetworkService._room_service
+	var room: Dictionary = server._matched_room_for(MATCH_A)
+	var svc = server._room_service
 	# 三个 B 队的人先到：他们必须坐 3/4/5，不能占 0 号位
 	for i in 3:
 		var slot := int(svc.room_next_free_slot_on_team(room, 1))
-		NetworkService._assign_peer_to_room(9000 + i, room, "", _matched_card(MATCH_A, 1, "player-b-%d" % i), slot)
+		server._assign_peer_to_room(9000 + i, room, "", _matched_card(MATCH_A, 1), slot)
 	var states: Array = room.get("slot_states", [])
 	for i in 3:
 		_eq(str(states[i]), "empty", "team_b_did_not_take_team_a_slots",
@@ -164,10 +175,10 @@ func _case_seating_follows_the_card() -> void:
 		_eq(str(states[i]), "player", "team_b_seated", "B 队座位 %d 应当有人" % i)
 
 	# 还没坐满：不该开局
-	_eq(str(room.get("state", "")), NetworkService.ROOM_LOBBY, "not_started_when_half_full",
+	_eq(str(room.get("state", "")), server.ROOM_LOBBY, "not_started_when_half_full",
 		"只有三个人时不该开局")
-	NetworkService._matched_try_start(room)
-	_eq(str(room.get("state", "")), NetworkService.ROOM_LOBBY, "try_start_is_a_noop_when_not_full",
+	server._matched_try_start(room)
+	_eq(str(room.get("state", "")), server.ROOM_LOBBY, "try_start_is_a_noop_when_not_full",
 		"没坐满时 _matched_try_start 应该什么都不做")
 	_drop(room)
 
@@ -183,14 +194,14 @@ func _case_seating_uses_party_seat() -> void:
 		_eq(BattleCard.seat_of(_card({"match": MATCH_A, "team": 1, "seat": bad})), -1, "bad_seat_ignored",
 			"位置 %d 超范围，应当当作没指定" % bad)
 
-	var room: Dictionary = NetworkService._matched_room_for(MATCH_B, "ranked")
-	_eq(NetworkService._matched_slot_for(room, 1, 2), 5, "party_seat_honoured",
+	var room: Dictionary = server._matched_room_for(MATCH_B, "ranked")
+	_eq(server._matched_slot_for(room, 1, 2), 5, "party_seat_honoured",
 		"B 队选了 2 号位（第三个位置）就该坐 5 号座位，而不是第一个空位 3")
-	_eq(NetworkService._matched_slot_for(room, 0, 1), 1, "party_seat_team_a", "A 队 1 号位 = 1 号座位")
-	NetworkService._assign_peer_to_room(9100, room, "", _card({"match": MATCH_B, "team": 1, "seat": 2}), 5)
-	_eq(NetworkService._matched_slot_for(room, 1, 2), 3, "taken_seat_falls_back",
+	_eq(server._matched_slot_for(room, 0, 1), 1, "party_seat_team_a", "A 队 1 号位 = 1 号座位")
+	server._assign_peer_to_room(9100, room, "", _card({"match": MATCH_B, "team": 1, "seat": 2}), 5)
+	_eq(server._matched_slot_for(room, 1, 2), 3, "taken_seat_falls_back",
 		"想坐的位置已经有人：退回坐本队第一个空位，不能拒绝进房")
-	_eq(NetworkService._matched_slot_for(room, 1, -1), 3, "no_seat_first_free",
+	_eq(server._matched_slot_for(room, 1, -1), 3, "no_seat_first_free",
 		"没指定位置（旧名片）照旧坐本队第一个空位")
 	_drop(room)
 
@@ -198,9 +209,9 @@ func _case_seating_uses_party_seat() -> void:
 # --- 5. 匹配房间是私有的 ---------------------------------------------------------
 
 func _case_matched_rooms_are_private() -> void:
-	var matched: Dictionary = NetworkService._matched_room_for(MATCH_A)
-	var normal: Dictionary = NetworkService._new_room()
-	var listed: Array = NetworkService._room_service.public_room_list()
+	var matched: Dictionary = server._matched_room_for(MATCH_A)
+	var normal: Dictionary = server._new_room()
+	var listed: Array = server._room_service.public_room_list()
 	var ids := []
 	for entry in listed:
 		ids.append(int((entry as Dictionary).get("id", 0)))
@@ -211,9 +222,9 @@ func _case_matched_rooms_are_private() -> void:
 
 	# 判据必须是 matched 标记，不是 match_uid 非空：
 	# 自定义房间开局时也会写 match_uid（战报要用，第 1 步）。
-	var custom_started: Dictionary = NetworkService._new_room()
+	var custom_started: Dictionary = server._new_room()
 	custom_started["match_uid"] = MATCH_B
-	var listed2: Array = NetworkService._room_service.public_room_list()
+	var listed2: Array = server._room_service.public_room_list()
 	var ids2 := []
 	for entry in listed2:
 		ids2.append(int((entry as Dictionary).get("id", 0)))
@@ -227,22 +238,22 @@ func _case_matched_rooms_are_private() -> void:
 # --- 6. 开局不覆盖会合键 ---------------------------------------------------------
 
 func _case_match_uid_is_not_overwritten() -> void:
-	var room: Dictionary = NetworkService._matched_room_for(MATCH_A)
-	var svc = NetworkService._room_service
+	var room: Dictionary = server._matched_room_for(MATCH_A)
+	var svc = server._room_service
 	for team in 2:
 		for i in 3:
 			var slot := int(svc.room_next_free_slot_on_team(room, team))
-			NetworkService._assign_peer_to_room(9100 + team * 3 + i, room, "",
-				_matched_card(MATCH_A, team, "player-%d-%d" % [team, i]), slot)
-	NetworkService._matched_try_start(room)
-	_eq(str(room.get("state", "")), NetworkService.ROOM_PREP, "full_room_starts",
+			server._assign_peer_to_room(9100 + team * 3 + i, room, "",
+				_matched_card(MATCH_A, team), slot)
+	server._matched_try_start(room)
+	_eq(str(room.get("state", "")), server.ROOM_PREP, "full_room_starts",
 		"六个人到齐应该自己开打（匹配对局没有「准备」那一步）")
 	_eq(str(room.get("match_uid", "")), MATCH_A, "start_keeps_the_rendezvous_key",
 		"🔴 开局时把会合键覆盖掉了 —— 同一局在匹配日志和对局历史里会是两个编号")
 	_drop(room)
 
 	# 对照组：自定义房间开局时**要**摇一个新的
-	var custom: Dictionary = NetworkService._new_room()
+	var custom: Dictionary = server._new_room()
 	var states: Array = custom.get("slot_states", [])
 	var ready: Array = custom.get("ready", [])
 	for i in 6:
@@ -250,12 +261,12 @@ func _case_match_uid_is_not_overwritten() -> void:
 		ready[i] = true
 	custom.slot_states = states
 	custom.ready = ready
-	NetworkService._room_start_authoritative(custom)
+	server._room_start_authoritative(custom)
 	# 🔴 守卫：开局必须真的把房间推到备战阶段。
 	# 少了 _set_room_state(ROOM_PREP) 的话服务器停在 lobby，而 team_start 已经广播 ——
 	# 客户端进了对局、服务器以为还在大厅。2026-09-22 真的踩过一次（第 1 步加
 	# match_uid 时手滑删掉了那一行），而当时跑的四条门禁一条都没覆盖这一步。
-	_eq(str(custom.get("state", "")), NetworkService.ROOM_PREP, "custom_room_reaches_prep",
+	_eq(str(custom.get("state", "")), server.ROOM_PREP, "custom_room_reaches_prep",
 		"开始游戏之后房间没进备战阶段")
 	_eq(str(custom.get("match_uid", "")).length(), 32, "custom_room_gets_a_fresh_uid",
 		"自定义房间开局时要自己摇一个 match_uid（战报要用）")
@@ -273,21 +284,21 @@ func _case_report_mode() -> void:
 # --- 8. 重启后索引重建 -----------------------------------------------------------
 
 func _case_index_rebuild() -> void:
-	var matched: Dictionary = NetworkService._matched_room_for(MATCH_A)
+	var matched: Dictionary = server._matched_room_for(MATCH_A)
 	# 自定义房间也有 match_uid，但没有 matched 标记 —— 它不该进索引。
-	var custom: Dictionary = NetworkService._new_room()
+	var custom: Dictionary = server._new_room()
 	custom["match_uid"] = MATCH_B
 
-	NetworkService._matched_rooms.clear()
-	NetworkService._rebuild_matched_index()
-	_eq(int(NetworkService._matched_rooms.get(MATCH_A, 0)), int(matched.get("id", 0)),
+	server._matched_rooms.clear()
+	server._rebuild_matched_index()
+	_eq(int(server._matched_rooms.get(MATCH_A, 0)), int(matched.get("id", 0)),
 		"index_rebuilds_matched_room",
 		"🔴 重启后索引没重建 —— 房间还在，但后到的人认不出亲，会去开一间新的")
-	_eq(NetworkService._matched_rooms.has(MATCH_B), false, "index_skips_custom_rooms",
+	_eq(server._matched_rooms.has(MATCH_B), false, "index_skips_custom_rooms",
 		"自定义房间的 match_uid 进了索引 —— 一张伪造的名片就能挤进别人的自定义房间")
 	_drop(matched)
 	_drop(custom)
-	NetworkService._matched_rooms.clear()
+	server._matched_rooms.clear()
 
 
 # --- 9. 常量对齐 -----------------------------------------------------------------

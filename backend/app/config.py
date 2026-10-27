@@ -139,8 +139,9 @@ class Settings(BaseSettings):
 
     # --- 人少时 AI 补位（app/matchmaking.py「人少时 AI 补位」那节）--------------
     #
-    # True = 等得最久的人满 match_ai_fill_after_sec 秒还凑不满 6 个真人，就用 AI 补满开局。
-    # 休闲与排位都适用。人多了可以关掉，或把时限调长。
+    # Enables AI fill for every queue. All modes form teams first.
+    # Seedling waits 10 seconds; Normal and Ranked wait 30 seconds.
+    # The legacy duration field is retained for config compatibility; mode deadlines are fixed.
     match_ai_fill: bool = True
     match_ai_fill_after_sec: float = 10.0
 
@@ -188,6 +189,42 @@ class Settings(BaseSettings):
     # 游戏向 Steam 要票时填的 identity（GetAuthTicketForWebApi 的参数），两边必须一字不差。
     # Steam 只放行用同一个 identity 开出来的票，别的服务拿到这张票也用不了。
     steam_ticket_identity: str = "glory-account"
+
+    # --- 充值（app/iap.py，docs/充值系统设计.md）----------------------------------------
+    #
+    # 每个平台一个开关，默认关。🔴 **关掉只挡「建新单」**：confirm、平台通知、定时对账一律照常 ——
+    # 不然已经付了钱的单就卡死在半路。出了问题先关开关、重启账号服务器，不用出包。
+    iap_google_enabled: bool = False
+    iap_apple_enabled: bool = False
+    iap_steam_enabled: bool = False
+
+    # Play Console 里那个 App 的包名。
+    google_play_package: str = "com.glory.game.google"
+    # ⛔ Google Cloud 服务账号 glory-play-billing 的 JSON 密钥文件（里面有私钥）。
+    # 放 /opt/glory/，只放服务器，绝不进 git、聊天。这个服务账号要在 Play Console 的
+    # 「用户和权限」里给「查看财务数据」和「管理订单」。空 = Google 核实回 503。
+    google_play_service_account_file: str = ""
+    # Google 实时通知（Pub/Sub 推送到 /iap/google/rtdn）的身份：推送订阅里「启用身份验证」时选的
+    # 服务账号邮箱，和填的「受众」（没填的话 Google 用推送地址本身）。两样都对上才认，
+    # 不然谁都能往这个公开地址 POST 一条「已退款」。任一空着 = 推送回 503（Pub/Sub 会一直重试，配好后自动补上）。
+    google_rtdn_service_account: str = ""
+    google_rtdn_audience: str = ""
+
+    # iOS 的 bundle id（tools/workspace/glory_ios_build.py 的 BUNDLE）。签名交易里的必须是它。
+    apple_bundle_id: str = "com.superforge.glory"
+    # Apple Root CA - G3 证书文件（https://www.apple.com/certificateauthority/AppleRootCA-G3.cer，
+    # DER 或 PEM 都行）。验签名交易时钉住它：证书链必须一路签到这一张。公开文件，不是密钥。
+    # 空 = Apple 核实回 503。
+    apple_root_cert_file: str = ""
+
+    # 走 Steam 沙盒（ISteamMicroTxnSandbox，不扣钱）的测试员 Steam 编号，逗号分隔。
+    # 这些人下的单记成测试单（docs/充值系统设计.md 第八节）。
+    steam_sandbox_steam_ids: str = ""
+
+    # 测试单（许可测试员、TestFlight、Apple 审核员、Steam 沙盒）每个号 24 小时内最多入账几张。
+    # 🔴 **正式上线前必须是 1。** TestFlight 上的人买东西不花钱，又连着正式服 —— 调大就是让他们多白拿。
+    # 只在自己测充值流程、要连着买好几次的那几天调大，测完改回来、重启账号服务器。
+    iap_test_orders_per_day: int = 1
 
     @property
     def is_dev(self) -> bool:

@@ -205,6 +205,7 @@ static func build(ctx: Dictionary) -> Dictionary:
 		"allies": _clean_allies(ctx.get("allies", [])),
 		"stats": _clean_stats(ctx.get("stats", [])),
 		"settlement_kind": str(ctx.get("settlement_kind", "")),
+		"end_reason": str(ctx.get("end_reason", "")).left(64),
 	}
 
 

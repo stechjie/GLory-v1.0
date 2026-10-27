@@ -1,0 +1,14 @@
+{
+	"schema_version": 1,
+	"_note": "充值档位（docs/充值系统设计.md 第二节）。只有账号服务器读，客户端问 GET /v1/iap/catalog。id 同时是 Google Play / App Store 后台的商品编号，建了就不能改名、也不能再用，所以按档位起名、不写钻石数。下架用 enabled=false，绝不删行：玩家可能付了钱还没入账，入账要按这里算钻石。",
+	"_amount_note": "diamond 是基础量（RM 1 = 10 钻），进付费列；bonus 是平时加送，进赠送列。每档第一次买时改成再给一份基础量（进赠送列），代替 bonus、不叠加。",
+	"_price_note": "steam_prices 是 Steam 下单用的价格，最小货币单位（MYR 是 sen，USD 是 cent）。钱包是别的币种时用 USD，Steam 按汇率换算。Google / Apple 的价格在它们后台填，不在这里。🔴 USD 是按约 4.2 换算的占位，上线前按当时汇率定。",
+	"products": [
+		{"id": "diamond_pack_1", "tier": 1, "enabled": true, "diamond": 50, "bonus": 0, "steam_prices": {"MYR": 500, "USD": 119}},
+		{"id": "diamond_pack_2", "tier": 2, "enabled": true, "diamond": 200, "bonus": 20, "steam_prices": {"MYR": 2000, "USD": 479}},
+		{"id": "diamond_pack_3", "tier": 3, "enabled": true, "diamond": 500, "bonus": 60, "steam_prices": {"MYR": 5000, "USD": 1199}},
+		{"id": "diamond_pack_4", "tier": 4, "enabled": false, "diamond": 1000, "bonus": 150, "steam_prices": {"MYR": 10000, "USD": 2399}},
+		{"id": "diamond_pack_5", "tier": 5, "enabled": false, "diamond": 2000, "bonus": 400, "steam_prices": {"MYR": 20000, "USD": 4799}},
+		{"id": "diamond_pack_6", "tier": 6, "enabled": false, "diamond": 4000, "bonus": 1000, "steam_prices": {"MYR": 40000, "USD": 9599}}
+	]
+}

@@ -231,6 +231,7 @@ def _validate(raw: dict, now: float) -> dict:
         "ended_at": dt.datetime.fromtimestamp(ended, dt.UTC),
         "rounds": rounds,
         "outcome": outcome,
+        "end_reason": str(raw.get("end_reason", ""))[:64],
         "team_a_hp": _int(hp[0]),
         "team_b_hp": _int(hp[1]),
         "gold_authoritative": bool(raw.get("gold_auth", False)),
@@ -312,6 +313,8 @@ def _validate_settlement(raw: dict, raw_seats: list) -> dict | None:
                     stones[kind] = count
         seats.append({"stones": stones, "total_gold": _soft_int(item.get("total_gold"), 0, _INT_MAX)})
     settlement = {"allies": allies, "stats": stats, "seats": seats}
+    if raw.get("end_reason"):
+        settlement["end_reason"] = str(raw["end_reason"])[:64]
     kind = raw.get("settlement_kind")
     if kind in ("pvp", "final", "pve", "boss"):
         settlement["kind"] = kind

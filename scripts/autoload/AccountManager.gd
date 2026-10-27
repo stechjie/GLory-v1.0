@@ -25,6 +25,8 @@ extends Node
 
 const AccountConfig := preload("res://scripts/account/AccountConfig.gd")
 const SignInBridge := preload("res://scripts/account/SignInBridge.gd")
+const SteamBridge := preload("res://scripts/account/SteamBridge.gd")
+const BillingBridge := preload("res://scripts/account/BillingBridge.gd")
 
 signal login_started()
 signal login_succeeded(player_id: String, player_name: String)
@@ -169,6 +171,14 @@ func login() -> void:
 
 	var saved: Dictionary = SaveManager.load_account_credentials()
 	var refresh_token := str(saved.get("refresh_token", ""))
+	# 电脑版、共用电脑：本机这张凭证是别的 Steam 用户的，就不用它（不然 B 会进到 A 的号里）。
+	# 清掉没有损失 —— A 的号绑着他自己的 Steam，下次他用 Steam 一登就回来了。
+	if not refresh_token.is_empty() and SteamBridge.available() \
+			and SteamBridge.remembered_owner() != SteamBridge.steam_id():
+		print("[ACCOUNT] 本机凭证属于另一个 Steam 用户，改用现在这个 Steam 登录")
+		SaveManager.clear_account_credentials()
+		SteamBridge.forget_owner()
+		refresh_token = ""
 	if not refresh_token.is_empty():
 		var refreshed := await _post("/v1/auth/refresh", {"refresh_token": refresh_token})
 		if int(refreshed.get("code", 0)) == 200:
@@ -194,7 +204,8 @@ func login() -> void:
 
 	# 新装（或凭证失效）：能用 Google / Apple 就先停下来问。换手机的老玩家要在这里找回旧号 ——
 	# 直接开游客号的话，他得先过完新手教学才找得到「切换账号」（docs/三方登录设计.md 第一节）。
-	if not _guest_chosen and SignInBridge.any_available():
+	# 电脑版（Steam）同理：问「用 Steam 进入 / 我在手机上玩过」，不开游客号。
+	if not _guest_chosen and (SignInBridge.any_available() or SteamBridge.available()):
 		awaiting_choice = true
 		state = State.IDLE
 		_busy = false
@@ -358,6 +369,89 @@ static func token_claims(token: String) -> Dictionary:
 	if json.parse(raw.get_string_from_utf8()) != OK or not (json.data is Dictionary):
 		return {}
 	return json.data
+
+
+# --- Steam（电脑版，docs/三方登录设计.md 第八节）--------------------------------------------
+
+# 是不是 Steam 电脑版（插件在、Steam 开着并已登录）。启动页据此决定出哪两个按钮。
+func is_steam_build() -> bool:
+	return SteamBridge.available()
+
+
+# 启动页「用 Steam 进入游戏」：这个 Steam 绑过号（自己开的、从手机关联过来的）就回那个号，没有就开新号。
+# 失败处理同 login_with_provider：回到「等玩家选」，原因放进 choice_error。
+func login_with_steam() -> Dictionary:
+	if _busy:
+		return {"code": 0, "error": "正在登录，请稍候"}
+	_busy = true
+	awaiting_choice = false
+	choice_error = ""
+	state = State.WORKING
+	last_error = ""
+	last_failure = Failure.NONE
+	login_started.emit()
+	var result := await _steam_post("/v1/auth/steam", PlayerProfile.player_id)
+	if int(result.get("code", 0)) == 409 and str(result.get("reason", "")) != IDENTITY_TAKEN:
+		PlayerProfile.reissue_player_id()
+		result = await _steam_post("/v1/auth/steam", PlayerProfile.player_id)
+	if int(result.get("code", 0)) == 200:
+		SteamBridge.remember_owner(SteamBridge.steam_id())
+		_finish_success(result.get("body", {}))
+		return result
+	if bool(result.get("banned", false)):
+		ban_info = result.get("ban", {})
+		_finish_failure(str(result.get("error", "账号已被封禁")), Failure.BANNED)
+		account_banned.emit(ban_info)
+		return result
+	_busy = false
+	state = State.IDLE
+	awaiting_choice = true
+	choice_error = str(result.get("error", "登录失败，请重试"))
+	_emit_status()
+	login_choice_needed.emit()
+	return result
+
+
+# 电脑：「我在手机上玩过」。成功时 body = {code, poll_token, expires_in, name}。
+func steam_link_begin() -> Dictionary:
+	return await _steam_post("/v1/auth/steam/link-code", "")
+
+
+# 电脑轮询关联结果：pending / linked / taken / expired（backend/app/steam_link.py）。连不上时回 ""。
+func steam_link_status(poll_token: String) -> String:
+	var result := await _request(HTTPClient.METHOD_POST, "/v1/auth/steam/link-code/status",
+		{"poll_token": poll_token}, false)
+	if int(result.get("code", 0)) != 200:
+		return ""
+	return str((result.get("body", {}) as Dictionary).get("state", ""))
+
+
+# 手机：输完码先看是谁的 Steam。成功时 body = {name, expires_in}；码不对 404。
+func steam_link_preview(code: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/auth/steam/link-code/preview", {"code": code}, true)
+
+
+# 手机：确认关联。后端回的是一套新凭证（同 link_provider），换法和续期一样。
+# 这个 Steam 已经属于别的号时 result.reason == IDENTITY_TAKEN。
+func steam_link_confirm(code: String) -> Dictionary:
+	var result := await _request(HTTPClient.METHOD_POST, "/v1/auth/steam/link-code/confirm", {"code": code}, true)
+	if int(result.get("code", 0)) != 200:
+		return result
+	if not _apply_refreshed_session(result.get("body", {})):
+		return {"code": 0, "error": "已经关联上了，但这台设备没能更新登录状态，请重启游戏"}
+	identities_changed.emit()
+	return result
+
+
+# 带上一张新的 Steam 票去请求。票几分钟就过期、而且用过就该作废，所以每个请求现要一张。
+func _steam_post(path: String, proposed_player_id: String) -> Dictionary:
+	var ticket: Dictionary = await SteamBridge.ticket(get_tree())
+	if not bool(ticket.get("ok", false)):
+		return {"code": 0, "error": str(ticket.get("error", "没有连上 Steam"))}
+	var payload := {"ticket": str(ticket.get("ticket", ""))}
+	if not proposed_player_id.is_empty():
+		payload["player_id"] = proposed_player_id
+	return await _post(path, payload)
 
 
 func _provider_post(provider: String, id_token: String, nonce: String, proposed_player_id: String) -> Dictionary:
@@ -869,6 +963,38 @@ func fetch_match_state() -> Dictionary:
 
 
 # 确认。**重复确认不是错误** —— 弱网下客户端会重发，玩家也会点两下。
+func release_match_assignment(match_uid: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/match/release",
+		{"match_uid": match_uid}, true)
+
+
+# Allocation is not a battle credential. Reconcile only after the battle layer
+# confirms a terminal result or that the saved seat no longer exists.
+func reconcile_finished_assignment() -> Dictionary:
+	var result: Dictionary = await fetch_match_state()
+	if int(result.get("code", 0)) != 200:
+		return result
+	var snapshot: Dictionary = (result.get("body", {}) as Dictionary).get("state", {})
+	if str(snapshot.get("state", "")) != "ready":
+		return result
+	var terminal := bool(NetworkService.latest_match_state.get("run_over", false))
+	if not terminal:
+		var status := await NetworkService.check_saved_match()
+		if status != "clear":
+			return {"code": 409, "error": localized_error("上一局还没结束，请先游戏重连或退出对局。" if status == "active" or status == "lobby" else "暂时无法确认对局状态，请检查网络后重试")}
+	return await release_match_assignment(str(snapshot.get("match_uid", "")))
+
+
+func prepare_custom_room() -> Dictionary:
+	if not is_logged_in():
+		return {"code": 200}
+	var checked := await reconcile_finished_assignment()
+	if int(checked.get("code", 0)) != 200:
+		return checked
+	# DELETE party also cancels its queued/pending group before leaving.
+	return await leave_party()
+
+
 func accept_match() -> Dictionary:
 	return await _request(HTTPClient.METHOD_POST, "/v1/match/accept", null, true)
 
@@ -1152,6 +1278,44 @@ func set_active_pet(pet_id: String) -> Dictionary:
 func pick_starter_pet(client_order_id: String, pet_id: String) -> Dictionary:
 	return await _request(HTTPClient.METHOD_POST, "/v1/me/pets/starter",
 		{"client_order_id": client_order_id, "pet_id": pet_id}, true)
+
+
+# --- 充值（docs/充值系统设计.md）------------------------------------------------
+#
+# 客户端只发意图：买哪一档。钻石数从服务器目录取，价格从平台取，到没到账只认服务器答复的 status
+# （credited / pending / cancelled）。
+#
+# 🔴 503、断网、超时 = 「处理中」，**不是失败**：钱多半已经扣了，只是这一趟没核实完
+# （商店刷新超时那次的教训）。下次启动 recover_purchases 会再交一次。
+
+
+# {"open", "products": [{id, diamond, bonus, first_bonus}], "diamond", "coin", "debt"}。
+func fetch_iap_catalog(platform: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/iap/catalog?platform=" + platform.uri_encode(), null, true)
+
+
+# 同 place_shop_order：重试同一笔时 client_order_id 原样复用，服务器回同一张单。
+# 回的 order_id 付款时塞进 obfuscatedProfileId，obfuscated_account_id 塞进 obfuscatedAccountId。
+func create_iap_order(client_order_id: String, platform: String, product_id: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/iap/orders",
+		{"client_order_id": client_order_id, "platform": platform, "product_id": product_id}, true)
+
+
+func confirm_google_purchase(order_id: String, purchase_token: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/iap/google/confirm",
+		{"order_id": order_id, "purchase_token": purchase_token}, true)
+
+
+# 只读数据库，不连平台。「处理中」时每隔几秒问一次。
+func fetch_iap_order(order_id: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/iap/orders/" + order_id.uri_encode(), null, true)
+
+
+# 启动、回到前台时调（Main）：把付了钱、还没处理完的付款交给服务器（BillingBridge.recover）。
+func recover_purchases() -> void:
+	if not is_logged_in() or BillingBridge.platform() != "google":
+		return
+	await BillingBridge.recover(get_tree(), confirm_google_purchase)
 
 
 # --- 出战配置与出战名片（docs/商城系统设计.md 第五节）----------------------------

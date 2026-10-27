@@ -464,16 +464,17 @@ function banCard(p, d, who, reload) {
   return card;
 }
 
-const CURRENCY = { diamond_paid: "付费钻石", diamond_free: "赠送钻石", coin: "黄金" };
+const CURRENCY = { diamond_paid: "付费钻石", diamond_free: "赠送钻石", coin: "黄金", diamond_debt: "欠账" };
 
 function walletCard(p, d, who, reload) {
   const w = d.wallet;
   const box = h("div", {});
   const card = h("section", { class: "card" }, h("h2", {}, "钱包"),
     h("div", { class: "money" },
-      h("div", {}, h("b", {}, num(w.diamond_paid + w.diamond_free)), h("span", {}, "钻石（游戏里显示的总数）")),
+      h("div", {}, h("b", {}, num(w.diamond_paid + w.diamond_free - (w.diamond_debt || 0))), h("span", {}, "钻石（游戏里显示的总数）")),
       h("div", {}, h("b", {}, num(w.diamond_paid)), h("span", {}, "其中付费")),
       h("div", {}, h("b", {}, num(w.diamond_free)), h("span", {}, "其中赠送")),
+      h("div", {}, h("b", {}, num(w.diamond_debt || 0)), h("span", {}, "欠账（充值退款扣不回的）")),
       h("div", {}, h("b", {}, num(w.coin)), h("span", {}, "黄金（账号，不是局内金币）"))),
     box);
   if (!p.deleted_at) {

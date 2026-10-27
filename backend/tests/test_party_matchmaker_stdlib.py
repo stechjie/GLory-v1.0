@@ -1,6 +1,8 @@
 """Matchmaker integration checks without the optional backend test environment."""
 
 import asyncio
+import importlib.util
+from unittest.mock import patch
 import sys
 import types
 import unittest
@@ -22,7 +24,7 @@ async def _no_penalty(_players):
 
 
 ranked.punish_no_accept = _no_penalty
-sys.modules["app.ranked"] = ranked
+
 
 party = types.ModuleType("app.party")
 finished = []
@@ -51,10 +53,19 @@ class PartyStub:
         return None
 
 
+from app.config import get_settings
+party.get_settings = get_settings
+party.startable_sizes = lambda: frozenset({1, 3}) if party.get_settings().party_full_team_only else frozenset({1, 2, 3})
 party.current = lambda: PartyStub()
 
-import app as app_package  # noqa: E402
-from app import matchmaking  # noqa: E402
+
+import app
+
+_spec = importlib.util.spec_from_file_location("_stdlib_matchmaking", Path(__file__).resolve().parents[1] / "app/matchmaking.py")
+matchmaking = importlib.util.module_from_spec(_spec)
+sys.modules[_spec.name] = matchmaking
+with patch.dict(sys.modules, {"app.ranked": ranked, "app.party": party}), patch.object(app, "party", party, create=True), patch.object(app, "ranked", ranked, create=True):
+    _spec.loader.exec_module(matchmaking)
 
 
 def player(index):
@@ -74,12 +85,9 @@ class PartyMatchTests(unittest.TestCase):
         self.assertIn("room-test", captured.output[0])
 
     def setUp(self):
-        # matchmaking 里是 `from app import party`（函数内现取）。整套 pytest 一起跑时，
-        # 别的测试先导入过真的 app.party，包上的 `party` 属性已经指向它 —— 只换 sys.modules 不够，
-        # 两处都换成桩，测完换回去（这一条原来在整套跑时必红）。
-        self._saved = (sys.modules.get("app.party"), getattr(app_package, "party", None))
-        sys.modules["app.party"] = party
-        app_package.party = party
+        context = patch.object(app, "party", party, create=True)
+        context.start()
+        self.addCleanup(context.stop)
         finished.clear()
         idled.clear()
         self.sent = []
@@ -90,17 +98,6 @@ class PartyMatchTests(unittest.TestCase):
 
         self.maker = matchmaking.Matchmaker(send, now=lambda: 100.0)
 
-    def tearDown(self):
-        module, attribute = self._saved
-        if module is None:
-            sys.modules.pop("app.party", None)
-        else:
-            sys.modules["app.party"] = module
-        if attribute is None:
-            if hasattr(app_package, "party"):
-                delattr(app_package, "party")
-        else:
-            app_package.party = attribute
 
     def _match_trio_with_three_solos(self):
         self.maker.join_group(TRIO.copy(), matchmaking.CASUAL)

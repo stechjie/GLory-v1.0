@@ -349,6 +349,7 @@ KEPT_ON_DELETE = {
     "ranked_reward_receipts",                         # 排位游戏币回执（027）：与 wallet_ledger 对账
     "pet_draws", "pet_draw_progress",                 # 钻石抽宠物（029）：花钻石的回执与保底进度，同钱包流水
     "player_progression", "level_up_events",         # 等级与奖励领取记录（037）：与钱包流水、棋子归属对账
+    "iap_orders", "iap_first_bonus",                 # 真钱订单与首充资格（040）：注销后平台还可能发来退款通知
 }
 
 

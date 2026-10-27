@@ -37,7 +37,7 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app import db, loadout, matchmaking, players, ranked, service_control
 from app.jwt_verify import Claims
@@ -83,7 +83,7 @@ _GATE_TEXT = {
     ranked.GATE_CREDIT_TOO_LOW: "信誉分过低，暂时不能排这个模式",
     # 人工禁排位（app/sanctions.py）。和 credit_banned 分开 —— 两者原因不同、解除方式也不同。
     ranked.GATE_SANCTIONED: "你的排位资格已被暂停",
-    "need_three_races": "需要集齐 3 个种族才能参加排位。去商城收集第三族棋子。",
+    "need_three_races": "排位模式需在备战区携带至少3个已解锁种族。",
     # 全局开关（app/service_control.py）。三个码分开，客户端要显示的话不一样。
     "service_maintenance": "服务器正在维护，暂时不能开始新对局",
     "matchmaking_disabled": "排位功能暂时关闭",
@@ -169,6 +169,12 @@ async def join_queue(
             await loadout.require_normal_races(me.player_id)
         except loadout.LoadoutRejected as exc:
             raise HTTPException(status_code=409, detail=exc.message) from None
+    if mode.startswith("ranked"):
+        try:
+            await loadout.require_ranked_races(me.player_id, mode == matchmaking.RANKED_NORMAL)
+        except loadout.LoadoutRejected as exc:
+            raise HTTPException(status_code=409, detail=exc.message,
+                                headers={"X-Glory-Reason": exc.code}) from None
     return MatchStateResponse(state=matchmaking.current().join(me.player_id, mode, chosen))
 
 
@@ -177,6 +183,25 @@ async def leave_queue(claims: Annotated[Claims, Depends(current_claims)]) -> Mat
     me = await _me(claims)
     _limit(_queue_limiter, str(me.player_id))
     return MatchStateResponse(state=matchmaking.current().leave(me.player_id))
+
+
+class ReleaseBody(BaseModel):
+    match_uid: str = Field(pattern=r"^[0-9a-f]{32}$")
+
+
+@router.post("/release", response_model=MatchStateResponse)
+async def release_assignment(body: ReleaseBody,
+                             claims: Annotated[Claims, Depends(current_claims)]) -> MatchStateResponse:
+    """Release only this caller's old allocation, never battle admission or rewards.
+
+    A server-issued battle card, active-seat checks and report signatures remain
+    authoritative. Delayed requests cannot cancel a newer allocation.
+    """
+    me = await _me(claims)
+    _limit(_queue_limiter, str(me.player_id))
+    mm = matchmaking.current()
+    mm.release_assignment(me.player_id, body.match_uid)
+    return MatchStateResponse(state=mm.state_of(me.player_id))
 
 
 @router.get("/state", response_model=MatchStateResponse)

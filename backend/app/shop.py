@@ -71,9 +71,11 @@ _PETS_PATH = pathlib.Path(
     os.environ.get("GLORY_PETS_TABLE", _REPO_ROOT / "data" / "pets" / "pets.json")
 )
 
-# 钱包的三列，也是流水的 currency 合法值。与 database/009_wallet.sql 一一对应 ——
+# 钱包的列，也是流水的 currency 合法值。与 database/009_wallet.sql、040_iap.sql 一一对应 ——
 # 写错列名不会报错，只会让那笔流水永远对不上任何一列余额。
-COLUMNS = ("diamond_paid", "diamond_free", "coin")
+#
+# diamond_debt（040）是欠账：退款时钻石已经花掉、扣不回来的那部分（docs/充值系统设计.md 第七节）。
+COLUMNS = ("diamond_paid", "diamond_free", "coin", "diamond_debt")
 
 # 商品能用哪些货币。**货币不等于列**：diamond 会落到 diamond_free / diamond_paid
 # 两列上（先扣赠送，见 split_charge）；coin 一对一。
@@ -84,7 +86,9 @@ CURRENCIES = ("diamond", "coin")
 # 而那通常发生在出事故的当天），所以这一层漏了就等于没校验。
 #
 # mail = 系统邮件的附件（backend/app/mail.py）。那一笔流水同时记 mail_id，指明是哪封。
-SOURCES = ("shop", "iap", "grant", "refund", "starter_pick", "match_reward", "mail", "seven_day_login", "pet_draw", "level_reward")
+# iap / iap_test / refund = 充值正式单、测试单、退款扣回（backend/app/iap.py）。
+SOURCES = ("shop", "iap", "iap_test", "grant", "refund", "starter_pick", "match_reward", "mail",
+           "seven_day_login", "pet_draw", "level_reward")
 
 
 class ShopRejected(RuntimeError):
@@ -280,17 +284,32 @@ class Wallet:
     diamond_paid: int
     diamond_free: int
     coin: int
+    # 欠账（040）。有欠账时付费、赠送两列一定是 0（040 的 wallet_debt_exclusive 钉着）。
+    diamond_debt: int = 0
 
     @property
     def diamond(self) -> int:
-        """对客户端合并成一个数。游戏里从来只显示总数，分账纯粹是后台账目。"""
-        return self.diamond_paid + self.diamond_free
+        """对客户端合并成一个数。游戏里从来只显示总数，分账纯粹是后台账目。
+
+        **欠账时是负数**（比如 -300）。商城和抽宠物都拿它判余额，欠着就自然「钻石不足」，
+        不用在每个花钻石的地方另加一道欠账判断 —— 那种判断漏一处就是一个白嫖口。
+        """
+        return self.diamond_paid + self.diamond_free - self.diamond_debt
 
     def balance_of(self, currency: str) -> int:
         return self.diamond if currency == "diamond" else self.coin
 
 
 EMPTY_WALLET = Wallet(0, 0, 0)
+
+# 读钱包的两条语句。拿出来做常量，是为了让启动自检（app/schema_check.py）原样 prepare 它们 ——
+# 040 漏跑时这里引用的 diamond_debt 不存在，商城、抽宠物、邮件领取会一起 500。
+WALLET_SELECT = "select diamond_paid, diamond_free, coin, diamond_debt from player_wallets where player_id = $1"
+LOCK_WALLET = WALLET_SELECT + " for update"
+
+
+def _wallet_of(row) -> Wallet:
+    return Wallet(row["diamond_paid"], row["diamond_free"], row["coin"], row["diamond_debt"])
 
 
 async def _lock_wallet(conn: asyncpg.Connection, player_id: uuid.UUID) -> Wallet:
@@ -304,12 +323,7 @@ async def _lock_wallet(conn: asyncpg.Connection, player_id: uuid.UUID) -> Wallet
         "insert into player_wallets (player_id) values ($1) on conflict do nothing",
         player_id,
     )
-    row = await conn.fetchrow(
-        "select diamond_paid, diamond_free, coin from player_wallets"
-        " where player_id = $1 for update",
-        player_id,
-    )
-    return Wallet(row["diamond_paid"], row["diamond_free"], row["coin"])
+    return _wallet_of(await conn.fetchrow(LOCK_WALLET, player_id))
 
 
 async def read_wallet(player_id: uuid.UUID) -> Wallet:
@@ -320,13 +334,10 @@ async def read_wallet(player_id: uuid.UUID) -> Wallet:
 
 async def read_wallet_in(conn: asyncpg.Connection, player_id: uuid.UUID) -> Wallet:
     """同 read_wallet，用调用方手上的连接（邮件领完要回报余额，不必再借一条连接）。"""
-    row = await conn.fetchrow(
-        "select diamond_paid, diamond_free, coin from player_wallets where player_id = $1",
-        player_id,
-    )
+    row = await conn.fetchrow(WALLET_SELECT, player_id)
     if row is None:
         return EMPTY_WALLET
-    return Wallet(row["diamond_paid"], row["diamond_free"], row["coin"])
+    return _wallet_of(row)
 
 
 def split_charge(wallet: Wallet, currency: str, amount: int) -> dict[str, int]:
@@ -351,6 +362,31 @@ def split_charge(wallet: Wallet, currency: str, amount: int) -> dict[str, int]:
     return out
 
 
+def settle_debt(wallet: Wallet, changes: dict[str, int]) -> dict[str, int]:
+    """有欠账时，钻石入账先还欠账，剩下的才进余额。返回改写后的 changes（有符号）。
+
+    只改**正的钻石入账**，先抵付费列、再抵赠送列；扣款、黄金、退款自己写的欠账列都原样放过。
+    放在 _apply 里调用，于是充值、邮件、七日登录、升级奖励……所有入账路径一处改全生效。
+
+    纯函数，单独拿出来是为了能直接测（同 split_charge）—— 这段写错不会报错，
+    只会让 040 的 wallet_debt_exclusive 在某一笔入账时把整个事务拒掉。
+    """
+    debt = wallet.diamond_debt
+    if debt <= 0:
+        return changes
+    out = dict(changes)
+    for column in ("diamond_paid", "diamond_free"):
+        incoming = out.get(column, 0)
+        if incoming <= 0 or debt <= 0:
+            continue
+        repay = min(incoming, debt)
+        debt -= repay
+        out[column] = incoming - repay
+        out["diamond_debt"] = out.get("diamond_debt", 0) - repay
+    # 009 的 delta <> 0 挡着：被欠账整个吃掉的那一列不能写成一条 0 的流水。
+    return {column: delta for column, delta in out.items() if delta != 0}
+
+
 async def _apply(
     conn: asyncpg.Connection,
     player_id: uuid.UUID,
@@ -370,10 +406,14 @@ async def _apply(
 
     🔴 source 不能填错：手工发放记 grant、充值记 iap、邮件附件记 mail（同时带 mail_id）。
     填错当时没有任何症状，坏的是以后对账。
+
+    有欠账时钻石入账先还欠账（settle_debt），流水里是「欠账列负数 + 余下的进对应列」，
+    名目照调用方给的。
     """
     if source not in SOURCES:
         raise ValueError("未知的流水来源：%s（合法值在 shop.SOURCES）" % source)
 
+    changes = settle_debt(wallet, changes)
     after = dataclasses.asdict(wallet)
     for column, delta in changes.items():
         if column not in COLUMNS:
@@ -382,8 +422,8 @@ async def _apply(
 
     await conn.execute(
         "update player_wallets set diamond_paid = $2, diamond_free = $3, coin = $4,"
-        " updated_at = now() where player_id = $1",
-        player_id, after["diamond_paid"], after["diamond_free"], after["coin"],
+        " diamond_debt = $5, updated_at = now() where player_id = $1",
+        player_id, after["diamond_paid"], after["diamond_free"], after["coin"], after["diamond_debt"],
     )
     # 一笔钱跨两列时写两条流水，每条的 balance_after 是**那一列**的余额。
     # 合成一条的话就没法对账到具体某一列。
@@ -401,7 +441,7 @@ async def _apply(
             % (names, "" if mail_id is None else ", mail_id", placeholders),
             *values,
         )
-    return Wallet(after["diamond_paid"], after["diamond_free"], after["coin"])
+    return Wallet(after["diamond_paid"], after["diamond_free"], after["coin"], after["diamond_debt"])
 
 
 # --- 归属 ---------------------------------------------------------------------

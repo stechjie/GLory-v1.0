@@ -5282,8 +5282,11 @@ func _room_report_ctx(room: Dictionary, rounds: int, outcome: int, hp_a: int, hp
 	# 结束那一刻谁还连着。**这就是排位的跑路判定线** —— 不是「有没有转过 AI」
 	# （座位断线 20 秒就转 AI，但转了之后 _resume_seat 还能回来）。
 	var online_slots := {}
+	var manual: Dictionary = room.get("manual_exit_slots", {})
 	for peer_id in (room.get("peer_slot", {}) as Dictionary).keys():
-		online_slots[int((room.get("peer_slot", {}) as Dictionary)[peer_id])] = true
+		var slot := int((room.get("peer_slot", {}) as Dictionary)[peer_id])
+		if not manual.has(slot) and _peer_connected(int(peer_id)):
+			online_slots[slot] = true
 
 	var seats := []
 	for slot in TEAM_SLOTS:
@@ -5329,6 +5332,7 @@ func _room_report_ctx(room: Dictionary, rounds: int, outcome: int, hp_a: int, hp
 		"allies": final_data.get("allies", []),
 		"stats": final_data.get("stats", []),
 		"settlement_kind": final_data.get("kind", ""),
+		"end_reason": str(final_data.get("end_reason", "")),
 	}
 
 # 专用服务器的权威结算：与本地/房主的 Main._on_team_battle_finished 共用
@@ -5940,26 +5944,34 @@ func abandon_started_match() -> void:
 		public_token_id = ""
 		reset()
 		return
-	# 要 await：_notice_manual_exit_then_reset 内部等两帧让 ENet 把包真的发出去。
-	# 不等的话，_confirm_exit_for_new_match 紧接着去问服务器「我还在局里吗」时，
-	# 那条退出通知还没离开本机 —— 服务器必然答「还在」，于是永远放行不了新局。
-	# 不关心结果的调用方（Main._on_exit_match_result）照旧不写 await，行为不变。
+	# Wait for the server status response before closing the reliable transport.
 	await _notice_manual_exit_then_reset()
 
 
-# 退出 / 让出座位时统一走这里：把「我退了、按掉线算」告诉服务端，然后断开。
-#
-# 🔴 **ENet 的包要等下一次 poll() 才真正发出去**，所以发完必须**等两帧**再 reset()——
-# 同一帧里断开连接会把刚排进去的那条包直接丢掉，症状是「服务端根本不知道你退了」，
-# 而客户端看起来完全正常（回了主菜单、重连键也在），查起来只能去量服务端日志。
-#
-# 没连着服务器（断线遮罩那条路、本地房主局、回合间空档）就没什么可通知的：
-# 断开本身就等于掉线，服务端心跳超时后一样判这局没有活人。
+# Use the existing ordered, reliable status RPC as acknowledgement. Two frames
+# do not guarantee ENet delivery. A timeout keeps credentials for later verification.
 func _notice_manual_exit_then_reset() -> void:
 	if _manual_exit_notice_available():
-		_rpc_manual_exit_seat.rpc_id(1, session_token)
-		await get_tree().process_frame
-		await get_tree().process_frame
+		var token := session_token
+		_match_check_generation += 1
+		var generation := _match_check_generation
+		_match_check_busy = true
+		_match_check_id = _make_request_id()
+		_match_check_result = ""
+		_rpc_manual_exit_seat.rpc_id(1, token)
+		_rpc_match_status_request.rpc_id(1, _match_check_id, token)
+		var deadline := Time.get_ticks_msec() + 3000
+		while generation == _match_check_generation and _match_check_result.is_empty() and Time.get_ticks_msec() < deadline:
+			await get_tree().create_timer(0.05).timeout
+		# A foreground reset or new connection supersedes this old exit operation.
+		if generation != _match_check_generation:
+			return
+		if _match_check_result == "clear" and str(SaveManager.load_reconnect().get("token", "")) == token:
+			SaveManager.clear_reconnect()
+			SaveManager.clear_public_token()
+			public_token_id = ""
+		_match_check_busy = false
+		_match_check_id = ""
 	reset()
 
 
@@ -5971,7 +5983,7 @@ func _manual_exit_notice_available() -> bool:
 		return false
 	if not (state in [SessionState.JOINING, SessionState.READY]):
 		return false
-	return multiplayer.multiplayer_peer != null
+	return multiplayer.multiplayer_peer != null and multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED
 
 # app 重开后凭本地存的 token 恢复对局（Main 在启动时调用）。
 # port 必须由调用方传进来：座位 token 是**进程内**的，多进程下连错端口 = 凭证失效。

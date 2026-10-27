@@ -1,0 +1,4 @@
+# The plugin class is loaded by name from the manifest meta-data
+# (org.godotengine.plugin.v2.GloryBilling) and its @UsedByGodot methods are called
+# through JNI by name. Same reasoning as android_plugins/glory_signin/proguard.txt.
+-keep class com.glory.billing.** { *; }

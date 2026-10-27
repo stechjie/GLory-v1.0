@@ -111,6 +111,16 @@ var _choice_panel: VBoxContainer
 var _choice_guest: Button
 var _choice_google: Button
 var _choice_error: Label
+# 电脑版（Steam）的两个按钮，和「我在手机上玩过」的关联码那一块（docs/三方登录设计.md 第八节）。
+var _choice_steam: Button
+var _choice_phone: Button
+var _link_box: VBoxContainer
+var _link_code: Label
+var _link_hint: Label
+var _link_poll_token := ""
+var _link_expires_at := 0.0
+# 每次开始 / 取消关联都换一代，旧的轮询循环看到代数变了就自己退出。
+var _link_serial := 0
 # 系统登录弹窗开着、或者正在拿身份证明换登录 —— 期间按钮不能再点。
 var _choice_busy := false
 
@@ -508,9 +518,18 @@ func _show_entry(view: Dictionary) -> void:
 	var error := ""
 	match _entry_state:
 		"choose":
-			title = _tr_text("选择登录方式", "Choose how to sign in")
-			detail = _tr_text("第一次在这台设备上玩，直接开始就行。\n在别的手机上玩过？用绑定过的账号登录，就能接着玩。",
-				"New here? Just start.\nPlayed on another phone? Sign in with the account you linked to carry on.")
+			if _link_box.visible:
+				title = _tr_text("关联手机上的账号", "Link your phone account")
+				detail = _tr_text("在手机上打开「资料 → 资料设置 → 账号与登录 → 关联电脑」，输入下面的码。",
+					"On your phone open Profile → Profile Settings → Account & sign-in → Link PC, and enter this code.")
+			elif AccountManager.is_steam_build():
+				title = _tr_text("进入 Glory", "Enter Glory")
+				detail = _tr_text("第一次玩直接用 Steam 进入。\n在手机上玩过？可以关联手机上的账号，接着玩。",
+					"New here? Just enter with Steam.\nPlayed on your phone? Link that account to carry on.")
+			else:
+				title = _tr_text("选择登录方式", "Choose how to sign in")
+				detail = _tr_text("第一次在这台设备上玩，直接开始就行。\n在别的手机上玩过？用绑定过的账号登录，就能接着玩。",
+					"New here? Just start.\nPlayed on another phone? Sign in with the account you linked to carry on.")
 		"login":
 			title = _tr_text("正在登录", "Signing in")
 			detail = _tr_text("进入游戏前要先连上账号服务器", "Connecting to the account server before entering")
@@ -628,6 +647,28 @@ func _build_choice_panel() -> void:
 	_choice_google = _choice_button(_tr_text("用 Google 登录", "Sign in with Google"), &"GloryGhost", 56)
 	_choice_google.pressed.connect(_on_choice_google)
 	_choice_panel.add_child(_choice_google)
+	# 电脑版：Steam 就是身份，不出游客 / Google。
+	_choice_steam = _choice_button(_tr_text("用 Steam 进入游戏", "Enter with Steam"), &"GloryPrimary", 72)
+	_choice_steam.pressed.connect(_on_choice_steam)
+	_choice_panel.add_child(_choice_steam)
+	_choice_phone = _choice_button(_tr_text("我在手机上玩过", "I've played on my phone"), &"GloryGhost", 56)
+	_choice_phone.pressed.connect(_on_choice_phone)
+	_choice_panel.add_child(_choice_phone)
+	_link_box = VBoxContainer.new()
+	_link_box.visible = false
+	_link_box.add_theme_constant_override("separation", Tokens.GAP_S)
+	_link_code = Label.new()
+	_link_code.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_link_code.add_theme_font_size_override("font_size", 56)
+	_link_box.add_child(_link_code)
+	_link_hint = Label.new()
+	_link_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_link_hint.add_theme_font_size_override("font_size", 17)
+	_link_box.add_child(_link_hint)
+	var back := _choice_button(_tr_text("返回", "Back"), &"GloryGhost", 48)
+	back.pressed.connect(_cancel_phone_link)
+	_link_box.add_child(back)
+	_choice_panel.add_child(_link_box)
 	_choice_error = Label.new()
 	_choice_error.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_choice_error.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -655,9 +696,17 @@ func _sync_choice_panel() -> void:
 	if not choosing:
 		return
 	# 每次重画时都现查：插件在不在、有没有 Google 服务，启动以后不会变，但查一次很便宜。
-	_choice_google.visible = SignInBridge.google_available()
-	_choice_guest.disabled = _choice_busy
-	_choice_google.disabled = _choice_busy
+	var steam := AccountManager.is_steam_build()
+	_choice_guest.visible = not steam
+	_choice_google.visible = not steam and SignInBridge.google_available()
+	_choice_steam.visible = steam and not _link_box.visible
+	_choice_phone.visible = steam and not _link_box.visible
+	for button in [_choice_guest, _choice_google, _choice_steam, _choice_phone]:
+		button.disabled = _choice_busy
+	if _link_box.visible:
+		var left := maxi(0, int(ceil(_link_expires_at - Time.get_unix_time_from_system())))
+		_link_hint.text = _tr_text("还剩 %d:%02d · 手机上确认后会自动进入" % [left / 60, left % 60],
+			"%d:%02d left · you'll get in automatically once you confirm on the phone" % [left / 60, left % 60])
 	var error := AccountManager.choice_error
 	_choice_error.text = error
 	_choice_error.visible = not error.is_empty()
@@ -687,6 +736,89 @@ func _on_choice_google() -> void:
 	_choice_busy = false
 	if is_inside_tree():
 		_tick_entry(0.0, true)
+
+
+# 电脑版「用 Steam 进入游戏」。失败时 AccountManager 自己回到「等玩家选」并写好 choice_error。
+func _on_choice_steam() -> void:
+	if _choice_busy:
+		return
+	_choice_busy = true
+	AccountManager.choice_error = ""
+	_sync_choice_panel()
+	await AccountManager.login_with_steam()
+	_choice_busy = false
+	if is_inside_tree():
+		_tick_entry(0.0, true)
+
+
+# 电脑版「我在手机上玩过」：拿一个 6 位码显示出来，等手机确认。
+func _on_choice_phone() -> void:
+	if _choice_busy:
+		return
+	_choice_busy = true
+	AccountManager.choice_error = ""
+	_sync_choice_panel()
+	var result: Dictionary = await AccountManager.steam_link_begin()
+	_choice_busy = false
+	if not is_inside_tree():
+		return
+	if int(result.get("code", 0)) != 200:
+		AccountManager.choice_error = str(result.get("error", "拿不到关联码，请重试"))
+		_tick_entry(0.0, true)
+		return
+	var body: Dictionary = result.get("body", {})
+	_link_serial += 1
+	_link_poll_token = str(body.get("poll_token", ""))
+	_link_expires_at = Time.get_unix_time_from_system() + float(body.get("expires_in", 300))
+	var code := str(body.get("code", ""))
+	# 3 + 3 分开写，照着念、照着打都不容易错位。
+	_link_code.text = "%s %s" % [code.substr(0, 3), code.substr(3)]
+	_link_box.visible = true
+	_tick_entry(0.0, true)
+	_poll_phone_link(_link_serial)
+
+
+func _cancel_phone_link() -> void:
+	_link_serial += 1
+	_link_box.visible = false
+	_tick_entry(0.0, true)
+
+
+# 每 2 秒问一次手机那边确认了没有。代数变了（返回 / 重新出码）就退出。
+func _poll_phone_link(serial: int) -> void:
+	while is_inside_tree() and serial == _link_serial:
+		await get_tree().create_timer(2.0).timeout
+		if not is_inside_tree() or serial != _link_serial:
+			return
+		_sync_choice_panel()
+		var state: String = await AccountManager.steam_link_status(_link_poll_token)
+		if not is_inside_tree() or serial != _link_serial:
+			return
+		var expired := Time.get_unix_time_from_system() > _link_expires_at
+		match state:
+			"linked":
+				_link_serial += 1
+				_link_box.visible = false
+				_on_choice_steam()
+				return
+			"taken":
+				_link_serial += 1
+				_link_box.visible = false
+				# 不合并（10-18 拍板）：这个 Steam 自己已经有号了，手机那个号接不过来。
+				AccountManager.choice_error = _tr_text(
+					"这个 Steam 已经有自己的游戏账号，不能再关联手机上的账号。点「用 Steam 进入游戏」进入它。",
+					"This Steam account already has its own game account and can't be linked. Use \"Enter with Steam\" to play it.")
+				_tick_entry(0.0, true)
+				return
+			"expired":
+				expired = true
+		if expired:
+			_link_serial += 1
+			_link_box.visible = false
+			AccountManager.choice_error = _tr_text("关联码已过期，请重新点「我在手机上玩过」。",
+				"The code expired. Tap \"I've played on my phone\" again.")
+			_tick_entry(0.0, true)
+			return
 
 
 # 读维护公告文件（scripts/account/ServiceStatus.gd 顶部）。只在进不去的时候、每 ENTRY_STATUS_POLL_SEC 读一次。

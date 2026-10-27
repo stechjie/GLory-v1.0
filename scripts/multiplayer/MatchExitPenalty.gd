@@ -29,9 +29,9 @@ static func body(mode: String, en: bool) -> String:
 	# 所以现在这句又得说「回不去」。🔴 **规则和文案必须一起翻** —— 这句话正是给
 	# 「网络抖了、盯着断线遮罩、不耐烦想退」的人看的，他最可能照着它做决定；
 	# 说反了就是主动误导。tools/match_exit_check 对着这几句。
-	var lead := ("Leaving ends this match for you: you cannot return to it, "
+	var lead := ("Leaving forfeits this match: you cannot return to it, "
 		+ "and a new match can start right away."
-		if en else "退出后这一局就结束了：**无法再回到这一局**，可以马上开新局。")
+		if en else "确认退出后本局判负，不能再回来，可以马上开新局。")
 	return lead + "\n" + penalty(mode, en)
 
 

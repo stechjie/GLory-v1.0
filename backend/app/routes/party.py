@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.jwt_verify import Claims
 from app.rate_limit import RateLimited, SlidingWindowLimiter
 from app.routes.me import current_claims
+from app.routes.matchmaking import _GATE_TEXT
 
 log = logging.getLogger("glory.party")
 
@@ -459,6 +460,12 @@ async def ready(body: ReadyBody,
 @router.post("/cancel", response_model=StateResponse)
 async def cancel(claims: Annotated[Claims, Depends(current_claims)]) -> StateResponse:
     me = await _me(claims)
+    # Final confirmation wins over a late cancellation. Preserve the allocation
+    # and report its actual state instead of sending a false idle notification.
+    mm = matchmaking.current()
+    state = mm.state_of(me.player_id)
+    if state["state"] == "ready":
+        return StateResponse(state=state)
     service = party.current()
     try:
         room = service.queued_room(me.player_id)
@@ -520,8 +527,9 @@ async def start(body: StartBody, claims: Annotated[Claims, Depends(current_claim
         for pid in members:
             reason = await ranked.queue_gate(conn, pid, room.mode)
             if reason:
-                raise HTTPException(status_code=409, detail=(
-                    "有队员暂时不能排位或休闲，请检查开放时间、禁赛与信誉分"))
+                raise HTTPException(status_code=409,
+                                    detail=_GATE_TEXT.get(reason, "现在不能开始匹配"),
+                                    headers={"X-Glory-Reason": reason})
         rows = await conn.fetch(
             "select player_id, score from player_ranked where player_id = any($1::uuid[])", members)
     ratings = {row["player_id"]: int(row["score"]) for row in rows}
@@ -532,6 +540,13 @@ async def start(body: StartBody, claims: Annotated[Claims, Depends(current_claim
             raise HTTPException(status_code=409,
                                 detail="队伍成员须处于相同排位回合阶段（突破前 13 回合，突破后 21 回合）")
         queue_mode = matchmaking.RANKED_NORMAL if True in stages else matchmaking.RANKED
+    if queue_mode.startswith("ranked"):
+        for pid in members:
+            try:
+                await loadout.require_ranked_races(pid, queue_mode == matchmaking.RANKED_NORMAL)
+            except loadout.LoadoutRejected as exc:
+                raise HTTPException(status_code=409, detail=exc.message,
+                                    headers={"X-Glory-Reason": exc.code}) from None
     try:
         room = service.mark_queued(me.player_id, version)
         # 组队房里选的位置带进对局（10-08）：满 3 人的队伍一定按它坐，见 matchmaking.allocate_seats。

@@ -49,6 +49,13 @@ VOICE_PERMISSION = "android.permission.RECORD_AUDIO"
 SIGNIN_PLUGIN_CLASS = b"com/glory/signin/GlorySignInPlugin"
 # The bridge is compiled against Credential Manager without bundling it (export plugin dependency).
 CREDENTIALS_CLASS = b"androidx/credentials/CredentialManager"
+# Google Play Billing (the top-up design doc under docs/, section 9). An APK without the GloryBilling
+# bridge installs and runs; the diamond store just says top-ups are unavailable on this device.
+BILLING_PLUGIN_CLASS = b"com/glory/billing/GloryBillingPlugin"
+# The bridge is compiled against the Play Billing Library without bundling it (export plugin dependency).
+BILLING_LIBRARY_CLASS = b"com/android/billingclient/api/BillingClient"
+# The billing library's own manifest adds it; without it Google refuses to open the payment sheet.
+BILLING_PERMISSION = "com.android.vending.BILLING"
 # LiveKit's own manifest brings these; the export plugin removes them (voice only).
 # CAMERA shows up on the Play listing; the media-projection foreground service needs its own
 # Play Console declaration.
@@ -308,6 +315,8 @@ def inspect_apk(apk: Path, aapt_request: str = "") -> Dict[str, Any]:
         livekit_present = any(LIVEKIT_CLASS in blob for blob in dex_blobs)
         signin_plugin_present = any(SIGNIN_PLUGIN_CLASS in blob for blob in dex_blobs)
         credentials_present = any(CREDENTIALS_CLASS in blob for blob in dex_blobs)
+        billing_plugin_present = any(BILLING_PLUGIN_CLASS in blob for blob in dex_blobs)
+        billing_library_present = any(BILLING_LIBRARY_CLASS in blob for blob in dex_blobs)
     build_info = json.loads(build_bytes.decode("utf-8-sig")) if build_bytes else {}
     manifest = json.loads(manifest_bytes.decode("utf-8-sig")) if manifest_bytes else {}
     bundle = json.loads(bundle_bytes.decode("utf-8-sig")) if bundle_bytes else {}
@@ -339,6 +348,8 @@ def inspect_apk(apk: Path, aapt_request: str = "") -> Dict[str, Any]:
         "livekit_present": livekit_present,
         "signin_plugin_present": signin_plugin_present,
         "credentials_present": credentials_present,
+        "billing_plugin_present": billing_plugin_present,
+        "billing_library_present": billing_library_present,
         "artifact_mapping_count": len(mappings),
         "artifact_mappings": mappings,
         "apk_entry_inventory_sha256": canonical_sha(entry_rows),
@@ -377,12 +388,18 @@ def verify_report(report: Dict[str, Any], expected: Optional[Dict[str, Any]]) ->
         failures.append("signin_plugin_absent")
     if not report.get("credentials_present"):
         failures.append("signin_credentials_absent")
+    if not report.get("billing_plugin_present"):
+        failures.append("billing_plugin_absent")
+    if not report.get("billing_library_present"):
+        failures.append("billing_library_absent")
     if report.get("android_manifest_error"):
         failures.append(str(report["android_manifest_error"]))
     else:
         android = report.get("android_manifest", {})
         if VOICE_PERMISSION not in android.get("permissions", []):
             failures.append("voice_record_audio_permission_absent")
+        if BILLING_PERMISSION not in android.get("permissions", []):
+            failures.append("billing_permission_absent")
         for permission in UNWANTED_PERMISSIONS:
             if permission in android.get("permissions", []):
                 failures.append("unwanted_permission_" + permission.rsplit(".", 1)[1].lower())

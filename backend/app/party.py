@@ -81,6 +81,8 @@ class Room:
     # 房间**不会**因为开了对局而关掉（用户口径：保留原排位队伍房间），
     # 这个字段只是让客户端知道「这支队伍现在打的是哪一局」。
     in_match: str = ""
+    # Original members retain their seats until they return or explicitly leave.
+    return_pending: set[uuid.UUID] = field(default_factory=set)
 
 
 class Parties:
@@ -168,7 +170,10 @@ class Parties:
 
     def state_of(self, player: uuid.UUID) -> dict:
         room = self.of(player)
-        return self.snapshot(room) if room is not None else {"t": "party", "state": "none"}
+        if room is None:
+            return {"t": "party", "state": "none"}
+        self._touch_present(room, player)
+        return self.snapshot(room)
 
     async def broadcast(self, room: Room) -> None:
         payload = self.snapshot(room)
@@ -231,6 +236,7 @@ class Parties:
         if room is None:
             return None, [], False, False
         old_members = room.members.copy()
+        room.return_pending.discard(player)
         self._member_room.pop(player, None)
         if player == room.host:
             # 房主退出：房里还有别人就交接给「待得最久」的那位，只剩自己才解散。
@@ -271,6 +277,7 @@ class Parties:
         if target not in room.members:
             raise PartyRejected("not_member", "这位玩家已经不在队伍里")
         self._member_room.pop(target, None)
+        room.return_pending.discard(target)
         room.members.remove(target)
         room.profiles.pop(target, None)
         room.active_pets.pop(target, None)
@@ -343,8 +350,11 @@ class Parties:
         now = self._now()
         touched: dict[str, Room] = {}
         for room in list(self._rooms.values()):
+            if room.in_match:
+                continue  # Account WS loss during battle must not dissolve the original party.
             stale = [pid for pid in room.members
-                     if 0.0 < room.dropped_at.get(pid, 0.0) <= now - LEFT_GRACE_SEC]
+                     if pid not in room.return_pending
+                     and 0.0 < room.dropped_at.get(pid, 0.0) <= now - LEFT_GRACE_SEC]
             for pid in stale:
                 _room, _members, _dissolved, _rotated = self.leave(pid)
                 if _room is not None:
@@ -445,12 +455,18 @@ class Parties:
                 room.ready.clear()
                 if match_uid:
                     room.in_match = match_uid
+                    room.return_pending = set(room.members)
                 room.version += 1
                 continue
             self._rooms.pop(room_id, None)
             self._close_voice(room)
             for pid in room.members:
                 self._member_room.pop(pid, None)
+
+    def finish_match(self, match_uid: str) -> None:
+        for room in self._rooms.values():
+            if room.in_match == match_uid:
+                self.clear_in_match(room)
 
     def clear_in_match(self, room: Room) -> None:
         """这一局的房间记录用完了（玩家重开一局 / 正常退房前的收尾）。
@@ -493,6 +509,8 @@ class Parties:
         return room
 
     def _touch_present(self, room: Room, player: uuid.UUID) -> None:
+        if not room.in_match:
+            room.return_pending.discard(player)
         if room.dropped_at.pop(player, 0.0) > 0.0:
             room.version += 1
 

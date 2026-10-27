@@ -540,6 +540,8 @@ def wired(monkeypatch: pytest.MonkeyPatch):
     get_settings.cache_clear()
     monkeypatch.setattr(db, "is_connected", lambda: True)
     monkeypatch.setattr(me_routes, "get_verifier", _FakeVerifier)
+    from http_fixture_support import isolate_http_services
+    isolate_http_services(monkeypatch, app)
 
     async def _lookup(auth_uid: str):
         return _FakePlayer(PLAYER_A, "阿甲", "AAAA2222") if auth_uid == "auth-a" else None

@@ -92,7 +92,8 @@ func refresh() -> void:
 
 
 # 金钱宝藏动作行。返回 logo 按钮，宿主拿它的位置做骰子 / 金币特效的起点。
-const ALTAR_LOGO_PATH := "res://assets/ui/treasure_logos/黄金祭坛_无框.png"
+# 原版图标仍在资源包中；不存在的“无框”路径会使 TextureButton 变成透明空白。
+const ALTAR_LOGO_PATH := "res://assets/ui/treasure_logos/黄金祭坛.png"
 # 骰子 logo 还没出图，先用慷慨命运原图占位；出图后只换这一个路径。
 const GAMBLE_LOGO_PATH := "res://assets/ui/treasure_logos/慷慨命运.png"
 const MONEY_LOGO_SIZE := Vector2(40, 40)

@@ -45,6 +45,7 @@ func _expect(value: bool, description: String) -> void:
 	h.expect(value, description, description)
 
 func _run() -> void:
+	LocaleManager.set_locale("zh")
 	if OS.get_cmdline_user_args().has("--compact"):
 		get_window().content_scale_size = Vector2i(1280, 720)
 	var server := TestServer.new()

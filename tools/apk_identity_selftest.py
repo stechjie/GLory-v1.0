@@ -44,6 +44,9 @@ def main():
             # And the Google sign-in bridge with Credential Manager.
             archive.writestr("classes3.dex",
                              b"dex\n035\x00...Lcom/glory/signin/GlorySignInPlugin;...Landroidx/credentials/CredentialManager;...")
+            # And the Play Billing bridge with the billing library.
+            archive.writestr("classes4.dex",
+                             b"dex\n035\x00...Lcom/glory/billing/GloryBillingPlugin;...Lcom/android/billingclient/api/BillingClient;...")
 
         report = identity.inspect_apk(apk)
         assert report["artifact_mapping_count"] == 1
@@ -52,10 +55,12 @@ def main():
         assert report["livekit_present"] is True
         assert report["signin_plugin_present"] is True
         assert report["credentials_present"] is True
+        assert report["billing_plugin_present"] is True
+        assert report["billing_library_present"] is True
         report["android_manifest_error"] = ""
         report["android_manifest"] = {
             "package_id": "glory.beta001", "version_code": 5, "version_name": "",
-            "permissions": ["android.permission.INTERNET", identity.VOICE_PERMISSION]}
+            "permissions": ["android.permission.INTERNET", identity.VOICE_PERMISSION, identity.BILLING_PERMISSION]}
         assert identity.verify_report(report, build) == []
 
         # An APK exported without the voice plugin must not verify (the p27-p30 case):
@@ -76,6 +81,12 @@ def main():
         assert "signin_plugin_absent" in identity.verify_report(no_signin, build)
         no_credentials = dict(report, credentials_present=False)
         assert "signin_credentials_absent" in identity.verify_report(no_credentials, build)
+        # Without the billing bridge / library the diamond store silently says "unavailable on this device".
+        assert "billing_plugin_absent" in identity.verify_report(dict(report, billing_plugin_present=False), build)
+        assert "billing_library_absent" in identity.verify_report(dict(report, billing_library_present=False), build)
+        no_billing_permission = dict(report, android_manifest=dict(report["android_manifest"],
+                                     permissions=["android.permission.INTERNET", identity.VOICE_PERMISSION]))
+        assert "billing_permission_absent" in identity.verify_report(no_billing_permission, build)
         # LiveKit's camera / screen-capture permissions must have been removed by the export plugin.
         camera = dict(report, android_manifest=dict(report["android_manifest"],
                       permissions=report["android_manifest"]["permissions"] + ["android.permission.CAMERA"]))
@@ -95,7 +106,7 @@ def main():
         assert "android_manifest_version_code_mismatch" in failures
         identity.write_json(report_path, report)
         assert report_path.is_file()
-    print("APK_IDENTITY_SELFTEST status=PASS checked=15")
+    print("APK_IDENTITY_SELFTEST status=PASS checked=18")
 
 
 if __name__ == "__main__":

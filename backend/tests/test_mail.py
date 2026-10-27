@@ -193,7 +193,7 @@ def owned_only(*content_ids: str):
     return lambda _player, item: 1 if item in owned else None
 
 
-WALLET = {"diamond_paid": 40, "diamond_free": 10, "coin": 0}
+WALLET = {"diamond_paid": 40, "diamond_free": 10, "coin": 0, "diamond_debt": 0}
 
 
 # --- 附件检查（纯函数）---------------------------------------------------------

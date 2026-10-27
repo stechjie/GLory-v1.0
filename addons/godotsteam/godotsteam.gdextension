@@ -1,0 +1,28 @@
+; GodotSteam GDExtension 4.23.2（Steamworks SDK 1.65，MIT，见 license.md）。电脑版 Steam 登录用（docs/三方登录设计.md 第八节）。
+; 来源：codeberg.org/godotsteam/godotsteam 发布页 v4.23.2-gde 的 godotsteam-4.23.2-gdextension-plugin-4.4.zip
+; （2026-10-23 下载，27,424,462 字节，sha256 4f1db786924ad0e1de9b161d87276b1a0b7504332ceec2e9c6694be202c33da4）。
+;
+; 🔴 **只留 Windows 64 位和 macOS。** 原包还带安卓、Linux 的库，没拷：
+;   - 安卓 / iOS 包里不能有 Steam（手机走 Google / Apple）。iOS 不是 macos，这里的 macOS 库进不了 iOS 包；
+;   - 战斗服务器跑在 Linux 上。它的包（tools/make_server_zip.ps1）本来就不带 addons/，这里也不留 Linux 库，两道保险；
+;   - macOS 留着只为 Mac 同事的编辑器 / 无界面门禁：缺库时 Godot 每次启动都报一条 ERROR，
+;     会混进打包日志的错误判断（同 glory_voice 的 macOS 占位库那段）。游戏只在 Windows 上初始化 Steam；
+;   - 原包里那个编辑器更新插件（会自己上网下载新版）也没拷，它不是用 Steam 必需的。
+; ⚠️ 原包这里把 macOS 文件名写成了不带 .universal 的，和实际文件对不上；下面按实际文件名写。
+; 升级时照这个做法：只换 win64/ 与 osx/ 下的库，改这里的版本号与来源。
+[configuration]
+
+entry_symbol = "godotsteam_init"
+compatibility_minimum = "4.4"
+
+[libraries]
+
+windows.debug.x86_64 = "res://addons/godotsteam/win64/libgodotsteam.windows.template_debug.x86_64.dll"
+windows.release.x86_64 = "res://addons/godotsteam/win64/libgodotsteam.windows.template_release.x86_64.dll"
+macos.debug = "res://addons/godotsteam/osx/libgodotsteam.macos.template_debug.universal.dylib"
+macos.release = "res://addons/godotsteam/osx/libgodotsteam.macos.template_release.universal.dylib"
+
+[dependencies]
+
+windows.x86_64 = { "res://addons/godotsteam/win64/steam_api64.dll": "" }
+macos.universal = { "res://addons/godotsteam/osx/libsteam_api.dylib": "" }
