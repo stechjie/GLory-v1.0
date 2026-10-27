@@ -263,7 +263,8 @@ const USE_DTLS := true
 #      (_rpc_spectate_*) change the RPC table; room_state gains a public spectator list; the
 #      room list rows gain joinable/spectate fields; board snapshots carry a display-only bench.
 #      Clients and the dedicated battle server must be updated together.
-const NETWORK_PROTOCOL_VERSION := 44
+# v45: settlement return replies carry an authoritative failure reason. Upgrade client and server together.
+const NETWORK_PROTOCOL_VERSION := 45
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false

@@ -1675,6 +1675,9 @@ func _show_friends_screen() -> void:
 func _join_room_by_id(room_id: int) -> void:
 	if room_id <= 0:
 		return
+	if NetworkService.team_active and NetworkService.is_online() and (NetworkService.team_local_slot >= 0 or NetworkService.spectating):
+		await _join_invited_room_preserving_current(room_id)
+		return
 	var released: Dictionary = await AccountManager.prepare_custom_room()
 	if int(released.get("code", 0)) != 200:
 		DialogService.info({"request_id": "leave_party_before_custom", "owner": self,
@@ -1683,6 +1686,48 @@ func _join_room_by_id(room_id: int) -> void:
 		return
 	_show_menu()
 	_start_join_room_action(room_id)
+
+
+var _invited_room_joining := false
+
+func _join_invited_room_preserving_current(room_id: int) -> void:
+	if _invited_room_joining or room_id == NetworkService.team_room_id:
+		return
+	var english := LocaleManager.get_locale().begins_with("en")
+	# Only configured shards are valid. In the current single-shard deployment this
+	# also rejects stale/corrupt endpoints without disconnecting the original room.
+	if NetworkConfig.shard_of_room(room_id) >= NetworkConfig.SHARD_COUNT or NetworkConfig.port_of_room(room_id) != NetworkService.remote_port:
+		preload("res://ui/components/GloryToast.gd").show_text(NetworkService.custom_room_error_text("room_not_found", english))
+		return
+	if not NetworkService.spectating and NetworkService.server_phase != "lobby":
+		preload("res://ui/components/GloryToast.gd").show_text(NetworkService.custom_room_error_text("room_started", english))
+		return
+	_invited_room_joining = true
+	var failure := {"reason": ""}
+	var on_failure := func(reason: String): failure.reason = reason
+	NetworkService.team_room_action_failed.connect(on_failure)
+	await NetworkService.team_request_join_room(room_id)
+	var deadline := Time.get_ticks_msec() + JOIN_ROOM_TIMEOUT_MSEC
+	while is_inside_tree() and str(failure.reason).is_empty() and Time.get_ticks_msec() < deadline:
+		if NetworkService.team_room_id == room_id and NetworkService.server_phase == "lobby":
+			break
+		if not NetworkService.is_online():
+			failure.reason = "connection_failed"
+			break
+		await get_tree().create_timer(0.05).timeout
+	if NetworkService.team_room_action_failed.is_connected(on_failure):
+		NetworkService.team_room_action_failed.disconnect(on_failure)
+	_invited_room_joining = false
+	if not is_inside_tree():
+		return
+	if not str(failure.reason).is_empty() or NetworkService.team_room_id != room_id:
+		preload("res://ui/components/GloryToast.gd").show_text(NetworkService.custom_room_error_text(str(failure.reason), english))
+		return
+	if not NetworkService.spectating and _spectate_active:
+		_spectate_cleanup()
+	if NetworkService.spectating:
+		_spectate_screen = "lobby"
+	_show_team3v3_lobby()
 
 
 # 聊天卡片里点组队邀请的「加入」（10.11 第 6 条 d）。
@@ -2863,7 +2908,12 @@ func _on_settlement_returned(ok: bool) -> void:
 	if NetworkService.settlement_returned.is_connected(_on_settlement_returned):
 		NetworkService.settlement_returned.disconnect(_on_settlement_returned)
 	if not ok:
+		var reason := NetworkService.settlement_return_error
+		if _spectate_active:
+			_spectate_cleanup()
 		_on_return_menu_requested()
+		if not reason.is_empty():
+			preload("res://ui/components/GloryToast.gd").show_text(NetworkService.custom_room_error_text(reason, LocaleManager.get_locale().begins_with("en")))
 		return
 	SaveManager.clear_reconnect()
 	GameState.reset_run()
