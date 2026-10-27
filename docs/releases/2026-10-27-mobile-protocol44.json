@@ -94,7 +94,7 @@
     "qr_url": "https://glorytd-api.duckdns.org/beta/invite-qr.png",
     "public_ios_available": "1.0.1 (68)",
     "latest_ios_external": "1.0.2 (70) waiting for review",
-    "drive_backup": "web upload still in progress; public Android download uses verified server APK"
+    "drive_backup": "web upload failed at 100%; existing Drive file preserved; public Android download successfully hosted on server"
   },
   "public_verification": {
     "config.json": {
