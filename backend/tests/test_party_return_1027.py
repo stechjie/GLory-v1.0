@@ -113,21 +113,22 @@ def test_http_presence_does_not_leave_an_old_disconnect_marker():
 
 
 @pytest.mark.anyio
-async def test_matchmaking_keeps_premade_trio_and_solo_parties_distinct(monkeypatch):
+@pytest.mark.parametrize("mode", [matchmaking.CASUAL, matchmaking.CASUAL_NORMAL, matchmaking.RANKED, matchmaking.RANKED_NORMAL])
+async def test_matchmaking_keeps_premade_trio_and_solo_parties_distinct(monkeypatch, mode):
     clock = [1000.0]
     store = party.Parties(now=lambda: clock[0])
     monkeypatch.setattr(party, "current", lambda: store)
     monkeypatch.setattr(ranked, "accepting_now", lambda: True)
-    trio, abc = create_party(store, "ranked", 3)
+    trio, abc = create_party(store, "ranked" if mode.startswith("ranked") else mode, 3)
     originals = {pid: trio for pid in abc}
     for number in [4, 5, 6]:
-        room, one = create_party(store, "ranked", 1, start=number)
+        room, one = create_party(store, "ranked" if mode.startswith("ranked") else mode, 1, start=number)
         originals[one[0]] = room
     maker = matchmaking.Matchmaker(AsyncMock(return_value=1), now=lambda: clock[0],
                                    ai_fill_after_sec=10, rng=random.Random(7))
-    maker.join_group(abc, matchmaking.RANKED)
+    maker.join_group(abc, mode)
     for player in list(originals)[3:]:
-        maker.join_group([player], matchmaking.RANKED)
+        maker.join_group([player], mode)
     await maker.tick()
     for player in originals:
         maker.accept(player)

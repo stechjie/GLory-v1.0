@@ -53,6 +53,8 @@ var _accept_deadline := 0.0
 var _poll_timer := 0.0
 var _queue_started_msec := 0
 var _busy := false
+var _finished := false
+var _accepted := false
 
 var _title: Label
 var _detail: Label
@@ -156,7 +158,7 @@ func _build() -> void:
 func _join() -> void:
 	_set_detail(_text("正在进入队列…", "Joining queue…"))
 	var result: Dictionary = await AccountManager.join_match_queue(_mode)
-	if not is_inside_tree():
+	if not is_inside_tree() or _finished:
 		return
 	if int(result.get("code", 0)) != 200:
 		# 窗口外 / 信誉分不够 / 被禁赛 / 未登录 / 服务器不在：说清楚，然后让玩家退出去。
@@ -179,38 +181,98 @@ func _on_accept() -> void:
 		if is_inside_tree():
 			_apply({"state": "ready"})
 		return
-	if _busy:
+	if _busy or _finished or _state != "found":
 		return
 	_busy = true
 	_accept_btn.disabled = true
+	_leave_btn.disabled = true
+	print("[MATCH_QUEUE] accept requested mode=%s" % _mode)
 	# 10.10 bug 第 6 条：不再写「已确认，等其他人…」—— 确认后自己那颗头像会打√
 	# （服务端 found 消息带 seats），这里只把提示清掉，避免和头像重复。
 	_set_detail("")
-	var result: Dictionary = await AccountManager.accept_match()
+	var result: Dictionary = await _request_accept()
 	_busy = false
-	if not is_inside_tree():
+	if not is_inside_tree() or _finished:
 		return
 	if int(result.get("code", 0)) != 200:
-		_fail(str(result.get("error", _text("确认失败", "Accept failed"))))
+		# The server may have accepted despite a lost response; keep polling.
+		_accept_btn.disabled = _accepted
+		_leave_btn.disabled = false
+		_set_detail(str(result.get("error", _text("确认失败，请重试", "Accept failed; please retry"))))
 		return
 	_apply((result.get("body", {}) as Dictionary).get("state", {}))
 
 
 func _on_leave() -> void:
+	if _busy or _finished:
+		return
 	SfxService.play(SfxService.CUE_UI_CONFIRM)
 	if _tutorial_ai:
+		_finished = true
 		dismissed.emit()
 		return
-	if _party_queue and _state == "queued":
-		# 10.07 第 14 条：队里**任意成员**取消都只是取消匹配，全队回到房间。
-		# 以前非房主走 leave_party()，那是退房 —— 房主以外的队友一点取消就掉出队伍。
-		AccountManager.cancel_party_match()
-		dismissed.emit()
+	_busy = true
+	_accept_btn.disabled = true
+	_leave_btn.disabled = true
+	_set_detail(_text("正在取消匹配…", "Cancelling matchmaking…"))
+	print("[MATCH_QUEUE] cancel requested mode=%s state=%s" % [_mode, _state])
+	var party_cancel := _party_queue and _state == "queued"
+	var result: Dictionary = await _request_leave(party_cancel)
+	if not is_inside_tree() or _finished:
 		return
-	# 不等回执就关：退队列是「尽力而为」的动作，等一趟网络只会让界面卡住。
-	# 真没退成的话，服务器那边的掉线宽限会收拾（QUEUE_GRACE_SEC）。
-	AccountManager.leave_match_queue()
+	if int(result.get("code", 0)) != 200:
+		# A failed cancellation is not permission to discard the ready listener.
+		var current: Dictionary = await _request_match_state()
+		if not is_inside_tree() or _finished:
+			return
+		_busy = false
+		if int(current.get("code", 0)) == 200:
+			var status: Dictionary = (current.get("body", {}) as Dictionary).get("state", {})
+			if str(status.get("state", "")) == "ready":
+				_apply(status)
+				return
+			if str(status.get("state", "")) == "idle":
+				_finish_cancel()
+				return
+			_apply(status)
+		_accept_btn.disabled = _accepted
+		_leave_btn.disabled = false
+		_set_detail(str(result.get("error", _text("取消失败，请重试", "Cancellation failed; please retry"))))
+		return
+	_busy = false
+	var status: Dictionary = (result.get("body", {}) as Dictionary).get("state", {})
+	if str(status.get("state", "")) == "ready":
+		_apply(status)
+	elif str(status.get("state", "")) == "idle" or (party_cancel \
+			and str(status.get("state", "")) == "room" and not bool(status.get("queued", true))):
+		_finish_cancel()
+	else:
+		if str(status.get("state", "")) in ["queued", "found"]:
+			_apply(status)
+		_accept_btn.disabled = _accepted
+		_leave_btn.disabled = false
+		_set_detail(_text("取消尚未确认，请重试", "Cancellation is not confirmed; please retry"))
+
+
+func _finish_cancel() -> void:
+	_finished = true
+	_state = "idle"
+	print("[MATCH_QUEUE] cancel confirmed mode=%s" % _mode)
 	dismissed.emit()
+
+
+func _request_accept() -> Dictionary:
+	return await AccountManager.accept_match()
+
+
+func _request_leave(party_queue: bool) -> Dictionary:
+	if party_queue:
+		return await AccountManager.cancel_party_match()
+	return await AccountManager.leave_match_queue()
+
+
+func _request_match_state() -> Dictionary:
+	return await AccountManager.fetch_match_state()
 
 
 # WS 推送与轮询走同一个函数 —— 两边是同一个形状（见文件头第 1 条）。
@@ -222,7 +284,7 @@ func _on_realtime_message(payload: Dictionary) -> void:
 
 
 func _process(delta: float) -> void:
-	if _state == "queued":
+	if _state == "queued" and not _busy:
 		var elapsed := maxi(1, int((Time.get_ticks_msec() - _queue_started_msec) / 1000) + 1)
 		_set_detail(_text("预计等待时间50s", "Estimated wait: 50s") + "\n%d..." % elapsed)
 	if _state == "found" and _accept_deadline > 0.0:
@@ -248,7 +310,7 @@ func _poll() -> void:
 	if _busy:
 		return
 	_busy = true
-	var result: Dictionary = await AccountManager.fetch_match_state()
+	var result: Dictionary = await _request_match_state()
 	_busy = false
 	if not is_inside_tree() or int(result.get("code", 0)) != 200:
 		return
@@ -281,14 +343,19 @@ func _tutorial_ai_seats(player_accepted: bool) -> Array:
 # --- 状态机 -------------------------------------------------------------------
 
 func _apply(state: Dictionary) -> void:
+	if _finished:
+		return
 	var next := str(state.get("state", "idle"))
 	# 上一个状态要在覆盖之前记下来：下面 found 分支的音效只能在**刚进入** found
 	# 时响。原来是无条件 play，而 _poll() 每 3 秒就会带着同一个 found 再走一遍
 	# _apply —— 于是那 30 秒确认窗口里弹窗音效会响十次。
 	var previous := _state
+	if previous != next:
+		print("[MATCH_QUEUE] mode=%s %s -> %s match=%s" % [_mode, previous, next, str(state.get("match_uid", ""))])
 	_state = next
 	match next:
 		"queued":
+			_accepted = false
 			_title.text = _text("匹配中…", "Searching…")
 			if previous != "queued":
 				_queue_started_msec = Time.get_ticks_msec()
@@ -310,6 +377,7 @@ func _apply(state: Dictionary) -> void:
 			_render_roster(state.get("seats", []))
 			# 「我按了没」由服务器说（协议里原来没有这一位）。
 			var accepted := bool(state.get("accepted", false))
+			_accepted = accepted
 			if accepted:
 				_set_detail("")
 				# 按钮留在原位但禁用：直接隐藏会让布局跳一下，而玩家刚按完正盯着它。
@@ -322,6 +390,7 @@ func _apply(state: Dictionary) -> void:
 				_accept_btn.disabled = false
 			_leave_btn.text = _text("拒绝", "Decline")
 		"ready":
+			_finished = true
 			_title.text = _text("准备进入对局", "Entering match")
 			_set_detail(_text("正在连接对战服务器…", "Connecting to the battle server…"))
 			_roster.visible = false
@@ -345,9 +414,14 @@ func _apply(state: Dictionary) -> void:
 			_accept_btn.visible = false
 			_roster.visible = false
 			_leave_btn.text = _text("关闭", "Close")
+	if _busy:
+		_accept_btn.disabled = true
+	_leave_btn.disabled = _busy or _finished
 
 
 func _fail(message: String) -> void:
+	if _finished:
+		return
 	_state = "idle"
 	_title.text = _text("排不了队", "Cannot queue")
 	_set_detail(message)

@@ -460,6 +460,12 @@ async def ready(body: ReadyBody,
 @router.post("/cancel", response_model=StateResponse)
 async def cancel(claims: Annotated[Claims, Depends(current_claims)]) -> StateResponse:
     me = await _me(claims)
+    # Final confirmation wins over a late cancellation. Preserve the allocation
+    # and report its actual state instead of sending a false idle notification.
+    mm = matchmaking.current()
+    state = mm.state_of(me.player_id)
+    if state["state"] == "ready":
+        return StateResponse(state=state)
     service = party.current()
     try:
         room = service.queued_room(me.player_id)

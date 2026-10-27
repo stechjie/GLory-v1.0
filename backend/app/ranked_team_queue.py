@@ -1,4 +1,4 @@
-"""Ranked FIFO team formation, separate from opponent selection.
+"""Shared FIFO team formation, separate from opponent selection.
 
 Entries refer to the original queue waiter. Queue storage remains authoritative
 for cancellation, reconnect and party membership; forming a team resets no clock.
@@ -40,8 +40,9 @@ class QueuedTeam:
         return min(entry.age_key for entry in self.entries)
 
 
-class RankedTeamQueue:
-    def __init__(self) -> None:
+class TeamQueue:
+    def __init__(self, wait_sec: float = RANKED_WAIT_SEC) -> None:
+        self.wait_sec = wait_sec
         self.teams: list[QueuedTeam] = []
 
     def refresh(self, entries: list[QueuedEntry]) -> None:
@@ -88,7 +89,7 @@ class RankedTeamQueue:
         if not ai_enabled:
             return out
         while True:
-            due = [team for team in self.teams if now - team.age_key[0] >= RANKED_WAIT_SEC]
+            due = [team for team in self.teams if now - team.age_key[0] >= self.wait_sec]
             if not due:
                 break
             a = due[0]

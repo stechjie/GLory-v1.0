@@ -139,8 +139,9 @@ class Settings(BaseSettings):
 
     # --- 人少时 AI 补位（app/matchmaking.py「人少时 AI 补位」那节）--------------
     #
-    # Enables AI fill for both queues. Casual uses match_ai_fill_after_sec;
-    # Ranked forms teams first and uses its independent 30-second deadline.
+    # Enables AI fill for every queue. All modes form teams first.
+    # Seedling waits 10 seconds; Normal and Ranked wait 30 seconds.
+    # The legacy duration field is retained for config compatibility; mode deadlines are fixed.
     match_ai_fill: bool = True
     match_ai_fill_after_sec: float = 10.0
 

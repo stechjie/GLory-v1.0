@@ -228,7 +228,7 @@ async def test_declined_opponent_preserves_team_and_original_wait(setup, grouped
     clock[0] += 25
     maker.leave(pid(4))
     await maker.tick()
-    teams = maker._ranked_team_queues[matchmaking.RANKED].teams
+    teams = maker._team_queues[matchmaking.RANKED].teams
     abc = next(t for t in teams if pid(1) in {p for e in t.entries for p in e.waiter.party})
     assert {p for e in abc.entries for p in e.waiter.party} == {pid(i) for i in [1, 2, 3]}
     assert abc.age_key[0] == 1000.0

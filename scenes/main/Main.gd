@@ -2452,6 +2452,8 @@ func _show_match_queue(mode: String, party_queue: bool = false, party_host: bool
 		# 🔴 **不许点背景关掉。** 确认框那 30 秒里误触一下背景就等于拒绝，
 		# 而拒绝会把自己移出队列、还拆掉另外五个人那一桌。
 		"dismiss_on_backdrop": false,
+		# Escape/Back must not remove the match listener without a server cancel.
+		"persistent": true,
 	})
 
 

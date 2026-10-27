@@ -36,14 +36,12 @@
 不确认的那个人被移出队列；**另外五个不受罚，并且回到队列最前面** ——
 他们已经等过一轮了，再排到队尾是第二次惩罚。
 
-## 这一步只做单排
+## 先组队，再匹配对手
 
-`docs/排位系统设计.md` 第五节定的是「单排或满 3 人车队」。车队没做，
-因为它要先有一套组队邀请/接受的流程（好友系统有了，组队没有），
-而匹配器这边支持车队却没人组得起队，是写了一半的功能。
+所有匹配模式复用 TeamQueue，单排按先后顺序组成三人队，预组队保持完整。
+青苗最早成员等待10秒、普通与排位等待30秒后补齐AI。两支真人满队立即匹配；
+未到自身时限的不足三人队伍不会被提前补AI。确认取消后保留原成员与排队起点。
 
-数据结构上没有堵死：`_Waiter.party` 留着，`_take_group` 按「一份一份地取」
-而不是「一个一个地取」写。做车队时改的是那两处，不是重写。
 """
 
 from __future__ import annotations
@@ -60,7 +58,7 @@ from dataclasses import dataclass, field
 
 from app import party, ranked
 from app.party_match_selection import select as select_party_seats
-from app.ranked_team_queue import RankedTeamQueue, QueuedEntry
+from app.ranked_team_queue import TeamQueue, QueuedEntry
 
 log = logging.getLogger("glory.matchmaking")
 
@@ -80,6 +78,7 @@ RANKED = "ranked"                 # 森卫突破前 13 rounds
 RANKED_NORMAL = "ranked_normal"   # 突破后 21 rounds
 OPEN_MODES = frozenset({CASUAL, CASUAL_NORMAL, RANKED, RANKED_NORMAL})
 KNOWN_MODES = OPEN_MODES
+TEAM_WAIT_SEC = {CASUAL: 10.0, CASUAL_NORMAL: 30.0, RANKED: 30.0, RANKED_NORMAL: 30.0}
 
 # 确认框的时限。
 #
@@ -112,19 +111,11 @@ MESSAGE_TYPE = "match"
 
 # --- 人少时 AI 补位（2026-10-19）---------------------------------------------
 #
-# 玩家还少，新来的人排休闲 / 排位常常凑不满 6 个人，一直排不到。于是：队列里等得最久
-# 的那个人满 `ai_fill_after_sec`（默认 10 秒，见 app/config.py）还凑不满一桌，就用
-# 当下在线的人开一桌，空座位由 AI 坐（_take_short_group / _form_with_ai）。
-#
-#   · 分队：按排队先后往 A 队装（装得下整队才装），A 队满了再装 B 队 ——
-#     1~3 个真人一定同一队对 AI；4~5 个真人时一队满员真人，剩下的去另一队。
-#   · AI 补位也必须确认；真人手动确认，AI 在 0.5~5 秒内陆续确认。
-#   · AI 的昵称 / 头像在这里随机定好，写进确认框的名单和出战名片（ai_seats），
-#     战斗服务器照名片放 AI、立刻开局 —— 三处看到的是同一个名字。
-#
-# 排位改用 RankedTeamQueue：先组队，30 秒时按各队最早成员计时补齐。
-# 上述六人拼桌与 GLORY_MATCH_AI_FILL_AFTER_SEC 只继续用于休闲。
-# GLORY_MATCH_AI_FILL 仍控制是否启用 AI 补位。
+# 所有模式先组成三人队，再匹配另一支队伍。满真人队优先即时匹配。
+# 青苗等最早成员10秒、普通与排位等30秒后，补齐本队AI；
+# 对手不足三人时，必须等对手自己的时限，不能因本队到期提前填满对手。
+# AI也走确认流程，名字、头像及座位随同一份分配进入战斗服务器。
+# GLORY_MATCH_AI_FILL仍控制是否启用补位；旧时长字段保留为配置兼容项。
 AI_NAMES = (
     "小麦田", "风之旅人", "橘子汽水", "夜行猫", "星河", "糯米团", "晚风", "青柠",
     "山海", "木鱼", "跳跳糖", "云朵", "北极熊", "柚子", "阿福", "薄荷",
@@ -289,7 +280,7 @@ class _Pending:
     ai_seats: list[dict] = field(default_factory=list)
     ai_confirm_at: dict[int, float] = field(default_factory=dict)
     ai_confirmed: set[int] = field(default_factory=set)
-    ranked_sides: list[list[QueuedEntry]] = field(default_factory=list)
+    queued_sides: list[list[QueuedEntry]] = field(default_factory=list)
     queued_solos: dict[uuid.UUID, _Waiter] = field(default_factory=dict)
 
     def all_confirmed(self) -> bool:
@@ -381,7 +372,7 @@ class Matchmaker:
         self._queues: dict[str, OrderedDict[uuid.UUID, _Waiter]] = {
             mode: OrderedDict() for mode in KNOWN_MODES
         }
-        # Group queue is separate so the original solo selector remains unchanged.
+        # Original groups stay atomic; all modes share the same team coordinator.
         self._party_queues: dict[str, OrderedDict[uuid.UUID, _Waiter]] = {
             mode: OrderedDict() for mode in KNOWN_MODES
         }
@@ -391,7 +382,10 @@ class Matchmaker:
         self._pending_of: dict[uuid.UUID, str] = {}
         self._pending: dict[str, _Pending] = {}
         self._assignments: dict[uuid.UUID, Assignment] = {}
-        self._ranked_team_queues = {mode: RankedTeamQueue() for mode in (RANKED, RANKED_NORMAL)}
+        self._team_queues = {
+            mode: TeamQueue(wait_sec=TEAM_WAIT_SEC[mode])
+            for mode in OPEN_MODES
+        }
         self._queue_serial = 0
         self._next_position_push = now()
         # 没按准备的人，等下一轮 tick 去扣信誉分。
@@ -625,26 +619,7 @@ class Matchmaker:
             # 已经开打的局不受影响 —— 00:00 关的是队列，不是对局。
             if mode.startswith("ranked") and not ranked.accepting_now():
                 continue
-            if mode.startswith("ranked"):
-                messages.extend(self._match_ranked_teams(mode, now))
-                continue
-            while True:
-                party_seats = self._take_party_match(mode)
-                if party_seats is None:
-                    break
-                players, teams, parties, lineups = party_seats
-                messages.extend(self._form_party(players, teams, parties, lineups, mode, now))
-            while True:
-                group = self._take_group(mode, now)
-                if group is None:
-                    break
-                players, lineups = group
-                messages.extend(self._form(players, lineups, mode, now))
-            # 凑不满 6 个真人：等得最久的人满了时限，就用现在在线的人开一桌，空位给 AI。
-            if self._ai_fill_after is not None:
-                short = self._take_short_group(mode, now)
-                if short is not None:
-                    messages.extend(self._form_with_ai(*short, mode, now))
+            messages.extend(self._match_teams(mode, now))
         messages.extend(self._position_updates(now))
         # 扣分放在发消息之前：被罚的那个人应该先收到 idle，再去查自己为什么被禁。
         if self._pending_penalties:
@@ -684,8 +659,8 @@ class Matchmaker:
             log.warning("匹配消息发不出去 player=%s", player_id, exc_info=True)
             return 0
 
-    def _match_ranked_teams(self, mode: str, now: float) -> list[tuple[uuid.UUID, dict]]:
-        coordinator = self._ranked_team_queues[mode]
+    def _match_teams(self, mode: str, now: float) -> list[tuple[uuid.UUID, dict]]:
+        coordinator = self._team_queues[mode]
         entries = [QueuedEntry(pid, waiter, False) for pid, waiter in self._queues[mode].items()
                    if waiter.dropped_at <= 0.0]
         entries.extend(QueuedEntry(leader, waiter, True)
@@ -720,7 +695,7 @@ class Matchmaker:
             else:
                 self._form_party(players, teams, parties, lineups, mode, now)
             pending = self._pending[self._pending_of[players[0]]]
-            pending.ranked_sides = sides
+            pending.queued_sides = sides
             pending.queued_solos = solos
             messages.extend((m.player_id, pending.found_for(m.player_id, ACCEPT_TIMEOUT_SEC))
                             for m in pending.members)
@@ -997,8 +972,8 @@ class Matchmaker:
             queue.move_to_end(member.player_id, last=False)
             out.append((member.player_id, queued_message(
                 self.position_of(member.player_id, pending.mode), pending.mode)))
-        if pending.ranked_sides:
-            self._ranked_team_queues[pending.mode].restore(pending.ranked_sides)
+        if pending.queued_sides:
+            self._team_queues[pending.mode].restore(pending.queued_sides)
         log.info("对局解散 match=%s 拒绝/超时 %d 人", pending.match_uid, len(bad))
         return out
 
@@ -1168,7 +1143,7 @@ def current() -> Matchmaker:
 
 
 def ai_fill_after_from_settings() -> float | None:
-    """配置里的 AI 补位时限；关掉就是 None（满 6 个真人才开桌）。"""
+    """AI补位开关的兼容入口；None禁用补位，实际等待时间由TEAM_WAIT_SEC统一决定。"""
     from app.config import get_settings
 
     settings = get_settings()
