@@ -96,6 +96,8 @@ Supabase Dashboard → SQL Editor，按编号顺序逐个执行。
 | `038_ranked_tier_floors.sql` | 段位门槛改成每段上限 100 / 200 / 400 / 800 / 1600（初誓 0–99 … 荣耀之冠 800 起）：重定义 `settle_season()` 归档那段 case（其余同 028）；把 037 按旧门槛写死的星铸保底 300 改成 200，并给 200 分以上的人补记突破。玩家平时看到的段位由 `ranked.TIER_FLOORS` 现算、更新账号服务器就变；**这个文件管赛季结算发奖与保底，必须在 `037_progression.sql` 之后、更新账号服务器之前跑**。可重复执行，不用重启 |
 | `040_iap.sql` | 充值（真钱买钻石）：`player_wallets.diamond_debt`（欠账，有欠账时付费 / 赠送两列一定是 0）、流水 currency 放行 `diamond_debt`；`iap_orders`（真钱订单，幂等键 `(player_id, client_order_id)`、去重键 `(platform, external_id)`，永不裁剪）；`iap_first_bonus`（首充资格）；删掉 010 在 `shop_orders` 上的充值预留。🔴 **必须在更新账号服务器之前跑**：新代码读钱包就要 `diamond_debt`，漏跑的话商城、抽宠物、邮件领取、七日登录一起 500。跑完重启账号服务器。可重复执行。039 编号留给图鉴同步（还在 worktree 里没提交）。设计见 `docs/充值系统设计.md` |
 
+| `041_ranked_reward_coin_limit.sql` | 排位奖励回执金币上限由15放宽到20，与胜利15–20金币保持一致。旧约束会使整份战报、六名玩家积分/钱包/经验回滚。可重复执行，不改余额、不补造战报。更新账号服前先执行；仅更新客户端不生效。 |
+
 **真库测试**：`backend/tests/pg_harness.py` 能在本机 PostgreSQL 上把这里全部文件跑一遍再测（设 `GLORY_TEST_PG`，只许本机）。
 见 `docs/运营后台设计.md` 第七节。
 
@@ -108,3 +110,5 @@ Godot 不直连 Supabase，一切经过 FastAPI（用 secret key，绕过 RLS）
 为那个具体场景单独加 policy —— 不要一开始就开口子。
 
 配套：建项目时 `Automatically expose new tables` 必须关掉。
+
+041线上迁移的完整命令、事务保护与验证方法见 [服务端AI执行指引](../docs/运维_041排位奖励数据库迁移_AI执行指引.md)。

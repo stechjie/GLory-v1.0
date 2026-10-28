@@ -3356,6 +3356,9 @@ func _spectate_join(sender: int, room_id: int, card: String) -> void:
 	if not associated.has(sender) and associated.size() >= SpectatorService.MAX_SPECTATORS:
 		_spectate_fail(sender, "spectate_full")
 		return
+	if not SpectatorService.is_open(room):
+		_spectate_fail(sender, "spectate_closed")
+		return
 	# 换房观战：先离开原来的观战席（同一条连接只能看一间）。
 	if int(_peer_spectate.get(sender, 0)) != room_id:
 		_spectate_detach(sender)
@@ -3589,25 +3592,14 @@ func _spectate_send_round(room: Dictionary, peer_id: int) -> void:
 	if not packed_a.is_empty() and not packed_b.is_empty():
 		_send_replay_to_peer(peer_id, battle_id, packed_a, packed_b)
 
-# 房间列表 = 能坐下的（形状不变，加 joinable 标记）+ 只能观战的（满员 / 已开局 / 匹配房）。
-# A finished room keeps settlement viewers until they explicitly return.
-# Public discovery shows only the continuation; count both groups there, once per
-# connection. Follow the trusted source link with cycle protection across rematches.
+# Public discovery contains waiting custom rooms only, including full rooms open to spectators.
+# Started matches are reachable only through the friend spectating entry.
+# Settlement viewers neither appear nor reserve capacity in the continuation.
 func _listed_spectator_peers(room: Dictionary) -> Dictionary:
+	# Settlement viewers belong only to their old room until they explicitly return.
 	var result := {}
-	var visited := {}
-	var current := room
-	while not current.is_empty():
-		var rid := int(current.get("id", 0))
-		if visited.has(rid):
-			break
-		visited[rid] = true
-		for peer_id in SpectatorService.peers(current):
-			result[peer_id] = true
-		var source: Dictionary = _rooms.get(int(current.get("settlement_source", 0)), {})
-		if source.is_empty() or not bool(source.get("run_over", false)) or int(source.get("rematch_room_id", 0)) != rid:
-			break
-		current = source
+	for peer_id in SpectatorService.peers(room):
+		result[peer_id] = true
 	return result
 
 
@@ -3625,11 +3617,11 @@ func _room_list_with_spectate() -> Array:
 	var spectate_rows: Array = []
 	for room in _rooms.values():
 		var rid := int(room.get("id", 0))
-		if listed.has(rid) or bool(room.get("run_over", false)) or str(room.get("state", "")) == ROOM_CLOSED:
+		if listed.has(rid) or bool(room.get("run_over", false)) or str(room.get("state", "")) != ROOM_LOBBY:
 			continue
-		# 关了观战的、等原班人马回来的（suspended）、一个真人都没有的，都不列。
-		if not SpectatorService.is_open(room) or bool(room.get("suspended", false)) \
-				or _room_player_count(room) <= 0:
+		if bool(room.get("matched", false)) or str(room.get("mode", "custom")) != "custom":
+			continue
+		if not SpectatorService.is_open(room) or bool(room.get("suspended", false)) or _room_player_count(room) <= 0:
 			continue
 		spectate_rows.append({
 			"id": rid,
@@ -3655,6 +3647,11 @@ func _rpc_spectate_state(envelope: Dictionary) -> void:
 	if room_id == spectate_room_id and seq <= _spectate_seq:
 		return
 	var payload: Dictionary = envelope.get("payload", {})
+	if not spectating or spectate_room_id != room_id:
+		_spectate_reset()
+		session_token = ""
+		SaveManager.clear_reconnect()
+		_clear_pending_ready("confirmed spectator admission")
 	spectating = true
 	spectate_room_id = room_id
 	spectate_sid = int(payload.get("my_sid", -1))
@@ -6112,50 +6109,68 @@ func _rpc_team_join_room(room_id: int, public_id: String = "", card: String = ""
 	var seat_card := _accept_seat_card(sender, card)
 	if seat_card.is_empty():
 		return
-	var requested_room: Dictionary = _rooms.get(room_id, {})
-	if _restore_account_seat(sender, requested_room, str(seat_card.get("pid", ""))) >= 0:
+	_join_custom_room(sender, room_id, _sanitize_public_id(public_id), seat_card)
+
+
+# No await between admission and commit: failed invitations never release the old seat.
+func _join_custom_room(sender: int, room_id: int, public_id: String, seat_card: Dictionary) -> void:
+	var room: Dictionary = _rooms.get(room_id, {})
+	if room.is_empty() or bool(room.get("matched", false)) or bool(room.get("run_over", false)):
+		_send_custom_room_failure(sender, "room_not_found")
 		return
-	# 一人一座（按名片上的账号 id）。只清**别的连接**留下的座位，这条连接自己的
-	# 座位原样留给下面那段 —— 否则「已经在这个房间里」那条重复请求判断永远不成立，
-	# 重发一次 join 就会被重新安排座位、重新签 token。
-	if not _release_stale_seats_for_pid(sender, str(seat_card.get("pid", ""))):
+	if str(room.get("state", "")) != ROOM_LOBBY:
+		_send_custom_room_failure(sender, "room_started")
+		return
+	if bool(room.get("suspended", false)) or _room_player_count(room) <= 0:
+		_send_custom_room_failure(sender, "room_not_found")
 		return
 	var existing := _room_for_peer(sender)
 	if not existing.is_empty():
-		if int(existing.get("id", 0)) == room_id:
-			return                                 # 已经在这个房间里，忽略重复请求
-		if str(existing.get("state", ROOM_LOBBY)) == ROOM_LOBBY:
-			_room_remove_peer(existing, sender)
-		else:
-			_rpc_team_action_failed.rpc_id(sender, "already_in_match")
+		if int(existing.id) == room_id:
 			return
-	var room: Dictionary = _rooms.get(room_id, {})
-	if room.is_empty():
-		_rpc_team_action_failed.rpc_id(sender, "room_not_found")
+		if str(existing.get("state", "")) != ROOM_LOBBY:
+			_send_custom_room_failure(sender, "already_in_match")
+			return
+	var to_spectate := _room_next_free_slot(room) < 0
+	if to_spectate and (not SpectatorService.is_open(room) or (SpectatorService.sid_of_peer(room, sender) < 0 and SpectatorService.count(room) >= SpectatorService.MAX_SPECTATORS)):
+		_send_custom_room_failure(sender, "room_full")
 		return
-	# 🔴 匹配出来的房间不能按房间号加入（协议 32）。六个座位是账号服务器分配好的，
-	# 放一个路人进去等于挤掉一个已经确认过、手里还拿着名片的人。
-	# 回 room_not_found 而不是别的原因：房间号是猜得出来的，不该反馈「猜中了」。
-	if bool(room.get("matched", false)):
-		_rpc_team_action_failed.rpc_id(sender, "room_not_found")
+	if _restore_account_seat(sender, room, str(seat_card.get("pid", ""))) >= 0:
 		return
-	if str(room.get("state", "")) != ROOM_LOBBY:
-		_rpc_team_action_failed.rpc_id(sender, "room_started")
+	if not _release_stale_seats_for_pid(sender, str(seat_card.get("pid", ""))):
 		return
-	if _room_next_free_slot(room) < 0:
+	# A retained account seat without a usable reconnect token cannot be overwritten.
+	if not to_spectate and str(seat_card.get("pid", "")) in (room.get("seat_pid", {}) as Dictionary).values():
+		_send_custom_room_failure(sender, "seat_busy")
+		return
+	if to_spectate:
 		var profile := public_seat_identity(BattleCard.profile_of(seat_card))
-		_remove_account_spectators(room, str(seat_card.get("pid", "")), str(profile.get("friend_code", "")), sender)
 		var result := SpectatorService.add(room, sender, profile, _now(), str(seat_card.get("pid", "")))
 		if not bool(result.get("ok", false)):
-			_rpc_team_action_failed.rpc_id(sender, "room_full")
+			_send_custom_room_failure(sender, "room_full")
 			return
+		if not existing.is_empty():
+			_room_remove_peer(existing, sender)
 		if _peer_spectate.has(sender) and int(_peer_spectate[sender]) != room_id:
 			_spectate_detach(sender)
+		_remove_account_spectators(room, str(seat_card.get("pid", "")), str(profile.get("friend_code", "")), sender)
 		_peer_spectate[sender] = room_id
 		_peer_last_ping[sender] = _now()
 		_broadcast_room_lobby(room)
 		return
-	_assign_peer_to_room(sender, room, _sanitize_public_id(public_id), seat_card)
+	if not existing.is_empty():
+		_room_remove_peer(existing, sender)
+	# A new room may have a smaller sequence than the old one.
+	if not existing.is_empty() or _peer_spectate.has(sender):
+		_send_custom_room_switch(sender)
+	_assign_peer_to_room(sender, room, public_id, seat_card)
+
+func _send_custom_room_failure(peer_id: int, reason: String) -> void:
+	_rpc_team_action_failed.rpc_id(peer_id, reason)
+
+func _send_custom_room_switch(peer_id: int) -> void:
+	_rpc_settlement_room_switch.rpc_id(peer_id)
+
 
 # 匹配出来的对局入座（协议 32，docs/排位系统设计.md 第五、九节）。
 #
@@ -8544,6 +8559,8 @@ func _rpc_team_assign_slot(slot: int, token: String = "", room_id: int = 0, shor
 	if state == SessionState.RECONNECTING and not session_token.is_empty():
 		_net_log("ignoring lobby assign during resume (slot=%d)" % slot)
 		return
+	if spectating:
+		_spectate_reset()
 	team_local_slot = slot
 	team_room_id = room_id
 	if not short_token.is_empty():
@@ -8737,8 +8754,10 @@ func _store_room_seat_pet(room: Dictionary, slot: int, pet_id: String) -> void:
 
 # Final-settlement rematch. Pending peers stay in their old room until they choose.
 signal settlement_returned(ok: bool)
+var settlement_return_error := ""
 
 func request_settlement_return() -> void:
+	settlement_return_error = ""
 	if not is_online() or is_host:
 		settlement_returned.emit(false)
 		return
@@ -8756,7 +8775,8 @@ func _rpc_settlement_return() -> void:
 		if not observed.is_empty():
 			_rpc_settlement_room_switch.rpc_id(sender)
 			_send_spectate_state(observed, sender, int(observed.get("state_seq", 1)))
-		_rpc_settlement_returned.rpc_id(sender, not observed.is_empty())
+		_rpc_settlement_returned.rpc_id(sender, not observed.is_empty(), str(_spectator_return_errors.get(sender, "")))
+		_spectator_return_errors.erase(sender)
 		return
 	var target := _return_to_settlement_room(sender)
 	if target.is_empty():
@@ -8776,30 +8796,47 @@ func _rpc_settlement_room_switch() -> void:
 	_net_log("settlement room switch room=%d cleared completed_round=%d" % [
 		team_room_id, int(latest_match_state.get("completed_round", 0))])
 	latest_match_state = {}
+	server_phase = ""
 	room_chat_log.clear()
 	_match_state.reset_applied()
 	_clear_pending_ready("settlement room switch")
 
 @rpc("authority", "call_remote", "reliable")
-func _rpc_settlement_returned(ok: bool) -> void:
+func _rpc_settlement_returned(ok: bool, reason: String = "") -> void:
+	settlement_return_error = reason
 	settlement_returned.emit(ok)
 
+var _spectator_return_errors := {}
+
 func _return_spectator_to_settlement_room(peer_id: int) -> Dictionary:
+	_spectator_return_errors[peer_id] = "room_not_found"
 	var old: Dictionary = _rooms.get(int(_peer_spectate.get(peer_id, 0)), {})
 	if old.is_empty():
 		return {}
 	if old.has("settlement_source") and str(old.get("state", "")) == ROOM_LOBBY:
+		_spectator_return_errors.erase(peer_id)
 		return old
 	if not bool(old.get("run_over", false)) or str(old.get("mode", "custom")) != "custom" or bool(old.get("matched", false)):
 		return {}
 	var target := _settlement_target(old)
-	if target.is_empty() or str(target.get("state", "")) != ROOM_LOBBY:
+	# Nonexistent/closed rooms take precedence, then started matches, then capacity.
+	if target.is_empty() or str(target.get("state", "")) == ROOM_CLOSED or not SpectatorService.is_open(target):
+		return {}
+	if str(target.get("state", "")) != ROOM_LOBBY or bool(target.get("run_over", false)) or int(target.get("rematch_room_id", 0)) > 0:
+		_spectator_return_errors[peer_id] = "room_started"
+		return {}
+	if _room_player_count(target) <= 0 and (target.get("settlement_pending", {}) as Dictionary).is_empty():
+		return {}
+	if SpectatorService.sid_of_peer(target, peer_id) < 0 and SpectatorService.count(target) >= SpectatorService.MAX_SPECTATORS:
+		_spectator_return_errors[peer_id] = "spectate_full"
 		return {}
 	var entry := SpectatorService.entry_of_peer(old, peer_id)
 	var identity: Dictionary = entry.get("identity", {})
 	var added := SpectatorService.add(target, peer_id, identity, _now(), str(entry.get("account_pid", "")))
 	if not bool(added.get("ok", false)):
+		_spectator_return_errors[peer_id] = str(added.get("reason", "room_not_found"))
 		return {}
+	_spectator_return_errors.erase(peer_id)
 	_spectate_detach(peer_id)
 	_peer_spectate[peer_id] = int(target.id)
 	_touch_room(target)
@@ -8818,11 +8855,19 @@ func _settlement_target(old: Dictionary) -> Dictionary:
 	var target_id := int(old.get("rematch_room_id", 0))
 	var target: Dictionary = _rooms.get(target_id, {})
 	if target_id == 0:
+		var has_returning_player := false
+		for peer_id in old.get("peer_slot", {}):
+			if _peer_connected(int(peer_id)):
+				has_returning_player = true
+				break
+		if not has_returning_player:
+			return {} # Do not recreate a closed/abandoned room for an old viewer.
 		target = _new_room()
 		old["rematch_room_id"] = int(target.id)
 		target["settlement_source"] = old_id
 		# Only original custom rooms support returning; matchmaking uses the menu.
 		target["mode"] = "custom"
+		target[SpectatorService.KEY_OPEN] = SpectatorService.is_open(old)
 		target["leader_slot"] = int(old.get("initial_leader", old.get("leader_slot", 0)))
 		target["settlement_pending"] = {}
 		var initial: Array = old.get("initial_seats", old.get("slot_states", []))
@@ -8930,3 +8975,19 @@ func _release_rematch_reservation(old: Dictionary, peer_id: int) -> void:
 	for slot in target.get("settlement_pending", {}).keys():
 		if int(target.settlement_pending[slot]) == peer_id:
 			_release_settlement_seat(target, int(slot))
+
+
+static func custom_room_error_text(reason: String, english: bool) -> String:
+	match reason:
+		"spectate_full":
+			return "Spectator seats are full" if english else "观战席已满"
+		"room_started":
+			return "The match has started" if english else "对局已开始"
+		"room_not_found", "spectate_closed":
+			return "Room does not exist" if english else "房间不存在"
+		"room_full":
+			return "Room is full" if english else "房间已满"
+		"seat_busy":
+			return "Your seat is busy. Please try again." if english else "座位正在恢复，请稍后重试"
+		_:
+			return "Unable to join. Your current room has been kept." if english else "加入失败，已保留当前房间状态"

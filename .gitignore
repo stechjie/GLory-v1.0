@@ -281,6 +281,8 @@ glory_server_key*.pem
 # Historical review output and local scratch must not re-enter source.
 /review_*/
 /work/
+# Skill VFX audit output is kept in the external REA workspace.
+/_qa_skill_vfx/
 /update ssh code.txt
 /_sha256*.txt
 /_代码改动清单*.txt
