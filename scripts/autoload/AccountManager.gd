@@ -802,6 +802,14 @@ func _ready() -> void:
 	_presence_timer.autostart = false
 	_presence_timer.timeout.connect(_on_presence_tick)
 	add_child(_presence_timer)
+	# StoreKit updates can arrive while the game stays in the foreground (Ask to
+	# Buy approval, restored connectivity). Keep recovery alive outside shop UI.
+	if BillingBridge.platform() == "apple":
+		var billing_timer := Timer.new()
+		billing_timer.wait_time = 15.0
+		billing_timer.autostart = true
+		billing_timer.timeout.connect(recover_purchases)
+		add_child(billing_timer)
 
 
 # 好友码归一：去空白 + 转大写。**唯一实现** —— 库里一律存大写（database/004），
@@ -1306,6 +1314,17 @@ func confirm_google_purchase(order_id: String, purchase_token: String) -> Dictio
 		{"order_id": order_id, "purchase_token": purchase_token}, true)
 
 
+func confirm_apple_purchase(order_id: String, signed_transaction: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/iap/apple/confirm",
+		{"order_id": order_id, "signed_transaction": signed_transaction}, true)
+
+
+func confirm_store_purchase(order_id: String, proof: String) -> Dictionary:
+	if BillingBridge.platform() == "apple":
+		return await confirm_apple_purchase(order_id, proof)
+	return await confirm_google_purchase(order_id, proof)
+
+
 # 只读数据库，不连平台。「处理中」时每隔几秒问一次。
 func fetch_iap_order(order_id: String) -> Dictionary:
 	return await _request(HTTPClient.METHOD_GET, "/v1/iap/orders/" + order_id.uri_encode(), null, true)
@@ -1313,9 +1332,9 @@ func fetch_iap_order(order_id: String) -> Dictionary:
 
 # 启动、回到前台时调（Main）：把付了钱、还没处理完的付款交给服务器（BillingBridge.recover）。
 func recover_purchases() -> void:
-	if not is_logged_in() or BillingBridge.platform() != "google":
+	if not is_logged_in() or BillingBridge.platform().is_empty():
 		return
-	await BillingBridge.recover(get_tree(), confirm_google_purchase)
+	await BillingBridge.recover(get_tree(), confirm_store_purchase)
 
 
 # --- 出战配置与出战名片（docs/商城系统设计.md 第五节）----------------------------

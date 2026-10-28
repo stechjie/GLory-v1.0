@@ -65,6 +65,10 @@ func _load() -> void:
 		_set_foot(_t("请从 Google Play 下载正式版后再充值。", "Install the game from Google Play to buy diamonds."))
 		_load_balance_only()
 		return
+	if _platform == "apple" and not BillingBridge.can_make_payments():
+		_set_foot(_t("此设备已限制 App Store 内购买。", "In-App Purchases are restricted on this device."))
+		_load_balance_only()
+		return
 	if not await _load_catalog():
 		return
 	var ids: Array = []
@@ -75,7 +79,7 @@ func _load() -> void:
 		return
 	_render()
 	if _prices.is_empty():
-		_set_foot(_t("读不到 Google Play 的价格，请稍后再试。", "Could not load prices from Google Play. Try again later."))
+		_set_foot(_t("读不到商店价格，请稍后再试。", "Could not load store prices. Try again later."))
 
 
 # 拉档位与余额。失败时把原因写在页脚，返回 false。
@@ -295,6 +299,8 @@ func _ask_guest(product: Dictionary) -> void:
 
 
 static func guest_warning_text(english: bool) -> String:
+	if BillingBridge.platform() == "apple":
+		return "You are playing as a guest. Link your account on the profile page before purchasing to keep access if you reinstall or change devices." if english else "你现在是游客号。建议购买前在资料页绑定账号，以免卸载游戏或换设备后无法找回账号和钻石。"
 	if english:
 		return "You are playing as a guest. If you uninstall the game or change phones, this account and its diamonds cannot be recovered. Link Google on the profile page first to keep them."
 	return "你现在是游客号。卸载游戏或换手机后，这个号和里面的钻石都找不回来。建议先在资料页绑定 Google。"
@@ -320,7 +326,8 @@ func _buy(product: Dictionary) -> void:
 		return
 	var order: Dictionary = created.get("body", {})
 	var order_id := str(order.get("order_id", ""))
-	_set_foot(_t("请在 Google 付款页完成付款", "Complete the payment on the Google Play sheet"))
+	_set_foot(_t("请在 App Store 付款页完成付款", "Complete the payment on the App Store sheet")
+		if _platform == "apple" else _t("请在 Google 付款页完成付款", "Complete the payment on the Google Play sheet"))
 	var paid: Dictionary = await BillingBridge.purchase(
 		get_tree(), id, str(order.get("obfuscated_account_id", "")), order_id)
 	if not is_inside_tree():
@@ -328,7 +335,9 @@ func _buy(product: Dictionary) -> void:
 	match str(paid.get("state", "")):
 		"purchased":
 			_set_foot(_t("付款成功，正在确认…", "Payment done, confirming…"))
-			var confirmed: Dictionary = await AccountManager.confirm_google_purchase(order_id, str(paid["token"]))
+			var confirmed: Dictionary = await AccountManager.confirm_store_purchase(order_id, str(paid["token"]))
+			await BillingBridge.finish_if_confirmed(Engine.get_main_loop() as SceneTree,
+				str(paid.get("transaction_id", "")), order_id, confirmed)
 			if not is_inside_tree():
 				return
 			await _show_outcome(confirmed, order_id)

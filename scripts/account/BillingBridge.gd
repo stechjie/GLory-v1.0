@@ -1,7 +1,6 @@
 extends RefCounted
 
-# 平台付款的 GDScript 一侧（docs/充值系统设计.md 第九节）。现在只有 Google Play；
-# Steam 是第 4 步，iOS 等 Mac 同事。
+# 平台付款的 GDScript 一侧：Google Play / Apple StoreKit 2。
 #
 # 安卓插件在 android_plugins/glory_billing/（GloryBillingPlugin.kt）。这里只负责：
 #   1. 这台设备在哪个平台付款、能不能付（直发的 APK 付不了，要去 Play 下载）；
@@ -15,6 +14,7 @@ extends RefCounted
 # 客户端永远不自己说「到账了」。
 
 const SINGLETON := "GloryBilling"
+const APPLE_SINGLETON := "GloryAppleBilling"
 const POLL_SEC := 0.2
 const QUERY_TIMEOUT_SEC := 30.0
 # 付款页开着的时候玩家可能在输卡号、切去电子钱包 App 付款。等太短会把正常付款判成失败；
@@ -29,6 +29,8 @@ static var _recovering := false
 static func _bridge() -> Object:
 	if bridge_override != null:
 		return bridge_override
+	if Engine.has_singleton(APPLE_SINGLETON):
+		return Engine.get_singleton(APPLE_SINGLETON)
 	if Engine.has_singleton(SINGLETON):
 		return Engine.get_singleton(SINGLETON)
 	return null
@@ -36,13 +38,23 @@ static func _bridge() -> Object:
 
 # 这台设备在哪个平台付款。"" = 现在付不了。
 static func platform() -> String:
-	return "google" if _bridge() != null else ""
+	var bridge := _bridge()
+	if bridge == null:
+		return ""
+	return "apple" if bridge.has_method("beginFinishTransaction") else "google"
+
+
+static func can_make_payments() -> bool:
+	var bridge := _bridge()
+	if bridge == null:
+		return false
+	return bool(bridge.call("canMakePayments")) if platform() == "apple" else installed_from_play()
 
 
 # 直发的 APK 用不了 Play 结算：钻石商店据此不给购买按钮，提示去 Play 下载（docs/充值系统设计.md 第十节）。
 static func installed_from_play() -> bool:
 	var bridge := _bridge()
-	return bridge != null and bool(bridge.call("installedFromPlay"))
+	return bridge != null and bridge.has_method("installedFromPlay") and bool(bridge.call("installedFromPlay"))
 
 
 # {档位编号: "RM 4.90"}。查不到的档不在里面 —— 钻石商店不给它购买按钮，不自己编一个价格。
@@ -77,6 +89,8 @@ static func purchase(tree: SceneTree, product_id: String, account_id: String, or
 	var result := await _wait(tree, bridge, int(bridge.call("beginPurchase", product_id, account_id, order_id)),
 		PURCHASE_TIMEOUT_SEC)
 	var state := str(result.get("state", ""))
+	if state == "pending_payment":
+		return {"state": "pending"}
 	if state != "ok":
 		if state == "error":
 			push_warning("[BILLING] 付款失败：%s" % str(result.get("error", "")))
@@ -91,8 +105,27 @@ static func purchase(tree: SceneTree, product_id: String, account_id: String, or
 		picked = purchases[0]
 	if picked.is_empty() or str(picked.get("token", "")).is_empty():
 		return {"state": "error", "error": "purchase without token"}
+	if platform() == "apple" and (str(picked.get("order_id", "")) != order_id
+			or str(picked.get("product", "")) != product_id
+			or str(picked.get("transaction_id", "")).is_empty()):
+		return {"state": "timeout"} # 不交错单，不 finish；稍后从 StoreKit 补交原订单。
 	return {"state": str(picked.get("state", "unknown")), "token": str(picked["token"]),
-		"order_id": str(picked.get("order_id", ""))}
+		"order_id": str(picked.get("order_id", "")), "transaction_id": str(picked.get("transaction_id", ""))}
+
+
+# Apple 必须先收到此订单的服务器终态。5xx、断网、pending、错单均留给 StoreKit 重投。
+# cancelled/refunded 也必须来自验签接口（包括测试单限额），不能只凭客户端猜测。
+static func finish_if_confirmed(tree: SceneTree, transaction_id: String, order_id: String, result: Dictionary) -> bool:
+	if platform() != "apple" or transaction_id.is_empty() or int(result.get("code", 0)) / 100 != 2:
+		return false
+	var body = result.get("body", {})
+	if not (body is Dictionary) or str(body.get("order_id", "")) != order_id:
+		return false
+	if str(body.get("status", "")) not in ["credited", "cancelled", "refunded"]:
+		return false
+	var bridge := _bridge()
+	var finished := await _wait(tree, bridge, int(bridge.call("beginFinishTransaction", transaction_id)), QUERY_TIMEOUT_SEC)
+	return str(finished.get("state", "")) == "ok"
 
 
 # 没完成（没消耗）的付款：[{token, product, order_id, state}]。查不到就是空数组。
@@ -129,7 +162,8 @@ static func recover(tree: SceneTree, confirm: Callable) -> int:
 		# 没有订单号的付款不是从我们的建单接口来的，服务器也认不出它是哪张单 —— 不交。
 		if str(item.get("state", "")) != "purchased" or order_id.is_empty() or token.is_empty():
 			continue
-		await confirm.call(order_id, token)
+		var result: Dictionary = await confirm.call(order_id, token)
+		await finish_if_confirmed(tree, str(item.get("transaction_id", "")), order_id, result)
 		sent += 1
 	_recovering = false
 	return sent

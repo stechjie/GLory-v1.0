@@ -61,6 +61,18 @@ class FakeBridge extends RefCounted:
 		return replies.pop_front()
 
 
+class FakeAppleBridge extends FakeBridge:
+	var finished: Array[String] = []
+	var allowed := true
+
+	func canMakePayments() -> bool:
+		return allowed
+
+	func beginFinishTransaction(transaction_id: String) -> int:
+		finished.append(transaction_id)
+		return 4
+
+
 func _ready() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
 	_case_aar_matches_source()
@@ -70,6 +82,7 @@ func _ready() -> void:
 	_case_unavailable_without_plugin()
 	await _case_bridge_flows()
 	await _case_recover_resubmits_only_paid_orders()
+	await _case_apple_flows()
 	_case_outcome_texts()
 	_case_bonus_text()
 	_case_no_client_tier_table()
@@ -234,6 +247,53 @@ func _case_recover_resubmits_only_paid_orders() -> void:
 
 
 # --- 钻石商店给玩家看的话 ----------------------------------------------------------
+
+func _case_apple_flows() -> void:
+	var fake := FakeAppleBridge.new()
+	BillingBridge.bridge_override = fake
+	_h.expect(BillingBridge.platform() == "apple" and BillingBridge.can_make_payments(),
+		"apple_platform", "Apple 单例必须选择 apple 通道")
+	fake.allowed = false
+	_h.expect(not BillingBridge.can_make_payments(), "apple_restricted", "受限设备不能开始购买")
+	fake.allowed = true
+	fake.replies = ['{"state":"pending_payment"}']
+	var paid: Dictionary = await BillingBridge.purchase(get_tree(), "diamond_pack_1", "", "apple-order")
+	_h.expect(paid.get("state") == "pending", "apple_ask_to_buy", "Ask to Buy 待批准不能被当作失败或轮询未完成")
+	var proof := {"token": "apple-jws", "state": "purchased", "order_id": "apple-order",
+		"product": "diamond_pack_1", "transaction_id": "apple-tx"}
+	fake.replies = [JSON.stringify({"state": "ok", "purchases": [proof]})]
+	paid = await BillingBridge.purchase(get_tree(), "diamond_pack_1", "", "apple-order")
+	_h.expect(paid.get("transaction_id") == "apple-tx" and fake.finished.is_empty(),
+		"apple_not_finished_on_purchase", "购买成功只提交凭证，不能提前结束交易")
+	var credited := {"code": 200, "body": {"order_id": "apple-order", "status": "credited"}}
+	for response in [{"code": 503}, {"code": 0}, {"code": 403}, {"code": 429},
+			{"code": 200, "body": {"order_id": "apple-order", "status": "pending"}},
+			{"code": 200, "body": {"order_id": "other-order", "status": "credited"}},
+			{"code": 200, "body": []}]:
+		_h.expect(not await BillingBridge.finish_if_confirmed(get_tree(), "apple-tx", "apple-order", response),
+			"apple_keep_unfinished", "未确认入账或错单不可结束交易")
+	_h.expect(fake.finished.is_empty(), "apple_no_early_finish", "断网、限流、处理中均保留交易")
+	var waiting := JSON.stringify({"state": "ok", "purchases": [proof]})
+	var sent: Array = []
+	var confirm := func(order_id: String, token: String) -> Dictionary:
+		sent.append([order_id, token])
+		return credited
+	fake.replies = [waiting, '{"state":"ok"}']
+	var count := await BillingBridge.recover(get_tree(), confirm)
+	_h.expect(count == 1 and sent == [["apple-order", "apple-jws"]] and fake.finished == ["apple-tx"],
+		"apple_recover_finish", "丢回执重交原单，服务器确认后才能结束 Apple 交易")
+	for status in ["credited", "cancelled", "refunded"]:
+		fake.replies = ['{"state":"ok"}']
+		var done := await BillingBridge.finish_if_confirmed(get_tree(), "apple-tx", "apple-order",
+			{"code": 200, "body": {"order_id": "apple-order", "status": status}})
+		_h.expect(done, "apple_finish_" + status, "已验签终态应该清理 StoreKit 队列")
+	proof["order_id"] = "another-order"
+	fake.replies = [JSON.stringify({"state": "ok", "purchases": [proof]})]
+	paid = await BillingBridge.purchase(get_tree(), "diamond_pack_1", "", "apple-order")
+	_h.expect(paid.get("state") == "timeout", "apple_mismatched_order", "错单不能发给当前单或提前结束")
+	_h.expect(not DiamondStore.guest_warning_text(false).contains("Google"), "apple_guest_warning", "Apple 游客提示应使用本平台文案")
+	BillingBridge.bridge_override = null
+
 
 func _case_outcome_texts() -> void:
 	var credited := DiamondStore.outcome_of(200, {"status": "credited", "credited": 1000}, "", false)

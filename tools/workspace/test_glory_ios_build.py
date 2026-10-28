@@ -22,6 +22,29 @@ spec.loader.exec_module(ios)
 
 
 class IOSBuildTests(unittest.TestCase):
+    def test_apple_billing_rejects_stale_source_and_old_native_binary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            source = project / "native/glory_voice_ios"
+            folder = project / "addons/glory_voice/bin/ios"
+            source.mkdir(parents=True)
+            binary = folder / "GloryVoice.framework/GloryVoice"
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b"GloryAppleBillingNative beginFinishTransaction: StoreKit")
+            manifest = {"source": {}, "files": {"GloryVoice.framework/GloryVoice": ios.shared.digest(binary)}}
+            for name in ("GloryAppleBilling.swift", "GloryAppleBillingNative.h", "GloryAppleBillingBridge.mm",
+                         "GloryVoiceBridge.mm", "build.py"):
+                (source / name).write_text("source " + name)
+                manifest["source"][name] = ios.shared.digest(source / name)
+            (folder / "build-manifest.json").write_text(json.dumps(manifest))
+            ios.verify_apple_billing_source(project)
+            (source / "GloryAppleBilling.swift").write_text("changed")
+            with self.assertRaisesRegex(RuntimeError, "源码不一致"):
+                ios.verify_apple_billing_source(project)
+            binary.write_bytes(b"old voice-only binary")
+            with self.assertRaisesRegex(RuntimeError, "StoreKit"):
+                ios.verify_apple_billing_binary(binary)
+
     def test_audio_engine_template_rejects_missing_or_stale_proof(self):
         with tempfile.TemporaryDirectory() as directory:
             project = Path(directory) / "project"
@@ -178,7 +201,7 @@ class IOSBuildTests(unittest.TestCase):
         with zipfile.ZipFile(ipa, "w") as archive:
             for name, data in {"Info.plist": plistlib.dumps(info), "Fixture": b"arm64 fixture",
                                "Fixture.pck": b"pck fixture", "embedded.mobileprovision": b"profile fixture",
-                               "Frameworks/GloryVoice.framework/GloryVoice": b"voice fixture",
+                               "Frameworks/GloryVoice.framework/GloryVoice": b"voice fixture GloryAppleBillingNative beginFinishTransaction: StoreKit",
                                "Frameworks/LiveKitWebRTC.framework/LiveKitWebRTC": b"rtc fixture",
                                "Frameworks/RustLiveKitUniFFI.framework/RustLiveKitUniFFI": b"ffi fixture"}.items():
                 archive.writestr("Payload/Fixture.app/" + name, data)
@@ -206,6 +229,7 @@ class IOSBuildTests(unittest.TestCase):
                 ios.verify_ipa(ipa, destination, "ad-hoc", self.profile, cert, "0.0.4", "2",
                                dict(identity, engine_info={"patched": True}), {})
         self.assertTrue(result["codesign"])
+        self.assertTrue(result["apple_storekit"])
         self.assertTrue((destination / "signer-0").is_file())
 
         # A signed-looking package without the native bridge must never pass.
@@ -224,6 +248,7 @@ class IOSBuildTests(unittest.TestCase):
         project.mkdir()
         (project / "project.godot").write_text('[application]\nconfig/version="0.0.4"\n')
         with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.object(ios, "verify_apple_billing_source"))
             stack.enter_context(mock.patch.object(ios, "ROOT", self.root))
             password = self.root / "password"
             password.touch()

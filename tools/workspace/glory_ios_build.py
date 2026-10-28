@@ -363,6 +363,27 @@ def install_profile(source, profile):
         os.replace(temporary, destination)
 
 
+def verify_apple_billing_binary(binary):
+    data = binary.read_bytes()
+    for marker in (b"GloryAppleBillingNative", b"beginFinishTransaction:", b"StoreKit"):
+        if marker not in data:
+            raise RuntimeError("iOS 框架缺少 Apple StoreKit 支付组件；请重新运行 native/glory_voice_ios/build.py。")
+
+
+def verify_apple_billing_source(project):
+    folder = project / "addons/glory_voice/bin/ios"
+    manifest = json.loads((folder / "build-manifest.json").read_text())
+    source = project / "native/glory_voice_ios"
+    for name in ("GloryAppleBilling.swift", "GloryAppleBillingNative.h", "GloryAppleBillingBridge.mm",
+                 "GloryVoiceBridge.mm", "build.py"):
+        if manifest.get("source", {}).get(name) != shared.digest(source / name):
+            raise RuntimeError("iOS 支付框架与源码不一致：" + name + "；请重新运行 native/glory_voice_ios/build.py。")
+    binary = folder / "GloryVoice.framework/GloryVoice"
+    if manifest.get("files", {}).get("GloryVoice.framework/GloryVoice") != shared.digest(binary):
+        raise RuntimeError("iOS 支付框架指纹不一致。")
+    verify_apple_billing_binary(binary)
+
+
 def pck_file(pack, wanted):
     with pack.open("rb") as stream:
         magic, version, *_engine, flags = struct.unpack("<6I", stream.read(24))
@@ -410,6 +431,7 @@ def verify_ipa(ipa, directory, method, profile, cert, version, number, identity,
     voice = app / "Frameworks/GloryVoice.framework/GloryVoice"
     if not voice.is_file():
         raise RuntimeError("IPA 缺少必需的 iOS 音频/语音扩展 GloryVoice.framework。")
+    verify_apple_billing_binary(voice)
     if voice.exists():
         if not str(info.get("NSMicrophoneUsageDescription", "")).strip():
             raise RuntimeError("IPA 包含 iOS 语音组件，但麦克风用途声明为空。")
@@ -439,7 +461,8 @@ def verify_ipa(ipa, directory, method, profile, cert, version, number, identity,
     if len(packs) != 1 or json.loads(pck_file(packs[0], "build_info.json")) != identity:
         raise RuntimeError("IPA 中的 Godot PCK 构建身份与本次代码/资源快照不一致。")
     return {"zip_crc": True, "codesign": True, "arm64": True, "embedded_profile_uuid": actual["UUID"],
-            "allowed_device_udids": actual.get("ProvisionedDevices", []), "pck_identity": True}
+            "allowed_device_udids": actual.get("ProvisionedDevices", []), "pck_identity": True,
+            "apple_storekit": True}
 
 
 def publish(ipa, outdir, summary):
@@ -497,6 +520,7 @@ def main(argv=None):
     env = environment(args)
     version = project_version(args.project, args.version)
     profile = read_profile(profile_path, args.method)
+    verify_apple_billing_source(args.project)
     note(f"{env['version']}；{env['xcode'].replace(chr(10), ' / ')}；{args.method}；营销版本 {version}")
     note(f"描述文件 {profile['Name']}，到期 {as_utc(profile['ExpirationDate']).date()}，授权设备 {len(profile.get('ProvisionedDevices', []))} 台。")
     if args.check:
