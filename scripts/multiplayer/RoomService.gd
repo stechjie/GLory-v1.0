@@ -430,7 +430,7 @@ func public_room_list() -> Array:
 		#
 		# 判据用独立的 matched 标记，**不用 match_uid 非空** ——
 		# 自定义房间开局时也会有 match_uid（战报要用，见第 1 步），两件事不能混。
-		if bool(room.get("matched", false)):
+		if bool(room.get("matched", false)) or str(room.get("mode", "custom")) != "custom":
 			continue
 		out.append({
 			"id": int(room.get("id", 0)),

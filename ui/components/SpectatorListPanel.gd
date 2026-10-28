@@ -65,7 +65,8 @@ func _ready() -> void:
 	add_child(_toggle)
 	_join = Button.new()
 	_join.name = "JoinSpectators"
-	_join.text = "+"
+	_join.text = ""
+	_join.draw.connect(_draw_join_plus)
 	_join.add_theme_color_override("font_color", INK)
 	var circle := _pill(0.88)
 	circle.set_corner_radius_all(24)
@@ -118,7 +119,7 @@ func _relayout() -> void:
 	_join.visible = _my_sid < 0 and _open
 	_join.position = Vector2(size.x * 0.5 - 20 * k, inner.position.y + 39 * k)
 	_join.size = Vector2(40, 40) * k
-	_join.add_theme_font_size_override("font_size", maxi(16, roundi(24*k)))
+	_join.queue_redraw()
 	_toggle.visible = _is_host
 	_toggle.position = Vector2(inner.position.x + inner.size.x * 0.15, inner.position.y + 82 * k)
 	_toggle.size = Vector2(inner.size.x * 0.70, 32 * k)
@@ -224,3 +225,12 @@ func _pill(alpha: float) -> StyleBoxFlat:
 
 func _t(zh: String, en: String) -> String:
 	return en if TranslationServer.get_locale().begins_with("en") else zh
+
+
+# Draw the glyph without a font minimum stretching the circular button at small scales.
+func _draw_join_plus() -> void:
+	var center := _join.size * 0.5
+	var arm := minf(_join.size.x, _join.size.y) * 0.22
+	var width := maxf(1.0, minf(_join.size.x, _join.size.y) * 0.055)
+	_join.draw_line(center - Vector2(arm, 0), center + Vector2(arm, 0), INK, width, true)
+	_join.draw_line(center - Vector2(0, arm), center + Vector2(0, arm), INK, width, true)
