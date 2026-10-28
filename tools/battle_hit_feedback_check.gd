@@ -28,6 +28,7 @@ func _run() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
 	await _check_flash_and_flinch()
 	await _check_hitstop()
+	await _check_freed_hitstop_actor()
 	await _check_toggles_and_throttle()
 	_check_shake_sink()
 	_check_battle_vfx_wiring()
@@ -141,6 +142,22 @@ func _check_hitstop() -> void:
 	victim.queue_free()
 	attacker.queue_free()
 	await get_tree().process_frame
+
+
+func _check_freed_hitstop_actor() -> void:
+	# SceneTreeTimer survives a killed unit or a battle scene switch. Its callback
+	# must resolve the target only when it fires, including the early-timer retry.
+	for rearm in [false, true]:
+		var actor := Node3D.new()
+		var player := AnimationPlayer.new()
+		actor.add_child(player)
+		add_child(actor)
+		Feedback.freeze_animation(actor, 0.04)
+		if rearm:
+			Feedback._release_freeze(actor)
+		actor.free()
+		await _wait(0.12)
+		_h.expect(not is_instance_valid(actor), "freed_hitstop_actor", "顿帧计时器不应保活已销毁的单位")
 
 
 func _check_toggles_and_throttle() -> void:
