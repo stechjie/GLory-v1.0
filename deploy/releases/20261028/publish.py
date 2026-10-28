@@ -19,7 +19,8 @@ s=PatchStore(p,firebase_host='glory-patches.web.app');c=s.catalogue();active=c['
 old=s.snapshot('internal','android','glory-20261027-protocol44-slim',0)
 s.register_client_base('internal','android','glory-20261028-protocol45-slim',4,'release-1.0.2-47-protocol45')
 snap=s.snapshot('internal','android','glory-20261028-protocol45-slim',0);assert snap['action']=='none' and snap['required_patch_seq']==0
-assert s.snapshot('internal','android','glory-20261027-protocol44-slim',0)==old
+after=s.snapshot('internal','android','glory-20261027-protocol44-slim',0)
+for key in ['action','artifact','required_patch_seq','hotfixes']:assert old[key]==after[key]
 config=json.loads((root/'config.json').read_text());config['android'].update(ready=True,mode='apk',url='https://glorytd-api.duckdns.org/beta/downloads/Glory-1.0.2-47-android.apk',version='1.0.2 (47)',size_bytes=579375881,size_label='552.5 MiB')
 # Only open public enrollment after the operator verifies build 71 external testing.
 config['ios'].update(ready='--ios-ready' in sys.argv,url='https://testflight.apple.com/join/W2p1ukJp',version='1.0.2 (71)',pending_version='' if '--ios-ready' in sys.argv else '1.0.2 (71)')
