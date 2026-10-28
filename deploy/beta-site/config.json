@@ -1,9 +1,9 @@
 {
   "ios": {
-    "ready": false,
+    "ready": true,
     "url": "https://testflight.apple.com/join/W2p1ukJp",
     "version": "1.0.2 (71)",
-    "pending_version": "1.0.2 (71)"
+    "pending_version": ""
   },
   "android": {
     "ready": true,
