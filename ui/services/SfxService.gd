@@ -102,6 +102,19 @@ const CUE_HUMAN_KING_DEATH := "human_king_death"
 const CUE_BATTLE_VICTORY := "battle_victory"
 const CUE_BATTLE_DEFEAT := "battle_defeat"
 
+# --- 10.29 死亡音（BattleVfx「死亡分档」一节调用）--------------------------
+#
+# 素材：Kenney「Impact Sounds」（CC0，kenney.nl），用 ffmpeg 叠层混成单文件：
+#   death_shatter       普通碎裂 = 中拳闷响 + 中玻璃碎裂（略升调）
+#   death_shatter_heavy 重量级   = 重拳 + 重玻璃（降调）+ 一层厚金属板
+#   death_fall          己方倒下 = 软重击低通压闷，不带玻璃（不庆祝）
+#   death_lane_clear    本地那一路清场 = 升调钟声余韵 + 重玻璃，与 heavy 同时出
+# 多杀合并由 BattleVfx 的 140ms 合并窗口负责，这里不另加节流。
+const CUE_DEATH_SHATTER := "death_shatter"
+const CUE_DEATH_SHATTER_HEAVY := "death_shatter_heavy"
+const CUE_DEATH_FALL := "death_fall"
+const CUE_DEATH_LANE_CLEAR := "death_lane_clear"
+
 const CUE_MERC_SUMMON := "merc_summon"
 const CUE_UPGRADE_STONE_DRAW := "upgrade_stone_draw"
 const CUE_CARROT_FARM_UPGRADE := "carrot_farm_upgrade"
@@ -326,6 +339,10 @@ const CUES := {
 	CUE_HUMAN_KING_DEATH: "res://assets/audio/sfx/battle/human_king_death.mp3",
 	CUE_BATTLE_VICTORY: "res://assets/audio/sfx/battle/battle_victory.mp3",
 	CUE_BATTLE_DEFEAT: "res://assets/audio/sfx/battle/battle_defeat.mp3",
+	CUE_DEATH_SHATTER: "res://assets/audio/sfx/battle/death_shatter.wav",
+	CUE_DEATH_SHATTER_HEAVY: "res://assets/audio/sfx/battle/death_shatter_heavy.wav",
+	CUE_DEATH_FALL: "res://assets/audio/sfx/battle/death_fall.wav",
+	CUE_DEATH_LANE_CLEAR: "res://assets/audio/sfx/battle/death_lane_clear.wav",
 	CUE_HUMAN_KING_REWARD: "res://assets/audio/sfx/battle/human_king_reward.mp3",
 	CUE_STAR4_SWORDSMAN_SKILL: "res://assets/audio/sfx/battle/star4_swordsman_skill.mp3",
 	CUE_STAR4_ARCHER_SKILL: "res://assets/audio/sfx/battle/star4_archer_skill.wav",

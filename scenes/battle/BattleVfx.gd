@@ -2242,11 +2242,12 @@ const LANE_CLEAR_FREEZE_SEC := 0.2
 const LANE_CLEAR_PUNCH_SCALE := 1.03
 const LANE_CLEAR_PUNCH_IN_SEC := 0.07
 const LANE_CLEAR_PUNCH_OUT_SEC := 0.26
-# 死亡音。素材到位前 SfxService 里没登记，_play_death_sfx 直接跳过（不刷 warning）。
-const DEATH_CUE_SHATTER := "death_shatter"
-const DEATH_CUE_SHATTER_HEAVY := "death_shatter_heavy"
-const DEATH_CUE_FALL := "death_fall"
-const DEATH_CUE_LANE_CLEAR := "death_lane_clear"
+# 死亡音，素材与混音说明见 SfxService 的「10.29 死亡音」。
+# 必须写成 SfxService.CUE_* —— audio_sfx_check 按这个前缀找生产调用点。
+const DEATH_CUE_SHATTER := SfxService.CUE_DEATH_SHATTER
+const DEATH_CUE_SHATTER_HEAVY := SfxService.CUE_DEATH_SHATTER_HEAVY
+const DEATH_CUE_FALL := SfxService.CUE_DEATH_FALL
+const DEATH_CUE_LANE_CLEAR := SfxService.CUE_DEATH_LANE_CLEAR
 const LANE_NONE := -99
 # 种族碎片色：人族暖金属、亡灵魂火青绿、暗族紫黑雾、神族金白、赤律族赤红。
 const DEATH_RACE_COLORS := {
