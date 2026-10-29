@@ -1580,9 +1580,7 @@ func _on_rename_pressed() -> void:
 		_set_status(_text("昵称没有变化", "Nickname unchanged"))
 		return
 	_begin_submit()
-	_finish_submit(await AccountManager.update_profile({"player_name": wanted}))
-	# 9.18：改名成功反馈音。
-	SfxService.play(SfxService.CUE_PROFILE_SAVE)
+	_finish_submit(await AccountManager.update_profile({"player_name": wanted}), true)
 
 
 func _on_save_bio_pressed() -> void:
@@ -1620,8 +1618,6 @@ func _on_save_bio_pressed() -> void:
 func _save_bio(payload: Dictionary) -> void:
 	_begin_submit()
 	_finish_submit(await AccountManager.update_bio(payload))
-	# 9.18：保存资料（签名/生日/性别/地区等）成功反馈音。
-	SfxService.play(SfxService.CUE_PROFILE_SAVE)
 
 
 func _save_avatar(value: String) -> void:
@@ -1682,7 +1678,7 @@ func _begin_submit() -> void:
 	_set_status(_text("保存中…", "Saving…"))
 
 
-func _finish_submit(result: Dictionary) -> void:
+func _finish_submit(result: Dictionary, rename_only: bool = false) -> void:
 	_busy = false
 	if not is_inside_tree():
 		return
@@ -1691,7 +1687,14 @@ func _finish_submit(result: Dictionary) -> void:
 		return
 	_data = result.get("body", {})
 	_set_status(_text("已保存", "Saved"))
-	_refresh()
+	if rename_only:
+		# Preserve unsaved bio controls; no draft-confirmation dialog.
+		_name_label.text = AccountManager.display_name(_field("player_name"), _field("friend_code"))
+		_name_edit.text = _field("player_name")
+		_name_hint.text = _rename_hint(_field("rename_available_at"), int(Time.get_unix_time_from_system()))
+	else:
+		_refresh()
+	SfxService.play(SfxService.CUE_PROFILE_SAVE)
 
 
 func _open_avatar_picker() -> void:
