@@ -83,7 +83,7 @@ _GATE_TEXT = {
     ranked.GATE_CREDIT_TOO_LOW: "信誉分过低，暂时不能排这个模式",
     # 人工禁排位（app/sanctions.py）。和 credit_banned 分开 —— 两者原因不同、解除方式也不同。
     ranked.GATE_SANCTIONED: "你的排位资格已被暂停",
-    "need_three_races": "排位模式需在备战区携带至少3个已解锁种族。",
+    "ranked_need_four_races": "排位模式需在备战区携带至少4个已解锁种族。",
     # 全局开关（app/service_control.py）。三个码分开，客户端要显示的话不一样。
     "service_maintenance": "服务器正在维护，暂时不能开始新对局",
     "matchmaking_disabled": "排位功能暂时关闭",
@@ -146,14 +146,11 @@ async def join_queue(
             status_code=409, detail="这个模式还没开放",
             headers={"X-Glory-Reason": "mode_closed"})
     await _service_gate()
-    # Ranked format is derived from authoritative score; clients cannot choose 21 rounds early.
+    # All ranked players share the 21-round queue, independent of rank score.
+    if mode.startswith("ranked"):
+        mode = matchmaking.RANKED_NORMAL
     async with db.pool().acquire() as conn:
         reason = await ranked.queue_gate(conn, me.player_id, mode)
-        if mode.startswith("ranked"):
-            score = await conn.fetchval(
-                "select score from player_ranked where player_id = $1", me.player_id)
-            mode = (matchmaking.RANKED_NORMAL if int(score or 0) >= ranked.STARFORGE_FLOOR
-                    else matchmaking.RANKED)
     if reason:
         raise HTTPException(
             status_code=409, detail=_GATE_TEXT.get(reason, "现在不能排这个模式"),

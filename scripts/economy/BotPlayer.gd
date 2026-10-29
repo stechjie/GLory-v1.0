@@ -22,6 +22,7 @@ extends RefCounted
 
 const ShopRoll := preload("res://scripts/economy/ShopRoll.gd")
 const CarrotRules := preload("res://scripts/economy/CarrotEconomy.gd")
+const Handover := preload("res://scripts/economy/AiHandover.gd")
 const RaceRules := preload("res://scripts/units/RacePick.gd")
 
 ## 按「跟普通真人差不多」设定：每场五五开。
@@ -94,13 +95,15 @@ static func prepare_round(bot: Dictionary, round_index: int) -> void:
 	# 必须留着（merc_round 记着它是哪一轮搬进来的），下一轮才照常清空。
 	if int(bot.get("merc_round", -1)) != round_index:
 		bot.mercs = []
-	bot.gold_spent_this_round = false
+	if int(bot.get("skip_reset_spending_round", -1)) != round_index:
+		bot.gold_spent_this_round = false
 	var ledger := {"carrots": int(bot.carrots), "merc_carrots_spent_total": int(bot.carrot_spent),
 		"harvest_tech_level": int(bot.tech), "last_harvest_round": int(bot.get("round", 0))}
 	if int(bot.get("skip_harvest_round", -1)) != round_index:
 		EconomyLedger.harvest_for_round(ledger, round_index, float(bot.get("carrot_bonus_rate", 0.0)))
 	bot.carrots = int(ledger.carrots)
-	bot["harvest_gain"] = int(ledger.get("last_harvest_gain", 0))
+	if int(bot.get("skip_harvest_round", -1)) != round_index:
+		bot["harvest_gain"] = int(ledger.get("last_harvest_gain", 0))
 	_prep_round(bot, round_index, rng, RaceRules.shop_pool(
 		DataRegistry.get_table("race_units").get("units", []), bot.get("races", RaceRules.default_races())))
 	# 佣兵也要 uid：账本是按 uid 记账的，没有 uid 的佣兵 mirror 不出去、
@@ -108,6 +111,12 @@ static func prepare_round(bot: Dictionary, round_index: int) -> void:
 	for unit in (bot.roster as Array) + (bot.mercs as Array):
 		if str(unit.get("uid", "")).is_empty():
 			var serial := int(bot.get("next_uid", 0)) + 1
+			bot["next_uid"] = serial
+			var used := {}
+			for other in (bot.roster as Array) + (bot.mercs as Array):
+				used[str(other.get("uid", ""))] = true
+			while used.has("bot_%s_%s" % [str(bot.slot), str(serial)]):
+				serial += 1
 			bot["next_uid"] = serial
 			unit["uid"] = "bot_%s_%s" % [str(bot.slot), str(serial)]
 	bot["merc_round"] = round_index
@@ -144,7 +153,7 @@ static func settle_round(bot: Dictionary, result: Dictionary, context: Dictionar
 	var settlement := EconomyService.settle_post_battle_breakdown(ctx)
 	bot.gold = int(settlement.gold_after)
 	bot.settled_round = round_index
-	if RoundService.is_treasure_round(round_index):
+	if RoundService.is_treasure_round(round_index) and not bool(bot.get("server_treasures", false)):
 		_pick_treasure(bot, rng)
 	return settlement
 
@@ -278,17 +287,23 @@ static func _harvest(bot: Dictionary) -> void:
 # 策略：容量还不够抽石头时，胡萝卜全拿去雇佣兵养农场；够了就攒着抽石头，
 # 抽完剩下的再雇佣兵。
 static func _spend_carrots(bot: Dictionary, round_index: int, rng: RandomNumberGenerator) -> void:
-	var cost := CarrotRules.stone_cost_for_draw(int(bot.stone_draws))
-	var capacity := CarrotRules.capacity_for_spent(int(bot.carrot_spent))
-	if round_index >= 3 and capacity >= cost:
-		if int(bot.carrots) >= cost:
-			bot.carrots = int(bot.carrots) - cost
-			bot.stone_draws = int(bot.stone_draws) + 1
-			var stone := CarrotRules.draw_type_from_roll(rng.randf())
-			bot.stones[stone] = int(bot.stones.get(stone, 0)) + 1
-			bot.stones_gained[stone] = int(bot.stones_gained.get(stone, 0)) + 1
-		else:
-			return  # 攒着下回合抽
+	if int(bot.get("stone_draw_used_round", -1)) != round_index and round_index >= 3:
+		var ledger := {"carrots": int(bot.carrots), "merc_carrots_spent_total": int(bot.carrot_spent),
+			"stone_draw_count": int(bot.stone_draws), "stone_draw_used_round": int(bot.get("stone_draw_used_round", -1)),
+			"free_stone_claimed": bool(bot.get("free_stone_claimed", false))}
+		var before: Dictionary = bot.stones.duplicate()
+		var draw := EconomyLedger.apply(ledger, "draw_upgrade_stone", {}, {
+			"round_index": round_index, "ruleset": str(bot.get("ruleset", "normal")),
+			"carrot_bonus_rate": float(bot.get("carrot_bonus_rate", 0.0)),
+			"team_stones": bot.stones, "stone_roll": rng.randf()})
+		if bool(draw.get("ok", false)):
+			bot.carrots = int(ledger.carrots)
+			bot.stone_draws = int(ledger.stone_draw_count)
+			bot["stone_draw_used_round"] = round_index
+			bot["free_stone_claimed"] = bool(ledger.get("free_stone_claimed", false))
+			for kind in bot.stones:
+				bot.stones_gained[kind] = int(bot.stones_gained.get(kind, 0)) + maxi(0, int(bot.stones[kind]) - int(before.get(kind, 0)))
+
 	_hire_mercs(bot)
 
 
@@ -306,11 +321,12 @@ static func _reserve(bot: Dictionary, round_index: int) -> int:
 
 
 static func _prep_round(bot: Dictionary, round_index: int, rng: RandomNumberGenerator, units: Array) -> void:
-	if (bot.treasures as Array).has("money_generous_fate") and int(bot.gold) >= 100:
+	if (bot.treasures as Array).has("money_generous_fate") and int(bot.gold) >= 100 and int(bot.get("gamble_used_round", -1)) != round_index:
 		var gamble := {"gold": int(bot.gold), "gamble_used": false}
 		EconomyLedger.apply(gamble, "gamble", {}, {"gamble_entitled": true,
 			"gamble_linked": TreasureService.has_linkage_in(bot.treasures, "link_fraud_fate"), "roll": rng.randf()})
 		bot.gold = int(gamble.gold)
+		bot["gamble_used_round"] = round_index
 	_try_four_star(bot)
 	_try_tech(bot, round_index)
 	_spend_carrots(bot, round_index, rng)
@@ -322,13 +338,15 @@ static func _prep_round(bot: Dictionary, round_index: int, rng: RandomNumberGene
 	while true:
 		var offers: Array = shop["offers"]
 		var sold: Array = shop["sold"]
-		for i in offers.size():
+		var order: Array = range(offers.size())
+		order.sort_custom(func(a, b): return _offer_priority(bot, offers[a]) > _offer_priority(bot, offers[b]))
+		for i in order:
 			var offer: Dictionary = offers[i] if typeof(offers[i]) == TYPE_DICTIONARY else {}
 			if offer.is_empty():
 				continue
 			if i < sold.size() and bool(sold[i]):
 				continue
-			var cost := EconomyLedger.unit_cost(offer, bot.treasures)
+			var cost := EconomyLedger.unit_cost(offer, bot.treasures, bool(bot.get("team_discount", false)))
 			if int(bot.gold) - cost < _reserve(bot, round_index):
 				continue
 			if not _wants(bot, offer):
@@ -345,8 +363,7 @@ static func _prep_round(bot: Dictionary, round_index: int, rng: RandomNumberGene
 			_trim_roster(bot)
 		if refreshes >= MAX_REFRESH_PER_ROUND:
 			break
-		var refresh_cost := EconomyService.shop_refresh_cost(refreshes,
-			TreasureService.has_set_in(bot.treasures, "money"))
+		var refresh_cost := EconomyService.shop_refresh_cost(int(shop.get("refresh_uses", 0)), false)
 		if int(bot.gold) - _reserve(bot, round_index) < refresh_cost + 60:
 			break
 		bot.gold = int(bot.gold) - refresh_cost
@@ -495,7 +512,7 @@ static func _unit_value(bot: Dictionary, u: Dictionary) -> float:
 
 
 static func _trim_roster(bot: Dictionary) -> void:
-	var cap := GameConstants.NORMAL_UNIT_CAP + BENCH_CAP
+	var cap := Handover.board_cap(bot.treasures) + BENCH_CAP
 	while (bot.roster as Array).size() > cap:
 		var worst := 0
 		var worst_v := INF
@@ -560,7 +577,7 @@ static func _try_four_star(bot: Dictionary) -> void:
 	var target := _four_star_candidate(bot)
 	if target.is_empty():
 		return
-	var cost := CarrotRules.four_star_gold(int((target.def as Dictionary).get("tier", 1)))
+	var cost := CarrotRules.seedling_four_star_gold(int(bot.get("four_star_upgrade_count", 0))) if str(bot.get("ruleset", "normal")) == "seedling" else CarrotRules.four_star_gold(int((target.def as Dictionary).get("tier", 1)))
 	if cost < 0 or int(bot.gold) < cost:
 		return
 	var element := str((target.def as Dictionary).get("element", ""))
@@ -568,6 +585,8 @@ static func _try_four_star(bot: Dictionary) -> void:
 	bot.gold_spent_this_round = true
 	bot.stones[element] = int(bot.stones[element]) - 1
 	target.star = GameState.MAX_UNIT_STAR
+	if str(bot.get("ruleset", "normal")) == "seedling":
+		bot["four_star_upgrade_count"] = int(bot.get("four_star_upgrade_count", 0)) + 1
 
 
 static func _hire_mercs(bot: Dictionary) -> void:
@@ -619,6 +638,13 @@ static func _pick_treasure(bot: Dictionary, rng: RandomNumberGenerator) -> void:
 		pool[i] = pool[j]
 		pool[j] = tmp
 	var candidates := pool.slice(0, mini(3, pool.size()))
+	var best := preferred_treasure(bot, candidates)
+	if not best.is_empty():
+		owned.append(best)
+
+
+static func preferred_treasure(bot: Dictionary, candidates: Array) -> String:
+	var owned: Array = bot.treasures
 	var counts := TreasureService.tag_counts_for(owned)
 	var links: Array = DataRegistry.get_table("treasures").get("linkages", [])
 	var best := ""
@@ -634,12 +660,10 @@ static func _pick_treasure(bot: Dictionary, rng: RandomNumberGenerator) -> void:
 						score += 5.0                          # 能直接凑出联动
 		if cat == "money" and owned.size() <= 1:
 			score += 1.5                                      # 早期偏好经济
-		score += rng.randf() * 0.5
 		if score > best_score:
 			best_score = score
 			best = tid
-	if not best.is_empty():
-		owned.append(best)
+	return best
 
 
 # ---------------------------------------------------------------- 上阵与站位
@@ -661,7 +685,7 @@ static func _arrange_board(bot: Dictionary) -> Array:
 	var chosen: Array = []
 	var unique_used := {}
 	for u in ranked:
-		if chosen.size() >= GameConstants.NORMAL_UNIT_CAP:
+		if chosen.size() >= Handover.board_cap(bot.treasures):
 			break
 		var d: Dictionary = u.def
 		if bool(d.get("unique_on_board", false)):
@@ -719,3 +743,29 @@ static func board_slots(bot: Dictionary) -> Dictionary:
 static func _cell(u: Dictionary) -> Dictionary:
 	return {"def": (u.def as Dictionary).duplicate(true), "star": int(u.star), "is_mercenary": false,
 		"id": str(u.id), "uid": str(u.get("uid", "")), "cost_basis": int(u.get("cost_basis", 0))}
+
+static func prioritize_owned_races(bot: Dictionary) -> void:
+	var counts := {}
+	for u in bot.roster:
+		var race := str((u.def as Dictionary).get("race", ""))
+		counts[race] = int(counts.get(race, 0)) + 1
+	var best := ""
+	var most := 0
+	var races := counts.keys()
+	races.sort()
+	for race in races:
+		if int(counts[race]) > most:
+			best = str(race)
+			most = int(counts[race])
+	if not best.is_empty():
+		bot["main_race"] = best
+	_update_second_race(bot)
+
+
+static func _offer_priority(bot: Dictionary, offer: Dictionary) -> float:
+	var id := str(offer.get("id", ""))
+	for u in bot.roster:
+		if str(u.id) == id and int(u.star) < GameConstants.MAX_MERGE_STAR:
+			return 1000.0 + float(u.star)
+	var race := str(offer.get("race", ""))
+	return 100.0 if race == str(bot.main_race) else (50.0 if race == str(bot.get("second_race", "")) else 0.0)

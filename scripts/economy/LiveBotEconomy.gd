@@ -19,9 +19,13 @@ static func prepare(room: Dictionary) -> Dictionary:
 				_seed_from_human(bot, room, slot, round_index)
 			bots[slot] = bot
 		var pet := str(room.get("seat_pets", {}).get(slot, ""))
+		bots[slot]["server_treasures"] = true
+		bots[slot]["ruleset"] = str(room.get("ruleset", "normal"))
+		NetworkService._bot_choose_pending_treasures(room, slot, bots[slot])
 		bots[slot]["final_round"] = 13 if str(room.get("ruleset", "normal")) == "seedling" else 21
 		bots[slot]["carrot_bonus_rate"] = PetService.carrot_bonus_rate(pet)
 		bots[slot]["stones"] = NetworkService._room_team_stones(room, slot)
+		bots[slot]["team_discount"] = NetworkService._room_team_has_clearance_sale(room, slot)
 		Bot.prepare_round(bots[slot], round_index)
 		mirror(room, slot, bots[slot])
 	room["bot_states"] = bots
@@ -46,11 +50,20 @@ static func _seed_from_human(bot: Dictionary, room: Dictionary, slot: int, round
 	var prep: Dictionary = _prep_for(room, slot)
 	var snapshot: Dictionary = room.get("last_board", {}).get(slot, {})
 	var gold: Array = room.get("slot_gold", [])
-	bot.gold = int(gold[slot]) if slot < gold.size() and gold[slot] != null else int(prep.get("gold", 0))
+	bot.gold = int(prep.get("gold", gold[slot] if slot < gold.size() and gold[slot] != null else 0))
 	bot.carrots = int(prep.get("carrots", 0))
+	bot["harvest_gain"] = int(prep.get("last_harvest_gain", 0))
 	bot.carrot_spent = int(prep.get("merc_carrots_spent_total", 0))
 	bot.tech = int(prep.get("harvest_tech_level", 0))
+	bot["four_star_upgrade_count"] = int(prep.get("four_star_upgrade_count", 0))
 	bot.stone_draws = int(prep.get("stone_draw_count", 0))
+	bot["stone_draw_used_round"] = int(prep.get("stone_draw_used_round", -1))
+	bot["free_stone_claimed"] = bool(prep.get("free_stone_claimed", false))
+	bot["gamble_used_round"] = round_index if bool(prep.get("gamble_used", false)) else -1
+	bot["gold_spent_this_round"] = bool(prep.get("gold_spent_this_round", false))
+	bot["skip_reset_spending_round"] = round_index
+	var streaks: Array = room.get("team_loss_streak", [0, 0])
+	bot["loss_streak"] = int(streaks[GameConstants.team_of_slot(slot)])
 	bot["races"] = Bot.RaceRules.resolve(room.get("seat_races", {}).get(slot, []))
 	bot.treasures = room.get("owned_treasures", {}).get(slot, snapshot.get("treasures", [])).duplicate()
 	var owned: Dictionary = prep.get("roster", {})
@@ -59,7 +72,7 @@ static func _seed_from_human(bot: Dictionary, room: Dictionary, slot: int, round
 	# 下一轮由 prepare_round 按 merc_round 照常过期。
 	bot["merc_round"] = round_index
 	var cells: Array = NetProtocol.extract_board(snapshot)
-	if not owned.is_empty():
+	if prep.has("roster"):
 		# 账本比棋盘快照更权威：快照可能是上一轮提交的那一份。
 		cells = []
 		for uid in owned:
@@ -77,6 +90,7 @@ static func _seed_from_human(bot: Dictionary, room: Dictionary, slot: int, round
 			bot.roster.append({"id": str(cell.get("id", d.get("id", ""))),
 				"uid": str(cell.get("uid", "")), "star": int(cell.get("star", 1)), "def": d.duplicate(true),
 				"cost_basis": int(cell.get("cost_basis", EconomyLedger.unit_cost(d, bot.treasures)))})
+	Bot.prioritize_owned_races(bot)
 	_seed_shop(bot, prep, round_index)
 	# The human seat has already harvested this prep round.
 	if int(prep.get("last_harvest_round", -1)) == round_index:
@@ -128,7 +142,11 @@ static func mirror(room: Dictionary, slot: int, bot: Dictionary) -> void:
 	prep.merge({"gold": int(bot.gold), "carrots": int(bot.carrots),
 		"harvest_tech_level": int(bot.tech), "merc_carrots_spent_total": int(bot.carrot_spent),
 		"last_harvest_round": int(bot.round), "last_harvest_gain": int(bot.get("harvest_gain", 0)),
-		"stone_draw_count": int(bot.stone_draws), "gold_spent_this_round": bool(bot.get("gold_spent_this_round", false))}, true)
+		"stone_draw_count": int(bot.stone_draws),
+		"stone_draw_used_round": int(bot.get("stone_draw_used_round", -1)),
+		"free_stone_claimed": bool(bot.get("free_stone_claimed", false)),
+		"gamble_used": int(bot.get("gamble_used_round", -1)) == int(bot.round),
+		"gold_spent_this_round": bool(bot.get("gold_spent_this_round", false))}, true)
 	# 站位一起写进账本：`slot` 是这一枚在棋盘上的格子下标，玩家收回座位时按它落位。
 	var slots: Dictionary = Bot.board_slots(bot)
 	var roster := {}
@@ -147,6 +165,12 @@ static func mirror(room: Dictionary, slot: int, bot: Dictionary) -> void:
 			"cost_basis": int(merc.get("cost_basis", 0)), "kind": "merc",
 			"merc_slot": int(merc.get("merc_slot", -1))}
 	prep["roster"] = roster
+	prep["four_star_upgrade_count"] = int(bot.get("four_star_upgrade_count", 0))
+	var grants: Dictionary = prep.get("four_star_uids", {})
+	for uid in roster:
+		if int(roster[uid].star) == GameState.MAX_UNIT_STAR:
+			grants[uid] = {"unit_id": str(roster[uid].unit_id), "round": int(bot.round)}
+	prep["four_star_uids"] = grants
 	# 商店：AI 花掉哪一格、刷新过几次，原样回写。
 	var shop: Dictionary = bot.get("shop", {})
 	if not (shop.get("offers", []) as Array).is_empty():

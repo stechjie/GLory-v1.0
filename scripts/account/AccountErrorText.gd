@@ -144,6 +144,7 @@ const EN := {
  "请先取消匹配": "Cancel matchmaking first.",
  "请先在备战区选择种族": "Select your races in preparation first.",
  "排位模式需在备战区携带至少3个已解锁种族。": "Ranked requires at least 3 unlocked races equipped in Prep.",
+ "排位模式需在备战区携带至少4个已解锁种族。": "Ranked requires at least 4 unlocked races equipped in Prep.",
  "突破后排位模式需在备战区携带至少4个已解锁种族。": "Post-breakthrough Ranked requires at least 4 unlocked races equipped in Prep.",
  "上一局还没结束，请先游戏重连或退出对局。": "Your previous match is still running. Reconnect or leave it first.",
  "无法退出原队伍，请重试": "Unable to leave your previous party. Please retry.",

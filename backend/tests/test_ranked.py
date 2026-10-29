@@ -589,9 +589,9 @@ async def test_gate_blocks_banned_and_low_credit() -> None:
 
 
 @pytest.mark.anyio
-async def test_gate_requires_three_complete_races() -> None:
-    assert await ranked.queue_gate(_GateConn(None, race_count=2), uuid.UUID(int=1), "ranked",
-                                   _at_myt(20)) == "need_three_races"
+async def test_gate_requires_four_complete_races() -> None:
+    assert await ranked.queue_gate(_GateConn(None, race_count=3), uuid.UUID(int=1), "ranked",
+                                   _at_myt(20)) == "ranked_need_four_races"
 
 
 # --- 跨文件约定 -------------------------------------------------------------------

@@ -1605,17 +1605,11 @@ func _cleanup_matched_rooms() -> void:
 		if now - float(room.get("created_at", now)) < MATCHED_FILL_TIMEOUT_SEC:
 			continue
 		var states: Array = room.get("slot_states", [])
-		# 排位不凭空填 AI；尚未开局就缺员时明确结束等待，不生成战报。
-		# 例外：AI 补位的房间（ai_filled）本来就有 AI，缺的那个真人也用 AI 顶上，照常开局。
-		if str(room.get("mode", "casual")) == "ranked" and not bool(room.get("ai_filled", false)) \
-				and (states.size() < TEAM_SLOTS or states.has("empty")):
-			_log_room_progress(room, "ranked_entry_timeout")
-			_room_close(room, "ranked_entry_timeout")
-			continue
 		var filled := 0
 		for i in TEAM_SLOTS:
-			if i < states.size() and str(states[i]) == "empty":
+			if i < states.size() and (str(states[i]) == "empty" or (room.get("reserved", {}) as Dictionary).has(i)):
 				states[i] = "dummy"
+				_reconnect_service.release_reservation(room, i)
 				_ensure_dummy_seat_pet(room, i)
 				filled += 1
 		if filled <= 0:
@@ -2320,6 +2314,8 @@ func _room_start_authoritative(room: Dictionary) -> void:
 		return
 	_log_room_progress(room, "start_accepted")
 	room["initial_seats"] = room.get("slot_states", []).duplicate()
+	for human_slot in (room.get("seat_pid", {}) as Dictionary).keys():
+		room.initial_seats[int(human_slot)] = "player"
 	room["initial_leader"] = int(room.get("leader_slot", 0))
 	_touch_room(room)
 	# 10.18：新局第一轮从零开始。PREP 阶段提交的棋盘不带进新局
@@ -2599,6 +2595,7 @@ func _build_economy_state(room: Dictionary, slot: int) -> Dictionary:
 			"refresh_uses": int(shop.get("refresh_uses", 0)),
 		},
 		"roster": (prep.get("roster", {}) as Dictionary).duplicate(true),
+		"owned_treasures": _room_owned_treasures(room, slot).duplicate(),
 		# AI 托管交接标记（10.17 bug 文档第 1 条）：seq > 0 表示这个座位的棋子/经济/
 		# 商店是 AI 打出来的，客户端要一次性落地（Main._apply_ai_handover）。
 		# seq 单调递增且在玩家做出第一笔经济操作后归零，重连读两次不会重放。
@@ -6186,9 +6183,6 @@ func _rpc_team_join_matched(public_id: String = "", card: String = "") -> void:
 	var sender := multiplayer.get_remote_sender_id()
 	if not _rate_ok(sender, "join_room"):
 		return
-	if not _active_match_for_token(str(_public_token_seat.get(_sanitize_public_id(public_id), ""))).is_empty():
-		_rpc_team_action_failed.rpc_id(sender, ACTIVE_MATCH_HINT)
-		return
 	# 名片先验（同 _rpc_team_join_room：必须在任何改状态的操作之前）。
 	var seat_card := _accept_seat_card(sender, card)
 	if seat_card.is_empty():
@@ -6199,6 +6193,13 @@ func _rpc_team_join_matched(public_id: String = "", card: String = "") -> void:
 	if match_uid.is_empty() or team < 0 or match_mode.is_empty():
 		# 名片上没有分配就走这条路 = 客户端搞错了（或者有人在试）。
 		_rpc_team_action_failed.rpc_id(sender, "no_match_assignment")
+		return
+
+	var assigned_room: Dictionary = _rooms.get(int(_matched_rooms.get(match_uid, 0)), {})
+	if not assigned_room.is_empty() and _restore_account_seat(sender, assigned_room, str(seat_card.get("pid", ""))) >= 0:
+		return
+	if not _active_match_for_token(str(_public_token_seat.get(_sanitize_public_id(public_id), ""))).is_empty():
+		_rpc_team_action_failed.rpc_id(sender, ACTIVE_MATCH_HINT)
 		return
 
 	# 一人一座（按名片上的账号 id）。这条路**也要**：在自定义房间里杀了进程、
@@ -6221,7 +6222,7 @@ func _rpc_team_join_matched(public_id: String = "", card: String = "") -> void:
 	if room.is_empty():
 		_rpc_team_action_failed.rpc_id(sender, "server_busy")
 		return
-	var ruleset := BattleCard.ruleset_of(seat_card)
+	var ruleset := "normal" if match_mode == "ranked" else BattleCard.ruleset_of(seat_card)
 	var occupied := not (room.get("peer_slot", {}) as Dictionary).is_empty()
 	if occupied and str(room.get("ruleset", "normal")) != ruleset:
 		_rpc_team_action_failed.rpc_id(sender, "ruleset_mismatch")
@@ -6229,8 +6230,18 @@ func _rpc_team_join_matched(public_id: String = "", card: String = "") -> void:
 	room["ruleset"] = ruleset
 	_apply_matched_ai_seats(room, seat_card)
 	if str(room.get("state", "")) != ROOM_LOBBY:
-		# 这一局已经开打了（他确认完之后卡了很久才连上来）。
-		# 不是错误路径的终点：座位还留着的话，客户端会走重连那条路。
+		var late_slot := team * 3 + BattleCard.seat_of(seat_card)
+		if BattleCard.seat_of(seat_card) >= 0 and late_slot < TEAM_SLOTS \
+				and str(room.slot_states[late_slot]) == "dummy" \
+				and str(room.get("seat_pid", {}).get(late_slot, "")) in ["", str(seat_card.get("pid", ""))]:
+			_assign_peer_to_room(sender, room, _sanitize_public_id(public_id), seat_card, late_slot)
+			var late_races := RacePick.sanitize(seat_card.get("races", []))
+			if not late_races.is_empty():
+				room.seat_races[late_slot] = late_races
+			if late_slot < (room.get("initial_seats", []) as Array).size():
+				room.initial_seats[late_slot] = "player"
+			_resume_seat(sender, str(room.get("seat_tokens", {}).get(late_slot, "")))
+			return
 		_rpc_team_action_failed.rpc_id(sender, "room_started")
 		return
 	var slot := _matched_slot_for(room, team, BattleCard.seat_of(seat_card))
@@ -6342,11 +6353,6 @@ func _matched_try_start(room: Dictionary) -> void:
 	for i in TEAM_SLOTS:
 		if i >= states.size() or str(states[i]) not in ["player", "dummy"]:
 			_log_room_progress(room, "matched_waiting_for_seats")
-			return
-		# 排位原本不许 AI；账号服务器明确安排了 AI 补位的房间（ai_filled）除外。
-		if str(room.get("mode", "casual")) == "ranked" and str(states[i]) == "dummy" \
-				and not bool(room.get("ai_filled", false)):
-			_log_room_progress(room, "ranked_invalid_ai_seat")
 			return
 	for i in TEAM_SLOTS:
 		ready[i] = true
@@ -6675,7 +6681,8 @@ func _resume_seat(sender: int, token: String) -> void:
 		room["bot_states"] = handover_bots
 		var handover_prep := _room_prep(room, slot)
 		handover_prep["ai_handover_round"] = int(room.get("round_index", 1))
-		handover_prep["ai_handover_seq"] = int(handover_prep.get("ai_handover_seq", 0)) + 1
+		handover_prep["ai_handover_generation"] = maxi(int(handover_prep.get("ai_handover_generation", 0)), int(handover_prep.get("ai_handover_seq", 0))) + 1
+		handover_prep["ai_handover_seq"] = int(handover_prep["ai_handover_generation"])
 		_net_log("ai handover room=%d slot=%d round=%d seq=%d gold=%d" % [
 			int(room.get("id", 0)), slot, int(room.get("round_index", 1)),
 			int(handover_prep["ai_handover_seq"]), int(handover_prep.get("gold", 0))])
@@ -8230,6 +8237,8 @@ func _room_reserve_peer(room: Dictionary, peer_id: int) -> void:
 	_net_log("seat reserved room=%d slot=%d grace=%ds" % [int(room.get("id", 0)), slot,
 		int(ceil(float(room.reserve_deadline[slot]) - _now()))])
 	_log_room_progress(room, "seat_disconnected")
+	if bool(room.get("matched", false)) and str(room.get("state", "")) == ROOM_LOBBY:
+		_room_auto_complete_seat(room, slot)
 
 # 房主掉线/离开 -> 顺延给最小编号的在线座位并广播。回来也不收回（避免反复切换）。
 # 保证 leader_slot 始终指向一个"在线真人"座位。当前房主离线/变 dummy/座位为空时，
@@ -8430,6 +8439,15 @@ func _void_abandoned_match(room: Dictionary) -> void:
 func _room_auto_complete_seat(room: Dictionary, slot: int) -> void:
 	if bool(room.get("run_over", false)):
 		return
+	var voice_identity := _voice_identity(room, slot)
+	if str(room.get("state", ROOM_LOBBY)) == ROOM_LOBBY and bool(room.get("matched", false)):
+		_reconnect_service.apply_ai_takeover(room, slot)
+		_voice_seat_released(room, slot, voice_identity)
+		_reconnect_service.release_reservation(room, slot)
+		_matched_try_start(room)
+		_touch_room(room)
+		_broadcast_room_lobby(room)
+		return
 	if str(room.get("state", ROOM_LOBBY)) == ROOM_LOBBY:
 		var identity := _voice_identity(room, slot)
 		_clear_seat_metadata(room, slot)
@@ -8442,7 +8460,6 @@ func _room_auto_complete_seat(room: Dictionary, slot: int) -> void:
 		return
 	# 状态变更已搬到 ReconnectService.apply_ai_takeover()。留在这里的是发消息与
 	# 阶段推进：广播大厅、按当前阶段决定接下来做什么 —— 那些都要发 RPC。
-	var voice_identity := _voice_identity(room, slot)
 	_reconnect_service.apply_ai_takeover(room, slot)
 	# AI 顶了这个座位：原来的人不再是这一队的玩家，请出语音房间（他重连回来会重新要钥匙）。
 	_voice_seat_released(room, slot, voice_identity)
@@ -8991,3 +9008,16 @@ static func custom_room_error_text(reason: String, english: bool) -> String:
 			return "Your seat is busy. Please try again." if english else "座位正在恢复，请稍后重试"
 		_:
 			return "Unable to join. Your current room has been kept." if english else "加入失败，已保留当前房间状态"
+
+func _bot_choose_pending_treasures(room: Dictionary, slot: int, bot: Dictionary) -> void:
+	for _pick in TreasureService.MAX_OWNED:
+		var offer: Dictionary = room.get("treasure_offer", {}).get(slot, {})
+		var candidates: Array = offer.get("candidates", [])
+		if candidates.is_empty():
+			break
+		var tid := LiveBotEconomy.Bot.preferred_treasure(bot, candidates)
+		var outcome := _room_apply_treasure_choice(room, slot, tid)
+		if not bool(outcome.get("ok", false)):
+			break
+		bot["treasures"] = (outcome.get("owned", []) as Array).duplicate()
+	bot["treasures"] = _room_owned_treasures(room, slot).duplicate()

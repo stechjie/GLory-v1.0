@@ -16,11 +16,9 @@ extends RefCounted
 ## 把一份 economy 段落进 GameState。返回是否真的改了棋盘。
 static func apply(state: Dictionary) -> bool:
 	var roster: Variant = state.get("roster", {})
-	if typeof(roster) != TYPE_DICTIONARY or (roster as Dictionary).is_empty():
+	if typeof(roster) != TYPE_DICTIONARY:
 		return false
-	var slots := build_slots(roster)
-	if int(slots["placed"]) <= 0:
-		return false
+	var slots := build_slots(roster, board_cap(state.get("owned_treasures", GameState.owned_treasures)))
 	GameState.board_slots = slots["board"]
 	GameState.bench_slots = slots["bench"]
 	GameState.mercenary_slots = slots["mercs"]
@@ -33,7 +31,7 @@ static func apply(state: Dictionary) -> bool:
 ##   * 没 slot / 那一格被占 -> 先找棋盘空格，棋盘满了进备战席；
 ##   * 佣兵按 `merc_slot` 进佣兵席，越界或被占就找第一个空位；
 ##   * 单位 id 在数据表里查不到（旧版本棋子被删）时计 missing，绝不塞半个格子。
-static func build_slots(roster: Dictionary) -> Dictionary:
+static func build_slots(roster: Dictionary, cap: int = GameConstants.NORMAL_UNIT_CAP) -> Dictionary:
 	var board: Array = []
 	board.resize(GameConstants.CELL_COUNT)
 	board.fill(null)
@@ -48,6 +46,10 @@ static func build_slots(roster: Dictionary) -> Dictionary:
 	# Dictionary 的键序在不同 uid 生成顺序下不一样，显式排序让同一个账本永远落成同一张棋盘。
 	var keys := roster.keys()
 	keys.sort()
+	# Explicit deployed positions take priority over legacy entries and bench units.
+	keys.sort_custom(func(a, b):
+		return int((roster[a] as Dictionary).get("slot", -1)) >= 0 and int((roster[b] as Dictionary).get("slot", -1)) < 0)
+	var deployed := 0
 	for raw_uid in keys:
 		var uid := str(raw_uid)
 		if uid.is_empty():
@@ -73,9 +75,12 @@ static func build_slots(roster: Dictionary) -> Dictionary:
 			mercs[merc_index] = cell
 			placed += 1
 			continue
-		var index := _place(board, int(entry.get("slot", -1)))
+		var wanted := int(entry.get("slot", -1))
+		var on_bench := entry.has("slot") and wanted < 0
+		var index := -1 if on_bench or deployed >= cap else _place(board, wanted)
 		if index >= 0:
 			board[index] = cell
+			deployed += 1
 		else:
 			var bench_index := _place(bench, -1)
 			if bench_index < 0:
@@ -90,3 +95,8 @@ static func _place(target: Array, wanted: int) -> int:
 	if wanted >= 0 and wanted < target.size() and target[wanted] == null:
 		return wanted
 	return target.find(null)
+
+static func board_cap(treasures: Array) -> int:
+	if not treasures.has("atk_fury_roster"):
+		return GameConstants.NORMAL_UNIT_CAP
+	return 9 if TreasureService.has_linkage_in(treasures, "link_hu_pai_master") else 8
