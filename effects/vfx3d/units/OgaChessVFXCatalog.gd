@@ -123,7 +123,7 @@ const PROJECTILES := {
 	# （960x176 = 6x160x176，与原图同分格），无需向美术要新资源。
 	"human_archer": {
 		"path":"res://assets/vfx/oga/projectiles/human_archer_metal_arrow.png", "columns":6, "rows":1, "frame_count":6,
-		"fps":20.0, "size":Vector2(0.92,0.40), "speed":11.5, "arc_height":0.05, "wobble":0.0,
+		"fps":20.0, "size":Vector2(0.92,0.40), "speed":11.5, "arc_height":0.0, "wobble":0.0,
 		"trail_count":2, "trail_spacing":0.045, "trail_size_scale":0.62,
 		"trail_color":Color(0.28,0.44,0.62,0.26), "trail_emission_scale":0.16,
 		"impact_path":"res://assets/vfx/oga/impacts/human_archer_hit.png", "impact_columns":4, "impact_rows":4, "impact_frames":16, "impact_fps":24.0, "impact_size":Vector2(0.58,0.58),

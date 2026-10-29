@@ -69,6 +69,7 @@
                   },
                   {
                       "id":  "god_guard",
+                      "model_in_place_actions": ["run"],
                       "star4":  {
                           "shield_control_immune":  true,
                           "start_shield_pct":  0.4,

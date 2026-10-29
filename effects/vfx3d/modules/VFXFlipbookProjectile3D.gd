@@ -18,6 +18,10 @@ func play_spec(origin: Vector3, target: Vector3, spec: Dictionary, context: Dict
 		return
 	var speed := maxf(0.5, float(spec.get("speed", 7.0)))
 	var travel_time := clampf(origin.distance_to(target) / speed, MIN_TRAVEL_TIME, MAX_TRAVEL_TIME)
+	# Optional archer replay intercept keeps the original flight duration.
+	var archer_travel_time := float(context.get("archer_travel_time", 0.0))
+	if archer_travel_time > 0.0:
+		travel_time = clampf(archer_travel_time, MIN_TRAVEL_TIME, MAX_TRAVEL_TIME)
 	_bind_target(context.get("target_node"), target)
 	var body_size: Vector2 = spec.get("size", Vector2(0.72, 0.72))
 	var body := FLIPBOOK.new() as VFXSpriteFlipbook3D

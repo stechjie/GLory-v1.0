@@ -17,6 +17,7 @@ uniform float opacity = 1.0;
 uniform float flow_strength = 0.018;
 uniform float seed = 0.0;
 uniform float billboard_mode = 1.0;
+uniform float art_rotation = 0.0;
 
 float hash21(vec2 p) {
 	p = fract(p * vec2(123.34, 345.45));
@@ -30,6 +31,9 @@ void vertex() {
 	}
 	float bend = sin(UV.y * 8.0 + TIME * 4.0 + seed) * flow_strength;
 	VERTEX.x += bend * (1.0 - abs(UV.y * 2.0 - 1.0));
+	float ca = cos(art_rotation);
+	float sa = sin(art_rotation);
+	VERTEX.xy = vec2(ca * VERTEX.x - sa * VERTEX.y, sa * VERTEX.x + ca * VERTEX.y);
 }
 
 void fragment() {
@@ -148,6 +152,7 @@ func play_layer(texture_path: String, params: Dictionary = {}) -> void:
 	_material.set_shader_parameter("flow_strength", float(params.get("flow_strength", 0.014)))
 	_material.set_shader_parameter("seed", float(params.get("seed", 0.0)))
 	_material.set_shader_parameter("billboard_mode", 0.0 if ground else 1.0)
+	_material.set_shader_parameter("art_rotation", float(params.get("art_rotation", 0.0)))
 	_material.set_shader_parameter("reveal", 0.0)
 	_material.set_shader_parameter("dissolve", 0.0)
 	_material.set_shader_parameter("opacity", vfx_alpha * float(params.get("opacity", 0.94)))
@@ -159,7 +164,8 @@ func play_layer(texture_path: String, params: Dictionary = {}) -> void:
 		if is_instance_valid(art):
 			art.scale = Vector3.ONE * value,
 		float(params.get("start_scale", 0.18)), peak_scale, duration * 0.28, str(params.get("curve", "ease_out_back")))
-	_tween_shader("reveal", 0.0, 1.0, duration * 0.26)
+	if not bool(params.get("keep_shape", false)):
+		_tween_shader("reveal", 0.0, 1.0, duration * 0.26)
 	if params.has("to"):
 		_travel_from = position
 		_travel_to = params["to"]

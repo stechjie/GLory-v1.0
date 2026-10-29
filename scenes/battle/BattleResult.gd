@@ -58,6 +58,7 @@ func _skip_animation() -> void:
 		return
 	while not bool(_state.get("finished", false)):
 		BattleSim.step_state(_state)
+	_visual_interp_snap()
 	_finish_simulation()
 
 func _show_result_overlay() -> void:

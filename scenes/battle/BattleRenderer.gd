@@ -28,6 +28,20 @@ var _visual_pos_cache: Dictionary = {}
 # enters the battle and never re-solved from neighbours, so presentation cannot
 # add sideways drift, catch-up motion, or a second "settle" after stopping.
 var _fixed_visual_offset_by_id: Dictionary = {}
+# --- 逻辑帧之间的显示插值（10.29）----------------------------------------------
+# 模拟 10Hz，屏幕 60fps：直接显示逻辑坐标时，角色连续 6 个画面不动再跳一步，
+# 慢放时 12 个画面跳一步。这里只在显示层把位置从「上一个逻辑帧」补到「当前逻辑帧」，
+# 模拟、回放、伤害判定、动画/朝向判定都继续读真实逻辑坐标。
+#   * 进度为 1 时显示位置与逻辑位置逐字相等；任意进度都落在两帧连线上。
+#   * 单帧位移超过 VISUAL_INTERP_SNAP_SIM（闪现、冲锋、布阵）当帧直接到位。
+#   * 没有上一帧记录的单位（召唤、复活、刚建体）当帧直接到位。
+#   * 不读邻居、不做缓动、停下后不会再滑。
+# 正常走路一帧约 16–18（移速 3.0–3.2 × 55 × 0.1），阈值取约 3 倍。
+const VISUAL_INTERP_SNAP_SIM := 48.0
+# uid -> 最新一次逻辑帧推进之前的原始模拟坐标。只由播放循环写入。
+var _interp_prev_pos_by_id: Dictionary = {}
+# 当前画面在「上一逻辑帧 → 当前逻辑帧」之间的进度，1.0 = 正好在当前逻辑帧。
+var _interp_alpha := 1.0
 var _status_vfx_by_id: Dictionary = {}
 # HpFill refs cached at node creation so the per-frame HP sync never walks the tree.
 var _hp_fill_by_id: Dictionary = {}
@@ -1662,8 +1676,9 @@ func _apply_formation_intro_visibility(id: String, fighter: Dictionary) -> void:
 		model_node.visible = should_show
 
 # Rebuild the per-frame lookup. Each actor receives one personal display slot on
-# its first frame. No neighbour query, interpolation, easing, or later reflow is
-# allowed: displayed_delta must always equal simulator_delta.
+# its first frame. No neighbour query, easing, or later reflow is allowed. The
+# only display-side motion is the tick-to-tick interpolation above: at alpha 1
+# displayed == simulator exactly, and in between it stays on that segment.
 func _begin_visual_frame(living: Array, _delta: float = 0.0) -> void:
 	_visual_pos_cache.clear()
 	_frame_living_ids.clear()
@@ -1682,7 +1697,8 @@ func _begin_visual_frame(living: Array, _delta: float = 0.0) -> void:
 		_frame_living_ids.append(id)
 		_frame_living_pos.append(raw)
 		_frame_fighter_by_id[id] = f
-		_visual_pos_cache[id] = _clamp_visual_sim_pos(BattleSimShared.constrain_fighter_position(f, _state, raw + offset))
+		var shown := _visual_interp_raw_pos(id, raw)
+		_visual_pos_cache[id] = _clamp_visual_sim_pos(BattleSimShared.constrain_fighter_position(f, _state, shown + offset))
 		living_ids[id] = true
 	for stale_id in _fixed_visual_offset_by_id.keys():
 		if not living_ids.has(stale_id):
@@ -1703,7 +1719,43 @@ func _visual_sim_pos_for_fighter(f: Dictionary) -> Vector2:
 func _make_fixed_visual_offset(_f: Dictionary, _id: String, _raw: Vector2) -> Vector2:
 	return Vector2.ZERO
 
+# 本画面帧该显示的原始模拟坐标（插值后、未加固定槽与边界限制）。
+func _visual_interp_raw_pos(id: String, raw: Vector2) -> Vector2:
+	if _interp_alpha >= 1.0:
+		return raw
+	var prev: Variant = _interp_prev_pos_by_id.get(id)
+	if not (prev is Vector2):
+		return raw
+	if (prev as Vector2).distance_to(raw) > VISUAL_INTERP_SNAP_SIM:
+		return raw
+	return (prev as Vector2).lerp(raw, _interp_alpha)
+
+# 该单位本画面帧是否处在两帧之间（弓箭手预判要据此换算显示时刻）。
+func _visual_interp_active_for(id: String, raw: Vector2) -> bool:
+	if _interp_alpha >= 1.0:
+		return false
+	var prev: Variant = _interp_prev_pos_by_id.get(id)
+	return prev is Vector2 and (prev as Vector2).distance_to(raw) <= VISUAL_INTERP_SNAP_SIM
+
+# 播放循环在推进每个逻辑帧之前调用：记下推进前的坐标。一帧补多个逻辑帧时
+# 只有最后一次留下，所以插值区间永远是最新的两帧。
+func _visual_interp_capture_tick_start() -> void:
+	_interp_prev_pos_by_id.clear()
+	for f in BattleSim.living_units(_state):
+		if typeof(f) != TYPE_DICTIONARY:
+			continue
+		_interp_prev_pos_by_id[_visual_id(f)] = Vector2(float(f.pos.x), float(f.pos.y))
+
+func _visual_interp_set_alpha(alpha: float) -> void:
+	_interp_alpha = clampf(alpha, 0.0, 1.0)
+
+# 跳帧、定位、开局、结算：直接显示逻辑坐标，丢掉旧的上一帧记录。
+func _visual_interp_snap() -> void:
+	_interp_prev_pos_by_id.clear()
+	_interp_alpha = 1.0
+
 func reset_visual_position_state() -> void:
+	_visual_interp_snap()
 	_visual_pos_cache.clear()
 	_fixed_visual_offset_by_id.clear()
 	_frame_living_ids.clear()

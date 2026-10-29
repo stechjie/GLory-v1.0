@@ -488,7 +488,22 @@ func _play_race_basic_attack(attack:Dictionary,target:Dictionary,mode:String,rac
 	var attack_unit_id:=str(attack.get("unit_id",""))
 	if not attack_unit_id.is_empty():
 		context["source_unit_id"] = attack_unit_id
+	if attack_unit_id == "human_archer" and mode == "ranged":
+		var spec: Dictionary = OGA_CHESS_CATALOG.projectile_for(attack_unit_id)
+		var speed := maxf(0.5, float(spec.get("speed", 11.5)))
+		var flight := clampf(origin.distance_to(target_world) / speed, _RANGED_OGA_MIN_TRAVEL, _RANGED_OGA_MAX_TRAVEL)
+		var predicted: Variant = _archer_future_target(str(attack.get("target_uid", "")), target_world, flight)
+		if predicted is Vector3:
+			context["archer_straight_target"] = predicted
+			context["archer_travel_time"] = flight
 	_play_unit_procedural("basic_attack_%s_%s"%[mode,race],origin,target_world,context)
+
+# A replay can supply a target's recorded position at arrow arrival. Live
+# simulation has no future frame and retains its existing tracking behaviour.
+func _archer_future_target(target_uid: String, target_world: Vector3, flight: float) -> Variant:
+	if target_uid.is_empty() or not has_method("cue_archer_replay_intercept"):
+		return null
+	return call("cue_archer_replay_intercept", target_uid, target_world, flight)
 
 func _nearest_enemy_damage_event(attack: Dictionary, damage_events: Array[Dictionary]) -> Dictionary:
 	var best: Dictionary = {}
@@ -1339,6 +1354,10 @@ func _play_attack_unit_procedural(attack:Dictionary,target:Dictionary,current:Di
 	var target_world:Vector3=target.get("world_hit",target.get("world_foot",Vector3.ZERO))
 	var source:Dictionary=current.get(str(attack.get("id","")),{})
 	var context:=_unit_target_context(source,target)
+	if sid=="every_fourth_combo" and str(attack.get("unit_id", ""))=="human_archer":
+		var predicted:Variant=_archer_future_target(str(attack.get("target_uid", "")),target_world,.56*.82)
+		if predicted is Vector3:
+			context["archer_straight_target"]=predicted
 	if sid=="every_fifth_group_heal":
 		context["targets"]=_living_team_world_positions(source,current)
 		target_world=origin
@@ -1814,7 +1833,10 @@ func cue_play_basic_attack(source_uid: String, target_uid: String, ranged: bool)
 	var race := _visual_race_from_unit_id(unit_id)
 	if str(source.get("race", "")) == _CRIMSON_CATALOG.RACE:
 		race = _CRIMSON_CATALOG.RACE
-	_play_race_basic_attack(attack, target, "ranged" if ranged else "melee", race, _vfx_prev_units)
+	# The empowered archer shot replaces the ordinary projectile visually.
+	var archer_empowered := ranged and unit_id == "human_archer" and str(attack.get("skill_id", "")) == "every_fourth_combo" and _attack_skill_vfx_ready(attack)
+	if not archer_empowered:
+		_play_race_basic_attack(attack, target, "ranged" if ranged else "melee", race, _vfx_prev_units)
 	_play_attack_unit_procedural(attack, target, _vfx_prev_units)
 	return true
 

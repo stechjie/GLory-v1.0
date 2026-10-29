@@ -109,9 +109,9 @@ static func get_textures(unit_id: String) -> Array[Dictionary]:
 			], 0.55)
 		"human_archer":
 			return _tex(b + "human_archer/", [
-				"human_archer_arrow_trail.png",
+				"human_archer_arrow_trail_v2.png",
 				"human_archer_charge_wind.png",
-				"human_archer_pierce_flash.png",
+				"human_archer_pierce_flash_v2.png",
 				"human_archer_star_crack.png",
 				"human_archer_leaf_spark.png",
 			], 0.40)

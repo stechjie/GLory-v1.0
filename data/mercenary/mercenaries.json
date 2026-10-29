@@ -37,6 +37,7 @@
                         },
                         {
                             "id":  "merc_cancer_shell",
+                            "model_in_place_actions": ["run"],
                             "name":  "甲壳守卫",
                             "cost":  100,
                             "carrot_cost": 6,
@@ -117,6 +118,7 @@
                         },
                         {
                             "id":  "merc_virgo_heal",
+                            "model_in_place_actions": ["run"],
                             "name":  "圣愈修女",
                             "cost":  250,
                             "carrot_cost": 15,
@@ -144,6 +146,7 @@
                         },
                         {
                             "id":  "merc_gemini_assassin",
+                            "model_in_place_actions": ["run"],
                             "name":  "镜像刺客",
                             "cost":  300,
                             "carrot_cost": 18,
@@ -284,6 +287,7 @@
                         },
                         {
                             "id":  "merc_aquarius_time",
+                            "model_in_place_actions": ["run"],
                             "name":  "时空观测者",
                             "cost":  550,
                             "carrot_cost": 33,
@@ -312,6 +316,7 @@
                         },
                         {
                             "id":  "merc_scorpio_death",
+                            "model_in_place_actions": ["run"],
                             "name":  "冥界执行者",
                             "cost":  600,
                             "carrot_cost": 36,
