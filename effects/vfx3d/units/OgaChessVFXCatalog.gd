@@ -121,9 +121,14 @@ const PROJECTILES := {
 	#
 	# 新图由 work/_qa_922/make_metal_arrow_924.py 依**原图实测的 45° 前向轴**生成
 	# （960x176 = 6x160x176，与原图同分格），无需向美术要新资源。
+	#
+	# 10.29 订正「箭是打横的一块 png」：每帧接近正方形、箭头朝右上 45°。
+	#   - 旋转只在卡片 UV 内做，卡片必须近似正方形，否则贴图被拉扁、转向时被斜切。
+	#     原先 0.92x0.40 把整帧横向拉宽约 2.5 倍。
+	#   - art_angle = 45° 补偿贴图自带的斜角，否则箭头总比飞行方向偏 45°。
 	"human_archer": {
 		"path":"res://assets/vfx/oga/projectiles/human_archer_metal_arrow.png", "columns":6, "rows":1, "frame_count":6,
-		"fps":20.0, "size":Vector2(0.92,0.40), "speed":11.5, "arc_height":0.0, "wobble":0.0,
+		"fps":20.0, "size":Vector2(0.92,0.92), "art_angle":PI * 0.25, "speed":11.5, "arc_height":0.0, "wobble":0.0,
 		"trail_count":2, "trail_spacing":0.045, "trail_size_scale":0.62,
 		"trail_color":Color(0.28,0.44,0.62,0.26), "trail_emission_scale":0.16,
 		"impact_path":"res://assets/vfx/oga/impacts/human_archer_hit.png", "impact_columns":4, "impact_rows":4, "impact_frames":16, "impact_fps":24.0, "impact_size":Vector2(0.58,0.58),
