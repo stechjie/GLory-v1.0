@@ -179,5 +179,7 @@ static func _release_freeze(actor: Node3D) -> void:
 			actor.get_tree().create_timer(remaining * 0.001, true, false, true).timeout.connect(_release_freeze.bind(actor))
 		return
 	actor.remove_meta("hitstop_until")
+	# 恢复到渲染层记的基准倍率（跑步时按移动速度调过），而不是一律 1.0。
+	var base_speed := float(actor.get_meta("anim_base_speed", 1.0))
 	for player in actor.find_children("*", "AnimationPlayer", true, false):
-		(player as AnimationPlayer).speed_scale = 1.0
+		(player as AnimationPlayer).speed_scale = base_speed

@@ -475,6 +475,8 @@ func _start_replay(replay: Dictionary) -> void:
 		#   elapsed playback」——而墙钟在后台会跳，跳完立刻判定「播太久了」直接判负。
 		_playback_deadline_msec = _mono_msec + int((playback_seconds + 20.0) * 1000.0)
 		_presentation_director.set_playback_speed(PLAYBACK_SPEED * _readable_speed)
+		# 跑步锁按真实的逻辑帧间隔放宽（慢放时一帧 0.2 秒），见 BattleRenderer._run_lock_sec。
+		set_visual_sim_time_scale(PLAYBACK_SPEED * _readable_speed)
 
 
 func _stage_pvp_opening_frame() -> void:
@@ -1181,6 +1183,7 @@ func _switch_active_replay(replay: Dictionary) -> void:
 	_refresh_visuals()
 	# _refresh_visuals() re-registered the new roster, so cues can resolve again.
 	_presentation_director.set_playback_speed(PLAYBACK_SPEED * _readable_speed)
+	set_visual_sim_time_scale(PLAYBACK_SPEED * _readable_speed)
 
 func _clear_unit_visuals() -> void:
 	# 两份 replay 的 uid 命名会撞车（都是 player_L0_0 这类），
