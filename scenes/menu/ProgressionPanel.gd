@@ -6,6 +6,7 @@ const Theming := preload("res://ui/theme/GloryTheme.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 const PROFILE_BG_TEX := preload("res://assets/ui/profile/hall_of_glory.png")
+const Currency := preload("res://scripts/account/Currency.gd")
 const UnitCollection := preload("res://scripts/account/UnitCollection.gd")
 const GOLD := Color("edca79")
 const CREAM := Color("f8f0dc")
@@ -122,6 +123,7 @@ func _build() -> void:
 	section.add_child(section_title)
 	section.add_child(_label(_t("选择等级查看奖励", "Select a level to preview its reward"), 17, MUTED))
 	_track_scroll = TouchScrollContainer.new()
+	_track_scroll.drag_horizontal = true
 	_track_scroll.custom_minimum_size.y = 195 if _compact else 242
 	_track_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	_track_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -193,25 +195,27 @@ func _make_card(level: int) -> Button:
 	body.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	body.offset_left = 10
 	body.offset_right = -10
-	body.offset_top = 9
-	body.offset_bottom = -9
+	body.offset_top = 6
+	body.offset_bottom = -6
 	body.alignment = BoxContainer.ALIGNMENT_CENTER
-	body.add_theme_constant_override("separation", 5)
+	body.add_theme_constant_override("separation", 3)
 	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(body)
-	var number := _label("Lv %d" % level, 21, GOLD if level <= _current_level else MUTED)
+	var number := _label("Lv %d" % level, 18 if _compact else 20, GOLD if level <= _current_level else MUTED)
 	number.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	body.add_child(number)
-	var art := _reward_art(_rewards.get(level, {}), 56 if _compact else 74)
+	var art := _reward_art(_rewards.get(level, {}), 48 if _compact else 64)
 	art.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	body.add_child(art)
-	var name := _label(_summary(level), 17, CREAM)
+	var name := _label(_summary(level), 15 if _compact else 16, CREAM)
 	name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	name.custom_minimum_size.y = 35 if _compact else 42
+	name.custom_minimum_size.y = 32 if _compact else 38
+	name.max_lines_visible = 2
+	name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	body.add_child(name)
 	var state := _t("已获得", "EARNED") if level <= _current_level else _t("待解锁", "LOCKED")
-	var status := _label(state, 15, GOLD if level <= _current_level else MUTED)
+	var status := _label(state, 14 if _compact else 15, GOLD if level <= _current_level else MUTED)
 	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	body.add_child(status)
 	return card
@@ -308,12 +312,12 @@ func _reward_art(reward: Dictionary, dimension: int) -> Control:
 		image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		holder.add_child(image)
 	else:
-		var glyph := "◆" if int(reward.get("diamond", 0)) > 0 else "G"
-		var symbol := _label(glyph, dimension / 2, GOLD)
-		symbol.custom_minimum_size = Vector2(dimension, dimension)
-		symbol.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		symbol.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		holder.add_child(symbol)
+		var image := TextureRect.new()
+		image.texture = Currency.icon("diamond" if int(reward.get("diamond", 0)) > 0 else "coin")
+		image.custom_minimum_size = Vector2(dimension, dimension)
+		image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		holder.add_child(image)
 	return holder
 
 

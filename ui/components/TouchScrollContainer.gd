@@ -30,6 +30,8 @@ extends ScrollContainer
 const DRAG_THRESHOLD := 5.0   # 纵向位移超过它才算滚动，轻点不受影响（原来 6.0）
 const HIT_SLOP := 6.0         # 命中框外扩，容忍边缘像素与安全区取整误差
 
+var drag_horizontal := false # Opt-in; existing vertical lists stay unchanged.
+
 var _pointer := ""            # "" / "touch" / "mouse"，空 = 当前没有手势
 var _touch_index := -1
 var _mouse_button := -1
@@ -104,18 +106,23 @@ func _begin(kind: String, touch_index: int, mouse_button: int, pos: Vector2) -> 
 	_touch_index = touch_index
 	_mouse_button = mouse_button
 	_start = local
-	_start_scroll = scroll_vertical
+	_start_scroll = scroll_horizontal if drag_horizontal else scroll_vertical
 	_dragging = false
 
 
 func _advance(pos: Vector2) -> void:
 	var movement := _to_local(pos) - _start
+	var primary := movement.x if drag_horizontal else movement.y
+	var cross_axis := movement.y if drag_horizontal else movement.x
 	if not _dragging:
-		if absf(movement.y) < DRAG_THRESHOLD or absf(movement.y) <= absf(movement.x):
+		if absf(primary) < DRAG_THRESHOLD or absf(primary) <= absf(cross_axis):
 			return
 		_dragging = true
 		propagate_notification(NOTIFICATION_SCROLL_BEGIN)
-	scroll_vertical = _start_scroll - roundi(movement.y / _gain())
+	if drag_horizontal:
+		scroll_horizontal = _start_scroll - roundi(primary / _gain())
+	else:
+		scroll_vertical = _start_scroll - roundi(primary / _gain())
 	_consume()
 
 
@@ -169,7 +176,7 @@ func _to_local(pos: Vector2) -> Vector2:
 
 func _gain() -> float:
 	var xform := get_global_transform_with_canvas() if _window_space else get_global_transform()
-	return maxf(0.01, xform.get_scale().y)
+	return maxf(0.01, xform.get_scale().x if drag_horizontal else xform.get_scale().y)
 
 
 func _in_drag_zone(pos: Vector2) -> bool:

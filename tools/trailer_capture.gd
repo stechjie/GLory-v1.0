@@ -81,6 +81,9 @@ const VARIANTS := {
 		"shooter": "dark_mage",
 		"front": "dark_queen",
 		"flank": "dark_scythe",
+		# 偷袭者只上一个：两个一起出招时，那团紫色的闪身特效叠成一大坨满场飞（用户看成片说
+		# 「整个模型很奇怪」）。BEATS 里第二个 @flank 拍子在这个版本跳过。
+		"flank_count": 1,
 		"finisher": "dark_dragon",
 		# 雷鸣灵：远程、链式闪电，跟雷系 Boss 配成一套；不会瞬移，600hp 也不算肉。
 		"monster": "pve_sky_thunder_spirit",
@@ -98,8 +101,12 @@ const VARIANTS := {
 		"monster_power": 0.3,
 		"monster_atk_power": 0.25,
 		"count_scale": 2.0,
-		"boss_power": 6.5,
-		"boss_atk_power": 0.08,
+		# 10-23 第三轮：偷袭者改成一个之后火力少一截，6.5 倍血的 Boss 打不死（撑到 64s 编排上限）。
+		# 用户说 Boss 可以打死后排，所以攻击放开到 0.3：Boss 从 45.5s 打到 60.5s，
+		# 53s 打死一个 4 星法师，剩下一个法师 + 黑龙收尾。攻 0.2 时三人全活但只撑 12 秒；
+		# 血 2.5 以上就全灭。
+		"boss_power": 2.0,
+		"boss_atk_power": 0.3,
 		# 控制类一共 5 件，套装要 4 件。挑打中都有可见效果的四件
 		# （眩晕 / 流血 / 打断 / 减速）；时空压缩只改技能冷却，画面上看不出来，不用。
 		# 集齐满足 has_set("control")：普攻打出最后一击时刷新技能冷却 —— 技能放得更勤。
@@ -255,6 +262,9 @@ var _card_decoys: Array = []
 var _treasure_decoys: Array = []
 var _monster_power := 1.0
 var _boss_power := 1.0
+# 两翼（@flank）最多上几个、已经上了几个。神族版两个光之卫士，暗族版一个偷袭者。
+var _flank_count := 2
+var _flank_placed := 0
 var _count_scale := 1.0
 # --monster-power 调参用；< 0 表示没给，用版本表里的。
 var _monster_power_cli := -1.0
@@ -346,6 +356,7 @@ func _apply_variant() -> void:
 	_set_category = str(v["set_category"])
 	_set_logo = str(v["set_logo"])
 	_card_decoys = (v["card_decoys"] as Array).duplicate()
+	_flank_count = int(v.get("flank_count", 2))
 	_treasure_decoys = (v["treasure_decoys"] as Array).duplicate()
 	if _monster_power_cli < 0.0:
 		_monster_power = float(v.get("monster_power", 1.0))
@@ -634,7 +645,12 @@ func _apply_beat(state: Dictionary, beat: Dictionary) -> void:
 		"star":
 			_upgrade_shooters(state, int(beat.get("star", 3)))
 		"unit":
-			_add_player_unit(state, _resolve_id(str(beat.get("id", ""))), int(beat.get("slot", 0)), int(beat.get("star", 1)))
+			var role := str(beat.get("id", ""))
+			if role == "@flank":
+				if _flank_placed >= _flank_count:
+					return
+				_flank_placed += 1
+			_add_player_unit(state, _resolve_id(role), int(beat.get("slot", 0)), int(beat.get("star", 1)))
 		"treasure":
 			_grant_treasure(state, _resolve_id(str(beat.get("id", ""))))
 		_:

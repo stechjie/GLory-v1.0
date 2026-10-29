@@ -8,6 +8,7 @@ const MAX_TRAVEL_TIME := 0.82
 
 var _target_ref: WeakRef
 var _target_offset := Vector3.ZERO
+var _art_angle := 0.0
 
 func play_spec(origin: Vector3, target: Vector3, spec: Dictionary, context: Dictionary = {}) -> void:
 	begin()
@@ -18,8 +19,14 @@ func play_spec(origin: Vector3, target: Vector3, spec: Dictionary, context: Dict
 		return
 	var speed := maxf(0.5, float(spec.get("speed", 7.0)))
 	var travel_time := clampf(origin.distance_to(target) / speed, MIN_TRAVEL_TIME, MAX_TRAVEL_TIME)
+	# Optional archer replay intercept keeps the original flight duration.
+	var archer_travel_time := float(context.get("archer_travel_time", 0.0))
+	if archer_travel_time > 0.0:
+		travel_time = clampf(archer_travel_time, MIN_TRAVEL_TIME, MAX_TRAVEL_TIME)
 	_bind_target(context.get("target_node"), target)
 	var body_size: Vector2 = spec.get("size", Vector2(0.72, 0.72))
+	# 贴图里弹体本身的朝向（屏幕坐标，y 朝上，0 = 朝右）。斜着画的箭要先减掉这个角度。
+	_art_angle = float(spec.get("art_angle", 0.0))
 	var body := FLIPBOOK.new() as VFXSpriteFlipbook3D
 	body.name = "OgaProjectileBody"
 	add_child(body)
@@ -165,5 +172,5 @@ func _screen_facing(from: Vector3, to: Vector3) -> float:
 	var direction := to - from
 	var screen_y := direction.y * 0.688 - direction.z * 0.726
 	if absf(direction.x) < 0.0001 and absf(screen_y) < 0.0001:
-		return PI * 0.5
-	return atan2(screen_y, direction.x)
+		return PI * 0.5 - _art_angle
+	return atan2(screen_y, direction.x) - _art_angle

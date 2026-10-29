@@ -284,7 +284,13 @@ func _basic_attack(origin:Vector3,target:Vector3,race:String,mode:String,context
 			var projectile:=_block(VFX_OGA_PROJECTILE) as VFXFlipbookProjectile3D
 			if projectile!=null:
 				last_spawned=projectile
-				projectile.play_spec(origin,target,projectile_spec,context)
+				var projectile_target:=target
+				var projectile_context:=context
+				if uid=="human_archer" and context.get("archer_straight_target") is Vector3:
+					projectile_target=context["archer_straight_target"]
+					projectile_context=context.duplicate(false)
+					projectile_context.erase("target_node")
+				projectile.play_spec(origin,projectile_target,projectile_spec,projectile_context)
 			return
 		if OGA_CHESS_CATALOG.is_player_chess(uid):
 			return
@@ -1454,16 +1460,37 @@ func _poison_reflect_stack(origin:Vector3)->void:
 func _combo_hit(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	var th := _uh(context)
 	var oh := _uh(context,"origin_height")
-	# The archer's fourth-hit skill is a straight, narrow authored arrow.
-	# Keep the projectile and its pierce flash target-bound; do not reuse the
-	# large generic slash sheet which obscures nearby units at the battle zoom.
+	var tracked_target:Variant=context.get("target_node")
+	var flight_target:=target
+	var flight_node:Variant=tracked_target
+	if context.get("archer_straight_target") is Vector3:
+		flight_target=context["archer_straight_target"]
+		flight_node=null
+	var from:=_lvl(origin,oh,LEVEL_BODY)
+	var to:=_lvl(flight_target,th,LEVEL_BODY)
+	var arrow_size:=Vector2(2.0,.42)
+	var arrow_rotation:=-atan2(arrow_size.y,arrow_size.x)
+	var camera:=get_viewport().get_camera_3d() if is_inside_tree() else null
+	if camera!=null:
+		var screen_direction:=camera.unproject_position(to)-camera.unproject_position(from)
+		if screen_direction.length_squared()>0.01:
+			arrow_rotation=atan2(-screen_direction.y,screen_direction.x)-atan2(arrow_size.y,arrow_size.x)
 	var arrow:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
 	if arrow!=null:
-		arrow.play_layer("res://assets/vfx/skills/human_archer/human_archer_arrow_trail.png",{"from":_lvl(origin,oh,LEVEL_BODY),"to":_lvl(target,th,LEVEL_BODY),"track_node":context.get("target_node"),"size":Vector2(1.42,.30),"duration":.56,"travel_ratio":.82,"start_scale":.24,"peak_scale":1.0,"dark_tint":Color(.015,.035,.10),"body_tint":Color(.16,.48,.92),"core_tint":Color(.82,.98,1.0),"seed":52.0,"flow_strength":.018,"opacity":.98})
+		arrow.play_layer("res://assets/vfx/skills/human_archer/human_archer_arrow_trail_v2.png",{"from":from,"to":to,"track_node":flight_node,"size":arrow_size,"duration":.56,"travel_ratio":.82,"start_scale":.24,"peak_scale":1.0,"dark_tint":Color(.015,.035,.10),"body_tint":Color.WHITE,"core_tint":Color(1.0,.96,.66),"seed":52.0,"flow_strength":0.0,"keep_shape":true,"art_rotation":arrow_rotation,"opacity":.98})
 	var impact:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+	# 0.42s 内这一箭可能已经把目标打死、节点被释放。直接捕获节点会让 Godot 报
+	# "Lambda capture ... was freed"，所以只捕获弱引用，回调里再取。
+	var impact_ref:WeakRef=weakref(impact) if impact!=null else null
+	var target_ref:WeakRef=weakref(tracked_target) if tracked_target is Object else null
 	var hit_tw:=create_tween();hit_tw.tween_interval(.42);hit_tw.tween_callback(func():
-		if is_instance_valid(impact):
-			impact.play_layer("res://assets/vfx/skills/human_archer/human_archer_pierce_flash.png",{"position":_lvl(target,th,LEVEL_BODY),"size":Vector2(.78,.78),"duration":.30,"start_scale":.12,"peak_scale":.72,"dark_tint":Color(.02,.04,.12),"body_tint":Color(.18,.52,.94),"core_tint":Color(.82,.98,1.0),"seed":56.0,"flow_strength":.012,"opacity":.82})
+		var impact_now:=impact_ref.get_ref() as VFXBossTextureLayer3D if impact_ref!=null else null
+		if impact_now!=null:
+			var impact_target:=target
+			var target_now:Node3D=target_ref.get_ref() as Node3D if target_ref!=null else null
+			if target_now!=null:
+				impact_target=target_now.global_position
+			impact_now.play_layer("res://assets/vfx/skills/human_archer/human_archer_pierce_flash_v2.png",{"position":_lvl(impact_target,th,LEVEL_BODY),"follow_node":target_now,"size":Vector2(.78,.78),"duration":.30,"start_scale":.12,"peak_scale":.72,"dark_tint":Color(.02,.04,.12),"body_tint":Color.WHITE,"core_tint":Color(1.0,.96,.66),"seed":56.0,"flow_strength":.012,"keep_shape":true,"opacity":.82})
 	)
 
 func _poison_death(origin:Vector3)->void:
@@ -1982,6 +2009,15 @@ func _dive_backline(origin:Vector3,target:Vector3,context:Dictionary)->void:
 func _sky_heal(origin:Vector3,context:Dictionary)->void:
 	var th := _uh(context)
 	var oh := _uh(context,"origin_height")
+	if not VFXQualityBudget.allow_dynamic_light():
+		# LOW disables OmniLight3D, so a light-only heal had no visible cue.
+		# Reuse Glory's existing shadowless quad flash; keep one cast marker even
+		# when the normal effect budget is full.
+		var marker:=_profile(Color(.06,.10,.14),Color(.42,.76,.92),Color(.92,1.0,1.0),.72,.46,2.8,0)
+		_spawn_forced(VFX_IMPACT_FLASH,marker,{"target":_lvl(origin,oh,LEVEL_FOOT,0.0)})
+		for value in _capped_targets(context.get("targets",[])):
+			_spawn(VFX_IMPACT_FLASH,marker,{"target":value})
+		return
 	var p:=_profile(Color(.06,.10,.14),Color(.42,.76,.92),Color(.92,1.0,1.0),.34,.52,2.8,7)
 	_spawn(VFX_LIGHT_PULSE,p,{"target":_lvl(origin,oh,LEVEL_BODY)})
 	for value in _capped_targets(context.get("targets",[])):

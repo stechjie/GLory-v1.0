@@ -4,6 +4,7 @@ const StatusVFXController := preload("res://scenes/battle/StatusVFXController.gd
 const UnitActor3DScript := preload("res://effects/runtime/presentation/UnitActor3D.gd")
 const UnitVisualResolverScript := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
 const ModelRootMotionPolicyScript := preload("res://effects/runtime/presentation/ModelRootMotionPolicy.gd")
+const RunAnimCalibrationScript := preload("res://effects/runtime/presentation/RunAnimCalibration.gd")
 const UnitContactShadowScript := preload("res://effects/runtime/presentation/UnitContactShadow.gd")
 const UnitPlanarShadowScript := preload("res://effects/runtime/presentation/UnitPlanarShadow.gd")
 const UNIT_TEAM_RING_SHADER := preload("res://shaders/unit_team_ring.gdshader")
@@ -28,6 +29,36 @@ var _visual_pos_cache: Dictionary = {}
 # enters the battle and never re-solved from neighbours, so presentation cannot
 # add sideways drift, catch-up motion, or a second "settle" after stopping.
 var _fixed_visual_offset_by_id: Dictionary = {}
+# --- 逻辑帧之间的显示插值（10.29）----------------------------------------------
+# 模拟 10Hz，屏幕 60fps：直接显示逻辑坐标时，角色连续 6 个画面不动再跳一步，
+# 慢放时 12 个画面跳一步。这里只在显示层把位置从「上一个逻辑帧」补到「当前逻辑帧」，
+# 模拟、回放、伤害判定、动画/朝向判定都继续读真实逻辑坐标。
+#   * 进度为 1 时显示位置与逻辑位置逐字相等；任意进度都落在两帧连线上。
+#   * 单帧位移超过 VISUAL_INTERP_SNAP_SIM（闪现、冲锋、布阵）当帧直接到位。
+#   * 没有上一帧记录的单位（召唤、复活、刚建体）当帧直接到位。
+#   * 不读邻居、不做缓动、停下后不会再滑。
+# 正常走路一帧约 16–18（移速 3.0–3.2 × 55 × 0.1），阈值取约 3 倍。
+const VISUAL_INTERP_SNAP_SIM := 48.0
+# uid -> 最新一次逻辑帧推进之前的原始模拟坐标。只由播放循环写入。
+var _interp_prev_pos_by_id: Dictionary = {}
+# 当前画面在「上一逻辑帧 → 当前逻辑帧」之间的进度，1.0 = 正好在当前逻辑帧。
+var _interp_alpha := 1.0
+# --- 跑步动画按实际移动速度调播放倍率（10.29）-------------------------------------
+# 滑步的根因是片段原速对应的地面速度和实际移动速度对不上（见 RunAnimCalibration）。
+# 跑步时 speed_scale = 显示移动速度 / 片段脚贴地速度，夹在 [MIN, MAX]：
+#   * 速度取画面上的显示位移（已含插值、慢放倍率、减速），平滑约 RUN_SPEED_SMOOTH_SEC；
+#   * 上限 2.5：走路片段要 5–30 倍，再快腿就糊了，这类单位要换片段；
+#   * 离开跑步（待机、攻击、开场等待、收尾归位）一律回到 1.0，攻击节奏不受影响；
+#   * 顿帧期间不写播放器，只记 anim_base_speed，BattleHitFeedback 解冻时恢复到它。
+const RUN_ANIM_SPEED_MIN := 0.6
+const RUN_ANIM_SPEED_MAX := 2.5
+const RUN_SPEED_SMOOTH_SEC := 0.12
+# 单帧显示位移超过这个速度（世界单位/秒）视为瞬移（闪现、布阵、seek），不计入。
+const RUN_SPEED_TELEPORT := 20.0
+# 跑步锁的最短时长。慢放时两个逻辑帧之间的真实时间会超过它，见 _run_lock_sec()。
+const RUN_LOCK_BASE_SEC := 0.18
+# 模拟秒 / 真实秒。BattleScreen 按回放倍率写入；本地模拟为 1。
+var _visual_sim_time_scale := 1.0
 var _status_vfx_by_id: Dictionary = {}
 # HpFill refs cached at node creation so the per-frame HP sync never walks the tree.
 var _hp_fill_by_id: Dictionary = {}
@@ -660,6 +691,10 @@ func _make_shared_model_node(f: Dictionary) -> Node3D:
 			visual_scale *= TIER3_VISUAL_BOOST
 		model.scale = Vector3(visual_scale, visual_scale, visual_scale)
 		model.rotation_degrees = Vector3.ZERO
+		# 标定表把模型自身缩放和全局 battle_unit_visual_scale 分开记，这里同口径传入。
+		actor.set_meta("run_ground_speed", RunAnimCalibrationScript.ground_speed_for(
+			str(f.get("id", unit_def.get("id", ""))), unit_def,
+			visual_scale / maxf(0.0001, battle_unit_visual_scale), battle_unit_visual_scale))
 		actor.attach_model(model)
 		_center_model_for_full_body_view(model)
 		_setup_model_animation_state(actor, model, unit_def, f)
@@ -1157,6 +1192,7 @@ func settle_model_animation_idle() -> void:
 			continue
 		actor.set_meta("run_lock_until", 0.0)
 		actor.set_meta("attack_lock_until", 0.0)
+		_set_model_anim_speed(actor, 1.0)
 		# 清缓存：`_play_model_action_method()` 的"同动作不重播"短路正是
 		# 我们不想让它挡住 idle 的地方（force_restart 已能绕过，缓存一起清更保险）。
 		actor.set_meta("current_model_action", "")
@@ -1206,10 +1242,12 @@ func _update_model_animation_state(model_node: Node3D, f: Dictionary) -> void:
 		model_node.set_meta("last_attack_count", 0)
 		model_node.set_meta("attack_lock_until", 0.0)
 		model_node.set_meta("run_lock_until", 0.0)
+		_set_model_anim_speed(model_node, 1.0)
 		if not _play_model_action_method(model_node, "idle") and player != null and not idle_name.is_empty():
 			_play_animation_if_needed(player, idle_name)
 		return
 	var visual_now := float(Time.get_ticks_msec()) * 0.001
+	_track_display_speed(model_node, visual_now)
 	# The fixed display slot never moves relative to the simulator, so only the
 	# authoritative combat position may start or sustain the run animation.
 	var current_sim_pos := Vector2(float(f.pos.x), float(f.pos.y))
@@ -1233,6 +1271,7 @@ func _update_model_animation_state(model_node: Node3D, f: Dictionary) -> void:
 			if sync_seek > 0.0:
 				player.seek(sync_seek, true)
 			player.advance(0.001)
+		_set_model_anim_speed(model_node, 1.0)
 		_play_model_attack_pulse(model_node)
 		model_node.set_meta("attack_lock_until", visual_now + maxf(0.08, float(model_node.get_meta("attack_lock_time", 0.45))))
 		model_node.set_meta("run_lock_until", 0.0)
@@ -1240,13 +1279,90 @@ func _update_model_animation_state(model_node: Node3D, f: Dictionary) -> void:
 	if visual_now < float(model_node.get_meta("attack_lock_until", 0.0)):
 		return
 	if moved:
-		model_node.set_meta("run_lock_until", visual_now + 0.18)
+		model_node.set_meta("run_lock_until", visual_now + _run_lock_sec())
 	var should_run := visual_now < float(model_node.get_meta("run_lock_until", 0.0))
 	if should_run:
 		if not _play_model_action_method(model_node, "run") and player != null and not run_name.is_empty() and player.has_animation(run_name):
 			_play_animation_if_needed(player, run_name)
-	elif not _play_model_action_method(model_node, "idle") and player != null and not idle_name.is_empty() and player.has_animation(idle_name):
-		_play_animation_if_needed(player, idle_name)
+		_set_model_anim_speed(model_node, _run_anim_speed_for(model_node))
+	else:
+		_set_model_anim_speed(model_node, 1.0)
+		if not _play_model_action_method(model_node, "idle") and player != null and not idle_name.is_empty() and player.has_animation(idle_name):
+			_play_animation_if_needed(player, idle_name)
+
+
+# 跑步锁要盖住两个逻辑帧之间的真实时间，否则慢放（_readable_speed 0.5 时一帧 0.2 秒）
+# 每帧中间都会闪回待机一下，身体还在滑。取 1.5 个逻辑帧，正常倍率下仍是 0.18。
+func _run_lock_sec() -> float:
+	return maxf(RUN_LOCK_BASE_SEC, 1.5 * SIM_TICK_SEC / maxf(0.05, _visual_sim_time_scale))
+
+
+func set_visual_sim_time_scale(scale: float) -> void:
+	_visual_sim_time_scale = maxf(0.05, scale)
+
+
+# 画面上的移动速度（世界单位/秒），对 model_node.position 做指数平滑。
+# 同一帧被多次刷新（建体、seek）时 dt 为 0，不更新；瞬移样本丢掉。
+func _track_display_speed(model_node: Node3D, now: float) -> void:
+	var pos := model_node.position
+	var last_t := float(model_node.get_meta("display_speed_t", -1.0))
+	# get_meta 的默认值传 null 等于没给默认值，键不存在会报错，所以先 has_meta。
+	var last_pos: Variant = model_node.get_meta("display_speed_pos") if model_node.has_meta("display_speed_pos") else null
+	model_node.set_meta("display_speed_pos", pos)
+	model_node.set_meta("display_speed_t", now)
+	if last_t < 0.0 or not (last_pos is Vector3):
+		return
+	var dt := now - last_t
+	if dt <= 0.0005 or dt > 0.5:
+		return
+	var delta := pos - (last_pos as Vector3)
+	delta.y = 0.0
+	var inst := delta.length() / dt
+	if inst > RUN_SPEED_TELEPORT:
+		return
+	var smoothed := float(model_node.get_meta("display_speed", 0.0))
+	smoothed += (inst - smoothed) * (1.0 - exp(-dt / RUN_SPEED_SMOOTH_SEC))
+	model_node.set_meta("display_speed", smoothed)
+
+
+func _run_anim_speed_for(model_node: Node3D) -> float:
+	var ground := float(model_node.get_meta("run_ground_speed", 0.0))
+	if ground <= 0.0:
+		return 1.0
+	var speed := float(model_node.get_meta("display_speed", 0.0))
+	return clampf(speed / ground, RUN_ANIM_SPEED_MIN, RUN_ANIM_SPEED_MAX)
+
+
+# 只在倍率变化时写播放器。顿帧中（hitstop_until）只记基准值，解冻时由
+# BattleHitFeedback 恢复到 anim_base_speed，避免把 0 覆盖掉或解冻后回到 1.0。
+func _set_model_anim_speed(model_node: Node3D, speed: float) -> void:
+	var current := float(model_node.get_meta("anim_base_speed", 1.0))
+	if is_equal_approx(current, speed):
+		return
+	if speed != 1.0 and current != 1.0 and absf(current - speed) < 0.03:
+		return
+	model_node.set_meta("anim_base_speed", speed)
+	if model_node.has_meta("hitstop_until"):
+		return
+	for player in _model_anim_players(model_node):
+		player.speed_scale = speed
+
+
+func _model_anim_players(model_node: Node3D) -> Array:
+	var cached: Variant = model_node.get_meta("anim_players_cache") if model_node.has_meta("anim_players_cache") else null
+	if cached is Array:
+		var valid := true
+		for p in (cached as Array):
+			if not is_instance_valid(p):
+				valid = false
+				break
+		if valid:
+			return cached as Array
+	var found: Array = []
+	for n in model_node.find_children("*", "AnimationPlayer", true, false):
+		found.append(n)
+	model_node.set_meta("anim_players_cache", found)
+	return found
 
 func _play_model_attack_pulse(model_node: Node3D) -> void:
 	if not model_node.is_inside_tree():
@@ -1662,8 +1778,9 @@ func _apply_formation_intro_visibility(id: String, fighter: Dictionary) -> void:
 		model_node.visible = should_show
 
 # Rebuild the per-frame lookup. Each actor receives one personal display slot on
-# its first frame. No neighbour query, interpolation, easing, or later reflow is
-# allowed: displayed_delta must always equal simulator_delta.
+# its first frame. No neighbour query, easing, or later reflow is allowed. The
+# only display-side motion is the tick-to-tick interpolation above: at alpha 1
+# displayed == simulator exactly, and in between it stays on that segment.
 func _begin_visual_frame(living: Array, _delta: float = 0.0) -> void:
 	_visual_pos_cache.clear()
 	_frame_living_ids.clear()
@@ -1682,7 +1799,8 @@ func _begin_visual_frame(living: Array, _delta: float = 0.0) -> void:
 		_frame_living_ids.append(id)
 		_frame_living_pos.append(raw)
 		_frame_fighter_by_id[id] = f
-		_visual_pos_cache[id] = _clamp_visual_sim_pos(BattleSimShared.constrain_fighter_position(f, _state, raw + offset))
+		var shown := _visual_interp_raw_pos(id, raw)
+		_visual_pos_cache[id] = _clamp_visual_sim_pos(BattleSimShared.constrain_fighter_position(f, _state, shown + offset))
 		living_ids[id] = true
 	for stale_id in _fixed_visual_offset_by_id.keys():
 		if not living_ids.has(stale_id):
@@ -1703,7 +1821,43 @@ func _visual_sim_pos_for_fighter(f: Dictionary) -> Vector2:
 func _make_fixed_visual_offset(_f: Dictionary, _id: String, _raw: Vector2) -> Vector2:
 	return Vector2.ZERO
 
+# 本画面帧该显示的原始模拟坐标（插值后、未加固定槽与边界限制）。
+func _visual_interp_raw_pos(id: String, raw: Vector2) -> Vector2:
+	if _interp_alpha >= 1.0:
+		return raw
+	var prev: Variant = _interp_prev_pos_by_id.get(id)
+	if not (prev is Vector2):
+		return raw
+	if (prev as Vector2).distance_to(raw) > VISUAL_INTERP_SNAP_SIM:
+		return raw
+	return (prev as Vector2).lerp(raw, _interp_alpha)
+
+# 该单位本画面帧是否处在两帧之间（弓箭手预判要据此换算显示时刻）。
+func _visual_interp_active_for(id: String, raw: Vector2) -> bool:
+	if _interp_alpha >= 1.0:
+		return false
+	var prev: Variant = _interp_prev_pos_by_id.get(id)
+	return prev is Vector2 and (prev as Vector2).distance_to(raw) <= VISUAL_INTERP_SNAP_SIM
+
+# 播放循环在推进每个逻辑帧之前调用：记下推进前的坐标。一帧补多个逻辑帧时
+# 只有最后一次留下，所以插值区间永远是最新的两帧。
+func _visual_interp_capture_tick_start() -> void:
+	_interp_prev_pos_by_id.clear()
+	for f in BattleSim.living_units(_state):
+		if typeof(f) != TYPE_DICTIONARY:
+			continue
+		_interp_prev_pos_by_id[_visual_id(f)] = Vector2(float(f.pos.x), float(f.pos.y))
+
+func _visual_interp_set_alpha(alpha: float) -> void:
+	_interp_alpha = clampf(alpha, 0.0, 1.0)
+
+# 跳帧、定位、开局、结算：直接显示逻辑坐标，丢掉旧的上一帧记录。
+func _visual_interp_snap() -> void:
+	_interp_prev_pos_by_id.clear()
+	_interp_alpha = 1.0
+
 func reset_visual_position_state() -> void:
+	_visual_interp_snap()
 	_visual_pos_cache.clear()
 	_fixed_visual_offset_by_id.clear()
 	_frame_living_ids.clear()

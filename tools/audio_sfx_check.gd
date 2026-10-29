@@ -60,7 +60,8 @@ const CHECK_NAME := "audio_sfx"
 # 既有的 settings_switch / voice_switch **逐字节相同**，是覆盖而非新增，不计数。
 # 9.26 大厅宠物脚步声：1 条**新增** cue（`pet_footstep`，素材在 lobby/ 下，
 #   由各宠物独立播放器播，不进共享池），故 75 → 76。
-const EXPECTED_CUE_COUNT := 110
+# 10.29 死亡音 4 条（碎裂 / 重量级碎裂 / 己方倒下 / 清场，BattleVfx 死亡分档调用），故 110 → 114。
+const EXPECTED_CUE_COUNT := 114
 
 # 播 SfxService 的生产代码扫描范围。**刻意不含 `res://tools`** ——
 # 门禁自己会调 play()，算进来就等于让门禁给自己的断言当证人

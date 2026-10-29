@@ -4,10 +4,15 @@ extends Node
 #
 # 第 1 条「普攻：轻微前冲/后坐、命中闪、单次小屏震；暴击只放大 20%-35%，不堆全屏闪白」
 #   * 命中闪本来就有（ProceduralVFXEffect 的 Flash + 冲击粒子）。
-#   * 前冲/后坐**原本没有**，普攻的命中屏震也没有 —— 改前只有技能会触发
-#     skill_shake，普攻一次都不震。这两样是新加的。
-#   * "暴击只放大 20%-35%"在这里落成一个可执行判据：暴击不另加任何一层效果，
-#     只把同一次演出乘上 CRIT_EMPHASIS_SCALE，且该系数必须落在 1.20-1.35。
+#   * 前冲/后坐**原本没有**，是这一项新加的。
+#   * ~~"单次小屏震"~~ **2026-10-24 手游化推翻**：真机上一场普攻几百下，再小的屏震
+#     叠起来也是整局在抖。2905067e 删掉 IMPACT_SHAKE_STRENGTH / IMPACT_SHAKE_SEC，
+#     cue_play_impact_feedback 改成空实现，屏震只留给技能（BattleCameraShakePolicy）。
+#     本门禁跟着转向：见 _check_basic_hit_does_not_shake()，验的是"普攻一下都不许震、
+#     但技能的还在"。
+#   * "暴击只放大，不另堆一层"现在落在 BattleHitFeedback 的逐单位反馈上：
+#     闪白/后仰/压扁三条通道 basic 与 crit 同 key 不同值，crit 只能是 basic 的放大。
+#     V2 原文的 20%-35% 是给全屏震动定的，不再直接套用，理由见 CRIT_LOCAL_RATIO_MAX。
 #
 # 第 3 条「胜利：镜头轻收束、幸存者定格、胜利字样和短音效/震动；至少保持 0.8 秒」
 #   * 保持时长本来就够（RESULT_DISPLAY_SECONDS = 1.0）。
@@ -26,11 +31,15 @@ const CheckHarness := preload("res://tools/CheckHarness.gd")
 const BattleVfxScript := preload("res://scenes/battle/BattleVfx.gd")
 const BattleUIScript := preload("res://scenes/battle/BattleUI.gd")
 const UnitActor3DScript := preload("res://effects/runtime/presentation/UnitActor3D.gd")
+const ShakePolicyScript := preload("res://scripts/battle/BattleCameraShakePolicy.gd")
 const CHECK_NAME := "battle_hit_victory"
 
-# V2 原文的暴击放大区间。
-const CRIT_SCALE_MIN := 1.20
-const CRIT_SCALE_MAX := 1.35
+# 暴击在**逐单位**反馈上的放大上限。V2 原文的 1.20-1.35 是给全屏震动定的，
+# 10.24 普攻屏震拿掉之后那一档不存在了；局部反馈只动受击的那一只棋子，
+# 读得出来的上限高得多（实测 flash 1.73 / flinch 1.67 / squash 1.57）。
+const CRIT_LOCAL_RATIO_MAX := 1.80
+# 顿帧上限：自走棋每秒几十下命中，再长就读成卡顿。
+const HITSTOP_MAX_SEC := 0.08
 # V2 原文：结算至少保持 0.8 秒再进奖励。
 const RESULT_HOLD_MIN_SEC := 0.8
 
@@ -45,7 +54,7 @@ func _run() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
 	_check_crit_is_only_an_amplifier()
 	_check_lunge_is_small_and_returns()
-	_check_impact_shake_is_small()
+	_check_basic_hit_does_not_shake()
 	_check_victory_hold_and_tighten()
 	_check_wiring()
 	await _check_lunge_meta_guard()
@@ -142,27 +151,63 @@ func _check_lunge_meta_guard() -> void:
 		"找不到 has_meta(\"lunge_tween\") 守卫")
 
 
-# 暴击只能是"同一套演出乘一个系数"，而且系数必须在 V2 给的 20%-35% 内。
+# 暴击只能是"同一套演出乘一个系数"，不另开一层效果。
+#
+# 10.24 手游化之后，这条的落点换了地方：暴击的强调原本是 IMPACT_SHAKE_STRENGTH *
+# CRIT_EMPHASIS_SCALE 的那一下屏震，现在屏震整个从普攻/暴击路径拿掉了（见
+# _check_basic_hit_does_not_shake），强调改由 BattleHitFeedback 的**逐单位**反馈承担：
+# 闪白强度、后仰角度、压扁幅度三条通道，basic / crit 用同一组 key 取不同数值。
+# 所以"同一套演出乘一个系数"在这里的可执行判据是：**crit 不得出现 basic 没有的通道**，
+# 并且每条通道上 crit 都只是把 basic 的值放大。
+#
+# V2 原文的 20%-35% 不再直接套用：那是全屏震动的幅度上限，一场里每次普攻都要震，
+# 稍大就糊成一片；现在是只动受击那一只棋子的局部反馈，看得见的上限高得多
+# （实际 1.57-1.73）。所以这里换成 CRIT_LOCAL_RATIO_MAX 这个**局部反馈**的上限，
+# 并且仍然守住"不许另开一层"和"不许全屏闪白"这两条真正的红线。
 func _check_crit_is_only_an_amplifier() -> void:
-	var scale: float = BattleVfxScript.CRIT_EMPHASIS_SCALE
-	_h.expect(scale >= CRIT_SCALE_MIN and scale <= CRIT_SCALE_MAX,
-		"crit_scale_out_of_range",
-		"暴击放大系数 %.3f 不在 V2 的 %.2f-%.2f —— 再大就变成「另加一层效果」了"
-			% [scale, CRIT_SCALE_MIN, CRIT_SCALE_MAX])
+	var channels := {
+		"flash": BattleHitFeedback.FLASH_STRENGTH,
+		"flinch": BattleHitFeedback.FLINCH_DEG,
+		"squash": BattleHitFeedback.SQUASH,
+	}
+	for channel in channels:
+		var table: Dictionary = channels[channel]
+		if not _h.expect(table.has("basic") and table.has("crit"),
+			"crit_channel_missing",
+			"BattleHitFeedback 的 %s 没有同时给 basic 和 crit —— 暴击必须和普攻走同一条通道" % channel):
+			continue
+		var base := float(table["basic"])
+		var crit := float(table["crit"])
+		_h.expect(base > 0.0 and crit > base,
+			"crit_not_an_amplification",
+			"%s 通道上暴击 %.3f 不是普攻 %.3f 的放大" % [channel, crit, base])
+		_h.expect(crit <= base * CRIT_LOCAL_RATIO_MAX,
+			"crit_ratio_out_of_range",
+			"%s 通道上暴击是普攻的 %.2f 倍，超过局部反馈上限 %.2f —— 再大就读成「另一种命中」了"
+				% [channel, crit / maxf(base, 0.0001), CRIT_LOCAL_RATIO_MAX])
 
-	# 暴击的屏震必须正好是普通命中乘这个系数，不能另走一条更响的路径。
-	var base: float = BattleVfxScript.IMPACT_SHAKE_STRENGTH
-	_h.expect(base > 0.0, "impact_shake_absent",
-		"普攻命中的屏震强度是 %.3f —— V2 第 1 条要求「单次小屏震」" % base)
-	_h.expect(is_equal_approx(base * scale, base * BattleVfxScript.CRIT_EMPHASIS_SCALE),
-		"crit_uses_other_path", "暴击没有走「同一次演出乘系数」这条路")
+	# 顿帧是暴击/技能独有的一档，basic 没有。它是唯一允许的"多出来的通道"，
+	# 条件是必须短到只读成一下发力：超过 0.08 秒就会读成卡顿。
+	for tier in BattleHitFeedback.HITSTOP_SEC:
+		_h.expect(float(BattleHitFeedback.HITSTOP_SEC[tier]) <= HITSTOP_MAX_SEC,
+			"hitstop_too_long",
+			"%s 的顿帧 %.3f 秒超过 %.2f —— 自走棋每秒几十下命中，会读成卡顿"
+				% [tier, float(BattleHitFeedback.HITSTOP_SEC[tier]), HITSTOP_MAX_SEC])
+	_h.expect(not BattleHitFeedback.HITSTOP_SEC.has("basic"),
+		"basic_got_hitstop",
+		"普攻也带上顿帧了 —— 普攻数量远多于技能，会一卡一卡")
 
-	# 反向：仓里不该出现全屏闪白。V2 第 1 条明确禁止。
-	var vfx_src := FileAccess.get_file_as_string("res://scenes/battle/BattleVfx.gd")
-	for banned in ["fullscreen_flash", "screen_flash", "white_flash"]:
-		_h.expect(not vfx_src.contains(banned),
-			"fullscreen_flash_added",
-			"出现了 %s —— V2 第 1 条明确写「不堆全屏闪白」" % banned)
+	# 反向：仓里不该出现全屏闪白。V2 第 1 条明确禁止。闪白实现搬到 BattleHitFeedback
+	# 之后，这条也要跟着看那个文件，否则换个文件写全屏闪白就绕过去了。
+	for path in ["res://scenes/battle/BattleVfx.gd",
+			"res://effects/runtime/presentation/BattleHitFeedback.gd"]:
+		var src := FileAccess.get_file_as_string(path)
+		if not _h.expect(not src.is_empty(), "crit_source_unreadable", "读不到 %s" % path):
+			continue
+		for banned in ["fullscreen_flash", "screen_flash", "white_flash"]:
+			_h.expect(not src.contains(banned),
+				"fullscreen_flash_added",
+				"%s 里出现了 %s —— V2 第 1 条明确写「不堆全屏闪白」" % [path, banned])
 
 
 # 前冲要"轻微"，而且必须回到原点。回不去的话单位会被一路推走。
@@ -194,16 +239,46 @@ func _check_lunge_is_small_and_returns() -> void:
 			% [back_sec, out_sec])
 
 
-func _check_impact_shake_is_small() -> void:
-	var impact: float = BattleVfxScript.IMPACT_SHAKE_STRENGTH
-	# 技能震动默认 6.5（见 BattleVfx._play_visual_events 的 skill_shake 分支）。
-	# 普攻的数量远多于技能，必须明显更小，否则整场都在抖。
-	_h.expect(impact < 6.5 * 0.5,
-		"impact_shake_too_strong",
-		"普攻命中屏震 %.2f 不明显小于技能的 6.5 —— 普攻数量远多于技能，会抖一整场" % impact)
-	_h.expect(BattleVfxScript.IMPACT_SHAKE_SEC <= 0.15,
-		"impact_shake_too_long",
-		"普攻命中屏震持续 %.3f 秒，太长了" % BattleVfxScript.IMPACT_SHAKE_SEC)
+# 10.24 手游化改掉的是这一条的前提：原来普攻命中有一下"小屏震"，这里只管它够不够小。
+# 真机上一场战斗普攻几百下，再小的屏震叠起来也是整局在抖，所以那一下被整个拿掉了
+# （2905067e 删了 IMPACT_SHAKE_STRENGTH / IMPACT_SHAKE_SEC，cue_play_impact_feedback
+# 改成空实现），强调改走 BattleHitFeedback 的逐单位反馈。
+#
+# 门禁跟着换方向：从"小屏震够不够小"变成"普攻这条路上一下都不许震"。
+func _check_basic_hit_does_not_shake() -> void:
+	var src := FileAccess.get_file_as_string("res://scenes/battle/BattleVfx.gd")
+	if not _h.expect(not src.is_empty(), "vfx_source_unreadable", "读不到 BattleVfx.gd"):
+		return
+
+	# 只看 cue_play_impact_feedback 的函数体。整文件 contains 会被技能屏震那条满足，
+	# 也会被这上面的注释满足 —— 那样这条断言不可证伪。
+	var body := _function_body(src, "func cue_play_impact_feedback(")
+	if _h.expect(not body.is_empty(), "impact_cue_missing",
+			"找不到 cue_play_impact_feedback —— adapter 还在按这个名字回调"):
+		for banned in ["_screen_shake(", "play_screen_shake("]:
+			_h.expect(not body.contains(banned),
+				"basic_hit_shakes_again",
+				"cue_play_impact_feedback 里又调了 %s —— 普攻每秒几十下，会抖一整场" % banned)
+
+	# 常量也不该复活：留着就会有人顺手接回去。
+	for gone in ["IMPACT_SHAKE_STRENGTH", "IMPACT_SHAKE_SEC"]:
+		_h.expect(not src.contains("const %s" % gone),
+			"impact_shake_const_back",
+			"%s 回来了 —— 普攻命中屏震是 10.24 手游化有意删掉的" % gone)
+
+	# 正向控制：屏震本身必须还在、还只给技能。只断言"普攻不震"的话，
+	# 把 is_candidate 改成恒 false（技能也不震了）同样会绿。
+	var basic_hit := {"type": "hit_number", "kind": "dmg", "amount": 120, "skill": false}
+	var skill_hit := {"type": "hit_number", "kind": "dmg", "amount": 120, "skill": true}
+	_h.expect(not ShakePolicyScript.is_candidate(basic_hit),
+		"basic_hit_is_shake_candidate",
+		"普攻命中仍然算屏震候选 —— BattleCameraShakePolicy 必须只认技能伤害")
+	_h.expect(ShakePolicyScript.is_candidate(skill_hit),
+		"skill_shake_gone",
+		"技能伤害也不再是屏震候选 —— 屏震被整个关掉了，不是只关普攻")
+	_h.expect(src.contains("_screen_shake(6.5, 0.20)"),
+		"skill_shake_call_gone",
+		"找不到技能屏震的调用 —— 第 1 条只去掉普攻那一下，技能的要留着")
 
 
 func _check_victory_hold_and_tighten() -> void:
@@ -239,7 +314,8 @@ func _check_wiring() -> void:
 	_h.expect(adapter.contains("cue_play_attack_lunge"),
 		"lunge_not_wired", "起手那一拍没有调 cue_play_attack_lunge —— 前冲是死代码")
 	_h.expect(adapter.contains("cue_play_impact_feedback"),
-		"impact_feedback_not_wired", "命中那一拍没有调 cue_play_impact_feedback —— 普攻仍然不震")
+		"impact_feedback_not_wired",
+		"命中那一拍没有调 cue_play_impact_feedback —— 它现在是空实现，但 adapter 的拍点契约还靠它")
 	_h.expect(screen.contains("play_victory_finish()"),
 		"victory_not_wired", "结算流程没有调 play_victory_finish() —— 收束和定格是死代码")
 	_h.expect(screen.contains("reset_battle_camera_framing()"),
@@ -258,3 +334,25 @@ func _check_wiring() -> void:
 	_h.expect(body.contains("kill()"),
 		"lunge_tween_not_killed",
 		"连续攻击时没有杀掉上一条前冲 tween —— 位移会累加，单位会被一路推走")
+
+
+# 取某个函数的函数体（不含签名行，去掉行注释）。
+#
+# 整文件 contains 做否定断言会被别处的同名调用、甚至被断言自己上面那条注释满足 ——
+# 那样的门禁不可证伪。所以凡是"某函数里不得出现 X"的判据，都先切出函数体再看。
+# 结束条件是下一个顶格的 func / 顶格声明：GDScript 的函数体必须缩进。
+func _function_body(src: String, signature: String) -> String:
+	var at := src.find(signature)
+	if at < 0:
+		return ""
+	var lines := src.substr(at).split("
+")
+	var body := PackedStringArray()
+	for i in range(1, lines.size()):
+		var line: String = lines[i]
+		if not line.is_empty() and not line.begins_with("	") and not line.begins_with(" "):
+			break
+		var hash_at := line.find("#")
+		body.append(line.substr(0, hash_at) if hash_at >= 0 else line)
+	return "
+".join(body)

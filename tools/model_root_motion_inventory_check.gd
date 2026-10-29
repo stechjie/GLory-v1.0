@@ -40,7 +40,12 @@ const LOCK_EPS := 0.001
 # 2026-09-25: restore 32 missing run registrations and the hymn attack policy;
 # register 14 measured non-returning attack/idle clips. Keep the 13 returning
 # lunges/sways authored by the artist; they are not locomotion bugs.
-const MAX_UNREGISTERED := 13
+# 2026-10-29: 量法补上 Armature 节点轨道、Z 向上骨架和单播放器模型后，同日登记
+# 6 条 run（cancer/gemini/scorpio/aquarius/virgo、god_guard）；量法本身新看见
+# 4 条早已存在的未登记动作：crimson attack、dark_doom attack、merc_scorpio_death attack、
+# merc_gemini_assassin idle。按上面的规矩 attack/idle 要逐个人工判断，不批量登记，
+# 所以上限按实测从 13 调到 17 —— 不是回退，是之前漏数。
+const MAX_UNREGISTERED := 17
 
 const POLICY_KEY := "model_in_place_actions"
 
@@ -164,6 +169,14 @@ func _measure(unit_id: String, model_path: String, definition: Dictionary,
 				continue
 			action_roots[action] = child
 			out[action] = _max_planar_span(child, action)
+	elif _count_animation_players(root) == 1:
+		# 单播放器模型（god_guard_refined）：所有动作在同一个播放器里，与策略的回退一致。
+		# 只量播放器里确实有对应片段的动作，没有就不报。
+		var player := _find_animation_player(root)
+		for action in ["idle", "attack", "run"]:
+			if _has_alias_clip(player, action):
+				action_roots[action] = root
+				out[action] = _max_planar_span(root, action)
 	if not configured.is_empty():
 		_verify_configured_policy(unit_id, definition, configured, out, action_roots, actor)
 	actor.queue_free()
@@ -232,7 +245,7 @@ func _max_planar_span(action_root: Node, action: String) -> float:
 	var animation := player.get_animation(chosen)
 	if animation == null:
 		return 0.0
-	return _root_planar_span(animation, skeleton)
+	return _root_planar_span(animation, skeleton, player)
 
 
 func _best_animation_name(player: AnimationPlayer, action: String) -> String:
@@ -270,25 +283,27 @@ func _action_aliases(action: String) -> Array[String]:
 			return []
 
 
-# 与 model_root_motion_lock_check 里的量法逐字一致，两条门禁的数字才可比：
-# 只看无父骨骼（根骨）的 POSITION_3D 轨道，取相对第一帧的最大水平位移。
-func _root_planar_span(animation: Animation, skeleton: Skeleton3D) -> float:
-	var roots := {}
-	for bone_index in skeleton.get_bone_count():
-		if skeleton.get_bone_parent(bone_index) < 0:
-			roots[str(skeleton.get_bone_name(bone_index))] = true
+# 与 model_root_motion_lock_check 里的量法一致，两条门禁的数字才可比。
+# 哪些轨道算根位移、哪个方向算「水平」直接用策略的公开判据（根骨轨道 + 骨架祖先
+# 节点轨道，按骨架真实朝向取水平面）：2026-10-29 之前这里只看根骨的本地 X/Z，
+# 把 Armature 节点上的前冲和 Z 向上骨架的前冲都量成 0，5 个单位因此从清单里漏掉。
+func _root_planar_span(animation: Animation, skeleton: Skeleton3D,
+		player: AnimationPlayer = null) -> float:
+	var roots := RootMotionPolicy.root_bone_names(skeleton)
 	var maximum := 0.0
 	for track_index in animation.get_track_count():
 		if animation.track_get_type(track_index) != Animation.TYPE_POSITION_3D:
 			continue
-		var bone_name := str(animation.track_get_path(track_index)).get_slice(":", 1)
-		if not roots.has(bone_name) or animation.track_get_key_count(track_index) <= 0:
+		if animation.track_get_key_count(track_index) <= 0:
 			continue
+		var space := RootMotionPolicy.root_motion_track_space(animation, track_index, roots, skeleton, player)
+		if space == null:
+			continue
+		var up := RootMotionPolicy.local_up(space)
 		var first := animation.track_get_key_value(track_index, 0) as Vector3
-		var origin := Vector2(first.x, first.z)
 		for key_index in animation.track_get_key_count(track_index):
 			var value := animation.track_get_key_value(track_index, key_index) as Vector3
-			maximum = maxf(maximum, origin.distance_to(Vector2(value.x, value.z)))
+			maximum = maxf(maximum, RootMotionPolicy.planar_offset(value - first, up).length())
 	return maximum
 
 
@@ -310,3 +325,19 @@ func _find_skeleton(root: Node) -> Skeleton3D:
 		if found != null:
 			return found
 	return null
+
+
+func _count_animation_players(root: Node) -> int:
+	var count := 1 if root is AnimationPlayer else 0
+	for child in root.get_children():
+		count += _count_animation_players(child)
+	return count
+
+
+func _has_alias_clip(player: AnimationPlayer, action: String) -> bool:
+	for name in player.get_animation_list():
+		var lower := String(name).to_lower()
+		for alias in _action_aliases(action):
+			if lower.contains(alias):
+				return true
+	return false

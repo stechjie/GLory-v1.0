@@ -210,7 +210,8 @@ func _defer_flight_tail(event: Dictionary, completion: Callable, present: Callab
 
 func _play_death(event: Dictionary, victim_uid: String, completion: Callable, speed: float) -> bool:
 	var seconds := _beat_seconds(event, DEATH_SEC)
-	var played := bool(_host.call("cue_play_death", victim_uid, seconds))
+	# killer_uid 给死亡反馈定「往哪边被顶飞」（DamageService.emit_death 带上的，回放里也保留）。
+	var played := bool(_host.call("cue_play_death", victim_uid, seconds, str(event.get("killer_uid", ""))))
 	if played:
 		_count("death")
 	return _finish_after(seconds / speed, completion, "death")

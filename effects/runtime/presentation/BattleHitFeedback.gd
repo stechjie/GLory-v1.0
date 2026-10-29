@@ -48,7 +48,8 @@ static func play(victim: Node3D, attacker: Node3D, tier: String, flash_allowed: 
 
 # --- 闪白 ---------------------------------------------------------------------
 
-static func flash(actor: Node3D, strength: float) -> void:
+## hold：顶满亮度先停多久再开始褪（死亡定格用）；受击闪白传 0。
+static func flash(actor: Node3D, strength: float, hold := 0.0) -> void:
 	_end_flash(actor)
 	var material := ShaderMaterial.new()
 	material.shader = FLASH_SHADER
@@ -62,6 +63,8 @@ static func flash(actor: Node3D, strength: float) -> void:
 		return
 	actor.set_meta("hit_flash", {"material": material, "meshes": meshes})
 	var tween := actor.create_tween()
+	if hold > 0.0:
+		tween.tween_interval(hold)
 	tween.tween_method(func(value: float) -> void: material.set_shader_parameter("amount", value),
 			strength, 0.0, FLASH_SEC).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tween.tween_callback(_end_flash.bind(actor))
@@ -187,5 +190,7 @@ static func _release_freeze(actor: Node3D) -> void:
 			actor.get_tree().create_timer(remaining * 0.001, true, false, true).timeout.connect(_release_freeze_by_id.bind(actor.get_instance_id()))
 		return
 	actor.remove_meta("hitstop_until")
+	# 恢复到渲染层记的基准倍率（跑步时按移动速度调过），而不是一律 1.0。
+	var base_speed := float(actor.get_meta("anim_base_speed", 1.0))
 	for player in actor.find_children("*", "AnimationPlayer", true, false):
-		(player as AnimationPlayer).speed_scale = 1.0
+		(player as AnimationPlayer).speed_scale = base_speed

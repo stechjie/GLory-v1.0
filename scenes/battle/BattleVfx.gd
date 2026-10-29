@@ -13,6 +13,8 @@ const _UnitGrowth := preload("res://scripts/units/UnitGrowth.gd")
 const _CRIMSON_CATALOG := preload("res://effects/vfx3d/units/CrimsonVFXCatalog.gd")
 const _CRIMSON_ADAPTER := preload("res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd")
 const _HIT_FEEDBACK := preload("res://effects/runtime/presentation/BattleHitFeedback.gd")
+const _DEATH_FEEDBACK := preload("res://effects/runtime/presentation/BattleDeathFeedback.gd")
+const _DEATH_SHATTER := preload("res://effects/vfx3d/modules/VFXDeathShatter3D.gd")
 
 var _vfx_prev_units: Dictionary = {}
 var _vfx_seeded: bool = false
@@ -311,7 +313,7 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 				var partner := _living_twin_partner(now, current)
 				if not partner.is_empty():
 					_play_boss_procedural("twin_timer", now.get("world_foot", Vector3.ZERO), partner.get("world_foot", now.get("world_foot", Vector3.ZERO)), _boss_target_context(partner))
-			_spawn_vfx("DEATH_EXPLOSION", now.get("foot_pos", Vector2.ZERO))
+			# 10.29：2D 的 DEATH_EXPLOSION 白粒子退役，死亡碎裂改由 cue_play_death 出 3D 种族色碎片。
 			if sid_now == "death_poison_explosion":
 				_play_unit_procedural("death_poison_explosion", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO), _unit_target_context(now, now))
 				# 9.20：自爆灵（`undead_bomb`）的四星技能音 —— 用户口径
@@ -325,7 +327,6 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 		if current.has(id):
 			continue
 		var prev_missing: Dictionary = _vfx_prev_units[id]
-		_spawn_vfx("DEATH_EXPLOSION", prev_missing.get("foot_pos", Vector2.ZERO))
 		if bool(prev_missing.get("mother_execute_kill", false)):
 			death_events.append({"pos": prev_missing.get("foot_pos", Vector2.ZERO), "world_foot": prev_missing.get("world_foot", Vector3.ZERO), "world_hit": prev_missing.get("world_hit", Vector3.ZERO), "killer_uid": str(prev_missing.get("killer_uid", "")), "mother_execute_kill": true, "model_node": prev_missing.get("model_node"), "victim_id": id})
 
@@ -488,7 +489,22 @@ func _play_race_basic_attack(attack:Dictionary,target:Dictionary,mode:String,rac
 	var attack_unit_id:=str(attack.get("unit_id",""))
 	if not attack_unit_id.is_empty():
 		context["source_unit_id"] = attack_unit_id
+	if attack_unit_id == "human_archer" and mode == "ranged":
+		var spec: Dictionary = OGA_CHESS_CATALOG.projectile_for(attack_unit_id)
+		var speed := maxf(0.5, float(spec.get("speed", 11.5)))
+		var flight := clampf(origin.distance_to(target_world) / speed, _RANGED_OGA_MIN_TRAVEL, _RANGED_OGA_MAX_TRAVEL)
+		var predicted: Variant = _archer_future_target(str(attack.get("target_uid", "")), target_world, flight)
+		if predicted is Vector3:
+			context["archer_straight_target"] = predicted
+			context["archer_travel_time"] = flight
 	_play_unit_procedural("basic_attack_%s_%s"%[mode,race],origin,target_world,context)
+
+# A replay can supply a target's recorded position at arrow arrival. Live
+# simulation has no future frame and retains its existing tracking behaviour.
+func _archer_future_target(target_uid: String, target_world: Vector3, flight: float) -> Variant:
+	if target_uid.is_empty() or not has_method("cue_archer_replay_intercept"):
+		return null
+	return call("cue_archer_replay_intercept", target_uid, target_world, flight)
 
 func _nearest_enemy_damage_event(attack: Dictionary, damage_events: Array[Dictionary]) -> Dictionary:
 	var best: Dictionary = {}
@@ -1339,6 +1355,10 @@ func _play_attack_unit_procedural(attack:Dictionary,target:Dictionary,current:Di
 	var target_world:Vector3=target.get("world_hit",target.get("world_foot",Vector3.ZERO))
 	var source:Dictionary=current.get(str(attack.get("id","")),{})
 	var context:=_unit_target_context(source,target)
+	if sid=="every_fourth_combo" and str(attack.get("unit_id", ""))=="human_archer":
+		var predicted:Variant=_archer_future_target(str(attack.get("target_uid", "")),target_world,.56*.82)
+		if predicted is Vector3:
+			context["archer_straight_target"]=predicted
 	if sid=="every_fifth_group_heal":
 		context["targets"]=_living_team_world_positions(source,current)
 		target_world=origin
@@ -1814,7 +1834,10 @@ func cue_play_basic_attack(source_uid: String, target_uid: String, ranged: bool)
 	var race := _visual_race_from_unit_id(unit_id)
 	if str(source.get("race", "")) == _CRIMSON_CATALOG.RACE:
 		race = _CRIMSON_CATALOG.RACE
-	_play_race_basic_attack(attack, target, "ranged" if ranged else "melee", race, _vfx_prev_units)
+	# The empowered archer shot replaces the ordinary projectile visually.
+	var archer_empowered := ranged and unit_id == "human_archer" and str(attack.get("skill_id", "")) == "every_fourth_combo" and _attack_skill_vfx_ready(attack)
+	if not archer_empowered:
+		_play_race_basic_attack(attack, target, "ranged" if ranged else "melee", race, _vfx_prev_units)
 	_play_attack_unit_procedural(attack, target, _vfx_prev_units)
 	return true
 
@@ -2122,10 +2145,13 @@ func cue_release_corpses() -> void:
 			release_death_actor(str(entry.get("uid", "")), actor_value as Node3D)
 	_active_death_actors.clear()
 	_pending_death_claim_tokens.clear()
+	_lane_clear_played = false
+	_board_freeze_until_msec = 0
+	_end_arena_punch()
 	release_dying_unit_nodes()
 
 
-func cue_play_death(victim_uid: String, duration_sec: float = 0.35) -> bool:
+func cue_play_death(victim_uid: String, duration_sec: float = 0.35, killer_uid: String = "") -> bool:
 	_maybe_play_human_king_death_sfx(victim_uid)
 	_pending_death_claim_tokens.erase(victim_uid)
 	var actor: Node3D = _cue_corpses.get(victim_uid)
@@ -2141,34 +2167,46 @@ func cue_play_death(victim_uid: String, duration_sec: float = 0.35) -> bool:
 	if _is_phoenix_revived_uid(victim_uid):
 		_play_phoenix_release(victim_uid, actor)
 		return true
+	# 10.29 死亡分档（普通 / 重量级 / 清场 / 己方阵亡），动作见 BattleDeathFeedback。
 	# The profile owns the length so a low quality tier can shorten the fade
 	# without ever removing it (checklist 6: death must never just disappear).
-	var fade := maxf(0.08, duration_sec * 0.92)
+	var tier := _death_tier(victim_uid)
+	var killer := _death_killer_actor(victim_uid, killer_uid)
+	var away := _DEATH_FEEDBACK.away_from(actor, killer)
 	var tween := create_tween()
-	# base_* 留给母灵处决：处决事件比死亡 cue 晚到时，要把已经开始的下沉复位再改走定身。
+	# base_* 留给母灵处决：处决事件比死亡 cue 晚到时，要把已经开始的倒下复位再改走定身。
 	_active_death_actors[actor.get_instance_id()] = {
 		"uid": victim_uid,
 		"actor": actor,
 		"tween": tween,
 		"base_position": actor.position,
 		"base_scale": actor.scale,
+		"base_basis": actor.basis,
 	}
-	tween.set_parallel(true)
-	var sink := actor.position + Vector3(0.0, -0.35, 0.0)
-	tween.tween_property(actor, "position", sink, fade).set_ease(Tween.EASE_IN)
-	tween.tween_property(actor, "scale", actor.scale * 0.72, fade).set_ease(Tween.EASE_IN)
 	# V2 P1-05：淡出必须**真的**淡出。
 	#
 	# 改前这里只遍历 actor.get_children()，而 actor 的直接子节点是 ActorRoot 和
 	# 六个锚点 —— 一个 GeometryInstance3D 都没有（模型是 attach_model() 挂到
 	# actor_root 下面的）。也就是说这个循环一次都不匹配，死亡只有下沉和缩小、
 	# 没有淡出。改成遍历整棵子树。
-	for geometry in _death_fade_targets(actor):
-		tween.tween_property(geometry, "transparency", 1.0, fade * 0.94)
+	var fade_targets := _death_fade_targets(actor)
+	var done := func() -> void: _finish_death_actor(victim_uid, actor)
+	var fade: float
+	if tier == DEATH_TIER_OWN:
+		fade = _DEATH_FEEDBACK.play_fall_body(tween, actor, away, fade_targets, duration_sec, done)
+		_play_death_sfx(DEATH_CUE_FALL, -3.0, 3)
+	else:
+		if tier == DEATH_TIER_FINALE:
+			_begin_lane_clear_freeze(actor)
+		elif killer != null and PresentationSettings.hit_stop_allowed():
+			_HIT_FEEDBACK.freeze_animation(killer, float(DEATH_KILLER_FREEZE_SEC.get(tier, 0.05)))
+		var color := _death_race_color(victim_uid)
+		var shatter := func() -> void: _on_death_shatter(victim_uid, actor, away, tier, color)
+		fade = _DEATH_FEEDBACK.play_shatter_body(tween, actor, away, tier, fade_targets, duration_sec,
+			PresentationSettings.flash_allowed(), shatter, done)
 	# 2D 的血条/名字层必须**跟着一起淡**，不能在尸体还在的时候就消失。
 	# V2 第 2 条原话："血条和状态图标同步，不突然消失"。
 	_play_unit_node_death_fade(victim_uid, fade)
-	tween.chain().tween_callback(func() -> void: _finish_death_actor(victim_uid, actor))
 	return true
 
 
@@ -2176,6 +2214,242 @@ func _finish_death_actor(uid: String, actor: Node3D) -> void:
 	if actor != null:
 		_active_death_actors.erase(actor.get_instance_id())
 	release_death_actor(uid, actor)
+
+
+# --- 10.29 死亡分档 / 多杀合并 / 己方那一路清场 ------------------------------------
+#
+# 用户定的分档：
+#   普通击杀：定格闪白 + 被顶飞 + 碎成种族色碎片 + 死亡音。**不震屏** ——
+#       一波 AOE 同时死四五个，每个都震就是一卡一卡，和手机掉帧分不出来。
+#   重量级（Boss / 四星 / 两格大体型）：再加轻震、更长定格、地面冲击环。
+#   同时多杀：一个合并窗口里只出一声；第 3 个起补一次轻震，不按个数重复。
+#   清场：**本地玩家那一路**的最后一个敌人被打死 —— 整个棋盘定格 0.2 秒再炸，全场最强。
+#       三路里只认自己那一路（另外两路是队友的，那一下是他们的高光，不是你的）。
+#   己方阵亡：要看得清但不庆祝 —— 不闪白、不碎、不震，往后倒下再淡出，声音更闷。
+const DEATH_TIER_NORMAL := "normal"
+const DEATH_TIER_HEAVY := "heavy"
+const DEATH_TIER_FINALE := "finale"
+const DEATH_TIER_OWN := "own"
+const DEATH_KILLER_FREEZE_SEC := {"normal": 0.05, "heavy": 0.08}
+const DEATH_MERGE_MSEC := 140
+const DEATH_MULTI_KILL_AT := 3
+# 屏震强度（× SHAKE_PX_PER_STRENGTH 0.55 = 像素，封顶 SHAKE_MAX_PX 9）。技能屏震是 6.5。
+const DEATH_SHAKE_HEAVY := [5.0, 0.18]
+const DEATH_SHAKE_MULTI := [4.0, 0.15]
+const DEATH_SHAKE_FINALE := [15.0, 0.34]
+const LANE_CLEAR_FREEZE_SEC := 0.2
+# 清场时整个战场往里推一下：放大 3%，0.07 秒推进、0.26 秒缓回。
+const LANE_CLEAR_PUNCH_SCALE := 1.03
+const LANE_CLEAR_PUNCH_IN_SEC := 0.07
+const LANE_CLEAR_PUNCH_OUT_SEC := 0.26
+# 死亡音，素材与混音说明见 SfxService 的「10.29 死亡音」。
+# 必须写成 SfxService.CUE_* —— audio_sfx_check 按这个前缀找生产调用点。
+const DEATH_CUE_SHATTER := SfxService.CUE_DEATH_SHATTER
+const DEATH_CUE_SHATTER_HEAVY := SfxService.CUE_DEATH_SHATTER_HEAVY
+const DEATH_CUE_FALL := SfxService.CUE_DEATH_FALL
+const DEATH_CUE_LANE_CLEAR := SfxService.CUE_DEATH_LANE_CLEAR
+const LANE_NONE := -99
+# 种族碎片色：人族暖金属、亡灵魂火青绿、暗族紫黑雾、神族金白、赤律族赤红。
+const DEATH_RACE_COLORS := {
+	"human": Color(1.0, 0.80, 0.52),
+	"undead": Color(0.42, 1.0, 0.74),
+	"dark": Color(0.70, 0.38, 1.0),
+	"god": Color(1.0, 0.92, 0.58),
+}
+const DEATH_CRIMSON_COLOR := Color(1.0, 0.34, 0.30)
+# 怪物 / 佣兵 / Boss 的 def 里没有 race，按 id 取色（不配就会全部落成人族暖金）。
+# PvE 三系：天空系淡天蓝、大地系岩土琥珀、人间系沿用人族暖金。
+const DEATH_MONSTER_COLORS := {
+	"pve_sky_": Color(0.62, 0.86, 1.0),
+	"pve_land_": Color(0.96, 0.66, 0.34),
+	"pve_ren_": Color(1.0, 0.80, 0.52),
+}
+# 佣兵是十二星座：统一星光色，和四族都不撞。
+const DEATH_MERC_COLOR := Color(0.74, 0.84, 1.0)
+# Boss 各按招牌技能的主色；表外的新 Boss 用暗红。
+const DEATH_BOSS_COLORS := {
+	"boss_meteor_caster": Color(1.0, 0.52, 0.22),
+	"boss_thunder_core": Color(0.55, 0.80, 1.0),
+	"boss_mirror_lord": Color(0.78, 0.94, 1.0),
+	"boss_holy_priest": Color(1.0, 0.90, 0.55),
+	"boss_rage_beast": Color(1.0, 0.42, 0.24),
+	"boss_blood_demon": Color(0.92, 0.16, 0.22),
+	"boss_soul_devourer": Color(0.62, 0.40, 1.0),
+	"boss_twin_gate": Color(0.40, 1.0, 0.86),
+	"boss_apocalypse": Color(0.86, 0.20, 0.16),
+}
+const DEATH_BOSS_DEFAULT_COLOR := Color(0.86, 0.24, 0.20)
+
+var _lane_clear_played := false
+var _board_freeze_until_msec := 0
+var _death_beat_msec := -100000
+var _death_beat_kills := 0
+var _arena_punch_tween: Tween = null
+
+
+func _death_tier(victim_uid: String) -> String:
+	if _is_own_or_ally_unit(victim_uid):
+		return DEATH_TIER_OWN
+	if _is_local_lane_clear(victim_uid):
+		return DEATH_TIER_FINALE
+	var unit := _state_unit_for(victim_uid)
+	var definition: Dictionary = unit.get("def", {}) if unit.get("def", {}) is Dictionary else {}
+	# Boss 判据和模拟器一致：def.is_boss 或 id 以 boss_ 开头（Boss 表里没写 is_boss，靠前缀）。
+	if bool(definition.get("is_boss", false)) or str(unit.get("id", "")).begins_with("boss_") \
+			or int(unit.get("star", 1)) >= GameConstants.MAX_STAR or int(unit.get("footprint_cells", 1)) >= 2:
+		return DEATH_TIER_HEAVY
+	return DEATH_TIER_NORMAL
+
+
+# 本地玩家那一路的最后一个敌人。每局只演一次。
+#
+# 判据要同时看两张表：死亡 cue 比模拟晚播（Director 排队），播到这一个时后面几个可能
+# 在 `_state` 里已经 alive=false 了 —— 它们的死亡 cue 还在排队，尸体在
+# _cue_corpses / _pending_death_claim_tokens 里。只看 alive 会让倒数第二个抢走清场。
+func _is_local_lane_clear(victim_uid: String) -> bool:
+	if _lane_clear_played:
+		return false
+	var victim := _state_unit_for(victim_uid)
+	var lane := _local_lane()
+	if victim.is_empty() or lane == LANE_NONE or int(victim.get("lane", -1)) != lane:
+		return false
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if not (raw is Dictionary):
+				continue
+			var uid := str(raw.get("uid", ""))
+			if uid == victim_uid or int(raw.get("lane", -1)) != lane or _is_own_or_ally_unit(uid):
+				continue
+			if bool(raw.get("alive", false)) or _cue_corpses.has(uid) or _pending_death_claim_tokens.has(uid):
+				return false
+	_lane_clear_played = true
+	return true
+
+
+# 本地玩家棋子所在的那一路。观战对手时回放里没有本地棋子，返回 LANE_NONE（不演清场）。
+func _local_lane() -> int:
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if raw is Dictionary and _is_local_owned_unit(str(raw.get("uid", ""))):
+				return int(raw.get("lane", -1))
+	return LANE_NONE
+
+
+# 击杀者的身体：事件带的 killer_uid 优先；取不到（DOT / 宝藏反应）就用最近一次普攻它的人。
+func _death_killer_actor(victim_uid: String, killer_uid: String) -> Node3D:
+	var uid := killer_uid
+	if uid.is_empty():
+		var memory: Dictionary = _last_basic_attacker.get(victim_uid, {})
+		if Time.get_ticks_msec() - int(memory.get("msec", -100000)) <= HIT_ATTACKER_MEMORY_MSEC:
+			uid = str(memory.get("uid", ""))
+	var found = _battle_3d_models.get(uid)
+	if found is Node3D and is_instance_valid(found):
+		return found as Node3D
+	return null
+
+
+func _death_race_color(victim_uid: String) -> Color:
+	var snapshot := _cue_unit_snapshot(victim_uid)
+	var unit := _state_unit_for(victim_uid)
+	var definition: Dictionary = unit.get("def", {}) if unit.get("def", {}) is Dictionary else {}
+	var race := str(snapshot.get("race", definition.get("race", "")))
+	if race == _CRIMSON_CATALOG.RACE:
+		return DEATH_CRIMSON_COLOR
+	var unit_id := str(snapshot.get("unit_id", unit.get("id", "")))
+	if unit_id.begins_with("boss_"):
+		return DEATH_BOSS_COLORS.get(unit_id, DEATH_BOSS_DEFAULT_COLOR)
+	if unit_id.begins_with("merc_"):
+		return DEATH_MERC_COLOR
+	for prefix in DEATH_MONSTER_COLORS:
+		if unit_id.begins_with(prefix):
+			return DEATH_MONSTER_COLORS[prefix]
+	return DEATH_RACE_COLORS.get(_visual_race_from_unit_id(unit_id), DEATH_RACE_COLORS["human"])
+
+
+# 被顶飞结束那一帧：碎片炸开、出声、按档位和合并窗口决定震不震。
+func _on_death_shatter(victim_uid: String, actor: Node3D, away: Vector3, tier: String, color: Color) -> void:
+	if is_instance_valid(actor) and actor.is_inside_tree() and _battle_3d_vfx_root != null and is_instance_valid(_battle_3d_vfx_root):
+		var hit := actor.get_node_or_null("HitAnchor") as Node3D
+		var center := hit.global_position if hit != null else actor.global_position + Vector3.UP * 0.5
+		var block := VFXBlockRoot.spawn_block(_DEATH_SHATTER, _battle_3d_vfx_root, true)
+		if block != null:
+			var local_away := (_battle_3d_vfx_root.global_basis.inverse() * away) if away.length() > 0.001 else Vector3.ZERO
+			block.call("play_shatter", _battle_3d_vfx_root.to_local(center),
+				_battle_3d_vfx_root.to_local(actor.global_position).y, local_away, color, tier)
+	var now := Time.get_ticks_msec()
+	var new_beat := now - _death_beat_msec > DEATH_MERGE_MSEC
+	if new_beat:
+		_death_beat_msec = now
+		_death_beat_kills = 0
+	_death_beat_kills += 1
+	match tier:
+		DEATH_TIER_FINALE:
+			_screen_shake(DEATH_SHAKE_FINALE[0], DEATH_SHAKE_FINALE[1])
+			_play_arena_punch()
+			_play_death_sfx(DEATH_CUE_LANE_CLEAR, 0.0, 1)
+			_play_death_sfx(DEATH_CUE_SHATTER_HEAVY, 0.0, 2)
+		DEATH_TIER_HEAVY:
+			_screen_shake(DEATH_SHAKE_HEAVY[0], DEATH_SHAKE_HEAVY[1])
+			_play_death_sfx(DEATH_CUE_SHATTER_HEAVY, _death_sfx_db(victim_uid), 2)
+		_:
+			if new_beat:
+				_play_death_sfx(DEATH_CUE_SHATTER, _death_sfx_db(victim_uid), 3)
+			elif _death_beat_kills == DEATH_MULTI_KILL_AT:
+				# 合并窗口里第 3 个：补一声更厚的、一次轻震；第 4、5 个不再加。
+				_screen_shake(DEATH_SHAKE_MULTI[0], DEATH_SHAKE_MULTI[1])
+				_play_death_sfx(DEATH_CUE_SHATTER_HEAVY, _death_sfx_db(victim_uid), 3)
+
+
+# 敌方死在本地那一路 0 dB；死在队友那两路 −5 dB（看得见，但那是别人的战场）。
+func _death_sfx_db(victim_uid: String) -> float:
+	var lane := _local_lane()
+	if lane == LANE_NONE or int(_state_unit_for(victim_uid).get("lane", -1)) == lane:
+		return 0.0
+	return -5.0
+
+
+func _play_death_sfx(cue: String, db: float, tier: int) -> void:
+	if SfxService.resolved_cue_path(cue).is_empty():
+		return
+	SfxService.play_battle(cue, db, tier)
+
+
+# 清场定格：整个棋盘停 0.2 秒。不碰 Engine.time_scale（checklist 0.3）——
+# 停的是回放 / 模拟的推进（BattleScreen._process 读 _board_freeze_active）和所有棋子的动作。
+# 一局最多一次，所以不会有「一卡一卡」的问题；回放时间线整体晚 0.2 秒结束。
+func _begin_lane_clear_freeze(victim: Node3D) -> void:
+	if not PresentationSettings.hit_stop_allowed():
+		return
+	_board_freeze_until_msec = Time.get_ticks_msec() + int(LANE_CLEAR_FREEZE_SEC * 1000.0)
+	for model in _battle_3d_models.values():
+		if model is Node3D and is_instance_valid(model) and model != victim:
+			_HIT_FEEDBACK.freeze_animation(model as Node3D, LANE_CLEAR_FREEZE_SEC)
+
+
+func _board_freeze_active() -> bool:
+	return Time.get_ticks_msec() < _board_freeze_until_msec
+
+
+# 整个战场容器（2D 底图 + 3D 单位层 + 血条）以中心为轴放大一下再缓回。
+# 和屏震共用 _arena：屏震写 position，这里只写 scale / pivot_offset，互不覆盖。
+func _play_arena_punch() -> void:
+	if _arena == null or not is_instance_valid(_arena) or PresentationSettings.screen_shake_scale() <= 0.0:
+		return
+	_end_arena_punch()
+	_arena.pivot_offset = _arena.size * 0.5
+	_arena_punch_tween = create_tween()
+	_arena_punch_tween.tween_property(_arena, "scale", Vector2.ONE * LANE_CLEAR_PUNCH_SCALE, LANE_CLEAR_PUNCH_IN_SEC) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_arena_punch_tween.tween_property(_arena, "scale", Vector2.ONE, LANE_CLEAR_PUNCH_OUT_SEC) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
+
+
+func _end_arena_punch() -> void:
+	if _arena_punch_tween != null and _arena_punch_tween.is_valid():
+		_arena_punch_tween.kill()
+	_arena_punch_tween = null
+	if _arena != null and is_instance_valid(_arena):
+		_arena.scale = Vector2.ONE
 
 
 # --- 10.18 母灵处决：被处决的棋子先被青光包住、定住不动，再化成魂火收进书里 ---
@@ -2224,6 +2498,7 @@ func _mark_mother_execute_victim(uid: String) -> void:
 			(tween_value as Tween).kill()
 		actor.position = entry.get("base_position", actor.position)
 		actor.scale = entry.get("base_scale", actor.scale)
+		actor.basis = entry.get("base_basis", actor.basis)
 		for geometry in _death_fade_targets(actor):
 			geometry.transparency = 0.0
 		_active_death_actors.erase(key)

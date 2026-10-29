@@ -66,7 +66,7 @@ func _run() -> void:
 		print("SEG1_ENV assets_not_delivered=%d（整批未投放，判为环境性，不判红）" % no_file)
 	print("SEG1 play_all_cues n=%d no_file=%d fails=%d" % [all_cues.size(), no_file, seg1_fail])
 
-	# --- 第 2 段：空串必须安全（不崩、不刷 warning、返回 false）-----------
+	# --- 第 2 段：空串静默返回 false；未知 cue 返回 false 并提示 -----------
 	# ⚠️ 这一段与 SEG1 **完全独立**：上一版拿 `2 if seg1_fail > 0 else 0` 报数，
 	# 结果 SEG1 一红这段就自动「假红 2 条」，读数会骗人。
 	var seg2_fail := 0
@@ -80,16 +80,16 @@ func _run() -> void:
 		fails.append("unknown_cue_should_return_false")
 	print("SEG2 empty_and_unknown fails=%d" % seg2_fail)
 
-	# --- 第 3 段：战斗层并发上限真的拦得住 ------------------------------
-	# cap=2，手动灌 2 条正在响的记账，第 3 条必须被 play_battle 拒。
-	# ⚠️ `set_battle_voice_cap()` 会清空记账，所以**先灌记账、后设 cap**。
+	# --- 第 3 段：战斗层并发上限与优先级 ------------------------------
+	# 当前实现统计实际播放的节点；满额时低优先级普攻被拒，技能可抢占普攻。
 	var seg3_fail := 0
-	var far := Time.get_ticks_msec() + 60000
-	SfxService._battle_stamps.clear()
-	SfxService._battle_stamps.append({"until": far, "cue": "proj_arrow"})
-	SfxService._battle_stamps.append({"until": far, "cue": "proj_orb"})
-	SfxService._battle_live = 2
+	SfxService.stop_all()
+	SfxService.reset_counters_for_check()
 	SfxService.set_battle_voice_cap(2)
+	checks += 1
+	if not SfxService.play_battle("melee_metal", -6.0) or not SfxService.play_battle("melee_nonmetal", -6.0):
+		seg3_fail += 1
+		fails.append("battle_voices_should_start")
 	checks += 1
 	if SfxService.battle_live_count() != 2:
 		seg3_fail += 1
@@ -98,17 +98,14 @@ func _run() -> void:
 	var before_blocked := SfxService.play_count("proj_frost")
 	if SfxService.play_battle("proj_frost", -6.0):
 		seg3_fail += 1
-		fails.append("play_battle_should_be_blocked_at_cap")
+		fails.append("lower_priority_attack_should_be_blocked_at_cap")
 	checks += 1
 	if SfxService.play_count("proj_frost") != before_blocked:
 		seg3_fail += 1
 		fails.append("blocked_cue_must_not_increment")
-	# 而普通 play() 不受这道闸门（技能音不能被普攻挤掉）
-	# ⚠️ 先清节流表：star4_guard_skill 在 SEG1 已经播过一次，P2 的 200ms
-	#    窗口会把第二次挡掉 —— 那是节流在对的事，不是这里要测的东西。
+	# 高优先级技能应当能抢占已满的普攻池。
 	# ⚠️ 素材不在（正式服仓整目录 ignore）时这一条无从验证 ⇒ 记环境性跳过，不判红。
 	checks += 1
-	SfxService._last_play_msec.clear()
 	var before_skill := SfxService.play_count("star4_guard_skill")
 	SfxService.play("star4_guard_skill", 0.0)
 	if SfxService.play_count("star4_guard_skill") != before_skill + 1:
@@ -117,17 +114,14 @@ func _run() -> void:
 		else:
 			seg3_fail += 1
 			fails.append("skill_cue_should_bypass_battle_cap before=%d after=%d" % [before_skill, SfxService.play_count("star4_guard_skill")])
-	# 清空后恢复
-	SfxService.set_battle_voice_cap(0)
-	SfxService._battle_stamps.clear()
-	SfxService._battle_live = 0
+	SfxService.stop_all()
+	SfxService.set_battle_voice_cap(6)
 	print("SEG3 battle_cap_blocks fails=%d" % seg3_fail)
 
 	# --- 第 4 段：节流真的生效（同 cue 连打只响一次）---------------------
 	# ⚠️ 同样：proj_arrow 素材不在时跳过（环境性），否则「播不动」会被误读成「节流坏了」。
 	var seg4_fail := 0
-	SfxService._last_play_msec.clear()
-	SfxService._play_counts["proj_arrow"] = 0
+	SfxService.reset_counters_for_check()
 	checks += 1
 	if FileAccess.file_exists(SfxService.resolved_cue_path("proj_arrow")):
 		SfxService.play("proj_arrow", -6.0)

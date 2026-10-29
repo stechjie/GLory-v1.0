@@ -91,53 +91,52 @@ func _run() -> void:
 			fails.append("missing_file " + str(name))
 	print("SEG1 cues_registered=%d missing=%d fails=%d" % [expected.size(), missing.size(), fails.size()])
 
-	# --- 第 2 段：普攻路由表覆盖 57 行审查表 ------------------------------
-	# 键 = (unit_id, ranged)，值 = 期望的 cue。取自 manifest 的 57 行 prev 条目。
+	# --- 第 2 段：普攻路由表核对已批准的单位音色 --------------------------
+	# 键 = unit_id，值 = 期望的 cue；与 ApprovedBattleAudio 的审核结果保持同步。
 	var ranged_expect := {
 		"god_priest": "proj_light_lance", "god_priestess": "proj_disc",
 		"god_aurora": "proj_light_lance", "god_angel": "proj_wing",
 		"god_archangel": "proj_holy", "dark_mage": "proj_dark_orb",
 		"dark_queen": "proj_thorn", "human_archer": "proj_arrow",
 		"human_cleric": "proj_orb", "undead_spike": "proj_bone",
-		"undead_mother": "proj_javelin", "dancer": "proj_disc",
+		"undead_mother": "proj_light_lance", "dancer": "proj_disc",
 		"hunter": "proj_arrow", "Icey": "proj_frost",
 		"skypierce": "proj_javelin", "lattern": "proj_ember",
 		"merc_sagittarius_rain": "proj_arrow", "merc_pisces_bubble": "proj_orb",
 		"merc_virgo_heal": "proj_holy", "merc_aquarius_time": "proj_orb",
 		"boss_meteor_caster": "proj_orb", "boss_holy_priest": "proj_holy",
-		"boss_apocalypse": "proj_javelin", "human_king": "proj_divine_blade",
+		"boss_apocalypse": "proj_light_lance", "human_king": "proj_divine_blade",
 		"boss_thunder_core": "proj_thunder",
-		# 10.21 审查表（PvE 专项，16 只全通过）：药毒医师按 dart 弹体改 proj_thorn
-		"pve_ren_poison_doctor": "proj_thorn",
+		"pve_ren_poison_doctor": "proj_bone",
 	}
 	var melee_expect := {
 		"god_arbiter": "melee_metal", "god_king": "melee_metal",
 		"human_swordsman": "melee_metal", "dark_scythe": "melee_metal",
 		"god_guard": "melee_metal", "drumer": "melee_nonmetal",
-		"armbreaker": "melee_metal", "human_militia": "melee_metal",
-		"human_death_servant": "melee_metal", "dark_imp": "melee_nonmetal",
-		"dark_fear": "melee_nonmetal", "dark_doom": "melee_metal",
-		"dark_dragon": "melee_nonmetal", "undead_titan": "melee_nonmetal",
-		"crimson": "melee_nonmetal", "undead_small": "melee_unarmed",
-		"undead_poison": "melee_unarmed", "undead_parasite": "melee_unarmed",
-		"undead_fly": "melee_unarmed", "undead_bomb": "melee_unarmed",
+		"armbreaker": "melee_heavy", "human_militia": "melee_nonmetal",
+		"human_death_servant": "melee_metal", "dark_imp": "melee_claw",
+		"dark_fear": "melee_claw", "dark_doom": "melee_heavy",
+		"dark_dragon": "melee_claw_heavy", "undead_titan": "melee_shell",
+		"crimson": "melee_metal", "undead_small": "melee_spirit",
+		"undead_poison": "melee_claw", "undead_parasite": "melee_spirit",
+		"undead_fly": "melee_claw", "undead_bomb": "melee_spirit",
 		"human_merchant": "melee_unarmed", "merc_libra_judge": "melee_metal",
-		"merc_taurus_charge": "melee_metal", "merc_gemini_assassin": "melee_metal",
-		"merc_aries_blood": "melee_metal", "merc_capricorn_steel": "melee_metal",
-		"merc_scorpio_death": "melee_metal", "merc_cancer_shell": "melee_nonmetal",
-		"merc_leo_sun": "melee_nonmetal", "boss_blood_demon": "melee_metal",
-		"boss_twin_gate": "melee_metal", "boss_mirror_lord": "melee_nonmetal",
-		"boss_rage_beast": "melee_nonmetal", "boss_soul_devourer": "melee_nonmetal",
-		# 10.21 补：PvE 近战小怪 9 只（此前从没进过审查表 ⇒ 普攻无声）
+		"merc_taurus_charge": "melee_heavy", "merc_gemini_assassin": "melee_metal",
+		"merc_aries_blood": "melee_heavy", "merc_capricorn_steel": "melee_heavy",
+		"merc_scorpio_death": "melee_metal", "merc_cancer_shell": "melee_shell",
+		"merc_leo_sun": "melee_claw_heavy", "boss_blood_demon": "melee_metal",
+		"boss_twin_gate": "melee_metal", "boss_mirror_lord": "melee_spirit",
+		"boss_rage_beast": "melee_claw_heavy", "boss_soul_devourer": "melee_spirit",
+		# PvE 近战小怪
 		"pve_ren_shadow_thief": "melee_metal",
 		"pve_ren_wandering_swordsman": "melee_metal",
 		"pve_sky_dome_guard": "melee_metal",
-		"pve_land_lava_golem": "melee_nonmetal",
-		"pve_land_mountain_giant": "melee_nonmetal",
-		"pve_land_rock_beast": "melee_nonmetal",
-		"pve_land_vein_worm": "melee_nonmetal",
-		"pve_sky_cloud_eagle": "melee_unarmed",
-		"pve_land_vine_guard": "melee_unarmed",
+		"pve_land_lava_golem": "melee_shell",
+		"pve_land_mountain_giant": "melee_shell",
+		"pve_land_rock_beast": "melee_shell",
+		"pve_land_vein_worm": "melee_shell",
+		"pve_sky_cloud_eagle": "melee_claw",
+		"pve_land_vine_guard": "melee_nonmetal",
 	}
 	var seg2_fail := 0
 	for uid in ranged_expect:
@@ -274,13 +273,13 @@ func _run() -> void:
 	if SfxService.battle_live_count() != 0:
 		seg5_fail += 1
 		fails.append("cap_reset_should_be_zero got=%d" % SfxService.battle_live_count())
-	# 闸门函数本身：cap=2 时连放 3 次，第 3 次必须被拒
-	# 不真的播（headless 无声），只验计数器逻辑。
-	SfxService.set_battle_voice_cap(0)   # 0 = 不限，先关掉
+	# 0 表示不限；真实播放及优先级由 sfx_playback_probe 覆盖。
+	SfxService.set_battle_voice_cap(0)
 	checks += 1
-	if not SfxService._battle_cap_allows():
+	if SfxService.battle_voice_cap() != 0:
 		seg5_fail += 1
-		fails.append("cap_zero_should_allow_all")
+		fails.append("cap_zero_should_be_unlimited")
+	SfxService.set_battle_voice_cap(6)
 	print("SEG5 battle_cap fails=%d" % seg5_fail)
 
 	# --- 第 6 段：BGM 战斗压低（10-21 用户实测「BGM 盖住普攻音」）-------------

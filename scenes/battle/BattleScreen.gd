@@ -43,6 +43,11 @@ const FINAL_ROUND_INTRO_SEC := 2.05
 var _replay: Dictionary = {}
 var _replay_mode := false
 var _replay_frame := 0
+# Latest applied replay tick, used only to aim the archer presentation.
+var _archer_intercept_tick := -1
+# 只有正常播放循环推进逻辑帧时为真：此时显示层在两帧之间插值。
+# 其余 _apply_replay_frame 调用（开局、PVP 放行、切换观战、跳过）都是定位，直接到位。
+var _visual_interp_stepping := false
 var _replay_round := -1
 var _battle_result_reported := false
 # --- 墙钟 vs 单调时钟（10.08 反馈第 3 / 5 条）----------------------------------
@@ -333,6 +338,11 @@ func _process(delta: float) -> void:
 	if _final_round_intro_active:
 		return
 	if _replay_mode:
+		# 10.29 清场定格：本地那一路最后一个敌人被打死时整个棋盘停 0.2 秒（BattleVfx._begin_lane_clear_freeze）。
+		# 停的是回放推进，不是 Engine.time_scale；这段时间不累加 delta，时间线整体顺延。
+		if _board_freeze_active():
+			_refresh_visuals()
+			return
 		# 累加器必须封顶，否则慢帧会自我放大成死亡螺旋：一帧慢 -> delta 变大 ->
 		# 下一帧要补更多回放帧（每帧还要把 visual_events 灌进 _state 生成特效）
 		# -> 更慢 -> 补更多。实测一次发作是 683ms -> 冻结 5s -> 单帧 4655ms，
@@ -354,12 +364,14 @@ func _process(delta: float) -> void:
 				and steps < MAX_REPLAY_FRAMES_PER_FRAME:
 			_sim_accumulator -= SIM_TICK_SEC
 			steps += 1
+			_visual_interp_capture_tick_start()
 			if _replay_frame < frames.size():
-				_apply_replay_frame(_replay_frame)
+				_apply_replay_frame_for_playback(_replay_frame)
 			_replay_frame += 1
 		# 补帧被砍掉时不能把 accumulator 留着 —— 否则下一帧继续补，永远追不上。
 		if steps >= MAX_REPLAY_FRAMES_PER_FRAME:
 			_sim_accumulator = minf(_sim_accumulator, SIM_TICK_SEC)
+		_visual_interp_set_alpha(_sim_accumulator / SIM_TICK_SEC)
 		_refresh_visuals()
 		if _replay_frame >= timeline_end:
 			_finish_replay()
@@ -371,7 +383,7 @@ func _process(delta: float) -> void:
 		return
 	# _vfx_hit_stop_active() already returns VFXManager.is_hitstop_active(); the old
 	# condition checked the same thing twice and resolved a node path every frame.
-	if _vfx_hit_stop_active():
+	if _vfx_hit_stop_active() or _board_freeze_active():
 		_refresh_visuals()
 		return
 	_sim_accumulator += delta * PLAYBACK_SPEED
@@ -379,12 +391,14 @@ func _process(delta: float) -> void:
 	while _sim_accumulator >= SIM_TICK_SEC and steps < MAX_STEPS_PER_FRAME:
 		_sim_accumulator -= SIM_TICK_SEC
 		steps += 1
+		_visual_interp_capture_tick_start()
 		BattleSim.step_state(_state)
 		if bool(_state.get("finished", false)):
 			_finish_simulation()
 			break
 	if _return_emitted:
 		return
+	_visual_interp_set_alpha(_sim_accumulator / SIM_TICK_SEC)
 	_refresh_visuals()
 
 # --- B2: replay playback ----------------------------------------------------
@@ -466,6 +480,8 @@ func _start_replay(replay: Dictionary) -> void:
 		#   elapsed playback」——而墙钟在后台会跳，跳完立刻判定「播太久了」直接判负。
 		_playback_deadline_msec = _mono_msec + int((playback_seconds + 20.0) * 1000.0)
 		_presentation_director.set_playback_speed(PLAYBACK_SPEED * _readable_speed)
+		# 跑步锁按真实的逻辑帧间隔放宽（慢放时一帧 0.2 秒），见 BattleRenderer._run_lock_sec。
+		set_visual_sim_time_scale(PLAYBACK_SPEED * _readable_speed)
 
 
 func _stage_pvp_opening_frame() -> void:
@@ -1027,10 +1043,13 @@ func _advance_spectate(delta: float) -> void:
 			and steps < MAX_REPLAY_FRAMES_PER_FRAME:
 		_sim_accumulator -= SIM_TICK_SEC
 		steps += 1
-		_apply_replay_frame(_replay_frame)
+		_visual_interp_capture_tick_start()
+		_apply_replay_frame_for_playback(_replay_frame)
 		_replay_frame += 1
 	if steps >= MAX_REPLAY_FRAMES_PER_FRAME:
 		_sim_accumulator = minf(_sim_accumulator, SIM_TICK_SEC)
+	# 补看到末帧后不再有新逻辑帧，进度自然涨到 1 并停在末帧坐标。
+	_visual_interp_set_alpha(_sim_accumulator / SIM_TICK_SEC if _replay_frame < frames.size() else 1.0)
 	_refresh_visuals()
 	if _replay_frame >= frames.size():
 		_spectate_done = true
@@ -1169,6 +1188,7 @@ func _switch_active_replay(replay: Dictionary) -> void:
 	_refresh_visuals()
 	# _refresh_visuals() re-registered the new roster, so cues can resolve again.
 	_presentation_director.set_playback_speed(PLAYBACK_SPEED * _readable_speed)
+	set_visual_sim_time_scale(PLAYBACK_SPEED * _readable_speed)
 
 func _clear_unit_visuals() -> void:
 	# 两份 replay 的 uid 命名会撞车（都是 player_L0_0 这类），
@@ -1289,10 +1309,55 @@ func _spawn_actors_for_tick(tick_index: int, tick_events: Array) -> void:
 		# （理由同 _prepare_battle_models 里的那段注释）。
 		_sync_3d_model_nodes([f], 0.0, false)
 
+# Predict only a recorded replay target; the simulation and replay stay unchanged.
+# The delta is applied to the current rendered anchor, preserving its visual offset.
+func cue_archer_replay_intercept(target_uid: String, target_world: Vector3, flight: float) -> Variant:
+	if not _replay_mode or _archer_intercept_tick < 0 or target_uid.is_empty():
+		return null
+	var frames: Array = _replay.get("frames", [])
+	if _archer_intercept_tick >= frames.size():
+		return null
+	var tick_pos: Variant = _archer_position_from_frame(frames[_archer_intercept_tick], target_uid)
+	if not (tick_pos is Vector2):
+		return null
+	# target_world 取自已插值的显示锚点，它对应的显示时刻是「上一帧 + 进度」，
+	# 不是当前逻辑帧。预判起点和落点都按显示时刻算，否则箭会落在目标身后约一步。
+	var display_tick := float(_archer_intercept_tick)
+	if _visual_interp_active_for(target_uid, tick_pos as Vector2):
+		display_tick -= 1.0 - _interp_alpha
+	var current := _visual_interp_raw_pos(target_uid, tick_pos as Vector2)
+	var future_tick := display_tick + maxf(0.0, flight) * PLAYBACK_SPEED * _readable_speed / SIM_TICK_SEC
+	var lo := int(floor(future_tick))
+	var hi := int(ceil(future_tick))
+	if lo < 0 or hi >= frames.size():
+		return null
+	var low: Variant = _archer_position_from_frame(frames[lo], target_uid)
+	var high: Variant = _archer_position_from_frame(frames[hi], target_uid)
+	if not (low is Vector2 and high is Vector2):
+		return null
+	var predicted: Vector2 = (low as Vector2).lerp(high as Vector2, future_tick - float(lo))
+	return target_world + _sim_to_world_pos(predicted) - _sim_to_world_pos(current)
+
+func _archer_position_from_frame(frame: Variant, target_uid: String) -> Variant:
+	if not (frame is Array):
+		return null
+	for entry: Variant in frame:
+		if entry is Array and (entry as Array).size() >= 3 and str(entry[0]) == target_uid:
+			return Vector2(float(entry[1]), float(entry[2]))
+	return null
+
+func _apply_replay_frame_for_playback(i: int) -> void:
+	_visual_interp_stepping = true
+	_apply_replay_frame(i)
+	_visual_interp_stepping = false
+
 func _apply_replay_frame(i: int) -> void:
+	if not _visual_interp_stepping:
+		_visual_interp_snap()
 	var frames: Array = _replay.get("frames", [])
 	if i < 0 or i >= frames.size():
 		return
+	_archer_intercept_tick = i
 	# 把本帧记录的视觉事件（母灵处决 / 屏震 / 技能演出）灌回 _state.visual_events，
 	# 前端 _play_visual_events 靠递增游标消费。用 _replay_events_applied 去重，
 	# 保证顺序播放每帧只灌一次、来回 seek 也不会重播。
@@ -1544,6 +1609,7 @@ func _finish_replay() -> void:
 		_set_watching_rival(false)
 	# The process loop stops refreshing positions once `_finished` is set. Refresh
 	# the authoritative final replay coordinates before the victory pose freezes.
+	_visual_interp_snap()
 	_refresh_visuals()
 	# 10.04 bug 文档第 3 条：`_refresh_visuals()` 会把"本帧还在移动"的棋子下发
 	# play_run() 并挂上 0.18 秒的 run 锁，而收尾后 `_process` 立刻停在
