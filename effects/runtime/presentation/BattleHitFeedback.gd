@@ -48,7 +48,8 @@ static func play(victim: Node3D, attacker: Node3D, tier: String, flash_allowed: 
 
 # --- 闪白 ---------------------------------------------------------------------
 
-static func flash(actor: Node3D, strength: float) -> void:
+## hold：顶满亮度先停多久再开始褪（死亡定格用）；受击闪白传 0。
+static func flash(actor: Node3D, strength: float, hold := 0.0) -> void:
 	_end_flash(actor)
 	var material := ShaderMaterial.new()
 	material.shader = FLASH_SHADER
@@ -62,6 +63,8 @@ static func flash(actor: Node3D, strength: float) -> void:
 		return
 	actor.set_meta("hit_flash", {"material": material, "meshes": meshes})
 	var tween := actor.create_tween()
+	if hold > 0.0:
+		tween.tween_interval(hold)
 	tween.tween_method(func(value: float) -> void: material.set_shader_parameter("amount", value),
 			strength, 0.0, FLASH_SEC).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tween.tween_callback(_end_flash.bind(actor))

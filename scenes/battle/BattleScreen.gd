@@ -338,6 +338,11 @@ func _process(delta: float) -> void:
 	if _final_round_intro_active:
 		return
 	if _replay_mode:
+		# 10.29 清场定格：本地那一路最后一个敌人被打死时整个棋盘停 0.2 秒（BattleVfx._begin_lane_clear_freeze）。
+		# 停的是回放推进，不是 Engine.time_scale；这段时间不累加 delta，时间线整体顺延。
+		if _board_freeze_active():
+			_refresh_visuals()
+			return
 		# 累加器必须封顶，否则慢帧会自我放大成死亡螺旋：一帧慢 -> delta 变大 ->
 		# 下一帧要补更多回放帧（每帧还要把 visual_events 灌进 _state 生成特效）
 		# -> 更慢 -> 补更多。实测一次发作是 683ms -> 冻结 5s -> 单帧 4655ms，
@@ -378,7 +383,7 @@ func _process(delta: float) -> void:
 		return
 	# _vfx_hit_stop_active() already returns VFXManager.is_hitstop_active(); the old
 	# condition checked the same thing twice and resolved a node path every frame.
-	if _vfx_hit_stop_active():
+	if _vfx_hit_stop_active() or _board_freeze_active():
 		_refresh_visuals()
 		return
 	_sim_accumulator += delta * PLAYBACK_SPEED
