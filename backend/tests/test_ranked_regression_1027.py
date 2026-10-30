@@ -100,7 +100,7 @@ async def test_failed_report_commit_does_not_finish_allocation(services, monkeyp
     with pytest.raises(RuntimeError): await report_routes.submit_report(report_routes.ReportBody(report="fixture"), None)
     assert mm.state_of(PIDS[0])["state"] == "ready"
 
-@pytest.mark.parametrize("normal,count,allowed", [(False,0,False),(False,1,False),(False,2,False),(False,3,True),(False,4,True),(True,3,False),(True,4,True)])
+@pytest.mark.parametrize("normal,count,allowed", [(False,0,False),(False,1,False),(False,2,False),(False,3,False),(False,4,True),(False,4,True),(True,3,False),(True,4,True)])
 def test_ranked_requires_equipped_races(normal, count, allowed):
     races=["human","god","dark","undead"][:count]
     if allowed: loadout.validate_ranked_races(races, normal)
@@ -131,7 +131,7 @@ def route_fixture(services, monkeypatch, mode="ranked", score=0):
     return ps,mm
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("reason",["need_three_races","ranked_window_closed","ranked_sanction","credit_banned","credit_too_low"])
+@pytest.mark.parametrize("reason",["ranked_need_four_races","ranked_window_closed","ranked_sanction","credit_banned","credit_too_low"])
 async def test_party_gate_keeps_exact_reason(services,monkeypatch,reason):
     route_fixture(services,monkeypatch)
     monkeypatch.setattr(party_routes.ranked,"queue_gate",AsyncMock(return_value=reason))
@@ -148,7 +148,7 @@ async def test_party_start_rejects_too_few_selected_races(services,monkeypatch,s
     profile=SimpleNamespace(races=["human","god","dark"][:count])
     monkeypatch.setattr(loadout,"build_loadout",AsyncMock(return_value=profile))
     with pytest.raises(HTTPException) as e: await party_routes.start(party_routes.StartBody(),None)
-    assert e.value.headers["X-Glory-Reason"] in ["need_three_races","ranked_need_four_races"]
+    assert e.value.headers["X-Glory-Reason"] in ["ranked_need_four_races","ranked_need_four_races"]
     assert not ps.of(PIDS[0]).queued
     assert mm.state_of(PIDS[0])["state"]=="idle"
 

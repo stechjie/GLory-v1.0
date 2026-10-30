@@ -173,7 +173,8 @@ def test_assigned_card_carries_server_chosen_mode() -> None:
     ranked = loadout.card_payload(_loadout(), match_uid="b" * 32, team=1, mode="ranked")
     assert casual["mode"] == "casual"
     assert ranked["mode"] == "ranked"
-    assert casual["ruleset"] == ranked["ruleset"] == "seedling"
+    assert casual["ruleset"] == "seedling"
+    assert ranked["ruleset"] == "normal"
     normal = loadout.card_payload(_loadout(), match_uid="c" * 32, team=0,
                                   mode="casual_normal")
     assert normal["mode"] == "casual" and normal["ruleset"] == "normal"

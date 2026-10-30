@@ -672,8 +672,8 @@ func _render_seats() -> void:
 		var name := str(member.get("player_name", ""))
 		var code := str(member.get("friend_code", ""))
 		# 10-08：正在说话的人头像上挂小麦克风；点别人的头像看资料（同自定义房间）。
-		VoiceControls.attach_speaking_mic(frame, 0.3)
-		_seat_frames[code] = frame
+		VoiceControls.attach_speaking_mic(mask, 0.3, 18.0)
+		_seat_frames[code] = mask
 		var others_seat := not _local_only and code != _my_code()
 		if others_seat:
 			var tap := _button(seat, "", frame.position, frame.size)
@@ -1171,13 +1171,13 @@ func _update_mode_display(mode: String) -> void:
 	match mode:
 		"casual_normal":
 			_mode_button.text = _text("普通  ·  21 回合    ▾", "NORMAL  ·  21 ROUNDS    ▾")
-			_mode_hint.text = _text("至少携带 4 族 · 21 回合", "Equip at least 4 races · 21 rounds")
+			_mode_hint.text = _text("21回合·至少携带4族·休闲娱乐", "21 rounds · equip at least 4 races · casual play")
 		"ranked", "ranked_normal":
-			_mode_button.text = _text("排位  ·  段位赛    ▾", "RANKED  ·  LADDER    ▾")
-			_mode_hint.text = _text("携带 4 族才能突破森卫", "Equip 4 races to pass Forest")
+			_mode_button.text = _text("排位  ·  21 回合    ▾", "RANKED  ·  21 ROUNDS    ▾")
+			_mode_hint.text = _text("21回合·至少携带4族·段位积分", "21 rounds · equip at least 4 races · ranked points")
 		_:
 			_mode_button.text = _text("青苗  ·  13 回合    ▾", "SEEDLING  ·  13 ROUNDS    ▾")
-			_mode_hint.text = _text("最多 3 族 · 更快上手", "Up to 3 races · a faster start")
+			_mode_hint.text = _text("13回合·最多3族·休闲娱乐", "13 rounds · up to 3 races · casual play")
 	_style_mode(_mode_button, true)
 
 

@@ -128,9 +128,17 @@ class GloryBillingPlugin(godot: Godot) : GodotPlugin(godot), PurchasesUpdatedLis
                     endPurchase(id, JSONObject().put("state", "error").put("error", "no_activity"))
                     return@queryDetails
                 }
+                // 结算库 8 起一次性商品可以有多个「购买选项」，付款时必须带上选中那个的 offer token。
+                // 我们每档只有一个，取「向后兼容」的那个（Play 后台默认第一个建的就是）。
+                val offerToken = item.oneTimePurchaseOfferDetails?.offerToken
+                if (offerToken == null) {
+                    endPurchase(id, JSONObject().put("state", "error").put("error", "no_purchase_option: $productId"))
+                    return@queryDetails
+                }
                 val params = BillingFlowParams.newBuilder()
                     .setProductDetailsParamsList(listOf(
-                        BillingFlowParams.ProductDetailsParams.newBuilder().setProductDetails(item).build()))
+                        BillingFlowParams.ProductDetailsParams.newBuilder()
+                            .setProductDetails(item).setOfferToken(offerToken).build()))
                     .setObfuscatedAccountId(accountId)
                     .setObfuscatedProfileId(profileId)
                     .build()

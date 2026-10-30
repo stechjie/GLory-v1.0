@@ -74,9 +74,9 @@ func _ready() -> void:
 
 func _build_modes(content: VBoxContainer) -> void:
 	var specs := [
-		["casual", _t("青苗", "SEEDLING"), _t("13 回合 · 每回合 60 秒 · 最多 3 族", "13 rounds · 60s prep · up to 3 races")],
-		["casual_normal", _t("普通", "NORMAL"), _t("21 回合 · 至少携带 4 族", "21 rounds · equip at least 4 races")],
-		["ranked", _t("排位", "RANKED"), _t("至少 3 族参赛 · 携带 4 族才能突破森卫", "3+ races to play · equip 4 to pass Forest")],
+		["casual", _t("青苗", "SEEDLING"), _t("13回合·最多3族·休闲娱乐", "13 rounds · up to 3 races · casual play")],
+		["casual_normal", _t("普通", "NORMAL"), _t("21回合·至少携带4族·休闲娱乐", "21 rounds · equip at least 4 races · casual play")],
+		["ranked", _t("排位", "RANKED"), _t("21回合·至少携带4族·段位积分", "21 rounds · equip at least 4 races · ranked points")],
 	]
 	for spec in specs:
 		var mode: String = spec[0]

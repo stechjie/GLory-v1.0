@@ -145,6 +145,12 @@ func _add_money_action(logo_path: String, title: String, desc: String, enabled: 
 func _add_synergy_widgets() -> void:
 	var counts := SynergyService.count_races_from_board()
 	var shown := false
+	var grid := GridContainer.new()
+	grid.name = "SynergyGrid"
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 8)
+	grid.add_theme_constant_override("v_separation", 4)
+	_left_panel.add_child(grid)
 	for race in ["god", "dark", "undead", "human", "crimson"]:
 		var count := int(counts.get(race, 0))
 		if count <= 0:
@@ -154,12 +160,12 @@ func _add_synergy_widgets() -> void:
 			continue
 		shown = true
 		var row := HBoxContainer.new()
-		row.custom_minimum_size = Vector2(220, 58)
-		row.add_theme_constant_override("separation", 12)
-		_left_panel.add_child(row)
+		row.custom_minimum_size = Vector2(106, 54)
+		row.add_theme_constant_override("separation", 4)
+		grid.add_child(row)
 
 		var logo := Button.new()
-		logo.custom_minimum_size = Vector2(54, 54)
+		logo.custom_minimum_size = Vector2(48, 48)
 		logo.focus_mode = Control.FOCUS_NONE
 		logo.text = ""
 		if PrepWidgets.is_en():

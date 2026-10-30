@@ -268,10 +268,8 @@ async def require_ranked_races(player_id: uuid.UUID, normal: bool = False) -> No
 
 
 def validate_ranked_races(races: list[str], normal: bool = False) -> None:
-    if normal and len(races) < 4:
-        raise LoadoutRejected("ranked_need_four_races", "突破后排位模式需在备战区携带至少4个已解锁种族。")
-    if len(races) < 3:
-        raise LoadoutRejected("need_three_races", "排位模式需在备战区携带至少3个已解锁种族。")
+    if len(races) < 4:
+        raise LoadoutRejected("ranked_need_four_races", "排位模式需在备战区携带至少4个已解锁种族。")
 
 
 async def require_normal_races(player_id: uuid.UUID) -> None:
@@ -346,7 +344,7 @@ def card_payload(
         payload["team"] = int(team)
         if mode in ("casual", "casual_normal", "ranked", "ranked_normal"):
             payload["mode"] = "ranked" if mode.startswith("ranked") else "casual"
-            payload["ruleset"] = "normal" if mode.endswith("_normal") else "seedling"
+            payload["ruleset"] = "seedling" if mode == "casual" else "normal"
         # 本队里坐几号位（0~2，10-08）：组队房里选的位置带进对局。旧战斗服务器不认识这个字段，
         # 照旧按到达顺序坐第一个空位 —— 加字段向后兼容（见上面 CARD_VERSION 那条）。
         if 0 <= seat <= 2:
