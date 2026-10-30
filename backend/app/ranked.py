@@ -594,8 +594,8 @@ async def queue_gate(conn, player_id: uuid.UUID, mode: str,
     """
     if mode.startswith("ranked") and not accepting_now(now_utc):
         return GATE_WINDOW_CLOSED
-    if mode.startswith("ranked") and await owned_race_count(conn, player_id) < 3:
-        return "need_three_races"
+    if mode.startswith("ranked") and await owned_race_count(conn, player_id) < 4:
+        return "ranked_need_four_races"
     # 人工禁排位。只管排位，休闲照常（任务书 §四.2「默认不限制休闲」）。
     # 放在信誉分前面：它是运营明确下的，比系统算出来的更该优先解释给玩家听。
     if mode.startswith("ranked") and await sanctions.is_sanctioned(conn, player_id, sanctions.SCOPE_RANKED):

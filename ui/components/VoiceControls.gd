@@ -234,7 +234,7 @@ const SPEAKING_BG := Color(0.06, 0.12, 0.10, 0.92)
 
 # 在头像右下角挂一个（已经挂过就直接返回那一个）。fraction = 标记占头像边长的比例。
 # 全用锚点、不用像素：大厅的头像会随窗口缩放（_track），标记要跟着一起缩。头像都是正方形。
-static func attach_speaking_mic(avatar: Control, fraction: float = 0.36) -> Control:
+static func attach_speaking_mic(avatar: Control, fraction: float = 0.36, vertical_inset: float = 0.0) -> Control:
 	var existing := avatar.get_node_or_null(SPEAKING_NODE) as Control
 	if existing != null:
 		return existing
@@ -247,8 +247,10 @@ static func attach_speaking_mic(avatar: Control, fraction: float = 0.36) -> Cont
 	style.border_color = ACTIVE_COLOR
 	style.set_border_width_all(2)
 	style.set_corner_radius_all(999)
+	for edge in [SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM]:
+		style.set_content_margin(edge, 0.0)
 	badge.add_theme_stylebox_override("panel", style)
-	_anchor_inside(badge, 1.0 - fraction, 1.0)
+	badge.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
 	var icon := TextureRect.new()
 	icon.texture = load("res://assets/ui/voice/mic_on.svg")
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -258,6 +260,14 @@ static func attach_speaking_mic(avatar: Control, fraction: float = 0.36) -> Cont
 	badge.add_child(icon)
 	badge.visible = false
 	avatar.add_child(badge)
+	var resize_badge := func() -> void:
+		var side := minf(avatar.size.x, avatar.size.y) * fraction
+		badge.offset_left = -side
+		badge.offset_top = -side - vertical_inset
+		badge.offset_right = 0.0
+		badge.offset_bottom = -vertical_inset
+	avatar.resized.connect(resize_badge)
+	resize_badge.call()
 	return badge
 
 

@@ -1086,24 +1086,7 @@ func _setup_voice_controls() -> void:
 		add_child(control)
 		SafeArea.track(control)
 		top += VOICE_BTN_STEP
-	# 10-08：谁在说话。战斗界面没有头像，就在语音按钮下面列出来（小麦克风 + 名字），只列正在说的人。
-	_speaking_list = VBoxContainer.new()
-	_speaking_list.name = "SpeakingList"
-	_speaking_list.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	_speaking_list.offset_left = -16.0 - SPEAKING_ROW_SIZE.x
-	_speaking_list.offset_right = -16.0
-	_speaking_list.offset_top = top
-	_speaking_list.offset_bottom = top + SPEAKING_ROW_SIZE.y * 6.0
-	_speaking_list.add_theme_constant_override("separation", 4)
-	_speaking_list.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_speaking_list.z_index = 100
-	add_child(_speaking_list)
-	SafeArea.track(_speaking_list)
-	var speaking_timer := Timer.new()
-	speaking_timer.wait_time = 0.2
-	speaking_timer.autostart = true
-	speaking_timer.timeout.connect(_refresh_speaking_list)
-	add_child(speaking_timer)
+	# 战斗场景隐藏说话绿标；房间和备战头像提示仍保留。
 
 
 const SPEAKING_ROW_SIZE := Vector2(190, 32)

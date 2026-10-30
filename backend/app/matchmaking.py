@@ -74,8 +74,8 @@ TEAM_SIDE_SIZE = 3
 # 真实时间表，前者才带 GLORY_RANKED_WINDOW_ALWAYS_OPEN 那个测试开关。
 CASUAL = "casual"                 # 青苗 13 rounds
 CASUAL_NORMAL = "casual_normal"   # 普通 21 rounds
-RANKED = "ranked"                 # 森卫突破前 13 rounds
-RANKED_NORMAL = "ranked_normal"   # 突破后 21 rounds
+RANKED = "ranked"                 # legacy ranked alias; 21 rounds
+RANKED_NORMAL = "ranked_normal"   # all ranked players, 21 rounds
 OPEN_MODES = frozenset({CASUAL, CASUAL_NORMAL, RANKED, RANKED_NORMAL})
 KNOWN_MODES = OPEN_MODES
 TEAM_WAIT_SEC = {CASUAL: 10.0, CASUAL_NORMAL: 30.0, RANKED: 30.0, RANKED_NORMAL: 30.0}
