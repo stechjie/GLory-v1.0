@@ -122,8 +122,8 @@ func _best_animation_name(player: AnimationPlayer, action: String) -> String:
 		return ""
 	var best_name := ""
 	var best_score := -999999.0
-	for name in names:
-		var text := String(name)
+	for anim_name in names:
+		var text := String(anim_name)
 		var lower := text.to_lower()
 		var animation := player.get_animation(text)
 		var length := animation.length if animation != null else 0.0
