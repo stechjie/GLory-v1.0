@@ -196,10 +196,7 @@ func _warm_one_missing_bot() -> bool:
 	# all keys present, prepare runs synchronously without another job intervening.
 	# Keep BotPlayer.state_for's cache policy, inputs and independent RNG intact.
 	for slot in _bot_slots:
-		if _net.team_bot_states.has(slot):
-			continue
-		var key := "%s/%d/%d" % [str(_net.shared_seed), slot, round_index]
-		if Bot._cache.has(key):
+		if Bot.has_cached_state(_net.shared_seed, slot, round_index):
 			continue
 		var started := Time.get_ticks_usec()
 		Bot.state_for(_net.shared_seed, slot, round_index)

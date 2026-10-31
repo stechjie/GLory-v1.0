@@ -114,6 +114,11 @@ const CUE_DEATH_SHATTER := "death_shatter"
 const CUE_DEATH_SHATTER_HEAVY := "death_shatter_heavy"
 const CUE_DEATH_FALL := "death_fall"
 const CUE_DEATH_LANE_CLEAR := "death_lane_clear"
+# Original synthesized monster kill accent; separate from actual balance-change UI.
+# P3 keeps the existing 220 ms retrigger guard / two voices per 600 ms burst limit.
+const CUE_MONSTER_KILL_REWARD := "monster_kill_reward"
+# These two accents are played only by BattleCombatFeedback, never by death VFX.
+const CUE_LANE_CLEAR_ACCENT := "lane_clear_accent"
 
 const CUE_MERC_SUMMON := "merc_summon"
 const CUE_UPGRADE_STONE_DRAW := "upgrade_stone_draw"
@@ -343,6 +348,8 @@ const CUES := {
 	CUE_DEATH_SHATTER_HEAVY: "res://assets/audio/sfx/battle/death_shatter_heavy.wav",
 	CUE_DEATH_FALL: "res://assets/audio/sfx/battle/death_fall.wav",
 	CUE_DEATH_LANE_CLEAR: "res://assets/audio/sfx/battle/death_lane_clear.wav",
+	CUE_MONSTER_KILL_REWARD: "res://assets/audio/sfx/battle/monster_coin_crisp.wav",
+	CUE_LANE_CLEAR_ACCENT: "res://assets/audio/sfx/battle/lane_clear_accent.wav",
 	CUE_HUMAN_KING_REWARD: "res://assets/audio/sfx/battle/human_king_reward.mp3",
 	CUE_STAR4_SWORDSMAN_SKILL: "res://assets/audio/sfx/battle/star4_swordsman_skill.mp3",
 	CUE_STAR4_ARCHER_SKILL: "res://assets/audio/sfx/battle/star4_archer_skill.wav",
@@ -527,6 +534,8 @@ const THROTTLE_MSEC_BY_CUE := {
 # ⚠️ 这一档是**音色配平**，与调用方按归属传的 `volume_db` 是**相加**的（见 play()）。
 #    也就是说「我方的一记冰棱」= −7 + 0 = −7 dB，「远处敌方的一记冰棱」= 直接不出声。
 const VOLUME_DB_BY_CUE := {
+	CUE_MONSTER_KILL_REWARD: -1.0,
+	CUE_LANE_CLEAR_ACCENT: -1.0,
 	# 10-21 整体 +2 dB（BGM 盖住音效）。用户实测「战斗时 BGM 太响、完全盖住普攻音」
 	# ⇒ 两头一起动：BGM 在对局里压到 0.5 线性（BattleUI.BATTLE_BGM_LINEAR），
 	#    这 17 条普攻音各 +2 dB。只抬音效不压 BGM 会让整体过载，别只改一边。
@@ -1016,6 +1025,10 @@ static func _stream_for(path: String) -> AudioStream:
 
 # Event tier wins before ownership. UI keeps a reserved, non-battle slot.
 static func cue_priority(cue: String) -> int:
+	if cue == CUE_LANE_CLEAR_ACCENT:
+		return 1
+	if cue == CUE_MONSTER_KILL_REWARD:
+		return 3
 	if cue in [CUE_BATTLE_VICTORY, CUE_BATTLE_DEFEAT, CUE_BOSS_APPEAR, CUE_FINAL_ROUND_PVP_INTRO]:
 		return 0
 	if cue == CUE_HUMAN_KING_DEATH:

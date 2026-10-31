@@ -35,6 +35,9 @@ const KNOWN_TYPES := {
 	# 而 `validate()` 会报 `unknown_type:`。这些事件**每只棋子的每次普攻**都会产生，
 	# 不登记就是每局几十条 warning + 校验错误。
 	"sfx_proc": true,
+	# 10.31：4 攻击套装斩杀（BattleSimTreasures._try_attack_set_execute）。旧客户端不认识它
+	# 只会记一次 warning 并忽略，不影响死亡与结算。
+	"set_execute": true,
 }
 
 const CORE_FIELD_ORDER := [

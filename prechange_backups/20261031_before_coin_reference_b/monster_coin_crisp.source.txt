@@ -1,0 +1,6 @@
+Source: 12 Coin Sound Effects by StarNinjas
+https://opengameart.org/node/123368
+License: CC0 1.0 Universal (https://creativecommons.org/publicdomain/zero/1.0/)
+Source file: coin.11.ogg from coins_-_starninjas.zip
+Adaptation: trimmed to 0.080-0.500 seconds, downmixed to mono, resampled to 44100 Hz, short fades, peak normalized.
+Retrieved: 2026-10-31

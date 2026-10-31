@@ -2920,16 +2920,72 @@ func _check_synergy_activation() -> void:
 		_synergy_unlocked_before = unlocked
 		return
 	var crossed := false
+	# 10.31：画面反馈要**所有**新解锁档位（声音仍只认终极档），所以这里不再 break。
+	var new_tiers: Array = []
 	for key in unlocked.keys():
 		if _synergy_unlocked_before.has(key):
 			continue
-		if not _is_ultimate_synergy_tier(str(key)):
-			continue
-		crossed = true
-		break
+		new_tiers.append(str(key))
+		if _is_ultimate_synergy_tier(str(key)):
+			crossed = true
+	var dropped_tiers: Array = []
+	for key in _synergy_unlocked_before.keys():
+		if not unlocked.has(key):
+			dropped_tiers.append(str(key))
 	_synergy_unlocked_before = unlocked
 	if crossed:
 		SfxService.play(SfxService.CUE_SYNERGY_ACTIVATE)
+	_queue_synergy_visuals(new_tiers, dropped_tiers)
+
+
+# --- 10.31 羁绊激活画面反馈 ----------------------------------------------------
+#
+# 分三档（按事件重要程度，见 PrepSynergyActivateBurst 顶部说明）：
+#   · minor：该族第 1 档「特性」—— 第一枚该族棋子上场就会触发，太频繁，只弹面板图标；
+#   · major：中间档（神3 / 暗2 / 灵4 …）—— 面板弹 + 计数闪种族色 + 棋盘该族全体脚下光环；
+#   · ultimate：最高档 —— major 全部 + 光柱 + 屏幕四周种族色暗角 + 档位名弹字。
+# 一次操作跨多档时，每族只按它**最高**的新档播一次。
+# 掉档（卖掉一枚跌出某档）只让面板图标褪一下色，不做棋盘特效。
+#
+# 不在这里直接播：_refresh_all() 后面还会重建棋子模型（摆上棋盘那一刻模型会被换新），
+# 当场挂上的特效立刻跟着节点没了 —— 与升星同一个坑，所以同样 call_deferred。
+func _queue_synergy_visuals(new_tiers: Array, dropped_tiers: Array) -> void:
+	var best: Dictionary = {}  # race -> 新解锁的最高档位
+	for key in new_tiers:
+		var parts := str(key).split("@")
+		if parts.size() != 2:
+			continue
+		best[parts[0]] = maxi(int(best.get(parts[0], 0)), int(parts[1]))
+	var dropped_races: Dictionary = {}
+	for key in dropped_tiers:
+		var parts := str(key).split("@")
+		if parts.size() == 2 and not best.has(parts[0]):
+			dropped_races[parts[0]] = true
+	for race in best.keys():
+		var threshold := int(best[race])
+		var kind := _synergy_activation_kind(str(race), threshold)
+		play_synergy_activation.call_deferred(str(race), threshold, kind)
+	for race in dropped_races.keys():
+		_synergy.pulse_race.call_deferred(str(race), "drop")
+
+
+# "minor" / "major" / "ultimate"。判据都取 RACE_THRESHOLDS，不写死数字。
+func _synergy_activation_kind(race: String, threshold: int) -> String:
+	if _is_ultimate_synergy_tier(_synergy_tier_key(race, threshold)):
+		return "ultimate"
+	var thresholds: Array = SynergyService.RACE_THRESHOLDS.get(race, [])
+	if not thresholds.is_empty() and threshold <= int(thresholds[0]):
+		return "minor"
+	return "major"
+
+
+func play_synergy_activation(race: String, threshold: int, kind: String) -> void:
+	_synergy.pulse_race(race, kind)
+	if kind == "minor":
+		return
+	play_synergy_board_burst(race, kind == "ultimate")
+	if kind == "ultimate":
+		play_synergy_ultimate_screen(race, threshold)
 
 
 # 这个档位键是不是「终极羁绊」。键的格式见 _synergy_tier_key()："god@7"。

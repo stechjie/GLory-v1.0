@@ -4167,6 +4167,8 @@ func _send_replay_to_peer(peer_id: int, battle_id: String, own: PackedByteArray,
 		"payloads": payloads,
 		"done": {},
 		"deadline": 0.0, # Start only after this connection's final queued block is sent.
+		"queued_at_usec": Time.get_ticks_usec(),
+		"send_drained_at_usec": 0,
 		"tries": 0,
 	}
 	_net_log("replay chunked send peer=%d battle=%s kinds=%d bytes=%d/%d" % [
@@ -4426,6 +4428,12 @@ func _handle_replay_ack(sender: int, battle_id: String, kind: String, missing: P
 		(pending["done"] as Dictionary)[kind] = true
 		_replay_send_queue.complete_kind(sender, kind)
 		if (pending["done"] as Dictionary).size() >= int(pending.get("kinds", 0)):
+			if pending.has("queued_at_usec"):
+				var completed_at := Time.get_ticks_usec()
+				var drained_at := int(pending.get("send_drained_at_usec", 0))
+				_net_log("replay delivery phases peer=%d battle=%s total_usec=%d after_drain_usec=%d tries=%d" % [
+					sender, battle_id, completed_at - int(pending.queued_at_usec),
+					maxi(0, completed_at - drained_at) if drained_at > 0 else 0, int(pending.get("tries", 0))])
 			_replay_forget_peer(sender)
 			_net_log("replay delivery complete peer=%d battle=%s" % [sender, battle_id])
 			return
@@ -4511,6 +4519,10 @@ func _replay_mark_queue_drained(peer_id: int) -> void:
 	if not pending.is_empty() and not _replay_send_queue.has_queued(peer_id) \
 			and float(pending.get("deadline", 0.0)) <= 0.0:
 		pending["deadline"] = _now() + REPLAY_ACK_TIMEOUT_SEC
+		if int(pending.get("send_drained_at_usec", 0)) == 0 and pending.has("queued_at_usec"):
+			pending["send_drained_at_usec"] = Time.get_ticks_usec()
+			_net_log("replay send queue drained peer=%d battle=%s elapsed_usec=%d" % [
+				peer_id, str(pending.battle_id), int(pending.send_drained_at_usec) - int(pending.queued_at_usec)])
 
 
 # 断线时把这个 peer 的下发状态丢掉。不清的话每个掉线的人都留一份几十 KB 的
@@ -4895,6 +4907,9 @@ func _room_publish_replays(room: Dictionary, job: RefCounted) -> void:
 	_net_log("server replay/result generated room=%d round=%d elapsed_ms=%.1f compute_usec=%d max_slice_usec=%d prepare_usec=%d enqueue_max_usec=%d" % [
 		job.room_id, job.round_index, (Time.get_ticks_usec() - job.enqueued_at_usec) / 1000.0,
 		job.compute_usec, job.max_slice_usec, job.prepare_usec, _simulation_max_enqueue_usec])
+	_net_log("server bot preparation room=%d round=%d warmup_calls=%d warmup_usec=%d max_warmup_usec=%d advances=%d" % [
+		job.room_id, job.round_index, job.bot_warmup_calls, job.bot_warmup_usec,
+		job.max_bot_warmup_usec, job.advances])
 	_net_log("replay packed room=%d round=%d a=%d B b=%d B pack_usec=%d error=%s" % [
 		job.room_id, job.round_index, packed_a.size(), packed_b.size(), int(job.result.pack_usec), str(room.replay_error)])
 	# All timestamps use the server monotonic clock. Slices include scheduler

@@ -46,8 +46,48 @@ func _run() -> void:
 	_check_dead_unit_nodes_are_not_recreated()
 	await _check_claim_zeroes_hp_and_watchdog_releases()
 	await _check_release_cleans_playing_death()
+	_check_cross_lane_kill_sound()
 	_check_source_contract()
 	_h.finish(get_tree())
+
+
+func _check_cross_lane_kill_sound() -> void:
+	var old_team_mode: bool = GameState.team_mode
+	var old_team_active: bool = NetworkService.team_active
+	GameState.team_mode = true
+	NetworkService.team_active = false
+	var vfx := BattleVfxScript.new()
+	add_child(vfx)
+	vfx._state = {
+		"player": [
+			{"uid": "own", "owner_slot": 0, "team": "player", "lane": 0},
+			{"uid": "ally", "owner_slot": 1, "team": "player", "lane": 1},
+		],
+		"enemy": [
+			{"uid": "local_target", "owner_slot": 3, "team": "enemy", "lane": 0},
+			{"uid": "other_target", "owner_slot": 4, "team": "enemy", "lane": 1},
+		],
+	}
+	vfx._monster_reward_msec = -100000
+	vfx._play_monster_kill_reward("local_target", "ally")
+	_h.expect(vfx._monster_reward_msec != -100000, "local_lane_reward_missing", "本路击杀音应保留原有行为")
+	vfx._monster_reward_msec = -100000
+	vfx._play_monster_kill_reward("other_target", "own")
+	_h.expect(vfx._monster_reward_msec != -100000, "cross_lane_local_kill_silent", "自己的棋子在其他路击杀应播放音效")
+	var first_msec := Time.get_ticks_msec() - 40
+	vfx._monster_reward_msec = first_msec
+	vfx._play_monster_kill_reward("other_target", "own")
+	_h.expect(vfx._monster_reward_msec == first_msec, "cross_lane_merge_failed", "短时间多次击杀应合并音效")
+	for killer in ["ally", "", "unknown"]:
+		vfx._monster_reward_msec = -100000
+		vfx._play_monster_kill_reward("other_target", killer)
+		_h.expect(vfx._monster_reward_msec == -100000, "cross_lane_unowned_kill_sounded", "队友或未知击杀者不能触发跨路音效")
+	vfx._monster_reward_msec = -100000
+	vfx._play_monster_kill_reward("ally", "own")
+	_h.expect(vfx._monster_reward_msec == -100000, "ally_death_reward_sounded", "友军死亡不能触发击杀音")
+	vfx.queue_free()
+	GameState.team_mode = old_team_mode
+	NetworkService.team_active = old_team_active
 
 
 # 第 1 条：淡出必须够得到真正的网格。
@@ -311,7 +351,10 @@ func _check_source_contract() -> void:
 	var at := renderer.find("func detach_actor_for_death")
 	if not _h.expect(at >= 0, "detach_missing", "找不到 detach_actor_for_death()"):
 		return
-	var block := renderer.substr(at, 1400)
+	# Read the whole function; a fixed character slice silently stopped reaching
+	# the status-controller line as the existing explanatory comments grew.
+	var next_function := renderer.find("\nfunc ", at + 1)
+	var block := renderer.substr(at, next_function - at) if next_function >= 0 else renderer.substr(at)
 	_h.expect(block.contains("(status_vfx as Node).set_process(false)"),
 		"status_controller_not_stopped",
 		"detach_actor_for_death() 没有停掉状态控制器的每帧刷新")

@@ -1,0 +1,1742 @@
+extends "res://scenes/battle/BattleResult.gd"
+
+const BattleReplayUtil = preload("res://scripts/battle/BattleReplayUtil.gd")
+const PlaybackRecovery := preload("res://scripts/battle/BattlePlaybackRecovery.gd")
+const RenderWarmup := preload("res://scripts/assets/BattleRenderWarmup.gd")
+const BattlePresentationDirectorScript := preload("res://effects/runtime/presentation/BattlePresentationDirector.gd")
+const LegacyBattleVfxAdapterScript := preload("res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd")
+const VfxProfileResolverScript := preload("res://effects/runtime/presentation/VfxProfileResolver.gd")
+const PetPreview := preload("res://scripts/pets/PetPreview.gd")
+
+# Presentation cannot hold the authoritative result indefinitely.
+const PRESENTATION_DRAIN_TIMEOUT_SEC := 3.0
+
+# --- V2 P1-01：最短可读演出时长 -----------------------------------------------
+#
+# 问题：固定 seed 的两个 PVE 回合实测只有 46 帧和 35 帧，按 SIM_TICK_SEC=0.1 播出来
+# 就是 4.6 秒和 3.5 秒。技能起手、命中、死亡挤在一起，玩家来不及看清发生了什么。
+#
+# 做法：**只改播放节奏，不碰模拟**。回放是一个已经算完的帧数组，播放速度决定的只是
+# 走多快；帧的内容、顺序、最终状态都不受影响。所以这里拉长的是可读窗口，
+# 不是战斗本身 —— final_state / replay / frame_events 三个哈希必须逐字不变，
+# 这一点由 tools/battle_presentation_baseline 的改前/改后对比守住。
+#
+# 刻意不做的事：
+#   * 不改 SIM_TICK_SEC（那是模拟步长，动它就是改战斗）
+#   * 不加速：natural >= 目标时保持 1.0，长战不会被压缩
+#   * 拉长有上限（READABLE_MIN_PLAYBACK_SPEED），否则一场 1 秒的战斗会被抻成慢动作
+#
+# 覆盖范围：**只覆盖回放路径**。本地模拟分支事先不知道总时长，无法据此定速度；
+# 那条路要另想办法（按事件密度动态调速），不在本项范围内。
+const READABLE_MIN_SEC := 5.0
+const READABLE_MIN_SEC_BOSS := 8.0
+# 最慢到 0.5 倍速，也就是最多拉长一倍。再慢就从"看得清"变成"拖沓"。
+const READABLE_MIN_PLAYBACK_SPEED := 0.5
+
+# 本场回放的播放倍率。1.0 表示自然时长已经够读，不做任何拉伸。
+var _readable_speed := 1.0
+const VFXSummonSpawn3D := preload("res://effects/vfx3d/modules/VFXSummonSpawn3D.gd")
+const FINAL_SUMMON_RED := preload("res://effects/vfx3d/profiles/formation/summon_formation_red.tres")
+const FINAL_SUMMON_BLUE := preload("res://effects/vfx3d/profiles/formation/summon_formation_blue.tres")
+const FINAL_ROUND_INTRO_SEC := 2.05
+
+var _replay: Dictionary = {}
+var _replay_mode := false
+var _replay_frame := 0
+# Latest applied replay tick, used only to aim the archer presentation.
+var _archer_intercept_tick := -1
+# 只有正常播放循环推进逻辑帧时为真：此时显示层在两帧之间插值。
+# 其余 _apply_replay_frame 调用（开局、PVP 放行、切换观战、跳过）都是定位，直接到位。
+var _visual_interp_stepping := false
+var _replay_round := -1
+var _battle_result_reported := false
+# --- 墙钟 vs 单调时钟（10.08 反馈第 3 / 5 条）----------------------------------
+#
+# 本场景里凡是「两个时刻相减」的 deadline，全都是**墙钟**（Time.get_ticks_msec()）。
+# 它在手机上是会跳的：切后台再回来，墙钟一次性跳掉几分钟 ⇒ 每个 deadline 瞬间过期
+# ⇒ 回放被判 `battle_playback_timeout`、准备被判 `battle_prepare_timeout`，
+# 玩家回来看到的是「已经进备战、但这一回合的战斗金没给」。
+#
+# 所以这里自己攒一个**只在前台推进**的毫秒表 `_mono_msec`：
+#   * 每帧按 `delta` 累加（`_process` 在后台不跑，这段天然不计入）；
+#   * 收到 NOTIFICATION_APPLICATION_PAUSED 时立刻冻结，RESUMED 时把本帧积压的
+#     `delta` 丢掉（_drop_resume_frame）。
+# 所有 deadline 的比较与写入都改用它；`Time.get_ticks_msec()` 仍留在**纯统计**处
+# （日志里的 elapsed_ms / analytics 的耗时），那是墙钟语义，本来就该算真实流逝。
+var _mono_msec := 0
+var _mono_frozen := false
+# 恢复前台后的第一帧还没处理（那时 delta 是积压值，要夹住）。
+var _resume_frame_pending := false
+# 恢复后的这一帧 delta 可能积压到几十秒 —— 不丢掉的话，回放会在单帧里被推完
+# （就是用户报的「卡屏」）。上限取 0.25 秒：比任何正常帧都宽，又远小于积压值。
+const RESUME_DELTA_CLAMP_SEC := 0.25
+# 单帧最多生成多少条回放视觉事件。`_apply_replay_frame` 要把每帧的 visual_events
+# 灌进 Director 并起特效；后台回来后若一次补几十帧，这里就是那个「卡死」的现场
+# （既存注释记过一次 683ms -> 冻结 5s -> 单帧 4655ms 的死亡螺旋）。
+const MAX_REPLAY_FRAMES_PER_FRAME := 6
+# 已灌入 visual_events 的最高回放帧号，避免重复播放同一帧的视觉事件。
+var _replay_events_applied := -1
+var _replay_drum_event_cursor := 0
+var _replay_drum_last_frame := -1
+var _replay_resonance_event_cursor := 0
+var _replay_resonance_last_frame := -1
+var _replay_red_tide_event_cursor := 0
+var _replay_red_tide_last_frame := -1
+var _replay_rune_event_cursor := 0
+var _replay_rune_last_frame := -1
+# 10.10：母灵魂火计数（undead_mother_count_events）的回放游标，与上面几组同一写法。
+var _replay_mother_event_cursor := 0
+var _replay_mother_last_frame := -1
+var _replay_by_uid: Dictionary = {}
+# 9.24 #7（订正）：末日守卫「血之契约」把被连接目标**永久**变成我方棋子。
+#
+# 模拟层就是这么做的 —— BattleSimulator._convert_link_target_to_caster_team 只把
+# target.team 改掉并把它从对方数组搬到己方数组，**没有任何回退路径**（守卫死了也不还）。
+# 但这一条跨不过回放边界：roster 是**首帧快照**，而 13 列 frame 里**没有 team 列**，
+# 于是表现层永远把它当敌方 —— 血条一直是红的（用户实测："末日守卫先死亡，而被连接方
+# 无特殊标志" / "我方棋子应该以绿色血条表示"）。
+#
+# 修法：**见到即锁存**（uid -> 策反后所属队伍）。契约一生效就把目标记下来，此后整局有效，
+# 与模拟层"不再回退"的语义逐字对应；连线那根绳子断掉不影响这条记录。
+#
+# 为什么不直接往 frame 里加一列 team：frames 属于 ReplayDigest.SIMULATION_TOP_FIELDS，
+# 加列会让 D0-D6 的**冻结哈希**漂移。表现层能自洽解决的问题，不去动模拟身份。
+var _converted_ally_ids: Dictionary = {}
+var _battle_setup_ready := false
+const BATTLE_PREPARE_TIMEOUT_MSEC := 30000
+var _battle_prepare_deadline_msec := 0
+var _playback_deadline_msec := 0
+var battle_preparation_report: Dictionary = {}
+var _assets_ready_on_entry := false
+var _skip_cached_prepare_bar := false
+var _battle_prepare_started_msec := 0
+var _final_round_intro_active := false
+var _final_round_intro_started := false
+# 切镜头观战：_replay 永远是"正在播放"的那份；自己队伍的原始 replay 存在
+# _replay_own（结算/跳过必须用它），敌方队伍的存在 _replay_rival。
+var _replay_own: Dictionary = {}
+var _replay_rival: Dictionary = {}
+var _view_toggle_btn: Button
+# 9.13 #2：自己这一场已经播完（含"跳过画面"）、正在等其他人结束时置真。
+# 这个状态下允许继续切镜头看另一队的战斗 —— 打完之后切过去只推回放，
+# 不再走任何结算/返回逻辑（_finish_replay 只允许跑一次）。
+var _settlement_waiting := false
+# 补看另一队时的播放游标是否已经到末帧（到了就停住，不再推进、也不触发结算）。
+var _spectate_done := false
+# B8: on-screen frame-rate readout (player-facing only, like PrepScreen).
+# Battle scene had none before this; see bug report 9.9bug提交及修复08 #8.
+var _fps_label: Label
+var _fps_accum := 0.0
+var _attack_audio_planner := preload("res://ui/services/BattleAttackAudioPlanner.gd").new()
+
+var _presentation_director: RefCounted = BattlePresentationDirectorScript.new()
+# D4: migration-period adapter. It only plays cues for units in
+# BattlePresentationSlice; everything else is completed immediately and keeps
+# being drawn by the legacy snapshot-diff path in BattleVfx.
+var _legacy_vfx_adapter: RefCounted = LegacyBattleVfxAdapterScript.new()
+# D5: resolves the .tres cue profile for each event. Loaded on the first battle
+# so the profiles are not read during scene instantiation.
+var _vfx_profile_resolver: RefCounted = VfxProfileResolverScript.new()
+var _vfx_profiles_loaded := false
+# 临时缓解（B7），与 PrepScreen.TEAM_BATTLE_PREP_TIMEOUT_SEC /
+# NetworkService.REPLAY_TIMEOUT_SEC 必须保持同量级：三处任何一处偏小，
+# 客户端就会先于服务器看门狗放弃。这是 fallback 路径，主路径在 PrepScreen。
+const TEAM_REPLAY_WAIT_TIMEOUT_SEC := 60.0
+
+func _ready() -> void:
+	_setup_fps_overlay()
+	_setup_voice_controls()
+	if GameState.team_mode:
+		var package := GameState.take_pending_battle_package()
+		if str(package.get("mode", "")) == "team_replay":
+			var prepared_replay: Dictionary = package.get("replay", {}) as Dictionary
+			if BattleReplayUtil.valid_team_replay(prepared_replay):
+				_start_replay(prepared_replay)
+				return
+			push_warning("Prepared team replay was invalid; falling back to BattleScreen wait.")
+		_kind = "team"
+		await get_tree().process_frame
+		if not is_inside_tree():
+			return
+		_build()
+		await get_tree().process_frame
+		if not is_inside_tree():
+			return
+		_show_team_waiting()
+		_start_battle_music()   # start BGM immediately, before the host's board-wait
+		_battle_setup_ready = true
+		if not NetworkService.team_active:
+			# 分帧计算：算的过程中玩家可能退出战斗界面，await 回来必须先确认还在树上。
+			var local_a: Dictionary
+			if TutorialMode.scripted_pvp_round():
+				local_a = await preload("res://scripts/tutorial/TutorialBattleDirector.gd").prepare(
+					func() -> bool: return is_inside_tree() and not _finished)
+			else:
+				local_a = await BattleSim.compute_team_replay_async(0)
+			if not is_inside_tree():
+				return
+			if local_a.is_empty():
+				_fail_team_replay("tutorial_roster_balance")
+				return
+			var local_b: Dictionary = await BattleSim.compute_team_replay_async(1)
+			TutorialMode.clear_ai_roster_plan()
+			if not is_inside_tree():
+				return
+			BattleSim.stamp_team_round_damages(local_a, local_b)
+			NetworkService.team_replay_rival = local_b
+			_start_replay(local_a)
+			return
+		NetworkService.team_replay = {}
+		NetworkService.team_replay_rival = {}
+		NetworkService.team_submit_board(NetProtocol.team_board_submission(GameState.board_slots, GameState.mercenary_slots))
+		var my_team := GameConstants.team_of_slot(NetworkService.team_local_slot)
+		if NetworkService.is_host and not bool(NetworkService.get("_dedicated_server")):
+			# Host waits for everyone's board, computes BOTH teams' replays, sends
+			# each player their team's, and plays its own.
+			while not NetworkService.team_boards_available():
+				await get_tree().create_timer(0.1).timeout
+			var replay_a: Dictionary = await BattleSim.compute_team_replay_async(0)
+			if not is_inside_tree():
+				return
+			var replay_b: Dictionary = await BattleSim.compute_team_replay_async(1)
+			if not is_inside_tree():
+				return
+			BattleSim.stamp_team_round_damages(replay_a, replay_b)
+			NetworkService.team_broadcast_replays(replay_a, replay_b)
+			NetworkService.team_replay_rival = replay_b if my_team == 0 else replay_a
+			_start_replay(replay_a if my_team == 0 else replay_b)
+		else:
+			# Client waits for the host's replay, then plays it.
+			var wait_elapsed := 0.0
+			print("[NET] waiting for replay round=%d" % GameState.round_index)
+			while not _valid_team_replay(NetworkService.team_replay):
+				await get_tree().create_timer(0.1).timeout
+				# 本函数其余每个 await 点都有这道守卫，唯独这个循环漏了。
+				# 场景被 Main._clear() 移除后（例如重连成功落回备战），这个协程还在
+				# 计时，到点就 _fail_team_replay -> battle_finished(error)，把一个已经
+				# 好好待在备战界面的玩家踹回主菜单。
+				# 注意这只是止血：完整修法是整段流程用 cancel token / attempt
+				# generation，并校验 battle_id 与代次（B12，见文档 1B-5）。
+				if not is_inside_tree():
+					return
+				wait_elapsed += 0.1
+				if not NetworkService.team_replay.is_empty() and not _valid_team_replay(NetworkService.team_replay):
+					print("[NET] replay invalid round=%d" % GameState.round_index)
+					_fail_team_replay("invalid_replay")
+					return
+				if wait_elapsed >= TEAM_REPLAY_WAIT_TIMEOUT_SEC:
+					print("[NET] replay timeout round=%d" % GameState.round_index)
+					_fail_team_replay("replay_timeout")
+					return
+			print("[NET] replay received round=%d" % GameState.round_index)
+			_start_replay(NetworkService.team_replay)
+		return
+	# 到这里 team_mode 必为 false，而那只有教学会留成 false（见 prepare_tutorial_state）。
+	_kind = TutorialMode.battle_kind()
+	_state = BattleSim.prepare_tutorial_state(_kind)
+	await get_tree().process_frame
+	if not is_inside_tree():
+		return
+	_prefetch_battle_assets()
+	await get_tree().process_frame
+	if not is_inside_tree():
+		return
+	_build()
+	await get_tree().process_frame
+	if not is_inside_tree():
+		return
+	_start_battle_music()
+	await get_tree().process_frame
+	if not is_inside_tree():
+		return
+	await _prepare_battle_models()
+func _exit_tree() -> void:
+	_presentation_director.dispose()
+	SfxService.stop_battle_audio()
+	if _voice_controls != null:
+		_voice_controls.teardown()
+	_stop_battle_music()
+	# 本回合的敌人资源到此为止；玩家阵容留着，下回合还要用。
+	release_round_assets()
+
+# --- 前台单调时钟（10.08 反馈第 3 / 5 条）------------------------------------
+#
+# 为什么不能用 Time.get_ticks_msec()：那是**墙钟**。手机切后台（锁屏、切应用）再
+# 回来，它会一次性跳掉几分钟，于是本场景所有 deadline 同时过期 ——
+#   回放超时 -> _fail_team_replay("battle_playback_timeout") -> 判负、战斗金不结算；
+#   准备超时 -> _fail_team_replay("battle_prepare_timeout")。
+# 这正是用户报的「切后台回来已经进备战，但没拿到回合战斗金」。
+#
+# 修法：自己攒一个**只在前台推进**的毫秒表。`_process` 在 APPLICATION_PAUSED 期间
+# 根本不会被调用，所以后台那段时间天然不计入；恢复时的积压 delta 也一并丢掉。
+#
+# `_mono_frozen` 是第二道保险：即便某个平台在后台仍然投递帧（或我们自己手动驱动
+# `_process` 做行为验证），只要收到过 PAUSED 且还没 RESUMED，这张表就一格都不走。
+# 两个条件都指向同一件事——「后台的时间不算进 deadline」。
+func _tick_monotonic_clock(delta: float) -> void:
+	if _mono_frozen:
+		# 后台期间收到帧：一毫秒都不计。delta 也不留给恢复帧（恢复帧另有夹取）。
+		return
+	# 恢复后的第一帧 delta 是积压值：夹到 RESUME_DELTA_CLAMP_SEC，既不让单调表
+	# 一次性跳掉（那等于没修），也不让回放补帧淹没这一帧（那正是「卡屏」）。
+	var step := delta
+	if _resume_frame_pending:
+		_resume_frame_pending = false
+		step = minf(delta, RESUME_DELTA_CLAMP_SEC)
+	_mono_msec += int(roundf(step * 1000.0))
+
+# 恢复前台后的第一帧：delta 是积压值（可能几十秒）。必须夹住 —— 不夹的话
+#   * 单调表一次性前进几十秒（等于没修）；
+#   * 回放在同一帧里被推进几十帧，每帧还要生成特效，正是「卡屏」的现场。
+func _drop_resume_frame() -> void:
+	_resume_frame_pending = true
+	# 积压的回放时间直接丢掉：宁可回放比实时略慢，也不能攒出无限积压
+	# （与 _process 里那道 minf 封顶同一条策略）。
+	_sim_accumulator = 0.0
+
+func _notification(what: int) -> void:
+	match what:
+		NOTIFICATION_APPLICATION_PAUSED:
+			# 后台期间 _process 不跑，单调表自然停住；_mono_frozen 是第二道保险
+			# （见 _tick_monotonic_clock），也是给日志留的一条证据。
+			_mono_frozen = true
+			_resume_frame_pending = true
+		NOTIFICATION_APPLICATION_RESUMED:
+			_mono_frozen = false
+			_drop_resume_frame()
+
+func _process(delta: float) -> void:
+	# 前台时钟先推进（切后台期间 _process 不跑，天然不计入）。
+	_tick_monotonic_clock(delta)
+	# Slow devices drop simulation accumulator time. Bound actual elapsed
+	# playback too, otherwise that deliberate slowdown can last indefinitely.
+	if NetworkService.team_active and not NetworkService.is_host and _replay_mode and not _return_emitted and _playback_deadline_msec > 0 \
+			and _mono_msec >= _playback_deadline_msec:
+		_fail_team_replay("battle_playback_timeout")
+		return
+	# B8: keep the on-screen FPS readout live in every mode (team + tutorial).
+	if _fps_label != null:
+		_fps_accum += delta
+		if _fps_accum >= 0.25:
+			_fps_accum = 0.0
+			_fps_label.text = "FPS %d" % int(Engine.get_frames_per_second())
+	if not _battle_setup_ready:
+		return
+	# _update_vfx_camera_shake is defined in BattleVfx (a base class), so the old
+	# per-frame has_method() check was always true — pure overhead.
+	_update_vfx_camera_shake()
+	# 水晶演出要在 _finished 之后才播（结算时才召唤），所以必须放在下面那个
+	# `if _finished: return` 之前，否则水晶不漂浮、血量数字也不会跟到水晶脚下。
+	_update_crystal_demo(delta)
+	if _finished:
+		# 9.13 #2：自己打完了（或跳过了动画）在等别人时，仍然让「查看另一队」能用。
+		# 这里只推进补看的回放，绝不重入 _finish_replay —— 结算与 battle_finished
+		# 只能发一次，否则会被重复拉进备战/结算。
+		if _settlement_waiting and _watching_rival and _replay_mode:
+			_advance_spectate(delta)
+		return
+	if _final_round_intro_active:
+		return
+	if _replay_mode:
+		# 10.29 清场定格：本地那一路最后一个敌人被打死时整个棋盘停 0.2 秒（BattleVfx._begin_lane_clear_freeze）。
+		# 停的是回放推进，不是 Engine.time_scale；这段时间不累加 delta，时间线整体顺延。
+		if _board_freeze_active():
+			_refresh_visuals()
+			return
+		# 累加器必须封顶，否则慢帧会自我放大成死亡螺旋：一帧慢 -> delta 变大 ->
+		# 下一帧要补更多回放帧（每帧还要把 visual_events 灌进 _state 生成特效）
+		# -> 更慢 -> 补更多。实测一次发作是 683ms -> 冻结 5s -> 单帧 4655ms，
+		# 全程 draw call 反而从 274 掉到 24（画面越空越卡），直到回放播完才恢复。
+		# 封顶后追不上就丢时间，宁可回放比实时略慢，也不攒出无限积压。
+		# 下面本地模拟那条分支一直有 MAX_STEPS_PER_FRAME，只有这里漏了。
+		_sim_accumulator = minf(_sim_accumulator + delta * PLAYBACK_SPEED * _readable_speed,
+			SIM_TICK_SEC * MAX_STEPS_PER_FRAME)
+		var frames: Array = _replay.get("frames", [])
+		# 时间线终点：看自己时就是己方 replay 的长度；观战敌方时取两边较长者，
+		# 敌方打得久也能看完，且己方结果照常在时间线走完后结算。
+		var own_size := (_replay_own.get("frames", []) as Array).size()
+		var timeline_end := maxi(frames.size(), own_size) if _watching_rival else frames.size()
+		# 每帧的补帧数另有一道上限（见 MAX_REPLAY_FRAMES_PER_FRAME）：切后台回来时
+		# 积压的 delta 已经被 _drop_resume_frame 丢过一道，这里是第二道 —— 补帧要
+		# 生成特效，一帧补几十帧就是「卡屏」本身。
+		var steps := 0
+		while _sim_accumulator >= SIM_TICK_SEC and _replay_frame < timeline_end \
+				and steps < MAX_REPLAY_FRAMES_PER_FRAME:
+			_sim_accumulator -= SIM_TICK_SEC
+			steps += 1
+			_visual_interp_capture_tick_start()
+			if _replay_frame < frames.size():
+				_apply_replay_frame_for_playback(_replay_frame)
+			_replay_frame += 1
+		# 补帧被砍掉时不能把 accumulator 留着 —— 否则下一帧继续补，永远追不上。
+		if steps >= MAX_REPLAY_FRAMES_PER_FRAME:
+			_sim_accumulator = minf(_sim_accumulator, SIM_TICK_SEC)
+		_visual_interp_set_alpha(_sim_accumulator / SIM_TICK_SEC)
+		_refresh_visuals()
+		if _replay_frame >= timeline_end:
+			_finish_replay()
+		return
+	# 3v3 只播服务器 replay;replay 没到时 _state 还是空 {}，绝不能跑本地模拟
+	# （否则每帧 step_state({}) 崩溃刷屏，表现成“一直断线”）。replay 一到
+	# _start_replay 会把 _replay_mode 置真，走上面的播放分支。
+	if GameState.team_mode:
+		return
+	# _vfx_hit_stop_active() already returns VFXManager.is_hitstop_active(); the old
+	# condition checked the same thing twice and resolved a node path every frame.
+	if _vfx_hit_stop_active() or _board_freeze_active():
+		_refresh_visuals()
+		return
+	_sim_accumulator += delta * PLAYBACK_SPEED
+	var steps := 0
+	while _sim_accumulator >= SIM_TICK_SEC and steps < MAX_STEPS_PER_FRAME:
+		_sim_accumulator -= SIM_TICK_SEC
+		steps += 1
+		_visual_interp_capture_tick_start()
+		BattleSim.step_state(_state)
+		if bool(_state.get("finished", false)):
+			_finish_simulation()
+			break
+	if _return_emitted:
+		return
+	_visual_interp_set_alpha(_sim_accumulator / SIM_TICK_SEC)
+	_refresh_visuals()
+
+# --- B2: replay playback ----------------------------------------------------
+func _start_replay(replay: Dictionary) -> void:
+	if not _valid_team_replay(replay):
+		_show_team_waiting()
+		return
+	_battle_setup_ready = false
+	_playback_deadline_msec = 0
+	_sim_accumulator = 0.0
+	# 单调时钟（10.08 第 3 条）：切后台再回来墙钟会跳，deadline 会瞬间过期。
+	_battle_prepare_started_msec = _mono_msec
+	battle_preparation_report = {"budget_ms": BATTLE_PREPARE_TIMEOUT_MSEC, "started_msec": _battle_prepare_started_msec}
+	_battle_prepare_deadline_msec = _battle_prepare_started_msec + BATTLE_PREPARE_TIMEOUT_MSEC
+	if _result_overlay_lbl != null:
+		_result_overlay_lbl.visible = false
+	_replay = replay
+	_replay_own = replay
+	_replay_round = GameState.round_index
+	_battle_result_reported = false
+	_replay_rival = NetworkService.team_replay_rival if _valid_team_replay(NetworkService.team_replay_rival) else {}
+	_watching_rival = false
+	_replay_mode = true
+	_replay_frame = 0
+	_replay_events_applied = -1
+	# 9.19：每局重置「末日守卫技能音已响过」记录，否则同一实例跑第二局（离线自测
+	# 回编辑态后再演示）时那一次也不会响。见 BattleVfx._doom_skill_sfx_played。
+	_doom_skill_sfx_played.clear()
+	# 9.19：人王奖励音/flash 的同款每局一次标记，也要跟着清。
+	_human_king_reward_played = false
+	# 上一局的胜利收束不能带进这一局，否则镜头会一场比一场紧。
+	reset_battle_camera_framing()
+	_begin_presentation_replay(replay)
+	_load_replay_roster(replay)
+	_pvp_combat_waiting = _effective_kind() in ["pvp", "final"]
+	if _pvp_combat_waiting:
+		_clear_unit_visuals()
+	# 9.20：换了一局就必须把 VFX 差分缓存**重新播种**（下面的方法里写清了理由）。
+	_reseat_vfx_diff_for_new_battle()
+	_prefetch_battle_assets()
+	if not await _prepare_replay_assets():
+		return
+	if not is_inside_tree() or _finished:
+		return
+	# (4) PvP canonical arrangement puts team A at the bottom. If I'm on team B, flip
+	# the arena vertically so my own units are always the ones at the bottom.
+	var my_slot := NetworkService.team_local_slot if NetworkService.team_active else 0
+	var my_team := GameConstants.team_of_slot(my_slot)
+	# 决赛除外：那一局的战斗轴是左右（_apply_final_round_left_right_layout），翻 Y
+	# 换不到"自己在下方"，只会把 B 队玩家的画面上下镜像。决赛 replay 的 kind 同样是
+	# "pvp"（被 prepare_team_state 改写过），所以必须按回合号单独排除。
+	_arena_flip_y = str(replay.get("kind", "")) == "pvp" and my_team == 1 \
+		and GameState.round_index != GameState.FINAL_ROUND
+	# (9.29 bug 文档第 1 条) 颜色归属单独一个开关，**不再跟着 _arena_flip_y 一起被决赛排除**。
+	# 规范化棋局里 A 队（slot 0-2）恒为 "player" 侧；B 队玩家看到的「我方」是规范化的
+	# enemy 侧，血条必须翻成绿，否则决赛里 B 队玩家自己全是红的（用户反馈的原现象）。
+	# 决赛的战斗轴是左右、位置不能翻，但**颜色与位置无关**，所以这里不带决赛排除。
+	# 见 BattleUI._color_flip 的注释与 BattleRenderer._display_team。
+	_color_flip = str(replay.get("kind", "")) == "pvp" and my_team == 1
+	if not replay.get("frames", []).is_empty():
+		if _pvp_combat_waiting:
+			_stage_pvp_opening_frame()
+		else:
+			_apply_replay_frame(0)
+		# Round 21 shows formation allies before combat starts. Stage only the
+		# Lantern opening cast so its silence and cast VFX wait for frame 0 playback.
+		if GameState.round_index == GameState.FINAL_ROUND and _has_live_formation_ally():
+			stage_final_intro_lanterns(_replay_by_uid)
+		_build()
+		_setup_view_toggle()
+		_start_battle_music()
+		await _prepare_battle_models()
+		if not is_inside_tree() or _finished:
+			return
+		# Actors are registered now, so queued cues may resolve their anchors.
+		_readable_speed = _compute_readable_speed()
+		var playback_seconds := maxf(8.0, float((_replay_own.get("frames", []) as Array).size()) * SIM_TICK_SEC / (PLAYBACK_SPEED * _readable_speed))
+		# ★ 用单调时钟（10.08 第 3 条）：这条 deadline 的注释自己写着「Bounded actual
+		#   elapsed playback」——而墙钟在后台会跳，跳完立刻判定「播太久了」直接判负。
+		_playback_deadline_msec = _mono_msec + int((playback_seconds + 20.0) * 1000.0)
+		_presentation_director.set_playback_speed(PLAYBACK_SPEED * _readable_speed)
+		# 跑步锁按真实的逻辑帧间隔放宽（慢放时一帧 0.2 秒），见 BattleRenderer._run_lock_sec。
+		set_visual_sim_time_scale(PLAYBACK_SPEED * _readable_speed)
+
+
+func _stage_pvp_opening_frame() -> void:
+	# 回放第 0 帧已经含开场技能结果。读条/Ready/Go 只借用站位，不能提前
+	# 消费技能事件、伤害、护盾或冷却；完整第 0 帧在字幕撤下后才应用。
+	var frames: Array = _replay.get("frames", [])
+	if frames.is_empty():
+		return
+	for entry in frames[0]:
+		if not entry is Array or entry.size() < 5:
+			continue
+		var fighter: Dictionary = _replay_by_uid.get(str(entry[0]), {})
+		if fighter.is_empty():
+			continue
+		fighter.pos = Vector2(float(entry[1]), float(entry[2]))
+		fighter.alive = bool(entry[4])
+		fighter.hp = int(fighter.max_hp) if fighter.alive else 0
+
+
+func _has_live_formation_ally() -> bool:
+	for fighter: Dictionary in _replay_by_uid.values():
+		if bool(fighter.get("alive", false)) and bool(fighter.get("is_formation_ally", false)):
+			return true
+	return false
+
+
+# The replay's frame 0 is already post-cast. Keep the authoritative frame intact;
+# only its presentation copies are staged during the round-21 summon. The first
+# playback tick reapplies frame 0, restoring the silence and the cast trace. The
+# skill_ready rise from zero then plays the cast once through BattleVfx's diff.
+static func stage_final_intro_lanterns(by_uid: Dictionary) -> int:
+	var staged := 0
+	for caster: Dictionary in by_uid.values():
+		if not bool(caster.get("alive", false)) or str(caster.get("def", {}).get("skill_id", "")) != "aoe_silence":
+			continue
+		var target_uids := str(caster.get("vfx_skill_target_uid", ""))
+		if target_uids.is_empty():
+			continue
+		for target_uid in target_uids.split(",", false):
+			var target: Dictionary = by_uid.get(target_uid, {})
+			var statuses: Dictionary = target.get("statuses", {})
+			var silence: Dictionary = statuses.get("silence", {})
+			if silence.has("lantern_slow_pct"):
+				statuses.erase("silence")
+		caster["skill_ready"] = 0.0
+		caster["vfx_skill_target_uid"] = ""
+		staged += 1
+	return staged
+
+
+# Normal Prep already owns these resources. Cold recovery and QA can enter the
+# battle directly; wait for this round's full roster before the first event.
+func _prepare_replay_assets() -> bool:
+	var model_paths: Array[String] = []
+	var texture_paths: Array[String] = []
+	for replay in [_replay_own, _replay_rival]:
+		for path in BattleAssetManifest.replay_paths(replay):
+			if not model_paths.has(path):
+				model_paths.append(path)
+		for raw_path in BattleAssetManifest.replay_texture_paths(replay):
+			var path := str(raw_path)
+			if not path.is_empty() and not texture_paths.has(path):
+				texture_paths.append(path)
+	var missing: Array[String] = []
+	for path in model_paths + texture_paths:
+		if not ResourceLoader.exists(path):
+			missing.append(path)
+	if not missing.is_empty():
+		push_warning("[BATTLE_ASSET_FAILED] missing=%s" % str(missing))
+		_fail_team_replay("battle_assets_missing")
+		return false
+	BattleAssetService.acquire_many(model_paths, BattleAssetService.OWNER_BATTLE)
+	BattleAssetService.promote_future_to_battle(GameState.round_index)
+	VFXManager.preload_textures(texture_paths)
+	var started := Time.get_ticks_msec()
+	# 15 秒资源预算也是 deadline：切后台回来墙钟会跳（10.08 第 3 条），
+	# 而这里失败会走 _fail_team_replay("battle_assets_timeout") ⇒ 判负、不结算金币。
+	var deadline := _mono_msec + 15000
+	var total := model_paths.size() + texture_paths.size()
+	var bar: ProgressBar = null
+	_assets_ready_on_entry = false
+	_skip_cached_prepare_bar = false
+	while is_inside_tree() and not _finished:
+		BattleAssetService.harvest()
+		var done := BattleAssetService.ready_count(model_paths) + VFXManager.ready_texture_count(texture_paths)
+		if done == total:
+			_assets_ready_on_entry = bar == null
+			_set_prepare_progress(bar, 30.0)
+			battle_preparation_report["assets"] = {"models": model_paths.size(), "textures": texture_paths.size(), "elapsed_ms": Time.get_ticks_msec() - started}
+			print("[BATTLE_ASSET_READY] models=%d textures=%d elapsed_ms=%d" % [
+				model_paths.size(), texture_paths.size(), Time.get_ticks_msec() - started])
+			return true
+		if bar == null:
+			bar = _make_battle_prepare_bar()
+		_set_prepare_progress(bar, 30.0 * float(done) / float(maxi(1, total)))
+		var failed: Array[String] = []
+		for path in model_paths + texture_paths:
+			if BattleAssetService.ready_count([path]) + VFXManager.ready_texture_count([path]) > 0:
+				continue
+			var status := ResourceLoader.load_threaded_get_status(path)
+			if status in [ResourceLoader.THREAD_LOAD_FAILED, ResourceLoader.THREAD_LOAD_INVALID_RESOURCE]:
+				failed.append(path)
+		if not failed.is_empty() or _mono_msec >= deadline:
+			bar.queue_free()
+			push_warning("[BATTLE_ASSET_FAILED] ready=%d/%d failed=%s elapsed_ms=%d" % [
+				done, total, str(failed), Time.get_ticks_msec() - started])
+			_fail_team_replay("battle_assets_failed" if not failed.is_empty() else "battle_assets_timeout")
+			return false
+		await get_tree().process_frame
+	if is_instance_valid(bar):
+		bar.queue_free()
+	return false
+
+
+func can_resume_playback(payload: Dictionary) -> bool:
+	return _replay_mode and PlaybackRecovery.same_battle(
+		PlaybackRecovery.replay_battle_id(_replay_own), _replay_round, payload)
+
+
+func has_reported_battle_result() -> bool:
+	return _battle_result_reported
+
+
+func completed_replay_result() -> Dictionary:
+	return _result
+
+
+# 每帧最多建几个单位模型。3 个是折中：太小则读条拖长，太大则单帧又开始卡。
+# 实测单个单位模型的实例化 + bounds + 动画绑定在这台机器上约 20–60 ms。
+const MODELS_PER_FRAME := 3
+
+# 读条（10.05 第 5 条）：进度条尺寸与条上宠物的大小。
+# 尺寸写成常量而不是读 `bar.size`：进度条是在 `_make_battle_prepare_bar()` 里
+# 现建、当场设值的，那一瞬间布局还没跑过，size 还是 0 —— 用 size 算出来的宠物
+# 位置会全部叠在左上角。
+const BATTLE_PREPARE_BAR_WIDTH := 520.0
+const BATTLE_PREPARE_BAR_HEIGHT := 12.0
+const BATTLE_PREPARE_PET_SIZE := Vector2(64.0, 64.0)
+
+# 分帧建单位模型，全程隐藏，建完一次性显形，建完才开打。
+#
+# 三件事各自的理由：
+#   分帧：一帧建 491 个节点实测 proc=1104ms，整帧堵死，心跳都发不出去
+#         （实测 process freeze 6.3s + pong silence，差点被服务器判掉线）。
+#         分帧不减少总耗时，收益是主线程不断流。
+#   隐藏：上一版分帧是「建一个显一个」，玩家看到棋子一个一个冒出来。
+#         整个建造期把 3D 根藏起来，最后一次性打开，观感上就是「一起出现」。
+#   读条：顶部细线接住备战界面那条蓝线，空棋盘期不至于像「画面卡住」。
+#
+# 必须「建完才开打」——否则 _apply_replay_frame 会去定位还不存在的单位。
+func _prepare_battle_models() -> void:
+	_pvp_combat_waiting = _effective_kind() in ["pvp", "final"]
+	var models_started := Time.get_ticks_msec()
+	# ★ _battle_prepare_started_msec 记的是**单调表**上的起点（见 _start_replay）。
+	#   绝不能用 models_started（墙钟）覆盖：battle_preparation_report.total_ms 与
+	#   Analytics 的 replay_done.ms 都是拿它做差的，两个钟混着减会算出
+	#   「这一回合准备了 8 分钟」这种假数字。
+	if _battle_prepare_started_msec <= 0:
+		_battle_prepare_started_msec = _mono_msec
+	if _battle_prepare_deadline_msec <= 0:
+		_battle_prepare_deadline_msec = _mono_msec + BATTLE_PREPARE_TIMEOUT_MSEC
+	var living: Array = []
+	for f in (_state.get("player", []) + _state.get("enemy", [])):
+		if typeof(f) == TYPE_DICTIONARY and bool(f.get("alive", false)):
+			living.append(f)
+	var total := living.size()
+	if _battle_3d_root != null:
+		_battle_3d_root.visible = false
+	_skip_cached_prepare_bar = _assets_ready_on_entry and RenderWarmup.pending_job_count([_replay_own, _replay_rival], _battle_3d_viewport) == 0
+	battle_preparation_report["prefetched_on_entry"] = _skip_cached_prepare_bar
+	var bar := _make_battle_prepare_bar()
+	var done := 0
+	for f in living:
+		# 只建不删（prune=false）：_sync_3d_model_nodes 的收尾会清掉「不在传入列表里」
+		# 的模型，而这里一次只喂一个单位，照常清理的话每建一个就会毁掉前面全部。
+		# facing_delta=0：此处没跑过 _begin_visual_frame，帧内单位表是空的，
+		# 转向要等第一次 _refresh_visuals 再算（那次会直接吸附到位）。
+		_sync_3d_model_nodes([f], 0.0, false)
+		done += 1
+		if done % MODELS_PER_FRAME == 0:
+			if bar != null:
+				_set_prepare_progress(bar, 30.0 + 15.0 * float(done) / float(maxi(1, total)))
+			await get_tree().process_frame
+			if not is_inside_tree() or _finished or _prepare_deadline_expired():
+				# 中途退出也要把根恢复可见，否则这个节点被复用时棋盘是空的。
+				if _battle_3d_root != null:
+					_battle_3d_root.visible = true
+				if is_instance_valid(bar):
+					bar.queue_free()
+				return
+	battle_preparation_report["models"] = {"count": total, "elapsed_ms": Time.get_ticks_msec() - models_started}
+	var effect_replays := [_replay_own, _replay_rival]
+	var effect_total := RenderWarmup.collect_jobs(effect_replays).size()
+	var effect_cached := effect_total - RenderWarmup.pending_job_count(effect_replays, _battle_3d_viewport)
+	_set_prepare_progress(bar, 45.0 + 45.0 * float(effect_cached) / float(maxi(1, effect_total)))
+	var warmup := RenderWarmup.new()
+	add_child(warmup)
+	# ★ 跨模块**边界换算**（10.08c 真机回归修的就是这一行）：
+	#   BattleRenderWarmup.prepare_replays() 内部拿 `Time.get_ticks_msec()`（墙钟）
+	#   比 deadline，而本场景的 deadline 全是 `_mono_msec`（切后台不计）。
+	#   把 `_battle_prepare_deadline_msec` 原样递过去 ⇒ 那个数远小于当前墙钟
+	#   ⇒ 一进门就判 `render_warmup_timeout` ⇒ _fail_team_replay(...) ⇒ 整场战斗
+	#   被跳过（用户报的新 bug：进战场读条后直接跳过战斗画面，开局越晚越必现）。
+	#   ⇒ 出界前必须换算：剩余预算照旧按单调表算，再贴到墙钟上。
+	var prepare_budget_left_msec := maxi(0, _battle_prepare_deadline_msec - _mono_msec)
+	var warmup_wall_cutoff_msec := warmup_cutoff_msec(prepare_budget_left_msec, Time.get_ticks_msec())
+	var render_report: Dictionary = await warmup.prepare_replays([_replay_own, _replay_rival], _battle_3d_viewport,
+		func(_ready_count: int, count: int):
+			if is_instance_valid(bar):
+				_set_prepare_progress(bar, 45.0 + 45.0 * float(count - RenderWarmup.pending_job_count(effect_replays, _battle_3d_viewport)) / float(maxi(1, count))),
+		func() -> bool: return is_inside_tree() and not _finished and not _return_emitted,
+		warmup_wall_cutoff_msec)
+	battle_preparation_report["effects"] = render_report.duplicate(true)
+	warmup.queue_free()
+	if not is_inside_tree() or _finished or _return_emitted or _prepare_deadline_expired():
+		if is_instance_valid(bar):
+			bar.queue_free()
+		if is_instance_valid(_battle_3d_root):
+			_battle_3d_root.visible = true
+		return
+	if not bool(render_report.get("ok", false)):
+		bar.queue_free()
+		_fail_team_replay(str(render_report.get("error", "battle_render_prepare_failed")))
+		return
+	_refresh_visuals()
+	_set_prepare_progress(bar, 90.0)
+	if _battle_3d_root != null:
+		_battle_3d_root.visible = true
+	# Group heals pair nearby geometry with Omni lights. GLES creates a
+	# separate specialization even for many unshaded materials, so warm both
+	# the ordinary and lit variants on these exact current-round models.
+	if DisplayServer.get_name() != "headless":
+		var first_draw_started := Time.get_ticks_msec()
+		var point_light := OmniLight3D.new()
+		point_light.name = "CurrentReplayModelOmniVariant"
+		point_light.omni_range = 128.0
+		point_light.light_energy = 0.001
+		point_light.shadow_enabled = false
+		_battle_3d_root.add_child(point_light)
+		for lighting_pass in 2:
+			point_light.visible = lighting_pass == 1
+			for frame in 2:
+				await RenderingServer.frame_post_draw
+				if not is_inside_tree() or _finished or _prepare_deadline_expired():
+					point_light.queue_free()
+					if is_instance_valid(bar):
+						bar.queue_free()
+					return
+				await get_tree().process_frame
+				if not is_inside_tree() or _finished:
+					point_light.queue_free()
+					if is_instance_valid(bar):
+						bar.queue_free()
+					return
+		point_light.queue_free()
+		battle_preparation_report["model_draw_ms"] = Time.get_ticks_msec() - first_draw_started
+		battle_preparation_report["model_lighting_variants"] = ["directional_only", "with_omni"]
+		print("[BATTLE_MODEL_DRAW_READY] elapsed_ms=%d" % (Time.get_ticks_msec() - first_draw_started))
+
+	if is_instance_valid(bar):
+		bar.queue_free()
+	# 9.17：Boss 登场。放在这里而不是 _start_battle_music() 里 ——
+	# 后者在进场景那一刻就会被调一次（BattleScreen.gd:98），那时 replay 还没到、
+	# 单位模型还没建，声音会比画面早一整段读条。
+	#
+	# 这里是「模型全部建完、战斗马上开打」，而且 _prepare_battle_models() 每场
+	# 只跑一次（_start_replay 里那一条调用），天然不会重复。
+	#
+	# 判据用 _effective_kind() 而不是 _kind：3v3 时 _kind 停在占位的 "team"，
+	# 真正的类型要么在 replay 里，要么按回合表算（boss 回合 = 5/10/15/20）。
+	#
+	# 「停掉备战 BGM + 响登场音」打包在 BattleUI._begin_boss_intro() 里：两件事必须
+	# **同一时刻**发生（9.17 第三轮反馈），拆在两个地方迟早漂移。
+	if _effective_kind() == "boss":
+		_begin_boss_intro()
+	# 10.13：所有 PVP 都在模型就绪后开始 Ready/Go；不依赖最终回合是否有法阵盟友。
+	if _effective_kind() in ["pvp", "final"]:
+		_begin_final_round_intro()
+	_try_start_final_round_intro()
+	if _effective_kind() in ["pvp", "final"]:
+		# PVP 的音效和 Ready/Go 属于开战流程；模型已就绪，但两条战斗时间线仍冻结。
+		await _resolve_pending_battle_music()
+	else:
+		# Boss 保留原有行为：较长的登场音不阻塞战斗。
+		_resolve_pending_battle_music()
+	# The actual final-round summon animation still gates both timelines.
+	while _final_round_intro_active:
+		await get_tree().process_frame
+		if not is_inside_tree() or _finished or _prepare_deadline_expired():
+			return
+	if is_inside_tree() and not _finished:
+		var release_pvp := _pvp_combat_waiting
+		_pvp_combat_waiting = false
+		if release_pvp:
+			if _replay_mode:
+				_apply_replay_frame(0)
+			# 不丢弃开场技能：仅延迟至音效结束、Go 撤下后，再播种其表现。
+			_refresh_visuals()
+		battle_preparation_report["total_ms"] = _mono_msec - _battle_prepare_started_msec
+		battle_preparation_report["ready"] = true
+		_battle_setup_ready = true
+		if is_instance_valid(_view_toggle_btn):
+			_view_toggle_btn.disabled = false
+
+func _prepare_deadline_expired() -> bool:
+	if _battle_prepare_deadline_msec > 0 and _mono_msec > _battle_prepare_deadline_msec:
+		_fail_team_replay("battle_prepare_timeout")
+		return true
+	return false
+
+
+# ★ 单调 → 墙钟的**出口换算**。为什么必须有两套 clock：
+#
+#   本场景所有 deadline 都是前台单调表 `_mono_msec`（切后台不计），这是 10.08 第 3 条
+#   的修复本体。但外部模块（BattleRenderWarmup.prepare_replays）内部是拿
+#   `Time.get_ticks_msec()` 比 deadline 的。把单调值原样递过去 ⇒ 它眼里「早就超时了」
+#   ⇒ render_warmup_timeout ⇒ 整场战斗被跳过。
+#
+#   所以凡是要**跨出本文件**的 deadline，都必须在这里换成墙钟：
+#   剩余预算按单调表算（后台那段时间照旧不吃预算），再贴到当前墙钟上。
+#
+#   纯函数、不读状态 —— 门禁直接拌值验证（tools/prep_1008_check.gd）。
+static func warmup_cutoff_msec(budget_left_msec: int, wall_now_msec: int) -> int:
+	return wall_now_msec + maxi(0, budget_left_msec)
+
+# 顶部一条细进度条，接着备战界面那条蓝线继续走，避免「画面停住」的观感。
+#
+# 10.05 反馈第 5 条：**去掉**「正在准备战斗特效 · 11/13」这类文字提示与它背后那块
+# 黑色卡片（LoadingBackdrop），只保留蓝色进度条；并在进度条填充的右端放一只玩家
+# 当前出战的宠物（跑动姿势），让它跟着进度一起前进 —— 加载期画面不再被黑卡遮住，
+# 玩家能看见宠物在跑，也知道还差多少。
+#
+# ★ 进度只能通过 `_set_prepare_progress()` 推进：宠物位置是跟着 value 算出来的，
+# 别处直接写 bar.value 会让「条走了、宠物没走」。
+func _make_battle_prepare_bar() -> ProgressBar:
+	var existing := get_node_or_null("BattlePrepareBar") as ProgressBar
+	if is_instance_valid(existing) and not existing.is_queued_for_deletion():
+		return existing
+	var bar := ProgressBar.new()
+	# Cached resources still need a few frames to attach actors and draw them.
+	# Avoid flashing a loading screen on this already-prepared fast path.
+	bar.visible = false
+	bar.name = "BattlePrepareBar"
+	bar.show_percentage = false
+	bar.min_value = 0.0
+	bar.max_value = 100.0
+	bar.value = 0.0
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	bar.offset_left = -BATTLE_PREPARE_BAR_WIDTH * 0.5
+	bar.offset_right = BATTLE_PREPARE_BAR_WIDTH * 0.5
+	bar.offset_top = 36.0
+	bar.offset_bottom = 36.0 + BATTLE_PREPARE_BAR_HEIGHT
+	bar.z_index = 200
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.06, 0.16, 0.20, 1.0)
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = Color(0.20, 0.95, 0.92, 1.0)
+	bar.add_theme_stylebox_override("background", bg)
+	bar.add_theme_stylebox_override("fill", fill)
+	add_child(bar)
+	_set_prepare_progress(bar, 0.0)
+	_reveal_pending_prepare_bar(bar)
+	return bar
+
+
+func _reveal_pending_prepare_bar(bar: ProgressBar) -> void:
+	await get_tree().create_timer(0.2).timeout
+	if is_inside_tree() and is_instance_valid(bar) and not bar.is_queued_for_deletion() and not _battle_setup_ready and not _finished and not _skip_cached_prepare_bar:
+		_attach_prepare_pet(bar)
+		_set_prepare_progress(bar, bar.value)
+		bar.visible = true
+
+
+# 进度条上的宠物。没有出战宠物时只显示进度条。
+func _attach_prepare_pet(bar: ProgressBar) -> void:
+	var pet := PetPreview.build_runner(PlayerProfile.get_active(), BATTLE_PREPARE_PET_SIZE)
+	if pet == null:
+		return
+	pet.name = "PreparePet"
+	pet.z_index = 201
+	bar.add_child(pet)
+
+
+func _set_prepare_progress(bar: ProgressBar, value: float) -> void:
+	if bar == null or not is_instance_valid(bar):
+		return
+	bar.value = maxf(bar.value, value)
+	var pet := bar.get_node_or_null("PreparePet") as Control
+	if pet == null:
+		return
+	var ratio := clampf(bar.value / maxf(1.0, bar.max_value), 0.0, 1.0)
+	# 横向：宠物中心贴在进度条填充的右端；纵向：脚踩在条上（底边略低于条中线）。
+	pet.position = Vector2(
+		BATTLE_PREPARE_BAR_WIDTH * ratio - pet.size.x * 0.5,
+		BATTLE_PREPARE_BAR_HEIGHT * 0.5 - pet.size.y + 5.0).round()
+
+func _try_start_final_round_intro() -> void:
+	if _final_round_intro_started or GameState.round_index != GameState.FINAL_ROUND:
+		return
+	var formation_allies: Array = []
+	for fighter in _state.get("player", []) + _state.get("enemy", []):
+		if bool(fighter.get("alive", false)) and bool(fighter.get("is_formation_ally", false)):
+			formation_allies.append(fighter)
+	if formation_allies.is_empty() or _battle_3d_world == null:
+		return
+	_final_round_intro_started = true
+	_final_round_intro_active = true
+	_set_formation_allies_intro_hidden(true)
+	for fighter in formation_allies:
+		var fx := VFXSummonSpawn3D.new()
+		fx.name = "FinalRoundFormationSummon_%s" % str(fighter.get("team", "side"))
+		_battle_3d_world.add_child(fx)
+		var profile = FINAL_SUMMON_RED if str(fighter.get("team", "")) == "player" else FINAL_SUMMON_BLUE
+		fx.reveal_requested.connect(_reveal_final_formation_ally.bind(_visual_id(fighter)))
+		fx.play_summon(_sim_to_world_pos(Vector2(fighter.get("pos", Vector2.ZERO))), profile)
+	_finish_final_round_intro_after_delay()
+
+
+func _reveal_final_formation_ally(id: String) -> void:
+	var model_node: Node3D = _battle_3d_models.get(id)
+	var unit_node: Control = _unit_nodes.get(id)
+	if unit_node != null and is_instance_valid(unit_node):
+		unit_node.visible = true
+	if model_node == null or not is_instance_valid(model_node):
+		return
+	model_node.visible = true
+	var resting_y := model_node.position.y
+	model_node.position.y = resting_y - 0.75
+	model_node.scale *= 0.72
+	var target_scale := model_node.scale / 0.72
+	var tween := model_node.create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(model_node, "position:y", resting_y, 0.38).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.tween_property(model_node, "scale", target_scale, 0.38).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+
+func _finish_final_round_intro_after_delay() -> void:
+	await get_tree().create_timer(FINAL_ROUND_INTRO_SEC).timeout
+	if not is_inside_tree() or _finished:
+		return
+	_set_formation_allies_intro_hidden(false)
+	_final_round_intro_active = false
+
+
+func _load_replay_roster(replay: Dictionary) -> void:
+	_replay_by_uid = {}
+	_replay_drum_event_cursor = 0
+	_replay_drum_last_frame = -1
+	_replay_resonance_event_cursor = 0
+	_replay_resonance_last_frame = -1
+	_replay_red_tide_event_cursor = 0
+	_replay_red_tide_last_frame = -1
+	_replay_rune_event_cursor = 0
+	_replay_rune_last_frame = -1
+	_replay_mother_event_cursor = 0
+	_replay_mother_last_frame = -1
+	# 9.24 #7：策反锁存是**每局**的，换局必须清空，否则上一局被策反过的 uid 会带到下一局。
+	_converted_ally_ids = {}
+	var players: Array = []
+	var enemies: Array = []
+	var roster: Dictionary = replay.get("roster", {})
+	for uid in roster:
+		var r: Dictionary = roster[uid]
+		var f := {
+			"uid": uid, "id": str(r.get("id", "")), "name": str(r.get("name", "")),
+			"name_en": str(r.get("name_en", "")),
+			"team": str(r.get("team", "")), "lane": int(r.get("lane", 0)),
+			"max_hp": int(r.get("max_hp", 1)), "hp": int(r.get("max_hp", 1)),
+			"is_mercenary": bool(r.get("is_mercenary", false)), "star": int(r.get("star", 1)),
+			"is_formation_ally": bool(r.get("is_formation_ally", false)),
+			"footprint_cells": int(r.get("footprint_cells", 1)), "def": r.get("def", {}),
+			"owner_slot": int(r.get("owner_slot", -1)),
+			"pos": Vector2.ZERO, "alive": false, "statuses": {}, "shield": 0,
+			"range_px": float(r.get("range_px", float(r.get("def", {}).get("range", 1)) * BattleSim.ATTACK_RANGE_SCALE)),
+			"attack_count": 0, "skill_ready": 0.0, "skill_stacks": 0,
+			"crimson_drum_stacks": 0,
+			"crimson_resonance_stacks": 0,
+			"crimson_pulse_stacks": 0,
+			"crimson_rune_stacks": 0,
+			"vfx_attack_target_uid": "", "vfx_skill_target_uid": "",
+		}
+		if r.has("twin_group_id"):
+			f["twin_group_id"] = str(r.get("twin_group_id", ""))
+			f["twin_member_index"] = int(r.get("twin_member_index", -1))
+		# 10.10 #157：与 BattleSimulator._replay_capture_roster 严格对称 —— 凤凰涅槃
+		# 的复活体标记只能经 roster 过回放边界（frames 13 列冻结、不能加列），
+		# 且只在有键时带，普通棋子不会多出这个字段。缺了这一步，回放里
+		# `phoenix_used` 永远是假，「死灵气息」在真实对局里一次都不会出现。
+		if r.has("phoenix_used"):
+			f["phoenix_used"] = bool(r.get("phoenix_used", false))
+		_replay_by_uid[uid] = f
+		if str(r.get("team", "")) == "player":
+			players.append(f)
+		else:
+			enemies.append(f)
+	_state = {"kind": str(replay.get("kind", "pve")), "player": players, "enemy": enemies, "elapsed": 0.0, "finished": false, "log": [], "visual_events": [], "unit_stats": {}}
+
+func _valid_team_replay(replay: Dictionary) -> bool:
+	return BattleReplayUtil.valid_team_replay(replay)
+
+# --- 切镜头观战敌方队伍 ------------------------------------------------------
+func _setup_view_toggle() -> void:
+	if _view_toggle_btn != null:
+		return
+	if not _valid_team_replay(_replay_rival):
+		return
+	# PVP/决赛双方同场对战，敌方就在画面里，没有第二个战场可切。
+	var kind := str(_replay_own.get("kind", ""))
+	if kind == "pvp" or kind == "final":
+		return
+	_view_toggle_btn = Button.new()
+	_view_toggle_btn.disabled = not _battle_setup_ready
+	_view_toggle_btn.text = tr("battle_view_rival")
+	_view_toggle_btn.custom_minimum_size = Vector2(120, 36)
+	_view_toggle_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_view_toggle_btn.offset_left = -136
+	_view_toggle_btn.offset_top = 56
+	_view_toggle_btn.offset_right = -16
+	_view_toggle_btn.offset_bottom = 92
+	_view_toggle_btn.z_index = 100
+	_view_toggle_btn.pressed.connect(_on_view_toggle_pressed)
+	add_child(_view_toggle_btn)
+	SafeArea.track(_view_toggle_btn)
+
+func _on_view_toggle_pressed() -> void:
+	if not _battle_setup_ready:
+		return
+	# 正常对局中 _return_emitted 之前都能切；进入结算等待后（_settlement_waiting）
+	# 虽然 _return_emitted 已经是 true，仍然允许切过去补看另一队（9.13 #2）。
+	if _return_emitted and not _settlement_waiting:
+		return
+	if not _replay_mode:
+		return
+	_set_watching_rival(not _watching_rival)
+
+func _set_watching_rival(watch_rival: bool) -> void:
+	if _watching_rival == watch_rival:
+		return
+	if watch_rival and not _valid_team_replay(_replay_rival):
+		return
+	_watching_rival = watch_rival
+	if _view_toggle_btn != null:
+		_view_toggle_btn.text = tr("battle_view_own") if _watching_rival else tr("battle_view_rival")
+	_switch_active_replay(_replay_rival if _watching_rival else _replay_own)
+
+# 结算等待期「补看另一队」的播放推进。与 _process 里的主线播放是**两套**：
+# 这里只到末帧为止，不调用 _finish_replay（结算已经发过了）。
+func _advance_spectate(delta: float) -> void:
+	if _spectate_done:
+		return
+	# 与主线同一个封顶策略：慢帧不得攒出无限积压。补帧数另加一道上限，
+	# 理由同 _process（切后台回来一帧补几十帧 = 卡屏）。
+	_sim_accumulator = minf(_sim_accumulator + delta * PLAYBACK_SPEED * _readable_speed,
+		SIM_TICK_SEC * MAX_STEPS_PER_FRAME)
+	var frames: Array = _replay.get("frames", [])
+	var steps := 0
+	while _sim_accumulator >= SIM_TICK_SEC and _replay_frame < frames.size() \
+			and steps < MAX_REPLAY_FRAMES_PER_FRAME:
+		_sim_accumulator -= SIM_TICK_SEC
+		steps += 1
+		_visual_interp_capture_tick_start()
+		_apply_replay_frame_for_playback(_replay_frame)
+		_replay_frame += 1
+	if steps >= MAX_REPLAY_FRAMES_PER_FRAME:
+		_sim_accumulator = minf(_sim_accumulator, SIM_TICK_SEC)
+	# 补看到末帧后不再有新逻辑帧，进度自然涨到 1 并停在末帧坐标。
+	_visual_interp_set_alpha(_sim_accumulator / SIM_TICK_SEC if _replay_frame < frames.size() else 1.0)
+	_refresh_visuals()
+	if _replay_frame >= frames.size():
+		_spectate_done = true
+
+# B8: lightweight on-screen FPS readout for the battle scene.
+# 组队语音（docs/聊天系统设计.md 第九节 v1.1）：右上角「跳过」（y 12~48）「切镜头」（y 56~92）下面，
+# 竖着放语音与队友两个按钮。只在联机对局里建；档位跨场景保持（VoiceService 是 autoload），
+# 这里只是给玩家一个随手开关。
+const VoiceControls := preload("res://ui/components/VoiceControls.gd")
+const VOICE_BTN_TOP := 100.0
+const VOICE_BTN_SIZE := Vector2(120, 56)
+const VOICE_BTN_STEP := 64.0
+var _voice_controls: VoiceControls = null
+
+func _setup_voice_controls() -> void:
+	if _voice_controls != null or not NetworkService.team_active or NetworkService.spectating:
+		return
+	_voice_controls = VoiceControls.new()
+	# 9.20 bug 文档第 3 条：战斗界面也要能切语音档位。
+	# 此前这里没传 panel_context，于是「队友」按钮既不计人数、打开的面板也拿不到
+	# 上下文 —— 玩家在战斗里点它，看不出自己当前在哪一档（关 / 只听 / 开麦）。
+	# 与 PrepUI._build_voice_button() 传 "prep" 同一个道理，这里传 "battle"。
+	_voice_controls.build(self, VOICE_BTN_SIZE, VOICE_BTN_SIZE, 14, {"panel_context": "battle"})
+	var top := VOICE_BTN_TOP
+	for button in [_voice_controls.voice_button, _voice_controls.audience_button, _voice_controls.members_button]:
+		var control := button as Button
+		control.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+		control.offset_left = -16.0 - VOICE_BTN_SIZE.x
+		control.offset_right = -16.0
+		control.offset_top = top
+		control.offset_bottom = top + VOICE_BTN_SIZE.y
+		# 同「跳过」按钮：盖在全屏战场之上。
+		control.z_index = 100
+		add_child(control)
+		SafeArea.track(control)
+		top += VOICE_BTN_STEP
+	# 战斗场景隐藏说话绿标；房间和备战头像提示仍保留。
+
+
+const SPEAKING_ROW_SIZE := Vector2(190, 32)
+var _speaking_list: VBoxContainer = null
+var _speaking_signature := ""
+
+func _refresh_speaking_list() -> void:
+	if _speaking_list == null or not is_instance_valid(_speaking_list):
+		return
+	var names: Array[String] = []
+	for slot in NetworkService.TEAM_SLOTS:
+		if VoiceService.slot_speaking(slot):
+			var me := slot == int(NetworkService.team_local_slot)
+			names.append(("Me" if LocaleManager.get_locale().begins_with("en") else "我") if me else VoiceService.member_name(slot))
+	var signature := "\n".join(names)
+	if signature == _speaking_signature:
+		return
+	_speaking_signature = signature
+	for child in _speaking_list.get_children():
+		_speaking_list.remove_child(child)
+		child.queue_free()
+	for speaker in names:
+		var row := HBoxContainer.new()
+		row.alignment = BoxContainer.ALIGNMENT_END
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.custom_minimum_size = SPEAKING_ROW_SIZE
+		var label := Label.new()
+		label.text = speaker
+		label.clip_text = true
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		label.add_theme_font_size_override("font_size", 18)
+		label.add_theme_color_override("font_color", VoiceControls.ACTIVE_COLOR)
+		label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+		label.add_theme_constant_override("outline_size", 5)
+		row.add_child(label)
+		var mic := Control.new()
+		mic.custom_minimum_size = Vector2(SPEAKING_ROW_SIZE.y, SPEAKING_ROW_SIZE.y)
+		mic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(mic)
+		VoiceControls.attach_speaking_mic(mic, 1.0)
+		VoiceControls.show_speaking_mic(mic, true)
+		_speaking_list.add_child(row)
+
+# Mirrors PrepScreen._setup_fps_overlay; positioned slightly off the top-left
+# corner (see bug report 9.9bug提交及修复08 #8 — old corner spot was hard to
+# see on mobile, "too close to the edge").
+func _setup_fps_overlay() -> void:
+	if _fps_label != null:
+		return
+	_fps_label = Label.new()
+	_fps_label.name = "FpsOverlay"
+	_fps_label.text = "FPS --"
+	_fps_label.position = Vector2(16, 8)
+	_fps_label.add_theme_font_size_override("font_size", 14)
+	_fps_label.add_theme_color_override("font_color", Color(0.6, 1.0, 0.6))
+	_fps_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	_fps_label.add_theme_constant_override("outline_size", 3)
+	_fps_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fps_label.z_index = 300
+	add_child(_fps_label)
+	SafeArea.track(_fps_label)
+
+func _switch_active_replay(replay: Dictionary) -> void:
+	_clear_unit_visuals()
+	_replay = replay
+	# 切换到另一份 replay：视觉事件游标随之重置，从新时间线重新灌。
+	_replay_events_applied = -1
+	_state["visual_events"] = []
+	_vfx_visual_event_index = 0
+	_camera_shake_policy.reset()
+	_spectate_done = false
+	_load_replay_roster(replay)
+	_begin_presentation_replay(replay)
+	_prefetch_battle_assets()
+	var frames: Array = replay.get("frames", [])
+	if not frames.is_empty():
+		# 两份 replay 同为 0.1s/帧的时间线，直接续在当前进度上（短的那份停在末帧）。
+		var target_tick := clampi(_replay_frame - 1, 0, frames.size() - 1)
+		# 切换观战目标属于 seek：重建当前姿态，但不重播已经发生的数字、屏震或瞬态 cue。
+		_presentation_director.seek_to_tick(target_tick)
+		_apply_replay_frame(target_tick)
+	_refresh_visuals()
+	# _refresh_visuals() re-registered the new roster, so cues can resolve again.
+	_presentation_director.set_playback_speed(PLAYBACK_SPEED * _readable_speed)
+	set_visual_sim_time_scale(PLAYBACK_SPEED * _readable_speed)
+
+func _clear_unit_visuals() -> void:
+	# 两份 replay 的 uid 命名会撞车（都是 player_L0_0 这类），
+	# 切换前必须整场清空，否则旧模型会被错认成新阵容复用。
+	reset_visual_position_state()
+	for node in _unit_nodes.values():
+		if node != null and is_instance_valid(node):
+			node.queue_free()
+	_unit_nodes.clear()
+	_hp_fill_by_id.clear()
+	for node in _battle_3d_models.values():
+		if node != null and is_instance_valid(node):
+			node.queue_free()
+	_battle_3d_models.clear()
+	cue_release_corpses()
+	_unit_actor_registry.clear()
+	_status_vfx_by_id.clear()
+	# VFX 差分缓存也按 uid 记上一帧血量/存活，不清会在切换瞬间放出假伤害/死亡特效。
+	_reseat_vfx_diff_for_new_battle()
+
+
+# 9.20：把「按 uid 记上一帧」的 VFX 缓存整场重播种。
+#
+# 两个调用点 —— `_start_replay()`（开一局 / 换一局）与 `_clear_unit_visuals()`
+# （切看另一队回放）—— 都是「另一份 uid 空间要开始了」，所以合并成一个定义。
+#
+# 不清的后果有二（两条都在 9.20 用户实测里出现过或差点出现）：
+#   * `BattleVfx._play_opening_unit_vfx()` 是**播种帧专用**（只在 `_vfx_seeded`
+#     还是 false 的那一帧跑）。同一个 BattleScreen 实例上再开一局却不重播种，
+#     它整场都不会跑 —— 凡是「开局就发生」的演出都会静默：死侍开场绑定音/绑定特效、
+#     血契连线、护盾嘲讽。用户报的「死侍开局绑定音不响」就是这一条
+#     （officetest 的编辑态预览先占掉了播种帧）。
+#   * 回放的 roster 会把战斗中途才出生的单位（寄生分身）提前放进 `_state`，
+#     于是第一帧的 diff 会把它们当成「上一帧就在」。
+# `visual_events` 游标同步归零：调用点刚把 `_state.visual_events` 换成空数组
+# （`_load_replay_roster()` / `_switch_active_replay()`），游标若停在上一局的位置，
+# 新一局的前 N 条事件会被静默跳过。
+func _reseat_vfx_diff_for_new_battle() -> void:
+	_clear_guardian_unit_vfx()
+	_vfx_prev_units = {}
+	_vfx_seeded = false
+	_vfx_visual_event_index = 0
+	_camera_shake_policy.reset()
+	_parasite_spawn_announced.clear()
+
+func show_settlement_waiting() -> void:
+	_settlement_waiting = true
+	# 9.13 #2：另一队的 replay 可能在本场开播之后才到（房主要把两队的都算完才广播），
+	# 那时 _setup_view_toggle() 会因为拿不到对手回放直接放弃，按钮压根没建出来。
+	# 进等待期时补一次：先补读 replay，再（幂等地）重建按钮。
+	if not _valid_team_replay(_replay_rival) and _valid_team_replay(NetworkService.team_replay_rival):
+		_replay_rival = NetworkService.team_replay_rival
+	_setup_view_toggle()
+	if _view_toggle_btn != null:
+		# PVP / 决赛两队同场，没有第二个战场可切 —— 与 _setup_view_toggle 同一判据。
+		var kind := str(_replay_own.get("kind", ""))
+		_view_toggle_btn.visible = _valid_team_replay(_replay_rival) \
+			and kind != "pvp" and kind != "final"
+	_show_team_waiting()
+	if _result_overlay_lbl != null:
+		_result_overlay_lbl.text = tr("battle_waiting_others")
+
+func _show_team_waiting() -> void:
+	if _result_overlay_lbl == null:
+		return
+	_result_overlay_lbl.text = tr("battle_preparing")
+	_result_overlay_lbl.add_theme_font_size_override("font_size", 34)
+	_result_overlay_lbl.add_theme_color_override("font_color", Color(0.92, 0.96, 1.0))
+	_result_overlay_lbl.visible = true
+
+
+# 入队前把这一 tick 会用到、却还没建出来的身体补上。
+#
+# 慢设备上回放要追帧：一次 _apply_replay_frame() 可能跨好几个回放帧，于是 j 从
+# _replay_events_applied+1 到 i 的 tick 会**一次性全部入队**，而建模要等循环之后的
+# _refresh_visuals()。这批 tick 里刚被召唤出来的单位那时还没有 actor，它的第一条
+# cue 会被 Director 判成 missing_actor:source 丢掉。
+#
+# 2026-08-20 实测：桌面每渲染帧恒定推进 1 个回放帧，所以从来不触发；真机第 20 回合
+# 只有 8.9 FPS，步长出现 2（26 次）和 3（2 次），镜像领主的镜像因此在 tick 15 丢了
+# 两条 attack_start —— 设备 2 条、桌面 0 条。
+#
+# 这和上面 cue_claim_corpses() 是对称的：那条在入队前把**要死的**身体扣下来，
+# 免得 _refresh_visuals() 先把它释放掉；这条在入队前把**刚出生的**身体建出来，
+# 免得它还不存在。两条都是同一句话：让渲染层在 Director 排这一 tick 之前就绪。
+func _spawn_actors_for_tick(tick_index: int, tick_events: Array) -> void:
+	var frames: Array = _replay.get("frames", [])
+	if tick_index < 0 or tick_index >= frames.size() or typeof(frames[tick_index]) != TYPE_ARRAY:
+		return
+	var wanted: Dictionary = {}
+	for event_value in tick_events:
+		if not (event_value is Dictionary):
+			continue
+		var uid := str((event_value as Dictionary).get("source_uid", ""))
+		if uid.is_empty() or wanted.has(uid):
+			continue
+		if _unit_actor_registry.get_actor(uid) == null:
+			wanted[uid] = true
+	if wanted.is_empty():
+		return
+	for entry in frames[tick_index]:
+		if typeof(entry) != TYPE_ARRAY or (entry as Array).size() < 5:
+			continue
+		var uid := str(entry[0])
+		if not wanted.has(uid):
+			continue
+		# 只给这一帧确实活着的单位建体。已经死掉的不该在这里复活，
+		# 它的 cue 本来就该按 source_dead 走。
+		if not bool(entry[4]):
+			continue
+		var f = _replay_by_uid.get(uid)
+		if f == null:
+			continue
+		f.pos = Vector2(float(entry[1]), float(entry[2]))
+		f.hp = int(entry[3])
+		f.alive = true
+		# prune=false：这里一次只喂一个单位，照常清理会把其余模型全毁掉
+		# （理由同 _prepare_battle_models 里的那段注释）。
+		_sync_3d_model_nodes([f], 0.0, false)
+
+# Predict only a recorded replay target; the simulation and replay stay unchanged.
+# The delta is applied to the current rendered anchor, preserving its visual offset.
+func cue_archer_replay_intercept(target_uid: String, target_world: Vector3, flight: float) -> Variant:
+	if not _replay_mode or _archer_intercept_tick < 0 or target_uid.is_empty():
+		return null
+	var frames: Array = _replay.get("frames", [])
+	if _archer_intercept_tick >= frames.size():
+		return null
+	var tick_pos: Variant = _archer_position_from_frame(frames[_archer_intercept_tick], target_uid)
+	if not (tick_pos is Vector2):
+		return null
+	# target_world 取自已插值的显示锚点，它对应的显示时刻是「上一帧 + 进度」，
+	# 不是当前逻辑帧。预判起点和落点都按显示时刻算，否则箭会落在目标身后约一步。
+	var display_tick := float(_archer_intercept_tick)
+	if _visual_interp_active_for(target_uid, tick_pos as Vector2):
+		display_tick -= 1.0 - _interp_alpha
+	var current := _visual_interp_raw_pos(target_uid, tick_pos as Vector2)
+	var future_tick := display_tick + maxf(0.0, flight) * PLAYBACK_SPEED * _readable_speed / SIM_TICK_SEC
+	var lo := int(floor(future_tick))
+	var hi := int(ceil(future_tick))
+	if lo < 0 or hi >= frames.size():
+		return null
+	var low: Variant = _archer_position_from_frame(frames[lo], target_uid)
+	var high: Variant = _archer_position_from_frame(frames[hi], target_uid)
+	if not (low is Vector2 and high is Vector2):
+		return null
+	var predicted: Vector2 = (low as Vector2).lerp(high as Vector2, future_tick - float(lo))
+	return target_world + _sim_to_world_pos(predicted) - _sim_to_world_pos(current)
+
+func _archer_position_from_frame(frame: Variant, target_uid: String) -> Variant:
+	if not (frame is Array):
+		return null
+	for entry: Variant in frame:
+		if entry is Array and (entry as Array).size() >= 3 and str(entry[0]) == target_uid:
+			return Vector2(float(entry[1]), float(entry[2]))
+	return null
+
+func _apply_replay_frame_for_playback(i: int) -> void:
+	_visual_interp_stepping = true
+	_apply_replay_frame(i)
+	_visual_interp_stepping = false
+
+func _apply_replay_frame(i: int) -> void:
+	if not _visual_interp_stepping:
+		_visual_interp_snap()
+	var frames: Array = _replay.get("frames", [])
+	if i < 0 or i >= frames.size():
+		return
+	_archer_intercept_tick = i
+	# 把本帧记录的视觉事件（母灵处决 / 屏震 / 技能演出）灌回 _state.visual_events，
+	# 前端 _play_visual_events 靠递增游标消费。用 _replay_events_applied 去重，
+	# 保证顺序播放每帧只灌一次、来回 seek 也不会重播。
+	if i > _replay_events_applied:
+		var frame_events: Array = _replay.get("frame_events", [])
+		var ve: Array = _state.get("visual_events", [])
+		for j in range(_replay_events_applied + 1, i + 1):
+			if j >= 0 and j < frame_events.size() and frame_events[j] is Array:
+				var tick_frame: Array = frames[j] if j < frames.size() and frames[j] is Array else []
+				var tick_events: Array = _attack_audio_planner.prepare_tick(frame_events[j], _replay_by_uid, tick_frame)
+				# D2 dual route: Director becomes the bounded scheduler while the old
+				# BattleVfx array remains a compatibility bridge until D6 migration.
+				# Claim dying bodies before the Director queues the tick: the next
+				# _refresh_visuals() would otherwise free them before the death cue runs.
+				cue_claim_corpses(tick_events)
+				_spawn_actors_for_tick(j, tick_events)
+				_presentation_director.enqueue_tick(j, tick_events)
+				for ev in tick_events:
+					ve.append(ev)
+		_state["visual_events"] = ve
+		_replay_events_applied = i
+	_apply_drum_stack_events(i)
+	_apply_resonance_stack_events(i)
+	_apply_red_tide_stack_events(i)
+	_apply_rune_stack_events(i)
+	_apply_mother_count_events(i)
+	for f in _replay_by_uid.values():
+		f.alive = false
+	if typeof(frames[i]) != TYPE_ARRAY:
+		return
+	# 9.24 #7：先整帧扫一遍，把「血之契约已锁定目标」的策反关系**锁存**下来。
+	# 必须**先扫后解码**：守卫会把目标从对方数组搬到己方数组**尾部**，所以同一帧里
+	# 目标可能排在守卫前面；边扫边应用的话，顺序一变就会漏掉几帧的红→绿切换。
+	var frame_conversions := latched_conversions_in_frame(frames[i], _replay_by_uid)
+	for linked_uid in frame_conversions:
+		_converted_ally_ids[linked_uid] = frame_conversions[linked_uid]
+	for entry in frames[i]:
+		if typeof(entry) != TYPE_ARRAY or (entry as Array).size() < 5:
+			continue
+		var f = _replay_by_uid.get(str(entry[0]))
+		if f == null:
+			continue
+		f.pos = Vector2(float(entry[1]), float(entry[2]))
+		f.hp = int(entry[3])
+		f.alive = bool(entry[4])
+		if entry.size() > 5:
+			f.attack_count = int(entry[5])
+		if entry.size() > 6:
+			f.skill_ready = float(entry[6])
+		if entry.size() > 7:
+			f.shield = int(entry[7])
+		if entry.size() > 8:
+			f.skill_stacks = int(entry[8])
+		if entry.size() > 9 and typeof(entry[9]) == TYPE_DICTIONARY:
+			f.statuses = (entry[9] as Dictionary).duplicate(true)
+		else:
+			f.statuses = {}
+		if entry.size() > 10:
+			f.damage_dealt = int(entry[10])
+		if entry.size() > 11:
+			f.vfx_attack_target_uid = str(entry[11])
+		if entry.size() > 12:
+			f.vfx_skill_target_uid = str(entry[12])
+		# 9.24 #7：被策反过的单位，队伍以锁存为准 —— 回放的 team 不会自己变，
+		# 而模拟层是**永久**改掉的（守卫死了也不还）。这里补齐这一条跨不过边界的变更，
+		# 之后血条配色 / 敌方目标集合 / 存活计数就全都跟着对了。
+		apply_latched_team(f, str(entry[0]), _converted_ally_ids)
+	# Conversion changes membership in the simulation, not only the health-bar
+	# colour. Boundary release and side counts must read the same membership.
+	reconcile_replay_teams(_state, _replay_by_uid)
+
+
+# War Drum stack counts are presentation-only changes outside the frozen frame
+# tuple. Rebuild from the start on backward seeks; normal playback consumes only
+# the new changes for this tick.
+func _apply_drum_stack_events(frame_index: int) -> void:
+	if frame_index < _replay_drum_last_frame:
+		for f: Dictionary in _replay_by_uid.values():
+			f["crimson_drum_stacks"] = 0
+		_replay_drum_event_cursor = 0
+	var events: Array = _replay.get("crimson_drum_stack_events", [])
+	while _replay_drum_event_cursor < events.size():
+		var event: Variant = events[_replay_drum_event_cursor]
+		if not (event is Array) or (event as Array).size() < 3:
+			_replay_drum_event_cursor += 1
+			continue
+		if int(event[0]) > frame_index:
+			break
+		var f: Variant = _replay_by_uid.get(str(event[1]))
+		if f is Dictionary:
+			(f as Dictionary)["crimson_drum_stacks"] = clampi(int(event[2]), 0, 15)
+		_replay_drum_event_cursor += 1
+	_replay_drum_last_frame = frame_index
+
+
+func _apply_resonance_stack_events(frame_index: int) -> void:
+	if frame_index < _replay_resonance_last_frame:
+		for f: Dictionary in _replay_by_uid.values():
+			f["crimson_resonance_stacks"] = 0
+		_replay_resonance_event_cursor = 0
+	var events: Array = _replay.get("crimson_resonance_stack_events", [])
+	while _replay_resonance_event_cursor < events.size():
+		var event: Variant = events[_replay_resonance_event_cursor]
+		if not (event is Array) or (event as Array).size() < 3:
+			_replay_resonance_event_cursor += 1
+			continue
+		if int(event[0]) > frame_index:
+			break
+		var f: Variant = _replay_by_uid.get(str(event[1]))
+		if f is Dictionary:
+			(f as Dictionary)["crimson_resonance_stacks"] = clampi(int(event[2]), 0, 10)
+		_replay_resonance_event_cursor += 1
+	_replay_resonance_last_frame = frame_index
+
+
+func _apply_red_tide_stack_events(frame_index: int) -> void:
+	if frame_index < _replay_red_tide_last_frame:
+		for f: Dictionary in _replay_by_uid.values():
+			f["crimson_pulse_stacks"] = 0
+		_replay_red_tide_event_cursor = 0
+	var events: Array = _replay.get("crimson_red_tide_stack_events", [])
+	while _replay_red_tide_event_cursor < events.size():
+		var event: Variant = events[_replay_red_tide_event_cursor]
+		if not (event is Array) or (event as Array).size() < 3:
+			_replay_red_tide_event_cursor += 1
+			continue
+		if int(event[0]) > frame_index:
+			break
+		var f: Variant = _replay_by_uid.get(str(event[1]))
+		if f is Dictionary:
+			(f as Dictionary)["crimson_pulse_stacks"] = clampi(int(event[2]), 0, 5)
+		_replay_red_tide_event_cursor += 1
+	_replay_red_tide_last_frame = frame_index
+
+
+func _apply_rune_stack_events(frame_index: int) -> void:
+	if frame_index < _replay_rune_last_frame:
+		for f: Dictionary in _replay_by_uid.values():
+			f["crimson_rune_stacks"] = 0
+		_replay_rune_event_cursor = 0
+	var events: Array = _replay.get("crimson_rune_stack_events", [])
+	while _replay_rune_event_cursor < events.size():
+		var event: Variant = events[_replay_rune_event_cursor]
+		if not (event is Array) or (event as Array).size() < 3:
+			_replay_rune_event_cursor += 1
+			continue
+		if int(event[0]) > frame_index:
+			break
+		var f: Variant = _replay_by_uid.get(str(event[1]))
+		if f is Dictionary:
+			(f as Dictionary)["crimson_rune_stacks"] = clampi(int(event[2]), 0, 9)
+		_replay_rune_event_cursor += 1
+	_replay_rune_last_frame = frame_index
+
+# 母灵魂火计数：[tick, uid, count, threshold]。只改展示字段，回退时从头重放。
+func _apply_mother_count_events(frame_index: int) -> void:
+	if frame_index < _replay_mother_last_frame:
+		for f: Dictionary in _replay_by_uid.values():
+			f.erase("vfx_mother_count")
+			f.erase("vfx_mother_threshold")
+		_replay_mother_event_cursor = 0
+	var events: Array = _replay.get("undead_mother_count_events", [])
+	while _replay_mother_event_cursor < events.size():
+		var event: Variant = events[_replay_mother_event_cursor]
+		if not (event is Array) or (event as Array).size() < 4:
+			_replay_mother_event_cursor += 1
+			continue
+		if int(event[0]) > frame_index:
+			break
+		var f: Variant = _replay_by_uid.get(str(event[1]))
+		if f is Dictionary:
+			(f as Dictionary)["vfx_mother_threshold"] = clampi(int(event[3]), 0, 99)
+			(f as Dictionary)["vfx_mother_count"] = clampi(int(event[2]), 0, 99)
+		_replay_mother_event_cursor += 1
+	_replay_mother_last_frame = frame_index
+
+static func reconcile_replay_teams(state: Dictionary, by_uid: Dictionary) -> void:
+	var player: Array = []
+	var enemy: Array = []
+	for f: Dictionary in by_uid.values():
+		if str(f.get("team", "player")) == "enemy":
+			enemy.append(f)
+		else:
+			player.append(f)
+	state["player"] = player
+	state["enemy"] = enemy
+
+# 9.24 #7：从**一帧回放**里抽出「本帧有哪些血之契约锁定了哪个目标」。
+#
+# 为什么写成不带任何实例状态的 `static`：这条修复的全部价值都落在"回放里到底能不能
+# 把策反还原出来"这个**可证伪**的问题上。所以它必须能被探针**直接调用生产实现**来验证，
+# 而不是靠探针自己复刻一份（复刻会随生产漂移 —— 老探针 probe_audio_920 正是这么瞎的），
+# 也不是靠源码文本断言（那只能证"写了"，证不了"对"）。
+#
+# 输入：frame = 某一帧的 entry 数组；by_uid = uid -> roster 字典（只为读 def.skill_id）。
+# 输出：uid(被策反者) -> 策反后所属队伍。
+static func latched_conversions_in_frame(frame: Array, by_uid: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	if typeof(frame) != TYPE_ARRAY:
+		return out
+	for entry in frame:
+		# 需要第 12 列（vfx_skill_target_uid）。列数不足说明不是本格式，跳过。
+		if typeof(entry) != TYPE_ARRAY or (entry as Array).size() < 13:
+			continue
+		var caster: Dictionary = by_uid.get(str(entry[0]), {})
+		if caster.is_empty():
+			continue
+		var caster_def: Dictionary = caster.get("def", {})
+		if str(caster_def.get("skill_id", "")) != "shared_hp_link":
+			continue
+		var linked_uid := str(entry[12])
+		if linked_uid.is_empty():
+			continue
+		out[linked_uid] = str(caster.get("team", "player"))
+	return out
+
+
+# 9.24 #7：把锁存到的队伍写回一条解码结果。同样抽成 `static` 以便被探针直接跑。
+#
+# 为什么值得单独抽出来：第一版把这两行内联在 `_apply_replay_frame` 里，于是"接线有没有
+# 真的生效"只能靠**源码文本断言**兜底 —— 而文本断言挡不住 `if false and ...` 这种改法
+# （变异测试实测：改坏之后探针照样全绿）。做成纯函数后，判据就能落在**行为**上：
+# 给一个 team="enemy" 的 fighter，调用后它必须变成守卫的队伍。
+static func apply_latched_team(f: Dictionary, uid: String, conversions: Dictionary) -> void:
+	var converted_team := str(conversions.get(uid, ""))
+	if not converted_team.is_empty():
+		f["team"] = converted_team
+
+
+func _fail_team_replay(reason: String) -> void:
+	if _return_emitted:
+		return
+	_return_emitted = true
+	_finished = true
+	AnalyticsService.track("replay_failed", {"round": _replay_round, "reason": reason})
+	_presentation_director.skip_to_result()
+	_stop_battle_music()
+	_result = {"kind": "team", "player_wins": false, "error": reason, "log": [reason]}
+	if _result_overlay_lbl != null:
+		_result_overlay_lbl.text = tr("battle_sync_failed")
+		_result_overlay_lbl.visible = true
+	battle_finished.emit(_result)
+
+func _finish_replay() -> void:
+	if _return_emitted:
+		return
+	# 结算永远基于己方 replay：正观战敌方时先切回我方战场收尾。
+	if _watching_rival:
+		_set_watching_rival(false)
+	# The process loop stops refreshing positions once `_finished` is set. Refresh
+	# the authoritative final replay coordinates before the victory pose freezes.
+	_visual_interp_snap()
+	_refresh_visuals()
+	# 10.04 bug 文档第 3 条：`_refresh_visuals()` 会把"本帧还在移动"的棋子下发
+	# play_run() 并挂上 0.18 秒的 run 锁，而收尾后 `_process` 立刻停在
+	# `if _finished: return` ⇒ 那次回落 idle 的刷新永不发生。这里补一次归位。
+	settle_model_animation_idle()
+	# 9.13 #2：这里**不隐藏**「查看另一队」按钮 —— Main 随后会调
+	# show_settlement_waiting()，等待期间玩家要能继续切过去补看另一队。
+	# 按钮最终随本场景一起销毁。
+	# D4: with a real adapter the cues are asynchronous, so DRAINING actually has
+	# something to wait for. Checklist 4.6: hold the result page for the
+	# critical/important cues, including already airborne projectile tails.
+	_presentation_director.begin_draining()
+	_finished = true
+	_result = _replay.get("result", {})
+	if GameState.tutorial_mode:
+		TutorialMode.coerce_victory(_result)
+	_return_emitted = true
+	# 运营数据：这一回合的战斗播完了（从开始准备到播完多久）。和服务器的结算对得上 = 玩家看到了结果。
+	AnalyticsService.track("replay_done", {"round": _replay_round,
+		"ms": _mono_msec - _battle_prepare_started_msec})
+	_stop_battle_music()
+	# 9.19：人王奖励音 + 升级闪光（见 BattleVfx._play_human_king_reward）。
+	# 本地模拟那条路在 BattleResult._emit_finished 里调，这里是 replay/组队那条。
+	_play_human_king_reward()
+	await _await_presentation_drained()
+	if not is_inside_tree():
+		return
+	await _play_crystal_attack_sequence(_result)
+	if not is_inside_tree():
+		return
+	# V2 P1-05 第 3 条：镜头轻收束 + 幸存者定格，然后才出胜负字样。
+	# 9.17 反馈第 3 条：停留时长改为「至少等胜负音播完」（见
+	# BattleResult._result_linger_seconds —— 它是 RESULT_DISPLAY_SECONDS
+	# 与胜负音实际时长的 max，所以 V2 那条「至少 0.8 秒」仍然被兜住）。
+	play_victory_finish()
+	_show_result_overlay()
+	await get_tree().create_timer(_result_linger_seconds()).timeout
+	if not is_inside_tree():
+		return
+	_battle_result_reported = true
+	battle_finished.emit(_result)
+
+func _skip_animation() -> void:
+	if _replay_mode:
+		if _return_emitted:
+			# A missing adapter completion must not trap the player after the
+			# timeline ends. The existing explicit Skip button also cancels drain.
+			if not _battle_result_reported and _presentation_director.has_blocking_cues():
+				_presentation_director.skip_to_result()
+				cue_release_corpses()
+			return
+		if _watching_rival:
+			_set_watching_rival(false)
+		_presentation_director.skip_to_result()
+		var frames: Array = _replay.get("frames", [])
+		if not frames.is_empty():
+			_apply_replay_frame(frames.size() - 1)
+		_replay_frame = frames.size()
+		# skip_to_result() cancelled the Director before the final frame was
+		# applied. Death events in that frame are therefore claimed but can no
+		# longer play; release them immediately instead of leaving frozen corpses.
+		cue_release_corpses()
+		_refresh_visuals()
+		_finish_replay()
+		return
+	super._skip_animation()
+
+
+# Skipping calls skip_to_result() first, which clears every queued cue, so this
+# returns on the first check instead of stalling the result page.
+# 纯函数，供门禁直接喂合成输入验证（见 tools/battle_readable_pace_check.gd）。
+#
+# 只依赖帧数与回合类型。刻意不看战斗内容 —— 演出节奏不该由谁打赢了决定。
+static func readable_speed_for(frame_count: int, tick_sec: float, is_boss: bool) -> float:
+	if frame_count <= 0 or tick_sec <= 0.0:
+		return 1.0
+	var natural_sec := float(frame_count) * tick_sec
+	var want_sec := READABLE_MIN_SEC_BOSS if is_boss else READABLE_MIN_SEC
+	if natural_sec >= want_sec:
+		# 自然就够长：不加速、不减速。长战绝不被压缩。
+		return 1.0
+	return maxf(natural_sec / want_sec, READABLE_MIN_PLAYBACK_SPEED)
+
+
+# 让这场回放至少播满可读窗口。返回 1.0 表示自然时长已经够长，不做拉伸。
+func _compute_readable_speed() -> float:
+	var frames: Array = _replay.get("frames", [])
+	var speed := readable_speed_for(frames.size(), SIM_TICK_SEC, _effective_kind() == "boss")
+	# 打一行可观测的证据：真机/基线日志里能直接看到这场拉伸了没有、拉了多少。
+	if not is_equal_approx(speed, 1.0):
+		print("[READABLE_PACE] frames=%d natural=%.2fs speed=%.3f -> %.2fs kind=%s"
+			% [frames.size(), float(frames.size()) * SIM_TICK_SEC, speed,
+				float(frames.size()) * SIM_TICK_SEC / speed, _effective_kind()])
+	return speed
+
+
+func _await_presentation_drained() -> void:
+	# 同样是 deadline ⇒ 用单调时钟（10.08 第 3 条）：切后台回来墙钟一跳，
+	# 这里会把还在播的关键 cue 直接跳掉。
+	var deadline := _mono_msec + int(PRESENTATION_DRAIN_TIMEOUT_SEC * 1000.0)
+	while _presentation_director.has_blocking_cues():
+		if _mono_msec >= deadline:
+			push_warning("[BATTLE_PLAYBACK] presentation deadline -> authoritative result")
+			_presentation_director.skip_to_result()
+			cue_release_corpses()
+			break
+		await get_tree().process_frame
+		if not is_inside_tree():
+			return
+
+
+func _begin_presentation_replay(replay: Dictionary) -> void:
+	_attack_audio_planner = preload("res://ui/services/BattleAttackAudioPlanner.gd").new()
+	SfxService.stop_battle_audio()
+	# Resolver/budget/real adapters intentionally remain null in D2. The existing
+	# UnitActorRegistry is passed now so D3 can add anchors without changing the
+	# BattleScreen ownership boundary.
+	_legacy_vfx_adapter.configure_host(self)
+	_legacy_vfx_adapter.reset_stats()
+	if not _vfx_profiles_loaded:
+		var loaded := int(_vfx_profile_resolver.load_profiles())
+		_vfx_profiles_loaded = loaded > 0
+		if loaded == 0:
+			push_warning("[VFX_PROFILE] no cue profile loaded; every cue runs on the built-in fallback")
+	_vfx_profile_resolver.reset_reports()
+	_presentation_director.configure(_unit_actor_registry, _vfx_profile_resolver, null, _legacy_vfx_adapter)
+	_presentation_director.begin_battle({
+		"battle_id": _presentation_battle_id(replay),
+		"kind": str(replay.get("kind", "team")),
+	})
+	# D3: stay paused until every actor is registered. Ticks still enqueue and
+	# de-duplicate while paused (_pump_track early-returns at speed 0), so no
+	# event is lost; playing them before _prepare_battle_models() finishes would
+	# resolve anchors against an empty registry and drop the whole first tick.
+	_presentation_director.set_playback_speed(0.0)
+
+
+func _presentation_battle_id(replay: Dictionary) -> String:
+	for bucket_value in (replay.get("frame_events", []) as Array):
+		if not (bucket_value is Array):
+			continue
+		for event_value in (bucket_value as Array):
+			if event_value is Dictionary:
+				var battle_id := str((event_value as Dictionary).get("battle_id", ""))
+				if not battle_id.is_empty():
+					return battle_id
+	return "local:%s:round%d" % [str(replay.get("kind", "team")), GameState.round_index]
