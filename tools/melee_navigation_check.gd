@@ -40,7 +40,7 @@ func _ready():
   Sim._step_team([f]+wall,[e],tick*0.1,st)
   worst=maxi(worst,Time.get_ticks_usec()-t)
   for w in wall:
-   h.expect(Vector2(f.pos).distance_to(w.pos)>=29.99,"penetration","walking may not pass through allies")
+   h.expect(Vector2(f.pos).distance_to(w.pos)>=Sim.body_radius(f)+Sim.body_radius(w)-0.01,"penetration","walking may not pass through allies")
   if f.attack_count>0: first_attack=tick; break
  h.expect(first_attack>=0 and first_attack<60,"queued_forever","blocked melee must actually attack within six seconds")
  h.note("first attack tick=%d worst step ms=%.3f" % [first_attack,worst/1000.0])

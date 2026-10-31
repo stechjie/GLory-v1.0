@@ -1,0 +1,52 @@
+{
+  "incident_window_beijing": [
+    "2026-10-30 20:00",
+    "2026-10-30 20:45"
+  ],
+  "verified_findings": [
+    "Ranked room 158995 admitted one human at 20:10:06; at 20:11:36 the client recovery and server fill timeout coincided, the last human disconnected and the newly started room was immediately voided.",
+    "At 20:11:35 DELETE /v1/party returned 500 because host_left.members contained UUID objects instead of JSON strings."
+  ],
+  "changes": {
+    "server": "Do not fill or start a matched lobby while no human peer is connected; retained seats can resume before the existing cleanup resumes starting.",
+    "backend": "Serialize host departure notice member IDs as strings.",
+    "client_pending_package": "Entry recovery waits 15 seconds beyond the server fill timeout.",
+    "collision": "Shared body radius 15px -> 7.5px, preserving footprint multipliers and visual size."
+  },
+  "validation": {
+    "before_transport": "Same 90s recovery scenario reproduces immediate abandonment against baseline code.",
+    "after_transport": [
+      "normal entry: 2 independent clients passed",
+      "late entry: 2 independent clients passed",
+      "last-entrant recovery at fill deadline: 2 independent clients passed, token preserved"
+    ],
+    "backend_assertions": 69,
+    "collision_assertions": 99,
+    "main_join_assertions": 46,
+    "main_join_limit": "Fresh isolated user directory required; existing fixture emits resource cleanup warnings at exit.",
+    "production_readonly_probe": "Protocol 45, pinned DTLS, unseated accountless client; 30s heartbeat and room-list checks passed, 9 ping/pong responses."
+  },
+  "production": {
+    "release": "/home/nins17121/Glory/releases/1.0.2-20261031-entry-v1",
+    "rollback": "/var/backups/glory/incident-20261031-entry-v1",
+    "status": "deployed",
+    "services": [
+      "glory-server",
+      "glory-backend",
+      "livekit",
+      "caddy"
+    ],
+    "health": "ok",
+    "idle_checks": 2,
+    "final_online": 0,
+    "final_battle_connections": 0,
+    "final_rooms": 0,
+    "isolated_cold_start": "passed",
+    "first_attempt": "Automatically rolled back after a 3-second readiness check; bounded readiness polling used for successful deployment."
+  },
+  "limits": [
+    "No new iOS or Android package delivered in this task.",
+    "GM001 account identity and client events verified, but the historical ranked peer cannot be conclusively mapped to this account from retained logs; do not claim this was the sole cause of every reported entry failure.",
+    "GM001 physical-device ranked acceptance and iPhone purchase/item-delivery acceptance remain unverified."
+  ]
+}

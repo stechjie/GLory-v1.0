@@ -1604,6 +1604,11 @@ func _cleanup_matched_rooms() -> void:
 			continue
 		if now - float(room.get("created_at", now)) < MATCHED_FILL_TIMEOUT_SEC:
 			continue
+		# The client's entry recovery can disconnect at the same 90s boundary.
+		# Wait for a retained human to reconnect before filling/starting; otherwise
+		# the no-human watchdog immediately voids the match we just created.
+		if not _matched_has_online_player(room):
+			continue
 		var states: Array = room.get("slot_states", [])
 		var filled := 0
 		for i in TEAM_SLOTS:
@@ -6342,8 +6347,17 @@ func _matched_room_for(match_uid: String, match_mode: String = "casual") -> Dict
 	return room
 
 # 超时补位后的 dummy 也是有效席位；否则补齐后会永远留在大厅。
+func _matched_has_online_player(room: Dictionary) -> bool:
+	for peer in (room.get("peer_slot", {}) as Dictionary):
+		if _peer_connected(int(peer)):
+			return true
+	return false
+
 func _matched_try_start(room: Dictionary) -> void:
 	if str(room.get("state", ROOM_LOBBY)) != ROOM_LOBBY:
+		return
+	if bool(room.get("matched", false)) and not _matched_has_online_player(room):
+		_log_room_progress(room, "matched_waiting_for_online_player")
 		return
 	var states: Array = room.get("slot_states", [])
 	var ready: Array = room.get("ready", [])

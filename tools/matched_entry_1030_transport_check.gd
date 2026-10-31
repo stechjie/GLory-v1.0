@@ -4,6 +4,8 @@ const MATCH := "10301030103010301030103010301030"
 var role := ""
 var port := 19950
 var late := false
+var entry_race := false
+var race_resumed := false
 var ids := {}
 var key: CryptoKey
 var room: Dictionary = {}
@@ -19,6 +21,7 @@ func _ready() -> void:
 		if arg.begins_with("--role="): role = arg.trim_prefix("--role=")
 		if arg.begins_with("--port="): port = int(arg.trim_prefix("--port="))
 	late = OS.get_cmdline_user_args().has("--late")
+	entry_race = OS.get_cmdline_user_args().has("--entry-race")
 	NetworkService.set_process(false)
 	NetworkService.team_active = true
 	NetworkService._dedicated_server = role == "server"
@@ -46,7 +49,9 @@ func connect_client() -> void:
 func register(who: String) -> void:
 	if role != "server": return
 	if sent and who == "a": ids["a_reconnected"] = true
+	var returning_b := sent and who == "b" and entry_race
 	ids[who] = multiplayer.get_remote_sender_id()
+	if returning_b: issue("b")
 	if ids.size() < 2: return
 	if not sent:
 		sent = true
@@ -66,7 +71,26 @@ func _process(_delta: float) -> void:
 	if role != "server" or not sent or finished: return
 	room = NetworkService._rooms.get(int(NetworkService._matched_rooms.get(MATCH, 0)), {})
 	if room.is_empty(): return
-	if late and not dropped and room.seat_pid.size() == 1:
+	if entry_race and not dropped and room.seat_pid.size() == 1:
+		dropped = true
+		old_token = str(room.seat_tokens.get(1, ""))
+		drop_connection.rpc_id(int(ids.b))
+	elif entry_race and dropped and not b_issued and not NetworkService._peer_connected(int(ids.b)):
+		room.created_at = NetworkService._now() - NetworkService.MATCHED_FILL_TIMEOUT_SEC - 1
+		NetworkService._cleanup_matched_rooms()
+		NetworkService._tick_void_watchdog()
+		if str(room.state) != "lobby" or bool(room.get("run_over", false)):
+			fail("90s recovery disconnected the last entrant and voided the match"); return
+		if not NetworkService._token_seat.has(old_token): fail("entry recovery lost token"); return
+		b_issued = true
+	elif entry_race and b_issued and not race_resumed and room.peer_slot.has(int(ids.b)):
+		NetworkService._cleanup_matched_rooms()
+		NetworkService._tick_void_watchdog()
+		if str(room.state) != "prep" or bool(room.get("run_over", false)):
+			fail("reconnected entrant did not start a playable match"); return
+		race_resumed = true
+		issue("a")
+	elif late and not entry_race and not dropped and room.seat_pid.size() == 1:
 		dropped = true
 		room.created_at = NetworkService._now() - NetworkService.MATCHED_FILL_TIMEOUT_SEC - 1
 		NetworkService._cleanup_matched_rooms()
@@ -100,10 +124,10 @@ func verify() -> void:
 @rpc("any_peer", "call_remote", "reliable")
 func report(who: String, ok: bool, token: String) -> void:
 	if role != "server": return
-	if not ok or (who == "a" and not late and token != old_token): fail("client resume state or token incorrect"); return
+	if not ok or (who == "a" and not late and token != old_token) or (entry_race and who == "b" and token != old_token): fail("client resume state or token incorrect"); return
 	reports[who] = true
 	if reports.has("a") and reports.has("b"):
-		print("ENTRY_TRANSPORT_RESULT PASS late=", late, " signed_cards=true independent_clients=2")
+		print("ENTRY_TRANSPORT_RESULT PASS late=", late, " entry_race=", entry_race, " signed_cards=true independent_clients=2")
 		finish.rpc_id(int(ids.a), true); finish.rpc_id(int(ids.b), true)
 		finished = true
 		await get_tree().create_timer(0.3).timeout

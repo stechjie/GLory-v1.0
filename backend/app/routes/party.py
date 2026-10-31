@@ -354,7 +354,7 @@ async def leave(claims: Annotated[Claims, Depends(current_claims)]) -> StateResp
                     await realtime.hub().send_to_player(pid, {
                         "t": "party_notice", "kind": "host_left",
                         "text": "房主已退出队伍", "host_code": new_host_code,
-                        "members": old_members,
+                        "members": [str(member) for member in old_members],
                     })
             await service.broadcast(room)
     return StateResponse(state={"t": "party", "state": "none"})

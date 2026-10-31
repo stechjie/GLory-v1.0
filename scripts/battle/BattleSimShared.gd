@@ -65,8 +65,9 @@ const ARENA_MID_Y := 260.0
 # range 4 → 248px（旧 288），range 1.5 → 68，range 2 → 104。
 const MELEE_RANGE_PX := 32.0
 const RANGE_STEP_PX := 72.0
-# 身体半径：推开逻辑用。体型大（footprint_cells>1）的按格数放大。
-const BODY_RADIUS_PX := 15.0
+# 身体半径：移动、绕行和推开共用；所有角色碰撞直径缩小一半。
+# 体型大（footprint_cells>1）的仍按格数放大，不改变外观和棋盘占格。
+const BODY_RADIUS_PX := 7.5
 # 小怪密集方阵的间距（略大于身体直径，开打后由推开逻辑散开）。
 const MONSTER_SPACING := 34.0
 
