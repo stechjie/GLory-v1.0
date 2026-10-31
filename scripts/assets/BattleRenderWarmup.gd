@@ -2,7 +2,7 @@ class_name BattleRenderWarmup
 extends Node
 
 # Resource ready does not mean a renderer pipeline exists. Render only this
-# replay's authored routes, one isolated effect at a time, before its first cue.
+# replay's authored routes in isolated worlds before their first cue.
 # No BattleScreen/Director callbacks, audio dispatch, or simulator state enter
 # this world. Never restore the old all-catalog, single-frame warm_draw.
 const PROCEDURAL := preload("res://effects/BossProceduralVFX3D.gd")
@@ -21,6 +21,7 @@ const DIVINE_PULSE := preload("res://effects/vfx3d/modules/VFXDivinePulseInvulne
 const DIRECT_PACK_ROUTES := ["lowest_ally_heal", "nearest_ally_bless", "nearby_ally_heal_buff",
 	"curse_attack", "same_target_damage_stack",
 	"poison_attack", "death_poison_explosion", "poison_reflect_armor_stack"]
+const DIRECT_BATCH_SIZE := 4
 const MAX_JOBS := 256
 const MAX_CACHED_JOBS := 512
 const MAX_TOTAL_MSEC := 90000
@@ -146,6 +147,16 @@ func prepare_replays(replays: Array, template: SubViewport, progress: Callable =
 	var max_draw_frame_ms := 0
 	var costs: Array[Dictionary] = []
 	var format_key := _format_key(template)
+	# Direct routes create every layer synchronously and freeze their cards.
+	# Independent worlds can share four draw fences without omitting a layer.
+	# Full composers stay serial: their delayed spawns share live VFX budgets.
+	var direct_report: Dictionary = await _prepare_direct_batches(jobs, template, progress, can_continue, deadline)
+	if not bool(direct_report.get("ok", false)):
+		viewport.queue_free()
+		return direct_report
+	rendered = int(direct_report.get("rendered", 0))
+	max_draw_frame_ms = int(direct_report.get("max_draw_frame_ms", 0))
+	costs.append_array(direct_report.get("items", []))
 	for index in jobs.size():
 		if _cancelled(can_continue) or Time.get_ticks_msec() > deadline:
 			viewport.queue_free()
@@ -216,6 +227,74 @@ func prepare_replays(replays: Array, template: SubViewport, progress: Callable =
 		"lighting_variants": ["directional_only", "with_omni"], "items": costs}
 	print("[BATTLE_RENDER_READY] %s" % JSON.stringify(report))
 	return report
+
+
+# Only the synchronous, frozen OGA factory is eligible. Each job retains its
+# original scene, camera, material and directional/Omni variants. No live battle
+# effect or simulation is changed. Bounded batches cap temporary GPU memory.
+func _prepare_direct_batches(jobs: Array[Dictionary], template: SubViewport, progress: Callable,
+		can_continue: Callable, deadline: int) -> Dictionary:
+	var pending: Array[Dictionary] = []
+	var prefix := _format_key(template)
+	for job in jobs:
+		if not _ready_jobs.has(prefix + str(job.key)) and not _direct_oga_route(job).is_empty():
+			pending.append(job)
+	var rendered := 0
+	var max_frame_ms := 0
+	var costs: Array[Dictionary] = []
+	for offset in range(0, pending.size(), DIRECT_BATCH_SIZE):
+		var batch: Array[Dictionary] = []
+		for index in range(offset, mini(offset + DIRECT_BATCH_SIZE, pending.size())):
+			if _cancelled(can_continue) or Time.get_ticks_msec() > deadline:
+				_free_direct_batch(batch)
+				return {"ok": false, "error": "render_warmup_cancelled" if _cancelled(can_continue) else "render_warmup_timeout"}
+			var job := pending[index]
+			var started := Time.get_ticks_msec()
+			var viewport := _make_viewport(template)
+			var light := OmniLight3D.new()
+			light.omni_range = 64.0
+			light.light_energy = 0.001
+			light.shadow_enabled = false
+			light.visible = false
+			viewport.add_child(light)
+			var holder := _spawn_direct_oga(viewport, _direct_oga_route(job))
+			batch.append({"job": job, "viewport": viewport, "holder": holder, "materials": {}, "started": started})
+		var previous_draw := Time.get_ticks_msec()
+		for draw_index in 4:
+			await get_tree().process_frame
+			if _cancelled(can_continue) or Time.get_ticks_msec() > deadline:
+				_free_direct_batch(batch)
+				return {"ok": false, "error": "render_warmup_cancelled" if _cancelled(can_continue) else "render_warmup_timeout"}
+			for item in batch:
+				_set_omni_visibility(item.viewport, draw_index % 2 == 1)
+				_retain_draw_materials(item.holder, item.materials)
+			await RenderingServer.frame_post_draw
+			if _cancelled(can_continue) or Time.get_ticks_msec() > deadline:
+				_free_direct_batch(batch)
+				return {"ok": false, "error": "render_warmup_cancelled" if _cancelled(can_continue) else "render_warmup_timeout"}
+			var now := Time.get_ticks_msec()
+			max_frame_ms = maxi(max_frame_ms, now - previous_draw)
+			previous_draw = now
+		for item in batch:
+			var materials: Dictionary = item.materials
+			costs.append({"key": item.job.key, "ms": Time.get_ticks_msec() - int(item.started),
+				"draw_frames": 4, "mode": "oga_direct", "batch_size": batch.size(),
+				"retained_materials": materials.size(), "drawn_texture_paths": _material_texture_paths(materials),
+				"drawn_shader_paths": _material_shader_paths(materials)})
+			_ready_jobs[prefix + str(item.job.key)] = materials.values()
+			rendered += 1
+		while _ready_jobs.size() > MAX_CACHED_JOBS:
+			_ready_jobs.erase(_ready_jobs.keys()[0])
+		_free_direct_batch(batch)
+		await get_tree().process_frame
+		if progress.is_valid():
+			progress.call(rendered, jobs.size())
+	return {"ok": true, "rendered": rendered, "items": costs, "max_draw_frame_ms": max_frame_ms}
+
+func _free_direct_batch(batch: Array[Dictionary]) -> void:
+	for item in batch:
+		if is_instance_valid(item.viewport):
+			item.viewport.queue_free()
 
 # Keep delayed layers, but do not wait for every already-drawn effect to fade
 # out. These windows include the last authored spawn plus multiple real draws
