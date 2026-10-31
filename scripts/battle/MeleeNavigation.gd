@@ -17,8 +17,36 @@ static func segment_clear(f: Dictionary, a: Vector2, b: Vector2, bodies: Array) 
 	var length := d.length()
 	if length <= 0.001:
 		return true
-	var hit := _first_contact(a, body_radius(f), d / length, length, f, bodies)
-	return float(hit.contact) >= length - 0.001
+	# This caller needs a boolean, not the closest body or its contact normal.
+	# Preserve _first_contact's arithmetic, ordering and approximate UID ties;
+	# accepted travel can only decrease, so a blocked answer is final. Movement
+	# still uses the full contact solver, with its original normals and sliding.
+	var radius := body_radius(f)
+	var direction := d / length
+	var travel := length
+	var hit_uid := ""
+	for other: Dictionary in bodies:
+		if is_same(other, f) or not bool(other.get("alive", false)) or int(other.get("hp", 0)) <= 0:
+			continue
+		var offset: Vector2 = a - Vector2(other.pos)
+		var minimum := radius + body_radius(other) + 0.01
+		if absf(offset.x) > minimum + length or absf(offset.y) > minimum + length:
+			continue
+		var towards := offset.dot(direction)
+		if towards >= 0.0:
+			continue
+		var discriminant := towards * towards - (offset.length_squared() - minimum * minimum)
+		if discriminant < 0.0:
+			continue
+		var contact := maxf(0.0, -towards - sqrt(discriminant))
+		var uid := str(other.get("uid", ""))
+		if contact > travel or (is_equal_approx(contact, travel) and not hit_uid.is_empty() and uid >= hit_uid):
+			continue
+		travel = contact
+		hit_uid = uid
+		if travel < length - 0.001:
+			return false
+	return true
 
 static func approach(f: Dictionary, target: Dictionary, from: Vector2) -> Vector2:
 	var delta := Vector2(target.pos) - from

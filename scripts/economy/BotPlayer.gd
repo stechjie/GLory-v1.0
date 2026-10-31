@@ -55,8 +55,7 @@ static func state_for(seed: Variant, slot: int, round_n: int) -> Dictionary:
 	var live: Dictionary = NetworkService.team_bot_states.get(slot, {})
 	if int(live.get("round", -1)) == round_n and str(live.get("seed", "")) == str(seed):
 		return view(live)
-	var key := "%s/%d/%d/%s/%d" % [str(seed), slot, round_n,
-		"tutorial" if GameState.tutorial_mode else "normal", GameState.FINAL_ROUND]
+	var key := state_cache_key(seed, slot, round_n)
 	if _cache.has(key):
 		return _cache[key]
 	if _cache.size() >= CACHE_LIMIT:
@@ -64,6 +63,22 @@ static func state_for(seed: Variant, slot: int, round_n: int) -> Dictionary:
 	var result := _simulate(seed, slot, maxi(1, round_n))
 	_cache[key] = result
 	return result
+
+
+# The scheduler and state_for must use the same identity. Tutorial rules and
+# final-round variants deliberately own separate deterministic fallback states.
+static func state_cache_key(seed: Variant, slot: int, round_n: int) -> String:
+	return "%s/%d/%d/%s/%d" % [str(seed), slot, round_n,
+		"tutorial" if GameState.tutorial_mode else "normal", GameState.FINAL_ROUND]
+
+
+# Query only: never generate a board or allocate a live-state presentation view.
+# A stale live entry must not bypass incremental fallback preparation.
+static func has_cached_state(seed: Variant, slot: int, round_n: int) -> bool:
+	var live: Dictionary = NetworkService.team_bot_states.get(slot, {})
+	if int(live.get("round", -1)) == round_n and str(live.get("seed", "")) == str(seed):
+		return true
+	return _cache.has(state_cache_key(seed, slot, round_n))
 
 
 static func clear_cache() -> void:
