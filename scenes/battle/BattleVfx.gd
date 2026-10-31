@@ -2218,7 +2218,7 @@ func cue_play_death(victim_uid: String, duration_sec: float = 0.35, killer_uid: 
 	elif not own and killer != null and PresentationSettings.hit_stop_allowed():
 		_HIT_FEEDBACK.freeze_animation(killer, 0.04)
 	if not own:
-		_play_monster_kill_reward(victim_uid)
+		_play_monster_kill_reward(victim_uid, killer_uid)
 	var fade := _DEATH_FEEDBACK.play_burst_body(tween, actor, fade_targets,
 		PresentationSettings.flash_allowed() and not own, tail, done)
 	# 2D 的血条/名字层必须**跟着一起淡**，不能在尸体还在的时候就消失。
@@ -2612,12 +2612,15 @@ func _uses_monster_death_feedback(victim_uid: String) -> bool:
 
 # This is a kill-confirmation sound, not a currency mutation or a payout claim.
 # An actor can only be detached once; a revived actor may legitimately die again.
-# Share one short accent for simultaneous kills on the local player's lane.
-func _play_monster_kill_reward(victim_uid: String) -> void:
+# Share one short accent for simultaneous qualifying kills across lanes.
+func _play_monster_kill_reward(victim_uid: String, killer_uid: String = "") -> void:
 	if not _kill_feedback_victim_eligible(victim_uid):
 		return
 	var lane := _local_lane()
-	if lane == LANE_NONE or int(_state_unit_for(victim_uid).get("lane", -1)) != lane:
+	var on_local_lane := lane != LANE_NONE and int(_state_unit_for(victim_uid).get("lane", -1)) == lane
+	# Other lanes only qualify when the death event identifies a local killer.
+	# Do not guess from the last attacker: the lethal damage may have another source.
+	if not on_local_lane and (killer_uid.is_empty() or not _is_local_owned_unit(killer_uid)):
 		return
 	var now := Time.get_ticks_msec()
 	if now - _monster_reward_msec < DEATH_MERGE_MSEC:

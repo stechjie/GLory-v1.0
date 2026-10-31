@@ -1,0 +1,3949 @@
+extends "res://scenes/battle/BattleRenderer.gd"
+
+# Diagnostic receipt for the arrow-rain snapshot route. A created core node is
+# not proof that its pixels were visible; the isolated review scene checks that.
+signal skill_visual_submitted(source_uid: String, skill_id: String, target_count: int, core_node_created: bool)
+
+const RANGED_ATTACK_MIN_RANGE_PX := 135.0
+const _SkillVFXConfig := preload("res://effects/SkillVFXConfig.gd")
+# 9.19：人王奖励判定要读「还能不能再长」，与战后真正长的那一步（Main →
+# UnitGrowth.grow_king）同一个函数。本仓惯例是 preload 常量而不是裸全局类名。
+const _UnitGrowth := preload("res://scripts/units/UnitGrowth.gd")
+# 赤律族特效查表（弹体速度 / 技能清单）与 Director 起手拍长度，见 _crimson_* 一组函数。
+const _CRIMSON_CATALOG := preload("res://effects/vfx3d/units/CrimsonVFXCatalog.gd")
+const _CRIMSON_ADAPTER := preload("res://effects/runtime/presentation/adapters/LegacyBattleVfxAdapter.gd")
+const _HIT_FEEDBACK := preload("res://effects/runtime/presentation/BattleHitFeedback.gd")
+const _DEATH_FEEDBACK := preload("res://effects/runtime/presentation/BattleDeathFeedback.gd")
+const _DEATH_SHATTER := preload("res://effects/vfx3d/modules/VFXDeathShatter3D.gd")
+
+var _vfx_prev_units: Dictionary = {}
+var _vfx_seeded: bool = false
+var _vfx_visual_event_index := 0
+var _camera_shake_policy = preload("res://scripts/battle/BattleCameraShakePolicy.gd").new()
+var _persistent_unit_vfx: Dictionary = {}
+var _blood_rework_vfx: Dictionary = {}
+# 9.24 #7（订正）：**取消了「血条染契约色」的做法。**
+#
+# 上一版把被连接双方的血条染成暗红（Color(0.74,0.17,0.40)），并把颜色绑在
+# 「连线是否还活着」上。用户实测回执说明这是错的：
+#
+#   * 契约的语义是把这个目标**永久**变成我方棋子（模拟层
+#     BattleSimulator._convert_link_target_to_caster_team 只改不还），
+#     而"我方棋子应该以绿色血条表示"；
+#   * 把颜色绑在连线上，等于**守卫一死颜色就跟着没了** —— 恰恰是用户报的
+#     "这种变化不会随末日守卫死亡而停止"。
+#
+# 现在血条颜色由**当前队伍**唯一裁决（每帧在 BattleRenderer._refresh_visuals
+# 里按 `_hp_color_for_team(_display_team(f))` 同步），被策反即常绿，与连线生死无关。
+# 连线那根绳子本身仍按"双方任意一方死亡即消失"处理，见 _sync_persistent_unit_vfx。
+
+# 9.24 #5：播种帧要补演「**基线之前就已经施过法**」的技能。
+#
+# 为什么需要：回放的 `frames[0]` 是 **step 过一次之后**的状态（`_replay_capture_frame`
+# 在 `step_state` 之后才写），而播种帧拿它当基线（`_vfx_prev_units = current`）。
+# 于是「第 0 tick 就施法」的单位的 skill_ready 上升沿整段落在基线之前 ——
+# 逐单位循环里那句 `now.skill_ready > prev.skill_ready + 0.1` 永远看不到它，
+# 施法的弹道与音效在实时与回放里都**一次都不出现**（用户报的就是这条）。
+#
+# 表：skill_id -> 「施法残留痕迹」的字段名。判据必须是**施法才会写**的痕迹，
+# **不能用 skill_ready**：
+#   · 带 `opening_cd` 的单位（race_units.json / formation_allies.json）开场就把
+#     skill_ready 抬起来，但根本没有施法；
+#   · 镜像魔君的分身固定 `skill_ready = 9999.0`（BattleSimTreasures.gd），
+#     那是「永不施法」的哨兵值。
+# 法师的 `random_attribute_bolt` 满足条件：模拟器施法时同步 `attack_count += 1`
+# （BattleSimulator.gd `_tick_skills` 的 random_attribute_bolt 分支），所以
+# attack_count 就是它的施法计数。赤灯使也会在第 0 tick 开场施法；
+# 它的目标 uid 列表只在真正施法后写入，适合作为播种帧的痕迹。
+const SEED_ALREADY_CAST_TRACE := {
+	"random_attribute_bolt": "attack_count",
+	"aoe_silence": "skill_target_uid",
+	"bubble_dream": "skill_target_uid",
+	"holy_song": "skill_target_uid",
+	"arrow_rain": "skill_target_uid",
+	"time_slow": "skill_target_uid",
+}
+# 9.19：四星末日守卫（skill_id = shared_hp_link 血契连线）的技能音**只在开始释放时播一次**。
+#
+# 该技能是一次性的（命中后 `_skill_shared_hp_link` 置 `shared_link_spent` 后直接 return），
+# 但模拟器每轮仍会执行 `caster.skill_ready = state.elapsed + 1.0`
+# （BattleSimulator.gd:896-898，shared_hp_link 分支固定 +1.0）——
+# 于是 `_play_skill_cast_vfx` 的「skill_ready 上升沿」判定**每秒都会再满足一次**，
+# 音效跟着每一秒重响一声（即用户说的「后续链接效果也在播」）。
+# 这里按 sim_uid 记「这一只已经响过」，后续链接/续期不再播。
+# 每局开始由 BattleScreen._start_replay() 清空。
+var _doom_skill_sfx_played: Dictionary = {}
+# 9.20 第三批：寄生灵的分身（uid 形如 `player_parasite_3`）**只在它首次活着出现**
+# 的那一帧报一次。不能只判「新 uid」—— 回放的 roster 会把战斗中段才出生的分身
+# 提前塞进 `_state`（alive=false），于是「进演示的第一帧」会被误判成召唤时刻
+# （用户实测：寄生灵的音在开局就响）。每局开始由 BattleScreen 清空。
+var _parasite_spawn_announced: Dictionary = {}
+# D4: bodies of slice units whose death cue has been enqueued but not played yet.
+# The renderer prunes a dead model on the next refresh, which is faster than the
+# death cue can be reached when the victim was mid-swing (checklist 4.3 keeps the
+# in-flight action). Claiming the actor at enqueue time is what gives the death
+# animation something to play on.
+var _cue_corpses: Dictionary = {}
+# Actors that already entered the fade. They are tracked separately so skip,
+# seek, restart and scene shutdown can release both queued and playing deaths.
+# Instance id is the key because summons may reuse a uid before the old body has
+# finished fading.
+var _active_death_actors: Dictionary = {}
+# A queued claim normally becomes an active death within one short action beat.
+# If its cue is rejected or cancelled, this watchdog is the final ownership
+# handoff: no claimed body or 2D bar may remain on the battlefield forever.
+const DEATH_CLAIM_WATCHDOG_SEC := 2.0
+var _death_claim_serial := 0
+var _pending_death_claim_tokens: Dictionary = {}
+
+# Floating damage/heal/shield numbers. A fixed pool of Labels is recycled round-
+# robin so fast fights never churn the scene tree (see vfx-mobile-pass).
+const _HIT_NUMBER_POOL_SIZE := 32
+var _hit_number_layer: Control = null
+var _hit_number_pool: Array[Label] = []
+var _hit_number_cursor := 0
+# 快照双缓冲：帧间 diff 需要 prev 和 current 两份，所以用两个缓冲区乒乓切换、
+# 原地改写字典键值，避免每帧每单位新建 34 键字典（20 个单位就是每帧 ~700 条堆分配）。
+# 安全前提：没有任何地方跨帧持有单帧的单位字典（已核实：apocalypse 走 duplicate，
+# death/damage 事件只拷字段）。
+var _vfx_snap_a: Dictionary = {}
+var _vfx_snap_b: Dictionary = {}
+var _vfx_snap_use_b := false
+var _vfx_seen_ids: Dictionary = {}
+
+# 10.21 审查批次：战斗层并发上限只在本场战斗第一次刷新时定一次。
+# 用这个标记而不是每帧都设，是因为 `set_battle_voice_cap()` 会清空计数器 ——
+# 每帧调等于上限永远不生效。
+var _battle_voice_cap_mode_ready := false
+
+func _refresh_visuals() -> void:
+	super._refresh_visuals()
+	_refresh_battle_vfx(_state)
+
+# 10.21：战斗屏震。原来 _screen_shake 交给 VFXManager 去晃 Camera2D，但战斗画面是
+# 3D 子视口叠在 2D 战场图上，整个项目里没有一台 Camera2D —— 命中屏震、技能屏震全是空转。
+# 现在直接平移整个战场容器（_arena：2D 底图 + 3D 单位层 + 血条一起动），单位不会相对棋盘乱晃。
+# 幅度按时长衰减（平方包络），偏移用两个不同频率的正弦而不是每帧随机，读起来是「一下冲击」
+# 而不是信号不良的抖动。玩家的屏震开关 / 低画质缩放沿用 PresentationSettings。
+const SHAKE_PX_PER_STRENGTH := 0.55
+const SHAKE_MAX_PX := 9.0
+var _shake_px := 0.0
+var _shake_started_msec := 0
+var _shake_duration_msec := 1
+var _shake_base := Vector2.ZERO
+var _shake_applied := false
+# 不需要在离开战斗时注销：BattleScreen._exit_tree 不往上调父类，写了也不会执行；
+# 而战斗场景释放后这个 Callable 自动失效（is_valid() 为 false），VFXManager 会退回原路。
+var _shake_sink_registered := false
+
+func _update_vfx_camera_shake() -> void:
+	if _arena == null or not is_instance_valid(_arena):
+		return
+	if not _shake_sink_registered:
+		_shake_sink_registered = true
+		VFXManager.set_battle_shake_sink(_screen_shake)
+	var elapsed := Time.get_ticks_msec() - _shake_started_msec
+	if _shake_px <= 0.0 or elapsed >= _shake_duration_msec:
+		if _shake_applied:
+			_arena.position = _shake_base
+			_shake_applied = false
+		_shake_px = 0.0
+		return
+	if not _shake_applied:
+		_shake_base = _arena.position
+		_shake_applied = true
+	var left := 1.0 - float(elapsed) / float(_shake_duration_msec)
+	var amplitude := _shake_px * left * left
+	var t := float(elapsed) * 0.001
+	_arena.position = _shake_base + Vector2(sin(t * 47.0), sin(t * 59.0 + 1.3)) * amplitude
+
+func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
+	# 建模也会主动刷新表现；只暂停回放不足以挡住首帧技能和技能音效。
+	# 不推进游标/播种标记，Go 撤下后的首帧仍会完整播放这些事件。
+	if _pvp_combat_waiting:
+		return
+	# 10.21 审查批次：按模式定战斗层并发上限。PvE 没有「友军 / 其他敌方」两个
+	# 归属，声源更少，上限比 PvP 宽一格（6 → 7）。见 SfxService.set_battle_voice_cap。
+	if not _battle_voice_cap_mode_ready:
+		_battle_voice_cap_mode_ready = true
+		var kind := str(state_snapshot.get("kind", "pve"))
+		SfxService.set_battle_voice_cap(7 if kind in ["pve", "boss"] else 6)
+	var current := _collect_vfx_units(state_snapshot)
+	_update_treasure_set_presentation()
+	_sync_persistent_unit_vfx(current)
+	_play_visual_events(state_snapshot,current)
+	if not _vfx_seeded:
+		_play_opening_unit_vfx(current)
+		_vfx_prev_units = current
+		_vfx_seeded = true
+		return
+
+	var damage_events: Array[Dictionary] = []
+	var death_events: Array[Dictionary] = []
+	# 10.18 控制四件套刷新：冷却骤降的候选先存下，等本帧的死亡全部收齐再判（击杀者可能先于死者被遍历）。
+	var refresh_candidates: Array = []
+
+	for id: String in current.keys():
+		var now: Dictionary = current[id]
+		var prev: Dictionary = _vfx_prev_units.get(id, {})
+		# 9.20：寄生灵的分身在**它首次活着出现**的那一帧报一次。
+		# 放在 `prev.is_empty()` 判断**之外**：回放的 roster 会把分身提前放进
+		# `_state`（alive=false），所以它「真正出生」那一帧的 prev 并不为空，
+		# 按「新 uid」判会漏；反过来按这个判则不会被「进演示第一帧」骗到。
+		if id.contains("_parasite_"):
+			_announce_parasite_clone(id, now)
+		# 10.18：镜像分身出现。和寄生分身同一个坑：回放的 roster 第 0 帧就把分身放进来
+		# （alive=false），按「新 uid」判在真实对局里一次都不播。改成「上一帧不是活的、这一帧活了」
+		# （分身死后重新召唤可能复用同一个 uid，也要再播）。
+		if _vfx_seeded and id.contains("_mirror_") and bool(now.get("alive", false)) and not bool(prev.get("alive", false)):
+			_play_boss_procedural("mirror_spawn", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO))
+		if prev.is_empty():
+			if _vfx_seeded and str(now.get("skill_id", "")) == "twin_revive":
+				_play_boss_procedural("twin_revive", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO))
+			continue
+		var hp_delta := int(now.get("hp", 0)) - int(prev.get("hp", 0))
+		var shield_delta := int(now.get("shield", 0)) - int(prev.get("shield", 0))
+		var stack_delta := int(now.get("skill_stacks", 0)) - int(prev.get("skill_stacks", 0))
+		var sid_now := str(now.get("skill_id", ""))
+		if hp_delta < 0:
+			var critical := -hp_delta >= maxi(35, int(round(float(maxi(1, int(now.get("max_hp", 1)))) * 0.24)))
+			damage_events.append({
+				"id": id,
+				"pos": now.get("hit_pos", Vector2.ZERO),
+				"hit_pos": now.get("hit_pos", Vector2.ZERO),
+				"head_pos": now.get("head_pos", Vector2.ZERO),
+				"foot_pos": now.get("foot_pos", Vector2.ZERO),
+				"world_hit": now.get("world_hit", Vector3.ZERO),
+				"world_head": now.get("world_head", Vector3.ZERO),
+				"world_foot": now.get("world_foot", Vector3.ZERO),
+				"model_node": now.get("model_node"),
+				"team": str(now.get("team", "")),
+				"lane": int(now.get("lane", -1)),
+				"critical": critical,
+			})
+		elif hp_delta > 0:
+			if sid_now == "blood_rage" and _blood_rage_entered.has(id):
+				var blood_source := _nearest_enemy_target(now, damage_events, current)
+				_play_boss_procedural("blood_lifesteal", now.get("world_foot", Vector3.ZERO), blood_source.get("world_hit", now.get("world_foot", Vector3.ZERO)), _boss_target_context(blood_source))
+			else:
+				# Healing is rendered by the 3D unit composer. Do not layer the
+				# legacy 2D HOLY_HEAL ring on top of it.
+				pass
+		if shield_delta > 0:
+			# The legacy 2D HOLY_SHIELD overlay is retired. Shield presentation is
+			# owned by the new-material status/skill routes, so the old blue disc
+			# can never be layered over them.
+			# Shield gain is unambiguous from the HP-diff (shield only rises on grant),
+			# so its number comes straight off the delta rather than a sim event.
+			_spawn_hit_number(now.get("head_pos", Vector2.ZERO), shield_delta, "shield", false, false)
+		if stack_delta > 0 and sid_now in ["rage_stack", "same_target_damage_stack"]:
+			if sid_now == "rage_stack":
+				var rage_stacks := int(now.get("skill_stacks", 0))
+				var rage_target := _nearest_enemy_target(now, damage_events, current)
+				if rage_stacks > 0 and rage_stacks % 5 == 0:
+					_play_boss_procedural("rage_milestone", now.get("world_foot", Vector3.ZERO), rage_target.get("world_foot", now.get("world_foot", Vector3.ZERO)), _boss_target_context(rage_target, {"stacks": rage_stacks}))
+				else:
+					_play_boss_procedural("rage_stack", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO), {"stacks": rage_stacks})
+			else:
+				_spawn_vfx("GROWTH_AURA", now.get("foot_pos", Vector2.ZERO))
+				var linked_uid := str(now.get("linked_target_uid", ""))
+				var linked_target:Dictionary = current.get(linked_uid, now) if not linked_uid.is_empty() else now
+				# The queen's stacks are real data (skill_stacks); the visuals use
+				# them to pick the fissure tier and the fourth-stack rupture.
+				_play_unit_procedural("same_target_damage_stack", now.get("world_foot", Vector3.ZERO), linked_target.get("world_hit", linked_target.get("world_foot", now.get("world_foot", Vector3.ZERO))), _unit_target_context(now, linked_target, {"stacks": int(now.get("skill_stacks", 0))}))
+		if stack_delta > 0 and sid_now == "poison_reflect_armor_stack":
+			_play_unit_procedural("poison_reflect_armor_stack", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO), _unit_target_context(now, now))
+		if sid_now == "overload_counter" and stack_delta > 0:
+			_play_boss_procedural("overload_stack", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO))
+		elif sid_now == "overload_counter" and stack_delta < 0:
+			var overload_target := _nearest_enemy_target(now, damage_events, current)
+			var overload_world: Vector3 = overload_target.get("world_foot", now.get("world_foot", Vector3.ZERO))
+			# 10.18：起点改用脚底 —— composer 按 Boss 体型自己算身上的挂点；原来传 world_cast（头顶）
+			# 再叠高度偏移，过载球画到了 Boss 头顶上方很远的地方。
+			_play_boss_procedural("overload_counter", now.get("world_foot", Vector3.ZERO), overload_world, _boss_target_context(overload_target))
+			# 9.23 第五批：雷怒核心的技能音 —— 用户口径「**触发技能造成伤害时**播放音效，
+			# 而不是开局播放」。
+			#
+			# 判据就是这一格：层数（`skill_stacks`）由 8 落回 0。`_apply_defender_reaction`
+			# 里那条反击是**唯一**会把层数清零的地方（见 BattleSimTreasures.gd 的
+			# `target.skill_stacks = 0`，紧跟着 `apply_damage(attacker, skill_damage)`），
+			# 所以「落回 0」≡「反击真的打出去了」。
+			#
+			# ★ 为什么这一条不走模拟器的 `sfx_proc` 事件：层数本来就会过回放边界
+			#   （`_replay_capture_frame` 的第 9 列 = skill_stacks），这一格已经是
+			#   精确时刻，再补一条事件是重复信息。
+			# ★ 事件沿用 `_maybe_play_boss_skill_proc()` 这一个消费口（而不是在这里直接
+			#   查表 / 直接 play），免得「boss 真事件音」出现第二个派发点。
+			_maybe_play_boss_skill_proc({
+				"type": "sfx_proc", "skill_id": "overload_counter",
+				"source_uid": str(now.get("sim_uid", "")),
+			})
+		var prev_ratio := float(prev.get("hp", 0)) / float(maxi(1, int(prev.get("max_hp", 1))))
+		var now_ratio := float(now.get("hp", 0)) / float(maxi(1, int(now.get("max_hp", 1))))
+		# The new blood-rage visual is synchronized every presentation frame below;
+		# crossing a health step updates that one persistent instance and its pulse.
+		if sid_now == "blood_rage" and prev_ratio > 0.35 and now_ratio <= 0.35:
+			_blood_rage_entered[id] = true
+			_play_boss_procedural("blood_rage", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO))
+		if sid_now == "twin_revive" and not bool(prev.get("alive", true)) and bool(now.get("alive", false)):
+			_play_boss_procedural("twin_revive", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO))
+			# 9.23 第五批：双生守门人**复活**那一帧的音（用户没点名，但它是同一类
+			# 「登记了素材、却挂在一个不存在的边沿上」的死音：`twin_revive` 同样不在
+			# `_tick_skills` 的 match 里，所以 9.22 那条施法边沿派发对它也从没生效过）。
+			# 触发点与上面那行演出**同一格**（`alive` 由假转真），`alive` 过回放边界。
+			_maybe_play_boss_skill_proc({
+				"type": "sfx_proc", "skill_id": "twin_revive",
+				"source_uid": str(now.get("sim_uid", "")),
+			})
+		# 10.18：灭世裁决者的蓄力 / 命中 / 打断演出改由模拟器的 sfx_proc 事件驱动
+		# （见 _play_boss_event_vfx）。原来这里按 `apocalypse_due` 做帧差，那个字段
+		# 不过回放边界，真实对局里从来没播过。
+		var prev_skill_ready := float(prev.get("skill_ready", 0.0))
+		var now_skill_ready := float(now.get("skill_ready", 0.0))
+		# 10.18 凤凰涅槃：复活体第一次活着出现 → 复活瞬间的绿光（复活体是新 uid，每只只播一次）。
+		if bool(now.get("phoenix_used", false)) and bool(now.get("alive", false)) and not _phoenix_rise_played.has(id):
+			_phoenix_rise_played[id] = true
+			_play_unit_procedural("treasure_phoenix_rise", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO), _unit_target_context(now, now))
+		if now_skill_ready > prev_skill_ready + 0.1:
+			_play_skill_cast_vfx(now, prev, damage_events, current)
+		elif prev_skill_ready - now_skill_ready > REFRESH_MIN_DROP_SEC:
+			refresh_candidates.append([prev, now])
+		if bool(prev.get("alive", true)) and not bool(now.get("alive", true)):
+			death_events.append({"pos": now.get("foot_pos", Vector2.ZERO), "world_foot": now.get("world_foot", Vector3.ZERO), "world_hit": now.get("world_hit", Vector3.ZERO), "killer_team": _opposite_team(str(now.get("team", ""))), "killer_uid": str(now.get("killer_uid", "")), "mother_execute_kill": bool(now.get("mother_execute_kill", false)), "model_node": now.get("model_node"), "victim_id": id})
+			if sid_now == "twin_revive":
+				var partner := _living_twin_partner(now, current)
+				if not partner.is_empty():
+					_play_boss_procedural("twin_timer", now.get("world_foot", Vector3.ZERO), partner.get("world_foot", now.get("world_foot", Vector3.ZERO)), _boss_target_context(partner))
+			# 10.29：2D 的 DEATH_EXPLOSION 白粒子退役，死亡碎裂改由 cue_play_death 出 3D 种族色碎片。
+			if sid_now == "death_poison_explosion":
+				_play_unit_procedural("death_poison_explosion", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO), _unit_target_context(now, now))
+				# 9.20：自爆灵（`undead_bomb`）的四星技能音 —— 用户口径
+				# 「死亡爆炸时」响，所以挂在这条死亡爆炸分支里（它的技能就是这一爆，
+				# 模拟器里没有 skill_ready 边沿可挂）。归属与星级门控在这里判：
+				# `id` 是这只自爆灵自己的 sim uid，此刻它还在 `current` 里，
+				# 所以 `_is_own_or_ally_unit` 的快照一路能查到它的 owner_slot。
+				_maybe_play_bomb_skill_sfx(id)
+
+	for id: String in _vfx_prev_units.keys():
+		if current.has(id):
+			continue
+		var prev_missing: Dictionary = _vfx_prev_units[id]
+		if bool(prev_missing.get("mother_execute_kill", false)):
+			death_events.append({"pos": prev_missing.get("foot_pos", Vector2.ZERO), "world_foot": prev_missing.get("world_foot", Vector3.ZERO), "world_hit": prev_missing.get("world_hit", Vector3.ZERO), "killer_uid": str(prev_missing.get("killer_uid", "")), "mother_execute_kill": true, "model_node": prev_missing.get("model_node"), "victim_id": id})
+
+	_note_refresh_death_teams(death_events)
+	for pair in refresh_candidates:
+		_maybe_play_refresh_clock(pair[0], pair[1])
+
+	# 母灵的书统一由 mother_execute 视觉事件驱动（见 _play_visual_events），
+	# 不再走这条依赖 mother_execute_kill 的死亡分支——那个标记在 team/回放模式
+	# 里不会被记录，导致回放时书永远不播。事件路径单人和回放都能工作。
+	#
+	# D6: 普攻的起手/投射物/命中/伤害数字/死亡已全部由 BattlePresentationDirector
+	# 的 cue 驱动，原先在这里按 attack_count 增量重建攻击的两条 diff 路径已删除。
+	# 保留在本函数里的仍是尚未迁移的部分：护盾、层数、治疗、Boss 与种族技能演出。
+	_vfx_prev_units = current
+
+func _vfx_hit_stop_active() -> bool:
+	# VFXManager is an autoload: reference it directly. The old has_node/get_node
+	# pair resolved a node path twice every frame from _process.
+	return VFXManager.is_hitstop_active()
+
+func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
+	# 取"当前不是上一帧快照"的那个缓冲区来填。prev 恒指向另一个缓冲区，
+	# 所以覆盖本缓冲区时绝不会动到 prev。
+	var result: Dictionary = _vfx_snap_b if _vfx_snap_use_b else _vfx_snap_a
+	_vfx_snap_use_b = not _vfx_snap_use_b
+	_vfx_seen_ids.clear()
+	for side in ["player", "enemy"]:
+		for f in state_snapshot.get(side, []):
+			if typeof(f) != TYPE_DICTIONARY:
+				continue
+			var id := _visual_id(f)
+			var sim_pos := _visual_sim_pos_for_fighter(f)
+			var base_pos := _sim_to_arena(sim_pos)
+			var unit_node := _unit_node_for_id(id)
+			var model_node: Node3D = _unit_actor_registry.get_actor(id)
+			_vfx_seen_ids[id] = true
+			# 取回该 id 的字典原地改写；首见才建一次，之后帧一直复用同一个字典对象。
+			# 不用 result.get(id, {})——那个默认 {} 每次调用都会构造一个丢弃的空字典，
+			# 等于每帧每单位又白分配一次。
+			var u: Dictionary
+			if result.has(id):
+				u = result[id]
+			else:
+				u = {}
+				result[id] = u
+			u["id"] = id
+			u["hp"] = int(f.get("hp", 0))
+			u["max_hp"] = int(f.get("max_hp", 1))
+			u["shield"] = int(f.get("shield", 0))
+			u["alive"] = bool(f.get("alive", true))
+			u["pos"] = base_pos
+			u["sim_pos"] = sim_pos
+			u["foot_pos"] = _unit_anchor_global_position(unit_node, "FootAnchor", base_pos)
+			u["cast_pos"] = _unit_anchor_global_position(unit_node, "CastAnchor", base_pos)
+			u["hit_pos"] = _unit_anchor_global_position(unit_node, "HitAnchor", base_pos)
+			u["head_pos"] = _unit_anchor_global_position(unit_node, "HeadAnchor", base_pos)
+			u["world_foot"] = _unit_vfx_position(id, "FootAnchor", sim_pos, 0.08)
+			u["world_cast"] = _unit_vfx_position(id, "CastAnchor", sim_pos, 0.82)
+			u["world_hit"] = _unit_vfx_position(id, "HitAnchor", sim_pos, 0.72)
+			u["world_head"] = _unit_vfx_position(id, "HeadAnchor", sim_pos, 1.45)
+			u["model_node"] = model_node
+			u["team"] = str(f.get("team", ""))
+			u["owner_slot"] = int(f.get("owner_slot", -1))
+			u["attack_count"] = int(f.get("attack_count", 0))
+			u["range_px"] = float(f.get("range_px", 0.0))
+			u["skill_ready"] = float(f.get("skill_ready", 0.0))
+			u["skill_id"] = str(f.get("def", {}).get("skill_id", ""))
+			# 种族只用于挑表现（赤律族的 unit_id 没有 god_/dark_ 这类前缀）。
+			u["race"] = str(f.get("def", {}).get("race", ""))
+			# 数据里的射程格数（1 = 近战）。range_px 在实时模拟与回放里口径不同
+			# （32 vs 72），判近战/远程只能看这个。
+			u["attack_range"] = float(f.get("def", {}).get("range", 1.0))
+			# Replay rosters preserve the resolved def, but omit the opening-only
+			# taunt fields. Taunt lasts while the guardian lives, independent of shield.
+			u["taunt_active"] = bool(f.get("taunt_active", u["skill_id"] == "guardian_shield_taunt"))
+			u["taunt_radius"] = float(f.get("taunt_radius", f.get("def", {}).get("taunt_radius", 0.0)))
+			u["skill_every"] = int(f.get("def", {}).get("every", 0))
+			u["unit_id"] = str(f.get("id", ""))
+			# 母灵处决打到 Boss 时是「重击」而不是吸魂（与模拟器 is_boss 判据一致）。
+			u["is_boss"] = bool(f.get("def", {}).get("is_boss", false))
+			u["skill_stacks"] = int(f.get("skill_stacks", 0))
+			# 人王的持久成长层数，只给天剑定尺寸用。3v3 回放的 roster 不带这个字段，读到 0。
+			u["king_stacks"] = int(f.get("king_growth_stacks", 0))
+			u["phoenix_used"] = bool(f.get("phoenix_used", false))
+			u["sim_uid"] = str(f.get("uid", ""))
+			u["killer_uid"] = str(f.get("killer_uid", ""))
+			u["mother_execute_kill"] = bool(f.get("mother_execute_kill", false))
+			u["attack_target_uid"] = str(f.get("vfx_attack_target_uid", ""))
+			u["skill_target_uid"] = str(f.get("vfx_skill_target_uid", ""))
+			u["lane"] = int(f.get("lane", -1))
+			u["blood_rage_active"] = bool(f.get("blood_rage_active", false))
+			u["apocalypse_charging"] = f.has("apocalypse_due")
+			u["apocalypse_due"] = float(f.get("apocalypse_due", -1.0))
+			u["twin_group_id"] = str(f.get("twin_group_id", ""))
+			u["twin_member_index"] = int(f.get("twin_member_index", -1))
+	# 剪掉本帧没出现的（已离场/被移除）单位的陈旧字典，否则 diff 会把它们当成还在。
+	if result.size() != _vfx_seen_ids.size():
+		for id in result.keys():
+			if not _vfx_seen_ids.has(id):
+				result.erase(id)
+	return result
+
+func _unit_vfx_position(id: String, anchor_name: String, sim_pos: Vector2, fallback_y: float) -> Vector3:
+	var model_node: Node3D = _unit_actor_registry.get_actor(id)
+	if model_node != null and is_instance_valid(model_node):
+		var anchor := _unit_actor_registry.get_anchor(id, anchor_name)
+		if anchor is Node3D:
+			var anchor_global := (anchor as Node3D).global_position
+			if _battle_3d_vfx_root != null and is_instance_valid(_battle_3d_vfx_root):
+				return _battle_3d_vfx_root.to_local(anchor_global)
+			return anchor_global
+		var model_global := model_node.global_position
+		if _battle_3d_vfx_root != null and is_instance_valid(_battle_3d_vfx_root):
+			model_global = _battle_3d_vfx_root.to_local(model_global)
+		model_global.y += fallback_y
+		return model_global
+	var fallback := _sim_to_world_pos(sim_pos)
+	fallback.y = fallback_y
+	return fallback
+
+func _fighter_sim_pos(f: Dictionary) -> Vector2:
+	var raw = f.get("pos", Vector2.ZERO)
+	if raw is Vector2:
+		return raw
+	if typeof(raw) == TYPE_DICTIONARY:
+		return Vector2(float(raw.get("x", 0.0)), float(raw.get("y", 0.0)))
+	return Vector2.ZERO
+
+func _race_from_unit_id(unit_id:String)->String:
+	for race in ["god","human","dark","undead"]:
+		if unit_id.begins_with(race+"_"):
+			return race
+	return ""
+
+func _visual_race_from_unit_id(unit_id:String)->String:
+	var race:=_race_from_unit_id(unit_id)
+	if not race.is_empty():
+		return race
+	var key:=unit_id.to_lower()
+	if key.contains("dark") or key.contains("shadow") or key.contains("demon"):
+		return "dark"
+	if key.contains("undead") or key.contains("wisp") or key.contains("poison") or key.contains("death"):
+		return "undead"
+	if key.contains("god") or key.contains("angel") or key.contains("divine"):
+		return "god"
+	# Mercenaries and unclassified neutral units use the restrained human
+	# projectile/strike palette instead of the legacy 2D hit effects.
+	return "human"
+
+func _play_race_basic_attack(attack:Dictionary,target:Dictionary,mode:String,race:String,current:Dictionary)->void:
+	var origin:Vector3=attack.get("world_cast",Vector3.ZERO)
+	var target_world:Vector3=target.get("world_hit",target.get("world_foot",Vector3.ZERO))
+	var source:Dictionary=current.get(str(attack.get("id","")),{})
+	# The attack event is authoritative for the firing unit.  The live-unit
+	# snapshot can be keyed by a different simulation id, so preserve the
+	# event's unit_id here or authored per-unit projectiles silently fall back
+	# to the generic race bolt.
+	var context:=_unit_target_context(source,target)
+	var attack_unit_id:=str(attack.get("unit_id",""))
+	if not attack_unit_id.is_empty():
+		context["source_unit_id"] = attack_unit_id
+	if attack_unit_id == "human_archer" and mode == "ranged":
+		var spec: Dictionary = OGA_CHESS_CATALOG.projectile_for(attack_unit_id)
+		var speed := maxf(0.5, float(spec.get("speed", 11.5)))
+		var flight := clampf(origin.distance_to(target_world) / speed, _RANGED_OGA_MIN_TRAVEL, _RANGED_OGA_MAX_TRAVEL)
+		var predicted: Variant = _archer_future_target(str(attack.get("target_uid", "")), target_world, flight)
+		if predicted is Vector3:
+			context["archer_straight_target"] = predicted
+			context["archer_travel_time"] = flight
+	_play_unit_procedural("basic_attack_%s_%s"%[mode,race],origin,target_world,context)
+
+# A replay can supply a target's recorded position at arrow arrival. Live
+# simulation has no future frame and retains its existing tracking behaviour.
+func _archer_future_target(target_uid: String, target_world: Vector3, flight: float) -> Variant:
+	if target_uid.is_empty() or not has_method("cue_archer_replay_intercept"):
+		return null
+	return call("cue_archer_replay_intercept", target_uid, target_world, flight)
+
+func _nearest_enemy_damage_event(attack: Dictionary, damage_events: Array[Dictionary]) -> Dictionary:
+	var best: Dictionary = {}
+	var best_dist := INF
+	var attack_team := str(attack.get("team", ""))
+	var attack_pos: Vector2 = attack.get("pos", Vector2.ZERO)
+	for event: Dictionary in damage_events:
+		if str(event.get("team", "")) == attack_team:
+			continue
+		var target_pos: Vector2 = event.get("pos", Vector2.ZERO)
+		var dist := attack_pos.distance_squared_to(target_pos)
+		if dist < best_dist:
+			best_dist = dist
+			best = event
+	return best
+
+func _nearest_enemy_target(source: Dictionary, damage_events: Array[Dictionary], current: Dictionary) -> Dictionary:
+	for target_key in ["target_uid", "skill_target_uid", "attack_target_uid"]:
+		var exact_uid := str(source.get(target_key, ""))
+		if exact_uid.is_empty() or not current.has(exact_uid):
+			continue
+		var exact: Dictionary = current[exact_uid]
+		if str(exact.get("team", "")) != str(source.get("team", "")):
+			return exact
+	var damaged := _nearest_enemy_damage_event(source, damage_events)
+	if not damaged.is_empty():
+		return damaged
+	var best: Dictionary = {}
+	var best_dist := INF
+	var source_team := str(source.get("team", ""))
+	var source_pos: Vector2 = source.get("pos", Vector2.ZERO)
+	for id: String in current.keys():
+		var target: Dictionary = current[id]
+		if not bool(target.get("alive", true)) or str(target.get("team", "")) == source_team:
+			continue
+		var target_pos: Vector2 = target.get("hit_pos", target.get("pos", Vector2.ZERO))
+		var dist := source_pos.distance_squared_to(target_pos)
+		if dist < best_dist:
+			best_dist = dist
+			best = {
+				"id": id,
+				"pos": target_pos,
+				"hit_pos": target.get("hit_pos", target_pos),
+				"head_pos": target.get("head_pos", target_pos),
+				"foot_pos": target.get("foot_pos", target_pos),
+				"world_hit": target.get("world_hit", Vector3.ZERO),
+				"world_head": target.get("world_head", Vector3.ZERO),
+				"world_foot": target.get("world_foot", Vector3.ZERO),
+				"model_node": target.get("model_node"),
+				"team": str(target.get("team", "")),
+			}
+	return best
+
+func _floor_target_for(source: Dictionary) -> Dictionary:
+	var from_pos: Vector2 = source.get("pos", Vector2.ZERO)
+	var dir := -1.0 if str(source.get("team", "")) == "player" else 1.0
+	var floor_pos := from_pos + Vector2(0.0, 150.0 * dir)
+	return {
+		"id": "",
+		"pos": floor_pos,
+		"hit_pos": floor_pos,
+		"head_pos": floor_pos,
+		"foot_pos": floor_pos,
+		"team": _opposite_team(str(source.get("team", ""))),
+	}
+
+func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events: Array[Dictionary], current: Dictionary) -> void:
+	var sid := str(unit.get("skill_id", ""))
+	var uid := str(unit.get("unit_id", ""))
+	# 9.18：四星单位施放专属技能时的音效。
+	#
+	# ★ 9.20 口径变更：此前是**仅自身棋子（不含队友）**才响，用户要求放宽到
+	#   **自身 + 友军**。判定入口由 `_is_local_owned_unit`（owner_slot == local_slot）
+	#   换成 `_is_own_or_ally_unit`（owner 与 local_slot 同队），再叠加 `star == 4`
+	#   防止低星单位的普攻上升沿误触发。
+	var _sim_uid := str(unit.get("sim_uid", ""))
+	var _owned := _is_own_or_ally_unit(_sim_uid)
+	if _owned and _is_star4(_sim_uid):
+		# 9.19：末日守卫（`dark_doom`）的技能只响**一次**——它的 `shared_hp_link`
+		# 是一次性技能，`_skill_shared_hp_link()` 命中 `shared_link_spent` 会直接
+		# return，但模拟器末尾仍把 `caster.skill_ready` 推到 `elapsed + 1.0`
+		# （BattleSimulator.gd:896-898），于是每秒都产生一次上升沿 → 连线持续期间
+		# 音效被反复重播。这里按棋子记一次播放标记，后续上升沿全部跳过。
+		# 判据同时认 uid 与 skill_id：uid 保证「末日守卫」本体，skill_id 保证将来
+		# 若有别的单位复用该机制也不会重复响（数据里 `shared_hp_link` 目前只有它一家）。
+		var once_only := uid == "dark_doom" or sid == "shared_hp_link"
+		if not once_only or not _doom_skill_sfx_played.has(_sim_uid):
+			if once_only:
+				_doom_skill_sfx_played[_sim_uid] = true
+			# 9.24 #4：沉默箭（dark_mage）的命中音挪到「封印落到目标」那一刻
+			# （SilenceSeal 层 delay=0.28s），不再在施法瞬间响。其余四星技能音
+			# 仍在施法边沿立刻播放。
+			if sid == "silence_bolt":
+				_play_sfx_delayed(SfxService.star4_cue_for(uid, true), cue_silence_hit_delay(_sim_uid, str(unit.get("skill_target_uid", ""))), _basic_attack_ownership_db(_sim_uid, ""))
+			else:
+				SfxService.play(SfxService.star4_cue_for(uid, true), _basic_attack_ownership_db(_sim_uid, ""))
+	elif _owned:
+		# 9.19 第二批：佣兵专属技能音（星轨猎人 / 泡沫术士 / 圣愈修女）。
+		# **佣兵升不到四星**（`EconomyLedger._use_upgrade_stone` 会拒），所以
+		# 它们不能并进上面那条 `_is_star4` 门 —— 并进去就是一条永远不响的音。
+		# 9.20 起门控与上面同一口径：自身 + 友军（敌方天然被排除）。
+		# 10.21 审查批次：甲壳守卫 `shell_guard` / 炎阳王者 `king_aura`
+		# 两条施法型佣兵技能音并入这里（表在 MERC_SKILL_CUES）。
+		var merc_cue := SfxService.merc_skill_cue_for(uid)
+		if not merc_cue.is_empty():
+			SfxService.play(merc_cue, _basic_attack_ownership_db(_sim_uid, ""))
+		# 10.21 审查批次：**法师 1~3★ 的技能音。**
+		#
+		# 这是本作唯一的例外 —— 惯例是「普通技能音只给四星」，而法师
+		# `no_basic_attack = true`（模拟器 BattleSimulator.gd:847 直接 continue），
+		# 1~3★ 法师连普攻音都没有，于是**完全沉默**。用户审查后明确要求补。
+		#
+		# ⚠️ 与上面那条 `_is_star4` 分支**互斥**：4★ 法师用已存在的
+		#    `star4_mage_skill`（STAR4_SKILL_CUES），1~3★ 才走这一条。
+		#    所以判据必须是 `elif _owned` 这条**非四星**支路 —— 写在上面的
+		#    四星分支里会让低星永远不响，写在这里正好互补。
+		if not _is_star4(_sim_uid):
+			var low_cue := SfxService.low_star_skill_cue_for(uid)
+			if not low_cue.is_empty():
+				SfxService.play(low_cue, _basic_attack_ownership_db(_sim_uid, ""))
+	# 9.22：boss 技能音 —— **只剩施法边沿这一条通道**。
+	#
+	# ★ **不做归属门控。** 用户口径：「boss 技能音效播放，我方队友都能听见」。
+	#   boss 在 3v3 里固定在场上、不属于任何玩家的 owner_slot，所以这一条独立于
+	#   上面的 `_owned`（`_is_own_or_ally_unit`）与 `_is_star4` 两个分支 ——
+	#   套上它们只会让它变成「永远不响」，而不是「更精确」。
+	#
+	# ★★ 9.23 第五批：这里改成 `boss_cast_edge_cue_for()`，**只有两只** boss 走这条路
+	#   （圣愈祭司 / 天罚投星者：它们的技能确实产生 `skill_ready` 上升沿，且「施法这一下」
+	#   就是用户要的那一声）。
+	#
+	#   其余 6 只**不能**挂在这里，9.22 的写法对它们全是错的：
+	#     · 雷怒核心（overload_counter）—— 用户要的是「触发反击造成伤害时」（下面
+	#       `stack_delta < 0` 那一格）；而且它不在 `_tick_skills` 的 match 里，没有上升沿；
+	#     · 镜像魔君（mirror_clone）—— 要的是「召唤分身时」；它的
+	#       `skill_ready = elapsed + 1.0`，挂这里就是**每秒重响一次**（用户原话「一直播放」）；
+	#     · 噬魂领主（soul_devour）—— 要的是「击杀单位后」；没有上升沿；
+	#     · 血怒魔王（blood_rage）—— 要的是「进入暴走那一次」；没有上升沿；
+	#     · 双生守门人（twin_revive）—— 要的是「复活那一帧」（下面 alive 上升沿那条）；没有上升沿；
+	#     · 灭世裁决者（apocalypse_charge）—— 蓄力/完成/打断三拍，走模拟器事件。
+	#   这 6 只的音效在 SfxService.BOSS_EVENT_ACTIONS 里，由模拟器补 `sfx_proc` 事件、
+	#   本文件的 `_maybe_play_boss_skill_proc()` 消费（理由见那张表上面的注释）。
+	var boss_cue := SfxService.boss_cast_edge_cue_for(uid)
+	if not boss_cue.is_empty():
+		SfxService.play(boss_cue, _basic_attack_ownership_db(_sim_uid, ""))
+	var texture_pos: Vector2 = unit.get("cast_pos", Vector2.ZERO)
+	var should_play_texture := true
+	var procedural_played := false
+	_play_race_unit_skill_procedural(sid, unit, previous, damage_events, current)
+	match sid:
+		"apocalypse_charge", "element_meteor", "mirror_clone", "holy_purify", "overload_counter", "twin_revive", "blood_rage", "soul_devour", "rage_stack":
+			should_play_texture = false
+			if sid == "element_meteor":
+				var meteor_target := _nearest_enemy_target(unit, damage_events, current)
+				var meteor_world: Vector3 = meteor_target.get("world_foot", unit.get("world_foot", Vector3.ZERO))
+				_play_boss_procedural("element_meteor", unit.get("world_cast", Vector3.ZERO), meteor_world, _boss_target_context(meteor_target))
+				procedural_played = true
+			elif sid == "holy_purify":
+				var ally_positions: Array = []
+				for ally_id: String in current.keys():
+					var ally: Dictionary = current[ally_id]
+					if bool(ally.get("alive", false)) and str(ally.get("team", "")) == str(unit.get("team", "")):
+						ally_positions.append(ally.get("world_foot", unit.get("world_foot", Vector3.ZERO)))
+				_play_boss_procedural("holy_purify", unit.get("world_foot", Vector3.ZERO), unit.get("world_foot", Vector3.ZERO), {"targets": ally_positions})
+				procedural_played = true
+		"random_attribute_bolt", "silence_bolt":
+			should_play_texture = false
+			# The OGA projectile/pack composer owns cast, travel and hit. Do not
+			# add the retired role textures underneath it.
+		"bubble_dream", "balance_judge", "gold_charge", "twin_strike", "arrow_rain", "blood_rampage", "steel_order", "time_slow", "death_hunt":
+			should_play_texture = false
+		"king_aura":
+			# Visual-only procedural aura; never spawn the obsolete legacy PNG layer.
+			should_play_texture = false
+		"judgement_strike", "global_divine_blast":
+			# 9.24 #3：裁决者（单体）与神王（全体）的落雷都由 composer 的
+			# _aoe_thunder 全权负责，旧的贴图层一律不再叠加。
+			should_play_texture = false
+		"front_cone_stun":
+			should_play_texture = false
+		"fear", "stun", "blink_low_def_backline":
+			# Fear Demon, Succubus and Ambusher moved to authored layers; the
+			# composer owns them and no legacy plate is added.
+			should_play_texture = false
+		"black_hole":
+			should_play_texture = false
+		"lowest_ally_heal", "nearest_ally_bless", "nearby_ally_heal_buff", "guardian_shield_taunt", "holy_song", "holy_purify":
+			should_play_texture = false
+			# The OGA light/shield pack owns the presentation; legacy holy plates
+			# and HOLY_HEAL/HOLY_SHIELD overlays stay disabled.
+		"curse_attack", "same_target_damage_stack", "poison_attack", "death_poison_explosion", "poison_reflect_armor_stack":
+			should_play_texture = false
+			# Blood/nature/explosion pack route is exclusive: no old role texture.
+		"random_ally_damage_reduction":
+			# Angel's Guard is now fully owned by VFXAngelGuard3D.  The legacy
+			# HOLY_SHIELD 2D scene must not be layered over the new-material route.
+			should_play_texture = false
+		"shell_guard", "apocalypse_charge":
+			should_play_texture = false
+			# Do not fall back to the retired HOLY_SHIELD overlay. These skills keep
+			# their own 3D composer presentation only.
+		"shared_hp_link":
+			should_play_texture = false
+		"random_ally_buff", "frost_status", "aoe_silence":
+			# 赤律族主动技由 VFXCrimsonSkill3D 独占（_play_race_unit_skill_procedural）。
+			should_play_texture = false
+		_:
+			pass
+	# 叠加贴图特效（与程序效果同时显示）
+	if should_play_texture:
+		_play_skill_texture_vfx(unit, texture_pos)
+	elif procedural_played:
+		# The procedural sample owns its full staged animation; do not place a static Boss PNG on top.
+		pass
+
+func _play_boss_procedural(effect_id: String, origin_value: Variant, target_value: Variant, context: Dictionary = {}) -> Node3D:
+	if _battle_3d_vfx_root == null or not is_instance_valid(_battle_3d_vfx_root):
+		return null
+	if not _battle_3d_vfx_root.has_method("play"):
+		return null
+	var world_context := context.duplicate(false)
+	if world_context.has("targets"):
+		var world_targets: Array = []
+		for value in world_context["targets"]:
+			world_targets.append(_boss_world_position(value))
+		world_context["targets"] = world_targets
+	return _battle_3d_vfx_root.call("play", effect_id, _boss_world_position(origin_value), _boss_world_position(target_value), world_context)
+
+func _play_unit_procedural(effect_id:String,origin:Vector3,target:Vector3,context:Dictionary={})->Node3D:
+	return _play_boss_procedural(effect_id,origin,target,context)
+
+func _sync_persistent_unit_vfx(current:Dictionary)->void:
+	_sync_blood_rework_vfx(current)
+	_sync_blood_qi_vfx(current)
+	_sync_mercenary_rework_statuses(current)
+	for id:String in _persistent_unit_vfx.keys().duplicate():
+		var unit:Dictionary=current.get(id,{})
+		var record:Dictionary=_persistent_unit_vfx.get(id,{})
+		var node:Variant=record.get("node")
+		if str(record.get("kind", "")) == "guardian":
+			var guardian_alive := not unit.is_empty() and bool(unit.get("alive", false)) and str(unit.get("skill_id", "")) == "guardian_shield_taunt"
+			if not is_instance_valid(node):
+				_persistent_unit_vfx.erase(id)
+				continue
+			if not guardian_alive:
+				node.call("update_guardian_state", false, false, Vector2.ZERO)
+				node.call("stop_vfx")
+				_persistent_unit_vfx.erase(id)
+				continue
+			node.call("update_guardian_state", int(unit.get("shield", 0)) > 0, bool(unit.get("taunt_active", false)), _guardian_taunt_world_radius(float(unit.get("taunt_radius", 0.0))))
+			continue
+		var uid:=str(unit.get("skill_target_uid",""))
+		var bound_target:=str(record.get("target_uid",""))
+		# 9.24 #7：连接特效要「双方任意一方死亡即消失」。原判据只看了守卫自身，
+		# 被连接的敌方先倒下时线条仍挂着（用户报的 bug）。这里补上目标存活检查：
+		# 目标已不在 current 里（阵亡后被剪枝）或 alive=false 都算失效。
+		var target_alive:=bool((current.get(bound_target,{}) as Dictionary).get("alive",false))
+		var active:=not unit.is_empty() and bool(unit.get("alive",false)) and str(unit.get("skill_id",""))=="shared_hp_link" and not uid.is_empty() and not bound_target.is_empty() and target_alive
+		if active and uid==bound_target:
+			# 9.24 #7：连接生效中 —— 绳子留着。
+			# 血条配色**不在**这里做了：那已由 BattleRenderer._refresh_visuals 每帧按
+			# 「当前队伍」裁决（见本文件顶部 9.24 #7（订正）那段），这里再插一手只会打架。
+			# 10.18：两端血量合计比上一帧少了 = 发生了一次分摊伤害，让链子闪一下。
+			# 只看表现快照里的 hp，不读模拟的 shared_link_* 字段（回放 roster 里没有）。
+			var hp_sum:=int(unit.get("hp",0))+int((current.get(bound_target,{}) as Dictionary).get("hp",0))
+			var last_hp:=int(record.get("hp_sum",hp_sum))
+			record["hp_sum"]=hp_sum
+			if hp_sum<last_hp and is_instance_valid(node) and node.has_method("pulse_share"):
+				node.call("pulse_share",1.0)
+			continue
+		if is_instance_valid(node) and node is Node3D and node.has_method("release_link"):
+			node.release_link()
+		_persistent_unit_vfx.erase(id)
+	# Models can become available after the opening snapshot. Retry only missing
+	# guardians; an existing record never replays its opening pulse every frame.
+	if _vfx_seeded:
+		for id: String in current:
+			var unit: Dictionary = current[id]
+			if str(unit.get("skill_id", "")) == "guardian_shield_taunt" and bool(unit.get("alive", false)) and not _persistent_unit_vfx.has(id):
+				_start_guardian_unit_vfx(unit)
+
+func _sync_blood_rework_vfx(current: Dictionary) -> void:
+	var seen: Dictionary = {}
+	for id: String in current:
+		var unit: Dictionary = current[id]
+		if str(unit.get("skill_id", "")) != "blood_rampage":
+			continue
+		var sim_uid := str(unit.get("sim_uid", id))
+		seen[sim_uid] = true
+		var node: Variant = _blood_rework_vfx.get(sim_uid)
+		var hp_ratio := float(unit.get("hp", 0)) / float(maxi(1, int(unit.get("max_hp", 1))))
+		var steps := clampi(int(floor((1.0 - hp_ratio) / 0.10 + 0.0001)), 0, 9)
+		if not bool(unit.get("alive", false)) or steps == 0:
+			if is_instance_valid(node):
+				node.queue_free()
+			_blood_rework_vfx.erase(sim_uid)
+			continue
+		if not is_instance_valid(node):
+			var world: Vector3 = unit.get("world_foot", Vector3.ZERO)
+			node = _play_unit_procedural("blood_rampage", world, world, _unit_target_context(unit, unit, {"stacks": steps}))
+			_blood_rework_vfx[sim_uid] = node
+		elif node.has_method("set_stacks"):
+			node.call("set_stacks", steps)
+	for sim_uid: String in _blood_rework_vfx.keys().duplicate():
+		if seen.has(sim_uid):
+			continue
+		var stale: Variant = _blood_rework_vfx[sim_uid]
+		if is_instance_valid(stale):
+			stale.queue_free()
+		_blood_rework_vfx.erase(sim_uid)
+
+func _sync_mercenary_rework_statuses(current: Dictionary) -> void:
+	if not is_instance_valid(_battle_3d_vfx_root) or not _battle_3d_vfx_root.has_method("mercenary_rework_active_target_uids"):
+		return
+	var status_by_uid: Dictionary = {}
+	for value in _battle_3d_vfx_root.call("mercenary_rework_active_target_uids"):
+		var uid := str(value)
+		var unit := _vfx_unit_by_sim_uid(current, uid)
+		if unit.is_empty():
+			status_by_uid[uid] = {"alive": false, "statuses": {}}
+			continue
+		status_by_uid[uid] = {"alive": bool(unit.get("alive", false)), "statuses": _state_unit_for(uid).get("statuses", {})}
+	_battle_3d_vfx_root.call("sync_mercenary_rework_statuses", status_by_uid)
+
+func _guardian_taunt_world_radius(sim_radius: float) -> Vector2:
+	# _sim_to_world_pos uses different X/Z scales. A sim-space circle therefore
+	# becomes an ellipse; offsets, board flip and visual clamping do not alter it.
+	return maxf(0.0, sim_radius) * Vector2(BATTLE_PLAYABLE_WIDTH / SIM_W, BATTLE_PLAYABLE_DEPTH / _sim_height()) * BATTLE_VISUAL_SPACE_SCALE
+
+func _start_guardian_unit_vfx(unit: Dictionary) -> void:
+	var id := str(unit.get("id", ""))
+	if _persistent_unit_vfx.has(id):
+		return
+	var model: Variant = unit.get("model_node")
+	if not is_instance_valid(model) or not model is Node3D:
+		return
+	var ground_anchor := model.get_node_or_null("FootAnchor") as Node3D
+	var context := _unit_target_context(unit, unit, {
+		"persistent": true,
+		"origin_ground_node": ground_anchor,
+		"shield_active": int(unit.get("shield", 0)) > 0,
+		"taunt_active": bool(unit.get("taunt_active", true)),
+		"taunt_world_radius": _guardian_taunt_world_radius(float(unit.get("taunt_radius", 0.0))),
+	})
+	var body: Vector3 = unit.get("world_cast", unit.get("world_foot", Vector3.ZERO))
+	var spawned := _play_unit_procedural("guardian_shield_taunt", body, body, context)
+	if spawned != null:
+		_persistent_unit_vfx[id] = {"node": spawned, "kind": "guardian"}
+
+func _clear_guardian_unit_vfx() -> void:
+	# Keep the existing blood-link lifecycle untouched when resetting a replay.
+	for id: String in _persistent_unit_vfx.keys().duplicate():
+		var record: Dictionary = _persistent_unit_vfx[id]
+		if str(record.get("kind", "")) != "guardian":
+			continue
+		var node: Variant = record.get("node")
+		if is_instance_valid(node):
+			node.call("stop_vfx", true)
+		_persistent_unit_vfx.erase(id)
+
+func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictionary,damage_events:Array[Dictionary],current:Dictionary)->void:
+	const ACTIVE_UNIT_SKILLS := [
+		"lowest_ally_heal", "nearest_ally_bless", "nearby_ally_heal_buff",
+		"random_attribute_bolt", "judgement_strike", "random_ally_damage_reduction",
+		"global_divine_blast", "silence_bolt", "fear", "stun", "black_hole",
+		"blink_low_def_backline", "shared_hp_link", "front_cone_stun",
+		"bubble_dream", "shell_guard", "gold_charge", "holy_song",
+		"twin_strike", "king_aura", "arrow_rain", "steel_order", "time_slow",
+		# 赤律族三个主动技（赤舞者 / 霜印使 / 赤灯使）。
+		"random_ally_buff", "frost_status", "aoe_silence",
+		# PVE 怪物与阵型盟友的主动技（都带 skill_cd，走 skill_ready 这条路）。
+		# 这批以前不在名单里，所以施法时连 composer 都不会被调用到。
+		"chain_lightning", "dive_backline", "heal_allies", "holy_shield_burst",
+		"wind_bleed", "slow_aura", "stun_impact", "entangle", "burrow_ambush",
+		"lava_burst", "nature_heal", "earth_slam", "backstab", "curse",
+		"counter_slash", "burn_claw", "soul_chain", "devour_bite",
+		"hell_burst", "eternal_night",
+	]
+	if not sid in ACTIVE_UNIT_SKILLS:
+		return
+	var origin:Vector3=unit.get("world_cast",unit.get("world_foot",Vector3.ZERO))
+	if sid in ["blink_low_def_backline", "gold_charge"]:
+		origin=previous.get("world_cast",previous.get("world_foot",origin))
+	var exact:=_exact_skill_target(unit,current)
+	if sid == "gold_charge" and exact.is_empty():
+		# A departed recorded target must not turn a charge into a visual hit on
+		# whichever enemy happens to be nearest in this presentation frame.
+		return
+	var target:=exact
+	# 赤舞者/赤灯使的目标是逗号列表，单 uid 解析一定落空；它们下面按记录逐个解析，
+	# 不能退回「最近的敌人」去猜（赤舞者的目标是友军）。
+	if target.is_empty() and sid not in ["nearby_ally_heal_buff","global_divine_blast","black_hole","random_ally_buff","aoe_silence","frost_status","bubble_dream","holy_song","twin_strike","king_aura","arrow_rain","steel_order","time_slow","shell_guard"]:
+		target=_nearest_enemy_target(unit,damage_events,current)
+	var target_world:Vector3=target.get("world_hit",target.get("world_foot",unit.get("world_foot",Vector3.ZERO)))
+	var context:=_unit_target_context(unit,target)
+	if sid=="random_attribute_bolt":
+		# Visual-only selection. Never touch the simulator/RNG stream: cycle the
+		# four authored elemental bodies from the already-rendered attack counter.
+		var visual_elements:PackedStringArray=["fire","ice","thunder","poison"]
+		context["attribute"]=visual_elements[posmod(int(unit.get("attack_count",0)),visual_elements.size())]
+	if sid=="black_hole" and str(unit.get("unit_id",""))!="dark_dragon":
+		return
+	if sid=="shared_hp_link":
+		var now_uid:=str(unit.get("skill_target_uid",""))
+		if now_uid.is_empty() or now_uid==str(previous.get("skill_target_uid","")):
+			return
+		var old_link:Dictionary=_persistent_unit_vfx.get(str(unit.get("id","")),{})
+		var old_node:Variant=old_link.get("node")
+		if is_instance_valid(old_node) and old_node is Node3D and old_node.has_method("release_link"):
+			old_node.release_link()
+		context["persistent"]=true
+	if sid=="nearby_ally_heal_buff":
+		context["targets"]=_living_team_world_positions(unit,current)
+		target_world=unit.get("world_foot",Vector3.ZERO)
+	elif sid=="global_divine_blast":
+		# 9.24 第四轮订正：目标集合**以模拟器记录为准**（`BattleSimSkills._skill_god_king`
+		# 里的 `_mark_vfx_targets`），不再自己按队伍猜。
+		#
+		# 旧写法有两个来源，**两个都不对**（用户报「非技能目标也出现了落雷」）：
+		#   ① 本帧的伤害事件 —— 那是**帧级**的，里面混着其它单位打出来的伤害。
+		#      别条路上的敌人被别人打掉血，也会在它头上落一道雷；
+		#   ② 取不到就退回「全部存活敌人」—— 完全无视 `_can_target` 的**路数限制**
+		#      （team_mode 下只打自己这一路），多目标技直接变成全屏技。
+		# 现在只认模拟器真正选中的那几只（含被闪避 / 被护盾全吸收的，见那边的注释）。
+		var recorded:=str(unit.get("skill_target_uid",""))
+		var enemy_targets:Array=resolve_skill_target_positions(current,recorded)
+		# ★ 退回旧口径**只在「根本没有记录」时**发生（老回放 / 该技能没记录）。
+		# 有记录却解析为空（目标已离场）时**不许**退 —— 那正是「非技能目标也落雷」的
+		# 成因：一退就等于把别处的敌人当成技能目标劈了。宁可少放一道雷。
+		if recorded.is_empty():
+			for event in _enemy_damage_events(unit,damage_events):enemy_targets.append(event.get("world_foot",Vector3.ZERO))
+			if enemy_targets.is_empty():
+				enemy_targets=_living_enemy_world_positions(unit,current)
+		context["targets"]=enemy_targets
+		# 10.10：光弹要跟着目标走（被推开 / 走位），把记录目标的模型节点按同序交过去。
+		var divine_nodes:Array=[]
+		for tid in _vfx_target_uids(recorded):
+			var struck:=_vfx_unit_by_sim_uid(current,tid)
+			if not struck.is_empty():
+				divine_nodes.append(struck.get("model_node"))
+		if divine_nodes.size()==enemy_targets.size():
+			context["target_nodes"]=divine_nodes
+		context["origin_foot"]=unit.get("world_foot",Vector3.ZERO)
+	elif sid=="black_hole":
+		target_world=unit.get("world_foot",Vector3.ZERO)
+		_black_hole_context(unit,current,context)
+	elif sid=="random_ally_damage_reduction":
+		# The presentation follows the simulator's real remaining status time, so
+		# 1-3 star (6s) and 4-star (8s) guards do not share a fake visual duration.
+		var statuses:Dictionary=target.get("statuses",{})
+		var reduction:Dictionary=statuses.get("damage_reduction",{})
+		context["status_duration"]=maxf(0.9,float(reduction.get("remaining",6.0)))
+	elif sid=="bubble_dream":
+		context["has_enemy"]=not exact.is_empty()
+	elif sid=="holy_song":
+		context["targets"]=resolve_skill_target_positions(current,str(unit.get("skill_target_uid","")))
+		context["target_nodes"]=_mercenary_target_nodes(current,str(unit.get("skill_target_uid","")))
+		target_world=unit.get("world_foot",Vector3.ZERO)
+	elif sid=="twin_strike":
+		target_world=unit.get("world_foot",Vector3.ZERO)
+	elif sid=="king_aura":
+		context["targets"]=resolve_skill_target_positions(current,str(unit.get("skill_target_uid","")))
+		context["target_nodes"]=_mercenary_target_nodes(current,str(unit.get("skill_target_uid","")))
+		context["target_sim_uids"]=_mercenary_target_sim_uids(current,str(unit.get("skill_target_uid","")))
+		target_world=unit.get("world_foot",Vector3.ZERO)
+	elif sid=="arrow_rain":
+		context["targets"]=resolve_skill_target_positions(current,str(unit.get("skill_target_uid","")))
+		target_world=unit.get("world_foot",Vector3.ZERO)
+	elif sid=="steel_order":
+		context["targets"]=resolve_skill_target_positions(current,str(unit.get("skill_target_uid","")))
+		context["target_nodes"]=_mercenary_target_nodes(current,str(unit.get("skill_target_uid","")))
+		context["target_sim_uids"]=_mercenary_target_sim_uids(current,str(unit.get("skill_target_uid","")))
+		target_world=unit.get("world_foot",Vector3.ZERO)
+	elif sid=="time_slow":
+		context["targets"]=resolve_skill_target_positions(current,str(unit.get("skill_target_uid","")))
+		target_world=unit.get("world_foot",Vector3.ZERO)
+	elif sid=="shell_guard":
+		target_world=unit.get("world_foot",Vector3.ZERO)
+		context["status_duration"]=float((unit.get("statuses",{}) as Dictionary).get("damage_reduction",{}).get("remaining",5.0))
+	elif sid=="gold_charge":
+		context["status_duration"]=float((target.get("statuses",{}) as Dictionary).get("stun",{}).get("remaining",1.2))
+	# PVE 怪物与阵型盟友里的群体技，目标集合的取法和上面同类技能一致。
+	elif sid in ["heal_allies","nature_heal"]:
+		context["targets"]=_living_team_world_positions(unit,current)
+		target_world=unit.get("world_foot",Vector3.ZERO)
+	elif sid=="holy_shield_burst":
+		target_world=unit.get("world_foot",Vector3.ZERO)
+	# 焰爪魔灵的主动技是纯自保（回血 + 加盾都作用在自己身上），落点必须回到施法者
+	# 脚下。以前它跟着默认分支指向最近的敌人，于是一个自保技把特效放在了敌人身上。
+	elif sid=="burn_claw":
+		target_world=unit.get("world_foot",Vector3.ZERO)
+	elif sid in ["slow_aura","eternal_night"]:
+		context["targets"]=_living_enemy_world_positions(unit,current)
+		target_world=unit.get("world_foot",Vector3.ZERO)
+	# 法阵友军的全场技（锁魂/噬兽/焚界者）：命中集合按"当场活着的敌人"取，不能走
+	# damage_events。这三个当帧要么只挂状态（眩晕/沉默），要么只挂 DoT（灼烧首跳在
+	# 下一 tick 才结算），施法当帧一个伤害事件都不产生——用 damage_events 会拿到空数组，
+	# 逐目标的特效直接不出。origin 保持在施法者脚下，落点仍指向最近的敌人。
+	elif sid in ["soul_chain","devour_bite","hell_burst"]:
+		context["targets"]=_living_enemy_world_positions(unit,current)
+	elif sid in ["random_ally_buff","frost_status","aoe_silence"]:
+		# 霜印的中心必须是模拟器记录的那个目标；解析不到就不画，绝不挪到别人脚下。
+		if sid=="frost_status" and target.is_empty():
+			return
+		target_world=_crimson_active_context(sid,unit,target,current,context)
+	elif sid=="chain_lightning":
+		var struck:Array=[]
+		for event:Dictionary in _enemy_damage_events(unit,damage_events):
+			struck.append(event.get("world_foot",Vector3.ZERO))
+		context["targets"]=struck
+	var spawned:=_play_unit_procedural(sid,origin,target_world,context)
+	if sid=="arrow_rain":
+		skill_visual_submitted.emit(str(unit.get("sim_uid","")),sid,
+			(context.get("targets",[]) as Array).size(),spawned!=null)
+	if sid=="shared_hp_link" and spawned!=null:
+		_persistent_unit_vfx[str(unit.get("id",""))]={"node":spawned,"target_uid":str(unit.get("skill_target_uid",""))}
+
+func _mercenary_target_nodes(current: Dictionary, raw: String) -> Array:
+	var nodes: Array = []
+	for tid in _vfx_target_uids(raw):
+		var target := _vfx_unit_by_sim_uid(current, tid)
+		if target.is_empty():
+			continue
+		nodes.append(target.get("model_node"))
+	return nodes
+
+func _mercenary_target_sim_uids(current: Dictionary, raw: String) -> Array:
+	var ids: Array = []
+	for tid in _vfx_target_uids(raw):
+		if not _vfx_unit_by_sim_uid(current, tid).is_empty():
+			ids.append(tid)
+	return ids
+
+# 10.10 黑龙黑洞：被拉的人以模拟器记录为准（BattleSimSkills._skill_black_hole 的
+# _mark_vfx_targets）。落点取「本帧模拟位置」（模型可能还在往新位置滑），起点取上一帧
+# 模型脚下 —— 两点之间就是拖拽残影。眩晕时长读目标身上真实的 stun 剩余时间。
+# 记录为空 = 这一发没拉到人：只画漩涡，**不**拿本帧别人打出的伤害去猜（同神王的教训）。
+func _black_hole_context(unit:Dictionary,current:Dictionary,context:Dictionary)->void:
+	context["origin_foot"]=unit.get("world_foot",Vector3.ZERO)
+	context["world_radius"]=_guardian_taunt_world_radius(220.0)
+	var recorded:=str(unit.get("skill_target_uid",""))
+	var to_positions:Array=[]
+	var from_positions:Array=[]
+	var stun:=0.0
+	if not recorded.is_empty():
+		for tid in _vfx_target_uids(recorded):
+			var now:=_vfx_unit_by_sim_uid(current,tid)
+			if now.is_empty():
+				continue
+			var foot:Vector3=now.get("world_foot",Vector3.ZERO)
+			var sim_world:=_sim_to_world_pos(now.get("sim_pos",Vector2.ZERO))
+			to_positions.append(Vector3(sim_world.x,foot.y,sim_world.z))
+			var before:=_vfx_unit_by_sim_uid(_vfx_prev_units,tid)
+			from_positions.append(before.get("world_foot",foot) if not before.is_empty() else foot)
+			var statuses:Dictionary=_state_unit_for(tid).get("statuses",{})
+			var stun_status:Variant=statuses.get("stun",{})
+			if stun_status is Dictionary:
+				stun=maxf(stun,float((stun_status as Dictionary).get("remaining",0.0)))
+	context["targets"]=to_positions
+	context["from_positions"]=from_positions
+	var data_pull:=float((_state_unit_for(str(unit.get("sim_uid",""))).get("def",{}) as Dictionary).get("pull_sec",1.0))
+	context["stun_duration"]=stun if stun>0.05 else data_pull
+
+
+func _exact_skill_target(unit:Dictionary,current:Dictionary)->Dictionary:
+	var uid:=str(unit.get("skill_target_uid",""))
+	if not uid.is_empty() and current.has(uid):
+		return current[uid]
+	return {}
+
+func _living_team_world_positions(unit:Dictionary,current:Dictionary)->Array:
+	var result:Array=[]
+	for id:String in current.keys():
+		var candidate:Dictionary=current[id]
+		if bool(candidate.get("alive",false)) and str(candidate.get("team",""))==str(unit.get("team","")):
+			result.append(candidate.get("world_foot",Vector3.ZERO))
+	return result
+
+func _living_enemy_world_positions(unit:Dictionary,current:Dictionary)->Array:
+	var result:Array=[]
+	for id:String in current.keys():
+		var candidate:Dictionary=current[id]
+		if bool(candidate.get("alive",false)) and str(candidate.get("team",""))!=str(unit.get("team","")):
+			result.append(candidate.get("world_foot",Vector3.ZERO))
+	return result
+
+func _lowest_living_team_target(unit:Dictionary,current:Dictionary)->Dictionary:
+	var best:Dictionary={};var best_ratio:=INF
+	for id:String in current.keys():
+		var candidate:Dictionary=current[id]
+		if not bool(candidate.get("alive",false)) or str(candidate.get("team",""))!=str(unit.get("team","")):continue
+		var ratio:=float(candidate.get("hp",0))/float(maxi(1,int(candidate.get("max_hp",1))))
+		if ratio<best_ratio:best_ratio=ratio;best=candidate
+	return best
+
+func _nearest_living_team_positions(unit:Dictionary,current:Dictionary,count:int)->Array:
+	var candidates:Array=[];var source:Vector3=unit.get("world_foot",Vector3.ZERO)
+	for id:String in current.keys():
+		var candidate:Dictionary=current[id]
+		if bool(candidate.get("alive",false)) and str(candidate.get("team",""))==str(unit.get("team","")):
+			candidates.append({"distance":source.distance_squared_to(candidate.get("world_foot",source)),"position":candidate.get("world_foot",source)})
+	candidates.sort_custom(func(a:Dictionary,b:Dictionary)->bool:return float(a["distance"])<float(b["distance"]))
+	var result:Array=[]
+	for entry in candidates.slice(0,mini(count,candidates.size())):result.append(entry["position"])
+	return result
+
+func _unit_target_context(source:Dictionary,target:Dictionary,extra:Dictionary={})->Dictionary:
+	var context:=extra.duplicate(false)
+	context["source_unit_id"] = str(source.get("unit_id", source.get("id", "")))
+	context["target_unit_id"] = str(target.get("unit_id", target.get("id", "")))
+	context["source_sim_uid"] = str(source.get("sim_uid", ""))
+	context["target_sim_uid"] = str(target.get("sim_uid", ""))
+	context["target_foot"] = target.get("world_foot", target.get("world_hit", Vector3.ZERO))
+	if source.has("stun_sec"):
+		context["status_duration"] = float(source.get("stun_sec",1.18))
+	var source_node=source.get("model_node")
+	if is_instance_valid(source_node) and source_node is Node3D:
+		var cast_anchor:Variant=source_node.get_node_or_null("CastAnchor")
+		context["origin_node"]=cast_anchor if cast_anchor is Node3D else source_node
+		context["origin_height"]=_model_height_of(source_node)
+	var target_node=target.get("model_node")
+	if is_instance_valid(target_node) and target_node is Node3D:
+		var hit_anchor:Variant=target_node.get_node_or_null("HitAnchor")
+		context["target_node"]=hit_anchor if hit_anchor is Node3D else target_node
+		context["target_height"]=_model_height_of(target_node)
+	return context
+
+# Rendered height of a unit, stashed on the model pivot by BattleRenderer.
+# The composer places layers at a fraction of it, so a 0.30 tall sprite and a
+# 0.93 tall one both get their feet, chest and head in the right places.
+func _model_height_of(node:Variant)->float:
+	if not (is_instance_valid(node) and node is Node3D):
+		return 0.0
+	var current:Node=node
+	while current!=null:
+		if current.has_meta("model_height"):
+			return float(current.get_meta("model_height"))
+		current=current.get_parent()
+	return 0.0
+
+func _play_opening_unit_vfx(current:Dictionary)->void:
+	for id:String in current.keys():
+		var unit:Dictionary=current[id]
+		# 寄生分身如果在这「播种帧」已经活着（播种帧可能落在回放中途 ——
+		# 新实例的头几次 `_refresh_visuals()` 发生在 `_prepare_battle_models()` 的
+		# 分帧等待里，那时回放已经推进过若干帧），补报一次。
+		# 播种帧在下面提前 return，进不到 `_refresh_battle_vfx` 的逐单位循环。
+		if id.contains("_parasite_"):
+			_announce_parasite_clone(id, unit)
+			continue
+		if not bool(unit.get("alive",false)):continue
+		var sid:=str(unit.get("skill_id",""))
+		if sid=="guardian_shield_taunt":
+			_start_guardian_unit_vfx(unit)
+		elif sid=="left_neighbor_sacrifice":
+			var target:=_exact_skill_target(unit,current)
+			if not target.is_empty():
+				_play_unit_procedural(sid,unit.get("world_foot",Vector3.ZERO),target.get("world_foot",Vector3.ZERO),_unit_target_context(unit,target))
+				# 9.20：死侍（`human_death_servant`）「左邻替死」的**绑定音**。
+				# 用户口径：在**开始绑定棋子时**响，**没绑到人就不响** —— 所以挂在
+				# 这条「目标已解析出来」的分支里，而不是无条件播。
+				# 绑定发生在开战首帧之前（`BattleSimulator._apply_opening_unit_skills`），
+				# 而首帧是「播种帧」、正常 diff 被整段跳过，所以只能在这里补。
+				_maybe_play_death_servant_bind_sfx(str(unit.get("id","")))
+		elif sid=="shared_hp_link":
+			# 血契连线在开战首帧就建立（dark_doom 一上来就转化并绑定一个敌人），
+			# 而首帧是"播种帧"、正常 diff 被跳过，所以连线特效要在这里补建，
+			# 否则实时和回放都看不到。持久节点记入 _persistent_unit_vfx 由后续帧维护。
+			var link_target:=_exact_skill_target(unit,current)
+			if not link_target.is_empty():
+				var context:=_unit_target_context(unit,link_target)
+				context["persistent"]=true
+				var spawned:=_play_unit_procedural(sid,unit.get("world_cast",unit.get("world_foot",Vector3.ZERO)),link_target.get("world_hit",link_target.get("world_foot",Vector3.ZERO)),context)
+				if spawned!=null:
+					_persistent_unit_vfx[str(unit.get("id",""))]={"node":spawned,"target_uid":str(unit.get("skill_target_uid",""))}
+		# 9.24 #5：开场即施法的技能（法师弹体和赤灯使禁言）。
+	# 法师（human_mage）的 random_attribute_bolt。它的 range = 4（288px）
+		# 已覆盖开战站位距离，所以第 0 tick 就会施法；而 frames[0] 已经是施法之后
+		# 的状态，skill_ready 上升沿落在基线之前 → 首次施法的弹道与技能音全丢
+		# （用户报的「首次发动技能不播放技能音效，也没有技能弹道，只造成伤害」）。
+		# 这里按「施法残留痕迹」补演一次；判据与理由见 SEED_ALREADY_CAST_TRACE。
+		#
+		# `previous` 传 `unit` 自身：播种帧没有上一帧可比。这对目标解析没有影响
+		# （`_exact_skill_target` 读的是快照里的 skill_target_uid，施法时由
+		# `_mark_vfx_target` 写好并一直留着）；`shared_hp_link` 那一支正是因为
+		# 「now_uid == previous.skill_target_uid」会直接 return，天然不会与上面
+		# 那条血契分支重复播放。
+		if _seed_cast_already_fired(unit):
+			_play_skill_cast_vfx(unit,unit,[],current)
+
+# 9.24 #5：这个单位在播种帧基线之前就已经施过法了吗。
+# 只认表里登记的 skill_id + 字段；表为空/字段为 0 一律返回 false，宁可不补
+# 也不凭空播一次不该有的施法演出。
+func _seed_cast_already_fired(unit:Dictionary)->bool:
+	var trace:=str(SEED_ALREADY_CAST_TRACE.get(str(unit.get("skill_id","")),""))
+	if trace.is_empty():return false
+	var value:Variant=unit.get(trace,0)
+	return not str(value).is_empty() if typeof(value)==TYPE_STRING else int(value)>0
+
+func _boss_world_position(value: Variant) -> Vector3:
+	if value is Vector3:
+		return value
+	if value is Vector2:
+		# Legacy fallback only. Formal Boss effects now pass model/world anchors.
+		return _sim_to_world_pos(value)
+	return Vector3.ZERO
+
+func _boss_target_context(target: Dictionary, extra: Dictionary = {}) -> Dictionary:
+	var context := extra.duplicate(false)
+	var model_node = target.get("model_node")
+	if is_instance_valid(model_node) and model_node is Node3D:
+		var hit_anchor:Variant=model_node.get_node_or_null("HitAnchor")
+		context["target_node"] = hit_anchor if hit_anchor is Node3D else model_node
+	return context
+
+func _living_twin_partner(unit: Dictionary, current: Dictionary) -> Dictionary:
+	var group_id := str(unit.get("twin_group_id", ""))
+	var member_index := int(unit.get("twin_member_index", -1))
+	if group_id.is_empty() or member_index < 0:
+		return {}
+	for id: String in current.keys():
+		var candidate: Dictionary = current[id]
+		if bool(candidate.get("alive", false)) and str(candidate.get("team", "")) == str(unit.get("team", "")) and str(candidate.get("twin_group_id", "")) == group_id and int(candidate.get("twin_member_index", -1)) != member_index:
+			return candidate
+	return {}
+
+func _boss_damage_events_for_lane(unit: Dictionary, damage_events: Array[Dictionary]) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var team := str(unit.get("team", ""))
+	var lane := int(unit.get("lane", -1))
+	for event: Dictionary in damage_events:
+		if str(event.get("team", "")) == team:
+			continue
+		if lane >= 0 and int(event.get("lane", -1)) >= 0 and int(event.get("lane", -1)) != lane:
+			continue
+		result.append(event)
+	return result
+
+func _play_skill_texture_vfx(unit: Dictionary, pos: Vector2) -> void:
+	var uid := str(unit.get("unit_id", ""))
+	_spawn_skill_texture_for_unit_id(uid, pos)
+
+func _spawn_skill_texture_for_unit_id(uid: String, pos: Vector2) -> void:
+	if uid.is_empty():
+		return
+	var tex_configs := SkillVFXConfig.get_textures(uid)
+	if tex_configs.is_empty():
+		return
+	_spawn_vfx("SKILL_TEXTURE", pos, {"textures": tex_configs})
+
+func _spawn_boss_texture_variant(uid: String, variant: String, pos: Vector2) -> void:
+	var configs := SkillVFXConfig.get_textures(uid)
+	var selected: Array[Dictionary] = []
+	for cfg: Dictionary in configs:
+		if str(cfg.get("path", "")).to_lower().contains(variant.to_lower()):
+			selected.append(cfg)
+	if not selected.is_empty():
+		_spawn_vfx("SKILL_TEXTURE", pos, {"textures": selected})
+
+func _spawn_skill_hit_texture_for_unit_id(uid: String, pos: Vector2) -> void:
+	var tex_configs := _textures_for_role(uid, "hit")
+	if tex_configs.is_empty():
+		return
+	_spawn_vfx("SKILL_TEXTURE", pos, {"textures": tex_configs})
+
+func _spawn_skill_textures_for_role(uid: String, role: String, pos: Vector2) -> void:
+	var tex_configs := _textures_for_role(uid, role)
+	if tex_configs.is_empty():
+		return
+	_spawn_vfx("SKILL_TEXTURE", pos, {"textures": tex_configs})
+
+func _spawn_skill_projectile_or_default(uid: String, vfx_id: String, start_pos: Vector2, target_node: Node, target_pos: Vector2) -> void:
+	var tex_configs := _textures_for_role(uid, "projectile")
+	var config := {"impact_id": ""}
+	if not tex_configs.is_empty():
+		config["texture_path"] = str(tex_configs[0].get("path", ""))
+		config["texture_scale"] = float(tex_configs[0].get("scale", 0.5))
+	config["impact_textures"] = _textures_for_role(uid, "hit")
+	config["head_textures"] = _textures_for_role(uid, "head")
+	config["foot_textures"] = _textures_for_role(uid, "foot")
+	_apply_projectile_race_color(uid, config)
+	_spawn_projectile(vfx_id, start_pos, target_node, target_pos, config)
+
+func _apply_projectile_race_color(uid: String, config: Dictionary) -> void:
+	if uid.begins_with("human_"):
+		config["color"] = Color(0.24, 0.68, 1.0, 1.0)
+	elif uid.begins_with("undead_") or uid.begins_with("spirit_"):
+		config["color"] = Color(0.24, 0.95, 0.30, 1.0)
+	elif uid.begins_with("dark_"):
+		config["color"] = Color(0.035, 0.025, 0.055, 1.0)
+
+func _textures_for_role(uid: String, role: String) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for tex: Dictionary in SkillVFXConfig.get_textures(uid):
+		if str(tex.get("role", "")) == role:
+			result.append(tex)
+	return result
+
+func _spawn_skill_roles_at_target(uid: String, unit: Dictionary, target: Dictionary, head_on_caster := false) -> void:
+	var hit_pos: Vector2 = target.get("hit_pos", target.get("pos", Vector2.ZERO))
+	_spawn_skill_textures_for_role(uid, "cast", unit.get("cast_pos", Vector2.ZERO))
+	_spawn_skill_textures_for_role(uid, "hit", hit_pos)
+	_spawn_skill_textures_for_role(uid, "foot", target.get("foot_pos", hit_pos))
+	var head_pos: Vector2 = unit.get("head_pos", hit_pos) if head_on_caster else target.get("head_pos", hit_pos)
+	_spawn_skill_textures_for_role(uid, "head", head_pos)
+
+func _enemy_damage_events(unit: Dictionary, damage_events: Array[Dictionary]) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var team := str(unit.get("team", ""))
+	for event: Dictionary in damage_events:
+		if str(event.get("team", "")) != team:
+			result.append(event)
+	return result
+
+func _play_attack_skill_texture(attack: Dictionary, target: Dictionary, spawn_projectile := false) -> void:
+	if not _attack_skill_vfx_ready(attack):
+		return
+	var uid := str(attack.get("unit_id", ""))
+	var target_pos: Vector2 = target.get("hit_pos", target.get("pos", Vector2.ZERO))
+	if spawn_projectile and not _textures_for_role(uid, "projectile").is_empty():
+		var target_node := _unit_anchor_node_for_id(str(target.get("id", "")), "HitAnchor")
+		_spawn_skill_projectile_or_default(uid, "PROJECTILE_MAGIC", attack.get("pos", Vector2.ZERO), target_node, target_pos)
+		return
+	_spawn_skill_hit_texture_for_unit_id(uid, target_pos)
+	_spawn_skill_textures_for_role(uid, "head", target.get("head_pos", target_pos))
+	_spawn_skill_textures_for_role(uid, "foot", target.get("foot_pos", target_pos))
+
+func _attack_skill_vfx_ready(attack: Dictionary) -> bool:
+	var sid := str(attack.get("skill_id", ""))
+	if str(attack.get("unit_id", attack.get("source_id", ""))) == "human_king":
+		return true
+	if sid == "every_fourth_combo":
+		var every := maxi(1, int(attack.get("skill_every", 4)))
+		return int(attack.get("attack_count", 0)) % every == 0
+	if sid == "same_target_damage_stack":
+		return int(attack.get("attack_count", 0)) % 2 == 0
+	if sid == "every_fifth_group_heal":
+		var every_heal:=maxi(1,int(attack.get("skill_every",5)))
+		return int(attack.get("attack_count",0))%every_heal==0
+	return sid in ["true_damage_attack", "curse_attack", "poison_attack", "defense_down_attack"]
+
+func _play_attack_unit_procedural(attack:Dictionary,target:Dictionary,current:Dictionary)->void:
+	if not _attack_skill_vfx_ready(attack):return
+	# 9.19：走到这里就说明**这一次普攻真的触发了技能**（上面那一步判的就是
+	# `attack_count % every`）。10.25 起这里只管特效，音效由 Director 的独立时机播放。
+	var sid:=str(attack.get("skill_id",""))
+	var origin:Vector3=attack.get("world_cast",Vector3.ZERO)
+	var target_world:Vector3=target.get("world_hit",target.get("world_foot",Vector3.ZERO))
+	var source:Dictionary=current.get(str(attack.get("id","")),{})
+	var context:=_unit_target_context(source,target)
+	if sid=="every_fourth_combo" and str(attack.get("unit_id", ""))=="human_archer":
+		var predicted:Variant=_archer_future_target(str(attack.get("target_uid", "")),target_world,.56*.82)
+		if predicted is Vector3:
+			context["archer_straight_target"]=predicted
+	if sid=="every_fifth_group_heal":
+		context["targets"]=_living_team_world_positions(source,current)
+		target_world=origin
+	# Human King's actual attack uses the target-bound vertical heaven sword.
+	# This is visual-only and leaves damage, timing and target selection untouched.
+	if str(attack.get("unit_id", attack.get("source_id", ""))) == "human_king":
+		context["king_stacks"] = int(source.get("king_stacks", 0))
+		_play_unit_procedural("unique_king_growth", origin, target_world, context)
+		return
+	_play_unit_procedural(sid,origin,target_world,context)
+
+# 9.19：「攻击触发型」四星技能音（弓箭手额外伤害 / 牧师治疗 / 极光射手真伤）。
+#
+# 只在**自身或友军**且**四星**时响 —— 与 `_play_skill_cast_vfx` 里那条四星音同一
+# 套门控口径（9.20 起由 `_is_own_or_ally_unit` 判定：owner 与 local_slot 同队，
+# 敌方天然排除）。
+# 「这次有没有触发」由调用方保证（已经过了 `_attack_skill_vfx_ready()`），
+# 所以这里不再重复判模。
+#
+# 判据用 `def.id` 而不是名字：名字会被 `DataRegistry.canonicalize_unit_display_names()`
+# 按本地化覆写，id 永远稳定。
+
+
+# --- 9.22：四星「普攻附状态」型 + 佣兵「普攻增伤」型的技能音 -------------------
+#
+# 触发点在模拟器：`BattleSimulator._apply_attack_statuses` 的四个分支
+# （破防 / 中毒 / 减速 / 反弹）与 `_perform_attack` 的增伤分支，各自补一条
+# `sfx_proc` 事件；这里按 skill_id 取 cue。
+#
+# 门控口径：
+#   * 四星那四条（刺灵 / 毒灵·飞灵 / 魔童 / 巨甲灵）—— 自身 + 友军 **且四星**，
+#     与其它四星技能音完全同一口径；
+#   * 审判剑士（`balance_judge`）—— 只判自身 + 友军。它是**佣兵**，永远到不了
+#     四星，叠 `_is_star4` 就是一条永远不响的音（同 MERC_PROC_SKILL_CUES 的注释）。
+#
+# `source_uid` 恒为「触发技能的那只棋子」：巨甲灵那条填的是巨甲灵自己
+# （反弹是它的技能，不是打它的那只攻击者的），这样归属门控才判得对。
+func _maybe_play_sfx_proc(event: Dictionary) -> void:
+	if bool(event.get("_attack_audio_managed", false)):
+		return
+	var skill_id := str(event.get("skill_id", ""))
+	var source_uid := str(event.get("source_uid", ""))
+	if skill_id.is_empty() or source_uid.is_empty():
+		return
+	if not _is_own_or_ally_unit(source_uid):
+		return
+	var cue := SfxService.proc_skill_cue_for(skill_id)
+	if not cue.is_empty():
+		if _is_star4(source_uid):
+			SfxService.play(cue, _basic_attack_ownership_db(source_uid, ""))
+		return
+	var merc_cue := SfxService.merc_proc_cue_for(skill_id)
+	if not merc_cue.is_empty():
+		SfxService.play(merc_cue, _basic_attack_ownership_db(source_uid, ""))
+
+
+# --- 9.23 第五批：boss 技能音的**真事件**通道（消费端）--------------------------
+#
+# 用户逐条点名的触发时刻，一张动作表在 SfxService.BOSS_EVENT_ACTIONS：
+#   雷怒核心   = 触发反击造成伤害那一帧（本文件 diff：层数由 8 落回 0）
+#   镜像魔君   = 真的召唤出分身那一帧（模拟器 `_skill_mirror_clone` 返回 > 0）
+#   噬魂领主   = 击杀单位后（模拟器 `_on_unit_killed`）
+#   血怒魔王   = 进入暴走那一次（模拟器 `_apply_boss_attacker_passives`）
+#   双生守门人 = 复活那一帧（本文件 diff：`alive` 由假转真）
+#   灭世裁决者 = 蓄力开始 / 蓄力完成 / 蓄力被收口（模拟器 `_tick_skills` 与 `_process_boss_charges`）
+#
+# 事件统一是 `sfx_proc`（只出声，不带特效），由模拟器经
+# `BattleSimShared._emit_sfx_proc` 补进 `state.visual_events`，再经
+# `frame_events` 过回放边界 —— 这正是「skill 音的判据必须跟着事件走、
+# 不能依赖回放帧里不存在的那几个字段」的落点。
+#
+# ★ **不做归属门控**（与施法边沿那条同口径）：boss 固定是敌方单位、不属于任何
+#   owner_slot，用户口径是「boss 技能音效播放，我方队友都能听见」。
+#   所以这一支**不能**并进 `_maybe_play_sfx_proc` —— 那一条开头就是
+#   `_is_own_or_ally_unit(source_uid)`，boss 永远过不了，并进去就是用户报的
+#   「音效未生效」。
+#
+# 返回值 = 这条事件是不是 boss 真事件。调用方据此决定要不要继续走
+# 四星 / 佣兵那两条普攻触发型分支 —— 一条事件只该响一声。
+func _maybe_play_boss_skill_proc(event: Dictionary) -> bool:
+	var skill_id := str(event.get("skill_id", ""))
+	var action: Dictionary = SfxService.boss_event_action_for(skill_id)
+	if action.is_empty():
+		return false
+	# 「先收口、再放音」的顺序由表里的 `stop` / `cue` 两个字段表达：
+	# 灭世裁决者的完成那一档要先把 2 秒的蓄力音掐掉，否则两声会叠在一起。
+	var stop_cue := str(action.get("stop", ""))
+	if not stop_cue.is_empty():
+		SfxService.stop_cue(stop_cue)
+	var cue := str(action.get("cue", ""))
+	if not cue.is_empty():
+		SfxService.play(cue, _basic_attack_ownership_db(str(event.get("source_uid", "")), ""))
+	return true
+
+
+# --- 9.20：三条「非施法型」四星技能音的触发点 --------------------------------
+#
+# 这三家的技能在模拟器里**不产生 `skill_ready` 上升沿**，所以不能走
+# `_play_skill_cast_vfx` 那条统一派发路径，各自挂在自己的真事件上。
+# 触发时刻是用户逐条指定的：
+#   * 寄生灵 → 「召唤敌人分身的时候」；
+#   * 自爆灵 → 「死亡爆炸时」；
+#   * 死侍   → 「开始绑定棋子时（无绑定就不播放）」。
+#
+# 归属与星级门控与施法型完全一致（自身 + 友军，且四星），取值入口也同一个
+# （`star4_cue_for(uid, true)`），只是调用点不同 —— 所以 7 条新 cue 在
+# `audio_sfx_check` 的豁免名单里是同一组。
+
+# 寄生分身的「出生」登记：同一个 uid 只报一次，且必须**真的活着**。
+#
+# 判据从「新 uid」改成「首次 alive」是 9.20 第三批的修正 —— 回放的 roster 会在
+# 第 0 帧就把分身放进 `_state`（alive=false），
+#   * 旧判据：进演示的第一帧 = 「新 uid」→ 开局就响（用户实测）；
+#   * 真实 3v3 路径：播种帧已把分身记进 `prev`（即使它还是死的）→ 等它真的出生时
+#     又不再是「新 uid」→ **一次都不响**。
+# 两个方向都由这一条判据收口。
+func _announce_parasite_clone(uid: String, unit: Dictionary) -> void:
+	if not bool(unit.get("alive", false)) or _parasite_spawn_announced.has(uid):
+		return
+	_parasite_spawn_announced[uid] = true
+	_maybe_play_parasite_skill_sfx(unit)
+
+
+# 寄生灵：击杀敌人后生成寄生分身的那一刻。
+#
+# ★ **不能拿分身自己判归属与星级。** 分身是死者的 `duplicate(true)`
+#   （`_maybe_spawn_parasite_clone`），它的 `id` / `owner_slot` / `star` 全都还是
+#   **死者的**（`id` 甚至是死者的单位 id，不是 `undead_parasite`）—— 只有 `team`
+#   被改写成击杀者那一方。所以这里按「分身所在的那一方」回头找**本体**：
+#   扫 `_state` 里 `team` 相同、`id == "undead_parasite"` 且还活着的棋子。
+#
+# 找不到就什么都不播（宁可少响一声，也不要把它算到别人头上）。
+func _maybe_play_parasite_skill_sfx(clone: Dictionary) -> void:
+	var team := str(clone.get("team", ""))
+	if team.is_empty():
+		return
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if typeof(raw) != TYPE_DICTIONARY:
+				continue
+			var f: Dictionary = raw
+			if str(f.get("team", "")) != team:
+				continue
+			if str(f.get("id", "")) != "undead_parasite" or not bool(f.get("alive", false)):
+				continue
+			var sim_uid := str(f.get("uid", ""))
+			if not _is_own_or_ally_unit(sim_uid) or not _is_star4(sim_uid):
+				continue
+			SfxService.play(SfxService.star4_cue_for("undead_parasite", true), _basic_attack_ownership_db(sim_uid, ""))
+			return
+
+
+# 自爆灵：死亡毒爆那一刻。挂在 `_refresh_battle_vfx` 的死亡分支里，
+# `sim_uid` 就是这只自爆灵自己的 uid。
+func _maybe_play_bomb_skill_sfx(sim_uid: String) -> void:
+	if not _is_own_or_ally_unit(sim_uid) or not _is_star4(sim_uid):
+		return
+	SfxService.play(SfxService.star4_cue_for("undead_bomb", true), _basic_attack_ownership_db(sim_uid, ""))
+
+
+# 死侍：绑定生效那一下。调用点已经保证了「绑到了人才走到这里」，
+# 所以这里只做归属与星级门控（星级的判据见 `_is_star4`）。
+func _maybe_play_death_servant_bind_sfx(sim_uid: String) -> void:
+	if not _is_own_or_ally_unit(sim_uid) or not _is_star4(sim_uid):
+		return
+	SfxService.play(SfxService.star4_cue_for("human_death_servant", true), _basic_attack_ownership_db(sim_uid, ""))
+
+func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
+	var events: Array = state_snapshot.get("visual_events", [])
+	if _vfx_visual_event_index > events.size():
+		_vfx_visual_event_index = events.size()
+	# 赤律族：同一次攻击产生的几条事件先归组，循环结束后各播一次（见 _play_crimson_event_groups）。
+	var crimson_hp_hits: Dictionary = {}
+	var crimson_pierces: Dictionary = {}
+	# 10.18 宝藏反应伤害（元素四件套 / 自爆 / 亡魂反击）：同一次触发的多条伤害归一组，播一次。
+	var treasure_groups: Dictionary = {}
+	while _vfx_visual_event_index < events.size():
+		var event = events[_vfx_visual_event_index]
+		_vfx_visual_event_index += 1
+		if typeof(event) != TYPE_DICTIONARY:
+			continue
+		if _camera_shake_policy.is_candidate(event):
+			var shake_uid := str(event.get("source_uid", ""))
+			if _camera_shake_policy.accepts(event, _state_unit_for(shake_uid), _is_local_owned_unit(shake_uid)):
+				_screen_shake(6.5, 0.20)
+		# Cast-only legacy events intentionally do not shake the camera.
+		if str(event.get("type", "")) == "skill_shake":
+			pass
+		elif str(event.get("type", "")) == "buff_apply" and str(event.get("skill_id", "")) in ["bubble_dream_heal", "holy_song_cleanse"]:
+			var merc_source := _vfx_unit_by_sim_uid(current, str(event.get("source_uid", "")))
+			var merc_target := _vfx_unit_by_sim_uid(current, str(event.get("target_uid", "")))
+			if not merc_source.is_empty() and not merc_target.is_empty():
+				_play_unit_procedural(str(event.get("skill_id", "")), merc_source.get("world_cast", Vector3.ZERO), merc_target.get("world_foot", Vector3.ZERO), _unit_target_context(merc_source, merc_target))
+		elif str(event.get("type",""))=="mother_execute":
+			# 书本挂在母灵头上，不依赖目标死活。母灵还能定位就一定放书。
+			# 目标能解析就顺带把吸魂流指向它，解析不到（已死/清光/Boss）就只放书。
+			var mother:=_vfx_unit_by_sim_uid(current,str(event.get("source_uid","")))
+			if mother.is_empty():
+				mother=_vfx_unit_by_sim_uid(_vfx_prev_units,str(event.get("source_uid","")))
+			if not mother.is_empty():
+				# 9.18：母灵（undead_mother）四星专属技「死亡执行」音效。
+				# 9.20 起门控放宽为「自身 + 友军」（原为仅自身）。
+				var _msim := str(event.get("source_uid", ""))
+				if _is_own_or_ally_unit(_msim) and _is_star4(_msim):
+					SfxService.play(SfxService.star4_cue_for("undead_mother", true), _basic_attack_ownership_db(_msim, ""))
+				var victim_uid:=str(event.get("target_uid",""))
+				var victim:=_vfx_unit_by_sim_uid(current,victim_uid)
+				# 处决当帧目标已经倒下：本帧快照里可能已没有它，退回上一帧的位置（吸魂从它最后站的地方升起）。
+				if victim.is_empty() and not victim_uid.is_empty():
+					victim=_vfx_unit_by_sim_uid(_vfx_prev_units,victim_uid)
+				var has_victim:=not victim.is_empty()
+				var book_target:Vector3=victim.get("world_foot",mother.get("world_foot",Vector3.ZERO)) if has_victim else mother.get("world_foot",Vector3.ZERO)
+				var book_context:Dictionary=_unit_target_context(mother,victim) if has_victim else _unit_target_context(mother,mother)
+				book_context["has_victim"]=has_victim
+				book_context["heavy"]=has_victim and bool(victim.get("is_boss",false))
+				# 10.18：非 Boss 目标当帧被处决 → 尸体改走「青光定身 → 化成魂火」。
+				if has_victim and not bool(victim.get("is_boss",false)):
+					_mark_mother_execute_victim(victim_uid)
+				var head_anchor:Variant=_unit_actor_registry.get_anchor(str(mother.get("id","")),"HeadAnchor")
+				if head_anchor is Node3D:
+					book_context["origin_head_node"]=head_anchor
+				if not has_victim:
+					book_context.erase("target_node")
+				_play_unit_procedural("unique_death_execute",mother.get("world_head",mother.get("world_cast",Vector3.ZERO)),book_target,book_context)
+		elif str(event.get("type", "")) == "unit_skill_proc" and str(event.get("skill_id", "")) in _CRIMSON_CATALOG.PROC_SKILLS:
+			_play_crimson_proc(event, current)
+		elif str(event.get("type", "")) == "impact" and str(event.get("skill_id", "")) == "line_pierce":
+			_collect_crimson_event(crimson_pierces, event, false)
+		elif str(event.get("type", "")) == "hit_number" and bool(event.get("treasure", false)) and str(event.get("kind", "dmg")) == "dmg":
+			_collect_treasure_hit(treasure_groups, event)
+		elif str(event.get("type", "")) == "treasure_gold":
+			_play_treasure_gold(event, current)
+		elif str(event.get("type", "")) == "set_execute":
+			_play_set_execute(event, current)
+		elif str(event.get("type", "")) == "hit_number" and str(event.get("skill_id", "")) == "global_divine_blast" and str(event.get("kind", "dmg")) == "dmg":
+			_play_divine_pulse(event, current)
+		elif str(event.get("type", "")) == "hit_number" and str(event.get("skill_id", "")) == "current_hp_strike" and str(event.get("kind", "dmg")) == "dmg":
+			_collect_crimson_event(crimson_hp_hits, event, true)
+		elif str(event.get("type", "")) == "unit_skill_proc":
+			var source := _vfx_unit_by_sim_uid(current, str(event.get("source_uid", "")))
+			var target := _vfx_unit_by_sim_uid(current, str(event.get("target_uid", "")))
+			var skill_id := str(event.get("skill_id", ""))
+			if target.is_empty() and skill_id in ["death_hunt", "death_hunt_kill"]:
+				# The killed target may have left this frame's actor map. Use the
+				# same recorded uid from the preceding frame, never a nearby enemy.
+				target = _vfx_unit_by_sim_uid(_vfx_prev_units, str(event.get("target_uid", "")))
+			# 9.21：四星民兵（「概率触发型」技能音）。`attack_interrupt` 是
+			# `randf() < interrupt_chance` 触发的，模拟器只在**真的打断成功**时
+			# 才补这条 unit_skill_proc 事件 —— 所以挂在这里就等于「响了 = 打成了」，
+			# 不需要另外判模。门控与其它四星技能音同口径（自身 + 友军 + 四星）。
+			var proc_cue := SfxService.proc_skill_cue_for(skill_id)
+			if not proc_cue.is_empty() and not bool(event.get("_attack_audio_managed", false)):
+				var proc_uid := str(event.get("source_uid", ""))
+				if _is_own_or_ally_unit(proc_uid) and _is_star4(proc_uid):
+					SfxService.play(proc_cue)
+			if not skill_id.is_empty() and not source.is_empty() and not target.is_empty():
+				var proc_context := _unit_target_context(source, target)
+				if skill_id == "death_hunt":
+					proc_context["status_duration"] = float((target.get("statuses", {}) as Dictionary).get("defense_flat_down", {}).get("remaining", 4.0))
+				_play_unit_procedural(skill_id, source.get("world_cast", Vector3.ZERO), target.get("world_hit", target.get("world_foot", Vector3.ZERO)), proc_context)
+		elif str(event.get("type", "")) == "sfx_proc":
+			# 9.22：**只出声、不出特效**的普攻触发型技能音。
+			#
+			# 为什么不复用上面那条 `unit_skill_proc`：那一条在派发完音效后还会顺带调
+			# `_play_unit_procedural(skill_id, ...)` 去放程序化特效，而
+			# poison_attack / defense_down_attack / curse_attack / balance_judge
+			# 这几个 skill_id 原本**没有**对应的程序化演出 —— 走那条路等于给它们
+			# 凭空叠一层特效，把「加音效」做成了「加演出」。
+			# 9.23 第五批：boss 技能音走的是**同一条事件通道**（`sfx_proc` + skill_id），
+			# 但它的门控口径完全不同（不做归属门控，见 `_maybe_play_boss_skill_proc`
+			# 的说明），所以先问 boss 那一支；它接了就结束，免得同一条事件被
+			# 四星 / 佣兵那两支按 skill_id 再判一遍。
+			if not _maybe_play_boss_skill_proc(event):
+				_maybe_play_sfx_proc(event)
+			_play_boss_event_vfx(event, current)
+			if str(event.get("skill_id", "")) == "balance_judge":
+				var judge_source := _vfx_unit_by_sim_uid(current, str(event.get("source_uid", "")))
+				var judge_target := _vfx_unit_by_sim_uid(current, str(event.get("target_uid", "")))
+				if not judge_source.is_empty() and not judge_target.is_empty():
+					_play_unit_procedural("balance_judge", judge_source.get("world_cast", Vector3.ZERO), judge_target.get("world_hit", Vector3.ZERO), _unit_target_context(judge_source, judge_target))
+		# D6: hit_number is drawn by the Director's adapter, on its timing. The old
+		# branch here would have been a second, untimed copy of the same number.
+	_play_crimson_event_groups(crimson_hp_hits, crimson_pierces, current)
+	_play_treasure_hit_groups(treasure_groups, current)
+
+
+# --- 10.18 宝藏反应伤害的表现 ------------------------------------------------
+#
+# 模拟器给这三类伤害打了 kind = treasure 的 hit_number（DamageService.push_treasure_hit_context），
+# fx_source_uid 是表现起点：元素爆发的中心目标 / 自爆灵自己 / 亡魂反击的持有者。
+# 起点那一位可能当帧就死了（自爆灵、持有者），所以先查本帧快照、再退回上一帧。
+# 宝藏伤害数字的配色（模拟把 tone 写进 hit_number 的 race 字段，见 DamageService.push_treasure_hit_context）。
+const _TREASURE_NUMBER_TONES := {
+	"treasure_fire": {"color": Color(1.0, 0.50, 0.14), "size": 24, "outline": Color(0.24, 0.04, 0.0, 0.95)},
+	"treasure_blood": {"color": Color(0.96, 0.14, 0.20), "size": 28, "outline": Color(0.14, 0.0, 0.02, 0.95)},
+	# 剧毒爆发：紫色字、绿色描边 —— 和紫绿两色的毒爆一个调子。
+	"treasure_toxic": {"color": Color(0.80, 0.42, 1.0), "size": 28, "outline": Color(0.10, 0.42, 0.08, 0.95)},
+}
+const TREASURE_HIT_VFX := {
+	"treasure_flame_shatter": "treasure_flame_shatter",
+	"treasure_blood_covenant": "treasure_blood_covenant",
+	"treasure_toxic_burst": "treasure_toxic_burst",
+	"treasure_element_burst": "treasure_element_burst",
+	"death_poison_explosion": "treasure_poison_blast",
+	"treasure_soul_counter": "treasure_soul_counter",
+}
+# 元素四件套和自爆的模拟半径（BattleSimTreasures 里写死的 180）。
+const TREASURE_BLAST_SIM_RADIUS := 180.0
+
+# 富裕之路 +10 金：被打的对手头上蹦金币 + 金色「+10」。所有人都看得到（战场提示，不做归属门控）。
+func _play_treasure_gold(event: Dictionary, current: Dictionary) -> void:
+	var target := _vfx_unit_by_sim_uid(current, str(event.get("target_uid", "")))
+	if target.is_empty():
+		target = _vfx_unit_by_sim_uid(_vfx_prev_units, str(event.get("target_uid", "")))
+	if target.is_empty():
+		return
+	var context := _unit_target_context(target, target)
+	var head: Vector3 = target.get("world_head", target.get("world_hit", Vector3.ZERO))
+	_play_unit_procedural("treasure_gold_coins", head, head, context)
+	_spawn_hit_number(target.get("head_pos", Vector2.ZERO) + Vector2(0, -26), int(event.get("amount", 10)), "gold", false, false)
+
+
+func _collect_treasure_hit(groups: Dictionary, event: Dictionary) -> void:
+	var skill_id := str(event.get("skill_id", ""))
+	if not TREASURE_HIT_VFX.has(skill_id):
+		return
+	var fx_source := str(event.get("fx_source_uid", ""))
+	var target_uid := str(event.get("target_uid", ""))
+	if fx_source.is_empty() or target_uid.is_empty():
+		return
+	var key := "%s|%s|%s" % [skill_id, fx_source, str(event.get("tick", event.get("time", "")))]
+	var group: Dictionary = groups.get(key, {"skill": skill_id, "fx_source": fx_source, "targets": []})
+	(group["targets"] as Array).append(target_uid)
+	groups[key] = group
+
+
+func _play_treasure_hit_groups(groups: Dictionary, current: Dictionary) -> void:
+	for key: String in groups:
+		var group: Dictionary = groups[key]
+		var skill_id := str(group["skill"])
+		var origin_unit := _vfx_unit_by_sim_uid(current, str(group["fx_source"]))
+		if origin_unit.is_empty():
+			origin_unit = _vfx_unit_by_sim_uid(_vfx_prev_units, str(group["fx_source"]))
+		if origin_unit.is_empty():
+			continue
+		var hit_positions: Array = []
+		var first_target: Dictionary = {}
+		for uid in group["targets"]:
+			var unit := _vfx_unit_by_sim_uid(current, str(uid))
+			if unit.is_empty():
+				unit = _vfx_unit_by_sim_uid(_vfx_prev_units, str(uid))
+			if unit.is_empty():
+				continue
+			if first_target.is_empty():
+				first_target = unit
+			hit_positions.append(unit.get("world_hit", unit.get("world_foot", Vector3.ZERO)))
+		if first_target.is_empty():
+			continue
+		var vfx_id := str(TREASURE_HIT_VFX[skill_id])
+		var context := _unit_target_context(origin_unit, first_target)
+		context["targets"] = hit_positions
+		context["radius"] = _guardian_taunt_world_radius(TREASURE_BLAST_SIM_RADIUS)
+		var origin: Vector3 = origin_unit.get("world_foot", Vector3.ZERO)
+		var target: Vector3 = first_target.get("world_hit", first_target.get("world_foot", Vector3.ZERO))
+		_play_unit_procedural(vfx_id, origin, target, context)
+
+
+# 10.18 控制四件套「普攻最后一下击杀 → 技能冷却清零」：模拟器不发事件，这里从冷却的变化推断。
+#
+# 判据（三条同时成立）：
+#   ① 一帧之内冷却缩短超过 0.3 秒 —— 正常情况冷却只会往后推（放完技能才更新）；
+#   ② 缩短量不是整 1 秒 / 2 秒 —— 排除赤律 7 赤潮（-1 秒）与赤律共鸣（-2 秒）没被截断的那几次；
+#   ③ 这一帧或上一帧有对方棋子阵亡 —— 刷新只由击杀触发。
+# 回放 roster 里没有棋子的宝藏列表，判不出谁带了控制套装，所以只能这样推；赤律那两条在
+# 剩余冷却不足 1/2 秒时会被压到「现在」，和击杀同帧时会误报一次，概率很低。
+# 用户口径：所有人都能看到（战场信息，不做归属门控）。
+const REFRESH_MIN_DROP_SEC := 0.3
+var _recent_death_teams: Dictionary = {}
+var _recent_death_teams_prev: Dictionary = {}
+
+func _note_refresh_death_teams(death_events: Array) -> void:
+	_recent_death_teams_prev = _recent_death_teams
+	_recent_death_teams = {}
+	for e: Dictionary in death_events:
+		var victim: Dictionary = _vfx_prev_units.get(str(e.get("victim_id", "")), {})
+		var team := str(victim.get("team", ""))
+		if not team.is_empty():
+			_recent_death_teams[team] = true
+
+
+func _maybe_play_refresh_clock(prev: Dictionary, now: Dictionary) -> void:
+	if not bool(now.get("alive", false)):
+		return
+	var drop := float(prev.get("skill_ready", 0.0)) - float(now.get("skill_ready", 0.0))
+	if drop <= REFRESH_MIN_DROP_SEC:
+		return
+	if absf(drop - 1.0) < 0.02 or absf(drop - 2.0) < 0.02:
+		return
+	var enemy_team := _opposite_team(str(now.get("team", "")))
+	if not (_recent_death_teams.has(enemy_team) or _recent_death_teams_prev.has(enemy_team)):
+		return
+	var context := _unit_target_context(now, now)
+	var head_anchor: Variant = _unit_actor_registry.get_anchor(str(now.get("id", "")), "HeadAnchor")
+	if head_anchor is Node3D:
+		context["origin_node"] = head_anchor
+	var head: Vector3 = now.get("world_head", now.get("world_cast", Vector3.ZERO))
+	_play_unit_procedural("treasure_control_refresh", head, head, context)
+
+# 10.10 神王：后续每一跳伤害（hit_number，skill_id = global_divine_blast）在目标身上
+# 补一个小脉冲。第一跳与施法同帧落下，那一下由光弹命中负责：同一次刷新里神王的
+# skill_ready 正在上升（本帧施法）就跳过。纯表现，可被并发上限丢弃。
+func _play_divine_pulse(event: Dictionary, current: Dictionary) -> void:
+	var source_uid := str(event.get("source_uid", ""))
+	var king := _vfx_unit_by_sim_uid(current, source_uid)
+	if not king.is_empty():
+		var before := _vfx_unit_by_sim_uid(_vfx_prev_units, source_uid)
+		if not before.is_empty() and float(king.get("skill_ready", 0.0)) > float(before.get("skill_ready", 0.0)) + 0.1:
+			return
+	var target := _vfx_unit_by_sim_uid(current, str(event.get("target_uid", "")))
+	if target.is_empty() or not bool(target.get("alive", false)):
+		return
+	var context := _unit_target_context(king if not king.is_empty() else target, target)
+	_play_unit_procedural("global_divine_blast_pulse", target.get("world_hit", target.get("world_foot", Vector3.ZERO)), target.get("world_hit", target.get("world_foot", Vector3.ZERO)), context)
+
+# --- Director cue entry points ------------------------------------------------
+# Every basic attack, damage number and death is drawn through these, driven by
+# BattlePresentationDirector cues. The snapshot-diff versions they replaced were
+# deleted in D6. _vfx_prev_units is reused deliberately: it already holds the most
+# recent snapshot after each refresh, and the ping-pong buffer comment above
+# forbids a second cross-frame holder of the same dictionaries.
+
+func cue_play_basic_attack(source_uid: String, target_uid: String, ranged: bool) -> bool:
+	var source: Dictionary = _cue_unit_snapshot(source_uid)
+	if source.is_empty():
+		return false
+	var attack := {
+		"id": source_uid,
+		"pos": source.get("cast_pos", Vector2.ZERO),
+		"world_cast": source.get("world_cast", Vector3.ZERO),
+		"team": str(source.get("team", "")),
+		"unit_id": str(source.get("unit_id", "")),
+		"skill_id": str(source.get("skill_id", "")),
+		"target_uid": target_uid,
+		# 9.19：「第 N 次普攻触发」类技能（弓箭手额外伤害 / 牧师治疗）靠
+		# `attack_count % every == 0` 判断**这一次**要不要出技能演出与技能音。
+		# 这两个字段原先只存在于 D6 删掉的 snapshot-diff 路径上，cue 这条路漏了
+		# 它们 —— `_attack_skill_vfx_ready()` 于是永远读到缺省值（`0 % every == 0`），
+		# 把每一次普攻都当成触发。补回来之后 VFX 与 9.19 新接的技能音才都只落在
+		# 真正的第 N 击上。（`_collect_vfx_units` 一直在写这两个字段，只是没人读。）
+		"attack_count": int(source.get("attack_count", 0)),
+	}
+	# `every` 用快照里的真实值：四星会改它（弓箭手 4→3、牧师 5→4）。为 0 表示
+	# 这只棋子的 def 里没有 `every`（技能不是这一类），**不写这个键**，
+	# 让 `_attack_skill_vfx_ready()` 走它原本的缺省，行为与改动前一致。
+	var source_every := int(source.get("skill_every", 0))
+	if source_every > 0:
+		attack["skill_every"] = source_every
+	# The event carries the simulator's real target, so unlike the diff path this
+	# never has to guess the victim from nearby damaged units.
+	var target: Dictionary = _cue_unit_snapshot(target_uid)
+	if target.is_empty():
+		target = _floor_target_for(attack)
+	var unit_id := str(attack.get("unit_id", ""))
+	# The two special cases the batched diff helpers carry must be mirrored here
+	# exactly, or a migrated unit would gain an extra swing the legacy path
+	# deliberately omits.
+	if unit_id == "human_king":
+		_play_attack_unit_procedural(attack, target, _vfx_prev_units)
+		return true
+	if not ranged and (str(attack.get("skill_id", "")) == "mirror_clone" or source_uid.contains("_mirror_")):
+		_play_boss_procedural("mirror_slash", attack.get("world_cast", Vector3.ZERO),
+			target.get("world_foot", Vector3.ZERO), _boss_target_context(target))
+		return true
+	_last_basic_attacker[target_uid] = {"uid": source_uid, "msec": Time.get_ticks_msec()}
+	var race := _visual_race_from_unit_id(unit_id)
+	if str(source.get("race", "")) == _CRIMSON_CATALOG.RACE:
+		race = _CRIMSON_CATALOG.RACE
+	# The empowered archer shot replaces the ordinary projectile visually.
+	var archer_empowered := ranged and unit_id == "human_archer" and str(attack.get("skill_id", "")) == "every_fourth_combo" and _attack_skill_vfx_ready(attack)
+	if not archer_empowered:
+		_play_race_basic_attack(attack, target, "ranged" if ranged else "melee", race, _vfx_prev_units)
+	_play_attack_unit_procedural(attack, target, _vfx_prev_units)
+	return true
+
+
+# 10.25: one decision per recorded attack, presented on its own Director beat.
+func cue_play_attack_audio(event: Dictionary, stage: String) -> bool:
+	var plan: Dictionary = event.get("_attack_audio", {})
+	if plan.is_empty():
+		return false
+	if stage == "impact":
+		for reaction: Dictionary in plan.get("reactions", []):
+			var reacting_uid := str(reaction.get("source_uid", ""))
+			if _is_own_or_ally_unit(reacting_uid):
+				SfxService.play_battle(str(reaction.get("cue", "")), _basic_attack_ownership_db(reacting_uid, str(reaction.get("target_uid", ""))), 2)
+	var cue := str(plan.get("cue", ""))
+	var source_uid := str(event.get("source_uid", ""))
+	var target_uid := str(plan.get("target_uid", ""))
+	var is_skill := bool(plan.get("skill", false))
+	var expected_stage := str(plan.get("stage", ""))
+	# Preserve the existing ownership gate for dedicated skill assets.
+	# An inaudible enemy skill must not erase that enemy's ordinary attack sound.
+	if (is_skill or bool(plan.get("cast_replacement", false))) and not _is_own_or_ally_unit(source_uid):
+		is_skill = false
+		cue = SfxService.basic_attack_cue_for(str(plan.get("unit_id", "")), bool(plan.get("ranged", false)))
+		expected_stage = "projectile_spawn" if bool(plan.get("ranged", false)) else "impact"
+	if cue.is_empty() or expected_stage != stage:
+		return false
+	var db := _basic_attack_ownership_db(source_uid, target_uid)
+	if not is_skill and stage == "projectile_spawn" and is_equal_approx(db, -6.0):
+		return false
+	var tier := 2 if is_skill else SfxService.cue_priority(cue)
+	if not is_skill and stage == "impact" and bool(plan.get("high_value", false)):
+		tier = 3
+	var weight := 0
+	if tier in [6, 7]:
+		var unit := _state_unit_for(source_uid)
+		var definition: Dictionary = unit.get("def", {})
+		var star := int(unit.get("star", 1))
+		var unit_tier := int(definition.get("tier", 1))
+		if star < 4 and unit_tier < 3 and int(definition.get("cost", 0)) < 100:
+			weight = 2 if star == 1 and unit_tier == 1 else 1
+	# cue mix level is added exactly once, inside SfxService.play.
+	return SfxService.play_battle(cue, db, tier, weight)
+
+
+# 普攻音的归属响度。返回 **−99.0 = 不出声**（远程飞行声在「其他敌方」下）。
+#
+# 四档（与 runtime_policy.json 的 ownership 一致）：
+#   自身 0 / 交战敌方 −2 / 友军 −4 / 其他敌方 −6
+# 其中「交战」用的是**伤害关系**而不是坐标：这一击打的是不是我方单位。
+# （棋盘一屏全览，距离衰减不可用；用目标归属判「跟我有关」是唯一可靠的替代。）
+func _basic_attack_ownership_db(sim_uid: String, target_uid: String) -> float:
+	if _is_local_owned_unit(sim_uid):
+		return 0.0
+	if _is_own_or_ally_unit(sim_uid):
+		# 友军：本地单机下 team_mode 恒真、local_slot 恒 0，自己没有友军可言；
+		# 走到这里基本就是 3v3 里的队友。
+		return -4.0
+	if str(_state.get("kind", "")) in ["pve", "boss"]:
+		return -3.0
+	# 敌方：打的是不是我方单位？
+	if not target_uid.is_empty() and _is_own_or_ally_unit(target_uid):
+		return -2.0
+	# 其他敌方：远程飞行声在这一格直接不出声，近战命中声 −6 dB。
+	return -6.0
+
+
+func cue_spawn_hit_number(target_uid: String, amount: int, kind: String, crit: bool, is_skill: bool, race: String) -> bool:
+	var target: Dictionary = _cue_unit_snapshot(target_uid)
+	if target.is_empty():
+		return false
+	if kind == "miss" and _unit_has_treasure_set(target_uid, "defense"):
+		kind = "dodge"
+		_play_set_dodge(target_uid)
+	_spawn_hit_number(target.get("head_pos", Vector2.ZERO), amount, kind, crit, is_skill, race)
+	_play_hit_reaction(target_uid, kind, amount, crit, is_skill)
+	return true
+
+
+# 10.21：受击反馈（闪白 / 后仰压扁 / 局部顿帧），和伤害数字同一拍。
+# 普攻的攻击者从 cue_play_basic_attack 记下的「最近一次谁打了它」取，用来定后仰方向和
+# 暴击时让攻击者一起顿帧；技能取不到攻击者就按向后仰。
+const HIT_ATTACKER_MEMORY_MSEC := 1500
+var _last_basic_attacker: Dictionary = {}   # target_uid -> {"uid": source_uid, "msec": int}
+
+func _play_hit_reaction(target_uid: String, kind: String, amount: int, crit: bool, is_skill: bool) -> void:
+	if kind != "dmg" or amount <= 0:
+		return
+	var victim = _battle_3d_models.get(target_uid)
+	if not (victim is Node3D) or not is_instance_valid(victim):
+		return
+	var attacker: Node3D = null
+	var memory: Dictionary = _last_basic_attacker.get(target_uid, {})
+	if not is_skill and Time.get_ticks_msec() - int(memory.get("msec", -100000)) <= HIT_ATTACKER_MEMORY_MSEC:
+		var found = _battle_3d_models.get(str(memory.get("uid", "")))
+		if found is Node3D and is_instance_valid(found):
+			attacker = found
+	var tier := "skill" if is_skill else ("crit" if crit else "basic")
+	_HIT_FEEDBACK.play(victim, attacker, tier, PresentationSettings.flash_allowed(), PresentationSettings.hit_stop_allowed())
+	# Camera shake is owned by the damage-event policy, once per activation.
+
+
+# Death had no visual at all before D4: the renderer simply freed the model on the
+# next refresh. Taking ownership of the actor lets it sink and fade instead of
+# blinking out (checklist section 6: never just disappear).
+# --- V2 P1-05 第 1 条：普攻的前冲/后坐 ----------------------
+#
+# 位移打在 **ActorRoot** 上而不是 actor 本身：_position_3d_model_node() 每帧都会
+# 用模拟位置重写 actor.position，动它一定会被覆盖掉。ActorRoot 是它的子节点，
+# 没有别的地方写，所以前冲能活过每帧重定位。
+const ATTACK_LUNGE_DISTANCE := 0.085
+const ATTACK_LUNGE_OUT_SEC := 0.07
+const ATTACK_LUNGE_BACK_SEC := 0.13
+# 远程是后坐不是前冲：出手方向相反、幅度更小。
+const RANGED_RECOIL_FACTOR := -0.55
+
+
+# V2 原话："暴击只放大 20%-35%，不堆全屏闪白"。
+# 所以暴击的强调就是把同一套演出乘上这个系数，而不是另加一层全屏效果。
+const CRIT_EMPHASIS_SCALE := 1.28
+
+# 9.24 #1：与 UnitSkillVFXComposer3D.BOLT_KIND_BY_UNIT / VFXRaceBasicAttack3D.BOLT_SPEED
+# 平行的、纯表现的查表。仅用于把远程普攻的 impact / 命中数字 cue 推迟到弹道真正
+# 落地（不改模拟结算）。若 composer 的映射有变更，这里需手动同步。
+const _RANGED_BOLT_SPEED := {
+	"arrow": 10.0, "dart": 8.8, "lance": 7.6, "orb": 6.4, "holy": 6.4,
+	"dark": 6.8, "star": 7.2, "thunder": 11.0, "crescent": 7.2,
+	"star_prayer": 5.8, "priestess_ring": 5.8, "shadow_sickle": 6.8, "thorn_lash": 8.0,
+}
+const _RANGED_BOLT_KIND_BY_UNIT := {
+	"human_archer": "arrow", "god_aurora": "arrow", "merc_sagittarius_rain": "arrow",
+	"pve_sky_wind_falcon": "arrow",
+	"human_mage": "orb", "merc_pisces_bubble": "orb", "merc_aquarius_time": "orb",
+	"pve_ren_voodoo_witch": "orb", "boss_meteor_caster": "orb",
+	"dark_mage": "shadow_sickle",
+	"pve_ren_poison_doctor": "dart", "undead_spike": "dart", "undead_mother": "dart",
+	"god_archangel": "holy",
+	"god_priest": "star_prayer", "god_priestess": "priestess_ring",
+	"human_cleric": "holy", "boss_holy_priest": "holy", "merc_virgo_heal": "holy",
+	"pve_sky_hymn_spirit": "holy", "pve_sky_star_butterfly": "holy", "pve_land_ancient_tree": "holy",
+	"god_angel": "star",
+	"ally_soul_chain": "dark", "ally_hell_inferno": "dark",
+	"dark_queen": "thorn_lash",
+	"boss_thunder_core": "thunder", "pve_sky_thunder_spirit": "thunder",
+}
+const _RANGED_MIN_TRAVEL := 0.28
+const _RANGED_MAX_TRAVEL := 0.80
+
+# 9.24 订正 #2：**玩家棋子的远程普攻并不走上面 `_RANGED_BOLT_KIND_BY_UNIT`** ——
+# `UnitSkillVFXComposer3D._basic_attack` 会先查 OGA 目录并**命中即 return**。
+# 所以计时也必须优先用 OGA 那条 spec 的 `speed`，否则算出的飞行时长和真正在飞的弹体
+# 对不上（例：神侍真实 speed=5.6，而 bolt_kind 表里按 "star_prayer" 记的是 5.8、
+# 按 "arrow" 记的是 10.0 —— 差得越多，①「命中后才结算」就越不准）。
+# ★ 限幅取 VFXFlipbookProjectile3D 的 MIN/MAX_TRAVEL_TIME，两边必须一致，
+#   否则延迟与弹体落地时刻会系统性错开。
+const OGA_CHESS_CATALOG := preload("res://effects/vfx3d/units/OgaChessVFXCatalog.gd")
+const _RANGED_OGA_MIN_TRAVEL := 0.24
+const _RANGED_OGA_MAX_TRAVEL := 0.82
+
+
+func cue_play_attack_lunge(source_uid: String, target_uid: String, ranged: bool) -> bool:
+	var actor_value = _battle_3d_models.get(source_uid)
+	if not (actor_value is Node3D) or not is_instance_valid(actor_value):
+		return false
+	var actor := actor_value as Node3D
+	var root := actor.get_node_or_null("ActorRoot") as Node3D
+	if root == null:
+		return false
+	var direction := _lunge_direction(actor, target_uid)
+	if direction == Vector3.ZERO:
+		return false
+	var distance := ATTACK_LUNGE_DISTANCE * (RANGED_RECOIL_FACTOR if ranged else 1.0)
+
+	# 连续攻击时上一发还没收回来就再来一发，会把 ActorRoot 越推越远。
+	# 每次开始前先杀掉上一条，并从原点重新起步。
+	#
+	# 必须先 has_meta 再 get_meta，不能用 get_meta(key, default) 的两参数形式：
+	# Godot 4.7 里那个形式**照样会为缺失 key 打一条引擎 ERROR**（默认值确实返回了，
+	# 但错误也确实打了）。第一次攻击时这个 key 根本没设过，于是每个单位的第一拳都
+	# 刷一条 —— 2026-08-30 的真机 logcat 里 135 次，本地 round 1 一场 18 次。
+	#
+	# 这条当初能溜过桌面全套门禁，是因为它是普通的 `ERROR:` 而不是 `SCRIPT ERROR:`，
+	# 而 run_check.ps1 的 EngineErrorPatterns 里没有这个模式。
+	if actor.has_meta("lunge_tween"):
+		var previous = actor.get_meta("lunge_tween")
+		if previous is Tween and (previous as Tween).is_valid():
+			(previous as Tween).kill()
+	root.position = Vector3.ZERO
+
+	var tween := create_tween()
+	tween.tween_property(root, "position", direction * distance, ATTACK_LUNGE_OUT_SEC) 		.set_ease(Tween.EASE_OUT)
+	tween.tween_property(root, "position", Vector3.ZERO, ATTACK_LUNGE_BACK_SEC) 		.set_ease(Tween.EASE_IN_OUT)
+	actor.set_meta("lunge_tween", tween)
+	return true
+
+
+# 攻击者指向目标的水平方向。取不到目标就返回零向量，让调用方跳过这次前冲 ——
+# 猜一个方向会让单位朝着空处冲。
+func _lunge_direction(actor: Node3D, target_uid: String) -> Vector3:
+	var target_value = _battle_3d_models.get(target_uid)
+	if not (target_value is Node3D) or not is_instance_valid(target_value):
+		return Vector3.ZERO
+	var delta: Vector3 = (target_value as Node3D).global_position - actor.global_position
+	delta.y = 0.0
+	if delta.length() < 0.001:
+		return Vector3.ZERO
+	return delta.normalized()
+
+
+# Legacy impact callback retained for the presentation adapter beat contract.
+func cue_play_impact_feedback(_target_uid: String, _crit: bool) -> void:
+	# Basic/critical impacts retain their local actor feedback only.
+	pass
+
+# 9.24 #1：远程普攻弹道的飞行时长（与 VFXRaceBasicAttack3D._play_ranged 同公式）。
+# LegacyBattleVfxAdapter 用它把 impact / 命中数字 推迟到弹体真正落地那一刻才播放，
+# 实现「命中后结算状态和伤害」的纯表现层延迟（模拟结算不变）。
+# 距离取世界坐标的地面平面（x,z）投影，弹速按施法者兵种原型查表。
+func cue_ranged_flight_time(source_uid: String, target_uid: String) -> float:
+	var s := _cue_unit_snapshot(source_uid)
+	var t := _cue_unit_snapshot(target_uid)
+	if s.is_empty() or t.is_empty():
+		return 0.4
+	var a: Vector3 = s.get("world_cast", Vector3.ZERO)
+	var bw: Vector3 = t.get("world_hit", t.get("world_foot", Vector3.ZERO))
+	var dist := Vector2(a.x, a.z).distance_to(Vector2(bw.x, bw.z))
+	var uid := str(s.get("unit_id", ""))
+	# 赤律族弹体与 VFXCrimsonAttack3D 共用 CrimsonVFXCatalog.flight_time()。
+	if str(s.get("race", "")) == _CRIMSON_CATALOG.RACE:
+		return _CRIMSON_CATALOG.flight_time(dist, uid)
+	# 9.24 订正 #2：玩家棋子以 OGA 弹体 spec 的 speed 为准 —— 那才是屏幕上真正在飞的那个弹体。
+	var oga_spec: Dictionary = OGA_CHESS_CATALOG.projectile_for(uid)
+	if not oga_spec.is_empty():
+		var oga_speed := maxf(0.5, float(oga_spec.get("speed", 7.0)))
+		return clampf(dist / oga_speed, _RANGED_OGA_MIN_TRAVEL, _RANGED_OGA_MAX_TRAVEL)
+	var kind := str(_RANGED_BOLT_KIND_BY_UNIT.get(uid, "lance"))
+	var speed := float(_RANGED_BOLT_SPEED.get(kind, 7.6))
+	return clampf(dist / maxf(0.5, speed), _RANGED_MIN_TRAVEL, _RANGED_MAX_TRAVEL)
+
+# 9.24 #4：把一条 cue 延后 delay 秒再播（用于把命中音对齐弹体落地 / 封印落点）。
+# 纯表现层：只延后播放时刻，不改任何模拟结算。
+func _play_sfx_delayed(cue: String, delay: float, volume_db := 0.0) -> void:
+	if cue.is_empty():
+		return
+	if delay <= 0.0 or not is_inside_tree():
+		SfxService.play(cue, volume_db)
+		return
+	await get_tree().create_timer(delay).timeout
+	if is_inside_tree():
+		SfxService.play(cue, volume_db)
+
+# 9.24 #4：沉默箭弹体的飞行时长（与 VFXFlipbookProjectile3D 同公式：dist/speed 限幅，
+# speed 取 OgaSkillVFXCatalog「silence」条目的 9.0）。命中音据此对齐箭体落地那一刻。
+func cue_silence_hit_delay(source_uid: String, target_uid: String) -> float:
+	var s := _cue_unit_snapshot(source_uid)
+	var t := _cue_unit_snapshot(target_uid)
+	if s.is_empty() or t.is_empty():
+		return 0.4
+	var a: Vector3 = s.get("world_cast", Vector3.ZERO)
+	var bw: Vector3 = t.get("world_hit", t.get("world_foot", Vector3.ZERO))
+	var dist := Vector2(a.x, a.z).distance_to(Vector2(bw.x, bw.z))
+	return clampf(dist / 9.0, 0.24, 0.82)
+
+
+func cue_claim_corpses(events: Array) -> void:
+	for event_value in events:
+		if not (event_value is Dictionary):
+			continue
+		var event: Dictionary = event_value
+		if str(event.get("type", "")) != "death":
+			continue
+		var uid := str(event.get("source_uid", ""))
+		if uid.is_empty() or _cue_corpses.has(uid):
+			continue
+		var claimed: Node3D = detach_actor_for_death(uid)
+		if claimed != null:
+			_cue_corpses[uid] = claimed
+		# 2D 层（名字 + 血条）也要在这里扣下来，理由和身体完全一样：
+		# 从入队到 cue_play_death 真正开播之间会经过 _refresh_visuals()，
+		# 那一趟剪枝会把血条当场释放，于是尸体还在淡、血条已经没了。
+		var claimed_unit_node := claim_unit_node_for_death(uid)
+		if claimed != null or claimed_unit_node != null:
+			_arm_death_claim_watchdog(uid)
+
+
+func cue_release_corpses() -> void:
+	for uid in _cue_corpses.keys():
+		var actor = _cue_corpses[uid]
+		if actor != null and is_instance_valid(actor):
+			release_death_actor(str(uid), actor as Node3D)
+	_cue_corpses.clear()
+	_mother_execute_victims.clear()
+	_phoenix_rise_played.clear()
+	_blood_rage_entered.clear()
+	for node in _blood_qi_vfx.values():
+		if is_instance_valid(node):
+			(node as Node).queue_free()
+	_blood_qi_vfx.clear()
+	for entry_value in _active_death_actors.values():
+		if not (entry_value is Dictionary):
+			continue
+		var entry: Dictionary = entry_value
+		var tween_value = entry.get("tween")
+		if tween_value is Tween and is_instance_valid(tween_value):
+			(tween_value as Tween).kill()
+		var actor_value = entry.get("actor")
+		if actor_value is Node3D and is_instance_valid(actor_value):
+			release_death_actor(str(entry.get("uid", "")), actor_value as Node3D)
+	_active_death_actors.clear()
+	_pending_death_claim_tokens.clear()
+	for reference in _death_tail_blocks:
+		var block = reference.get_ref()
+		if is_instance_valid(block):
+			block.call("stop_vfx", true)
+	_death_tail_blocks.clear()
+	_lane_clear_played = false
+	_reset_treasure_set_presentation()
+	_lane_clear_presented = false
+	_lane_clear_pending_uid = ""
+	_monster_reward_msec = -100000
+	if is_instance_valid(_combat_feedback):
+		_combat_feedback.call("reset_feedback")
+	_board_freeze_until_msec = 0
+	_end_arena_punch()
+	_end_lane_clear_spotlight()
+	_lane_clear_pivot = Vector2.INF
+	release_dying_unit_nodes()
+
+
+func cue_play_death(victim_uid: String, duration_sec: float = 0.35, killer_uid: String = "", event_key: String = "", event_time: float = -1.0) -> bool:
+	_maybe_play_human_king_death_sfx(victim_uid)
+	_pending_death_claim_tokens.erase(victim_uid)
+	var actor: Node3D = _cue_corpses.get(victim_uid)
+	_cue_corpses.erase(victim_uid)
+	if actor == null or not is_instance_valid(actor):
+		actor = detach_actor_for_death(victim_uid)
+	if actor == null or not is_instance_valid(actor):
+		_release_dying_unit_node(victim_uid)
+		return false
+	if _is_fresh_mother_execute_victim(victim_uid):
+		_play_mother_execute_death(victim_uid, actor)
+		return true
+	if _is_phoenix_revived_uid(victim_uid):
+		_play_phoenix_release(victim_uid, actor)
+		return true
+	# 10.29 死亡分档（普通 / 重量级 / 清场 / 己方阵亡），动作见 BattleDeathFeedback。
+	# The profile owns the length so a low quality tier can shorten the fade
+	# without ever removing it (checklist 6: death must never just disappear).
+	var tier := _death_tier(victim_uid)
+	var killer := _death_killer_actor(victim_uid, killer_uid)
+	var away := _DEATH_FEEDBACK.away_from(actor, killer)
+	var tween := create_tween()
+	# base_* 留给母灵处决：处决事件比死亡 cue 晚到时，要把已经开始的倒下复位再改走定身。
+	_active_death_actors[actor.get_instance_id()] = {
+		"uid": victim_uid,
+		"actor": actor,
+		"tween": tween,
+		"base_position": actor.position,
+		"base_scale": actor.scale,
+		"base_basis": actor.basis,
+	}
+	# V2 P1-05：淡出必须**真的**淡出。
+	#
+	# 改前这里只遍历 actor.get_children()，而 actor 的直接子节点是 ActorRoot 和
+	# 六个锚点 —— 一个 GeometryInstance3D 都没有（模型是 attach_model() 挂到
+	# actor_root 下面的）。也就是说这个循环一次都不匹配，死亡只有下沉和缩小、
+	# 没有淡出。改成遍历整棵子树。
+	var fade_targets := _death_fade_targets(actor)
+	var done := func() -> void: _finish_death_actor(victim_uid, actor)
+	var color := _death_race_color(victim_uid)
+	var own := tier == DEATH_TIER_OWN
+	var tail := func() -> void: _on_death_shatter(victim_uid, actor, away, tier, color, true, false, false, not own)
+	if tier == DEATH_TIER_FINALE:
+		_begin_lane_clear_freeze(actor, killer)
+	elif not own and killer != null and PresentationSettings.hit_stop_allowed():
+		_HIT_FEEDBACK.freeze_animation(killer, 0.04)
+	if not own:
+		_play_monster_kill_reward(victim_uid)
+	var fade := _DEATH_FEEDBACK.play_burst_body(tween, actor, fade_targets,
+		PresentationSettings.flash_allowed() and not own, tail, done)
+	# 2D 的血条/名字层必须**跟着一起淡**，不能在尸体还在的时候就消失。
+	# V2 第 2 条原话："血条和状态图标同步，不突然消失"。
+	_play_unit_node_death_fade(victim_uid, fade)
+	return true
+
+
+func _finish_death_actor(uid: String, actor: Node3D) -> void:
+	# Mother execution / phoenix release may replace a reserved finale tween.
+	# Transfer that reservation to the actual final body callback exactly once.
+	if not _lane_clear_presented and not _is_own_or_ally_unit(uid):
+		var final_clear := _lane_clear_pending_uid == uid
+		if not _lane_clear_played:
+			final_clear = _is_local_lane_clear(uid)
+		if final_clear:
+			_lane_clear_shake()
+			# 先出光效（顺带算出本路推近轴心），再推近。
+			_spawn_lane_clear_feedback(actor)
+			_play_arena_punch()
+	if actor != null:
+		_active_death_actors.erase(actor.get_instance_id())
+	release_death_actor(uid, actor)
+
+
+
+# --- 10.31 宝藏 4 件套战斗表现 ----------------------------------------------------
+#
+# 用户定的规则：
+#   * 所有人都看得到（自己的棋子满亮度，别人的 0.75）；
+#   * 攻击套：斩杀刀光 + 「斩」字 + 攻击者 5 秒红色速度光环；本地玩家有攻击套时，
+#     本路敌人血条 10% 处画斩杀线，掉到线下血条底框闪红（这条只给自己看，是「我能斩谁」的提示）；
+#   * 防卫套：只在开局亮一次护罩（不要常驻盾纹）；闪避时侧闪 + 青色残光 + 「闪避」字；
+#   * 控制套已有紫色刷新时钟，不另做；金钱套暂不做。
+# 套装归属：回放单位读 roster 带来的 treasure_sets（BattleScreen 一律补键），本地模拟单位读 owner_treasures。
+const _TREASURE_SET_VFX := preload("res://effects/vfx3d/modules/VFXTreasureSet3D.gd")
+# 与 BattleSimTreasures.ATTACK_SET_EXECUTE_PCT 一致；那边改这里也要改。
+const SET_EXECUTE_PCT := 0.10
+# 与 _try_attack_set_execute 里 attack_set_speed_bonus 的 5 秒一致。
+const SET_SPEED_AURA_SEC := 5.0
+const SET_OTHER_STRENGTH := 0.75
+const SET_EXECUTE_MARK_COLOR := Color(1.0, 0.30, 0.22)
+const SET_EXECUTE_FLASH_COLOR := Color(0.70, 0.04, 0.02)
+const SET_HP_BG_COLOR := Color(0.05, 0.05, 0.05)
+# 血条几何（BattleRenderer._make_unit_node）：HpBg 在 x5、宽 72；HpFill 从 x8 起、宽 66。
+const SET_HP_FILL_X_IN_BG := 3.0
+const SET_HP_FILL_WIDTH := 66.0
+const SET_DODGE_STEP := 0.12
+const SET_DODGE_OUT_SEC := 0.07
+const SET_DODGE_BACK_SEC := 0.16
+
+var _set_defense_shown: Dictionary = {}
+var _set_speed_auras: Dictionary = {}   # uid -> WeakRef(VFXTreasureSet3D)
+var _set_execute_marked: Dictionary = {}  # uid -> true
+
+
+func _unit_has_treasure_set(uid: String, category: String) -> bool:
+	var unit := _state_unit_for(uid)
+	if unit.is_empty():
+		return false
+	if unit.has("treasure_sets"):
+		return category in (unit.get("treasure_sets", []) as Array)
+	if BattleSimShared._ignores_treasure(unit):
+		return false
+	return BattleSimShared._f_has_set(unit, category)
+
+
+func _set_vfx_strength(uid: String) -> float:
+	var base := 1.0 if _is_local_owned_unit(uid) else SET_OTHER_STRENGTH
+	return base * (1.0 if PresentationSettings.flash_allowed() else 0.5)
+
+
+func _set_model_for(uid: String) -> Node3D:
+	for source in [_battle_3d_models, _cue_corpses]:
+		var found = (source as Dictionary).get(uid)
+		if found is Node3D and is_instance_valid(found) and (found as Node3D).is_inside_tree():
+			return found as Node3D
+	return null
+
+
+# 单位身高：HitAnchor 在胸口，约身高的 0.6。取不到就按 0.6 世界单位。
+func _set_unit_height(model: Node3D) -> float:
+	var hit := model.get_node_or_null("HitAnchor") as Node3D
+	if hit == null:
+		return 0.6
+	return clampf((hit.global_position.y - model.global_position.y) * 1.65, 0.3, 1.3)
+
+
+func _play_set_execute(event: Dictionary, current: Dictionary) -> void:
+	var target_uid := str(event.get("target_uid", ""))
+	var source_uid := str(event.get("source_uid", ""))
+	var snapshot := _vfx_unit_by_sim_uid(current, target_uid)
+	if snapshot.is_empty():
+		snapshot = _vfx_unit_by_sim_uid(_vfx_prev_units, target_uid)
+	if not snapshot.is_empty():
+		_spawn_hit_number(snapshot.get("head_pos", Vector2.ZERO) + Vector2(0, -56), 1, "execute", false, false)
+	if _battle_3d_vfx_root == null or not is_instance_valid(_battle_3d_vfx_root):
+		return
+	# 目标这一拍已被死亡流程接管（从 _battle_3d_models 摘掉），多数时候取不到模型 ——
+	# 退回上一帧快照里的锚点（world_* 已是 VFX 根本地坐标，见 _unit_vfx_position）。
+	var victim := _set_model_for(target_uid)
+	var prev := _vfx_unit_by_sim_uid(_vfx_prev_units, target_uid)
+	var center_local := Vector3.ZERO
+	var foot_y := 0.0
+	var height := 0.6
+	var located := false
+	if victim != null:
+		height = _set_unit_height(victim)
+		var hit := victim.get_node_or_null("HitAnchor") as Node3D
+		var center := hit.global_position if hit != null else victim.global_position + Vector3.UP * height * 0.6
+		center_local = _battle_3d_vfx_root.to_local(center)
+		foot_y = _battle_3d_vfx_root.to_local(victim.global_position).y
+		located = true
+	elif not prev.is_empty() and prev.has("world_hit"):
+		center_local = prev.get("world_hit", Vector3.ZERO)
+		var foot: Vector3 = prev.get("world_foot", center_local)
+		foot_y = foot.y
+		height = clampf((center_local.y - foot_y) * 1.65, 0.3, 1.3)
+		located = true
+	if located:
+		var block := VFXBlockRoot.spawn_block(_TREASURE_SET_VFX, _battle_3d_vfx_root, true)
+		if block != null:
+			block.call("play_execute", center_local, foot_y, height, _set_vfx_strength(source_uid))
+	var attacker := _set_model_for(source_uid)
+	if attacker == null:
+		return
+	var existing: WeakRef = _set_speed_auras.get(source_uid)
+	var aura = existing.get_ref() if existing != null else null
+	if aura != null and is_instance_valid(aura) and not (aura as Node).is_queued_for_deletion():
+		aura.call("refresh_speed_aura", SET_SPEED_AURA_SEC)
+		return
+	var aura_block := VFXBlockRoot.spawn_block(_TREASURE_SET_VFX, _battle_3d_vfx_root, true)
+	if aura_block != null:
+		aura_block.call("play_speed_aura", attacker, SET_SPEED_AURA_SEC,
+			_set_unit_height(attacker) * 0.42, _set_vfx_strength(source_uid))
+		_set_speed_auras[source_uid] = weakref(aura_block)
+
+
+# 防卫套闪避：ActorRoot 往侧面闪一下再回来（和普攻前冲共用 lunge_tween，互相顶掉、从原点起步），
+# 原地留两道青色残光。侧闪方向取「垂直于最近一次打它的人」，取不到就往右。
+func _play_set_dodge(uid: String) -> void:
+	var model := _set_model_for(uid)
+	if model == null or _battle_3d_vfx_root == null or not is_instance_valid(_battle_3d_vfx_root):
+		return
+	var side := Vector3.RIGHT
+	var memory: Dictionary = _last_basic_attacker.get(uid, {})
+	var attacker := _set_model_for(str(memory.get("uid", "")))
+	if attacker != null:
+		var delta := model.global_position - attacker.global_position
+		delta.y = 0.0
+		if delta.length() > 0.001:
+			side = Vector3(-delta.z, 0.0, delta.x).normalized()
+	var height := _set_unit_height(model)
+	var block := VFXBlockRoot.spawn_block(_TREASURE_SET_VFX, _battle_3d_vfx_root, true)
+	if block != null:
+		var local_side := _battle_3d_vfx_root.global_basis.inverse() * side
+		block.call("play_dodge", _battle_3d_vfx_root.to_local(model.global_position), local_side.normalized(),
+			height, _set_vfx_strength(uid))
+	var root := model.get_node_or_null("ActorRoot") as Node3D
+	if root == null or not PresentationSettings.hit_stop_allowed():
+		return
+	if model.has_meta("lunge_tween"):
+		var previous = model.get_meta("lunge_tween")
+		if previous is Tween and (previous as Tween).is_valid():
+			(previous as Tween).kill()
+	root.position = Vector3.ZERO
+	var step := (model.global_basis.inverse() * side).normalized() * SET_DODGE_STEP
+	var tween := create_tween()
+	tween.tween_property(root, "position", step, SET_DODGE_OUT_SEC).set_ease(Tween.EASE_OUT)
+	tween.tween_property(root, "position", Vector3.ZERO, SET_DODGE_BACK_SEC).set_ease(Tween.EASE_IN_OUT)
+	model.set_meta("lunge_tween", tween)
+
+
+func _update_treasure_set_presentation() -> void:
+	var local_attack := false
+	var lane := _local_lane()
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if not (raw is Dictionary):
+				continue
+			var uid := str(raw.get("uid", ""))
+			if not local_attack and _is_local_owned_unit(uid) and _unit_has_treasure_set(uid, "attack"):
+				local_attack = true
+			if bool(raw.get("alive", false)) and not _set_defense_shown.has(uid) and _unit_has_treasure_set(uid, "defense"):
+				var model := _set_model_for(uid)
+				if model != null and _battle_3d_vfx_root != null and is_instance_valid(_battle_3d_vfx_root):
+					_set_defense_shown[uid] = true
+					var block := VFXBlockRoot.spawn_block(_TREASURE_SET_VFX, _battle_3d_vfx_root, true)
+					if block != null:
+						block.call("play_defense_shield", model, _set_unit_height(model), _set_vfx_strength(uid))
+	var pulse := 0.5 + 0.5 * sin(float(Time.get_ticks_msec()) * 0.014)
+	var still_marked: Dictionary = {}
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if not (raw is Dictionary):
+				continue
+			var uid := str(raw.get("uid", ""))
+			if not local_attack or lane == LANE_NONE or not bool(raw.get("alive", false)) \
+					or int(raw.get("lane", -1)) != lane or _is_own_or_ally_unit(uid):
+				continue
+			var definition: Dictionary = raw.get("def", {}) if raw.get("def", {}) is Dictionary else {}
+			if str(raw.get("id", "")).begins_with("boss_") or bool(definition.get("is_boss", false)):
+				continue
+			var bg := _set_hp_bg_for(raw)
+			if bg == null:
+				continue
+			var mark := bg.get_node_or_null("ExecuteMark") as ColorRect
+			if mark == null:
+				mark = ColorRect.new()
+				mark.name = "ExecuteMark"
+				mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				mark.color = SET_EXECUTE_MARK_COLOR
+				mark.size = Vector2(2.0, 13.0)
+				mark.position = Vector2(SET_HP_FILL_X_IN_BG + SET_HP_FILL_WIDTH * SET_EXECUTE_PCT - 1.0, -2.0)
+				mark.z_index = 2
+				bg.add_child(mark)
+			var low := float(raw.get("hp", 0)) <= float(maxi(1, int(raw.get("max_hp", 1)))) * SET_EXECUTE_PCT
+			bg.color = SET_HP_BG_COLOR.lerp(SET_EXECUTE_FLASH_COLOR, pulse) if low else SET_HP_BG_COLOR
+			still_marked[uid] = true
+	for uid in _set_execute_marked.keys():
+		if not still_marked.has(uid):
+			_clear_execute_mark(str(uid))
+	_set_execute_marked = still_marked
+
+
+func _set_hp_bg_for(raw: Dictionary) -> ColorRect:
+	var node = _unit_nodes.get(_visual_id(raw))
+	if node == null:
+		node = _unit_nodes.get(str(raw.get("uid", "")))
+	if not (node is Node) or not is_instance_valid(node):
+		return null
+	return (node as Node).get_node_or_null("HpBg") as ColorRect
+
+
+func _clear_execute_mark(uid: String) -> void:
+	var raw := _state_unit_for(uid)
+	if raw.is_empty():
+		return
+	var bg := _set_hp_bg_for(raw)
+	if bg == null:
+		return
+	var mark := bg.get_node_or_null("ExecuteMark")
+	if mark != null:
+		mark.queue_free()
+	bg.color = SET_HP_BG_COLOR
+
+
+func _reset_treasure_set_presentation() -> void:
+	_set_defense_shown.clear()
+	for ref in _set_speed_auras.values():
+		var aura = (ref as WeakRef).get_ref() if ref is WeakRef else null
+		if aura != null and is_instance_valid(aura):
+			aura.call("finish")
+	_set_speed_auras.clear()
+	for uid in _set_execute_marked.keys():
+		_clear_execute_mark(str(uid))
+	_set_execute_marked.clear()
+
+# --- 10.29 死亡分档 / 多杀合并 / 己方那一路清场 ------------------------------------
+#
+# 用户定的分档：
+#   普通击杀：定格闪白 + 被顶飞 + 碎成种族色碎片 + 死亡音。**不震屏** ——
+#       一波 AOE 同时死四五个，每个都震就是一卡一卡，和手机掉帧分不出来。
+#   重量级（Boss / 四星 / 两格大体型）：再加轻震、更长定格、地面冲击环。
+#   同时多杀：一个合并窗口里只出一声；第 3 个起补一次轻震，不按个数重复。
+#   清场：**本地玩家那一路**的最后一个敌人被打死 —— 整个棋盘定格 0.2 秒再炸，全场最强。
+#       三路里只认自己那一路（另外两路是队友的，那一下是他们的高光，不是你的）。
+#   己方阵亡：要看得清但不庆祝 —— 不闪白、不碎、不震，往后倒下再淡出，声音更闷。
+const DEATH_TIER_NORMAL := "normal"
+const DEATH_TIER_HEAVY := "heavy"
+const DEATH_TIER_FINALE := "finale"
+const DEATH_TIER_OWN := "own"
+const DEATH_KILLER_FREEZE_SEC := {"normal": 0.05, "heavy": 0.08}
+const DEATH_MERGE_MSEC := 140
+const DEATH_MULTI_KILL_AT := 3
+# 屏震强度（× SHAKE_PX_PER_STRENGTH 0.55 = 像素，封顶 SHAKE_MAX_PX 9）。技能屏震是 6.5。
+const DEATH_SHAKE_HEAVY := [5.0, 0.18]
+const DEATH_SHAKE_MULTI := [4.0, 0.15]
+const DEATH_SHAKE_FINALE := [15.0, 0.34]
+const LANE_CLEAR_FREEZE_SEC := 0.2
+# 清场时整个战场往里推一下：放大 3%，0.07 秒推进、0.26 秒缓回。
+const LANE_CLEAR_PUNCH_SCALE := 1.05
+# 10.31 清场加强（用户批准方案 1、3、4、5）：
+#   定格那 0.2 秒全场压暗，只留最后一个敌人和击杀者两个亮洞（聚光灯）；
+#   字幕对准本路；我方本路存活棋子小跳 + 脚下金环；推近以本路为轴；
+#   震屏按屏幕高度换算（原来封顶 9 px，手机高分辨率下几乎看不见）。
+const LANE_CLEAR_SPOT_IN_SEC := 0.05
+const LANE_CLEAR_SPOT_OUT_SEC := 0.24
+const LANE_CLEAR_SPOT_RADIUS_RATIO := 0.12
+const LANE_CLEAR_SHAKE_RATIO := 0.017
+const LANE_CLEAR_SHAKE_MIN_PX := 9.0
+const LANE_CLEAR_SHAKE_MAX_PX := 22.0
+const LANE_CLEAR_SHAKE_SEC := 0.34
+const LANE_CLEAR_HOP_HEIGHT := 0.15
+const LANE_CLEAR_HOP_UP_SEC := 0.13
+const LANE_CLEAR_HOP_DOWN_SEC := 0.17
+# 字幕放在本路屏幕范围顶边往下 14% 处 —— 放中间会压住我方棋子（10.31 截帧实测）。
+const LANE_CLEAR_CAPTION_FROM_TOP := 0.14
+const LANE_CLEAR_PUNCH_IN_SEC := 0.07
+const LANE_CLEAR_PUNCH_OUT_SEC := 0.26
+# 死亡音，素材与混音说明见 SfxService 的「10.29 死亡音」。
+# 必须写成 SfxService.CUE_* —— audio_sfx_check 按这个前缀找生产调用点。
+const DEATH_CUE_SHATTER := SfxService.CUE_DEATH_SHATTER
+const DEATH_CUE_SHATTER_HEAVY := SfxService.CUE_DEATH_SHATTER_HEAVY
+const DEATH_CUE_FALL := SfxService.CUE_DEATH_FALL
+const DEATH_CUE_LANE_CLEAR := SfxService.CUE_DEATH_LANE_CLEAR
+const LANE_NONE := -99
+# 种族碎片色：人族暖金属、亡灵魂火青绿、暗族紫黑雾、神族金白、赤律族赤红。
+const DEATH_RACE_COLORS := {
+	"human": Color(1.0, 0.80, 0.52),
+	"undead": Color(0.42, 1.0, 0.74),
+	"dark": Color(0.70, 0.38, 1.0),
+	"god": Color(1.0, 0.92, 0.58),
+}
+const DEATH_CRIMSON_COLOR := Color(1.0, 0.34, 0.30)
+# 怪物 / 佣兵 / Boss 的 def 里没有 race，按 id 取色（不配就会全部落成人族暖金）。
+# PvE 三系：天空系淡天蓝、大地系岩土琥珀、人间系沿用人族暖金。
+const DEATH_MONSTER_COLORS := {
+	"pve_sky_": Color(0.62, 0.86, 1.0),
+	"pve_land_": Color(0.96, 0.66, 0.34),
+	"pve_ren_": Color(1.0, 0.80, 0.52),
+}
+# 佣兵是十二星座：统一星光色，和四族都不撞。
+const DEATH_MERC_COLOR := Color(0.74, 0.84, 1.0)
+# Boss 各按招牌技能的主色；表外的新 Boss 用暗红。
+const DEATH_BOSS_COLORS := {
+	"boss_meteor_caster": Color(1.0, 0.52, 0.22),
+	"boss_thunder_core": Color(0.55, 0.80, 1.0),
+	"boss_mirror_lord": Color(0.78, 0.94, 1.0),
+	"boss_holy_priest": Color(1.0, 0.90, 0.55),
+	"boss_rage_beast": Color(1.0, 0.42, 0.24),
+	"boss_blood_demon": Color(0.92, 0.16, 0.22),
+	"boss_soul_devourer": Color(0.62, 0.40, 1.0),
+	"boss_twin_gate": Color(0.40, 1.0, 0.86),
+	"boss_apocalypse": Color(0.86, 0.20, 0.16),
+}
+const DEATH_BOSS_DEFAULT_COLOR := Color(0.86, 0.24, 0.20)
+
+var _lane_clear_played := false
+var _lane_clear_presented := false
+var _lane_clear_pending_uid := ""
+var _death_tail_blocks: Array[WeakRef] = []
+var _board_freeze_until_msec := 0
+var _death_beat_msec := -100000
+var _death_beat_kills := 0
+var _monster_reward_msec := -100000
+var _arena_punch_tween: Tween = null
+var _lane_clear_spot: ColorRect = null
+var _lane_clear_spot_tween: Tween = null
+# 推近的轴心（_arena 本地坐标）。INF = 没算出本路，退回中心。
+var _lane_clear_pivot := Vector2.INF
+const _COMBAT_FEEDBACK := preload("res://effects/runtime/presentation/BattleCombatFeedback.gd")
+var _combat_feedback: Control
+
+
+func _ensure_combat_feedback() -> Control:
+	if not is_instance_valid(_combat_feedback):
+		_combat_feedback = _COMBAT_FEEDBACK.new()
+		_combat_feedback.name = "BattleCombatFeedback"
+		_combat_feedback.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		_combat_feedback.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_combat_feedback.z_index = 115
+		add_child(_combat_feedback)
+		SafeArea.track(_combat_feedback)
+	return _combat_feedback
+
+
+func _kill_feedback_victim_eligible(victim_uid: String) -> bool:
+	if victim_uid.is_empty() or _is_own_or_ally_unit(victim_uid):
+		return false
+	var victim := _state_unit_for(victim_uid)
+	return not victim.is_empty() and not bool(victim.get("is_formation_ally", false)) \
+		and not victim_uid.contains("_mirror_") and not victim_uid.contains("_parasite_")
+
+
+func _is_mercenary_death(victim_uid: String) -> bool:
+	var unit := _state_unit_for(victim_uid)
+	return str(unit.get("id", unit.get("unit_id", ""))).begins_with("merc_") or bool(unit.get("is_mercenary", false))
+
+
+# PvE/Boss use dust; pieces and mercenaries use their separate subtle residue.
+# The mother execution and phoenix release keep their earlier priority branches.
+func _uses_monster_death_feedback(victim_uid: String) -> bool:
+	if _is_own_or_ally_unit(victim_uid):
+		return false
+	var unit := _state_unit_for(victim_uid)
+	var definition: Dictionary = unit.get("def", {}) if unit.get("def", {}) is Dictionary else {}
+	var unit_id := str(unit.get("id", unit.get("unit_id", definition.get("id", ""))))
+	return unit_id.begins_with("pve_") or unit_id.begins_with("boss_") or bool(definition.get("is_boss", false))
+
+
+# This is a kill-confirmation sound, not a currency mutation or a payout claim.
+# An actor can only be detached once; a revived actor may legitimately die again.
+# Share one short accent for simultaneous kills on the local player's lane.
+func _play_monster_kill_reward(victim_uid: String) -> void:
+	if not _kill_feedback_victim_eligible(victim_uid):
+		return
+	var lane := _local_lane()
+	if lane == LANE_NONE or int(_state_unit_for(victim_uid).get("lane", -1)) != lane:
+		return
+	var now := Time.get_ticks_msec()
+	if now - _monster_reward_msec < DEATH_MERGE_MSEC:
+		return
+	_monster_reward_msec = now
+	_play_death_sfx(SfxService.CUE_MONSTER_KILL_REWARD, 0.0, 3)
+
+
+func _death_tier(victim_uid: String) -> String:
+	if _is_own_or_ally_unit(victim_uid):
+		return DEATH_TIER_OWN
+	if _is_local_lane_clear(victim_uid):
+		return DEATH_TIER_FINALE
+	var unit := _state_unit_for(victim_uid)
+	var definition: Dictionary = unit.get("def", {}) if unit.get("def", {}) is Dictionary else {}
+	# Boss 判据和模拟器一致：def.is_boss 或 id 以 boss_ 开头（Boss 表里没写 is_boss，靠前缀）。
+	if bool(definition.get("is_boss", false)) or str(unit.get("id", "")).begins_with("boss_") \
+			or int(unit.get("star", 1)) >= GameConstants.MAX_STAR or int(unit.get("footprint_cells", 1)) >= 2:
+		return DEATH_TIER_HEAVY
+	return DEATH_TIER_NORMAL
+
+
+# 本地玩家那一路的最后一个敌人。每局只演一次。
+#
+# 判据要同时看两张表：死亡 cue 比模拟晚播（Director 排队），播到这一个时后面几个可能
+# 在 `_state` 里已经 alive=false 了 —— 它们的死亡 cue 还在排队，尸体在
+# _cue_corpses / _pending_death_claim_tokens 里。只看 alive 会让倒数第二个抢走清场。
+func _is_local_lane_clear(victim_uid: String) -> bool:
+	if _lane_clear_played:
+		return false
+	var victim := _state_unit_for(victim_uid)
+	var lane := _local_lane()
+	if victim.is_empty() or lane == LANE_NONE or int(victim.get("lane", -1)) != lane:
+		return false
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if not (raw is Dictionary):
+				continue
+			var uid := str(raw.get("uid", ""))
+			if uid == victim_uid or int(raw.get("lane", -1)) != lane or _is_own_or_ally_unit(uid):
+				continue
+			if bool(raw.get("alive", false)) or _cue_corpses.has(uid) or _pending_death_claim_tokens.has(uid):
+				return false
+	_lane_clear_played = true
+	_lane_clear_pending_uid = victim_uid
+	return true
+
+
+# 本地玩家棋子所在的那一路。观战对手时回放里没有本地棋子，返回 LANE_NONE（不演清场）。
+func _local_lane() -> int:
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if raw is Dictionary and _is_local_owned_unit(str(raw.get("uid", ""))):
+				return int(raw.get("lane", -1))
+	return LANE_NONE
+
+
+# 击杀者的身体：事件带的 killer_uid 优先；取不到（DOT / 宝藏反应）就用最近一次普攻它的人。
+func _death_killer_actor(victim_uid: String, killer_uid: String) -> Node3D:
+	var uid := killer_uid
+	if uid.is_empty():
+		var memory: Dictionary = _last_basic_attacker.get(victim_uid, {})
+		if Time.get_ticks_msec() - int(memory.get("msec", -100000)) <= HIT_ATTACKER_MEMORY_MSEC:
+			uid = str(memory.get("uid", ""))
+	var found = _battle_3d_models.get(uid)
+	if found is Node3D and is_instance_valid(found):
+		return found as Node3D
+	return null
+
+
+func _death_race_color(victim_uid: String) -> Color:
+	var snapshot := _cue_unit_snapshot(victim_uid)
+	var unit := _state_unit_for(victim_uid)
+	var definition: Dictionary = unit.get("def", {}) if unit.get("def", {}) is Dictionary else {}
+	var race := str(snapshot.get("race", definition.get("race", "")))
+	if race == _CRIMSON_CATALOG.RACE:
+		return DEATH_CRIMSON_COLOR
+	var unit_id := str(snapshot.get("unit_id", unit.get("id", "")))
+	if unit_id.begins_with("boss_"):
+		return DEATH_BOSS_COLORS.get(unit_id, DEATH_BOSS_DEFAULT_COLOR)
+	if unit_id.begins_with("merc_"):
+		return DEATH_MERC_COLOR
+	for prefix in DEATH_MONSTER_COLORS:
+		if unit_id.begins_with(prefix):
+			return DEATH_MONSTER_COLORS[prefix]
+	return DEATH_RACE_COLORS.get(_visual_race_from_unit_id(unit_id), DEATH_RACE_COLORS["human"])
+
+
+# 被顶飞结束那一帧：碎片炸开、出声、按档位和合并窗口决定震不震。
+func _on_death_shatter(victim_uid: String, actor: Node3D, away: Vector3, tier: String, color: Color, monster := false, piece := false, mercenary := false, coins := true) -> void:
+	if piece:
+		_spawn_piece_death_residue(actor, away, color, tier, mercenary, false)
+	if is_instance_valid(actor) and actor.is_inside_tree() and _battle_3d_vfx_root != null and is_instance_valid(_battle_3d_vfx_root):
+		var hit := actor.get_node_or_null("HitAnchor") as Node3D
+		var center := hit.global_position if hit != null else actor.global_position + Vector3.UP * 0.5
+		var block := VFXBlockRoot.spawn_block(preload("res://effects/vfx3d/modules/VFXCoinBurst3D.gd"), _battle_3d_vfx_root, true) if not piece else null
+		if block != null:
+			_death_tail_blocks.append(weakref(block))
+			var local_away := (_battle_3d_vfx_root.global_basis.inverse() * away) if away.length() > 0.001 else Vector3.ZERO
+			block.call("play_burst", _battle_3d_vfx_root.to_local(center),
+				_battle_3d_vfx_root.to_local(actor.global_position).y, local_away, color, tier, coins)
+	if not coins:
+		_play_death_sfx(DEATH_CUE_FALL, -3.0, 3)
+		return
+	var now := Time.get_ticks_msec()
+	var new_beat := now - _death_beat_msec > DEATH_MERGE_MSEC
+	if new_beat:
+		_death_beat_msec = now
+		_death_beat_kills = 0
+	_death_beat_kills += 1
+	match tier:
+		DEATH_TIER_FINALE:
+			_lane_clear_shake()
+			# 先出光效（顺带算出本路推近轴心），再推近。
+			_spawn_lane_clear_feedback(actor)
+			_play_arena_punch()
+			if not monster and not piece:
+				_play_death_sfx(DEATH_CUE_SHATTER_HEAVY, 0.0, 2)
+		DEATH_TIER_HEAVY:
+			_screen_shake(DEATH_SHAKE_HEAVY[0], DEATH_SHAKE_HEAVY[1])
+			_play_death_sfx(DEATH_CUE_FALL if monster or piece else DEATH_CUE_SHATTER_HEAVY, _death_sfx_db(victim_uid), 2)
+		_:
+			if new_beat:
+				_play_death_sfx(DEATH_CUE_FALL if monster or piece else DEATH_CUE_SHATTER, _death_sfx_db(victim_uid), 3)
+			elif _death_beat_kills == DEATH_MULTI_KILL_AT:
+				# 合并窗口里第 3 个：补一声更厚的、一次轻震；第 4、5 个不再加。
+				_screen_shake(DEATH_SHAKE_MULTI[0], DEATH_SHAKE_MULTI[1])
+				_play_death_sfx(DEATH_CUE_FALL if monster or piece else DEATH_CUE_SHATTER_HEAVY, _death_sfx_db(victim_uid), 3)
+
+
+func _spawn_piece_death_residue(actor: Node3D, away: Vector3, color: Color, tier: String, mercenary: bool, own: bool) -> void:
+	if not is_instance_valid(actor) or not actor.is_inside_tree() or not is_instance_valid(_battle_3d_vfx_root):
+		return
+	var hit := actor.get_node_or_null("HitAnchor") as Node3D
+	var center := hit.global_position if hit != null else actor.global_position + Vector3.UP * 0.25
+	var block := VFXBlockRoot.spawn_block(_DEATH_SHATTER, _battle_3d_vfx_root, true)
+	if block != null:
+		_death_tail_blocks.append(weakref(block))
+		var local_away := _battle_3d_vfx_root.global_basis.inverse() * away
+		block.call("play_piece_dissipate", _battle_3d_vfx_root.to_local(center),
+			_battle_3d_vfx_root.to_local(actor.global_position).y, local_away, color, tier, mercenary, own)
+
+
+func _spawn_lane_clear_feedback(actor: Node3D) -> void:
+	if _lane_clear_presented:
+		return
+	_lane_clear_presented = true
+	var feedback := _ensure_combat_feedback()
+	var lane := _local_lane()
+	if lane < 0 or lane > 2 or not is_instance_valid(actor) or not actor.is_inside_tree() \
+			or not is_instance_valid(_battle_3d_vfx_root):
+		feedback.call("show_lane_clear")
+		return
+	var visual_min := _battle_visual_min()
+	var visual_max := _battle_visual_max()
+	var band := BattleSimShared.lane_band_x(lane)
+	var corners: Array[Vector3] = []
+	for sim in [Vector2(band.x, visual_min.y), Vector2(band.y, visual_min.y), Vector2(band.x, visual_max.y), Vector2(band.y, visual_max.y)]:
+		corners.append(_sim_to_world_pos(sim))
+	var a := _battle_3d_vfx_root.to_local(corners[0])
+	var b := _battle_3d_vfx_root.to_local(corners[3])
+	var bounds := Rect2(Vector2(minf(a.x,b.x),minf(a.z,b.z)),Vector2(absf(b.x-a.x),absf(b.z-a.z)))
+	# 本路在屏幕上的范围：四个角投影后取外接框。字幕和推近轴心都对准它。
+	var screen_rect := Rect2(_world_to_arena_point(corners[0]), Vector2.ZERO)
+	for corner in corners:
+		screen_rect = screen_rect.expand(_world_to_arena_point(corner))
+	var lane_center := screen_rect.get_center()
+	_lane_clear_pivot = lane_center
+	var caption_point := Vector2(lane_center.x, screen_rect.position.y + screen_rect.size.y * LANE_CLEAR_CAPTION_FROM_TOP)
+	feedback.call("show_lane_clear", _arena.get_global_transform() * caption_point)
+	var cheer_points: Array = []
+	for model in _lane_clear_cheer_actors(lane):
+		cheer_points.append(_battle_3d_vfx_root.to_local(model.global_position))
+		_play_lane_clear_hop(model)
+	var block := VFXBlockRoot.spawn_block(preload("res://effects/vfx3d/modules/VFXLaneClearBurst3D.gd"), _battle_3d_vfx_root, true)
+	if block != null:
+		_death_tail_blocks.append(weakref(block))
+		block.call("play_clear", _battle_3d_vfx_root.to_local(actor.global_position), bounds, cheer_points)
+
+
+# 我方在本地那一路还活着的棋子（含队友借位的友军不算 —— 本路只有自己的棋子）。
+func _lane_clear_cheer_actors(lane: int) -> Array[Node3D]:
+	var result: Array[Node3D] = []
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if not (raw is Dictionary) or not bool(raw.get("alive", false)) or int(raw.get("lane", -1)) != lane:
+				continue
+			var uid := str(raw.get("uid", ""))
+			if not _is_local_owned_unit(uid):
+				continue
+			var model = _battle_3d_models.get(uid)
+			if model is Node3D and is_instance_valid(model) and (model as Node3D).is_inside_tree():
+				result.append(model as Node3D)
+	return result
+
+
+# 庆祝小跳打在 ActorRoot.position:y 上：actor.position 每帧被模拟重写，
+# ActorRoot 的 x/z 归普攻前冲用，y 没人写，所以只动 y，落地归零。
+func _play_lane_clear_hop(model: Node3D) -> void:
+	if not PresentationSettings.hit_stop_allowed():
+		return
+	var root := model.get_node_or_null("ActorRoot") as Node3D
+	if root == null:
+		return
+	var base_y := root.position.y
+	var tween := root.create_tween()
+	tween.tween_property(root, "position:y", base_y + LANE_CLEAR_HOP_HEIGHT, LANE_CLEAR_HOP_UP_SEC) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property(root, "position:y", base_y, LANE_CLEAR_HOP_DOWN_SEC) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+
+
+# 敌方死在本地那一路 0 dB；死在队友那两路 −5 dB（看得见，但那是别人的战场）。
+func _death_sfx_db(victim_uid: String) -> float:
+	var lane := _local_lane()
+	if lane == LANE_NONE or int(_state_unit_for(victim_uid).get("lane", -1)) == lane:
+		return 0.0
+	return -5.0
+
+
+func _play_death_sfx(cue: String, db: float, tier: int) -> void:
+	if SfxService.resolved_cue_path(cue).is_empty():
+		return
+	SfxService.play_battle(cue, db, tier)
+
+
+# 清场定格：整个棋盘停 0.2 秒。不碰 Engine.time_scale（checklist 0.3）——
+# 停的是回放 / 模拟的推进（BattleScreen._process 读 _board_freeze_active）和所有棋子的动作。
+# 一局最多一次，所以不会有「一卡一卡」的问题；回放时间线整体晚 0.2 秒结束。
+func _begin_lane_clear_freeze(victim: Node3D, killer: Node3D = null) -> void:
+	if not PresentationSettings.hit_stop_allowed():
+		return
+	_board_freeze_until_msec = Time.get_ticks_msec() + int(LANE_CLEAR_FREEZE_SEC * 1000.0)
+	for model in _battle_3d_models.values():
+		if model is Node3D and is_instance_valid(model) and model != victim:
+			_HIT_FEEDBACK.freeze_animation(model as Node3D, LANE_CLEAR_FREEZE_SEC)
+	_begin_lane_clear_spotlight(victim, killer)
+
+
+# 定格那 0.2 秒：全场压暗、两个亮洞，定格一结束「啪」地亮回来。
+# 挂在 _arena 下、z 45：压得住 2D 底图（z −20）和 3D 单位层（z 40），
+# 压不到顶栏 / 血量条 / 字幕（z 80 以上）。只在顿帧开关打开时出现（跟定格同一个开关）。
+func _begin_lane_clear_spotlight(victim: Node3D, killer: Node3D) -> void:
+	if _arena == null or not is_instance_valid(_arena):
+		return
+	_end_lane_clear_spotlight()
+	var spot := ColorRect.new()
+	spot.name = "LaneClearSpotlight"
+	spot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	spot.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	spot.z_index = 45
+	var material := ShaderMaterial.new()
+	material.shader = preload("res://shaders/lane_clear_spotlight.gdshader")
+	var rect_size := _arena.size
+	material.set_shader_parameter("rect_size", rect_size)
+	material.set_shader_parameter("radius", rect_size.y * LANE_CLEAR_SPOT_RADIUS_RATIO)
+	material.set_shader_parameter("spot_a", _lane_clear_screen_point(victim))
+	material.set_shader_parameter("spot_b", _lane_clear_screen_point(killer))
+	material.set_shader_parameter("dim", 0.0)
+	spot.material = material
+	_arena.add_child(spot)
+	_lane_clear_spot = spot
+	_lane_clear_spot_tween = create_tween()
+	_lane_clear_spot_tween.tween_property(material, "shader_parameter/dim", 1.0, LANE_CLEAR_SPOT_IN_SEC)
+	_lane_clear_spot_tween.tween_interval(maxf(0.0, LANE_CLEAR_FREEZE_SEC - LANE_CLEAR_SPOT_IN_SEC))
+	_lane_clear_spot_tween.tween_property(material, "shader_parameter/dim", 0.0, LANE_CLEAR_SPOT_OUT_SEC) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_lane_clear_spot_tween.tween_callback(_end_lane_clear_spotlight)
+
+
+func _end_lane_clear_spotlight() -> void:
+	if _lane_clear_spot_tween != null and _lane_clear_spot_tween.is_valid():
+		_lane_clear_spot_tween.kill()
+	_lane_clear_spot_tween = null
+	if _lane_clear_spot != null and is_instance_valid(_lane_clear_spot):
+		_lane_clear_spot.queue_free()
+	_lane_clear_spot = null
+
+
+# 3D 单位（取 HitAnchor，没有就取身体中段）在 _arena 本地坐标里的位置。
+# 3D 视口 stretch 到容器大小，容器铺满 _arena，所以按「容器 / 视口」比例换算即可。
+func _lane_clear_screen_point(actor: Node3D) -> Vector2:
+	if actor == null or not is_instance_valid(actor) or not actor.is_inside_tree():
+		return Vector2(-10000.0, -10000.0)
+	var hit := actor.get_node_or_null("HitAnchor") as Node3D
+	var world := hit.global_position if hit != null else actor.global_position + Vector3.UP * 0.4
+	return _world_to_arena_point(world)
+
+
+func _world_to_arena_point(world: Vector3) -> Vector2:
+	if _battle_3d_camera == null or _battle_3d_viewport == null or _arena == null:
+		return Vector2(-10000.0, -10000.0)
+	var container := _battle_3d_viewport.get_parent() as Control
+	var view_size := Vector2(_battle_3d_viewport.size)
+	if container == null or view_size.x <= 0.0 or view_size.y <= 0.0:
+		return Vector2(-10000.0, -10000.0)
+	var p := _battle_3d_camera.unproject_position(world) * container.size / view_size
+	return container.position + p
+
+
+# 清场震屏：按 _arena 高度换算（720 高约 12 px、1080 高约 18 px），不受普通屏震 9 px 封顶。
+func _lane_clear_shake() -> void:
+	if _arena == null or not is_instance_valid(_arena):
+		return
+	var px := clampf(_arena.size.y * LANE_CLEAR_SHAKE_RATIO, LANE_CLEAR_SHAKE_MIN_PX, LANE_CLEAR_SHAKE_MAX_PX) \
+		* PresentationSettings.screen_shake_scale()
+	if px <= 0.0:
+		return
+	_shake_px = px
+	_shake_started_msec = Time.get_ticks_msec()
+	_shake_duration_msec = int(LANE_CLEAR_SHAKE_SEC * 1000.0)
+
+
+func _board_freeze_active() -> bool:
+	return Time.get_ticks_msec() < _board_freeze_until_msec
+
+
+# 整个战场容器（2D 底图 + 3D 单位层 + 血条）以中心为轴放大一下再缓回。
+# 和屏震共用 _arena：屏震写 position，这里只写 scale / pivot_offset，互不覆盖。
+func _play_arena_punch() -> void:
+	if _arena == null or not is_instance_valid(_arena) or PresentationSettings.screen_shake_scale() <= 0.0:
+		return
+	_end_arena_punch()
+	_arena.pivot_offset = _lane_clear_pivot if _lane_clear_pivot != Vector2.INF else _arena.size * 0.5
+	_arena_punch_tween = create_tween()
+	_arena_punch_tween.tween_property(_arena, "scale", Vector2.ONE * LANE_CLEAR_PUNCH_SCALE, LANE_CLEAR_PUNCH_IN_SEC) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_arena_punch_tween.tween_property(_arena, "scale", Vector2.ONE, LANE_CLEAR_PUNCH_OUT_SEC) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
+
+
+func _end_arena_punch() -> void:
+	if _arena_punch_tween != null and _arena_punch_tween.is_valid():
+		_arena_punch_tween.kill()
+	_arena_punch_tween = null
+	if _arena != null and is_instance_valid(_arena):
+		_arena.scale = Vector2.ONE
+
+
+# --- 10.18 母灵处决：被处决的棋子先被青光包住、定住不动，再化成魂火收进书里 ---
+#
+# 纯表现层，不改模拟：目标在模拟里当帧就死了，这里只是把尸体多留一会儿。
+# 时长和书的节奏对齐（VFXHeroSkill3D._book_victim 的魂火在 HOLD 秒后才起飞），
+# 两边改一边必须同步改另一边。
+const MOTHER_EXECUTE_HOLD_SEC := 1.0
+const MOTHER_EXECUTE_DISSOLVE_SEC := 0.34
+const MOTHER_EXECUTE_TINT := Color(0.30, 0.96, 1.0)
+const MOTHER_ENCASE_SHADER_CODE := """
+shader_type spatial;
+render_mode unshaded, blend_mix, depth_draw_never, cull_back;
+uniform vec4 tint : source_color = vec4(0.30, 0.96, 1.0, 1.0);
+uniform float glow = 0.0;
+// 覆盖混合而不是纯叠加：叠加在绿色小灵身上会混成黄绿，读不出「青光」。
+// glow 1 时盖住约六成本色、边缘更亮；化开前推到 1.8，整只几乎变成发亮的青色剪影。
+void fragment() {
+	float rim = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 2.2);
+	float band = 0.5 + 0.5 * sin(TIME * 7.0 - VERTEX.y * 22.0);
+	ALBEDO = tint.rgb * (0.85 + rim * 1.2 + band * 0.15);
+	ALPHA = clamp(glow * (0.62 + rim * 0.38), 0.0, 1.0);
+}
+"""
+static var _mother_encase_shader: Shader = null
+# 本局被母灵处决的目标 sim uid → 标记时刻（毫秒）。mother_execute 视觉事件写入，死亡 cue 读走。
+# 两条路径先后不定（视觉事件走 _refresh_battle_vfx，死亡走 Director 的 cue），两种顺序都要接住。
+var _mother_execute_victims: Dictionary = {}
+
+
+func _mark_mother_execute_victim(uid: String) -> void:
+	if uid.is_empty():
+		return
+	_mother_execute_victims[uid] = Time.get_ticks_msec()
+	# 死亡 cue 已经先到、普通下沉已开始：打断它，复位后改走处决定身。
+	for key in _active_death_actors.keys():
+		var entry: Dictionary = _active_death_actors[key]
+		if str(entry.get("uid", "")) != uid or bool(entry.get("mother_execute", false)):
+			continue
+		var actor_value = entry.get("actor")
+		if not (actor_value is Node3D and is_instance_valid(actor_value)):
+			continue
+		var actor := actor_value as Node3D
+		var tween_value = entry.get("tween")
+		if tween_value is Tween and is_instance_valid(tween_value):
+			(tween_value as Tween).kill()
+		actor.position = entry.get("base_position", actor.position)
+		actor.scale = entry.get("base_scale", actor.scale)
+		actor.basis = entry.get("base_basis", actor.basis)
+		for geometry in _death_fade_targets(actor):
+			geometry.transparency = 0.0
+		_active_death_actors.erase(key)
+		_play_mother_execute_death(uid, actor)
+		return
+
+
+# 召唤物会用同一个 uid 反复重生：标记只在处决后短时间内有效，免得下一只同 uid 的单位
+# 正常死亡时也被当成处决。
+const MOTHER_EXECUTE_MARK_TTL_MSEC := 3000
+
+func _is_fresh_mother_execute_victim(uid: String) -> bool:
+	if not _mother_execute_victims.has(uid):
+		return false
+	if Time.get_ticks_msec() - int(_mother_execute_victims[uid]) > MOTHER_EXECUTE_MARK_TTL_MSEC:
+		_mother_execute_victims.erase(uid)
+		return false
+	return true
+
+
+func _play_mother_execute_death(uid: String, actor: Node3D) -> void:
+	_mother_execute_victims.erase(uid)
+	_freeze_actor_animation(actor)
+	if _mother_encase_shader == null:
+		_mother_encase_shader = Shader.new()
+		_mother_encase_shader.code = MOTHER_ENCASE_SHADER_CODE
+	var overlay := ShaderMaterial.new()
+	overlay.shader = _mother_encase_shader
+	overlay.set_shader_parameter("tint", MOTHER_EXECUTE_TINT)
+	overlay.set_shader_parameter("glow", 0.0)
+	var geometries := _death_fade_targets(actor)
+	for geometry in _overlay_targets(geometries):
+		geometry.material_overlay = overlay
+	var set_glow := func(value: float) -> void:
+		overlay.set_shader_parameter("glow", value)
+	var tween := create_tween()
+	_active_death_actors[actor.get_instance_id()] = {
+		"uid": uid,
+		"actor": actor,
+		"tween": tween,
+		"mother_execute": true,
+	}
+	# 青光包住：快速亮起，然后定住等魂火被抽走。
+	tween.tween_method(set_glow, 0.0, 1.0, 0.18).set_ease(Tween.EASE_OUT)
+	tween.tween_interval(maxf(0.0, MOTHER_EXECUTE_HOLD_SEC - 0.18))
+	# 化开：先闪亮一下，身体随之淡出、微缩，魂火（书那边画）同时从身上升起。
+	# ⚠️ 必须 chain() 开新的一步再在步内 parallel()。用 set_parallel(true) 的话，后面
+	#   这几条会并进上面那个 interval 同时开始 —— 实测定身只剩 0.2 秒就开始化开。
+	tween.chain().tween_method(set_glow, 1.0, 1.8, MOTHER_EXECUTE_DISSOLVE_SEC * 0.35)
+	tween.parallel().tween_property(actor, "scale", actor.scale * 0.88, MOTHER_EXECUTE_DISSOLVE_SEC).set_ease(Tween.EASE_IN)
+	for geometry in geometries:
+		tween.parallel().tween_property(geometry, "transparency", 1.0, MOTHER_EXECUTE_DISSOLVE_SEC)
+	tween.chain().tween_callback(func() -> void: _finish_death_actor(uid, actor))
+	_play_unit_node_death_fade(uid, MOTHER_EXECUTE_HOLD_SEC + MOTHER_EXECUTE_DISSOLVE_SEC)
+
+
+# --- 10.18 凤凰涅槃：复活体罩绿色鬼魂光，真死时化成绿色魂粒 -----------------------
+#
+# 用户口径：不要「死灵气息」，要母灵处决那种覆盖在身上的光，绿色。所以直接复用
+# MOTHER_ENCASE_SHADER_CODE（同一份着色器），只把 tint 换成绿色、亮度做呼吸。
+const PHOENIX_GHOST_TINT := Color(0.24, 1.0, 0.46)
+var _phoenix_rise_played: Dictionary = {}
+# 10.18：血怒魔王进入暴走后（HP 跌破 35%，模拟里只进一次、不会退出）才有吸血。
+# 回放帧里没有 blood_rage_active，所以客户端在暴走那一格自己记下来。
+var _blood_rage_entered: Dictionary = {}
+# 暴走后常驻的红色粒子气（sim_uid -> 节点），Boss 死亡 / 消失时释放。
+var _blood_qi_vfx: Dictionary = {}
+
+
+# 暴走期间模型本身罩一层血红光（与母灵处决 / 凤凰鬼魂同一个覆盖着色器），按心跳节奏起伏：
+# 平时只罩一成多（边缘发红、本体细节看得清），每次「咚」一下推到四成左右。
+# 第一版平时三成、峰值六成，实战截图里整只变成纯红剪影，太重。
+const BLOOD_RAGE_GLOW_TINT := Color(1.0, 0.10, 0.12)
+
+func _sync_blood_rage_glow(model_value: Variant) -> void:
+	if not is_instance_valid(model_value) or not (model_value is Node3D):
+		return
+	var model_node := model_value as Node3D
+	var overlay: ShaderMaterial = model_node.get_meta("blood_rage_overlay") if model_node.has_meta("blood_rage_overlay") else null
+	if overlay == null:
+		if _mother_encase_shader == null:
+			_mother_encase_shader = Shader.new()
+			_mother_encase_shader.code = MOTHER_ENCASE_SHADER_CODE
+		overlay = ShaderMaterial.new()
+		overlay.shader = _mother_encase_shader
+		overlay.set_shader_parameter("tint", BLOOD_RAGE_GLOW_TINT)
+		for geometry in _overlay_targets(_death_fade_targets(model_node)):
+			geometry.material_overlay = overlay
+		model_node.set_meta("blood_rage_overlay", overlay)
+	var beat := fposmod(float(Time.get_ticks_msec()) * 0.001, 0.9) / 0.9
+	var thump := exp(-beat * 9.0) + 0.6 * exp(-absf(beat - 0.22) * 18.0)
+	overlay.set_shader_parameter("glow", 0.12 + 0.26 * clampf(thump, 0.0, 1.0))
+
+
+func _sync_blood_qi_vfx(current: Dictionary) -> void:
+	var seen: Dictionary = {}
+	for id: String in _blood_rage_entered.keys():
+		var unit: Dictionary = current.get(id, {})
+		if unit.is_empty() or not bool(unit.get("alive", false)):
+			continue
+		seen[id] = true
+		if not is_instance_valid(_blood_qi_vfx.get(id)):
+			_blood_qi_vfx[id] = _play_boss_procedural("blood_qi", unit.get("world_foot", Vector3.ZERO), unit.get("world_foot", Vector3.ZERO), {"boss_node": unit.get("model_node")})
+		_sync_blood_rage_glow(unit.get("model_node"))
+	for id: String in _blood_qi_vfx.keys().duplicate():
+		if seen.has(id):
+			continue
+		var node: Variant = _blood_qi_vfx[id]
+		if is_instance_valid(node):
+			(node as Node).queue_free()
+		_blood_qi_vfx.erase(id)
+
+
+# 10.18：噬魂 / 灭世裁决者的演出挂在模拟器补的 sfx_proc 事件上 —— 它们的旧判据
+# （killer_uid / apocalypse_due）都不在回放帧里，真实对局一次都没播过。
+# 事件在单人模拟和回放两条路径上都有，所以这是唯一的派发口。
+func _play_boss_event_vfx(event: Dictionary, current: Dictionary) -> void:
+	var skill_id := str(event.get("skill_id", ""))
+	if not skill_id in ["soul_devour", "apocalypse_charge", "apocalypse_impact", "apocalypse_stop"]:
+		return
+	var boss := _vfx_unit_by_sim_uid(current, str(event.get("source_uid", "")))
+	if boss.is_empty():
+		boss = _vfx_unit_by_sim_uid(_vfx_prev_units, str(event.get("source_uid", "")))
+	if boss.is_empty():
+		return
+	var foot: Vector3 = boss.get("world_foot", Vector3.ZERO)
+	match skill_id:
+		"soul_devour":
+			# 死者当帧可能已经不在快照里，退回上一帧找。
+			var victim := _vfx_unit_by_sim_uid(current, str(event.get("target_uid", "")))
+			if victim.is_empty():
+				victim = _vfx_unit_by_sim_uid(_vfx_prev_units, str(event.get("target_uid", "")))
+			var at: Vector3 = victim.get("world_hit", victim.get("world_foot", foot)) if not victim.is_empty() else foot
+			_play_boss_procedural("soul_devour", foot, at, {"boss_node": boss.get("model_node")})
+		"apocalypse_charge":
+			_play_boss_procedural("apocalypse_charge", foot, foot, {"lane_targets": _apocalypse_lane_targets(boss, current)})
+		"apocalypse_impact":
+			var targets := _apocalypse_lane_targets(boss, current)
+			if targets.is_empty():
+				targets.append(foot)
+			_play_boss_procedural("apocalypse_complete", foot, targets[0], {"targets": targets})
+		"apocalypse_stop":
+			_play_boss_procedural("apocalypse_interrupt", foot, foot)
+
+
+# 灭世裁决者一击打的是同一路上所有能打到的敌人；被这一下打死的单位本帧可能已不在，
+# 所以从上一帧取位置；开局第一下蓄力时还没有上一帧，退回本帧。
+func _apocalypse_lane_targets(boss: Dictionary, current: Dictionary) -> Array:
+	var out: Array = []
+	var team := str(boss.get("team", ""))
+	var lane := int(boss.get("lane", -1))
+	var units: Dictionary = _vfx_prev_units if not _vfx_prev_units.is_empty() else current
+	for id: String in units.keys():
+		var u: Dictionary = units[id]
+		if not bool(u.get("alive", false)) or str(u.get("team", "")) == team:
+			continue
+		if lane >= 0 and int(u.get("lane", -1)) >= 0 and int(u.get("lane", -1)) != lane:
+			continue
+		out.append(u.get("world_foot", Vector3.ZERO))
+	return out
+
+func _sync_phoenix_ghost(model_node: Node3D) -> void:
+	if model_node == null or not is_instance_valid(model_node):
+		return
+	var overlay: ShaderMaterial = model_node.get_meta("phoenix_ghost_overlay") if model_node.has_meta("phoenix_ghost_overlay") else null
+	if overlay == null:
+		if _mother_encase_shader == null:
+			_mother_encase_shader = Shader.new()
+			_mother_encase_shader.code = MOTHER_ENCASE_SHADER_CODE
+		overlay = ShaderMaterial.new()
+		overlay.shader = _mother_encase_shader
+		overlay.set_shader_parameter("tint", PHOENIX_GHOST_TINT)
+		for geometry in _overlay_targets(_death_fade_targets(model_node)):
+			geometry.material_overlay = overlay
+		model_node.set_meta("phoenix_ghost_overlay", overlay)
+	# 呼吸：0.55 ~ 0.85 之间起伏，看得出「这是借来的命」又不至于盖死本体。
+	overlay.set_shader_parameter("glow", 0.70 + 0.15 * sin(float(Time.get_ticks_msec()) * 0.006))
+
+
+# 复活体 uid 形如「<原 uid>_phoenix_<n>」（BattleSimTreasures._queue_phoenix_revive）；
+# 再用状态里的 phoenix_used 兜一次，两者都成立才算。
+func _is_phoenix_revived_uid(uid: String) -> bool:
+	if not uid.contains("_phoenix_"):
+		return false
+	for side in ["player", "enemy"]:
+		for f in _state.get(side, []):
+			if typeof(f) == TYPE_DICTIONARY and str(f.get("uid", "")) == uid:
+				return bool(f.get("phoenix_used", false))
+	return false
+
+
+func _play_phoenix_release(uid: String, actor: Node3D) -> void:
+	_freeze_actor_animation(actor)
+	var overlay: ShaderMaterial = actor.get_meta("phoenix_ghost_overlay") if actor.has_meta("phoenix_ghost_overlay") else null
+	var geometries := _death_fade_targets(actor)
+	var tween := create_tween()
+	_active_death_actors[actor.get_instance_id()] = {"uid": uid, "actor": actor, "tween": tween, "mother_execute": true}
+	if overlay != null:
+		var set_glow := func(value: float) -> void:
+			overlay.set_shader_parameter("glow", value)
+		tween.tween_method(set_glow, 0.85, 1.8, MOTHER_EXECUTE_DISSOLVE_SEC * 0.4)
+		tween.parallel().tween_property(actor, "scale", actor.scale * 0.85, MOTHER_EXECUTE_DISSOLVE_SEC).set_ease(Tween.EASE_IN)
+	else:
+		tween.tween_property(actor, "scale", actor.scale * 0.85, MOTHER_EXECUTE_DISSOLVE_SEC).set_ease(Tween.EASE_IN)
+	for geometry in geometries:
+		tween.parallel().tween_property(geometry, "transparency", 1.0, MOTHER_EXECUTE_DISSOLVE_SEC)
+	tween.chain().tween_callback(func() -> void: _finish_death_actor(uid, actor))
+	_play_unit_node_death_fade(uid, MOTHER_EXECUTE_DISSOLVE_SEC)
+	var foot := actor.global_position
+	var h := _model_height_of(actor)
+	_play_unit_procedural("treasure_phoenix_release", foot, foot, {"origin_height": h if h > 0.0 else 0.98})
+
+
+# 定身：停掉模型自己的动画（AnimationPlayer 暂停、AnimationTree 关掉）和残留的前冲 tween。
+# 尸体已经从 _battle_3d_models 摘掉，渲染层不会再驱动它的动作。
+func _freeze_actor_animation(actor: Node3D) -> void:
+	if actor.has_meta("lunge_tween"):
+		var lunge = actor.get_meta("lunge_tween")
+		if lunge is Tween and (lunge as Tween).is_valid():
+			(lunge as Tween).kill()
+	var pending: Array[Node] = [actor]
+	while not pending.is_empty():
+		var node: Node = pending.pop_back()
+		if node is AnimationPlayer:
+			(node as AnimationPlayer).pause()
+		elif node is AnimationTree:
+			(node as AnimationTree).active = false
+		pending.append_array(node.get_children())
+
+
+func _arm_death_claim_watchdog(uid: String) -> void:
+	_death_claim_serial += 1
+	var token := _death_claim_serial
+	_pending_death_claim_tokens[uid] = token
+	var tree := get_tree()
+	if tree == null:
+		return
+	var timer := tree.create_timer(DEATH_CLAIM_WATCHDOG_SEC)
+	timer.timeout.connect(_release_stale_death_claim.bind(uid, token))
+
+
+func _release_stale_death_claim(uid: String, token: int) -> void:
+	if int(_pending_death_claim_tokens.get(uid, -1)) != token:
+		return
+	_pending_death_claim_tokens.erase(uid)
+	var actor = _cue_corpses.get(uid)
+	_cue_corpses.erase(uid)
+	if actor is Node3D and is_instance_valid(actor):
+		release_death_actor(uid, actor as Node3D)
+	_release_dying_unit_node(uid)
+
+
+# 整棵子树里所有能调 transparency 的节点。
+#
+# 状态图标（Sprite3D）也在里面：它们挂在 HeadAnchor/BodyAnchor 下面，是 actor 的
+# 孙节点。detach_actor_for_death() 已经把 StatusVFXController 停掉了，所以这里
+# 改 transparency 不会被它的 _process 每帧覆写回去。
+func _death_fade_targets(root: Node) -> Array[GeometryInstance3D]:
+	var out: Array[GeometryInstance3D] = []
+	var pending: Array[Node] = [root]
+	while not pending.is_empty():
+		var node: Node = pending.pop_back()
+		if node is GeometryInstance3D:
+			out.append(node as GeometryInstance3D)
+		for child in node.get_children():
+			pending.append(child)
+	return out
+
+
+# 罩光（母灵处决青光 / 凤凰鬼魂光）只给真正的模型网格：导入的模型是 ArrayMesh；
+# 脚下选中圈、影子、状态图标这些是 Quad/Plane 之类的 PrimitiveMesh 或 Sprite3D，
+# 罩上去会变成一块块纯色方块（10.18 凤凰截图里看到的绿色方块）。
+func _overlay_targets(geometries: Array) -> Array[MeshInstance3D]:
+	var out: Array[MeshInstance3D] = []
+	for geometry in geometries:
+		if geometry is MeshInstance3D and (geometry as MeshInstance3D).mesh is ArrayMesh:
+			out.append(geometry as MeshInstance3D)
+	return out
+
+
+func _cue_unit_snapshot(sim_uid: String) -> Dictionary:
+	if sim_uid.is_empty():
+		return {}
+	var snapshot: Dictionary = _vfx_prev_units.get(sim_uid, {})
+	return snapshot
+
+
+# --- 9.17 人王阵亡音 ---------------------------------------------------------
+
+# 已经响过的 uid。**去重是必须的，不是保险**：DamageService.apply_damage 对一个
+# 已经 hp == 0 的目标再打一次时 `died_now` 会再次为 true（`hp = maxi(0, 0 - remaining)`
+# 仍然是 0），所以同一个 uid 的 death 可能被重复投递。BattlePresentationDirector
+# 那层虽然有 _seen_event_keys 去重，但它只覆盖 replay 那条路。
+#
+# 按 uid 去重；仅本座位的人王通过下面的归属检查，队友及敌方不播放。
+#
+# ★ 9.20 明确：人王这一类**不参与**「放宽到友军」那次改动（见 `_is_own_or_ally_unit`）。
+#   用户原话是「包括人王升级时的特效表现也能被友军看见」，但在追问后改口：
+#   拿不到队友人王的成长层数，无法判断它是否还该升级 ——「那就改为人王的音效和
+#   特效都不被友军看见」。所以本函数与 `_local_living_human_king` 一律继续用
+#   `_is_local_owned_unit`（仅自身）。
+var _human_king_death_sfx_uids: Dictionary = {}
+
+
+func _maybe_play_human_king_death_sfx(victim_uid: String) -> void:
+	if victim_uid.is_empty() or _human_king_death_sfx_uids.has(victim_uid):
+		return
+	if not _is_unit_id(victim_uid, "human_king") or not _is_local_owned_unit(victim_uid):
+		return
+	_human_king_death_sfx_uids[victim_uid] = true
+	SfxService.play(SfxService.CUE_HUMAN_KING_DEATH)
+
+
+# --- 9.19 人王「战斗结束未阵亡 · 奖励属性」音 + 升级闪光 ----------------------
+
+# 每场只播一次。`battle_finished` 前后有两条收尾路径（本地模拟走
+# BattleResult._emit_finished，replay 走 BattleScreen._finish_replay），
+# 都用 `_return_emitted` 保证只走一次；这个标记是第二道保险。
+# 每局开始由 BattleScreen._start_replay() 清空。
+var _human_king_reward_played := false
+
+
+# 战斗结束那一刻调用。
+#
+# 用户给的两个硬条件**缺一不可**：
+#   ① 本次战斗**自身人王未阵亡** —— 人王的唯一技是「参战且战后仍存活才成长」
+#      （Main._apply_post_battle_unit_outcomes 按 result.king_outcomes 判），
+#      阵亡的人王下一回合直接被移出棋盘，成长无从谈起；
+#   ② 本次**还有成长空间**（`king_growth_stacks < max_stacks`）—— 已经到上限
+#      就没有属性加成了，这时响奖励音是在骗玩家。
+#
+# 用户口径：**不要在战后结算面板里响，要在战斗结束那一刻响**，并且要在
+# 自身人王身上出一个只给自己看的闪光升级特效。所以这条挂在收尾路径的
+# 「水晶演出之前」——赢了的那一方棋子随后会被水晶演出逐一出场带走，
+# 挂在那之后就没人王可以闪光了。
+func _play_human_king_reward() -> void:
+	if _human_king_reward_played:
+		return
+	var king := _local_living_human_king()
+	if king.is_empty():
+		return
+	if not _human_king_can_grow():
+		return
+	_human_king_reward_played = true
+	# 升级金光：专用特效 `HUMAN_KING_REWARD`（金色扩散环 + 地面金色光晕 +
+	# 金色迸发 + 上升金粒子），落在**人王本体**脚下 —— 用户要的是「在自身人王
+	# 身上」，不是队伍中心。归属判定在 `_local_living_human_king()` 里做掉了，
+	# 队友 / 敌方的人王根本走不到这里。
+	#
+	# ★ 这里**不再调 `_play_unit_procedural()`**。那是 3D 技能入口，只认
+	#   `BossProceduralVFX3D.UNIT_SKILLS` 与 3D composer 里的技能 id；早先传的是
+	#   2D 特效 id（`GROWTH_AURA`），会一路落到 composer 的默认分支 → **静默无
+	#   表现**，等于白写一行。要加 3D 层的金光，得先在 `BossSkillVFXComposer3D`
+	#   里加一条分支（还没做）。
+	_spawn_vfx("HUMAN_KING_REWARD", king.get("foot_pos", Vector2.ZERO))
+	SfxService.play(SfxService.CUE_HUMAN_KING_REWARD)
+
+
+# 本座位还活着的人王。归属一律走 `_is_local_owned_unit`（owner_slot == local_slot）。
+#
+# ★ 9.20：**刻意不用 `_is_own_or_ally_unit`。** 用户先要求「人王升级时的特效
+#   友军也能看见」，追问后改口「人王的音效和特效都不被友军看见」——原因是本地
+#   拿不到队友人王的成长层数（`NetProtocol._minimal_slots` 的棋盘提交载荷里
+#   没有 `king_growth_stacks`），判不出它是否已封顶，宁可不播也不误播。
+#   所以人王这一路（阵亡音 / 奖励音 / 升级金光）全部保持**仅自身**。
+# 用数据表 id（human_king）判定而不是名字：名字会被本地化覆写，id 永远稳定。
+func _local_living_human_king() -> Dictionary:
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if typeof(raw) != TYPE_DICTIONARY:
+				continue
+			var sim_uid := str(raw.get("uid", ""))
+			if str(raw.get("id", "")) != "human_king" or not bool(raw.get("alive", false)):
+				continue
+			if not _is_local_owned_unit(sim_uid):
+				continue
+			var snap := _cue_unit_snapshot(sim_uid)
+			if not snap.is_empty():
+				return snap
+			# 收尾帧快照可能已经把它剪掉，用手头的位置字段拼一个够用的锚点。
+			var sim_pos := _fighter_sim_pos(raw)
+			return {
+				"foot_pos": _sim_to_arena(sim_pos),
+				"world_foot": _sim_to_world_pos(sim_pos),
+			}
+	return {}
+
+
+# 本座位人王这一局结束**还能不能**拿到成长。false = 已到上限，或棋盘上没有人王。
+#
+# 判据就是战后真正长的那一步用的 UnitGrowth.king_can_grow：上限按星级读
+# （`max_stacks` 在 star4 里被覆写，1~3 星 5 层 / 4 星 8 层），直接读原表项会把
+# 4 星的上限读成 5 层，于是人王明明已经封顶了还在响奖励音。
+func _human_king_can_grow() -> bool:
+	for cell in GameState.board_slots:
+		if typeof(cell) == TYPE_DICTIONARY and _UnitGrowth.is_king(cell):
+			return _UnitGrowth.king_can_grow(cell)
+	return false
+
+
+# 这个 uid 是不是指定的数据表棋子。两条路都试：
+#
+#   1. `_vfx_prev_units[uid].unit_id` —— 快照里已经存了（_collect_vfx_units 写的），
+#      最省事，但快照是按「本帧还在不在」剪枝的，某个时序下可能已经没了；
+#   2. 直接扫 `_state` 的双方单位表 —— cue 到得比快照清理晚时的兜底。
+#
+# **用数据表 id（human_king）判定，不用名字**：名字会随本地化变，
+# 而 data/units/race_units.json 里的 id 永远稳定。两条路都查不到就返回 false ——
+# 宁可少响一声，也不要把别人的阵亡音播给人王。
+func _is_local_owned_unit(sim_uid: String) -> bool:
+	var unit := _state_unit_for(sim_uid)
+	if unit.is_empty():
+		return false
+	if NetworkService.team_active or GameState.team_mode:
+		var local_slot := NetworkService.team_local_slot if NetworkService.team_active else 0
+		return local_slot >= 0 and int(unit.get("owner_slot", -1)) == local_slot
+	return str(unit.get("team", "")) == "player" and int(unit.get("owner_slot", -1)) <= 0
+
+
+# sim_uid -> `_state` 里那份原始棋子字典。
+#
+# 两条路都试：`_cue_unit_snapshot` 那份快照最省事，但它按「本帧还在不在」剪枝，
+# 某个时序下可能已经没了；再直接扫 `_state` 的双方单位表兜底。
+#
+# 抽出来是因为 9.20 起有三个判据（自身 / 自身+友军 / 星级）共用同一套查找 ——
+# 原来这段在三处各抄了一遍。
+func _state_unit_for(sim_uid: String) -> Dictionary:
+	var unit: Dictionary = _cue_unit_snapshot(sim_uid)
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if raw is Dictionary and str(raw.get("uid", "")) == sim_uid:
+				unit = raw
+	return unit
+
+
+# 9.20：归属判据的**放宽版** —— 「自身 + 友军」。
+#
+# 用户口径：战场上的音效此前只能听见**自己**的棋子，现在要能听见**自己和友军**的。
+# 3v3 里队友是**另外两个 owner_slot**（`GameConstants.TEAM_SIDE_SIZE` = 3，
+# 红队 0-2 / 蓝队 3-5），所以判据从 `owner == local_slot` 变成
+# 「owner 与 local_slot 同队」。
+#
+# **单机下的行为不变**：离线单人局里 `team_mode` 为真、local_slot 恒为 0，
+# 而自己那一队只有 0 号位是真人棋盘，1/2 号位是空位或自己加的假想敌 ——
+# 也就是说单机没有「友军」可言，放宽前后等价。
+#
+# ★ 人王相关的三处（阵亡音、战后奖励音、升级金光）**刻意不用本函数**：
+#   用户明确要求人王的音效与特效都保持只给自己看，见 `_local_living_human_king`。
+func _is_own_or_ally_unit(sim_uid: String) -> bool:
+	var unit := _state_unit_for(sim_uid)
+	if unit.is_empty():
+		return false
+	if NetworkService.team_active or GameState.team_mode:
+		var local_slot := NetworkService.team_local_slot if NetworkService.team_active else 0
+		var owner := int(unit.get("owner_slot", -1))
+		if local_slot < 0 or owner < 0:
+			return false
+		return GameConstants.team_of_slot(owner) == GameConstants.team_of_slot(local_slot)
+	return _is_local_owned_unit(sim_uid)
+
+
+# 9.18：该 sim_uid 对应单位是否四星。快照不存 star，所以直接扫 `_state` 双方表
+# （与 `_is_local_owned_unit` 同款兜底）。`GameConstants.MAX_STAR` 即 4。
+# 只用于四星技能音效门控 —— 宁可少响，也不在普攻上升沿误触。
+func _is_star4(sim_uid: String) -> bool:
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if raw is Dictionary and str(raw.get("uid", "")) == sim_uid:
+				return int(raw.get("star", 1)) == GameConstants.MAX_STAR
+	return false
+
+func _is_unit_id(sim_uid: String, unit_id: String) -> bool:
+	if str(_cue_unit_snapshot(sim_uid).get("unit_id", "")) == unit_id:
+		return true
+	for side in ["player", "enemy"]:
+		for f in (_state.get(side, []) as Array):
+			if typeof(f) != TYPE_DICTIONARY:
+				continue
+			var fighter: Dictionary = f
+			if str(fighter.get("uid", "")) == sim_uid:
+				return str(fighter.get("id", "")) == unit_id
+	return false
+
+
+func _vfx_unit_by_sim_uid(current:Dictionary,sim_uid:String)->Dictionary:
+	for id:String in current.keys():
+		var unit:Dictionary=current[id]
+		if str(unit.get("sim_uid",""))==sim_uid:return unit
+	return {}
+
+# 9.24 第四轮：解析模拟器记录下来的技能目标。
+#
+# `vfx_skill_target_uid` 这个字段有**两种写法**，都从这里读，调用方不必分辨：
+#   · 单目标技：一个 uid（历史写法，`_mark_vfx_target`）；
+#   · 多目标技：逗号连接的 uid 列表（`_mark_vfx_targets`，神王全体落雷）。
+# uid 由模拟器生成，不含逗号，所以逗号是安全分隔符。
+# 空串 -> 空数组，调用方据此退回旧口径（老回放 / 没有记录）。
+static func _vfx_target_uids(raw:String)->PackedStringArray:
+	if raw.is_empty():
+		return PackedStringArray()
+	return raw.split(",", false)
+
+# 把模拟器记下来的技能目标 uid 列表映射成**落点集合**（世界坐标）。
+#
+# static 纯函数，理由同上一轮的 `apply_latched_team`：文本断言挡不住
+# `if false and ...` 这类变异，判据必须能落在**行为**上 —— 探针直接调这个函数，
+# 给一份假的 `current` 就能验「活着的才落雷 / 认不得的 uid 要跳过 / 顺序要保住」。
+#
+# ★ 只要求「这一只在 current 里能找到」，**不**要求它还活着 —— 这一点很关键。
+#
+# 记录是在**选目标的时候**写下的，那时它一定活着（`_skill_god_king` 里
+# `_can_target` + `alive` 都过了一遍）。反过来推：能出现在记录里的，必然是本技能
+# 认下的目标。同一帧里它可能已经被**本技能的雷**打死 —— 那雷恰恰是最该看见的一道。
+# 早先按 `alive` 过滤，等于把「劈死目标的那道雷」删掉：目标无声倒下、头顶没雷。
+# 而且 `alive=false` 的单位**不会**被移出 `state.player/enemy`（模拟器只标记不删），
+# 所以它在 current 里始终找得到、`world_foot` 也仍然有效，落雷点就在它倒下的位置。
+#
+# 认不得的 uid（老回放里没有这只 / 已离场）才跳过。
+static func resolve_skill_target_positions(current:Dictionary, raw:String) -> Array:
+	var out:Array=[]
+	for tid in _vfx_target_uids(raw):
+		var hit:Dictionary={}
+		for id:String in current.keys():
+			var unit:Dictionary=current[id]
+			if str(unit.get("sim_uid",""))==tid:
+				hit=unit
+				break
+		if hit.is_empty():
+			continue
+		out.append(hit.get("world_foot",Vector3.ZERO))
+	return out
+
+func _ensure_hit_number_layer() -> void:
+	if _hit_number_layer != null and is_instance_valid(_hit_number_layer):
+		return
+	if _arena == null:
+		return
+	_hit_number_layer = Control.new()
+	_hit_number_layer.name = "HitNumbers"
+	_hit_number_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hit_number_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Unit nodes use a position-based z_index (int(round(mapped.y)), up to ~arena
+	# height, i.e. ~1000+), so the numbers must sit near the top of the z range or
+	# they render behind the units. z_index max is 4096.
+	_hit_number_layer.z_index = 4096
+	_arena.add_child(_hit_number_layer)
+	_hit_number_pool.clear()
+	for _i in _HIT_NUMBER_POOL_SIZE:
+		var lbl := Label.new()
+		lbl.visible = false
+		lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		lbl.add_theme_constant_override("outline_size", 5)
+		lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
+		_hit_number_layer.add_child(lbl)
+		_hit_number_pool.append(lbl)
+
+# god / dark / undead / human get distinct normal-attack number colors so you can
+# read a unit's race off its hits. Unlisted races fall back to near-white.
+const _RACE_NUMBER_COLORS := {
+	"god": Color(1.0, 1.0, 1.0),      # 神 = white
+	"dark": Color(0.07, 0.07, 0.09),  # 暗 = black (uses a light outline below)
+	"undead": Color(0.30, 1.0, 0.90), # 灵 = cyan
+	"human": Color(0.36, 0.62, 1.0),  # 人 = blue
+	"crimson": Color(1.0, 0.18, 0.16), # 赤律 = red
+}
+
+# Spawns one floating number at a screen-space head anchor. kind is
+# "dmg" | "heal" | "shield" | "miss"; crit/skill tweak damage styling. race colors
+# the normal-attack tier only.
+func _spawn_hit_number(head_pos: Vector2, amount: int, kind: String, crit: bool, is_skill: bool, race: String = "") -> void:
+	if amount <= 0 and not (kind in ["miss", "dodge", "execute"]):
+		return
+	_ensure_hit_number_layer()
+	if _hit_number_pool.is_empty():
+		return
+	var lbl: Label = _hit_number_pool[_hit_number_cursor]
+	_hit_number_cursor = (_hit_number_cursor + 1) % _hit_number_pool.size()
+	if not is_instance_valid(lbl):
+		return
+	if lbl.has_meta("hit_tween"):
+		var prev_tween: Variant = lbl.get_meta("hit_tween")
+		if prev_tween is Tween and (prev_tween as Tween).is_valid():
+			(prev_tween as Tween).kill()
+
+	var color: Color
+	var font_size: int
+	var text: String
+	# Per-tier motion/opacity. Normal basics are deliberately the quietest layer:
+	# small, faint and short-lived so they read as background chatter while crits
+	# and skills pop above them.
+	var base_alpha := 1.0
+	var rise := 46.0
+	var dur := 0.8
+	var pop := true
+	var tone: Dictionary = _TREASURE_NUMBER_TONES.get(race, {}) if kind == "dmg" else {}
+	if kind == "gold":
+		tone = {"color": Color(1.0, 0.84, 0.22), "size": 22, "outline": Color(0.30, 0.16, 0.0, 0.95), "prefix": "+"}
+	match kind if tone.is_empty() else "__tone":
+		"__tone":
+			color = tone["color"]
+			text = str(tone.get("prefix", "")) + str(amount)
+			font_size = int(tone["size"])
+			rise = 52.0
+			dur = 0.75
+		"miss":
+			color = Color(0.72, 0.91, 1.0)
+			text = "MISS"
+			font_size = 22
+			rise = 40.0
+			dur = 0.62
+		# 10.31 防卫套闪避：和普通 MISS 区分开，青色、稍大。
+		"dodge":
+			color = Color(0.50, 0.95, 1.0)
+			text = "DODGE" if LocaleManager.get_locale().begins_with("en") else "闪避"
+			font_size = 24
+			rise = 44.0
+			dur = 0.66
+		# 10.31 攻击套斩杀：全场最大的一个字，赤红。
+		"execute":
+			color = Color(1.0, 0.30, 0.16)
+			text = "EXECUTE" if LocaleManager.get_locale().begins_with("en") else "斩"
+			font_size = 44
+			rise = 54.0
+			dur = 0.9
+		"heal":
+			color = Color(0.36, 1.0, 0.46)
+			text = "+%d" % amount
+			font_size = 20
+		"shield":
+			color = Color(0.46, 0.82, 1.0)
+			text = "+%d" % amount
+			font_size = 18
+		_:
+			if crit:
+				color = Color(1.0, 0.56, 0.16)
+				text = "%d!" % amount
+				font_size = 30
+				rise = 60.0
+				dur = 0.72
+			elif is_skill:
+				color = Color(1.0, 0.98, 0.66)
+				text = str(amount)
+				font_size = 24
+				dur = 0.7
+			else:
+				# Normal attack: the quiet background layer, but still clearly legible.
+				# Color by attacker race so hits are readable at a glance.
+				color = _RACE_NUMBER_COLORS.get(race, Color(0.94, 0.96, 1.0))
+				text = str(amount)
+				font_size = 18
+				base_alpha = 0.88
+				rise = 34.0
+				dur = 0.5
+				pop = false
+	lbl.add_theme_font_size_override("font_size", font_size)
+	lbl.add_theme_color_override("font_color", color)
+	# Dark race numbers are near-black, so give them a light outline to stay legible;
+	# everything else keeps the default black outline.
+	if not tone.is_empty():
+		lbl.add_theme_color_override("font_outline_color", tone.get("outline", Color(0, 0, 0, 0.95)))
+	elif kind == "execute":
+		lbl.add_theme_color_override("font_outline_color", Color(0.20, 0.02, 0.0, 1.0))
+	else:
+		lbl.add_theme_color_override("font_outline_color", Color(0.92, 0.94, 1.0, 0.95) if race == "dark" and kind == "dmg" and not crit and not is_skill else Color(0, 0, 0, 0.95))
+	lbl.text = text
+	lbl.reset_size()
+	var sz := lbl.get_minimum_size()
+	lbl.size = sz
+	lbl.pivot_offset = sz * 0.5
+	lbl.modulate = Color(1, 1, 1, base_alpha)
+	lbl.scale = Vector2.ONE
+	lbl.visible = true
+	# Small horizontal jitter so numbers stacking on one target don't perfectly overlap.
+	var jitter := randf_range(-16.0, 16.0)
+	lbl.global_position = head_pos + Vector2(jitter - sz.x * 0.5, -sz.y * 0.5)
+	var start := lbl.position
+
+	var tw := lbl.create_tween()
+	lbl.set_meta("hit_tween", tw)
+	tw.set_parallel(true)
+	tw.tween_property(lbl, "position", start + Vector2(0, -rise), dur).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(lbl, "modulate:a", 0.0, dur * 0.55).set_delay(dur * 0.45)
+	# 10.21 数字弹出：暴击 / 技能「先大后落」—— 从 1.7 倍砸回原大，比从小长大更像一记重击；
+	# 普攻原来完全不动，现在给一个很轻的弹出（仍是最安静的一层）。
+	if pop:
+		lbl.scale = Vector2(1.7, 1.7) if crit else Vector2(1.35, 1.35)
+		tw.tween_property(lbl, "scale", Vector2.ONE, 0.16).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	elif kind == "dmg":
+		lbl.scale = Vector2(0.8, 0.8)
+		tw.tween_property(lbl, "scale", Vector2.ONE, 0.10).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.set_parallel(false)
+	tw.tween_callback(lbl.hide)
+
+func _spawn_vfx(vfx_id: String, pos: Vector2, config: Dictionary = {}) -> void:
+	VFXManager.spawn_vfx(vfx_id, pos, config)
+
+func _spawn_projectile(vfx_id: String, start_pos: Vector2, target_node: Node, target_pos: Vector2, config: Dictionary = {}) -> void:
+	config["target_position"] = target_pos
+	VFXManager.spawn_projectile_vfx(vfx_id, start_pos, target_node, config)
+
+func _hitstop(duration: float) -> void:
+	VFXManager.play_hitstop(duration)
+
+func _screen_shake(strength: float, duration: float) -> void:
+	var px := minf(strength * SHAKE_PX_PER_STRENGTH * PresentationSettings.screen_shake_scale(), SHAKE_MAX_PX)
+	if px <= 0.0:
+		return
+	# 正在震时新来一下：取「剩余幅度」和新幅度的较大者重新起跳，不叠加成更大的震。
+	var elapsed := Time.get_ticks_msec() - _shake_started_msec
+	var left := clampf(1.0 - float(elapsed) / float(maxi(1, _shake_duration_msec)), 0.0, 1.0)
+	var remaining := _shake_px * left * left
+	if px < remaining:
+		return
+	_shake_px = px
+	_shake_started_msec = Time.get_ticks_msec()
+	_shake_duration_msec = maxi(1, int(round(duration * 1000.0)))
+
+func _unit_node_for_id(id: String) -> Node:
+	if _unit_nodes.has(id):
+		return _unit_nodes[id]
+	return null
+
+func _unit_anchor_node_for_id(id: String, anchor_name: String) -> Node:
+	var unit_node := _unit_node_for_id(id)
+	if unit_node == null or not is_instance_valid(unit_node):
+		return null
+	return unit_node.get_node_or_null(anchor_name)
+
+func _unit_anchor_global_position(unit_node: Node, anchor_name: String, fallback: Vector2) -> Vector2:
+	if unit_node == null or not is_instance_valid(unit_node):
+		return fallback
+	var anchor := unit_node.get_node_or_null(anchor_name)
+	if anchor is Node2D:
+		return (anchor as Node2D).global_position
+	if anchor is Control:
+		var c := anchor as Control
+		return c.global_position + c.size * 0.5
+	return fallback
+
+func _opposite_team(team: String) -> String:
+	return "enemy" if team == "player" else "player"
+
+
+# --- 赤律族（race = crimson）特效接线 ---------------------------------------
+#
+# 原则与 docs/CODEX_VFX_WORKFLOW.md 一致：只消费已经发生的权威结果，不为特效
+# 再掷 RngService，不改任何模拟字段。
+#
+#   主动技（skill_ready 上升沿）  → _crimson_active_context() 补齐表现上下文
+#   被动触发（unit_skill_proc）   → _play_crimson_proc()；事件只在格挡/破甲/鼓点
+#                                    真的生效时由模拟器补发（DamageService / CrimsonCombat）
+#   血猎者 / 穿云弩手             → 复用已有的 hit_number / impact 事件（同 skill_id）
+#
+# 命中类表现按「起手拍 + 弹体飞行」延后，落在弹体真正到达的那一刻；
+# 飞行时长与 VFXCrimsonAttack3D 共用 CrimsonVFXCatalog.flight_time()。
+
+func _crimson_active_context(sid: String, unit: Dictionary, target: Dictionary, current: Dictionary, context: Dictionary) -> Vector3:
+	context["origin_foot"] = unit.get("world_foot", Vector3.ZERO)
+	var caster_state := _state_unit_for(str(unit.get("sim_uid", "")))
+	match sid:
+		"random_ally_buff":
+			# 记录是逗号列表（四星选 2 个友军），逐个解析；认不得的 uid 跳过，不猜。
+			context["targets"] = resolve_skill_target_positions(current, str(unit.get("skill_target_uid", "")))
+			# 音符挂在被增益者身上、跟着人走，持续到增益结束（数据 buff_duration，三选一的三种都按它记时）。
+			var nodes: Array = []
+			for tid in _vfx_target_uids(str(unit.get("skill_target_uid", ""))):
+				var ally := _vfx_unit_by_sim_uid(current, tid)
+				if not ally.is_empty():
+					nodes.append(ally.get("model_node"))
+			context["target_nodes"] = nodes
+			context["duration"] = float((caster_state.get("def", {}) as Dictionary).get("buff_duration", 3.0))
+			return unit.get("world_foot", Vector3.ZERO)
+		"frost_status":
+			# 中心 = 模拟器记录的目标；半径 = 该单位数据里的 aoe_radius（四星同值），
+			# 经与光之卫士嘲讽圈相同的 X/Z 映射变成战场椭圆。
+			var radius := float((caster_state.get("def", {}) as Dictionary).get("aoe_radius", 144.0))
+			context["world_radius"] = _guardian_taunt_world_radius(radius)
+			var affected: Array = []
+			if not target.is_empty():
+				var center_sim: Vector2 = target.get("sim_pos", Vector2.ZERO)
+				for id: String in current.keys():
+					var other: Dictionary = current[id]
+					if not bool(other.get("alive", false)) or str(other.get("team", "")) == str(unit.get("team", "")):
+						continue
+					var other_sim: Vector2 = other.get("sim_pos", Vector2.ZERO)
+					if other_sim.distance_to(center_sim) > radius + 0.5:
+						continue
+					var statuses: Dictionary = _state_unit_for(str(other.get("sim_uid", ""))).get("statuses", {})
+					if statuses.has("ice_vulnerable"):
+						affected.append(other.get("world_foot", Vector3.ZERO))
+			context["targets"] = affected
+			return target.get("world_hit", target.get("world_foot", unit.get("world_foot", Vector3.ZERO)))
+		"aoe_silence":
+			# 目标集合 = 施法时锁定的整组 uid；封印只画在这一帧真的带着沉默的目标上
+			# （控制免疫 / Boss 减半不影响「有没有沉默」这一判据）。
+			var positions: Array = []
+			var sealed: Array = []
+			for tid in _vfx_target_uids(str(unit.get("skill_target_uid", ""))):
+				var hit := _vfx_unit_by_sim_uid(current, tid)
+				if hit.is_empty():
+					continue
+				positions.append(hit.get("world_foot", Vector3.ZERO))
+				var statuses: Dictionary = _state_unit_for(tid).get("statuses", {})
+				sealed.append(statuses.has("silence"))
+			context["targets"] = positions
+			context["sealed"] = sealed
+			return unit.get("world_foot", Vector3.ZERO)
+	return target.get("world_hit", unit.get("world_foot", Vector3.ZERO))
+
+
+func _crimson_playback_speed() -> float:
+	var director: Variant = get("_presentation_director")
+	if director is Object and is_instance_valid(director) and (director as Object).has_method("get_playback_speed"):
+		return clampf(float((director as Object).call("get_playback_speed")), 0.25, 4.0)
+	return 1.0
+
+
+# 一次普攻从「本帧事件落地」到「命中那一刻」的表现延时。
+# 近战：VFXCrimsonAttack3D 与通用近战都在起手后约 0.1s 画命中；
+# 远程：Director 起手拍（随播放倍率）+ 弹体飞行。
+# 近战/远程按数据射程判（range_px 在回放里被换算成 range×72，近战也是 72）。
+func _crimson_hit_delay(attacker_uid: String, victim_uid: String) -> float:
+	var attacker := _cue_unit_snapshot(attacker_uid)
+	if attacker.is_empty() or float(attacker.get("attack_range", 1.0)) <= 1.0:
+		return 0.10
+	return _CRIMSON_ADAPTER.WINDUP_SEC / _crimson_playback_speed() + cue_ranged_flight_time(attacker_uid, victim_uid)
+
+
+static func _crimson_event_target(event: Dictionary) -> String:
+	var targets: Variant = event.get("target_uids", [])
+	if targets is Array and not (targets as Array).is_empty():
+		return str((targets as Array)[0])
+	return str(event.get("target_uid", ""))
+
+
+# 归组后的赤律**真事件**技能音。见 `_play_crimson_event_groups` 开头的说明。
+# 门控与其它四星技能音同口径（自身 + 友军 + 四星）。
+func _maybe_play_crimson_event_sfx(_skill_id: String, _groups: Dictionary, _current: Dictionary) -> void:
+	# Audio belongs to the associated basic impact, not the early grouped VFX.
+	pass
+
+
+func _play_crimson_proc(event: Dictionary, current: Dictionary) -> void:
+	var skill_id := str(event.get("skill_id", ""))
+	var source_uid := str(event.get("source_uid", ""))
+	var target_uid := _crimson_event_target(event)
+	var source := _vfx_unit_by_sim_uid(current, source_uid)
+	var target := _vfx_unit_by_sim_uid(current, target_uid)
+	# 10.21 审查批次：赤卫 `block_guard` / 破甲者 `stacking_def_break` 的四星技能音。
+	#
+	# 派发点为什么在这里：这两条的触发时刻是**模拟器判定成功的那一刻**
+	# （`unit_skill_proc`，DamageService:148 / CrimsonCombat:96），不是 `skill_ready`
+	# 上升沿 —— 它们压根不在 `_tick_skills` 里，走施法表会永远不响。
+	# 而本函数正好是那条事件的唯一消费端（BattleVfx:1503 按
+	# `_CRIMSON_CATALOG.PROC_SKILLS` 拦在这里），音挂在这里就等于「响了 = 打成了」。
+	#
+	# 门控与其它四星技能音同口径（自身 + 友军 + 四星）：赤卫自己 1~3 星时不响，
+	# 敌方赤卫也不响。
+	var cue := SfxService.proc_skill_cue_for(skill_id)
+	if not bool(event.get("_attack_audio_managed", false)) and not cue.is_empty() and _is_own_or_ally_unit(source_uid) and _is_star4(source_uid):
+		SfxService.play(cue, _basic_attack_ownership_db(source_uid, ""))
+	match skill_id:
+		"block_guard":
+			# source = 格挡成功的赤卫，target = 被挡下的攻击者。
+			if source.is_empty():
+				return
+			var context := _unit_target_context(source, target if not target.is_empty() else source)
+			context["delay"] = _crimson_hit_delay(target_uid, source_uid) if not target.is_empty() else 0.10
+			var toward: Vector3 = target.get("world_hit", source.get("world_hit", Vector3.ZERO) + Vector3.RIGHT)
+			_play_unit_procedural(skill_id, source.get("world_cast", Vector3.ZERO), toward, context)
+		"stacking_def_break":
+			if target.is_empty():
+				return
+			var context := _unit_target_context(source if not source.is_empty() else target, target)
+			context["stacks"] = int(event.get("stacks", 2))
+			context["delay"] = _crimson_hit_delay(source_uid, target_uid)
+			_play_unit_procedural(skill_id, source.get("world_cast", target.get("world_hit", Vector3.ZERO)), target.get("world_hit", Vector3.ZERO), context)
+
+
+# 同一次攻击的几条事件归成一组：键里带上 tick，避免把相邻两次攻击混成「斩杀」。
+func _collect_crimson_event(groups: Dictionary, event: Dictionary, by_target: bool) -> void:
+	var source_uid := str(event.get("source_uid", ""))
+	var target_uid := _crimson_event_target(event)
+	if source_uid.is_empty() or target_uid.is_empty():
+		return
+	var stamp := str(event.get("tick", event.get("time", "")))
+	var key := "%s|%s|%s" % [source_uid, target_uid if by_target else "", stamp]
+	var group: Dictionary = groups.get(key, {"source": source_uid, "targets": []})
+	(group["targets"] as Array).append(target_uid)
+	groups[key] = group
+
+
+func _play_crimson_event_groups(hp_hits: Dictionary, pierces: Dictionary, current: Dictionary) -> void:
+	# 10.21 审查批次：血猎者 / 穿云弩手的四星技能音。
+	#
+	# 派发点为什么在这里：这两条是**真事件**，没有施法边沿（不在 `_tick_skills`），
+	# 也不走 proc 事件通道 —— 它们的 skill_id 是搭在 `hit_number` / `impact`
+	# 事件上过来的（BattleVfx:1513 / :1505 归组到本函数）。音挂在本函数
+	# 就等于「响了 = 这一击真的打出了百分比伤害 / 真的贯穿了」。
+	#
+	# 归组键里带 tick，所以同一次攻击只响一声，不会因为命中了多个目标而叠。
+	_maybe_play_crimson_event_sfx("current_hp_strike", hp_hits, current)
+	_maybe_play_crimson_event_sfx("line_pierce", pierces, current)
+	# 血猎者：同一击里 current_hp_strike 出现两次 = 四星斩杀那一下也打出来了。
+	for key: String in hp_hits:
+		var group: Dictionary = hp_hits[key]
+		var targets: Array = group["targets"]
+		var source_uid := str(group["source"])
+		var target := _vfx_unit_by_sim_uid(current, str(targets[0]))
+		if target.is_empty():
+			continue
+		var source := _vfx_unit_by_sim_uid(current, source_uid)
+		var context := _unit_target_context(source if not source.is_empty() else target, target)
+		context["execute"] = targets.size() >= 2
+		context["delay"] = _crimson_hit_delay(source_uid, str(targets[0]))
+		_play_unit_procedural("current_hp_strike", source.get("world_cast", target.get("world_hit", Vector3.ZERO)), target.get("world_hit", Vector3.ZERO), context)
+	# 穿云弩手：被贯穿的目标按模拟器顺序（由近到远）连成一条线，从主目标接续。
+	for key: String in pierces:
+		var group: Dictionary = pierces[key]
+		var source_uid := str(group["source"])
+		var source := _vfx_unit_by_sim_uid(current, source_uid)
+		if source.is_empty():
+			continue
+		var positions: Array = []
+		var first: Dictionary = {}
+		for uid_value in group["targets"]:
+			var hit := _vfx_unit_by_sim_uid(current, str(uid_value))
+			if hit.is_empty():
+				continue
+			if first.is_empty():
+				first = hit
+			positions.append(hit.get("world_hit", hit.get("world_foot", Vector3.ZERO)))
+		if positions.is_empty():
+			continue
+		var primary_uid := str(source.get("attack_target_uid", ""))
+		var primary := _vfx_unit_by_sim_uid(current, primary_uid)
+		var start: Vector3 = primary.get("world_hit", positions[0]) if not primary.is_empty() else positions[0]
+		var context := _unit_target_context(source, first)
+		context["targets"] = positions
+		context["delay"] = _crimson_hit_delay(source_uid, primary_uid if not primary.is_empty() else str(first.get("sim_uid", "")))
+		_play_unit_procedural("line_pierce", start, positions[0], context)
