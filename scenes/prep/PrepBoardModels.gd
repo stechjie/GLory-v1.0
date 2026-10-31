@@ -376,6 +376,122 @@ func _play_four_star_screen_fx(actor: Node3D, element: String) -> void:
 	await fx.impact
 
 
+# -- 羁绊跨档表现（10.31）-------------------------------------------------------
+#
+# 调用方是 PrepUI.play_synergy_activation（已经 call_deferred 到模型重建之后）。
+# 只找**棋盘**上的棋子：羁绊人数本来就只数棋盘（SynergyService.count_races_from_board），
+# 待命区的同族棋子不参与，亮起来反而误导。
+const SYNERGY_BURST := preload("res://scenes/prep/effects/PrepSynergyActivateBurst.gd")
+# 同族多枚棋子不同时亮，按屏幕从左到右错开一点，读起来是「一串连起来」。
+const SYNERGY_BURST_STAGGER_SEC := 0.035
+# 压扁回弹沿用升星那张表：major 取 2★ 的幅度，ultimate 取 4★ 的。
+const SYNERGY_SQUASH_KEY := {"major": 2, "ultimate": 4}
+# 比升 4★ 全屏层低一层：两者同时出现时升星是主角。
+const SYNERGY_FX_LAYER := 149
+const SYNERGY_VIGNETTE_ALPHA := 0.55
+var _synergy_fx_layer: CanvasLayer
+
+
+func play_synergy_board_burst(race: String, ultimate: bool) -> void:
+	var actors: Array = []
+	for index in GameState.board_slots.size():
+		var cell = GameState.board_slots[index]
+		if not (cell is Dictionary):
+			continue
+		if str(((cell as Dictionary).get("def", {}) as Dictionary).get("race", "")) != race:
+			continue
+		var node := _prep_board_model_nodes.get(index) as Node3D
+		if node != null and is_instance_valid(node) and node.is_inside_tree():
+			actors.append(node)
+	actors.sort_custom(func(a: Node3D, b: Node3D) -> bool: return a.global_position.x < b.global_position.x)
+	var squash_key := int(SYNERGY_SQUASH_KEY["ultimate" if ultimate else "major"])
+	for i in actors.size():
+		if i > 0:
+			await get_tree().create_timer(SYNERGY_BURST_STAGGER_SEC).timeout
+		# 等待期间棋子可能已被刷新释放：先判有效再转型，对已释放对象 as 会报 SCRIPT ERROR。
+		if not is_instance_valid(actors[i]):
+			continue
+		var actor := actors[i] as Node3D
+		if not actor.is_inside_tree():
+			continue
+		var parent := actor.get_parent() as Node3D
+		if parent == null:
+			continue
+		var burst: Node3D = SYNERGY_BURST.new()
+		burst.name = "SynergyBurst"
+		parent.add_child(burst)
+		burst.position = actor.position
+		burst.scale = _prep_effect_scale(parent)
+		burst.call("play", race, ultimate)
+		_squash_prep_model(actor, squash_key)
+
+
+# 终极档：屏幕四周种族色暗角一闪 + 档位名弹字（如「神7·神佑」）。
+# 全部 MOUSE_FILTER_IGNORE —— 这一秒里玩家很可能还在拖下一枚棋子。
+func play_synergy_ultimate_screen(race: String, threshold: int) -> void:
+	if _synergy_fx_layer == null or not is_instance_valid(_synergy_fx_layer):
+		_synergy_fx_layer = CanvasLayer.new()
+		_synergy_fx_layer.name = "SynergyFxLayer"
+		_synergy_fx_layer.layer = SYNERGY_FX_LAYER
+		add_child(_synergy_fx_layer)
+	var color: Color = SYNERGY_BURST.race_color(race)
+
+	var vignette := TextureRect.new()
+	vignette.name = "SynergyVignette"
+	vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vignette.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	vignette.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	vignette.stretch_mode = TextureRect.STRETCH_SCALE
+	var gradient := Gradient.new()
+	gradient.offsets = PackedFloat32Array([0.0, 0.55, 1.0])
+	gradient.colors = PackedColorArray([Color(color, 0.0), Color(color, 0.0), Color(color, 1.0)])
+	var tex := GradientTexture2D.new()
+	tex.gradient = gradient
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5, 0.5)
+	tex.fill_to = Vector2(1.05, 0.5)
+	tex.width = 256
+	tex.height = 256
+	vignette.texture = tex
+	vignette.modulate.a = 0.0
+	_synergy_fx_layer.add_child(vignette)
+	var vt := vignette.create_tween()
+	vt.tween_property(vignette, "modulate:a", SYNERGY_VIGNETTE_ALPHA, 0.08).set_ease(Tween.EASE_OUT)
+	vt.tween_property(vignette, "modulate:a", 0.0, 0.45).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	vt.tween_callback(vignette.queue_free)
+
+	var title := SynergyPanelScript.tier_display_name(race, threshold)
+	if title.is_empty():
+		return
+	var label := Label.new()
+	label.name = "SynergyTierCaption"
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.text = title
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 38)
+	label.add_theme_color_override("font_color", color.lerp(Color.WHITE, 0.35))
+	label.add_theme_constant_override("outline_size", 10)
+	label.add_theme_color_override("font_outline_color", Color(0.05, 0.04, 0.08, 0.92))
+	# 横贯屏幕的一条带子，夹在顶部「开始战斗 / 回合」条与棋盘第一排之间。
+	# 第一版放在 0.26~0.36，实拍压住了第一排棋子（1600x720 下第一排在 y≈210~260）。
+	label.anchor_left = 0.0
+	label.anchor_right = 1.0
+	label.anchor_top = 0.165
+	label.anchor_bottom = 0.255
+	_synergy_fx_layer.add_child(label)
+	var vp := get_viewport().get_visible_rect().size
+	label.pivot_offset = Vector2(vp.x * 0.5, vp.y * 0.045)
+	label.scale = Vector2.ONE * 1.6
+	label.modulate.a = 0.0
+	var lt := label.create_tween()
+	lt.tween_property(label, "scale", Vector2.ONE, 0.32).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	lt.parallel().tween_property(label, "modulate:a", 1.0, 0.10)
+	lt.tween_interval(0.75)
+	lt.tween_property(label, "modulate:a", 0.0, 0.30)
+	lt.tween_callback(label.queue_free)
+
+
 # 镜头轻震：只动 Camera3D 的 h_offset / v_offset（纯视觉，不碰任何棋子的变换）。
 # 平方衰减 + 正弦，不用每帧随机 —— 每帧随机读起来像信号干扰，不像「震了一下」。
 func _shake_prep_camera(amplitude: float) -> void:

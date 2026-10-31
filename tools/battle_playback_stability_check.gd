@@ -28,7 +28,7 @@ class Host:
 	func cue_spawn_hit_number(target: String, _amount: int, _kind: String, _crit: bool, _skill: bool, _race: String) -> void:
 		hits[target] = Time.get_ticks_usec()
 		numbers.append(_amount)
-	func cue_play_death(uid: String, _duration: float, _killer_uid: String = "") -> bool:
+	func cue_play_death(uid: String, _duration: float, _killer_uid: String = "", _event_key: String = "", _event_time: float = -1.0) -> bool:
 		deaths[uid] = Time.get_ticks_usec()
 		return true
 

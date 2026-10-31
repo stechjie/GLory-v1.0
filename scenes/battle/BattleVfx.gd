@@ -169,6 +169,7 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 		var kind := str(state_snapshot.get("kind", "pve"))
 		SfxService.set_battle_voice_cap(7 if kind in ["pve", "boss"] else 6)
 	var current := _collect_vfx_units(state_snapshot)
+	_update_treasure_set_presentation()
 	_sync_persistent_unit_vfx(current)
 	_play_visual_events(state_snapshot,current)
 	if not _vfx_seeded:
@@ -1591,6 +1592,8 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 			_collect_treasure_hit(treasure_groups, event)
 		elif str(event.get("type", "")) == "treasure_gold":
 			_play_treasure_gold(event, current)
+		elif str(event.get("type", "")) == "set_execute":
+			_play_set_execute(event, current)
 		elif str(event.get("type", "")) == "hit_number" and str(event.get("skill_id", "")) == "global_divine_blast" and str(event.get("kind", "dmg")) == "dmg":
 			_play_divine_pulse(event, current)
 		elif str(event.get("type", "")) == "hit_number" and str(event.get("skill_id", "")) == "current_hp_strike" and str(event.get("kind", "dmg")) == "dmg":
@@ -1909,6 +1912,9 @@ func cue_spawn_hit_number(target_uid: String, amount: int, kind: String, crit: b
 	var target: Dictionary = _cue_unit_snapshot(target_uid)
 	if target.is_empty():
 		return false
+	if kind == "miss" and _unit_has_treasure_set(target_uid, "defense"):
+		kind = "dodge"
+		_play_set_dodge(target_uid)
 	_spawn_hit_number(target.get("head_pos", Vector2.ZERO), amount, kind, crit, is_skill, race)
 	_play_hit_reaction(target_uid, kind, amount, crit, is_skill)
 	return true
@@ -2145,13 +2151,26 @@ func cue_release_corpses() -> void:
 			release_death_actor(str(entry.get("uid", "")), actor_value as Node3D)
 	_active_death_actors.clear()
 	_pending_death_claim_tokens.clear()
+	for reference in _death_tail_blocks:
+		var block = reference.get_ref()
+		if is_instance_valid(block):
+			block.call("stop_vfx", true)
+	_death_tail_blocks.clear()
 	_lane_clear_played = false
+	_reset_treasure_set_presentation()
+	_lane_clear_presented = false
+	_lane_clear_pending_uid = ""
+	_monster_reward_msec = -100000
+	if is_instance_valid(_combat_feedback):
+		_combat_feedback.call("reset_feedback")
 	_board_freeze_until_msec = 0
 	_end_arena_punch()
+	_end_lane_clear_spotlight()
+	_lane_clear_pivot = Vector2.INF
 	release_dying_unit_nodes()
 
 
-func cue_play_death(victim_uid: String, duration_sec: float = 0.35, killer_uid: String = "") -> bool:
+func cue_play_death(victim_uid: String, duration_sec: float = 0.35, killer_uid: String = "", event_key: String = "", event_time: float = -1.0) -> bool:
 	_maybe_play_human_king_death_sfx(victim_uid)
 	_pending_death_claim_tokens.erase(victim_uid)
 	var actor: Node3D = _cue_corpses.get(victim_uid)
@@ -2191,19 +2210,17 @@ func cue_play_death(victim_uid: String, duration_sec: float = 0.35, killer_uid: 
 	# 没有淡出。改成遍历整棵子树。
 	var fade_targets := _death_fade_targets(actor)
 	var done := func() -> void: _finish_death_actor(victim_uid, actor)
-	var fade: float
-	if tier == DEATH_TIER_OWN:
-		fade = _DEATH_FEEDBACK.play_fall_body(tween, actor, away, fade_targets, duration_sec, done)
-		_play_death_sfx(DEATH_CUE_FALL, -3.0, 3)
-	else:
-		if tier == DEATH_TIER_FINALE:
-			_begin_lane_clear_freeze(actor)
-		elif killer != null and PresentationSettings.hit_stop_allowed():
-			_HIT_FEEDBACK.freeze_animation(killer, float(DEATH_KILLER_FREEZE_SEC.get(tier, 0.05)))
-		var color := _death_race_color(victim_uid)
-		var shatter := func() -> void: _on_death_shatter(victim_uid, actor, away, tier, color)
-		fade = _DEATH_FEEDBACK.play_shatter_body(tween, actor, away, tier, fade_targets, duration_sec,
-			PresentationSettings.flash_allowed(), shatter, done)
+	var color := _death_race_color(victim_uid)
+	var own := tier == DEATH_TIER_OWN
+	var tail := func() -> void: _on_death_shatter(victim_uid, actor, away, tier, color, true, false, false, not own)
+	if tier == DEATH_TIER_FINALE:
+		_begin_lane_clear_freeze(actor, killer)
+	elif not own and killer != null and PresentationSettings.hit_stop_allowed():
+		_HIT_FEEDBACK.freeze_animation(killer, 0.04)
+	if not own:
+		_play_monster_kill_reward(victim_uid)
+	var fade := _DEATH_FEEDBACK.play_burst_body(tween, actor, fade_targets,
+		PresentationSettings.flash_allowed() and not own, tail, done)
 	# 2D 的血条/名字层必须**跟着一起淡**，不能在尸体还在的时候就消失。
 	# V2 第 2 条原话："血条和状态图标同步，不突然消失"。
 	_play_unit_node_death_fade(victim_uid, fade)
@@ -2211,10 +2228,254 @@ func cue_play_death(victim_uid: String, duration_sec: float = 0.35, killer_uid: 
 
 
 func _finish_death_actor(uid: String, actor: Node3D) -> void:
+	# Mother execution / phoenix release may replace a reserved finale tween.
+	# Transfer that reservation to the actual final body callback exactly once.
+	if not _lane_clear_presented and not _is_own_or_ally_unit(uid):
+		var final_clear := _lane_clear_pending_uid == uid
+		if not _lane_clear_played:
+			final_clear = _is_local_lane_clear(uid)
+		if final_clear:
+			_lane_clear_shake()
+			# 先出光效（顺带算出本路推近轴心），再推近。
+			_spawn_lane_clear_feedback(actor)
+			_play_arena_punch()
 	if actor != null:
 		_active_death_actors.erase(actor.get_instance_id())
 	release_death_actor(uid, actor)
 
+
+
+# --- 10.31 宝藏 4 件套战斗表现 ----------------------------------------------------
+#
+# 用户定的规则：
+#   * 所有人都看得到（自己的棋子满亮度，别人的 0.75）；
+#   * 攻击套：斩杀刀光 + 「斩」字 + 攻击者 5 秒红色速度光环；本地玩家有攻击套时，
+#     本路敌人血条 10% 处画斩杀线，掉到线下血条底框闪红（这条只给自己看，是「我能斩谁」的提示）；
+#   * 防卫套：只在开局亮一次护罩（不要常驻盾纹）；闪避时侧闪 + 青色残光 + 「闪避」字；
+#   * 控制套已有紫色刷新时钟，不另做；金钱套暂不做。
+# 套装归属：回放单位读 roster 带来的 treasure_sets（BattleScreen 一律补键），本地模拟单位读 owner_treasures。
+const _TREASURE_SET_VFX := preload("res://effects/vfx3d/modules/VFXTreasureSet3D.gd")
+# 与 BattleSimTreasures.ATTACK_SET_EXECUTE_PCT 一致；那边改这里也要改。
+const SET_EXECUTE_PCT := 0.10
+# 与 _try_attack_set_execute 里 attack_set_speed_bonus 的 5 秒一致。
+const SET_SPEED_AURA_SEC := 5.0
+const SET_OTHER_STRENGTH := 0.75
+const SET_EXECUTE_MARK_COLOR := Color(1.0, 0.30, 0.22)
+const SET_EXECUTE_FLASH_COLOR := Color(0.70, 0.04, 0.02)
+const SET_HP_BG_COLOR := Color(0.05, 0.05, 0.05)
+# 血条几何（BattleRenderer._make_unit_node）：HpBg 在 x5、宽 72；HpFill 从 x8 起、宽 66。
+const SET_HP_FILL_X_IN_BG := 3.0
+const SET_HP_FILL_WIDTH := 66.0
+const SET_DODGE_STEP := 0.12
+const SET_DODGE_OUT_SEC := 0.07
+const SET_DODGE_BACK_SEC := 0.16
+
+var _set_defense_shown: Dictionary = {}
+var _set_speed_auras: Dictionary = {}   # uid -> WeakRef(VFXTreasureSet3D)
+var _set_execute_marked: Dictionary = {}  # uid -> true
+
+
+func _unit_has_treasure_set(uid: String, category: String) -> bool:
+	var unit := _state_unit_for(uid)
+	if unit.is_empty():
+		return false
+	if unit.has("treasure_sets"):
+		return category in (unit.get("treasure_sets", []) as Array)
+	if BattleSimShared._ignores_treasure(unit):
+		return false
+	return BattleSimShared._f_has_set(unit, category)
+
+
+func _set_vfx_strength(uid: String) -> float:
+	var base := 1.0 if _is_local_owned_unit(uid) else SET_OTHER_STRENGTH
+	return base * (1.0 if PresentationSettings.flash_allowed() else 0.5)
+
+
+func _set_model_for(uid: String) -> Node3D:
+	for source in [_battle_3d_models, _cue_corpses]:
+		var found = (source as Dictionary).get(uid)
+		if found is Node3D and is_instance_valid(found) and (found as Node3D).is_inside_tree():
+			return found as Node3D
+	return null
+
+
+# 单位身高：HitAnchor 在胸口，约身高的 0.6。取不到就按 0.6 世界单位。
+func _set_unit_height(model: Node3D) -> float:
+	var hit := model.get_node_or_null("HitAnchor") as Node3D
+	if hit == null:
+		return 0.6
+	return clampf((hit.global_position.y - model.global_position.y) * 1.65, 0.3, 1.3)
+
+
+func _play_set_execute(event: Dictionary, current: Dictionary) -> void:
+	var target_uid := str(event.get("target_uid", ""))
+	var source_uid := str(event.get("source_uid", ""))
+	var snapshot := _vfx_unit_by_sim_uid(current, target_uid)
+	if snapshot.is_empty():
+		snapshot = _vfx_unit_by_sim_uid(_vfx_prev_units, target_uid)
+	if not snapshot.is_empty():
+		_spawn_hit_number(snapshot.get("head_pos", Vector2.ZERO) + Vector2(0, -56), 1, "execute", false, false)
+	if _battle_3d_vfx_root == null or not is_instance_valid(_battle_3d_vfx_root):
+		return
+	# 目标这一拍已被死亡流程接管（从 _battle_3d_models 摘掉），多数时候取不到模型 ——
+	# 退回上一帧快照里的锚点（world_* 已是 VFX 根本地坐标，见 _unit_vfx_position）。
+	var victim := _set_model_for(target_uid)
+	var prev := _vfx_unit_by_sim_uid(_vfx_prev_units, target_uid)
+	var center_local := Vector3.ZERO
+	var foot_y := 0.0
+	var height := 0.6
+	var located := false
+	if victim != null:
+		height = _set_unit_height(victim)
+		var hit := victim.get_node_or_null("HitAnchor") as Node3D
+		var center := hit.global_position if hit != null else victim.global_position + Vector3.UP * height * 0.6
+		center_local = _battle_3d_vfx_root.to_local(center)
+		foot_y = _battle_3d_vfx_root.to_local(victim.global_position).y
+		located = true
+	elif not prev.is_empty() and prev.has("world_hit"):
+		center_local = prev.get("world_hit", Vector3.ZERO)
+		var foot: Vector3 = prev.get("world_foot", center_local)
+		foot_y = foot.y
+		height = clampf((center_local.y - foot_y) * 1.65, 0.3, 1.3)
+		located = true
+	if located:
+		var block := VFXBlockRoot.spawn_block(_TREASURE_SET_VFX, _battle_3d_vfx_root, true)
+		if block != null:
+			block.call("play_execute", center_local, foot_y, height, _set_vfx_strength(source_uid))
+	var attacker := _set_model_for(source_uid)
+	if attacker == null:
+		return
+	var existing: WeakRef = _set_speed_auras.get(source_uid)
+	var aura = existing.get_ref() if existing != null else null
+	if aura != null and is_instance_valid(aura) and not (aura as Node).is_queued_for_deletion():
+		aura.call("refresh_speed_aura", SET_SPEED_AURA_SEC)
+		return
+	var aura_block := VFXBlockRoot.spawn_block(_TREASURE_SET_VFX, _battle_3d_vfx_root, true)
+	if aura_block != null:
+		aura_block.call("play_speed_aura", attacker, SET_SPEED_AURA_SEC,
+			_set_unit_height(attacker) * 0.42, _set_vfx_strength(source_uid))
+		_set_speed_auras[source_uid] = weakref(aura_block)
+
+
+# 防卫套闪避：ActorRoot 往侧面闪一下再回来（和普攻前冲共用 lunge_tween，互相顶掉、从原点起步），
+# 原地留两道青色残光。侧闪方向取「垂直于最近一次打它的人」，取不到就往右。
+func _play_set_dodge(uid: String) -> void:
+	var model := _set_model_for(uid)
+	if model == null or _battle_3d_vfx_root == null or not is_instance_valid(_battle_3d_vfx_root):
+		return
+	var side := Vector3.RIGHT
+	var memory: Dictionary = _last_basic_attacker.get(uid, {})
+	var attacker := _set_model_for(str(memory.get("uid", "")))
+	if attacker != null:
+		var delta := model.global_position - attacker.global_position
+		delta.y = 0.0
+		if delta.length() > 0.001:
+			side = Vector3(-delta.z, 0.0, delta.x).normalized()
+	var height := _set_unit_height(model)
+	var block := VFXBlockRoot.spawn_block(_TREASURE_SET_VFX, _battle_3d_vfx_root, true)
+	if block != null:
+		var local_side := _battle_3d_vfx_root.global_basis.inverse() * side
+		block.call("play_dodge", _battle_3d_vfx_root.to_local(model.global_position), local_side.normalized(),
+			height, _set_vfx_strength(uid))
+	var root := model.get_node_or_null("ActorRoot") as Node3D
+	if root == null or not PresentationSettings.hit_stop_allowed():
+		return
+	if model.has_meta("lunge_tween"):
+		var previous = model.get_meta("lunge_tween")
+		if previous is Tween and (previous as Tween).is_valid():
+			(previous as Tween).kill()
+	root.position = Vector3.ZERO
+	var step := (model.global_basis.inverse() * side).normalized() * SET_DODGE_STEP
+	var tween := create_tween()
+	tween.tween_property(root, "position", step, SET_DODGE_OUT_SEC).set_ease(Tween.EASE_OUT)
+	tween.tween_property(root, "position", Vector3.ZERO, SET_DODGE_BACK_SEC).set_ease(Tween.EASE_IN_OUT)
+	model.set_meta("lunge_tween", tween)
+
+
+func _update_treasure_set_presentation() -> void:
+	var local_attack := false
+	var lane := _local_lane()
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if not (raw is Dictionary):
+				continue
+			var uid := str(raw.get("uid", ""))
+			if not local_attack and _is_local_owned_unit(uid) and _unit_has_treasure_set(uid, "attack"):
+				local_attack = true
+			if bool(raw.get("alive", false)) and not _set_defense_shown.has(uid) and _unit_has_treasure_set(uid, "defense"):
+				var model := _set_model_for(uid)
+				if model != null and _battle_3d_vfx_root != null and is_instance_valid(_battle_3d_vfx_root):
+					_set_defense_shown[uid] = true
+					var block := VFXBlockRoot.spawn_block(_TREASURE_SET_VFX, _battle_3d_vfx_root, true)
+					if block != null:
+						block.call("play_defense_shield", model, _set_unit_height(model), _set_vfx_strength(uid))
+	var pulse := 0.5 + 0.5 * sin(float(Time.get_ticks_msec()) * 0.014)
+	var still_marked: Dictionary = {}
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if not (raw is Dictionary):
+				continue
+			var uid := str(raw.get("uid", ""))
+			if not local_attack or lane == LANE_NONE or not bool(raw.get("alive", false)) \
+					or int(raw.get("lane", -1)) != lane or _is_own_or_ally_unit(uid):
+				continue
+			var definition: Dictionary = raw.get("def", {}) if raw.get("def", {}) is Dictionary else {}
+			if str(raw.get("id", "")).begins_with("boss_") or bool(definition.get("is_boss", false)):
+				continue
+			var bg := _set_hp_bg_for(raw)
+			if bg == null:
+				continue
+			var mark := bg.get_node_or_null("ExecuteMark") as ColorRect
+			if mark == null:
+				mark = ColorRect.new()
+				mark.name = "ExecuteMark"
+				mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				mark.color = SET_EXECUTE_MARK_COLOR
+				mark.size = Vector2(2.0, 13.0)
+				mark.position = Vector2(SET_HP_FILL_X_IN_BG + SET_HP_FILL_WIDTH * SET_EXECUTE_PCT - 1.0, -2.0)
+				mark.z_index = 2
+				bg.add_child(mark)
+			var low := float(raw.get("hp", 0)) <= float(maxi(1, int(raw.get("max_hp", 1)))) * SET_EXECUTE_PCT
+			bg.color = SET_HP_BG_COLOR.lerp(SET_EXECUTE_FLASH_COLOR, pulse) if low else SET_HP_BG_COLOR
+			still_marked[uid] = true
+	for uid in _set_execute_marked.keys():
+		if not still_marked.has(uid):
+			_clear_execute_mark(str(uid))
+	_set_execute_marked = still_marked
+
+
+func _set_hp_bg_for(raw: Dictionary) -> ColorRect:
+	var node = _unit_nodes.get(_visual_id(raw))
+	if node == null:
+		node = _unit_nodes.get(str(raw.get("uid", "")))
+	if not (node is Node) or not is_instance_valid(node):
+		return null
+	return (node as Node).get_node_or_null("HpBg") as ColorRect
+
+
+func _clear_execute_mark(uid: String) -> void:
+	var raw := _state_unit_for(uid)
+	if raw.is_empty():
+		return
+	var bg := _set_hp_bg_for(raw)
+	if bg == null:
+		return
+	var mark := bg.get_node_or_null("ExecuteMark")
+	if mark != null:
+		mark.queue_free()
+	bg.color = SET_HP_BG_COLOR
+
+
+func _reset_treasure_set_presentation() -> void:
+	_set_defense_shown.clear()
+	for ref in _set_speed_auras.values():
+		var aura = (ref as WeakRef).get_ref() if ref is WeakRef else null
+		if aura != null and is_instance_valid(aura):
+			aura.call("finish")
+	_set_speed_auras.clear()
+	for uid in _set_execute_marked.keys():
+		_clear_execute_mark(str(uid))
+	_set_execute_marked.clear()
 
 # --- 10.29 死亡分档 / 多杀合并 / 己方那一路清场 ------------------------------------
 #
@@ -2239,7 +2500,23 @@ const DEATH_SHAKE_MULTI := [4.0, 0.15]
 const DEATH_SHAKE_FINALE := [15.0, 0.34]
 const LANE_CLEAR_FREEZE_SEC := 0.2
 # 清场时整个战场往里推一下：放大 3%，0.07 秒推进、0.26 秒缓回。
-const LANE_CLEAR_PUNCH_SCALE := 1.03
+const LANE_CLEAR_PUNCH_SCALE := 1.05
+# 10.31 清场加强（用户批准方案 1、3、4、5）：
+#   定格那 0.2 秒全场压暗，只留最后一个敌人和击杀者两个亮洞（聚光灯）；
+#   字幕对准本路；我方本路存活棋子小跳 + 脚下金环；推近以本路为轴；
+#   震屏按屏幕高度换算（原来封顶 9 px，手机高分辨率下几乎看不见）。
+const LANE_CLEAR_SPOT_IN_SEC := 0.05
+const LANE_CLEAR_SPOT_OUT_SEC := 0.24
+const LANE_CLEAR_SPOT_RADIUS_RATIO := 0.12
+const LANE_CLEAR_SHAKE_RATIO := 0.017
+const LANE_CLEAR_SHAKE_MIN_PX := 9.0
+const LANE_CLEAR_SHAKE_MAX_PX := 22.0
+const LANE_CLEAR_SHAKE_SEC := 0.34
+const LANE_CLEAR_HOP_HEIGHT := 0.15
+const LANE_CLEAR_HOP_UP_SEC := 0.13
+const LANE_CLEAR_HOP_DOWN_SEC := 0.17
+# 字幕放在本路屏幕范围顶边往下 14% 处 —— 放中间会压住我方棋子（10.31 截帧实测）。
+const LANE_CLEAR_CAPTION_FROM_TOP := 0.14
 const LANE_CLEAR_PUNCH_IN_SEC := 0.07
 const LANE_CLEAR_PUNCH_OUT_SEC := 0.26
 # 死亡音，素材与混音说明见 SfxService 的「10.29 死亡音」。
@@ -2281,10 +2558,72 @@ const DEATH_BOSS_COLORS := {
 const DEATH_BOSS_DEFAULT_COLOR := Color(0.86, 0.24, 0.20)
 
 var _lane_clear_played := false
+var _lane_clear_presented := false
+var _lane_clear_pending_uid := ""
+var _death_tail_blocks: Array[WeakRef] = []
 var _board_freeze_until_msec := 0
 var _death_beat_msec := -100000
 var _death_beat_kills := 0
+var _monster_reward_msec := -100000
 var _arena_punch_tween: Tween = null
+var _lane_clear_spot: ColorRect = null
+var _lane_clear_spot_tween: Tween = null
+# 推近的轴心（_arena 本地坐标）。INF = 没算出本路，退回中心。
+var _lane_clear_pivot := Vector2.INF
+const _COMBAT_FEEDBACK := preload("res://effects/runtime/presentation/BattleCombatFeedback.gd")
+var _combat_feedback: Control
+
+
+func _ensure_combat_feedback() -> Control:
+	if not is_instance_valid(_combat_feedback):
+		_combat_feedback = _COMBAT_FEEDBACK.new()
+		_combat_feedback.name = "BattleCombatFeedback"
+		_combat_feedback.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		_combat_feedback.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_combat_feedback.z_index = 115
+		add_child(_combat_feedback)
+		SafeArea.track(_combat_feedback)
+	return _combat_feedback
+
+
+func _kill_feedback_victim_eligible(victim_uid: String) -> bool:
+	if victim_uid.is_empty() or _is_own_or_ally_unit(victim_uid):
+		return false
+	var victim := _state_unit_for(victim_uid)
+	return not victim.is_empty() and not bool(victim.get("is_formation_ally", false)) \
+		and not victim_uid.contains("_mirror_") and not victim_uid.contains("_parasite_")
+
+
+func _is_mercenary_death(victim_uid: String) -> bool:
+	var unit := _state_unit_for(victim_uid)
+	return str(unit.get("id", unit.get("unit_id", ""))).begins_with("merc_") or bool(unit.get("is_mercenary", false))
+
+
+# PvE/Boss use dust; pieces and mercenaries use their separate subtle residue.
+# The mother execution and phoenix release keep their earlier priority branches.
+func _uses_monster_death_feedback(victim_uid: String) -> bool:
+	if _is_own_or_ally_unit(victim_uid):
+		return false
+	var unit := _state_unit_for(victim_uid)
+	var definition: Dictionary = unit.get("def", {}) if unit.get("def", {}) is Dictionary else {}
+	var unit_id := str(unit.get("id", unit.get("unit_id", definition.get("id", ""))))
+	return unit_id.begins_with("pve_") or unit_id.begins_with("boss_") or bool(definition.get("is_boss", false))
+
+
+# This is a kill-confirmation sound, not a currency mutation or a payout claim.
+# An actor can only be detached once; a revived actor may legitimately die again.
+# Share one short accent for simultaneous kills on the local player's lane.
+func _play_monster_kill_reward(victim_uid: String) -> void:
+	if not _kill_feedback_victim_eligible(victim_uid):
+		return
+	var lane := _local_lane()
+	if lane == LANE_NONE or int(_state_unit_for(victim_uid).get("lane", -1)) != lane:
+		return
+	var now := Time.get_ticks_msec()
+	if now - _monster_reward_msec < DEATH_MERGE_MSEC:
+		return
+	_monster_reward_msec = now
+	_play_death_sfx(SfxService.CUE_MONSTER_KILL_REWARD, 0.0, 3)
 
 
 func _death_tier(victim_uid: String) -> String:
@@ -2323,6 +2662,7 @@ func _is_local_lane_clear(victim_uid: String) -> bool:
 			if bool(raw.get("alive", false)) or _cue_corpses.has(uid) or _pending_death_claim_tokens.has(uid):
 				return false
 	_lane_clear_played = true
+	_lane_clear_pending_uid = victim_uid
 	return true
 
 
@@ -2367,15 +2707,21 @@ func _death_race_color(victim_uid: String) -> Color:
 
 
 # 被顶飞结束那一帧：碎片炸开、出声、按档位和合并窗口决定震不震。
-func _on_death_shatter(victim_uid: String, actor: Node3D, away: Vector3, tier: String, color: Color) -> void:
+func _on_death_shatter(victim_uid: String, actor: Node3D, away: Vector3, tier: String, color: Color, monster := false, piece := false, mercenary := false, coins := true) -> void:
+	if piece:
+		_spawn_piece_death_residue(actor, away, color, tier, mercenary, false)
 	if is_instance_valid(actor) and actor.is_inside_tree() and _battle_3d_vfx_root != null and is_instance_valid(_battle_3d_vfx_root):
 		var hit := actor.get_node_or_null("HitAnchor") as Node3D
 		var center := hit.global_position if hit != null else actor.global_position + Vector3.UP * 0.5
-		var block := VFXBlockRoot.spawn_block(_DEATH_SHATTER, _battle_3d_vfx_root, true)
+		var block := VFXBlockRoot.spawn_block(preload("res://effects/vfx3d/modules/VFXCoinBurst3D.gd"), _battle_3d_vfx_root, true) if not piece else null
 		if block != null:
+			_death_tail_blocks.append(weakref(block))
 			var local_away := (_battle_3d_vfx_root.global_basis.inverse() * away) if away.length() > 0.001 else Vector3.ZERO
-			block.call("play_shatter", _battle_3d_vfx_root.to_local(center),
-				_battle_3d_vfx_root.to_local(actor.global_position).y, local_away, color, tier)
+			block.call("play_burst", _battle_3d_vfx_root.to_local(center),
+				_battle_3d_vfx_root.to_local(actor.global_position).y, local_away, color, tier, coins)
+	if not coins:
+		_play_death_sfx(DEATH_CUE_FALL, -3.0, 3)
+		return
 	var now := Time.get_ticks_msec()
 	var new_beat := now - _death_beat_msec > DEATH_MERGE_MSEC
 	if new_beat:
@@ -2384,20 +2730,104 @@ func _on_death_shatter(victim_uid: String, actor: Node3D, away: Vector3, tier: S
 	_death_beat_kills += 1
 	match tier:
 		DEATH_TIER_FINALE:
-			_screen_shake(DEATH_SHAKE_FINALE[0], DEATH_SHAKE_FINALE[1])
+			_lane_clear_shake()
+			# 先出光效（顺带算出本路推近轴心），再推近。
+			_spawn_lane_clear_feedback(actor)
 			_play_arena_punch()
-			_play_death_sfx(DEATH_CUE_LANE_CLEAR, 0.0, 1)
-			_play_death_sfx(DEATH_CUE_SHATTER_HEAVY, 0.0, 2)
+			if not monster and not piece:
+				_play_death_sfx(DEATH_CUE_SHATTER_HEAVY, 0.0, 2)
 		DEATH_TIER_HEAVY:
 			_screen_shake(DEATH_SHAKE_HEAVY[0], DEATH_SHAKE_HEAVY[1])
-			_play_death_sfx(DEATH_CUE_SHATTER_HEAVY, _death_sfx_db(victim_uid), 2)
+			_play_death_sfx(DEATH_CUE_FALL if monster or piece else DEATH_CUE_SHATTER_HEAVY, _death_sfx_db(victim_uid), 2)
 		_:
 			if new_beat:
-				_play_death_sfx(DEATH_CUE_SHATTER, _death_sfx_db(victim_uid), 3)
+				_play_death_sfx(DEATH_CUE_FALL if monster or piece else DEATH_CUE_SHATTER, _death_sfx_db(victim_uid), 3)
 			elif _death_beat_kills == DEATH_MULTI_KILL_AT:
 				# 合并窗口里第 3 个：补一声更厚的、一次轻震；第 4、5 个不再加。
 				_screen_shake(DEATH_SHAKE_MULTI[0], DEATH_SHAKE_MULTI[1])
-				_play_death_sfx(DEATH_CUE_SHATTER_HEAVY, _death_sfx_db(victim_uid), 3)
+				_play_death_sfx(DEATH_CUE_FALL if monster or piece else DEATH_CUE_SHATTER_HEAVY, _death_sfx_db(victim_uid), 3)
+
+
+func _spawn_piece_death_residue(actor: Node3D, away: Vector3, color: Color, tier: String, mercenary: bool, own: bool) -> void:
+	if not is_instance_valid(actor) or not actor.is_inside_tree() or not is_instance_valid(_battle_3d_vfx_root):
+		return
+	var hit := actor.get_node_or_null("HitAnchor") as Node3D
+	var center := hit.global_position if hit != null else actor.global_position + Vector3.UP * 0.25
+	var block := VFXBlockRoot.spawn_block(_DEATH_SHATTER, _battle_3d_vfx_root, true)
+	if block != null:
+		_death_tail_blocks.append(weakref(block))
+		var local_away := _battle_3d_vfx_root.global_basis.inverse() * away
+		block.call("play_piece_dissipate", _battle_3d_vfx_root.to_local(center),
+			_battle_3d_vfx_root.to_local(actor.global_position).y, local_away, color, tier, mercenary, own)
+
+
+func _spawn_lane_clear_feedback(actor: Node3D) -> void:
+	if _lane_clear_presented:
+		return
+	_lane_clear_presented = true
+	var feedback := _ensure_combat_feedback()
+	var lane := _local_lane()
+	if lane < 0 or lane > 2 or not is_instance_valid(actor) or not actor.is_inside_tree() \
+			or not is_instance_valid(_battle_3d_vfx_root):
+		feedback.call("show_lane_clear")
+		return
+	var visual_min := _battle_visual_min()
+	var visual_max := _battle_visual_max()
+	var band := BattleSimShared.lane_band_x(lane)
+	var corners: Array[Vector3] = []
+	for sim in [Vector2(band.x, visual_min.y), Vector2(band.y, visual_min.y), Vector2(band.x, visual_max.y), Vector2(band.y, visual_max.y)]:
+		corners.append(_sim_to_world_pos(sim))
+	var a := _battle_3d_vfx_root.to_local(corners[0])
+	var b := _battle_3d_vfx_root.to_local(corners[3])
+	var bounds := Rect2(Vector2(minf(a.x,b.x),minf(a.z,b.z)),Vector2(absf(b.x-a.x),absf(b.z-a.z)))
+	# 本路在屏幕上的范围：四个角投影后取外接框。字幕和推近轴心都对准它。
+	var screen_rect := Rect2(_world_to_arena_point(corners[0]), Vector2.ZERO)
+	for corner in corners:
+		screen_rect = screen_rect.expand(_world_to_arena_point(corner))
+	var lane_center := screen_rect.get_center()
+	_lane_clear_pivot = lane_center
+	var caption_point := Vector2(lane_center.x, screen_rect.position.y + screen_rect.size.y * LANE_CLEAR_CAPTION_FROM_TOP)
+	feedback.call("show_lane_clear", _arena.get_global_transform() * caption_point)
+	var cheer_points: Array = []
+	for model in _lane_clear_cheer_actors(lane):
+		cheer_points.append(_battle_3d_vfx_root.to_local(model.global_position))
+		_play_lane_clear_hop(model)
+	var block := VFXBlockRoot.spawn_block(preload("res://effects/vfx3d/modules/VFXLaneClearBurst3D.gd"), _battle_3d_vfx_root, true)
+	if block != null:
+		_death_tail_blocks.append(weakref(block))
+		block.call("play_clear", _battle_3d_vfx_root.to_local(actor.global_position), bounds, cheer_points)
+
+
+# 我方在本地那一路还活着的棋子（含队友借位的友军不算 —— 本路只有自己的棋子）。
+func _lane_clear_cheer_actors(lane: int) -> Array[Node3D]:
+	var result: Array[Node3D] = []
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if not (raw is Dictionary) or not bool(raw.get("alive", false)) or int(raw.get("lane", -1)) != lane:
+				continue
+			var uid := str(raw.get("uid", ""))
+			if not _is_local_owned_unit(uid):
+				continue
+			var model = _battle_3d_models.get(uid)
+			if model is Node3D and is_instance_valid(model) and (model as Node3D).is_inside_tree():
+				result.append(model as Node3D)
+	return result
+
+
+# 庆祝小跳打在 ActorRoot.position:y 上：actor.position 每帧被模拟重写，
+# ActorRoot 的 x/z 归普攻前冲用，y 没人写，所以只动 y，落地归零。
+func _play_lane_clear_hop(model: Node3D) -> void:
+	if not PresentationSettings.hit_stop_allowed():
+		return
+	var root := model.get_node_or_null("ActorRoot") as Node3D
+	if root == null:
+		return
+	var base_y := root.position.y
+	var tween := root.create_tween()
+	tween.tween_property(root, "position:y", base_y + LANE_CLEAR_HOP_HEIGHT, LANE_CLEAR_HOP_UP_SEC) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property(root, "position:y", base_y, LANE_CLEAR_HOP_DOWN_SEC) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 
 
 # 敌方死在本地那一路 0 dB；死在队友那两路 −5 dB（看得见，但那是别人的战场）。
@@ -2417,13 +2847,88 @@ func _play_death_sfx(cue: String, db: float, tier: int) -> void:
 # 清场定格：整个棋盘停 0.2 秒。不碰 Engine.time_scale（checklist 0.3）——
 # 停的是回放 / 模拟的推进（BattleScreen._process 读 _board_freeze_active）和所有棋子的动作。
 # 一局最多一次，所以不会有「一卡一卡」的问题；回放时间线整体晚 0.2 秒结束。
-func _begin_lane_clear_freeze(victim: Node3D) -> void:
+func _begin_lane_clear_freeze(victim: Node3D, killer: Node3D = null) -> void:
 	if not PresentationSettings.hit_stop_allowed():
 		return
 	_board_freeze_until_msec = Time.get_ticks_msec() + int(LANE_CLEAR_FREEZE_SEC * 1000.0)
 	for model in _battle_3d_models.values():
 		if model is Node3D and is_instance_valid(model) and model != victim:
 			_HIT_FEEDBACK.freeze_animation(model as Node3D, LANE_CLEAR_FREEZE_SEC)
+	_begin_lane_clear_spotlight(victim, killer)
+
+
+# 定格那 0.2 秒：全场压暗、两个亮洞，定格一结束「啪」地亮回来。
+# 挂在 _arena 下、z 45：压得住 2D 底图（z −20）和 3D 单位层（z 40），
+# 压不到顶栏 / 血量条 / 字幕（z 80 以上）。只在顿帧开关打开时出现（跟定格同一个开关）。
+func _begin_lane_clear_spotlight(victim: Node3D, killer: Node3D) -> void:
+	if _arena == null or not is_instance_valid(_arena):
+		return
+	_end_lane_clear_spotlight()
+	var spot := ColorRect.new()
+	spot.name = "LaneClearSpotlight"
+	spot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	spot.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	spot.z_index = 45
+	var material := ShaderMaterial.new()
+	material.shader = preload("res://shaders/lane_clear_spotlight.gdshader")
+	var rect_size := _arena.size
+	material.set_shader_parameter("rect_size", rect_size)
+	material.set_shader_parameter("radius", rect_size.y * LANE_CLEAR_SPOT_RADIUS_RATIO)
+	material.set_shader_parameter("spot_a", _lane_clear_screen_point(victim))
+	material.set_shader_parameter("spot_b", _lane_clear_screen_point(killer))
+	material.set_shader_parameter("dim", 0.0)
+	spot.material = material
+	_arena.add_child(spot)
+	_lane_clear_spot = spot
+	_lane_clear_spot_tween = create_tween()
+	_lane_clear_spot_tween.tween_property(material, "shader_parameter/dim", 1.0, LANE_CLEAR_SPOT_IN_SEC)
+	_lane_clear_spot_tween.tween_interval(maxf(0.0, LANE_CLEAR_FREEZE_SEC - LANE_CLEAR_SPOT_IN_SEC))
+	_lane_clear_spot_tween.tween_property(material, "shader_parameter/dim", 0.0, LANE_CLEAR_SPOT_OUT_SEC) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_lane_clear_spot_tween.tween_callback(_end_lane_clear_spotlight)
+
+
+func _end_lane_clear_spotlight() -> void:
+	if _lane_clear_spot_tween != null and _lane_clear_spot_tween.is_valid():
+		_lane_clear_spot_tween.kill()
+	_lane_clear_spot_tween = null
+	if _lane_clear_spot != null and is_instance_valid(_lane_clear_spot):
+		_lane_clear_spot.queue_free()
+	_lane_clear_spot = null
+
+
+# 3D 单位（取 HitAnchor，没有就取身体中段）在 _arena 本地坐标里的位置。
+# 3D 视口 stretch 到容器大小，容器铺满 _arena，所以按「容器 / 视口」比例换算即可。
+func _lane_clear_screen_point(actor: Node3D) -> Vector2:
+	if actor == null or not is_instance_valid(actor) or not actor.is_inside_tree():
+		return Vector2(-10000.0, -10000.0)
+	var hit := actor.get_node_or_null("HitAnchor") as Node3D
+	var world := hit.global_position if hit != null else actor.global_position + Vector3.UP * 0.4
+	return _world_to_arena_point(world)
+
+
+func _world_to_arena_point(world: Vector3) -> Vector2:
+	if _battle_3d_camera == null or _battle_3d_viewport == null or _arena == null:
+		return Vector2(-10000.0, -10000.0)
+	var container := _battle_3d_viewport.get_parent() as Control
+	var view_size := Vector2(_battle_3d_viewport.size)
+	if container == null or view_size.x <= 0.0 or view_size.y <= 0.0:
+		return Vector2(-10000.0, -10000.0)
+	var p := _battle_3d_camera.unproject_position(world) * container.size / view_size
+	return container.position + p
+
+
+# 清场震屏：按 _arena 高度换算（720 高约 12 px、1080 高约 18 px），不受普通屏震 9 px 封顶。
+func _lane_clear_shake() -> void:
+	if _arena == null or not is_instance_valid(_arena):
+		return
+	var px := clampf(_arena.size.y * LANE_CLEAR_SHAKE_RATIO, LANE_CLEAR_SHAKE_MIN_PX, LANE_CLEAR_SHAKE_MAX_PX) \
+		* PresentationSettings.screen_shake_scale()
+	if px <= 0.0:
+		return
+	_shake_px = px
+	_shake_started_msec = Time.get_ticks_msec()
+	_shake_duration_msec = int(LANE_CLEAR_SHAKE_SEC * 1000.0)
 
 
 func _board_freeze_active() -> bool:
@@ -2436,7 +2941,7 @@ func _play_arena_punch() -> void:
 	if _arena == null or not is_instance_valid(_arena) or PresentationSettings.screen_shake_scale() <= 0.0:
 		return
 	_end_arena_punch()
-	_arena.pivot_offset = _arena.size * 0.5
+	_arena.pivot_offset = _lane_clear_pivot if _lane_clear_pivot != Vector2.INF else _arena.size * 0.5
 	_arena_punch_tween = create_tween()
 	_arena_punch_tween.tween_property(_arena, "scale", Vector2.ONE * LANE_CLEAR_PUNCH_SCALE, LANE_CLEAR_PUNCH_IN_SEC) \
 		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
@@ -3071,7 +3576,7 @@ const _RACE_NUMBER_COLORS := {
 # "dmg" | "heal" | "shield" | "miss"; crit/skill tweak damage styling. race colors
 # the normal-attack tier only.
 func _spawn_hit_number(head_pos: Vector2, amount: int, kind: String, crit: bool, is_skill: bool, race: String = "") -> void:
-	if amount <= 0 and kind != "miss":
+	if amount <= 0 and not (kind in ["miss", "dodge", "execute"]):
 		return
 	_ensure_hit_number_layer()
 	if _hit_number_pool.is_empty():
@@ -3111,6 +3616,20 @@ func _spawn_hit_number(head_pos: Vector2, amount: int, kind: String, crit: bool,
 			font_size = 22
 			rise = 40.0
 			dur = 0.62
+		# 10.31 防卫套闪避：和普通 MISS 区分开，青色、稍大。
+		"dodge":
+			color = Color(0.50, 0.95, 1.0)
+			text = "DODGE" if LocaleManager.get_locale().begins_with("en") else "闪避"
+			font_size = 24
+			rise = 44.0
+			dur = 0.66
+		# 10.31 攻击套斩杀：全场最大的一个字，赤红。
+		"execute":
+			color = Color(1.0, 0.30, 0.16)
+			text = "EXECUTE" if LocaleManager.get_locale().begins_with("en") else "斩"
+			font_size = 44
+			rise = 54.0
+			dur = 0.9
 		"heal":
 			color = Color(0.36, 1.0, 0.46)
 			text = "+%d" % amount
@@ -3147,6 +3666,8 @@ func _spawn_hit_number(head_pos: Vector2, amount: int, kind: String, crit: bool,
 	# everything else keeps the default black outline.
 	if not tone.is_empty():
 		lbl.add_theme_color_override("font_outline_color", tone.get("outline", Color(0, 0, 0, 0.95)))
+	elif kind == "execute":
+		lbl.add_theme_color_override("font_outline_color", Color(0.20, 0.02, 0.0, 1.0))
 	else:
 		lbl.add_theme_color_override("font_outline_color", Color(0.92, 0.94, 1.0, 0.95) if race == "dark" and kind == "dmg" and not crit and not is_skill else Color(0, 0, 0, 0.95))
 	lbl.text = text

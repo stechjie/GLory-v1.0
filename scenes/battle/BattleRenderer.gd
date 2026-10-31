@@ -1,4 +1,4 @@
-﻿extends "res://scenes/battle/BattleArena.gd"
+extends "res://scenes/battle/BattleArena.gd"
 
 const StatusVFXController := preload("res://scenes/battle/StatusVFXController.gd")
 const UnitActor3DScript := preload("res://effects/runtime/presentation/UnitActor3D.gd")
@@ -163,6 +163,7 @@ func _refresh_visuals() -> void:
 	_sync_battle_readability_static_geometry()
 	_update_battle_readability_focus()
 	_refresh_top5_atk(living)
+	_refresh_damage_counter()
 	if _summary_lbl != null and _summary_lbl.visible:
 		_refresh_summary()
 
@@ -1892,3 +1893,28 @@ func _camera_distance_for_bounds(bounds: AABB, frame_fill: float, fov_deg: float
 
 func _visual_id(f: Dictionary) -> String:
 	return str(f.get("uid", "%s_%s" % [str(f.get("team", "")), str(f.get("id", ""))]))
+
+func _refresh_damage_counter() -> void:
+	if not has_method("_ensure_combat_feedback"):
+		return
+	var local_slot := NetworkService.team_local_slot if NetworkService.team_active else 0
+	var total := 0
+	var found := false
+	var stats: Dictionary = _state.get("unit_stats", {})
+	for side in ["player", "enemy"]:
+		for fighter: Dictionary in _state.get(side, []):
+			if not bool(call("_is_local_owned_unit", str(fighter.get("uid", "")))):
+				continue
+			found = true
+			if str((stats.get(str(fighter.get("uid", "")), {}) as Dictionary).get("group", "")) != "boss":
+				total += _fighter_damage_dealt(fighter)
+	var snapshot: Array = _state.get("presentation_slot_damage", [])
+	if local_slot >= 0 and local_slot < snapshot.size():
+		total = int(snapshot[local_slot])
+	else:
+		var elemental: Dictionary = _state.get("element_damage_by_slot", {})
+		total += int(elemental.get(local_slot, elemental.get(str(local_slot), 0)))
+	var hud: Control = call("_ensure_combat_feedback")
+	hud.visible = found
+	if found:
+		hud.call("show_damage", total, not bool(_state.get("presentation_damage_silent", false)), GameState.round_index)

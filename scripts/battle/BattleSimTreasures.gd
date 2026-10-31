@@ -915,6 +915,13 @@ static func _try_attack_set_execute(attacker: Dictionary, target: Dictionary, st
 	target.alive = false
 	StatusEffectService.add_status(attacker, "attack_set_speed_bonus", 5.0, {"pct": 0.25})
 	target["killer_uid"] = str(attacker.get("uid", ""))
+	# 10.31：斩杀专属演出（刀光 + 「斩」字 + 攻击者 5 秒加速光环）。纯表现事件，走 visual_events
+	# （与富裕之路金币同一通道；frame_events 不进 simulation_sha256，不改玩法身份）。
+	# 放在 emit_death 之前：前端先认出「这一下是斩杀」，再接死亡演出。
+	if not state.has("visual_events") or typeof(state.visual_events) != TYPE_ARRAY:
+		state.visual_events = []
+	state.visual_events.append({"type": "set_execute", "source_uid": str(attacker.get("uid", "")),
+		"target_uid": str(target.get("uid", "")), "time": float(state.get("elapsed", 0.0))})
 	DamageService.emit_death(target)
 	state.log.append(TranslationServer.translate("log_attack_execute") % [str(attacker.get("name", "?")), str(target.get("name", "?"))])
 	return hp_before

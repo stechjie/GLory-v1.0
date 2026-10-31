@@ -155,6 +155,9 @@ func _build() -> void:
 	_add_battle_grid_overlay(arena_wrap)
 
 	_setup_battle_3d_view(arena_wrap)
+	var player_lane_wave := preload("res://scenes/battle/PlayerLaneWave.gd").new()
+	player_lane_wave.battle = self
+	arena_wrap.add_child(player_lane_wave)
 	_sync_battle_readability_static_geometry.call_deferred()
 	_add_battle_3v3_dividers(arena_wrap)
 	_add_result_overlay(arena_wrap)

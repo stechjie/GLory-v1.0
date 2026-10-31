@@ -167,7 +167,15 @@ static func freeze_animation(actor: Node3D, duration: float) -> void:
 		for player in actor.find_children("*", "AnimationPlayer", true, false):
 			(player as AnimationPlayer).speed_scale = 0.0
 	# ignore_time_scale = true：不受 Engine.time_scale 影响，也不会被别处的全局停帧拖住。
-	actor.get_tree().create_timer(duration, true, false, true).timeout.connect(_release_freeze.bind(actor))
+	actor.get_tree().create_timer(duration, true, false, true).timeout.connect(_release_freeze_weak.bind(weakref(actor)))
+
+
+# 尸体可能先于恢复计时器回收。不能把已释放的 Node3D 直接传给有类型的回调：
+# 参数转换会在进入 _release_freeze 的有效性守卫之前报错。
+static func _release_freeze_weak(actor_ref: WeakRef) -> void:
+	var actor := actor_ref.get_ref() as Node3D
+	if is_instance_valid(actor):
+		_release_freeze(actor)
 
 
 static func _release_freeze(actor: Node3D) -> void:
@@ -179,7 +187,7 @@ static func _release_freeze(actor: Node3D) -> void:
 		# 不能直接 return —— 那样没有下一个计时器，这个单位会一直停着。
 		# （顺延的那次命中也会自己排计时器，多排一个只是空跑一次。）
 		if actor.is_inside_tree():
-			actor.get_tree().create_timer(remaining * 0.001, true, false, true).timeout.connect(_release_freeze.bind(actor))
+			actor.get_tree().create_timer(remaining * 0.001, true, false, true).timeout.connect(_release_freeze_weak.bind(weakref(actor)))
 		return
 	actor.remove_meta("hitstop_until")
 	# 恢复到渲染层记的基准倍率（跑步时按移动速度调过），而不是一律 1.0。

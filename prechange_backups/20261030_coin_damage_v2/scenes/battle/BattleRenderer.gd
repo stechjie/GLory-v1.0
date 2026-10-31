@@ -1,0 +1,1894 @@
+﻿extends "res://scenes/battle/BattleArena.gd"
+
+const StatusVFXController := preload("res://scenes/battle/StatusVFXController.gd")
+const UnitActor3DScript := preload("res://effects/runtime/presentation/UnitActor3D.gd")
+const UnitVisualResolverScript := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
+const ModelRootMotionPolicyScript := preload("res://effects/runtime/presentation/ModelRootMotionPolicy.gd")
+const RunAnimCalibrationScript := preload("res://effects/runtime/presentation/RunAnimCalibration.gd")
+const UnitContactShadowScript := preload("res://effects/runtime/presentation/UnitContactShadow.gd")
+const UnitPlanarShadowScript := preload("res://effects/runtime/presentation/UnitPlanarShadow.gd")
+const UNIT_TEAM_RING_SHADER := preload("res://shaders/unit_team_ring.gdshader")
+const FOUR_STAR_AURA := preload("res://effects/vfx3d/modules/FourStarAuraV3_3D.gd")
+const CrimsonDrumBadge := preload("res://scenes/battle/CrimsonDrumBadge.gd")
+const CrimsonRuneBadgeScript := preload("res://scenes/battle/CrimsonRuneBadge.gd")
+const MotherSoulBadgeScript := preload("res://scenes/battle/MotherSoulBadge.gd")
+const CrimsonResonanceOrb := preload("res://effects/vfx3d/modules/CrimsonResonanceOrb3D.gd")
+const CrimsonRedTideOrbits := preload("res://effects/vfx3d/modules/CrimsonRedTideOrbits3D.gd")
+# 10.10 第 10 条：凤凰涅槃复活体的「死灵气息」常驻标识。
+const UNDEAD_NECROSIS_AURA := preload("res://effects/vfx3d/modules/UndeadNecrosisAura3D.gd")
+
+# Per-frame actor lookup and memoized visual positions. The immutable personal
+# slot is stored separately; these frame tables are rebuilt by _refresh_visuals.
+var _frame_living_ids: PackedStringArray = PackedStringArray()
+var _frame_living_pos: PackedVector2Array = PackedVector2Array()
+# id -> fighter dict for this frame. Facing needs to resolve a target uid back
+# to a unit; holding the references costs nothing and keeps the lookup O(1).
+var _frame_fighter_by_id: Dictionary = {}
+var _visual_pos_cache: Dictionary = {}
+# One immutable display offset per actor. It is chosen once when the actor first
+# enters the battle and never re-solved from neighbours, so presentation cannot
+# add sideways drift, catch-up motion, or a second "settle" after stopping.
+var _fixed_visual_offset_by_id: Dictionary = {}
+# --- 逻辑帧之间的显示插值（10.29）----------------------------------------------
+# 模拟 10Hz，屏幕 60fps：直接显示逻辑坐标时，角色连续 6 个画面不动再跳一步，
+# 慢放时 12 个画面跳一步。这里只在显示层把位置从「上一个逻辑帧」补到「当前逻辑帧」，
+# 模拟、回放、伤害判定、动画/朝向判定都继续读真实逻辑坐标。
+#   * 进度为 1 时显示位置与逻辑位置逐字相等；任意进度都落在两帧连线上。
+#   * 单帧位移超过 VISUAL_INTERP_SNAP_SIM（闪现、冲锋、布阵）当帧直接到位。
+#   * 没有上一帧记录的单位（召唤、复活、刚建体）当帧直接到位。
+#   * 不读邻居、不做缓动、停下后不会再滑。
+# 正常走路一帧约 16–18（移速 3.0–3.2 × 55 × 0.1），阈值取约 3 倍。
+const VISUAL_INTERP_SNAP_SIM := 48.0
+# uid -> 最新一次逻辑帧推进之前的原始模拟坐标。只由播放循环写入。
+var _interp_prev_pos_by_id: Dictionary = {}
+# 当前画面在「上一逻辑帧 → 当前逻辑帧」之间的进度，1.0 = 正好在当前逻辑帧。
+var _interp_alpha := 1.0
+# --- 跑步动画按实际移动速度调播放倍率（10.29）-------------------------------------
+# 滑步的根因是片段原速对应的地面速度和实际移动速度对不上（见 RunAnimCalibration）。
+# 跑步时 speed_scale = 显示移动速度 / 片段脚贴地速度，夹在 [MIN, MAX]：
+#   * 速度取画面上的显示位移（已含插值、慢放倍率、减速），平滑约 RUN_SPEED_SMOOTH_SEC；
+#   * 上限 2.5：走路片段要 5–30 倍，再快腿就糊了，这类单位要换片段；
+#   * 离开跑步（待机、攻击、开场等待、收尾归位）一律回到 1.0，攻击节奏不受影响；
+#   * 顿帧期间不写播放器，只记 anim_base_speed，BattleHitFeedback 解冻时恢复到它。
+const RUN_ANIM_SPEED_MIN := 0.6
+const RUN_ANIM_SPEED_MAX := 2.5
+const RUN_SPEED_SMOOTH_SEC := 0.12
+# 单帧显示位移超过这个速度（世界单位/秒）视为瞬移（闪现、布阵、seek），不计入。
+const RUN_SPEED_TELEPORT := 20.0
+# 跑步锁的最短时长。慢放时两个逻辑帧之间的真实时间会超过它，见 _run_lock_sec()。
+const RUN_LOCK_BASE_SEC := 0.18
+# 模拟秒 / 真实秒。BattleScreen 按回放倍率写入；本地模拟为 1。
+var _visual_sim_time_scale := 1.0
+var _status_vfx_by_id: Dictionary = {}
+# HpFill refs cached at node creation so the per-frame HP sync never walks the tree.
+var _hp_fill_by_id: Dictionary = {}
+# V2 P1-05：已被死亡演出接管的 2D 层（名字 + 血条），uid -> Control。
+# 从 _unit_nodes 里搬出来才不会被 _sync_unit_nodes 的剪枝当场释放 ——
+# 和 3D 侧的 _cue_corpses 是同一个套路。
+var _dying_unit_nodes: Dictionary = {}
+var _top5_next_refresh_msec := 0
+var _formation_allies_hidden_for_intro := false
+
+func _fighter_display_name(f: Dictionary) -> String:
+	var d: Dictionary = f.get("def", {})
+	var unit_id := str(f.get("id", d.get("id", "")))
+	# Team replays contain a by-value name snapshot and the dedicated server may
+	# still be one content revision behind. Normal units always display the local
+	# canonical name by stable id; monsters/bosses keep their replay/data names.
+	var canonical := DataRegistry.canonical_unit_def(unit_id)
+	if not canonical.is_empty():
+		return DataRegistry.unit_display_name(canonical, LocaleManager.get_locale() == "en")
+	if LocaleManager.get_locale() == "en":
+		var en := str(f.get("name_en", d.get("name_en", "")))
+		if not en.is_empty():
+			return en
+		return _english_name_from_id(unit_id)
+	return str(f.get("name", str(f.get("id", "?"))))
+
+func _english_name_from_id(id: String) -> String:
+	for prefix in ["pve_", "boss_", "merc_"]:
+		if id.begins_with(prefix):
+			id = id.substr(prefix.length())
+	for element in ["land_", "sky_", "water_", "fire_", "ren_"]:
+		if id.begins_with(element):
+			id = id.substr(element.length())
+	var words := id.split("_", false)
+	for i in words.size():
+		var w := str(words[i])
+		words[i] = w.substr(0, 1).to_upper() + w.substr(1)
+	return " ".join(words) if not words.is_empty() else "Unit"
+
+func _refresh_visuals() -> void:
+	var facing_delta := _model_facing_delta()
+	# Compute the living set ONCE per frame and reuse it everywhere.
+	var living := BattleSim.living_units(_state)
+	_begin_visual_frame(living, facing_delta)
+	var living_ids := {}
+	var player_alive := 0
+	var enemy_alive := 0
+	for f in living:
+		living_ids[_visual_id(f)] = true
+		if str(f.get("team", "")) == "player":
+			player_alive += 1
+		else:
+			enemy_alive += 1
+	if not _selected_battle_unit_id.is_empty() and not living_ids.has(_selected_battle_unit_id):
+		_selected_battle_unit_id = ""
+	_sync_unit_nodes(_state.get("player", []), living_ids)
+	_sync_unit_nodes(_state.get("enemy", []), living_ids)
+	_sync_3d_model_nodes(living, facing_delta)
+	# These HUD labels are hidden — only rebuild their text if actually shown.
+	if _battle_state_lbl != null and _battle_state_lbl.visible:
+		_battle_state_lbl.text = tr("battle_state") % [player_alive, enemy_alive, float(_state.get("elapsed", 0.0)), tr("battle_ended_suffix") if _finished else ""]
+	_refresh_frenzy_hud()
+	# Per-unit: only the things that actually change each frame (position + HP fill).
+	for f in living:
+		var node: Control = _unit_nodes.get(_visual_id(f))
+		if node == null:
+			continue
+		_position_unit_node(node, f)
+		var drum_count := _crimson_drum_stack_count(f)
+		var drum_badge := node.get_node_or_null("CrimsonDrumBadge") as Control
+		if drum_count > 0 and drum_badge == null:
+			drum_badge = CrimsonDrumBadge.new()
+			node.add_child(drum_badge)
+		if drum_badge != null:
+			drum_badge.call("set_stacks", drum_count)
+		var rune_count := clampi(int(f.get("crimson_rune_stacks", 0)), 0, 9)
+		var rune_badge := node.get_node_or_null("CrimsonRuneBadge") as Control
+		if rune_count > 0 and rune_badge == null:
+			rune_badge = CrimsonRuneBadgeScript.new()
+			node.add_child(rune_badge)
+		if rune_badge != null:
+			rune_badge.call("set_stacks", rune_count)
+		# 10.10：母灵击杀计数（亮几盏魂火 / 阈值）。字段只有母灵身上有。
+		var mother_threshold := int(f.get("vfx_mother_threshold", 0))
+		var soul_badge := node.get_node_or_null("MotherSoulBadge") as Control
+		if mother_threshold > 0 and soul_badge == null:
+			soul_badge = MotherSoulBadgeScript.new()
+			node.add_child(soul_badge)
+		if soul_badge != null:
+			soul_badge.call("set_counter", int(f.get("vfx_mother_count", 0)), mother_threshold)
+		var hp_bar: ColorRect = _hp_fill_by_id.get(_visual_id(f))
+		if hp_bar != null and is_instance_valid(hp_bar):
+			hp_bar.scale.x = clampf(float(f.hp) / float(maxi(1, f.max_hp)), 0.0, 1.0)
+			# 9.24 #7：血条颜色要跟着**当前**队伍走，不能像原来那样只在建节点时定死。
+			# 末日守卫的血之契约会把敌方目标永久策反成我方棋子，颜色必须同帧变绿
+			# （绿=我方 / 红=敌方，见 _hp_color_for_team）。这里改的是同一帧的填充色，
+			# 不做动画 —— 用户要的是"同步改变"，不是渐变。
+			var want_color: Color = _hp_color_for_team(_display_team(f))
+			if hp_bar.color != want_color:
+				hp_bar.color = want_color
+	_update_3v3_dividers()
+	_sync_battle_readability_static_geometry()
+	_update_battle_readability_focus()
+	_refresh_top5_atk(living)
+	if _summary_lbl != null and _summary_lbl.visible:
+		_refresh_summary()
+
+
+func _crimson_drum_stack_count(f: Dictionary) -> int:
+	if f.has("crimson_drum_stacks"):
+		return clampi(int(f["crimson_drum_stacks"]), 0, 15)
+	var atk_layers: Array = f.get("crimson_drum_atk", [])
+	var speed_layers: Array = f.get("crimson_drum_speed", [])
+	return mini(atk_layers.size(), speed_layers.size())
+
+
+func _refresh_frenzy_hud() -> void:
+	if _frenzy_lbl == null:
+		return
+	var frenzy_panel := _frenzy_lbl.get_parent() as Control
+	var elapsed := float(_state.get("elapsed", 0.0))
+	if _finished or elapsed < 30.0:
+		if frenzy_panel != null:
+			frenzy_panel.visible = false
+		return
+	if frenzy_panel != null:
+		frenzy_panel.visible = true
+	if elapsed < BattleFrenzy.FRENZY_I_SEC:
+		var remaining := maxi(1, int(ceil(BattleFrenzy.FRENZY_I_SEC - elapsed)))
+		_frenzy_lbl.text = tr("battle_frenzy_warning") % remaining
+		_frenzy_lbl.add_theme_color_override("font_color", Color(1.0, 0.86, 0.34))
+		return
+	match BattleFrenzy.stage_for_elapsed(elapsed):
+		1:
+			_frenzy_lbl.text = tr("battle_frenzy_i")
+			_frenzy_lbl.add_theme_color_override("font_color", Color(1.0, 0.78, 0.24))
+		2:
+			_frenzy_lbl.text = tr("battle_frenzy_ii")
+			_frenzy_lbl.add_theme_color_override("font_color", Color(1.0, 0.52, 0.18))
+		3:
+			_frenzy_lbl.text = tr("battle_frenzy_iii")
+			_frenzy_lbl.add_theme_color_override("font_color", Color(1.0, 0.30, 0.18))
+		_:
+			_frenzy_lbl.text = tr("battle_sudden_death")
+			_frenzy_lbl.add_theme_color_override("font_color", Color(1.0, 0.18, 0.14))
+
+# (8) Left-middle leaderboard: top 5 living units by ATK, colored by owner/team,
+# with the damage each has dealt so far.
+func _refresh_top5_atk(living: Array) -> void:
+	if _top5_atk_lbl == null:
+		return
+	# Rebuilding BBCode text re-parses the whole label; 4x/sec is plenty.
+	var now := Time.get_ticks_msec()
+	if now < _top5_next_refresh_msec:
+		return
+	_top5_next_refresh_msec = now + 250
+	var ranked := living.duplicate()
+	ranked.sort_custom(func(a, b): return _fighter_atk(a) > _fighter_atk(b))
+	var lines: Array[String] = []
+	lines.append("[b]%s[/b]" % tr("top_atk"))
+	var shown := mini(5, ranked.size())
+	for i in shown:
+		var f: Dictionary = ranked[i]
+		var col := _fighter_display_color(f)
+		var name_txt := _fighter_display_name(f)
+		lines.append("[color=#%s]%s  %s %d  %s %d[/color]" % [
+			col.to_html(false),
+			name_txt,
+			tr("abbr_atk"), _fighter_atk(f),
+			tr("abbr_dmg"), _fighter_damage_dealt(f),
+		])
+	var text := "\n".join(lines)
+	# Assigning identical text still re-parses the BBCode — skip it.
+	if _top5_atk_lbl.text != text:
+		_top5_atk_lbl.text = text
+
+func _fighter_atk(f: Dictionary) -> int:
+	return int(f.get("atk", f.get("def", {}).get("atk", 0)))
+
+func _fighter_damage_dealt(f: Dictionary) -> int:
+	# Replay frames carry per-unit damage directly; the live sim keeps it in unit_stats.
+	if f.has("damage_dealt"):
+		return int(f.get("damage_dealt", 0))
+	var stats: Dictionary = _state.get("unit_stats", {})
+	var entry: Dictionary = stats.get(str(f.get("uid", "")), {})
+	return int(entry.get("damage_dealt", 0))
+
+func _fighter_display_color(f: Dictionary) -> Color:
+	var owner_slot := int(f.get("owner_slot", -1))
+	var fid := str(f.get("id", ""))
+	if fid.is_empty():
+		fid = str(f.get("def", {}).get("id", ""))
+	var is_boss := bool(f.get("def", {}).get("is_boss", false)) or fid.begins_with("boss_")
+	var is_monster := fid.begins_with("pve_")
+	if is_boss:
+		return Color(0.90, 0.45, 0.95)
+	if is_monster:
+		return Color(0.72, 0.76, 0.84)
+	if owner_slot >= 0:
+		return GameConstants.team_slot_color(owner_slot)
+	return Color(0.35, 0.85, 1.0) if _display_team(f) == "player" else Color(1.0, 0.42, 0.30)
+
+func _position_unit_node(node: Control, f: Dictionary) -> void:
+	var visual_pos := _visual_sim_pos_for_fighter(f)
+	var world_pos := _sim_to_world_pos(visual_pos)
+	var mapped := _world_to_arena(Vector3(world_pos.x, battle_unit_y_offset, world_pos.z))
+	node.position = mapped - UNIT_VISUAL_OFFSET
+	# Units lower on the arena should visually stand in front of units behind them.
+	node.z_index = int(round(mapped.y))
+
+func _sync_unit_nodes(fighters: Array, living_ids: Dictionary) -> void:
+	for f in fighters:
+		var id := _visual_id(f)
+		# Replay/state arrays retain dead fighters. Without this guard a dead
+		# fighter whose 2D node was pruned below is rebuilt on the next visual
+		# refresh, then immediately queued for deletion again. Round 20 keeps 67
+		# dead entries, so that churn recreated labels, HP bars, anchors and shadows
+		# every frame even after the battlefield had mostly emptied.
+		if not living_ids.has(id):
+			continue
+		if _unit_nodes.has(id):
+			continue
+		var node := _make_unit_node(f)
+		_position_unit_node(node, f)
+		_unit_nodes[id] = node
+		_hp_fill_by_id[id] = node.get_node("HpFill")
+		_arena.add_child(node)
+		_apply_formation_intro_visibility(id, f)
+	# O(N) cleanup: drop nodes whose unit is no longer alive (set lookup).
+	#
+	# 被死亡演出接管的那些已经从 _unit_nodes 搬进 _dying_unit_nodes 了，
+	# 所以这里看不到它们，也就不会在尸体还在淡出时把血条当场释放。
+	# 走到这条分支的是非死亡的移除（重开、seek、战斗结束清场）。
+	for key in _unit_nodes.keys():
+		if not living_ids.has(key):
+			var n: Node = _unit_nodes[key]
+			n.queue_free()
+			_unit_nodes.erase(key)
+			_hp_fill_by_id.erase(key)
+
+
+# V2 P1-05 第 2 条："血条和状态图标同步，不突然消失"。
+#
+# 把 2D 层（名字 + 血条）从剪枝路径里扣下来，交给死亡演出。和 3D 侧的
+# cue_claim_corpses() 对称：都必须在 _refresh_visuals() 之前抢下来。
+func claim_unit_node_for_death(uid: String) -> Control:
+	if _dying_unit_nodes.has(uid):
+		return _dying_unit_nodes[uid] as Control
+	var node_value = _unit_nodes.get(uid)
+	if not (node_value is Control) or not is_instance_valid(node_value):
+		return null
+	# The node leaves the normal per-frame HP sync as soon as the death cue is
+	# claimed. Zero the fill first; otherwise it keeps the pre-death sliver for
+	# the whole fade (or forever when a queued cue is cancelled).
+	var hp_fill_value = _hp_fill_by_id.get(uid)
+	if hp_fill_value is ColorRect and is_instance_valid(hp_fill_value):
+		(hp_fill_value as ColorRect).scale.x = 0.0
+	_unit_nodes.erase(uid)
+	_hp_fill_by_id.erase(uid)
+	_dying_unit_nodes[uid] = node_value
+	return node_value as Control
+
+
+# 让扣下来的 2D 层与身体同时淡出。seconds 由 cue_play_death 传的同一个 fade
+# 决定 —— 两边共用一个数，就不会各自漂移。
+func _play_unit_node_death_fade(uid: String, seconds: float) -> void:
+	var node := claim_unit_node_for_death(uid)
+	if node == null:
+		return
+	var tween := create_tween()
+	tween.tween_property(node, "modulate:a", 0.0, maxf(0.05, seconds))
+	tween.tween_callback(func() -> void: _release_dying_unit_node(uid))
+
+
+func _release_dying_unit_node(uid: String) -> void:
+	var node_value = _dying_unit_nodes.get(uid)
+	_dying_unit_nodes.erase(uid)
+	if node_value is Node and is_instance_valid(node_value):
+		(node_value as Node).queue_free()
+
+
+# 与 cue_release_corpses() 对称：seek / 重开 / 结束时把还在淡的 2D 层收干净。
+func release_dying_unit_nodes() -> void:
+	for uid in _dying_unit_nodes.keys():
+		var node_value = _dying_unit_nodes[uid]
+		if node_value is Node and is_instance_valid(node_value):
+			(node_value as Node).queue_free()
+	_dying_unit_nodes.clear()
+
+# (4) Team color from the VIEWER's point of view: the local player's own units keep
+# the friendly color and the opponent stays red, even when the arena is flipped.
+#
+# 9.14 修正：**观战另一队时不再反转**。
+# 这条反转原来是为「观战敌方」写的 —— 把敌队 replay 的 "player" 侧染红、他们打的怪染绿，
+# 好让画面保持"我方绿、对面红"。但 3v3 里的另一队是**同等的真人玩家**（见
+# docs/联机审计与整改方案.md 的术语边界，UI 早已改名"查看另一队/返回本队"，C25），
+# 反馈要的是「查看另一队」呈现**对方视角本身**：和那位玩家自己屏幕上看到的一模一样。
+# 反转会让同一场战斗在两台设备上配色/半场标注相反，就是 9.14 反馈的"与对方视角不同步"。
+#
+# 9.29 修正：反转的依据从 _arena_flip_y 换成 _color_flip。
+# 原来两者同源，但决赛的战斗轴是左右、位置**不能翻**（翻了画面会坏），于是
+# _arena_flip_y 在决赛被强制 false —— 顺带把「B 队玩家看到自己绿」也一起关掉了，
+# 表现为「一开始我方绿，到最终回合我方变红」。颜色与位置无关，必须解耦：
+#   · 位置镜像：_arena_flip_y（决赛 false）
+#   · 颜色归属：_color_flip（决赛对 B 队玩家仍为 true）
+# 见 BattleUI._color_flip 与 BattleScreen 的两处赋值。
+func _display_team(f: Dictionary) -> String:
+	return resolve_display_team(str(f.get("team", "")), _color_flip)
+
+
+# (9.29 bug 文档第 1 条) 纯函数：把棋子的**真实** team 映射成**画面展示**的 team。
+#
+# `color_flip` = 观众自己坐在规范化棋局的 "enemy" 侧（B 队玩家、联机 PvP）。
+# 抽成 static 是为了让门禁/探针**不实例化整个战斗场景**就能直调这条判据 ——
+# BattleRenderer 是重型 3D 场景，headless 下 new() 会挂死（见仓库纪律）。
+static func resolve_display_team(fighter_team: String, color_flip: bool) -> String:
+	if color_flip:
+		return "player" if fighter_team == "enemy" else "enemy"
+	return fighter_team
+
+
+# 同上的纯函数版本：**展示 team → 血条颜色**。绿=我方 / 红=敌方。
+static func hp_color_for_display_team(display_team: String) -> Color:
+	return Color(1.0, 0.18, 0.12) if display_team == "enemy" else Color(0.2, 0.9, 0.25)
+
+
+func _hp_color_for_team(team: String) -> Color:
+	return hp_color_for_display_team(team)
+
+func _make_unit_node(f: Dictionary) -> Control:
+	var root := Control.new()
+	var visual_id := _visual_id(f)
+	root.name = "UnitHit_%s" % visual_id.validate_node_name()
+	root.custom_minimum_size = UNIT_VISUAL_SIZE
+	root.size = UNIT_VISUAL_SIZE
+	root.mouse_filter = Control.MOUSE_FILTER_STOP
+	root.focus_mode = Control.FOCUS_NONE
+	root.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	root.tooltip_text = _fighter_display_name(f)
+	root.gui_input.connect(_on_battle_unit_gui_input.bind(visual_id))
+	# 9.14 离线自测需求：鼠标放到棋子上要弹「实时数值面板」。基类只发一个空回调，
+	# 正式对局不受影响；OfficeTestScreen（离线自测）覆写 _on_battle_unit_hover 来接。
+	root.mouse_entered.connect(_on_battle_unit_hover.bind(visual_id, true))
+	root.mouse_exited.connect(_on_battle_unit_hover.bind(visual_id, false))
+	# Prevent the parent layout from touching this node
+	root.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	_add_unit_anchors(root)
+	var hp_bg := ColorRect.new()
+	hp_bg.name = "HpBg"
+	hp_bg.color = Color(0.05, 0.05, 0.05)
+	hp_bg.position = Vector2(5, 8)
+	hp_bg.size = Vector2(72, 9)
+	hp_bg.z_index = 20
+	hp_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(hp_bg)
+	var hp := ColorRect.new()
+	hp.name = "HpFill"
+	hp.color = _hp_color_for_team(_display_team(f))
+	hp.position = Vector2(8, 11)
+	hp.size = Vector2(66, 4)
+	hp.z_index = 21
+	hp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(hp)
+	var label := Label.new()
+	label.name = "Name"
+	label.position = Vector2(0, 86)
+	label.size = Vector2(82, 28)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 9)
+	label.add_theme_color_override("font_color", Color(0.94, 0.98, 1.0))
+	label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.92))
+	label.add_theme_constant_override("outline_size", 3)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.clip_text = true
+	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	# Names don't change mid-battle: set once here instead of every frame.
+	label.text = _fighter_display_name(f)
+	root.add_child(label)
+	return root
+
+
+# 9.14：单位悬停回调，基类空实现。离线自测（OfficeTestScreen）覆写它显示实时数值面板。
+func _on_battle_unit_hover(_unit_id: String, _entered: bool) -> void:
+	pass
+
+
+func _on_battle_unit_gui_input(event: InputEvent, unit_id: String) -> void:
+	var pressed := false
+	if event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		pressed = mouse_event.button_index == MOUSE_BUTTON_LEFT and mouse_event.pressed
+	elif event is InputEventScreenTouch:
+		pressed = (event as InputEventScreenTouch).pressed
+	if not pressed:
+		return
+	_selected_battle_unit_id = "" if _selected_battle_unit_id == unit_id else unit_id
+	_update_battle_readability_focus()
+	accept_event()
+
+
+func _update_battle_readability_focus() -> void:
+	if _board_readability_layer == null or not is_instance_valid(_board_readability_layer):
+		return
+	_board_readability_layer.set_guides_enabled(PlayerProfile.board_readability_enabled)
+	_board_readability_layer.set_low_quality(VFXManager.get_quality_tier() == VFXQualityBudget.Tier.LOW)
+	if _selected_battle_unit_id.is_empty():
+		_board_readability_layer.clear_battle_focus()
+		return
+	var fighter_value = _frame_fighter_by_id.get(_selected_battle_unit_id)
+	if typeof(fighter_value) != TYPE_DICTIONARY:
+		_board_readability_layer.clear_battle_focus()
+		return
+	var fighter: Dictionary = fighter_value
+	var source_sim := _visual_sim_pos_for_fighter(fighter)
+	var source := _battle_focus_screen_point(source_sim)
+	var range_polygon := PackedVector2Array()
+	var attack_range := maxf(1.0, float(fighter.get("range_px", BattleSimShared.ATTACK_RANGE_SCALE)))
+	for segment in 40:
+		var angle := TAU * float(segment) / 40.0
+		range_polygon.append(_battle_focus_screen_point(source_sim + Vector2(cos(angle), sin(angle)) * attack_range))
+	# 多目标技能（赤灯使、四星赤舞者、神王）把 uid 逗号连接写在同一列里；
+	# 焦点线只指向第一个目标，否则整串当成一个 uid 永远查不到。
+	var target_id := str(fighter.get("vfx_skill_target_uid", "")).get_slice(",", 0)
+	if target_id.is_empty():
+		target_id = str(fighter.get("vfx_attack_target_uid", ""))
+	var target := Vector2.ZERO
+	var has_target := false
+	var target_value = _frame_fighter_by_id.get(target_id)
+	if typeof(target_value) == TYPE_DICTIONARY:
+		target = _battle_focus_screen_point(_visual_sim_pos_for_fighter(target_value as Dictionary))
+		has_target = true
+	var focus_color := _actor_team_color(fighter)
+	focus_color.a = 1.0
+	_board_readability_layer.set_battle_focus(
+		_selected_battle_unit_id,
+		source,
+		range_polygon,
+		target,
+		has_target,
+		focus_color
+	)
+
+
+func _battle_focus_screen_point(sim_pos: Vector2) -> Vector2:
+	var world_pos := _sim_to_world_pos(sim_pos)
+	return _world_to_arena(Vector3(world_pos.x, battle_unit_y_offset, world_pos.z))
+
+func _add_unit_anchors(root: Control) -> void:
+	var anchors := {
+		"FootAnchor": Vector2(41, 70),
+		"CastAnchor": Vector2(41, 42),
+		"HitAnchor": Vector2(41, 48),
+		"HeadAnchor": Vector2(41, 14),
+	}
+	for anchor_name: String in anchors.keys():
+		var marker := Marker2D.new()
+		marker.name = anchor_name
+		marker.position = anchors[anchor_name]
+		marker.visible = false
+		root.add_child(marker)
+
+# prune=false：只建不删。分帧建造（_prepare_battle_models）一次只喂一个单位进来，
+# 若照常执行收尾的清理，每建一个就会把前面建好的全部 queue_free —— 最后只剩一个。
+func _sync_3d_model_nodes(living: Array, facing_delta: float, prune := true) -> void:
+	if _battle_3d_root == null:
+		return
+	var seen := {}
+	for f in living:
+		if typeof(f) != TYPE_DICTIONARY:
+			continue
+		var id := _visual_id(f)
+		seen[id] = true
+		var model_node: Node3D = _battle_3d_models.get(id)
+		if model_node == null:
+			model_node = _make_shared_model_node(f)
+			if model_node == null:
+				continue
+			_battle_3d_models[id] = model_node
+			_battle_3d_root.add_child(model_node)
+			var root_motion_result := ModelRootMotionPolicyScript.apply_to_actor(
+				model_node, _display_unit_def_for_fighter(f))
+			if bool(root_motion_result.get("requested", false)) \
+					and int(root_motion_result.get("locked_tracks", 0)) <= 0:
+				UnitVisualResolverScript.report_failure(str(f.get("id", id)),
+					str(f.get("def", {}).get("model", "")), "battle",
+					"configured in-place action has no lockable root-motion track")
+			_refresh_actor_material_audit(model_node)
+			if not _unit_actor_registry.register_actor(id, model_node):
+				UnitVisualResolverScript.report_failure(str(f.get("id", id)), str(f.get("def", {}).get("model", "")), "battle", "actor contract registration failed")
+		_position_3d_model_node(model_node, f, facing_delta)
+		_apply_formation_intro_visibility(id, f)
+		_update_model_animation_state(model_node, f)
+		if _pvp_combat_waiting:
+			continue
+		# 10.10 第 10 条：凤凰涅槃的复活体（`phoenix_used`）罩一层「死灵气息」，
+		# 好让玩家一眼读出「这只是借尸还魂、3 秒后要真死」。
+		#
+		# 只有复活体这一帧才付代价 —— 非复活体不做建节点、也不做子节点查找：
+		# 每帧对全场每个单位查一次 `get_node_or_null` 是白给的 CPU。
+		# 判据取 `phoenix_used`（BattleSimTreasures._queue_phoenix_revive 只写给
+		# 复活体，原体身上没有），而不是 uid 里含 `_phoenix_` —— 回放里 uid 是
+		# 数据，判据要跟着数据走；同时补 `alive` 防止死亡帧仍挂着。
+		if bool(f.get("alive", false)) and bool(f.get("phoenix_used", false)):
+			# 10.18（用户定）：不再用「死灵气息」，改成母灵处决那种覆盖在身上的鬼魂光（绿色），
+			# 由 BattleVfx._sync_phoenix_ghost 实现（着色器和母灵处决共用一份）。
+			_sync_phoenix_ghost(model_node)
+		var status_vfx: Node = _status_vfx_by_id.get(id)
+		if status_vfx == null or not is_instance_valid(status_vfx):
+			status_vfx = _ensure_status_vfx_controller(model_node)
+			_status_vfx_by_id[id] = status_vfx
+		status_vfx.update_from_fighter(f)
+		var resonance_count := clampi(int(f.get("crimson_resonance_stacks", 0)), 0, 10)
+		var resonance_orb := model_node.get_node_or_null("HeadAnchor/CrimsonResonanceOrb3D") as Node3D
+		if resonance_count > 0 and resonance_orb == null:
+			var head_anchor := model_node.get_node_or_null("HeadAnchor") as Node3D
+			if head_anchor != null:
+				resonance_orb = CrimsonResonanceOrb.new()
+				resonance_orb.name = "CrimsonResonanceOrb3D"
+				head_anchor.add_child(resonance_orb)
+		if resonance_orb != null:
+			resonance_orb.call("set_stacks", resonance_count)
+		var red_tide_count := clampi(int(f.get("crimson_pulse_stacks", 0)), 0, 5)
+		var red_tide_orbits := model_node.get_node_or_null("CrimsonRedTideOrbits3D") as CrimsonRedTideOrbits3D
+		if red_tide_count > 0 and red_tide_orbits == null:
+			red_tide_orbits = CrimsonRedTideOrbits.new() as CrimsonRedTideOrbits3D
+			red_tide_orbits.name = "CrimsonRedTideOrbits3D"
+			model_node.add_child(red_tide_orbits)
+			red_tide_orbits.configure(null, float(model_node.get_meta("model_height", NOMINAL_UNIT_HEIGHT)))
+		if red_tide_orbits != null:
+			red_tide_orbits.set_stacks(red_tide_count)
+	if not prune:
+		return
+	for key in _battle_3d_models.keys():
+		if not seen.has(key):
+			var node: Node = _battle_3d_models[key]
+			node.queue_free()
+			_battle_3d_models.erase(key)
+			_unit_actor_registry.unregister_actor(str(key))
+			_status_vfx_by_id.erase(key)
+
+# D4: hand a dead unit's actor over to the presentation layer so a death cue can
+# play it out. Normally _sync_3d_model_nodes frees the model the instant the unit
+# leaves the living set, which is why death has no visual at all before D4.
+# Erasing it from _battle_3d_models keeps the prune from freeing it mid-cue, and
+# unregistering satisfies the D3 contract that a dead uid stops resolving anchors.
+func detach_actor_for_death(uid: String) -> Node3D:
+	var node_value = _battle_3d_models.get(uid)
+	if not (node_value is Node3D) or not is_instance_valid(node_value):
+		return null
+	# Only detach from the prune list here. The actor stays registered for the
+	# whole death cue: it is still on screen, and the killer's impact/number cues
+	# run on a different action track that may still be resolving its anchors.
+	# Checklist section 3 is explicit that the actor is unregistered *after* the
+	# death animation, which release_death_actor() below does.
+	_battle_3d_models.erase(uid)
+	var ascension := (node_value as Node3D).get_node_or_null("FourStarAuraV2")
+	if ascension != null:
+		ascension.deactivate()
+	# 10.10 第 10 条：借来的这条命到点了（凤凰涅槃的 3 秒无敌结束后被强制真死）
+	# ⇒「死灵气息」必须跟着收掉，不能骑着正在淡出的尸体继续亮。
+	# 和上面四星光环同一条纪律：只收表现层，不碰任何战斗状态。
+	var necrosis := (node_value as Node3D).get_node_or_null("UndeadNecrosisAura")
+	if necrosis != null:
+		necrosis.call("deactivate")
+	var status_vfx = _status_vfx_by_id.get(uid)
+	if status_vfx != null and is_instance_valid(status_vfx):
+		# V2 P1-05 第 2 条："血条和状态图标同步，不突然消失"。
+		#
+		# 改前这里直接 queue_free() 掉控制器。但状态图标的 Sprite3D 并不是控制器的
+		# 子节点 —— StatusVFXController._anchor() 把锚点挂在**父节点**（也就是 actor）
+		# 上，图标再挂在锚点下。所以释放控制器根本收不掉图标：它们会以满不透明度
+		# 骑在正在下沉淡出的尸体上，直到 actor 被整个释放才一起消失。
+		#
+		# 改成只停掉控制器的每帧刷新，图标留在原地由 cue_play_death 的
+		# transparency tween 跟着身体一起淡。不停 _process 的话，它每帧都会把
+		# modulate.a 写回去，和 tween 逐帧打架（和 P1-03 同一个约束）。
+		(status_vfx as Node).set_process(false)
+	_status_vfx_by_id.erase(uid)
+	return node_value as Node3D
+
+
+# 凤凰涅槃复活体的身上表现。渲染层只负责「每帧对活着的复活体调一次」，具体样子在 BattleVfx。
+func _sync_phoenix_ghost(_model_node: Node3D) -> void:
+	pass
+
+
+func release_death_actor(uid: String, actor: Node3D) -> void:
+	# 只在注册表里存的还是自己这一份时才注销。召唤物会用**同一个 uid 反复重生**
+	# —— 镜像领主的 enemy_mirror_1/2/3 就是这样：上一具尸体的死亡动画还在播，
+	# 单位已经重新召唤出来并把新 actor 注册到了同一个 uid 上。这时无条件
+	# unregister_actor(uid) 会把**活着的新单位**从注册表里抹掉，它随后的死亡就会被
+	# Director 判成 missing_actor:source 丢弃，玩家看到的是镜像凭空消失。
+	#
+	# 2026-08-20 打点实测：第 20 回合 release 时 held_null=false、held_is_mine=false
+	# —— 注册表里确实已经换成了另一份 actor。固定第 20 回合因此丢 3 条死亡演出。
+	_unit_actor_registry.unregister_if_holds(uid, actor)
+	if actor != null and is_instance_valid(actor):
+		actor.queue_free()
+
+
+# 和备战棋盘共用 BattleAssetService 的缓存 —— 备战期加载过的模型，进战斗直接命中。
+func _scene_for_model_path(model_path: String) -> PackedScene:
+	return BattleAssetService.get_scene(model_path)
+
+func _make_shared_model_node(f: Dictionary) -> Node3D:
+	var unit_def := _display_unit_def_for_fighter(f)
+	# Every fighter that reaches the battlefield passes through here — allied and
+	# enemy, piece, mercenary, monster, boss and formation ally — so this single
+	# call covers the whole codex. mark_seen is a no-op after the first sighting.
+	PlayerProfile.mark_seen(str(f.get("id", unit_def.get("id", ""))))
+	var actor: Node3D = UnitActor3DScript.new()
+	actor.name = "UnitActor_%s" % str(f.get("id", "unit"))
+	var model_height := anchor_height_for(unit_def)
+	actor.configure_contract(model_height, UnitVisualResolverScript.archetype_for(unit_def))
+	actor.set_meta("unit_id", str(f.get("id", unit_def.get("id", ""))))
+	actor.set_meta("resolved_visual", unit_def)
+	actor.set_meta("material_audit", _empty_material_audit())
+	var base_yaw := float(unit_def.get("model_base_yaw", 180.0))
+	actor.set_meta("base_yaw", base_yaw)
+	actor.rotation_degrees.y = _spawn_facing_yaw(f, base_yaw)
+	var model_path := str(unit_def.get("model", ""))
+	var scene := _scene_for_model_path(model_path) if _model_path_available(model_path) else null
+	var instance = scene.instantiate() if scene != null else null
+	if instance is Node3D:
+		var model := instance as Node3D
+		if model_path == "res://assets/models/units/dark_imp_motong/dark_imp_motong_attack_punching.fbx":
+			actor.set_meta("material_audit", cleanup_imported_model_visuals(model))
+		var visual_scale := float(unit_def.get("model_visual_scale", 1.0)) * battle_unit_visual_scale
+		if int(unit_def.get("tier", 1)) == 3:
+			visual_scale *= TIER3_VISUAL_BOOST
+		model.scale = Vector3(visual_scale, visual_scale, visual_scale)
+		model.rotation_degrees = Vector3.ZERO
+		# 标定表把模型自身缩放和全局 battle_unit_visual_scale 分开记，这里同口径传入。
+		actor.set_meta("run_ground_speed", RunAnimCalibrationScript.ground_speed_for(
+			str(f.get("id", unit_def.get("id", ""))), unit_def,
+			visual_scale / maxf(0.0001, battle_unit_visual_scale), battle_unit_visual_scale))
+		actor.attach_model(model)
+		_center_model_for_full_body_view(model)
+		_setup_model_animation_state(actor, model, unit_def, f)
+	else:
+		if instance is Node:
+			(instance as Node).queue_free()
+		var reason := "model scene unavailable" if scene == null else "model root is not Node3D"
+		UnitVisualResolverScript.report_failure(str(unit_def.get("id", f.get("id", ""))), model_path, "battle", reason)
+		var portrait_ok: bool = actor.attach_portrait_fallback(
+			str(unit_def.get("portrait", "")),
+			str(unit_def.get("fallback_frame", "")),
+			_actor_team_color(f),
+			model_height
+		)
+		if not portrait_ok:
+			UnitVisualResolverScript.report_failure(str(unit_def.get("id", f.get("id", ""))), str(unit_def.get("portrait", "")), "battle", "portrait unavailable")
+	# Anchors must be derived from the model that was just scaled, not hardcoded.
+	# The pivot is unscaled while the model inside it is scaled to ~0.42, so a
+	# fixed 0.85 "body" height sat 1.5x-3x above the head of every unit and every
+	# projectile aimed at empty air. Measured with tools/measure_unit_anchors.gd.
+	# Do NOT derive this from the mesh AABB. These are skinned models and their
+	# stored AABB covers only part of the rig: measured against the rendered
+	# silhouette it underestimates by 1.15x to 3.5x, inconsistently per model.
+	# The rendered heights actually cluster tightly (0.71-1.08 world units over
+	# ten sampled units, median ~0.95) because every unit shares the same visual
+	# scale, so a nominal height is both simpler and more accurate than a bad
+	# measurement. Re-measure with tools/vfx_capture.gd --unit <id> if the model
+	# scale ever changes.
+	_ensure_status_vfx_controller(actor, model_height)
+	_add_3d_unit_readability(actor, f)
+	if int(f.get("star", 1)) == GameState.MAX_UNIT_STAR and not bool(unit_def.get("is_mercenary", false)):
+		FOUR_STAR_AURA.sync(actor, 2, str(unit_def.get("element", "")), model_height, true)
+		_fit_four_star_battle_aura.call_deferred(actor, model_height)
+	return actor
+
+func _fit_four_star_battle_aura(actor: Node3D, height: float) -> void:
+	if not is_instance_valid(actor) or not actor.is_inside_tree():
+		return
+	var aura := actor.get_node_or_null("FourStarAuraV2") as Node3D
+	if aura != null:
+		FOUR_STAR_AURA.fit_to_actor(aura, actor, height)
+
+# model_height is the rendered height of this unit in world units. Pass 0 when
+# it is unknown (the late-repair path below) and the legacy 1.7 stand-in is used,
+# which reproduces the old fixed anchor heights exactly.
+# Measured from rendered silhouettes, not from mesh AABBs (see _build_3d_unit).
+const NOMINAL_UNIT_HEIGHT := 0.98
+const ANCHOR_HEAD_RATIO := 1.02   # just above the crown, where a status icon sits
+const ANCHOR_BODY_RATIO := 0.55   # chest: what every projectile aims at
+const ANCHOR_FEET_RATIO := 0.05
+const ANCHOR_FALLBACK_HEIGHT := NOMINAL_UNIT_HEIGHT
+
+# T3 单位在模型缩放和锚点高度上必须用**同一个**系数。
+# 改前模型乘 1.2、高度乘 1.12，两边差 7%，锚点会略微偏低。
+const TIER3_VISUAL_BOOST := 1.2
+
+
+# V2 P1-04 第 4 条：锚点高度不能是所有角色共用的一个常量。
+#
+# NOMINAL_UNIT_HEIGHT(0.98) 是在 model_visual_scale = 1.0 下从渲染剪影量出来的。
+# 但 registry 里各类单位的缩放并不相同 —— 实测：普通单位 1.0（32 个全是）、
+# 援军 1.15、Boss **2.0**、佣兵 11 个 1.0 加 1 个 2.0。改前这个函数不看
+# model_visual_scale，于是 Boss 渲染高约 1.9 却按 1.098 算锚点：
+# 头顶状态图标挂在它胸口，投射物也瞄在半腰。
+#
+# 缩放乘进去之后，锚点跟着实际体型走，Boss 和援军才对得上。
+static func anchor_height_for(unit_def: Dictionary) -> float:
+	var height := NOMINAL_UNIT_HEIGHT * maxf(0.05, float(unit_def.get("model_visual_scale", 1.0)))
+	if int(unit_def.get("tier", 1)) == 3:
+		height *= TIER3_VISUAL_BOOST
+	return height
+
+func _ensure_status_vfx_controller(pivot: Node3D, model_height: float = 0.0) -> Node:
+	var height := model_height if model_height > 0.05 else ANCHOR_FALLBACK_HEIGHT
+	for anchor_name in ["HeadAnchor", "BodyAnchor", "FeetAnchor"]:
+		if pivot.get_node_or_null(anchor_name) != null:
+			continue
+		var anchor := Node3D.new()
+		anchor.name = anchor_name
+		match anchor_name:
+			"HeadAnchor":
+				anchor.position = Vector3(0.0, height * ANCHOR_HEAD_RATIO, 0.0)
+			"BodyAnchor":
+				anchor.position = Vector3(0.0, height * ANCHOR_BODY_RATIO, -0.06)
+			_:
+				anchor.position = Vector3(0.0, height * ANCHOR_FEET_RATIO, 0.0)
+		pivot.add_child(anchor)
+	var controller := pivot.get_node_or_null("StatusVFXController")
+	if controller == null:
+		controller = StatusVFXController.new()
+		controller.name = "StatusVFXController"
+		pivot.add_child(controller)
+	return controller
+
+func cleanup_imported_model_visuals(root: Node) -> Dictionary:
+	var changed_fields: Dictionary = {}
+	var stack: Array[Node] = [root]
+	while not stack.is_empty():
+		var node: Node = stack.pop_back()
+		for child in node.get_children():
+			stack.append(child)
+		if node is Light3D:
+			var parent := node.get_parent()
+			if parent != null:
+				parent.remove_child(node)
+			node.queue_free()
+			continue
+		if node is MeshInstance3D:
+			for field in _disable_mesh_emission(node as MeshInstance3D):
+				changed_fields[field] = true
+	var audit := _audit_model_materials(root)
+	var changed: Array[String] = []
+	for field in changed_fields.keys():
+		changed.append(str(field))
+	changed.sort()
+	audit["cleanup_changed_fields"] = changed
+	root.set_meta("material_audit", audit)
+	return audit
+
+func _disable_mesh_emission(mesh_instance: MeshInstance3D) -> Array[String]:
+	var changed_fields: Dictionary = {}
+	var override := mesh_instance.material_override
+	if override != null:
+		var clean_override := _material_without_emission(override)
+		_collect_material_changed_fields(override, clean_override, changed_fields)
+		mesh_instance.material_override = clean_override
+	var mesh := mesh_instance.mesh
+	if mesh == null:
+		return _sorted_string_keys(changed_fields)
+	for surface in range(mesh.get_surface_count()):
+		var material := mesh_instance.get_surface_override_material(surface)
+		if material == null:
+			material = mesh.surface_get_material(surface)
+		if material != null:
+			var clean_surface := _material_without_emission(material)
+			_collect_material_changed_fields(material, clean_surface, changed_fields)
+			mesh_instance.set_surface_override_material(surface, clean_surface)
+	return _sorted_string_keys(changed_fields)
+
+# 去自发光材质缓存：duplicate(true) 会触发着色器变体编译（手机上 50~200ms 顿挫），
+# 同一份源材质整局只复制/编译一次。static：跨战斗场景复用。
+static var _clean_material_cache: Dictionary = {}
+const MATERIAL_TEXTURE_SLOTS: Array[int] = [
+	BaseMaterial3D.TEXTURE_ALBEDO,
+	BaseMaterial3D.TEXTURE_NORMAL,
+	BaseMaterial3D.TEXTURE_EMISSION,
+	BaseMaterial3D.TEXTURE_ORM,
+	BaseMaterial3D.TEXTURE_METALLIC,
+	BaseMaterial3D.TEXTURE_ROUGHNESS,
+]
+
+func _material_without_emission(material: Material) -> Material:
+	# resource_path 不能代表运行时状态：同一路径的局部 override 或同一资源被
+	# 改写后仍会命中旧副本。RID 区分源实例，状态哈希区分该实例的当前属性。
+	var key := "%s|%d" % [str(material.get_rid()), _material_state_hash(material)]
+	var cached: Material = _clean_material_cache.get(key)
+	if cached != null:
+		return cached
+	# duplicate(false) 而不是 (true)：这里只要改 emission 两个属性，那是材质自身的
+	# 字段。深拷贝会连子资源一起复制——**包括贴图**，等于同一张贴图在显存里存两份。
+	# 实测 video 峰值 1206 MB / tex 峰值 889 MB，这条是其中一份重复。
+	# 浅拷贝后贴图与原材质共享，改 emission 不会影响原材质。
+	var clean := material.duplicate(false) as Material
+	if clean is BaseMaterial3D:
+		var base := clean as BaseMaterial3D
+		base.emission_enabled = false
+		base.emission_energy_multiplier = 0.0
+	_clean_material_cache[key] = clean
+	return clean
+
+static func clear_for_test() -> void:
+	_clean_material_cache.clear()
+
+static func material_cache_count_for_test() -> int:
+	return _clean_material_cache.size()
+
+func _empty_material_audit() -> Dictionary:
+	return {
+		"surface_count": 0,
+		"textured_surface_count": 0,
+		"suspect_white_count": 0,
+		"cleanup_changed_fields": [],
+	}
+
+func _refresh_actor_material_audit(actor: Node) -> Dictionary:
+	var previous_value: Variant = actor.get_meta("material_audit", {})
+	var previous: Dictionary = previous_value as Dictionary if previous_value is Dictionary else {}
+	# Model wrapper scripts create their MeshInstance3D children in _ready(). This
+	# refresh runs immediately after the actor enters the live battle tree, so the
+	# audit observes the real runtime surfaces without polling or per-frame work.
+	var visual_value: Variant = actor.get("visual_root")
+	var visual_root: Node = visual_value as Node if visual_value is Node else null
+	var audit := _audit_model_materials(visual_root) if visual_root != null \
+		and str(actor.get_meta("visual_kind", "")) == "model" else _empty_material_audit()
+	audit["cleanup_changed_fields"] = (previous.get("cleanup_changed_fields", []) as Array).duplicate()
+	actor.set_meta("material_audit", audit)
+	return audit
+
+func _audit_model_materials(root: Node) -> Dictionary:
+	var audit := _empty_material_audit()
+	var stack: Array[Node] = [root]
+	while not stack.is_empty():
+		var node: Node = stack.pop_back()
+		for child in node.get_children():
+			stack.append(child)
+		if not (node is MeshInstance3D):
+			continue
+		var mesh_instance := node as MeshInstance3D
+		var mesh := mesh_instance.mesh
+		if mesh == null:
+			continue
+		for surface in range(mesh.get_surface_count()):
+			audit["surface_count"] = int(audit["surface_count"]) + 1
+			var material := _effective_surface_material(mesh_instance, surface)
+			if material == null:
+				continue
+			if _material_has_texture(material):
+				audit["textured_surface_count"] = int(audit["textured_surface_count"]) + 1
+			if _material_is_suspect_white(material):
+				audit["suspect_white_count"] = int(audit["suspect_white_count"]) + 1
+	return audit
+
+func _effective_surface_material(mesh_instance: MeshInstance3D, surface: int) -> Material:
+	if mesh_instance.material_override != null:
+		return mesh_instance.material_override
+	var surface_override := mesh_instance.get_surface_override_material(surface)
+	if surface_override != null:
+		return surface_override
+	return mesh_instance.mesh.surface_get_material(surface) if mesh_instance.mesh != null else null
+
+func _material_has_texture(material: Material) -> bool:
+	var current: Material = material
+	var seen: Dictionary = {}
+	while current != null and not seen.has(current.get_instance_id()):
+		seen[current.get_instance_id()] = true
+		if current is BaseMaterial3D:
+			var base := current as BaseMaterial3D
+			for slot in MATERIAL_TEXTURE_SLOTS:
+				if base.get_texture(slot) != null:
+					return true
+		elif current is ShaderMaterial:
+			for property_info in current.get_property_list():
+				var property_name := str(property_info.get("name", ""))
+				if property_name.begins_with("shader_parameter/") and current.get(property_name) is Texture2D:
+					return true
+		current = current.next_pass
+	return false
+
+func _material_is_suspect_white(material: Material) -> bool:
+	var has_color_texture := false
+	var has_nonwhite_color := false
+	var current: Material = material
+	var seen: Dictionary = {}
+	while current != null and not seen.has(current.get_instance_id()):
+		seen[current.get_instance_id()] = true
+		if current is BaseMaterial3D:
+			var base := current as BaseMaterial3D
+			has_color_texture = has_color_texture or base.albedo_texture != null
+			has_nonwhite_color = has_nonwhite_color or not _color_is_near_white(base.albedo_color)
+		elif current is ShaderMaterial:
+			for property_info in current.get_property_list():
+				var property_name := str(property_info.get("name", ""))
+				if not property_name.begins_with("shader_parameter/"):
+					continue
+				var value: Variant = current.get(property_name)
+				if value is Texture2D and _is_color_texture_slot(property_name):
+					has_color_texture = true
+				elif value is Color and _is_color_value_slot(property_name) and not _color_is_near_white(value):
+					has_nonwhite_color = true
+		current = current.next_pass
+	return not has_color_texture and not has_nonwhite_color
+
+func _is_color_texture_slot(property_name: String) -> bool:
+	var lowered := property_name.to_lower()
+	for excluded in ["normal", "rough", "metal", "orm", "emission", "mask", "height", "depth", "ao"]:
+		if lowered.contains(excluded):
+			return false
+	return lowered.contains("albedo") or lowered.contains("diffuse") or lowered.contains("base") \
+		or lowered.contains("color") or lowered.contains("texture") or lowered.contains("tex")
+
+func _is_color_value_slot(property_name: String) -> bool:
+	var lowered := property_name.to_lower().trim_prefix("shader_parameter/")
+	for excluded in ["emission", "outline", "rim", "shadow", "specular", "highlight", "glow", "mask"]:
+		if lowered.contains(excluded):
+			return false
+	return lowered.contains("albedo") or lowered.contains("diffuse") or lowered.contains("base") \
+		or lowered.contains("body") or lowered.contains("main") or lowered.contains("color") or lowered.contains("tint")
+
+func _color_is_near_white(color: Color) -> bool:
+	return color.a > 0.05 and color.r >= 0.9 and color.g >= 0.9 and color.b >= 0.9
+
+func _material_state_hash(material: Material) -> int:
+	var state := _material_visual_state(material)
+	var names: Array = state.keys()
+	names.sort()
+	var tokens: Array[String] = []
+	for property_name in names:
+		tokens.append(str(property_name))
+		tokens.append(_material_state_token(state[property_name]))
+	return hash(tokens)
+
+func _material_visual_state(material: Material) -> Dictionary:
+	var state: Dictionary = {}
+	for property_info in material.get_property_list():
+		if (int(property_info.get("usage", 0)) & PROPERTY_USAGE_STORAGE) == 0:
+			continue
+		var property_name := str(property_info.get("name", ""))
+		if property_name.is_empty() or property_name == "script" or property_name.begins_with("resource_"):
+			continue
+		state[property_name] = material.get(property_name)
+	# Imported textures and dynamic shader parameters are not guaranteed to carry
+	# PROPERTY_USAGE_STORAGE, but they are part of the runtime visual state and the
+	# cache must split when any of them changes.
+	if material is BaseMaterial3D:
+		var base := material as BaseMaterial3D
+		for slot in MATERIAL_TEXTURE_SLOTS:
+			state["texture_slot/%d" % slot] = base.get_texture(slot)
+	elif material is ShaderMaterial:
+		for property_info in material.get_property_list():
+			var property_name := str(property_info.get("name", ""))
+			if property_name.begins_with("shader_parameter/"):
+				state[property_name] = material.get(property_name)
+	return state
+
+func _material_state_token(value: Variant) -> String:
+	if value is Resource:
+		var resource := value as Resource
+		return "resource:%s:%d:%s" % [resource.get_class(), resource.get_instance_id(), resource.resource_path]
+	if value is Array:
+		var array_tokens: Array[String] = []
+		for item in value:
+			array_tokens.append(_material_state_token(item))
+		return "array:[%s]" % "|".join(array_tokens)
+	if value is Dictionary:
+		var keys: Array = value.keys()
+		keys.sort_custom(func(a: Variant, b: Variant) -> bool: return str(a) < str(b))
+		var dictionary_tokens: Array[String] = []
+		for key_value in keys:
+			dictionary_tokens.append("%s=%s" % [str(key_value), _material_state_token(value[key_value])])
+		return "dictionary:{%s}" % "|".join(dictionary_tokens)
+	return var_to_str(value)
+
+func _collect_material_changed_fields(source: Material, cleaned: Material, into: Dictionary) -> void:
+	var before := _material_visual_state(source)
+	var after := _material_visual_state(cleaned)
+	var names: Dictionary = {}
+	for property_name in before.keys():
+		names[property_name] = true
+	for property_name in after.keys():
+		names[property_name] = true
+	for property_name in names.keys():
+		if not before.has(property_name) or not after.has(property_name) \
+			or not _material_values_equal(before.get(property_name), after.get(property_name)):
+			into[str(property_name)] = true
+
+func _material_values_equal(a: Variant, b: Variant) -> bool:
+	if typeof(a) != typeof(b):
+		return false
+	if a is Resource:
+		return is_same(a, b)
+	return a == b
+
+func _sorted_string_keys(values: Dictionary) -> Array[String]:
+	var result: Array[String] = []
+	for key in values.keys():
+		result.append(str(key))
+	result.sort()
+	return result
+func _setup_model_animation_state(pivot: Node3D, model: Node3D, unit_def: Dictionary, f: Dictionary) -> void:
+	if _supports_model_action_methods(model):
+		pivot.set_meta("model_action_node_path", pivot.get_path_to(model))
+		pivot.set_meta("current_model_action", "")
+		_setup_animation_tracking_meta(pivot, unit_def, f)
+		return
+	var players := _find_animation_players(model)
+	if players.is_empty():
+		_setup_animation_tracking_meta(pivot, unit_def, f)
+		return
+	var player := _select_model_animation_player(players, unit_def)
+	if player == null:
+		_setup_animation_tracking_meta(pivot, unit_def, f)
+		return
+	var player_path := pivot.get_path_to(player)
+	var attack_name := str(unit_def.get("model_attack_animation_name", ""))
+	if attack_name.is_empty() or not player.has_animation(attack_name):
+		attack_name = _first_animation_name(player)
+	var idle_name := "idle"
+	var idle_source_path := str(unit_def.get("model_idle_animation", ""))
+	var idle_source_name := str(unit_def.get("model_idle_animation_name", ""))
+	if not idle_source_path.is_empty():
+		_add_animation_from_scene(player, idle_source_path, idle_source_name, idle_name, true)
+	if not player.has_animation(idle_name):
+		idle_name = attack_name
+	if not idle_name.is_empty() and player.has_animation(idle_name):
+		var idle_anim := player.get_animation(idle_name)
+		if idle_anim != null:
+			idle_anim.loop_mode = Animation.LOOP_LINEAR
+		player.play(idle_name)
+	if not attack_name.is_empty() and player.has_animation(attack_name):
+		var attack_anim := player.get_animation(attack_name)
+		if attack_anim != null and attack_name != idle_name:
+			attack_anim.loop_mode = Animation.LOOP_NONE
+	var run_name := str(unit_def.get("model_run_animation_name", ""))
+	if run_name.is_empty():
+		run_name = "run"
+	if not player.has_animation(run_name):
+		run_name = ""
+	if not run_name.is_empty():
+		var run_anim := player.get_animation(run_name)
+		if run_anim != null:
+			run_anim.loop_mode = Animation.LOOP_LINEAR
+	pivot.set_meta("animation_player_path", player_path)
+	pivot.set_meta("idle_animation", idle_name)
+	pivot.set_meta("attack_animation", attack_name)
+	pivot.set_meta("run_animation", run_name)
+	_setup_animation_tracking_meta(pivot, unit_def, f)
+
+func _setup_animation_tracking_meta(pivot: Node3D, unit_def: Dictionary, f: Dictionary) -> void:
+	pivot.set_meta("last_animation_position", pivot.position)
+	pivot.set_meta("last_animation_raw_pos", Vector2(float(f.pos.x), float(f.pos.y)))
+	pivot.set_meta("attack_sync_seek", float(unit_def.get("model_attack_sync_seek", 0.0)))
+	pivot.set_meta("attack_lock_time", float(unit_def.get("model_attack_lock_time", 0.45)))
+	pivot.set_meta("attack_lock_left", 0.0)
+	pivot.set_meta("attack_lock_until", 0.0)
+	pivot.set_meta("run_lock_until", 0.0)
+	pivot.set_meta("last_attack_count", int(f.get("attack_count", 0)))
+	pivot.set_meta("last_next_attack", float(f.get("next_attack", 0.0)))
+# --- V2 P1-05 第 3 条：胜利收尾 ------------------------------------------------
+#
+# 「镜头轻收束、幸存者定格、胜利字样和短音效/震动；至少保持 0.8 秒后进入奖励」。
+#
+# 保持时长已经够了（BattleUI.RESULT_DISPLAY_SECONDS = 1.0）。这里补的是收束和定格。
+#
+# **2026-09-17 更新：短音效已补上。** 此前 assets/audio 下只有 BGM 和一个
+# start_game.mp3，没有胜利音效资源，这里就明写了缺口。9.17 音效批次交付后归
+# `ui/services/SfxService.gd` 统一播：胜负音接在
+# `scenes/battle/BattleResult.gd` 的结算浮层显示处（`battle_victory` /
+# `battle_defeat`），不在这里重复挂一次 —— 播两声比没声音更难查。
+# 震动用的是同一套无障碍开关，玩家关了就不震。
+
+# 正交相机的 size 越小越近。0.94 是"轻"收束：看得出镜头往里收了一点，
+# 又不会把边上的幸存者挤出画面。
+const VICTORY_CAMERA_TIGHTEN := 0.94
+const VICTORY_CAMERA_SEC := 0.45
+
+
+func play_victory_finish() -> void:
+	_freeze_surviving_actors()
+	_tighten_battle_camera()
+
+
+# 幸存者定格：停在当前姿势，不再继续 idle 循环。
+# 只停动画、不动位置 —— 位置每帧仍由 _position_3d_model_node 写，动它会打架。
+func _freeze_surviving_actors() -> void:
+	for key in _battle_3d_models.keys():
+		var actor_value = _battle_3d_models[key]
+		if not (actor_value is Node3D) or not is_instance_valid(actor_value):
+			continue
+		var actor := actor_value as Node3D
+		if not actor.has_meta("animation_player_path"):
+			continue
+		var player := actor.get_node_or_null(actor.get_meta("animation_player_path")) as AnimationPlayer
+		if player != null and player.is_playing():
+			player.pause()
+
+
+# 10.04 bug 文档第 3 条：战斗收尾时把"还停在 run"的棋子归位到 idle。
+#
+# 为什么需要一次单独的"收尾归位"：
+#   * `_update_model_animation_state()` 在本帧发生过位移时会设
+#     `run_lock_until = now + 0.18` 并当场下发 play_run()，指望 0.18 秒后的
+#     那次刷新把它带回 idle；
+#   * 收尾路径先 `_refresh_visuals()`、紧接着 `_finished = true`，而
+#     `BattleScreen._process()` 里 `if _finished: return` ⇒ 0.18 秒后的那次
+#     刷新永远不会发生 ⇒ 结束帧正在移动的棋子会**永久停在 run**。
+#   * `_freeze_surviving_actors()` 按 `animation_player_path` 过滤，而 74 个
+#     棋子模型全走"动作方法通道"（只写 `model_action_node_path`）⇒ 它一个都
+#     命中不到（保留不动，免得动到别处语义）。
+#
+# 口径**只修 run 这一种**：`current_model_action == "run"`（或 run 锁还没到期）
+# 才归位到 idle。停在 `attack` 是原本的"幸存者定格"设计（`_freeze_surviving_actors`
+# 的原意就是停在当前姿势），《战斗结束棋子idle异常统计_20261004》也把"停在 attack"
+# 判为不算异常 —— 所以这里不去动它，免得把刚挥出去的一刀切掉。`idle` 的更是原样。
+# 只改动画、不碰位置（位置每帧仍由 `_position_3d_model_node` 写）。
+func settle_model_animation_idle() -> void:
+	var now := float(Time.get_ticks_msec()) * 0.001
+	for key in _battle_3d_models.keys():
+		var actor_value = _battle_3d_models[key]
+		if not (actor_value is Node3D) or not is_instance_valid(actor_value):
+			continue
+		var actor := actor_value as Node3D
+		var current := str(actor.get_meta("current_model_action", ""))
+		var locked := now < float(actor.get_meta("run_lock_until", 0.0))
+		if current != "run" and not locked:
+			continue
+		actor.set_meta("run_lock_until", 0.0)
+		actor.set_meta("attack_lock_until", 0.0)
+		_set_model_anim_speed(actor, 1.0)
+		# 清缓存：`_play_model_action_method()` 的"同动作不重播"短路正是
+		# 我们不想让它挡住 idle 的地方（force_restart 已能绕过，缓存一起清更保险）。
+		actor.set_meta("current_model_action", "")
+		if _play_model_action_method(actor, "idle", true):
+			continue
+		# 回退到 AnimationPlayer 通道。当前 74 个模型都不走这条，留着防以后新增。
+		if not actor.has_meta("animation_player_path"):
+			continue
+		var player := actor.get_node_or_null(actor.get_meta("animation_player_path")) as AnimationPlayer
+		var idle_name := str(actor.get_meta("idle_animation", ""))
+		if player != null and not idle_name.is_empty() and player.has_animation(idle_name):
+			_play_animation_if_needed(player, idle_name)
+
+
+func _tighten_battle_camera() -> void:
+	if _battle_3d_camera == null or not is_instance_valid(_battle_3d_camera):
+		return
+	# 从当前 size 起收，而不是从常量起 —— 重复调用（skip 之后又走正常结算）
+	# 不该把镜头一路收下去。
+	var target := BATTLE_CAMERA_SIZE * VICTORY_CAMERA_TIGHTEN
+	if _battle_3d_camera.size <= target + 0.001:
+		return
+	var tween := create_tween()
+	tween.tween_property(_battle_3d_camera, "size", target, VICTORY_CAMERA_SEC) 		.set_ease(Tween.EASE_OUT)
+
+
+# 下一场战斗必须从原始取景开始，否则收束会一场比一场紧。
+func reset_battle_camera_framing() -> void:
+	if _battle_3d_camera != null and is_instance_valid(_battle_3d_camera):
+		_battle_3d_camera.size = BATTLE_CAMERA_SIZE
+
+
+func _update_model_animation_state(model_node: Node3D, f: Dictionary) -> void:
+	var has_action_methods := model_node.has_meta("model_action_node_path")
+	var player: AnimationPlayer = null
+	if model_node.has_meta("animation_player_path"):
+		player = model_node.get_node_or_null(model_node.get_meta("animation_player_path")) as AnimationPlayer
+	if player == null and not has_action_methods:
+		return
+	var idle_name := str(model_node.get_meta("idle_animation", ""))
+	var attack_name := str(model_node.get_meta("attack_animation", ""))
+	var run_name := str(model_node.get_meta("run_animation", ""))
+	# PVP 开场只允许待机。尤其自测复用 actor 时，重新布阵会被误判为跑动。
+	# Go 随音效结束撤下后才由 BattleScreen 放行；普通 PVE/Boss 不走此分支。
+	if _pvp_combat_waiting:
+		model_node.set_meta("last_animation_raw_pos", Vector2(f.pos))
+		model_node.set_meta("last_attack_count", 0)
+		model_node.set_meta("attack_lock_until", 0.0)
+		model_node.set_meta("run_lock_until", 0.0)
+		_set_model_anim_speed(model_node, 1.0)
+		if not _play_model_action_method(model_node, "idle") and player != null and not idle_name.is_empty():
+			_play_animation_if_needed(player, idle_name)
+		return
+	var visual_now := float(Time.get_ticks_msec()) * 0.001
+	_track_display_speed(model_node, visual_now)
+	# The fixed display slot never moves relative to the simulator, so only the
+	# authoritative combat position may start or sustain the run animation.
+	var current_sim_pos := Vector2(float(f.pos.x), float(f.pos.y))
+	var raw_last_sim_pos = model_node.get_meta("last_animation_raw_pos", current_sim_pos)
+	var last_sim_pos := current_sim_pos
+	if raw_last_sim_pos is Vector2:
+		last_sim_pos = raw_last_sim_pos
+	var moved := current_sim_pos.distance_to(last_sim_pos) > MODEL_FACING_MOVE_EPS_SIM
+	model_node.set_meta("last_animation_raw_pos", current_sim_pos)
+	var attack_count := int(f.get("attack_count", 0))
+	var last_attack_count := int(model_node.get_meta("last_attack_count", attack_count))
+	var attack_triggered := attack_count > last_attack_count
+	model_node.set_meta("last_attack_count", attack_count)
+	model_node.set_meta("last_next_attack", float(f.get("next_attack", 0.0)))
+	if attack_triggered:
+		var played_attack := _play_model_action_method(model_node, "attack", true)
+		if not played_attack and player != null and not attack_name.is_empty() and player.has_animation(attack_name):
+			player.stop()
+			player.play(attack_name)
+			var sync_seek := float(model_node.get_meta("attack_sync_seek", 0.0))
+			if sync_seek > 0.0:
+				player.seek(sync_seek, true)
+			player.advance(0.001)
+		_set_model_anim_speed(model_node, 1.0)
+		_play_model_attack_pulse(model_node)
+		model_node.set_meta("attack_lock_until", visual_now + maxf(0.08, float(model_node.get_meta("attack_lock_time", 0.45))))
+		model_node.set_meta("run_lock_until", 0.0)
+		return
+	if visual_now < float(model_node.get_meta("attack_lock_until", 0.0)):
+		return
+	if moved:
+		model_node.set_meta("run_lock_until", visual_now + _run_lock_sec())
+	var should_run := visual_now < float(model_node.get_meta("run_lock_until", 0.0))
+	if should_run:
+		if not _play_model_action_method(model_node, "run") and player != null and not run_name.is_empty() and player.has_animation(run_name):
+			_play_animation_if_needed(player, run_name)
+		_set_model_anim_speed(model_node, _run_anim_speed_for(model_node))
+	else:
+		_set_model_anim_speed(model_node, 1.0)
+		if not _play_model_action_method(model_node, "idle") and player != null and not idle_name.is_empty() and player.has_animation(idle_name):
+			_play_animation_if_needed(player, idle_name)
+
+
+# 跑步锁要盖住两个逻辑帧之间的真实时间，否则慢放（_readable_speed 0.5 时一帧 0.2 秒）
+# 每帧中间都会闪回待机一下，身体还在滑。取 1.5 个逻辑帧，正常倍率下仍是 0.18。
+func _run_lock_sec() -> float:
+	return maxf(RUN_LOCK_BASE_SEC, 1.5 * SIM_TICK_SEC / maxf(0.05, _visual_sim_time_scale))
+
+
+func set_visual_sim_time_scale(scale: float) -> void:
+	_visual_sim_time_scale = maxf(0.05, scale)
+
+
+# 画面上的移动速度（世界单位/秒），对 model_node.position 做指数平滑。
+# 同一帧被多次刷新（建体、seek）时 dt 为 0，不更新；瞬移样本丢掉。
+func _track_display_speed(model_node: Node3D, now: float) -> void:
+	var pos := model_node.position
+	var last_t := float(model_node.get_meta("display_speed_t", -1.0))
+	# get_meta 的默认值传 null 等于没给默认值，键不存在会报错，所以先 has_meta。
+	var last_pos: Variant = model_node.get_meta("display_speed_pos") if model_node.has_meta("display_speed_pos") else null
+	model_node.set_meta("display_speed_pos", pos)
+	model_node.set_meta("display_speed_t", now)
+	if last_t < 0.0 or not (last_pos is Vector3):
+		return
+	var dt := now - last_t
+	if dt <= 0.0005 or dt > 0.5:
+		return
+	var delta := pos - (last_pos as Vector3)
+	delta.y = 0.0
+	var inst := delta.length() / dt
+	if inst > RUN_SPEED_TELEPORT:
+		return
+	var smoothed := float(model_node.get_meta("display_speed", 0.0))
+	smoothed += (inst - smoothed) * (1.0 - exp(-dt / RUN_SPEED_SMOOTH_SEC))
+	model_node.set_meta("display_speed", smoothed)
+
+
+func _run_anim_speed_for(model_node: Node3D) -> float:
+	var ground := float(model_node.get_meta("run_ground_speed", 0.0))
+	if ground <= 0.0:
+		return 1.0
+	var speed := float(model_node.get_meta("display_speed", 0.0))
+	return clampf(speed / ground, RUN_ANIM_SPEED_MIN, RUN_ANIM_SPEED_MAX)
+
+
+# 只在倍率变化时写播放器。顿帧中（hitstop_until）只记基准值，解冻时由
+# BattleHitFeedback 恢复到 anim_base_speed，避免把 0 覆盖掉或解冻后回到 1.0。
+func _set_model_anim_speed(model_node: Node3D, speed: float) -> void:
+	var current := float(model_node.get_meta("anim_base_speed", 1.0))
+	if is_equal_approx(current, speed):
+		return
+	if speed != 1.0 and current != 1.0 and absf(current - speed) < 0.03:
+		return
+	model_node.set_meta("anim_base_speed", speed)
+	if model_node.has_meta("hitstop_until"):
+		return
+	for player in _model_anim_players(model_node):
+		player.speed_scale = speed
+
+
+func _model_anim_players(model_node: Node3D) -> Array:
+	var cached: Variant = model_node.get_meta("anim_players_cache") if model_node.has_meta("anim_players_cache") else null
+	if cached is Array:
+		var valid := true
+		for p in (cached as Array):
+			if not is_instance_valid(p):
+				valid = false
+				break
+		if valid:
+			return cached as Array
+	var found: Array = []
+	for n in model_node.find_children("*", "AnimationPlayer", true, false):
+		found.append(n)
+	model_node.set_meta("anim_players_cache", found)
+	return found
+
+func _play_model_attack_pulse(model_node: Node3D) -> void:
+	if not model_node.is_inside_tree():
+		return
+	model_node.scale = Vector3(1.08, 1.08, 1.08)
+	var tween := model_node.create_tween()
+	tween.tween_property(model_node, "scale", Vector3.ONE, 0.16).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+func _play_animation_if_needed(player: AnimationPlayer, animation_name: String) -> void:
+	if player.current_animation != animation_name or not player.is_playing():
+		player.play(animation_name)
+
+func _supports_model_action_methods(model: Node) -> bool:
+	return model.has_method("play_idle") or model.has_method("play_attack") or model.has_method("play_run")
+
+func _play_model_action_method(model_node: Node3D, action: String, force_restart := false) -> bool:
+	if not model_node.has_meta("model_action_node_path"):
+		return false
+	var action_node := model_node.get_node_or_null(model_node.get_meta("model_action_node_path"))
+	if action_node == null:
+		return false
+	var method_name := _model_action_method_name(action)
+	if method_name.is_empty() or not action_node.has_method(method_name):
+		return false
+	if not force_restart and str(model_node.get_meta("current_model_action", "")) == action:
+		return true
+	action_node.call(method_name)
+	_pause_hidden_model_animation_players(action_node)
+	model_node.set_meta("current_model_action", action)
+	return true
+
+
+# Most animated wrappers keep three imported FBX submodels alive (idle / attack /
+# run) and switch them with `visible`.  The imported AnimationPlayers do not stop
+# when their branch is hidden, so every unit can keep evaluating three skeletons.
+# Round 20 measured up to 137 hidden players, 205 Skeleton3D nodes and 15,175 bones.
+#
+# Run this only after an action switch (not every frame).  The active branch and the
+# wrapper's proxy player keep playing; only players whose whole parent subtree has
+# no visible mesh are paused.  Calling play_* on that branch later resumes it, while
+# attacks still restart because their wrappers already stop() before play().
+func _pause_hidden_model_animation_players(root: Node) -> int:
+	var paused := 0
+	for player in _find_animation_players(root):
+		if player == null or not player.is_playing():
+			continue
+		if _animation_player_subtree_has_visible_mesh(player):
+			continue
+		player.pause()
+		paused += 1
+	return paused
+
+
+func _animation_player_subtree_has_visible_mesh(player: AnimationPlayer) -> bool:
+	var subtree_root := player.get_parent()
+	if subtree_root == null:
+		return false
+	var stack: Array[Node] = [subtree_root]
+	while not stack.is_empty():
+		var node: Node = stack.pop_back()
+		if node is MeshInstance3D and (node as MeshInstance3D).is_visible_in_tree():
+			return true
+		for child in node.get_children():
+			stack.append(child)
+	return false
+
+
+func _model_action_method_name(action: String) -> String:
+	match action:
+		"idle":
+			return "play_idle"
+		"attack":
+			return "play_attack"
+		"run":
+			return "play_run"
+		_:
+			return ""
+func _add_animation_from_scene(player: AnimationPlayer, scene_path: String, source_name: String, target_name: String, should_loop: bool) -> void:
+	if player.has_animation(target_name):
+		return
+	var source_scene := _animation_scene_for_path(scene_path)
+	if source_scene == null:
+		return
+	var source_root := source_scene.instantiate()
+	var source_players := _find_animation_players(source_root)
+	for source_player in source_players:
+		var anim_name := source_name
+		if anim_name.is_empty() or not source_player.has_animation(anim_name):
+			anim_name = _first_animation_name(source_player)
+		if anim_name.is_empty() or not source_player.has_animation(anim_name):
+			continue
+		var anim := source_player.get_animation(anim_name).duplicate(true) as Animation
+		if should_loop:
+			anim.loop_mode = Animation.LOOP_LINEAR
+		var library := player.get_animation_library("")
+		if library == null:
+			library = AnimationLibrary.new()
+			player.add_animation_library("", library)
+		library.add_animation(target_name, anim)
+		break
+	source_root.queue_free()
+
+var _animation_prefetch_started: Dictionary = {}
+
+# 开战预取：把本场阵容会用到的模型场景、待机动画场景、技能/弹道贴图
+# 全部丢给后台线程加载，避免战斗中首次出场/首次施法时同步读盘顿挫。
+func _prefetch_battle_assets() -> void:
+	var texture_paths: Array = []
+	# 玩家阵容整局都在，敌人每回合都换 —— 分开预取，好让回合结束只放后者。
+	for f in _state.get("player", []):
+		_prefetch_one_fighter(f, texture_paths, true)
+	for f in _state.get("enemy", []):
+		_prefetch_one_fighter(f, texture_paths, false)
+	VFXManager.preload_textures(texture_paths)
+
+func _prefetch_one_fighter(f: Dictionary, texture_paths: Array, persistent: bool) -> void:
+	var unit_def := _display_unit_def_for_fighter(f)
+	# 玩家阵容整局持有；本回合的怪 / Boss / 对手回合末释放。
+	var owner := BattleAssetService.OWNER_PLAYER if persistent else BattleAssetService.OWNER_BATTLE
+	var model_path := str(unit_def.get("model", ""))
+	if _model_path_available(model_path):
+		BattleAssetService.acquire(model_path, owner)
+	var idle_path := str(unit_def.get("model_idle_animation", ""))
+	if not idle_path.is_empty() and _model_path_available(idle_path):
+		BattleAssetService.acquire(idle_path, owner)
+	var unit_id := str(unit_def.get("id", f.get("id", "")))
+	for path in BattleAssetManifest.fighter_texture_paths(unit_id, unit_def):
+		if not texture_paths.has(path):
+			texture_paths.append(path)
+
+# 回合结束调用：放掉本回合的怪 / Boss / PVP 对手，保留玩家阵容。
+#
+# 为什么需要：这几个缓存是 static（否则玩家自己的棋子每回合都要重新加载），
+# 而 static 只增不减的话，一局里遇到过的每个敌人都会被永久钉在显存里 ——
+# 实测 6 个回合 video 峰值从 688 MB 涨到 1206 MB，约 +90 MB/轮，
+# 第 20 回合外推约 1.9 GB，而整机只有 3.9 GB。
+#
+# 材质缓存整份清掉：它的 key 是源材质路径，映射不回具体单位，没法分级。
+# 清掉的代价只是下回合重新 duplicate(false)（浅拷贝，很便宜）；着色器变体由
+# 引擎按 shader+变体缓存、不按材质实例，所以不会重新编译。
+# 共享 Shader 缓存（VFXShaderCache）不动 —— 那个清了才会真的重新编译。
+# 备战期调用：把接下来几个回合的敌方模型丢给后台线程。
+#
+# 为什么能提前知道：怪物 / Boss 的选择只依赖 shared_seed + 回合号
+# （BattleSimShared._round_pick_index），开局那一刻整局名单就定了。
+#
+# 为什么不是"开局全载 20 轮"：实测每轮新内容约 +104 MB，20 轮外推 2.5 GB 以上，
+# 而测试机（3.9 GB 整机）可用约 2 GB —— 那正是原本第 20 回合加载不出来的成因。
+# 提前量取 3 轮是内存与保险的折中。
+#
+# 这里**只发请求、不收割**：Godot 会把加载好的资源留着，直到有人调
+# load_threaded_get()。等开打时 _scene_for_model_path 走到状态检查那一步就是
+# THREAD_LOAD_LOADED，直接取走，没有磁盘 I/O，也不需要备战期每帧轮询。
+static func prefetch_upcoming_rounds(current_round: int) -> void:
+	var by_round := BattleAssetManifest.rounds_enemy_paths(
+		current_round + 1, BattleAssetManifest.LOOKAHEAD_ROUNDS)
+	for n in by_round:
+		BattleAssetService.acquire_many(by_round[n], BattleAssetService.owner_future(int(n)))
+
+# 回合结束：摘掉 battle/current 这个 owner。
+#
+# 关键在于**只摘一个 owner，不是按「是不是玩家阵容」清表**。旧写法会把备战期为
+# 未来 3 轮预取的资源一并删掉（它们同样不属于玩家阵容），于是每回合结束丢弃一次
+# 预取成果、下回合重新加载 —— 实测每轮战斗中仍现加载 96–426 MB 贴图。
+# 现在只要还有 run/player 或 future/round/N 持有，资源就留着。
+static func release_round_assets() -> void:
+	# 本回合资源取用统计：走了几次同步路径、总共堵了主线程多久。
+	# 「hit / harvest」是便宜的，「wait / cold」才是卡顿来源。
+	print("[ASSET] 回合结束 %s" % BattleAssetService.stats_line())
+	BattleAssetService.reset_stats()
+	BattleAssetService.release_owner(BattleAssetService.OWNER_BATTLE)
+	# 材质缓存按源 RID + 当前状态哈希索引，仍映射不回具体单位 —— 整份清掉。
+	# 代价只是下回合重新 duplicate(false)（浅拷贝，很便宜）；着色器变体由引擎
+	# 按 shader+变体缓存、不按材质实例，所以不会重新编译。
+	_clean_material_cache.clear()
+
+func _prefetch_animation_scene(scene_path: String) -> void:
+	BattleAssetService.acquire(scene_path, BattleAssetService.OWNER_BATTLE)
+
+func _animation_scene_for_path(scene_path: String) -> PackedScene:
+	if not _model_path_available(scene_path):
+		return null
+	return BattleAssetService.get_scene(scene_path)
+
+func _select_model_animation_player(players: Array[AnimationPlayer], unit_def: Dictionary) -> AnimationPlayer:
+	if players.is_empty():
+		return null
+	var desired_names := _desired_model_animation_names(unit_def)
+	var best_player := players[0]
+	var best_score := -1
+	for player in players:
+		var score := 0
+		for animation_name in desired_names:
+			if player.has_animation(animation_name):
+				score += 1
+		if score > best_score:
+			best_score = score
+			best_player = player
+	return best_player
+
+func _desired_model_animation_names(unit_def: Dictionary) -> Array[String]:
+	var names: Array[String] = []
+	var attack_name := str(unit_def.get("model_attack_animation_name", ""))
+	if not attack_name.is_empty():
+		names.append(attack_name)
+	var idle_name := str(unit_def.get("model_idle_animation_name", ""))
+	if idle_name.is_empty():
+		idle_name = "idle"
+	names.append(idle_name)
+	var run_name := str(unit_def.get("model_run_animation_name", ""))
+	if run_name.is_empty():
+		run_name = "run"
+	names.append(run_name)
+	return names
+func _first_animation_name(player: AnimationPlayer) -> String:
+	var names := player.get_animation_list()
+	return str(names[0]) if not names.is_empty() else ""
+
+func _find_animation_players(root: Node) -> Array[AnimationPlayer]:
+	var out: Array[AnimationPlayer] = []
+	var stack: Array[Node] = [root]
+	while not stack.is_empty():
+		var node: Node = stack.pop_back()
+		if node is AnimationPlayer:
+			out.append(node as AnimationPlayer)
+		for child in node.get_children():
+			stack.append(child)
+	return out
+
+func _add_3d_unit_readability(pivot: Node3D, f: Dictionary) -> void:
+	var team_color := _actor_team_color(f)
+	# One shadow in the actor's 3D space follows its movement, facing and death
+	# fade. The old fixed 68 px HUD ellipse doubled this into a dark ground smear.
+	var footprint_scale := clampf(float(pivot.get_meta("model_height", NOMINAL_UNIT_HEIGHT)) / NOMINAL_UNIT_HEIGHT, 0.7, 2.4)
+	# 10.21：中 / 高画质加投影剪影（角色轮廓压在地上，落向右下），脚底圆缩成小核心只管
+	# 「踩住」；低画质和立绘兜底单位保持原来的整圆。见 UnitPlanarShadow.gd。
+	var model: Node3D = pivot.get("visual_root") as Node3D if str(pivot.get_meta("visual_kind", "")) == "model" else null
+	var planar := model != null and UnitPlanarShadowScript.enabled_for_tier(VFXManager.get_quality_tier())
+	var shadow_scale := footprint_scale
+	if planar:
+		UnitPlanarShadowScript.attach(model, battle_unit_y_offset)
+		shadow_scale *= UnitPlanarShadowScript.CORE_SCALE
+	var shadow := UnitContactShadowScript.create("GroundShadow3D", Vector2.ONE * 0.62 * shadow_scale)
+	var shadow_root := pivot.get_node_or_null("Shadow") as Node3D
+	if shadow_root != null:
+		shadow_root.add_child(shadow)
+	else:
+		pivot.add_child(shadow)
+
+	var glow := MeshInstance3D.new()
+	glow.name = "TeamGlow3D"
+	var glow_mesh := PlaneMesh.new()
+	glow_mesh.size = Vector2.ONE * 0.72 * footprint_scale
+	glow.mesh = glow_mesh
+	var glow_mat := ShaderMaterial.new()
+	glow_mat.shader = UNIT_TEAM_RING_SHADER
+	glow_mat.set_shader_parameter("team_color", team_color)
+	glow.material_override = glow_mat
+	glow.position = Vector3(0.0, 0.022, 0.0)
+	glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	pivot.add_child(glow)
+
+
+func _actor_team_color(f: Dictionary) -> Color:
+	# 3v3: ring uses the owning player's slot color. Otherwise team blue/red.
+	var owner_slot := int(f.get("owner_slot", -1))
+	var fid := str(f.get("id", ""))
+	var def_value = f.get("def", {})
+	var definition: Dictionary = def_value if typeof(def_value) == TYPE_DICTIONARY else {}
+	if fid.is_empty():
+		fid = str(definition.get("id", ""))
+	var is_boss := bool(definition.get("is_boss", false)) or fid.begins_with("boss_")
+	var is_monster := fid.begins_with("pve_")
+	if is_boss:
+		return Color(0.82, 0.22, 0.85, 0.55)
+	if is_monster:
+		return Color(0.58, 0.62, 0.70, 0.52)
+	if owner_slot >= 0:
+		var slot_color := GameConstants.team_slot_color(owner_slot)
+		slot_color.a = 0.55
+		return slot_color
+	return Color(0.25, 0.85, 1.0, 0.48) if _display_team(f) == "player" else Color(1.0, 0.34, 0.18, 0.52)
+
+func _position_3d_model_node(model_node: Node3D, f: Dictionary, facing_delta: float) -> void:
+	var pos := _sim_to_world_pos(_visual_sim_pos_for_fighter(f))
+	var world_pos := Vector3(pos.x, battle_unit_y_offset, pos.z)
+	model_node.position = world_pos
+	if facing_delta <= 0.0:
+		return
+	_update_model_facing(model_node, f, world_pos, facing_delta)
+
+# Seconds since the previous facing update. Read off the wall clock rather than
+# a _process delta because _refresh_visuals also runs from one-off call sites
+# (model build, replay seek, skip-to-end) that have no delta to pass down.
+func _model_facing_delta() -> float:
+	var now := Time.get_ticks_msec()
+	var last := _model_facing_last_msec
+	_model_facing_last_msec = now
+	if last <= 0:
+		return MODEL_FACING_MAX_DELTA
+	return clampf(float(now - last) * 0.001, 0.0, MODEL_FACING_MAX_DELTA)
+
+# Turn the model toward its aim direction at a fixed angular speed. Everything
+# is resolved in world space, so the arena flip and the final round's rotated
+# layout fall out of _sim_to_world_pos and need no special case here.
+func _update_model_facing(model_node: Node3D, f: Dictionary, world_pos: Vector3, delta: float) -> void:
+	var aim := _model_aim_dir(model_node, f, world_pos)
+	if aim == Vector2.ZERO:
+		return
+	# atan2(x, z) is the yaw that points +Z along `aim`; model_base_yaw is the
+	# per-model art calibration (180 for a model whose forward is -Z), which is
+	# exactly the value the old team-based facing used for the player side.
+	var base_yaw := float(model_node.get_meta("base_yaw", 180.0))
+	var target_yaw := atan2(aim.x, aim.y) + deg_to_rad(base_yaw - 180.0)
+	if not bool(model_node.get_meta("facing_ready", false)):
+		model_node.set_meta("facing_ready", true)
+		model_node.rotation.y = target_yaw
+		return
+	var diff := wrapf(target_yaw - model_node.rotation.y, -PI, PI)
+	var max_step := deg_to_rad(MODEL_FACING_TURN_SPEED_DEG) * delta
+	model_node.rotation.y = wrapf(model_node.rotation.y + clampf(diff, -max_step, max_step), -PI, PI)
+
+# Where the unit should be looking, as a world-space (x, z) direction:
+# where its feet are going while it closes in, who it is hitting while it
+# stands and swings. Returns ZERO to mean "keep the current facing".
+func _model_aim_dir(model_node: Node3D, f: Dictionary, world_pos: Vector3) -> Vector2:
+	var here := Vector2(world_pos.x, world_pos.z)
+	# Fixed display slots are translations, never motion. Face only the combat
+	# route so neighbour changes can neither rotate nor slide a stationary actor.
+	var sim_now := Vector2(float(f.pos.x), float(f.pos.y))
+	if not model_node.has_meta("facing_last_raw_pos"):
+		model_node.set_meta("facing_last_raw_pos", sim_now)
+	var raw_last: Variant = model_node.get_meta("facing_last_raw_pos")
+	var sim_last := sim_now
+	if raw_last is Vector2:
+		sim_last = raw_last
+	# The reference point only advances once the unit clears the dead zone, so a
+	# slow crawl still accumulates into a heading while a unit standing still
+	# never spins on sub-pixel noise.
+	if sim_now.distance_to(sim_last) >= MODEL_FACING_MOVE_EPS_SIM:
+		model_node.set_meta("facing_last_raw_pos", sim_now)
+		var from_world := _sim_to_world_pos(sim_last)
+		var to_world := _sim_to_world_pos(sim_now)
+		var travel := Vector2(to_world.x - from_world.x, to_world.z - from_world.z)
+		if travel.length() > 0.0001:
+			return travel.normalized()
+	var target_dir := _dir_to_fighter_id(here, str(f.get("vfx_attack_target_uid", "")))
+	if target_dir != Vector2.ZERO:
+		return target_dir
+	# No target yet (nobody hit so far) or it just died: look at the nearest
+	# live enemy so ranged units that never move still face the fight.
+	return _dir_to_nearest_enemy(here, f)
+
+func _dir_to_fighter_id(here: Vector2, target_id: String) -> Vector2:
+	if target_id.is_empty():
+		return Vector2.ZERO
+	# Only living units are in the frame table, so a dead target falls through
+	# to the nearest-enemy path instead of leaving the model aimed at a corpse.
+	var target: Variant = _frame_fighter_by_id.get(target_id)
+	if typeof(target) != TYPE_DICTIONARY:
+		return Vector2.ZERO
+	var pos := _sim_to_world_pos(_visual_sim_pos_for_fighter(target))
+	var dir := Vector2(pos.x, pos.z) - here
+	return dir.normalized() if dir.length() > 0.001 else Vector2.ZERO
+
+func _dir_to_nearest_enemy(here: Vector2, f: Dictionary) -> Vector2:
+	var my_team := str(f.get("team", ""))
+	var my_id := _visual_id(f)
+	# Rank on the raw sim positions already gathered this frame (cheap, no
+	# separation pass), then take the winner's visual position for the aim.
+	var my_sim := Vector2(float(f.pos.x), float(f.pos.y))
+	var best_id := ""
+	var best_dist := INF
+	for i in _frame_living_ids.size():
+		var id := _frame_living_ids[i]
+		if id == my_id:
+			continue
+		var other: Variant = _frame_fighter_by_id.get(id)
+		if typeof(other) != TYPE_DICTIONARY:
+			continue
+		if str((other as Dictionary).get("team", "")) == my_team:
+			continue
+		var dist := my_sim.distance_squared_to(_frame_living_pos[i])
+		if dist < best_dist:
+			best_dist = dist
+			best_id = id
+	return _dir_to_fighter_id(here, best_id)
+
+# Spawn pose, held only until the first facing update snaps the model onto its
+# aim direction — the build pass runs before any frame table exists.
+func _spawn_facing_yaw(f: Dictionary, base_yaw: float) -> float:
+	var is_player := str(f.get("team", "")) == "player"
+	if _arena_flip_y:
+		is_player = not is_player
+	return base_yaw if is_player else base_yaw + MODEL_FACING_SPAWN_ENEMY_YAW
+
+
+func _set_formation_allies_intro_hidden(hidden: bool) -> void:
+	_formation_allies_hidden_for_intro = hidden
+	for fighter in _state.get("player", []) + _state.get("enemy", []):
+		_apply_formation_intro_visibility(_visual_id(fighter), fighter)
+
+
+func _apply_formation_intro_visibility(id: String, fighter: Dictionary) -> void:
+	if not bool(fighter.get("is_formation_ally", false)):
+		return
+	var should_show := not _formation_allies_hidden_for_intro
+	var unit_node: Control = _unit_nodes.get(id)
+	if unit_node != null and is_instance_valid(unit_node):
+		unit_node.visible = should_show
+	var model_node: Node3D = _battle_3d_models.get(id)
+	if model_node != null and is_instance_valid(model_node):
+		model_node.visible = should_show
+
+# Rebuild the per-frame lookup. Each actor receives one personal display slot on
+# its first frame. No neighbour query, easing, or later reflow is allowed. The
+# only display-side motion is the tick-to-tick interpolation above: at alpha 1
+# displayed == simulator exactly, and in between it stays on that segment.
+func _begin_visual_frame(living: Array, _delta: float = 0.0) -> void:
+	_visual_pos_cache.clear()
+	_frame_living_ids.clear()
+	_frame_living_pos.clear()
+	_frame_fighter_by_id.clear()
+	var living_ids := {}
+	for f in living:
+		if typeof(f) != TYPE_DICTIONARY:
+			continue
+		var id := _visual_id(f)
+		var raw := Vector2(float(f.pos.x), float(f.pos.y))
+		if not _fixed_visual_offset_by_id.has(id):
+			_fixed_visual_offset_by_id[id] = _make_fixed_visual_offset(f, id, raw)
+		var offset_value = _fixed_visual_offset_by_id.get(id, Vector2.ZERO)
+		var offset := offset_value as Vector2 if offset_value is Vector2 else Vector2.ZERO
+		_frame_living_ids.append(id)
+		_frame_living_pos.append(raw)
+		_frame_fighter_by_id[id] = f
+		var shown := _visual_interp_raw_pos(id, raw)
+		_visual_pos_cache[id] = _clamp_visual_sim_pos(BattleSimShared.constrain_fighter_position(f, _state, shown + offset))
+		living_ids[id] = true
+	for stale_id in _fixed_visual_offset_by_id.keys():
+		if not living_ids.has(stale_id):
+			_fixed_visual_offset_by_id.erase(stale_id)
+
+
+func _visual_sim_pos_for_fighter(f: Dictionary) -> Vector2:
+	var id := _visual_id(f)
+	var cached: Variant = _visual_pos_cache.get(id)
+	if cached is Vector2:
+		return cached as Vector2
+	return _clamp_visual_sim_pos(BattleSimShared.constrain_fighter_position(f, _state, Vector2(float(f.pos.x), float(f.pos.y))))
+
+
+# 9.25：模拟坐标已经按准备阶段的 4×4 真实间距摆放（BattleSimShared.board_cell_pos），
+# 画面直接显示模拟位置，不再额外加偏移。旧版按 4×2 = 8 格写的偏移只照顾前两行，
+# 第 3、4 行的棋子按 id 哈希乱塞，敌方行序也是反的，画面距离和伤害判定距离对不上。
+func _make_fixed_visual_offset(_f: Dictionary, _id: String, _raw: Vector2) -> Vector2:
+	return Vector2.ZERO
+
+# 本画面帧该显示的原始模拟坐标（插值后、未加固定槽与边界限制）。
+func _visual_interp_raw_pos(id: String, raw: Vector2) -> Vector2:
+	if _interp_alpha >= 1.0:
+		return raw
+	var prev: Variant = _interp_prev_pos_by_id.get(id)
+	if not (prev is Vector2):
+		return raw
+	if (prev as Vector2).distance_to(raw) > VISUAL_INTERP_SNAP_SIM:
+		return raw
+	return (prev as Vector2).lerp(raw, _interp_alpha)
+
+# 该单位本画面帧是否处在两帧之间（弓箭手预判要据此换算显示时刻）。
+func _visual_interp_active_for(id: String, raw: Vector2) -> bool:
+	if _interp_alpha >= 1.0:
+		return false
+	var prev: Variant = _interp_prev_pos_by_id.get(id)
+	return prev is Vector2 and (prev as Vector2).distance_to(raw) <= VISUAL_INTERP_SNAP_SIM
+
+# 播放循环在推进每个逻辑帧之前调用：记下推进前的坐标。一帧补多个逻辑帧时
+# 只有最后一次留下，所以插值区间永远是最新的两帧。
+func _visual_interp_capture_tick_start() -> void:
+	_interp_prev_pos_by_id.clear()
+	for f in BattleSim.living_units(_state):
+		if typeof(f) != TYPE_DICTIONARY:
+			continue
+		_interp_prev_pos_by_id[_visual_id(f)] = Vector2(float(f.pos.x), float(f.pos.y))
+
+func _visual_interp_set_alpha(alpha: float) -> void:
+	_interp_alpha = clampf(alpha, 0.0, 1.0)
+
+# 跳帧、定位、开局、结算：直接显示逻辑坐标，丢掉旧的上一帧记录。
+func _visual_interp_snap() -> void:
+	_interp_prev_pos_by_id.clear()
+	_interp_alpha = 1.0
+
+func reset_visual_position_state() -> void:
+	_visual_interp_snap()
+	_visual_pos_cache.clear()
+	_fixed_visual_offset_by_id.clear()
+	_frame_living_ids.clear()
+	_frame_living_pos.clear()
+	_frame_fighter_by_id.clear()
+
+func _display_unit_def_for_fighter(f: Dictionary) -> Dictionary:
+	return UnitVisualResolverScript.resolve_for_fighter(f)
+
+func _model_path_available(model_path: String) -> bool:
+	return UnitVisualResolverScript.resource_exists(model_path)
+
+func _center_model_for_full_body_view(model: Node3D) -> void:
+	var bounds := _node3d_bounds(model)
+	if bounds.size == Vector3.ZERO:
+		return
+	var center := bounds.get_center()
+	# _node3d_bounds is measured in the model's unscaled local space. Apply the
+	# model basis so the centering offset stays correct after model_visual_scale;
+	# subtracting the raw AABB values made 0.42-scale actors float above FootAnchor.
+	model.position -= model.transform.basis * Vector3(center.x, bounds.position.y, center.z)
+
+func _camera_distance_for_bounds(bounds: AABB, frame_fill: float, fov_deg: float) -> float:
+	if bounds.size == Vector3.ZERO:
+		return 3.2
+	var fill := clampf(frame_fill, 0.55, 1.15)
+	var half_height := maxf(bounds.size.y * 0.5, 0.2)
+	var half_width := maxf(bounds.size.x * 0.5, 0.2)
+	var half_fov := deg_to_rad(fov_deg) * 0.5
+	var needed := maxf(half_height / tan(half_fov), half_width / tan(half_fov))
+	return maxf(1.2, needed / fill)
+
+func _visual_id(f: Dictionary) -> String:
+	return str(f.get("uid", "%s_%s" % [str(f.get("team", "")), str(f.get("id", ""))]))

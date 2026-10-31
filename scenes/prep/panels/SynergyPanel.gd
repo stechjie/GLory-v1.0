@@ -143,6 +143,7 @@ func _add_money_action(logo_path: String, title: String, desc: String, enabled: 
 # ─── synergy widgets ──────────────────────────────────────────────────────────
 
 func _add_synergy_widgets() -> void:
+	_race_widgets.clear()
 	var counts := SynergyService.count_races_from_board()
 	var shown := false
 	var grid := GridContainer.new()
@@ -184,15 +185,102 @@ func _add_synergy_widgets() -> void:
 		count_label.text = "%d/%d" % [count, max_threshold]
 		count_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		count_label.add_theme_font_size_override("font_size", 18)
-		count_label.add_theme_color_override("font_color", Color(0.94, 0.94, 0.90))
 		count_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_apply_tier_style(count_label, race, count)
 		row.add_child(count_label)
+		_race_widgets[race] = {"logo": effect_logo, "label": count_label, "count": count}
 	if not shown:
 		var none := _outlined(Label.new())
 		none.text = "No units on board" if PrepWidgets.is_en() else "棋盘上没有普通棋子"
 		none.modulate = Color(0.55, 0.55, 0.55)
 		_left_panel.add_child(none)
 
+
+
+# ─── 10.31 羁绊档位的面板反馈 ────────────────────────────────────────────────
+#
+# 计数文字按「生效到哪一档」上色：
+#   · 只有第 1 档「特性」（棋盘上有这一族就自动有）：常色偏灰 —— 它谈不上「凑出来了」；
+#   · 中间档生效：种族色；
+#   · 最高档生效：种族色提亮 + 加粗描边。
+# 这样不点开详情也能一眼看出「神 3/7」到底生效到哪一档。
+
+# race -> {logo, label, count}。每次 _add_synergy_widgets 重建时重填（旧节点已 queue_free）。
+var _race_widgets: Dictionary = {}
+
+const TIER_IDLE_COLOR := Color(0.80, 0.80, 0.76)
+const PulseColors := preload("res://scenes/prep/effects/PrepSynergyActivateBurst.gd")
+
+
+func _apply_tier_style(label: Label, race: String, count: int) -> void:
+	var thresholds: Array = SynergyService.RACE_THRESHOLDS.get(race, [])
+	var color := TIER_IDLE_COLOR
+	if thresholds.size() >= 2 and count >= int(thresholds[thresholds.size() - 1]):
+		color = PulseColors.race_color(race).lerp(Color.WHITE, 0.25)
+		label.add_theme_constant_override("outline_size", TEXT_OUTLINE_SIZE + 3)
+	elif thresholds.size() >= 2 and count >= int(thresholds[1]):
+		# 提亮一点：人族蓝 / 暗族紫原色压在深色描边上偏暗，18px 字不好认。
+		color = PulseColors.race_color(race).lerp(Color.WHITE, 0.2)
+	label.add_theme_color_override("font_color", color)
+	label.set_meta("tier_color", color)
+
+
+# 宿主在羁绊跨档 / 掉档时调。kind："minor" / "major" / "ultimate" / "drop"。
+#
+# 调用时面板刚被 refresh() 整个重建过，新节点还没排版（size 为 0），
+# 所以先等一帧再设 pivot —— 否则缩放绕左上角，图标会往右下甩。
+func pulse_race(race: String, kind: String) -> void:
+	if not is_inside_tree():
+		return
+	var widgets: Dictionary = _race_widgets.get(race, {})
+	if widgets.is_empty():
+		return
+	await get_tree().process_frame
+	# 等的这一帧里面板可能又重建了：先判有效再转型（对已释放对象 as 会报 SCRIPT ERROR）。
+	if not is_instance_valid(widgets.get("logo")):
+		return
+	var logo := widgets.get("logo") as Control
+	var label: Label = widgets.get("label") as Label if is_instance_valid(widgets.get("label")) else null
+	logo.pivot_offset = logo.size * 0.5
+	if kind == "drop":
+		# 掉档：图标迅速褪成灰再恢复，不弹。
+		logo.modulate = Color(0.45, 0.45, 0.45, 1.0)
+		var dt := logo.create_tween()
+		dt.tween_property(logo, "modulate", Color.WHITE, 0.40).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		return
+	# 弹一下：先压扁再 TRANS_BACK 过冲回弹。档位越高越大。
+	var amount := {"minor": 0.18, "major": 0.30, "ultimate": 0.45}.get(kind, 0.18) as float
+	logo.scale = Vector2(1.0 + amount, 1.0 - amount * 0.6)
+	var tween := logo.create_tween()
+	tween.tween_property(logo, "scale", Vector2.ONE, 0.32 if kind == "minor" else 0.42) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	if kind == "minor" or label == null or not is_instance_valid(label):
+		return
+	# 计数文字闪一下：先亮成近白的种族色，再回到这一档的常驻色。
+	var rest: Color = label.get_meta("tier_color", TIER_IDLE_COLOR)
+	var flash := PulseColors.race_color(race).lerp(Color.WHITE, 0.6)
+	label.pivot_offset = label.size * 0.5
+	label.scale = Vector2.ONE * (1.25 if kind == "major" else 1.4)
+	var lt := label.create_tween()
+	lt.tween_property(label, "scale", Vector2.ONE, 0.36).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	# tween 绑在 label 自己身上，label 被释放时 tween 一起停，回调里不会碰到已释放节点。
+	lt.parallel().tween_method(_set_label_color.bind(label), flash, rest, 0.6 if kind == "major" else 0.9)
+
+
+func _set_label_color(c: Color, label: Label) -> void:
+	label.add_theme_color_override("font_color", c)
+
+
+# 档位显示名（如「神7·神佑」）。终极档弹字用，口径与详情弹窗一致：
+# 中文优先取 FinalStatusCatalog 的定稿名，没有再退回本文件的条目表。
+static func tier_display_name(race: String, threshold: int) -> String:
+	var entries := _race_entries_en(race) if PrepWidgets.is_en() else _race_entries(race)
+	for item in entries:
+		if int(item.get("threshold", 0)) != threshold:
+			continue
+		var approved := FinalStatusCatalog.synergy_cn(race, threshold) if not PrepWidgets.is_en() else {}
+		return str(approved.get("name_cn", item.get("name", "")))
+	return ""
 
 
 # 原 _race_synergy_entries（PrepDetails.gd）

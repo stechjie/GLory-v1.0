@@ -41,6 +41,8 @@ class_name VFXWarmup
 # 第 1 回合的新编译量随之从 21 降到 13 —— 格式是对上的。
 
 const PROCEDURAL_VFX := preload("res://effects/BossProceduralVFX3D.gd")
+const MONSTER_DEATH_VFX := preload("res://effects/vfx3d/modules/VFXDeathShatter3D.gd")
+const MONSTER_DEATH_ITEM := "monster_death_dissipate"
 
 # 普攻组合。这几个不在数据表里（种族 × 近战/远程是代码推出来的），要手写。
 const BASIC_ATTACKS := [
@@ -233,6 +235,8 @@ func _collect_ids() -> Array[String]:
 	for table_name in FIRST_BATTLE_TABLES:
 		for sid in _skill_ids_of(str(table_name), str(FIRST_BATTLE_TABLES[table_name])):
 			_append_phase_id(out, seen, sid, PHASE_FIRST_BATTLE)
+	# 怪物死亡不来自 skill_id：独立提交生产中的两组粒子，避免第一次击杀现场编译。
+	_append_phase_id(out, seen, MONSTER_DEATH_ITEM, PHASE_FIRST_BATTLE)
 	# 以 res:// 开头，_spawn_one 走整场景实例化分支。
 	_append_phase_id(out, seen, LANE_BARRIER_SCENE, PHASE_FIRST_BATTLE)
 
@@ -494,6 +498,28 @@ func _process(_delta: float) -> void:
 	_wait_frames = FRAMES_PER_ITEM + _backoff_frames_for(spawn_ms)
 
 func _spawn_one(item: String) -> void:
+	if item == MONSTER_DEATH_ITEM:
+		# Cache both selected FrameRonin poses before either can first appear in battle.
+		var ronin := preload("res://effects/vfx3d/frameronin/FrameRoninImpactMeshes.gd")
+		ronin.frames(81)
+		ronin.frames(85)
+		var holder := Node3D.new()
+		holder.name = "WarmMonsterDeath"
+		_world_root.add_child(holder)
+		var dissipate := preload("res://effects/vfx3d/modules/VFXCoinBurst3D.gd").new()
+		holder.add_child(dissipate)
+		# 与战斗共用方法、材质、粒子。holder 留在独立 world 内，沿用两帧 settle 后回收。
+		dissipate.play_burst(Vector3(0.0, 0.14, 0.0), 0.0,
+			Vector3(0.7, 0.0, 0.0), Color(0.96, 0.66, 0.34), "heavy")
+		var stars := MONSTER_DEATH_VFX.new()
+		holder.add_child(stars)
+		stars.play_piece_dissipate(Vector3(-0.35, 0.14, 0.0), 0.0,
+			Vector3.RIGHT, Color(0.76, 0.87, 1.0), "normal", true)
+		var lane_clear := preload("res://effects/vfx3d/modules/VFXLaneClearBurst3D.gd").new()
+		holder.add_child(lane_clear)
+		lane_clear.play_clear(Vector3.ZERO, Rect2(-1.7,-3.0,3.4,6.0))
+		_active = holder
+		return
 	if item.begins_with("res://"):
 		_spawn_scene(item)
 		return

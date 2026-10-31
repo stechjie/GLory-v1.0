@@ -311,7 +311,10 @@ func _check_source_contract() -> void:
 	var at := renderer.find("func detach_actor_for_death")
 	if not _h.expect(at >= 0, "detach_missing", "找不到 detach_actor_for_death()"):
 		return
-	var block := renderer.substr(at, 1400)
+	# Read the whole function; a fixed character slice silently stopped reaching
+	# the status-controller line as the existing explanatory comments grew.
+	var next_function := renderer.find("\nfunc ", at + 1)
+	var block := renderer.substr(at, next_function - at) if next_function >= 0 else renderer.substr(at)
 	_h.expect(block.contains("(status_vfx as Node).set_process(false)"),
 		"status_controller_not_stopped",
 		"detach_actor_for_death() 没有停掉状态控制器的每帧刷新")

@@ -285,6 +285,19 @@ static func _replay_capture_frame(state: Dictionary, frames: Array, frame_events
 	state["_replay_ve_cursor"] = ve.size()
 	frame_events.append(new_events)
 	var frame_stats: Dictionary = state.get("unit_stats", {})
+	var slot_damage: Array = [0, 0, 0, 0, 0, 0]
+	for entry: Dictionary in frame_stats.values():
+		var slot := int(entry.get("owner_slot", -1))
+		if slot < 0 and str(entry.get("team", "")) == "player":
+			slot = 0
+		if slot >= 0 and slot < 6 and str(entry.get("group", "")) != "boss":
+			slot_damage[slot] += maxi(0, int(entry.get("damage_dealt", 0)))
+	var elemental: Dictionary = state.get("element_damage_by_slot", {})
+	for slot in range(6):
+		slot_damage[slot] += maxi(0, int(elemental.get(slot, elemental.get(str(slot), 0))))
+	var damage_frames: Array = state.get("_replay_slot_damage", [])
+	damage_frames.append(slot_damage)
+	state["_replay_slot_damage"] = damage_frames
 	var frame: Array = []
 	# Keep War Drum HUD data beside the frozen 13-column simulation frames.
 	# Only count changes are recorded, so timed expiry is visible in replays too.
@@ -360,6 +373,7 @@ static func _team_replay_payload(state: Dictionary, roster: Dictionary, frames: 
 	replay_result["team_heal_ally"] = int(state.get("team_heal_ally", 0))
 	replay_result["team_heal_rival"] = int(state.get("team_heal_rival", 0))
 	var payload := {"kind": str(state.get("kind", "pve")), "roster": roster, "frames": frames, "frame_events": frame_events, "result": replay_result}
+	payload["frame_slot_damage"] = state.get("_replay_slot_damage", [])
 	var drum_events: Array = state.get("_replay_drum_stack_events", [])
 	if not drum_events.is_empty():
 		payload["crimson_drum_stack_events"] = drum_events
@@ -477,6 +491,15 @@ static func _replay_capture_roster(state: Dictionary, roster: Dictionary) -> voi
 		# 不影响玩法身份。表现层（BattleRenderer）靠它给复活体罩「死灵气息」。
 		if f.has("phoenix_used"):
 			roster[uid]["phoenix_used"] = bool(f.get("phoenix_used", false))
+		# 10.31：攻击 / 防卫 4 件套的持有标记，给前端做斩杀线、开局护罩、闪避残光。
+		# 同凤凰的做法只在有套装时带键；roster 只有白名单字段进 simulation_sha256，不改玩法身份。
+		var sets: Array = []
+		if not _ignores_treasure(f):
+			for category in ["attack", "defense"]:
+				if _f_has_set(f, category):
+					sets.append(category)
+		if not sets.is_empty():
+			roster[uid]["treasure_sets"] = sets
 
 
 static func step_state(state: Dictionary) -> void:

@@ -973,6 +973,10 @@ func _load_replay_roster(replay: Dictionary) -> void:
 		# `phoenix_used` 永远是假，「死灵气息」在真实对局里一次都不会出现。
 		if r.has("phoenix_used"):
 			f["phoenix_used"] = bool(r.get("phoenix_used", false))
+		# 10.31：套装标记（BattleSimulator._replay_capture_roster）。回放单位一律带上这个键，
+		# 没有就是空表 —— BattleVfx._unit_has_treasure_set 靠「有没有键」区分回放单位和本地模拟单位，
+		# 否则回放里的队友 / 敌方棋子会落回「读本地玩家宝藏」那条兜底。
+		f["treasure_sets"] = (r.get("treasure_sets", []) as Array).duplicate()
 		_replay_by_uid[uid] = f
 		if str(r.get("team", "")) == "player":
 			players.append(f)
@@ -1411,6 +1415,12 @@ func _apply_replay_frame(i: int) -> void:
 	# Conversion changes membership in the simulation, not only the health-bar
 	# colour. Boundary release and side counts must read the same membership.
 	reconcile_replay_teams(_state, _replay_by_uid)
+	_state["presentation_damage_silent"] = not _visual_interp_stepping
+	var damage_frames: Array = _replay.get("frame_slot_damage", [])
+	if i >= 0 and i < damage_frames.size():
+		_state["presentation_slot_damage"] = damage_frames[i]
+	else:
+		_state.erase("presentation_slot_damage")
 
 
 # War Drum stack counts are presentation-only changes outside the frozen frame

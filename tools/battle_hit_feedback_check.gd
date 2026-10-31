@@ -17,6 +17,28 @@ const CHECK_NAME := "battle_hit_feedback"
 const MODEL := "res://assets/models/units/human_refined/human_militia/human_militia_refined.tscn"
 const VFX_PATH := "res://scenes/battle/BattleVfx.gd"
 
+# 捕获实际引擎错误，让“计时器报错但检查场景仍退出0”也能成为失败。
+class FreezeErrorCapture:
+	extends Logger
+	var _errors: Array[String] = []
+	var _mutex := Mutex.new()
+
+	func _log_error(_function: String, _file: String, _line: int, code: String,
+			rationale: String, _editor_notify: bool, error_type: int,
+			_script_backtraces: Array[ScriptBacktrace]) -> void:
+		if error_type == Logger.ERROR_TYPE_WARNING:
+			return
+		_mutex.lock()
+		_errors.append("%s %s" % [code, rationale])
+		_mutex.unlock()
+
+	func messages() -> Array[String]:
+		_mutex.lock()
+		var result: Array[String] = _errors.duplicate()
+		_mutex.unlock()
+		return result
+
+
 var _h: RefCounted
 
 
@@ -28,6 +50,7 @@ func _run() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
 	await _check_flash_and_flinch()
 	await _check_hitstop()
+	await _check_hitstop_actor_freed_before_timer()
 	await _check_toggles_and_throttle()
 	_check_shake_sink()
 	_check_battle_vfx_wiring()
@@ -163,6 +186,27 @@ func _check_toggles_and_throttle() -> void:
 	_h.expect(not any_overlay, "throttle_missing", "70ms 内同一目标的第二次反馈没有被节流")
 	victim.queue_free()
 	await get_tree().process_frame
+
+
+func _check_hitstop_actor_freed_before_timer() -> void:
+	var capture := FreezeErrorCapture.new()
+	OS.add_logger(capture)
+	var victim := _make_actor()
+	await get_tree().process_frame
+	Feedback.freeze_animation(victim, 0.08)
+	# 同时覆盖初次计时器和“提前触发后顺延”的恢复计时器。
+	Feedback._release_freeze(victim)
+	var actor_ref: WeakRef = weakref(victim)
+	victim.queue_free()
+	await get_tree().process_frame
+	_h.expect(actor_ref.get_ref() == null, "freed_hitstop_actor_survives",
+		"测试中的冻结单位未提前回收，无法覆盖死亡先于恢复计时器的情况")
+	await _wait(0.18)
+	await get_tree().process_frame
+	OS.remove_logger(capture)
+	var errors := capture.messages()
+	_h.expect(errors.is_empty(), "freed_hitstop_timer_errors",
+		"冻结单位先回收后，恢复计时器仍产生引擎错误：%s" % str(errors))
 
 
 func _check_shake_sink() -> void:
