@@ -14,7 +14,7 @@ const CheckHarness := preload("res://tools/CheckHarness.gd")
 const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
 const CHECK_NAME := "prep_skin"
 const SHOP_PATH := "res://data/shop.json"
-const ALLOWED_KEYS := ["id", "name", "name_en", "firefly_color", "river_glow"]
+const ALLOWED_KEYS := ["id", "name", "name_en", "firefly_color", "river_glow", "ambient", "refresh_fx"]
 
 var _h: RefCounted
 
@@ -60,6 +60,12 @@ func _check_entry(skin_id: String, entry: Dictionary) -> void:
 		_h.expect(ok, "bad_firefly_color", "%s 的 firefly_color 要是 3 个 0~1 的数" % skin_id)
 	if entry.has("river_glow"):
 		_h.expect(entry["river_glow"] is bool, "bad_river_glow", "%s 的 river_glow 要是 true / false" % skin_id)
+	if entry.has("ambient"):
+		_h.expect(str(entry["ambient"]) in PrepSkin.AMBIENT_KINDS, "bad_ambient",
+			"%s 的 ambient 只能是 %s" % [skin_id, str(PrepSkin.AMBIENT_KINDS)])
+	if entry.has("refresh_fx"):
+		_h.expect(str(entry["refresh_fx"]) in PrepSkin.REFRESH_FX_KINDS, "bad_refresh_fx",
+			"%s 的 refresh_fx 只能是 %s" % [skin_id, str(PrepSkin.REFRESH_FX_KINDS)])
 	if skin_id != PrepSkin.DEFAULT_ID:
 		var board := PrepSkin.SKIN_FILE % [skin_id, "board"]
 		_h.expect(ResourceLoader.exists(board), "skin_images_missing",

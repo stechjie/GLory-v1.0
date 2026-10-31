@@ -33,7 +33,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
-from app import balance_version, client_version, db, players, shop, pet_draw
+from app import balance_version, client_version, db, players, shop, pet_draw, skin_draw
 from app.jwt_verify import Claims
 from app.rate_limit import RateLimited, SlidingWindowLimiter
 from app.routes.me import current_claims
@@ -151,6 +151,34 @@ class PetDrawReceiptModel(BaseModel):
     coin_reward: int
     misses: int
     energy: int
+    diamond: int
+    coin: int
+    replayed: bool
+
+
+class SkinDrawBody(BaseModel):
+    client_draw_id: uuid.UUID
+
+
+class SkinDrawStateModel(BaseModel):
+    skin_id: str
+    cost: int
+    target_shards: int
+    pity_limit: int
+    shards: int
+    draws: int
+    owned: bool
+
+
+class SkinDrawReceiptModel(BaseModel):
+    draw_id: uuid.UUID
+    skin_id: str
+    shards_gained: int
+    coin_reward: int
+    shards: int
+    draws: int
+    unlocked: bool
+    owned: bool
     diamond: int
     coin: int
     replayed: bool
@@ -321,6 +349,47 @@ async def draw_pet(
                                energy=receipt.energy,
                                diamond=receipt.wallet.diamond, coin=receipt.wallet.coin,
                                replayed=receipt.replayed)
+
+
+# 钻石抽棋盘皮肤碎片（樱花祈愿，backend/app/skin_draw.py）。skin_id 走路径：以后加别的皮肤祈愿不改接口。
+@router.get("/me/skins/{skin_id}/draw", response_model=SkinDrawStateModel)
+async def skin_draw_state(
+    skin_id: str,
+    claims: Annotated[Claims, Depends(current_claims)],
+) -> SkinDrawStateModel:
+    me = await _me(claims)
+    try:
+        current = await skin_draw.state(me.player_id, skin_id)
+    except shop.ShopRejected as exc:
+        raise _reject(exc) from None
+    return SkinDrawStateModel(skin_id=current.skin_id, cost=skin_draw.PRICE,
+                              target_shards=skin_draw.TARGET_SHARDS,
+                              pity_limit=skin_draw.PITY_LIMIT, shards=current.shards,
+                              draws=current.draws, owned=current.owned)
+
+
+@router.post("/me/skins/{skin_id}/draw", response_model=SkinDrawReceiptModel)
+async def draw_skin_shard(
+    skin_id: str,
+    body: SkinDrawBody,
+    claims: Annotated[Claims, Depends(current_claims)],
+) -> SkinDrawReceiptModel:
+    me = await _me(claims)
+    _check_rate(me.player_id)
+    try:
+        receipt = await skin_draw.draw(me.player_id, skin_id, body.client_draw_id)
+    except shop.ShopRejected as exc:
+        raise _reject(exc) from None
+    if not receipt.replayed:
+        log.info("皮肤祈愿 player=%s draw=%s skin=%s shards=+%d coin=%d unlocked=%s",
+                 me.player_id, receipt.draw_id, receipt.skin_id, receipt.shards_gained,
+                 receipt.coin_reward, receipt.unlocked)
+    return SkinDrawReceiptModel(draw_id=receipt.draw_id, skin_id=receipt.skin_id,
+                                shards_gained=receipt.shards_gained, coin_reward=receipt.coin_reward,
+                                shards=receipt.shards, draws=receipt.draws,
+                                unlocked=receipt.unlocked, owned=receipt.owned,
+                                diamond=receipt.wallet.diamond, coin=receipt.wallet.coin,
+                                replayed=receipt.replayed)
 
 
 @router.put("/me/pets/active", response_model=PetsResponse)

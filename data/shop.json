@@ -13,6 +13,8 @@
 
 	"_race_note": "种族：kind=race，grants=种族 id，enabled=false（不能直接买，只能集齐），requires 列出要集齐的全部棋子内容 id。买到 / 邮件领到最后一个棋子时，服务端在同一笔事务里把种族发下去（backend/app/shop.py 的 complete_sets）。种族一进这个文件，没有归属的玩家就选不了它 —— 上线前已经在用的老玩家由 database/031_crimson_grandfather.sql 一次性补发，那条迁移必须先于这个文件部署。",
 
+	"_skin_draw_note": "樱花棋盘（shop_prep_skin_sakura）、夜荧光棋盘（shop_prep_skin_nightwisp）enabled=false 不直接卖：商城祈愿抽碎片，集满 10 片自动解锁（backend/app/skin_draw.py）。登记在这里是为了让它要归属才能用 —— 删掉哪一条，那张皮肤就变成免费的，而抽奖接口会直接报错拒绝（不收钱卖空气）。",
+
 	"items": [
 		{"id": "shop_unit_human_militia", "kind": "unit", "grants": "unit:human_militia", "currency": "coin", "price": 0, "enabled": false, "name": "民兵", "name_en": "Militia"},
 		{"id": "shop_unit_human_merchant", "kind": "unit", "grants": "unit:human_merchant", "currency": "coin", "price": 0, "enabled": false, "name": "商人", "name_en": "Merchant"},
@@ -86,6 +88,26 @@
 			"enabled": false,
 			"name": "冰雪棋盘",
 			"name_en": "Frost Board"
+		},
+		{
+			"id": "shop_prep_skin_sakura",
+			"kind": "prep_skin",
+			"grants": "prep_skin_sakura",
+			"currency": "diamond",
+			"price": 0,
+			"enabled": false,
+			"name": "樱花棋盘",
+			"name_en": "Sakura Board"
+		},
+		{
+			"id": "shop_prep_skin_nightwisp",
+			"kind": "prep_skin",
+			"grants": "prep_skin_nightwisp",
+			"currency": "diamond",
+			"price": 0,
+			"enabled": false,
+			"name": "夜荧光棋盘",
+			"name_en": "Night Wisp Board"
 		},
 		{
 			"id": "event_frame_7day_ice",

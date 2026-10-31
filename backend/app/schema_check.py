@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import logging
 
-from app import db, friends, iap, presence, ranked, sanctions, service_control, shop
+from app import db, friends, iap, presence, ranked, sanctions, service_control, shop, skin_draw
 
 log = logging.getLogger("glory.schema")
 
@@ -64,6 +64,8 @@ _PREPARED: list[tuple[str, str]] = [
     ("shop.LOCK_WALLET", shop.LOCK_WALLET),
     # 真钱订单（040）。挂了的症状是玩家付了钱、confirm 500、钻石不到账。
     ("iap.LOCK_ORDER", iap.LOCK_ORDER),
+    # 樱花祈愿（042）。挂了的症状是打开祈愿页 500、抽不了。
+    ("skin_draw._PROGRESS", skin_draw._PROGRESS),
 ]
 
 # 第二类：prepare 看不见的东西。只收「不是加列」的迁移，一条迁移一行。

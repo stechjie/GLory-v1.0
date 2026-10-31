@@ -88,7 +88,7 @@ CURRENCIES = ("diamond", "coin")
 # mail = 系统邮件的附件（backend/app/mail.py）。那一笔流水同时记 mail_id，指明是哪封。
 # iap / iap_test / refund = 充值正式单、测试单、退款扣回（backend/app/iap.py）。
 SOURCES = ("shop", "iap", "iap_test", "grant", "refund", "starter_pick", "match_reward", "mail",
-           "seven_day_login", "pet_draw", "level_reward")
+           "seven_day_login", "pet_draw", "level_reward", "skin_draw")
 
 
 class ShopRejected(RuntimeError):

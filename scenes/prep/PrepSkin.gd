@@ -32,6 +32,11 @@ const SLOTS := {
 #   firefly_color: [r, g, b]  满场飘的光点颜色
 #   river_glow: false         关掉下河面的流动波光（那层是照草地河道画的）
 const FIREFLY_DEFAULT := Color(1.0, 0.85, 0.45)  # 金色萤火虫
+# 另外两项是「换一种效果」，取值只能是下面列的（门禁按这里查）：
+#   ambient: "firefly" 满场光点往上飘（默认） / "petal" 樱花瓣往下飘，这时 firefly_color 不用
+#   refresh_fx: "fire" 商店刷新时卷轴烧掉（默认） / "petal" 卷轴化成花瓣吹散
+const AMBIENT_KINDS := ["firefly", "petal"]
+const REFRESH_FX_KINDS := ["fire", "petal", "frost", "wisp"]
 
 # 当前用哪张。游戏里只有 PlayerProfile 写它（账号服务器上存的那张）；皮肤预览场景会临时改。
 static var active_id := DEFAULT_ID
@@ -80,6 +85,16 @@ static func firefly_color() -> Color:
 
 static func river_glow() -> bool:
 	return bool(entry(active_id).get("river_glow", true))
+
+
+static func ambient() -> String:
+	var kind := str(entry(active_id).get("ambient", AMBIENT_KINDS[0]))
+	return kind if kind in AMBIENT_KINDS else AMBIENT_KINDS[0]
+
+
+static func refresh_fx() -> String:
+	var kind := str(entry(active_id).get("refresh_fx", REFRESH_FX_KINDS[0]))
+	return kind if kind in REFRESH_FX_KINDS else REFRESH_FX_KINDS[0]
 
 
 # 这个包里有的皮肤，按 data/prep_skins.json 里的顺序。

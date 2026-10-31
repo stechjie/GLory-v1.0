@@ -1,6 +1,7 @@
 extends "res://scenes/prep/PrepShared.gd"
 
 const PREP_RELATION_PARTICLES_SCRIPT := preload("res://scenes/prep/PrepRelationParticles3D.gd")
+const PREP_PETAL_FALL_SCRIPT := preload("res://scenes/prep/effects/PrepPetalFall3D.gd")
 
 # 9.17 音效。**只在这一层声明一次**：整条继承链
 # PrepBoardModels ← PrepUI ← PrepFlowController ← PrepBoardController ← PrepScreen
@@ -1408,17 +1409,32 @@ func _add_prep_ambient_particles(world: Node3D) -> void:
 	# 全场萤火虫缓慢飘浮（颜色随皮肤，默认金色；冰雪是白色雪点）+ 下河面青色星光闪烁
 	var dot := _make_soft_dot_texture()
 	var ground := PREP_BOARD_GROUND_CENTER
-	world.add_child(_make_prep_drift_particles(
+	var fireflies := _make_prep_drift_particles(
 		"PrepFireflies", dot,
 		ground + Vector3(0.0, 0.30, 0.0), Vector3(3.4, 0.26, 1.9),
 		34, 7.0, PrepSkin.firefly_color(), 0.5, 1.1, 0.05
-	))
+	)
+	world.add_child(fireflies)
+	# 樱花皮肤用往下飘的花瓣代替萤火虫（PrepSkin.ambient）。两样都建好，按皮肤显隐：
+	# 皮肤可能晚到，PrepUI.reapply_prep_skin 只切显隐，不用重建。
+	var petals: MultiMeshInstance3D = PREP_PETAL_FALL_SCRIPT.new()
+	world.add_child(petals)
+	petals.setup(ground, Vector2(3.6, 2.0), ground.y)
+	_apply_prep_ambient_kind(fireflies, petals)
 	var bottom_center := _board_plane_world_pos(0.5, 0.905) + Vector3(0.0, 0.05, 0.0)
 	world.add_child(_make_prep_drift_particles(
 		"PrepRiverSparkleBottom", dot,
 		bottom_center, Vector3(3.2, 0.02, 0.22),
 		26, 2.6, Color(0.55, 0.90, 1.0), 0.3, 0.8, 0.02
 	))
+
+func _apply_prep_ambient_kind(fireflies: Node, petals: Node) -> void:
+	var use_petals := PrepSkin.ambient() == "petal"
+	if fireflies is CPUParticles3D:
+		(fireflies as CPUParticles3D).visible = not use_petals
+		(fireflies as CPUParticles3D).emitting = not use_petals
+	if petals != null and petals.has_method("set_active"):
+		petals.set_active(use_petals)
 
 func _make_prep_drift_particles(node_name: String, dot: Texture2D, center: Vector3, extents: Vector3, amount: int, lifetime: float, tint: Color, scale_min: float, scale_max: float, rise_speed: float) -> CPUParticles3D:
 	var p := CPUParticles3D.new()

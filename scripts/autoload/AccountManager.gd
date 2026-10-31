@@ -1269,6 +1269,17 @@ func draw_pet(client_draw_id: String) -> Dictionary:
 		{"client_draw_id": client_draw_id}, true)
 
 
+# 樱花祈愿：钻石抽棋盘皮肤碎片（backend/app/skin_draw.py）。结果由服务端决定，
+# 客户端只带一个防重复扣费的 client_draw_id（断网重发用同一个，服务端原样回上次结果）。
+func fetch_skin_draw_state(skin_id: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/me/skins/%s/draw" % skin_id.uri_encode(), null, true)
+
+
+func draw_skin_shard(skin_id: String, client_draw_id: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/skins/%s/draw" % skin_id.uri_encode(),
+		{"client_draw_id": client_draw_id}, true)
+
+
 # 出战宠物。服务端会校验归属 —— 没有的宠物设不上去，回 403。
 func set_active_pet(pet_id: String) -> Dictionary:
 	return await _request(HTTPClient.METHOD_PUT, "/v1/me/pets/active", {"pet_id": pet_id}, true)

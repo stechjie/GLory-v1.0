@@ -21,6 +21,7 @@ extends Control
 signal back_requested
 signal diamond_store_requested
 signal pet_draw_requested
+signal wish_requested(skin_id: String)
 # 棋子页：集齐一族后点「去备战」。Main 打开备战页的种族页签并高亮这一族。
 signal prep_races_requested(race: String)
 
@@ -48,6 +49,8 @@ const PetPreview := preload("res://scripts/pets/PetPreview.gd")
 const PetService := preload("res://scripts/pets/PetService.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
 const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
+const PetalTexture := preload("res://scenes/prep/effects/PrepPetalTexture.gd")
+const FxTextures := preload("res://scenes/prep/effects/PrepRefreshFxTextures.gd")
 # 棋子页（2026-10-10 赤律族上商城）：内容 id 前缀、哪一族在卖、集齐几个，和备战页共用这一份。
 const UnitCollection := preload("res://scripts/account/UnitCollection.gd")
 # 棋子页背景：每族一张，assets/ui/shop/<种族>_unit_bg.png。缺图就只用底色，不报错 ——
@@ -90,6 +93,37 @@ const CATEGORY_SKINS := "prep_skin"
 const CATEGORY_DIAMONDS := "diamonds"
 const CATEGORY_EVENT := "seven_day"
 const CATEGORY_UNITS := "unit"
+# 皮肤祈愿（docs/樱花祈愿.md）：钻石抽碎片，集满解锁那张棋盘皮肤。每张一个分类，页面只是入口横幅，
+# 抽在 SkinWishDialog（Main 打开，按 skin_id 换主题）。加新皮肤：这里加一行、WISH_BANNERS 加一段。
+const CATEGORY_SAKURA := "sakura_wish"
+const CATEGORY_NIGHTWISP := "nightwisp_wish"
+const WISH_CATEGORIES := {
+	CATEGORY_SAKURA: "prep_skin_sakura",
+	CATEGORY_NIGHTWISP: "prep_skin_nightwisp",
+}
+const WISH_TARGET := 10
+const WISH_PITY := 10
+# 横幅：背景图（与祈愿弹窗同一张）+ 文案 + 配色。卷轴就是皮肤自己的 shop_button 那张图。
+const WISH_BANNERS := {
+	"prep_skin_sakura": {
+		"bg": "res://assets/ui/shop/sakura_wish_bg.png",
+		"title": ["樱花祈愿", "Sakura Wish"],
+		"name": ["樱花棋盘", "Sakura Board"],
+		"shard": ["樱花碎片", "Sakura shards"],
+		"desc": ["整片棋盘落满樱花，摆放界面飘起花瓣，刷新商店时卷轴化作花瓣吹散。",
+			"Blossoms across your board, drifting petals in preparation, and a shop scroll that scatters into petals."],
+		"night": false,
+	},
+	"prep_skin_nightwisp": {
+		"bg": "res://assets/ui/shop/nightwisp_wish_bg.png",
+		"title": ["夜荧光祈愿", "Night Wisp Wish"],
+		"name": ["夜荧光棋盘", "Night Wisp Board"],
+		"shard": ["荧光碎片", "Wisp shards"],
+		"desc": ["月夜下的荧光森林：星光萤火满场飘浮，刷新商店时卷轴化作黄色荧光飞散。",
+			"A moonlit glowing forest: violet wisps over your board and a shop scroll that dissolves into golden wisps."],
+		"night": true,
+	},
+}
 
 var _busy := false
 var _loading := true
@@ -103,6 +137,7 @@ var _active_category := CATEGORY_PETS
 var _selected_item_id := ""
 var _active_pet := ""
 var _login_state: Dictionary = {}
+var _wish_states: Dictionary = {}   # skin_id -> GET /v1/me/skins/<id>/draw 的 body；拉不到就没有这一项
 # 棋子页当前看的种族。空 = 第一个在卖的。
 var _unit_race := ""
 
@@ -300,6 +335,8 @@ func _category_bar() -> Control:
 	panel.add_child(row)
 	for entry in [
 		{"id": CATEGORY_PETS, "zh": "宠物", "en": "Pets"},
+		{"id": CATEGORY_SAKURA, "zh": "樱花祈愿", "en": "Sakura Wish"},
+		{"id": CATEGORY_NIGHTWISP, "zh": "夜荧光", "en": "Night Wisp"},
 		{"id": CATEGORY_UNITS, "zh": "棋子", "en": "Units"},
 		{"id": CATEGORY_FRAMES, "zh": "头像框", "en": "Avatar Frames"},
 		{"id": CATEGORY_SKINS, "zh": "外观", "en": "Appearance"},
@@ -561,9 +598,19 @@ func _reload() -> void:
 	var owned: Dictionary = await AccountManager.fetch_entitlements()
 	var pets: Dictionary = await AccountManager.fetch_pets()
 	var login: Dictionary = await AccountManager.fetch_seven_day_login()
+	var wish_results: Dictionary = {}
+	for wish_skin in WISH_CATEGORIES.values():
+		if PrepSkin.has_skin(str(wish_skin)):
+			wish_results[wish_skin] = await AccountManager.fetch_skin_draw_state(str(wish_skin))
 	if not is_inside_tree():
 		return
 	_loading = false
+	# 祈愿进度拉不到不算致命：横幅照样显示，进度写「—」，进去弹窗会再拉一次。
+	_wish_states.clear()
+	for wish_skin in wish_results:
+		var result: Dictionary = wish_results[wish_skin]
+		if int(result.get("code", 0)) / 100 == 2:
+			_wish_states[wish_skin] = result.get("body", {})
 
 	if int(catalog.get("code", 0)) / 100 != 2:
 		_set_notice(str(catalog.get("error", _t("商城打不开", "The shop failed to load"))), true)
@@ -620,13 +667,15 @@ func _render() -> void:
 		_style_category_button(category_button, str(category) == _active_category)
 	_event_dot.visible = bool(_login_state.get("claimable_today", false))
 	_apply_page_background()
-	var special := _active_category in [CATEGORY_SKINS, CATEGORY_EVENT, CATEGORY_UNITS]
+	var special := _active_category in [CATEGORY_SKINS, CATEGORY_EVENT, CATEGORY_UNITS] or WISH_CATEGORIES.has(_active_category)
 	_catalog_shell.visible = not special
 	_special_panel.visible = special
 	if special:
 		_clear_children(_special_content)
 		if _active_category == CATEGORY_EVENT:
 			_render_event()
+		elif WISH_CATEGORIES.has(_active_category):
+			_render_wish(str(WISH_CATEGORIES[_active_category]))
 		elif _active_category == CATEGORY_UNITS:
 			_render_units()
 		else:
@@ -761,6 +810,143 @@ func _render_appearance() -> void:
 		else:
 			_select_category(CATEGORY_EVENT))
 	side.add_child(action)
+
+
+# 祈愿入口横幅：祭坛大图 + 浮动卷轴 + 碎片进度 + 一个按钮。抽本身在 SkinWishDialog（Main 打开）。
+func _render_wish(skin_id: String) -> void:
+	var banner: Dictionary = WISH_BANNERS[skin_id]
+	var state: Dictionary = _wish_states.get(skin_id, {})
+	var night := bool(banner.night)
+	var owned := _owned.has(skin_id) or bool(state.get("owned", false))
+	var known := state.has("shards")
+	var shards := int(state.get("shards", 0))
+	var draws := int(state.get("draws", 0))
+	_section_title(_pair(banner.title), _t(
+		"祈愿收集%s，集齐 %d 片自动解锁%s。每次 100 钻石，最多 %d 次必定集齐。" % [_pair(banner.shard), WISH_TARGET, _pair(banner.name), WISH_PITY],
+		"Wish for %s; %d unlock the %s. 100 gems per wish, guaranteed within %d." % [_pair(banner.shard).to_lower(), WISH_TARGET, _pair(banner.name), WISH_PITY]))
+	var row := HBoxContainer.new()
+	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	row.add_theme_constant_override("separation", Tokens.GAP_L)
+	_special_content.add_child(row)
+	var art_button: Button = ACTION_BUTTON.instantiate()
+	art_button.flat = true
+	art_button.custom_minimum_size = Vector2(620, 300)
+	art_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	art_button.tooltip_text = _pair(banner.title)
+	art_button.pressed.connect(func() -> void: wish_requested.emit(skin_id))
+	row.add_child(art_button)
+	# 横幅和祈愿弹窗同一个画面：祭坛背景 + 悬在祭坛上方、轻轻浮动的卷轴
+	art_button.clip_contents = true
+	var art := TextureRect.new()
+	art.texture = load(str(banner.bg)) as Texture2D if ResourceLoader.exists(str(banner.bg)) else null
+	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	art_button.add_child(art)
+	# 卷轴本身是挂在这个锚点上的 Sprite2D：界面控件的位置会吸附到整像素，几个像素的浮动会
+	# 一格一格地跳；Sprite2D 按小数像素走，浮得顺。
+	var scroll := Control.new()
+	scroll.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 锚在横幅中线偏上（背景图里祭坛台面在约 54% 高处，卷轴悬在它上方）
+	scroll.anchor_left = 0.5
+	scroll.anchor_right = 0.5
+	# 横幅比背景宽得多，按宽铺满后上下裁掉不少：台面实际落在横幅约 58% 高处，卷轴悬在 30%
+	scroll.anchor_top = 0.30
+	scroll.anchor_bottom = 0.30
+	scroll.offset_left = -150
+	scroll.offset_right = 150
+	scroll.offset_top = -41
+	scroll.offset_bottom = 41
+	art_button.add_child(scroll)
+	var sprite := Sprite2D.new()
+	sprite.texture = load(PrepSkin.path_for(skin_id, "shop_button")) as Texture2D
+	if sprite.texture != null:
+		sprite.scale = Vector2.ONE * (300.0 / float(sprite.texture.get_width()))
+	scroll.add_child(sprite)
+	# 锚点进树时就算好了尺寸（那一次 resized 已经错过），先摆一次，之后跟着 resized 走
+	sprite.position = scroll.size * 0.5
+	scroll.resized.connect(func() -> void: sprite.position = scroll.size * 0.5)
+	# 浮动走 offset（贴图像素，会乘上 scale）：position 留给居中，横幅改尺寸时不打架。
+	# tween 挂在精灵自己身上，页面重画时跟着一起销毁。
+	# 「减少动态效果」打开时 motion() 是 0，零时长的无限循环 tween 会报错，所以干脆不浮。
+	if Tokens.motion(1.2) > 0.0 and sprite.texture != null:
+		var amp := 7.0 / sprite.scale.y
+		sprite.offset.y = amp
+		var bob := sprite.create_tween().set_loops()
+		bob.tween_property(sprite, "offset:y", -amp, 1.3).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		bob.tween_property(sprite, "offset:y", amp, 1.3).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+	var side_panel := PanelContainer.new()
+	side_panel.custom_minimum_size.x = 360
+	side_panel.add_theme_stylebox_override("panel", Tokens.panel_box(
+		Tokens.NIGHT_GLASS if night else Tokens.SAKURA_GLASS, Tokens.NIGHT_EDGE if night else Tokens.SAKURA_EDGE, Tokens.GAP_M))
+	row.add_child(side_panel)
+	var side := VBoxContainer.new()
+	side.add_theme_constant_override("separation", Tokens.GAP_M)
+	side_panel.add_child(side)
+	var status := Label.new()
+	status.text = _t("已永久拥有", "Permanently owned") if owned else _t("限定棋盘皮肤", "Limited board skin")
+	status.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
+	status.add_theme_color_override("font_color", (Tokens.NIGHT_ACCENT if night else Tokens.SAKURA_PINK))
+	side.add_child(status)
+	var desc := Label.new()
+	desc.text = _pair(banner.desc)
+	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	desc.add_theme_color_override("font_color", (Tokens.NIGHT_TEXT_MUTED if night else Tokens.SAKURA_TEXT_MUTED))
+	side.add_child(desc)
+	var petals := HBoxContainer.new()
+	petals.add_theme_constant_override("separation", 4)
+	side.add_child(petals)
+	for i in WISH_TARGET:
+		var petal := TextureRect.new()
+		petal.texture = FxTextures.star() if night else PetalTexture.get_texture()
+		petal.custom_minimum_size = Vector2(28, 28)
+		petal.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		petal.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		petal.modulate = Color.WHITE if (owned or i < shards) else (Tokens.NIGHT_SLOT_EMPTY if night else Tokens.SAKURA_SLOT_EMPTY)
+		petal.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		petals.add_child(petal)
+	var progress := Label.new()
+	if owned:
+		progress.text = _t("%s已集齐", "All %s collected") % _pair(banner.shard)
+	elif known:
+		progress.text = _t("%s %d / %d · 最多再祈愿 %d 次必定集齐" % [_pair(banner.shard), shards, WISH_TARGET, maxi(1, WISH_PITY - draws)],
+			"Shards %d / %d · guaranteed within %d more" % [shards, WISH_TARGET, maxi(1, WISH_PITY - draws)])
+	else:
+		progress.text = "%s  — / %d" % [_pair(banner.shard), WISH_TARGET]
+	progress.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	progress.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	progress.add_theme_color_override("font_color", (Tokens.NIGHT_TEXT if night else Tokens.SAKURA_TEXT))
+	side.add_child(progress)
+	var action: Button = ACTION_BUTTON.instantiate()
+	action.theme_type_variation = Theming.VARIATION_PRIMARY
+	action.custom_minimum_size.y = Tokens.TOUCH_MIN
+	if owned:
+		var in_use := PrepSkin.active_id == skin_id
+		action.text = _t("使用中", "In use") if in_use else _t("立即使用", "Equip now")
+		action.disabled = in_use
+		action.pressed.connect(_equip_wish_skin.bind(skin_id))
+	else:
+		action.text = _t("进入祈愿  →", "Make a wish  →")
+		action.pressed.connect(func() -> void: wish_requested.emit(skin_id))
+	side.add_child(action)
+
+
+func _equip_wish_skin(skin_id: String) -> void:
+	var code: int = await PlayerProfile.set_prep_skin(skin_id)
+	if not is_inside_tree():
+		return
+	if code / 100 == 2:
+		_set_notice(_t("%s已使用", "%s equipped") % _pair(WISH_BANNERS[skin_id].name), false)
+	else:
+		_set_notice(_t("使用失败", "Could not equip"), true)
+	_render()
+
+
+func _pair(pair: Variant) -> String:
+	var a: Array = pair
+	return _t(str(a[0]), str(a[1]))
 
 
 func _render_event() -> void:
@@ -1351,6 +1537,9 @@ func _visible_items() -> Array:
 func _category_has_items(category: String) -> bool:
 	if category in [CATEGORY_DIAMONDS, CATEGORY_FRAMES, CATEGORY_SKINS, CATEGORY_EVENT]:
 		return true
+	if WISH_CATEGORIES.has(category):
+		# 这个包里没有那张皮肤的图（旧包）就不放入口：抽到了也显示不出来
+		return PrepSkin.has_skin(str(WISH_CATEGORIES[category]))
 	if category == CATEGORY_UNITS:
 		return not UnitCollection.races_on_sale(_unit_items()).is_empty()
 	for raw in _items:
@@ -1477,6 +1666,9 @@ func _apply_page_background() -> void:
 		var bg_path := UNIT_BG_PATH % race
 		if not race.is_empty() and ResourceLoader.exists(bg_path):
 			unit_bg = load(bg_path) as Texture2D
+	# 祈愿页：整页铺那张皮肤的棋盘底图，进来就是那个氛围
+	if WISH_CATEGORIES.has(_active_category) and PrepSkin.has_skin(str(WISH_CATEGORIES[_active_category])):
+		unit_bg = load(PrepSkin.path_for(str(WISH_CATEGORIES[_active_category]), "board")) as Texture2D
 	_page_bg.texture = unit_bg if unit_bg != null else MENU_BG_TEX
 	_dim.color = Color(0.04, 0.01, 0.01, 0.30) if unit_bg != null else Tokens.SHOP_SCENE_DIM
 	_special_panel.add_theme_stylebox_override("panel", Tokens.panel_box(
