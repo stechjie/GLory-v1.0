@@ -1,0 +1,175 @@
+{
+  "release": "1.0.2 Android51 iOS75",
+  "recorded_at": "2026-11-01T05:25:40.710739+00:00",
+  "source_commit": "7f96d243da4cc2254166fd0ed2a9d6f1c2f1dbd9",
+  "branch": "codex/release-20261013-sync",
+  "source_pushed": true,
+  "resource_sync": {
+    "downloaded": 76,
+    "checked": 1064,
+    "skipped": 2636,
+    "local_preserved": 3,
+    "errors": [],
+    "asset_inventory_sha256": "528e8e975008e4eda7769387082ee3ca860f6a37f0260cf1eae38fffc2acbbf1"
+  },
+  "backend_checks": {
+    "passed": 120,
+    "failed": 1,
+    "preexisting_failure": "test_every_table_referencing_players_is_either_erased_or_kept: match_entries and voice_clips unclassified; latest merge only adds skin_draw tables to classification"
+  },
+  "server": {
+    "deployed": true,
+    "protocol": 45,
+    "revision": "7f96d243da4cc2254166fd0ed2a9d6f1c2f1dbd9",
+    "source_sha256": "cabe3a849b54010f442a898a6e4a5243d2690aef3c7e712b14fd2c3aebc79737",
+    "runtime": "/home/nins17121/Glory/releases/1.0.2-20261101-7f96d243",
+    "health": "ok",
+    "schema_verified": true,
+    "migration": "042_skin_draw.sql executed transactionally; schema errors empty",
+    "rollback_directory": "/var/backups/glory/server-20261101-7f96d243",
+    "startup_smoke_passed": true,
+    "services": {
+      "glory-server": "active",
+      "glory-backend": "active",
+      "livekit": "active",
+      "caddy": "active"
+    },
+    "balance_status_gate": "Existing O30/P30 undead_bomb description gate failure; final_status.json verified unchanged from c5264da6 before guarded packaging.",
+    "storage": "Failed install copy replaced by atomic same-filesystem move of verified APK. apt package cache cleaned. Root filesystem still 99% used, about 392 MiB available; capacity maintenance remains necessary."
+  },
+  "artifacts": {
+    "apk": {
+      "path": "/Volumes/repository/github/GLory/build/apk/Glory-release-slim-20261101-123511-7f96d243.apk",
+      "sha256": "91fb82bde29638a609da55eddeb077c38eea033813a0e8a3256cdccf2cfe3e51",
+      "bytes": 599373752,
+      "signed": true
+    },
+    "ipa": {
+      "path": "/Volumes/repository/github/GLory/build/ipa/Glory-app-store-20261101-123513-138610-7f96d243.ipa",
+      "sha256": "4e223e195ffc5ed1c80f766f88e4d4097648ac36388a64ea49fa091ade4ac64b",
+      "bytes": 562916860,
+      "signed": true
+    },
+    "aab": {
+      "path": "/Volumes/repository/github/GLory/build/aab/Glory-1.0.2-51-20261101-123941-release.aab",
+      "sha256": "c92e940a603a93a43d076b8fd94a8b4bffabdff1bf1b01120935fe60da8cec2c",
+      "bytes": 601929907,
+      "signed": true
+    }
+  },
+  "google_play": {
+    "internal": {
+      "track": "internal",
+      "releases": [
+        {
+          "name": "1.0.2 (51)",
+          "versionCodes": [
+            "51"
+          ],
+          "releaseNotes": [
+            {
+              "language": "zh-CN",
+              "text": "同步最新代码与资源，修复已发现的问题。请验证登录、组队、连续对战和语音。"
+            }
+          ],
+          "status": "completed"
+        }
+      ]
+    },
+    "alpha": {
+      "track": "alpha",
+      "releases": [
+        {
+          "name": "1.0.2 (51) - Closed Alpha",
+          "versionCodes": [
+            "51"
+          ],
+          "releaseNotes": [
+            {
+              "language": "zh-CN",
+              "text": "同步最新代码与资源，新增棋盘皮肤与樱花祈愿。请测试商城、祈愿、登录、组队与连续对战。"
+            }
+          ],
+          "status": "completed"
+        }
+      ]
+    },
+    "verified_at": "2026-11-01T05:18:40.154026+00:00",
+    "tester_membership_verified": false
+  },
+  "testflight": {
+    "observed_at": "2026-11-01T05:22:39.993531+00:00",
+    "version": "1.0.2",
+    "build": 75,
+    "build_id": "22ed534a-3b4f-4309-b91a-541b3e63bb06",
+    "upload_and_processing": "complete",
+    "internal_group": "GLory 内部验证",
+    "external_group": "Glory tester",
+    "external_testers": 23,
+    "external_build_status": "正在测试",
+    "public_url": "https://testflight.apple.com/join/W2p1ukJp",
+    "device_gameplay_tested": false
+  },
+  "public_verification": {
+    "patches": {
+      "android": {
+        "protocol": 1,
+        "revision": 68,
+        "deployment_id": "9c3c8ea0e480f89ffe266da34cfa99a20b3d975cd48306e4cb3262b13bbd344b",
+        "channel": "internal",
+        "platform": "android",
+        "hotfix_epoch": 35,
+        "base_id": "glory-20261101-skinwish",
+        "required_patch_seq": 0,
+        "action": "none",
+        "artifact": null,
+        "hotfixes": []
+      },
+      "ios": {
+        "protocol": 1,
+        "revision": 68,
+        "deployment_id": "9c3c8ea0e480f89ffe266da34cfa99a20b3d975cd48306e4cb3262b13bbd344b",
+        "channel": "internal",
+        "platform": "ios",
+        "hotfix_epoch": 35,
+        "base_id": "glory-20261101-skinwish",
+        "required_patch_seq": 0,
+        "action": "none",
+        "artifact": null,
+        "hotfixes": []
+      }
+    },
+    "config": {
+      "ios": {
+        "ready": true,
+        "url": "https://testflight.apple.com/join/W2p1ukJp",
+        "version": "1.0.2 (75)",
+        "pending_version": ""
+      },
+      "android": {
+        "ready": true,
+        "mode": "apk",
+        "url": "https://glorytd-api.duckdns.org/beta/downloads/Glory-1.0.2-51-android.apk",
+        "version": "1.0.2 (51)",
+        "size_bytes": 599373752,
+        "size_label": "571.6 MiB"
+      }
+    },
+    "qr_sha256": "8f06b9ffe436ded23822bc49bced52c5cb89535a253489e74080bde0e2b6807a",
+    "apk_range_status": 206,
+    "apk_range_bytes_match": true,
+    "health": {
+      "status": "ok",
+      "environment": "prod",
+      "configured": true,
+      "missing_config": []
+    },
+    "qr_url": "https://glorytd-api.duckdns.org/beta/",
+    "qr_decoded_with": "Apple Vision",
+    "physical_device_tested": false
+  },
+  "device_gameplay_tested": false,
+  "ios_payment_device_tested": false,
+  "app_store_production_review_verified": false,
+  "play_cleanup_note": "Both tracks read back as completed. Deleting the already committed temporary edit returned HTTP 400 after successful publication; publication readback was preserved."
+}
