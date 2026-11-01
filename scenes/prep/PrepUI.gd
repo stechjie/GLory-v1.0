@@ -65,7 +65,6 @@ const CHAT_BTN_PATH := "res://assets/ui/main_menu_live/chat.png"
 const CARROT_CURRENCY_ICON_PATH := "res://assets/props/carrot_system/ui/icon_carrot_currency.png"
 const TEAM_MERCS_STAGE_BACKGROUND_PATH := "res://assets/ui/prep/team_mercs_stage.png"
 const MERC_BTN_SIZE := Vector2(132, 132)                                  # 方形
-const SHOP_REFRESH_FIRE_ATLAS_PATH := "res://assets/vfx/prep/scroll_edge_fire_atlas.png"
 const TEAM_MERC_ALERT_ATLAS_PATH := "res://assets/vfx/prep/team_merc_crossed_swords_atlas.png"
 const CRYSTAL_FIRE_PATHS := [                 # 火队（slot 0-2 红蓝绿）红水晶：按血量段 0-10..40-50
 	"res://assets/ui/crystals/red_0_10.png",
@@ -684,6 +683,8 @@ func reapply_prep_skin() -> void:
 				Color(tint.r, tint.g, tint.b, 0.85),
 				Color(tint.r, tint.g, tint.b, 0.0)])
 			(fireflies as CPUParticles3D).color_ramp = ramp
+	# 萤火虫还是樱花瓣（PrepSkin.ambient）。刷新特效不用这里管：每次点刷新时现问皮肤。
+	_apply_prep_ambient_kind(fireflies, find_child("PrepPetalFall", true, false))
 
 func _swap_prep_skin_plane(node_name: String, slot: String) -> void:
 	var node := find_child(node_name, true, false)
@@ -1238,7 +1239,6 @@ func _build_merc_panels(body: HBoxContainer, center_host: Control) -> void:
 	_shop_refresh_burn.setup(
 		_shop._shop_background,
 		_shop.refresh_button,
-		PrepWidgets.cached_texture(SHOP_REFRESH_FIRE_ATLAS_PATH),
 		SHOP_SCROLL_BURN_SHADER
 	)
 

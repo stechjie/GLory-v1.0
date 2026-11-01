@@ -141,6 +141,34 @@ const SUMMON_ENERGY_SHADOW := Color(0.035, 0.20, 0.12)
 const SUMMON_ENERGY_GREEN := Color(0.14, 0.73, 0.38)
 const SUMMON_ENERGY_LIGHT := Color(0.58, 0.98, 0.54)
 
+# 樱花祈愿（scenes/menu/SakuraWishDialog.gd）：深莓色玻璃底 + 樱粉描边，压在粉色樱花图上字才读得清。
+const SAKURA_GLASS := Color(0.22, 0.05, 0.13, 0.62)
+const SAKURA_GLASS_LIGHT := Color(0.30, 0.08, 0.18, 0.42)
+const SAKURA_EDGE := Color(1.0, 0.74, 0.86, 0.85)
+const SAKURA_PINK := Color(1.0, 0.62, 0.79)
+const SAKURA_TEXT := Color(1.0, 0.95, 0.97)
+const SAKURA_TEXT_MUTED := Color(0.98, 0.84, 0.90)
+const SAKURA_TEXT_EDGE := Color(0.30, 0.06, 0.16, 0.95)
+const SAKURA_DIM := Color(0.16, 0.03, 0.09, 0.40)
+const SAKURA_SLOT_EMPTY := Color(0.42, 0.30, 0.36, 0.55)
+const SAKURA_FLASH := Color(1.0, 0.93, 0.97, 1.0)
+const SAKURA_SOCKET := Color(0.24, 0.04, 0.14, 0.78)
+
+# 夜荧光祈愿（SkinWishDialog 的 prep_skin_nightwisp 主题）：深靛玻璃 + 淡紫描边，荧光紫点缀。
+const NIGHT_GLASS := Color(0.08, 0.05, 0.22, 0.68)
+const NIGHT_EDGE := Color(0.72, 0.64, 1.0, 0.85)
+const NIGHT_ACCENT := Color(0.76, 0.66, 1.0)
+const NIGHT_TEXT := Color(0.96, 0.95, 1.0)
+const NIGHT_TEXT_MUTED := Color(0.86, 0.84, 0.99)
+const NIGHT_TEXT_EDGE := Color(0.06, 0.03, 0.18, 0.95)
+const NIGHT_SOCKET := Color(0.05, 0.03, 0.15, 0.82)
+const NIGHT_SLOT_EMPTY := Color(0.40, 0.36, 0.58, 0.55)
+const NIGHT_FLASH := Color(0.90, 0.88, 1.0, 1.0)
+const NIGHT_GLOW := Color(0.62, 0.50, 1.0)
+const NIGHT_WISP := Color(0.70, 0.86, 1.0)
+# 夜荧光的碎片是黄色星星（呼应背景里的星星灯笼）：亮起的光晕、迸发和飘浮的荧光点都用这个暖黄
+const NIGHT_STAR := Color(1.0, 0.80, 0.34)
+
 # --- 遮罩 ---------------------------------------------------------------------
 # V3 P1-02 要求 80–88%：太浅看不出模态，太深会把背景战场吃掉。
 const BACKDROP := Color(0.008, 0.016, 0.031, 0.84)

@@ -1597,6 +1597,11 @@ func _show_shop_screen() -> void:
 		var dialog: Control = (load("res://scenes/menu/PetDrawDialog.gd") as GDScript).new()
 		dialog.draw_finished.connect(screen._reload)
 		screen.add_child(dialog))
+	screen.wish_requested.connect(func(skin_id: String) -> void:
+		var wish: Control = (load("res://scenes/menu/SkinWishDialog.gd") as GDScript).new()
+		wish.set("skin_id", skin_id)
+		wish.draw_finished.connect(screen._reload)
+		screen.add_child(wish))
 	_page_back_route = _show_menu
 	add_child(screen)
 

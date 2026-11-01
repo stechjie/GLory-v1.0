@@ -5,7 +5,7 @@
 
 	"_order": "按这里的顺序显示。默认皮肤放第一个，永远免费（不许进 data/shop.json）。",
 
-	"_options": "每张皮肤可以另写：firefly_color = [r, g, b] 满场光点的颜色（默认金色萤火虫）；river_glow = false 关掉下河面的流动波光。",
+	"_options": "每张皮肤可以另写：firefly_color = [r, g, b] 满场光点的颜色（默认金色萤火虫）；river_glow = false 关掉下河面的流动波光；ambient = \"petal\" 把满场光点换成往下飘的樱花瓣；refresh_fx = \"petal\" / \"frost\" / \"wisp\" 把商店刷新的烧卷轴换成花瓣吹散 / 冻住崩碎 / 化成荧光飞散（默认 \"fire\" 烧掉）。取值表在 PrepSkin.gd 的 AMBIENT_KINDS / REFRESH_FX_KINDS。",
 
 	"_sale": "要卖就在 data/shop.json 加一个 kind=prep_skin、grants=这里 id 的商品。不在 shop.json 里的皮肤一律免费。",
 
@@ -20,7 +20,22 @@
 			"name": "冰雪",
 			"name_en": "Frost",
 			"firefly_color": [0.86, 0.95, 1.0],
-			"river_glow": false
+			"river_glow": false,
+			"refresh_fx": "frost"
+		},
+		{
+			"id": "prep_skin_sakura",
+			"name": "樱花",
+			"name_en": "Sakura",
+			"ambient": "petal",
+			"refresh_fx": "petal"
+		},
+		{
+			"id": "prep_skin_nightwisp",
+			"name": "夜荧光",
+			"name_en": "Night Wisp",
+			"firefly_color": [1.0, 0.84, 0.40],
+			"refresh_fx": "wisp"
 		}
 	]
 }

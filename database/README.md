@@ -97,6 +97,7 @@ Supabase Dashboard → SQL Editor，按编号顺序逐个执行。
 | `040_iap.sql` | 充值（真钱买钻石）：`player_wallets.diamond_debt`（欠账，有欠账时付费 / 赠送两列一定是 0）、流水 currency 放行 `diamond_debt`；`iap_orders`（真钱订单，幂等键 `(player_id, client_order_id)`、去重键 `(platform, external_id)`，永不裁剪）；`iap_first_bonus`（首充资格）；删掉 010 在 `shop_orders` 上的充值预留。🔴 **必须在更新账号服务器之前跑**：新代码读钱包就要 `diamond_debt`，漏跑的话商城、抽宠物、邮件领取、七日登录一起 500。跑完重启账号服务器。可重复执行。039 编号留给图鉴同步（还在 worktree 里没提交）。设计见 `docs/充值系统设计.md` |
 
 | `041_ranked_reward_coin_limit.sql` | 排位奖励回执金币上限由15放宽到20，与胜利15–20金币保持一致。旧约束会使整份战报、六名玩家积分/钱包/经验回滚。可重复执行，不改余额、不补造战报。更新账号服前先执行；仅更新客户端不生效。 |
+| `042_skin_draw.sql` | 樱花祈愿：钻石抽棋盘皮肤碎片。`skin_draw_progress`（每人每张皮肤的碎片数与抽数）、`skin_draws`（每一抽的回执，`(player_id, client_draw_id)` 防重复扣费）。集满 10 片在同一事务里发皮肤归属。🔴 **必须在更新账号服务器之前跑**，并且和新的 `data/shop.json`（樱花登记成要归属）一起部署。可重复执行。设计见 `docs/樱花祈愿.md` |
 
 **真库测试**：`backend/tests/pg_harness.py` 能在本机 PostgreSQL 上把这里全部文件跑一遍再测（设 `GLORY_TEST_PG`，只许本机）。
 见 `docs/运营后台设计.md` 第七节。

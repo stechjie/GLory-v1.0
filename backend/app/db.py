@@ -143,6 +143,9 @@ EXPECTED_TABLES: tuple[str, ...] = (
     # 029（钻石抽宠与账号保底）
     "pet_draw_progress",
     "pet_draws",
+    # 042（钻石抽棋盘皮肤碎片：樱花祈愿）
+    "skin_draw_progress",
+    "skin_draws",
     # 031（一次性补发的执行记录：赤律族老玩家补发）
     "one_time_grants",
     # 033（语音留言的文件登记 / 举报锚点）
