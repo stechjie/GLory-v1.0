@@ -54,7 +54,13 @@ static func can_make_payments() -> bool:
 # 直发的 APK 用不了 Play 结算：钻石商店据此不给购买按钮，提示去 Play 下载（docs/充值系统设计.md 第十节）。
 static func installed_from_play() -> bool:
 	var bridge := _bridge()
-	return bridge != null and bridge.has_method("installedFromPlay") and bool(bridge.call("installedFromPlay"))
+	if bridge == null:
+		return false
+	# Android 的 JNISingleton 将 Kotlin 方法注册在独立的方法表中；
+	# Object.has_method() 不会查这张表，必须使用 has_java_method()。
+	var available := bool(bridge.call("has_java_method", "installedFromPlay")) \
+		if bridge.has_method("has_java_method") else bridge.has_method("installedFromPlay")
+	return available and bool(bridge.call("installedFromPlay"))
 
 
 # {档位编号: "RM 4.90"}。查不到的档不在里面 —— 钻石商店不给它购买按钮，不自己编一个价格。
