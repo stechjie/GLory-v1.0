@@ -52,8 +52,9 @@ static var _cache: Dictionary = {}
 static func state_for(seed: Variant, slot: int, round_n: int) -> Dictionary:
 	# Real matches carry their own persistent economy; historical simulation is
 	# only a fallback for previews/audits without a running room.
+	# Tutorial AI deliberately uses its scripted roster and outcome plan instead.
 	var live: Dictionary = NetworkService.team_bot_states.get(slot, {})
-	if int(live.get("round", -1)) == round_n and str(live.get("seed", "")) == str(seed):
+	if not GameState.tutorial_mode and int(live.get("round", -1)) == round_n and str(live.get("battle_seed", live.get("seed", ""))) == str(seed):
 		return view(live)
 	var key := state_cache_key(seed, slot, round_n)
 	if _cache.has(key):
@@ -76,7 +77,7 @@ static func state_cache_key(seed: Variant, slot: int, round_n: int) -> String:
 # A stale live entry must not bypass incremental fallback preparation.
 static func has_cached_state(seed: Variant, slot: int, round_n: int) -> bool:
 	var live: Dictionary = NetworkService.team_bot_states.get(slot, {})
-	if int(live.get("round", -1)) == round_n and str(live.get("seed", "")) == str(seed):
+	if not GameState.tutorial_mode and int(live.get("round", -1)) == round_n and str(live.get("battle_seed", live.get("seed", ""))) == str(seed):
 		return true
 	return _cache.has(state_cache_key(seed, slot, round_n))
 
@@ -164,7 +165,8 @@ static func settle_round(bot: Dictionary, result: Dictionary, context: Dictionar
 		"boss_hp_current": int(result.get("enemy_hp_current", 0)), "boss_hp_max": maxi(1, int(result.get("enemy_hp_max", 1))),
 		"merchant_gold": EconomyService.merchant_gold_from_board(_arrange_board(bot)),
 		"treasures": bot.treasures, "gold_spent_this_round": bool(bot.get("gold_spent_this_round", false)),
-		"camp_income": CarrotRules.income_for_spent(int(bot.carrot_spent)), "rng": rng}, true)
+		"camp_income": CarrotRules.income_for_spent(int(bot.carrot_spent)),
+		"pet_id": str(bot.get("pet_id", "")), "rng": rng}, true)
 	var settlement := EconomyService.settle_post_battle_breakdown(ctx)
 	bot.gold = int(settlement.gold_after)
 	bot.settled_round = round_index
@@ -501,14 +503,18 @@ static func _merge(bot: Dictionary) -> void:
 					continue
 				var take := idxs.slice(0, need)
 				var basis := 0
-				var def_ref: Dictionary = bot.roster[int(take[0])].def
+				var keeper: Dictionary = bot.roster[int(take[0])].duplicate()
+				var def_ref: Dictionary = keeper.def
 				for i in take:
 					basis += int(bot.roster[int(i)].cost_basis)
 				take.sort()
 				take.reverse()
 				for i in take:
 					(bot.roster as Array).remove_at(int(i))
-				(bot.roster as Array).append({"id": str(key), "star": star + 1, "def": def_ref, "cost_basis": basis})
+				# As in the player ledger, the keeper survives a merge. Retain its
+				# identity so reconnect snapshots do not invent a replacement unit.
+				keeper.merge({"id": str(key), "star": star + 1, "def": def_ref, "cost_basis": basis}, true)
+				(bot.roster as Array).append(keeper)
 				changed = true
 				break
 			if changed:
@@ -537,7 +543,7 @@ static func _trim_roster(bot: Dictionary) -> void:
 				worst_v = v
 				worst = i
 		var sold: Dictionary = bot.roster[worst]
-		bot.gold = int(bot.gold) + int(floor(float(sold.cost_basis) * 0.5))
+		bot.gold = int(bot.gold) + EconomyLedger.sell_refund(int(sold.cost_basis))
 		(bot.roster as Array).remove_at(worst)
 
 
