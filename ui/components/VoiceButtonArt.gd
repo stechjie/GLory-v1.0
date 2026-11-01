@@ -1,7 +1,8 @@
 extends RefCounted
 
 # One lazy-loaded atlas keeps the existing dedicated-server resource contract.
-# The source has four equally sized quadrants, ordered mic-on/off, speaker-on/off.
+# The four plates are offset within their atlas quadrants. Normalize their
+# visible frames while keeping the original 627px canvas and button hit boxes.
 const ATLAS_PATH := "res://assets/ui/voice/voice_controls_lowpoly.png"
 static var _atlas: Texture2D
 static var _icons := {}
@@ -13,20 +14,19 @@ static func texture_for(key: String) -> Texture2D:
 		_atlas = load("res://assets/ui/voice/voice_controls_lowpoly.png") as Texture2D
 	if _atlas == null:
 		return null
-	var col := 0
-	var row := 0
+	var origin: Vector2
 	match key:
-		"mic_on": pass
-		"mic_off": col = 1
-		"speaker_on": row = 1
-		"speaker_off":
-			col = 1
-			row = 1
+		"mic_on": origin = Vector2(84, 76)
+		"mic_off": origin = Vector2(654, 76)
+		"speaker_on": origin = Vector2(84, 654)
+		"speaker_off": origin = Vector2(654, 654)
 		_: return null
-	var cell := Vector2(_atlas.get_width(), _atlas.get_height()) * 0.5
 	var sprite := AtlasTexture.new()
 	sprite.atlas = _atlas
-	sprite.region = Rect2(Vector2(col, row) * cell, cell)
+	# Each 512px region contains the whole gold frame. Equal transparent margins
+	# center it on the old 627px canvas without enlarging the visible button.
+	sprite.region = Rect2(origin, Vector2(512, 512))
+	sprite.margin = Rect2(Vector2(57.5, 57.5), Vector2(115, 115))
 	sprite.filter_clip = true
 	_icons[key] = sprite
 	return sprite

@@ -1119,7 +1119,7 @@ func _refresh_skin_card(skin_id: String, is_active: bool) -> void:
 	var btn: Button = parts["button"]
 	var loading := _skin_ownership == SkinOwnership.LOADING or _skin_ownership == SkinOwnership.NOT_LOADED
 	if skin_id == PrepSkin.DEFAULT_ID:
-		status_lbl.text = tr("skin_status_free")
+		status_lbl.text = ""
 	elif _skin_sold.has(skin_id):
 		status_lbl.text = tr("skin_status_owned") if _skin_owned.has(skin_id) else tr("skin_status_locked")
 	elif loading:
@@ -1128,7 +1128,8 @@ func _refresh_skin_card(skin_id: String, is_active: bool) -> void:
 		# 没拉到目录：不知道要不要钱，宁可不写，也别把卖的写成「免费」。
 		status_lbl.text = ""
 	else:
-		status_lbl.text = tr("skin_status_free")
+		status_lbl.text = ""
+	status_lbl.visible = not status_lbl.text.is_empty()
 	if is_active:
 		btn.text = tr("skin_in_use")
 		btn.disabled = true
