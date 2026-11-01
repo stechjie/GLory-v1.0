@@ -1,0 +1,90 @@
+{
+  "release": "1.0.2 Android50 iOS74",
+  "recorded_at": "2026-11-01T03:53:30.829255+00:00",
+  "source_commit": "c5264da6710bb15986d21889a3d19263929df8f9",
+  "branch": "codex/release-20261013-sync",
+  "source_pushed": true,
+  "resource_sync": {
+    "downloaded": 273,
+    "skipped": 2948,
+    "errors": [],
+    "asset_inventory_sha256": "b6bd4ff3baa13591f6931eecfd2f867bf0f7c6fba0fa05ad9f0926000955ee8c"
+  },
+  "server": {
+    "deployed": true,
+    "protocol": 45,
+    "revision": "c5264da6710bb15986d21889a3d19263929df8f9",
+    "health": "ok",
+    "schema_verified": true,
+    "rollback_directory": "/var/backups/glory/server-20261031-c5264da6",
+    "startup_smoke_passed": true,
+    "balance_status_gate": "Existing O30/P30 description gate failure; final_status.json and balance/database source were verified unchanged from prior deployed revision before packaging."
+  },
+  "artifacts": {
+    "apk": {
+      "path": "/Volumes/repository/github/GLory/build/apk/Glory-release-slim-20261031-182318-c5264da6.apk",
+      "sha256": "a4c52ac6b4247b9b242501d132b76b4c612227b1746a3665f8e410d0440fb210",
+      "bytes": 580986788
+    },
+    "ipa": {
+      "path": "/Volumes/repository/github/GLory/build/ipa/Glory-app-store-20261031-182319-537984-c5264da6.ipa",
+      "sha256": "ac248a8af4eb5c90cf4e461a1e92a5cdab9643abfe0779229356cef4f8968eff",
+      "bytes": 544532151
+    },
+    "aab": {
+      "path": "/Volumes/repository/github/GLory/build/aab/Glory-1.0.2-50-20261031-182823-release.aab",
+      "sha256": "0118fd2f28bc44c91fc510a9f0b196ec0a36e4fd354ced7b7fef6503f1108f2e",
+      "bytes": 583539736
+    }
+  },
+  "google_play": {
+    "version_code": 50,
+    "internal": "completed",
+    "alpha": "completed",
+    "tester_membership_verified": false
+  },
+  "testflight": {
+    "observed_at": "2026-11-01T03:50:54.447305+00:00",
+    "version": "1.0.2",
+    "build": 74,
+    "build_id": "37c6d593-9a03-4451-ace5-91a3c213bfb2",
+    "upload_and_processing": "complete",
+    "internal_group": "GLory 内部验证",
+    "external_group": "Glory tester",
+    "external_testers": 23,
+    "external_build_status": "正在测试",
+    "public_url": "https://testflight.apple.com/join/W2p1ukJp",
+    "device_gameplay_tested": false
+  },
+  "public_verification": {
+    "config": {
+      "ios": {
+        "ready": true,
+        "url": "https://testflight.apple.com/join/W2p1ukJp",
+        "version": "1.0.2 (74)",
+        "pending_version": ""
+      },
+      "android": {
+        "ready": true,
+        "mode": "apk",
+        "url": "https://glorytd-api.duckdns.org/beta/downloads/Glory-1.0.2-50-android.apk",
+        "version": "1.0.2 (50)",
+        "size_bytes": 580986788,
+        "size_label": "554.1 MiB"
+      }
+    },
+    "qr_url": "https://glorytd-api.duckdns.org/beta/",
+    "qr_sha256": "8f06b9ffe436ded23822bc49bced52c5cb89535a253489e74080bde0e2b6807a",
+    "apk_range_http": 206,
+    "apk_range_bytes": 1048576,
+    "apk_range_matches_local": true,
+    "health": {
+      "status": "ok",
+      "environment": "prod",
+      "configured": true,
+      "missing_config": []
+    },
+    "physical_device_tested": false
+  },
+  "device_gameplay_tested": false
+}
