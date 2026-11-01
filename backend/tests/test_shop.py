@@ -762,16 +762,22 @@ def _entitlement_inserts(conn: FakeConn) -> list[tuple]:
     return [args for q, args in zip(conn.queries, conn.args) if "into player_entitlements" in q]
 
 
-def test_crimson_is_sold_as_eight_units_priced_by_tier() -> None:
+@pytest.mark.parametrize("race_id", sorted(
+    item.grants for item in shop._catalog()["by_item"].values()
+    if item.kind == "race" and any(unit.kind == "unit" and unit.price > 0
+                                  and unit.grants in item.requires
+                                  for unit in shop._catalog()["by_item"].values())
+))
+def test_registered_race_units_are_sold_and_priced_by_tier(race_id: str) -> None:
     units = {str(u["id"]): u for u in UNIT_TABLE["units"]}
-    crimson = sorted(shop.UNIT_PREFIX + str(u["id"]) for u in UNIT_TABLE["units"]
-                     if u["race"] == "crimson")
-    assert len(crimson) == 8
-    sold = [i for i in shop.items() if i.kind == "unit"]
-    assert sorted(i.grants for i in sold) == crimson
+    expected = sorted(shop.UNIT_PREFIX + str(u["id"]) for u in UNIT_TABLE["units"]
+                      if u["race"] == race_id)
+    assert expected, "Registered race has no unit definitions: %s" % race_id
+    sold = [item for item in shop.items() if item.kind == "unit"
+            and units[item.grants.removeprefix(shop.UNIT_PREFIX)]["race"] == race_id]
+    assert sorted(item.grants for item in sold) == expected
     for item in sold:
         unit_id = item.grants.removeprefix(shop.UNIT_PREFIX)
-        assert unit_id in units, "%s 不在 race_units.json 里（大小写也要一样）" % item.grants
         assert item.currency == "coin"
         assert item.price == PRICE_BY_TIER[int(units[unit_id]["tier"])], item.id
 
@@ -785,12 +791,18 @@ def test_unit_content_ids_never_collide_with_race_ids() -> None:
             assert item.grants not in races
 
 
-def test_race_requires_every_unit_and_cannot_be_bought(monkeypatch: pytest.MonkeyPatch) -> None:
-    race = shop.item_by_id("race_crimson")
-    assert race.kind == "race" and race.grants == "crimson"
+@pytest.mark.parametrize("race_id", sorted(
+    item.grants for item in shop._catalog()["by_item"].values() if item.kind == "race"
+))
+def test_race_requires_every_unit_and_cannot_be_bought(monkeypatch: pytest.MonkeyPatch, race_id: str) -> None:
+    race = shop.item_by_id("race_" + race_id)
+    assert race.kind == "race" and race.grants == race_id
     assert not race.enabled and race not in shop.items()
-    assert shop.requires_entitlement("crimson"), "种族不在目录里 = 人人免费，商城就白做了"
-    assert sorted(race.requires) == sorted(i.grants for i in shop.items() if i.kind == "unit")
+    assert shop.requires_entitlement(race_id), "种族不在目录里 = 人人免费，商城就白做了"
+    expected = sorted(shop.UNIT_PREFIX + str(u["id"]) for u in UNIT_TABLE["units"]
+                      if u["race"] == race_id)
+    assert expected
+    assert sorted(race.requires) == expected
 
     conn = wire_db(monkeypatch, [("from shop_orders where", None)])
     with pytest.raises(shop.ShopRejected) as exc:
