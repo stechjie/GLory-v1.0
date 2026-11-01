@@ -1,5 +1,16 @@
 # GLory 构建与资源交付约定
 
+## 云服务器环境归属
+
+- 测试服固定使用 Google Cloud 项目 `project-60c72d94-b558-4e4f-992`：
+  https://ssh.cloud.google.com/v2/ssh/projects/project-60c72d94-b558-4e4f-992/
+- 正式服（审核服）固定使用 Google Cloud 项目 `project-60d2cb8c-3b40-4f95-a67`：
+  https://console.cloud.google.com/compute/instances?project=project-60d2cb8c-3b40-4f95-a67
+- 发布、部署和支付配置前，实际核对项目、实例、域名、数据库与运行环境；不得沿用旧文档的“正式服”称呼来判断环境。
+- Google Play 正式包连接正式服（审核服）；测试包连接测试服。账号接口、战斗连接、语音、补丁检查及通知回调须核对环境一致性，不能只修改启动器地址。
+- 更新两套服务器时分别核验、备份和验收，保留各自配置与凭证，不把凭证写入仓库、日志或打包产物。
+- 重启前检查在线玩家；有玩家在线时等待，除非用户明确授权中断。构建、部署、健康检查与真机沙盒支付验收分别记录。
+
 ## APK / IPA 必须使用精简打包入口
 
 今后构建 APK 和 IPA，必须使用本仓库 `tools/workspace/build_apk.sh` 和
