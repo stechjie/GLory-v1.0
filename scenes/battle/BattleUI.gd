@@ -403,7 +403,7 @@ func _settlement_preview(result: Dictionary) -> String:
 			lines.append(tr("settle_kill") % kill_gold)
 			lines.append(tr("settle_result_bonus") % [tr("battle_result_win") if win else tr("battle_result_lose"), result_bonus])
 	var merchant_gold := _merchant_gold_preview()
-	var bonus_gold := int(result.get("bonus_gold", 0))
+	var bonus_gold := int(result.get("bonus_gold", 0)) + EconomyService.merchant_attack_gold_for_slot(result, slot)
 	var consolation_gold := 0
 	if not win:
 		consolation_gold = EconomyService.consolation_reward(GameState.loss_streak + 1)

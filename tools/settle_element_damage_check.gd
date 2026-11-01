@@ -34,6 +34,8 @@ func _ready() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
 	DataRegistry.load_all()
 	_case_death_explosion_and_its_poison()
+	_case_four_star_poison_bonus()
+	_case_merchant_attack_income()
 	_case_parasite_clone()
 	_case_attributed_poison_unchanged()
 	_case_sudden_death_not_element()
@@ -82,6 +84,60 @@ func _taken(state: Dictionary, uid: String) -> int:
 
 
 # --- 用例 1：自爆灵死亡爆炸 + 它挂的毒 -----------------------------------------
+
+func _case_merchant_attack_income() -> void:
+	var raw: Dictionary = {}
+	for unit in DataRegistry.get_table("race_units").get("units", []):
+		if str(unit.get("id", "")) == "human_merchant":
+			raw = unit
+	var scaled := UnitFactory.apply_star_stats(raw, 4)
+	_h.expect(is_equal_approx(float(scaled.get("attack_gold_chance", -1)), 0.2) and int(scaled.get("attack_gold_amount", 0)) == 15, "merchant_config", "4-star merchant must have a 20% chance to earn 15 gold")
+	_h.expect(EconomyService.merchant_gold_from_board([{"star": 4, "def": raw}]) == 0, "merchant_no_fixed_four_star", "4-star merchant must not earn the old fixed income")
+	_h.expect(EconomyService.merchant_gold_from_board([{"star": 3, "def": raw}]) == 30, "merchant_three_star_fixed", "3-star merchant fixed income must remain 30")
+	var merchant := _fighter("merchant", "enemy", 4, 5000, 100, "post_battle_gold_by_star")
+	merchant.def = scaled.duplicate(true)
+	merchant.def.attack_gold_chance = 1.0
+	var target := _fighter("target", "player", 1, 5000)
+	var state := _state([merchant, target])
+	state["player"] = [target]
+	state["enemy"] = [merchant]
+	state["player_syn"] = {}
+	state["enemy_syn"] = {}
+	DamageService.set_stat_state(state)
+	DamageService.clear_stat_context()
+	Sim._perform_attack(merchant, target, state)
+	_h.expect(EconomyService.merchant_attack_gold_for_slot(state, 4) == 15, "merchant_attack_owner", "Triggered attack must credit owner slot 4")
+	_h.expect(EconomyService.merchant_attack_gold_for_slot(state, 1) == 0, "merchant_no_other_owner", "Triggered attack must not credit another slot")
+	merchant.def.attack_gold_chance = 0.0
+	Sim._perform_attack(merchant, target, state)
+	_h.expect(EconomyService.merchant_attack_gold_for_slot(state, 4) == 15, "merchant_no_proc", "A failed proc must not add gold")
+	var result := Sim.result_from_state(state)
+	_h.expect(EconomyService.merchant_attack_gold_for_slot(result, 4) == 15, "merchant_result_ledger", "Battle result must retain owner income")
+	var server := NetworkService._server_gold_breakdown(0, result, 4, {}, {"kind": "pvp", "player_wins": true})
+	var other := NetworkService._server_gold_breakdown(0, result, 1, {}, {"kind": "pvp", "player_wins": true})
+	_h.expect(int(server.gold_after) > int(other.gold_after), "merchant_server_settlement", "Server must pay only the merchant owner")
+
+func _case_four_star_poison_bonus() -> void:
+	var raw: Dictionary = {}
+	for unit in DataRegistry.get_table("race_units").get("units", []):
+		if str(unit.get("id", "")) == "undead_bomb":
+			raw = unit
+			break
+	for star in [1, 4]:
+		var bomb := _fighter("bomb_%d" % star, "player", 1, 100, 100, "death_poison_explosion")
+		bomb.def = UnitFactory.apply_star_stats(raw, star)
+		bomb.alive = false
+		bomb.hp = 0
+		var clean := _fighter("clean_%d" % star, "enemy", 4, 5000)
+		var poisoned := _fighter("poisoned_%d" % star, "enemy", 4, 5000)
+		StatusEffectService.add_poison(poisoned, 4.0)
+		var state := _state([bomb, clean, poisoned])
+		DamageService.set_stat_state(state)
+		DamageService.clear_stat_context()
+		Bomber.apply_death_poison_explosion(bomb, bomb.def, [clean, poisoned])
+		_h.expect(_taken(state, clean.uid) == (300 if star == 4 else 200), "bomb_clean_%d" % star, "Unpoisoned target damage does not match star level")
+		_h.expect(_taken(state, poisoned.uid) == (350 if star == 4 else 200), "bomb_poisoned_%d" % star, "Poisoned target damage does not match star level")
+		_h.expect(StatusEffectService.has_status(clean, "poison"), "bomb_applies_poison_%d" % star, "Explosion should apply poison after calculating damage")
 
 func _case_death_explosion_and_its_poison() -> void:
 	var bomb := _fighter("p_bomb", "player", 1, 100, 100, "death_poison_explosion")

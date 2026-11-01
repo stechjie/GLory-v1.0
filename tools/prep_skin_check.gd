@@ -14,7 +14,8 @@ const CheckHarness := preload("res://tools/CheckHarness.gd")
 const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
 const CHECK_NAME := "prep_skin"
 const SHOP_PATH := "res://data/shop.json"
-const ALLOWED_KEYS := ["id", "name", "name_en", "firefly_color", "river_glow", "ambient", "refresh_fx"]
+const ALLOWED_KEYS := ["id", "name", "name_en", "firefly_color", "river_glow", "ambient", "refresh_fx",
+	"river_drop"]
 
 var _h: RefCounted
 
@@ -58,6 +59,11 @@ func _check_entry(skin_id: String, entry: Dictionary) -> void:
 			for part in color:
 				ok = ok and (part is float or part is int) and float(part) >= 0.0 and float(part) <= 1.0
 		_h.expect(ok, "bad_firefly_color", "%s 的 firefly_color 要是 3 个 0~1 的数" % skin_id)
+	if entry.has("river_drop"):
+		var drop: Variant = entry["river_drop"]
+		# 上限 0.25：再多河面就整条滑出棋盘了。PrepSkin.river_drop 也会夹一次，这里是为了当场报错
+		_h.expect((drop is float or drop is int) and float(drop) >= 0.0 and float(drop) <= 0.25,
+			"bad_river_drop", "%s 的 river_drop 要是 0~0.25 的数" % skin_id)
 	if entry.has("river_glow"):
 		_h.expect(entry["river_glow"] is bool, "bad_river_glow", "%s 的 river_glow 要是 true / false" % skin_id)
 	if entry.has("ambient"):

@@ -87,7 +87,10 @@ static func apply_death_poison_explosion(victim: Dictionary, vd: Dictionary, ene
 			continue
 		if victim.pos.distance_to(o.pos) > 180.0:
 			continue
-		DamageService.apply_damage(o, maxi(1, int(round(float(victim.atk) * float(vd.get("damage_atk_pct", 2.5))))), true)
+		var damage_pct := float(vd.get("damage_atk_pct", 2.5))
+		if vd.has("poisoned_damage_atk_pct") and StatusEffectService.has_status(o, "poison"):
+			damage_pct = float(vd.poisoned_damage_atk_pct)
+		DamageService.apply_damage(o, maxi(1, int(round(float(victim.atk) * damage_pct))), true)
 		StatusEffectService.add_poison(o, 4.0, 0.03, 0.0, true)
 		exploded = true
 	DamageService.restore_hit_context(saved_hit)
@@ -216,18 +219,17 @@ static func _apply_opening_treasures(player: Array, event_log: Array[String]) ->
 			continue
 		if _f_has_treasure(f, "def_iron_wall"):
 			f.defense = int(f.get("defense", 0)) + 10
+		# 11.01：生命丰碑、血契、宠物与防御套 / 金钱套同进开场加法池（_add_open_pct），
+		# 闪避按 1-(1-a)(1-b) 叠加。
 		if _f_has_treasure(f, "def_life_monument"):
-			var life_multiplier := 1.40 if _f_has_linkage(f, "link_hu_pai_master") else 1.20
-			f.max_hp = maxi(1, int(round(float(f.max_hp) * life_multiplier)))
-			f.hp = int(f.max_hp)
+			_add_open_pct(f, "max_hp", 0.40 if _f_has_linkage(f, "link_hu_pai_master") else 0.20)
 		if _f_has_treasure(f, "def_phantom_step"):
-			f.dodge = float(f.get("dodge", 0.0)) + 0.20
+			f.dodge = DamageService.stack_dodge(float(f.get("dodge", 0.0)), 0.20)
 		if _f_has_treasure(f, "ctrl_time_compress"):
 			f.skill_cd_multiplier = 0.75
 			f.skill_ready = float(f.get("skill_ready", 0.0)) * 0.75
 		if _f_has_treasure(f, "atk_blood_pact"):
-			var blood_multiplier := 1.50 if _f_has_linkage(f, "link_hu_pai_master") else 1.25
-			f.atk = maxi(1, int(round(float(f.atk) * blood_multiplier)))
+			_add_open_pct(f, "atk", 0.50 if _f_has_linkage(f, "link_hu_pai_master") else 0.25)
 			# Blood Pact pays HP for power but is not allowed to kill its holder.
 			# Offensive bleed keeps the default lethal behaviour.
 			StatusEffectService.add_bleed(f, 999.0, 0.06, true)
@@ -238,11 +240,10 @@ static func _apply_opening_treasures(player: Array, event_log: Array[String]) ->
 		if not pet_id.is_empty():
 			var hp_mult := PetService.opening_hp_mult(pet_id)
 			if hp_mult != 1.0:
-				f.max_hp = maxi(1, int(round(float(f.max_hp) * hp_mult)))
-				f.hp = int(f.max_hp)
+				_add_open_pct(f, "max_hp", hp_mult - 1.0)
 			var atk_mult := PetService.opening_atk_mult(pet_id)
 			if atk_mult != 1.0:
-				f.atk = maxi(1, int(round(float(f.atk) * atk_mult)))
+				_add_open_pct(f, "atk", atk_mult - 1.0)
 			# 老虎不在这里：它的加成是每枚棋子自己的层数，建 fighter 时就乘上了
 			# （BattleSimShared._fighter_from_cell → UnitGrowth.stat_multiplier）。
 	if GameState.owned_treasures.has("ctrl_time_compress"):
@@ -610,8 +611,10 @@ static func _apply_boss_attacker_passives(attacker: Dictionary, state: Dictionar
 		var new_stacks := mini(int(d.get("max_stacks", 50)), old_stacks + 1)
 		if new_stacks > old_stacks:
 			attacker.skill_stacks = new_stacks
-			attacker.atk = maxi(1, int(round(float(attacker.atk) * (1.0 + float(d.get("atk_per_hit", 0.05))))))
-			attacker.attack_speed = clampf(float(attacker.attack_speed) + float(d.get("aspd_per_hit", 0.03)), 0.25, 2.5)
+			# 11.01：按开战攻击相加（以前 1.05^50 ≈ ×11.5 复利），攻速进百分比池。
+			_ensure_base_stats(attacker)
+			attacker.atk = maxi(1, int(attacker.atk) + int(round(float(attacker.base_atk) * float(d.get("atk_per_hit", 0.05)))))
+			attacker.aspd_bonus_pct = float(attacker.get("aspd_bonus_pct", 0.0)) + float(d.get("aspd_per_hit", 0.03))
 	elif str(d.get("skill_id", "")) == "blood_rage":
 		_activate_blood_rage(attacker, state)
 
@@ -628,8 +631,9 @@ static func _activate_blood_rage(attacker: Dictionary, state: Dictionary) -> voi
 	if float(attacker.get("hp", 0)) / float(maxi(1, int(attacker.get("max_hp", 1)))) > float(d.get("trigger_hp_pct", 0.50)):
 		return
 	attacker.blood_rage_active = true
-	attacker.atk = maxi(1, int(round(float(attacker.atk) * (1.0 + float(d.get("atk_bonus", 1.00))))))
-	attacker.attack_speed = clampf(float(attacker.attack_speed) + float(d.get("aspd_bonus", 0.50)), 0.25, 2.5)
+	_ensure_base_stats(attacker)
+	attacker.atk = maxi(1, int(attacker.atk) + int(round(float(attacker.base_atk) * float(d.get("atk_bonus", 1.00)))))
+	attacker.aspd_bonus_pct = float(attacker.get("aspd_bonus_pct", 0.0)) + float(d.get("aspd_bonus", 0.50))
 	_emit_sfx_proc(state, "blood_rage", attacker, attacker)
 
 
@@ -665,7 +669,8 @@ static func _apply_soul_devour_on_death(state: Dictionary, victim: Dictionary) -
 		boss.soul_devour_stacks = int(boss.get("soul_devour_stacks", 0)) + 1
 		_heal_unit(boss, maxi(1, int(round(float(boss.max_hp) * float(d.get("kill_heal_pct", 0.20))))))
 		boss.atk = maxi(1, int(round(float(d.get("atk", boss.atk)) * (1.0 + float(boss.soul_devour_stacks) * float(d.get("atk_stack", 0.20))))))
-		boss.attack_speed = clampf(float(d.get("attack_speed", boss.attack_speed)) + float(boss.soul_devour_stacks) * float(d.get("aspd_stack", 0.20)), 0.25, 2.5)
+		# 11.01：每层 +20% 攻速进百分比池（以前是 +0.20 次/秒绝对值）。
+		boss.aspd_bonus_pct = float(boss.get("aspd_bonus_pct", 0.0)) + float(d.get("aspd_stack", 0.20))
 		_emit_sfx_proc(state, "soul_devour", boss, victim)
 
 

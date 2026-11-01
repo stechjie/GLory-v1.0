@@ -492,7 +492,8 @@ func _emit_battle_request_once() -> void:
 		# 「准备 / 未准备」的宝石红·青是**实例级 stylebox 覆盖**，会盖掉忙碌皮肤
 		# （GloryBusy 变体）⇒ 进忙碌前先撤掉，让「正在加载」看着还是加载。
 		_clear_ready_button_tone()
-		_start_battle_button.show_pending(request_id, tr("battle_load_busy"))
+		_start_battle_button.show_pending(request_id, "Loading" if LocaleManager.get_locale().begins_with("en") else "加载中")
+		_set_ready_orbit(2)
 	# 10.18 晚二：备战（team_mode）不再弹「战斗准备」窗口 —— 棋盘在准备时就交了，
 	# 无掉线时服务端毫秒级 finalize，弹窗只会闪一下；有掉线时按用户口径也同样不弹。
 	# 提交后的反馈由开始按钮 busy 态（「正在准备战斗」）承担，随后直接切 BattleScreen，

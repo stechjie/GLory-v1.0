@@ -88,7 +88,7 @@ func _ready() -> void:
 	var b := {"uid": "b", "alive": true, "owner_treasures": ["ctrl_binding_weight", "atk_frenzy_assault"]}
 	BattleSimTreasures._apply_frenzy_assault(a, b)
 	BattleSimTreasures._apply_frenzy_assault(a, b)
-	h.expect(is_equal_approx(StatusEffectService.attack_speed_multiplier(a), 1.15 * 1.15), "stack", "同目标叠加攻速")
+	h.expect(is_equal_approx(StatusEffectService.attack_speed_multiplier(a), 1.30), "stack", "同目标叠加攻速（11.01 起每层 +15% 相加）")
 	BattleSimTreasures._apply_frenzy_assault(a, {"uid": "c"})
 	h.expect(is_equal_approx(StatusEffectService.attack_speed_multiplier(a), 1.15) and a.attack_speed == 1.0, "reset", "换目标仅保留新的一层，基础攻速未污染")
 	a.frenzy_stacks = 0

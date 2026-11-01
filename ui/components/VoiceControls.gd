@@ -1,6 +1,7 @@
 extends RefCounted
 
 const SfxService := preload("res://ui/services/SfxService.gd")
+const VoiceButtonArt := preload("res://ui/components/VoiceButtonArt.gd")
 
 # 语音按钮 + 队友按钮（docs/聊天系统设计.md 第九节 v1.1）。大厅、备战期、战斗界面共用。
 #
@@ -60,6 +61,9 @@ func build(owner: Node, voice_size: Vector2, members_size: Vector2, font_size: i
 		style.content_margin_right = 4.0
 		for state in ["normal", "hover", "pressed"]:
 			button.add_theme_stylebox_override(state, style)
+
+	VoiceButtonArt.use_art_as_button_background(voice_button)
+	VoiceButtonArt.use_art_as_button_background(audience_button)
 
 	if not VoiceService.mode_changed.is_connected(_on_mode_changed):
 		VoiceService.mode_changed.connect(_on_mode_changed)
@@ -123,13 +127,13 @@ func _set_icon(button: Button, key: String) -> void:
 		art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		button.add_child(art)
 		art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		art.offset_left = 8
-		art.offset_right = -8
-		art.offset_top = 5
-		art.offset_bottom = -5
-	var path := "res://assets/ui/voice/%s.svg" % key
+		# Full plate is in the sprite; the original Button keeps its hit box.
+		art.offset_left = 0
+		art.offset_right = 0
+		art.offset_top = 0
+		art.offset_bottom = 0
 	if art.get_meta("voice_icon", "") != key:
-		art.texture = load(path)
+		art.texture = VoiceButtonArt.texture_for(key)
 		art.set_meta("voice_icon", key)
 
 func _on_speaker_pressed() -> void:

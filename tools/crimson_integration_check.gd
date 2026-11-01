@@ -540,7 +540,7 @@ func _check_combat() -> void:
 		drummer_four.get_or_add("crimson_drum_atk", []).append({"pct": 0.08})
 	_h.expect(is_equal_approx(StatusEffectService.attack_multiplier(drummer_four), 2.20), "drummer_star4_stacks", "Fifteen 8% attack layers should total 120%")
 	drummer_four.crimson_resonance_stacks = 2
-	_h.expect(is_equal_approx(StatusEffectService.attack_multiplier(drummer_four), 2.42), "resonance_attack", "Two 5% Resonance layers should multiply attack by 1.10")
+	_h.expect(is_equal_approx(StatusEffectService.attack_multiplier(drummer_four), 2.30), "resonance_attack", "Two 5% Resonance layers should add 10% attack (11.01 additive stacking)")
 
 	var icey := _fighter("Icey")
 	icey.def.skill_id = "frost_status"
@@ -611,7 +611,7 @@ func _check_combat() -> void:
 		CrimsonCombat.pulse(state)
 	_h.expect(int(guard.get("crimson_pulse_stacks", 0)) == 5, "pulse_cap", "Crimson 7 exceeded five permanent stacks")
 	_h.expect(CrimsonRuneService.stack_count(guard) == 6, "pulse_rune_count", "Each Red Tide action must add one Battle Rune")
-	_h.expect(is_equal_approx(StatusEffectService.attack_multiplier(guard), 1.50) and is_equal_approx(StatusEffectService.attack_speed_multiplier(guard), 2.40), "pulse_max_stats", "Five Red Tide stacks and six Battle Runes must combine correctly")
+	_h.expect(is_equal_approx(StatusEffectService.attack_multiplier(guard), 1.50) and is_equal_approx(StatusEffectService.attack_speed_multiplier(guard), 2.10), "pulse_max_stats", "Five Red Tide stacks (+50%) and six Battle Runes (+60%) must add up (11.01 additive stacking)")
 	_h.expect(is_equal_approx(OfficeTestScreenScript.live_crit(guard), 0.80), "pulse_crit", "Red Tide and Battle Runes must combine in the live crit value")
 
 

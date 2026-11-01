@@ -340,9 +340,9 @@
       "cost": 20,
       "skill_id": "nearest_ally_bless",
       "skill_name_cn": "神赐祝福",
-      "skill_cn_1to3": "神赐祝福（冷却6.0秒）：强化最近友军，攻击+8%、攻速+0.15，并清除负面状态。",
-      "skill_cn_4": "神赐祝福（冷却4.5秒）：强化最近友军，攻击+32%、攻速+0.45，并清除负面状态。",
-      "skill_en_1to3": "Divine Blessing (CD 6.0s): Buff the nearest ally — ATK +8%, AS +0.15 — and cleanse their debuffs.",
+      "skill_cn_1to3": "神赐祝福（冷却6.0秒）：强化最近友军，攻击+8%（按开战攻击）、攻速+15%，并清除负面状态；同一目标最多叠加3层。",
+      "skill_cn_4": "神赐祝福（冷却4.5秒）：强化最近友军，攻击+32%（按开战攻击）、攻速+45%，并清除负面状态；同一目标最多叠加3层。",
+      "skill_en_1to3": "Divine Blessing (CD 6.0s): Buff the nearest ally — ATK +8% (of battle-start ATK), AS +15% — and cleanse their debuffs; stacks up to 3 times per ally.",
       "skill_raw_params": "aspd_bonus = 0.15\natk_bonus = 0.08\nskill_cd = 6",
       "star4_changes": "aspd_bonus: 0.15 → 0.45\natk_bonus: 0.08 → 0.32\nskill_cd: 6 → 4.5",
       "stats": {
@@ -376,9 +376,9 @@
       "cost": 30,
       "skill_id": "nearby_ally_heal_buff",
       "skill_name_cn": "光环治疗",
-      "skill_cn_1to3": "光环治疗（冷却7.0秒）：治疗自身周围友军最大生命15%，并给攻击+10%、攻速+0.15，同时清除负面状态；开场冷却2.0秒。",
-      "skill_cn_4": "光环治疗（冷却5.0秒）：治疗自身周围友军最大生命40%，并给攻击+40%、攻速+0.45，同时清除负面状态；开场冷却2.0秒。",
-      "skill_en_1to3": "Halo Heal (CD 7.0s): Heal nearby allies for 15% max HP; grant ATK +10% and AS +0.15 and cleanse debuffs; initial cooldown 2.0s.",
+      "skill_cn_1to3": "光环治疗（冷却7.0秒）：治疗自身周围友军最大生命15%，并给攻击+10%（按开战攻击）、攻速+15%（同一目标最多叠加3层），同时清除负面状态；开场冷却2.0秒。",
+      "skill_cn_4": "光环治疗（冷却5.0秒）：治疗自身周围友军最大生命40%，并给攻击+40%（按开战攻击）、攻速+45%（同一目标最多叠加3层），同时清除负面状态；开场冷却2.0秒。",
+      "skill_en_1to3": "Halo Heal (CD 7.0s): Heal nearby allies for 15% max HP; grant ATK +10% (of battle-start ATK) and AS +15% (up to 3 stacks per ally) and cleanse debuffs; initial cooldown 2.0s.",
       "skill_raw_params": "aspd_bonus = 0.15\natk_bonus = 0.1\nheal_pct = 0.15\nopening_cd = 2\nskill_cd = 7",
       "star4_changes": "aspd_bonus: 0.15 → 0.45\natk_bonus: 0.1 → 0.4\ncontrol_immune_sec: — → 2\nheal_pct: 0.15 → 0.4\nskill_cd: 7 → 5",
       "stats": {
@@ -412,8 +412,8 @@
       "cost": 30,
       "skill_id": "judgement_strike",
       "skill_name_cn": "审判打击",
-      "skill_cn_1to3": "审判打击（冷却3.0秒）：对最近敌人造成自身攻击220%伤害；每次释放自身防御叠加+6%，最多5层。",
-      "skill_cn_4": "审判打击（冷却2.0秒）：对最近敌人造成自身攻击440%伤害；每次释放自身防御叠加+20%，最多5层。",
+      "skill_cn_1to3": "审判打击（冷却3.0秒）：对最近敌人造成自身攻击220%伤害；每次释放自身防御叠加开战防御的6%，最多5层。",
+      "skill_cn_4": "审判打击（冷却2.0秒）：对最近敌人造成自身攻击440%伤害；每次释放自身防御叠加开战防御的20%，最多5层。",
       "skill_en_1to3": "Judgement Strike (CD 3.0s): Deal 220% ATK damage to the nearest enemy; each cast permanently stacks own DEF +6% (max 5 stacks).",
       "skill_raw_params": "damage_atk_pct = 2.2\ndef_stack_pct = 0.06\nmax_stacks = 5\nskill_cd = 3",
       "star4_changes": "damage_atk_pct: 2.2 → 4.4\ndef_stack_pct: 0.06 → 0.2\nskill_cd: 3 → 2",
@@ -592,11 +592,11 @@
       "cost": 20,
       "skill_id": "post_battle_gold_by_star",
       "skill_name_cn": "战后经商",
-      "skill_cn_1to3": "战后经商：参与战斗后，按星级获得金币。1星+10，2星+20，3星+30，4星+40。",
-      "skill_cn_4": "战后经商：参与战斗后，按星级获得金币。1星+10，2星+20，3星+30，4星+40。",
-      "skill_en_1to3": "Trade: After each battle, gain gold by star level (★1 → +10G, ★2 → +20G, ★3 → +30G, ★4 → +40G).",
-      "skill_raw_params": "",
-      "star4_changes": "无",
+      "skill_cn_1to3": "战后经商：参与战斗后，1星获得10金币，2星获得20金币，3星获得30金币。",
+      "skill_cn_4": "战场经商：每次普通攻击有20%概率获得15金币，战斗结束后结算。",
+      "skill_en_1to3": "Trade: After each battle, gain gold by star level (★1 → +10G, ★2 → +20G, ★3 → +30G).",
+      "skill_raw_params": "4星：每次普通攻击有20%概率获得15金币，战斗结束后结算。",
+      "star4_changes": "4星：战后固定收入替换为攻击获得金币。",
       "stats": {
         "1": {
           "hp": 560,
@@ -883,7 +883,7 @@
       "skill_id": "poison_attack",
       "skill_name_cn": "毒击",
       "skill_cn_1to3": "毒击：普通攻击附带中毒，每秒造成目标最大生命3%伤害，持续4.0秒；灵4毒伤x2。",
-      "skill_cn_4": "毒击：普通攻击附带中毒，每秒造成目标最大生命6%伤害，持续10.0秒；最多2层，分别扣血。",
+      "skill_cn_4": "毒击：普通攻击附带中毒，每秒造成目标最大生命6%伤害，持续6.0秒；最多2层，分别扣血。",
       "skill_en_1to3": "Poison Strike: Normal attacks apply poison — 3% max HP per second for 4.0s. Up to 2 stacks tick separately.",
       "skill_raw_params": "poison_duration = 4\npoison_pct_max_hp = 0.03",
       "star4_changes": "poison_duration: 4 → 6\npoison_pct_max_hp: 0.03 → 0.06",
@@ -954,35 +954,35 @@
       "cost": 30,
       "skill_id": "death_poison_explosion",
       "skill_name_cn": "死亡毒爆",
-      "skill_cn_1to3": "死亡毒爆：死亡时对周围敌人造成自身攻击100%真实伤害，并施加中毒（最多2层，分别扣血）。",
-      "skill_cn_4": "死亡毒爆：死亡时对周围敌人造成自身攻击250%真实伤害，并施加中毒（最多2层，分别扣血）。",
-      "skill_en_1to3": "Death Poison Burst: On death, deal 100% ATK true damage to surrounding enemies and apply poison (up to 2 separate damage stacks).",
-      "skill_raw_params": "damage_atk_pct = 1.0",
-      "star4_changes": "damage_atk_pct: 1.0 → 2.5",
+      "skill_cn_1to3": "死亡毒爆：死亡时对周围敌人造成自身攻击200%真实伤害，并施加中毒（最多2层，分别扣血）。",
+      "skill_cn_4": "死亡毒爆：死亡时对周围敌人造成自身攻击300%真实伤害，已中毒目标受到350%伤害，并施加中毒（最多2层，分别扣血）。",
+      "skill_en_1to3": "Death Poison Burst: On death, deal 200% ATK true damage to surrounding enemies and apply poison (up to 2 separate damage stacks).",
+      "skill_raw_params": "damage_atk_pct = 2.0",
+      "star4_changes": "damage_atk_pct: 2.0 → 3.0；已中毒目标 3.5",
       "stats": {
         "1": {
-          "hp": 600,
+          "hp": 1200,
           "atk": 145,
-          "defense": 0
+          "defense": 10
         },
         "2": {
-          "hp": 900,
+          "hp": 1800,
           "atk": 218,
-          "defense": 0
+          "defense": 15
         },
         "3": {
-          "hp": 1800,
+          "hp": 3600,
           "atk": 435,
-          "defense": 0
+          "defense": 30
         },
         "4": {
-          "hp": 2070,
+          "hp": 4140,
           "atk": 500,
-          "defense": 0
+          "defense": 35
         }
       },
-      "skill_damage_multiplier_1to3": 1.0,
-      "skill_damage_multiplier_4": 2.5
+      "skill_damage_multiplier_1to3": 2.0,
+      "skill_damage_multiplier_4": 3.0
     },
     "undead_fly": {
       "name_cn": "飞灵",
@@ -1001,22 +1001,22 @@
         "1": {
           "hp": 760,
           "atk": 66,
-          "defense": 4
+          "defense": 8
         },
         "2": {
           "hp": 1140,
           "atk": 99,
-          "defense": 6
+          "defense": 12
         },
         "3": {
           "hp": 2280,
           "atk": 198,
-          "defense": 12
+          "defense": 24
         },
         "4": {
           "hp": 2622,
           "atk": 228,
-          "defense": 14
+          "defense": 28
         }
       }
     },
@@ -1036,22 +1036,22 @@
       "stats": {
         "1": {
           "hp": 840,
-          "atk": 57,
+          "atk": 67,
           "defense": 7
         },
         "2": {
           "hp": 1260,
-          "atk": 86,
+          "atk": 101,
           "defense": 11
         },
         "3": {
           "hp": 2520,
-          "atk": 171,
+          "atk": 201,
           "defense": 21
         },
         "4": {
           "hp": 2898,
-          "atk": 197,
+          "atk": 231,
           "defense": 24
         }
       }
@@ -1064,11 +1064,11 @@
       "cost": 30,
       "skill_id": "defense_down_attack",
       "skill_name_cn": "腐蚀攻击",
-      "skill_cn_1to3": "腐蚀攻击：普通攻击降低目标防御30%，持续5.0秒；暗2会增强效果。",
+      "skill_cn_1to3": "腐蚀攻击：普通攻击降低目标防御35%，持续5.0秒；暗2会增强效果。",
       "skill_cn_4": "腐蚀攻击：普通攻击降低目标防御60%，持续8.0秒。",
-      "skill_en_1to3": "Corrosive Strike: Normal attacks reduce target DEF by 30% for 5.0s.",
-      "skill_raw_params": "def_down_pct = 0.3\nduration = 5",
-      "star4_changes": "def_down_pct: 0.3 → 0.6\nduration: 5 → 8",
+      "skill_en_1to3": "Corrosive Strike: Normal attacks reduce target DEF by 35% for 5.0s.",
+      "skill_raw_params": "def_down_pct = 0.35\nduration = 5",
+      "star4_changes": "def_down_pct: 0.35 → 0.6\nduration: 5 → 8",
       "stats": {
         "1": {
           "hp": 800,
@@ -1100,11 +1100,11 @@
       "cost": 30,
       "skill_id": "poison_reflect_armor_stack",
       "skill_name_cn": "毒甲",
-      "skill_cn_1to3": "毒甲：受伤后反弹本次伤害15%真实伤害并使攻击者中毒；自身防御每次+14%，最多10层。",
-      "skill_cn_4": "毒甲：受伤后反弹本次伤害30%真实伤害并使攻击者中毒（最多2层，分别扣血）；自身防御每次+28%，最多10层。",
-      "skill_en_1to3": "Toxic Armor: On taking damage, reflect 15% as true damage and poison the attacker (up to 2 separate damage stacks). Own DEF stacks +14% per hit (max 10 stacks).",
-      "skill_raw_params": "armor_per_hit_pct = 0.14\nmax_stacks = 10\nreflect_taken_damage_pct = 0.15",
-      "star4_changes": "armor_per_hit_pct: 0.14 → 0.28\nreflect_taken_damage_pct: 0.15 → 0.3",
+      "skill_cn_1to3": "毒甲：受伤后反弹本次伤害15%真实伤害并使攻击者中毒；自身防御每次+7%，最多10层。",
+      "skill_cn_4": "毒甲：受伤后反弹本次伤害30%真实伤害并使攻击者中毒（最多2层，分别扣血）；自身防御每次+10%，最多10层。",
+      "skill_en_1to3": "Toxic Armor: On taking damage, reflect 15% as true damage and poison the attacker (up to 2 separate damage stacks). Own DEF stacks +7% per hit (max 10 stacks).",
+      "skill_raw_params": "armor_per_hit_pct = 0.07\nmax_stacks = 10\nreflect_taken_damage_pct = 0.15",
+      "star4_changes": "armor_per_hit_pct: 0.07 → 0.1\nreflect_taken_damage_pct: 0.15 → 0.3",
       "stats": {
         "1": {
           "hp": 1500,
@@ -1617,7 +1617,7 @@
     "def_life_monument": {
       "name_cn": "生命丰碑",
       "category_cn": "防御",
-      "effect_cn": "最大生命 ×1.20 并回满",
+      "effect_cn": "最大生命 +20% 并回满（与其他开场加成相加）",
       "hu_pai_text_cn": "×1.40"
     },
     "def_formation_heal": {
@@ -1641,7 +1641,7 @@
     "def_phantom_step": {
       "name_cn": "幻影步伐",
       "category_cn": "防御",
-      "effect_cn": "闪避 +20%（闪避是完全免伤，不是减伤）",
+      "effect_cn": "闪避 +20%（闪避是完全免伤，不是减伤；多个来源按 1-(1-a)(1-b) 叠加，上限 50%）",
       "hu_pai_text_cn": "—"
     },
     "ctrl_shockwave": {
@@ -1677,7 +1677,7 @@
     "atk_blood_pact": {
       "name_cn": "血契之刃",
       "category_cn": "攻击",
-      "effect_cn": "攻击 ×1.25；代价：自身永久流血（每秒 当前生命×6%，999 秒）",
+      "effect_cn": "攻击 +25%（与其他开场加成相加）；代价：自身永久流血（每秒 当前生命×6%，999 秒）",
       "hu_pai_text_cn": "攻击 ×1.50（流血代价不变）"
     },
     "atk_fury_roster": {
@@ -1816,6 +1816,6 @@
       "effect_cn": "需要：生命丰碑 + 黄金祭坛 + 震荡余波 + 血契之刃 + 狂怒阵容。生命丰碑 ×1.20→×1.40；震荡余波眩晕 1→2 秒；血契之刃 ×1.25→×1.50；狂怒阵容上限 8→9。黄金祭坛使用不扣法阵 HP；选到胡牌手立即回复法阵 HP +2（上限 50）。\n表内字段：positive_effect_multiplier = 2"
     }
   },
-  "balance_version": "5ca3d8e36256d0428ce94a6fa30c1cc63bbd82ff1cce345012679c70808e0704",
-  "final_workbook_sha256": "adb8c294be6eb014c32e86f0857d18b3407700210052e66f92b9c17145eb91e2"
+  "balance_version": "07a5902dedd6b1b8d31d8881ee16a3951ecbe0f0e931fbebe2d067120fbfee88",
+  "final_workbook_sha256": "07996ce9a0eb63664aefb112fd1363daba20acb5cc185524eeba6bbaa07e2905"
 }

@@ -18,12 +18,18 @@ extends Node
 #   B 皮肤晚到（active_id 改冰雪 + 发 prep_skin_changed）→ 上面几层**全部**换成冰雪
 #   C 再换回默认 → 全部换回去（不是只会变一次的单向补丁）
 #   D 皮肤设置项也跟着走：冰雪 river_glow=false → 河面波光层隐藏；萤火虫色 = 冰雪白
+#   G 河面整体位置也跟着走：river_drop 把画得偏高的河面挪到和草地同一条水线
+#   F 河面波光的**图**也跟着走（10.31 补）：默认用那张照草地河道画的高光图；自带河面图的
+#     皮肤改用它自己那张当波光源。只换显隐不换图的话，樱花会顶着草地那条青蓝流光
+#     （实测就是这样，玩家反馈"河流怪怪的"）。
 #   E 接线本身：PrepScreen 必须真连了信号（连不上时 B 会红——由 B 覆盖）
 
 const H := preload("res://tools/CheckHarness.gd")
 const PrepSkinC := preload("res://scenes/prep/PrepSkin.gd")
 const PREP := preload("res://scenes/prep/PrepScreen.tscn")
+const PrepBoardC := preload("res://scenes/prep/PrepBoardModels.gd")
 const ICE := "prep_skin_ice"
+const SELF_GLOW := "prep_skin_sakura"   # 自带河面图、且没关波光的皮肤
 const DEFAULT := "prep_skin_default"
 const ICE_FIREFLY := Color(0.86, 0.95, 1.0)
 
@@ -43,6 +49,7 @@ func _ready() -> void:
 
 	_section_build(prep)
 	await _section_arrive(prep)
+	await _section_self_glow(prep)
 	await _section_revert(prep)
 
 	# 收尾：断开信号依赖、还原静态状态
@@ -97,6 +104,34 @@ func _section_arrive(prep: Control) -> void:
 			"冰雪 river_glow=false，河面流动波光层应隐藏")
 
 
+# F：自带河面图的皮肤，波光源要换成它自己那张（不是照草地河道画的那张）。
+func _section_self_glow(prep: Control) -> void:
+	if not PrepSkinC.has_skin(SELF_GLOW):
+		return   # 这个包里没有这张皮肤的图（旧包）：没什么可查的
+	PrepSkinC.active_id = SELF_GLOW
+	PlayerProfile.prep_skin_changed.emit()
+	await _settle(prep, 6)
+	var flow := prep.find_child("PrepRiverFlowBottom", true, false)
+	if not is_instance_valid(flow):
+		return
+	h.expect((flow as Node3D).visible, "self_glow_visible",
+		"%s 没关 river_glow，波光层应显示" % SELF_GLOW)
+	h.expect(_glow_path(prep) == _own(SELF_GLOW, "river"), "self_glow_uses_skin_river",
+		"波光源应是皮肤自己的河面图，实为 %s" % _glow_path(prep))
+	h.expect(_glow_cut(prep) > 0.0, "self_glow_cut_on",
+		"用皮肤河面图当波光源时要切亮度（整条河都很亮，不切就是整条在滚）")
+	# G（11.01 补）：河面画得比默认高的皮肤要整体往下游挪，底图和波光**两层用同一个偏移**。
+	# 只换图不挪位置的话，水面会漫过待命区台子（玩家反馈「河流跑出上面的位置」）；
+	# 只挪一层的话，波光会和水面错开。
+	var want := PrepBoardC.PREP_BOARD_GROUND_CENTER.z + PrepSkinC.river_drop() * PrepBoardC.PREP_BOARD_GROUND_SIZE.y
+	h.expect(PrepSkinC.river_drop() > 0.0, "self_glow_skin_drops_river",
+		"%s 的河面比默认画得高，应当配了 river_drop" % SELF_GLOW)
+	h.expect(is_equal_approx(_layer_z(prep, "PrepRiverBottomLayer"), want), "arrive_river_dropped",
+		"皮肤晚到后河面底图应挪到 z=%.3f，实为 %.3f" % [want, _layer_z(prep, "PrepRiverBottomLayer")])
+	h.expect(is_equal_approx(_layer_z(prep, "PrepRiverFlowBottom"), want), "arrive_glow_dropped",
+		"波光层要和河面底图同一个 z，实为 %.3f" % _layer_z(prep, "PrepRiverFlowBottom"))
+
+
 func _section_revert(prep: Control) -> void:
 	PrepSkinC.active_id = DEFAULT
 	PlayerProfile.prep_skin_changed.emit()
@@ -109,6 +144,13 @@ func _section_revert(prep: Control) -> void:
 	if is_instance_valid(flow):
 		h.expect((flow as Node3D).visible, "revert_river_glow_on",
 			"换回草地后河面流动波光应重新显示（草地 river_glow=true）")
+		h.expect(_glow_path(prep) == PrepBoardC.PREP_RIVER_BOTTOM_EF_PATH, "revert_glow_default_ef",
+			"换回草地后波光源应回到那张专门画的高光图，实为 %s" % _glow_path(prep))
+		h.expect(is_equal_approx(_glow_cut(prep), 0.0), "revert_glow_cut_off",
+			"草地那张高光图是黑底，整张都该出，不许切亮度")
+		# 草地没有 river_drop：换回来时河面要挪回原位（不是只会往下挪的单向补丁）
+		h.expect(is_equal_approx(_layer_z(prep, "PrepRiverBottomLayer"), PrepBoardC.PREP_BOARD_GROUND_CENTER.z),
+			"revert_river_z", "换回草地后河面应回到原位，实为 %.3f" % _layer_z(prep, "PrepRiverBottomLayer"))
 
 
 # --- 工具 -------------------------------------------------------------------
@@ -135,6 +177,34 @@ func _plane_path(prep: Control, node_name: String) -> String:
 		if mat is StandardMaterial3D and (mat as StandardMaterial3D).albedo_texture != null:
 			return (mat as StandardMaterial3D).albedo_texture.resource_path
 	return ""
+
+
+# 波光层当前用的是哪张图 / 切了多少亮度
+func _layer_z(prep: Control, node_name: String) -> float:
+	var node := prep.find_child(node_name, true, false)
+	return (node as Node3D).position.z if node is Node3D else NAN
+
+
+func _glow_material(prep: Control) -> ShaderMaterial:
+	var node := prep.find_child("PrepRiverFlowBottom", true, false)
+	if node is MeshInstance3D and (node as MeshInstance3D).material_override is ShaderMaterial:
+		return (node as MeshInstance3D).material_override as ShaderMaterial
+	return null
+
+
+func _glow_path(prep: Control) -> String:
+	var mat := _glow_material(prep)
+	if mat == null:
+		return ""
+	var tex: Variant = mat.get_shader_parameter("river_tex")
+	return (tex as Texture2D).resource_path if tex is Texture2D else ""
+
+
+func _glow_cut(prep: Control) -> float:
+	var mat := _glow_material(prep)
+	if mat == null:
+		return -1.0
+	return float(mat.get_shader_parameter("highlight_cut"))
 
 
 func _firefly_color(prep: Control) -> Color:

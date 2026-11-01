@@ -3917,7 +3917,7 @@ func _on_team_battle_finished(result: Dictionary) -> void:
 		"gold_before": GameState.gold,
 		"gold_spent_this_round": GameState.gold_spent_this_round,
 		"kill_gold": _team_local_kill_gold(result),
-		"bonus_gold": int(result.get("bonus_gold", 0)),
+		"bonus_gold": int(result.get("bonus_gold", 0)) + EconomyService.merchant_attack_gold_for_slot(result, NetworkService.team_local_slot if NetworkService.team_active else 0),
 		"kind": kind,
 		"player_wins": player_wins,
 		"round_index": completed_round,

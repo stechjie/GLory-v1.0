@@ -55,6 +55,7 @@ func _ready() -> void:
 	add_child(_title)
 	_toggle = Button.new()
 	_toggle.focus_mode = Control.FOCUS_NONE
+	_toggle.clip_text = true
 	_toggle.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	_toggle.add_theme_color_override("font_color", INK)
 	_toggle.add_theme_stylebox_override("normal", _pill(0.82))
@@ -122,8 +123,10 @@ func _relayout() -> void:
 	_join.queue_redraw()
 	_toggle.visible = _is_host
 	_toggle.position = Vector2(inner.position.x + inner.size.x * 0.15, inner.position.y + 82 * k)
-	_toggle.size = Vector2(inner.size.x * 0.70, 32 * k)
+	# Set font metrics before size: the default font's minimum height otherwise
+	# clamps the first layout, then shrinks only after a seat/state update.
 	_toggle.add_theme_font_size_override("font_size", maxi(13, roundi(17 * k)))
+	_toggle.size = Vector2(inner.size.x * 0.70, 32 * k)
 	# 标题木牌的图案比标题框往下多伸出一截（约 60），列表从它下面开始，否则第一行被压住。
 	var list_top := inner.position.y + (122 if _is_host else 84) * k
 	_scroll.position = Vector2(inner.position.x + 12 * k, list_top)

@@ -56,7 +56,7 @@ func _ready() -> void:
 				h.expect(UnitFactory.apply_star_stats(ordinary, star).atk == int(round(10 * GameState.star_stat_multiplier(star, ordinary))), "normal_scaling", "其他棋子攻击仍随升星增长")
 
 		if d.id == "human_merchant":
-			h.expect(Format.format_skill_detail(d).contains("4星+40"), "merchant", "商人四星收入说明")
+			h.expect(Format.format_unit_def(d, 4).contains("20%") and Format.format_unit_def(d, 4).contains("15"), "merchant", "商人四星攻击金币说明")
 	_check_upgrade_shadow(h)
 	ServerFlags._values = saved_flags
 	if "--review" in OS.get_cmdline_user_args():

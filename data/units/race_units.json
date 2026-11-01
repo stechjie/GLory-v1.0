@@ -582,7 +582,7 @@
                       "id":  "undead_spike",
                       "star4":  {
                           "duration":  8,
-                          "def_down_pct":  1.0
+                          "def_down_pct":  0.60
                       },
                       "name":  "刺灵",
                       "race":  "undead",
@@ -598,7 +598,7 @@
                       "crit":  0.15,
                       "crit_dmg":  1.6,
                       "skill_id":  "defense_down_attack",
-                      "def_down_pct":  0.60,
+                      "def_down_pct":  0.35,
                       "duration":  5.0,
                       "model":  "res://assets/models/units/undead_refined/undead_spike/undead_spike_refined.tscn",
                       "model_visual_scale":  1,
@@ -639,7 +639,8 @@
                       "id":  "undead_bomb",
                       "model_in_place_actions": ["run"],
                       "star4":  {
-                          "damage_atk_pct":  3.5
+                          "damage_atk_pct":  3.0,
+                          "poisoned_damage_atk_pct":  3.5
                       },
                       "name":  "自爆灵",
                       "race":  "undead",
@@ -663,9 +664,9 @@
                   },
                   {
                       "id":  "undead_titan",
-                      "armor_per_hit_pct":  0.14,
+                      "armor_per_hit_pct":  0.07,
                       "star4":  {
-                          "armor_per_hit_pct":  0.28,
+                          "armor_per_hit_pct":  0.10,
                           "reflect_taken_damage_pct":  0.3
                       },
                       "name":  "巨甲灵",
@@ -757,6 +758,7 @@
                   {
                       "id":  "human_merchant",
                       "model_in_place_actions": ["run", "idle"],
+                      "star4": {"attack_gold_chance": 0.20, "attack_gold_amount": 15},
                       "name":  "商人",
                       "race":  "human",
                       "element":  "ren",

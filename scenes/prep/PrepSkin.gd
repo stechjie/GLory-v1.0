@@ -83,6 +83,16 @@ static func firefly_color() -> Color:
 	return FIREFLY_DEFAULT
 
 
+# 河面整体往下游挪多少（占棋盘纵深的比例）。
+#
+# 默认草地那张图的水线在图高 84.6%，而樱花 / 夜荧光画到了 79.5% —— 直接贴上去水会漫过
+# 待命区台子，看着像台子泡在水里（10.31 玩家反馈「河流跑出上面的位置」）。
+# 这里把整块河面连同岸边石头一起往下游平移，水线就和草地对齐了；河面下沿顺势挂到棋盘外，
+# 底边照样铺满。实测 0.067（= 0.30 世界单位）两张皮肤都正好。
+static func river_drop() -> float:
+	return clampf(float(entry(active_id).get("river_drop", 0.0)), 0.0, 0.25)
+
+
 static func river_glow() -> bool:
 	return bool(entry(active_id).get("river_glow", true))
 

@@ -376,16 +376,19 @@ func _case_replay_live_stats_end_to_end() -> void:
 		last_f = fi
 	_h.expect(ordered, "live_stats_not_ascending",
 		"live_stats 的帧号不是升序 —— 「取最近一条」的查询会拿错值")
-	# 首条 = 技能强化后的值（大祭司 1★：atk ×1.08、aspd +0.15），**不是**基准。
+	# 首条 = 技能强化后的值（大祭司 1★：atk +开战攻击的 8%、攻速 +15% 进百分比池），**不是**基准。
 	# 这两个期望值是对战斗式子的独立复刻（第二实现），不是读实现抄来的。
-	var want_atk := maxi(1, int(round(float(base_atk) * (1.0 + 0.08))))
-	var want_as := clampf(base_as + 0.15, 0.25, 2.5)
+	# 11.01 起面板攻速 attack_speed 不再被祝福改写，加成记在 abp（aspd_bonus_pct）。
+	var want_atk := base_atk + int(round(float(base_atk) * 0.08))
+	var want_as := base_as
 	var first: Dictionary = entries[0]
 	_h.expect(int(first.get("atk", -1)) == want_atk, "live_stats_first_atk_wrong",
 		"首条 atk=%s，期望技能强化后的 %d（基准 %d × 1.08）—— 技能效果没被录进去"
 		% [str(first.get("atk", "缺")), want_atk, base_atk])
 	_h.expect(is_equal_approx(float(first.get("as", -1.0)), want_as), "live_stats_first_as_wrong",
-		"首条攻速=%s，期望 %s（基准 %s + 0.15）" % [str(first.get("as", "缺")), str(want_as), str(base_as)])
+		"首条攻速=%s，期望面板值 %s 不变" % [str(first.get("as", "缺")), str(want_as)])
+	_h.expect(is_equal_approx(float(first.get("abp", -1.0)), 0.15), "live_stats_first_abp_wrong",
+		"首条永久攻速加成=%s，期望 0.15" % str(first.get("abp", "缺")))
 	# 回放 fighter：只有帧字段（复刻 _replay_by_uid 造出来的对象，没有四项活字段）。
 	var rf_value = replay.get("roster", {}).get(priest_uid, null)
 	_h.expect(rf_value != null and typeof(rf_value) == TYPE_DICTIONARY, "roster_entry_missing",
@@ -412,7 +415,7 @@ func _case_replay_live_stats_end_to_end() -> void:
 		% [str(patched.get("attack_speed", "缺")), str(last.get("as", "缺"))])
 	# 面板口径函数（live_attack_speed）在补上活字段后必须给出与战斗一致的值。
 	var panel_as := ScreenScript.live_attack_speed(patched)
-	var battle_as := clampf(float(last.get("as", 0.0)), 0.25, 2.5)
+	var battle_as := clampf(float(last.get("as", 0.0)) * (1.0 + float(last.get("abp", 0.0))), 0.25, 2.5)
 	_h.expect(is_equal_approx(panel_as, battle_as), "panel_as_not_battle_value",
 		"面板攻速 %s ≠ 战斗值 %s（statuses 已在帧里，补上活字段后应自动对齐）"
 		% [str(panel_as), str(battle_as)])

@@ -44,13 +44,20 @@ func _ready() -> void:
 	# The reveal hides the stage while anchors are initialized. A hidden stage
 	# must not hide active rig feet from this one-time placement measurement.
 	stage.visible = false
+	var previous_tier := VFXManager.get_quality_tier()
+	VFXManager.set_quality_tier(VFXQualityBudget.Tier.HIGH)
 	var samples: Array[Node3D] = []
 	for unit_id in ["human_militia", "human_archer", "human_merchant", "dark_imp", "dark_queen"]:
 		var definition := DataRegistry.canonical_unit_def(unit_id)
 		var sample: Node3D = prep._make_prep_board_model({"id": unit_id, "star": 1, "def": definition}, definition)
 		prep._prep_standby_model_root.add_child(sample)
+		prep._position_prep_standby_model(sample, samples.size(), definition)
 		samples.append(sample)
 	for frame in 4:
+		await get_tree().process_frame
+	for sample in samples:
+		prep._update_prep_model_anchors(sample, 1)
+	for frame in 2:
 		await get_tree().process_frame
 	for sample in samples:
 		var model: Node3D = sample.visual_root
@@ -62,6 +69,14 @@ func _ready() -> void:
 			"idle_feet_off_center", "%s: idle feet must center even under a hidden stage" % unit_id)
 		h.expect(absf(model.position.y - original_y) < 0.00001,
 			"centering_lifts_model", "%s: horizontal centering must preserve existing vertical clearance" % unit_id)
+		h.expect(bool(sample.get_meta("prep_planar_shadow_attached", false)), "prep_planar_missing", "%s: high quality needs the battle silhouette" % unit_id)
+		var contact := sample.get_node("ContactShadow3D") as MeshInstance3D
+		h.expect(is_equal_approx((contact.mesh as PlaneMesh).size.x, 1.2 * 0.55), "prep_core_size", "%s: planar shadow needs the smaller contact core" % unit_id)
+	var prep_material: ShaderMaterial = prep._prep_planar_shadow_materials.values()[0]
+	h.expect(prep_material != preload("res://effects/runtime/presentation/UnitPlanarShadow.gd").shared_material(), "prep_battle_material_shared", "Prep ground height and priority must not alter battle")
+	h.expect(prep_material.render_priority > 7, "prep_planar_hidden", "Prep silhouette must draw after the board and platform")
+	h.expect(is_equal_approx(float(prep_material.get_shader_parameter("ground_y")), samples[0].global_position.y + 0.004), "prep_planar_ground", "Prep silhouette must use the actual surface height")
+	VFXManager.set_quality_tier(previous_tier)
 	stage.free()
 	# PrepUI normally adopts these panels; this geometry fixture never builds UI.
 	for panel in [prep._shop, prep._synergy, prep._stats, prep._treasure, prep._board_hud]:

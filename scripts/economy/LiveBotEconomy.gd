@@ -18,7 +18,12 @@ static func prepare(room: Dictionary) -> Dictionary:
 			if slot < initial.size() and str(initial[slot]) == "player":
 				_seed_from_human(bot, room, slot, round_index)
 			bots[slot] = bot
+		# shared_seed rotates after boards lock. Bind the current room's live state
+		# to that battle without changing the persistent economy seed or RNG.
+		# Do this even when prepare_round is an idempotent same-round no-op.
+		bots[slot]["battle_seed"] = str(room.get("shared_seed", 0))
 		var pet := str(room.get("seat_pets", {}).get(slot, ""))
+		bots[slot]["pet_id"] = pet
 		bots[slot]["server_treasures"] = true
 		bots[slot]["ruleset"] = str(room.get("ruleset", "normal"))
 		NetworkService._bot_choose_pending_treasures(room, slot, bots[slot])

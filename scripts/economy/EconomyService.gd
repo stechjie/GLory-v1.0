@@ -86,6 +86,11 @@ static func kill_gold_for_slot(result: Dictionary, slot: int) -> int:
 	var s := maxi(0, slot)
 	return int(by_slot.get(s, by_slot.get(str(s), 0)))
 
+static func merchant_attack_gold_for_slot(result: Dictionary, slot: int) -> int:
+	var by_slot: Dictionary = result.get("merchant_attack_gold_by_slot", {})
+	var s := maxi(0, slot)
+	return maxi(0, int(by_slot.get(s, by_slot.get(str(s), 0))))
+
 # 商人棋子（post_battle_gold_by_star）：棋盘上每个商人按星级给金。
 # board 既可以是 GameState.board_slots，也可以是 NetProtocol.extract_board(snapshot)
 # 的服务器端棋盘——两者的格子都带 def 与 star。
@@ -96,7 +101,9 @@ static func merchant_gold_from_board(board: Array) -> int:
 			continue
 		var c: Dictionary = cell
 		if str((c.get("def", {}) as Dictionary).get("skill_id", "")) == "post_battle_gold_by_star":
-			total += clampi(int(c.get("star", 1)), 1, GameState.MAX_UNIT_STAR) * MERCHANT_GOLD_PER_STAR
+			var star := clampi(int(c.get("star", 1)), 1, GameState.MAX_UNIT_STAR)
+			if star < 4:
+				total += star * MERCHANT_GOLD_PER_STAR
 	return total
 
 # 战后金币结算——唯一实现，返回结算后的总金币。

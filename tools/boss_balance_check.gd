@@ -107,18 +107,26 @@ func check_mirror_priest() -> void:
 func check_rage_blood() -> void:
 	var rage := spawn("boss_rage_beast")
 	var s := state([], [rage])
+	# 11.01 叠加规则：每层 +开战攻击的 5%（相加，不复利），攻速每层 +3% 进百分比池，
+	# 面板攻速 attack_speed 本身不再被改写；攻速总加成封顶 +150%。
+	var rage_base := int(rage.atk)
+	var rage_aspd := float(rage.attack_speed)
+	var rage_expected := rage_base + 50 * int(round(float(rage_base) * 0.05))
 	for i in range(50):
 		BattleSimTreasures._apply_boss_attacker_passives(rage, s)
-	h.expect(rage.atk == 954 and rage.skill_stacks == 50 and is_equal_approx(rage.attack_speed, 2.5),
-		"rage_50", "50 stacks should give 954 ATK, cap 50 and 2.5 AS")
+	h.expect(rage.atk == rage_expected and rage.skill_stacks == 50 and is_equal_approx(rage.attack_speed, rage_aspd)
+		and is_equal_approx(float(rage.aspd_bonus_pct), 1.5)
+		and is_equal_approx(StatusEffectService.attack_speed_multiplier(rage), 2.5),
+		"rage_50", "50 stacks should add 50x5% of entry ATK, +150% AS pool, base AS untouched")
 	BattleSimTreasures._apply_boss_attacker_passives(rage, s)
-	h.expect(rage.atk == 954 and rage.skill_stacks == 50, "rage_cap", "stack cap failed")
+	h.expect(rage.atk == rage_expected and rage.skill_stacks == 50, "rage_cap", "stack cap failed")
 	var blood := spawn("boss_blood_demon")
 	s = state([], [blood])
 	blood.hp = int(blood.max_hp / 2)
 	BattleSimTreasures._process_boss_health_triggers(s)
-	h.expect(bool(blood.get("blood_rage_active", false)) and blood.atk == 184 and is_equal_approx(blood.attack_speed, 1.35),
-		"blood_threshold", "50% enrage should double attack and add 0.50 AS")
+	h.expect(bool(blood.get("blood_rage_active", false)) and blood.atk == 184 and is_equal_approx(blood.attack_speed, 0.85)
+		and is_equal_approx(float(blood.get("aspd_bonus_pct", 0.0)), 0.50),
+		"blood_threshold", "50% enrage should double attack and add +50% AS to the pool")
 	BattleSimTreasures._apply_boss_attack_lifesteal(blood, blood.def, 100)
 	h.expect(blood.hp == int(blood.max_hp / 2) + 20, "blood_lifesteal", "20% lifesteal failed")
 	BattleSimTreasures._process_boss_health_triggers(s)
@@ -132,7 +140,7 @@ func check_soul() -> void:
 	var m := piece("monster", "enemy", Vector2(900, 200))
 	m.id = "pve_probe"
 	BattleSimTreasures._apply_soul_devour_on_death(s, m)
-	h.expect(b.hp == b.max_hp - 370 and b.atk == 143 and is_equal_approx(b.attack_speed, 1.5),
+	h.expect(b.hp == b.max_hp - 370 and b.atk == 143 and is_equal_approx(float(b.get("aspd_bonus_pct", 0.0)), 0.20),
 		"soul_monster", "same-lane monster death did not grant 20% heal/attack and +0.20 AS")
 	BattleSimTreasures._apply_soul_devour_on_death(s, m)
 	h.expect(b.soul_devour_stacks == 1, "soul_dedupe", "death counted twice")
@@ -143,8 +151,8 @@ func check_soul() -> void:
 	h.expect(b.soul_devour_stacks == 2, "soul_lane", "other lane counted")
 	for i in range(16):
 		BattleSimTreasures._apply_soul_devour_on_death(s, piece("extra_%d" % i, "player", Vector2(900, 200)))
-	h.expect(b.soul_devour_stacks == 18 and b.atk == 547 and is_equal_approx(b.attack_speed, 2.5),
-		"soul_4_6x", "18 deaths should be 4.6x entry ATK with 2.5 AS cap")
+	h.expect(b.soul_devour_stacks == 18 and b.atk == 547 and is_equal_approx(StatusEffectService.attack_speed_multiplier(b), 2.5),
+		"soul_4_6x", "18 deaths should be 4.6x entry ATK with the +150% AS pool cap")
 
 
 func check_twin() -> void:

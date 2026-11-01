@@ -1209,6 +1209,7 @@ static func patched_with_live_stats(f: Dictionary, live_stats: Dictionary, frame
 	out["crit_bonus"] = float(best.get("cb", 0.0))
 	out["crimson_pulse_stacks"] = int(best.get("cps", 0))
 	out["crimson_rune_stacks"] = int(best.get("crs", 0))
+	out["aspd_bonus_pct"] = float(best.get("abp", 0.0))
 	return out
 
 
@@ -1292,8 +1293,7 @@ func _refresh_stat_panel() -> void:
 # 攻速：与 BattleSimulator 普攻间隔同一个式子（含状态乘数与动态乘数）。
 static func live_attack_speed(f: Dictionary) -> float:
 	var raw := base_attack_speed(f)
-	raw *= StatusEffectService.attack_speed_multiplier(f)
-	raw *= BattleSimulator._dynamic_attack_speed_multiplier(f)
+	raw *= StatusEffectService.attack_speed_multiplier(f, BattleSimulator._dynamic_attack_speed_multiplier(f) - 1.0)
 	return clampf(raw, 0.25, 2.5)
 
 
@@ -1329,7 +1329,7 @@ static func live_crit(f: Dictionary) -> float:
 	var d_value = f.get("def", {})
 	var d: Dictionary = d_value if typeof(d_value) == TYPE_DICTIONARY else {}
 	var base := float(d.get("crit", 0.0))
-	var total := base + float(f.get("crit_bonus", 0.0)) + 0.10 * float(f.get("crimson_pulse_stacks", 0)) + CrimsonRuneService.crit_bonus(f)
+	var total := base + float(f.get("crit_bonus", 0.0)) + StatusEffectService.status_crit_bonus(f) + 0.10 * float(f.get("crimson_pulse_stacks", 0)) + CrimsonRuneService.crit_bonus(f)
 	if str(d.get("race", "")) == "human" and int(f.get("attack_count", 0)) % 3 == 2:
 		# 下一次普攻（attack_count+1 后 %3==0）必定暴击。
 		return 1.0

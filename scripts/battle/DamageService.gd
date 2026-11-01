@@ -345,14 +345,32 @@ static func damage_reduction(defense: int) -> float:
 	var d := maxi(0, defense)
 	return float(d) / float(100 + d)
 
+# 11.01：受到伤害的修正同类相加（减伤为负、易伤为正），最多减到 30%。
+# 防御、来源减伤、狂暴系数是别的类，仍各自相乘。
+const INCOMING_DAMAGE_MIN_MUL := 0.30
+# 闪避上限。各来源按 1-(1-a)(1-b) 叠加，再夹到这个值。
+const DODGE_CAP := 0.50
+
 static func status_damage_taken_multiplier(target: Dictionary) -> float:
 	StatusEffectService.ensure_status(target)
-	var mul := 1.0
+	var pct := 0.0
 	if target.statuses.has("damage_reduction"):
-		mul *= maxf(0.0, 1.0 - float(target.statuses.damage_reduction.get("pct", 0.0)))
+		pct -= float(target.statuses.damage_reduction.get("pct", 0.0))
 	if target.statuses.has("ice_vulnerable"):
-		mul *= 1.0 + float(target.statuses.ice_vulnerable.get("pct", 0.15))
-	return mul
+		pct += float(target.statuses.ice_vulnerable.get("pct", 0.15))
+	return maxf(INCOMING_DAMAGE_MIN_MUL, 1.0 + pct)
+
+
+static func stack_dodge(current: float, added: float) -> float:
+	return 1.0 - (1.0 - clampf(current, 0.0, 1.0)) * (1.0 - clampf(added, 0.0, 1.0))
+
+
+static func dodge_chance(target: Dictionary) -> float:
+	StatusEffectService.ensure_status(target)
+	var chance := float(target.get("dodge", 0.0))
+	if target.statuses.has("dodge_bonus"):
+		chance = stack_dodge(chance, float(target.statuses.dodge_bonus.get("pct", 0.0)))
+	return minf(DODGE_CAP, chance)
 
 static func source_damage_multiplier() -> float:
 	if _stat_source_uid.is_empty():
@@ -383,10 +401,7 @@ static func skill_hit_lands(target: Dictionary) -> bool:
 	StatusEffectService.ensure_status(target)
 	if target.statuses.has("invulnerable"):
 		return false
-	var dodge_chance := float(target.get("dodge", 0.0))
-	if target.statuses.has("dodge_bonus"):
-		dodge_chance += float(target.statuses.dodge_bonus.get("pct", 0.0))
-	var landed := RngService.rng.randf() >= dodge_chance
+	var landed := RngService.rng.randf() >= dodge_chance(target)
 	if not landed:
 		_emit_dodge_miss(target)
 	return landed
@@ -408,10 +423,7 @@ static func apply_damage(target: Dictionary, amount: int, ignore_defense: bool =
 			_emit_block(target)
 			return 0
 	if not skip_dodge:
-		var dodge_chance := float(target.get("dodge", 0.0))
-		if target.statuses.has("dodge_bonus"):
-			dodge_chance += float(target.statuses.dodge_bonus.get("pct", 0.0))
-		if RngService.rng.randf() < dodge_chance:
+		if RngService.rng.randf() < dodge_chance(target):
 			_emit_dodge_miss(target)
 			return 0
 	var remaining := amount

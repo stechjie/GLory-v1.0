@@ -62,17 +62,18 @@ static func shared_material() -> ShaderMaterial:
 ## 人族 Refined.gd 在 _ready 里才加装备网格。deferred 保证排在它们后面。
 ## ground_y：单位脚底所在的世界高度。战斗单位不站在 y = 0，而是站在
 ## BattleUI.battle_unit_y_offset（默认 1.0）上；压到 0 会让影子整片错位到单位前方。
-static func attach(model: Node3D, ground_y: float) -> void:
+static func attach(model: Node3D, ground_y: float, shadow_material: ShaderMaterial = null) -> void:
 	if model == null:
 		return
-	shared_material().set_shader_parameter("ground_y", ground_y + GROUND_LIFT)
+	var target_material := shadow_material if shadow_material != null else shared_material()
+	target_material.set_shader_parameter("ground_y", ground_y + GROUND_LIFT)
 	if model.is_node_ready():
-		_apply.call_deferred(model)
+		_apply.call_deferred(model, target_material)
 	else:
-		model.ready.connect(func() -> void: _apply.call_deferred(model), CONNECT_ONE_SHOT)
+		model.ready.connect(func() -> void: _apply.call_deferred(model, target_material), CONNECT_ONE_SHOT)
 
 
-static func _apply(model: Node3D) -> void:
+static func _apply(model: Node3D, shadow_material: ShaderMaterial) -> void:
 	if not is_instance_valid(model):
 		return
 	var stack: Array[Node] = [model]
@@ -86,19 +87,20 @@ static func _apply(model: Node3D) -> void:
 		if not mesh_instance.mesh is ArrayMesh:
 			continue
 		if mesh_instance.material_override != null:
-			mesh_instance.material_override = chained(mesh_instance.material_override)
+			mesh_instance.material_override = chained(mesh_instance.material_override, shadow_material)
 			continue
 		for surface in mesh_instance.mesh.get_surface_count():
 			var material := mesh_instance.get_active_material(surface)
 			if material != null:
-				mesh_instance.set_surface_override_material(surface, chained(material))
+				mesh_instance.set_surface_override_material(surface, chained(material, shadow_material))
 
 
 ## 返回「原材质 + 投影影子」的副本；传入已经是副本时原样返回。
-static func chained(material: Material) -> Material:
+static func chained(material: Material, shadow_material: ShaderMaterial = null) -> Material:
 	if _copies.has(material.get_instance_id()):
 		return material
-	var key := material.get_instance_id()
+	var target_material := shadow_material if shadow_material != null else shared_material()
+	var key := "%s:%s" % [material.get_instance_id(), target_material.get_instance_id()]
 	if _chained.has(key):
 		return _chained[key]
 	var copy := material.duplicate() as Material
@@ -106,7 +108,7 @@ static func chained(material: Material) -> Material:
 	while tail.next_pass != null:
 		tail.next_pass = tail.next_pass.duplicate()
 		tail = tail.next_pass
-	tail.next_pass = shared_material()
+	tail.next_pass = target_material
 	_chained[key] = copy
 	_copies[copy.get_instance_id()] = true
 	return copy

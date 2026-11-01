@@ -23,6 +23,9 @@ const TutorialModeScript := preload("res://scripts/tutorial/TutorialMode.gd")
 const CarrotCampPanelScript := preload("res://scenes/prep/CarrotCampPanelV3.gd")
 # 10.11 第 8 条：营地入口按钮在有升级石时散发柔和星爆（纯 _draw()，不进 procedural_ui_ratchet）。
 const CampEntryGlowScript := preload("res://ui/components/CampEntryGlow.gd")
+const ReadyOrbitGlowScript := preload("res://scenes/prep/effects/ReadyOrbitGlow.gd")
+const READY_RUBY_TEXTURE := preload("res://assets/ui/buttons/ready_ruby_lowpoly.png")
+var _ready_orbit_glow: ReadyOrbitGlowScript
 # 入口角标那枚石头图标（通用款，不分天 / 地 / 人 —— 角标说的是「队伍有石头」）。
 const CARROT_ENTRY_STONE_ICON_PATH := "res://assets/props/carrot_system/stones/stone_unknown.png"
 const UNIT_TEAM_RING_SHADER := preload("res://shaders/unit_team_ring.gdshader")
@@ -662,16 +665,25 @@ func reapply_prep_skin() -> void:
 		_sky_background.texture = PrepWidgets.cached_texture(PrepSkin.path("board"))
 	_swap_prep_skin_plane("PrepBaseLayer", "board")
 	_swap_prep_skin_plane("PrepRiverBottomLayer", "river")
+	# 河面画得比默认高的皮肤要整体往下游挪（PrepSkin.river_drop）。只换图不挪位置的话，
+	# 晚到的皮肤水面会漫过待命区台子。底图和波光两层用同一个偏移，不然会错开。
+	_move_river_layer("PrepRiverBottomLayer")
+	_move_river_layer("PrepRiverFlowBottom")
 	_swap_prep_skin_plane("PrepStandbyBgLayer", "bench")
 	var carrot := find_child("CarrotGeneratedSprite", true, false)
 	if carrot is Sprite3D:
 		var carrot_tex := ResourceLoader.load(PrepSkin.path("carrot")) as Texture2D
 		if carrot_tex != null:
 			(carrot as Sprite3D).texture = carrot_tex
-	# 河面流动波光是照草地河道画的：皮肤可以关掉它（冰雪就关）。
+	# 河面流动波光：皮肤可以整个关掉它（冰雪就关）。没关的，波光图也要跟着换 ——
+	# 自带河面图的皮肤用它自己那张当波光源（见 _apply_river_glow_material），
+	# 只换显隐不换图的话，晚到的皮肤会顶着默认草地那条青蓝流光。
 	var flow := find_child("PrepRiverFlowBottom", true, false)
 	if is_instance_valid(flow):
 		flow.visible = PrepSkin.river_glow()
+		var flow_mat := (flow as MeshInstance3D).material_override
+		if flow_mat is ShaderMaterial:
+			_apply_river_glow_material(flow_mat as ShaderMaterial)
 	# 萤火虫是 CPUParticles3D，颜色走 color_ramp（三档：淡入/亮/淡出）。
 	var fireflies := find_child("PrepFireflies", true, false)
 	if fireflies is CPUParticles3D:
@@ -685,6 +697,13 @@ func reapply_prep_skin() -> void:
 			(fireflies as CPUParticles3D).color_ramp = ramp
 	# 萤火虫还是樱花瓣（PrepSkin.ambient）。刷新特效不用这里管：每次点刷新时现问皮肤。
 	_apply_prep_ambient_kind(fireflies, find_child("PrepPetalFall", true, false))
+
+func _move_river_layer(node_name: String) -> void:
+	var node := find_child(node_name, true, false)
+	if node is Node3D:
+		var at := (node as Node3D).position
+		(node as Node3D).position = Vector3(at.x, at.y, PREP_BOARD_GROUND_CENTER.z + river_z_offset())
+
 
 func _swap_prep_skin_plane(node_name: String, slot: String) -> void:
 	var node := find_child(node_name, true, false)
@@ -862,20 +881,32 @@ func _build_top_bar(root: VBoxContainer) -> void:
 	battle.custom_minimum_size = START_BTN_SIZE
 	battle.focus_mode = Control.FOCUS_NONE
 	battle.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	var battle_style := PrepWidgets.menu_button_style()          # 统一「离线自测」样式
-	battle.add_theme_stylebox_override("normal", battle_style)
-	battle.add_theme_stylebox_override("hover", battle_style)
-	battle.add_theme_stylebox_override("pressed", battle_style)
+	# The original Button retains all input and async behavior; the sprite is visual only.
+	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
+		battle.add_theme_stylebox_override(state, StyleBoxEmpty.new())
 	battle.button_down.connect(_on_start_battle_input_down)
 	battle.pressed.connect(_on_start_battle)
+	_ready_orbit_glow = ReadyOrbitGlowScript.new()
+	battle.add_child(_ready_orbit_glow)
+	_ready_orbit_glow.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var ready_art := TextureRect.new()
+	ready_art.texture = READY_RUBY_TEXTURE
+	ready_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	ready_art.stretch_mode = TextureRect.STRETCH_SCALE
+	ready_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	battle.add_child(ready_art)
+	ready_art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var battle_label := Label.new()          # 单独 Label：_refresh_start_button_label 会改它的文字
 	battle_label.text = tr("ui_start_battle_btn")
 	battle_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	battle_label.z_index = 2
 	battle_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	battle_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	battle_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	battle_label.add_theme_font_size_override("font_size", 20)
 	battle_label.add_theme_color_override("font_color", READY_BTN_TEXT_DEFAULT)
+	battle_label.add_theme_color_override("font_outline_color", Color(0.18, 0.04, 0.02, 1.0))
+	battle_label.add_theme_constant_override("outline_size", 3)
 	battle.add_child(battle_label)
 	battle.bind_content_label(battle_label)
 	battle.set_idle_text(tr("ui_start_battle_btn"))
@@ -889,17 +920,20 @@ func _build_top_bar(root: VBoxContainer) -> void:
 	round_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	round_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	round_lbl.add_theme_font_size_override("font_size", 22)
-	round_lbl.add_theme_color_override("font_color", Color(0.98, 0.92, 0.74))
-	round_lbl.add_theme_color_override("font_outline_color", Color(0.10, 0.05, 0.0, 0.95))
-	round_lbl.add_theme_constant_override("outline_size", 5)
+	round_lbl.add_theme_color_override("font_color", Color(0.16, 0.30, 0.23))
+	round_lbl.add_theme_color_override("font_outline_color", Color(1.0, 0.97, 0.84, 0.45))
+	round_lbl.add_theme_constant_override("outline_size", 1)
 	_round_info_label = round_lbl
 	var round_panel := PanelContainer.new()
 	round_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var round_style := StyleBoxFlat.new()
-	round_style.bg_color = Color(0.035, 0.027, 0.020, 0.82)
-	round_style.border_color = Color(0.77, 0.57, 0.28, 0.70)
-	round_style.set_border_width_all(1)
-	round_style.set_corner_radius_all(7)
+	# Crop only the transparent top/bottom padding in the generated plate.
+	# The original PNG remains intact and text stays independently localized.
+	var round_plate := AtlasTexture.new()
+	round_plate.atlas = load("res://assets/ui/prep/round_plate_lowpoly.png") as Texture2D
+	round_plate.region = Rect2(0, 208, 2172, 308)
+	round_plate.filter_clip = true
+	var round_style := StyleBoxTexture.new()
+	round_style.texture = round_plate
 	round_style.content_margin_left = 12.0
 	round_style.content_margin_right = 12.0
 	round_style.content_margin_top = 3.0
@@ -2394,11 +2428,11 @@ func _refresh_round_info_label() -> void:
 		_round_info_label.text = "Round %d · %s" % [GameState.round_index, type_txt]
 	else:
 		_round_info_label.text = "第 %d 回合 · %s" % [GameState.round_index, type_txt]
-	var kind_color := Color(0.54, 0.96, 0.82)
+	var kind_color := Color(0.13, 0.34, 0.27)
 	match kind:
-		"pvp": kind_color = Color(1.0, 0.48, 0.40)
-		"boss": kind_color = Color(1.0, 0.78, 0.28)
-		"final": kind_color = Color(1.0, 0.60, 0.22)
+		"pvp": kind_color = Color(0.56, 0.15, 0.12)
+		"boss": kind_color = Color(0.43, 0.26, 0.05)
+		"final": kind_color = Color(0.52, 0.22, 0.06)
 	_round_info_label.add_theme_color_override("font_color", kind_color)
 
 func _refresh_start_button_label() -> void:
@@ -2409,37 +2443,30 @@ func _refresh_start_button_label() -> void:
 		var ready := my >= 0 and my < NetworkService.team_ready.size() and bool(NetworkService.team_ready[my])
 		var seconds := int(get_meta("prep_countdown_seconds", -1))
 		var suffix := " (%d s)" % seconds if seconds >= 0 else ""
-		_start_battle_button.set_idle_text((tr("lobby_ready_done") if ready else tr("lobby_ready")) + suffix)
+		var ready_text := ("Ready ✓" if LocaleManager.get_locale().begins_with("en") else "已准备") if ready else tr("lobby_ready")
+		_start_battle_button.set_idle_text(ready_text + suffix)
 		_apply_ready_button_tone(ready)
+		_set_ready_orbit(2 if _ready_button_is_busy() else (1 if ready else 0))
 	else:
 		var seconds := int(get_meta("prep_countdown_seconds", -1))
 		_start_battle_button.set_idle_text(tr("ui_start_battle_btn") + (" (%d s)" % seconds if seconds >= 0 else ""))
 		_clear_ready_button_tone()
+		_set_ready_orbit(2 if _ready_button_is_busy() else 0)
+
+
+func _set_ready_orbit(mode: int) -> void:
+	if is_instance_valid(_ready_orbit_glow):
+		_ready_orbit_glow.set_mode(mode)
 
 
 # 「方案 B · 宝石红 / 青」。见文件上方 READY_TONE_* 常量的注释。
-func _apply_ready_button_tone(ready: bool) -> void:
-	if _start_battle_button == null:
-		return
-	# 忙碌态（战斗加载中）有它自己的皮肤（GloryBusy 主题变体）。实例级 stylebox
-	# 覆盖会把它整块盖掉 ⇒ 忙的时候索性让开，等它回到非 pending 再上色。
-	if _ready_button_is_busy():
-		_clear_ready_button_tone()
-		return
-	var edge := READY_TONE_DONE_EDGE if ready else READY_TONE_PENDING_EDGE
-	var fill := READY_TONE_DONE_FILL if ready else READY_TONE_PENDING_FILL
-	var ink := READY_TONE_DONE_TEXT if ready else READY_TONE_PENDING_TEXT
-	_set_ready_button_style(edge, fill)
+func _apply_ready_button_tone(_ready: bool) -> void:
+	# Keep the artwork consistent across states; the moving orbit indicates ready.
 	if _start_battle_label != null:
-		_start_battle_label.add_theme_color_override("font_color", ink)
+		_start_battle_label.add_theme_color_override("font_color", READY_BTN_TEXT_DEFAULT)
 
 
-# 交还给主题画（含 GloryBusy 变体），文字回到木牌金。
 func _clear_ready_button_tone() -> void:
-	if _start_battle_button == null:
-		return
-	for state in ["normal", "hover", "pressed"]:
-		_start_battle_button.remove_theme_stylebox_override(state)
 	if _start_battle_label != null:
 		_start_battle_label.add_theme_color_override("font_color", READY_BTN_TEXT_DEFAULT)
 

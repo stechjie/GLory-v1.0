@@ -5360,7 +5360,7 @@ func _server_gold_breakdown(gold_before: int, result: Dictionary, slot: int, sna
 	return EconomyService.settle_post_battle_breakdown({
 		"gold_before": gold_before,
 		"kill_gold": EconomyService.kill_gold_for_slot(result, slot),
-		"bonus_gold": int(result.get("bonus_gold", 0)),
+		"bonus_gold": int(result.get("bonus_gold", 0)) + EconomyService.merchant_attack_gold_for_slot(result, slot),
 		"kind": str(round_ctx.get("kind", "pve")),
 		"player_wins": bool(round_ctx.get("player_wins", false)),
 		"round_index": int(round_ctx.get("round_index", 0)),
