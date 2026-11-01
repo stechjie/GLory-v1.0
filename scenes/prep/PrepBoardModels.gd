@@ -15,6 +15,7 @@ const UnitActor3DScript := preload("res://effects/runtime/presentation/UnitActor
 const PetPreview := preload("res://scripts/pets/PetPreview.gd")
 const UnitVisualResolverScript := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
 const UnitContactShadowScript := preload("res://effects/runtime/presentation/UnitContactShadow.gd")
+const UnitPlanarShadowScript := preload("res://effects/runtime/presentation/UnitPlanarShadow.gd")
 const FOUR_STAR_READY_AURA := preload("res://effects/vfx3d/modules/FourStarAura3D.gd")
 const STAR_UPGRADE_BURST := preload("res://scenes/prep/effects/PrepStarUpgradeBurst.gd")
 const FOUR_STAR_READY_GLOW := preload("res://scenes/prep/effects/PrepFourStarReadyGlow.gd")
@@ -33,6 +34,7 @@ const CARROT_CURRENCY_ICON := preload("res://assets/props/carrot_system/ui/icon_
 # 而面片是在 PrepBoardModels 里建的。
 const PrepDeployCounterScript := preload("res://scenes/prep/panels/PrepDeployCounter.gd")
 var _four_star_visual_poll := 0.0
+var _prep_planar_shadow_materials: Dictionary = {}
 
 func refresh_four_star_visuals(delta: float) -> void:
 	_four_star_visual_poll += delta
@@ -1134,7 +1136,7 @@ func _add_prep_art_layers(world: Node3D) -> void:
 	# v4 横向竞技场，一层一层贴在平躺 3D 平面上（保留 2.5D 倾斜）
 	_add_prep_texture_plane(world, "PrepBaseLayer", PrepSkin.path("board"), 0.000, 0)
 	# 下河流：黑底贴图，flow shader 键透明 + 横向滚动流动
-	_add_prep_texture_plane(world, "PrepRiverBottomLayer", PrepSkin.path("river"), 0.002, 2)
+	_add_prep_texture_plane(world, "PrepRiverBottomLayer", PrepSkin.path("river"), 0.002, 2, river_z_offset())
 	# 流动波光是照草地河道画的，皮肤可以关掉它（data/prep_skins.json 的 river_glow）。
 	if PrepSkin.river_glow():
 		_add_prep_river_flow(world)
@@ -1346,7 +1348,7 @@ func _add_prep_standby_bg_plane(world: Node3D) -> void:
 	layer.position = center
 	world.add_child(layer)
 
-func _add_prep_texture_plane(world: Node3D, node_name: String, texture_path: String, y_lift: float, render_priority: int) -> void:
+func _add_prep_texture_plane(world: Node3D, node_name: String, texture_path: String, y_lift: float, render_priority: int, z_offset := 0.0) -> void:
 	var tex := ResourceLoader.load(texture_path) as Texture2D
 	if tex == null:
 		push_warning("Prep art layer failed to load: %s" % texture_path)
@@ -1366,22 +1368,57 @@ func _add_prep_texture_plane(world: Node3D, node_name: String, texture_path: Str
 	if PREP_BOARD_GROUND_FLIP_V:
 		mat.uv1_scale = Vector3(1.0, -1.0, 1.0)
 	layer.material_override = mat
-	layer.position = PREP_BOARD_GROUND_CENTER + Vector3(0.0, y_lift, 0.0)
+	layer.position = PREP_BOARD_GROUND_CENTER + Vector3(0.0, y_lift, z_offset)
 	world.add_child(layer)
 
+# 河面（底图 + 波光两层一起）要往下游挪多少世界单位。见 PrepSkin.river_drop 的注释。
+# 两层必须用同一个值，不然波光会和水面错开。
+static func river_z_offset() -> float:
+	return PrepSkin.river_drop() * PREP_BOARD_GROUND_SIZE.y
+
+
 func _add_prep_river_flow(world: Node3D) -> void:
-	# 在棋盘上方叠两块流动波光 quad（上/下河流），横向滚动 + 呼吸发光
+	# 在棋盘上方叠一块流动波光 quad，横向滚动 + 呼吸发光
 	var shader := ResourceLoader.load(PREP_RIVER_FLOW_SHADER) as Shader
 	if shader == null:
 		push_warning("河流流动 shader 加载失败：%s" % PREP_RIVER_FLOW_SHADER)
 		return
-	_add_one_river_flow_quad(world, "PrepRiverFlowBottom", PREP_RIVER_BOTTOM_EF_PATH, shader, 0.004, 4)
+	_add_one_river_flow_quad(world, "PrepRiverFlowBottom", shader, 0.004, 4)
 
-func _add_one_river_flow_quad(world: Node3D, node_name: String, ef_path: String, shader: Shader, y_lift: float, render_priority: int) -> void:
-	var tex := ResourceLoader.load(ef_path) as Texture2D
+# 波光图是跟着皮肤走的还是用默认那张？
+#
+# 默认草地用的 prep20_river_bottom_ef.png 是**照草地河道画的**：黑底、只有 84%～98% 那一条
+# 有高光，颜色还在代码里写死成青蓝。皮肤换了河面图，这张就对不上了 ——
+# 樱花的河面从 71% 就开始，青蓝流光只盖住下半截，中间还露一条边（10.31 实测）。
+# 所以自带河面图的皮肤改用**它自己那张**当波光源：河道形状、水色自动就对，不用另出美术图。
+func _river_glow_uses_skin_art() -> bool:
+	return PrepSkin.path("river") != str(PrepSkin.SLOTS["river"])
+
+# 皮肤自带河面图时，只有亮度超过这个值的像素才会发光（整条河都很亮，不切就是整条在滚）。
+# 0.965 实测在樱花与夜荧光上都约等于「最亮的 10%」—— 两张图的高光都顶到 1.0，所以共用一个值。
+const RIVER_SELF_GLOW_CUT := 0.965
+
+# 配好波光材质（建板和中途换皮肤共用，免得两处参数走偏）。
+func _apply_river_glow_material(mat: ShaderMaterial) -> void:
+	var self_art := _river_glow_uses_skin_art()
+	var path := PrepSkin.path("river") if self_art else PREP_RIVER_BOTTOM_EF_PATH
+	var tex := ResourceLoader.load(path) as Texture2D
 	if tex == null:
-		push_warning("河流高光图加载失败：%s" % ef_path)
+		push_warning("河流高光图加载失败：%s" % path)
 		return
+	mat.set_shader_parameter("river_tex", tex)
+	mat.set_shader_parameter("highlight_cut", RIVER_SELF_GLOW_CUT if self_art else 0.0)
+	# 皮肤自己那张：保留它本来的水色（tint 不染色），第二层**不缩放** ——
+	# 缩放会把河带整体挪上去，变成河岸上方也有一条流光。
+	mat.set_shader_parameter("tint", Vector3(1.0, 1.0, 1.0) if self_art else Vector3(0.80, 1.05, 1.22))
+	mat.set_shader_parameter("layer2_scale", 1.0 if self_art else 1.06)
+	mat.set_shader_parameter("flow_speed", 0.022 if self_art else 0.028)
+	mat.set_shader_parameter("layer2_speed", 0.55 if self_art else 0.45)
+	mat.set_shader_parameter("warp_amp", 0.006 if self_art else 0.005)
+	mat.set_shader_parameter("bright", 1.0 if self_art else 0.92)
+	mat.set_shader_parameter("alpha_gain", 1.0)
+
+func _add_one_river_flow_quad(world: Node3D, node_name: String, shader: Shader, y_lift: float, render_priority: int) -> void:
 	var quad := MeshInstance3D.new()
 	quad.name = node_name
 	var plane := PlaneMesh.new()
@@ -1389,20 +1426,11 @@ func _add_one_river_flow_quad(world: Node3D, node_name: String, ef_path: String,
 	quad.mesh = plane
 	var mat := ShaderMaterial.new()
 	mat.shader = shader
-	mat.set_shader_parameter("river_tex", tex)
-	var is_top := node_name == "PrepRiverFlowTop"
-	# 流速提到肉眼明显（约为原来的 4 倍），波光更亮、水色偏青蓝
-	mat.set_shader_parameter("flow_speed", 0.036 if is_top else 0.028)
-	mat.set_shader_parameter("layer2_scale", 1.06)
-	mat.set_shader_parameter("layer2_speed", 0.55 if is_top else 0.45)
-	mat.set_shader_parameter("warp_amp", 0.006 if is_top else 0.005)
-	mat.set_shader_parameter("bright", 1.12 if is_top else 0.92)
-	mat.set_shader_parameter("alpha_gain", 1.30 if is_top else 1.00)
-	mat.set_shader_parameter("tint", Vector3(0.80, 1.05, 1.22))
+	_apply_river_glow_material(mat)
 	mat.render_priority = render_priority
 	quad.material_override = mat
 	# 和棋盘同位置、略抬高避免 z-fighting（depth_draw_never 已基本免疫）
-	quad.position = PREP_BOARD_GROUND_CENTER + Vector3(0.0, y_lift, 0.0)
+	quad.position = PREP_BOARD_GROUND_CENTER + Vector3(0.0, y_lift, river_z_offset())
 	world.add_child(quad)
 
 func _add_prep_ambient_particles(world: Node3D) -> void:
@@ -1755,6 +1783,21 @@ func _update_prep_model_anchors(model_node: Node3D, attempt: int) -> void:
 			model_node.set_meta("prep_anchor_update_pending", false)
 		return
 	_configure_prep_contact_shadow(model_node)
+	if not bool(model_node.get_meta("prep_planar_shadow_attached", false)) and UnitPlanarShadowScript.enabled_for_tier(VFXManager.get_quality_tier()):
+		var ground_y := model_node.global_position.y
+		var ground_key := snappedf(ground_y, 0.0001)
+		if not _prep_planar_shadow_materials.has(ground_key):
+			var material := ShaderMaterial.new()
+			material.shader = UnitPlanarShadowScript.SHADER
+			material.render_priority = 8
+			material.set_shader_parameter("shadow_direction", UnitPlanarShadowScript.SHADOW_DIRECTION)
+			_prep_planar_shadow_materials[ground_key] = material
+		UnitPlanarShadowScript.attach(visual_root, ground_key, _prep_planar_shadow_materials[ground_key])
+		model_node.set_meta("prep_planar_shadow_attached", true)
+		var shadow := model_node.get_node_or_null("ContactShadow3D") as MeshInstance3D
+		if shadow != null:
+			(shadow.mesh as PlaneMesh).size *= UnitPlanarShadowScript.CORE_SCALE
+			shadow.get_active_material(0).render_priority = 9
 	model_node.set_meta("relation_waist_height", bounds.size.y * 0.52)
 	model_node.set_meta("four_star_height", bounds.size.y)
 	model_node.set_meta("prep_anchor_update_pending", false)
@@ -1814,7 +1857,7 @@ func _configure_prep_contact_shadow(model_node: Node3D) -> void:
 	var shadow_mesh := shadow.mesh as PlaneMesh
 	if shadow_mesh == null:
 		return
-	shadow_mesh.size = Vector2(1.2, 0.9)
+	shadow_mesh.size = Vector2(1.2, 0.9) * (UnitPlanarShadowScript.CORE_SCALE if bool(model_node.get_meta("prep_planar_shadow_attached", false)) else 1.0)
 	shadow.position = Vector3(0.0, 0.012, 0.0)
 
 # 3D 世界点 → 主屏幕像素坐标（穿过 river 相机投影，再映射到全屏）

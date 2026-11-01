@@ -5,6 +5,18 @@ const DEBUFF_POOL := ["slow", "attack_down", "silence", "stun", "poison", "inter
 const POISON_TICK_SEC := 1.0
 const BLEED_TICK_SEC := 1.0
 
+# 11.01 叠加规则统一（参考 Dota 2：同类相加、不同类相乘）。
+# 带数值的同名状态不再「后来的覆盖前面的」：每次施加记成一个实例，生效值取各字段最强的
+# 那个，时长各算各的。于是 25% 的光环顶不掉 60% 的雷霆，诅咒的「只减攻速」也抹不掉
+# 冰冻的移速减速（两者同在 slow 里，按字段分别取最大）。
+const MERGE_KINDS := ["slow", "attack_down", "damage_down", "defense_down", "defense_flat_down", "defense_flat_up", "heal_reduction", "ice_vulnerable", "speed_bonus", "attack_set_speed_bonus", "damage_reduction", "dodge_bonus", "control_time_reduction", "crimson_attack", "crimson_speed"]
+const MAX_STATUS_INSTANCES := 4
+# 攻速百分比总和的上下限（所有加速、减速、永久攻速加成相加后再夹）。
+const ASPD_PCT_MIN := -0.60
+const ASPD_PCT_MAX := 1.50
+# 攻击百分比总和的下限：最多降到 10%。
+const ATK_PCT_MIN := -0.90
+
 static func ensure_status(fighter: Dictionary) -> void:
 	if not fighter.has("statuses") or typeof(fighter.statuses) != TYPE_DICTIONARY:
 		fighter.statuses = {}
@@ -74,6 +86,15 @@ static func add_status(fighter: Dictionary, kind: String, duration: float, param
 		DamageService.record_status_applied(kind, added_stack_duration, true)
 		_note_crimson_self_status(source, fighter, kind)
 		return
+	if kind in MERGE_KINDS:
+		next["remaining"] = adjusted_duration
+		var instances := _push_status_instance(_status_instances(existing), next)
+		var merged := _merge_status_instances(instances)
+		fighter.statuses[kind] = merged
+		var merged_added := maxf(0.0, float(merged.remaining) - maxf(0.0, float(existing.get("remaining", 0.0))))
+		DamageService.record_status_applied(kind, merged_added, _is_negative_status(kind))
+		_note_crimson_self_status(source, fighter, kind)
+		return
 	next["remaining"] = maxf(float(existing.get("remaining", 0.0)), adjusted_duration)
 	if kind == "silence":
 		# Keep Lantern's attack-speed penalty on its own timer if another
@@ -101,6 +122,68 @@ static func _note_crimson_self_status(source: Dictionary, fighter: Dictionary, k
 	if float(fighter.get("statuses", {}).get(kind, {}).get("remaining", 0.0)) <= 0.0:
 		return
 	CrimsonRuneService.note_self_effect(source, DamageService._stat_state)
+
+# 同名状态的实例表。只有一个实例时状态字典就是它本身（不带 instances 键），
+# 与改版前的结构一致，读 statuses.<kind>.pct 的老代码不用改。
+static func _status_instances(existing: Dictionary) -> Array:
+	var out: Array = []
+	if existing.has("instances"):
+		for raw in existing.get("instances", []):
+			if typeof(raw) == TYPE_DICTIONARY and float(raw.get("remaining", 0.0)) > 0.0:
+				out.append((raw as Dictionary).duplicate())
+	elif float(existing.get("remaining", 0.0)) > 0.0:
+		out.append(existing.duplicate())
+	return out
+
+
+static func _same_instance_values(a: Dictionary, b: Dictionary) -> bool:
+	for key in a.keys():
+		if str(key) == "remaining":
+			continue
+		if not b.has(key) or b[key] != a[key]:
+			return false
+	for key in b.keys():
+		if str(key) != "remaining" and not a.has(key):
+			return false
+	return true
+
+
+# 数值完全相同的再次施加只刷新时长（Dota 的「同来源只刷新」）；实例数封顶，
+# 超出时丢掉剩余时间最短的那个，顺序确定、不消耗随机数。
+static func _push_status_instance(instances: Array, next: Dictionary) -> Array:
+	for inst in instances:
+		if _same_instance_values(inst, next):
+			inst["remaining"] = maxf(float(inst.get("remaining", 0.0)), float(next.get("remaining", 0.0)))
+			return instances
+	instances.append(next)
+	while instances.size() > MAX_STATUS_INSTANCES:
+		var drop := 0
+		for i in instances.size():
+			if float(instances[i].get("remaining", 0.0)) < float(instances[drop].get("remaining", 0.0)):
+				drop = i
+		instances.remove_at(drop)
+	return instances
+
+
+# 生效值：每个数值字段取所有实例里的最大值，remaining 取最长；非数值字段取第一个实例的。
+static func _merge_status_instances(instances: Array) -> Dictionary:
+	if instances.size() == 1:
+		return (instances[0] as Dictionary).duplicate()
+	var merged := {}
+	for raw in instances:
+		var inst: Dictionary = raw
+		for key in inst.keys():
+			var v = inst[key]
+			if (typeof(v) == TYPE_INT or typeof(v) == TYPE_FLOAT) and merged.has(key):
+				merged[key] = maxf(float(merged[key]), float(v))
+			elif not merged.has(key):
+				merged[key] = v
+	var copies: Array = []
+	for raw in instances:
+		copies.append((raw as Dictionary).duplicate())
+	merged["instances"] = copies
+	return merged
+
 
 # Keep top-level poison fields for healing, VFX and replay readers.
 # Each nested stack retains its own duration, tick timer, strength and caster.
@@ -244,6 +327,18 @@ static func tick(fighter: Dictionary, delta: float) -> Array[int]:
 			else:
 				fighter.statuses[key] = _poison_status_from_stacks(active_stacks)
 			continue
+		if s.has("instances"):
+			var alive_instances: Array = []
+			for raw_inst in s.get("instances", []):
+				var inst: Dictionary = raw_inst
+				inst.remaining = float(inst.get("remaining", 0.0)) - delta
+				if float(inst.remaining) > 0.0:
+					alive_instances.append(inst)
+			if alive_instances.is_empty():
+				remove_keys.append(str(key))
+			else:
+				fighter.statuses[key] = _merge_status_instances(alive_instances)
+			continue
 		s.remaining = float(s.get("remaining", 0.0)) - delta
 		if key == "silence" and s.has("lantern_slow_remaining"):
 			s.lantern_slow_remaining = maxf(0.0, float(s.lantern_slow_remaining) - delta)
@@ -294,42 +389,49 @@ static func defense_multiplier(fighter: Dictionary) -> float:
 		mul *= maxf(0.1, 1.0 - float(fighter.statuses.defense_down.get("pct", 0.0)))
 	return mul
 
+# 11.01：战斗中的攻击百分比全部相加后再乘一次（不再互相复利），最低 10%。
 static func attack_multiplier(fighter: Dictionary) -> float:
 	ensure_status(fighter)
-	var mul := 1.0
+	var pct := 0.0
 	if fighter.statuses.has("attack_down"):
-		mul *= maxf(0.1, 1.0 - float(fighter.statuses.attack_down.get("pct", 0.0)))
+		pct -= float(fighter.statuses.attack_down.get("pct", 0.0))
 	if fighter.statuses.has("crimson_attack"):
-		mul *= 1.0 + float(fighter.statuses.crimson_attack.get("pct", 0.0))
-	mul *= 1.0 + 0.10 * float(fighter.get("crimson_pulse_stacks", 0))
-	var drum_atk_pct := 0.0
+		pct += float(fighter.statuses.crimson_attack.get("pct", 0.0))
+	pct += 0.10 * float(fighter.get("crimson_pulse_stacks", 0))
 	for layer in fighter.get("crimson_drum_atk", []):
-		drum_atk_pct += float((layer as Dictionary).get("pct", 0.0))
-	mul *= 1.0 + drum_atk_pct
-	mul *= 1.0 + 0.05 * float(fighter.get("crimson_resonance_stacks", 0))
-	return mul
+		pct += float((layer as Dictionary).get("pct", 0.0))
+	pct += 0.05 * float(fighter.get("crimson_resonance_stacks", 0))
+	return 1.0 + maxf(ATK_PCT_MIN, pct)
 
-static func attack_speed_multiplier(fighter: Dictionary) -> float:
+# 11.01：攻速改成 Dota 式——所有加速、减速和永久攻速加成（aspd_bonus_pct）按百分比相加，
+# 夹在 [-60%, +150%] 后乘一次面板攻速。extra_pct 留给按血量变化的血怒这类动态加成。
+static func attack_speed_multiplier(fighter: Dictionary, extra_pct: float = 0.0) -> float:
 	ensure_status(fighter)
-	var mul := pow(1.15, clampi(int(fighter.get("frenzy_stacks", 0)), 0, 64))
+	var pct := extra_pct + float(fighter.get("aspd_bonus_pct", 0.0))
+	pct += 0.15 * float(clampi(int(fighter.get("frenzy_stacks", 0)), 0, 64))
 	if fighter.statuses.has("slow"):
-		mul *= maxf(0.1, 1.0 - float(fighter.statuses.slow.get("attack_speed_pct", 0.0)))
+		pct -= float(fighter.statuses.slow.get("attack_speed_pct", 0.0))
 	if fighter.statuses.has("silence") and float(fighter.statuses.silence.get("lantern_slow_remaining", 0.0)) > 0.0:
-		mul *= maxf(0.1, 1.0 - float(fighter.statuses.silence.get("lantern_slow_pct", 0.0)))
+		pct -= float(fighter.statuses.silence.get("lantern_slow_pct", 0.0))
 	if fighter.statuses.has("speed_bonus"):
-		mul *= 1.0 + float(fighter.statuses.speed_bonus.get("pct", fighter.statuses.speed_bonus.get("attack_speed_pct", 0.0)))
+		pct += float(fighter.statuses.speed_bonus.get("pct", fighter.statuses.speed_bonus.get("attack_speed_pct", 0.0)))
 	if fighter.statuses.has("attack_set_speed_bonus"):
-		mul *= 1.0 + float(fighter.statuses.attack_set_speed_bonus.get("pct", 0.0))
+		pct += float(fighter.statuses.attack_set_speed_bonus.get("pct", 0.0))
 	if fighter.statuses.has("crimson_speed"):
-		mul *= 1.0 + float(fighter.statuses.crimson_speed.get("pct", 0.0))
-	mul *= 1.0 + 0.10 * float(fighter.get("crimson_pulse_stacks", 0))
-	var drum_speed_pct := 0.0
+		pct += float(fighter.statuses.crimson_speed.get("pct", 0.0))
+	pct += 0.10 * float(fighter.get("crimson_pulse_stacks", 0))
 	for layer in fighter.get("crimson_drum_speed", []):
-		drum_speed_pct += float((layer as Dictionary).get("pct", 0.0))
-	mul *= 1.0 + drum_speed_pct
-	mul *= 1.0 + 0.05 * float(fighter.get("crimson_resonance_stacks", 0))
-	mul *= CrimsonRuneService.attack_speed_multiplier(fighter)
-	return mul
+		pct += float((layer as Dictionary).get("pct", 0.0))
+	pct += 0.05 * float(fighter.get("crimson_resonance_stacks", 0))
+	pct += CrimsonRuneService.attack_speed_multiplier(fighter) - 1.0
+	return 1.0 + clampf(pct, ASPD_PCT_MIN, ASPD_PCT_MAX)
+
+# 王者光环的暴击跟着它的加速状态走，光环断了暴击也没了（以前写在 crit_bonus 上，永久保留）。
+static func status_crit_bonus(fighter: Dictionary) -> float:
+	ensure_status(fighter)
+	if not fighter.statuses.has("speed_bonus"):
+		return 0.0
+	return float(fighter.statuses.speed_bonus.get("crit_pct", 0.0))
 
 static func move_speed_multiplier(fighter: Dictionary) -> float:
 	ensure_status(fighter)
@@ -353,7 +455,10 @@ static func _duration_after_control_reduction(fighter: Dictionary, kind: String,
 	ensure_status(fighter)
 	if not fighter.statuses.has("control_time_reduction"):
 		return duration
-	if kind in ["slow", "attack_down", "damage_down", "silence", "stun", "fear", "interrupt", "defense_down", "defense_flat_down", "heal_reduction", "ice_vulnerable", "ice_affected", "dodge_bonus", "speed_bonus", "attack_set_speed_bonus", "damage_reduction", "defense_flat_up", "invulnerable", "control_time_reduction"]:
+	# 11.01：只缩短负面效果。以前列表里混着加速、减伤、无敌、闪避这些正面状态，
+	# 钢铁号令的「控制减免 30%」会把神 7 的无敌、天使庇护也一起砍短 30%。
+	# 中毒、流血、灼烧这类持续伤害本来就不在列表里，保持不变。
+	if kind in ["slow", "attack_down", "damage_down", "silence", "stun", "fear", "interrupt", "defense_down", "defense_flat_down", "heal_reduction", "ice_vulnerable", "ice_affected"]:
 		return duration * maxf(0.0, 1.0 - float(fighter.statuses.control_time_reduction.get("pct", 0.0)))
 	return duration
 

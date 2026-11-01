@@ -9,7 +9,7 @@
 | 棋子 | `01_棋子基础` G/K/O：1★ HP/攻击/防御 | `data/units/race_units.json` 的 `hp/atk/def` |
 | 黑龙黑洞 | `02_棋子技能` O11/P11：1–3★/4★伤害百分比，填 `160` 表示 160% | `data/units/race_units.json` 的 `dark_dragon.damage_atk_pct` / `star4.damage_atk_pct` |
 | 牧师战歌 | `02_棋子技能` O23/P23：1–3★/4★治疗百分比，填 `10` 表示 10% | `human_cleric.heal_pct` / `star4.heal_pct` |
-| 自爆灵死亡毒爆 | `02_棋子技能` O30/P30：1–3★/4★攻击伤害百分比，填 `100` 表示 100% | `undead_bomb.damage_atk_pct` / `star4.damage_atk_pct` |
+| 自爆灵死亡毒爆 | `02_棋子技能` O30/P30：1–3★伤害 / 4★对未中毒目标伤害，填 `200` 表示 200%；4★对已中毒目标为 350%，另由 JSON 维护 | `undead_bomb.damage_atk_pct` / `star4.damage_atk_pct` / `star4.poisoned_damage_atk_pct` |
 | 野怪 | `05_野怪` E/F/G：基础 HP/攻击/防御 | `data/pve/pve_monsters.json` 的 `hp/atk/def` |
 | Boss | `06_Boss` D/E/O：首场 HP/攻击/R5 防御 | `data/boss/bosses.json` 的 `hp/atk/def` |
 | Boss 技能 | `06_Boss` D16:D51：按 B 列 Boss ID、C 列参数字段编辑；百分数填 `20` 表示 20% | `data/boss/bosses.json` 中对应 Boss 的技能数值字段 |
@@ -21,7 +21,7 @@ Boss 的 JSON 保存战斗前整数基础值，入场时 HP/攻击/防御乘 1.5
 
 Boss 技能参数表从 `06_Boss!B15:E51` 开始，黄色的 D 列是输入值。带“百分数”的行填整数百分数（`5` 代表 5%，`250` 代表 250%）；冷却、像素、攻速增量、伤害点数填实际数字。雷怒核心 `skill_damage` 是 JSON 基础值，首场伤害乘 1.5；`splash_damage` 填首场实际伤害，后续 Boss 回合再按技能成长倍率计算。AB/AC 列是本次说明快照，游戏内 Boss 描述由当前 JSON 动态生成。更改 Boss 行为规则（例如分裂形状、触发目标）仍需改战斗代码，工具只同步登记的数值字段。
 
-上述字段只在业务页编辑。黑龙、牧师、自爆灵的百分比只改各自 O/P 数字格，不要输入 Excel 百分比格式；同一行 G/H/I/L/M 文案和参数说明由公式自动跟随。保存 Excel 后运行工具，游戏实际技能数值也会更新。1–3★共用 O，4★使用 P。K 列是旧倍率的实测记录，不代表修改后的数值。人王成长目前增加生命、攻击、防御和攻速，攻速在战斗中封顶 2.5 次/秒。其他佣兵及多数技能、成长系数、羁绊机制等复杂配置继续在对应 JSON / GDScript 中维护；同步工具不会覆盖这些字段。`13_怪物Boss回合` 是成长和宝藏节点审阅页，`92_战斗参数` 保留凤凰复活与亡灵减疗的硬编码参数校验。法阵友军数值由 `data/formation/formation_allies.json` 管理，已不从 Excel 写回。
+上述字段只在业务页编辑。黑龙、牧师、自爆灵的百分比只改各自 O/P 数字格，不要输入 Excel 百分比格式；同一行 G/H/I/L/M 文案和参数说明由公式自动跟随。保存 Excel 后运行工具，游戏实际技能数值也会更新。1–3★共用 O，4★使用 P。自爆灵 4★对已中毒目标的 350% 单独维护在 JSON 中；如调整该值，也须更新表格 M30/I30 的说明，且判断发生在爆炸附加中毒之前。K 列是旧倍率的实测记录，不代表修改后的数值。人王成长目前增加生命、攻击、防御和攻速，攻速在战斗中封顶 2.5 次/秒。其他佣兵及多数技能、成长系数、羁绊机制等复杂配置继续在对应 JSON / GDScript 中维护；同步工具不会覆盖这些字段。`13_怪物Boss回合` 是成长和宝藏节点审阅页，`92_战斗参数` 保留凤凰复活与亡灵减疗的硬编码参数校验。法阵友军数值由 `data/formation/formation_allies.json` 管理，已不从 Excel 写回。
 
 ## 本机启动
 

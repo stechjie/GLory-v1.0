@@ -1345,11 +1345,40 @@ static func _apply_money_set_bonus(fighter: Dictionary) -> void:
 	var bonus := TreasureService.money_set_bonus_for_gold(_f_gold(fighter))
 	if bonus <= 0.0:
 		return
-	var multiplier := 1.0 + bonus
-	fighter.max_hp = maxi(1, int(round(float(fighter.max_hp) * multiplier)))
-	fighter.hp = int(fighter.max_hp)
-	fighter.atk = maxi(1, int(round(float(fighter.atk) * multiplier)))
-	fighter["money_set_multiplier"] = multiplier
+	fighter["open_money_pct"] = bonus
+	_add_open_pct(fighter, "max_hp", bonus)
+	_add_open_pct(fighter, "atk", bonus)
+
+
+# 11.01：开场的百分比加成（防御套、金钱套、生命丰碑、血契、宠物）同类相加，
+# 都按「开场前」的数值算，不再一层乘一层。按差值写回，铁壁 +10 这类固定值不会被冲掉。
+static func _add_open_pct(f: Dictionary, key: String, pct: float) -> void:
+	var base_key := "open_base_" + key
+	var sum_key := "open_pct_" + key
+	if not f.has(base_key):
+		f[base_key] = float(f.get(key, 0))
+	var base := float(f[base_key])
+	var old_sum := float(f.get(sum_key, 0.0))
+	var new_sum := old_sum + pct
+	f[sum_key] = new_sum
+	var delta := int(round(base * (1.0 + new_sum))) - int(round(base * (1.0 + old_sum)))
+	var floor_value := 0 if key == "defense" else 1
+	f[key] = maxi(floor_value, int(f.get(key, 0)) + delta)
+	if key == "max_hp":
+		f.hp = int(f.max_hp)
+	# 分身（镜像 / 寄生）要剥掉金钱套那一份：除数 = 含金钱的总倍率 ÷ 不含金钱的总倍率。
+	if f.has("open_money_pct"):
+		var money := float(f.open_money_pct)
+		var atk_sum := float(f.get("open_pct_atk", 0.0))
+		var hp_sum := float(f.get("open_pct_max_hp", 0.0))
+		f["money_set_multiplier"] = (1.0 + atk_sum) / maxf(0.01, 1.0 + atk_sum - money)
+		f["money_set_hp_multiplier"] = (1.0 + hp_sum) / maxf(0.01, 1.0 + hp_sum - money)
+
+
+static func _apply_defense_set_bonus(f: Dictionary) -> void:
+	_add_open_pct(f, "max_hp", 0.30)
+	_add_open_pct(f, "defense", 0.30)
+	f.dodge = DamageService.stack_dodge(float(f.get("dodge", 0.0)), 0.15)
 
 
 static func timeout_power(fighters: Array) -> float:
@@ -1652,4 +1681,5 @@ static func _add_base_pct_stats(f: Dictionary, pct: float) -> void:
 	_ensure_base_stats(f)
 	f.atk = maxi(1, int(f.atk) + int(round(float(f.base_atk) * pct)))
 	f.defense = maxi(0, int(f.get("defense", 0)) + int(round(float(f.base_defense) * pct)))
-	f.attack_speed = clampf(float(f.attack_speed) + float(f.base_attack_speed) * pct, 0.05, 5.0)
+	# 攻速进百分比池（StatusEffectService.attack_speed_multiplier 统一相加、统一上下限）。
+	f.aspd_bonus_pct = float(f.get("aspd_bonus_pct", 0.0)) + pct

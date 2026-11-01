@@ -76,8 +76,7 @@ static func _skill_nearest_ally_bless(caster: Dictionary, allies: Array, d: Dict
 	var target := _nearest(caster, allies.filter(func(a): return a != caster and bool(a.get("alive", false))))
 	if target.is_empty(): return
 	_mark_vfx_target(caster, target)
-	target.atk = maxi(1, int(round(float(target.atk) * (1.0 + float(d.get("atk_bonus", 0.12))))))
-	target.attack_speed = clampf(float(target.attack_speed) + float(d.get("aspd_bonus", 0.15)), 0.25, 2.5)
+	_apply_bless_stack(target, "nearest_ally_bless", float(d.get("atk_bonus", 0.12)), float(d.get("aspd_bonus", 0.15)))
 	StatusEffectService.clear_negative_statuses(target)
 
 
@@ -85,9 +84,23 @@ static func _skill_nearby_ally_heal_buff(caster: Dictionary, allies: Array, d: D
 	for a in allies:
 		if not bool(a.get("alive", false)) or caster.pos.distance_to(a.pos) > 180.0: continue
 		_heal_unit(a, maxi(1, int(float(a.max_hp) * float(d.get("heal_pct", 0.08)))))
-		a.atk = maxi(1, int(round(float(a.atk) * (1.0 + float(d.get("atk_bonus", 0.10))))))
-		a.attack_speed = clampf(float(a.attack_speed) + float(d.get("aspd_bonus", 0.15)), 0.25, 2.5)
+		_apply_bless_stack(a, "nearby_ally_heal_buff", float(d.get("atk_bonus", 0.10)), float(d.get("aspd_bonus", 0.15)))
 		StatusEffectService.clear_negative_statuses(a)
+
+
+# 11.01：祝福 / 光环治疗的永久加成。以前每次施法都在「当前攻击」上 ×(1+x) 复利、
+# 攻速 +0.15 次/秒绝对值，打得越久越强。现在按开战基础值相加、攻速按百分比，
+# 同一目标同一技能最多 3 层；满层后治疗与净化照常。
+const BLESS_MAX_STACKS := 3
+
+static func _apply_bless_stack(target: Dictionary, skill: String, atk_pct: float, aspd_pct: float) -> void:
+	var key := "bless_stacks_" + skill
+	if int(target.get(key, 0)) >= BLESS_MAX_STACKS:
+		return
+	target[key] = int(target.get(key, 0)) + 1
+	_ensure_base_stats(target)
+	target.atk = maxi(1, int(target.atk) + int(round(float(target.base_atk) * atk_pct)))
+	target.aspd_bonus_pct = float(target.get("aspd_bonus_pct", 0.0)) + aspd_pct
 
 
 static func _skill_random_attribute_bolt(caster: Dictionary, opponents: Array, d: Dictionary) -> void:
@@ -118,7 +131,9 @@ static func _skill_judgement(caster: Dictionary, opponents: Array, d: Dictionary
 	var stacks_before := int(caster.get("skill_stacks", 0))
 	caster.skill_stacks = mini(int(d.get("max_stacks", 5)), stacks_before + 1)
 	if int(caster.skill_stacks) > stacks_before:
-		caster.defense = int(round(float(caster.defense) * (1.0 + float(d.get("def_stack_pct", 0.06)))))
+		# 11.01：按开战防御相加，不再在当前防御上复利（4 星 5 层从 ×2.49 变成 +100%）。
+		_ensure_base_stats(caster)
+		caster.defense = int(caster.defense) + int(round(float(caster.base_defense) * float(d.get("def_stack_pct", 0.06))))
 
 
 static func _skill_archangel(caster: Dictionary, allies: Array, d: Dictionary) -> void:
@@ -360,16 +375,18 @@ static func _skill_mirror_clone(caster: Dictionary, state: Dictionary, d: Dictio
 	for idx in range(have + 1, should_have + 1):
 		var clone := caster.duplicate(true)
 		var inherited_money_multiplier := maxf(1.0, float(caster.get("money_set_multiplier", 1.0)))
+		var inherited_money_hp_multiplier := maxf(1.0, float(caster.get("money_set_hp_multiplier", inherited_money_multiplier)))
 		# Every lane has its own boss. Keep the summon prefix for treasure rules,
 		# but include the caster identity so one lane's death cannot own another.
 		clone.uid = "%s_mirror_%s_%d" % [str(caster.team), str(caster.uid), idx]
-		clone.hp = maxi(1, int(round(float(caster.max_hp) / inherited_money_multiplier * float(d.get("clone_hp_pct", 0.30)))))
+		clone.hp = maxi(1, int(round(float(caster.max_hp) / inherited_money_hp_multiplier * float(d.get("clone_hp_pct", 0.30)))))
 		clone.max_hp = clone.hp
 		clone.atk = maxi(1, int(round(float(caster.atk) / inherited_money_multiplier * float(d.get("clone_atk_pct", 1.00)))))
 		clone.defense = int(d.get("clone_def", 0))
 		clone.alive = true
 		clone.statuses = {}
 		clone.erase("money_set_multiplier")
+		clone.erase("money_set_hp_multiplier")
 		clone.skill_ready = 9999.0
 		if str(caster.team) == "enemy":
 			state.enemy.append(clone)
@@ -427,12 +444,14 @@ static func _skill_twin_strike(caster: Dictionary, state: Dictionary, d: Diction
 	caster.twin_clones_spawned = summon_index
 	var clone := caster.duplicate(true)
 	var inherited_money_multiplier := maxf(1.0, float(caster.get("money_set_multiplier", 1.0)))
+	var inherited_money_hp_multiplier := maxf(1.0, float(caster.get("money_set_hp_multiplier", inherited_money_multiplier)))
 	clone.uid = "%s_twin_%d" % [str(caster.uid), summon_index]
-	clone.hp = maxi(1, int(round(float(caster.max_hp) / inherited_money_multiplier * float(d.get("clone_hp_pct", 0.30)))))
+	clone.hp = maxi(1, int(round(float(caster.max_hp) / inherited_money_hp_multiplier * float(d.get("clone_hp_pct", 0.30)))))
 	clone.max_hp = clone.hp
 	clone.atk = maxi(1, int(round(float(caster.atk) / inherited_money_multiplier * float(d.get("clone_atk_pct", 0.40)))))
 	clone.statuses = {}
 	clone.erase("money_set_multiplier")
+	clone.erase("money_set_hp_multiplier")
 	clone.skill_ready = 9999.0
 	if str(caster.team) == "player": state.player.append(clone)
 	else: state.enemy.append(clone)
@@ -487,8 +506,8 @@ static func _skill_king_aura(caster: Dictionary, allies: Array, d: Dictionary) -
 	for a in allies:
 		if bool(a.get("alive", false)) and caster.pos.distance_to(a.pos) <= radius:
 			affected.append(a)
-			StatusEffectService.add_status(a, "speed_bonus", 2.2, {"pct": float(d.get("ally_aspd_bonus", 0.25))})
-			a.crit_bonus = maxf(float(a.get("crit_bonus", 0.0)), float(d.get("ally_crit_bonus", 0.15)))
+			# 暴击挂在这次加速状态上，光环断了就没了（以前写进 crit_bonus，永久保留）。
+			StatusEffectService.add_status(a, "speed_bonus", 2.2, {"pct": float(d.get("ally_aspd_bonus", 0.25)), "crit_pct": float(d.get("ally_crit_bonus", 0.15))})
 	caster.vfx_skill_target_uid = ""
 	_mark_vfx_targets(caster, affected)
 

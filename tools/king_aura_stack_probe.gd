@@ -87,52 +87,54 @@ func _ready() -> void:
 	# 施放者自己也在 casters 里，且在半径 0 处 -> 必然吃到自身光环
 	_check(fails, absf(StatusEffectService.attack_speed_multiplier(king) - 1.25) <= 0.0001, "施放者自身也应吃到光环攻速")
 
-	# ---- 6) 两种加成的时间语义差异：攻速计时 vs 暴击永久字段 ----
-	var crit_before := float(near.get("crit_bonus", 0.0))
+	# ---- 6) 11.01 起暴击挂在光环的加速状态上：光环在就有，过期就没 ----
+	var crit_before := StatusEffectService.status_crit_bonus(near)
 	for i in 30:
 		StatusEffectService.tick(near, TICK)
-	var crit_after := float(near.get("crit_bonus", 0.0))
+	var crit_after := StatusEffectService.status_crit_bonus(near)
 	var aspd_after := StatusEffectService.attack_speed_multiplier(near)
-	print("PROBE after_3s crit %.3f -> %.3f  aspd=%.3f" % [crit_before, crit_after, aspd_after])
-	_check(fails, absf(crit_after - crit_before) <= 0.0001, "暴击是永久字段，3 秒后不应衰减")
+	print("PROBE after_3s status_crit %.3f -> %.3f  aspd=%.3f" % [crit_before, crit_after, aspd_after])
+	_check(fails, absf(crit_before - 0.25) <= 0.0001, "光环内友军应有 0.25 光环暴击（实为 %.3f）" % crit_before)
+	_check(fails, crit_after <= 0.0001, "光环 3 秒后已过期，暴击应随之消失（实为 %.3f）" % crit_after)
+	_check(fails, float(near.get("crit_bonus", 0.0)) == 0.0, "光环不应再写永久字段 crit_bonus")
 	_check(fails, aspd_after <= 1.0001, "攻速加成 3 秒后应已过期（实为 %.3f）" % aspd_after)
 
-	# ---- 7) 复施时暴击走 maxf 语义（已有更高值不被压回）----
+	# ---- 7) 别的来源的暴击（crit_bonus）不受光环影响，两者相加 ----
 	near["crit_bonus"] = 0.60
 	BattleSimSkills._skill_king_aura(king, [king, near, far], king.def)
-	var crit_3 := float(near.get("crit_bonus", 0.0))
-	print("PROBE crit_maxf self_0.600 then_aura -> %.3f" % crit_3)
-	_check(fails, absf(crit_3 - 0.60) <= 0.0001, "暴击应为 maxf 语义，已有 0.60 不该被 0.25 覆盖")
+	var crit_3 := float(near.get("crit_bonus", 0.0)) + StatusEffectService.status_crit_bonus(near)
+	print("PROBE crit_other_source 0.600 + aura -> %.3f" % crit_3)
+	_check(fails, absf(float(near.get("crit_bonus", 0.0)) - 0.60) <= 0.0001, "光环不应改写已有的 crit_bonus 0.60")
+	_check(fails, absf(crit_3 - 0.85) <= 0.0001, "其他来源 0.60 + 光环 0.25 应为 0.85（实为 %.3f）" % crit_3)
 
 	# ---- 7b) 用户问的核心：多次吃到光环，暴击是加到 0.25×N 还是封顶 0.25 ----
 	var many := _mk("ally_e")
 	var trace: Array[String] = []
 	for i in 8:
 		BattleSimSkills._skill_king_aura(king, [king, many], king.def)
-		trace.append("%.2f" % float(many.get("crit_bonus", 0.0)))
+		trace.append("%.2f" % StatusEffectService.status_crit_bonus(many))
 	print("PROBE crit_reapply_8x -> [%s]" % ", ".join(trace))
-	var crit_8 := float(many.get("crit_bonus", 0.0))
+	var crit_8 := StatusEffectService.status_crit_bonus(many)
 	_check(fails, absf(crit_8 - 0.25) <= 0.0001,
-		"暴击复施 8 次后应为封顶 0.25（maxf 语义），实为 %.3f（若为 2.00 则是 += 累加）" % crit_8)
+		"暴击复施 8 次后应为封顶 0.25（同名状态取最强），实为 %.3f（若为 2.00 则是累加）" % crit_8)
 
 	# ---- 7c) 施放者自身反复吃光环，同样应封顶 ----
 	var king_trace: Array[String] = []
 	for i in 8:
 		BattleSimSkills._skill_king_aura(king, [king, many], king.def)
-		king_trace.append("%.2f" % float(king.get("crit_bonus", 0.0)))
+		king_trace.append("%.2f" % StatusEffectService.status_crit_bonus(king))
 	print("PROBE crit_self_reapply_8x -> [%s]" % ", ".join(king_trace))
-	_check(fails, absf(float(king.get("crit_bonus", 0.0)) - 0.25) <= 0.0001, "施放者自身暴击也应封顶 0.25")
+	_check(fails, absf(StatusEffectService.status_crit_bonus(king) - 0.25) <= 0.0001, "施放者自身暴击也应封顶 0.25")
 
-	# ---- 7d) 低起点不累加：从 0 起 8 次仍是 0.25，而不是 8×0.25 ----
-	# （7b 已覆盖 0 起点；这里补“接力式”复施 + tick 之后仍不涨）
-	for i in 12:
+	# ---- 7d) 过期后复施：重新获得 0.25，不会残留或翻倍 ----
+	for i in 25:
 		StatusEffectService.tick(many, TICK)
-	var crit_after_ticks := float(many.get("crit_bonus", 0.0))
+	var crit_after_ticks := StatusEffectService.status_crit_bonus(many)
 	BattleSimSkills._skill_king_aura(king, [king, many], king.def)
-	var crit_after_more := float(many.get("crit_bonus", 0.0))
-	print("PROBE crit_after_ticks %.3f then_reapply -> %.3f" % [crit_after_ticks, crit_after_more])
-	_check(fails, absf(crit_after_ticks - 0.25) <= 0.0001, "tick 不该影响顶层暴击字段（实为 %.3f）" % crit_after_ticks)
-	_check(fails, absf(crit_after_more - 0.25) <= 0.0001, "过期后复施仍应封顶 0.25（实为 %.3f）" % crit_after_more)
+	var crit_after_more := StatusEffectService.status_crit_bonus(many)
+	print("PROBE crit_after_expire %.3f then_reapply -> %.3f" % [crit_after_ticks, crit_after_more])
+	_check(fails, crit_after_ticks <= 0.0001, "过期后光环暴击应为 0（实为 %.3f）" % crit_after_ticks)
+	_check(fails, absf(crit_after_more - 0.25) <= 0.0001, "过期后复施应回到 0.25（实为 %.3f）" % crit_after_more)
 
 	# ---- 8) 余量假设：攻速时长必须 > 光环周期，否则每轮留空窗 ----
 	print("PROBE margin duration-period = %.2f (需 > 0)" % (ASPD_DURATION - AURA_PERIOD))

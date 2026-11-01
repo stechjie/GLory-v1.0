@@ -632,7 +632,7 @@ func _commit_draw() -> void:
 	else:
 		_shards = after
 		_refresh_ui()
-		await _play_coin(coin)
+		await _play_coin(coin, replayed)
 	if not is_inside_tree():
 		return
 	_shards = after
@@ -700,24 +700,67 @@ func _kick_scroll() -> void:
 	tw.tween_property(_scroll, "scale", _scroll_base_scale, Tokens.motion(0.35)).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
 
 
-# 小档：没出碎片，游戏币数字从卷轴前升起。
-func _play_coin(coin: int) -> void:
-	var pop := _label(_t("游戏币 +%d", "Coins +%d") % coin, 34)
-	pop.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
-	pop.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var center := _scroll_center()
-	_rect(pop, center.x - 200, center.y + 30, 400, 48)
-	pop.pivot_offset = pop.size * 0.5
-	pop.scale = Vector2.ONE * 0.6
-	_canvas.add_child(pop)
-	SfxService.play(SfxService.CUE_UI_CURRENCY_GAIN)
-	var tw := create_tween()
-	tw.tween_property(pop, "scale", Vector2.ONE, Tokens.motion(0.18)).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	tw.parallel().tween_property(pop, "position:y", pop.position.y - 60, Tokens.motion(0.9)).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.tween_property(pop, "modulate:a", 0.0, Tokens.motion(0.35))
-	tw.tween_callback(pop.queue_free)
+# 小档：没出碎片。原来只在卷轴前飘一个数字，玩家会以为这一抽什么都没有 ——
+# 改成和抽宠物一样弹一块结果板（照 PetDrawReveal.show_reward 的金币那一支做）。
+func _play_coin(coin: int, replayed: bool) -> void:
 	_notice.text = _t("这次没有碎片，获得 %d 游戏币", "No shard this time — %d coins") % coin
-	await get_tree().create_timer(Tokens.motion(0.5)).timeout
+	_show_coin_reward(coin, replayed)
+	# 等玩家点确认再往下走：这期间 _busy 还是 true，祈愿按钮按不动，
+	# 不会出现上一抽的板子还在、下一抽的动画已经开始。
+	while _overlay != null and is_inside_tree():
+		await get_tree().process_frame
+
+
+func _show_coin_reward(coin: int, replayed: bool) -> void:
+	var col := _open_overlay_card(Rect2(540, 150, 520, 0), 190.0)
+	var head := _label(_t("获得奖励", "Reward received"), 34)
+	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(head)
+	# 金币从板子下沿飞上来：错开出发、带回弹和一点旋转（同抽宠物那块板）
+	var stage := Control.new()
+	stage.custom_minimum_size = Vector2(420, 170)
+	stage.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(stage)
+	for i in 4:
+		var icon := TextureRect.new()
+		icon.texture = Currency.icon("coin")
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.size = Vector2(80, 80)
+		icon.position = Vector2(170 + i * 8, 150)
+		icon.pivot_offset = icon.size * 0.5
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		stage.add_child(icon)
+		if Tokens.motion(1.0) > 0.0:
+			var seconds := 0.42 + i * 0.07
+			var fly := create_tween().set_parallel(true)
+			fly.tween_property(icon, "position", Vector2(42 + i * 84, 40 + (i % 2) * 24), seconds) \
+				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+			fly.tween_property(icon, "rotation", -0.13 + 0.09 * i, seconds)
+	SfxService.play(SfxService.CUE_UI_CURRENCY_GAIN)
+	var amount := _label(_t("获得 %d 游戏币", "Received %d coins") % coin, 28)
+	amount.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	amount.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+	col.add_child(amount)
+	# 没中也在往保底走：把进度摆出来，玩家才知道这抽不是白花
+	var left := maxi(1, PITY - _draws)
+	var hint := _label(_t("%s %d / %d · 最多再祈愿 %d 次必定集齐",
+		"%s %d / %d · guaranteed within %d more") % [_txt("shard"), _shards, TARGET, left], 18)
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint.add_theme_color_override("font_color", _th.muted)
+	col.add_child(hint)
+	if replayed:
+		var note := _label(_t("已恢复本次祈愿，没有再次扣钻",
+			"Wish restored without another charge"), 16)
+		note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		note.add_theme_color_override("font_color", _th.muted)
+		col.add_child(note)
+	var ok := _button(_t("确认", "Confirm"), Vector2(220, 56))
+	ok.theme_type_variation = Theming.VARIATION_PRIMARY
+	ok.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	ok.pressed.connect(_dismiss_overlay)
+	col.add_child(ok)
 
 
 # 大档：集满。白光一闪、卷轴炸出满屏花瓣，然后弹解锁卡片。
@@ -739,7 +782,10 @@ func _celebrate() -> void:
 		_show_unlocked()
 
 
-func _show_unlocked() -> void:
+# 盖在整页上的一块卡片：遮罩铺满**屏幕**（画布按比例缩放后四周会留边），
+# 卡片按画布坐标摆、跟画布同一个缩放。返回卡片里那一列，调用方往里塞内容。
+# pivot_y 是弹出时的缩放中心（卡片高度随内容走，建的时候还量不到）。
+func _open_overlay_card(rect: Rect2, pivot_y: float) -> VBoxContainer:
 	_overlay = Control.new()
 	_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
 	_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -749,7 +795,6 @@ func _show_unlocked() -> void:
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_overlay.add_child(shade)
-	# 卡片按画布坐标摆，和画布同一个缩放
 	var layer := Control.new()
 	layer.mouse_filter = Control.MOUSE_FILTER_PASS
 	layer.size = CANVAS
@@ -757,14 +802,24 @@ func _show_unlocked() -> void:
 	layer.position = _canvas.position
 	_overlay.add_child(layer)
 	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel", Tokens.panel_box(
-		_th.glass, _th.edge, 24))
-	_rect(card, 480, 110, 640, 0)
+	card.add_theme_stylebox_override("panel", Tokens.panel_box(_th.glass, _th.edge, 24))
+	_rect(card, rect.position.x, rect.position.y, rect.size.x, rect.size.y)
 	layer.add_child(card)
 	var col := VBoxContainer.new()
 	col.alignment = BoxContainer.ALIGNMENT_CENTER
 	col.add_theme_constant_override("separation", Tokens.GAP_M)
 	card.add_child(col)
+	card.pivot_offset = Vector2(rect.size.x * 0.5, pivot_y)
+	card.scale = Vector2.ONE * 0.8
+	card.modulate.a = 0.0
+	var tw := create_tween()
+	tw.tween_property(card, "scale", Vector2.ONE, Tokens.motion(0.3)).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(card, "modulate:a", 1.0, Tokens.motion(0.2))
+	return col
+
+
+func _show_unlocked() -> void:
+	var col := _open_overlay_card(Rect2(480, 110, 640, 0), 230.0)
 	var head := _label(_t("%s  已解锁！", "%s unlocked!") % _txt("name"), 36)
 	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(head)
@@ -788,12 +843,6 @@ func _show_unlocked() -> void:
 		_dismiss_overlay()
 		_equip())
 	buttons.add_child(equip)
-	card.pivot_offset = Vector2(320, 230)
-	card.scale = Vector2.ONE * 0.8
-	card.modulate.a = 0.0
-	var tw := create_tween()
-	tw.tween_property(card, "scale", Vector2.ONE, Tokens.motion(0.3)).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	tw.parallel().tween_property(card, "modulate:a", 1.0, Tokens.motion(0.2))
 
 
 func _dismiss_overlay() -> void:

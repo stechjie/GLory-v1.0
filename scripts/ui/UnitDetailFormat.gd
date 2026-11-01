@@ -239,15 +239,15 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"lowest_ally_heal":
 			return "星辉祈愿%s：治疗生命比例最低的友军，回复其最大生命%s；有%s概率清除负面状态。" % [cd, pct(float(d.get("heal_pct", 0.06))), pct(float(d.get("cleanse_chance", 0.25)))]
 		"nearest_ally_bless":
-			return "神赐祝福%s：强化最近友军，攻击+%s、攻速+%.2f，并清除负面状态。" % [cd, pct(float(d.get("atk_bonus", 0.12))), float(d.get("aspd_bonus", 0.15))]
+			return "神赐祝福%s：强化最近友军，攻击+%s（按开战攻击）、攻速+%s，并清除负面状态；同一目标最多叠加%d层。" % [cd, pct(float(d.get("atk_bonus", 0.12))), pct(float(d.get("aspd_bonus", 0.15))), BattleSimSkills.BLESS_MAX_STACKS]
 		"guardian_shield_taunt":
 			return "守护嘲讽：战斗开始获得最大生命%s护盾，并让周围敌人优先攻击自己。" % pct(float(d.get("start_shield_pct", 0.20)))
 		"true_damage_attack":
 			return "圣枪裁决：普通攻击额外造成自身攻击%s真实伤害。" % pct(float(d.get("true_damage_pct", 0.18)))
 		"nearby_ally_heal_buff":
-			return "光环治疗%s：治疗自身周围友军最大生命%s，并给攻击+%s、攻速+%.2f，同时清除负面状态；开场冷却%.1f秒。" % [cd, pct(float(d.get("heal_pct", 0.15))), pct(float(d.get("atk_bonus", 0.10))), float(d.get("aspd_bonus", 0.15)), float(d.get("opening_cd", 0.0))]
+			return "光环治疗%s：治疗自身周围友军最大生命%s，并给攻击+%s（按开战攻击）、攻速+%s（同一目标最多叠加%d层），同时清除负面状态；开场冷却%.1f秒。" % [cd, pct(float(d.get("heal_pct", 0.15))), pct(float(d.get("atk_bonus", 0.10))), pct(float(d.get("aspd_bonus", 0.15))), BattleSimSkills.BLESS_MAX_STACKS, float(d.get("opening_cd", 0.0))]
 		"judgement_strike":
-			return "审判打击%s：对最近敌人造成自身攻击%s伤害；每次释放自身防御叠加+%s，最多%d层。" % [cd, pct(float(d.get("damage_atk_pct", 2.2))), pct(float(d.get("def_stack_pct", 0.06))), int(d.get("max_stacks", 5))]
+			return "审判打击%s：对最近敌人造成自身攻击%s伤害；每次释放自身防御叠加开战防御的%s，最多%d层。" % [cd, pct(float(d.get("damage_atk_pct", 2.2))), pct(float(d.get("def_stack_pct", 0.06))), int(d.get("max_stacks", 5))]
 		"random_ally_damage_reduction":
 			return "天使庇护%s：随机友军获得%s减伤，持续%.1f秒。" % [cd, pct(float(d.get("damage_reduction", 0.50))), float(d.get("duration", 6.0))]
 		"global_divine_blast":
@@ -286,6 +286,8 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"defense_down_attack":
 			return "腐蚀攻击：普通攻击降低目标防御%s，持续%.1f秒。" % [pct(float(d.get("def_down_pct", 0.10))), float(d.get("duration", 5.0))]
 		"death_poison_explosion":
+			if d.has("poisoned_damage_atk_pct"):
+				return "死亡毒爆：死亡时对周围敌人造成自身攻击%s真实伤害，已中毒目标受到%s伤害，并施加中毒（最多2层，分别扣血）。" % [pct(float(d.get("damage_atk_pct", 3.0))), pct(float(d.poisoned_damage_atk_pct))]
 			return "死亡毒爆：死亡时对周围敌人造成自身攻击%s真实伤害，并施加中毒（最多2层，分别扣血）。" % pct(float(d.get("damage_atk_pct", 2.5)))
 		"poison_reflect_armor_stack":
 			return "毒甲：受伤后反弹本次伤害%s真实伤害并使攻击者中毒（最多2层，分别扣血）；自身防御每次+%s，最多%d层。" % [pct(float(d.get("reflect_taken_damage_pct", 0.12))), pct(float(d.get("armor_per_hit_pct", 0.14))), int(d.get("max_stacks", 10))]
@@ -306,7 +308,9 @@ static func format_skill_detail(d: Dictionary) -> String:
 				return "缴械攻击：普通攻击有%s概率眩晕目标%.1f秒。" % [pct(float(d.get("interrupt_chance", 0.12))), militia_stun]
 			return "缴械攻击：普通攻击有%s概率缴械目标（1 秒内无法普攻）。" % pct(float(d.get("interrupt_chance", 0.12)))
 		"post_battle_gold_by_star":
-			return "战后经商：参与战斗后，按星级获得金币。1星+10，2星+20，3星+30，4星+40。"
+			if d.has("attack_gold_chance"):
+				return "战场经商：每次普通攻击有%s概率获得%d金币，战斗结束后结算。" % [pct(float(d.attack_gold_chance)), int(d.attack_gold_amount)]
+			return "战后经商：参与战斗后，按星级获得金币。1星+10，2星+20，3星+30。"
 		"every_fourth_combo":
 			return "连射：每第%d次普通攻击额外造成自身攻击%s伤害。" % [int(d.get("every", 4)), pct(float(d.get("combo_atk_pct", 0.70)))]
 		"front_cone_stun":
@@ -353,7 +357,7 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"twin_strike":
 			return "镜像突袭%s：召唤自身镜像，镜像生命%s、攻击%s。" % [cd, pct(float(d.get("clone_hp_pct", 0.30))), pct(float(d.get("clone_atk_pct", 0.40)))]
 		"king_aura":
-			return "王者光环：每2秒强化周围友军，攻速+%s、暴击+%s。" % [pct(float(d.get("ally_aspd_bonus", 0.25))), pct(float(d.get("ally_crit_bonus", 0.15)))]
+			return "王者光环：每2秒强化周围友军，攻速+%s、暴击+%s，持续2.2秒。" % [pct(float(d.get("ally_aspd_bonus", 0.25))), pct(float(d.get("ally_crit_bonus", 0.15)))]
 		"arrow_rain":
 			return "箭雨%s：攻击最近%d名敌人，每个目标受到自身攻击85%%伤害。" % [cd, int(d.get("targets", 5))]
 		"blood_rampage":
@@ -374,11 +378,11 @@ static func format_skill_detail(d: Dictionary) -> String:
 		"holy_purify":
 			return "圣愈净化%s：清除全体友军身上的所有状态，治疗其最大生命 %s，并给予最大生命 %s 的护盾；随行小怪均为远程。" % [cd, pct(float(d.get("heal_pct", 0.20))), pct(float(d.get("shield_pct", 0.15)))]
 		"rage_stack":
-			return "狂怒叠加：每次普通攻击后，当前攻击提高 %s、攻速 +%.2f，最多叠加 %d 层。" % [pct(float(d.get("atk_per_hit", 0.05))), float(d.get("aspd_per_hit", 0.03)), int(d.get("max_stacks", 50))]
+			return "狂怒叠加：每次普通攻击后，攻击提高开战攻击的 %s、攻速 +%s，最多叠加 %d 层。" % [pct(float(d.get("atk_per_hit", 0.05))), pct(float(d.get("aspd_per_hit", 0.03))), int(d.get("max_stacks", 50))]
 		"blood_rage":
-			return "血怒暴走：生命降至 %s 时立即进入暴走，攻击 +%s、攻速 +%.2f，并获得 %s 吸血。" % [pct(float(d.get("trigger_hp_pct", 0.50))), pct(float(d.get("atk_bonus", 1.00))), float(d.get("aspd_bonus", 0.50)), pct(float(d.get("lifesteal", 0.20)))]
+			return "血怒暴走：生命降至 %s 时立即进入暴走，攻击 +%s（按开战攻击）、攻速 +%s，并获得 %s 吸血。" % [pct(float(d.get("trigger_hp_pct", 0.50))), pct(float(d.get("atk_bonus", 1.00))), pct(float(d.get("aspd_bonus", 0.50))), pct(float(d.get("lifesteal", 0.20)))]
 		"soul_devour":
-			return "噬魂：同一路的己方小怪或敌方棋子每死亡一名，回复最大生命 %s，按入场攻击累计 +%s，攻速 +%.2f。" % [pct(float(d.get("kill_heal_pct", 0.20))), pct(float(d.get("atk_stack", 0.20))), float(d.get("aspd_stack", 0.20))]
+			return "噬魂：同一路的己方小怪或敌方棋子每死亡一名，回复最大生命 %s，按入场攻击累计 +%s，攻速 +%s。" % [pct(float(d.get("kill_heal_pct", 0.20))), pct(float(d.get("atk_stack", 0.20))), pct(float(d.get("aspd_stack", 0.20)))]
 		"twin_revive":
 			return "双生分裂：普攻对主目标身后扇形中的其他敌人造成 %s 攻击伤害。双子同时登场；任一方死亡后 %.1f 秒以 %s 生命复活，每只最多 %d 次，同伴阵亡则无法复活。" % [pct(float(d.get("cleave_atk_pct", 0.50))), float(d.get("revive_delay", 5.0)), pct(float(d.get("revive_hp_pct", 0.60))), int(d.get("revives_per_twin", 1))]
 		"apocalypse_charge":
@@ -429,15 +433,15 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"lowest_ally_heal":
 			return "Starlight Prayer%s: Heal the ally with the lowest HP ratio by %s of their max HP; %s chance to cleanse debuffs." % [cd, pct(float(d.get("heal_pct", 0.06))), pct(float(d.get("cleanse_chance", 0.25)))]
 		"nearest_ally_bless":
-			return "Divine Blessing%s: Buff the nearest ally — ATK +%s, AS +%.2f — and cleanse their debuffs." % [cd, pct(float(d.get("atk_bonus", 0.12))), float(d.get("aspd_bonus", 0.15))]
+			return "Divine Blessing%s: Buff the nearest ally — ATK +%s (of battle-start ATK), AS +%s — and cleanse their debuffs; stacks up to %d times per ally." % [cd, pct(float(d.get("atk_bonus", 0.12))), pct(float(d.get("aspd_bonus", 0.15))), BattleSimSkills.BLESS_MAX_STACKS]
 		"guardian_shield_taunt":
 			return "Guardian Taunt: Gain a shield equal to %s max HP at battle start; force nearby enemies to target this unit." % pct(float(d.get("start_shield_pct", 0.20)))
 		"true_damage_attack":
 			return "Holy Lance: Normal attacks deal bonus true damage equal to %s ATK." % pct(float(d.get("true_damage_pct", 0.18)))
 		"nearby_ally_heal_buff":
-			return "Halo Heal%s: Heal nearby allies for %s max HP; grant ATK +%s and AS +%.2f and cleanse debuffs; initial cooldown %.1fs." % [cd, pct(float(d.get("heal_pct", 0.15))), pct(float(d.get("atk_bonus", 0.10))), float(d.get("aspd_bonus", 0.15)), float(d.get("opening_cd", 0.0))]
+			return "Halo Heal%s: Heal nearby allies for %s max HP; grant ATK +%s (of battle-start ATK) and AS +%s (up to %d stacks per ally) and cleanse debuffs; initial cooldown %.1fs." % [cd, pct(float(d.get("heal_pct", 0.15))), pct(float(d.get("atk_bonus", 0.10))), pct(float(d.get("aspd_bonus", 0.15))), BattleSimSkills.BLESS_MAX_STACKS, float(d.get("opening_cd", 0.0))]
 		"judgement_strike":
-			return "Judgement Strike%s: Deal %s ATK damage to the nearest enemy; each cast permanently stacks own DEF +%s (max %d stacks)." % [cd, pct(float(d.get("damage_atk_pct", 2.2))), pct(float(d.get("def_stack_pct", 0.06))), int(d.get("max_stacks", 5))]
+			return "Judgement Strike%s: Deal %s ATK damage to the nearest enemy; each cast permanently adds %s of battle-start DEF (max %d stacks)." % [cd, pct(float(d.get("damage_atk_pct", 2.2))), pct(float(d.get("def_stack_pct", 0.06))), int(d.get("max_stacks", 5))]
 		"random_ally_damage_reduction":
 			return "Angel's Guard%s: Grant a random ally %s damage reduction for %.1fs." % [cd, pct(float(d.get("damage_reduction", 0.50))), float(d.get("duration", 6.0))]
 		"global_divine_blast":
@@ -477,6 +481,8 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"defense_down_attack":
 			return "Corrosive Strike: Normal attacks reduce target DEF by %s for %.1fs." % [pct(float(d.get("def_down_pct", 0.10))), float(d.get("duration", 5.0))]
 		"death_poison_explosion":
+			if d.has("poisoned_damage_atk_pct"):
+				return "Death Poison Burst: On death, deal %s ATK true damage to nearby enemies, or %s to poisoned enemies, and apply poison (up to 2 separate damage stacks)." % [pct(float(d.get("damage_atk_pct", 3.0))), pct(float(d.poisoned_damage_atk_pct))]
 			return "Death Poison Burst: On death, deal %s ATK true damage to surrounding enemies and apply poison (up to 2 separate damage stacks)." % pct(float(d.get("damage_atk_pct", 2.5)))
 		"poison_reflect_armor_stack":
 			return "Toxic Armor: On taking damage, reflect %s as true damage and poison the attacker (up to 2 separate damage stacks). Own DEF stacks +%s per hit (max %d stacks)." % [pct(float(d.get("reflect_taken_damage_pct", 0.12))), pct(float(d.get("armor_per_hit_pct", 0.14))), int(d.get("max_stacks", 10))]
@@ -493,7 +499,9 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 				return "Disarm Strike: Normal attacks have a %s chance to stun the target for %.1fs." % [pct(float(d.get("interrupt_chance", 0.12))), militia_stun]
 			return "Disarm Strike: Normal attacks have a %s chance to disarm the target (cannot use normal attacks for 1s)." % pct(float(d.get("interrupt_chance", 0.12)))
 		"post_battle_gold_by_star":
-			return "Trade: After each battle, gain gold by star level (★1 → +10G, ★2 → +20G, ★3 → +30G, ★4 → +40G)."
+			if d.has("attack_gold_chance"):
+				return "Battle Trade: Each normal attack has a %s chance to earn %d gold, paid after battle." % [pct(float(d.attack_gold_chance)), int(d.attack_gold_amount)]
+			return "Trade: After each battle, gain gold by star level (★1 → +10G, ★2 → +20G, ★3 → +30G)."
 		"every_fourth_combo":
 			return "Rapid Fire: Every %d attacks, deal bonus %s ATK damage." % [int(d.get("every", 4)), pct(float(d.get("combo_atk_pct", 0.70)))]
 		"front_cone_stun":
@@ -531,7 +539,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"twin_strike":
 			return "Mirror Ambush%s: Summon a mirror clone with %s HP and %s ATK." % [cd, pct(float(d.get("clone_hp_pct", 0.30))), pct(float(d.get("clone_atk_pct", 0.40)))]
 		"king_aura":
-			return "King's Aura: Every 2s, buff nearby allies — AS +%s, Crit +%s." % [pct(float(d.get("ally_aspd_bonus", 0.25))), pct(float(d.get("ally_crit_bonus", 0.15)))]
+			return "King's Aura: Every 2s, buff nearby allies — AS +%s, Crit +%s for 2.2s." % [pct(float(d.get("ally_aspd_bonus", 0.25))), pct(float(d.get("ally_crit_bonus", 0.15)))]
 		"arrow_rain":
 			return "Arrow Rain%s: Strike the nearest %d enemies, each taking 85%% ATK damage." % [cd, int(d.get("targets", 5))]
 		"blood_rampage":
@@ -552,11 +560,11 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"holy_purify":
 			return "Holy Purify%s: Cleanse all statuses from every ally, heal them for %s max HP and grant a shield worth %s max HP. Escort monsters are ranged." % [cd, pct(float(d.get("heal_pct", 0.20))), pct(float(d.get("shield_pct", 0.15)))]
 		"rage_stack":
-			return "Rage Stacks: After every basic attack, increase current ATK by %s and AS by %.2f, up to %d stacks." % [pct(float(d.get("atk_per_hit", 0.05))), float(d.get("aspd_per_hit", 0.03)), int(d.get("max_stacks", 50))]
+			return "Rage Stacks: After every basic attack, gain %s of battle-start ATK and +%s AS, up to %d stacks." % [pct(float(d.get("atk_per_hit", 0.05))), pct(float(d.get("aspd_per_hit", 0.03))), int(d.get("max_stacks", 50))]
 		"blood_rage":
-			return "Blood Frenzy: At %s HP, enrage immediately — ATK +%s, AS +%.2f, and %s lifesteal." % [pct(float(d.get("trigger_hp_pct", 0.50))), pct(float(d.get("atk_bonus", 1.00))), float(d.get("aspd_bonus", 0.50)), pct(float(d.get("lifesteal", 0.20)))]
+			return "Blood Frenzy: At %s HP, enrage immediately — ATK +%s (of battle-start ATK), AS +%s, and %s lifesteal." % [pct(float(d.get("trigger_hp_pct", 0.50))), pct(float(d.get("atk_bonus", 1.00))), pct(float(d.get("aspd_bonus", 0.50))), pct(float(d.get("lifesteal", 0.20)))]
 		"soul_devour":
-			return "Soul Devour: Each friendly monster or enemy piece death in this lane restores %s max HP, adds %s of entry ATK, and grants +%.2f AS." % [pct(float(d.get("kill_heal_pct", 0.20))), pct(float(d.get("atk_stack", 0.20))), float(d.get("aspd_stack", 0.20))]
+			return "Soul Devour: Each friendly monster or enemy piece death in this lane restores %s max HP, adds %s of entry ATK, and grants +%s AS." % [pct(float(d.get("kill_heal_pct", 0.20))), pct(float(d.get("atk_stack", 0.20))), pct(float(d.get("aspd_stack", 0.20)))]
 		"twin_revive":
 			return "Twin Cleave: Basics deal %s ATK damage in a cone behind the primary target. The twins enter together; each may revive once after %.1fs at %s HP while its partner lives (limit %d)." % [pct(float(d.get("cleave_atk_pct", 0.50))), float(d.get("revive_delay", 5.0)), pct(float(d.get("revive_hp_pct", 0.60))), int(d.get("revives_per_twin", 1))]
 		"apocalypse_charge":

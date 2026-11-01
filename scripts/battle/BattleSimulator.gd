@@ -30,10 +30,7 @@ static func prepare_tutorial_state(kind: String) -> Dictionary:
 	if TreasureService.has_set("defense"):
 		for f in player:
 			if not _ignores_treasure(f):
-				f.max_hp = maxi(1, int(round(float(f.max_hp) * 1.30)))
-				f.hp = int(f.max_hp)
-				f.defense = maxi(0, int(round(float(f.defense) * 1.30)))
-				f.dodge = float(f.get("dodge", 0.0)) + 0.15
+				_apply_defense_set_bonus(f)
 		battle_log.append(TranslationServer.translate("log_defense_set"))
 	for f in player:
 		_apply_money_set_bonus(f)
@@ -190,10 +187,7 @@ static func _finalize_team_opening(state: Dictionary) -> void:
 		if _ignores_treasure(f):
 			continue
 		if _f_has_set(f, "defense"):
-			f.max_hp = maxi(1, int(round(float(f.max_hp) * 1.30)))
-			f.hp = int(f.max_hp)
-			f.defense = maxi(0, int(round(float(f.defense) * 1.30)))
-			f.dodge = float(f.get("dodge", 0.0)) + 0.15
+			_apply_defense_set_bonus(f)
 		_apply_money_set_bonus(f)
 		if bool(_f_syn(f).get("human_shield", false)):
 			f.shield = maxi(int(f.get("shield", 0)), int(float(f.get("max_hp", 1)) * 0.08))
@@ -454,7 +448,12 @@ static func _replay_statuses(f: Dictionary) -> Dictionary:
 	var statuses = f.get("statuses", {})
 	if typeof(statuses) != TYPE_DICTIONARY:
 		return {}
-	return (statuses as Dictionary).duplicate(true)
+	var out := (statuses as Dictionary).duplicate(true)
+	# 同名状态的实例表只给模拟用，回放里只要合并后的生效值，省掉每帧的嵌套数组。
+	for kind in out.keys():
+		if typeof(out[kind]) == TYPE_DICTIONARY:
+			(out[kind] as Dictionary).erase("instances")
+	return out
 
 
 static func _replay_capture_roster(state: Dictionary, roster: Dictionary) -> void:
@@ -609,6 +608,7 @@ static func result_from_state(state: Dictionary) -> Dictionary:
 			"enemy_hp_max": _team_max_hp(forced_enemy),
 			"log": forced.get("log", []),
 			"kill_gold_by_slot": state.get("kill_gold_by_slot", {}),
+			"merchant_attack_gold_by_slot": state.get("merchant_attack_gold_by_slot", {}),
 			"unit_stats": state.get("unit_stats", {}),
 			# 10.09 第 4 条：无归属来源（自爆灵爆炸/寄生灵分身）的元素伤害账本，
 			# 结算面板按 owner_slot 并入「本回合总造成伤害」。
@@ -664,6 +664,7 @@ static func result_from_state(state: Dictionary) -> Dictionary:
 		"player_kill_gold": int(state.get("player_kill_gold", 0)),
 		"enemy_kill_gold": int(state.get("enemy_kill_gold", 0)),
 		"kill_gold_by_slot": state.get("kill_gold_by_slot", {}),
+		"merchant_attack_gold_by_slot": state.get("merchant_attack_gold_by_slot", {}),
 		"player_kills": state.get("player_kills", []),
 		"enemy_kills": state.get("enemy_kills", []),
 		"bonus_gold": int(state.get("bonus_gold", 0)),
@@ -905,7 +906,7 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 				BattleSimTreasures._control_set_refresh_on_kill(f, state)
 			if str(f.get("def", {}).get("skill_id", "")) == "every_fifth_group_heal" and int(f.get("attack_count", 0)) % int(f.get("def", {}).get("every", 5)) == 0:
 				_group_heal(f, team_units, float(f.get("def", {}).get("heal_pct", 0.05)))
-			var aspd := clampf(float(f.attack_speed) * StatusEffectService.attack_speed_multiplier(f) * _dynamic_attack_speed_multiplier(f), 0.25, 2.5)
+			var aspd := clampf(float(f.attack_speed) * StatusEffectService.attack_speed_multiplier(f, _dynamic_attack_speed_multiplier(f) - 1.0), 0.25, 2.5)
 			f.next_attack = elapsed + (1.0 / aspd)
 			DamageService.clear_stat_context()
 			CrimsonRuneService.end_action(f)
@@ -1127,9 +1128,17 @@ static func _perform_attack(attacker: Dictionary, target: Dictionary, state: Dic
 		base *= 1.0 + TreasureService.corrosive_needle_bleed_bonus()
 	var is_crit := false
 	attacker.attack_count = int(attacker.get("attack_count", 0)) + 1
+	if str(d.get("skill_id", "")) == "post_battle_gold_by_star" and d.has("attack_gold_chance"):
+		var owner_slot := int(attacker.get("owner_slot", -1))
+		if owner_slot >= 0 or str(attacker.get("team", "")) == "player":
+			if RngService.rng.randf() < float(d.get("attack_gold_chance", 0.0)):
+				var ledger: Dictionary = state.get("merchant_attack_gold_by_slot", {})
+				owner_slot = maxi(0, owner_slot)
+				ledger[owner_slot] = int(ledger.get(owner_slot, 0)) + int(d.get("attack_gold_amount", 0))
+				state.merchant_attack_gold_by_slot = ledger
 	if str(d.get("race", "")) == "human" and int(attacker.attack_count) % 3 == 0:
 		is_crit = true
-	elif RngService.rng.randf() < float(d.get("crit", 0.05)) + float(attacker.get("crit_bonus", 0.0)) + 0.10 * float(attacker.get("crimson_pulse_stacks", 0)) + CrimsonRuneService.crit_bonus(attacker):
+	elif RngService.rng.randf() < float(d.get("crit", 0.05)) + float(attacker.get("crit_bonus", 0.0)) + StatusEffectService.status_crit_bonus(attacker) + 0.10 * float(attacker.get("crimson_pulse_stacks", 0)) + CrimsonRuneService.crit_bonus(attacker):
 		is_crit = true
 	if is_crit:
 		base *= float(d.get("crit_dmg", 1.5)) + float(attacker.get("crit_dmg_bonus", 0.0)) + CrimsonRuneService.crit_damage_bonus(attacker)
@@ -1558,15 +1567,17 @@ static func _maybe_spawn_parasite_clone(killer: Dictionary, victim: Dictionary, 
 		return false
 	var clone := victim.duplicate(true)
 	var inherited_money_multiplier := maxf(1.0, float(victim.get("money_set_multiplier", 1.0)))
+	var inherited_money_hp_multiplier := maxf(1.0, float(victim.get("money_set_hp_multiplier", inherited_money_multiplier)))
 	clone.uid = "%s_parasite_%d" % [str(killer.team), int(state.get("total_deaths", 0))]
 	clone.team = str(killer.team)
-	clone.hp = maxi(1, int(round(float(victim.max_hp) / inherited_money_multiplier * float(killer.get("def", {}).get("clone_hp_pct", 0.10)))))
+	clone.hp = maxi(1, int(round(float(victim.max_hp) / inherited_money_hp_multiplier * float(killer.get("def", {}).get("clone_hp_pct", 0.10)))))
 	clone.max_hp = clone.hp
 	clone.atk = maxi(1, int(round(float(victim.atk) / inherited_money_multiplier * float(killer.get("def", {}).get("clone_atk_def_pct", 0.50)))))
 	clone.defense = maxi(0, int(round(float(victim.defense) * float(killer.get("def", {}).get("clone_atk_def_pct", 0.50)))))
 	clone.alive = true
 	clone.statuses = {}
 	clone.erase("money_set_multiplier")
+	clone.erase("money_set_hp_multiplier")
 	# 10.09 bug 文档第 4 条：分身不在 `unit_stats` 里（每个 uid 只在开场登记一次），
 	# 所以它打出的伤害、它挂的毒一直无人认领（实测见 probe_attr_paths.gd 的 _case_clone_dot）。
 	# 给它打上「无归属来源」标记：归属按击杀者（也就是寄生灵自己）的席位走，进元素旁路。

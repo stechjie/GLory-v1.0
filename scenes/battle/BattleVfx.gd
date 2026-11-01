@@ -2251,10 +2251,14 @@ func _finish_death_actor(uid: String, actor: Node3D) -> void:
 #   * 所有人都看得到（自己的棋子满亮度，别人的 0.75）；
 #   * 攻击套：斩杀刀光 + 「斩」字 + 攻击者 5 秒红色速度光环；本地玩家有攻击套时，
 #     本路敌人血条 10% 处画斩杀线，掉到线下血条底框闪红（这条只给自己看，是「我能斩谁」的提示）；
-#   * 防卫套：只在开局亮一次护罩（不要常驻盾纹）；闪避时侧闪 + 青色残光 + 「闪避」字；
+#   * 防卫套：开局亮一次护罩 + 脚下常驻淡盾纹（11.01 用户改主意，原定不要常驻）；
+#     闪避时侧闪 + 青色残光 + 「闪避」字；
 #   * 控制套已有紫色刷新时钟，不另做；金钱套暂不做。
 # 套装归属：回放单位读 roster 带来的 treasure_sets（BattleScreen 一律补键），本地模拟单位读 owner_treasures。
 const _TREASURE_SET_VFX := preload("res://effects/vfx3d/modules/VFXTreasureSet3D.gd")
+const _DEFENSE_SIGIL := preload("res://effects/vfx3d/modules/SetDefenseSigil3D.gd")
+# 盾纹半径 = 身高 × 这个比例（和攻速光环同量级，略大一点，两者同时出现时盾纹在外圈）。
+const SET_SIGIL_RADIUS_RATIO := 0.55
 # 与 BattleSimTreasures.ATTACK_SET_EXECUTE_PCT 一致；那边改这里也要改。
 const SET_EXECUTE_PCT := 0.10
 # 与 _try_attack_set_execute 里 attack_set_speed_bonus 的 5 秒一致。
@@ -2273,6 +2277,7 @@ const SET_DODGE_BACK_SEC := 0.16
 var _set_defense_shown: Dictionary = {}
 var _set_speed_auras: Dictionary = {}   # uid -> WeakRef(VFXTreasureSet3D)
 var _set_execute_marked: Dictionary = {}  # uid -> true
+var _set_defense_sigils: Dictionary = {}  # uid -> SetDefenseSigil3D
 
 
 func _unit_has_treasure_set(uid: String, category: String) -> bool:
@@ -2402,6 +2407,7 @@ func _update_treasure_set_presentation() -> void:
 			var uid := str(raw.get("uid", ""))
 			if not local_attack and _is_local_owned_unit(uid) and _unit_has_treasure_set(uid, "attack"):
 				local_attack = true
+			_sync_defense_sigil(uid, raw)
 			if bool(raw.get("alive", false)) and not _set_defense_shown.has(uid) and _unit_has_treasure_set(uid, "defense"):
 				var model := _set_model_for(uid)
 				if model != null and _battle_3d_vfx_root != null and is_instance_valid(_battle_3d_vfx_root):
@@ -2444,6 +2450,30 @@ func _update_treasure_set_presentation() -> void:
 	_set_execute_marked = still_marked
 
 
+# 常驻盾纹：活着、有防卫套、模型在 → 保证有一个；否则收掉。死亡时随单位淡出。
+func _sync_defense_sigil(uid: String, raw: Dictionary) -> void:
+	var existing = _set_defense_sigils.get(uid)
+	if existing != null and not is_instance_valid(existing):
+		_set_defense_sigils.erase(uid)
+		existing = null
+	var model: Node3D = null
+	if bool(raw.get("alive", false)) and _unit_has_treasure_set(uid, "defense"):
+		var found = _battle_3d_models.get(uid)
+		if found is Node3D and is_instance_valid(found) and (found as Node3D).is_inside_tree():
+			model = found as Node3D
+	if model == null:
+		if existing != null:
+			existing.call("stop")
+			_set_defense_sigils.erase(uid)
+		return
+	if existing != null or _battle_3d_vfx_root == null or not is_instance_valid(_battle_3d_vfx_root):
+		return
+	var sigil := _DEFENSE_SIGIL.new() as MeshInstance3D
+	_battle_3d_vfx_root.add_child(sigil)
+	sigil.call("setup", model, _set_unit_height(model) * SET_SIGIL_RADIUS_RATIO, _set_vfx_strength(uid))
+	_set_defense_sigils[uid] = sigil
+
+
 func _set_hp_bg_for(raw: Dictionary) -> ColorRect:
 	var node = _unit_nodes.get(_visual_id(raw))
 	if node == null:
@@ -2468,6 +2498,10 @@ func _clear_execute_mark(uid: String) -> void:
 
 func _reset_treasure_set_presentation() -> void:
 	_set_defense_shown.clear()
+	for sigil in _set_defense_sigils.values():
+		if sigil != null and is_instance_valid(sigil):
+			(sigil as Node).queue_free()
+	_set_defense_sigils.clear()
 	for ref in _set_speed_auras.values():
 		var aura = (ref as WeakRef).get_ref() if ref is WeakRef else null
 		if aura != null and is_instance_valid(aura):

@@ -61,6 +61,7 @@ const DARK := Color("101b1c")
 const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 # 头像上的「正在说话」小麦克风（10-08，所有用到语音的地方共用 VoiceControls 里那两个函数）。
 const VoiceControls := preload("res://ui/components/VoiceControls.gd")
+const VoiceButtonArt := preload("res://ui/components/VoiceButtonArt.gd")
 const ChatPhrases := preload("res://scripts/multiplayer/ChatPhrases.gd")
 const SfxService := preload("res://ui/services/SfxService.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
@@ -2153,7 +2154,7 @@ func _button(parent: Control, value: String, pos: Vector2, dimensions: Vector2) 
 # 图标本身 `MOUSE_FILTER_IGNORE`，点击照常落到按钮上。
 func _icon_button(parent: Control, pos: Vector2, dimensions: Vector2) -> Button:
 	var button := _button(parent, "", pos, dimensions)
-	_style_compact_button(button, false)
+	VoiceButtonArt.use_art_as_button_background(button)
 	var art := TextureRect.new()
 	art.name = "VoiceIcon"
 	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2161,10 +2162,10 @@ func _icon_button(parent: Control, pos: Vector2, dimensions: Vector2) -> Button:
 	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	button.add_child(art)
 	art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	art.offset_left = 9
-	art.offset_right = -9
-	art.offset_top = 9
-	art.offset_bottom = -9
+	art.offset_left = 0
+	art.offset_right = 0
+	art.offset_top = 0
+	art.offset_bottom = 0
 	return button
 
 
@@ -2176,7 +2177,7 @@ func _set_voice_icon(button: Button, key: String) -> void:
 		return
 	if art.get_meta("voice_icon", "") == key:
 		return
-	art.texture = load("res://assets/ui/voice/%s.svg" % key)
+	art.texture = VoiceButtonArt.texture_for(key)
 	art.set_meta("voice_icon", key)
 
 
@@ -2197,6 +2198,11 @@ func _refresh_voice_icons() -> void:
 	if _voice_speaker != null:
 		_voice_speaker.tooltip_text = _text("关闭扬声器" if speaker_on else "打开扬声器", "Toggle speaker")
 		_voice_speaker.disabled = _local_only
+	for b in [_voice_mic, _voice_speaker]:
+		if b != null:
+			var icon := b.get_node_or_null("VoiceIcon") as TextureRect
+			if icon != null:
+				icon.modulate.a = 0.55 if b.disabled else 1.0
 
 
 func _style_mode(button: Button, selected: bool) -> void:
