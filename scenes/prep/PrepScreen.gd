@@ -2,6 +2,8 @@ extends "res://scenes/prep/PrepBoardController.gd"
 
 signal startup_ready
 var startup_staged := false
+var _battle_ui_ready := false
+var _early_round_start := false
 # 观战只读模式（协议 44，2026-10-22）：画面和选手完全一样（GameState 由 SpectatorSeat 装好），
 # 但**这一页自己会做的事一件都不做**：不采集萝卜、不摇商店、不写存档、不倒计时自动上阵、
 # 不交棋盘、不进战斗流程。点按全部被一层透明遮罩吃掉（商店 / 拖拽 / 出售都在它下面）。
@@ -176,6 +178,8 @@ func _ready() -> void:
 	# Start disk/script loading while the player deploys pieces, not on Ready.
 	_prefetch_battle_scene.call_deferred()
 	_warm_deployed_effects.call_deferred()
+	_battle_ui_ready = true
+	_recover_early_team_round_start.call_deferred()
 
 # 观战：只建画面。和 _ready 的正常路径相比，留下的只有 _build / _refresh_all / 音乐 ——
 # 那几样是纯显示；其余每一行都会改 GameState、写盘或者发网络请求。
@@ -246,13 +250,33 @@ func _exit_tree() -> void:
 	release_tutorial_target_provider()
 
 func _on_team_round_start() -> void:
-	if spectator_view:
+	if spectator_view or _battle_launch_emitted or _battle_transition_running:
 		return
+	if not _battle_ui_ready:
+		_early_round_start = true
+		return
+	_early_round_start = false
 	# All players readied -> launch this round's battle.
 	_auto_deploy_at_deadline()
 	RaceRelationService.finalize_for_battle(GameState.board_slots, GameState.bench_slots)
 	SaveManager.save_run()
 	_emit_battle_request_once()
+
+# A result may arrive during the opening cue or asynchronous UI construction.
+func _current_team_round_has_result() -> bool:
+	var state: Dictionary = NetworkService.latest_match_state
+	return NetworkService.team_active and not NetworkService.is_host \
+		and int(state.get("completed_round", -1)) == GameState.round_index \
+		and not str(state.get("battle_id", "")).is_empty() \
+		and str(state.get("battle_id", "")) == NetworkService.current_battle_id
+
+func _recover_early_team_round_start() -> void:
+	if not _battle_ui_ready or spectator_view or not NetworkService.team_active:
+		return
+	var battle_locked := NetworkService.server_phase == "battle" \
+		and NetworkService.server_round_index == GameState.round_index
+	if _early_round_start or battle_locked or _current_team_round_has_result():
+		_on_team_round_start()
 
 func _auto_deploy_at_deadline() -> void:
 	if spectator_view:
@@ -750,6 +774,9 @@ func _prepare_team_battle_package(request_id: String) -> bool:
 	AsyncActionController.set_cancellable(_battle_action_request_id, false, "team_resolution_committed")
 	if _battle_loading_overlay != null and is_instance_valid(_battle_loading_overlay):
 		_battle_loading_overlay.set_cancel_policy(false, tr("battle_load_cannot_cancel"))
+	# Do not discard an already acknowledged replay or resubmit it as round N+1.
+	if _current_team_round_has_result():
+		return await _wait_for_team_replay(request_id)
 	NetworkService.team_replay = {}
 	NetworkService.team_replay_rival = {}
 	NetworkService.team_submit_board(NetProtocol.team_board_submission(GameState.board_slots, GameState.mercenary_slots))

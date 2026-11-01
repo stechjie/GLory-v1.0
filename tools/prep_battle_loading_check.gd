@@ -66,7 +66,11 @@ func _ready() -> void:
 	var baseline: Array = ModalStack.find_invisible_stop_controls()
 	await _check_overlay_contract()
 	await _check_failure_recovery_paths()
-	await _check_team_mode_no_prep_window()
+	var previous_locale := LocaleManager.get_locale()
+	for locale in ["zh", "en"]:
+		LocaleManager.set_locale(locale)
+		await _check_team_mode_no_prep_window()
+	LocaleManager.set_locale(previous_locale)
 	await _check_offline_success_path()
 	await _check_wait_escalation()
 	await _check_wait_resets_on_progress()
@@ -254,8 +258,6 @@ func _check_prep_source_contract() -> void:
 		"旧 z_index=-4 加载条仍存在")
 	_h.expect(source.contains("AsyncActionController.begin(BATTLE_ACTION"),
 		"start_battle_not_controller_owned", "开始战斗没有接入 AsyncActionController")
-	_h.expect(source.contains("show_pending(request_id, tr(\"battle_load_busy\"))"),
-		"start_button_silent_disabled", "开始战斗没有在 pending 时显示 busy 动词")
 	for stage in ["submit_roster", "generate_replay", "receive_replay",
 			"load_battle_scene", "load_battle_assets", "enter_battle"]:
 		_h.expect(source.contains("\"%s\"" % stage), "battle_stage_missing",
@@ -417,6 +419,24 @@ func _check_team_mode_no_prep_window() -> void:
 		"team_prep_hook_rejected", "debug 构建拒绝安装战斗准备故障注入 hook")
 	prep._emit_battle_request_once()
 	await _wait_for_probe_call(hold_probe, 1)
+	# Validate the real button while preparation is held, independently of the
+	# source spelling or localization API used to enter its loading state.
+	var button := prep._start_battle_button
+	if _h.expect(button != null, "start_button_missing", "战斗准备期间缺少开始按钮"):
+		var button_state: Dictionary = button.action_snapshot()
+		var request_id := prep.battle_action_request_id_for_check()
+		_h.expect(str(button_state.get("state", "")) == "pending",
+			"start_button_not_pending", "战斗准备期间开始按钮未进入 pending")
+		_h.expect(not request_id.is_empty() and str(button_state.get("request_id", "")) == request_id,
+			"start_button_wrong_request", "加载按钮没有绑定当前战斗请求")
+		_h.expect(button.disabled, "start_button_not_disabled", "加载期间按钮仍可重复点击")
+		_h.expect(bool(button_state.get("looks_busy", false)),
+			"start_button_not_busy", "加载期间按钮缺少 busy 视觉状态")
+		_h.expect(bool(button_state.get("busy_text_visible", false)) and button.is_visible_in_tree(),
+			"start_button_silent_disabled", "加载期间按钮没有可见的加载提示")
+		var expected := "Loading" if LocaleManager.get_locale().begins_with("en") else "加载中"
+		_h.expect(button._display_text().begins_with(expected),
+			"start_button_wrong_locale", "加载提示不符合当前语言：%s" % LocaleManager.get_locale())
 	var pending_snapshot: Dictionary = prep.battle_loading_snapshot_for_check()
 	_h.expect(pending_snapshot.is_empty(), "team_prep_window_opened",
 		"备战提交后弹出了战斗准备窗口（snapshot=%s）" % str(pending_snapshot))

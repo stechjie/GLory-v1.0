@@ -1720,6 +1720,24 @@ func _build_voice_button() -> void:
 	_place_voice_button(_voice_controls.audience_button, right, VOICE_AUDIENCE_SIZE)
 	right -= VOICE_AUDIENCE_SIZE.x + VOICE_INNER_GAP
 	_place_voice_button(_voice_controls.voice_button, right, VOICE_BTN_SIZE)
+	_voice_controls.voice_button.resized.connect(_align_prep_voice_icons)
+	_align_prep_voice_icons()
+
+func _align_prep_voice_icons() -> void:
+	if _voice_controls == null or _voice_controls.voice_button == null:
+		return
+	var mic := _voice_controls.voice_button
+	var art := mic.get_node_or_null("VoiceIcon") as TextureRect
+	if art == null:
+		return
+	# Gold frames occupy 504px of the normalized 627px atlas canvas. The
+	# speaker-to-Team gap contains one transparent inset, mic-to-speaker two.
+	# Move only the mic art by one inset; touch regions remain non-overlapping.
+	var frame_width := minf(mic.size.x, mic.size.y) * 504.0 / 627.0
+	var inset := maxf(0.0, (mic.size.x - frame_width) * 0.5)
+	art.offset_left = inset
+	art.offset_right = inset
+
 
 func _place_voice_button(button: Button, right: float, size: Vector2) -> void:
 	button.anchor_left = 1.0
