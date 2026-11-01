@@ -32,6 +32,7 @@ def main():
     p.add_argument('--unsigned', action='store_true', help='Build only; defer signing until the password is available')
     p.add_argument('--check', action='store_true', help='Check local dependencies without building or signing')
     p.add_argument('--sync', action='store_true', help='Update GitHub and Drive before building')
+    p.add_argument('--server-environment', choices=('prod', 'test'), help='Select server endpoints only in the isolated staging copy')
     p.add_argument('--patch-config', type=Path, help='Install the immutable update launcher in the staging copy')
     p.add_argument('--version-code', type=int, help='Override Android versionCode in the isolated build only')
     p.add_argument('--version', help='Override Android versionName in the isolated build only')
@@ -118,6 +119,11 @@ def main():
             if state_path.exists() and json.loads(state_path.read_text()).get('status') in ('running', 'failed'):
                 raise RuntimeError('Resource sync is running or failed; resolve it before building')
             report = b.stage_project(project,b.asset_root(b.ROOT/'res'),stage,log)
+        server_target = b.configure_server_environment(stage, a.server_environment)
+        if a.patch_config and server_target:
+            patch_settings = json.loads(a.patch_config.read_text())
+            if patch_settings.get("backend_url") != server_target["backend_url"]:
+                raise RuntimeError("Patch endpoint does not match selected server environment")
         engine = b.prepare_engine(env,work)
         preset,package = b.export_preset(stage,None)
         # This Play listing uses a distinct, user-selected application ID.
@@ -146,7 +152,7 @@ def main():
         code = int(re.search(r'^version/code=(\d+)',text,re.M)[1])
         identity = dict(build_id=str(uuid.uuid4()),git_commit=commit,dirty_files=len(status.splitlines()),
                         build_utc=dt.datetime.now(dt.timezone.utc).isoformat(),godot_version=env['version'],
-                        package_id=package,version_name=version,version_code=code,export_preset='Google Play Release',
+                        server_target=server_target, package_id=package,version_name=version,version_code=code,export_preset='Google Play Release',
                         asset_inventory_sha256=report['actual_assets_sha256'])
         b.json_write(stage/'build_info.json',identity)
         b.json_write(log/'build_info.json',identity)

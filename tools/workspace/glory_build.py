@@ -99,6 +99,29 @@ def sync_project(project):
         raise RuntimeError("Git 同步失败，已停止，未继续同步 Drive 或构建 APK。" + (f"\n{detail}" if detail else "请查看上方 Git 错误。")) from error
 
 
+def configure_server_environment(stage, environment):
+    """Select public endpoints in the generated copy, preserving source defaults."""
+    if environment is None:
+        return None
+    endpoints = {
+        "prod": ("https://glorytd-prod-api.duckdns.org", "glorytd-prod-battle.duckdns.org"),
+        "test": ("https://glorytd-api.duckdns.org", "glorytd-battle.duckdns.org"),
+    }
+    backend, battle = endpoints[environment]
+    for filename, name, value in (
+        ("scripts/account/AccountConfig.gd", "DEFAULT_BACKEND_URL", backend),
+        ("scripts/multiplayer/NetworkConfig.gd", "SERVER_HOST", battle),
+    ):
+        path = stage / filename
+        raw = path.read_bytes()
+        pattern = rb'(const ' + name.encode() + rb' := ")[^"\r\n]+(")'
+        raw, count = re.subn(pattern, lambda m: m[1] + value.encode() + m[2], raw)
+        if count != 1:
+            raise RuntimeError("Cannot select server environment in " + filename)
+        path.write_bytes(raw)
+    return {"environment": environment, "backend_url": backend, "battle_host": battle}
+
+
 def find_executable(values):
     for value in values:
         if not value:
@@ -817,6 +840,7 @@ def main():
     parser.add_argument("--android-sdk", help="Android SDK 根目录，也可设置 ANDROID_HOME")
     parser.add_argument("--templates", help="匹配 Godot 版本的导出模板目录")
     parser.add_argument("--preset", help="导出预设名，默认选首个 Android 预设")
+    parser.add_argument("--server-environment", choices=("prod", "test"), help="只在隔离目录选择正式服或测试服")
     parser.add_argument("--patch-config", type=Path, help="更新器基础包配置 JSON；只修改隔离构建目录")
     parser.add_argument("--debug", action="store_true", help="仅诊断使用调试包；默认精简 Release")
     parser.add_argument("--version", help="覆盖 Android versionName")
@@ -875,6 +899,7 @@ def main():
                     if state in ("running", "failed"):
                         raise RuntimeError("资源同步尚未成功完成，请重新运行 ./tools/sync_res.sh 后再打包。")
                 report = stage_project(project, assets, stage, logdir)
+            configure_server_environment(stage, args.server_environment)
             engine = prepare_engine(env, work)
             preset, package = export_preset(stage, args.preset)
             # Change only the selected generated Android preset.

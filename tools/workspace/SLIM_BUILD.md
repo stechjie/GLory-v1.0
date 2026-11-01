@@ -62,3 +62,13 @@ AAB 同样在隔离 stage 中应用上述依赖精简策略，保留全部设备
 Android 4,831 个、iOS 4,833 个基线文件逐项匹配实际包；各平台加载 2,361 个资源、编译 26 个服务脚本，验证 8 个精修模型的三个动作。iOS 语音为设备原生库，macOS 无头验证不覆盖它；IPA 签名和原生依赖结构已检查，仍需真机验收。47 项相关脚本测试通过。
 
 此次为本地构建验证，产物使用独立验证 base_id，未注册线上基线、未上传或替换已发布包。工作区证据见 `delivery/slim-20261012/verification.json`。
+
+### Google Play 服务器选择
+
+Google Play 正式／审核包使用 `./tools/build_aab.sh --server-environment prod`；
+测试服包使用 `--server-environment test`。APK 入口也支持同名选项。
+选择只改隔离 stage，不改源码默认值；AAB 构建记录会保留目标环境。
+正式服账号为 `https://glorytd-prod-api.duckdns.org`，战斗为
+`glorytd-prod-battle.duckdns.org:8080`（UDP + DTLS），语音由正式服下发
+`wss://glorytd-prod-voice.duckdns.org`。使用 `--patch-config` 时账号与补丁
+接口必须匹配；新版本保留独立基线。
