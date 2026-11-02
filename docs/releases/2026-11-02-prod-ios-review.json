@@ -1,5 +1,5 @@
 {
-  "recorded_at_utc": "2026-11-02T14:51:42.706857+00:00",
+  "recorded_at_utc": "2026-11-02T19:17:21.904860+00:00",
   "runtime_source_commit": "4055e10422ffbb32bcdbcdcbdab788bbf968891d",
   "server_environment": "prod",
   "resource_sync": {
@@ -69,20 +69,79 @@
   "temporary_ssh_access_remaining": false,
   "ios": {
     "version": "1.0.2",
-    "app_store_build": 79,
-    "device_build": 80,
-    "app_store_ipa_sha256": "0a8c5e4b9df97dd2c65b7164901d3ac21d1fec454f6197144f0bfd0154c38caa",
-    "device_ipa_sha256": "7d29df882075fbbb960f1914429289e46093d9775bc473bf9bed4bbff068410d",
-    "app_store_build_id": "48500ca5-2f96-4ffc-9b4a-c9d67935fb60",
+    "app_store_build": 81,
+    "device_build": 81,
+    "app_store_ipa_sha256": "9dd9ad6bfd5fccaa0e7a23e2cd2e4ef2c55ee663116348af2fbdae96d57fd495",
+    "app_store_build_id": "d61866c8-bbd2-48db-ac07-10f57ee4ce29",
     "upload": "complete",
     "apple_processing": "complete",
     "internal": "正在测试",
     "internal_group": "GLory 内部验证",
     "external": "正在测试",
     "external_group": "Glory tester",
-    "device_install": "success",
-    "new_server_device_gameplay_acceptance": "awaiting_user",
-    "formal_app_review_submitted": false
+    "device_install": "TestFlight build 81 installed; original save restored and launch verified",
+    "new_server_device_gameplay_acceptance": "user accepted 79/80 gameplay; 81 contains only four profile confirmation callback fixes with unchanged assets",
+    "formal_app_review_submitted": true,
+    "previous_candidate": {
+      "app_store_build": 79,
+      "device_build": 80,
+      "user_gameplay_accepted": true
+    },
+    "submission": {
+      "id": "5d04af88-0c8d-4206-8519-1538cf1d415a",
+      "url": "https://appstoreconnect.apple.com/apps/6811578280/distribution/reviewsubmissions/details/5d04af88-0c8d-4206-8519-1538cf1d415a",
+      "submitted_at_local": "2026-11-03T03:13:00+08:00",
+      "status": "等待审核",
+      "items": [
+        {
+          "name": "iOS App 1.0.2 (81)",
+          "status": "等待审核"
+        },
+        {
+          "name": "50 Diamonds",
+          "status": "等待审核"
+        },
+        {
+          "name": "200 Diamonds",
+          "status": "等待审核"
+        },
+        {
+          "name": "500 Diamonds",
+          "status": "等待审核"
+        }
+      ],
+      "release_mode": "manual",
+      "six_item_notes_saved": true,
+      "physical_video_attached": true,
+      "old_rejection_reply_sent": true,
+      "old_submission_status": "已移除",
+      "evidence": "delivery/app-review-20261102/submission-final-status.txt"
+    },
+    "verification_ad_hoc_build": 82,
+    "client_fix_validation": {
+      "focused_checks_passed": 12,
+      "physical_build81_account_deletion_verified": true,
+      "physical_build82_account_deletion_verified": true
+    },
+    "physical_review_video": {
+      "file": "GLory-1.0.2-81-physical-review.mp4",
+      "seconds": 291.066667,
+      "sha256": "5ed9274a04bad04b27da199cfc157309ab1545363b6e3c57c921e8f8bd18eace",
+      "full_decode_passed": true,
+      "checkout_cancelled_before_authentication": true
+    },
+    "payment_validation": {
+      "three_tiers_credited_and_relaunch_verified_on_build": 77,
+      "testflight_pack1_credited_and_relaunch_verified_on_build": 79,
+      "build81_demo_checkout_cancelled": true,
+      "payment_implementation_unchanged_from_79": true
+    },
+    "patch_base": {
+      "base_id": "glory-ios-20261103-prod-review",
+      "action": "none",
+      "required_seq": 0,
+      "hotfixes": []
+    }
   },
   "qr_codes_modified": false,
   "sandbox_limit": {
@@ -104,5 +163,6 @@
     ],
     "published_new_patch": false
   },
-  "evidence": "outer workspace delivery/release-20261102-prod/"
+  "evidence": "outer workspace delivery/release-20261102-prod/ and delivery/app-review-20261102/",
+  "client_source_commit": "17d02bee426708559d3001d1974d050afbd4390b"
 }
