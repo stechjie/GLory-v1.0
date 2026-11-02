@@ -7,6 +7,7 @@ const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const ActionButtonScene := preload("res://ui/components/GloryActionButton.tscn")
 const SfxService := preload("res://ui/services/SfxService.gd")
 const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
+const GameHelp := preload("res://scripts/account/GameHelp.gd")
 
 signal back_requested
 signal replay_tutorial_requested
@@ -288,6 +289,22 @@ func _build() -> void:
 		_refresh_music_label())
 	audio_rows.add_child(_music_slider)
 	_refresh_music_label()
+
+	var help_row := HBoxContainer.new()
+	help_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	help_row.add_theme_constant_override("separation", Tokens.GAP_M)
+	layout.add_child(help_row)
+	var english := LocaleManager.get_locale() == "en"
+	for entry in [
+		["Game help and support" if english else "游戏帮助与支持", GameHelp.show_help],
+		["Privacy policy" if english else "隐私政策", GameHelp.show_privacy],
+		["Account deletion" if english else "账号删除说明", GameHelp.show_deletion],
+	]:
+		var button := ActionButtonScene.instantiate() as Button
+		button.text = str(entry[0])
+		button.custom_minimum_size = Vector2(280, Tokens.TOUCH_MIN)
+		button.pressed.connect((entry[1] as Callable).bind(self))
+		help_row.add_child(button)
 
 	var sep2 := HSeparator.new()
 	layout.add_child(sep2)

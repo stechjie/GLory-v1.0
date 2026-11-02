@@ -1,0 +1,125 @@
+{
+  "recorded_at": "2026-11-01T14:55:11.502348+00:00",
+  "version": "1.0.2",
+  "build_number": "76",
+  "source_commit": "1debf8d5abb7ceda41dad8d987b6f1040c755d13",
+  "includes_uncommitted_task_changes": true,
+  "server_target": {
+    "environment": "prod",
+    "backend_url": "https://glorytd-prod-api.duckdns.org",
+    "battle_host": "glorytd-prod-battle.duckdns.org"
+  },
+  "ipa": "/Volumes/repository/github/GLory/build/ipa/Glory-app-store-20261101-224734-361640-1debf8d5.ipa",
+  "ipa_sha256": "400d8b5a38dc9c332c5d0be722937c8a3d59b16d059ab1c598c7d67f9b8d0448",
+  "bytes": 566334674,
+  "validation": {
+    "zip_crc": true,
+    "codesign": true,
+    "arm64": true,
+    "embedded_profile_uuid": "19d26700-0dbc-4797-b5ec-84d3bd29c6fd",
+    "allowed_device_udids": [],
+    "pck_identity": true,
+    "apple_storekit": true
+  },
+  "patch_base": {
+    "archive": "/Volumes/repository/github/GLory/build/ios-auto-work/runs/20261101-224734-361640/patch-base/base.zip",
+    "manifest": "/Volumes/repository/github/GLory/build/ios-auto-work/runs/20261101-224734-361640/patch-base/base.export.json",
+    "sha256": "94c04d4a8dbefa357c91da64b58aa3caf4f34b31d1bc12a0f5032d797d6b6935",
+    "base_id": "glory-ios-review-20261101-prod",
+    "debug": false,
+    "payload_verification": {
+      "identical_base_files": 5779,
+      "platform": "ios",
+      "payload_matches_baseline": true
+    }
+  },
+  "asset_sync": {
+    "status": "success",
+    "remote_files": 4425,
+    "downloaded": 0,
+    "checked": 721,
+    "skipped": 3703,
+    "local_preserved": 1,
+    "errors": 0
+  },
+  "changes": [
+    "Document test and production endpoints and internal-first release workflow",
+    "Select production endpoints in isolated iOS staging and reject mismatched patch origin",
+    "Add bilingual offline help, full privacy policy and deletion guidance in Settings and Profile",
+    "Correct privacy policy description of purchases and payment-proof processing"
+  ],
+  "payment_review": "/Volumes/repository/github/GLory/delivery/ios-review-20261101/payment-review.json",
+  "tests": {
+    "backend_iap": 139,
+    "client_iap": 65,
+    "swift_storekit_tasks": 1,
+    "ios_build_tool": 20,
+    "settings_localization": 4,
+    "help_pages_rendered": 6
+  },
+  "production_apple_payments_enabled": true,
+  "physical_sandbox_payment_verified": false,
+  "uploaded_to_apple": true,
+  "internal_testing_enabled": true,
+  "external_testing_submitted": false,
+  "app_store_submitted": false,
+  "next_action": "Apple still processing build 76 per user. User will assign only internal group because Computer Use URL access was blocked. New sandbox account login verified on physical device; Ad Hoc build 77 shows correct products but Apple prices unavailable, no purchase made. Compare TestFlight and diagnose Apple product availability before payment acceptance.",
+  "production_apple_evidence": "/Volumes/repository/github/GLory/delivery/ios-review-20261101/apple-production-public-check.json",
+  "upload_started": true,
+  "user_authorized_internal_before_payment_tests": true,
+  "apple_processing_complete": true,
+  "internal_testing_verification": {
+    "date": "2026-11-02",
+    "group": "GLory 内部验证",
+    "testers": 10,
+    "installed_build_76_testers_observed": 3,
+    "test_notes_saved": true
+  },
+  "market_availability_verified": {
+    "date": "2026-11-02",
+    "app_and_three_iaps": "10 Southeast Asian countries only",
+    "future_auto_add": false,
+    "evidence": "delivery/ios-review-20261101/markets-live-verification.json"
+  },
+  "apple_tax_forms_verified": {
+    "date": "2026-11-02",
+    "foreign_status_certificate": "In Use",
+    "w8ben": "In Use",
+    "paid_apps_agreement": "Active",
+    "bank_account": "Available",
+    "developer_license": "Account Holder acceptance still required"
+  },
+  "physical_sandbox_acceptance_20261102": {
+    "candidate": "1.0.2 (77) Ad Hoc; production backend",
+    "prices_myr": [
+      "4.90",
+      "19.90",
+      "49.90"
+    ],
+    "independent_game_qa_accounts": 3,
+    "tiers": [
+      {
+        "id": "diamond_pack_1",
+        "credited": 100,
+        "fresh_server_login_balance": 100
+      },
+      {
+        "id": "diamond_pack_2",
+        "credited": 400,
+        "fresh_server_login_balance": 400
+      },
+      {
+        "id": "diamond_pack_3",
+        "credited": 1000,
+        "fresh_server_login_balance": 1000
+      }
+    ],
+    "all_passed": true,
+    "first_bonus_preserved_for_real_purchase": true,
+    "sandbox_daily_limit_unchanged": true,
+    "tier1_relaunch_balance": 100,
+    "testflight_device_acceptance_separate": true,
+    "external_or_formal_review_submitted_this_task": false,
+    "evidence": "outer delivery/ios-review-20261101/sandbox-payment-live-20261102.json"
+  }
+}

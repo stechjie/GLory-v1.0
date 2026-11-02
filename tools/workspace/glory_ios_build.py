@@ -501,6 +501,7 @@ def arguments(argv=None):
     parser.add_argument("--templates", help="与 Godot 匹配的 iOS 模板目录")
     parser.add_argument("--keychain", type=Path, default=DEFAULT_KEYCHAIN)
     parser.add_argument("--patch-config", type=Path, help="更新器基础包配置 JSON")
+    parser.add_argument("--server-environment", choices=("prod", "test"), help="只在隔离目录选择正式服或测试服")
     return parser.parse_args(argv)
 
 
@@ -556,6 +557,11 @@ def main(argv=None):
                 if sync_status.is_file() and json.loads(sync_status.read_text()).get("status") in ("running", "failed"):
                     raise RuntimeError("资源同步尚未成功完成，请先同步。")
                 report = shared.stage_project(args.project, assets, stage, logdir)
+            server_target = shared.configure_server_environment(stage, args.server_environment)
+            if args.patch_config and server_target:
+                patch_settings = json.loads(args.patch_config.read_text(encoding="utf-8"))
+                if patch_settings.get("backend_url", "").rstrip("/") != server_target["backend_url"]:
+                    raise RuntimeError("补丁账号接口与所选服务器环境不一致，停止构建。")
             number = reserve_build_number(work / "build-number.json", args.build_number)
             note(f"本次 build number：{number}；快照：{stage}")
             install_profile(profile_path, profile)
@@ -570,6 +576,7 @@ def main(argv=None):
                         "dirty_files": len(dirty.splitlines()) if dirty else 0,
                         "build_utc": dt.datetime.now(dt.timezone.utc).isoformat(), "godot_version": env["version"],
                         "engine_info": env.get("engine_info", {}),
+                        "server_target": server_target,
                         "package_id": BUNDLE, "export_preset": PRESET, "version": version, "build_number": number,
                         "asset_inventory_sha256": report["actual_assets_sha256"],
                         "asset_inventory_kind": "merged_source_files_sha256"}

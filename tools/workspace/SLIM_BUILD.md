@@ -72,3 +72,7 @@ Google Play 正式／审核包使用 `./tools/build_aab.sh --server-environment 
 `glorytd-prod-battle.duckdns.org:8080`（UDP + DTLS），语音由正式服下发
 `wss://glorytd-prod-voice.duckdns.org`。使用 `--patch-config` 时账号与补丁
 接口必须匹配；新版本保留独立基线。
+
+iOS 正式候选包也显式指定 `./tools/build_ipa.sh --method app-store --server-environment prod`。
+TestFlight 与后续 App Store 提审使用同一候选包；`--patch-config` 的 `backend_url`
+必须匹配所选环境，否则停止构建。构建记录的 `server_target` 保留环境与实际端点。
