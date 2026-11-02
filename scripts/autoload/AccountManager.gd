@@ -1336,6 +1336,26 @@ func confirm_store_purchase(order_id: String, proof: String) -> Dictionary:
 	return await confirm_google_purchase(order_id, proof)
 
 
+# Steam 下单：带一张新的 Steam 票，服务器验票、核对这个 Steam 绑在当前号上，再向 Steam 下单。
+# 回的 steam_order_no 用来认确认窗口的回调（SteamBridge.wait_microtxn）。
+# web = true：游戏里的 Steam 确认窗口用不了，改在浏览器里确认 —— 回的 steam_url 由钻石宝库打开。
+func create_steam_iap_order(client_order_id: String, product_id: String, web: bool) -> Dictionary:
+	var ticket: Dictionary = await SteamBridge.ticket(get_tree())
+	if not bool(ticket.get("ok", false)):
+		return {"code": 0, "error": localized_error(str(ticket.get("error", "")))}
+	return await _request(HTTPClient.METHOD_POST, "/v1/iap/orders", {
+		"client_order_id": client_order_id, "platform": "steam", "product_id": product_id,
+		"steam_ticket": str(ticket["ticket"]), "steam_web": web,
+		"language": "en" if LocaleManager.get_locale().begins_with("en") else "zh"}, true)
+
+
+# 让服务器去问 Steam 这张单现在怎样了（扣款、入账都在服务器那边）。
+# authorized = false 只在玩家点了取消时传；浏览器付款拿不到回调，轮询时一律 true（只查不取消）。
+func confirm_steam_purchase(order_id: String, authorized: bool) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/iap/steam/confirm",
+		{"order_id": order_id, "authorized": authorized}, true)
+
+
 # 只读数据库，不连平台。「处理中」时每隔几秒问一次。
 func fetch_iap_order(order_id: String) -> Dictionary:
 	return await _request(HTTPClient.METHOD_GET, "/v1/iap/orders/" + order_id.uri_encode(), null, true)

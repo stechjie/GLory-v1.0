@@ -208,6 +208,20 @@ async def untag(player_id: uuid.UUID, who: Writer) -> dict:
     return await admin.untag_player(who, player_id)
 
 
+# --- 充值（docs/充值系统设计.md 第十一节）-------------------------------------------------
+
+
+@router.post("/admin/api/players/{player_id}/iap/{order_id}/recheck")
+async def recheck_iap(player_id: uuid.UUID, order_id: uuid.UUID, who: Writer) -> dict:
+    # 不用第二个人批：只有平台确认付了款才会入账，和玩家自己交凭证是同一条路。
+    return await admin.recheck_iap(who, player_id, order_id)
+
+
+@router.get("/admin/api/iap")
+async def iap_overview(_who: Me, min_refunds: Annotated[int, Query(ge=1, le=100)] = 2) -> dict:
+    return await admin.iap_overview(min_refunds)
+
+
 # --- 运营数据（只读；docs/运营数据.md）---------------------------------------------------
 
 Days = Annotated[int, Query(ge=1, le=analytics_report.MAX_DAYS)]

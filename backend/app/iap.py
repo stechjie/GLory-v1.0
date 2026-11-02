@@ -324,6 +324,20 @@ async def mark_steam_txn(order_id: uuid.UUID, transid: str) -> None:
             order_id, transid)
 
 
+async def remember_token(order_id: uuid.UUID, token: str) -> None:
+    """Google 的凭证一交上来就先记在**待付款**的单上，还没核实。
+
+    核实这一趟可能做不完（连不上 Google、服务器没配好、Google 说还在待付款）。记下来，
+    后台「重新核实」才有东西可查 —— 不然服务器手里什么都没有，只能等玩家重开游戏再交。
+    重新核实照样走 Google 那一整套比对，记下的凭证不对也入不了账。
+    入过账 / 取消的单不写：那上面的凭证是 credit 定的，不许被改。
+    """
+    async with db.pool().acquire() as conn:
+        await conn.execute(
+            "update iap_orders set purchase_token = $2 where order_id = $1 and status = 'pending'",
+            order_id, token)
+
+
 async def mark_consumed(order_id: uuid.UUID) -> None:
     """Google 消耗成功。只记时间，不影响入账（入账在消耗之前就已经提交了）。"""
     async with db.pool().acquire() as conn:

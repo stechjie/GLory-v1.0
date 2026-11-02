@@ -47,6 +47,7 @@ func _ready() -> void:
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
 	_title = Label.new()
+	_title.clip_text = true
 	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_title.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
@@ -84,7 +85,11 @@ func _ready() -> void:
 	_empty = Label.new()
 	_empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_empty.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# A wrapped label laid out at zero width keeps a stale multi-line minimum
+	# height until a later room update. Keep this short status on one fixed line.
+	_empty.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_empty.clip_text = true
+	_empty.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_empty.add_theme_color_override("font_color", INK)
 	add_child(_empty)
 	resized.connect(_relayout)
@@ -115,8 +120,8 @@ func _relayout() -> void:
 	# 羊皮纸的内区（实测 friends.png 拉到 330×480 时，纸面约在 9%~91% 宽、11%~92% 高）。
 	var inner := Rect2(size.x * 0.10, size.y * 0.09, size.x * 0.80, size.y * 0.83)
 	_title.position = Vector2(inner.position.x, inner.position.y)
-	_title.size = Vector2(inner.size.x, 40 * k)
 	_title.add_theme_font_size_override("font_size", maxi(13, roundi(24 * k)))
+	_title.size = Vector2(inner.size.x, 40 * k)
 	_join.visible = _my_sid < 0 and _open
 	_join.position = Vector2(size.x * 0.5 - 20 * k, inner.position.y + 39 * k)
 	_join.size = Vector2(40, 40) * k
@@ -132,8 +137,8 @@ func _relayout() -> void:
 	_scroll.position = Vector2(inner.position.x + 12 * k, list_top)
 	_scroll.size = Vector2(inner.size.x - 12 * k, inner.end.y - list_top)
 	_empty.position = _scroll.position
-	_empty.size = Vector2(_scroll.size.x, 80 * k)
 	_empty.add_theme_font_size_override("font_size", maxi(13, roundi(18 * k)))
+	_empty.size = Vector2(_scroll.size.x, 80 * k)
 	for row in _rows.get_children():
 		_size_row(row as Control, k)
 

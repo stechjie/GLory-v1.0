@@ -1,17 +1,20 @@
 extends RefCounted
 
-# 平台付款的 GDScript 一侧：Google Play / Apple StoreKit 2。
+# 平台付款的 GDScript 一侧：Google Play / Apple StoreKit 2 / Steam。
 #
 # 安卓插件在 android_plugins/glory_billing/（GloryBillingPlugin.kt）。这里只负责：
 #   1. 这台设备在哪个平台付款、能不能付（直发的 APK 付不了，要去 Play 下载）；
 #   2. 查当地价格、弹付款页、查没完成的付款，把插件的结果翻成几种固定状态；
 #   3. 启动 / 回到前台时把没完成的付款逐张交给账号服务器（recover）。
+# Steam 那一路的等确认窗口在 SteamBridge（同一个插件的事放一处），这里只认「这台电脑能用 Steam 付」。
 #
-# 不做 autoload、不 preload 任何资源、不声明 class_name：同 SignInBridge 文件头那两条理由
-# （战斗服务器也会加载账号脚本；全局类名要先重建缓存才能打服务器包）。
+# 不做 autoload、不 preload 贴图字体这类资源（SteamBridge 是纯脚本）、不声明 class_name：
+# 同 SignInBridge 文件头那两条理由（战斗服务器也会加载账号脚本；全局类名要先重建缓存才能打服务器包）。
 #
 # 🔴 付款凭证只在内存里转一手：不打印、不存盘。到没到账只认账号服务器的答复 ——
 # 客户端永远不自己说「到账了」。
+
+const SteamBridge := preload("res://scripts/account/SteamBridge.gd")
 
 const SINGLETON := "GloryBilling"
 const APPLE_SINGLETON := "GloryAppleBilling"
@@ -37,11 +40,13 @@ static func _bridge() -> Object:
 
 
 # 这台设备在哪个平台付款。"" = 现在付不了。
+#   google  安卓，有 GloryBilling 插件
+#   steam   Windows 电脑版，Steam 开着并已登录（SteamBridge.available）
 static func platform() -> String:
 	var bridge := _bridge()
-	if bridge == null:
-		return ""
-	return "apple" if bridge.has_method("beginFinishTransaction") else "google"
+	if bridge != null:
+		return "apple" if bridge.has_method("beginFinishTransaction") else "google"
+	return "steam" if SteamBridge.available() else ""
 
 
 static func can_make_payments() -> bool:

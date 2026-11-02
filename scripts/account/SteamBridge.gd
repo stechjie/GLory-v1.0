@@ -2,8 +2,8 @@ extends RefCounted
 
 # 电脑版 Steam 的 GDScript 一侧（docs/三方登录设计.md 第八节）。插件是 addons/godotsteam（GDExtension）。
 #
-# 只负责三件事：Steam 能不能用、现在登录 Steam 的是谁、向 Steam 要一张给账号服务器验的票。
-# 拿票去换登录是 AccountManager 的事。
+# 只负责几件事：Steam 能不能用、现在登录 Steam 的是谁、向 Steam 要一张给账号服务器验的票、
+# 充值时等 Steam 确认窗口的结果（docs/充值系统设计.md 第五节）。拿票去换登录 / 下单是 AccountManager 的事。
 #
 # 🔴 代码里**不直接写 `Steam`**，一律 Engine.get_singleton：手机包和战斗服务器里没有这个插件，
 # 直接写类名会让整个脚本解析失败（同 SignInBridge / VoiceService 的做法）。
@@ -20,8 +20,13 @@ const RESULT_OK := 1
 # 本机存着的登录凭证属于哪个 SteamID（共用电脑时判断要不要换号）。不是凭证，只是一个公开的编号。
 const OWNER_PATH := "user://glory_steam_owner.txt"
 
-# 门禁换成替身用（tools/account_steam_check）。替身要有 getSteamID / getPersonaName / getAuthTicketForWebApi
-# 三个方法和 get_ticket_for_web_api 信号；设了替身就不做真初始化。
+# 充值时玩家可能在确认窗口里看半天、切去给 Steam 钱包充值。等满了也不算失败 ——
+# 服务器每分钟扫一遍待付款的 Steam 单，点了确认的照样入账（app/iap_sync.py）。
+const MICROTXN_TIMEOUT_SEC := 600.0
+
+# 门禁换成替身用（tools/account_steam_check、tools/iap_check）。替身要有 getSteamID / getPersonaName /
+# getAuthTicketForWebApi / isOverlayEnabled 四个方法和 get_ticket_for_web_api、microtransaction_auth_response
+# 两个信号；设了替身就不做真初始化。
 static var bridge_override: Object = null
 static var _init_done := false
 static var _init_ok := false
@@ -108,6 +113,60 @@ class _TicketWaiter extends RefCounted:
 			return
 		result = p_result
 		buffer = ticket_buffer
+		done = true
+
+
+# --- 充值（docs/充值系统设计.md 第五节）---------------------------------------------------
+# 服务器先向 Steam 下单（InitTxn），Steam 在游戏画面上弹确认窗口。玩家点了确认 / 取消，
+# Steam 回 MicroTxnAuthorizationResponse（插件里是 microtransaction_auth_response 信号）。
+# 回调里的 authorized 只是提示：扣不扣钱、入不入账由服务器去问 Steam。
+
+# 游戏里的 Steam 界面（overlay）能不能用。不能用 = 确认窗口弹不出来，钻石宝库改去浏览器付款。
+# 玩家在 Steam 设置里关了「游戏中启用 Steam 界面」就是 false；刚启动那几秒也是（还在挂上来）。
+static func overlay_ready() -> bool:
+	return available() and bool(_steam().call("isOverlayEnabled"))
+
+
+# 等确认窗口的结果。order_no = 下单时报给 Steam 的 orderid（服务器回的 steam_order_no）。
+# keep_waiting 返回 false（或者它所在的窗口已经没了）就不等了：窗口关了、玩家选了改用浏览器。
+# 返回 {"state": …} 之一：
+#   authorized  玩家点了确认 —— 交给服务器去扣款入账，**还不算到账**
+#   declined    玩家点了取消
+#   timeout     等太久 —— 不算失败，服务器会自己扫这张单
+#   abandoned   keep_waiting 说不等了
+static func wait_microtxn(tree: SceneTree, order_no: int, timeout_sec: float = MICROTXN_TIMEOUT_SEC,
+		keep_waiting: Callable = Callable()) -> Dictionary:
+	if not available():
+		return {"state": "timeout"}
+	var steam := _steam()
+	var waiter := _MicroTxnWaiter.new()
+	waiter.order_no = order_no
+	steam.connect("microtransaction_auth_response", waiter.on_response)
+	var waited := 0.0
+	var abandoned := false
+	while not waiter.done and waited < timeout_sec:
+		if not keep_waiting.is_null() and (not keep_waiting.is_valid() or not bool(keep_waiting.call())):
+			abandoned = true
+			break
+		await tree.create_timer(0.1).timeout
+		waited += 0.1
+	if steam.is_connected("microtransaction_auth_response", waiter.on_response):
+		steam.disconnect("microtransaction_auth_response", waiter.on_response)
+	if waiter.done:
+		return {"state": "authorized" if waiter.authorized else "declined"}
+	return {"state": "abandoned" if abandoned else "timeout"}
+
+
+class _MicroTxnWaiter extends RefCounted:
+	var order_no := 0
+	var done := false
+	var authorized := false
+
+	func on_response(_app_id: int, order_id: int, p_authorized: bool) -> void:
+		# 信号是广播的：上一张没等到结果的单，它的回调也可能这时才来 —— 按 orderid 认。
+		if order_id != order_no:
+			return
+		authorized = p_authorized
 		done = true
 
 

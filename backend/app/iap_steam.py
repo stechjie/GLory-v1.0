@@ -89,6 +89,11 @@ async def user_currency(steam_id: str, sandbox: bool, transport: httpx.AsyncBase
     return str(params.get("currency") or "")
 
 
+async def wallet_currency(steam_id: str, transport: httpx.AsyncBaseTransport | None = None) -> str:
+    """钻石宝库显示价格用：这个 Steam 号钱包的币种。测试员问沙盒那边，同下单。"""
+    return await user_currency(steam_id, steam_id in iap.steam_sandbox_ids(), transport)
+
+
 def pick_price(item: iap.Product, wallet_currency: str) -> tuple[str, int]:
     """(币种, 最小单位金额)。目录里有钱包的币种就用它，没有就 USD（Steam 按汇率换算），再没有就 MYR。"""
     for currency in (wallet_currency, "USD", "MYR"):
@@ -121,8 +126,8 @@ async def begin_in_browser(player_id: uuid.UUID, client_order_id: uuid.UUID, pro
                            transport: httpx.AsyncBaseTransport | None = None) -> tuple[iap.Outcome, str]:
     """同 begin，但让玩家在浏览器里确认（usersession=web）。返回 (单, 要打开的 Steam 网址)。
 
-    两处用：deploy/check_iap_steam.py 不经过游戏走一遍沙盒；以后游戏里 overlay 弹不出来时的退路
-    （docs/充值系统设计.md 第五节）。ipaddress 是玩家的公网 IP —— Steam 对这种单要求带上。
+    两处用：deploy/check_iap_steam.py 不经过游戏走一遍沙盒；游戏里 Steam 确认窗口弹不出来时的退路
+    （客户端下单带 steam_web，docs/充值系统设计.md 第五节）。ipaddress 是玩家的公网 IP —— Steam 对这种单要求带上。
     重试拿回原单时网址是空串（Steam 只在下单那一次给）。
     """
     return await _begin(player_id, client_order_id, product_id, steam_id, language, ipaddress,

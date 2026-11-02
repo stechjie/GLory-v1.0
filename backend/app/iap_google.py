@@ -203,6 +203,8 @@ async def confirm(order: iap.Order, token: str,
     """核实 + 入账 + 消耗。客户端交凭证走这里；实时通知走 on_purchase_notice，最后是同一段 _settle。"""
     if order.platform != "google":
         raise iap.IapRejected("wrong_platform", "这张单不是 Google Play 的")
+    if order.status == "pending" and _TOKEN_RE.match(token) and token != order.purchase_token:
+        await iap.remember_token(order.order_id, token)
     return await _settle(order, token, await get_purchase(order.product_id, token, transport), transport)
 
 

@@ -2854,6 +2854,19 @@ func _show_game_over(local_settlement: Dictionary = {}) -> void:
 		reward_screen.details_requested.connect(_show_final_settlement)
 		add_child(reward_screen)
 		return
+	if str(_final_settlement_data.get("mode", "")) in ["casual", "casual_normal"] \
+		and not str(_final_settlement_data.get("match_uid", "")).is_empty() and not NetworkService.spectating:
+		var reward_screen := preload("res://scenes/menu/RankedRewardScreen.gd").new()
+		reward_screen.data = _final_settlement_data.duplicate(true)
+		reward_screen.confirmed.connect(_show_game_over_summary)
+		add_child(reward_screen)
+		return
+	_show_game_over_summary()
+
+func _show_game_over_summary() -> void:
+	_clear()
+	_enter_match_flow()
+	_set_chat_sound_suppressed(true)
 	var result_screen := preload("res://scenes/menu/GameOverScreen.gd").new()
 	result_screen.result_kind = _game_over_kind()
 	result_screen.title_text = _game_over_title()
@@ -3825,7 +3838,10 @@ func _show_public_token_in_menu(token_id: String) -> void:
 	if is_instance_valid(_menu) and _menu.has_method("show_public_token"):
 		_menu.show_public_token(token_id)
 
+var _team_entry_pending := false
+
 func _on_team3v3_start() -> void:
+	_team_entry_pending = true
 	SaveManager.new_run()
 	# 匹配局以服务端座位名片为准；青苗的临时 1–3 族不等于备战区常驻的 4 族。
 	# 本地房主/离线自测仍使用备战区选择。new_run() 已清空 run_races。
@@ -3850,6 +3866,7 @@ func _on_team3v3_start() -> void:
 	#     而不是写死常数：换素材时那个常数就对不上了，而且没人会发现
 	#     （见 SfxService.cue_length 的注释，胜负 BGM 用的是同一套）。
 	await _play_start_game_success_then_prep()
+	_team_entry_pending = false
 
 func _play_start_game_success_then_prep() -> void:
 	var started := SfxService.play(SfxService.CUE_START_GAME_SUCCESS)
@@ -4325,6 +4342,15 @@ func _on_network_match_state_received(state_payload: Dictionary) -> void:
 		return
 	if _battle != null and is_instance_valid(_battle):
 		return
+	# Receiving a result does not mean its replay was viewed. Protect the opening
+	# cue and a prep screen that has not yet committed or finished building.
+	if GameState.team_mode and int(state_payload.get("completed_round", -1)) >= GameState.round_index:
+		if _team_entry_pending:
+			return
+		if is_instance_valid(_prep):
+			if _prep.has_method("_recover_early_team_round_start"):
+				_prep.call_deferred("_recover_early_team_round_start")
+			return
 	# 内嵌服务器会在本回合刚就绪时立刻把战后 match_state 发回，此刻玩家可能还在
 	# 备战界面异步打包战斗（战斗场景尚未创建）。这时绝不能提前应用——否则
 	# round_index 会在进战斗前就 +1，既跳了回合，又让备战的

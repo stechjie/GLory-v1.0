@@ -489,11 +489,12 @@ func _build() -> void:
 	reconnect_btn.add_theme_font_size_override("font_size", 26)
 	reconnect_btn.pressed.connect(_emit_reconnect)
 	# Active leave requests retain credentials only for the server receipt.
-	reconnect_btn.visible = not SaveManager.load_resumable_reconnect().is_empty()
+	reconnect_btn.visible = false # Wait for a verified resumable room, not just a disk token.
 	add_child(reconnect_btn)
 	_track(reconnect_btn, Vector2(1110, 591), Vector2(235, 64))
 
 	_net_status = _add_label("", Vector2(640, 64), Vector2(320, 32), 20)
+	_net_status.hide() # Background status checks must not overlay the currency HUD.
 	_net_status.add_theme_color_override("font_color", Color(0.98, 0.88, 0.55))
 
 	_address_edit = LineEdit.new()
@@ -731,18 +732,17 @@ func _room_row(room_id: int, players: int, max_players: int, full: bool) -> Butt
 	return row
 
 func show_connecting() -> void:
-	if _net_status == null:
-		return
-	_net_status.add_theme_color_override("font_color", Color(0.98, 0.88, 0.55))
-	_net_status.text = tr("menu_connecting")
+	if _net_status != null:
+		_net_status.text = ""
+		_net_status.hide()
 
 func show_connection_error(msg: String) -> void:
-	if _net_status == null:
-		return
-	_net_status.add_theme_color_override("font_color", Color(0.95, 0.45, 0.42))
-	_net_status.text = tr("menu_connect_failed") % msg
+	if _net_status != null:
+		_net_status.text = ""
+		_net_status.hide()
+	# Explicit room operations still report errors inside their own dialog.
 	if _room_status != null:
-		_room_status.text = msg
+		_room_status.text = "" if "token_unknown" in msg else msg
 
 func show_public_token(token_id: String) -> void:
 	if _token_label != null:
@@ -929,6 +929,9 @@ func _emit_offline() -> void:
 	team_offline_requested.emit()
 
 func _emit_reconnect() -> void:
+	if SaveManager.load_resumable_reconnect().is_empty():
+		_apply_saved_match_status("clear", "")
+		return
 	team_reconnect_requested.emit()
 
 # 「休闲」：进匹配队列（协议 32）。
@@ -951,24 +954,29 @@ func _on_ranked() -> void:
 	if await NetworkService.allow_new_match():
 		ranked_requested.emit()
 
+# A local token is only a candidate. Show a return action after its current
+# server status is confirmed; never reuse the result for a replacement token.
+func _apply_saved_match_status(status: String, checked_token: String) -> void:
+	var rc := SaveManager.load_resumable_reconnect()
+	var can_return := not rc.is_empty() and not checked_token.is_empty() \
+		and str(rc.get("token", "")) == checked_token and status in ["lobby", "active"]
+	for child in get_children():
+		if child is Button and child.pressed.is_connected(_emit_reconnect):
+			child.visible = can_return
+			if can_return:
+				child.text = _menu_text("返回房间", "Back to Room") if status == "lobby" else _menu_text("游戏重连", "Reconnect")
+
 func _refresh_saved_match() -> void:
-	while is_inside_tree() and not SaveManager.load_resumable_reconnect().is_empty():
+	while is_inside_tree():
+		var rc := SaveManager.load_resumable_reconnect()
+		if rc.is_empty():
+			_apply_saved_match_status("clear", "")
+			return
+		var token := str(rc.get("token", ""))
 		var status := await NetworkService.check_saved_match()
 		if not is_inside_tree():
 			return
-		# 协议 40 起这颗键有两种处境，文案必须跟着变：对一个**还没开打的房间**说
-		# 「重连」，玩家会以为要回到对局里去（而那边其实只是他的座位还空着）。
-		# status 为 unknown（问不出来）时不动文案，保持上一次问到的说法。
-		var label := ""
-		if status == "lobby":
-			label = _menu_text("返回房间", "Back to Room")
-		elif status == "active":
-			label = _menu_text("游戏重连", "Reconnect")
-		for child in get_children():
-			if child is Button and child.pressed.is_connected(_emit_reconnect):
-				child.visible = not SaveManager.load_resumable_reconnect().is_empty()
-				if not label.is_empty():
-					child.text = label
+		_apply_saved_match_status(status, token)
 		await get_tree().create_timer(3.0).timeout
 
 func _emit_prep() -> void:

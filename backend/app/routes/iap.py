@@ -1,10 +1,10 @@
 """充值接口（docs/充值系统设计.md 第四节）。
 
-    GET  /v1/iap/catalog?platform=     档位、每档还有没有首充、当前余额与欠账
+    GET  /v1/iap/catalog?platform=     档位、每档还有没有首充、当前余额与欠账（Steam 还有按钱包币种的价格）
     POST /v1/iap/orders                建单（Steam 同时向 Steam 下单）
     POST /v1/iap/google/confirm        交 Google 的付款凭证
     POST /v1/iap/apple/confirm         交 StoreKit 2 的签名交易
-    POST /v1/iap/steam/confirm         overlay 回调之后来查
+    POST /v1/iap/steam/confirm         Steam 确认窗口回调之后来查；浏览器付款时轮询它
     GET  /v1/iap/orders/{order_id}     查单（「处理中」时轮询）
 
 平台推过来的（不在 /v1 下，同 /oidc/steam，避开客户端版本检查；不收玩家令牌，各自验平台的签名）：
@@ -35,6 +35,7 @@ from app import db, iap, iap_apple, iap_google, iap_steam, players, steam
 from app.config import get_settings
 from app.jwt_verify import Claims
 from app.rate_limit import RateLimited, SlidingWindowLimiter
+from app.routes.auth import _client_ip
 from app.routes.me import current_claims
 from app.supabase_auth import STEAM_PROVIDER, AuthError, SupabaseAuth
 
@@ -66,8 +67,9 @@ class CatalogProduct(BaseModel):
     diamond: int        # 基础量
     bonus: int          # 平时加送
     first_bonus: bool   # 这一档还有首充双倍（有的话这次给 diamond × 2，不给 bonus）
-    # 只有 platform=steam 才有：Steam 不给游戏查价格，客户端拿它显示。币种 -> 最小单位。
-    steam_prices: dict[str, int] = {}
+    # 只有 platform=steam 才有：Steam 不给游戏查价格，客户端拿它显示。
+    # {"currency": "MYR", "amount": 500}（最小货币单位），就是下单时会报给 Steam 的那个价（iap_steam.pick_price）。
+    steam_charge: dict[str, str | int] = {}
 
 
 class CatalogResponse(BaseModel):
@@ -76,6 +78,9 @@ class CatalogResponse(BaseModel):
     diamond: int        # 当前余额，欠账时是负数
     coin: int
     debt: int           # 欠账
+    # 只有 platform=steam 才有：这个号绑的 Steam 钱包的币种。空串 = 没查到，steam_charge 按马币给，
+    # 客户端要注明「以 Steam 确认窗口为准」；和 steam_charge 的币种不同 = Steam 会按汇率换算。
+    steam_wallet_currency: str = ""
 
 
 class CreateOrderBody(BaseModel):
@@ -86,6 +91,9 @@ class CreateOrderBody(BaseModel):
     steam_ticket: str | None = Field(default=None, max_length=8192)
     # Steam overlay 的语言（ISO 639-1）。
     language: str = Field(default="en", pattern=r"^[a-z]{2}$")
+    # 只有 Steam：true = 游戏里的 Steam 确认窗口用不了（玩家关了 Steam 游戏内界面、或者弹不出来），
+    # 改在浏览器里确认。回的 steam_url 由客户端打开，之后客户端轮询 /steam/confirm。
+    steam_web: bool = False
 
 
 class OrderOut(BaseModel):
@@ -103,6 +111,11 @@ class OrderOut(BaseModel):
     # Apple 的 appAccountToken（就是 order_id）。
     obfuscated_account_id: str = ""
     app_account_token: str = ""
+    # 只有 Steam：下单时报给 Steam 的 orderid。确认窗口的回调（MicroTxnAuthorizationResponse）带回的就是它，
+    # 客户端拿它认出是不是自己这一单的回调。
+    steam_order_no: int = 0
+    # 只有 Steam 浏览器付款：要打开的 Steam 确认页。重试拿回原单时是空串（Steam 只在下单那一次给）。
+    steam_url: str = ""
 
 
 class GoogleConfirmBody(BaseModel):
@@ -118,6 +131,7 @@ class AppleConfirmBody(BaseModel):
 class SteamConfirmBody(BaseModel):
     order_id: uuid.UUID
     # overlay 回调里的 authorized。只是提示：扣不扣、入不入以 Steam 那边的状态为准。
+    # 浏览器付款时客户端拿不到回调，轮询时一律带 true（= 只查不取消）。
     authorized: bool
 
 
@@ -164,7 +178,7 @@ async def _run(call):
         raise _http(502, "steam_failed", "Steam 处理失败（%d），请稍后再试" % exc.code) from None
 
 
-def _out(outcome: iap.Outcome) -> OrderOut:
+def _out(outcome: iap.Outcome, steam_url: str = "") -> OrderOut:
     order = outcome.order
     return OrderOut(
         order_id=order.order_id, platform=order.platform, product_id=order.product_id,
@@ -174,6 +188,8 @@ def _out(outcome: iap.Outcome) -> OrderOut:
         replayed=outcome.replayed,
         obfuscated_account_id=iap_google.account_tag(order.player_id) if order.platform == "google" else "",
         app_account_token=str(order.order_id) if order.platform == "apple" else "",
+        steam_order_no=order.order_no if order.platform == "steam" else 0,
+        steam_url=steam_url,
     )
 
 
@@ -181,15 +197,20 @@ async def _own_order(player_id: uuid.UUID, order_id: uuid.UUID) -> iap.Order:
     return (await _run(iap.read_order(player_id, order_id))).order
 
 
+async def _linked_identities(authorization: str) -> list:
+    s = get_settings()
+    _anonymous, linked = await SupabaseAuth(s.supabase_url, s.supabase_publishable_key).linked_identities(
+        authorization.partition(" ")[2].strip())
+    return linked
+
+
 async def _verified_steam_id(ticket: str | None, authorization: str) -> str:
     """验票拿到 Steam 编号，并核对它绑在当前这个号上（防止用 A 的 Steam 钱包给 B 充）。"""
     if not ticket:
         raise _http(400, "steam_ticket_missing", "Steam 下单要带 Steam 票")
     user = await _run(steam.authenticate_ticket(ticket))
-    s = get_settings()
     try:
-        _anonymous, linked = await SupabaseAuth(s.supabase_url, s.supabase_publishable_key).linked_identities(
-            authorization.partition(" ")[2].strip())
+        linked = await _linked_identities(authorization)
     except AuthError as exc:
         raise _http(503, "platform_unavailable", "查不到这个号绑的登录方式：%s" % exc) from None
     # Steam 身份在 Supabase 上的邮箱是 steam.placeholder_email 那个占位，里面就是 Steam 编号。
@@ -199,6 +220,20 @@ async def _verified_steam_id(ticket: str | None, authorization: str) -> str:
     return user.steam_id
 
 
+async def _steam_wallet_currency(authorization: str) -> str:
+    """这个号绑的 Steam 钱包是什么币种。只为显示价格：查不到回空串，不挡开商店（下单时还会再问一次 Steam）。
+
+    不要 Steam 票：只是看价格，用绑在号上的那个 Steam 编号就够了。下单才验票、才核对是不是同一个人。
+    """
+    try:
+        linked = await _linked_identities(authorization)
+        steam_id = next((steam.steam_id_of_placeholder(i.email) for i in linked if i.provider == STEAM_PROVIDER), "")
+        return await iap_steam.wallet_currency(steam_id) if steam_id else ""
+    except (AuthError, steam.SteamUnavailable, iap_steam.SteamTxnFailed) as exc:
+        log.info("查不到 Steam 钱包币种，按马币显示：%s", exc)
+        return ""
+
+
 # --- 接口 ---------------------------------------------------------------------
 
 
@@ -206,21 +241,34 @@ async def _verified_steam_id(ticket: str | None, authorization: str) -> str:
 async def catalog(
     claims: Annotated[Claims, Depends(current_claims)],
     platform: Annotated[Literal["google", "apple", "steam"], Query()],
+    authorization: Annotated[str, Header()],
 ) -> CatalogResponse:
     me = await _me(claims)
     shelf = await _run(iap.shelf(me.player_id, platform))
+    wallet_currency = ""
+    if platform == "steam" and shelf.open:
+        wallet_currency = await _steam_wallet_currency(authorization)
+
+    def steam_charge(item: iap.Product) -> dict[str, str | int]:
+        if platform != "steam":
+            return {}
+        currency, amount = iap_steam.pick_price(item, wallet_currency or "MYR")
+        return {"currency": currency, "amount": amount}
+
     return CatalogResponse(
         open=shelf.open,
         products=[CatalogProduct(id=item.id, diamond=item.diamond, bonus=item.bonus, first_bonus=first,
-                                 steam_prices=dict(item.steam_prices) if platform == "steam" else {})
+                                 steam_charge=steam_charge(item))
                   for item, first in shelf.products],
         diamond=shelf.wallet.diamond, coin=shelf.wallet.coin, debt=shelf.wallet.diamond_debt,
+        steam_wallet_currency=wallet_currency,
     )
 
 
 @router.post("/orders", response_model=OrderOut)
 async def create_order(
     body: CreateOrderBody,
+    request: Request,
     claims: Annotated[Claims, Depends(current_claims)],
     authorization: Annotated[str, Header()],
 ) -> OrderOut:
@@ -232,6 +280,12 @@ async def create_order(
             # 先挡开关再验票：关着的时候不该为一个注定被拒的请求去连 Steam 和 Supabase。
             raise _http(503, "iap_closed", "充值暂未开放")
         steam_id = await _verified_steam_id(body.steam_ticket, authorization)
+        if body.steam_web:
+            # Steam 要浏览器确认的单带上玩家的公网 IP：取 Caddy 转来的那个（只信本机代理）。
+            outcome, url = await _run(iap_steam.begin_in_browser(
+                me.player_id, body.client_order_id, body.product_id, steam_id, body.language,
+                _client_ip(request)))
+            return _out(outcome, steam_url=url)
         outcome = await _run(iap_steam.begin(me.player_id, body.client_order_id, body.product_id,
                                              steam_id, body.language))
         return _out(outcome)
