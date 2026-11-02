@@ -1066,7 +1066,7 @@ func _on_delete_pressed() -> void:
 		"intent": ConfirmDialog.Intent.DANGER,
 		"confirm_text": _text("永久删除", "Delete forever"),
 		"owner": self,
-		"on_result": func(result: String) -> void:
+		"on_result": func(result: String, _request_id: String) -> void:
 			if result == ConfirmDialog.RESULT_CONFIRMED:
 				_run_delete(code),
 	})
@@ -1245,7 +1245,7 @@ func _on_link_pc_submit() -> void:
 		"intent": ConfirmDialog.Intent.NORMAL,
 		"confirm_text": _text("关联", "Link"),
 		"owner": self,
-		"on_result": func(answer: String) -> void:
+		"on_result": func(answer: String, _request_id: String) -> void:
 			if answer == ConfirmDialog.RESULT_CONFIRMED:
 				_run_link_pc(code),
 	})
@@ -1313,7 +1313,7 @@ func _confirm_switch_to_taken(provider: String, token: String, nonce: String) ->
 		"intent": ConfirmDialog.Intent.DANGER,
 		"confirm_text": _text("切换到那个账号", "Switch to that account"),
 		"owner": self,
-		"on_result": func(answer: String) -> void:
+		"on_result": func(answer: String, _request_id: String) -> void:
 			if answer == ConfirmDialog.RESULT_CONFIRMED:
 				_run_switch(provider, token, nonce),
 	})
@@ -1329,7 +1329,7 @@ func _on_switch_account() -> void:
 		"intent": ConfirmDialog.Intent.DANGER if AccountManager.is_guest() else ConfirmDialog.Intent.NORMAL,
 		"confirm_text": _text("继续", "Continue"),
 		"owner": self,
-		"on_result": func(answer: String) -> void:
+		"on_result": func(answer: String, _request_id: String) -> void:
 			if answer == ConfirmDialog.RESULT_CONFIRMED:
 				_sign_in_and_switch(),
 	})
