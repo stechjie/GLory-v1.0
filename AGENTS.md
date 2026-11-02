@@ -45,5 +45,6 @@
 - 使用 `--result-file <JSON>` 获取本次准确产物。APK 可用 `--version`、`--version-code`；IPA 可用 `--version`、`--build-number`。
 - 交付前检查签名、版本、包内依赖和补丁基线一致性。构建成功不代表上传、TestFlight 处理、测试组分配或真机验收成功；分别报告。
 - 构建入口不会自动上传、发布或改写在线补丁基线。只有得到相关任务授权后才执行这些步骤。
+- Patch 同样必须精简：统一通过 `tools/workspace/export_patch.py` 导出；手工和 nightly 构建都在隔离 stage 中重新扫描依赖并输出 `slim-resources.json`。动态引用保守保留，扫描失败停止构建，不允许退回全量导出。原包中已存在的未引用文件只继承原包字节用于差异比较，不重复放入补丁；真正删除原包文件仍需新全量包。不得改写旧基线。
 
 详见 `tools/workspace/SLIM_BUILD.md`。

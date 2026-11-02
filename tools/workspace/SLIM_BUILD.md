@@ -39,6 +39,16 @@ APK 下载文件更小不等于安装占用同幅度下降：native 库安装时
 
 ## 回归验证
 
+### Patch 默认精简
+
+手工补丁和 `nightly_patch.sh` 统一调用 `export_patch.py`，在 Godot 导入后、导出资源 ZIP 前重新执行同一依赖扫描。没有全量回退开关；扫描失败则停止构建。每个平台输出 `slim-resources.json` 和 `slim-patch-compatibility.json`，nightly 状态记录这两个报告路径。
+
+重复使用 stage 时会撤销上次扫描生成的排除项，再按最新引用计算；原有手工排除规则保留。保留 stage 时也保留 `.glory-slim-filters.json`；新基线清单同时记录自动排除源路径。
+
+旧基线若缺少自动排除记录，仍保留原来的严格预设校验；发现已被排除的资源重新成为运行依赖时停止构建，需恢复原始精简记录或重新制作全量基线，不能静默导出缺失资源。
+
+补丁不能从已安装原包中删除资源。对本次扫描确认无引用、但原包已经带有的资源，仅在差异比较 ZIP 中继承原始字节，因此不进入新补丁；对应导入映射和导入产物同样处理。其他删除、引擎／原生库／启动器变化继续拒绝构建，要求重新出全量包。旧基线 ZIP 不会被修改。
+
 ```bash
 python3 -m unittest discover -s tools -p test_glory_slim.py -v
 python3 -m unittest discover -s tools -p test_glory_build.py -q

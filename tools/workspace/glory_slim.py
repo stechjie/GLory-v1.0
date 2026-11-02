@@ -67,7 +67,7 @@ def closure(files, dependencies, texts, project):
     return seen, dynamic
 
 
-def apply(stage, engine, logdir):
+def apply(stage, engine, logdir, *, previous_exclusions=()):
     stage, logdir = Path(stage).resolve(), Path(logdir).resolve()
     if (stage / '.git').exists() or not (stage / '.godot/imported').is_dir():
         raise RuntimeError('Slimming requires an imported generated stage, never a Git checkout')
@@ -106,17 +106,29 @@ def apply(stage, engine, logdir):
         raise RuntimeError('Unsafe resource path for Godot exclusion filter')
     cfg = stage / 'export_presets.cfg'
     before = cfg.read_text()
+    state_file = stage / '.glory-slim-filters.json'
+    previous = set(previous_exclusions)
+    if state_file.exists():
+        previous.update(json.loads(state_file.read_text())['generated_exclusions'])
+    manual = set()
+    for value in re.findall(r'(?m)^exclude_filter="([^"]*)"', before):
+        manual.update(set(value.split(',')) - previous)
+    blocked = sorted(n for n in manual if n.startswith('assets/') and n in seen and Path(n).suffix in ART)
+    if blocked:
+        raise RuntimeError('Reachable resources excluded by retained/manual preset; recover original slim provenance or create a new base: ' + str(blocked[:8]))
     # All presets share the same game content. Do not remove source files or caches.
     def filters(match):
-        values = list(dict.fromkeys(match[1].split(',') + removed))
+        values = list(dict.fromkeys([x for x in match[1].split(',') if x not in previous] + removed))
         return 'exclude_filter=' + json.dumps(','.join(values), ensure_ascii=False)
     after, count = re.subn(r'(?m)^exclude_filter="([^"]*)"', filters, before)
     if not count:
         raise RuntimeError('No export exclusion field; refusing an unfiltered export')
     cfg.write_text(after)
+    generated = sorted(set(removed) - manual)
+    state_file.write_text(json.dumps({'generated_exclusions': generated}, ensure_ascii=False) + '\n')
     report = {'policy': 'current-source-dependency-closure-v1', 'removed_source_paths': removed,
               'removed_source_bytes': sum(files[n].stat().st_size for n in removed),
-              'reachable_count': len(seen), 'dynamic_keeps': dynamic,
+              'reachable_count': len(seen), 'dynamic_keeps': dynamic, 'generated_exclusions': generated,
               'source_files_deleted': False, 'texture_quality_changed': False, 'abis_removed': False}
     (logdir / 'slim-resources.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
     return report

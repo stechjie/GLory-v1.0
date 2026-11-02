@@ -158,6 +158,9 @@ def run(args) -> int:
             if not preset_source.is_file():
                 raise RuntimeError(f"Missing retained {platform} export preset: {preset_source}")
             (stage / "export_presets.cfg").write_bytes(preset_source.read_bytes())
+            slim_state = preset_source.parent / '.glory-slim-filters.json'
+            if slim_state.is_file():
+                (stage / slim_state.name).write_bytes(slim_state.read_bytes())
             build_info_source = Path(target["source_snapshot"]) / "build_info.json"
             if not build_info_source.is_file():
                 raise RuntimeError(f"Missing retained {platform} client build metadata: {build_info_source}")
@@ -181,7 +184,7 @@ def run(args) -> int:
             inventories[platform] = report["actual_assets_sha256"]
             state["patches"][platform] = {"assets_sha256": report["actual_assets_sha256"]}
             write(state_path, state)
-        signature = hashlib.sha256((commit + "\n" + json.dumps(inventories, sort_keys=True)
+        signature = hashlib.sha256(("slim-patch-v1\n" + commit + "\n" + json.dumps(inventories, sort_keys=True)
                                     + "\n" + base_id).encode()).hexdigest()
         state["source_signature"] = signature
         latest_path = ROOT / "build/patch-nightly/latest.json"

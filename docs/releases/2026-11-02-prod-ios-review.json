@@ -1,0 +1,108 @@
+{
+  "recorded_at_utc": "2026-11-02T14:51:42.706857+00:00",
+  "runtime_source_commit": "4055e10422ffbb32bcdbcdcbdab788bbf968891d",
+  "server_environment": "prod",
+  "resource_sync": {
+    "status": "success",
+    "remote_files": 4425,
+    "errors": [],
+    "local_preserved_count": 1
+  },
+  "slim_payload_audit": {
+    "excluded_resources": 362,
+    "excluded_source_mib": 865.4,
+    "baseline_verified_matches_final_ipa": true,
+    "excluded_sources_found_in_final_payload": [],
+    "excluded_imported_resources_found_in_payload": [],
+    "payload_files": 5779
+  },
+  "server": {
+    "status": "deployed",
+    "commit": "4055e10422ff",
+    "idle_checks": [
+      {
+        "account_connections": 0,
+        "battle_connections": 0,
+        "at": "2026-11-02T14:43:14.916494+00:00"
+      },
+      {
+        "account_connections": 0,
+        "battle_connections": 0,
+        "at": "2026-11-02T14:43:18.009289+00:00"
+      }
+    ],
+    "project": "project-60d2cb8c-3b40-4f95-a67",
+    "production_database_verified": true,
+    "apple_enabled": true,
+    "google_enabled": true,
+    "sandbox_daily_limit": 1,
+    "new_tables_before": {
+      "skin_draw_progress": "skin_draw_progress",
+      "skin_draws": "skin_draws"
+    },
+    "ranked_coin_constraint_before": "CHECK (((coin >= 3) AND (coin <= 20)))",
+    "migration_042_applied": false,
+    "schema_verified": true,
+    "services": {
+      "glory-server": "active",
+      "glory-backend": "active",
+      "livekit": "active",
+      "caddy": "active"
+    },
+    "health": {
+      "status": "ok",
+      "environment": "prod",
+      "configured": true,
+      "missing_config": []
+    },
+    "environment_unchanged": true,
+    "battle_release": "/opt/glory/releases/review-20261102-4055e104/battle",
+    "backup": "/var/backups/glory/review-20261102-4055e104",
+    "client_base": {
+      "base_id": "glory-ios-20261102-prod-review",
+      "includes_seq": 0,
+      "action": "none"
+    },
+    "finished_at": "2026-11-02T14:43:27.000289+00:00"
+  },
+  "runtime_backend_files_verified": 161,
+  "temporary_ssh_access_remaining": false,
+  "ios": {
+    "version": "1.0.2",
+    "app_store_build": 79,
+    "device_build": 80,
+    "app_store_ipa_sha256": "0a8c5e4b9df97dd2c65b7164901d3ac21d1fec454f6197144f0bfd0154c38caa",
+    "device_ipa_sha256": "7d29df882075fbbb960f1914429289e46093d9775bc473bf9bed4bbff068410d",
+    "app_store_build_id": "48500ca5-2f96-4ffc-9b4a-c9d67935fb60",
+    "upload": "complete",
+    "apple_processing": "complete",
+    "internal": "正在测试",
+    "internal_group": "GLory 内部验证",
+    "external": "正在测试",
+    "external_group": "Glory tester",
+    "device_install": "success",
+    "new_server_device_gameplay_acceptance": "awaiting_user",
+    "formal_app_review_submitted": false
+  },
+  "qr_codes_modified": false,
+  "sandbox_limit": {
+    "orders_per_account_rolling_24h": 1,
+    "shared_across_products": true,
+    "production_payments_limited": false,
+    "changed": false
+  },
+  "patch_tooling": {
+    "default_slim": true,
+    "manual_and_nightly": true,
+    "scan_failure_fatal": true,
+    "base_archives_immutable": true,
+    "tests_passed": 30,
+    "actual_godot_export_platforms": [
+      "android",
+      "ios",
+      "windows"
+    ],
+    "published_new_patch": false
+  },
+  "evidence": "outer workspace delivery/release-20261102-prod/"
+}

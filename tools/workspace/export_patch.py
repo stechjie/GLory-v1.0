@@ -14,9 +14,33 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import zipfile
 
 from glory_patch import build, NATIVE_SUFFIXES
 from prepare_patch_base import from_config
+
+
+def retain_excluded_base_files(base, archive, removed):
+    """Keep installed bytes in the comparison ZIP, never in the patch itself.
+
+    Overlay packs cannot delete base files. Only exclusions proven by the current
+    dependency scan may inherit base bytes; unrelated deletions still fail build().
+    """
+    retained = []
+    with zipfile.ZipFile(base) as original, zipfile.ZipFile(archive, 'a') as current:
+        existing = set(current.namelist())
+        allowed = set()
+        names = set(original.namelist())
+        for source in removed:
+            allowed.update({source, source + '.import', source + '.remap'} & names)
+        for name in list(allowed):
+            if name.endswith(('.import', '.remap')):
+                allowed.update(path for path in re.findall(r'"res://([^"\n]+)"',
+                    original.read(name).decode('utf-8')) if path.startswith('.godot/') and path in names)
+        for name in sorted(allowed - existing):
+            current.writestr(original.getinfo(name), original.read(name))
+            retained.append(name)
+    return retained
 
 
 def digest(path):
@@ -25,6 +49,17 @@ def digest(path):
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             value.update(chunk)
     return value.hexdigest()
+
+
+def preset_policy_digest(stage, previous_exclusions=()):
+    previous = set(previous_exclusions)
+    state = stage / '.glory-slim-filters.json'
+    if state.exists():
+        previous.update(json.loads(state.read_text())['generated_exclusions'])
+    text = (stage / 'export_presets.cfg').read_text()
+    text = re.sub(r'(?m)^exclude_filter="([^"]*)"', lambda m: 'exclude_filter=' +
+        json.dumps(','.join(x for x in m[1].split(',') if x not in previous), ensure_ascii=False), text)
+    return hashlib.sha256(text.encode()).hexdigest()
 
 
 def native_inventory(stage: Path) -> dict[str, str]:
@@ -100,6 +135,7 @@ def export(stage: Path, engine: Path, preset: str, platform: str, config: Path,
     native = native_inventory(stage)
     identity = {"engine_version": version, "platform": platform, "base_id": boot["base_id"], "debug": debug,
                 "preset_sha256": digest(stage / "export_presets.cfg"), "native_files": native}
+    record = {}
     if base:
         record = json.loads(base.with_suffix(".export.json").read_text())
         recorded = dict(record)
@@ -108,7 +144,11 @@ def export(stage: Path, engine: Path, preset: str, platform: str, config: Path,
         # the same shipped-input inventory used for current stages.
         recorded["native_files"] = {name: value for name, value in record.get("native_files", {}).items()
                                     if not name.startswith("android/build/")}
-        if any(recorded.get(k) != v for k, v in identity.items()) or record.get("sha256") != digest(base):
+        comparison = dict(identity)
+        if 'preset_policy_sha256' in record:
+            comparison.pop('preset_sha256')
+            comparison['preset_policy_sha256'] = preset_policy_digest(stage, record.get('slim_generated_exclusions', ()))
+        if any(recorded.get(k) != v for k, v in comparison.items()) or record.get("sha256") != digest(base):
             raise ValueError("Engine, native libraries, preset or original base changed; create a new base build")
     output.mkdir(parents=True)
     def verify_import(text):
@@ -117,6 +157,9 @@ def export(stage: Path, engine: Path, preset: str, platform: str, config: Path,
         diagnostics = verify_import_diagnostics(text, stage, output, materials)
         (output / "import-diagnostics.json").write_text(json.dumps(diagnostics, ensure_ascii=False, indent=2) + "\n")
     run(engine, stage, ["--editor", "--import"], output / "import.log", verify=verify_import)
+    import glory_slim
+    slim = glory_slim.apply(stage, engine, output,
+        previous_exclusions=record.get('slim_generated_exclusions', ()))
     archive = output / ("current.zip" if base else "base.zip")
     # Godot 4.7 parses export-pack and export-debug as independent flags;
     # a single positional destination keeps pack-only output in debug mode.
@@ -127,6 +170,15 @@ def export(stage: Path, engine: Path, preset: str, platform: str, config: Path,
         verify=lambda text: verify_pack_export(text, output))
     if not archive.is_file():
         raise RuntimeError("Godot did not produce the resource ZIP")
+    retained = retain_excluded_base_files(base, archive, slim['removed_source_paths']) if base else []
+    (output / 'slim-patch-compatibility.json').write_text(json.dumps({
+        'inherited_base_files': retained, 'inherited_files_added_to_patch': False,
+        'note': 'Inherited bytes exist only in the comparison ZIP; installed base files cannot be deleted.'
+    }, indent=2) + '\n')
+    identity.update(preset_sha256=digest(stage / 'export_presets.cfg'),
+                    preset_policy_sha256=preset_policy_digest(stage),
+                    slim_generated_exclusions=slim['generated_exclusions'],
+                    slim_removed_source_paths=slim['removed_source_paths'])
     identity.update(sha256=digest(archive), size=archive.stat().st_size)
     archive.with_suffix(".export.json").write_text(json.dumps(identity, indent=2) + "\n")
     if executable:
@@ -135,7 +187,10 @@ def export(stage: Path, engine: Path, preset: str, platform: str, config: Path,
             raise ValueError("--executable takes a filename, not a path")
         run(engine, stage, ["--export-debug" if debug else "--export-release", preset, output / executable], output / "application.log")
     if base:
-        return build(base, archive, output / f"{platform}.zip", platform=platform, base_id=boot["base_id"])
+        result = build(base, archive, output / f"{platform}.zip", platform=platform, base_id=boot["base_id"])
+        result['slim_report'] = str(output / 'slim-resources.json')
+        result['slim_compatibility_report'] = str(output / 'slim-patch-compatibility.json')
+        return result
     return identity
 
 

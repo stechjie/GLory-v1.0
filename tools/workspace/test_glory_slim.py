@@ -5,11 +5,39 @@ import struct
 import tempfile
 import unittest
 import zipfile
-from glory_slim import closure
+from unittest.mock import patch
+from glory_slim import closure, apply
 from glory_package import compressed_native_manifest, rewrite_zip, verify_baseline
 
 
 class ReachabilityTests(unittest.TestCase):
+    def test_rescan_reactivates_art_and_preserves_manual_exclusions(self):
+        with tempfile.TemporaryDirectory() as folder:
+            stage = Path(folder) / 'stage'
+            (stage / '.godot/imported').mkdir(parents=True)
+            (stage / 'assets').mkdir()
+            (stage / 'scripts').mkdir()
+            for name in ('manual', 'dynamic'):
+                (stage / 'assets' / (name + '.svg')).write_text('<svg/>')
+            (stage / 'project.godot').write_text('config_version=5')
+            preset = stage / 'export_presets.cfg'
+            preset.write_text('exclude_filter="assets/manual.svg"\n')
+            logs = Path(folder) / 'logs'
+            logs.mkdir()
+            def scan(*args, **kwargs):
+                (logs / 'slim-dependencies.json').write_text('{}')
+            with patch('glory_slim.subprocess.run', side_effect=scan):
+                apply(stage, Path('godot'), logs)
+                (stage / 'scripts/load.gd').write_text('load("res://assets/dynamic.svg")')
+                result = apply(stage, Path('godot'), logs)
+            self.assertNotIn('assets/dynamic.svg', preset.read_text())
+            self.assertIn('assets/manual.svg', preset.read_text())
+            self.assertNotIn('assets/manual.svg', result['generated_exclusions'])
+            (stage / 'scripts/load.gd').write_text('load("res://assets/manual.svg")')
+            with patch('glory_slim.subprocess.run', side_effect=scan):
+                with self.assertRaisesRegex(RuntimeError, 'Reachable resources excluded'):
+                    apply(stage, Path('godot'), logs)
+
     def test_scene_texture_chain_and_unused_art(self):
         files = {'scenes/main.tscn', 'assets/unit.tscn', 'assets/body.png', 'assets/unused.png'}
         deps = {'scenes/main.tscn': ['uid://abc::PackedScene::res://assets/unit.tscn'],
