@@ -47,6 +47,9 @@ func _ready() -> void:
 		_poll_receipt()
 
 
+func _coins_only() -> bool:
+	return str(data.get("mode", "ranked")) in ["casual", "casual_normal"]
+
 func _local_result() -> String:
 	var outcome := int(data.get("outcome", 2))
 	if outcome == 2:
@@ -87,7 +90,7 @@ func _build() -> void:
 	column.add_theme_constant_override("separation", 12)
 	frame.add_child(column)
 
-	var eyebrow := _label(_t("荣耀排位 · 对局结算", "GLORY RANKED · MATCH RESULT"), 16,
+	var eyebrow := _label(_t("休闲对局 · 金币结算", "CASUAL · COIN REWARD") if _coins_only() else _t("荣耀排位 · 对局结算", "GLORY RANKED · MATCH RESULT"), 16,
 		Tokens.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
 	column.add_child(eyebrow)
 	var title_color := Tokens.GOLD_HOVER if _result == "win" else (
@@ -115,18 +118,20 @@ func _build() -> void:
 	emblem_area.add_child(emblem_center)
 	var emblem := TextureRect.new()
 	_emblem = emblem
-	emblem.texture = RANK_EMBLEM
+	emblem.texture = Currency.icon("coin") if _coins_only() else RANK_EMBLEM
 	emblem.custom_minimum_size = Vector2(190, 174)
 	emblem.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	emblem.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	emblem_center.add_child(emblem)
 	_tier_label = _label(_t("正在确认段位…", "Verifying rank…"), 20,
 		Tokens.GOLD_HOVER, HORIZONTAL_ALIGNMENT_CENTER)
+	_tier_label.visible = not _coins_only()
 	column.add_child(_tier_label)
 
 	var score_panel := PanelContainer.new()
 	score_panel.add_theme_stylebox_override("panel", Tokens.panel_box(
 		Tokens.SURFACE, Tokens.BORDER, 14))
+	score_panel.visible = not _coins_only()
 	column.add_child(score_panel)
 	var score_column := VBoxContainer.new()
 	score_column.add_theme_constant_override("separation", 6)
@@ -182,7 +187,7 @@ func _build() -> void:
 	# ⚠ 不能无条件删掉「确认」：没有详细战况时（show_details=false）这张页面
 	#   就一个出口都没有，玩家被卡死在结算页。所以「确认」只在**拿不到详细战况**
 	#   时兜底显示；正常情况下出口是 查看详细战况 → 结算面板的「返回队伍 / 返回主菜单」。
-	var has_details := bool(data.get("show_details", false))
+	var has_details := bool(data.get("show_details", false)) and not _coins_only()
 	_details = ACTION_BUTTON.instantiate()
 	_details.text = _t("查看详细战况", "Match details")
 	_details.custom_minimum_size = Vector2(220, 52)
@@ -191,7 +196,7 @@ func _build() -> void:
 	_details.pressed.connect(func() -> void: details_requested.emit())
 	actions.add_child(_details)
 	_confirm = ACTION_BUTTON.instantiate()
-	_confirm.text = _t("确认并返回大厅", "Confirm and return")
+	_confirm.text = _t("继续", "Continue") if _coins_only() else _t("确认并返回大厅", "Confirm and return")
 	_confirm.custom_minimum_size = Vector2(260, 52)
 	_confirm.disabled = true
 	_confirm.visible = not has_details
@@ -270,15 +275,16 @@ func _apply_receipt(receipt: Dictionary) -> void:
 	_amount.text = "+%d" % coins
 	_receipt_status.text = _t("已加入账户钱包", "Added to your account wallet")
 	_receipt_status.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
-	var before := int(receipt.get("score_before", 0))
-	var after := int(receipt.get("score_after", 0))
-	var delta := after - before
-	_score.text = _t("排位积分  %d → %d   (%+d)", "Rank score  %d → %d   (%+d)") % [before, after, delta]
-	var tier_before := clampi(int(receipt.get("tier_before", 0)), 0, RankedTiers.BADGES.size() - 1)
-	var tier_after := clampi(int(receipt.get("tier_after", 0)), 0, RankedTiers.BADGES.size() - 1)
-	var span := int(receipt.get("tier_span", 0))
-	_progress.value = 100.0 if span <= 0 else 100.0 * float(receipt.get("tier_progress", 0)) / float(span)
-	_show_rank(tier_before, tier_after)
+	if not _coins_only():
+		var before := int(receipt.get("score_before", 0))
+		var after := int(receipt.get("score_after", 0))
+		var delta := after - before
+		_score.text = _t("排位积分  %d → %d   (%+d)", "Rank score  %d → %d   (%+d)") % [before, after, delta]
+		var tier_before := clampi(int(receipt.get("tier_before", 0)), 0, RankedTiers.BADGES.size() - 1)
+		var tier_after := clampi(int(receipt.get("tier_after", 0)), 0, RankedTiers.BADGES.size() - 1)
+		var span := int(receipt.get("tier_span", 0))
+		_progress.value = 100.0 if span <= 0 else 100.0 * float(receipt.get("tier_progress", 0)) / float(span)
+		_show_rank(tier_before, tier_after)
 	_balance.text = _t("当前游戏币  %d", "Account coins  %d") % int(receipt.get("coin_balance_after", 0))
 	_confirm.disabled = false
 	_details.disabled = false

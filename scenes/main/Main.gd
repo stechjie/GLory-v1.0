@@ -2855,6 +2855,19 @@ func _show_game_over(local_settlement: Dictionary = {}) -> void:
 		reward_screen.details_requested.connect(_show_final_settlement)
 		add_child(reward_screen)
 		return
+	if str(_final_settlement_data.get("mode", "")) in ["casual", "casual_normal"] \
+		and not str(_final_settlement_data.get("match_uid", "")).is_empty() and not NetworkService.spectating:
+		var reward_screen := preload("res://scenes/menu/RankedRewardScreen.gd").new()
+		reward_screen.data = _final_settlement_data.duplicate(true)
+		reward_screen.confirmed.connect(_show_game_over_summary)
+		add_child(reward_screen)
+		return
+	_show_game_over_summary()
+
+func _show_game_over_summary() -> void:
+	_clear()
+	_enter_match_flow()
+	_set_chat_sound_suppressed(true)
 	var result_screen := preload("res://scenes/menu/GameOverScreen.gd").new()
 	result_screen.result_kind = _game_over_kind()
 	result_screen.title_text = _game_over_title()

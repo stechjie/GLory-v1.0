@@ -160,7 +160,7 @@ async def my_ranked_reward(
     match_uid: str,
     claims: Annotated[Claims, Depends(current_claims)],
 ) -> RankedRewardResponse:
-    """The player's committed ranked reward. A missing row is still being settled."""
+    """The player's committed ranked or casual reward; missing rows remain pending."""
     if re.fullmatch(r"[0-9a-f]{32}", match_uid) is None:
         raise HTTPException(status_code=400, detail="对局编号格式不对")
     me = await _me(claims)
@@ -172,6 +172,26 @@ async def my_ranked_reward(
             match_uid, me.player_id,
         )
     if row is None:
+        # Casual payouts already live in the immutable wallet ledger. Read the
+        # committed transaction rather than rerolling rewards or granting twice.
+        async with db.pool().acquire() as conn:
+            casual = await conn.fetchrow(
+                "select case when not s.online_at_end then 'lose' "
+                "when m.outcome = 'draw' then 'draw' "
+                "when m.outcome = case when s.team = 0 then 'team_a' else 'team_b' end "
+                "then 'win' else 'lose' end as result, "
+                "l.delta as coin, l.balance_after as coin_balance_after "
+                "from match_records m join match_seats s on s.match_uid = m.match_uid "
+                "join wallet_ledger l on l.player_id = s.player_id "
+                "and l.currency = 'coin' and l.source = 'match_reward' and l.note = $3 "
+                "where m.match_uid = $1 and m.mode = 'casual' and s.player_id = $2 "
+                "order by l.id limit 1",
+                match_uid, me.player_id, f"casual match {match_uid}",
+            )
+        if casual is not None:
+            return RankedRewardResponse(status="settled", result=str(casual["result"]),
+                                        coin=int(casual["coin"]),
+                                        coin_balance_after=int(casual["coin_balance_after"]))
         return RankedRewardResponse(status="pending")
     before = int(row["score_before"])
     after = int(row["score_after"])
