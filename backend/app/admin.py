@@ -32,8 +32,8 @@ from typing import Any
 import asyncpg
 import httpx
 
-from app import (analytics, announcements, bans, db, mail, ranked, realtime,
-                 sanctions, service_control, shop, world_chat)
+from app import (analytics, announcements, bans, db, iap, iap_google, iap_steam, mail, ranked, realtime,
+                 sanctions, service_control, shop, steam, world_chat)
 from app.admin_auth import Admin
 from app.config import get_settings
 
@@ -174,6 +174,11 @@ async def player_detail(player_id: uuid.UUID) -> dict:
         # 025（运营数据）没跑时空着。
         tag = await _optional(conn,
             "select kind, note, tagged_by, tagged_at from analytics_account_tags where player_id = $1", player_id)
+        # 040（充值）没跑时空着。付款凭证本身不给页面看（拿它能查这笔付款，算半个凭证），只说有没有。
+        iap_orders = await _optional(conn, _IAP_ORDER_COLUMNS
+            + " where o.player_id = $1 order by o.created_at desc limit 50", player_id)
+        refunds = await _optional(conn,
+            "select count(*) as n from iap_orders where player_id = $1 and status = 'refunded'", player_id)
     ranked_out = None
     if ranked_row is not None:
         ranked_out = {**_row(ranked_row), "tier": ranked.tier_of(int(ranked_row["score"]))}
@@ -198,6 +203,8 @@ async def player_detail(player_id: uuid.UUID) -> dict:
         "reports_against": [_row(r) for r in reports_against],
         "world_recent": [_row(r) for r in world_recent],
         "tag": _row(tag[0]) if tag else None,
+        "iap_orders": [_iap_order(r) for r in iap_orders],
+        "iap_refunds": int(refunds[0]["n"]) if refunds else 0,
     }
 
 
@@ -207,6 +214,129 @@ async def _optional(conn: asyncpg.Connection, sql: str, *args) -> list[asyncpg.R
         return await conn.fetch(sql, *args)
     except asyncpg.UndefinedTableError:
         return []
+
+
+# --- 充值（docs/充值系统设计.md 第七、十一节）----------------------------------------
+#
+# 只看、加一个「重新核实」。**不提供「手工标成已付款」**：玩家拿截图来也一样要平台说了算，
+# 入账永远只走 iap.credit()。要补偿就照旧用发钱（进赠送列、双人批），不碰付费列。
+
+_IAP_ORDER_COLUMNS = (
+    "select o.order_id, o.order_no, o.created_at, o.platform, o.product_id, o.status, o.environment,"
+    "       o.diamond_paid, o.diamond_free, o.first_bonus, o.price_amount, o.price_currency, o.note,"
+    "       o.credited_at, o.consumed_at, o.refunded_at,"
+    "       o.purchase_token is not null as has_token,"
+    "       case when o.platform = 'steam' then o.external_id end as steam_transid"
+    " from iap_orders o")
+
+_IAP_STATUS = {"pending": "待付款", "credited": "已入账", "cancelled": "已取消", "refunded": "已退款"}
+
+
+def _recheck_blocker(platform: str, status: str, consumed_at: Any, has_token: bool, has_txn: bool) -> str:
+    """这张单为什么不能「重新核实」。空串 = 能。
+
+    能核实的：还在待付款的；Google 已入账但还没消耗的（3 天内不消耗 Google 会自动退款，定时任务也在补）。
+    """
+    if platform == "apple":
+        return "Apple 的单服务器没法主动去问（手里没有能重新核实的凭证）：让玩家在 iPhone 上重开游戏，或等 Apple 的通知。"
+    if not (status == "pending" or (platform == "google" and status == "credited" and consumed_at is None)):
+        return "这张单已经是「%s」，不用再核实。" % _IAP_STATUS.get(status, status)
+    if platform == "google" and not has_token:
+        return ("服务器没收到过这张单的 Google 付款凭证：玩家可能没付款，或者付了但游戏还没交上来。"
+                "让玩家重开游戏（启动时会自动重交），再来查。")
+    if platform == "steam" and not has_txn:
+        return "这张单没在 Steam 下单成功（没有 Steam 交易号），玩家不可能为它付过钱。"
+    return ""
+
+
+def _iap_order(record: asyncpg.Record) -> dict:
+    out = _row(record)
+    out["recheck_blocker"] = _recheck_blocker(out["platform"], out["status"], out["consumed_at"],
+                                              bool(out["has_token"]), out["steam_transid"] is not None)
+    return out
+
+
+async def _audit_alone(admin: Admin, action: str, player_id: uuid.UUID | None, detail: dict, ok: bool = True) -> None:
+    async with db.pool().acquire() as conn:
+        await _audit(conn, admin, action, player_id, detail, ok)
+
+
+async def recheck_iap(admin: Admin, player_id: uuid.UUID, order_id: uuid.UUID) -> dict:
+    """「重新核实」：拿单上记着的凭证 / 交易号再问一次平台，真付了钱才入账（和玩家自己交是同一条路）。
+
+    🔴 向平台核实时不握数据库连接（好友在线推送把服务器拖卡过一次）：操作记录在问完之后另开连接写。
+    """
+    order = await iap.order_by_id(order_id)
+    if order is None or order.player_id != player_id:
+        raise AdminRejected("这个玩家没有这张充值单", 404)
+    blocker = _recheck_blocker(order.platform, order.status, order.consumed_at,
+                               order.purchase_token is not None, order.external_id is not None)
+    if blocker:
+        raise AdminRejected(blocker)
+    detail: dict[str, Any] = {"order_id": str(order_id), "order_no": order.order_no,
+                              "platform": order.platform, "before": order.status}
+    try:
+        if order.platform == "google":
+            outcome = await iap_google.confirm(order, order.purchase_token or "")
+        else:
+            outcome = await iap_steam.settle(order)
+    except (iap.IapRejected, iap_google.GoogleRejected, steam.SteamRejected, iap_steam.SteamTxnFailed) as exc:
+        message = exc.message if isinstance(exc, iap.IapRejected) else str(exc)
+        await _audit_alone(admin, "iap.recheck", player_id, {**detail, "error": message}, ok=False)
+        raise AdminRejected("平台不认这张单：%s" % message) from None
+    except (iap_google.GoogleUnavailable, steam.SteamUnavailable) as exc:
+        await _audit_alone(admin, "iap.recheck", player_id, {**detail, "error": str(exc)}, ok=False)
+        raise AdminRejected("这次没问到平台，稍后再试：%s" % exc, 503) from None
+    newly = outcome.order.status == "credited" and not outcome.replayed
+    if newly:
+        await iap.mail_notice(outcome)
+    after = await iap.order_by_id(order_id) or outcome.order
+    detail.update(after=after.status, credited=after.diamond_paid + after.diamond_free if newly else 0)
+    await _audit_alone(admin, "iap.recheck", player_id, detail)
+    return {"before": order.status, "after": after.status, "message": _recheck_message(order, after, newly)}
+
+
+def _recheck_message(before: iap.Order, after: iap.Order, newly: bool) -> str:
+    if newly:
+        return "平台确认付了款，已入账 %d 钻（付费 %d + 赠送 %d），已给玩家发到账邮件。" % (
+            after.diamond_paid + after.diamond_free, after.diamond_paid, after.diamond_free)
+    if before.status == "credited":
+        if after.consumed_at is not None:
+            return "这张单原来就入过账，这次补上了 Google 的消耗（不会被自动退款了）。"
+        return "这张单原来就入过账；Google 的消耗这次还是没成功，定时任务会继续补。"
+    if after.status == "cancelled":
+        return "平台说这笔没有付款，单已取消。"
+    if after.status == "pending":
+        if before.platform == "steam":
+            return "玩家还没在 Steam 确认付款。建单超过一小时还没确认会自动取消。"
+        return "Google 说还在待付款（比如便利店付现金还没付），付完会自动入账。"
+    return "核实完：%s → %s。" % (_IAP_STATUS.get(before.status, before.status), _IAP_STATUS.get(after.status, after.status))
+
+
+async def iap_overview(min_refunds: int) -> dict:
+    """充值页：要盯的号（有欠账 / 退款不少于 min_refunds 次，要不要封由人决定，不自动封）、卡住的单。"""
+    async with db.pool().acquire() as conn:
+        watch = await _optional(conn,
+            "select p.player_id, p.friend_code, p.player_name, p.deleted_at, w.diamond_debt,"
+            "       coalesce(r.refunds, 0) as refunds, r.last_refund_at"
+            " from players p"
+            " left join player_wallets w on w.player_id = p.player_id"
+            " left join (select player_id, count(*) as refunds, max(refunded_at) as last_refund_at"
+            "            from iap_orders where status = 'refunded' group by player_id) r on r.player_id = p.player_id"
+            " where coalesce(w.diamond_debt, 0) > 0 or coalesce(r.refunds, 0) >= $1"
+            " order by coalesce(w.diamond_debt, 0) desc, coalesce(r.refunds, 0) desc limit 200", min_refunds)
+        # 十分钟还停在待付款的，和 Google 入了账却没消耗的（定时任务三天内都会补，超过一天还没补上要人看一眼）。
+        stuck = await _optional(conn,
+            "select o.order_id, o.order_no, o.created_at, o.platform, o.product_id, o.status, o.environment, o.note,"
+            "       o.consumed_at, o.purchase_token is not null as has_token,"
+            "       case when o.platform = 'steam' then o.external_id end as steam_transid,"
+            "       p.player_id, p.friend_code, p.player_name"
+            " from iap_orders o join players p on p.player_id = o.player_id"
+            " where (o.status = 'pending' and o.created_at < now() - interval '10 minutes')"
+            "    or (o.platform = 'google' and o.status = 'credited' and o.consumed_at is null"
+            "        and o.created_at < now() - interval '1 day')"
+            " order by o.created_at desc limit 100")
+    return {"watchlist": [_row(r) for r in watch], "stuck": [_iap_order(r) for r in stuck]}
 
 
 # --- 封号（不用批）-----------------------------------------------------------------

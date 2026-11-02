@@ -1,13 +1,17 @@
 extends Control
 
-# 钻石宝库：充值（docs/充值系统设计.md 第二、九节）。界面是 lenoliew 09-30 做的那版，档位改成问服务器。
+# 钻石宝库：充值（docs/充值系统设计.md 第二、五、九节）。界面是 lenoliew 09-30 做的那版，档位改成问服务器。
 #
-# 数字都不是这里算的：钻石数、首充、余额问账号服务器（GET /v1/iap/catalog），当地价格问 Google
-# （BillingBridge.prices）。查不到价格的档不给购买按钮，不自己编一个价格。
+# 数字都不是这里算的：钻石数、首充、余额问账号服务器（GET /v1/iap/catalog）。当地价格安卓问 Google
+# （BillingBridge.prices）；Steam 不给游戏查价格，用服务器按玩家钱包币种给的 steam_charge。
+# 查不到价格的档不给购买按钮，不自己编一个价格。
 #
-# 买一档：建单 → 弹 Google 付款页 → 把付款凭证交给服务器 → 服务器答复 credited / pending / cancelled。
+# 买一档（安卓）：建单 → 弹 Google 付款页 → 把付款凭证交给服务器 → 服务器答复 credited / pending / cancelled。
+# 买一档（Steam）：建单时服务器向 Steam 下单 → Steam 在游戏画面上弹确认窗口 → 把玩家点了什么告诉服务器，
+# 服务器问 Steam、扣款、入账。确认窗口用不了就改在浏览器里确认，之后隔几秒请服务器问一次 Steam。
 # 到没到账只看服务器的 status。🔴 503、断网、超时一律显示「处理中」，不显示失败：
-# 钱多半已经扣了，只是这一趟没核实完，下次启动会再交一次（AccountManager.recover_purchases）。
+# 钱多半已经扣了，只是这一趟没核实完。安卓下次启动会再交一次（AccountManager.recover_purchases），
+# Steam 的单服务器每分钟自己扫（app/iap_sync.py），入了账发邮件。
 
 signal balance_changed(diamond: int)
 
@@ -16,10 +20,17 @@ const Theming := preload("res://ui/theme/GloryTheme.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const Currency := preload("res://scripts/account/Currency.gd")
 const BillingBridge := preload("res://scripts/account/BillingBridge.gd")
+const SteamBridge := preload("res://scripts/account/SteamBridge.gd")
 
 # 「处理中」之后每隔几秒问一次服务器这张单入账没有，问几次。
 const POLL_ORDER_SEC := 3.0
 const POLL_ORDER_TIMES := 10
+# Steam 确认窗口等这么久还没结果，就给玩家一个「改用浏览器付款」的按钮（窗口可能弹不出来）。
+const STEAM_WEB_OFFER_SEC := 15.0
+# 浏览器付款时拿不到确认窗口的回调：隔几秒请服务器问一次 Steam，问满十分钟。
+# 之后关了窗口也不要紧，服务器每分钟自己扫，入了账发邮件。
+const STEAM_WEB_POLL_SEC := 5.0
+const STEAM_WEB_POLL_TIMES := 120
 
 # 截图工具（tools/shop_bag_ui_capture.gd）的假档位：不联网也能画出卡片。只在 ui_capture_fixture 时用。
 const FIXTURE_PRODUCTS := [
@@ -36,7 +47,14 @@ var _foot: Label
 var _platform := ""
 var _products: Array = []
 var _prices: Dictionary = {}
+# 这个号绑的 Steam 钱包币种（服务器查的）；空串 = 没查到，价格按马币显示。
+var _steam_wallet := ""
 var _busy := false
+# 正在等 Steam 确认窗口；玩家点了「改用浏览器付款」就不再等。
+var _waiting_overlay := false
+var _switch_to_web := false
+var _overlay_round := 0
+var _web_button: Button
 # 游客提醒只问一次：点过「继续」这次打开窗口期间就不再拦。
 var _guest_ok := false
 var _guest_panel: Control = null
@@ -57,7 +75,12 @@ func _ready() -> void:
 func _load() -> void:
 	_platform = BillingBridge.platform()
 	if _platform.is_empty():
-		_set_foot(_t("这台设备暂时还不能充值。", "Top-ups are not available on this device yet."))
+		if OS.has_feature("windows"):
+			# 电脑版只能用 Steam 付：Steam 没开、没登录，或者不是从 Steam 启动的。
+			_set_foot(_t("请先打开并登录 Steam，从 Steam 启动游戏后再充值。",
+				"Open Steam, sign in, and launch the game from Steam to buy diamonds."))
+		else:
+			_set_foot(_t("这台设备暂时还不能充值。", "Top-ups are not available on this device yet."))
 		_load_balance_only()
 		return
 	if _platform == "google" and not BillingBridge.installed_from_play():
@@ -66,6 +89,11 @@ func _load() -> void:
 		_load_balance_only()
 		return
 	if not await _load_catalog():
+		return
+	if _platform == "steam":
+		_prices = steam_prices(_products)
+		_render()
+		_set_foot(steam_price_note(_steam_wallet, _products, LocaleManager.get_locale().begins_with("en")))
 		return
 	var ids: Array = []
 	for product in _products:
@@ -93,6 +121,7 @@ func _load_catalog() -> bool:
 		_set_foot(_t("充值暂未开放。", "Top-ups are not open yet."))
 		return false
 	_products = body.get("products", [])
+	_steam_wallet = str(body.get("steam_wallet_currency", ""))
 	_set_foot(_t("钻石由服务器确认后到账。", "Diamonds are added once the server confirms the payment."))
 	return true
 
@@ -180,6 +209,14 @@ func _build() -> void:
 	_foot.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 	_foot.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
 	content.add_child(_foot)
+	# 只在等 Steam 确认窗口等久了才出现（STEAM_WEB_OFFER_SEC）。
+	_web_button = ACTION_BUTTON.instantiate()
+	_web_button.text = _t("确认窗口没出现？改用浏览器付款", "No Steam window? Pay in the browser")
+	_web_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_web_button.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+	_web_button.visible = false
+	_web_button.pressed.connect(func() -> void: _switch_to_web = true)
+	content.add_child(_web_button)
 
 
 func _render() -> void:
@@ -241,6 +278,53 @@ static func bonus_text(product: Dictionary, english: bool) -> String:
 	if bonus > 0:
 		return ("+%s bonus" if english else "加送 %s") % Currency.comma(bonus)
 	return ""
+
+
+# Steam 不给游戏查价格：显示服务器给的 steam_charge，就是下单时会报给 Steam 的那个价。没有的档不在里面。
+static func steam_prices(products: Array) -> Dictionary:
+	var out := {}
+	for raw in products:
+		var product: Dictionary = raw
+		var charge: Dictionary = product.get("steam_charge", {})
+		var text := money_text(str(charge.get("currency", "")), int(charge.get("amount", 0)))
+		if not text.is_empty():
+			out[str(product.get("id", ""))] = text
+	return out
+
+
+# 最小货币单位 → 「RM 5.00」「US$1.19」。目录里只有这两种（data/iap_products.json），别的照币种代码写。
+static func money_text(currency: String, amount: int) -> String:
+	if currency.is_empty() or amount <= 0:
+		return ""
+	var value := "%d.%02d" % [amount / 100, amount % 100]
+	match currency:
+		"MYR":
+			return "RM " + value
+		"USD":
+			return "US$" + value
+	return "%s %s" % [currency, value]
+
+
+# Steam 价格下面那句话：查不到钱包币种时按马币显示，要说明以 Steam 为准；钱包不是这个币种时 Steam 会换算。
+static func steam_price_note(wallet_currency: String, products: Array, english: bool) -> String:
+	if wallet_currency.is_empty():
+		return "Prices shown in RM. The Steam window shows the exact amount before you pay." if english \
+			else "价格按马币显示，实际金额以 Steam 确认窗口为准。"
+	var charged := ""
+	if not products.is_empty():
+		charged = str(((products[0] as Dictionary).get("steam_charge", {}) as Dictionary).get("currency", ""))
+	if not charged.is_empty() and charged != wallet_currency:
+		return "Steam converts this into your wallet currency when you pay." if english \
+			else "Steam 付款时会按汇率换算成你钱包的币种。"
+	return "Diamonds are added once the server confirms the payment." if english else "钻石由服务器确认后到账。"
+
+
+# 浏览器付款只打开 Steam 自己的页面。网址是服务器转来的 Steam 原话，这里再挡一道：不是 steampowered.com 的不开。
+static func is_steam_checkout_url(url: String) -> bool:
+	if not url.begins_with("https://"):
+		return false
+	var host := url.trim_prefix("https://").get_slice("/", 0).to_lower()
+	return host == "steampowered.com" or host.ends_with(".steampowered.com")
 
 
 func _set_buttons_enabled(enabled: bool) -> void:
@@ -307,6 +391,9 @@ func _close_guest_panel() -> void:
 
 
 func _buy(product: Dictionary) -> void:
+	if _platform == "steam":
+		await _buy_steam(product, not SteamBridge.overlay_ready())
+		return
 	var id := str(product.get("id", ""))
 	_busy = true
 	_set_buttons_enabled(false)
@@ -348,6 +435,80 @@ func _buy(product: Dictionary) -> void:
 			_done(processing_text(LocaleManager.get_locale().begins_with("en")))
 		_:
 			_done(_t("付款没有完成，请稍后再试。", "The payment did not go through. Try again later."))
+
+
+# Steam：服务器下单时就向 Steam 下了单（docs/充值系统设计.md 第五节）。web = 在浏览器里确认。
+func _buy_steam(product: Dictionary, web: bool) -> void:
+	_busy = true
+	_set_buttons_enabled(false)
+	_set_foot(_t("正在向 Steam 下单…", "Placing the order with Steam…"))
+	var created: Dictionary = await AccountManager.create_steam_iap_order(
+		AccountManager.new_client_order_id(), str(product.get("id", "")), web)
+	if not is_inside_tree():
+		return
+	if int(created.get("code", 0)) / 100 != 2:
+		_done(str(created.get("error", _t("下单失败，请稍后再试", "Could not place the order. Try again later."))))
+		return
+	var order: Dictionary = created.get("body", {})
+	var order_id := str(order.get("order_id", ""))
+	if web:
+		await _steam_in_browser(order_id, str(order.get("steam_url", "")))
+		return
+	_set_foot(_t("请在 Steam 弹出的窗口里确认付款。", "Confirm the payment in the Steam window."))
+	_overlay_round += 1
+	_waiting_overlay = true
+	_switch_to_web = false
+	get_tree().create_timer(STEAM_WEB_OFFER_SEC).timeout.connect(_offer_web_payment.bind(_overlay_round))
+	var answer: Dictionary = await SteamBridge.wait_microtxn(get_tree(), int(order.get("steam_order_no", 0)),
+		SteamBridge.MICROTXN_TIMEOUT_SEC, _still_waiting_for_overlay)
+	_waiting_overlay = false
+	if not is_inside_tree():
+		return
+	_web_button.visible = false
+	match str(answer.get("state", "")):
+		"authorized", "declined":
+			_set_foot(_t("正在确认…", "Confirming…"))
+			var confirmed: Dictionary = await AccountManager.confirm_steam_purchase(
+				order_id, str(answer["state"]) == "authorized")
+			if is_inside_tree():
+				await _show_outcome(confirmed, order_id)
+		"abandoned":
+			# 窗口没出来，玩家选了浏览器：另下一张浏览器确认的单。这一张没人确认，服务器一小时后自己取消。
+			await _buy_steam(product, true)
+		_:
+			_done(processing_text(LocaleManager.get_locale().begins_with("en")))
+
+
+func _still_waiting_for_overlay() -> bool:
+	return is_inside_tree() and not _switch_to_web
+
+
+# 等了 STEAM_WEB_OFFER_SEC 还在等的话，给「改用浏览器付款」按钮。round 防止上一次购买留下的计时器
+# 在这一次一开始就把按钮亮出来。
+func _offer_web_payment(round_no: int) -> void:
+	if _waiting_overlay and round_no == _overlay_round:
+		_web_button.visible = true
+
+
+# 浏览器付款：打开 Steam 的确认页，之后隔几秒请服务器问一次 Steam（这种付款没有确认窗口的回调）。
+# 重试拿回原单时没有网址（Steam 只在下单那一次给），那就只等。
+func _steam_in_browser(order_id: String, url: String) -> void:
+	if is_steam_checkout_url(url):
+		OS.shell_open(url)
+	_set_foot(_t("已在浏览器打开 Steam 付款页。登录 Steam 确认付款后回到游戏，钻石会自动到账。",
+		"The Steam payment page is open in your browser. Confirm it there, then come back — diamonds are added automatically."))
+	for _i in STEAM_WEB_POLL_TIMES:
+		await get_tree().create_timer(STEAM_WEB_POLL_SEC).timeout
+		if not is_inside_tree():
+			return
+		var result: Dictionary = await AccountManager.confirm_steam_purchase(order_id, true)
+		if not is_inside_tree():
+			return
+		var body: Dictionary = result.get("body", {}) if result.get("body") is Dictionary else {}
+		if int(result.get("code", 0)) / 100 == 2 and str(body.get("status", "")) != "pending":
+			await _show_outcome(result, order_id)
+			return
+	_done(processing_text(LocaleManager.get_locale().begins_with("en")))
 
 
 # 服务器对 confirm 的答复 → 给玩家看的话。拿出来做纯函数，门禁（tools/iap_check）直接测。

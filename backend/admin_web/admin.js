@@ -131,6 +131,7 @@ const TABS = [
   ["players", "玩家"],
   ["data", "数据"],
   ["requests", "审批"],
+  ["iap", "充值"],
   ["mails", "邮件"],
   ["announcements", "公告"],
   ["patches", "版本更新"],
@@ -169,7 +170,7 @@ function render() {
     h("button", { class: "btn small", onclick: logout }, "退出"));
   const main = h("main", {});
   app.replaceChildren(bar, main);
-  const views = { players: playersView, data: dataView, requests: requestsView, mails: mailsView,
+  const views = { players: playersView, data: dataView, requests: requestsView, iap: iapView, mails: mailsView,
                   announcements: announcementsView, patches: patchesView, reports: reportsView, world: worldView,
                     service: serviceView, audit: auditView };
   views[state.tab](main);
@@ -312,7 +313,8 @@ function playersView(main) {
   query.focus();
 }
 
-async function showPlayer(playerId, into) {
+// flash：刷新之后顶上要显示的一句话（刷新会把原来那张卡片连同结果一起换掉）。
+async function showPlayer(playerId, into, flash) {
   into.replaceChildren(h("p", { class: "muted" }, "加载中…"));
   let d;
   try {
@@ -322,7 +324,7 @@ async function showPlayer(playerId, into) {
     return;
   }
   const p = d.player;
-  const reload = () => showPlayer(playerId, into);
+  const reload = (message) => showPlayer(playerId, into, message);
   const who = `${p.player_name}（${p.friend_code}）`;
   const header = h("section", { class: d.ban ? "card banned" : "card" },
     h("h2", {}, p.player_name, " ",
@@ -335,10 +337,10 @@ async function showPlayer(playerId, into) {
       h("div", {}, h("span", {}, "注册"), fmt(p.created_at)),
       h("div", {}, h("span", {}, "最后登录"), fmt(p.last_seen_at)),
       p.deleted_at ? h("div", {}, h("span", {}, "注销于"), fmt(p.deleted_at)) : null));
-  into.replaceChildren(header, banCard(p, d, who, reload), muteCard(p, d, who, reload),
+  into.replaceChildren(header, flash ? notice("ok", flash) : "", banCard(p, d, who, reload), muteCard(p, d, who, reload),
     worldCard(d.world_recent, reload, "他最近在世界频道说的（30 条，含已删）"),
     reportsCard(d.reports_against, "别人对他的举报（最近 20 条）"),
-    walletCard(p, d, who, reload), tagCard(p, d, who, reload), historyCards(d));
+    walletCard(p, d, who, reload), iapCard(p, d, who, reload), tagCard(p, d, who, reload), historyCards(d));
 }
 
 // 内部账号（员工 / 测试 / 压测）：运营数据里不算他。只影响统计，不影响他玩。
@@ -506,6 +508,90 @@ function walletCard(p, d, who, reload) {
       h("td", {}, l.source, l.mail_id ? ` #${l.mail_id}` : ""), h("td", {}, l.actor || ""),
       h("td", { class: "muted" }, l.note || "")))));
   return card;
+}
+
+// 充值（docs/充值系统设计.md 第十一节）。没有「手工标成已付款」：入账只认平台，补偿走上面的发钱。
+const IAP_PLATFORM = { google: "Google Play", apple: "App Store", steam: "Steam" };
+const IAP_STATUS = { pending: ["待付款", "yellow"], credited: ["已入账", "green"], cancelled: ["已取消", ""],
+                     refunded: ["已退款", "red"] };
+
+// 最小货币单位 → 「50.00 MYR」。Google 的查单接口不给价格，那种单是空的。
+function iapPrice(amount, currency) {
+  if (amount === null || amount === undefined) return "—";
+  return `${(amount / 100).toFixed(2)} ${currency || ""}`;
+}
+
+function iapCard(p, d, who, reload) {
+  const box = h("div", {});
+  const debt = d.wallet.diamond_debt || 0;
+  const card = h("section", { class: "card" }, h("h2", {}, "充值"),
+    h("p", {}, `退款 ${d.iap_refunds || 0} 次`, debt ? h("span", { class: "neg" }, ` · 欠账 ${num(debt)} 钻`) : ""),
+    h("p", { class: "hint" }, "「重新核实」拿单上记着的凭证再问一次平台：平台确认付了款才入账，说没付就不动钱。"
+      + "玩家说「付了钱没到账」先点这个。没有「手工标成已付款」，要补偿走上面的发钱。"),
+    box);
+  card.append(table(["时间", "单号", "平台", "档位", "状态", "钻石（付费 + 赠送）", "价格", "备注", ""],
+    (d.iap_orders || []).map((o) => {
+      let act = "";
+      if (!o.recheck_blocker) {
+        act = h("button", { class: "btn small" }, "重新核实");
+        act.addEventListener("click", action(act, box, async () => {
+          if (!confirm(`重新向 ${IAP_PLATFORM[o.platform] || o.platform} 核实 ${who} 的充值单 #${o.order_no}？\n`
+            + "平台确认付了款才会入账；平台说没付就不会动钱。")) return "";
+          const r = await api("POST", `/admin/api/players/${p.player_id}/iap/${o.order_id}/recheck`);
+          reload(`充值单 #${o.order_no}：${r.message}`);
+          return "";
+        }));
+      } else if (o.status === "pending") {
+        act = h("span", { class: "muted", title: o.recheck_blocker }, "不能核实（悬停看原因）");
+      }
+      const granted = o.status === "credited" || o.status === "refunded";
+      return h("tr", {},
+        h("td", {}, fmt(o.created_at)), h("td", { class: "mono" }, `#${o.order_no}`),
+        h("td", {}, IAP_PLATFORM[o.platform] || o.platform, o.environment === "sandbox" ? h("span", { class: "tag" }, "测试单") : ""),
+        h("td", { class: "mono" }, o.product_id), h("td", {}, statusTag(IAP_STATUS, o.status)),
+        h("td", { class: "num" }, granted ? `${num(o.diamond_paid)} + ${num(o.diamond_free)}${o.first_bonus ? "（首充）" : ""}` : "—"),
+        h("td", { class: "num" }, iapPrice(o.price_amount, o.price_currency)),
+        h("td", { class: "muted" }, o.note || "", o.steam_transid ? ` Steam 交易 ${o.steam_transid}` : "",
+          o.platform === "google" && o.status === "credited" && !o.consumed_at ? h("span", { class: "neg" }, " 未消耗") : ""),
+        h("td", {}, act));
+    })));
+  return card;
+}
+
+// 充值页：要盯的号、卡住的单。动手（重新核实）在玩家页里做。
+async function iapView(main) {
+  const minRefunds = h("input", { type: "number", min: "1", max: "100", value: "2" });
+  const go = h("button", { class: "btn" }, "刷新");
+  const box = h("div", {});
+  const body = h("div", {});
+  const load = action(go, box, async () => {
+    const data = await api("GET", "/admin/api/iap?min_refunds=" + encodeURIComponent(minRefunds.value || "2"));
+    body.replaceChildren(
+      h("section", { class: "card" }, h("h2", {}, "要盯的号"),
+        h("p", { class: "hint" }, "有欠账、或者退款次数不少于上面那个数的号（docs/充值系统设计.md 第七节）。"
+          + "要不要封由人决定，不会自动封。点一行打开这个人。"),
+        table(["好友码", "昵称", "欠账", "退款次数", "最近一次退款", ""], data.watchlist.map((w) =>
+          h("tr", { class: "click", onclick: () => openPlayer(w.player_id) },
+            h("td", { class: "mono" }, w.friend_code), h("td", {}, w.player_name),
+            h("td", { class: "num" }, num(w.diamond_debt)), h("td", { class: "num" }, w.refunds),
+            h("td", {}, fmt(w.last_refund_at)), h("td", {}, w.deleted_at ? h("span", { class: "tag" }, "已注销") : ""))))),
+      h("section", { class: "card" }, h("h2", {}, "卡住的单"),
+        h("p", { class: "hint" }, "超过 10 分钟还在待付款的；Google 入了账超过一天还没消耗的（三天内不消耗 Google 会自动退款）。"
+          + "点一行打开这个人，在他的「充值」里重新核实。"),
+        table(["建单", "单号", "玩家", "平台", "档位", "状态", "备注"], data.stuck.map((o) =>
+          h("tr", { class: "click", onclick: () => openPlayer(o.player_id) },
+            h("td", {}, fmt(o.created_at)), h("td", { class: "mono" }, `#${o.order_no}`),
+            h("td", {}, `${o.player_name}（${o.friend_code}）`),
+            h("td", {}, IAP_PLATFORM[o.platform] || o.platform, o.environment === "sandbox" ? h("span", { class: "tag" }, "测试单") : ""),
+            h("td", { class: "mono" }, o.product_id),
+            h("td", {}, o.status === "credited" ? h("span", { class: "tag red" }, "已入账未消耗") : statusTag(IAP_STATUS, o.status)),
+            h("td", { class: "muted" }, o.recheck_blocker || o.note || ""))))));
+    return "";
+  });
+  go.addEventListener("click", load);
+  main.append(h("section", { class: "card" }, h("h2", {}, "充值"),
+    h("div", { class: "row" }, field("退款次数不少于", minRefunds), go), box), body);
+  load();
 }
 
 function historyCards(d) {

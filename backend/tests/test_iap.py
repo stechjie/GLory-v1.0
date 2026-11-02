@@ -35,8 +35,9 @@ from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.x509.oid import NameOID
 from fastapi.testclient import TestClient
 
-from app import (db, iap, iap_apple, iap_google, iap_steam, iap_sync, login_sessions, players, schema_check, shop,
-                 steam)
+from app import (admin, db, iap, iap_apple, iap_google, iap_steam, iap_sync, login_sessions, players, schema_check,
+                 shop, steam)
+from app.admin_auth import Admin
 from app.config import get_settings
 from app.jwt_verify import Claims, TokenError
 from app.main import app
@@ -1050,7 +1051,7 @@ def test_routes_are_wired_into_the_app(client) -> None:
 def test_order_body_has_no_price_or_amount() -> None:
     """客户端只发意图。价格、钻石数都从服务器目录取。"""
     assert set(iap_routes.CreateOrderBody.model_fields) == {
-        "client_order_id", "platform", "product_id", "steam_ticket", "language"}
+        "client_order_id", "platform", "product_id", "steam_ticket", "language", "steam_web"}
 
 
 def test_catalog_shows_first_bonus_per_tier_and_debt(monkeypatch, client) -> None:
@@ -1062,7 +1063,54 @@ def test_catalog_shows_first_bonus_per_tier_and_debt(monkeypatch, client) -> Non
     assert body["open"] is True and body["diamond"] == -120 and body["debt"] == 120
     assert [(p["id"], p["first_bonus"]) for p in body["products"]] == [
         ("diamond_pack_1", False), ("diamond_pack_2", True), ("diamond_pack_3", True)]
-    assert body["products"][0]["steam_prices"] == {}, "只有 Steam 才发价格"
+    assert body["products"][0]["steam_charge"] == {}, "只有 Steam 才发价格"
+    assert body["steam_wallet_currency"] == ""
+
+
+def test_steam_catalog_prices_follow_the_wallet_currency(monkeypatch, client) -> None:
+    """显示的价 = 下单时会报给 Steam 的价（pick_price）。查不到钱包币种不挡开商店，按马币显示。"""
+    wire(monkeypatch, [("select product_id from iap_first_bonus", []),
+                       ("from player_wallets where player_id = $1", wallet_row())])
+
+    async def identities(self, _token):
+        return False, [LinkedIdentity("google", "a@b.c"), LinkedIdentity(STEAM_PROVIDER, steam.placeholder_email(STEAM_ID))]
+
+    asked: list[str] = []
+    wallet = {"currency": "MYR"}
+
+    async def wallet_currency(steam_id, transport=None):
+        asked.append(steam_id)
+        if wallet["currency"] is None:
+            raise steam.SteamUnavailable("连不上 Steam")
+        return wallet["currency"]
+
+    monkeypatch.setattr(iap_routes.SupabaseAuth, "linked_identities", identities)
+    monkeypatch.setattr(iap_steam, "wallet_currency", wallet_currency)
+
+    def shown() -> tuple[str, list]:
+        r = client.get("/v1/iap/catalog", params={"platform": "steam"}, headers=AUTH)
+        assert r.status_code == 200, r.text
+        return r.json()["steam_wallet_currency"], [p["steam_charge"] for p in r.json()["products"]]
+
+    assert shown() == ("MYR", [{"currency": "MYR", "amount": a} for a in (500, 2000, 5000)])
+    wallet["currency"] = "EUR"
+    assert shown() == ("EUR", [{"currency": "USD", "amount": a} for a in (119, 479, 1199)]), "目录里没有的币种按美元，Steam 换算"
+    wallet["currency"] = None
+    assert shown() == ("", [{"currency": "MYR", "amount": a} for a in (500, 2000, 5000)])
+    assert set(asked) == {STEAM_ID}, "用绑在号上的那个 Steam 编号去问"
+
+
+def test_steam_catalog_skips_steam_when_top_ups_are_closed(monkeypatch, client, _iap_settings) -> None:
+    _iap_settings["s"] = _settings(iap_steam_enabled=False)
+    wire(monkeypatch, [("select product_id from iap_first_bonus", []),
+                       ("from player_wallets where player_id = $1", wallet_row())])
+
+    async def boom(*_a, **_k):
+        raise AssertionError("开关关着还去问 Supabase / Steam")
+
+    monkeypatch.setattr(iap_routes.SupabaseAuth, "linked_identities", boom)
+    r = client.get("/v1/iap/catalog", params={"platform": "steam"}, headers=AUTH)
+    assert r.status_code == 200 and r.json()["open"] is False
 
 
 def test_google_order_response_carries_what_billing_needs(monkeypatch, client) -> None:
@@ -1106,6 +1154,57 @@ def test_steam_account_not_linked_to_this_player_is_refused(monkeypatch, client)
     assert r.status_code == 403 and r.headers["X-Glory-Reason"] == "steam_not_linked"
 
 
+def _linked_steam(monkeypatch) -> None:
+    async def ticket(_t):
+        return steam.SteamUser(steam_id=STEAM_ID, owner_steam_id=STEAM_ID)
+
+    async def identities(self, _token):
+        return False, [LinkedIdentity(STEAM_PROVIDER, steam.placeholder_email(STEAM_ID))]
+
+    monkeypatch.setattr(steam, "authenticate_ticket", ticket)
+    monkeypatch.setattr(iap_routes.SupabaseAuth, "linked_identities", identities)
+
+
+def test_steam_order_carries_the_order_no_the_overlay_callback_reports(monkeypatch, client) -> None:
+    """确认窗口的回调只带 orderid（= order_no）：客户端拿它认出是不是自己这一单。"""
+    wire(monkeypatch, [])
+    _linked_steam(monkeypatch)
+
+    async def begin(player_id, client_order_id, product_id, steam_id, language):
+        return iap.Outcome(iap._order_of(steam_order()), shop.Wallet(0, 0, 0))
+
+    monkeypatch.setattr(iap_steam, "begin", begin)
+    r = client.post("/v1/iap/orders", headers=AUTH, json={
+        "client_order_id": str(CLIENT), "platform": "steam", "product_id": PACK, "steam_ticket": "ab" * 20})
+    assert r.status_code == 200, r.text
+    assert r.json()["steam_order_no"] == 42 and r.json()["steam_url"] == ""
+
+
+def test_steam_browser_order_sends_the_player_ip_and_returns_the_url(monkeypatch, client) -> None:
+    """游戏里的确认窗口用不了时的退路：浏览器确认。Steam 要玩家的公网 IP —— 取 Caddy 转来的那个。"""
+    wire(monkeypatch, [])
+    _linked_steam(monkeypatch)
+    got: dict = {}
+
+    async def browser(player_id, client_order_id, product_id, steam_id, language, ipaddress):
+        got.update(steam_id=steam_id, ip=ipaddress)
+        return (iap.Outcome(iap._order_of(steam_order()), shop.Wallet(0, 0, 0)),
+                "https://store.steampowered.com/checkout/approvetxn/9001")
+
+    async def overlay(*_a, **_k):
+        raise AssertionError("要浏览器付款却下了游戏内窗口的单")
+
+    monkeypatch.setattr(iap_steam, "begin_in_browser", browser)
+    monkeypatch.setattr(iap_steam, "begin", overlay)
+    monkeypatch.setattr(iap_routes, "_client_ip", lambda _request: "203.0.113.7")
+    r = client.post("/v1/iap/orders", headers=AUTH, json={
+        "client_order_id": str(CLIENT), "platform": "steam", "product_id": PACK, "steam_ticket": "ab" * 20,
+        "steam_web": True})
+    assert r.status_code == 200, r.text
+    assert r.json()["steam_url"].endswith("/approvetxn/9001") and r.json()["steam_order_no"] == 42
+    assert got == {"steam_id": STEAM_ID, "ip": "203.0.113.7"}
+
+
 def test_confirm_works_even_when_the_switch_is_off(monkeypatch, client, _iap_settings, google_key) -> None:
     """🔴 关开关只挡建新单 —— 已经付了钱的单必须照样能入账。"""
     _iap_settings["s"] = _settings(iap_google_enabled=False,
@@ -1136,6 +1235,139 @@ def test_platform_outage_is_503_so_the_client_shows_processing(monkeypatch, clie
                        ("from player_wallets where player_id = $1", wallet_row())])
     r = client.post("/v1/iap/google/confirm", headers=AUTH, json={"order_id": str(ORDER), "purchase_token": TOKEN})
     assert r.status_code == 503 and r.headers["X-Glory-Reason"] == "platform_unavailable"
+
+
+def test_google_token_is_kept_even_when_google_cannot_be_reached(monkeypatch, client) -> None:
+    """核实这一趟没做完，凭证也要留在单上 —— 不然后台「重新核实」手里什么都没有。"""
+    conn, _ = wire(monkeypatch, [("from iap_orders where order_id = $1 and player_id = $2", order_row()),
+                                 ("from player_wallets where player_id = $1", wallet_row())])
+    r = client.post("/v1/iap/google/confirm", headers=AUTH, json={"order_id": str(ORDER), "purchase_token": TOKEN})
+    assert r.status_code == 503
+    i = conn.index_of("update iap_orders set purchase_token")
+    assert i >= 0 and conn.args[i] == (ORDER, TOKEN)
+    assert "status = 'pending'" in conn.queries[i], "入过账的单上的凭证不许被改"
+
+
+def test_google_token_is_not_rewritten_on_settled_orders(monkeypatch) -> None:
+    conn, _ = wire(monkeypatch, [])
+    for order in (order_row(status="credited", purchase_token=TOKEN), order_row(purchase_token=TOKEN),
+                  order_row(status="cancelled")):
+        with pytest.raises(iap_google.GoogleUnavailable):
+            asyncio.run(iap_google.confirm(iap._order_of(order), TOKEN))
+    assert conn.count("set purchase_token") == 0
+
+
+# --- 后台「重新核实」（第十一节）-------------------------------------------------------
+
+ALICE = Admin(uuid.UUID("aaaaaaaa-0000-0000-0000-000000000001"), "alice")
+
+
+def _audits(conn: FakeConn) -> list[dict]:
+    return [dict(json.loads(a[3]), ok=a[4]) for q, a in zip(conn.queries, conn.args) if "insert into admin_audit" in q]
+
+
+def _order_reads(*rows):
+    """order_by_id 依次读到的样子（核实前、核实后）。"""
+    left = list(rows)
+    return lambda *_args: left.pop(0) if len(left) > 1 else left[0]
+
+
+def test_admin_recheck_credits_only_what_the_platform_confirms(monkeypatch) -> None:
+    before = order_row(purchase_token=TOKEN)
+    after = _credited(ORDER, iap.PRODUCTION, "ext", TOKEN, 500, 500, True, None, None)
+    conn, pool = wire(monkeypatch, [("from iap_orders where order_id = $1", _order_reads(before, after))])
+    asked: list = []
+
+    async def confirm(order, token, transport=None):
+        assert pool.active == 0, "向平台核实时手上握着数据库连接"
+        asked.append((order.order_id, token))
+        return iap.Outcome(iap._order_of(after), shop.Wallet(500, 500, 0))
+
+    monkeypatch.setattr(iap_google, "confirm", confirm)
+    out = asyncio.run(admin.recheck_iap(ALICE, PLAYER, ORDER))
+    assert asked == [(ORDER, TOKEN)], "拿单上记着的那张凭证去问"
+    assert out["before"] == "pending" and out["after"] == "credited" and "1000" in out["message"]
+    assert conn.count("insert into mails") == 1, "入了账给玩家发到账邮件"
+    assert _audits(conn) == [{"order_id": str(ORDER), "order_no": 42, "platform": "google", "before": "pending",
+                              "after": "credited", "credited": 1000, "ok": True}]
+
+
+def test_admin_recheck_of_a_still_unpaid_steam_order_moves_no_money(monkeypatch) -> None:
+    order = steam_order()
+    conn, _ = wire(monkeypatch, [("from iap_orders where order_id = $1", order)])
+
+    async def settle(o, declined=False, transport=None):
+        assert not declined, "后台核实不能替玩家点取消"
+        return iap.Outcome(o, shop.Wallet(0, 0, 0), replayed=True)
+
+    monkeypatch.setattr(iap_steam, "settle", settle)
+    out = asyncio.run(admin.recheck_iap(ALICE, PLAYER, ORDER))
+    assert out["after"] == "pending" and "Steam 确认" in out["message"]
+    assert conn.count("insert into mails") == 0 and _audits(conn)[0]["ok"] is True
+
+
+@pytest.mark.parametrize("row, says", [
+    (order_row(platform="apple"), "Apple"),
+    (order_row(), "没收到过"),
+    (steam_order(external_id=None), "没在 Steam 下单成功"),
+    (order_row(status="cancelled", purchase_token=TOKEN), "已取消"),
+    (steam_order(status="credited"), "已入账"),
+    (order_row(status="credited", purchase_token=TOKEN, consumed_at=NOW), "已入账"),
+])
+def test_admin_recheck_refuses_what_it_cannot_check(monkeypatch, row, says) -> None:
+    conn, _ = wire(monkeypatch, [("from iap_orders where order_id = $1", row)])
+
+    async def boom(*_a, **_k):
+        raise AssertionError("不该去问平台")
+
+    monkeypatch.setattr(iap_google, "confirm", boom)
+    monkeypatch.setattr(iap_steam, "settle", boom)
+    with pytest.raises(admin.AdminRejected) as exc:
+        asyncio.run(admin.recheck_iap(ALICE, PLAYER, ORDER))
+    assert says in exc.value.message
+    assert conn.count("insert into mails") == 0
+
+
+def test_admin_recheck_finishes_google_consumption_on_credited_orders(monkeypatch) -> None:
+    """Google 入了账没消耗，三天后会自动退款：已入账的也能核实一次，补上消耗。"""
+    before = order_row(status="credited", purchase_token=TOKEN, diamond_paid=500, credited_at=NOW)
+    after = dict(before, consumed_at=NOW)
+    conn, _ = wire(monkeypatch, [("from iap_orders where order_id = $1", _order_reads(before, after))])
+
+    async def confirm(order, token, transport=None):
+        return iap.Outcome(iap._order_of(before), shop.Wallet(500, 0, 0), replayed=True)
+
+    monkeypatch.setattr(iap_google, "confirm", confirm)
+    out = asyncio.run(admin.recheck_iap(ALICE, PLAYER, ORDER))
+    assert "补上了 Google 的消耗" in out["message"] and conn.count("insert into mails") == 0
+
+
+def test_admin_recheck_is_only_for_this_players_orders(monkeypatch) -> None:
+    wire(monkeypatch, [("from iap_orders where order_id = $1", order_row(player_id=OTHER, purchase_token=TOKEN))])
+    with pytest.raises(admin.AdminRejected) as exc:
+        asyncio.run(admin.recheck_iap(ALICE, PLAYER, ORDER))
+    assert exc.value.status == 404
+
+
+def test_admin_recheck_outage_is_logged_and_readable(monkeypatch) -> None:
+    conn, _ = wire(monkeypatch, [("from iap_orders where order_id = $1", order_row(purchase_token=TOKEN))])
+
+    async def down(*_a, **_k):
+        raise iap_google.GoogleUnavailable("连不上 Google（ConnectError）")
+
+    monkeypatch.setattr(iap_google, "confirm", down)
+    with pytest.raises(admin.AdminRejected) as exc:
+        asyncio.run(admin.recheck_iap(ALICE, PLAYER, ORDER))
+    assert exc.value.status == 503 and "连不上 Google" in exc.value.message
+    assert _audits(conn)[0]["ok"] is False
+
+
+def test_admin_never_credits_by_hand() -> None:
+    """后台没有「手工标成已付款」：入账只走平台核实 → iap.credit()（第十一节）。"""
+    source = "\n".join(line.split("#", 1)[0]
+                       for line in (REPO / "backend" / "app" / "admin.py").read_text(encoding="utf-8").splitlines())
+    assert "iap.credit(" not in source
+    assert "update iap_orders" not in source and "insert into iap_orders" not in source
 
 
 # --- 迁移、部署、自检 -----------------------------------------------------------

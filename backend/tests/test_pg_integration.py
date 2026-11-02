@@ -18,7 +18,7 @@ import uuid
 import asyncpg
 import pytest
 
-from app import bans, battle_report, db, iap, mail, players, profile, schema_check, shop
+from app import admin, bans, battle_report, db, iap, mail, players, profile, schema_check, shop
 from pg_harness import auth_uid_of, new_player, requires_pg, run_with_db
 
 pytestmark = requires_pg
@@ -569,6 +569,41 @@ def test_iap_sweep_queries_and_notice_mail_on_a_real_database() -> None:
             # 邮差会把它推给在线的人（同其它系统邮件）。
             ours = {int(r["mail_id"]) for r in await conn.fetch("select mail_id from mails where player_id = $1", p)}
             assert ours <= {row.mail_id for row in await mail.load_scan(0)}
+
+    run_with_db(body)
+
+
+def test_admin_iap_views_and_kept_tokens_on_a_real_database() -> None:
+    """后台的三条语句（玩家页订单、要盯的号、卡住的单）和「待付款时先记凭证」，在真库上跑得通、筛得对。"""
+
+    async def body() -> None:
+        async with db.pool().acquire() as conn:
+            p = await new_player(conn, created_days_ago=1)
+            quiet = await new_player(conn, created_days_ago=1)
+            stuck = await _iap_order(conn, p)
+            await conn.execute("update iap_orders set created_at = now() - interval '1 hour' where order_id = $1", stuck)
+            await _iap_order(conn, quiet)  # 刚建的单还不算卡住
+            paid = await _iap_order(conn, p)
+        await iap.remember_token(stuck, "tok-stuck")
+        await iap.credit(_proof(paid, "ext-p"))
+        await iap.refund("google", "ext-p", "google_voided")
+        await iap.remember_token(paid, "tok-overwrite")
+        async with db.pool().acquire() as conn:
+            tokens = {r["order_id"]: r["purchase_token"]
+                      for r in await conn.fetch("select order_id, purchase_token from iap_orders where player_id = $1", p)}
+        assert tokens == {stuck: "tok-stuck", paid: "tok-ext-p"}, "已退款的单上的凭证不许被改"
+
+        detail = await admin.player_detail(p)
+        rows = {o["order_id"]: o for o in detail["iap_orders"]}
+        assert detail["iap_refunds"] == 1
+        assert rows[str(stuck)]["has_token"] and rows[str(stuck)]["recheck_blocker"] == ""
+        assert "purchase_token" not in rows[str(stuck)], "凭证本身不给页面看"
+        assert rows[str(paid)]["status"] == "refunded" and rows[str(paid)]["recheck_blocker"]
+
+        overview = await admin.iap_overview(1)
+        assert [w["player_id"] for w in overview["watchlist"]] == [str(p)]
+        assert [o["order_id"] for o in overview["stuck"]] == [str(stuck)]
+        assert (await admin.iap_overview(2))["watchlist"] == [], "退款 1 次、没欠账的号不到 2 次的门槛"
 
     run_with_db(body)
 

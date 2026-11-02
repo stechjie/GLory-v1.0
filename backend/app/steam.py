@@ -101,3 +101,12 @@ def placeholder_email(steam_id: str) -> str:
     用保留域名 .invalid（RFC 2606）：信永远发不出去，换服务器域名也不受影响。10-23 定。
     """
     return f"steam-{steam_id}@steam.invalid"
+
+
+_PLACEHOLDER_RE = re.compile(r"^steam-([0-9]{1,20})@steam\.invalid$")
+
+
+def steam_id_of_placeholder(email: str) -> str:
+    """placeholder_email 反过来：从占位邮箱里取 Steam 编号。不是这种邮箱回空串。"""
+    match = _PLACEHOLDER_RE.match(email or "")
+    return match.group(1) if match else ""

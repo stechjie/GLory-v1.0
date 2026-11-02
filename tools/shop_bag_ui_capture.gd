@@ -83,6 +83,21 @@ func _capture_shop_diamonds() -> void:
 	_show(dialog)
 	await _settle_and_shot("diamond_store_dialog_1280")
 	_clear_screen()
+	# Steam 电脑版：价格是服务器给的 steam_charge；等确认窗口等久了，底下多出「改用浏览器付款」。
+	dialog = DIAMOND_STORE.new()
+	dialog.set_meta("ui_capture_fixture", true)
+	dialog.set("_balance", 500)
+	_show(dialog)
+	dialog.set("_prices", DIAMOND_STORE.steam_prices([
+		{"id": "diamond_pack_1", "steam_charge": {"currency": "MYR", "amount": 500}},
+		{"id": "diamond_pack_2", "steam_charge": {"currency": "MYR", "amount": 2000}},
+		{"id": "diamond_pack_3", "steam_charge": {"currency": "MYR", "amount": 5000}},
+	]))
+	dialog.call("_render")
+	dialog.call("_set_foot", "请在 Steam 弹出的窗口里确认付款。")
+	(dialog.get("_web_button") as Control).visible = true
+	await _settle_and_shot("diamond_store_steam_waiting_1280")
+	_clear_screen()
 
 
 func _capture_pet_draw() -> void:

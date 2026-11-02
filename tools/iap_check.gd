@@ -9,13 +9,16 @@ extends Node
 #   - 客户端自己消耗了付款 → 服务器那边一出错，钱就没了；
 #   - 503 / 断网被显示成「失败」→ 玩家以为没付成又买一次（钱多半已经扣了）；
 #   - 客户端还留着一份档位表 → 和服务器两份真相；
-#   - 两个入口的信号没人接 → 点钻石没反应（10-27 查出来就是这样）。
+#   - 两个入口的信号没人接 → 点钻石没反应（10-27 查出来就是这样）；
+#   - Steam：认错别的单的确认回调、窗口关了还在死等、浏览器付款打开了不是 Steam 的网址、
+#     客户端和服务器的字段名对不上（钻石宝库悄悄显示「暂不可买」）。
 #
 # 运行：
 #   Godot_v4.7.1-stable_win64_console.exe --headless --path . tools/iap_check.tscn
 
 const CheckHarness := preload("res://tools/CheckHarness.gd")
 const BillingBridge := preload("res://scripts/account/BillingBridge.gd")
+const SteamBridge := preload("res://scripts/account/SteamBridge.gd")
 const DiamondStore := preload("res://scenes/menu/DiamondStoreDialog.gd")
 
 const CHECK_NAME := "iap"
@@ -61,6 +64,19 @@ class FakeBridge extends RefCounted:
 		return replies.pop_front()
 
 
+class FakeSteam extends RefCounted:
+	signal microtransaction_auth_response(app_id: int, order_id: int, authorized: bool)
+	var overlay := true
+
+	func isOverlayEnabled() -> bool:
+		return overlay
+
+	# 先来一张别的单的回调（信号是广播的，上一张没等到的单可能这时才回），再来自己的。
+	func answer(order_no: int, authorized: bool) -> void:
+		microtransaction_auth_response.emit(SteamBridge.STEAM_APP_ID, order_no + 1, not authorized)
+		microtransaction_auth_response.emit(SteamBridge.STEAM_APP_ID, order_no, authorized)
+
+
 func _ready() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
 	_case_aar_matches_source()
@@ -74,7 +90,13 @@ func _ready() -> void:
 	_case_bonus_text()
 	_case_no_client_tier_table()
 	_case_entrances_wired()
+	_case_steam_platform()
+	await _case_steam_confirmation_window()
+	_case_steam_prices()
+	_case_steam_checkout_url()
+	_case_steam_fields_match_the_server()
 	BillingBridge.bridge_override = null
+	SteamBridge.bridge_override = null
 	_h.finish(get_tree())
 
 
@@ -281,3 +303,88 @@ func _case_entrances_wired() -> void:
 		"商城页「+」和钻石页按钮的信号没人接：点了没反应")
 	_h.expect(main.contains("AccountManager.recover_purchases()"), "recover_wired",
 		"没有地方补交没完成的付款：付了钱但回执丢了的那笔要等 3 天后 Google 自动退款")
+
+
+# --- Steam（docs/充值系统设计.md 第五节）-------------------------------------------------
+
+func _case_steam_platform() -> void:
+	BillingBridge.bridge_override = null
+	var fake := FakeSteam.new()
+	SteamBridge.bridge_override = fake
+	_h.expect(BillingBridge.platform() == "steam", "platform_steam",
+		"电脑版 Steam 开着时 platform() 应是 steam，不然钻石宝库说「这台设备不能充值」")
+	_h.expect(SteamBridge.overlay_ready(), "overlay_ready", "Steam 界面开着时应走游戏内确认窗口")
+	fake.overlay = false
+	_h.expect(not SteamBridge.overlay_ready(), "overlay_off",
+		"玩家关了 Steam 游戏内界面时 overlay_ready() 必须是 false：确认窗口弹不出来，要改走浏览器")
+	BillingBridge.bridge_override = FakeBridge.new()
+	_h.expect(BillingBridge.platform() == "google", "google_wins", "有 Google 结算插件就是安卓，走 Google")
+	BillingBridge.bridge_override = null
+
+
+func _case_steam_confirmation_window() -> void:
+	var fake := FakeSteam.new()
+	SteamBridge.bridge_override = fake
+	for authorized in [true, false]:
+		fake.answer.call_deferred(42, authorized)
+		var got: Dictionary = await SteamBridge.wait_microtxn(get_tree(), 42, 2.0)
+		var expected := "authorized" if authorized else "declined"
+		_h.expect(got.get("state") == expected, "microtxn_" + expected,
+			"确认窗口点了%s要报 %s，而且只认自己这张单（orderid）的回调：%s" % ["确认" if authorized else "取消", expected, str(got)])
+	var timed: Dictionary = await SteamBridge.wait_microtxn(get_tree(), 42, 0.3)
+	_h.expect(timed.get("state") == "timeout", "microtxn_timeout", "等不到结果是 timeout（不算失败，服务器会自己扫）：%s" % str(timed))
+	var stop := func() -> bool: return false
+	var gave_up: Dictionary = await SteamBridge.wait_microtxn(get_tree(), 42, 5.0, stop)
+	_h.expect(gave_up.get("state") == "abandoned", "microtxn_abandoned",
+		"玩家选了改用浏览器付款，就不能再等这个窗口：%s" % str(gave_up))
+	var gone := Node.new()
+	var dead_check := Callable(gone, "is_inside_tree")
+	gone.free()
+	var orphan: Dictionary = await SteamBridge.wait_microtxn(get_tree(), 42, 5.0, dead_check)
+	_h.expect(orphan.get("state") == "abandoned", "microtxn_dialog_gone",
+		"钻石宝库关掉之后不能还在后台死等十分钟：%s" % str(orphan))
+	_h.expect(fake.get_signal_connection_list("microtransaction_auth_response").is_empty(), "microtxn_disconnect",
+		"等完要断开信号：不然下一次付款会被上一次的等待者抢走回调")
+
+
+func _case_steam_prices() -> void:
+	_h.expect(DiamondStore.money_text("MYR", 500) == "RM 5.00" and DiamondStore.money_text("USD", 119) == "US$1.19"
+		and DiamondStore.money_text("EUR", 1050) == "EUR 10.50" and DiamondStore.money_text("MYR", 0) == "",
+		"money_text", "最小货币单位换成给人看的价格")
+	var prices := DiamondStore.steam_prices([
+		{"id": "diamond_pack_1", "steam_charge": {"currency": "MYR", "amount": 500}},
+		{"id": "diamond_pack_2", "steam_charge": {}},
+	])
+	_h.expect(prices == {"diamond_pack_1": "RM 5.00"}, "steam_prices",
+		"Steam 价格只用服务器给的 steam_charge；没有的档不给购买按钮：%s" % str(prices))
+	var usd := [{"steam_charge": {"currency": "USD", "amount": 119}}]
+	var myr := [{"steam_charge": {"currency": "MYR", "amount": 500}}]
+	_h.expect(DiamondStore.steam_price_note("", myr, false).contains("以 Steam 确认窗口为准"), "steam_note_unknown",
+		"查不到钱包币种时要说明价格以 Steam 为准")
+	_h.expect(DiamondStore.steam_price_note("EUR", usd, false).contains("换算"), "steam_note_converted",
+		"钱包不是美元、按美元报价时要说 Steam 会换算")
+	_h.expect(not DiamondStore.steam_price_note("MYR", myr, false).contains("换算"), "steam_note_plain",
+		"钱包就是马币时不用提换算")
+
+
+func _case_steam_checkout_url() -> void:
+	_h.expect(DiamondStore.is_steam_checkout_url("https://store.steampowered.com/checkout/approvetxn/9001"),
+		"checkout_url_ok", "Steam 的确认页要能打开")
+	for bad in ["http://store.steampowered.com/checkout/approvetxn/9001", "https://steampowered.com.evil.test/x",
+			"https://evil.test/?u=https://store.steampowered.com/", ""]:
+		_h.expect(not DiamondStore.is_steam_checkout_url(bad), "checkout_url_refused",
+			"不是 https 的 steampowered.com 就不打开：%s" % bad)
+	var store := FileAccess.get_file_as_string("res://scenes/menu/DiamondStoreDialog.gd")
+	_h.expect(store.contains("if is_steam_checkout_url(url):\n\t\tOS.shell_open(url)")
+		or store.contains("if is_steam_checkout_url(url):\r\n\t\tOS.shell_open(url)"), "checkout_url_guarded",
+		"OS.shell_open 前面要先过 is_steam_checkout_url")
+
+
+# 客户端读的字段名和服务器发的必须一样：错一个字，钻石宝库就悄悄显示「暂不可买」或认不出回调。
+func _case_steam_fields_match_the_server() -> void:
+	var server := FileAccess.get_file_as_string("res://backend/app/routes/iap.py")
+	var client := FileAccess.get_file_as_string("res://scenes/menu/DiamondStoreDialog.gd") \
+		+ FileAccess.get_file_as_string("res://scripts/autoload/AccountManager.gd")
+	for field in ["steam_charge", "steam_wallet_currency", "steam_order_no", "steam_url", "steam_web", "authorized"]:
+		_h.expect(server.contains(field + ":") and client.contains("\"%s\"" % field), "field_" + field,
+			"字段 %s 在服务器（routes/iap.py）和客户端两边要一致" % field)
