@@ -5,6 +5,7 @@
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -225,6 +226,36 @@ class Settings(BaseSettings):
     # 🔴 **正式上线前必须是 1。** TestFlight 上的人买东西不花钱，又连着正式服 —— 调大就是让他们多白拿。
     # 只在自己测充值流程、要连着买好几次的那几天调大，测完改回来、重启账号服务器。
     iap_test_orders_per_day: int = 1
+
+    # --- 邀请码（app/invites.py，database/043_invites.sql）---------------------------
+    #
+    # 2026-11-03 用户定的数。改了重启账号服务器就生效，**不用出包**：客户端显示的门槛和钻石数
+    # 都是从 GET /v1/me/invite 拿的。
+    #
+    # 🔴 上下限是 Field 卡的：填错（比如多打一个 0）账号服务器**启动时**就报错退出，
+    #    而不是等到某个玩家升到 5 级、发奖那一刻才炸在对局结算里。
+    #
+    # 总闸。关掉：不能再填码；已经绑定、达标的人**先不发，留着**，开回来之后的下一局照发
+    # （发奖认的是「达到或超过」门槛，不是「刚好跨过」）。被刷的时候先关它。
+    invite_enabled: bool = True
+    # 被邀请人达到（或超过）这个等级时，双方发奖。
+    invite_reward_level: int = Field(default=5, ge=2, le=20)
+    # 钻石进赠送列。上限同邮件单封上限（012 mail_diamond_range）。
+    invite_invitee_diamond: int = Field(default=50, ge=1, le=100_000)
+    invite_inviter_diamond: int = Field(default=100, ge=1, le=100_000)
+    # 一个邀请人最多拿几份。**算的是发了奖的，不是绑定了的**（043 文件头）。
+    # 0 = 邀请人一律不发，被邀请人照发。
+    invite_max_rewarded: int = Field(default=20, ge=0, le=1000)
+    # 注册后几天内能填码。邀请码是拉新的，不是给老玩家互刷的。
+    invite_bind_window_days: int = Field(default=7, ge=1, le=365)
+
+    # --- 兑换码（app/redeem.py，database/044_redeem_codes.sql）-------------------------
+    #
+    # 防爆破：一个号在这段时间里「码不存在」到这个次数，就先不让试了，等最早那次滑出窗口。
+    # 只数「不存在」—— 填了过期、领完的码是手慢的真玩家，不是在猜码。
+    # 按账号不按 IP：接口要登录，所以躲开了限流器那个固有缺陷（运营商 NAT 后面几万人共一个出口）。
+    redeem_failure_limit: int = Field(default=10, ge=1, le=1000)
+    redeem_failure_window_seconds: int = Field(default=3600, ge=60, le=86_400)
 
     @property
     def is_dev(self) -> bool:

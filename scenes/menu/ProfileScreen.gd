@@ -28,6 +28,7 @@ const TouchChoice := preload("res://ui/components/TouchChoiceButton.gd")
 const ConfirmDialog := preload("res://ui/components/GloryConfirmDialog.gd")
 const MatchHistory := preload("res://scenes/menu/MatchHistoryPanel.gd")
 const ProgressionPanel := preload("res://scenes/menu/ProgressionPanel.gd")
+const InviteRedeemPanel := preload("res://scenes/menu/InviteRedeemPanel.gd")
 const ReportDialog := preload("res://ui/components/ReportDialog.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const PROFILE_BG_TEX := preload("res://assets/ui/profile/hall_of_glory.png")
@@ -67,6 +68,7 @@ var _win_rate_value: Label
 var _tier_icons: Array[TextureRect] = []
 var _overview_panel: Control
 var _settings_panel: Control
+var _invite_panel: InviteRedeemPanel
 # 「账号与登录」区块（_account_section）。
 var _account_note: Label
 var _account_rows: VBoxContainer
@@ -257,7 +259,9 @@ func _build() -> void:
 		_body.add_child(_settings_panel)
 		_settings_panel.add_child(_column(400, [_name_section(), _account_section(), _privacy_section()]))
 		_settings_panel.add_child(_column(440, [_bio_section()]))
-		_settings_panel.add_child(_column(340, [_danger_zone()]))
+		# 邀请与兑换码放在注销上面：注销是这一页最后一件事（2026-11-03）。
+		_invite_panel = InviteRedeemPanel.new()
+		_settings_panel.add_child(_column(340, [_invite_panel, _danger_zone()]))
 		_select_profile_tab(false)
 	else:
 		var columns := HBoxContainer.new()
@@ -1540,6 +1544,8 @@ func _refresh_self() -> void:
 
 	_signature_edit.text = _field("signature")
 	_sync_delete_button()
+	if _invite_panel != null:
+		_invite_panel.set_friend_code(_field("friend_code"))
 
 
 func _refresh_public() -> void:

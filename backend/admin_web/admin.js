@@ -133,6 +133,7 @@ const TABS = [
   ["requests", "审批"],
   ["iap", "充值"],
   ["mails", "邮件"],
+  ["redeem", "兑换码"],
   ["announcements", "公告"],
   ["patches", "版本更新"],
   ["reports", "举报"],
@@ -171,7 +172,7 @@ function render() {
   const main = h("main", {});
   app.replaceChildren(bar, main);
   const views = { players: playersView, data: dataView, requests: requestsView, iap: iapView, mails: mailsView,
-                  announcements: announcementsView, patches: patchesView, reports: reportsView, world: worldView,
+                  redeem: redeemView, announcements: announcementsView, patches: patchesView, reports: reportsView, world: worldView,
                     service: serviceView, audit: auditView };
   views[state.tab](main);
   refreshPendingCount();
@@ -611,6 +612,7 @@ function historyCards(d) {
         h("td", {}, attachmentText(m)), h("td", {}, m.read_at ? "是" : ""),
         h("td", {}, m.claimed_at ? fmt(m.claimed_at) : ""),
         h("td", {}, mailStatus(m)))))),
+    inviteCard(d),
     h("section", { class: "card" }, h("h2", {}, "排位与信誉"),
       h("p", {}, d.ranked ? `第 ${d.ranked.season} 赛季 · ${d.ranked.score} 分（第 ${d.ranked.tier + 1} 段）· ${d.ranked.games} 局 ${d.ranked.wins} 胜` : "没打过排位"),
       h("p", {}, d.credit ? `信誉分 ${d.credit.score}` + (d.credit.banned_until ? ` · 排位禁赛到 ${fmt(d.credit.banned_until)}` : "") : "信誉分 100（没有记录）"),
@@ -620,6 +622,29 @@ function historyCards(d) {
         h("td", {}, fmt(m.ended_at)), h("td", {}, m.mode), h("td", {}, m.rounds), h("td", {}, outcome[m.outcome] || m.outcome),
         h("td", {}, m.team === 0 ? "A 队" : "B 队"), h("td", {}, m.online_at_end ? "是" : h("span", { class: "neg" }, "否")))))),
     h("section", { class: "card" }, h("h2", {}, "后台对他做过的操作"), auditTable(d.audit, false)));
+}
+
+// 客服最常被问「我邀请了人怎么没钻石」：答案在「没拿到」那一栏（拿满上限 / 发奖时已注销）。
+// 玩家自己在游戏里看不到这些数字（2026-11-03 用户定），只有这里看得到。
+const INVITE_SKIPPED = { capped: "邀请人已拿满上限", deleted: "发奖时邀请人已注销" };
+
+function inviteCard(d) {
+  const by = d.invited_by;
+  const mine = d.invites;
+  return h("section", { class: "card" }, h("h2", {}, "邀请与兑换码"),
+    h("p", {}, by
+      ? [`被 ${by.player_name}（`, h("span", { class: "mono" }, by.friend_code), `）邀请，${fmt(by.bound_at)} 填的码；`,
+         by.rewarded_at ? `${fmt(by.rewarded_at)} 达标发奖` + (by.inviter_skipped ? `（邀请人那份没发：${INVITE_SKIPPED[by.inviter_skipped] || by.inviter_skipped}）` : "")
+                        : "还没达标"]
+      : "没有填过邀请码"),
+    h("p", {}, mine && Number(mine.bound)
+      ? `他邀请了 ${num(mine.bound)} 人：已达标 ${num(mine.rewarded)}，他拿到 ${num(mine.paid)} 份` +
+        (Number(mine.capped) ? `，${num(mine.capped)} 份因为拿满上限没发` : "")
+      : "没有邀请过别人"),
+    h("h3", {}, "领过的兑换码（最近 50 个）"),
+    table(["时间", "码", "活动", "邮件"], (d.redeemed || []).map((c) => h("tr", {},
+      h("td", {}, fmt(c.claimed_at)), h("td", { class: "mono" }, c.code), h("td", {}, c.campaign || "—"),
+      h("td", {}, `#${c.mail_id}`)))));
 }
 
 function attachmentText(m) {
@@ -695,6 +720,8 @@ async function requestsView(main) {
     let result = "";
     if (r.result && r.result.error) result = r.result.error;
     else if (r.result && r.result.mail_id) result = `邮件 #${r.result.mail_id}`;
+    else if (r.result && r.result.code) result = `兑换码 ${r.result.code}`;
+    else if (r.result && r.result.campaign) result = `${num(r.result.count)} 个码 · 活动 ${r.result.campaign}`;
     else if (r.result && r.result.balance_after !== undefined) result = `之后余额 ${num(r.result.balance_after)}`;
     return h("tr", {}, h("td", {}, r.request_id), h("td", {}, r.summary), h("td", {}, r.reason),
       h("td", {}, `${r.requested_by} ${fmt(r.requested_at)}`),
@@ -816,6 +843,149 @@ async function mailsView(main) {
         h("td", {}, m.title_zh), h("td", {}, attachmentText(m)), h("td", { class: "num" }, num(m.claimed)),
         h("td", {}, mailStatus(m), m.problem ? h("div", { class: "muted" }, m.problem) : ""),
         h("td", {}, m.actor), cell);
+    }))));
+}
+
+// ---------------------------------------------------------------------------
+// 兑换码（database/044_redeem_codes.sql）
+// ---------------------------------------------------------------------------
+//
+// 建码 = 批量发钱：一律提交审批，另一个管理员批准才建（018 的规矩）。
+// 撤回、导出一个人就能做 —— 撤回是止血，必须立刻。
+
+function rewardRange(lo, hi, unit) {
+  if (!Number(hi)) return "";
+  return Number(lo) === Number(hi) ? `${num(hi)} ${unit}` : `${num(lo)}–${num(hi)} ${unit}`;
+}
+
+function redeemStatus(g) {
+  if (Number(g.withdrawn) >= Number(g.codes)) return h("span", { class: "tag" }, "已撤回");
+  if (Date.parse(g.expires_at) < Date.now()) return h("span", { class: "tag" }, "已过期");
+  if (Number(g.used) >= Number(g.max_uses)) return h("span", { class: "tag" }, "已领完");
+  if (Date.parse(g.starts_at) > Date.now()) return h("span", { class: "tag yellow" }, "未开始");
+  if (Number(g.withdrawn)) return h("span", { class: "tag yellow" }, `撤回了 ${num(g.withdrawn)} 个`);
+  return h("span", { class: "tag green" }, "有效");
+}
+
+function downloadText(name, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
+  const a = h("a", { href: url, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function redeemView(main) {
+  const box = h("div", {});
+  let data;
+  try {
+    data = await api("GET", "/admin/api/redeem");
+  } catch (e) {
+    main.append(notice("error", e.message));
+    return;
+  }
+  let key = newKey();
+  const mode = h("select", {}, h("option", { value: "code" }, "一个码（通用码：全服都能填，一人一次）"),
+    h("option", { value: "batch" }, "批量单次码（每个只能用一次，一人一批只能领一个）"));
+  const code = h("input", { maxlength: "24", placeholder: "例如 GLORY2026（避开 0 / O、1 / I）" });
+  const maxUses = h("input", { type: "number", min: "1", max: "1000000", value: "1000" });
+  const count = h("input", { type: "number", min: "1", max: "5000", value: "100" });
+  const campaign = h("input", { maxlength: "32", placeholder: "可空。同一活动下一人只能领一个码" });
+  const diamond = h("input", { type: "number", min: "0", value: "0" });
+  const coin = h("input", { type: "number", min: "0", value: "0" });
+  const days = h("input", { type: "number", min: "1", max: "365", value: "30" });
+  const starts = h("input", { type: "datetime-local" });
+  const note = h("input", { maxlength: "200", placeholder: "为什么建、哪个活动（必填，玩家看不到）" });
+  const items = data.catalog.map((c) => ({ id: c.content_id, box: h("input", { type: "checkbox" }), name: c.name }));
+  const send = h("button", { class: "btn primary" }, "提交审批");
+  const codeField = field("兑换码", code);
+  const maxField = field("最多几人能领", maxUses);
+  const countField = field("生成几个", count);
+  const total = h("p", { class: "hint" }, "");
+
+  const sync = () => {
+    const batch = mode.value === "batch";
+    codeField.style.display = batch ? "none" : "";
+    maxField.style.display = batch ? "none" : "";
+    countField.style.display = batch ? "" : "none";
+    const uses = Number((batch ? count : maxUses).value || 0);
+    const parts = [];
+    if (Number(diamond.value) > 0) parts.push(`${num(Number(diamond.value) * uses)} 钻石`);
+    if (Number(coin.value) > 0) parts.push(`${num(Number(coin.value) * uses)} 黄金`);
+    total.textContent = parts.length ? `最多一共发出 ${parts.join("，")}（批的人看到的就是这个数）` : "";
+  };
+  [mode, maxUses, count, diamond, coin].forEach((el) => el.addEventListener("input", sync));
+
+  send.addEventListener("click", action(send, box, async () => {
+    const body = {
+      mode: mode.value, code: code.value, max_uses: Number(maxUses.value || 0), count: Number(count.value || 0),
+      campaign: campaign.value, diamond: Number(diamond.value || 0), coin: Number(coin.value || 0),
+      items: items.filter((i) => i.box.checked).map((i) => i.id), days: Number(days.value || 30),
+      starts_at: fromLocalInput(starts.value) || "", note: note.value, request_key: key,
+    };
+    if (!confirm(`提交建码申请？\n${total.textContent || "（没填奖励）"}\n\n要另一个管理员批准才会建。`)) return "";
+    const r = await api("POST", "/admin/api/redeem", body);
+    key = newKey();
+    refreshPendingCount();
+    return r.replayed ? `这个已经提交过了（申请 #${r.request_id}）` : `已提交申请 #${r.request_id}：${r.summary}`;
+  }));
+
+  main.append(h("section", { class: "card" }, h("h2", {}, "建兑换码"),
+    h("p", { class: "hint" }, "建码会发钱：提交后要另一个管理员批准才建。奖励发到玩家邮箱，钻石进赠送那一列。"
+      + "「最多几人能领」必填、不许无限 —— 码泄漏出去时它就是自动刹车。批量码批准后在下面的列表里导出。"),
+    h("div", { class: "row" }, field("方式", mode), codeField, maxField, countField, field("活动", campaign, true)),
+    h("div", { class: "row" }, field("每人钻石", diamond), field("每人黄金", coin), field("有效天数", days),
+      field("开始时间（空 = 批准即开始）", starts),
+      h("div", { class: "field" }, h("span", {}, "物品"), h("div", {}, items.map((i) =>
+        h("label", { class: "check" }, i.box, `${i.name}（${i.id}）`))))),
+    total,
+    h("div", { class: "row" }, field("原因（内部备注）", note, true), send), box));
+  sync();
+
+  const listBox = h("div", {});
+  main.append(h("section", { class: "card" }, h("h2", {}, "最近 100 组"),
+    h("p", { class: "hint" }, "一批单次码算一组。撤回只让还没领的人领不了；已经领走的收不回来。导出的码是秘密，别贴到公开的地方。"),
+    listBox,
+    table(["码 / 活动", "个数", "已领 / 总数", "每人奖励", "有效期", "状态", "建的人", ""], data.groups.map((g) => {
+      const cell = h("td", {});
+      // 领完、过期、全撤回了的组不给撤回按钮：已经没人能领了，再点一下只是多一条操作记录。
+      const live = Number(g.withdrawn) < Number(g.codes) && Date.parse(g.expires_at) > Date.now()
+        && Number(g.used) < Number(g.max_uses);
+      if (g.campaign) {
+        const out = h("button", { class: "btn small" }, "导出");
+        out.addEventListener("click", action(out, listBox, async () => {
+          const r = await api("GET", "/admin/api/redeem/export?campaign=" + encodeURIComponent(g.campaign));
+          const lines = ["code,used,max_uses,withdrawn"].concat(r.codes.map((c) =>
+            `${c.code},${c.used_count},${c.max_uses},${c.withdrawn_at ? "yes" : ""}`));
+          downloadText(`redeem-${g.campaign}.csv`, lines.join("\n") + "\n");
+          return `已导出 ${r.codes.length} 个码`;
+        }));
+        cell.append(out, " ");
+      }
+      if (live) {
+        const whole = Boolean(g.campaign);
+        const btn = h("button", { class: "btn small" }, whole ? "整个活动撤回" : "撤回");
+        btn.addEventListener("click", action(btn, listBox, async () => {
+          const what = whole ? `活动「${g.campaign}」下全部 ${num(g.codes)} 个码` : `兑换码 ${g.code}`;
+          if (!confirm(`撤回${what}？\n已经有 ${num(g.used)} 次领走了，领走的收不回来。`)) return "";
+          const r = await api("POST", "/admin/api/redeem/withdraw", whole ? { campaign: g.campaign } : { code: g.code });
+          setTimeout(render, 800);
+          return `已撤回 ${num(r.withdrawn)} 个码`;
+        }));
+        cell.append(btn);
+      }
+      const reward = [rewardRange(g.diamond_min, g.diamond_max, "钻石"), rewardRange(g.coin_min, g.coin_max, "黄金"),
+        g.items || ""].filter(Boolean).join("，") || "—";
+      return h("tr", {},
+        h("td", {}, Number(g.codes) === 1 ? h("span", { class: "mono" }, g.code) : "",
+          g.campaign ? h("div", { class: "muted" }, `活动 ${g.campaign}`) : ""),
+        h("td", { class: "num" }, num(g.codes)),
+        h("td", { class: "num" }, `${num(g.used)} / ${num(g.max_uses)}`),
+        h("td", {}, reward),
+        h("td", {}, `${fmt(g.starts_at)} → ${fmt(g.expires_at)}`),
+        h("td", {}, redeemStatus(g)),
+        h("td", {}, g.actor), cell);
     }))));
 }
 

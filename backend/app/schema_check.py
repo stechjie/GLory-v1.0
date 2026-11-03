@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import logging
 
-from app import db, friends, iap, presence, ranked, sanctions, service_control, shop, skin_draw
+from app import db, friends, iap, invites, presence, ranked, redeem, sanctions, service_control, shop, skin_draw
 
 log = logging.getLogger("glory.schema")
 
@@ -66,6 +66,13 @@ _PREPARED: list[tuple[str, str]] = [
     ("iap.LOCK_ORDER", iap.LOCK_ORDER),
     # 樱花祈愿（042）。挂了的症状是打开祈愿页 500、抽不了。
     ("skin_draw._PROGRESS", skin_draw._PROGRESS),
+    # 邀请码（043）。🔴 _LOCK_PENDING 挂了的症状最隐蔽：发奖在保存点里，失败只记日志 ——
+    # 所有被邀请人到了 5 级都**静默地**拿不到钻石，结算照常、没有任何 500。
+    ("invites._STATUS", invites._STATUS),
+    ("invites._LOCK_PENDING", invites._LOCK_PENDING),
+    # 兑换码（044）。挂了的症状是填码 500。
+    ("redeem._FIND", redeem._FIND),
+    ("redeem._TAKE", redeem._TAKE),
 ]
 
 # 第二类：prepare 看不见的东西。只收「不是加列」的迁移，一条迁移一行。
@@ -151,6 +158,26 @@ _PROBES: list[tuple[str, str, str]] = [
         "select 1 from pg_proc where proname = 'keep_ranked_stage_floor'"
         "   and prosrc like '%%greatest(new.score, %d)%%'" % ranked.STARFORGE_FLOOR,
         "突破森卫后的保底停在旧的 300：星铸 200–299 分的人打完一局会被直接抬到 300",
+    ),
+    (
+        "044 admin_requests.kind 放行 redeem_code",
+        "select 1 from pg_constraint"
+        " where conname = 'admin_request_kind'"
+        "   and pg_get_constraintdef(oid) like '%redeem_code%'",
+        "后台提交建兑换码会 HTTP 500（同 030 的毛病：约束拦在 insert 那一刻，prepare 看不见）",
+    ),
+    (
+        "044 redeem_claims 的 campaign 由触发器抄写",
+        "select 1 from pg_trigger"
+        " where tgname = 'redeem_claims_copy_campaign' and not tgisinternal",
+        "🔴 「同一活动只能领一个」失效：领取记录里 campaign 是空的，唯一索引管不到，"
+        "一个人能把同一批单次码全领一遍。不报错",
+    ),
+    (
+        "044 兑换码的 campaign 冻结",
+        "select 1 from pg_trigger"
+        " where tgname = 'redeem_codes_campaign_frozen' and not tgisinternal",
+        "改一个被领过的码的 campaign 就能绕过活动互斥。不报错",
     ),
 ]
 

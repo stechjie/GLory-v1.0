@@ -200,6 +200,12 @@ const TARGETS: Array[Dictionary] = [
 	{"kind": "script", "path": "res://tools/unit_growth_check.gd"},
 	{"kind": "script", "path": "res://tools/pet_feature_check.gd"},
 	{"kind": "script", "path": "res://tools/four_star_values_check.gd"},
+	# ★ 11.03 邀请码 / 兑换码：AccountManager.gd、ProfileScreen.gd 已在上面；
+	#   新面板、改过的报错翻译表和新门禁按同一条教训单列。
+	{"kind": "script", "path": "res://scenes/menu/InviteRedeemPanel.gd"},
+	{"kind": "script", "path": "res://scripts/account/AccountErrorText.gd"},
+	{"kind": "script", "path": "res://tools/invite_redeem_check.gd"},
+	{"kind": "script", "path": "res://scenes/debug/ProfileScreenReview.gd"},
 ]
 
 

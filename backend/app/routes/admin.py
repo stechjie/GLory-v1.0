@@ -327,6 +327,58 @@ async def withdraw(mail_id: int, who: Writer) -> dict:
     return await admin.withdraw_mail(who, mail_id)
 
 
+# --- 兑换码 ---------------------------------------------------------------------
+
+
+class RedeemBody(BaseModel):
+    mode: Literal["code", "batch"]
+    code: str = Field(default="", max_length=64)
+    max_uses: int = 0
+    count: int = 0
+    campaign: str = Field(default="", max_length=64)
+    diamond: int = 0
+    coin: int = 0
+    items: list[str] = Field(default_factory=list, max_length=10)
+    days: int = 30
+    starts_at: str = Field(default="", max_length=40)
+    note: str = Field(default="", max_length=200)
+    request_key: uuid.UUID
+
+
+class RedeemWithdrawBody(BaseModel):
+    code: str = Field(default="", max_length=64)
+    campaign: str = Field(default="", max_length=64)
+
+
+@router.post("/admin/api/redeem")
+async def request_redeem(body: RedeemBody, who: Writer) -> dict:
+    """建码一律进审批（要另一个管理员批准）。"""
+    draft = admin.RedeemDraft(
+        mode=body.mode, code=body.code, max_uses=body.max_uses, count=body.count, campaign=body.campaign,
+        diamond=body.diamond, coin=body.coin, items=tuple(body.items), days=body.days,
+        starts_at=body.starts_at, note=body.note)
+    return await admin.request_redeem(who, draft, body.request_key)
+
+
+@router.get("/admin/api/redeem")
+async def redeem_codes(_who: Me) -> dict:
+    return {"groups": await admin.recent_redeem(), "catalog": admin.attachable_items()}
+
+
+@router.get("/admin/api/redeem/export")
+async def export_redeem(campaign: Annotated[str, Query(max_length=64)], who: Writer) -> dict:
+    """一个活动下全部的码（码是秘密，只给能改东西的管理员，记操作记录）。"""
+    return {"campaign": campaign, "codes": await admin.export_redeem(who, campaign)}
+
+
+@router.post("/admin/api/redeem/withdraw")
+async def withdraw_redeem(body: RedeemWithdrawBody, who: Writer) -> dict:
+    """撤回一个码或一整个活动。**不用批**：止血必须一个人立刻能做。"""
+    if bool(body.code.strip()) == bool(body.campaign.strip()):
+        raise HTTPException(status_code=400, detail="码和活动二选一")
+    return await admin.withdraw_redeem(who, body.code.strip() or None, body.campaign.strip() or None)
+
+
 # --- 公告 -----------------------------------------------------------------------
 
 

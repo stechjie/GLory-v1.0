@@ -73,6 +73,30 @@ def test_key_table_is_bounded() -> None:
 # --- 接口层 -------------------------------------------------------------------
 
 
+def test_blocked_only_looks_and_record_only_counts() -> None:
+    """兑换码只数「码不存在」：先 blocked() 决定让不让试，是那种结果再 record()。
+
+    blocked() 要是顺手记了一次，玩家每填一个**对的**码也会被算成试错 —— 领十个活动码就被锁。
+    """
+    limiter = SlidingWindowLimiter(limit=2, window_seconds=60)
+    for _ in range(10):
+        assert limiter.blocked("p") is None
+    limiter.record("p")
+    assert limiter.blocked("p") is None
+    limiter.record("p")
+    retry_after = limiter.blocked("p")
+    assert retry_after is not None and 1 <= retry_after <= 61
+    assert limiter.blocked("other") is None
+
+
+def test_check_still_means_blocked_then_record() -> None:
+    limiter = SlidingWindowLimiter(limit=1, window_seconds=60)
+    limiter.check("p")
+    assert limiter.blocked("p") is not None
+    with pytest.raises(RateLimited):
+        limiter.check("p")
+
+
 def test_anonymous_endpoint_returns_429_with_header() -> None:
     """超额时必须是 429 且带 Retry-After。
 

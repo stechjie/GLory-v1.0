@@ -49,6 +49,8 @@ from app.routes import reports as report_routes
 from app.routes import shop as shop_routes
 from app.routes import steam_oidc as steam_oidc_routes
 from app.routes import seven_day_login as seven_day_login_routes
+from app.routes import invites as invite_routes
+from app.routes import redeem as redeem_routes
 from app.routes import voice_clips as voice_clip_routes
 from app.routes import world as world_routes
 from app.routes import service_status as service_status_routes
@@ -279,6 +281,8 @@ app.include_router(shop_routes.router)
 app.include_router(iap_routes.router)
 app.include_router(iap_routes.notify_router)
 app.include_router(seven_day_login_routes.router)
+app.include_router(invite_routes.router)
+app.include_router(redeem_routes.router)
 app.include_router(loadout_routes.router)
 app.include_router(mail_routes.router)
 app.include_router(battle_report_routes.router)
