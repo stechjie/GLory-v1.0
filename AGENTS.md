@@ -1,5 +1,17 @@
 # GLory 构建与资源交付约定
 
+## 测试服 / 正式服地址
+
+| 用途 | 测试服 | 正式服 |
+|---|---|---|
+| IP | `34.124.141.90` | `35.247.132.13` |
+| 账号接口 | `https://glorytd-api.duckdns.org` | `https://glorytd-prod-api.duckdns.org` |
+| 战斗（UDP + DTLS） | `glorytd-battle.duckdns.org:8080` | `glorytd-prod-battle.duckdns.org:8080` |
+| 语音 | `wss://glorytd-voice.duckdns.org` | `wss://glorytd-prod-voice.duckdns.org` |
+
+- 客户端源码默认值是测试服（`scripts/account/AccountConfig.gd` 的 `DEFAULT_BACKEND_URL`、`scripts/multiplayer/NetworkConfig.gd` 的 `SERVER_HOST`）。语音地址由服务器下发（战斗服务器和账号服务器各自的 LiveKit 配置里的 `client_url`），客户端不写死。
+- 战斗链路的 DTLS 证书两边不同：客户端 `scripts/multiplayer/NetTLSCert.gd` 里是测试服那张（SHA-256 `F7:73:C1:A5:…:A4:9C:25:0D`），正式服是 2026-10-31 新生成的（SHA-256 `DE:B1:9B:3E:…:0E:CA:53:54`，以服务器上 `~/Glory/keys/dtls_cert.pem` 为准）。切正式服只改域名、不换证书，会卡在连接中直到超时。
+
 ## APK / IPA 必须使用精简打包入口
 
 今后构建 APK 和 IPA，必须使用本仓库 `tools/workspace/build_apk.sh` 和

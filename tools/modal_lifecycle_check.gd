@@ -97,10 +97,78 @@ func _ready() -> void:
 	await _check_merc_picker_modal()
 	await _check_treasure_choice_modal()
 	_check_room_panel_is_modal()
+	_check_dialog_callback_arity()
 	await _check_page_cycles_leave_nothing()
 	await _check_final_state_is_clean()
 
 	_h.finish(get_tree())
+
+
+# --- on_result 回调的参数个数 ----------------------------------------------------
+#
+# 🔴 `DialogService._emit_result` 调的是 `cb.call(result, request_id)` —— **两个参数**。
+# 回调只声明一个时，GDScript 报
+#   `Invalid call to function '<anonymous lambda>'. Expected 1 argument(s).`
+# 然后**函数体根本不跑**。
+#
+# 这个错法在界面上**完全看不出来**：框照常弹、按钮照常按下去、框照常关掉，
+# 就是什么都没发生。玩家的描述是「按了没反应」。
+#
+# 2026-11-02 实际踩到：`ProfileScreen` 里四个账号相关的确认框 ——
+# 永久删除账号、关联 Steam、绑定冲突切号、切换账号 —— 全是一参，四个全是哑的。
+# 同期仓库里另有 12 处写的是两参，所以这是个「多数写对、少数写错、
+# 而且错了没人看得出来」的坑，值得钉死。
+#
+# 只扫源码、不进场景，所以它很便宜，也不依赖本检查前面那些真实页面。
+func _check_dialog_callback_arity() -> void:
+	var offenders: Array[String] = []
+	for path in _gd_files_under(["res://scenes", "res://ui", "res://scripts", "res://effects"]):
+		var text := FileAccess.get_file_as_string(path)
+		if text.is_empty() or not text.contains("\"on_result\""):
+			continue
+		var line_no := 0
+		for line in text.split("\n"):
+			line_no += 1
+			if not line.contains("\"on_result\""):
+				continue
+			var at := line.find("func(")
+			if at < 0:
+				continue    # 具名回调（"on_result": _on_xxx）在下面单独核
+			var close := line.find(")", at)
+			if close < 0:
+				continue
+			var params := line.substr(at + 5, close - at - 5).strip_edges()
+			if not params.is_empty() and not params.contains(","):
+				offenders.append("%s:%d" % [path, line_no])
+	_h.item()
+	_h.expect(offenders.is_empty(), "dialog_callback_arity",
+		"这些 on_result 内联回调只声明了一个参数，而 DialogService 会传两个 —— "
+		+ "GDScript 会直接报 Expected 1 argument(s)，回调体不执行，"
+		+ "界面上表现为「按了确定没反应」且无任何提示：" + ", ".join(offenders))
+
+
+func _gd_files_under(roots: Array) -> Array[String]:
+	var out: Array[String] = []
+	var pending: Array = roots.duplicate()
+	while not pending.is_empty():
+		var dir_path: String = pending.pop_back()
+		var dir := DirAccess.open(dir_path)
+		if dir == null:
+			continue
+		dir.list_dir_begin()
+		var name := dir.get_next()
+		while name != "":
+			if name.begins_with("."):
+				name = dir.get_next()
+				continue
+			var full := dir_path.path_join(name)
+			if dir.current_is_dir():
+				pending.append(full)
+			elif name.ends_with(".gd"):
+				out.append(full)
+			name = dir.get_next()
+		dir.list_dir_end()
+	return out
 
 
 # --- snapshot ------------------------------------------------------------------

@@ -81,6 +81,7 @@ def compact_ipa(ipa):
 
 def sign_apk(apk, build_tools, keystore, child_env, logdir):
     from glory_aab_build import signing_password
+    from glory_build import sdk_tool
     password = signing_password()
     if not password or not Path(keystore).is_file():
         raise RuntimeError('Release signing key unavailable; no debug-key fallback')
@@ -91,11 +92,12 @@ def sign_apk(apk, build_tools, keystore, child_env, logdir):
     rewrite_zip(apk, compact, android=True)
     def run(args):
         subprocess.run([str(x) for x in args], env=env, check=True, capture_output=True)
-    run([build_tools/'zipalign', '-P', '16', '-f', '4', compact, aligned])
-    run([build_tools/'apksigner', 'sign', '--ks', keystore, '--ks-pass', 'env:GLORY_KEYSTORE_PASSWORD',
+    zipalign, apksigner = sdk_tool(build_tools, 'zipalign'), sdk_tool(build_tools, 'apksigner')
+    run([zipalign, '-P', '16', '-f', '4', compact, aligned])
+    run([apksigner, 'sign', '--ks', keystore, '--ks-pass', 'env:GLORY_KEYSTORE_PASSWORD',
          '--key-pass', 'env:GLORY_KEY_PASSWORD', '--out', signed, aligned])
-    run([build_tools/'apksigner', 'verify', '--verbose', signed])
-    run([build_tools/'zipalign', '-c', '-P', '16', '4', signed])
+    run([apksigner, 'verify', '--verbose', signed])
+    run([zipalign, '-c', '-P', '16', '4', signed])
     os.replace(signed, apk)
     compact.unlink()
     aligned.unlink()

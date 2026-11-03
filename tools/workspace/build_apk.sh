@@ -3,4 +3,6 @@
 set -euo pipefail
 GLORY_TOOLS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 GLORY_ROOT="$(cd "$GLORY_TOOLS/../../.." && pwd -P)"
+# Windows Python otherwise reads/writes text in the ANSI code page.
+export PYTHONUTF8=1
 exec "${PYTHON3:-python3}" "$GLORY_TOOLS/glory_build.py" "$@"

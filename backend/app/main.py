@@ -231,8 +231,10 @@ app = FastAPI(
 @app.middleware("http")
 async def check_patch_version(request: Request, call_next):
     # Server-signed battle reports have independent authentication. The launch
-    # manifest must stay reachable before a client has updated.
-    if request.url.path.startswith("/v1/") and request.url.path not in ("/v1/patches/check", "/v1/battle/report"):
+    # manifest must stay reachable before a client has updated. The battle
+    # server's own delivery carries no client patch headers at all.
+    if request.url.path.startswith("/v1/") and request.url.path not in (
+            "/v1/patches/check", "/v1/battle/report", "/v1/internal/battle/report"):
         problem = patch_gate.problem(request.headers)
         if problem:
             return JSONResponse(status_code=problem["status"], content={

@@ -52,6 +52,9 @@ class VersionGateTests(unittest.TestCase):
         for path in ("/v1/me", "/v1/match/queue", "/v1/battle/card", "/v1/party/start"):
             self.assertEqual(self.client.post(path).status_code, 426)
         self.assertEqual(self.client.get("/health").status_code, 200)
+        # The battle server sends no client patch headers; its own gate (loopback) answers.
+        self.assertEqual(self.client.post("/v1/internal/battle/report",
+            json={"report": "a.b"}).status_code, 403)
         self.assertEqual(self.client.get("/v1/patches/check", params={"channel": "stable",
             "platform": "android", "base_id": "base-1", "installed_seq": 0}).status_code, 200)
 

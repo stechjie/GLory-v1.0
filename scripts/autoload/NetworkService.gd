@@ -326,6 +326,10 @@ const UnitGrowth := preload("res://scripts/units/UnitGrowth.gd")
 const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
 const BattleCard := preload("res://scripts/multiplayer/BattleCard.gd")
 const BattleReport := preload("res://scripts/multiplayer/BattleReport.gd")
+const BattleReportUplink := preload("res://scripts/multiplayer/BattleReportUplink.gd")
+# 专服：对局结束时把战报直接交给本机账号服务器（BattleReportUplink.gd 文件头）。
+# 门禁换成记账的假对象，所以不写死类型；为空（本地房主 / 门禁默认）就只靠手机转交。
+var _report_uplink: Object = null
 
 # --- 出战名片的状态（见 BattleCard.gd 文件头）---------------------------------
 #
@@ -421,8 +425,12 @@ const MATCH_DISCONNECT_GRACE_SEC := RESERVE_GRACE_SEC
 # 这个秒数的人；AI、空位、掉线超过这个秒数的人、以及手动「退出对局」的人都不算。
 # 用于「所有人都掉线 / 都退了之后，房间别被永远吊在『对局中』」——那正是玩家报的
 # 「退了对局之后创建房间一直提示『正在对局中，请进行游戏重连』」。
-# 判据独立于 RESERVE_GRACE_SEC（120s 是「别人等多久」，这里是「多久没人了就作废」）。
-const NO_LIVE_HUMAN_END_SEC := 30.0
+#
+# 2026-11-03 用户定（甲）：**和重连窗口一样长**，原来是 30 秒。
+# 作废局从这天起会真的结算（战斗服务器直交战报），掉线没回来的人按跑路扣分 ——
+# 30 秒的话，切出去接个电话就被扣，而普通对局掉线有 120 秒能回来。规则统一成
+# 「只看你有没有回来」。手动「退出对局」不受影响，照旧立刻作废（manual_exit_slots）。
+const NO_LIVE_HUMAN_END_SEC := RESERVE_GRACE_SEC
 
 # --- 会话状态（D1 步骤 1.5）---------------------------------------------------
 # 下面这一批曾是门面自己的字段，现已搬到 scripts/multiplayer/SessionContext.gd。
@@ -1080,6 +1088,7 @@ func team_host(port: int = DEFAULT_PORT, dedicated: bool = false) -> bool:
 			_net_log("⚠ 战报私钥不可用，本进程的对局都不会记历史：%s" % str(report_key.get("error", "")))
 		else:
 			_net_log("battle report key loaded path=%s" % BattleReport.key_path())
+		_report_uplink_setup()
 		# 语音服务器（LiveKit）的钥匙配置。读不到照常开服，只是不发语音钥匙（docs/语音LiveKit方案.md 3.2）。
 		_voice_setup_server()
 	var p := ENetMultiplayerPeer.new()
@@ -5252,6 +5261,7 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 			for slot in TEAM_SLOTS:
 				if out.has(slot):
 					(out[slot] as Dictionary)["battle_report"] = report
+		_room_deliver_report(room, report)
 	_net_log("official match_state generated room=%d round=%d hp=%s gold=%s run_over=%s outcome=%s" % [
 		int(room.get("id", 0)), completed_round, str(room.team_hp), str(slot_gold), str(run_over),
 		["team_a", "team_b", "draw"][outcome]])
@@ -5275,6 +5285,24 @@ func _room_sign_report(room: Dictionary, rounds: int, outcome: int, hp_a: int, h
 		_net_log("battle report skipped room=%d: 没有 match_uid（013 之前开的局）" % int(room.get("id", 0)))
 		return ""
 	return BattleReport.sign(BattleReport.build(_room_report_ctx(room, rounds, outcome, hp_a, hp_b, final_data)), key)
+
+# 签出来的那份**同时**直接交给本机账号服务器（2026-11-03）。
+# 两个签章点（正常打完 / 作废 _finish_abandoned_match）都要调 —— 作废那条恰恰是
+# 「一个连着的人都没有」的情况，只靠手机转交就是 11-02 那 5 局一局都没记上。
+func _room_deliver_report(room: Dictionary, report: String) -> void:
+	if report.is_empty() or _report_uplink == null:
+		return
+	_report_uplink.submit(str(room.get("match_uid", "")), report)
+
+func _report_uplink_setup() -> void:
+	if _report_uplink is Node and is_instance_valid(_report_uplink):
+		(_report_uplink as Node).queue_free()
+	var uplink := BattleReportUplink.new()
+	uplink.name = "BattleReportUplink"
+	add_child(uplink)
+	uplink.setup(_net_log)
+	_report_uplink = uplink
+	_net_log("battle report uplink url=%s" % uplink.url)
 
 
 # 战报的原料（还没清洗、没签）。和签章拆开，门禁才能不带私钥直接查「哪个账号坐哪个座位」。
@@ -8360,6 +8388,7 @@ func _finish_abandoned_match(room: Dictionary, winner_slot: int, end_reason: Str
 	room["final_settlement"] = final_data
 	var hp: Array = room.get("team_hp", [GameState.START_FORMATION_HP, GameState.START_FORMATION_HP])
 	var report := _room_sign_report(room, int(room.round_index), outcome, int(hp[0]), int(hp[1]), final_data)
+	_room_deliver_report(room, report)
 	var states := {}
 	for slot in TEAM_SLOTS:
 		var own_team := GameConstants.team_of_slot(slot)
@@ -8385,17 +8414,19 @@ func _finish_abandoned_match(room: Dictionary, winner_slot: int, end_reason: Str
 			_resend_result_state(int(pid), states[int(room.peer_slot[pid])])
 	_net_log("match abandoned room=%d winner_slot=%d outcome=%d" % [int(room.id), winner_slot, outcome])
 
-# --- 10.11 第 7 条：无活人 -> 对局作废（不结算）-----------------------------------
+# --- 10.11 第 7 条：无活人 -> 对局作废 ----------------------------------------------
 #
 # 每秒扫一遍：一个活跃对局里**一个活人都不剩**就自动结束（作废、不算胜负、不发奖励）。
+# 🔴 作废 ≠ 不追究：战报照签、照交（2026-11-03 起战斗服务器直交），结束时不在线的人
+#    在账号服务器那边按跑路扣排位分和信誉分（app/ranked.py 看 online_at_end）。
 #
 # 与 _last_online_human_winner() 的分工（两条别混）：
 #   · 那条：还剩**恰好一个**在线真人 -> **他赢**（end_reason=last_human_online）；
 #   · 这条：**一个活人都不剩**     -> **谁都不赢**（end_reason=no_live_human）。
 #
-# 「活人」的判据见 _room_live_human_count()。手动「退出对局」的座位在上面
-# _rpc_abandon_seat() 里打了 manual_exit_slots 标记，立刻不算活人 —— 于是
-# 「最后一个活人手动退出」＝立刻作废，正是需求要的「视为该玩家掉线超过 30 秒」。
+# 「活人」的判据见 _room_live_human_count()。手动「退出对局」的座位在
+# _rpc_manual_exit_seat() 里打了 manual_exit_slots 标记，立刻不算活人 —— 于是
+# 「最后一个活人手动退出」＝立刻作废，不用等掉线那 NO_LIVE_HUMAN_END_SEC。
 func _tick_void_watchdog() -> void:
 	for room in _rooms.values():
 		if _void_room_eligible(room):
@@ -8424,9 +8455,15 @@ func _void_room_eligible(room: Dictionary) -> bool:
 		return false
 	return _room_live_human_count(room) <= 0
 
-# 「活人」＝原先是真人（initial_seats 该格 "player"）、座位还没被 AI 顶掉
-# （slot_states 仍是 "player"）、没有手动退出标记、且掉线时长 < NO_LIVE_HUMAN_END_SEC。
-# 四个「不活」的理由都要显式排掉：漏掉任何一个，房间都会晚 30 秒才结束（或永不结束）。
+# 「活人」＝原先是真人（initial_seats 该格 "player"）、没有手动退出标记，并且：
+#   · 掉线了（human_offline_since 有记录）→ 掉线时长 < NO_LIVE_HUMAN_END_SEC 就还算，
+#     **座位这会儿是不是 AI 在代打都一样**；
+#   · 没掉线记录 → 座位还得是 "player"（没被 AI 顶掉、不是空位）。
+#
+# 🔴 掉线那一支不能看 slot_states（2026-11-03）。掉线的座位不到 120 秒就可能被 AI 代打：
+#    备战倒计时到点（prep_timed_out）、战斗 30 秒没交棋盘（_tick_board_watchdog）都会转 AI。
+#    看 slot_states 的话这两种情况一转就作废，而作废从这天起会按跑路扣分 ——
+#    掉线 120 秒内能回来的规则就被它们悄悄缩短了。AI 代打的座位回来照样接上（_resume_seat）。
 func _room_live_human_count(room: Dictionary) -> int:
 	var initial: Array = room.get("initial_seats", [])
 	var states: Array = room.get("slot_states", [])
@@ -8436,12 +8473,13 @@ func _room_live_human_count(room: Dictionary) -> int:
 	for slot in TEAM_SLOTS:
 		if slot >= initial.size() or str(initial[slot]) != "player":
 			continue
-		if slot >= states.size() or str(states[slot]) != "player":
-			continue  # 已被 AI 顶掉（dummy）/ 空位
 		if manual.has(slot):
-			continue  # 手动点过「退出对局」＝视为掉线超过 30 秒
-		if offline.has(slot) and _now() - float(offline[slot]) >= NO_LIVE_HUMAN_END_SEC:
-			continue  # 掉线超过 30 秒
+			continue  # 手动点过「退出对局」＝立刻不算，不等掉线计时
+		if offline.has(slot):
+			if _now() - float(offline[slot]) >= NO_LIVE_HUMAN_END_SEC:
+				continue  # 掉线超过重连窗口还没回来
+		elif slot >= states.size() or str(states[slot]) != "player":
+			continue  # 没有掉线记录却不是真人在打（空位 / 从没到场就被 AI 顶掉）
 		count += 1
 	return count
 
@@ -8754,6 +8792,9 @@ func _rpc_receive_match_state(state_payload: Dictionary) -> void:
 	match_state_received.emit(latest_match_state)
 
 # 把战报交给账号服务器。**纯搬运** —— 客户端不解析、不改，报文是不透明字符串。
+#
+# 2026-11-03 起战斗服务器自己也交（BattleReportUplink.gd），这条是兜底：
+# 战斗服务器交不上（账号服务器正好在重启）时，还连着的人补上。
 #
 # 一份战报有全场六个座位的结果，六个人里只要有一个交上来就够。所以这里
 # **失败了也不必大动干戈**：重试两次兜住「刚打完网络还没稳」，就到此为止。

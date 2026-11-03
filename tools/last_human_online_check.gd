@@ -24,6 +24,11 @@ class Server extends "res://scripts/autoload/NetworkService.gd":
 		return "signed_fixture"
 	func _voice_seat_released(_r: Dictionary, _s: int, _i: String) -> void:
 		pass
+# 顶替 BattleReportUplink：只记下交了什么，不发 HTTP。
+class Uplink extends RefCounted:
+	var got: Array = []
+	func submit(match_uid: String, wire: String) -> void:
+		got.append([match_uid, wire])
 class Client extends "res://scenes/main/Main.gd":
 	var shown := 0
 	var applied: Dictionary = {}
@@ -130,31 +135,50 @@ func _ready() -> void:
 		c._on_network_match_state_received(next)
 		h.expect(c.shown == count + 1 and not screen.is_inside_tree(), field + "_interrupted", "No lingering battle/loading owner after termination")
 
-	# ---- 10.11 第 7 条：无活人 -> 对局作废（不结算）----------------------------
+	# ---- 10.11 第 7 条：无活人 -> 对局作废 ------------------------------------
+	# 2026-11-03（甲）：掉线等满重连窗口才作废；作废的战报直接交给账号服务器。
+	var grace: float = s.NO_LIVE_HUMAN_END_SEC
+	h.expect(is_equal_approx(grace, s.RESERVE_GRACE_SEC), "void_grace_is_reconnect_window",
+		"掉线作废必须等满重连窗口（%s 秒），实测 %s" % [str(s.RESERVE_GRACE_SEC), str(grace)])
+	var uplink := Uplink.new()
+	s._report_uplink = uplink
 	for phase in ["prep", "battle", "result"]:
 		s.clock = 5000.0
 		s.live = {}
+		uplink.got.clear()
 		var v: Dictionary = s._new_room()
 		v.state = phase
 		v.round_index = 4
+		v.match_uid = "%032x" % (0x5000 + int(v.id))
 		v.peer_slot = {11: 0, 12: 3}
 		# 真人只有 0 号与 3 号两格（其余是 AI / 空位），好让「活人数」一眼可数。
 		v.initial_seats = ["player", "dummy", "dummy", "player", "dummy", "empty"]
 		v.slot_states = v.initial_seats.duplicate()
 		v.battle_id = "%d:4:1" % int(v.id)
-		# 两个真人都在 30 秒内掉线：还算活人 -> 不作废。
-		v.human_offline_since = {0: s.clock - 29.0, 3: s.clock - 29.0}
+		# 两个真人都还在重连窗口内：还算活人 -> 不作废。
+		v.human_offline_since = {0: s.clock - (grace - 1.0), 3: s.clock - (grace - 1.0)}
 		h.expect(s._room_live_human_count(v) == 2, phase + "_live_within_grace",
-			"掉线未超 30 秒的真人仍算活人")
+			"掉线未超重连窗口的真人仍算活人")
 		h.expect(not s._void_room_eligible(v), phase + "_not_eligible_within_grace",
-			"掉线未超 30 秒时不该作废")
-		# 过了 30 秒：一个活人都不剩 -> 作废。
-		v.human_offline_since = {0: s.clock - 30.0, 3: s.clock - 31.0}
+			"掉线未超重连窗口时不该作废")
+		# 🔴 窗口内座位被 AI 代打了（备战倒计时到点 / 30 秒没交棋盘）也还算 —— 回来照样接上。
+		v.slot_states[0] = "dummy"
+		v.slot_states[3] = "dummy"
+		h.expect(s._room_live_human_count(v) == 2, phase + "_ai_covered_within_grace",
+			"重连窗口内被 AI 代打的掉线真人仍算活人（否则会提前作废、按跑路扣分）")
+		h.expect(not s._void_room_eligible(v), phase + "_ai_covered_not_eligible",
+			"重连窗口内座位转 AI 不该作废")
+		# 窗口过了：一个活人都不剩 -> 作废。
+		v.human_offline_since = {0: s.clock - grace, 3: s.clock - (grace + 1.0)}
 		h.expect(s._room_live_human_count(v) == 0, phase + "_live_expired",
-			"掉线超过 30 秒不再算活人")
+			"掉线超过重连窗口不再算活人")
 		h.expect(s._void_room_eligible(v), phase + "_eligible", "无活人时该作废")
 		s._tick_void_watchdog()
 		h.expect(v.run_over and v.state == "result", phase + "_voided", "无活人的对局应被作废")
+		# 一个连着的人都没有 —— 只有战斗服务器自己交，这局才记得上（11-02 线上 5 局全丢）。
+		h.expect(uplink.got.count([str(v.match_uid), "signed_fixture"]) == 1,
+			phase + "_void_report_delivered",
+			"作废的战报必须直接交给账号服务器，实测 %s" % str(uplink.got))
 		var seat0: Dictionary = v.last_match_state.get(0, {})
 		var seat3: Dictionary = v.last_match_state.get(3, {})
 		h.expect(not bool(seat0.get("team_run_won", true)) and not bool(seat3.get("team_run_won", true)),
@@ -166,6 +190,7 @@ func _ready() -> void:
 		s._tick_void_watchdog()
 		h.expect(s.signed_count == signed_after, phase + "_void_idempotent",
 			"作废只签一次终局战报")
+		h.expect(uplink.got.count([str(v.match_uid), "signed_fixture"]) == 1, phase + "_void_delivered_once", "作废只交一次")
 
 	# 纯 AI 房永不触发（不加这条每局一开局就自杀）。
 	var bots: Dictionary = s._new_room()
@@ -175,18 +200,27 @@ func _ready() -> void:
 	h.expect(s._room_live_human_count(bots) == 0, "bots_zero_live", "纯 AI 房没有活人")
 	h.expect(not s._void_room_eligible(bots), "bots_never_voided", "纯 AI 房不该被判作废")
 
-	# 手动「退出对局」的座位立刻不算活人（＝视为掉线超过 30 秒）。
+	# 手动「退出对局」的座位立刻不算活人，不等掉线那个重连窗口。
+	# 这正是 11-02 的现场：AI 补位排位局，唯一的真人点了退出。
 	s.clock = 6000.0
+	uplink.got.clear()
 	var manual: Dictionary = s._new_room()
 	manual.state = "prep"
+	manual.round_index = 5
+	manual.match_uid = "%032x" % 0x6000
 	manual.initial_seats = ["player", "dummy", "dummy", "dummy", "dummy", "dummy"]
 	manual.slot_states = manual.initial_seats.duplicate()
 	manual.peer_slot = {}
 	h.expect(s._room_live_human_count(manual) == 1, "manual_live_before", "手动退出前算活人")
 	manual.manual_exit_slots = {0: true}
+	# _rpc_manual_exit_seat 顺手记的掉线时刻是「刚刚」—— 有它也必须立刻不算。
+	manual.human_offline_since = {0: s.clock}
 	h.expect(s._room_live_human_count(manual) == 0, "manual_not_live", "手动退出后立刻不算活人")
 	h.expect(s._void_room_eligible(manual), "manual_eligible",
 		"最后一名活人手动退出 -> 立刻可以作废")
+	s._tick_void_watchdog()
+	h.expect(bool(manual.get("run_over", false)) and uplink.got.count([str(manual.match_uid), "signed_fixture"]) == 1,
+		"manual_void_report_delivered", "唯一真人退出后，作废的战报由战斗服务器直接交上去，实测 %s" % str(uplink.got))
 
 	# 大厅阶段不是对局，不作废。
 	var lobby_room: Dictionary = s._new_room()
@@ -202,8 +236,10 @@ func _ready() -> void:
 	var ns_src := FileAccess.get_file_as_string("res://scripts/autoload/NetworkService.gd")
 	h.expect(ns_src.contains("\t\t\t_tick_void_watchdog()"), "watchdog_wired",
 		"服务端 tick 必须调用 _tick_void_watchdog()，否则这条规则永远不跑")
-	h.expect(ns_src.contains("const NO_LIVE_HUMAN_END_SEC := 30.0"), "void_threshold_30",
-		"无活人阈值必须是需求里的 30 秒")
+	h.expect(ns_src.contains("const NO_LIVE_HUMAN_END_SEC := RESERVE_GRACE_SEC"), "void_threshold_reconnect_window",
+		"无活人阈值必须和重连窗口是同一个常量（2026-11-03 用户定），不能另写一个数")
+	h.expect(ns_src.contains("\t\t_report_uplink_setup()\n"), "uplink_wired_on_dedicated",
+		"专服启动时必须建好战报直交（_report_uplink_setup），否则作废局又没人交")
 	h.expect(ns_src.contains("_finish_abandoned_match(room, -1, \"no_live_human\")"),
 		"void_no_winner", "作废必须走「无胜者」那条（winner_slot = -1 + end_reason=no_live_human）")
 	h.expect(ns_src.contains("room[\"manual_exit_slots\"] = manual") and ns_src.contains("manual[slot] = true"),

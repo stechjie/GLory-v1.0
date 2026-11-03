@@ -10,6 +10,7 @@ var h := Harness.new("final_settlement")
 # Exercise the real server state transitions with transport replaced by a sink.
 class TestServer extends "res://scripts/autoload/NetworkService.gd":
 	var live := {11: true, 12: true, 13: true, 14: true}
+	var sign_result := ""
 	func _ready() -> void:
 		_reconnect_service.configure(_now, _net_log, {})
 		_room_service.configure(_now, _wall_now, _net_log, func(): return 0, {}, _reconnect_service)
@@ -23,9 +24,15 @@ class TestServer extends "res://scripts/autoload/NetworkService.gd":
 	func _send_room_state(_room: Dictionary, _peer: int, _seq: int) -> void:
 		pass
 	func _room_sign_report(_room: Dictionary, _rounds: int, _outcome: int, _hp_a: int, _hp_b: int, _final_data: Dictionary) -> String:
-		return ""
+		return sign_result
 	func _voice_seat_released(_room: Dictionary, _slot: int, _identity: String) -> void:
 		pass
+
+# 顶替 BattleReportUplink：只记下交了什么，不发 HTTP。
+class Uplink extends RefCounted:
+	var got: Array = []
+	func submit(match_uid: String, wire: String) -> void:
+		got.append([match_uid, wire])
 
 # Keep the real lobby drawing/interaction, omit unrelated background asset preloads.
 class TestLobby extends "res://scenes/menu/Team3v3Lobby.gd":
@@ -123,7 +130,16 @@ func _run() -> void:
 	var final_b: Dictionary = replay.duplicate(true)
 	final_b["kind"] = "final"
 	final_b.result["player_wins"] = false
+	# 正常打完那一份也由战斗服务器直接交（2026-11-03），和发给手机的是同一串。
+	var uplink := Uplink.new()
+	server._report_uplink = uplink
+	server.sign_result = "signed_final_fixture"
+	final_room["match_uid"] = "f".repeat(32)
 	var official: Dictionary = server._room_build_match_states(final_room, final_a, final_b)
+	server.sign_result = ""
+	server._report_uplink = null
+	_expect(uplink.got == [["f".repeat(32), "signed_final_fixture"]], "final_report_delivered_by_battle_server")
+	_expect(str(official[0].get("battle_report", "")) == "signed_final_fixture", "phones_get_the_same_report")
 	_expect(official.size() == 6 and official[0].has("final_settlement"), "official_final_payload_contains_details")
 	_expect(official[0].final_settlement == official[3].final_settlement, "both_sides_receive_same_final_details")
 	_expect(final_room.prep[0].has("income_by_reason"), "server_records_actual_reward_breakdown")

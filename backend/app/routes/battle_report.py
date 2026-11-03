@@ -1,7 +1,18 @@
 """对局历史接口（docs/排位系统设计.md 第七、八节）。
 
-    POST /v1/battle/report    交一份战斗服务器签过章的战报
-    GET  /v1/me/matches       我打过的局（新的在前）
+    POST /v1/battle/report             玩家手机转交一份战斗服务器签过章的战报
+    POST /v1/internal/battle/report    战斗服务器自己交（只收本机直连）
+    GET  /v1/me/matches                我打过的局（新的在前）
+
+## 为什么战斗服务器也要自己交（2026-11-03）
+
+只靠手机转交的前提是「结束那一刻有人连着」。AI 补位开的桌只有一个真人，
+他一退出（或掉线超时）这局就作废 —— 战报签了，可一个连着的人都没有，
+账号服务器收不到就不结算：跑路不扣信誉分、不扣排位分，历史里也没有这局。
+11-02 测试服上作废的 5 局一局都没记上。
+
+两条路交的是**同一串字节**，下面按 match_uid 只记第一份，所以谁先到都一样。
+手机那条留着兜底：战斗服务器交不上（账号服务器正好在重启）时，有人连着就还能补上。
 
 ## 谁交都一样，交几次都一样
 
@@ -20,6 +31,18 @@
 
 同 `/v1/battle/card` 那条：服务器配置问题，客户端据此提示「稍后再试」，
 而不是把路径写进响应。对局本身不受影响 —— 只是这一局不记历史。
+
+## 战斗服务器那条只收「本机、没经过 Caddy」的请求
+
+两个服务在同一台机器上，战斗服务器直接打 127.0.0.1:8099。但 Caddy 也在这台机器上，
+它把公网的**所有**路径都转给 8099 —— TCP 那一层对端同样是 127.0.0.1。
+区别是 Caddy 每次都写 X-Forwarded-For（deploy/Caddyfile 的 `header_up`，覆盖不是追加，
+玩家删不掉），所以两样都看：对端必须是回环，**并且**不能带 `X-Forwarded-*`。
+（uvicorn 默认还会按这个头把对端改写成玩家 IP，11-03 本机实测如此；但那取决于
+uvicorn 的启动参数，不能只靠它。）
+
+就算漏过去也伪造不了结果（可信度全在签名上），挡它是为了别让公网白白耗这边的验章 CPU。
+两台服务器以后分开放时，这条会把跨机器的请求全拒掉 —— 那时要另加鉴权，不是放宽这里。
 """
 
 from __future__ import annotations
@@ -28,12 +51,13 @@ import logging
 import re
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from app import matchmaking, battle_report, db, players, ranked
 from app.jwt_verify import Claims
 from app.rate_limit import RateLimited, SlidingWindowLimiter
+from app.routes.auth import TRUSTED_PROXIES
 from app.routes.me import current_claims
 
 log = logging.getLogger("glory.battle_report")
@@ -107,16 +131,18 @@ def _limit(limiter: SlidingWindowLimiter, key: str) -> None:
         ) from None
 
 
-@router.post("/battle/report", response_model=ReportResponse)
-async def submit_report(
-    body: ReportBody,
-    claims: Annotated[Claims, Depends(current_claims)],
-) -> ReportResponse:
-    me = await _me(claims)
-    _limit(_report_limiter, str(me.player_id))
+def direct_from_this_machine(request: Request) -> bool:
+    """本机直连、没经过 Caddy。理由见文件头「战斗服务器那条」一节。"""
+    peer = request.client.host if request.client else ""
+    if peer not in TRUSTED_PROXIES:
+        return False
+    return not any(name.lower().startswith("x-forwarded-") for name in request.headers.keys())
 
+
+async def _accept(wire: str, by: str) -> ReportResponse:
+    """验章 → 入库（含结算）→ 划掉匹配名册。两条交法共用，`by` 只进日志。"""
     try:
-        report = battle_report.verify(body.report)
+        report = battle_report.verify(wire)
     except battle_report.ReportKeyMissing as exc:
         # 日志里留原因，给玩家的只有一句「稍后再试」—— 路径不外传。
         log.error("收不了战报：%s", exc)
@@ -125,7 +151,7 @@ async def submit_report(
         # 🔴 签名验过了却被形状校验拒掉 = **我们自己的战斗服务器有 bug**，
         # 不是玩家的问题。这条要能在日志里一眼看见。
         level = log.warning if exc.code in ("report_bad_signature", "report_malformed") else log.info
-        level("战报被拒 code=%s player=%s", exc.code, me.player_id)
+        level("战报被拒 code=%s by=%s", exc.code, by)
         raise HTTPException(
             status_code=400,
             detail=exc.message,
@@ -140,9 +166,37 @@ async def submit_report(
         log.info(
             "记下一局 match=%s mode=%s rounds=%d outcome=%s by=%s",
             report["match_uid"], report["mode"], report["rounds"],
-            report["outcome"], me.player_id,
+            report["outcome"], by,
         )
     return ReportResponse(recorded=recorded, match_uid=report["match_uid"])
+
+
+@router.post("/battle/report", response_model=ReportResponse)
+async def submit_report(
+    body: ReportBody,
+    claims: Annotated[Claims, Depends(current_claims)],
+) -> ReportResponse:
+    me = await _me(claims)
+    _limit(_report_limiter, str(me.player_id))
+    return await _accept(body.report, str(me.player_id))
+
+
+@router.post("/internal/battle/report", response_model=ReportResponse)
+async def submit_report_from_battle_server(body: ReportBody, request: Request) -> ReportResponse:
+    """战斗服务器直交（scripts/multiplayer/BattleReportUplink.gd）。
+
+    不要玩家身份、不限流：调用方只可能是本机进程，可信度照旧全在签名上。
+    """
+    if not direct_from_this_machine(request):
+        log.warning("战报直交被拒：不是本机直连 peer=%s",
+                    request.client.host if request.client else "unknown")
+        raise HTTPException(status_code=403, detail="这个接口只收本机战斗服务器直接交的战报")
+    if not db.is_connected():
+        raise HTTPException(
+            status_code=503,
+            detail="数据库未配置：backend/.env 里的 GLORY_DATABASE_URL 是空的",
+        )
+    return await _accept(body.report, "battle_server")
 
 
 @router.get("/me/matches", response_model=MatchesResponse)
