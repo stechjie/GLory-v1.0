@@ -151,7 +151,7 @@ func _refresh_visuals() -> void:
 			soul_badge.call("set_counter", int(f.get("vfx_mother_count", 0)), mother_threshold)
 		var hp_bar: ColorRect = _hp_fill_by_id.get(_visual_id(f))
 		if hp_bar != null and is_instance_valid(hp_bar):
-			hp_bar.scale.x = clampf(float(f.hp) / float(maxi(1, f.max_hp)), 0.0, 1.0)
+			_sync_health_segments(hp_bar, f)
 			# 9.24 #7：血条颜色要跟着**当前**队伍走，不能像原来那样只在建节点时定死。
 			# 末日守卫的血之契约会把敌方目标永久策反成我方棋子，颜色必须同帧变绿
 			# （绿=我方 / 红=敌方，见 _hp_color_for_team）。这里改的是同一帧的填充色，
@@ -316,7 +316,7 @@ func claim_unit_node_for_death(uid: String) -> Control:
 	# the whole fade (or forever when a queued cue is cancelled).
 	var hp_fill_value = _hp_fill_by_id.get(uid)
 	if hp_fill_value is ColorRect and is_instance_valid(hp_fill_value):
-		(hp_fill_value as ColorRect).scale.x = 0.0
+		_sync_health_segments(hp_fill_value as ColorRect, {"hp": 0, "max_hp": 1, "shield": 0})
 	_unit_nodes.erase(uid)
 	_hp_fill_by_id.erase(uid)
 	_dying_unit_nodes[uid] = node_value
@@ -389,6 +389,29 @@ static func hp_color_for_display_team(display_team: String) -> Color:
 func _hp_color_for_team(team: String) -> Color:
 	return hp_color_for_display_team(team)
 
+# Both segments use one numeric scale and share the existing 66px footprint.
+# Missing health is a transparent outlined segment after the shield.
+func _sync_health_segments(hp: ColorRect, fighter: Dictionary) -> void:
+	var health := clampf(float(fighter.get("hp", 0)), 0.0, maxf(1.0, float(fighter.get("max_hp", 1))))
+	var shield_value := maxf(0.0, float(fighter.get("shield", 0))) if health > 0.0 else 0.0
+	var maximum := maxf(1.0, float(fighter.get("max_hp", 1)))
+	var capacity := maximum + shield_value
+	var pixels_per_point := 66.0 / capacity
+	hp.scale = Vector2.ONE
+	hp.size = Vector2(health * pixels_per_point, 4.0)
+	hp.visible = health > 0.0
+	var shield := hp.get_meta("shield_fill", null) as ColorRect
+	if is_instance_valid(shield):
+		shield.position = hp.position + Vector2(hp.size.x, 0.0)
+		shield.size = Vector2(shield_value * pixels_per_point, 4.0)
+		shield.visible = shield_value > 0.0
+	var empty := hp.get_meta("hp_empty", null) as ReferenceRect
+	if is_instance_valid(empty):
+		empty.position = hp.position + Vector2((health + shield_value) * pixels_per_point, 0.0)
+		empty.size = Vector2((maximum - health) * pixels_per_point, 4.0)
+		empty.visible = health > 0.0 and health < maximum
+
+
 func _make_unit_node(f: Dictionary) -> Control:
 	var root := Control.new()
 	var visual_id := _visual_id(f)
@@ -410,6 +433,7 @@ func _make_unit_node(f: Dictionary) -> Control:
 	var hp_bg := ColorRect.new()
 	hp_bg.name = "HpBg"
 	hp_bg.color = Color(0.05, 0.05, 0.05)
+	hp_bg.self_modulate.a = 0.0 # Hide only the background; keep existing child markers visible.
 	hp_bg.position = Vector2(5, 8)
 	hp_bg.size = Vector2(72, 9)
 	hp_bg.z_index = 20
@@ -423,6 +447,23 @@ func _make_unit_node(f: Dictionary) -> Control:
 	hp.z_index = 21
 	hp.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(hp)
+	var shield := ColorRect.new()
+	shield.name = "ShieldFill"
+	shield.color = Color("aeb7c2")
+	shield.z_index = hp.z_index
+	shield.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(shield)
+	hp.set_meta("shield_fill", shield)
+	var empty := ReferenceRect.new()
+	empty.name = "HpEmpty"
+	empty.editor_only = false
+	empty.border_color = Color(0.05, 0.05, 0.05, 0.85)
+	empty.border_width = 1.0
+	empty.z_index = hp.z_index
+	empty.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(empty)
+	hp.set_meta("hp_empty", empty)
+	_sync_health_segments(hp, f)
 	var label := Label.new()
 	label.name = "Name"
 	label.position = Vector2(0, 86)
