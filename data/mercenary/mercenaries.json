@@ -263,7 +263,7 @@
                             "carrot_cost": 30,
                             "hp":  3000,
                             "atk":  100,
-                            "def":  16,
+                            "def":  22,
                             "attack_speed":  0.90,
                             "range":  1,
                             "move_speed":  2.9,

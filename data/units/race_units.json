@@ -815,14 +815,14 @@
                       "model_in_place_actions": ["run"],
                       "star4":  {
                           "damage_atk_pct":  3,
-                          "stun_sec":  2
+                          "stun_sec":  2.5
                       },
                       "name":  "剑士",
                       "race":  "human",
                       "element":  "land",
                       "tier":  2,
                       "cost":  30,
-                      "hp":  1120,
+                      "hp":  1320,
                       "atk":  64,
                       "def":  10,
                       "attack_speed":  0.88,
