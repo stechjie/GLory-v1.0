@@ -3,6 +3,8 @@ extends BattleSimShared
 
 const BattlePresentationEventSchema := preload("res://scripts/battle/BattlePresentationEvent.gd")
 const MeleeNavigation := preload("res://scripts/battle/MeleeNavigation.gd")
+# 人族 2 开场护盾：最大生命的百分比，需与 final status 表 04_羁绊 文案一致。
+const HUMAN_SHIELD_PCT := 0.15
 
 # 教学专用战斗。唯一入口是 BattleScreen 的 `team_mode == false` 分支，而 team_mode
 # 只有 Main._select_language() → TutorialMode.start() 这一条路会留成 false，
@@ -37,12 +39,12 @@ static func prepare_tutorial_state(kind: String) -> Dictionary:
 	if bool(player_syn.get("human_shield", false)):
 		for f in player:
 			if not _ignores_treasure(f):
-				f.shield = maxi(1, int(float(f.max_hp) * 0.08))
+				f.shield = maxi(1, int(float(f.max_hp) * HUMAN_SHIELD_PCT))
 		battle_log.append(TranslationServer.translate("log_human_shield"))
 	if bool(enemy_syn.get("human_shield", false)):
 		for f in enemy:
 			if not _ignores_treasure(f):
-				f.shield = maxi(1, int(float(f.max_hp) * 0.08))
+				f.shield = maxi(1, int(float(f.max_hp) * HUMAN_SHIELD_PCT))
 	_apply_opening_unit_skills(player, enemy, battle_log, state)
 	BattleSimTreasures._apply_opening_treasures(player, battle_log)
 	_snapshot_base_stats(player + enemy)
@@ -190,7 +192,7 @@ static func _finalize_team_opening(state: Dictionary) -> void:
 			_apply_defense_set_bonus(f)
 		_apply_money_set_bonus(f)
 		if bool(_f_syn(f).get("human_shield", false)):
-			f.shield = maxi(int(f.get("shield", 0)), int(float(f.get("max_hp", 1)) * 0.08))
+			f.shield = maxi(int(f.get("shield", 0)), int(float(f.get("max_hp", 1)) * HUMAN_SHIELD_PCT))
 	_init_unit_stats(state)
 	DamageService.set_stat_state(state)
 	_apply_opening_unit_skills(player, enemy, battle_log, state)
