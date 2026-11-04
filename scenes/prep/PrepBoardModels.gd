@@ -41,6 +41,7 @@ func refresh_four_star_visuals(delta: float) -> void:
 	if _four_star_visual_poll < 0.2:
 		return
 	_four_star_visual_poll = 0.0
+	sync_prep_treasure_visuals()
 	for source in [[GameState.board_slots, _prep_board_model_nodes], [GameState.bench_slots, _prep_standby_model_nodes]]:
 		var slots: Array = source[0]
 		var models: Dictionary = source[1]
@@ -495,6 +496,286 @@ func play_synergy_ultimate_screen(race: String, threshold: int) -> void:
 	lt.tween_callback(label.queue_free)
 
 
+# -- 宝藏套装 / 联动的常驻表现（11.04）------------------------------------------
+#
+# Leno 11.04 拍板：
+#   · 只挂**棋盘上的普通棋子**（备战席不要；佣兵不吃宝藏，也不挂）——与战斗里的生效范围一致；
+#   · 脚下归套装：五个套装共用战斗盾纹那块面片（SetDefenseSigil3D），按套装换刻口和颜色；
+#     防卫套就是战斗里那个盾纹原样，备战和战斗对得上；
+#   · 金钱套亮度随当前金币变（= 开战时实际能吃到的加成，TreasureService.money_set_bonus_for_gold）；
+#   · 联动（11.04 返工，Leno：绕身小光点「很难看」）改成**棋盘上一只代码画的平面生物**：凤凰涅槃 = 火凤凰，
+#     其余六条（锦鲤 / 毒蛇 / 血蝠 / 冰链 / 铁荆棘 / 压迫掌印）照同一套做法陆续加进 PREP_LINK_CREATURES；
+#     经济类联动不做。生物掠过棋子时点燃它（piece_ignited → 棋子压扁回弹），表示联动作用在棋子身上。
+# 一直显示，不会消失；套装 / 联动刚成立那一下，全队从左到右依次淡入。
+#
+# 同步时机：四星光那条 0.2 秒轮询 + _refresh_all() 末尾各一次。后者是为了模型重建的那一帧
+# 立刻把面片 / 光点换到新模型上（retarget），否则旧模型一释放它们会跟着自毁、等下次轮询再淡入，看着像闪。
+const PREP_SET_SIGIL := preload("res://effects/vfx3d/modules/SetDefenseSigil3D.gd")
+const PREP_LINK_CREATURES := {
+	"link_phoenix": preload("res://scenes/prep/effects/creatures/PrepPhoenix2D.gd"),
+	"link_rich_path": preload("res://scenes/prep/effects/creatures/PrepKoi2D.gd"),
+	"link_toxic_burst": preload("res://scenes/prep/effects/creatures/PrepSnake2D.gd"),
+	"link_blood_covenant": preload("res://scenes/prep/effects/creatures/PrepBats2D.gd"),
+	"link_paralysis_shackles": preload("res://scenes/prep/effects/creatures/PrepIceChain2D.gd"),
+	"link_iron_maiden": preload("res://scenes/prep/effects/creatures/PrepScorpion2D.gd"),
+	"link_oppression_counter": preload("res://scenes/prep/effects/creatures/PrepCrab2D.gd"),
+}
+# 生物画在一张离屏画布上，画布贴在棋盘地面的 3D 面片上（与「上阵数」贴地图案同一做法）：
+# 透视交给 3D，棋子站在生物上面不被盖住（Leno 11.04：「平面的在棋盘动，不需要做到在空中」）。
+# 画布覆盖的棋盘 UV 区域（比生物可游动的范围大一圈，翅膀伸出去不被裁掉）与像素密度：
+const PREP_CREATURE_CANVAS_UV := Rect2(0.20, 0.14, 0.54, 0.74)
+const PREP_CREATURE_PX_PER_WORLD := 220.0
+# 站位图在 0.005、棋子在其上；生物面片压在站位图上面一点、render_priority 也高一档。
+const PREP_CREATURE_Y_LIFT := 0.0056
+const PREP_CREATURE_RENDER_PRIORITY := 6
+const PREP_CREATURE_CANVAS_SHADER := preload("res://shaders/prep_creature_canvas.gdshader")
+# 11.04 返工：套装除了脚下纹，身上也要有东西。目前只有防卫套（战斗开局护罩的常驻版），
+# 其余套装的身上表现待 Leno 定稿后在这张表里加。
+const PREP_SET_BODY_SCRIPTS := {
+	"defense": preload("res://scenes/prep/effects/PrepDefenseShell3D.gd"),
+}
+# 脚下纹半径（特效单位，一格 = 0.6）。与战斗 SET_SIGIL_RADIUS_RATIO 0.55 × 棋子高 0.32 同量级，
+# 略大一点：备战镜头更远，太小看不出刻口。
+const PREP_SET_SIGIL_RADIUS := 0.21
+# 刚成立时从左到右依次亮起的间隔。
+const PREP_TREASURE_STAGGER_SEC := 0.06
+# 金钱套最暗（金币不够 1000、加成为 0）时的亮度：不能完全看不见，否则玩家以为没生效。
+const PREP_MONEY_SET_MIN_STRENGTH := 0.35
+const PREP_SET_STYLES := {
+	"defense": {"pattern": 0},  # 战斗盾纹原色
+	"attack": {"pattern": 1, "ring": Color(1.0, 0.42, 0.32), "notch": Color(1.0, 0.78, 0.70)},
+	"control": {"pattern": 2, "ring": Color(0.72, 0.50, 1.0), "notch": Color(0.92, 0.84, 1.0)},
+	"money": {"pattern": 3, "ring": Color(1.0, 0.80, 0.30), "notch": Color(1.0, 0.92, 0.55)},
+	"element": {"pattern": 4, "ring": Color(0.90, 0.90, 0.95), "notch": Color(1.0, 0.45, 0.20),
+		"elem_b": Color(0.50, 0.85, 1.0), "elem_c": Color(1.0, 0.90, 0.30)},
+}
+
+var _prep_set_category := ""
+var _prep_link_creatures: Dictionary = {}  # link_id -> 生物 Node2D（在 _prep_creature_viewport 里）
+var _prep_creature_viewport: SubViewport
+var _prep_creature_plane: MeshInstance3D
+# 进备战页第一次同步：已成立的联动不放登场大动静（那是旧成果），静静淡入。
+var _prep_links_sampled := false
+var _prep_set_sigils: Dictionary = {}     # uid -> SetDefenseSigil3D
+var _prep_set_bodies: Dictionary = {}     # uid -> 套装身上表现（PREP_SET_BODY_SCRIPTS）
+
+
+func _prep_active_set_category() -> String:
+	for category in TreasureService.SET_CATEGORIES:
+		if TreasureService.has_set(category):
+			return str(category)
+	return ""
+
+
+func _prep_active_creature_links() -> Array[String]:
+	var out: Array[String] = []
+	for link_id in PREP_LINK_CREATURES.keys():
+		if TreasureService.has_linkage(str(link_id)):
+			out.append(str(link_id))
+	return out
+
+
+func _prep_set_strength(category: String) -> float:
+	if category != "money":
+		return 1.0
+	var bonus := clampf(TreasureService.money_set_bonus_for_gold(GameState.gold), 0.0, 1.0)
+	return lerpf(PREP_MONEY_SET_MIN_STRENGTH, 1.0, bonus)
+
+
+# 棋盘上吃宝藏的棋子：uid -> 模型，按屏幕从左到右排好（依次淡入用）。
+func _prep_treasure_targets() -> Array:
+	var out: Array = []
+	for index in GameState.board_slots.size():
+		var cell = GameState.board_slots[index]
+		if not (cell is Dictionary):
+			continue
+		var d := cell as Dictionary
+		if bool(d.get("is_mercenary", false)) or bool(d.get("is_formation_ally", false)):
+			continue
+		var uid := str(d.get("uid", ""))
+		var node = _prep_board_model_nodes.get(index)
+		if uid.is_empty() or not is_instance_valid(node):
+			continue
+		var actor := node as Node3D
+		if actor == null or actor.is_queued_for_deletion() or not actor.is_inside_tree():
+			continue
+		out.append([uid, actor])
+	out.sort_custom(func(a: Array, b: Array) -> bool:
+		return (a[1] as Node3D).global_position.x < (b[1] as Node3D).global_position.x)
+	return out
+
+
+func sync_prep_treasure_visuals() -> void:
+	var category := _prep_active_set_category()
+	_sync_prep_link_creatures()
+	# 套装换了（或刚成立）：旧的全部淡出，新的整队依次亮。
+	var set_fresh := category != _prep_set_category
+	if set_fresh:
+		for node in _prep_set_sigils.values() + _prep_set_bodies.values():
+			if is_instance_valid(node):
+				node.call("stop")
+		_prep_set_sigils.clear()
+		_prep_set_bodies.clear()
+		_prep_set_category = category
+
+	var targets := _prep_treasure_targets()
+	var wanted_sigils: Dictionary = {}
+	var strength := _prep_set_strength(category)
+	for i in targets.size():
+		var uid: String = targets[i][0]
+		var actor: Node3D = targets[i][1]
+		var delay := float(i) * PREP_TREASURE_STAGGER_SEC
+		if not category.is_empty():
+			wanted_sigils[uid] = true
+			_sync_prep_set_sigil(uid, actor, category, strength, delay if set_fresh else 0.0)
+			if PREP_SET_BODY_SCRIPTS.has(category):
+				_sync_prep_set_body(uid, actor, category, strength, delay if set_fresh else 0.0)
+	# 下了棋盘 / 卖掉 / 宝藏没了：淡出。
+	for uid in _prep_set_sigils.keys():
+		if not wanted_sigils.has(uid):
+			var sigil = _prep_set_sigils[uid]
+			if is_instance_valid(sigil):
+				sigil.call("stop")
+			_prep_set_sigils.erase(uid)
+	for uid in _prep_set_bodies.keys():
+		if not wanted_sigils.has(uid):
+			var body = _prep_set_bodies[uid]
+			if is_instance_valid(body):
+				body.call("stop")
+			_prep_set_bodies.erase(uid)
+
+
+func _sync_prep_set_sigil(uid: String, actor: Node3D, category: String, strength: float, delay: float) -> void:
+	var parent := actor.get_parent() as Node3D
+	if parent == null:
+		return
+	var existing = _prep_set_sigils.get(uid)
+	if is_instance_valid(existing) and not (existing as Node).is_queued_for_deletion():
+		var sigil := existing as Node3D
+		if sigil.get_parent() != parent:
+			sigil.reparent(parent, false)
+		sigil.call("retarget", actor)
+		sigil.call("set_strength", strength)
+		return
+	# 第一次挂（或被意外收掉了）。delay > 0 只在套装刚成立时出现；
+	# 之后新摆上棋盘的棋子立刻淡入，不用等。
+	var sigil := PREP_SET_SIGIL.new() as MeshInstance3D
+	parent.add_child(sigil)
+	sigil.call("setup", actor, PREP_SET_SIGIL_RADIUS, strength)
+	sigil.scale = _prep_effect_scale(parent)
+	sigil.call("configure", PREP_SET_STYLES.get(category, {}))
+	sigil.call("set_start", delay, false)
+	_prep_set_sigils[uid] = sigil
+
+
+func _sync_prep_set_body(uid: String, actor: Node3D, category: String, strength: float, delay: float) -> void:
+	var parent := actor.get_parent() as Node3D
+	if parent == null:
+		return
+	var existing = _prep_set_bodies.get(uid)
+	if is_instance_valid(existing) and not (existing as Node).is_queued_for_deletion():
+		var body := existing as Node3D
+		if body.get_parent() != parent:
+			body.reparent(parent, false)
+		body.call("retarget", actor)
+		body.call("set_strength", strength)
+		return
+	var body: Node3D = (PREP_SET_BODY_SCRIPTS[category] as Script).new()
+	parent.add_child(body)
+	# 身高 = 备战棋子统一渲染高度（UNIT_HEIGHT 0.32 × 格距换算，与升星 / 四星同口径）。
+	body.call("setup", actor, strength, STAR_UPGRADE_BURST.UNIT_HEIGHT * _prep_effect_scale(parent).y)
+	body.call("set_start", delay, false)
+	_prep_set_bodies[uid] = body
+
+
+func _sync_prep_link_creatures() -> void:
+	var links := _prep_active_creature_links()
+	if not links.is_empty() and not _ensure_prep_creature_canvas():
+		return
+	for link_id in links:
+		var existing = _prep_link_creatures.get(link_id)
+		if is_instance_valid(existing) and not bool(existing.get("_leaving")):
+			continue
+		var creature: Node2D = (PREP_LINK_CREATURES[link_id] as Script).new()
+		_prep_creature_viewport.add_child(creature)
+		var canvas_px := Vector2(_prep_creature_viewport.size)
+		var cell_world := (BOARD_STONE_U.y - BOARD_STONE_U.x) * PREP_BOARD_GROUND_SIZE.x / float(GameConstants.BOARD_COLUMNS)
+		creature.call("setup", PREP_CREATURE_CANVAS_UV.position, PREP_CREATURE_CANVAS_UV.size, canvas_px,
+			cell_world * PREP_CREATURE_PX_PER_WORLD, _prep_creature_targets, hash(link_id))
+		if creature.has_signal("piece_ignited"):
+			creature.connect("piece_ignited", _on_prep_creature_ignited)
+		creature.call("appear_with_rebirth" if _prep_links_sampled else "appear_quiet")
+		_prep_link_creatures[link_id] = creature
+	for link_id in _prep_link_creatures.keys():
+		if not links.has(link_id):
+			var c = _prep_link_creatures[link_id]
+			if is_instance_valid(c):
+				c.call("dismiss")
+			_prep_link_creatures.erase(link_id)
+	_prep_links_sampled = true
+
+
+# 第一次需要时才建画布 + 贴地面片（没有联动的局不多占一块视口）。
+func _ensure_prep_creature_canvas() -> bool:
+	if _prep_creature_viewport != null and is_instance_valid(_prep_creature_viewport):
+		return true
+	if _prep_river_viewport == null or not is_instance_valid(_prep_river_viewport):
+		return false
+	var world := _prep_river_viewport.get_node_or_null("PrepRiverArenaWorld") as Node3D
+	if world == null:
+		return false
+	var world_size := PREP_CREATURE_CANVAS_UV.size * PREP_BOARD_GROUND_SIZE
+	var vp := SubViewport.new()
+	vp.name = "PrepBoardCreatureViewport"
+	vp.transparent_bg = true
+	vp.disable_3d = true
+	vp.size = Vector2i(roundi(world_size.x * PREP_CREATURE_PX_PER_WORLD), roundi(world_size.y * PREP_CREATURE_PX_PER_WORLD))
+	# 跟着 3D 棋盘的 30Hz 刷新一起重画一帧（_on_prep_river_refresh_tick），手机上不额外全速渲染。
+	vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	add_child(vp)
+	_prep_creature_viewport = vp
+	var plane_mesh := PlaneMesh.new()
+	plane_mesh.size = world_size
+	var layer := MeshInstance3D.new()
+	layer.name = "PrepBoardCreatureLayer"
+	layer.mesh = plane_mesh
+	layer.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# 专用材质（shaders/prep_creature_canvas.gdshader）：预乘混合 + 亮部提亮。
+	# 预乘：2D 画布在透明底上画出来本来就是预乘的；提亮：抵消备战 3D 的 Filmic 压暗，
+	# 让凤凰的核心冲到白热（Leno 要「共鸣光那样亮，但是橙色」）。
+	var mat := ShaderMaterial.new()
+	mat.shader = PREP_CREATURE_CANVAS_SHADER
+	mat.set_shader_parameter("canvas", vp.get_texture())
+	mat.render_priority = PREP_CREATURE_RENDER_PRIORITY
+	layer.material_override = mat
+	var center := _board_plane_world_pos(PREP_CREATURE_CANVAS_UV.get_center().x, PREP_CREATURE_CANVAS_UV.get_center().y)
+	center.y = PREP_BOARD_GROUND_CENTER.y + PREP_CREATURE_Y_LIFT
+	layer.position = center
+	world.add_child(layer)
+	_prep_creature_plane = layer
+	return true
+
+
+# 生物可以俯冲的目标：棋盘上吃宝藏的普通棋子（与套装同一口径），给棋盘 UV 坐标。
+func _prep_creature_targets() -> Array:
+	var out: Array = []
+	for index in GameState.board_slots.size():
+		var cell = GameState.board_slots[index]
+		if not (cell is Dictionary):
+			continue
+		if bool((cell as Dictionary).get("is_mercenary", false)) or bool((cell as Dictionary).get("is_formation_ally", false)):
+			continue
+		out.append({"index": index, "pos": _board_cell_uv(index)})
+	return out
+
+
+# 生物掠过时点燃棋子：棋子压扁回弹一下（中档反馈），表示联动落在了它身上。
+func _on_prep_creature_ignited(index: int) -> void:
+	var node = _prep_board_model_nodes.get(index)
+	if is_instance_valid(node) and (node as Node3D).is_inside_tree():
+		_squash_prep_model(node as Node3D, 2)
+
+
 # 镜头轻震：只动 Camera3D 的 h_offset / v_offset（纯视觉，不碰任何棋子的变换）。
 # 平方衰减 + 正弦，不用每帧随机 —— 每帧随机读起来像信号干扰，不像「震了一下」。
 func _shake_prep_camera(amplitude: float) -> void:
@@ -627,6 +908,9 @@ var _prep_layout_refresh_version := 0
 func _on_prep_river_refresh_tick() -> void:
 	if _prep_river_viewport != null and is_visible_in_tree():
 		_prep_river_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+		# 棋盘生物画布：有生物时跟着同一拍重画（先于 3D 视口采样它的贴图）
+		if _prep_creature_viewport != null and is_instance_valid(_prep_creature_viewport) and _prep_creature_viewport.get_child_count() > 0:
+			_prep_creature_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 func _setup_prep_river_background() -> void:
 	var container := SubViewportContainer.new()
@@ -2041,6 +2325,12 @@ func _board_plane_world_pos(u: float, v: float) -> Vector3:
 # 格子序号 -> 棋盘平面上的世界坐标。摆模型和「量一格有多大」都走这一份，
 # 两处各算各的话，特效的尺度迟早和棋盘对不上。
 func _board_cell_plane_world_pos(index: int) -> Vector3:
+	var uv := _board_cell_uv(index)
+	return _board_plane_world_pos(uv.x, uv.y)
+
+
+# 格子序号 -> 棋盘图 UV（棋子站位，含 SPREAD 修正）。凤凰等棋盘生物按它找棋子。
+func _board_cell_uv(index: int) -> Vector2:
 	# 直接按石台 UV 区域把 16 格落到 3D 平面上（确定性，不靠 2D 投影）
 	var column := index % GameConstants.BOARD_COLUMNS
 	var row := floori(float(index) / float(GameConstants.BOARD_COLUMNS))
@@ -2051,7 +2341,7 @@ func _board_cell_plane_world_pos(index: int) -> Vector3:
 	var center_v := (BOARD_STONE_V.x + BOARD_STONE_V.y) * 0.5
 	u = center_u + (u - center_u) * BOARD_MODEL_SPREAD_U
 	v = center_v + (v - center_v) * BOARD_MODEL_SPREAD_V
-	return _board_plane_world_pos(u, v)
+	return Vector2(u, v)
 
 
 func _position_prep_board_model(model_node: Node3D, index: int, unit_def: Dictionary) -> void:

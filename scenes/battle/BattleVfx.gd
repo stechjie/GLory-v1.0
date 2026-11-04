@@ -2438,9 +2438,10 @@ func _update_treasure_set_presentation() -> void:
 				mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
 				mark.color = SET_EXECUTE_MARK_COLOR
 				mark.size = Vector2(2.0, 13.0)
-				mark.position = Vector2(SET_HP_FILL_X_IN_BG + SET_HP_FILL_WIDTH * SET_EXECUTE_PCT - 1.0, -2.0)
 				mark.z_index = 2
 				bg.add_child(mark)
+			var hp_max_width := float(bg.get_meta("hp_max_width")) if bg.has_meta("hp_max_width") else SET_HP_FILL_WIDTH
+			mark.position = Vector2(SET_HP_FILL_X_IN_BG + hp_max_width * SET_EXECUTE_PCT - 1.0, -2.0)
 			var low := float(raw.get("hp", 0)) <= float(maxi(1, int(raw.get("max_hp", 1)))) * SET_EXECUTE_PCT
 			bg.color = SET_HP_BG_COLOR.lerp(SET_EXECUTE_FLASH_COLOR, pulse) if low else SET_HP_BG_COLOR
 			still_marked[uid] = true
