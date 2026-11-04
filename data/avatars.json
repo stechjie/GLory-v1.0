@@ -59,63 +59,63 @@
 	"avatars": [
 		{
 			"id": "avatar_001",
-			"name": "人族国王",
+			"name": "人王",
 			"name_en": "Human King",
 			"source": "res://assets/ui/unit_portraits/human_king.png",
 			"group": "human"
 		},
 		{
 			"id": "avatar_002",
-			"name": "人族剑士",
+			"name": "剑士",
 			"name_en": "Swordsman",
 			"source": "res://assets/ui/unit_portraits/human_swordsman.png",
 			"group": "human"
 		},
 		{
 			"id": "avatar_003",
-			"name": "人族弓手",
+			"name": "弓箭手",
 			"name_en": "Archer",
 			"source": "res://assets/ui/unit_portraits/human_archer.png",
 			"group": "human"
 		},
 		{
 			"id": "avatar_004",
-			"name": "人族法师",
+			"name": "法师",
 			"name_en": "Mage",
 			"source": "res://assets/ui/unit_portraits/human_mage.png",
 			"group": "human"
 		},
 		{
 			"id": "avatar_005",
-			"name": "暗黑巨龙",
-			"name_en": "Dark Dragon",
+			"name": "黑龙",
+			"name_en": "Blackwyrm",
 			"source": "res://assets/ui/unit_portraits/dark_dragon.png",
 			"group": "dark"
 		},
 		{
 			"id": "avatar_006",
-			"name": "暗黑女王",
-			"name_en": "Dark Queen",
+			"name": "痛苦女王",
+			"name_en": "Pain Queen",
 			"source": "res://assets/ui/unit_portraits/dark_queen.png",
 			"group": "dark"
 		},
 		{
 			"id": "avatar_007",
-			"name": "暗黑法师",
-			"name_en": "Dark Mage",
+			"name": "暗影法师",
+			"name_en": "Hexmage",
 			"source": "res://assets/ui/unit_portraits/dark_mage.png",
 			"group": "dark"
 		},
 		{
 			"id": "avatar_008",
-			"name": "末日",
-			"name_en": "Doom",
+			"name": "末日守卫",
+			"name_en": "Doom Guard",
 			"source": "res://assets/ui/unit_portraits/dark_doom.png",
 			"group": "dark"
 		},
 		{
 			"id": "avatar_009",
-			"name": "神族之王",
+			"name": "神王",
 			"name_en": "God King",
 			"source": "res://assets/ui/unit_portraits/god_king.png",
 			"group": "god"
@@ -129,43 +129,43 @@
 		},
 		{
 			"id": "avatar_011",
-			"name": "极光",
+			"name": "极光射手",
 			"name_en": "Aurora",
 			"source": "res://assets/ui/unit_portraits/god_aurora.png",
 			"group": "god"
 		},
 		{
 			"id": "avatar_012",
-			"name": "女祭司",
+			"name": "大祭司",
 			"name_en": "Priestess",
 			"source": "res://assets/ui/unit_portraits/god_priestess.png",
 			"group": "god"
 		},
 		{
 			"id": "avatar_013",
-			"name": "亡灵泰坦",
-			"name_en": "Undead Titan",
+			"name": "巨甲灵",
+			"name_en": "Titan Wisp",
 			"source": "res://assets/ui/unit_portraits/undead_titan.png",
 			"group": "undead"
 		},
 		{
 			"id": "avatar_014",
-			"name": "亡灵母体",
-			"name_en": "Undead Mother",
+			"name": "母灵",
+			"name_en": "Matron",
 			"source": "res://assets/ui/unit_portraits/undead_mother.png",
 			"group": "undead"
 		},
 		{
 			"id": "avatar_015",
-			"name": "尖刺",
-			"name_en": "Spike",
+			"name": "刺灵",
+			"name_en": "Spike Wisp",
 			"source": "res://assets/ui/unit_portraits/undead_spike.png",
 			"group": "undead"
 		},
 		{
 			"id": "avatar_016",
-			"name": "剧毒",
-			"name_en": "Poison",
+			"name": "毒灵",
+			"name_en": "Venom",
 			"source": "res://assets/ui/unit_portraits/undead_poison.png",
 			"group": "undead"
 		},
