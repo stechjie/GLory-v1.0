@@ -603,6 +603,97 @@ def test_oversize_body_is_rejected_by_the_schema(wired, report_key) -> None:
     assert r.status_code == 422
 
 
+# --- 战斗服务器直交（2026-11-03）-------------------------------------------------
+#
+# 只靠手机转交时，AI 补位局里唯一的真人一退出就没人交了 —— 不结算、不扣分。
+
+INTERNAL = "/v1/internal/battle/report"
+LOOPBACK = ("127.0.0.1", 50000)
+
+
+def test_battle_server_delivers_without_any_player(wired, report_key, monkeypatch: pytest.MonkeyPatch) -> None:
+    """🔴 这一节最要紧的一条：一个连着的人都没有，这局照样记得上。"""
+    conn = _FakeConn(set(), {PLAYER_A, PLAYER_B})
+    monkeypatch.setattr(db, "pool", lambda: _Pool(conn))
+    wire = _sign(report_key, _payload())
+    with TestClient(app, client=LOOPBACK) as client:
+        first = client.post(INTERNAL, json={"report": wire})
+        # 手机后到：同一串字节，只记第一份 —— 两条路谁先到都一样。
+        later = client.post("/v1/battle/report", json={"report": wire},
+                            headers={"Authorization": "Bearer token-a"})
+    assert first.status_code == 200 and first.json()["recorded"] is True
+    assert later.status_code == 200 and later.json()["recorded"] is False
+    assert len(conn.seat_rows) == 6, "只记了一次"
+
+
+def test_phone_first_then_battle_server_is_still_one_record(wired, report_key, monkeypatch: pytest.MonkeyPatch) -> None:
+    conn = _FakeConn(set(), {PLAYER_A, PLAYER_B})
+    monkeypatch.setattr(db, "pool", lambda: _Pool(conn))
+    wire = _sign(report_key, _payload())
+    with TestClient(app, client=LOOPBACK) as client:
+        phone = client.post("/v1/battle/report", json={"report": wire},
+                            headers={"Authorization": "Bearer token-a"})
+        server = client.post(INTERNAL, json={"report": wire})
+    assert phone.json()["recorded"] is True
+    assert server.status_code == 200 and server.json()["recorded"] is False
+    assert len(conn.seat_rows) == 6
+
+
+@pytest.mark.parametrize("header", ["X-Forwarded-For", "X-Forwarded-Proto", "x-forwarded-host"])
+def test_requests_through_caddy_are_refused(wired, report_key, header) -> None:
+    """🔴 Caddy 也在本机，它转进来的请求对端同样是 127.0.0.1 —— 只能靠它写的头分辨。"""
+    wire = _sign(report_key, _payload())
+    with TestClient(app, client=LOOPBACK) as client:
+        r = client.post(INTERNAL, json={"report": wire}, headers={header: "198.51.100.7"})
+    assert r.status_code == 403
+
+
+@pytest.mark.parametrize("peer", ["203.0.113.9", "10.0.0.5", "testclient"])
+def test_other_machines_are_refused(wired, report_key, peer) -> None:
+    wire = _sign(report_key, _payload())
+    with TestClient(app, client=(peer, 50000)) as client:
+        assert client.post(INTERNAL, json={"report": wire}).status_code == 403
+
+
+def test_ipv6_loopback_is_accepted(wired, report_key, monkeypatch: pytest.MonkeyPatch) -> None:
+    conn = _FakeConn(set(), {PLAYER_A, PLAYER_B})
+    monkeypatch.setattr(db, "pool", lambda: _Pool(conn))
+    with TestClient(app, client=("::1", 50000)) as client:
+        r = client.post(INTERNAL, json={"report": _sign(report_key, _payload())})
+    assert r.status_code == 200
+
+
+def test_battle_server_bad_signature_is_400_with_reason(wired, report_key) -> None:
+    """4xx 告诉战斗服务器「重试也没用」；它据此停手（BattleReportUplink.gd）。"""
+    other = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    with TestClient(app, client=LOOPBACK) as client:
+        r = client.post(INTERNAL, json={"report": _sign(other, _payload())})
+    assert r.status_code == 400
+    assert r.headers.get("X-Glory-Reason") == "report_bad_signature"
+
+
+def test_battle_server_without_database_is_503(wired, report_key, monkeypatch: pytest.MonkeyPatch) -> None:
+    """5xx = 稍后再试；战斗服务器会接着重试，而不是当成被拒放弃。"""
+    monkeypatch.setattr(db, "is_connected", lambda: False)
+    with TestClient(app, client=LOOPBACK) as client:
+        r = client.post(INTERNAL, json={"report": _sign(report_key, _payload())})
+    assert r.status_code == 503
+
+
+def test_caddy_still_overwrites_forwarded_for() -> None:
+    """直交那条的门全靠 Caddy 每次都写 X-Forwarded-For。这行没了，公网就能打到它。"""
+    caddy = (REPO / "deploy" / "Caddyfile").read_text(encoding="utf-8")
+    assert "header_up X-Forwarded-For {remote_host}" in caddy
+
+
+def test_battle_server_uplink_points_at_this_route() -> None:
+    uplink = (REPO / "scripts" / "multiplayer" / "BattleReportUplink.gd").read_text(encoding="utf-8")
+    assert 'const PATH := "%s"' % INTERNAL in uplink
+    assert 'const DEFAULT_BASE_URL := "http://127.0.0.1:8099"' in uplink
+    service = (REPO / "deploy" / "glory-backend.service").read_text(encoding="utf-8")
+    assert "--host 127.0.0.1 --port 8099" in service
+
+
 def test_matches_requires_login(wired) -> None:
     assert TestClient(app).get("/v1/me/matches").status_code == 401
 
@@ -618,21 +709,31 @@ async def test_ranked_reward_receipt_is_scoped_to_the_signed_in_player(
     wired, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class ReceiptConn:
-        async def fetchrow(self, sql, match_uid, player_id):
+        def __init__(self) -> None:
+            self.casual_lookups: list[tuple] = []
+
+        async def fetchrow(self, sql, match_uid, player_id, note=None):
             assert "player_id = $2" in sql
             assert match_uid == "a" * 32
+            if "ranked_reward_receipts" not in sql:
+                # 没有排位收据时回落查休闲流水（2026-11-02）。这局是排位，流水里没有它。
+                assert "wallet_ledger" in sql and note == f"casual match {match_uid}"
+                self.casual_lookups.append((player_id, note))
+                return None
             if player_id != PLAYER_A:
                 return None
             return {"result": "win", "coin": 12, "score_before": 320,
                     "score_after": 345, "coin_balance_after": 1512}
 
-    monkeypatch.setattr(db, "pool", lambda: _Pool(ReceiptConn()))
+    conn = ReceiptConn()
+    monkeypatch.setattr(db, "pool", lambda: _Pool(conn))
     report_routes._reward_limiter.reset()
     claims = Claims(auth_uid="auth-a", is_anonymous=True, expires_at=0)
     own = await report_routes.my_ranked_reward("a" * 32, claims)
     assert own.status == "settled" and own.coin == 12 and own.score_after == 345
     # 320 → 345 都在星铸（200–399）：本段 145 / 200。
     assert (own.tier_before, own.tier_after, own.tier_progress, own.tier_span) == (2, 2, 145, 200)
+    assert conn.casual_lookups == [], "有排位收据就不该再去查休闲流水"
 
     async def other_player(_claims):
         return _FakePlayer(PLAYER_B, "阿乙", "BBBB2222")
@@ -640,6 +741,8 @@ async def test_ranked_reward_receipt_is_scoped_to_the_signed_in_player(
     monkeypatch.setattr(report_routes, "_me", other_player)
     other = await report_routes.my_ranked_reward("a" * 32, claims)
     assert other.status == "pending" and other.coin is None
+    # 回落那条也只查当前登录的人，不会把别人的到账金额拿过来。
+    assert conn.casual_lookups == [(PLAYER_B, "casual match " + "a" * 32)]
 
 
 # --- 部署 ---------------------------------------------------------------------

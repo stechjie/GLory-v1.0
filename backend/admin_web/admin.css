@@ -58,6 +58,18 @@ textarea { min-height: 72px; resize: vertical; }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
 label.check { display: flex; gap: 6px; align-items: center; margin: 4px 12px 10px 0; }
 
+/* 物品选择器（发邮件 / 建兑换码，admin.js 的 itemPicker） */
+.picker { border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+.picker-group + .picker-group { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 6px; }
+.picker-group > b { display: block; font-size: 12px; color: var(--muted); font-weight: 600; }
+.picker-items { display: flex; flex-wrap: wrap; }
+.picker-items label.check { margin-bottom: 4px; }
+.picker-race { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 12px; }
+.picker-race > label.check { min-width: 9.5em; }
+.picker-race details { flex: 1; min-width: 240px; font-size: 13px; }
+.picker-race summary { cursor: pointer; color: var(--muted); }
+.picker-over { color: var(--danger); font-weight: 600; }
+
 button.btn {
   font: inherit; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--line); background: #fff; cursor: pointer;
 }

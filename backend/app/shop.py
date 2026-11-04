@@ -244,6 +244,14 @@ def items() -> list[Item]:
     return [item for item in _catalog()["by_item"].values() if item.enabled]
 
 
+def contents() -> list[Item]:
+    """要归属才能用的全部内容，每样一行（取目录里第一个卖它的），**上不上架都算**。
+
+    items() 只有在卖的；下架的（种族、抽奖皮肤、七日头像框……）一样要归属，邮件也能发。
+    """
+    return list(_catalog()["by_content"].values())
+
+
 def item_by_id(item_id: str) -> Item:
     found = _catalog()["by_item"].get(item_id)
     if found is None:
@@ -498,7 +506,11 @@ async def grant_content(
 ) -> list[str]:
     """发一件内容；它若是某个种族的最后一个棋子，**同一事务里**把种族也发了。
 
-    返回这次因集齐而额外发出的内容 id（绝大多数时候是空列表）。**必须已经在事务里。**
+    发的是**种族本身**（邮件 / 兑换码的「整族」，2026-11-04）：补齐这个人缺的棋子，种族跟着集齐解锁。
+    🔴 不能只发种族那一行 —— 那样能拿这个种族出战，商城却把那 8 个棋子当没买过、继续卖给他。
+
+    返回这次额外发出的内容 id：集齐解锁的种族、整族补上的棋子（绝大多数时候是空列表）。
+    **必须已经在事务里。**
     会凑成一套的发货路径（购买、邮件附件）都走这里，不直接调 `_grant` ——
     直接调的那条路发了第 8 个棋子，种族就永远不会来，而且不报错。
 
@@ -510,45 +522,66 @@ async def grant_content(
     把同一个人的这类事务排成队：后到的那笔等前一笔提交，它的计数语句就能看见前一笔的棋子。
     先锁再发（而不是发完再锁）是为了让所有路径的加锁顺序都是「钱包 → 归属」，不会互相死锁。
     """
+    whole = _catalog()["by_content"].get(content_id)
+    if whole is not None and whole.requires:
+        await _lock_wallet(conn, player_id)
+        added: list[str] = []
+        for part in whole.requires:
+            if not await _owns(conn, player_id, part):
+                # 逐个走棋子那条路：补上最后一个时种族在里面集齐（连同出战选择、突破那两条）。
+                added.extend([part, *await grant_content(conn, player_id, part, source, order_id)])
+        # 棋子早就全有、只差种族那一行（不该发生；发生了也在这里补上）。
+        if await _complete_set(conn, player_id, whole, source, order_id):
+            added.append(content_id)
+        return [c for c in added if c != content_id]
+
     sets = _catalog()["sets_by_part"].get(content_id, ())
     if sets:
         await _lock_wallet(conn, player_id)
     await _grant(conn, player_id, content_id, source, order_id)
-    unlocked: list[str] = []
-    for set_item in sets:
-        if await _owns(conn, player_id, set_item.grants):
-            continue
-        have = await conn.fetchval(
-            "select count(*) from player_entitlements"
-            " where player_id = $1 and revoked_at is null and item_id = any($2::text[])",
-            player_id, list(set_item.requires),
-        )
-        if int(have or 0) < len(set_item.requires):
-            continue
-        # 种族那一行记在同一张订单 / 同一封邮件名下：客服查「种族哪来的」能直接追到最后那一笔。
-        await _grant(conn, player_id, set_item.grants, source, order_id)
-        unlocked.append(set_item.grants)
-        # A fourth completed race immediately releases a pending Forest breakthrough.
-        race_count = await conn.fetchval(
-            "select count(*) from player_entitlements where player_id = $1"
-            " and revoked_at is null and item_id = any($2::text[])",
-            player_id, ["human", "god", "dark", "undead", "crimson"])
-        if int(race_count or 0) >= 4:
-            # 函数内 import：ranked 在模块顶层 import 了 shop，顶层互相 import 会循环。
-            from app import ranked
-            await conn.execute(
-                "update player_ranked set score = greatest(score, $2),"
-                " breakthrough_ready = false where player_id = $1"
-                " and breakthrough_ready", player_id, ranked.STARFORGE_FLOOR)
-        # Newly completed race joins the loadout automatically until four are selected.
+    return [s.grants for s in sets if await _complete_set(conn, player_id, s, source, order_id)]
+
+
+async def _complete_set(
+    conn: asyncpg.Connection,
+    player_id: uuid.UUID,
+    set_item: Item,
+    source: str,
+    order_id: uuid.UUID | None,
+) -> bool:
+    """棋子集齐了、种族还没有，就把种族发了。返回发没发。调用方已经锁了钱包行（见 grant_content）。"""
+    if await _owns(conn, player_id, set_item.grants):
+        return False
+    have = await conn.fetchval(
+        "select count(*) from player_entitlements"
+        " where player_id = $1 and revoked_at is null and item_id = any($2::text[])",
+        player_id, list(set_item.requires),
+    )
+    if int(have or 0) < len(set_item.requires):
+        return False
+    # 种族那一行记在同一张订单 / 同一封邮件名下：客服查「种族哪来的」能直接追到最后那一笔。
+    await _grant(conn, player_id, set_item.grants, source, order_id)
+    # A fourth completed race immediately releases a pending Forest breakthrough.
+    race_count = await conn.fetchval(
+        "select count(*) from player_entitlements where player_id = $1"
+        " and revoked_at is null and item_id = any($2::text[])",
+        player_id, ["human", "god", "dark", "undead", "crimson"])
+    if int(race_count or 0) >= 4:
+        # 函数内 import：ranked 在模块顶层 import 了 shop，顶层互相 import 会循环。
+        from app import ranked
         await conn.execute(
-            "update players set selected_races = array_append("
-            "coalesce(selected_races, array['human']::text[]), $2)"
-            " where player_id = $1 and not ($2 = any("
-            "coalesce(selected_races, array['human']::text[])))"
-            " and cardinality(coalesce(selected_races, array['human']::text[])) < 4",
-            player_id, set_item.grants)
-    return unlocked
+            "update player_ranked set score = greatest(score, $2),"
+            " breakthrough_ready = false where player_id = $1"
+            " and breakthrough_ready", player_id, ranked.STARFORGE_FLOOR)
+    # Newly completed race joins the loadout automatically until four are selected.
+    await conn.execute(
+        "update players set selected_races = array_append("
+        "coalesce(selected_races, array['human']::text[]), $2)"
+        " where player_id = $1 and not ($2 = any("
+        "coalesce(selected_races, array['human']::text[])))"
+        " and cardinality(coalesce(selected_races, array['human']::text[])) < 4",
+        player_id, set_item.grants)
+    return True
 
 
 # --- 购买 ---------------------------------------------------------------------

@@ -33,6 +33,36 @@ func setup(follow: Node3D, radius: float, strength: float) -> void:
 	_snap()
 
 
+# 11.04 备战界面五个套装共用这块面片（战斗里只有防卫套，不调这几个，外观不变）。
+# style：{pattern:int, ring:Color, notch:Color, elem_b:Color, elem_c:Color}，缺的键保留默认。
+func configure(style: Dictionary) -> void:
+	if _material == null:
+		return
+	if style.has("pattern"):
+		_material.set_shader_parameter("pattern", int(style["pattern"]))
+	for key in ["ring", "notch", "elem_b", "elem_c"]:
+		if style.has(key):
+			var param: String = {"ring": "ring_color", "notch": "notch_color"}.get(key, key)
+			_material.set_shader_parameter(param, style[key])
+
+
+# 备战里棋子模型会被整个重建（星级 / 外观签名变了）：换跟随目标，不重建面片，免得再淡入一次。
+func retarget(follow: Node3D) -> void:
+	_follow = follow
+	_snap()
+
+
+# 常驻期间改亮度（金钱套随金币变）。淡入 / 淡出过程中也生效。
+func set_strength(strength: float) -> void:
+	_strength = strength
+
+
+# 负的 age = 晚这么多秒才开始淡入（备战里同族一串从左到右依次亮）。
+# skip_fade：模型被重建、盾纹跟着重建时直接满亮，不要再闪一次淡入。
+func set_start(delay: float, skip_fade: bool) -> void:
+	_age = FADE_IN_SEC if skip_fade else -maxf(0.0, delay)
+
+
 func stop() -> void:
 	if _stopping:
 		return
@@ -52,7 +82,7 @@ func _process(delta: float) -> void:
 	rotation.y += delta * SPIN_RAD_PER_SEC
 	if _stopping:
 		return
-	var pulse := maxf(0.0, sin(_age * TAU / PULSE_PERIOD_SEC))
+	var pulse := maxf(0.0, sin(maxf(_age, 0.0) * TAU / PULSE_PERIOD_SEC))
 	_material.set_shader_parameter("pulse", pulse * pulse)
 	_material.set_shader_parameter("fade", clampf(_age / FADE_IN_SEC, 0.0, 1.0) * _strength)
 

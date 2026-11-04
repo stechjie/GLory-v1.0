@@ -54,27 +54,46 @@ class SlidingWindowLimiter:
         self._hits: OrderedDict[str, deque[float]] = OrderedDict()
 
     def check(self, key: str) -> None:
-        """放行则返回，超额抛 RateLimited。"""
-        now = time.monotonic()
-        window_start = now - self.window
+        """放行则返回（并记一次），超额抛 RateLimited。"""
+        retry_after = self.blocked(key)
+        if retry_after is not None:
+            raise RateLimited(retry_after)
+        self.record(key)
 
+    def blocked(self, key: str) -> int | None:
+        """只看、不记：超额了返回还要等几秒，没超返回 None。
+
+        给「只有某种结果才算一次」的场景用（兑换码只数「码不存在」）：
+        先 blocked() 决定让不让试，试完是那种结果再 record()。
+        """
+        now = time.monotonic()
+        stamps = self._hits.get(key)
+        if stamps is None:
+            return None
+        self._hits.move_to_end(key)
+        self._expire(stamps, now)
+        if len(stamps) >= self.limit:
+            # 最早那一次滑出窗口时就能再来一发。
+            return max(1, int(stamps[0] + self.window - now) + 1)
+        return None
+
+    def record(self, key: str) -> None:
+        """记一次，不检查。"""
+        now = time.monotonic()
         stamps = self._hits.get(key)
         if stamps is None:
             stamps = deque()
             self._hits[key] = stamps
         else:
             self._hits.move_to_end(key)
-
-        while stamps and stamps[0] <= window_start:
-            stamps.popleft()
-
-        if len(stamps) >= self.limit:
-            # 最早那一次滑出窗口时就能再来一发。
-            retry_after = max(1, int(stamps[0] + self.window - now) + 1)
-            raise RateLimited(retry_after)
-
+        self._expire(stamps, now)
         stamps.append(now)
         self._evict_if_needed()
+
+    def _expire(self, stamps: deque[float], now: float) -> None:
+        window_start = now - self.window
+        while stamps and stamps[0] <= window_start:
+            stamps.popleft()
 
     def _evict_if_needed(self) -> None:
         while len(self._hits) > self.max_keys:

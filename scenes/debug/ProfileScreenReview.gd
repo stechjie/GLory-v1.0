@@ -8,6 +8,8 @@ extends Node
 #   Godot_v4.7.1-stable_win64.exe --path . scenes/debug/ProfileScreenReview.tscn \
 #       --resolution 1280x900 -- --shot=self
 #   ... -- --shot=public
+#   ... -- --shot=settings      「资料设置」页签（含邀请与兑换码，新账号还能填码的状态）
+#   ... -- --shot=settings_en   同上，英文（看 340 宽那一栏会不会被英文撑爆）
 #
 # 不带 --shot 就只是开着让人手动看。
 
@@ -66,6 +68,17 @@ const FAKE_EMPTY := {
 	"rename_available_at": null,
 }
 
+# 「邀请与兑换码」面板没登录时自己去拿状态会是 401（只剩兑换码），这里注入新账号还能填码的样子。
+# 字段名与后端 invites.Status 一致。
+const FAKE_INVITE := {
+	"can_bind": true,
+	"bound": false,
+	"rewarded": false,
+	"reward_level": 5,
+	"invitee_diamond": 50,
+	"inviter_diamond": 100,
+}
+
 var _shot := ""
 
 func _ready() -> void:
@@ -76,6 +89,8 @@ func _ready() -> void:
 
 func _run() -> void:
 	var public := _shot == "public"
+	# 显式设语言：不设就跟着这台机器的系统语言走（英文 Windows 上「中文」那张也是英文）。
+	TranslationServer.set_locale("en" if _shot.ends_with("_en") else "zh")
 	var screen := (load(PROFILE_SCENE) as PackedScene).instantiate() as Control
 	if public:
 		screen.call("configure_public", "7K2M9Q4B")
@@ -95,6 +110,9 @@ func _run() -> void:
 	screen.set("_data", payload)
 	screen.call("_set_status", "")
 	screen.call("_refresh")
+	if _shot.begins_with("settings"):
+		screen.call("_select_profile_tab", true)
+		(screen.get("_invite_panel") as Node).call("apply_status", FAKE_INVITE)
 
 	if _shot.is_empty():
 		return

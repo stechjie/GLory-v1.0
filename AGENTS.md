@@ -29,6 +29,9 @@
 - 已核实的 Supabase 归属：测试服为 `https://tzkysvnpjmgzfbvazugi.supabase.co`；正式服为 `https://jiqctertgtxoabvyhbid.supabase.co`（`glory-prod`，管理账号 `stanwertsupplychain@gmail.com`）。2026-11-01 已在正式账号的 Supabase 控制台核验独立项目归属；该正式项目可继续使用，不需重复创建第三套数据库。以后改库仍须重新核验并更新此记录。
 - 重启前检查在线玩家；有玩家在线时等待，除非用户明确授权中断。构建、部署、健康检查与真机沙盒支付验收分别记录。
 
+- 客户端源码默认值是测试服（`scripts/account/AccountConfig.gd` 的 `DEFAULT_BACKEND_URL`、`scripts/multiplayer/NetworkConfig.gd` 的 `SERVER_HOST`）。语音地址由服务器下发（战斗服务器和账号服务器各自的 LiveKit 配置里的 `client_url`），客户端不写死。
+- 战斗链路的 DTLS 证书两边不同：客户端 `scripts/multiplayer/NetTLSCert.gd` 里是测试服那张（SHA-256 `F7:73:C1:A5:…:A4:9C:25:0D`），正式服是 2026-10-31 新生成的（SHA-256 `DE:B1:9B:3E:…:0E:CA:53:54`，以服务器上 `~/Glory/keys/dtls_cert.pem` 为准）。切正式服只改域名、不换证书，会卡在连接中直到超时。
+
 ## APK / IPA 必须使用精简打包入口
 
 今后构建 APK 和 IPA，必须使用本仓库 `tools/workspace/build_apk.sh` 和

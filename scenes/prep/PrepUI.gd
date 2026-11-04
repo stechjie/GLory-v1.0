@@ -3072,6 +3072,8 @@ func _refresh_all() -> void:
 	# 9.17：羁绊激活音。放最后 —— 前面的 _auto_combine_all() 可能刚把棋子合成掉、
 	# 改变棋盘构成，先采样再判会拿到中间态。
 	_check_synergy_activation()
+	# 11.04：套装脚下纹 / 联动光点立刻换到重建后的模型上（见 PrepBoardModels.sync_prep_treasure_visuals）。
+	sync_prep_treasure_visuals.call_deferred()
 	# 升星表现放在**模型重建之后**：合成那一刻保留的那枚棋子的模型马上要被换掉
 	# （星级变了 ⇒ signature 变了 ⇒ 整个节点 queue_free），当场挂特效立刻就没了。
 	flush_star_upgrades()

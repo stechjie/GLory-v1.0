@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import contextlib
 import datetime as dt
 import hashlib
@@ -17,7 +18,10 @@ import sys
 import uuid
 import zipfile
 
-ROOT = Path(__file__).resolve().parents[3]
+# GLORY_WORKSPACE relocates the stage, logs and outputs. Windows Java/Gradle tools
+# cannot open paths outside the ANSI code page (for example a project under 桌面).
+ROOT = Path(os.environ["GLORY_WORKSPACE"]).resolve() if os.environ.get("GLORY_WORKSPACE") else Path(__file__).resolve().parents[3]
+WINDOWS = os.name == "nt"
 SKIP_DIRS = {".git", ".godot", ".svn", "__pycache__", "__MACOSX"}
 SKIP_FILES = {".DS_Store", "Thumbs.db", "desktop.ini"}
 ERROR_RE = re.compile(r"(?:^|\n)(?:SCRIPT ERROR:|ERROR:)|Failed to (?:load|import)|Parse Error:")
@@ -99,15 +103,53 @@ def sync_project(project):
         raise RuntimeError("Git 同步失败，已停止，未继续同步 Drive 或构建 APK。" + (f"\n{detail}" if detail else "请查看上方 Git 错误。")) from error
 
 
+# Each battle server has its own DTLS certificate and the client pins it
+# (scripts/multiplayer/NetTLSCert.gd). Changing only the host leaves the client
+# stuck in CONNECTING: DTLS fails below the protocol handshake. Certificates are
+# public; the private keys stay on the servers. Fingerprints are SHA-256 of the DER.
+TEST_DTLS_SHA256 = "f773c1a5e917e3fe7c0c938ee19ed2ecfc0b16ed3ecf8fb8f3fa6987a49c250d"
+PROD_DTLS_SHA256 = "deb19b3e25862e2008e1e7c00211c41b39f92a5bcf428f990230cb260eca5354"
+# Production ~/Glory/keys/dtls_cert.pem, generated 2026-10-31.
+PROD_DTLS_PEM = """-----BEGIN CERTIFICATE-----
+MIIDXTCCAkWgAwIBAgIUQfIeIKhyq47xl4R9l0igr4hz5SQwDQYJKoZIhvcNAQEL
+BQAwPjEVMBMGA1UEAwwMZ2xvcnktYmF0dGxlMQ4wDAYDVQQKDAVHbG9yeTEVMBMG
+A1UECwwMQmF0dGxlU2VydmVyMB4XDTI2MTAzMTA2NTE0M1oXDTM2MTAyODA2NTE0
+M1owPjEVMBMGA1UEAwwMZ2xvcnktYmF0dGxlMQ4wDAYDVQQKDAVHbG9yeTEVMBMG
+A1UECwwMQmF0dGxlU2VydmVyMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKC
+AQEAuVJfwoje3ACPSr+gRCnv3uIIP95ZMJxz3q3sAeNVZUDXAudEwQU6ozGTSTU0
+LfXOTiGOwKluHEBdBK7s8xfuF6159zrJNFt6/jS3JZdSE3kOcnPcZIPA1GGjtjAh
+OPq9S1z3VtxDDcbuV8LdkQr7FIlLH7uiOKgEFYjipuQto8iAs6GJ5yM5774jZFMT
+h2nsfnTRCoRnnLKTscxKIK4fWsISFmFHemA0PV8TUs9EnCdspyRbzFFjCC628NGH
+1Bec6xsy8N+SEiDPPtTjtmkDeFce+oMNTXP1MChMIVEd/sJyAIY7uOZh/US2c7+A
+8N92cL7Cl6cgJ0ClJzDjIRghaQIDAQABo1MwUTAdBgNVHQ4EFgQUFfVCmYxqE1Nc
+F8ucltzvYaHNcwowHwYDVR0jBBgwFoAUFfVCmYxqE1NcF8ucltzvYaHNcwowDwYD
+VR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEAchEVrebwm5F0WolMIMU0
+D5veRaeRjX8A3BpEiKOWbtOiFIR5bdfmUKouiCKokAeXsavBRgiejbkFRpGLzooE
+kz9rtWPvG1bAVpJlhoU0jucq3ZoK+2p4/yFCIpnzgu17VUcXX2ihAcKFxLTc+F1C
+tbhs7r8UBq49iA9lAHRoyLw2aEqdIsx49DT9mr1eKGhA+FQj0CLW5iaCQD7PldWW
+uaiSTY8IvokRlkt5u5uwI2P9y3aqpjQ7mxnvwVn0fJRfAnNsDHNlTHfg5Sib2e1Y
+UoPQX63DYmodIt8nATo7YbmSPkyn+/HUYX3tR6601Guo/OfhYWsJ8/PwFgRiVr8I
+YQ==
+-----END CERTIFICATE-----"""
+PEM_RE = re.compile(rb"-----BEGIN CERTIFICATE-----(.*?)-----END CERTIFICATE-----", re.S)
+
+
+def pem_sha256(raw):
+    blocks = PEM_RE.findall(raw)
+    if len(blocks) != 1:
+        raise RuntimeError("NetTLSCert.gd must contain exactly one certificate")
+    return hashlib.sha256(base64.b64decode(b"".join(blocks[0].split()))).hexdigest()
+
+
 def configure_server_environment(stage, environment):
     """Select public endpoints in the generated copy, preserving source defaults."""
     if environment is None:
         return None
     endpoints = {
-        "prod": ("https://glorytd-prod-api.duckdns.org", "glorytd-prod-battle.duckdns.org"),
-        "test": ("https://glorytd-api.duckdns.org", "glorytd-battle.duckdns.org"),
+        "prod": ("https://glorytd-prod-api.duckdns.org", "glorytd-prod-battle.duckdns.org", PROD_DTLS_SHA256),
+        "test": ("https://glorytd-api.duckdns.org", "glorytd-battle.duckdns.org", TEST_DTLS_SHA256),
     }
-    backend, battle = endpoints[environment]
+    backend, battle, cert_sha256 = endpoints[environment]
     for filename, name, value in (
         ("scripts/account/AccountConfig.gd", "DEFAULT_BACKEND_URL", backend),
         ("scripts/multiplayer/NetworkConfig.gd", "SERVER_HOST", battle),
@@ -119,7 +161,15 @@ def configure_server_environment(stage, environment):
         if count != 1:
             raise RuntimeError("Cannot select server environment in " + filename)
         path.write_bytes(raw)
-    return {"environment": environment, "backend_url": backend, "battle_host": battle}
+    cert = stage / "scripts/multiplayer/NetTLSCert.gd"
+    raw = cert.read_bytes()
+    if environment == "prod":
+        raw = PEM_RE.sub(lambda _: PROD_DTLS_PEM.encode(), raw, count=1)
+        cert.write_bytes(raw)
+    if pem_sha256(raw) != cert_sha256:
+        raise RuntimeError(f"Pinned DTLS certificate does not belong to the {environment} battle server")
+    return {"environment": environment, "backend_url": backend, "battle_host": battle,
+            "dtls_cert_sha256": cert_sha256}
 
 
 def find_executable(values):
@@ -135,8 +185,19 @@ def find_executable(values):
     return None
 
 
+def sdk_tool(folder, name):
+    """Windows ships SDK/JDK tools as .exe or .bat; subprocess never appends .bat."""
+    if WINDOWS:
+        for suffix in (".exe", ".bat"):
+            if (folder / (name + suffix)).is_file():
+                return folder / (name + suffix)
+    return folder / name
+
+
 def read_editor_paths():
     configs = [Path.home() / "Library/Application Support/Godot", Path.home() / ".config/godot"]
+    if WINDOWS and os.environ.get("APPDATA"):
+        configs.append(Path(os.environ["APPDATA"]) / "Godot")
     settings = {}
     for folder in configs:
         for file in sorted(folder.glob("editor_settings-*.tres"), reverse=True):
@@ -175,6 +236,7 @@ def environment(args):
         args.templates, os.environ.get("GODOT_TEMPLATES"),
         Path.home() / "Library/Application Support/Godot/export_templates" / template_version,
         Path.home() / ".local/share/godot/export_templates" / template_version,
+        Path(os.environ.get("APPDATA", "")) / "Godot/export_templates" / template_version if WINDOWS else None,
     ], "android_debug.apk")
     if not template:
         raise RuntimeError(f"缺少 {template_version} Android 导出模板；在 Godot 导出模板管理器安装，或用 --templates 指定目录。")
@@ -183,20 +245,21 @@ def environment(args):
         "/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home",
         "/usr/local/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home",
         "/usr/lib/jvm/java-17-openjdk-amd64",
-    ], "bin/java")
-    if not java or not (java / "bin/keytool").is_file():
+    ], "bin/java.exe" if WINDOWS else "bin/java")
+    if not java or not sdk_tool(java / "bin", "keytool").is_file():
         raise RuntimeError("缺少 JDK；安装 JDK 17 后设置 JAVA_HOME 或 --java-home。")
     sdk = first_dir([
         args.android_sdk, os.environ.get("ANDROID_HOME"), os.environ.get("ANDROID_SDK_ROOT"),
         settings.get("android_sdk_path"), Path.home() / "Library/Android/sdk",
         "/opt/homebrew/share/android-commandlinetools", Path.home() / "Android/Sdk",
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Android/Sdk" if WINDOWS else None,
     ], "build-tools")
     if not sdk:
         raise RuntimeError("缺少 Android SDK；用 --android-sdk 指定包含 build-tools 和 platform-tools 的目录。")
     build_tools = sorted((p for p in (sdk / "build-tools").iterdir()
-                          if (p / "apksigner").is_file() and (p / "aapt2").is_file() and (p / "zipalign").is_file()),
+                          if all(sdk_tool(p, name).is_file() for name in ("apksigner", "aapt2", "zipalign"))),
                          key=lambda p: tuple(int(n) for n in re.findall(r"\d+", p.name)), reverse=True)
-    if not build_tools or not (sdk / "platform-tools/adb").is_file():
+    if not build_tools or not sdk_tool(sdk / "platform-tools", "adb").is_file():
         raise RuntimeError(f"Android SDK 不完整：{sdk}（需要 aapt2、apksigner、zipalign、adb）。")
     keystore = Path(settings.get("debug_keystore") or Path.home() / ".android/debug.keystore").expanduser()
     return {"godot": godot, "version": version, "major_minor": major_minor,
@@ -250,8 +313,24 @@ def copy_changed(source, target):
 
 @contextlib.contextmanager
 def file_lock(path, shared=False, nonblocking=False):
-    import fcntl  # POSIX-only; keeps this module importable on Windows (model pilot audit).
     path.parent.mkdir(parents=True, exist_ok=True)
+    if WINDOWS:
+        # msvcrt has no shared mode; sync_res.sh never runs on Windows, so an
+        # exclusive lock serializes the same work.
+        import msvcrt
+        with path.open("a+") as stream:
+            stream.seek(0)
+            try:
+                msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK if nonblocking else msvcrt.LK_LOCK, 1)
+            except OSError:
+                raise RuntimeError("已有 APK 构建在运行，请等待完成。") from None
+            try:
+                yield
+            finally:
+                stream.seek(0)
+                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+        return
+    import fcntl  # POSIX-only; keeps this module importable on Windows (model pilot audit).
     with path.open("a+") as stream:
         try:
             fcntl.flock(stream.fileno(), (fcntl.LOCK_SH if shared else fcntl.LOCK_EX) | (fcntl.LOCK_NB if nonblocking else 0))
@@ -428,10 +507,22 @@ def stage_project(project, assets, stage, logdir):
     excluded = ["/.git", "/.godot", "/assets", "/build", "/backups", "/captures", "/reports", "/logs",
                 "/delivery", "/work", "/backend", "/android", "/.claude", "/.codex", "/certs", "*.pem", "*.key", ".env*",
                 "*.apk", "*.zip", "__pycache__", ".DS_Store", "upload ssh code.txt"]
-    command = ["rsync", "-ac", "--delete", "--safe-links"]
-    for value in excluded:
-        command += ["--exclude", value]
-    subprocess.run(command + [str(project) + "/", str(stage) + "/"], check=True)
+    if WINDOWS:
+        # robocopy has no root-anchored patterns: name each anchored path in both
+        # trees so /MIR neither copies nor purges it (the stage keeps its import cache).
+        anchored = [str(root / value[1:]) for value in excluded if value.startswith("/") for root in (project, stage)]
+        dirs = [value for value in excluded if value == "__pycache__"]
+        files = [value for value in excluded if not value.startswith("/") and value not in dirs]
+        command = ["robocopy", str(project), str(stage), "/MIR", "/XJ", "/R:1", "/W:1",
+                   "/NFL", "/NDL", "/NP", "/NJH", "/NJS", "/XD", *anchored, *dirs, "/XF", *files]
+        # robocopy exit codes below 8 mean success (bit flags for copied/extra files).
+        if subprocess.run(command, stdout=subprocess.DEVNULL).returncode >= 8:
+            raise RuntimeError("robocopy 复制项目到隔离目录失败。")
+    else:
+        command = ["rsync", "-ac", "--delete", "--safe-links"]
+        for value in excluded:
+            command += ["--exclude", value]
+        subprocess.run(command + [str(project) + "/", str(stage) + "/"], check=True)
     # Older staging runs copied diagnostic backups; rsync preserves excluded paths.
     # Ignore them in a reused stage without deleting any evidence.
     if (stage / "delivery").is_dir():
@@ -494,6 +585,14 @@ def prepare_engine(env, work):
         target_app = folder / "Godot.app"
         subprocess.run(["rsync", "-ac", "--delete", str(source_app) + "/", str(target_app) + "/"], check=True)
         engine = target_app / "Contents/MacOS" / env["godot"].name
+    elif WINDOWS:
+        # *_console.exe only relays the output of the GUI build beside it; copy both
+        # under their own names so _sc_ applies to the engine that actually runs.
+        gui = env["godot"].with_name(env["godot"].name.replace("_console", ""))
+        for source in {env["godot"], gui}:
+            if source.is_file():
+                copy_changed(source, folder / source.name)
+        engine = folder / env["godot"].name
     else:
         engine = folder / "Godot"
         copy_changed(env["godot"], engine)
@@ -503,11 +602,16 @@ def prepare_engine(env, work):
     templates = editor_data / "export_templates"
     templates.mkdir(exist_ok=True)
     target = templates / env["template_version"]
-    if target.is_symlink():
+    if target.is_symlink() or (WINDOWS and target.is_junction()):
         if target.resolve() != env["templates"]:
-            target.unlink()
+            os.rmdir(target) if WINDOWS else target.unlink()
     if not target.exists():
-        target.symlink_to(env["templates"], target_is_directory=True)
+        if WINDOWS:
+            # Symlinks need Developer Mode on Windows; a junction does not.
+            import _winapi
+            _winapi.CreateJunction(str(env["templates"]), str(target))
+        else:
+            target.symlink_to(env["templates"], target_is_directory=True)
     keystore = env["keystore"]
     if not keystore.is_file():
         keystore = folder / "debug.keystore"
@@ -880,7 +984,7 @@ def main():
                 raise RuntimeError(f"工具环境可用；最近资源同步状态是 {sync_state}，需同步成功后再构建。")
         note("环境与资源目录检查通过；实际资源完整性及导入将在构建时检查。")
         return
-    if not shutil.which("rsync"):
+    if not WINDOWS and not shutil.which("rsync"):
         raise RuntimeError("缺少 rsync，请先安装。")
     build = ROOT / "build"
     with file_lock(build / ".apk-build.lock", nonblocking=True):
@@ -899,7 +1003,10 @@ def main():
                     if state in ("running", "failed"):
                         raise RuntimeError("资源同步尚未成功完成，请重新运行 ./tools/sync_res.sh 后再打包。")
                 report = stage_project(project, assets, stage, logdir)
-            configure_server_environment(stage, args.server_environment)
+            server_target = configure_server_environment(stage, args.server_environment)
+            if args.patch_config and server_target:
+                if json.loads(args.patch_config.read_text()).get("backend_url") != server_target["backend_url"]:
+                    raise RuntimeError("补丁配置的账号接口与所选服务器环境不一致。")
             engine = prepare_engine(env, work)
             preset, package = export_preset(stage, args.preset)
             # Change only the selected generated Android preset.
@@ -929,6 +1036,7 @@ def main():
             identity = {"build_id": str(uuid.uuid4()), "git_commit": commit, "git_commit_short": commit[:8],
                         "dirty_files": len(status.splitlines()) if status else 0, "build_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
                         "godot_version": env["version"], "package_id": package, "export_preset": preset,
+                        "server_target": server_target,
                         "asset_inventory_sha256": report["actual_assets_sha256"], "asset_inventory_kind": "merged_source_files_sha256"}
             json_write(stage / "build_info.json", identity)
             json_write(logdir / "build_info.json", identity)
@@ -951,7 +1059,8 @@ def main():
             # first export; subsequent builds reuse the isolated module.
             if not (stage / "android/build/config.gradle").is_file():
                 export_command.append("--install-android-build-template")
-            export_command += ["--export-debug" if args.debug else "--export-release", preset, apk]
+            # Forward slashes: Godot on Windows rejected a backslash APK path as lacking *.apk.
+            export_command += ["--export-debug" if args.debug else "--export-release", preset, apk.as_posix()]
             exported = logged_process(export_command, logdir / "export.log", child_env, strict=False)
             export_diagnostics = verify_export_diagnostics(exported, logdir)
             if not apk.is_file():
@@ -970,8 +1079,8 @@ def main():
                 for required in (b'com/glory/voice/GloryVoicePlugin', b'io/livekit/android/room/Room'):
                     if not any(required in blob for blob in dex):
                         raise RuntimeError("APK 缺少语音运行依赖：" + required.decode())
-            logged_process([env["build_tools"] / "apksigner", "verify", "--verbose", apk], logdir / "signature.log", child_env)
-            badging = capture([env["build_tools"] / "aapt2", "dump", "badging", apk], env=child_env)
+            logged_process([sdk_tool(env["build_tools"], "apksigner"), "verify", "--verbose", apk], logdir / "signature.log", child_env)
+            badging = capture([sdk_tool(env["build_tools"], "aapt2"), "dump", "badging", apk], env=child_env)
             (logdir / "apk-badging.txt").write_text(badging + "\n")
             if f"package: name='{package}'" not in badging:
                 raise RuntimeError("APK 包名与导出预设不一致。")
@@ -1001,7 +1110,10 @@ def main():
                 json_write(args.result_file.expanduser().resolve(), summary)
             latest = outdir / "Glory-latest.apk"
             temporary = outdir / f".latest-{os.getpid()}"
-            temporary.symlink_to(apk.name)
+            if WINDOWS:
+                os.link(apk, temporary)  # symlinks need Developer Mode; a hard link does not
+            else:
+                temporary.symlink_to(apk.name)
             os.replace(temporary, latest)
             note(f"构建完成：{apk}（{apk.stat().st_size / 1048576:.1f} MiB）")
             note(f"固定入口：{latest}；SHA-256：{summary['apk_sha256']}")

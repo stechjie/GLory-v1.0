@@ -1,0 +1,17 @@
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+OpenGL API 3.3.0 NVIDIA 610.62 - Compatibility - Using Device: NVIDIA - NVIDIA GeForce RTX 5070 Ti
+
+ERROR: Failed to read the root certificate store.
+   at: get_system_ca_certificates (platform/windows/os_windows.cpp:2582)
+GLORY_STARTUP {"base":"engine_init","mark":"t0_trace_ready","meta":{"note":"engine boot; no game code has run before this"},"ms":5703,"since_previous_ms":0}
+GLORY_BUILD {"asset_inventory_sha256":"7a1d6bf01af99c542a42be4c2532e7259eb66d672525b7cf58168a9160514a6f","available":true,"build_utc":"2026-08-31T07:59:44Z","dirty_tracked_files":54,"git_commit":"478026297a76e8f7f2562d8263d027dad6f81371","git_commit_short":"4780262","godot_version":"4.7.stable.official.5b4e0cb0f","package_id":"glory.beta001","preset":"Android","preset_template_sha256":"220b5d47bcdca15ca1f0b83a6b2cec46f2cddcb692987135b2ff0b1420044257","schema_version":1,"version_code":5,"version_name":""}
+GLORY_STARTUP {"base":"engine_init","mark":"data_registry_loaded","meta":{"balance_version":"5ca3d8e36256d0428ce94a6fa30c1cc63bbd82ff1cce345012679c70808e0704","elapsed_ms":5.1,"failed":0,"files":10,"reads":10},"ms":5710,"since_previous_ms":7}
+[DEVICE_HARNESS] 未接管：命令行无 --device-baseline，且 user://device_harness.json 不存在
+GLORY_STARTUP {"base":"engine_init","mark":"t1_first_frame","meta":{},"ms":5761,"since_previous_ms":51}
+HEALTH_BAR_PREVIEW 0 res://artifacts/battle_health_shield_20261104/preview_fixed.png
+WARNING: [SAVE] cannot open temp file: user://glory_analytics.bin.tmp
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] atomic_write_bytes (res://scripts/autoload/SaveManager.gd:72)
+       [1] _persist (res://scripts/autoload/AnalyticsService.gd:450)
+       [2] _exit_tree (res://scripts/autoload/AnalyticsService.gd:163)

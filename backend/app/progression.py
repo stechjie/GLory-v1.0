@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import uuid
 
-from app import shop
+from app import invites, shop
 
 MAX_LEVEL = 20
 # Cumulative XP to enter each level, indexed by level - 1.
@@ -82,6 +82,8 @@ async def award_match(conn, player_id: uuid.UUID, match_uid: str,
         " where player_id = $1", player_id, after_xp, after)
     for level in range(before + 1, after + 1):
         await _grant_level(conn, player_id, level, match_uid)
+    # Savepoint inside; an invite failure never rolls back the battle report.
+    await invites.maybe_reward(conn, player_id, after)
     return gained
 
 
@@ -106,6 +108,7 @@ async def award_tutorial(conn, player_id: uuid.UUID) -> int:
         "update player_progression set xp = $2, level = 2, updated_at = now()"
         " where player_id = $1", player_id, after_xp)
     await _grant_level(conn, player_id, 2, f"tutorial:{player_id}")
+    await invites.maybe_reward(conn, player_id, 2)
     return after_xp - before_xp
 
 

@@ -27,13 +27,14 @@ import json
 import logging
 import re
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 import asyncpg
 import httpx
 
 from app import (analytics, announcements, bans, db, iap, iap_google, iap_steam, mail, ranked, realtime,
-                 sanctions, service_control, shop, steam, world_chat)
+                 redeem, sanctions, service_control, shop, steam, world_chat)
 from app.admin_auth import Admin
 from app.config import get_settings
 
@@ -179,6 +180,19 @@ async def player_detail(player_id: uuid.UUID) -> dict:
             + " where o.player_id = $1 order by o.created_at desc limit 50", player_id)
         refunds = await _optional(conn,
             "select count(*) as n from iap_orders where player_id = $1 and status = 'refunded'", player_id)
+        # 043 / 044 没跑时空着。客服最常被问的是「我邀请了人怎么没钻石」—— 答案在 skipped 里。
+        invited_by = await _optional(conn,
+            "select p.friend_code, p.player_name, i.bound_at, i.rewarded_at, i.inviter_skipped"
+            " from player_invites i join players p on p.player_id = i.inviter where i.invitee = $1", player_id)
+        invites_out = await _optional(conn,
+            "select count(*) as bound, count(rewarded_at) as rewarded,"
+            "       count(inviter_mail) as paid,"
+            "       count(*) filter (where inviter_skipped = 'capped') as capped"
+            " from player_invites where inviter = $1", player_id)
+        redeemed = await _optional(conn,
+            "select c.claimed_at, r.code, r.campaign, c.mail_id"
+            " from redeem_claims c join redeem_codes r on r.code_id = c.code_id"
+            " where c.player_id = $1 order by c.claimed_at desc limit 50", player_id)
     ranked_out = None
     if ranked_row is not None:
         ranked_out = {**_row(ranked_row), "tier": ranked.tier_of(int(ranked_row["score"]))}
@@ -205,6 +219,9 @@ async def player_detail(player_id: uuid.UUID) -> dict:
         "tag": _row(tag[0]) if tag else None,
         "iap_orders": [_iap_order(r) for r in iap_orders],
         "iap_refunds": int(refunds[0]["n"]) if refunds else 0,
+        "invited_by": _row(invited_by[0]) if invited_by else None,
+        "invites": _row(invites_out[0]) if invites_out else None,
+        "redeemed": [_row(r) for r in redeemed],
     }
 
 
@@ -644,6 +661,8 @@ async def _execute(conn: asyncpg.Connection, row: asyncpg.Record, actor: str) ->
         return {"balance_after": int(balance)}
     if kind == "mail":
         return {"mail_id": await _send_mail_now(conn, row["player_id"], payload, actor, note)}
+    if kind == "redeem_code":
+        return await _create_redeem_now(conn, payload, actor, note)
     raise AdminRejected("不认识的申请类型：%s" % kind)
 
 
@@ -791,7 +810,7 @@ async def submit_mail(admin: Admin, draft: MailDraft, request_key: uuid.UUID) ->
             if draft.has_attachments:
                 parts = [("%d 钻石" % draft.diamond) if draft.diamond else "",
                          ("%d 黄金" % draft.coin) if draft.coin else "",
-                         "、".join(draft.items)]
+                         item_names(draft.items)]
                 summary = "给%s发邮件《%s》，附件：%s" % (
                     target if player_id is None else " " + target, payload["title_zh"],
                     "，".join(p for p in parts if p))
@@ -830,8 +849,209 @@ async def withdraw_mail(admin: Admin, mail_id: int) -> dict:
 
 
 def attachable_items() -> list[dict]:
-    """邮件能发的东西：只有商品目录里卖的（不在目录里的本来就人人免费，见 mail.item_problem）。"""
-    return [{"content_id": i.grants, "name": i.name, "name_en": i.name_en} for i in shop.items()]
+    """邮件 / 兑换码能发的东西，后台按 kind 分组（admin.js 的 itemPicker）。
+
+    商品目录里登记的**全部**，上不上架都列（2026-11-04）：棋盘皮肤三张都不直接卖（两张靠祈愿抽碎片）、
+    人族开局送、神族 2–10 级送、松鼠老虎靠抽、七日头像框是登录奖励 —— 补偿和活动都要能发。
+    不在目录里的不列：那些本来就人人免费（见 mail.item_problem）。
+
+    种族那一行能「整族」发：领的时候补齐缺的棋子、种族跟着解锁（shop.grant_content），一整族只占一件附件。
+    所以种族带上它的棋子（parts），棋子带上它属于哪一族（race）。
+    """
+    contents = shop.contents()
+    race_of = {part: i.grants for i in contents for part in i.requires}
+    return [{"content_id": i.grants, "name": i.name, "name_en": i.name_en, "kind": i.kind,
+             "parts": list(i.requires), "race": race_of.get(i.grants, "")}
+            for i in contents]
+
+
+def item_names(items: Sequence[str]) -> str:
+    """附件给批的人看的名字。批的人要看得懂批的是什么，`unit:human_king` 看不懂。"""
+    names = []
+    for content_id in items:
+        item = shop.content_item(content_id)
+        if item is None:
+            names.append(content_id)
+        else:
+            names.append("%s（整族 %d 个棋子）" % (item.name, len(item.requires)) if item.requires else item.name)
+    return "、".join(names)
+
+
+# --- 兑换码（database/044_redeem_codes.sql）---------------------------------------
+#
+# 建码 = 批量发钱，所以**一律走审批**（018 的规矩：发钱要第二个人批准）。
+# 一个 1000 钻 × 10 万次的码就是 1 亿钻 —— 比单人发钱大几个数量级，没有理由反而一个人就能做。
+# 撤回、导出不用批：撤回是止血，必须一个人立刻能做。
+
+REDEEM_MAX_USES = 1_000_000
+REDEEM_MAX_BATCH = 5000
+
+
+@dataclasses.dataclass(frozen=True)
+class RedeemDraft:
+    mode: str                # "code" 一个码（通用码） / "batch" 批量单次码
+    code: str                # mode = code
+    max_uses: int | None     # mode = code；None = 不限人数（045，2026-11-04 用户定）
+    count: int               # mode = batch
+    campaign: str            # 空 = 不分组（batch 时由数据库用批次号）
+    diamond: int
+    coin: int
+    items: tuple[str, ...]
+    days: int
+    starts_at: str           # ISO 时间，空 = 批准那一刻开始
+    note: str                # 原因，必填
+
+
+def _check_redeem(draft: RedeemDraft) -> dict:
+    """与 044 的约束同一套数（那边是最后一道；这里先挡，报错说人话）。返回要批的 payload。"""
+    if draft.mode not in ("code", "batch"):
+        raise AdminRejected("不认识的建码方式：%s" % draft.mode)
+    if not 0 <= draft.diamond <= 100_000 or not 0 <= draft.coin <= 1_000_000:
+        raise AdminRejected("每次最多 100000 钻石、1000000 黄金")
+    problem = mail.item_problem(list(draft.items))
+    if problem:
+        raise AdminRejected(problem)
+    if draft.diamond <= 0 and draft.coin <= 0 and not draft.items:
+        raise AdminRejected("兑换码总得发点东西：钻石、黄金、物品至少填一样")
+    if not 1 <= draft.days <= 365:
+        raise AdminRejected("有效天数要在 1 到 365 之间")
+    campaign = draft.campaign.strip()
+    if len(campaign) > 32:
+        raise AdminRejected("活动名最多 32 个字")
+    starts_at = draft.starts_at.strip()
+    if starts_at:
+        try:
+            when = dt.datetime.fromisoformat(starts_at)
+        except ValueError:
+            raise AdminRejected("开始时间格式不对") from None
+        if when.tzinfo is None:
+            raise AdminRejected("开始时间要带时区")
+    payload: dict[str, Any] = {
+        "mode": draft.mode, "campaign": campaign, "diamond": draft.diamond, "coin": draft.coin,
+        "items": list(draft.items), "days": draft.days, "starts_at": starts_at,
+    }
+    if draft.mode == "code":
+        code = redeem.normalize(draft.code)
+        if not redeem.CODE_RE.fullmatch(code):
+            raise AdminRejected("兑换码只能是 4 到 24 位字母和数字（空格、连字符会自动去掉）")
+        if draft.max_uses is not None and not 1 <= draft.max_uses <= REDEEM_MAX_USES:
+            raise AdminRejected("「最多几人能领」要么留空（不限人数），要么在 1 到 %d 之间" % REDEEM_MAX_USES)
+        payload.update(code=code, max_uses=draft.max_uses)
+    else:
+        if not 1 <= draft.count <= REDEEM_MAX_BATCH:
+            raise AdminRejected("一批要在 1 到 %d 个之间（再多就分几批，每批都有人再看一眼）" % REDEEM_MAX_BATCH)
+        payload.update(count=draft.count)
+    return payload
+
+
+def _redeem_summary(payload: dict) -> str:
+    """给批的人看的一句话。🔴 一定写出「最多一共发出多少」—— 批的就是这个数。
+
+    不限人数的码没有这个数，就写明「没有总量上限」：批的人批的是每人多少 × 多少天。
+    """
+    if payload["mode"] == "code":
+        uses = None if payload["max_uses"] is None else int(payload["max_uses"])
+        what = "建兑换码 %s，%s" % (payload["code"], "不限人数" if uses is None else "最多 %s 人" % num_text(uses))
+    else:
+        uses = int(payload["count"])
+        what = "生成 %s 个单次兑换码" % num_text(uses)
+    if payload["campaign"]:
+        what += "（活动 %s）" % payload["campaign"]
+    each = [("%s 钻石" % num_text(payload["diamond"])) if payload["diamond"] else "",
+            ("%s 黄金" % num_text(payload["coin"])) if payload["coin"] else "",
+            item_names(payload["items"])]
+    text = "%s：每人 %s，有效 %d 天" % (what, "，".join(x for x in each if x), payload["days"])
+    if uses is None:
+        return text + "；🔴 不限人数：有效期内来领的账号（包括小号）越多发得越多，没有总量上限"
+    total = [("%s 钻石" % num_text(payload["diamond"] * uses)) if payload["diamond"] else "",
+             ("%s 黄金" % num_text(payload["coin"] * uses)) if payload["coin"] else ""]
+    if any(total):
+        text += "；🔴 最多一共发出 %s" % "，".join(x for x in total if x)
+    return text
+
+
+def num_text(n: int) -> str:
+    return "{:,}".format(int(n))
+
+
+async def request_redeem(admin: Admin, draft: RedeemDraft, request_key: uuid.UUID) -> dict:
+    payload = _check_redeem(draft)
+    reason = _require_text(draft.note, "原因（内部备注）", 200)
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            if payload["mode"] == "code" and await conn.fetchval(
+                    "select 1 from redeem_codes where code = $1", payload["code"]):
+                raise AdminRejected("这个兑换码已经有了（撤回过的也不能重用，换一个名字）", 409)
+            return {"queued": True, **await _insert_request(
+                conn, admin, "redeem_code", None, payload, _redeem_summary(payload)[:300], reason, request_key)}
+
+
+async def _create_redeem_now(conn: asyncpg.Connection, payload: dict, actor: str, note: str) -> dict:
+    starts = dt.datetime.fromisoformat(payload["starts_at"]) if payload.get("starts_at") else None
+    common = (int(payload["diamond"]), int(payload["coin"]), list(payload["items"]), int(payload["days"]),
+              payload["campaign"] or None, starts, note)
+    if payload["mode"] == "code":
+        code_id = await conn.fetchval(
+            "select create_redeem_code(p_code => $1, p_max_uses => $2, p_actor => $3, p_diamond => $4,"
+            " p_coin => $5, p_items => $6, p_days => $7, p_campaign => $8, p_starts_at => $9, p_note => $10)",
+            payload["code"], None if payload["max_uses"] is None else int(payload["max_uses"]), actor, *common)
+        return {"code": payload["code"], "code_id": int(code_id)}
+    codes = await conn.fetchval(
+        "select create_redeem_batch(p_count => $1, p_actor => $2, p_diamond => $3, p_coin => $4,"
+        " p_items => $5, p_days => $6, p_campaign => $7, p_starts_at => $8, p_note => $9)",
+        int(payload["count"]), actor, *common)
+    campaign = await conn.fetchval("select campaign from redeem_codes where code = $1", codes[0])
+    # 码本身不进审批结果（结果会出现在审批列表里，一批几千个太大，而且码是秘密）。导出走 export_redeem。
+    return {"campaign": campaign, "count": len(codes)}
+
+
+async def recent_redeem() -> list[dict]:
+    """按活动归组：一批单次码是一行，没活动的码各自一行。"""
+    async with db.pool().acquire() as conn:
+        rows = await _optional(conn,
+            "select campaign, count(*) as codes, min(code) as code,"
+            "       sum(used_count)::bigint as used,"
+            # 有一个不限人数（null）整组就不限；sum 会悄悄跳过 null，算出一个偏小的「总数」。
+            "       case when bool_or(max_uses is null) then null else sum(max_uses) end::bigint as max_uses,"
+            "       min(diamond) as diamond_min, max(diamond) as diamond_max,"
+            "       min(coin) as coin_min, max(coin) as coin_max,"
+            "       string_agg(distinct nullif(array_to_string(items, '、'), ''), ' / ') as items,"
+            "       min(starts_at) as starts_at, max(expires_at) as expires_at,"
+            "       count(withdrawn_at) as withdrawn, min(actor) as actor, max(code_id) as latest"
+            " from redeem_codes group by coalesce(campaign, code), campaign"
+            " order by latest desc limit 100")
+    return [_row(r) for r in rows]
+
+
+async def export_redeem(admin: Admin, campaign: str) -> list[dict]:
+    """一个活动下全部的码。码是秘密：只给能改东西的管理员，而且记操作记录。"""
+    campaign = _require_text(campaign, "活动", 32)
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            rows = await conn.fetch(
+                "select code, used_count, max_uses, withdrawn_at, expires_at from redeem_codes"
+                " where campaign = $1 order by code_id", campaign)
+            if not rows:
+                raise AdminRejected("这个活动下没有兑换码", 404)
+            await _audit(conn, admin, "redeem.export", None, {"campaign": campaign, "codes": len(rows)})
+    return [_row(r) for r in rows]
+
+
+async def withdraw_redeem(admin: Admin, code: str | None, campaign: str | None) -> dict:
+    """撤回一个码，或者一整个活动。**不用批**：止血必须一个人立刻能做。"""
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            try:
+                if campaign:
+                    count = int(await conn.fetchval("select withdraw_redeem_campaign($1)", campaign))
+                else:
+                    await conn.execute("select withdraw_redeem_code($1)", code or "")
+                    count = 1
+            except asyncpg.RaiseError as exc:
+                raise AdminRejected(str(exc).split("\n")[0], 409) from None
+            await _audit(conn, admin, "redeem.withdraw", None,
+                         {"code": code, "campaign": campaign, "withdrawn": count})
+    return {"withdrawn": count}
 
 
 # --- 公告（不用批）------------------------------------------------------------------

@@ -98,6 +98,9 @@ Supabase Dashboard → SQL Editor，按编号顺序逐个执行。
 
 | `041_ranked_reward_coin_limit.sql` | 排位奖励回执金币上限由15放宽到20，与胜利15–20金币保持一致。旧约束会使整份战报、六名玩家积分/钱包/经验回滚。可重复执行，不改余额、不补造战报。更新账号服前先执行；仅更新客户端不生效。 |
 | `042_skin_draw.sql` | 樱花祈愿：钻石抽棋盘皮肤碎片。`skin_draw_progress`（每人每张皮肤的碎片数与抽数）、`skin_draws`（每一抽的回执，`(player_id, client_draw_id)` 防重复扣费）。集满 10 片在同一事务里发皮肤归属。🔴 **必须在更新账号服务器之前跑**，并且和新的 `data/shop.json`（樱花登记成要归属）一起部署。可重复执行。设计见 `docs/樱花祈愿.md` |
+| `043_invites.sql` | 邀请码：`player_invites`（被邀请人一辈子一行，码用的是 `players.friend_code`、表里只存 player_id）。被邀请人达到 `GLORY_INVITE_REWARD_LEVEL` 级时账号服务器在同一事务里给两边各发一封带钻石的邮件；邀请人拿满上限 / 已注销记在 `inviter_skipped`（客服要的）。上限、窗口刻意不进约束（在 .env）。🔴 **必须在更新账号服务器之前跑**。可重复执行。设计 2026-11-03 拍板，见文件头 |
+| `044_redeem_codes.sql` | 兑换码：`redeem_codes`（通用码与单次码同表；`max_uses` 这里建成必填，045 放开成可不限）、`redeem_claims`（码×人唯一、同 campaign 一人一条，campaign 由触发器从码上抄，码的 campaign 冻结）；附 `create_redeem_code()` / `create_redeem_batch()`（12 位、整批同一 campaign）/ `withdraw_redeem_code()` / `withdraw_redeem_campaign()`；`admin_requests.kind` 放行 `redeem_code`（建码走后台双人批）。🔴 **043 之后、更新账号服务器之前跑**；漏跑的话后台建码 500、启动自检报缺。可重复执行 |
+| `045_redeem_unlimited.sql` | 兑换码可以不限人数（2026-11-04 用户定）：`redeem_codes.max_uses` 允许 null，`create_redeem_code()` 的 `p_max_uses` 传 null = 不限；收口靠截止时间和撤回。批量单次码不受影响。🔴 **044 之后、更新账号服务器之前跑**（测试服已跑过 044，只跑这个）；漏跑的话批准不限人数的码会报错。可重复执行 |
 
 **真库测试**：`backend/tests/pg_harness.py` 能在本机 PostgreSQL 上把这里全部文件跑一遍再测（设 `GLORY_TEST_PG`，只许本机）。
 见 `docs/运营后台设计.md` 第七节。

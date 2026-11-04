@@ -249,6 +249,7 @@ async def _claim_locked(
             continue
         # 走 grant_content 而不是 _grant：邮件发的是某个种族的最后一个棋子时，
         # 种族要跟着到账（同一事务），否则八个棋子全有、种族永远解锁不了。
+        # 附件是种族本身（后台的「整族」）时，它把缺的棋子补齐，补上的棋子也算进 granted。
         unlocked = await shop.grant_content(conn, player_id, item, "mail", None)
         granted.append(item)
         granted.extend(u for u in unlocked if u not in granted)

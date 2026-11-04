@@ -205,19 +205,24 @@ main() {
 
 	say "重启"
 	systemctl restart glory-backend
-	sleep 2
 
 	say "验收"
 	# 只看 127.0.0.1：这一步验的是后端进程本身，不掺 Caddy 与证书的问题。
-	if curl -fsS --max-time 10 http://127.0.0.1:8099/health; then
-		echo
-		echo "OK"
-	else
-		echo
-		echo "❌ /health 打不开。看日志："
-		echo "   sudo journalctl -u glory-backend -n 50 --no-pager"
-		exit 1
-	fi
+	#
+	# 轮询，不固定等几秒：uvicorn 要等启动流程（加载代码、连库、结构自检）全部跑完才监听端口，
+	# 这期间访问一律 Connection refused。2026-11-04 日志里重启到能访问要 3 秒，原来的固定
+	# `sleep 2` 就每次都误报失败 —— 误报多了，真挂的那次也会被当成「又是误报」放过去。
+	local started=$SECONDS body
+	until body=$(curl -fsS --max-time 2 http://127.0.0.1:8099/health 2>/dev/null); do
+		if (( SECONDS - started >= 30 )); then
+			echo "❌ 重启 30 秒后 /health 还是打不开。看日志："
+			echo "   sudo journalctl -u glory-backend -n 50 --no-pager"
+			exit 1
+		fi
+		sleep 1
+	done
+	echo "$body"
+	echo "OK（重启后 $((SECONDS - started)) 秒能访问）"
 }
 
 main "$@"

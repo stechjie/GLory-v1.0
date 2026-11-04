@@ -257,8 +257,6 @@ func _list_row(index: int) -> Control:
 	action_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	content.add_child(action_box)
 	action_box.add_child(_row_label(_ago_text(int(item.get("age_sec", 0))), Tokens.TEXT_SECONDARY, 14))
-	if not bool(item.get("gold_authoritative", false)):
-		action_box.add_child(_row_label(_text("金币为客户端上报值", "Gold is client-reported"), Tokens.TEXT_SECONDARY, 12))
 	if available:
 		var detail := ACTION_BUTTON.instantiate() as Button
 		detail.text = _text("详细战况", "Match details")

@@ -1,0 +1,5180 @@
+{
+  "engine": "4.7-stable (official)",
+  "failures": [],
+  "generated_utc": "2026-11-04T03:14:23",
+  "guardian_warmup": {
+    "draw_frames": 90,
+    "drawn_shader_paths": [
+      "res://effects/vfx3d/shaders/guardian_range.gdshader",
+      "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader"
+    ],
+    "drawn_texture_paths": [],
+    "key": "god_guard|guardian_shield_taunt|",
+    "mode": "full_composer",
+    "ms": 858,
+    "retained_materials": 4
+  },
+  "guardians": {
+    "player_L1_1": {
+      "lane": 1,
+      "name": "光之卫士",
+      "resolved_def": {
+        "atk": 138,
+        "attack_speed": 0.75,
+        "cost": 30.0,
+        "crit": 0.05,
+        "crit_dmg": 1.5,
+        "def": 42,
+        "element": "land",
+        "hp": 4560,
+        "id": "god_guard",
+        "model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+        "model_attack_animation_name": "attack",
+        "model_attack_lock_time": 0.45,
+        "model_attack_sync_seek": 0.35,
+        "model_base_yaw": 180.0,
+        "model_in_place_actions": [
+          "run"
+        ],
+        "model_run_animation_name": "run",
+        "model_visual_scale": 1.0,
+        "move_speed": 3.0,
+        "name": "光之卫士",
+        "name_en": "Lightguard",
+        "race": "god",
+        "range": 1.0,
+        "skill_id": "guardian_shield_taunt",
+        "star": 3,
+        "start_shield_pct": 0.2,
+        "taunt_radius": 180.0,
+        "tier": 2.0
+      },
+      "star": 3,
+      "team": "player",
+      "unit_id": "god_guard"
+    }
+  },
+  "natural_shield_depletion_captured": false,
+  "network": {
+    "peer": "OfflineMultiplayerPeer",
+    "processing_disabled": true,
+    "team_active_during_playback": false
+  },
+  "notes": [
+    "Screenshots are unmodified engine viewport output.",
+    "Frame samples read production snapshots and nodes without calling the effect directly.",
+    "Shield depletion/death are reported only if the unchanged fixture naturally produces them.",
+    "This capture is functional and visual evidence, not a device performance benchmark."
+  ],
+  "output_directory": "C:\\Users\\Leno\\Desktop\\Beta 0.04\\artifacts\\battle_health_shield_20261104\\battle",
+  "peak_sanctuary_node_count": 1,
+  "pipeline": "FixedBattleFixture.setup_match_state -> BattleSimulator.compute_team_replay -> GameState.pending_battle_package -> BattleScreen._ready -> replay playback",
+  "preparation": {
+    "assets": {
+      "elapsed_ms": 361,
+      "models": 13,
+      "textures": 61
+    },
+    "budget_ms": 30000,
+    "effects": {
+      "elapsed_ms": 7213,
+      "items": [
+        {
+          "batch_size": 4,
+          "draw_frames": 4,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [
+            "res://assets/vfx/oga/skill_packs/earth_debris.png",
+            "res://assets/vfx/oga/skill_packs/slash_blue.png"
+          ],
+          "key": "human_swordsman|basic_attack_melee_human|",
+          "mode": "oga_direct",
+          "ms": 86,
+          "retained_materials": 2
+        },
+        {
+          "batch_size": 4,
+          "draw_frames": 4,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [
+            "res://assets/vfx/oga/skill_packs/earth_debris.png",
+            "res://assets/vfx/oga/skill_packs/slash_blue.png"
+          ],
+          "key": "human_swordsman|front_cone_stun|",
+          "mode": "oga_direct",
+          "ms": 81,
+          "retained_materials": 2
+        },
+        {
+          "batch_size": 4,
+          "draw_frames": 4,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [
+            "res://assets/vfx/oga/impacts/human_archer_hit.png",
+            "res://assets/vfx/oga/projectiles/human_archer_metal_arrow.png"
+          ],
+          "key": "human_archer|basic_attack_ranged_human|",
+          "mode": "oga_direct",
+          "ms": 75,
+          "retained_materials": 4
+        },
+        {
+          "batch_size": 4,
+          "draw_frames": 4,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [
+            "res://assets/vfx/oga/impacts/human_mage_hit.png",
+            "res://assets/vfx/oga/projectiles/human_mage_arcane_satellites.png"
+          ],
+          "key": "human_mage|basic_attack_ranged_human|",
+          "mode": "oga_direct",
+          "ms": 73,
+          "retained_materials": 3
+        },
+        {
+          "batch_size": 4,
+          "draw_frames": 4,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [
+            "res://assets/vfx/oga/skill_packs/mage_fire_impact.png",
+            "res://assets/vfx/oga/skill_packs/mage_fireball.png"
+          ],
+          "key": "human_mage|random_attribute_bolt|fire",
+          "mode": "oga_direct",
+          "ms": 53,
+          "retained_materials": 2
+        },
+        {
+          "batch_size": 4,
+          "draw_frames": 4,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [
+            "res://assets/vfx/oga/skill_packs/holy_burst.png",
+            "res://assets/vfx/oga/skill_packs/mage_ice.png"
+          ],
+          "key": "human_mage|random_attribute_bolt|ice",
+          "mode": "oga_direct",
+          "ms": 50,
+          "retained_materials": 2
+        },
+        {
+          "batch_size": 4,
+          "draw_frames": 4,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [
+            "res://assets/vfx/oga/skill_packs/mage_lightning.png"
+          ],
+          "key": "human_mage|random_attribute_bolt|thunder",
+          "mode": "oga_direct",
+          "ms": 44,
+          "retained_materials": 2
+        },
+        {
+          "batch_size": 4,
+          "draw_frames": 4,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [
+            "res://assets/vfx/oga/skill_packs/nature_cast.png",
+            "res://assets/vfx/oga/skill_packs/nature_poison.png"
+          ],
+          "key": "human_mage|random_attribute_bolt|poison",
+          "mode": "oga_direct",
+          "ms": 42,
+          "retained_materials": 2
+        },
+        {
+          "batch_size": 4,
+          "draw_frames": 4,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [
+            "res://assets/vfx/oga/skill_packs/earth_debris.png",
+            "res://assets/vfx/oga/skill_packs/slash_gold.png"
+          ],
+          "key": "god_king|basic_attack_melee_god|",
+          "mode": "oga_direct",
+          "ms": 39,
+          "retained_materials": 2
+        },
+        {
+          "batch_size": 4,
+          "draw_frames": 4,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [
+            "res://assets/vfx/oga/skill_packs/earth_debris.png",
+            "res://assets/vfx/oga/skill_packs/slash_gold.png"
+          ],
+          "key": "god_arbiter|basic_attack_melee_god|",
+          "mode": "oga_direct",
+          "ms": 37,
+          "retained_materials": 2
+        },
+        {
+          "batch_size": 4,
+          "draw_frames": 4,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [
+            "res://assets/vfx/oga/impacts/god_priestess_hit.png",
+            "res://assets/vfx/oga/projectiles/god_priestess_halo_disc.png"
+          ],
+          "key": "god_priestess|basic_attack_ranged_god|",
+          "mode": "oga_direct",
+          "ms": 36,
+          "retained_materials": 2
+        },
+        {
+          "batch_size": 4,
+          "draw_frames": 4,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [
+            "res://assets/vfx/oga/skill_packs/holy_bless.png",
+            "res://assets/vfx/oga/skill_packs/holy_heal.png"
+          ],
+          "key": "god_priestess|nearest_ally_bless|",
+          "mode": "oga_direct",
+          "ms": 34,
+          "retained_materials": 2
+        },
+        {
+          "batch_size": 3,
+          "draw_frames": 4,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [
+            "res://assets/vfx/oga/impacts/god_archangel_hit.png",
+            "res://assets/vfx/oga/projectiles/god_archangel_seraph_orb.png"
+          ],
+          "key": "god_archangel|basic_attack_ranged_god|",
+          "mode": "oga_direct",
+          "ms": 41,
+          "retained_materials": 3
+        },
+        {
+          "batch_size": 3,
+          "draw_frames": 4,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [
+            "res://assets/vfx/oga/impacts/god_aurora_hit.png",
+            "res://assets/vfx/oga/projectiles/god_priest_star_lance.png"
+          ],
+          "key": "god_aurora|basic_attack_ranged_god|",
+          "mode": "oga_direct",
+          "ms": 37,
+          "retained_materials": 4
+        },
+        {
+          "batch_size": 3,
+          "draw_frames": 4,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [
+            "res://assets/vfx/oga/impacts/human_cleric_hit.png",
+            "res://assets/vfx/oga/projectiles/human_cleric_nature_seed.png"
+          ],
+          "key": "human_cleric|basic_attack_ranged_human|",
+          "mode": "oga_direct",
+          "ms": 36,
+          "retained_materials": 2
+        },
+        {
+          "draw_frames": 4,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [],
+          "key": "human_king|unique_king_growth|",
+          "mode": "full_composer",
+          "ms": 696,
+          "retained_materials": 3
+        },
+        {
+          "draw_frames": 75,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [],
+          "key": "human_archer|every_fourth_combo|",
+          "mode": "full_composer",
+          "ms": 626,
+          "retained_materials": 2
+        },
+        {
+          "draw_frames": 11,
+          "drawn_shader_paths": [
+            "res://effects/vfx3d/shaders/divine_pulse_invulnerability.gdshader"
+          ],
+          "drawn_texture_paths": [],
+          "key": "god_synergy|god_divine_pulse|",
+          "mode": "full_composer",
+          "ms": 116,
+          "retained_materials": 1
+        },
+        {
+          "draw_frames": 71,
+          "drawn_shader_paths": [
+            "res://effects/vfx3d/shaders/crimson_vfx_glow.gdshader"
+          ],
+          "drawn_texture_paths": [],
+          "key": "god_king|global_divine_blast|",
+          "mode": "full_composer",
+          "ms": 766,
+          "retained_materials": 24
+        },
+        {
+          "draw_frames": 48,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [],
+          "key": "god_guard|basic_attack_melee_god|",
+          "mode": "full_composer",
+          "ms": 408,
+          "retained_materials": 3
+        },
+        {
+          "draw_frames": 90,
+          "drawn_shader_paths": [
+            "res://effects/vfx3d/shaders/guardian_range.gdshader",
+            "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader"
+          ],
+          "drawn_texture_paths": [],
+          "key": "god_guard|guardian_shield_taunt|",
+          "mode": "full_composer",
+          "ms": 858,
+          "retained_materials": 4
+        },
+        {
+          "draw_frames": 45,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [],
+          "key": "god_arbiter|judgement_strike|",
+          "mode": "full_composer",
+          "ms": 558,
+          "retained_materials": 66
+        },
+        {
+          "draw_frames": 67,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [
+            "res://assets/vfx/oga/skills/angel_shield.png"
+          ],
+          "key": "god_archangel|random_ally_damage_reduction|",
+          "mode": "full_composer",
+          "ms": 874,
+          "retained_materials": 29
+        },
+        {
+          "draw_frames": 7,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [],
+          "key": "human_militia|attack_interrupt|",
+          "mode": "full_composer",
+          "ms": 216,
+          "retained_materials": 14
+        },
+        {
+          "draw_frames": 43,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [],
+          "key": "god_aurora|true_damage_attack|",
+          "mode": "full_composer",
+          "ms": 366,
+          "retained_materials": 2
+        },
+        {
+          "draw_frames": 25,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [],
+          "key": "human_cleric|every_fifth_group_heal|",
+          "mode": "full_composer",
+          "ms": 216,
+          "retained_materials": 1
+        },
+        {
+          "draw_frames": 48,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [],
+          "key": "pve_sky_thunder_spirit|basic_attack_ranged_human|",
+          "mode": "full_composer",
+          "ms": 416,
+          "retained_materials": 7
+        },
+        {
+          "draw_frames": 79,
+          "drawn_shader_paths": [],
+          "drawn_texture_paths": [],
+          "key": "pve_sky_thunder_spirit|chain_lightning|",
+          "mode": "full_composer",
+          "ms": 858,
+          "retained_materials": 74
+        }
+      ],
+      "jobs": 28,
+      "lighting_variants": [
+        "directional_only",
+        "with_omni"
+      ],
+      "max_draw_frame_ms": 428,
+      "ok": true,
+      "rendered": 28
+    },
+    "model_draw_ms": 1525,
+    "model_lighting_variants": [
+      "directional_only",
+      "with_omni"
+    ],
+    "models": {
+      "count": 20,
+      "elapsed_ms": 777
+    },
+    "prefetched_on_entry": false,
+    "ready": true,
+    "started_msec": 0,
+    "total_ms": 7748
+  },
+  "renderer": "gl_compatibility",
+  "replay_frames": 24,
+  "round": 1,
+  "samples": [
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              -0.336330443620682,
+              1.0,
+              1.65292406082153
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              175.688049316406,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  -0.336330443620682,
+                  1.0,
+                  1.65292406082153
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  -0.339337915182114,
+                  1.58800005912781,
+                  1.69281089305878
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  -0.336330443620682,
+                  1.04900002479553,
+                  1.65292406082153
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  -0.34084165096283,
+                  1.53900003433228,
+                  1.71275424957275
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 0.294263022126023,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            -0.339337915182114,
+            1.58800005912781,
+            1.69281089305878
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                -0.339337915182114,
+                1.04900002479553,
+                1.69281089305878
+              ],
+              "global_scale": [
+                0.866672992706299,
+                0.759869515895844,
+                0.866672992706299
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.336330443620682,
+                1.06700003147125,
+                1.65292406082153
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.336330443620682,
+                1.07300007343292,
+                1.65292406082153
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1193,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 697,
+      "replay_frame": 0,
+      "sanctuary_node_count": 1
+    },
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              -0.336330443620682,
+              1.0,
+              1.65292406082153
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              175.688049316406,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  -0.336330443620682,
+                  1.0,
+                  1.65292406082153
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  -0.339337915182114,
+                  1.58800005912781,
+                  1.69281089305878
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  -0.336330443620682,
+                  1.04900002479553,
+                  1.65292406082153
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  -0.34084165096283,
+                  1.53900003433228,
+                  1.71275424957275
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 0.497126022126022,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            -0.339337915182114,
+            1.58800005912781,
+            1.69281089305878
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                -0.339337915182114,
+                1.04900002479553,
+                1.69281089305878
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.336330443620682,
+                1.06700003147125,
+                1.65292406082153
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.336330443620682,
+                1.07300007343292,
+                1.65292406082153
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1193,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 704,
+      "replay_frame": 1,
+      "sanctuary_node_count": 1
+    },
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              -0.335664570331573,
+              1.0,
+              1.64409124851227
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              175.688049316406,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  -0.335664570331573,
+                  1.0,
+                  1.64409124851227
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  -0.338672041893005,
+                  1.58800005912781,
+                  1.68397808074951
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  -0.335664570331573,
+                  1.04900002479553,
+                  1.64409124851227
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  -0.340175777673721,
+                  1.53900003433228,
+                  1.70392143726349
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 0.693484318422319,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            -0.338672041893005,
+            1.58800005912781,
+            1.68397808074951
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                -0.338672041893005,
+                1.04900002479553,
+                1.68397808074951
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.335664570331573,
+                1.06700003147125,
+                1.64409124851227
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.335664570331573,
+                1.07300007343292,
+                1.64409124851227
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1193,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 724,
+      "replay_frame": 2,
+      "sanctuary_node_count": 1
+    },
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              -0.313635170459747,
+              1.0,
+              1.35192537307739
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              175.688049316406,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  -0.313635170459747,
+                  1.0,
+                  1.35192537307739
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  -0.316642642021179,
+                  1.58800005912781,
+                  1.39181220531464
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  -0.313635170459747,
+                  1.04900002479553,
+                  1.35192537307739
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  -0.318146377801895,
+                  1.53900003433228,
+                  1.41175556182861
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 0.903792688792689,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            -0.316642642021179,
+            1.58800005912781,
+            1.39181220531464
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                -0.316642642021179,
+                1.04900002479553,
+                1.39181220531464
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.313635170459747,
+                1.06700003147125,
+                1.35192537307739
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.313635170459747,
+                1.07300007343292,
+                1.35192537307739
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1193,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 731,
+      "replay_frame": 3,
+      "sanctuary_node_count": 1
+    },
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              -0.293700784444809,
+              1.0,
+              1.08754467964172
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              175.688049316406,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  -0.293700784444809,
+                  1.0,
+                  1.08754467964172
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  -0.296708256006241,
+                  1.58800005912781,
+                  1.12743151187897
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  -0.293700784444809,
+                  1.04900002479553,
+                  1.08754467964172
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  -0.298211991786957,
+                  1.53900003433228,
+                  1.14737486839294
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 1.09410035545936,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            -0.296708256006241,
+            1.58800005912781,
+            1.12743151187897
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                -0.296708256006241,
+                1.04900002479553,
+                1.12743151187897
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.293700784444809,
+                1.06700003147125,
+                1.08754467964172
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.293700784444809,
+                1.07300007343292,
+                1.08754467964172
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1193,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 750,
+      "replay_frame": 4,
+      "sanctuary_node_count": 1
+    },
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              -0.272813141345978,
+              1.0,
+              0.810521245002747
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              175.688064575195,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  -0.272813141345978,
+                  1.0,
+                  0.810521245002747
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  -0.275820583105087,
+                  1.58800005912781,
+                  0.850408017635345
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  -0.272813141345978,
+                  1.04900002479553,
+                  0.810521245002747
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  -0.277324318885803,
+                  1.53900003433228,
+                  0.870351433753967
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 1.29551902212602,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            -0.275820583105087,
+            1.58800005912781,
+            0.850408017635345
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                -0.275820583105087,
+                1.04900002479553,
+                0.850408017635345
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.272813141345978,
+                1.06700003147125,
+                0.810521245002747
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.272813141345978,
+                1.07300007343292,
+                0.810521245002747
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1193,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 770,
+      "replay_frame": 5,
+      "sanctuary_node_count": 1
+    },
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              -0.257549285888672,
+              1.0,
+              0.608081638813019
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              175.688049316406,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  -0.259498089551926,
+                  1.0,
+                  0.620931327342987
+                ],
+                "local": [
+                  0.000912979943677783,
+                  0.0,
+                  -0.0121084870770574
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  -0.260768204927444,
+                  1.62934374809265,
+                  0.650772929191589
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  -0.257549285888672,
+                  1.05244529247284,
+                  0.608081638813019
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  -0.262377679347992,
+                  1.57689833641052,
+                  0.672118604183197
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 1.49551902212602,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            -0.26079735159874,
+            1.63504004478455,
+            0.651159346103668
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                -0.26079735159874,
+                1.09604001045227,
+                0.651159346103668
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.257549285888672,
+                1.07091999053955,
+                0.608081638813019
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.257549285888672,
+                1.07692003250122,
+                0.608081638813019
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1193,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 790,
+      "replay_frame": 6,
+      "sanctuary_node_count": 1
+    },
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              -0.257549285888672,
+              1.0,
+              0.608081638813019
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              175.688049316406,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  -0.257549285888672,
+                  1.0,
+                  0.608081638813019
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  -0.260556757450104,
+                  1.58800005912781,
+                  0.647968411445618
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  -0.257549285888672,
+                  1.04900002479553,
+                  0.608081638813019
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  -0.262060463428497,
+                  1.53900003433228,
+                  0.66791182756424
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 1.68712602212602,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            -0.260609686374664,
+            1.59835243225098,
+            0.648670673370361
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                -0.260609686374664,
+                1.0593523979187,
+                0.648670673370361
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.257549285888672,
+                1.06786274909973,
+                0.608081638813019
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.257549285888672,
+                1.0738627910614,
+                0.608081638813019
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1193,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 792,
+      "replay_frame": 7,
+      "sanctuary_node_count": 1
+    },
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              -0.257549285888672,
+              1.0,
+              0.608081638813019
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              175.688049316406,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  -0.257549285888672,
+                  1.0,
+                  0.608081638813019
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  -0.260556757450104,
+                  1.58800005912781,
+                  0.647968411445618
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  -0.257549285888672,
+                  1.04900002479553,
+                  0.608081638813019
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  -0.262060463428497,
+                  1.53900003433228,
+                  0.66791182756424
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 1.92488435545936,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            -0.260556757450104,
+            1.58800005912781,
+            0.647968411445618
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                -0.260556757450104,
+                1.04900002479553,
+                0.647968411445618
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.257549285888672,
+                1.06700003147125,
+                0.608081638813019
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.257549285888672,
+                1.07300007343292,
+                0.608081638813019
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1193,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 794,
+      "replay_frame": 8,
+      "sanctuary_node_count": 1
+    },
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              -0.257549285888672,
+              1.0,
+              0.608081638813019
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              175.688049316406,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  -0.257549285888672,
+                  1.0,
+                  0.608081638813019
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  -0.260556757450104,
+                  1.58800005912781,
+                  0.647968411445618
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  -0.257549285888672,
+                  1.04900002479553,
+                  0.608081638813019
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  -0.262060463428497,
+                  1.53900003433228,
+                  0.66791182756424
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 2.09684824434825,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            -0.260556757450104,
+            1.58800005912781,
+            0.647968411445618
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                -0.260556757450104,
+                1.04900002479553,
+                0.647968411445618
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.257549285888672,
+                1.06700003147125,
+                0.608081638813019
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.257549285888672,
+                1.07300007343292,
+                0.608081638813019
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1193,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 811,
+      "replay_frame": 9,
+      "sanctuary_node_count": 1
+    },
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              -0.257549285888672,
+              1.0,
+              0.608081638813019
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              175.688049316406,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  -0.257549285888672,
+                  1.0,
+                  0.608081638813019
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  -0.260556757450104,
+                  1.58800005912781,
+                  0.647968411445618
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  -0.257549285888672,
+                  1.04900002479553,
+                  0.608081638813019
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  -0.262060463428497,
+                  1.53900003433228,
+                  0.66791182756424
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 2.29422068879269,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            -0.260556757450104,
+            1.58800005912781,
+            0.647968411445618
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                -0.260556757450104,
+                1.04900002479553,
+                0.647968411445618
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.257549285888672,
+                1.06700003147125,
+                0.608081638813019
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.257549285888672,
+                1.07300007343292,
+                0.608081638813019
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1193,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 832,
+      "replay_frame": 10,
+      "sanctuary_node_count": 1
+    },
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              -0.257549285888672,
+              1.0,
+              0.608081638813019
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              175.688049316406,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  -0.257549285888672,
+                  1.0,
+                  0.608081638813019
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  -0.260556757450104,
+                  1.58800005912781,
+                  0.647968411445618
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  -0.257549285888672,
+                  1.04900002479553,
+                  0.608081638813019
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  -0.262060463428497,
+                  1.53900003433228,
+                  0.66791182756424
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 2.48897787397787,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            -0.260556757450104,
+            1.58800005912781,
+            0.647968411445618
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                -0.260556757450104,
+                1.04900002479553,
+                0.647968411445618
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.257549285888672,
+                1.06700003147125,
+                0.608081638813019
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.257549285888672,
+                1.07300007343292,
+                0.608081638813019
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1145,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 853,
+      "replay_frame": 11,
+      "sanctuary_node_count": 1
+    },
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              -0.257549285888672,
+              1.0,
+              0.608081638813019
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              175.688049316406,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  -0.257549285888672,
+                  1.0,
+                  0.608081638813019
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  -0.260556757450104,
+                  1.58800005912781,
+                  0.647968411445618
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  -0.257549285888672,
+                  1.04900002479553,
+                  0.608081638813019
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  -0.262060463428497,
+                  1.53900003433228,
+                  0.66791182756424
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 2.73211635545935,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            -0.260556757450104,
+            1.58800005912781,
+            0.647968411445618
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                -0.260556757450104,
+                1.04900002479553,
+                0.647968411445618
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.257549285888672,
+                1.06700003147125,
+                0.608081638813019
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.257549285888672,
+                1.07300007343292,
+                0.608081638813019
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1145,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 866,
+      "replay_frame": 12,
+      "sanctuary_node_count": 1
+    },
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              -0.257549285888672,
+              1.0,
+              0.608081638813019
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              179.288055419922,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  -0.257549285888672,
+                  1.0,
+                  0.608081638813019
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  -0.258046299219131,
+                  1.58800005912781,
+                  0.648078560829163
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  -0.257549285888672,
+                  1.04900002479553,
+                  0.608081638813019
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  -0.2582947909832,
+                  1.53900003433228,
+                  0.668076992034912
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 2.89638528138528,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            -0.258046299219131,
+            1.58800005912781,
+            0.648078560829163
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                -0.258046299219131,
+                1.04900002479553,
+                0.648078560829163
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.257549285888672,
+                1.06700003147125,
+                0.608081638813019
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.257549285888672,
+                1.07300007343292,
+                0.608081638813019
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1145,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 881,
+      "replay_frame": 13,
+      "sanctuary_node_count": 1
+    },
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              -0.261990040540695,
+              1.0,
+              0.601995766162872
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              -143.881057739258,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  -0.261990040540695,
+                  1.0,
+                  0.601995766162872
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  -0.238411501049995,
+                  1.58800005912781,
+                  0.634307563304901
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  -0.261990040540695,
+                  1.04900002479553,
+                  0.601995766162872
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  -0.226622238755226,
+                  1.53900003433228,
+                  0.650463461875916
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 3.09525606974507,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            -0.238411501049995,
+            1.58800005912781,
+            0.634307563304901
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                -0.238411501049995,
+                1.04900002479553,
+                0.634307563304901
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.261990040540695,
+                1.06700003147125,
+                0.601995766162872
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.261990040540695,
+                1.07300007343292,
+                0.601995766162872
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1145,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 902,
+      "replay_frame": 14,
+      "sanctuary_node_count": 1
+    },
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              -0.366796642541885,
+              1.0,
+              0.458370119333267
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              -143.880966186523,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  -0.366796642541885,
+                  1.0,
+                  0.458370119333267
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  -0.343218058347702,
+                  1.58800005912781,
+                  0.490681886672974
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  -0.366796642541885,
+                  1.04900002479553,
+                  0.458370119333267
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  -0.33142876625061,
+                  1.53900003433228,
+                  0.506837785243988
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 3.29025368879268,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            -0.343218058347702,
+            1.58800005912781,
+            0.490681886672974
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                -0.343218058347702,
+                1.04900002479553,
+                0.490681886672974
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.366796642541885,
+                1.06700003147125,
+                0.458370119333267
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.366796642541885,
+                1.07300007343292,
+                0.458370119333267
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1145,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 919,
+      "replay_frame": 15,
+      "sanctuary_node_count": 1
+    },
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              -0.366796642541885,
+              1.0,
+              0.458370119333267
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              -143.880966186523,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  -0.366796642541885,
+                  1.0,
+                  0.458370119333267
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  -0.343218058347702,
+                  1.58800005912781,
+                  0.490681886672974
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  -0.366796642541885,
+                  1.04900002479553,
+                  0.458370119333267
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  -0.33142876625061,
+                  1.53900003433228,
+                  0.506837785243988
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 3.49044268879268,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            -0.343218058347702,
+            1.58800005912781,
+            0.490681886672974
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                -0.343218058347702,
+                1.04900002479553,
+                0.490681886672974
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.366796642541885,
+                1.06700003147125,
+                0.458370119333267
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.366796642541885,
+                1.07300007343292,
+                0.458370119333267
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1145,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 941,
+      "replay_frame": 16,
+      "sanctuary_node_count": 1
+    },
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              -0.366796642541885,
+              1.0,
+              0.458370119333267
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              -143.880966186523,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  -0.366796642541885,
+                  1.0,
+                  0.458370119333267
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  -0.343218058347702,
+                  1.58800005912781,
+                  0.490681886672974
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  -0.366796642541885,
+                  1.04900002479553,
+                  0.458370119333267
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  -0.33142876625061,
+                  1.53900003433228,
+                  0.506837785243988
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 3.69184168879268,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            -0.343218058347702,
+            1.58800005912781,
+            0.490681886672974
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                -0.343218058347702,
+                1.04900002479553,
+                0.490681886672974
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.366796642541885,
+                1.06700003147125,
+                0.458370119333267
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.366796642541885,
+                1.07300007343292,
+                0.458370119333267
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1145,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 964,
+      "replay_frame": 17,
+      "sanctuary_node_count": 1
+    },
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              -0.365461766719818,
+              1.0,
+              0.458205908536911
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              -147.840957641602,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  -0.365461766719818,
+                  1.0,
+                  0.458205908536911
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  -0.344170928001404,
+                  1.58800005912781,
+                  0.492068856954575
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  -0.365461766719818,
+                  1.04900002479553,
+                  0.458205908536911
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  -0.333525478839874,
+                  1.53900003433228,
+                  0.509000360965729
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 3.88839968879269,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            -0.344170928001404,
+            1.58800005912781,
+            0.492068856954575
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                -0.344170928001404,
+                1.04900002479553,
+                0.492068856954575
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.365461766719818,
+                1.06700003147125,
+                0.458205908536911
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.365461766719818,
+                1.07300007343292,
+                0.458205908536911
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1145,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 986,
+      "replay_frame": 18,
+      "sanctuary_node_count": 1
+    },
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              -0.156188115477562,
+              1.0,
+              0.432527154684067
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              143.759033203125,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  -0.156188115477562,
+                  1.0,
+                  0.432527154684067
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  -0.17983540892601,
+                  1.58800005912781,
+                  0.464788675308228
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  -0.156188115477562,
+                  1.04900002479553,
+                  0.432527154684067
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  -0.191659063100815,
+                  1.53900003433228,
+                  0.480919420719147
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 4.12045935545935,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            -0.17983540892601,
+            1.58800005912781,
+            0.464788675308228
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                -0.17983540892601,
+                1.04900002479553,
+                0.464788675308228
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.156188115477562,
+                1.06700003147125,
+                0.432527154684067
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.156188115477562,
+                1.07300007343292,
+                0.432527154684067
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1145,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 990,
+      "replay_frame": 19,
+      "sanctuary_node_count": 1
+    },
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              0.0547708831727505,
+              1.0,
+              0.424602478742599
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              94.4922637939453,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  0.0547708831727505,
+                  1.0,
+                  0.424602478742599
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  0.0148937664926052,
+                  1.58800005912781,
+                  0.427735477685928
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  0.0547708831727505,
+                  1.04900002479553,
+                  0.424602478742599
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  -0.00504479184746742,
+                  1.53900003433228,
+                  0.42930194735527
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 4.32212002212602,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            0.0148937664926052,
+            1.58800005912781,
+            0.427735477685928
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                0.0148937664926052,
+                1.04900002479553,
+                0.427735477685928
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                0.0547708831727505,
+                1.06700003147125,
+                0.424602478742599
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                0.0547708831727505,
+                1.07300007343292,
+                0.424602478742599
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1145,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 1013,
+      "replay_frame": 20,
+      "sanctuary_node_count": 1
+    },
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              0.263030916452408,
+              1.0,
+              0.424602478742599
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              95.0881118774414,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  0.263030916452408,
+                  1.0,
+                  0.424602478742599
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  0.223188534379005,
+                  1.58800005912781,
+                  0.428149998188019
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  0.263030916452408,
+                  1.04900002479553,
+                  0.424602478742599
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  0.203267350792885,
+                  1.53900003433228,
+                  0.429923743009567
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 4.52045935545936,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            0.223188534379005,
+            1.58800005912781,
+            0.428149998188019
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                0.223188534379005,
+                1.04900002479553,
+                0.428149998188019
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                0.263030916452408,
+                1.06700003147125,
+                0.424602478742599
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                0.263030916452408,
+                1.07300007343292,
+                0.424602478742599
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1145,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 1035,
+      "replay_frame": 21,
+      "sanctuary_node_count": 1
+    },
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              0.362547069787979,
+              1.0,
+              0.430251926183701
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              95.4152374267578,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  0.362547069787979,
+                  1.0,
+                  0.430251926183701
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  0.322725594043732,
+                  1.58800005912781,
+                  0.43402686715126
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  0.362547069787979,
+                  1.04900002479553,
+                  0.430251926183701
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  0.302814871072769,
+                  1.53900003433228,
+                  0.435914307832718
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 4.72525502212603,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            0.322725594043732,
+            1.58800005912781,
+            0.43402686715126
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                0.322725594043732,
+                1.04900002479553,
+                0.43402686715126
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                0.362547069787979,
+                1.06700003147125,
+                0.430251926183701
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                0.362547069787979,
+                1.07300007343292,
+                0.430251926183701
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1145,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 1059,
+      "replay_frame": 22,
+      "sanctuary_node_count": 1
+    },
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              0.50880891084671,
+              1.0,
+              0.621650099754334
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              103.587379455566,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  0.50880891084671,
+                  1.0,
+                  0.621650099754334
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  0.469928413629532,
+                  1.58800005912781,
+                  0.631047248840332
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  0.50880891084671,
+                  1.04900002479553,
+                  0.621650099754334
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  0.450488150119781,
+                  1.53900003433228,
+                  0.635745763778687
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 4.92112368879271,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            0.469928413629532,
+            1.58800005912781,
+            0.631047248840332
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                0.469928413629532,
+                1.04900002479553,
+                0.631047248840332
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                0.50880891084671,
+                1.06700003147125,
+                0.621650099754334
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                0.50880891084671,
+                1.07300007343292,
+                0.621650099754334
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1145,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 1082,
+      "replay_frame": 23,
+      "sanctuary_node_count": 1
+    },
+    {
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              0.714289724826813,
+              1.0,
+              0.571987092494965
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              103.587379455566,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  0.714289724826813,
+                  1.0,
+                  0.571987092494965
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  0.675409197807312,
+                  1.58800005912781,
+                  0.581384241580963
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  0.714289724826813,
+                  1.04900002479553,
+                  0.571987092494965
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  0.655968964099884,
+                  1.53900003433228,
+                  0.586082756519318
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 5.12112368879272,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            0.675409197807312,
+            1.58800005912781,
+            0.581384241580963
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                0.675409197807312,
+                1.04900002479553,
+                0.581384241580963
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                0.714289724826813,
+                1.06700003147125,
+                0.571987092494965
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                0.714289724826813,
+                1.07300007343292,
+                0.571987092494965
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1145,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 1106,
+      "replay_frame": 24,
+      "sanctuary_node_count": 1
+    }
+  ],
+  "sanctuary_nodes_after_screen_free": 0,
+  "screenshots": [
+    {
+      "file": "01-opening.png",
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              -0.336330443620682,
+              1.0,
+              1.65292406082153
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              175.688049316406,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  -0.336330443620682,
+                  1.0,
+                  1.65292406082153
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  -0.339337915182114,
+                  1.58800005912781,
+                  1.69281089305878
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  -0.336330443620682,
+                  1.04900002479553,
+                  1.65292406082153
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  -0.34084165096283,
+                  1.53900003433228,
+                  1.71275424957275
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 0.306034022126022,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            -0.339337915182114,
+            1.58800005912781,
+            1.69281089305878
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                -0.339337915182114,
+                1.04900002479553,
+                1.69281089305878
+              ],
+              "global_scale": [
+                0.880459606647491,
+                0.766087293624878,
+                0.880459606647491
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.336330443620682,
+                1.06700003147125,
+                1.65292406082153
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.336330443620682,
+                1.07300007343292,
+                1.65292406082153
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1193,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 698,
+      "replay_frame": 0,
+      "sanctuary_node_count": 1,
+      "save_error": 0
+    },
+    {
+      "file": "02-shield-established.png",
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              -0.334521263837814,
+              1.0,
+              1.62893033027649
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              175.688049316406,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  -0.334521263837814,
+                  1.0,
+                  1.62893033027649
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  -0.337528735399246,
+                  1.58800005912781,
+                  1.66881716251373
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  -0.334521263837814,
+                  1.04900002479553,
+                  1.62893033027649
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  -0.33903244137764,
+                  1.53900003433228,
+                  1.68876051902771
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 0.704397355459356,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            -0.337528735399246,
+            1.58800005912781,
+            1.66881716251373
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                -0.337528735399246,
+                1.04900002479553,
+                1.66881716251373
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.334521263837814,
+                1.06700003147125,
+                1.62893033027649
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.334521263837814,
+                1.07300007343292,
+                1.62893033027649
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1193,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 725,
+      "replay_frame": 2,
+      "sanctuary_node_count": 1,
+      "save_error": 0
+    },
+    {
+      "file": "03-persistent-state.png",
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              -0.257549285888672,
+              1.0,
+              0.608081638813019
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              175.688049316406,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  -0.257549285888672,
+                  1.0,
+                  0.608081638813019
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  -0.260556757450104,
+                  1.58800005912781,
+                  0.647968411445618
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  -0.257549285888672,
+                  1.04900002479553,
+                  0.608081638813019
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  -0.262060463428497,
+                  1.53900003433228,
+                  0.66791182756424
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 1.68712602212602,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            -0.260609686374664,
+            1.59835243225098,
+            0.648670673370361
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                -0.260609686374664,
+                1.0593523979187,
+                0.648670673370361
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.257549285888672,
+                1.06786274909973,
+                0.608081638813019
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                -0.257549285888672,
+                1.0738627910614,
+                0.608081638813019
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1193,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 792,
+      "replay_frame": 7,
+      "sanctuary_node_count": 1,
+      "save_error": 0
+    },
+    {
+      "file": "05-timeline-end.png",
+      "guardians": [
+        {
+          "actor": {
+            "actor_position": [
+              0.714289724826813,
+              1.0,
+              0.571987092494965
+            ],
+            "actor_rotation_degrees": [
+              0.0,
+              103.587379455566,
+              0.0
+            ],
+            "anchors": {
+              "ActorRoot": {
+                "global": [
+                  0.714289724826813,
+                  1.0,
+                  0.571987092494965
+                ],
+                "local": [
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "CastAnchor": {
+                "global": [
+                  0.675409197807312,
+                  1.58800005912781,
+                  0.581384241580963
+                ],
+                "local": [
+                  0.0,
+                  0.587999999523163,
+                  -0.0399999991059303
+                ]
+              },
+              "FootAnchor": {
+                "global": [
+                  0.714289724826813,
+                  1.04900002479553,
+                  0.571987092494965
+                ],
+                "local": [
+                  0.0,
+                  0.0489999987185001,
+                  0.0
+                ]
+              },
+              "HitAnchor": {
+                "global": [
+                  0.655968964099884,
+                  1.53900003433228,
+                  0.586082756519318
+                ],
+                "local": [
+                  0.0,
+                  0.538999974727631,
+                  -0.0599999986588955
+                ]
+              }
+            },
+            "battle_visual_scale": 0.42,
+            "model_height": 0.98,
+            "model_visual_scale": 1.0,
+            "raw_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "resolved_model": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn",
+            "visual_root_position": [
+              -0.0000000500679000481341,
+              0.168809428811073,
+              -0.366145342588425
+            ],
+            "visual_root_scale": [
+              0.419999986886978,
+              0.419999986886978,
+              0.419999986886978
+            ],
+            "visual_scene_path": "res://assets/models/units/god_guard_refined/god_guard_refined.tscn"
+          },
+          "alive": true,
+          "effect": {
+            "age": 5.12112368879272,
+            "persistent": true,
+            "range_fade": 1.0,
+            "shield_active": true,
+            "shield_fade": 1.0,
+            "spark_count": 18,
+            "taunt_active": true,
+            "world_radius": [
+              2.29679989814758,
+              3.0461540222168
+            ]
+          },
+          "effect_position": [
+            0.675409197807312,
+            1.58800005912781,
+            0.581384241580963
+          ],
+          "effect_script": "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd",
+          "effect_tree_path": "/root/BattleScreen/@Control@4/UnitsLayer/@SubViewport@6/Battle3DWorld/BattleModelRoot/BossProceduralVFX3D/UnitSkillVFXComposer3D/@Node3D@497",
+          "hp": 4560,
+          "meshes": [
+            {
+              "global_position": [
+                0.675409197807312,
+                1.04900002479553,
+                0.581384241580963
+              ],
+              "global_scale": [
+                1.0,
+                0.819999992847443,
+                1.0
+              ],
+              "name": "WhiteCrystalShield",
+              "shader": "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                0.714289724826813,
+                1.06700003147125,
+                0.571987092494965
+              ],
+              "global_scale": [
+                2.29679989814758,
+                1.0,
+                3.0461540222168
+              ],
+              "name": "TauntRange_NoDamage",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            },
+            {
+              "global_position": [
+                0.714289724826813,
+                1.07300007343292,
+                0.571987092494965
+              ],
+              "global_scale": [
+                0.421400010585785,
+                0.421400010585785,
+                0.421400010585785
+              ],
+              "name": "ShieldFootSeal",
+              "shader": "res://effects/vfx3d/shaders/guardian_range.gdshader",
+              "visible": true
+            }
+          ],
+          "record_kind": "guardian",
+          "shield": 1145,
+          "snapshot_taunt_active": true,
+          "snapshot_taunt_radius_sim": 180.0,
+          "star": 3,
+          "uid": "player_L1_1",
+          "unit_id": "god_guard"
+        }
+      ],
+      "render_frame": 1106,
+      "replay_frame": 24,
+      "sanctuary_node_count": 1,
+      "save_error": 0
+    }
+  ],
+  "seed": 20260823,
+  "source_sha256": {
+    "res://effects/vfx3d/modules/VFXGuardianSanctuary3D.gd": "6fb0f55961d8031b87dc8fd775e591780e0c21d5917b54d94f722438891081d8",
+    "res://effects/vfx3d/shaders/guardian_range.gdshader": "2829ee97d2009583ab842f1b40cdd9fa9fccfef06b7572f59fc5874e083d4910",
+    "res://effects/vfx3d/shaders/guardian_sanctuary.gdshader": "8aaef87450b04eafbbcff3c96264970ef772855365aa0380c437ba6154c2b8fc",
+    "res://effects/vfx3d/units/UnitSkillVFXComposer3D.gd": "b6e5b35dfa3247df8fb2dafc8de09c852f62c2fea7c455f08571b6ed25cc93cc",
+    "res://scenes/battle/BattleVfx.gd": "036e3870e6a5fbeabc0c5ad05cf750094ff2d944c1d5ccb53f06ab264fbe5060",
+    "res://scripts/assets/BattleRenderWarmup.gd": "d34e3d060d29c3e6a981d7e8c666d0da4f755fd69aae2716e93c8702dffa3aa5"
+  },
+  "status": "PASS",
+  "tier": "MEDIUM"
+}

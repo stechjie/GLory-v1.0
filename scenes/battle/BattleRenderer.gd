@@ -151,7 +151,7 @@ func _refresh_visuals() -> void:
 			soul_badge.call("set_counter", int(f.get("vfx_mother_count", 0)), mother_threshold)
 		var hp_bar: ColorRect = _hp_fill_by_id.get(_visual_id(f))
 		if hp_bar != null and is_instance_valid(hp_bar):
-			hp_bar.scale.x = clampf(float(f.hp) / float(maxi(1, f.max_hp)), 0.0, 1.0)
+			_sync_health_segments(hp_bar, f, facing_delta)
 			# 9.24 #7：血条颜色要跟着**当前**队伍走，不能像原来那样只在建节点时定死。
 			# 末日守卫的血之契约会把敌方目标永久策反成我方棋子，颜色必须同帧变绿
 			# （绿=我方 / 红=敌方，见 _hp_color_for_team）。这里改的是同一帧的填充色，
@@ -316,7 +316,7 @@ func claim_unit_node_for_death(uid: String) -> Control:
 	# the whole fade (or forever when a queued cue is cancelled).
 	var hp_fill_value = _hp_fill_by_id.get(uid)
 	if hp_fill_value is ColorRect and is_instance_valid(hp_fill_value):
-		(hp_fill_value as ColorRect).scale.x = 0.0
+		_sync_health_segments(hp_fill_value as ColorRect, {"hp": 0, "max_hp": 1, "shield": 0})
 	_unit_nodes.erase(uid)
 	_hp_fill_by_id.erase(uid)
 	_dying_unit_nodes[uid] = node_value
@@ -389,6 +389,67 @@ static func hp_color_for_display_team(display_team: String) -> Color:
 func _hp_color_for_team(team: String) -> Color:
 	return hp_color_for_display_team(team)
 
+# One fixed 66px meter: HP then blue shield. Only the internal proportions change;
+# adding a shield must never extend the background or reserve a black side slot.
+const HP_FILL_WIDTH := 66.0
+const SHIELD_MIN_WIDTH := 3.0
+const SHIELD_COLOR := Color("39bafa")
+const SHIELD_DRAIN_SEC := 0.12
+
+static func _sync_health_segments(hp: ColorRect, fighter: Dictionary, delta := 0.0) -> void:
+	var health := clampf(float(fighter.get("hp", 0)), 0.0, maxf(1.0, float(fighter.get("max_hp", 1))))
+	var shield_value := maxf(0.0, float(fighter.get("shield", 0))) if health > 0.0 else 0.0
+	var maximum := maxf(1.0, float(fighter.get("max_hp", 1)))
+	var hp_ratio := health / maximum
+	var has_shield := shield_value > 0.0
+	var shown_shield := shield_value
+	# Smooth absorbed hits in value space so both colors remain contiguous and
+	# inside the fixed slot. Broken shields and simultaneous HP damage snap to truth.
+	if delta > 0.0 and has_shield and hp.has_meta("shown_shield") \
+			and is_equal_approx(float(hp.get_meta("last_health", health)), health) \
+			and is_equal_approx(float(hp.get_meta("last_max_health", maximum)), maximum):
+		var previous := float(hp.get_meta("shown_shield"))
+		if previous > shield_value:
+			if not hp.has_meta("shield_target") or not is_equal_approx(float(hp.get_meta("shield_target")), shield_value):
+				hp.set_meta("shield_drain_speed", (previous - shield_value) / SHIELD_DRAIN_SEC)
+			shown_shield = move_toward(previous, shield_value, float(hp.get_meta("shield_drain_speed", 0.0)) * delta)
+	hp.set_meta("shown_shield", shown_shield)
+	hp.set_meta("shield_target", shield_value)
+	hp.set_meta("last_health", health)
+	hp.set_meta("last_max_health", maximum)
+	# Missing HP remains empty only when HP + shield does not fill the original
+	# capacity. A full-health unit with any shield has no artificial black tail.
+	var capacity := maxf(maximum, health + shown_shield)
+	var shield_width := clampf(HP_FILL_WIDTH * shown_shield / capacity, SHIELD_MIN_WIDTH, HP_FILL_WIDTH) if has_shield else 0.0
+	var health_width := minf(HP_FILL_WIDTH * health / capacity, HP_FILL_WIDTH - shield_width)
+	hp.size = Vector2(HP_FILL_WIDTH, 4.0)
+	hp.scale = Vector2(health_width / HP_FILL_WIDTH, 1.0)
+	hp.visible = health > 0.0
+	var background := hp.get_meta("hp_background") as ColorRect if hp.has_meta("hp_background") else null
+	if is_instance_valid(background):
+		background.size.x = HP_FILL_WIDTH + 6.0
+		# BattleVfx's execute marker uses this same HP scale, including the small
+		# minimum visible blue segment. The gameplay threshold is untouched.
+		background.set_meta("hp_max_width", health_width / hp_ratio if hp_ratio > 0.0 else HP_FILL_WIDTH)
+	var shield := hp.get_meta("shield_fill") as ColorRect if hp.has_meta("shield_fill") else null
+	if is_instance_valid(shield):
+		shield.position = hp.position + Vector2(health_width, 0.0)
+		shield.size = Vector2(shield_width, 4.0)
+		shield.visible = has_shield
+	var track := hp.get_meta("shield_track") as Control if hp.has_meta("shield_track") else null
+	if is_instance_valid(track):
+		track.visible = has_shield
+	var overflow := hp.get_meta("shield_overflow") as Control if hp.has_meta("shield_overflow") else null
+	if is_instance_valid(overflow):
+		overflow.visible = shield_value > maximum
+	var empty := hp.get_meta("hp_empty") as ReferenceRect if hp.has_meta("hp_empty") else null
+	if is_instance_valid(empty):
+		var filled_width := health_width + shield_width
+		empty.position = hp.position + Vector2(filled_width, 0.0)
+		empty.size = Vector2(maxf(0.0, HP_FILL_WIDTH - filled_width), 4.0)
+		empty.visible = health > 0.0 and empty.size.x > 0.0
+
+
 func _make_unit_node(f: Dictionary) -> Control:
 	var root := Control.new()
 	var visual_id := _visual_id(f)
@@ -407,22 +468,7 @@ func _make_unit_node(f: Dictionary) -> Control:
 	# Prevent the parent layout from touching this node
 	root.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
 	_add_unit_anchors(root)
-	var hp_bg := ColorRect.new()
-	hp_bg.name = "HpBg"
-	hp_bg.color = Color(0.05, 0.05, 0.05)
-	hp_bg.position = Vector2(5, 8)
-	hp_bg.size = Vector2(72, 9)
-	hp_bg.z_index = 20
-	hp_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(hp_bg)
-	var hp := ColorRect.new()
-	hp.name = "HpFill"
-	hp.color = _hp_color_for_team(_display_team(f))
-	hp.position = Vector2(8, 11)
-	hp.size = Vector2(66, 4)
-	hp.z_index = 21
-	hp.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(hp)
+	_add_health_bar(root, f, _display_team(f))
 	var label := Label.new()
 	label.name = "Name"
 	label.position = Vector2(0, 86)
@@ -439,6 +485,74 @@ func _make_unit_node(f: Dictionary) -> Control:
 	label.text = _fighter_display_name(f)
 	root.add_child(label)
 	return root
+
+
+# Kept independent of the 3D arena so the real controls can also be previewed.
+static func _add_health_bar(root: Control, fighter: Dictionary, display_team: String) -> void:
+	var hp_bg := ColorRect.new()
+	hp_bg.name = "HpBg"
+	hp_bg.color = Color(0.05, 0.05, 0.05)
+	hp_bg.position = Vector2(5, 8)
+	hp_bg.size = Vector2(72, 9)
+	hp_bg.z_index = 20
+	hp_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(hp_bg)
+	var hp := ColorRect.new()
+	hp.name = "HpFill"
+	hp.color = hp_color_for_display_team(display_team)
+	hp.position = Vector2(8, 11)
+	hp.size = Vector2(HP_FILL_WIDTH, 4)
+	hp.z_index = 21
+	hp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(hp)
+	hp.set_meta("hp_background", hp_bg)
+	var track := Control.new()
+	track.name = "ShieldTrack"
+	track.position = Vector2(75, 8)
+	track.size = Vector2(8, 9)
+	track.z_index = 20
+	track.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(track)
+	hp.set_meta("shield_track", track)
+	# A small native polygon stays crisp without a texture or font dependency.
+	var badge := Polygon2D.new()
+	badge.name = "ShieldIcon"
+	badge.polygon = PackedVector2Array([Vector2(0, 0), Vector2(8, 0), Vector2(8, 5), Vector2(4, 9), Vector2(0, 5)])
+	badge.color = Color(0.03, 0.08, 0.12)
+	track.add_child(badge)
+	var badge_fill := Polygon2D.new()
+	badge_fill.polygon = PackedVector2Array([Vector2(1, 1), Vector2(7, 1), Vector2(7, 4.5), Vector2(4, 7.5), Vector2(1, 4.5)])
+	badge_fill.color = SHIELD_COLOR
+	badge.add_child(badge_fill)
+	var overflow := Control.new()
+	overflow.name = "Overflow"
+	overflow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.add_child(overflow)
+	for rect in [Rect2(2, 3, 4, 1), Rect2(3.5, 1.5, 1, 4)]:
+		var stroke := ColorRect.new()
+		stroke.position = rect.position
+		stroke.size = rect.size
+		stroke.color = Color(0.03, 0.08, 0.12)
+		stroke.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		overflow.add_child(stroke)
+	hp.set_meta("shield_overflow", overflow)
+	var shield := ColorRect.new()
+	shield.name = "ShieldFill"
+	shield.color = SHIELD_COLOR
+	shield.z_index = hp.z_index
+	shield.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(shield)
+	hp.set_meta("shield_fill", shield)
+	var empty := ReferenceRect.new()
+	empty.name = "HpEmpty"
+	empty.editor_only = false
+	empty.border_color = Color(0.05, 0.05, 0.05)
+	empty.border_width = 1.0
+	empty.z_index = hp.z_index
+	empty.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(empty)
+	hp.set_meta("hp_empty", empty)
+	_sync_health_segments(hp, fighter)
 
 
 # 9.14：单位悬停回调，基类空实现。离线自测（OfficeTestScreen）覆写它显示实时数值面板。

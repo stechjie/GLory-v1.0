@@ -1244,6 +1244,26 @@ func claim_seven_day_login() -> Dictionary:
 	return await _request(HTTPClient.METHOD_POST, "/v1/me/seven-day-login/claim", {}, true)
 
 
+# --- 邀请码 / 兑换码（backend/app/invites.py、redeem.py）---------------------------
+#
+# 自己的邀请码就是好友码（profile 里本来就有），不再单独要。
+# 邀请了几个人、到账几个**服务器不下发**（2026-11-03 用户定：玩家那边不显示）。
+#
+# {"can_bind", "bound", "rewarded", "reward_level", "invitee_diamond", "inviter_diamond"}
+func fetch_invite() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/me/invite", null, true)
+
+
+# 码原样发过去：全角、空格、大小写由服务器统一规范化，两边不各写一份。
+func bind_invite(code: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/invite/bind", {"code": code.strip_edges()}, true)
+
+
+# 奖励发到邮箱，不直接进钱包：{"mail_id", "diamond", "coin", "items"}。
+func redeem_code(code: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/redeem", {"code": code.strip_edges()}, true)
+
+
 # 拥有的**内容 id**（pet_cat / preset:avatar_005），不是商品 id。
 #
 # 🔴 **不在这个列表里 ≠ 没有。** 不在服务端目录里的内容一律免费 ——

@@ -671,22 +671,22 @@
       "star4_changes": "combo_atk_pct: 1.5 → 3\nevery: 4 → 3",
       "stats": {
         "1": {
-          "hp": 760,
+          "hp": 860,
           "atk": 70,
           "defense": 3
         },
         "2": {
-          "hp": 1140,
+          "hp": 1290,
           "atk": 105,
           "defense": 5
         },
         "3": {
-          "hp": 2280,
+          "hp": 2580,
           "atk": 210,
           "defense": 9
         },
         "4": {
-          "hp": 2622,
+          "hp": 2967,
           "atk": 241,
           "defense": 10
         }
@@ -810,29 +810,29 @@
       "cost": 30,
       "skill_id": "front_cone_stun",
       "skill_name_cn": "盾击",
-      "skill_cn_1to3": "盾击（冷却5.0秒）：攻击最近敌人，造成自身攻击150%伤害并眩晕1.0秒。",
-      "skill_cn_4": "盾击（冷却5.0秒）：攻击最近敌人，造成自身攻击300%伤害并眩晕2.0秒。",
-      "skill_en_1to3": "Shield Bash (CD 5.0s): Strike the nearest enemy for 150% ATK damage and stun for 1.0s.",
-      "skill_raw_params": "damage_atk_pct = 1.5\nstun_sec = 1",
-      "star4_changes": "damage_atk_pct: 1.5 → 3\nstun_sec: 1 → 2",
+      "skill_cn_1to3": "盾击（冷却5.0秒）：攻击最近敌人，造成自身攻击150%伤害并眩晕1.6秒。",
+      "skill_cn_4": "盾击（冷却5.0秒）：攻击最近敌人，造成自身攻击300%伤害并眩晕2.5秒。",
+      "skill_en_1to3": "Shield Bash (CD 5.0s): Strike the nearest enemy for 150% ATK damage and stun for 1.6s.",
+      "skill_raw_params": "damage_atk_pct = 1.5\nstun_sec = 1.6",
+      "star4_changes": "damage_atk_pct: 1.5 → 3\nstun_sec: 1.6 →2.5 ",
       "stats": {
         "1": {
-          "hp": 1120,
+          "hp": 1320,
           "atk": 64,
           "defense": 10
         },
         "2": {
-          "hp": 1680,
+          "hp": 1980,
           "atk": 96,
           "defense": 15
         },
         "3": {
-          "hp": 3360,
+          "hp": 3960,
           "atk": 192,
           "defense": 30
         },
         "4": {
-          "hp": 3864,
+          "hp": 4554,
           "atk": 221,
           "defense": 35
         }
@@ -1576,7 +1576,7 @@
       {
         "threshold": 2,
         "name_cn": "人族·开场护盾",
-        "detail_cn": "开场获得 最大生命×8% 的护盾"
+        "detail_cn": "开场获得 最大生命×15% 的护盾"
       },
       {
         "threshold": 7,
@@ -1816,6 +1816,6 @@
       "effect_cn": "需要：生命丰碑 + 黄金祭坛 + 震荡余波 + 血契之刃 + 狂怒阵容。生命丰碑 ×1.20→×1.40；震荡余波眩晕 1→2 秒；血契之刃 ×1.25→×1.50；狂怒阵容上限 8→9。黄金祭坛使用不扣法阵 HP；选到胡牌手立即回复法阵 HP +2（上限 50）。\n表内字段：positive_effect_multiplier = 2"
     }
   },
-  "balance_version": "07a5902dedd6b1b8d31d8881ee16a3951ecbe0f0e931fbebe2d067120fbfee88",
-  "final_workbook_sha256": "07996ce9a0eb63664aefb112fd1363daba20acb5cc185524eeba6bbaa07e2905"
+  "balance_version": "2afec6476fd1fad973d19aaafe55718f9d0af2cbdfc1cf6b6ff216bc508a223a",
+  "final_workbook_sha256": "68fbcfc9c54383c48085988446813fed2cca561cff00ba991640e57c4d3fbc0a"
 }
