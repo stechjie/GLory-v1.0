@@ -26,7 +26,12 @@
       "subtests": 4
     },
     "iap_client_checks": 92,
-    "build_tool_checks": 40
+    "build_tool_checks": 40,
+    "live_battle_probe": "passed protocol=45 dtls=pinned host=34.124.141.90",
+    "public_apk_range": "HTTP 206; first 1 MiB matches signed local APK",
+    "public_apk_server_full_sha256_verified": true,
+    "public_qr_decoded": "https://glorytd-api.duckdns.org/beta/",
+    "site_routing_tests": 5
   },
   "android": {
     "file_id": "1sEWAsV4yc-hiraG09CGVa2y5kQh_mDWO",
@@ -36,7 +41,12 @@
     "size_readback_verified": true,
     "sha256_readback_verified": true,
     "sha256": "2fe6bd906ad9abb84d29ed037dbb547dd185c5842fc40493e5f2c2ced916ee6f",
-    "direct_qr_url": "https://drive.google.com/file/d/1UOn1f6qdeT-h-tBtAS8OIVAxEtsAWTtn/view?usp=drivesdk"
+    "direct_qr_url": "https://drive.google.com/file/d/1UOn1f6qdeT-h-tBtAS8OIVAxEtsAWTtn/view?usp=drivesdk",
+    "version": "1.0.2 (57)",
+    "public_apk_url": "https://glorytd-api.duckdns.org/beta/downloads/Glory-1.0.2-57-android.apk",
+    "public_download_page": "https://glorytd-api.duckdns.org/beta/",
+    "public_qr_url": "https://glorytd-api.duckdns.org/beta/invite-qr.png",
+    "public_apk_server_sha256_verified": true
   },
   "ios": {
     "version": "1.0.2",
@@ -53,27 +63,62 @@
     "internal_state": "Testing",
     "external_group_assigned": false,
     "notes_saved": true,
-    "verified_at": "2026-11-04T12:13:59.254060+00:00"
+    "verified_at": "2026-11-04T12:13:59.254060+00:00",
+    "server_ready": true,
+    "server_ready_notes_saved": true,
+    "apple_processing": "complete",
+    "notes_updated_at": "2026-11-04T12:40:55.890127+00:00"
   },
   "server": {
     "project": "project-60c72d94-b558-4e4f-992",
     "instance": "glory-server-3",
     "ip": "34.124.141.90",
-    "disk_gb_current": 30,
-    "serial_console": "No space left on device",
-    "browser_ssh": "authentication_failed",
-    "local_ssh": "publickey_denied",
-    "prepared_disk_gb": 40,
-    "resize_saved": false,
-    "restart_performed": false,
-    "user_confirmation": "pending"
+    "database_project": "tzkysvnpjmgzfbvazugi",
+    "disk_gb_current": 40,
+    "resize_saved": true,
+    "restart_performed": true,
+    "user_confirmation": "approved",
+    "status": "deployed",
+    "release": "/home/nins17121/Glory/releases/1.0.2-20261104-67726010",
+    "commit": "677260109c650d1b845b2affefd9431466be0e9e",
+    "protocol": 45,
+    "boot_id": "bde8efb5-be16-4015-9639-e99e16d36c3b",
+    "free_bytes": 10526175232,
+    "services": {
+      "glory-server": "active",
+      "glory-backend": "active",
+      "livekit": "active",
+      "caddy": "active"
+    },
+    "health_configured": true,
+    "health_status": "ok",
+    "health_environment_field": "prod (legacy label; test VM and database independently verified)",
+    "schema_verified": true,
+    "migrations": [
+      "045_redeem_unlimited.sql"
+    ],
+    "battle_probe": "passed protocol=45 dtls=pinned",
+    "rollback_directory": "/var/backups/glory/server-20261104-67726010",
+    "verified_at": "2026-11-04T12:39:43.069076+00:00"
   },
-  "permanent_beta_entry_updated": false,
+  "permanent_beta_entry_updated": true,
   "physical_device_gameplay_verified": false,
-  "updated_at": "2026-11-04T12:13:59.254060+00:00",
-  "pending": [
-    "test server disk expansion confirmation",
-    "test server deployment and live schema/protocol validation",
-    "permanent beta landing configuration update"
-  ]
+  "updated_at": "2026-11-04T12:40:55.890127+00:00",
+  "pending": [],
+  "public_config": {
+    "ios": {
+      "ready": false,
+      "url": "https://testflight.apple.com/join/W2p1ukJp",
+      "version": "1.0.2 (78)",
+      "pending_version": "1.0.2 (83)"
+    },
+    "android": {
+      "ready": true,
+      "mode": "apk",
+      "url": "https://glorytd-api.duckdns.org/beta/downloads/Glory-1.0.2-57-android.apk",
+      "version": "1.0.2 (57)",
+      "size_bytes": 612521681,
+      "size_label": "584.1 MiB"
+    }
+  }
 }
