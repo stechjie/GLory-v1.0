@@ -1459,7 +1459,7 @@ func _show_settings() -> void:
 
 func _on_replay_tutorial_requested() -> void:
 	if not PlayerProfile.begin_tutorial():
-		DialogService.info({"title": "新手教学", "body": "暂时无法保存教学进度，请重试。"})
+		DialogService.info({"title": _startup_text("新手教学", "Tutorial"), "body": _startup_text("暂时无法保存教学进度，请重试。", "Could not save your tutorial progress. Please try again.")})
 		return
 	TutorialMode.clear_checkpoint()
 	_show_menu()
@@ -2336,7 +2336,7 @@ func _on_tutorial_reward_claimed(_go_prep: bool) -> void:
 	var response: Dictionary = await AccountManager.mark_progression_seen([2])
 	_tutorial_reward_claim_busy = false
 	if int(response.get("code", 0)) / 100 != 2:
-		DialogService.info({"title": "等级奖励", "body": "领取状态暂时无法同步，请再试一次。"})
+		DialogService.info({"title": _startup_text("等级奖励", "Level reward"), "body": _startup_text("领取状态暂时无法同步，请再试一次。", "Could not sync the claim status. Please try again.")})
 		return
 	if not PlayerProfile.set_tutorial_followup_step("prep"):
 		return
@@ -4182,14 +4182,16 @@ func _complete_tutorial_reward() -> void:
 						"Can't reach the server right now. Your reward (Lv2 + a Divine piece) will be delivered automatically once you're online. You can go to the lobby now.")})
 				return
 			_tutorial_completion_busy = false
-			DialogService.info({"title": "教学奖励", "body":
-				"奖励同步暂时失败。教学进度已保存，点击「返回主菜单」重试。"})
+			DialogService.info({"title": _startup_text("教学奖励", "Tutorial Reward"), "body":
+				_startup_text("奖励同步暂时失败。教学进度已保存，点击「返回主菜单」重试。",
+					"Could not sync the reward. Your tutorial progress is saved. Select Return to Main Menu to try again.")})
 			return
 		gained_xp = int(body.get("gained_xp", 0))
 		if not PlayerProfile.complete_tutorial_with_followup():
 			_tutorial_completion_busy = false
-			DialogService.info({"title": "教学奖励", "body":
-				"本地引导进度暂时无法保存。教学进度已保留，请重试。"})
+			DialogService.info({"title": _startup_text("教学奖励", "Tutorial Reward"), "body":
+				_startup_text("本地引导进度暂时无法保存。教学进度已保留，请重试。",
+					"Could not save the next tutorial step. Your existing progress is saved. Please try again.")})
 			return
 	else:
 		if not PlayerProfile.set_onboarding_status(PlayerProfile.ONBOARDING_COMPLETED):

@@ -136,7 +136,7 @@ func _build(spec: Dictionary) -> void:
 
 	if _intent != Intent.INFO:
 		_cancel_btn = _make_button(
-			str(spec.get("cancel_text", "取消")),
+			str(spec.get("cancel_text", "Cancel" if TranslationServer.get_locale().begins_with("en") else "取消")),
 			Theming.VARIATION_GHOST)
 		_cancel_btn.name = "CancelButton"
 		_cancel_btn.pressed.connect(_on_cancel_pressed)
@@ -145,7 +145,9 @@ func _build(spec: Dictionary) -> void:
 	var confirm_variation := (Theming.VARIATION_DANGER
 		if _intent == Intent.DANGER
 		else Theming.VARIATION_PRIMARY)
-	_confirm_btn = _make_button(str(spec.get("confirm_text", "确定")), confirm_variation)
+	var english := TranslationServer.get_locale().begins_with("en")
+	var default_confirm := ("Got it" if english else "知道了") if _intent == Intent.INFO else ("OK" if english else "确定")
+	_confirm_btn = _make_button(str(spec.get("confirm_text", default_confirm)), confirm_variation)
 	_confirm_btn.name = "ConfirmButton"
 	_confirm_btn.pressed.connect(_on_confirm_pressed)
 	row.add_child(_confirm_btn)

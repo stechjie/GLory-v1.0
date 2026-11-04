@@ -74,14 +74,16 @@ func confirm(spec: Dictionary) -> String:
 		"on_result": spec.get("on_result", Callable()),
 	}
 	# push 之后再 configure：configure 会起入场动画，需要节点已在树上。
-	dialog.configure({
+	var dialog_spec := {
 		"title": spec.get("title", ""),
 		"body": spec.get("body", ""),
 		"intent": spec.get("intent", Dialog.Intent.NORMAL),
-		"confirm_text": spec.get("confirm_text", "确定"),
-		"cancel_text": spec.get("cancel_text", "取消"),
 		"request_id": request_id,
-	})
+	}
+	for key in ["confirm_text", "cancel_text"]:
+		if spec.has(key):
+			dialog_spec[key] = spec[key]
+	dialog.configure(dialog_spec)
 	return request_id
 
 
@@ -89,7 +91,6 @@ func confirm(spec: Dictionary) -> String:
 func info(spec: Dictionary) -> String:
 	var merged := spec.duplicate()
 	merged["intent"] = Dialog.Intent.INFO
-	merged["confirm_text"] = spec.get("confirm_text", "知道了")
 	return confirm(merged)
 
 

@@ -100,7 +100,9 @@ func allow_new_match() -> bool:
 	if status_allows_new_match(result):
 		return true
 	if result != "active":
-		DialogService.info({"request_id": "active_match_guard", "title": "提示", "body": "暂时无法确认对局状态，请检查网络后重试", "owner": self})
+		var english := LocaleManager.get_locale().begins_with("en")
+		DialogService.info({"request_id": "active_match_guard", "title": "Notice" if english else "提示",
+			"body": "Could not verify the match status. Check your connection and try again." if english else "暂时无法确认对局状态，请检查网络后重试", "owner": self})
 		return false
 	return await _confirm_exit_for_new_match()
 

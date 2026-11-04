@@ -68,11 +68,39 @@ func _ready() -> void:
 	_data_bilingual()
 	await _surface_round("zh", false)
 	await _surface_round("en", true)
+	await _shop_dialog_defaults()
 	LocaleManager.set_locale("zh")
 	GameState.reset_run()
 	_h.expect(_h.checked_count() >= 20, "too_few_assertions",
 		"整份门禁只量到 %d 条断言，等于没验" % _h.checked_count())
 	_h.finish(get_tree())
+
+
+func _shop_dialog_defaults() -> void:
+	var shop: Control = load("res://scenes/menu/ShopScreen.gd").new()
+	shop.set_meta("ui_capture_fixture", true)
+	add_child(shop)
+	for locale in ["en", "zh"]:
+		LocaleManager.set_locale(locale)
+		var english: bool = locale == "en"
+		shop.call("_confirm_buy", {"id": "test_frame", "name": "测试头像框",
+			"name_en": "Test Frame", "price": 600, "currency": "coin"})
+		await get_tree().process_frame
+		var cancel := get_tree().root.find_child("CancelButton", true, false) as Button
+		_h.expect(cancel != null and cancel.text == ("Cancel" if english else "取消"),
+			"shop_purchase_cancel_locale", "Purchase dialog Cancel should follow %s" % locale)
+		ModalStack.close_all()
+		await get_tree().process_frame
+
+		DialogService.info({"owner": shop, "body": "Reward claimed" if english else "奖励已领取"})
+		await get_tree().process_frame
+		var confirm := get_tree().root.find_child("ConfirmButton", true, false) as Button
+		_h.expect(confirm != null and confirm.text == ("Got it" if english else "知道了"),
+			"info_confirm_locale", "Default info button should follow %s" % locale)
+		ModalStack.close_all()
+		await get_tree().process_frame
+	shop.queue_free()
+	await get_tree().process_frame
 
 
 # ---- ① 检测器自测 ------------------------------------------------------------

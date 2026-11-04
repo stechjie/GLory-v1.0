@@ -563,7 +563,7 @@ static func _mother_execute_on(state: Dictionary, candidates: Array, mother: Dic
 	state.visual_events.append({"type":"mother_execute","source_uid":str(mother.get("uid","")),"target_uid":str(target.get("uid","")),"time":float(state.get("elapsed",0.0))})
 	if target.is_empty():
 		return
-	if bool(target.get("def", {}).get("is_boss", false)):
+	if bool(target.get("def", {}).get("is_boss", false)) or str(target.get("id", target.get("def", {}).get("id", ""))).begins_with("boss_"):
 		var dealt := DamageService.apply_damage(target, maxi(1, int(round(float(target.max_hp) * float((mother.get("def", {}) as Dictionary).get("boss_max_hp_damage", 0.20))))), true)
 		DamageService.emit_confirmed_skill_damage(state, mother, target, dealt, "unique_death_execute")
 		return
