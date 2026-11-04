@@ -329,6 +329,11 @@ glory_server_key*.pem
 /assets/ui/treasure_cards/emblems/*
 !/assets/ui/treasure_cards/emblems/*.png
 !/assets/ui/treasure_cards/emblems/*.png.import
+# 11.05 图鉴图（怪物 / Boss / 法阵友军 / 宠物 / 元素）：CodexService 按名字拼路径加载，
+# 同事那边一直没有这个目录，图鉴这些分类是空的，所以改为进 git（38 张约 26MB）。
+!/assets/ui/codex_portraits/
+/assets/ui/codex_portraits/*
+!/assets/ui/codex_portraits/*.png
 # Human unit refinements: native runtime meshes, materials and atlases.
 !/assets/models/units/human_refined/
 !/assets/models/units/human_refined/**
