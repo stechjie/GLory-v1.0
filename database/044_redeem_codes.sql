@@ -9,7 +9,7 @@
 --
 -- ## 一张表装两种码，区别只在 max_uses
 --
---   通用码  GLORY2026   人取的名字，全服都能填，一人一次
+--   通用码  GLORY2026   人取的名字，全服都能填，一人一次；max_uses 可以 null = 不限人数（045）
 --   单次码  12 位随机    max_uses = 1，批量生成（KOL / 补偿 / 线下活动）
 --
 -- ## 管理员怎么建
@@ -116,14 +116,13 @@ create table if not exists redeem_codes (
   constraint redeem_campaign_length check (
     campaign is null or char_length(btrim(campaign)) between 1 and 32),
 
-  -- 🔴 **必填，不许无限。** 一个泄漏的无限码 = 全服白拿，而唯一的刹车是人工撤回 ——
-  --    从泄漏到有人发现通常是几小时。必须填 = 自动刹车：要发给全服就填 100000，
-  --    但建码的人必须想一下这个数。
+  -- 这里建出来是 not null；🔴 045（2026-11-04 用户定）放开成 null = 不限人数，理由写在 045 开头。
+  -- 改这一列的约束去 045 改，别在这里改：已经跑过 044 的库不会再执行 create table。
   max_uses   integer not null,
   constraint redeem_max_uses_range check (max_uses between 1 and 1000000),
 
   -- 已领次数。冗余（claims 能数出来），但「先数再写」在并发下会超发。
-  -- 领取走 update … where used_count < max_uses returning，一条语句定胜负。
+  -- 领取走 update … where (max_uses is null or used_count < max_uses) returning，一条语句定胜负。
   -- 下面的约束是最后一道：就算哪天有人写错了领取逻辑，也超发不了。
   used_count integer not null default 0,
   constraint redeem_used_count_range check (
@@ -172,7 +171,7 @@ alter table redeem_codes enable row level security;
 comment on table redeem_codes is
   '兑换码。通用码与单次码同一张表，区别只在 max_uses。撤回打标记，不删行。';
 comment on column redeem_codes.max_uses is
-  '总共能被领多少次。必填、不许无限：泄漏的码要有自动刹车。单次码是 1。';
+  '总共能被领多少次。null = 不限人数（只有通用码会这样，截止时间收口）。单次码是 1。';
 
 
 -- ============================================================================
@@ -284,8 +283,9 @@ begin
 	if v_code !~ '^[A-Z0-9]{4,24}$' then
 		raise exception '兑换码只能是 4 到 24 位字母和数字（空格、连字符会自动去掉）：%', p_code;
 	end if;
-	if p_max_uses is null or p_max_uses < 1 or p_max_uses > 1000000 then
-		raise exception '总次数（p_max_uses）必填，1 到 1000000 之间，现在是 %：不许无限，泄漏的码要有自动刹车', p_max_uses;
+	-- 与 045 里那份同一个判断：044 可重复执行，重跑时不能把 045 放开的「不限人数」改回去。
+	if p_max_uses is not null and (p_max_uses < 1 or p_max_uses > 1000000) then
+		raise exception '总次数（p_max_uses）要么不填（不限人数），要么在 1 到 1000000 之间，现在是 %', p_max_uses;
 	end if;
 	if exists (select 1 from redeem_codes where code = v_code) then
 		raise exception '这个兑换码已经有了：%（撤回过的也不能重用，换一个名字）', v_code;
@@ -303,7 +303,7 @@ end;
 $$;
 
 comment on function create_redeem_code(text, integer, text, bigint, bigint, text[], integer, text, timestamptz, text) is
-	'建一个兑换码。返回 code_id。操作人必填；码自动转大写、去空格和连字符。';
+	'建一个兑换码。返回 code_id。p_max_uses 传 null = 不限人数。操作人必填；码自动转大写、去空格和连字符。';
 
 
 -- 批量生成单次码（每个 max_uses = 1）。返回这一批的码，给运营导出。

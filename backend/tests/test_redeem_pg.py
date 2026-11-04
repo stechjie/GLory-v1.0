@@ -49,7 +49,7 @@ async def _warm_pool() -> None:
         await db.pool().release(conn)
 
 
-async def _make(conn: asyncpg.Connection, code: str, *, max_uses: int = 100, diamond: int = 100, coin: int = 0,
+async def _make(conn: asyncpg.Connection, code: str, *, max_uses: int | None = 100, diamond: int = 100, coin: int = 0,
                 items: list[str] | None = None, campaign: str | None = None, days: int = 30,
                 starts_in_hours: int = 0) -> int:
     return int(await conn.fetchval(
@@ -241,6 +241,37 @@ def test_admin_code_needs_a_second_person_and_withdraw_needs_one() -> None:
     run_with_db(body)
 
 
+def test_unlimited_code_never_runs_out_but_each_player_still_gets_one() -> None:
+    """不限人数（045，11-04 用户定）：后台批出来 max_uses 是 null；领多少次都不会「已领完」，一人仍只能一次。
+
+    🔴 领取那条条件 update 写成 `used_count < max_uses` 的话，和 null 比是 null —— 一次都领不了。
+    """
+
+    async def body() -> None:
+        queued = await admin.request_redeem(ARVIN, _draft(code="OPEN2026", max_uses=None), uuid.uuid4())
+        assert "不限人数" in queued["summary"] and "最多一共发出" not in queued["summary"]
+        await admin.decide(LENO, queued["request_id"], True, "")
+        async with db.pool().acquire() as conn:
+            assert await conn.fetchval("select max_uses from redeem_codes where code = 'OPEN2026'") is None
+            players = [await new_player(conn) for _ in range(6)]
+        for p in players:
+            assert (await redeem.claim(p, "OPEN2026")).diamond == 100
+        await _rejected("redeem_already_claimed", redeem.claim(players[0], "OPEN2026"))
+        async with db.pool().acquire() as conn:
+            assert await conn.fetchval("select used_count from redeem_codes where code = 'OPEN2026'") == 6
+        [group] = await admin.recent_redeem()
+        assert group["max_uses"] is None and group["used"] == 6
+
+        # 同一个活动里一个不限、一个限 100：整组是「不限」。sum 会悄悄跳过 null，算成一个偏小的 100。
+        async with db.pool().acquire() as conn:
+            await _make(conn, "MIXOPEN", max_uses=None, campaign="mix")
+            await _make(conn, "MIXCAP", max_uses=100, campaign="mix")
+        mixed = next(g for g in await admin.recent_redeem() if g["campaign"] == "mix")
+        assert mixed["codes"] == 2 and mixed["max_uses"] is None, "列表要显示「不限」"
+
+    run_with_db(body)
+
+
 def test_admin_batch_is_one_campaign_exported_and_withdrawn_together() -> None:
     async def body() -> None:
         async with db.pool().acquire() as conn:
@@ -267,7 +298,10 @@ def test_admin_batch_is_one_campaign_exported_and_withdrawn_together() -> None:
 
 
 def test_migrations_can_be_run_twice_without_touching_data() -> None:
-    """043 / 044 是手工在 Supabase 里跑的：跑两遍（或者跑到一半重跑）不能报错、也不能动已有数据。"""
+    """043–045 是手工在 Supabase 里跑的：跑两遍（或者跑到一半重跑）不能报错、也不能动已有数据。
+
+    044 在 045 之后重跑，不能把 045 放开的「不限人数」改回去（建码函数两份要一致）。
+    """
 
     async def body() -> None:
         root = pathlib.Path(__file__).resolve().parents[2] / "database"
@@ -276,9 +310,11 @@ def test_migrations_can_be_run_twice_without_touching_data() -> None:
             await _make(conn, "KEEP")
             await conn.execute("insert into player_invites (invitee, inviter) values ($1, $2)",
                                p, await new_player(conn))
-            for name in ("043_invites.sql", "044_redeem_codes.sql"):
+            await _make(conn, "OPENKEEP", max_uses=None)
+            for name in ("043_invites.sql", "044_redeem_codes.sql", "045_redeem_unlimited.sql", "044_redeem_codes.sql"):
                 await conn.execute((root / name).read_text(encoding="utf-8"))
-            assert await conn.fetchval("select count(*) from redeem_codes where code = 'KEEP'") == 1
+            assert await conn.fetchval("select count(*) from redeem_codes where code in ('KEEP', 'OPENKEEP')") == 2
             assert await conn.fetchval("select count(*) from player_invites") == 1
+            await _make(conn, "OPENAGAIN", max_uses=None)
 
     run_with_db(body)

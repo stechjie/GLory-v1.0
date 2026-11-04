@@ -103,9 +103,11 @@ _FIND = (
 )
 
 # 第 4 步。条件和上面的判断重复 —— 锁住之后不会变，这里是第二道。
+# max_uses 为 null = 不限人数（045）。🔴 别写回 `used_count < max_uses`：和 null 比是 null，
+# 不限人数的码就一次都领不了。
 _TAKE = (
     "update redeem_codes set used_count = used_count + 1"
-    " where code_id = $1 and used_count < max_uses and withdrawn_at is null"
+    " where code_id = $1 and (max_uses is null or used_count < max_uses) and withdrawn_at is null"
     "   and now() >= starts_at and now() < expires_at"
     " returning used_count"
 )
@@ -145,7 +147,7 @@ async def claim(player_id: uuid.UUID, raw_code: str) -> Claimed:
                 "select 1 from redeem_claims where campaign = $1 and player_id = $2",
                 row["campaign"], player_id):
             raise RedeemRejected("redeem_campaign_claimed", "这个活动的兑换码你已经领过一个了")
-        if int(row["used_count"]) >= int(row["max_uses"]):
+        if row["max_uses"] is not None and int(row["used_count"]) >= int(row["max_uses"]):
             raise RedeemRejected("redeem_used_up", "这个兑换码已经被领完了")
         items = list(row["items"])
         # 后台建码时核过一次；商品目录之后可能改了。发出去的邮件附件不对会被整封藏起来

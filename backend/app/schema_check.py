@@ -179,6 +179,12 @@ _PROBES: list[tuple[str, str, str]] = [
         " where tgname = 'redeem_codes_campaign_frozen' and not tgisinternal",
         "改一个被领过的码的 campaign 就能绕过活动互斥。不报错",
     ),
+    (
+        "045 兑换码可以不限人数",
+        "select 1 from pg_attribute"
+        " where attrelid = 'redeem_codes'::regclass and attname = 'max_uses' and not attnotnull",
+        "后台批准「不限人数」的兑换码会报错、码建不出来（不会发错钱）",
+    ),
 ]
 
 

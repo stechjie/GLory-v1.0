@@ -647,12 +647,77 @@ function inviteCard(d) {
       h("td", {}, `#${c.mail_id}`)))));
 }
 
-function attachmentText(m) {
+// names：content_id → 给人看的名字（itemNames(catalog)）。没给就显示 id（玩家详情页没拉目录）。
+function attachmentText(m, names = {}) {
   const parts = [];
   if (m.diamond) parts.push(`${num(m.diamond)} 钻石`);
   if (m.coin) parts.push(`${num(m.coin)} 黄金`);
-  if (m.items && m.items.length) parts.push(m.items.join("、"));
+  if (m.items && m.items.length) parts.push(m.items.map((id) => names[id] || id).join("、"));
   return parts.join("，") || "—";
+}
+
+function itemNames(catalog) {
+  const names = {};
+  for (const c of catalog) names[c.content_id] = c.kind === "race" ? `${c.name}（整族）` : c.name;
+  return names;
+}
+
+// 发邮件、建兑换码共用的物品选择器（2026-11-04 用户要的）。分组照商品目录的 kind；这里没列的种类进「其他」。
+//
+// 种族可以整族勾：整族只算一件附件，领的时候补齐他缺的棋子、种族跟着解锁（backend/app/shop.py grant_content）。
+// 也可以展开只勾其中几个棋子。两者互斥：整族已经包含全部棋子，再勾棋子没有意义。
+const ITEM_GROUPS = [["race", "种族"], ["avatar_frame", "头像框"], ["pet", "宠物"], ["prep_skin", "棋盘皮肤"], ["avatar", "头像"]];
+// 一封邮件 / 一个兑换码最多几件（012 的 mail_items_shape、044 的 redeem_items_shape）。
+const MAX_ATTACH = 10;
+
+function itemPicker(catalog, onChange) {
+  const picked = [];   // { id, box }，按目录顺序
+  const count = h("span", { class: "muted" }, "");
+  const selected = () => picked.filter((p) => p.box.checked).map((p) => p.id);
+  const changed = () => {
+    const n = selected().length;
+    count.textContent = n ? `已选 ${n} / ${MAX_ATTACH} 件` + (n > MAX_ATTACH ? "：太多了，分成几封 / 几个码" : "") : "";
+    count.className = n > MAX_ATTACH ? "picker-over" : "muted";
+    onChange();
+  };
+  const option = (c, text) => {
+    const box = h("input", { type: "checkbox" });
+    picked.push({ id: c.content_id, box });
+    box.addEventListener("change", changed);
+    return { box, label: h("label", { class: "check", title: c.content_id }, box, text) };
+  };
+
+  const raceBlock = (race) => {
+    const whole = option(race, `${race.name}（整族）`);
+    const units = catalog.filter((c) => c.kind === "unit" && c.race === race.content_id).map((c) => option(c, c.name));
+    const more = h("details", {}, h("summary", {}, `只选其中几个棋子（${units.length}）`),
+      h("div", { class: "picker-items" }, units.map((u) => u.label)));
+    whole.box.addEventListener("change", () => {
+      for (const u of units) {
+        u.box.disabled = whole.box.checked;
+        if (whole.box.checked) u.box.checked = false;
+      }
+      if (whole.box.checked) more.open = false;
+      changed();
+    });
+    return h("div", { class: "picker-race" }, whole.label, more);
+  };
+
+  const listed = new Set(ITEM_GROUPS.map(([kind]) => kind).concat(["unit"]));
+  const blocks = [];
+  for (const [kind, title] of ITEM_GROUPS) {
+    const rows = catalog.filter((c) => c.kind === kind);
+    if (!rows.length) continue;
+    blocks.push(h("div", { class: "picker-group" }, h("b", {}, title),
+      kind === "race" ? rows.map(raceBlock) : h("div", { class: "picker-items" }, rows.map((c) => option(c, c.name).label))));
+  }
+  // 不属于任何种族的棋子、以后新加的种类：照样能发，不能因为这里没列就悄悄消失。
+  const rest = catalog.filter((c) => !listed.has(c.kind) || (c.kind === "unit" && !c.race));
+  if (rest.length) {
+    blocks.push(h("div", { class: "picker-group" }, h("b", {}, "其他"),
+      h("div", { class: "picker-items" }, rest.map((c) => option(c, c.name).label))));
+  }
+  return { el: h("div", { class: "picker" }, blocks, count), selected };
 }
 
 function mailStatus(m) {
@@ -763,18 +828,18 @@ async function mailsView(main) {
   const coin = h("input", { type: "number", min: "0", value: "0" });
   const days = h("input", { type: "number", min: "1", max: "365", value: "30" });
   const note = h("input", { maxlength: "200", placeholder: "为什么发、对应哪次事故（带附件时必填）" });
-  const items = data.catalog.map((c) => ({ id: c.content_id, box: h("input", { type: "checkbox" }), name: c.name }));
+  const names = itemNames(data.catalog);
+  const picker = itemPicker(data.catalog, () => sync());
   const send = h("button", { class: "btn primary" }, "发送");
 
   const sync = () => {
     const all = mode.value === "all";
     code.disabled = all;
     newbiesLabel.style.display = all ? "" : "none";
-    const paid = Number(diamond.value) > 0 || Number(coin.value) > 0 || items.some((i) => i.box.checked);
+    const paid = Number(diamond.value) > 0 || Number(coin.value) > 0 || picker.selected().length > 0;
     send.textContent = paid ? "提交审批" : "发送";
   };
   [mode, diamond, coin].forEach((el) => el.addEventListener("input", sync));
-  items.forEach((i) => i.box.addEventListener("change", sync));
   code.addEventListener("change", async () => {
     target = null;
     who.textContent = "";
@@ -794,12 +859,12 @@ async function mailsView(main) {
     const body = {
       to: all ? "all" : target.player_id, title_zh: titleZh.value, body_zh: bodyZh.value,
       title_en: titleEn.value, body_en: bodyEn.value, diamond: Number(diamond.value || 0),
-      coin: Number(coin.value || 0), items: items.filter((i) => i.box.checked).map((i) => i.id),
+      coin: Number(coin.value || 0), items: picker.selected(),
       days: Number(days.value || 30), include_new_players: all && newbies.checked, note: note.value,
       request_key: key,
     };
     const toText = all ? "全服" : `${target.player_name}（${target.friend_code}）`;
-    const attach = attachmentText(body);
+    const attach = attachmentText(body, names);
     if (!confirm(`发邮件给 ${toText}\n标题：${body.title_zh}\n附件：${attach}\n有效 ${body.days} 天`
       + (attach !== "—" ? "\n\n带附件：提交后要另一个管理员批准才会发出。" : ""))) return "";
     const r = await api("POST", "/admin/api/mails", body);
@@ -812,14 +877,14 @@ async function mailsView(main) {
 
   main.append(h("section", { class: "card" }, h("h2", {}, "发系统邮件"),
     h("p", { class: "hint" }, "没附件的当场发；带钻石 / 黄金 / 物品的要另一个管理员批准。钻石进赠送那一列。"
-      + "附件只能是商城里卖的东西；玩家已经拥有的会跳过、不折算。"),
+      + "附件只能是商品目录里登记的东西（抽奖、活动限定的也能发）；整族只算一件，领的时候补齐他缺的棋子。"
+      + "玩家已经拥有的会跳过、不折算。"),
     h("div", { class: "row" }, field("收件人", mode), field("好友码", code), who),
     newbiesLabel,
     h("div", { class: "row" }, field("中文标题（必填，60 字内）", titleZh, true), field("英文标题", titleEn, true)),
     h("div", { class: "row" }, field("中文正文", bodyZh, true), field("英文正文", bodyEn, true)),
-    h("div", { class: "row" }, field("钻石", diamond), field("黄金", coin), field("有效天数", days),
-      h("div", { class: "field" }, h("span", {}, "物品"), h("div", {}, items.map((i) =>
-        h("label", { class: "check" }, i.box, `${i.name}（${i.id}）`))))),
+    h("div", { class: "row" }, field("钻石", diamond), field("黄金", coin), field("有效天数", days)),
+    h("div", { class: "field" }, h("span", {}, "物品"), picker.el),
     h("div", { class: "row" }, field("内部备注 / 原因（玩家看不到）", note, true), send), box));
   sync();
 
@@ -840,7 +905,7 @@ async function mailsView(main) {
       }
       return h("tr", {}, h("td", {}, m.mail_id), h("td", {}, fmt(m.created_at)),
         h("td", {}, m.player_id ? h("span", { class: "mono" }, m.friend_code || "?") : (m.include_new_players ? "全服（含新玩家）" : "全服")),
-        h("td", {}, m.title_zh), h("td", {}, attachmentText(m)), h("td", { class: "num" }, num(m.claimed)),
+        h("td", {}, m.title_zh), h("td", {}, attachmentText(m, names)), h("td", { class: "num" }, num(m.claimed)),
         h("td", {}, mailStatus(m), m.problem ? h("div", { class: "muted" }, m.problem) : ""),
         h("td", {}, m.actor), cell);
     }))));
@@ -858,10 +923,15 @@ function rewardRange(lo, hi, unit) {
   return Number(lo) === Number(hi) ? `${num(hi)} ${unit}` : `${num(lo)}–${num(hi)} ${unit}`;
 }
 
+// max_uses 为 null = 不限人数（045）。
+function usedUp(g) {
+  return g.max_uses != null && Number(g.used) >= Number(g.max_uses);
+}
+
 function redeemStatus(g) {
   if (Number(g.withdrawn) >= Number(g.codes)) return h("span", { class: "tag" }, "已撤回");
   if (Date.parse(g.expires_at) < Date.now()) return h("span", { class: "tag" }, "已过期");
-  if (Number(g.used) >= Number(g.max_uses)) return h("span", { class: "tag" }, "已领完");
+  if (usedUp(g)) return h("span", { class: "tag" }, "已领完");
   if (Date.parse(g.starts_at) > Date.now()) return h("span", { class: "tag yellow" }, "未开始");
   if (Number(g.withdrawn)) return h("span", { class: "tag yellow" }, `撤回了 ${num(g.withdrawn)} 个`);
   return h("span", { class: "tag green" }, "有效");
@@ -889,7 +959,7 @@ async function redeemView(main) {
   const mode = h("select", {}, h("option", { value: "code" }, "一个码（通用码：全服都能填，一人一次）"),
     h("option", { value: "batch" }, "批量单次码（每个只能用一次，一人一批只能领一个）"));
   const code = h("input", { maxlength: "24", placeholder: "例如 GLORY2026（避开 0 / O、1 / I）" });
-  const maxUses = h("input", { type: "number", min: "1", max: "1000000", value: "1000" });
+  const maxUses = h("input", { type: "number", min: "1", max: "1000000", placeholder: "空 = 不限人数" });
   const count = h("input", { type: "number", min: "1", max: "5000", value: "100" });
   const campaign = h("input", { maxlength: "32", placeholder: "可空。同一活动下一人只能领一个码" });
   const diamond = h("input", { type: "number", min: "0", value: "0" });
@@ -897,7 +967,8 @@ async function redeemView(main) {
   const days = h("input", { type: "number", min: "1", max: "365", value: "30" });
   const starts = h("input", { type: "datetime-local" });
   const note = h("input", { maxlength: "200", placeholder: "为什么建、哪个活动（必填，玩家看不到）" });
-  const items = data.catalog.map((c) => ({ id: c.content_id, box: h("input", { type: "checkbox" }), name: c.name }));
+  const names = itemNames(data.catalog);
+  const picker = itemPicker(data.catalog, () => sync());
   const send = h("button", { class: "btn primary" }, "提交审批");
   const codeField = field("兑换码", code);
   const maxField = field("最多几人能领", maxUses);
@@ -909,19 +980,24 @@ async function redeemView(main) {
     codeField.style.display = batch ? "none" : "";
     maxField.style.display = batch ? "none" : "";
     countField.style.display = batch ? "" : "none";
-    const uses = Number((batch ? count : maxUses).value || 0);
+    const unlimited = !batch && maxUses.value === "";
+    const uses = unlimited ? 1 : Number((batch ? count : maxUses).value || 0);
     const parts = [];
     if (Number(diamond.value) > 0) parts.push(`${num(Number(diamond.value) * uses)} 钻石`);
     if (Number(coin.value) > 0) parts.push(`${num(Number(coin.value) * uses)} 黄金`);
-    total.textContent = parts.length ? `最多一共发出 ${parts.join("，")}（批的人看到的就是这个数）` : "";
+    if (!parts.length) total.textContent = "";
+    else if (unlimited) {
+      total.textContent = `🔴 不限人数：每个账号 ${parts.join("，")}，有效 ${num(Number(days.value || 0))} 天内`
+        + "来领的账号（包括小号）越多发得越多，没有总量上限";
+    } else total.textContent = `最多一共发出 ${parts.join("，")}（批的人看到的就是这个数）`;
   };
-  [mode, maxUses, count, diamond, coin].forEach((el) => el.addEventListener("input", sync));
+  [mode, maxUses, count, diamond, coin, days].forEach((el) => el.addEventListener("input", sync));
 
   send.addEventListener("click", action(send, box, async () => {
     const body = {
-      mode: mode.value, code: code.value, max_uses: Number(maxUses.value || 0), count: Number(count.value || 0),
-      campaign: campaign.value, diamond: Number(diamond.value || 0), coin: Number(coin.value || 0),
-      items: items.filter((i) => i.box.checked).map((i) => i.id), days: Number(days.value || 30),
+      mode: mode.value, code: code.value, max_uses: maxUses.value === "" ? null : Number(maxUses.value),
+      count: Number(count.value || 0), campaign: campaign.value, diamond: Number(diamond.value || 0),
+      coin: Number(coin.value || 0), items: picker.selected(), days: Number(days.value || 30),
       starts_at: fromLocalInput(starts.value) || "", note: note.value, request_key: key,
     };
     if (!confirm(`提交建码申请？\n${total.textContent || "（没填奖励）"}\n\n要另一个管理员批准才会建。`)) return "";
@@ -933,12 +1009,12 @@ async function redeemView(main) {
 
   main.append(h("section", { class: "card" }, h("h2", {}, "建兑换码"),
     h("p", { class: "hint" }, "建码会发钱：提交后要另一个管理员批准才建。奖励发到玩家邮箱，钻石进赠送那一列。"
-      + "「最多几人能领」必填、不许无限 —— 码泄漏出去时它就是自动刹车。批量码批准后在下面的列表里导出。"),
+      + "「最多几人能领」留空 = 不限人数，只靠有效天数收口；提前不要了就在下面的列表里撤回。"
+      + "批量码批准后在下面的列表里导出。"),
     h("div", { class: "row" }, field("方式", mode), codeField, maxField, countField, field("活动", campaign, true)),
     h("div", { class: "row" }, field("每人钻石", diamond), field("每人黄金", coin), field("有效天数", days),
-      field("开始时间（空 = 批准即开始）", starts),
-      h("div", { class: "field" }, h("span", {}, "物品"), h("div", {}, items.map((i) =>
-        h("label", { class: "check" }, i.box, `${i.name}（${i.id}）`))))),
+      field("开始时间（空 = 批准即开始）", starts)),
+    h("div", { class: "field" }, h("span", {}, "物品"), picker.el),
     total,
     h("div", { class: "row" }, field("原因（内部备注）", note, true), send), box));
   sync();
@@ -950,8 +1026,7 @@ async function redeemView(main) {
     table(["码 / 活动", "个数", "已领 / 总数", "每人奖励", "有效期", "状态", "建的人", ""], data.groups.map((g) => {
       const cell = h("td", {});
       // 领完、过期、全撤回了的组不给撤回按钮：已经没人能领了，再点一下只是多一条操作记录。
-      const live = Number(g.withdrawn) < Number(g.codes) && Date.parse(g.expires_at) > Date.now()
-        && Number(g.used) < Number(g.max_uses);
+      const live = Number(g.withdrawn) < Number(g.codes) && Date.parse(g.expires_at) > Date.now() && !usedUp(g);
       if (g.campaign) {
         const out = h("button", { class: "btn small" }, "导出");
         out.addEventListener("click", action(out, listBox, async () => {
@@ -975,13 +1050,16 @@ async function redeemView(main) {
         }));
         cell.append(btn);
       }
+      // g.items 是 SQL 拼好的「a、b / c」（一组里不同的附件组合用 / 隔开），逐个换成名字。
+      const itemText = (g.items || "").split(" / ").filter(Boolean)
+        .map((combo) => combo.split("、").map((id) => names[id] || id).join("、")).join(" / ");
       const reward = [rewardRange(g.diamond_min, g.diamond_max, "钻石"), rewardRange(g.coin_min, g.coin_max, "黄金"),
-        g.items || ""].filter(Boolean).join("，") || "—";
+        itemText].filter(Boolean).join("，") || "—";
       return h("tr", {},
         h("td", {}, Number(g.codes) === 1 ? h("span", { class: "mono" }, g.code) : "",
           g.campaign ? h("div", { class: "muted" }, `活动 ${g.campaign}`) : ""),
         h("td", { class: "num" }, num(g.codes)),
-        h("td", { class: "num" }, `${num(g.used)} / ${num(g.max_uses)}`),
+        h("td", { class: "num" }, `${num(g.used)} / ${g.max_uses == null ? "不限" : num(g.max_uses)}`),
         h("td", {}, reward),
         h("td", {}, `${fmt(g.starts_at)} → ${fmt(g.expires_at)}`),
         h("td", {}, redeemStatus(g)),

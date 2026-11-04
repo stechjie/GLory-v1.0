@@ -27,6 +27,7 @@ import json
 import logging
 import re
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 import asyncpg
@@ -809,7 +810,7 @@ async def submit_mail(admin: Admin, draft: MailDraft, request_key: uuid.UUID) ->
             if draft.has_attachments:
                 parts = [("%d 钻石" % draft.diamond) if draft.diamond else "",
                          ("%d 黄金" % draft.coin) if draft.coin else "",
-                         "、".join(draft.items)]
+                         item_names(draft.items)]
                 summary = "给%s发邮件《%s》，附件：%s" % (
                     target if player_id is None else " " + target, payload["title_zh"],
                     "，".join(p for p in parts if p))
@@ -848,8 +849,32 @@ async def withdraw_mail(admin: Admin, mail_id: int) -> dict:
 
 
 def attachable_items() -> list[dict]:
-    """邮件能发的东西：只有商品目录里卖的（不在目录里的本来就人人免费，见 mail.item_problem）。"""
-    return [{"content_id": i.grants, "name": i.name, "name_en": i.name_en} for i in shop.items()]
+    """邮件 / 兑换码能发的东西，后台按 kind 分组（admin.js 的 itemPicker）。
+
+    商品目录里登记的**全部**，上不上架都列（2026-11-04）：棋盘皮肤三张都不直接卖（两张靠祈愿抽碎片）、
+    人族开局送、神族 2–10 级送、松鼠老虎靠抽、七日头像框是登录奖励 —— 补偿和活动都要能发。
+    不在目录里的不列：那些本来就人人免费（见 mail.item_problem）。
+
+    种族那一行能「整族」发：领的时候补齐缺的棋子、种族跟着解锁（shop.grant_content），一整族只占一件附件。
+    所以种族带上它的棋子（parts），棋子带上它属于哪一族（race）。
+    """
+    contents = shop.contents()
+    race_of = {part: i.grants for i in contents for part in i.requires}
+    return [{"content_id": i.grants, "name": i.name, "name_en": i.name_en, "kind": i.kind,
+             "parts": list(i.requires), "race": race_of.get(i.grants, "")}
+            for i in contents]
+
+
+def item_names(items: Sequence[str]) -> str:
+    """附件给批的人看的名字。批的人要看得懂批的是什么，`unit:human_king` 看不懂。"""
+    names = []
+    for content_id in items:
+        item = shop.content_item(content_id)
+        if item is None:
+            names.append(content_id)
+        else:
+            names.append("%s（整族 %d 个棋子）" % (item.name, len(item.requires)) if item.requires else item.name)
+    return "、".join(names)
 
 
 # --- 兑换码（database/044_redeem_codes.sql）---------------------------------------
@@ -866,7 +891,7 @@ REDEEM_MAX_BATCH = 5000
 class RedeemDraft:
     mode: str                # "code" 一个码（通用码） / "batch" 批量单次码
     code: str                # mode = code
-    max_uses: int            # mode = code
+    max_uses: int | None     # mode = code；None = 不限人数（045，2026-11-04 用户定）
     count: int               # mode = batch
     campaign: str            # 空 = 不分组（batch 时由数据库用批次号）
     diamond: int
@@ -909,8 +934,8 @@ def _check_redeem(draft: RedeemDraft) -> dict:
         code = redeem.normalize(draft.code)
         if not redeem.CODE_RE.fullmatch(code):
             raise AdminRejected("兑换码只能是 4 到 24 位字母和数字（空格、连字符会自动去掉）")
-        if not 1 <= draft.max_uses <= REDEEM_MAX_USES:
-            raise AdminRejected("总次数要在 1 到 %d 之间：不许无限，泄漏的码要有自动刹车" % REDEEM_MAX_USES)
+        if draft.max_uses is not None and not 1 <= draft.max_uses <= REDEEM_MAX_USES:
+            raise AdminRejected("「最多几人能领」要么留空（不限人数），要么在 1 到 %d 之间" % REDEEM_MAX_USES)
         payload.update(code=code, max_uses=draft.max_uses)
     else:
         if not 1 <= draft.count <= REDEEM_MAX_BATCH:
@@ -920,18 +945,26 @@ def _check_redeem(draft: RedeemDraft) -> dict:
 
 
 def _redeem_summary(payload: dict) -> str:
-    """给批的人看的一句话。🔴 一定写出「最多一共发出多少」—— 批的就是这个数。"""
-    uses = int(payload["max_uses"]) if payload["mode"] == "code" else int(payload["count"])
-    each = [("%s 钻石" % num_text(payload["diamond"])) if payload["diamond"] else "",
-            ("%s 黄金" % num_text(payload["coin"])) if payload["coin"] else "",
-            "、".join(payload["items"])]
-    total = [("%s 钻石" % num_text(payload["diamond"] * uses)) if payload["diamond"] else "",
-             ("%s 黄金" % num_text(payload["coin"] * uses)) if payload["coin"] else ""]
-    what = ("建兑换码 %s，最多 %s 人" % (payload["code"], num_text(uses)) if payload["mode"] == "code"
-            else "生成 %s 个单次兑换码" % num_text(uses))
+    """给批的人看的一句话。🔴 一定写出「最多一共发出多少」—— 批的就是这个数。
+
+    不限人数的码没有这个数，就写明「没有总量上限」：批的人批的是每人多少 × 多少天。
+    """
+    if payload["mode"] == "code":
+        uses = None if payload["max_uses"] is None else int(payload["max_uses"])
+        what = "建兑换码 %s，%s" % (payload["code"], "不限人数" if uses is None else "最多 %s 人" % num_text(uses))
+    else:
+        uses = int(payload["count"])
+        what = "生成 %s 个单次兑换码" % num_text(uses)
     if payload["campaign"]:
         what += "（活动 %s）" % payload["campaign"]
+    each = [("%s 钻石" % num_text(payload["diamond"])) if payload["diamond"] else "",
+            ("%s 黄金" % num_text(payload["coin"])) if payload["coin"] else "",
+            item_names(payload["items"])]
     text = "%s：每人 %s，有效 %d 天" % (what, "，".join(x for x in each if x), payload["days"])
+    if uses is None:
+        return text + "；🔴 不限人数：有效期内来领的账号（包括小号）越多发得越多，没有总量上限"
+    total = [("%s 钻石" % num_text(payload["diamond"] * uses)) if payload["diamond"] else "",
+             ("%s 黄金" % num_text(payload["coin"] * uses)) if payload["coin"] else ""]
     if any(total):
         text += "；🔴 最多一共发出 %s" % "，".join(x for x in total if x)
     return text
@@ -961,7 +994,7 @@ async def _create_redeem_now(conn: asyncpg.Connection, payload: dict, actor: str
         code_id = await conn.fetchval(
             "select create_redeem_code(p_code => $1, p_max_uses => $2, p_actor => $3, p_diamond => $4,"
             " p_coin => $5, p_items => $6, p_days => $7, p_campaign => $8, p_starts_at => $9, p_note => $10)",
-            payload["code"], int(payload["max_uses"]), actor, *common)
+            payload["code"], None if payload["max_uses"] is None else int(payload["max_uses"]), actor, *common)
         return {"code": payload["code"], "code_id": int(code_id)}
     codes = await conn.fetchval(
         "select create_redeem_batch(p_count => $1, p_actor => $2, p_diamond => $3, p_coin => $4,"
@@ -977,7 +1010,9 @@ async def recent_redeem() -> list[dict]:
     async with db.pool().acquire() as conn:
         rows = await _optional(conn,
             "select campaign, count(*) as codes, min(code) as code,"
-            "       sum(used_count)::bigint as used, sum(max_uses)::bigint as max_uses,"
+            "       sum(used_count)::bigint as used,"
+            # 有一个不限人数（null）整组就不限；sum 会悄悄跳过 null，算出一个偏小的「总数」。
+            "       case when bool_or(max_uses is null) then null else sum(max_uses) end::bigint as max_uses,"
             "       min(diamond) as diamond_min, max(diamond) as diamond_max,"
             "       min(coin) as coin_min, max(coin) as coin_max,"
             "       string_agg(distinct nullif(array_to_string(items, '、'), ''), ' / ') as items,"

@@ -11,7 +11,7 @@ import pydantic
 import pytest
 from fastapi.testclient import TestClient
 
-from app import admin, invites, login_sessions, players, redeem
+from app import admin, invites, login_sessions, mail, players, redeem, shop
 from app.config import Settings, get_settings
 from app.jwt_verify import Claims, TokenError
 from app.main import app
@@ -199,7 +199,8 @@ def test_redeem_request_summary_states_the_total_exposure() -> None:
 
 
 @pytest.mark.parametrize("kw, words", [
-    ({"max_uses": 0}, "不许无限"),
+    ({"max_uses": 0}, "要么留空"),
+    ({"max_uses": 1_000_001}, "要么留空"),
     ({"mode": "batch", "count": 5001}, "5000"),
     ({"diamond": 0, "coin": 0}, "至少填一样"),
     ({"code": "AB_CD"}, "4 到 24 位"),
@@ -210,3 +211,39 @@ def test_redeem_request_rejects_bad_drafts(kw, words) -> None:
     with pytest.raises(admin.AdminRejected) as exc:
         admin._check_redeem(_draft(**kw))
     assert words in exc.value.message
+
+
+def test_unlimited_code_summary_says_there_is_no_total_cap() -> None:
+    """不限人数（045，11-04 用户定）没有「最多一共发出」这个数 —— 摘要要明说没有上限，而不是算出一个 0。"""
+    payload = admin._check_redeem(_draft(max_uses=None, diamond=100, days=14))
+    assert payload["max_uses"] is None
+    summary = admin._redeem_summary(payload)
+    assert "不限人数" in summary and "没有总量上限" in summary and "每人 100 钻石" in summary
+    assert "最多一共发出" not in summary
+
+
+def test_summary_names_items_so_the_approver_knows_what_they_approve() -> None:
+    """批的人看到的是名字；整族要写明是整族（一件附件 = 8 个棋子）。"""
+    human = shop.content_item("human")
+    frame = next(i for i in shop.items() if i.kind == "avatar_frame")
+    summary = admin._redeem_summary(admin._check_redeem(_draft(items=("human", frame.grants))))
+    assert "%s（整族 %d 个棋子）" % (human.name, len(human.requires)) in summary
+    assert frame.name in summary and frame.grants not in summary
+
+
+def test_attachable_catalog_groups_units_under_their_race() -> None:
+    """后台选择器靠这份清单分组：种族带全部棋子，棋子指回种族；目录里登记的一样不少，下架的也在。"""
+    catalog = admin.attachable_items()
+    by_id = {c["content_id"]: c for c in catalog}
+    assert len(by_id) == len(catalog), "清单里不能有重复的 content_id"
+    races = [c for c in catalog if c["kind"] == "race"]
+    assert {r["content_id"] for r in races} == {"human", "god", "dark", "undead", "crimson"}
+    for race in races:
+        assert race["parts"], race
+        for part in race["parts"]:
+            assert by_id[part]["kind"] == "unit" and by_id[part]["race"] == race["content_id"], part
+    # 用户要的「皮肤」分组：三张棋盘皮肤都没上架（两张靠祈愿），只列在卖的话这一组是空的。
+    assert {"prep_skin_ice", "prep_skin_sakura", "prep_skin_nightwisp"} <= set(by_id)
+    assert {i.grants for i in shop.items()} <= set(by_id)
+    for c in catalog:
+        assert mail.item_problem([c["content_id"]]) == "", c

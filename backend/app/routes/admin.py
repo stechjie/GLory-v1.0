@@ -333,7 +333,7 @@ async def withdraw(mail_id: int, who: Writer) -> dict:
 class RedeemBody(BaseModel):
     mode: Literal["code", "batch"]
     code: str = Field(default="", max_length=64)
-    max_uses: int = 0
+    max_uses: int | None = None   # 空 = 不限人数（045）
     count: int = 0
     campaign: str = Field(default="", max_length=64)
     diamond: int = 0
