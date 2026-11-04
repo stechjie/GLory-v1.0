@@ -23,6 +23,7 @@ const IceChainScript := preload("res://scenes/prep/effects/creatures/PrepIceChai
 const ScorpionScript := preload("res://scenes/prep/effects/creatures/PrepScorpion2D.gd")
 const CrabScript := preload("res://scenes/prep/effects/creatures/PrepCrab2D.gd")
 const ShellScript := preload("res://scenes/prep/effects/PrepDefenseShell3D.gd")
+const SetBodyScript := preload("res://scenes/prep/effects/PrepSetBody3D.gd")
 
 const CHECK_NAME := "prep_treasure_visuals"
 const PREP_SCENE := "res://scenes/prep/PrepScreen.tscn"
@@ -52,6 +53,10 @@ func _ready() -> void:
 	var uniforms: Array = (SigilScript.SIGIL_SHADER as Shader).get_shader_uniform_list().map(func(u): return str(u.get("name", "")))
 	_h.expect("pattern" in uniforms and "fade" in uniforms, "sigil_shader_not_compiled",
 		"set_defense_sigil.gdshader 的 uniform 列表里没有 pattern / fade（%s）—— 多半编译失败，战斗盾纹也会没" % str(uniforms))
+	for sh in [preload("res://shaders/prep_set_overlay.gdshader"), preload("res://shaders/prep_set_emblem.gdshader")]:
+		var names: Array = (sh as Shader).get_shader_uniform_list().map(func(u): return str(u.get("name", "")))
+		_h.expect("fade" in names and "mode" in names, "set_body_shader_not_compiled",
+			"%s 的 uniform 列表里没有 fade / mode —— 多半编译失败" % (sh as Shader).resource_path)
 	_set_treasures([])
 	_place_pieces(1)
 	var prep := load(PREP_SCENE).instantiate() as PrepScript
@@ -105,6 +110,27 @@ func _ready() -> void:
 		var s := _sigils(prep)
 		_h.expect(s.size() == 3 and _all_pattern(s, int(SET_PATTERN[category])), "set_pattern_" + category,
 			"%s 套：应 3 个 pattern %d，实际 %d 个" % [category, int(SET_PATTERN[category]), s.size()])
+		# 11.04：身上效果 —— 3 枚棋盘普通棋子各一个；贴身光确实叠到模型网格上；攻击 / 控制有背后虚影
+		var bodies := _live(_collect_list(prep, SetBodyScript)).filter(func(b): return str(b.get("category")) == category)
+		_h.expect(bodies.size() == 3 and _follows_only_board_normals(prep, bodies), "set_body_count_" + category,
+			"%s 套身上效果：应只给棋盘 3 枚普通棋子，实际 %d 个" % [category, bodies.size()])
+		var overlaid := 0
+		for b in bodies:
+			overlaid += (b.get("_overlaid") as Array).size()
+		# 元素套有光柱，棋子身上不上色（Leno 11.04）；其余三套要有贴身光
+		if category == "element":
+			_h.expect(overlaid == 0, "element_overlay_present", "元素套不该再给棋子身上上色（已有环绕光柱）")
+			_h.expect(bodies.all(func(b): return b.get("_vortex") != null), "element_vortex_missing", "元素套没有环绕光柱")
+		elif category == "money":
+			# 金钱套：金币雨，身上不上色（Leno 11.04）
+			_h.expect(overlaid == 0, "money_overlay_present", "金钱套不该再给棋子身上上色（已有金币雨）")
+			_h.expect(bodies.all(func(b): return b.get("_coin_mm") != null), "money_coins_missing", "金钱套没有金币雨")
+		else:
+			_h.expect(overlaid > 0, "set_overlay_missing_" + category, "%s 套的贴身光没有叠到任何模型网格上" % category)
+		var want_emblem: bool = category in ["attack", "control"]
+		var has_emblem: bool = bodies.all(func(b): return b.get("_emblem") != null)
+		_h.expect(bodies.is_empty() or has_emblem == want_emblem, "set_emblem_" + category,
+			"%s 套背后虚影：应%s，实际%s" % [category, "有" if want_emblem else "无", "有" if has_emblem else "无"])
 
 	# 5. 金钱套亮度随金币
 	GameState.gold = 0
@@ -115,6 +141,19 @@ func _ready() -> void:
 	var rich := _min_strength(_sigils(prep))
 	_h.expect(poor > 0.2 and poor < 0.5, "money_poor_strength", "金钱套 0 金时亮度 %.2f（应在 0.2~0.5：暗但看得见）" % poor)
 	_h.expect(rich > 0.95, "money_rich_strength", "金钱套 10000 金时亮度 %.2f（应满亮）" % rich)
+	# 金币雨随档位变密：0 金（0 档）和 10000 金（10 档）各下 2.5 秒，比在场金币数
+	var money_bodies := _live(_collect_list(prep, SetBodyScript)).filter(func(x): return str(x.get("category")) == "money")
+	if not money_bodies.is_empty():
+		var mb = money_bodies[0]
+		GameState.gold = 0
+		await _wait(2.5)
+		var few := int(mb.get("_coin_mm").visible_instance_count)
+		_h.expect(int(mb.call("coin_tier")) == 0, "coin_tier_poor", "0 金应是 0 档，实际 %d" % int(mb.call("coin_tier")))
+		GameState.gold = 10000
+		await _wait(2.5)
+		var many := int(mb.get("_coin_mm").visible_instance_count)
+		_h.expect(int(mb.call("coin_tier")) == 10, "coin_tier_rich", "10000 金应是 10 档，实际 %d" % int(mb.call("coin_tier")))
+		_h.expect(many > few + 3, "coins_not_scaling", "金币雨没有随档位变密（0 档 %d 枚、10 档 %d 枚）" % [few, many])
 
 	# 6. 凤凰涅槃（哀鸣共鸣 + 亡魂反击）：棋盘上一只凤凰，几秒内俯冲点燃一枚棋子
 	_set_treasures(["atk_wail_resonance", "def_soul_counter"])

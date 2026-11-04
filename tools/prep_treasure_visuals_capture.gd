@@ -17,6 +17,7 @@ const CASES := [
 	["set_element", ["elem_flame_shatter", "elem_frost_blade", "elem_thunder_haste", "elem_toxic_spread"], 5000],
 	["set_money_poor", ["money_compound", "money_generous_fate", "money_discount", "money_golden_altar"], 0],
 	["set_money_rich", ["money_compound", "money_generous_fate", "money_discount", "money_golden_altar"], 10000],
+	["set_money_mid", ["money_compound", "money_generous_fate", "money_discount", "money_golden_altar"], 5000],
 	["link_phoenix", ["atk_wail_resonance", "def_soul_counter"], 100],
 	["link_iron_maiden", ["def_iron_wall", "ctrl_corrosive_needle"], 100],
 	["link_oppression_counter", ["ctrl_binding_weight", "atk_frenzy_assault"], 100],
@@ -31,6 +32,8 @@ const CASES := [
 var _dir := ""
 var _screen: Node
 var _defs: Dictionary = {}
+# `-- --star 4`：棋子按几星摆（看套装效果叠在 4★ 光环上的样子）
+var _star := 1
 
 
 func _ready() -> void:
@@ -44,13 +47,44 @@ func _ready() -> void:
 	GameState.reset_run()
 	NetworkService.team_active = false
 	NetworkService.is_host = true
+	var sargs := OS.get_cmdline_user_args()
+	var si := sargs.find("--star")
+	if si >= 0 and si + 1 < sargs.size():
+		_star = int(sargs[si + 1])
 	for cand in DataRegistry.get_table("race_units").get("units", []):
 		_defs[str((cand as Dictionary).get("id", ""))] = cand
 	_place()
 	_screen = PrepScene.instantiate()
 	add_child(_screen)
 	await get_tree().create_timer(1.0).timeout
+	# `-- --only set_attack --burst 12`：只拍一个情况、每 0.12 秒连拍 N 张（看劈砍这类动作）
+	var args := OS.get_cmdline_user_args()
+	var only := ""
+	var burst := 0
+	var ai := args.find("--only")
+	if ai >= 0 and ai + 1 < args.size():
+		only = args[ai + 1]
+	var bi := args.find("--burst")
+	if bi >= 0 and bi + 1 < args.size():
+		burst = int(args[bi + 1])
+	var every := 0.12
+	var ei := args.find("--every")
+	if ei >= 0 and ei + 1 < args.size():
+		every = float(args[ei + 1])
 	for c in CASES:
+		if not only.is_empty() and c[0] != only:
+			continue
+		if burst > 0:
+			GameState.owned_treasures.clear()
+			for id in c[1]:
+				GameState.owned_treasures.append(str(id))
+			GameState.gold = int(c[2])
+			_screen.call("_refresh_all")
+			await get_tree().create_timer(1.4).timeout
+			for k in burst:
+				get_viewport().get_texture().get_image().save_png("%s/%s_burst_%02d.png" % [_dir, c[0], k])
+				await get_tree().create_timer(every).timeout
+			continue
 		GameState.owned_treasures.clear()
 		for id in c[1]:
 			GameState.owned_treasures.append(str(id))
@@ -80,4 +114,4 @@ func _place() -> void:
 
 
 func _cell(id: String, uid: String, merc: bool) -> Dictionary:
-	return {"id": id, "uid": uid, "star": 1, "is_mercenary": merc, "def": (_defs[id] as Dictionary).duplicate(true)}
+	return {"id": id, "uid": uid, "star": _star, "is_mercenary": merc, "def": (_defs[id] as Dictionary).duplicate(true)}

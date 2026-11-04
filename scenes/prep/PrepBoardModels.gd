@@ -529,10 +529,16 @@ const PREP_CREATURE_PX_PER_WORLD := 220.0
 const PREP_CREATURE_Y_LIFT := 0.0056
 const PREP_CREATURE_RENDER_PRIORITY := 6
 const PREP_CREATURE_CANVAS_SHADER := preload("res://shaders/prep_creature_canvas.gdshader")
-# 11.04 返工：套装除了脚下纹，身上也要有东西。目前只有防卫套（战斗开局护罩的常驻版），
-# 其余套装的身上表现待 Leno 定稿后在这张表里加。
+# 11.04 返工：套装除了脚下纹，身上也要有东西。防卫套是战斗开局护罩的常驻版，
+# 其余四个套装见 PrepSetBody3D：攻击 = 红贴身光 + 背后交叉双斧劈砍，控制 = 紫贴身光 + 背后钟盘，
+# 金钱 = 周围金币雨（10 档随金币变密），元素 = 环绕棋子旋转的四色螺旋光柱。
 const PREP_SET_BODY_SCRIPTS := {
 	"defense": preload("res://scenes/prep/effects/PrepDefenseShell3D.gd"),
+	# 11.04：其余四个套装共用一个脚本，按 category 换样式
+	"attack": preload("res://scenes/prep/effects/PrepSetBody3D.gd"),
+	"control": preload("res://scenes/prep/effects/PrepSetBody3D.gd"),
+	"money": preload("res://scenes/prep/effects/PrepSetBody3D.gd"),
+	"element": preload("res://scenes/prep/effects/PrepSetBody3D.gd"),
 }
 # 脚下纹半径（特效单位，一格 = 0.6）。与战斗 SET_SIGIL_RADIUS_RATIO 0.55 × 棋子高 0.32 同量级，
 # 略大一点：备战镜头更远，太小看不出刻口。
@@ -681,6 +687,8 @@ func _sync_prep_set_body(uid: String, actor: Node3D, category: String, strength:
 		body.call("set_strength", strength)
 		return
 	var body: Node3D = (PREP_SET_BODY_SCRIPTS[category] as Script).new()
+	if "category" in body:
+		body.set("category", category)
 	parent.add_child(body)
 	# 身高 = 备战棋子统一渲染高度（UNIT_HEIGHT 0.32 × 格距换算，与升星 / 四星同口径）。
 	body.call("setup", actor, strength, STAR_UPGRADE_BURST.UNIT_HEIGHT * _prep_effect_scale(parent).y)
