@@ -313,6 +313,18 @@ glory_server_key*.pem
 !/assets/ui/mercenary_portraits/
 /assets/ui/mercenary_portraits/*
 !/assets/ui/mercenary_portraits/*.png
+# 11.04 宝藏图标 + 选宝卡联动徽记：代码按名字 / 联动 id 拼路径加载，缺了图鉴、宝藏栏、
+# 选宝卡全是空的。以前靠手动同步，同事那边一直没有这个目录，所以改为进 git。
+# 徽记带 .import：卡上只显示约 60px，要靠 mipmaps/generate=true 才不出锯齿。
+!/assets/ui/treasure_logos/
+/assets/ui/treasure_logos/*
+!/assets/ui/treasure_logos/*.png
+!/assets/ui/treasure_cards/
+/assets/ui/treasure_cards/*
+!/assets/ui/treasure_cards/emblems/
+/assets/ui/treasure_cards/emblems/*
+!/assets/ui/treasure_cards/emblems/*.png
+!/assets/ui/treasure_cards/emblems/*.png.import
 # Human unit refinements: native runtime meshes, materials and atlases.
 !/assets/models/units/human_refined/
 !/assets/models/units/human_refined/**
