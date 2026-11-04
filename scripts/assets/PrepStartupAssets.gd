@@ -7,6 +7,7 @@ const Shop := preload("res://scenes/prep/panels/ShopPanel.gd")
 const Resolver := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
 const Rules := preload("res://scenes/prep/PrepRules.gd")
 const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
+const RaceIcon := preload("res://scenes/prep/PrepShopRaceIcon.gd")
 
 static func paths() -> Array:
 	var out: Array = [
@@ -30,7 +31,11 @@ static func paths() -> Array:
 		out.append(Prep.PREP_MUSIC_PATH)
 	out.append_array(Prep.CRYSTAL_FIRE_PATHS)
 	out.append_array(Prep.CRYSTAL_WATER_PATHS)
-	out.append_array(Shop.SHOP_CARD_FRAME_PATHS.values())
+	# 商店卡框 11.04 起是代码画的，不再有框贴图；改为预热商店卡左上角的种族符号。
+	for race in RaceIcon.LOGO_PATHS:
+		var glyph := RaceIcon.GLYPH_DIR + str(race) + ".png"
+		if ResourceLoader.exists(glyph):
+			out.append(glyph)
 	# The farm displays the starter pets even before the player chooses one.
 	var pets: Array = PetService.starter_ids().duplicate()
 	if not PlayerProfile.get_active().is_empty():

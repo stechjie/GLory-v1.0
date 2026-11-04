@@ -62,7 +62,7 @@ var refresh_cost_label: Label          # 原 _refresh_shop_cost_label
 
 var buttons: Array[DragButton] = []    # 原 _shop_buttons
 var portraits: Array[TextureRect] = [] # 原 _shop_portraits
-var card_frames: Array[TextureRect] = []  # 原 _shop_card_frames
+var card_frames: Array[Control] = []  # 原 _shop_card_frames；11.04 起是代码画框 ShopCardFrame
 var card_labels: Array[Label] = []     # 原 _shop_card_labels
 var price_labels: Array[Label] = []    # 原 _shop_price_labels
 var race_icons: Array[Control] = []    # 原 _shop_race_icons
@@ -179,11 +179,10 @@ const SHOP_CARD_SIZE := Vector2(180, 180)    # 手牌卡尺寸（稀有度框比
 # 两次点击间隔超过它就不算双击，退回「两次独立单击」（各自只切换选中态）。
 const SHOP_DOUBLE_CLICK_WINDOW_MS := 350
 const UNIT_PORTRAIT_DIR := "res://assets/ui/unit_portraits"   # 头像 = <dir>/<unit_id>.png
-const SHOP_CARD_FRAME_PATHS := {             # tier(1/2/3) → 普通/稀有/史诗框
-	1: "res://assets/ui/shop/card_frame_common.png",
-	2: "res://assets/ui/shop/card_frame_rare.png",
-	3: "res://assets/ui/shop/card_frame_epic.png",
-}
+# 卡框（11.04 起代码画，替代 assets/ui/shop/card_frame_*.png 三张石框）：
+# 按 tier 分 T1 单线 / T2 双线蓝 / T3 金框，带近战远程章、升星提示。见 ShopCardFrame。
+const ShopCardFrameScript := preload("res://scenes/prep/panels/ShopCardFrame.gd")
+const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const PrepScrollIdleFlipbookScript = preload("res://scenes/prep/effects/PrepScrollIdleFlipbook.gd")
 const PrepMoneyBagIcon = preload("res://scenes/prep/PrepMoneyBagIcon.gd")
 const PrepMoneyBagAttentionGlowScript = preload("res://scenes/prep/effects/PrepMoneyBagAttentionGlow.gd")
@@ -453,7 +452,7 @@ func build_popup(body: HBoxContainer, center_host: Control) -> void:
 		buy_selected())
 	overlay.attach_long_press(gold_info_btn, func() -> void: overlay.show_gold_interest(format_gold_interest_detail()))
 	# 手牌区：4 张随机棋子卡，横排居中在卷轴空白区。
-	# 卡片层级（从底到顶）：头像 → 稀有度框（tier 换图） → 左上种族 logo → 右上价格（框自带金币） → 底部铭牌名字 → 灰色不可买覆盖层
+	# 卡片层级（从底到顶）：头像 → 代码画框（稀有度 / 近战远程章 / 升星章 / 金币） → 左上种族 logo → 右上价格 → 底部名字 → 灰色不可买覆盖层
 	var shop_card_area := Control.new()
 	shop_card_area.anchor_left = 0.0
 	shop_card_area.anchor_top = 0.10
@@ -499,38 +498,37 @@ func build_hand_cards(body: HBoxContainer, center_host: Control) -> void:
 		slot.add_child(portrait)
 		portraits.append(portrait)
 
-		# 稀有度框：刷新时按棋子 tier 换普通/稀有/史诗贴图
-		var card_frame := TextureRect.new()
-		card_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		card_frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		card_frame.stretch_mode = TextureRect.STRETCH_SCALE
+		# 代码画框：刷新时按棋子 tier / 射程 / 能否升星重画。三张卡错开动画相位，不齐步呼吸。
+		var card_frame: Control = ShopCardFrameScript.new()
+		card_frame.set("animated", not Tokens.reduced_motion())
+		card_frame.set("anim_phase", float(i) * 1.7)
 		card_frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		slot.add_child(card_frame)
 		card_frames.append(card_frame)
 
-		# 左上角种族 logo（复用详情弹窗的静态 logo 控件）
+		# 左上角种族 logo（复用详情弹窗的静态 logo 控件）：只画符号、不要圆章外框，
+		# 直接压在卡的左上角上（不往里缩）；下面是近战远程章
 		var race_icon: Control = PrepShopRaceIcon.new()
-		race_icon.anchor_left = 0.02
-		race_icon.anchor_top = 0.02
-		race_icon.anchor_right = 0.26
-		race_icon.anchor_bottom = 0.26
+		race_icon.set("glyph_only", true)
+		race_icon.anchor_left = -0.035
+		race_icon.anchor_top = -0.035
+		race_icon.anchor_right = 0.235
+		race_icon.anchor_bottom = 0.235
 		race_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		slot.add_child(race_icon)
 		race_icons.append(race_icon)
 
-		# 右上角价格：写在框自带的金币圆牌上（金币是亮金色，用深棕字不加描边）
+		# 右上角价格：写在框画的金币上（金币直接压在右上角；亮金色，用深棕字不加描边）
 		var price_label := Label.new()
 		price_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		price_label.anchor_left = 0.75
-		price_label.anchor_top = 0.02
-		price_label.anchor_right = 0.98
-		price_label.anchor_bottom = 0.23
+		price_label.anchor_left = 0.81
+		price_label.anchor_top = 0.0
+		price_label.anchor_right = 1.0
+		price_label.anchor_bottom = 0.19
 		price_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		price_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		price_label.pivot_offset = Vector2(14, 11)
-		price_label.rotation_degrees = -5.0
 		price_label.add_theme_font_override("font", GOLD_NUMBER_FONT)
-		price_label.add_theme_font_size_override("font_size", 22)
+		price_label.add_theme_font_size_override("font_size", 19)
 		price_label.add_theme_color_override("font_color", Color(0.28, 0.16, 0.02))
 		price_label.add_theme_color_override("font_outline_color", Color(1.0, 0.77, 0.20, 0.55))
 		price_label.add_theme_constant_override("outline_size", 1)
@@ -540,10 +538,10 @@ func build_hand_cards(body: HBoxContainer, center_host: Control) -> void:
 		# 底部铭牌：棋子名字（切英文时自动显示英文名）
 		var name_label := Label.new()
 		name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		name_label.anchor_left = 0.14
-		name_label.anchor_top = 0.76
-		name_label.anchor_right = 0.86
-		name_label.anchor_bottom = 0.95
+		name_label.anchor_left = 0.12
+		name_label.anchor_top = 0.80
+		name_label.anchor_right = 0.88
+		name_label.anchor_bottom = 0.93
 		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		name_label.clip_text = true
@@ -610,6 +608,8 @@ func refresh() -> void:
 		PrepRules.first_empty_bench_slot() < 0,
 		GameState.tutorial_mode,
 		LocaleManager.get_locale(),
+		# 升星提示跟着棋盘 / 待命区变：买走一张、卖掉一枚、合成之后都要重画。
+		_star_up_flags(),
 		# 宝物持有变了要立刻重算价格（折扣令牌 / 狂怒+折扣清仓联动），
 		# 否则签名命中旧值，refresh 提前返回，新折扣要等下次刷新商店才生效。
 		GameState.owned_treasures,
@@ -650,15 +650,32 @@ func refresh() -> void:
 		portrait.texture = PrepWidgets.cached_texture("%s/%s.png" % [UNIT_PORTRAIT_DIR, str(offer.get("id", ""))])
 		portrait.visible = portrait.texture != null
 		card_frame.visible = true
-		card_frame.texture = PrepWidgets.cached_texture(str(SHOP_CARD_FRAME_PATHS.get(int(offer.get("tier", 1)), SHOP_CARD_FRAME_PATHS[1])))
+		card_frame.call("configure", int(offer.get("tier", 1)), ShopCardFrameScript.is_ranged(offer), not sold and _would_star_up(offer))
 		name_label.text = unit_name
-		price_label.text = str(cost)   # 金币图案已画死在框右上角，只写数字
+		price_label.text = str(cost)   # 金币由框画在右上角，这里只写数字
 		race_icon.visible = true
 		race_icon.call("set_race", str(offer.get("race", "")))
 		btn.drag_payload = {} if GameState.tutorial_mode else ({"kind": "shop", "index": i} if can_purchase else {})
 		var purchase_reason := _purchase_reason(i)
 		_set_purchase_reason(reason_label, purchase_reason)
 		btn.modulate = Color(0.52, 0.64, 0.72, 0.92) if purchase_reason.is_empty() and i == selected else Color.WHITE
+
+
+# 买下这张会不会立刻合成升星。和真正买入时的自动摆放（PrepBoardController._auto_dispatch_shop_card
+# 的第 ①② 步）用同一个判据 PrepRules.first_merge_target：棋盘或待命区有同名同星、未满星的那一枚。
+func _would_star_up(offer: Dictionary) -> bool:
+	if offer.is_empty() or GameState.tutorial_mode:
+		return false
+	var incoming := {"id": str(offer.get("id", "")), "star": int(offer.get("star", 1))}
+	return PrepRules.first_merge_target(GameState.board_slots, incoming) >= 0 		or PrepRules.first_merge_target(GameState.bench_slots, incoming) >= 0
+
+
+func _star_up_flags() -> Array:
+	var out: Array = []
+	for i in GameState.shop_offers.size():
+		var offer: Dictionary = GameState.shop_offers[i]
+		out.append(not bool(GameState.shop_sold[i]) and _would_star_up(offer))
+	return out
 
 
 # 原 _refresh_shop_picker（PrepUI.gd）

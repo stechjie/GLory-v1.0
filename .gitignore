@@ -155,6 +155,10 @@ android/
 !/assets/ui/race_logos/crimson.png.import
 !/assets/ui/race_logos/crimson_lantern.png
 !/assets/ui/race_logos/crimson_lantern.png.import
+# 11.04 商店卡用的种族符号（从同名 logo 抠出、不带圆章外框）
+!/assets/ui/race_logos/glyph/
+/assets/ui/race_logos/glyph/*
+!/assets/ui/race_logos/glyph/*.png
 
 # Seven-day shop art is a runtime dependency of ShopScreen and PrepSkin.
 # Keep this small set with the code while the rest of the large art bundle stays external.
