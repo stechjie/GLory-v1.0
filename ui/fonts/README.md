@@ -1,30 +1,3 @@
-# Game display font (2026-11-05)
-
-The whole game now uses one display font chain, installed by `UIFontFallback.gd`
-as the default theme font and engine fallback font:
-
-1. **Knewave** (`Knewave-Regular.ttf`) for Latin letters, digits and punctuation.
-   Same file as `assets/fonts/Knewave-Regular.ttf` (the gold-number font), kept here
-   so a stale Drive asset bundle cannot remove it.
-   - Upstream: https://github.com/google/fonts/tree/main/ofl/knewave
-   - SHA-256: `ed3bac761d755b89ab3082c844d4a623d63c7d6eef85d22ba1fb6c680e6a4436`
-   - License: SIL OFL 1.1, Reserved Font Name "Knewave"; full text in `Knewave-OFL.txt`.
-2. **ZCOOL KuaiLe** (`ZCOOLKuaiLe-Regular.ttf`, 站酷快乐体) for Chinese. Shipped whole
-   (7053 glyphs, 1.5 MB) so player names and chat are covered too.
-   - Upstream: https://github.com/google/fonts/tree/main/ofl/zcoolkuaile
-   - SHA-256: `812a6fc1fe54b6d73a419245c32dfeba8aa33104d5be90d1cf6af082007cb71d`
-   - License: SIL OFL 1.1; full text in `ZCOOLKuaiLe-OFL.txt`.
-3. **Noto Sans SC** (below) for the few characters KuaiLe lacks.
-
-The RichTextLabel bold / italic variants of the default theme are re-based onto the
-same chain, otherwise `[b]中文[/b]` renders as missing-glyph boxes.
-`tools/font_fallback_check.gd` checks the chain, idempotent install, and coverage of
-every Chinese locale string with system font fallback disabled.
-
-The battle damage counter (`BattleCombatFeedback.gd`) also uses this chain, slightly
-narrowed (x0.92) so very large totals stay inside the plate. Libre Baskerville is no
-longer used by the game.
-
 # Bundled Chinese UI fallback
 
 `UIFontFallback.gd` runs before the UI and adds Noto Sans SC to Godot's existing
