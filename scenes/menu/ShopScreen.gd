@@ -1337,11 +1337,15 @@ func _preview_stage(item: Dictionary, owned: bool, preview_size: Vector2) -> Con
 	holder.custom_minimum_size = preview_size
 	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	center.add_child(holder)
-	holder.add_child(preview)
+	# 浮动挂在 Node2D 上动：Control 的位置会被取整到整像素，慢浮动会一顿一顿（见 ShopMotion.bob）。
+	var floater := Node2D.new()
+	floater.name = "PreviewFloat"
+	holder.add_child(floater)
+	floater.add_child(preview)
 	preview.position = Vector2.ZERO
 	preview.size = preview_size
 	if _motion_on():
-		Motion.bob(preview, 4.0, float(absi(hash(_item_id(item))) % 628) / 100.0)
+		Motion.bob(floater, 4.0, float(absi(hash(_item_id(item))) % 628) / 100.0)
 
 	if owned:
 		var badge := Label.new()

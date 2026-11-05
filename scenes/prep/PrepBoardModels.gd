@@ -827,7 +827,6 @@ const PREP_DEPLOY_COUNTER_RENDER_PRIORITY := 5                 # 与站位图同
 # 兜底开关：若真机上视口贴图与普通贴图的 V 轴相反、图案上下颠倒，改 true 即翻正
 # （结构门禁在 headless 下渲不出图，测不到朝向，所以留这一行显式开关）。
 const PREP_DEPLOY_COUNTER_FLIP_V := false
-const PREP_RIVER_TOP_PATH := "res://assets/board/prep_2_5d/prep20_river_top.png"        # 上河流（黑底，shader 键透明+流动）
 # ══════ 整块棋盘的「大小 / 位置」══════
 #  改这两个会连 石台+格子+棋子+待命区+河流 一起动（它们都贴在这块地面上，不是只动棋盘）。
 # 大小：x=宽、y=进深；调大 = 整个场地变大。
@@ -839,7 +838,6 @@ const PREP_BOARD_GROUND_FLIP_V := false                  # 若图上下颠倒则
 const PREP_BASE_LAYER_IN_3D := false
 # 河流流动高光层（贴在棋盘上方、横向滚动的波光）
 const PREP_RIVER_FLOW_SHADER := "res://assets/shaders/prep_river_flow.gdshader"
-const PREP_RIVER_TOP_EF_PATH := "res://assets/board/prep_2_5d/prep20_river_top_ef.png"
 const PREP_RIVER_BOTTOM_EF_PATH := "res://assets/board/prep_2_5d/prep20_river_bottom_ef.png"
 const PREP_CARROT_DIG_PATH := "res://assets/props/carrot_system/vfx/atlas_digging_dust_4x4.png"
 const PREP_CARROT_LEVELUP_PATH := "res://assets/props/carrot_system/vfx/atlas_farm_levelup_4x4.png"

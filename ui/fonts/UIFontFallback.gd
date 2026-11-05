@@ -10,15 +10,7 @@ extends Node
 # Both export presets use all_resources, so the font still ships with the client.
 const FONT_PATH := "res://ui/fonts/NotoSansSC-Regular.otf"
 
-# 11.05 全游戏换字体（用户定）：英文 / 数字用 Knewave（卡通粗体，原来金币数字就是它），
-# 中文用站酷快乐体（Knewave 没有中文字形，自动落到它）；快乐体缺的极少数字
-# （冚 媽 屄 屌 幹 槃 熝，基本是脏话过滤词）再落到 Noto Sans SC。三者都是 SIL OFL 1.1，许可在同目录。
-# 主菜单、备战、战斗、弹窗……凡是没单独指定字体的文字都走这一套。
-const DISPLAY_LATIN_PATH := "res://ui/fonts/Knewave-Regular.ttf"
-const DISPLAY_CJK_PATH := "res://ui/fonts/ZCOOLKuaiLe-Regular.ttf"
-
 static var _font: FontFile
-static var _display: FontVariation
 
 
 static func chinese_font() -> FontFile:
@@ -34,40 +26,7 @@ func _enter_tree() -> void:
 	install()
 
 
-# 全游戏默认字体：Knewave → 站酷快乐体 → Noto Sans SC。加载失败时返回 null（调用方退回老做法）。
-static func display_font() -> Font:
-	if _display != null:
-		return _display
-	var latin := load(DISPLAY_LATIN_PATH) as FontFile
-	var kuaile := load(DISPLAY_CJK_PATH) as FontFile
-	if latin == null or kuaile == null:
-		return null
-	var chain: Array[Font] = [kuaile]
-	var noto := chinese_font()
-	if noto != null:
-		chain.append(noto)
-	_display = FontVariation.new()
-	_display.base_font = latin
-	_display.fallbacks = chain
-	return _display
-
-
 func install() -> void:
-	var display := display_font()
-	if display != null:
-		# 默认主题 + 引擎兜底字体都换成这一套：没单独指定字体的控件（含 RichTextLabel 的粗 / 斜体变体）全跟着变。
-		var theme := ThemeDB.get_default_theme()
-		theme.default_font = display
-		ThemeDB.fallback_font = display
-		# 默认主题里 RichTextLabel 的粗体 / 斜体 / 粗斜体是建在**引擎原字体**上的 FontVariation，
-		# 不跟着 default_font 走 —— 不改的话 [b]中文[/b] 会全是缺字方块（font_fallback_check 抓到过）。
-		# 把它们的底换成这一套，加粗 / 倾斜参数保留。
-		for type in theme.get_font_type_list():
-			for item in theme.get_font_list(type):
-				var f := theme.get_font(item, type)
-				if f is FontVariation and f != display and (f as FontVariation).base_font != display:
-					(f as FontVariation).base_font = display
-		return
 	var cjk := chinese_font()
 	if cjk == null:
 		return

@@ -342,7 +342,7 @@ const CUES := {
 
 	CUE_BOSS_APPEAR: "res://assets/audio/sfx/battle/boss_appear.wav",
 	CUE_HUMAN_KING_DEATH: "res://assets/audio/sfx/battle/human_king_death.mp3",
-	CUE_BATTLE_VICTORY: "res://assets/audio/sfx/battle/battle_victory.mp3",
+	CUE_BATTLE_VICTORY: "res://assets/audio/sfx/battle/battle_victory_chime.wav",
 	CUE_BATTLE_DEFEAT: "res://assets/audio/sfx/battle/battle_defeat.mp3",
 	CUE_DEATH_SHATTER: "res://assets/audio/sfx/battle/death_shatter.wav",
 	CUE_DEATH_SHATTER_HEAVY: "res://assets/audio/sfx/battle/death_shatter_heavy.wav",

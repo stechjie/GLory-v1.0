@@ -11,8 +11,8 @@ const RaceIcon := preload("res://scenes/prep/PrepShopRaceIcon.gd")
 
 static func paths() -> Array:
 	var out: Array = [
-		Prep.PREP_CELL_MARK_PATH, Prep.PREP_RIVER_TOP_PATH,
-		Prep.PREP_RIVER_TOP_EF_PATH, Prep.PREP_RIVER_BOTTOM_EF_PATH, Prep.PREP_RIVER_FLOW_SHADER,
+		Prep.PREP_CELL_MARK_PATH,
+		Prep.PREP_RIVER_BOTTOM_EF_PATH, Prep.PREP_RIVER_FLOW_SHADER,
 		Prep.START_BTN_PATH, Prep.STATS_BTN_PATH, Prep.REFRESH_BTN_PATH,
 		Prep.TOP_POWER_BTN_PATH, Prep.TOP_STATS_BTN_PATH, Prep.TOP_SETTINGS_BTN_PATH,
 		Prep.PrepRefreshEmblem.FIREFLY_PATH,

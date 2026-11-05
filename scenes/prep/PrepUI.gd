@@ -4127,8 +4127,10 @@ func _show_pvp_warning_overlay() -> void:
 	title.offset_top = 90
 	title.offset_bottom = -70
 	title.add_theme_font_size_override("font_size", 72)
-	# 11.05 起中英文都走全游戏默认字体（Knewave + 站酷快乐体），这里只加粗。
-	title.add_theme_font_override("font", UIFontFallback.bold_font(null, 1.2))
+	var title_base_font: Font = null
+	if LocaleManager.get_locale() != "en":
+		title_base_font = UIFontFallback.chinese_font()
+	title.add_theme_font_override("font", UIFontFallback.bold_font(title_base_font, 1.2))
 	title.add_theme_color_override("font_color", Color(0.29, 0.13, 0.06))
 	title.add_theme_color_override("font_outline_color", Color(1.0, 0.84, 0.56, 0.95))
 	title.add_theme_constant_override("outline_size", 5)

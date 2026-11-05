@@ -1,0 +1,7 @@
+Source: Kenney Interface Sounds (confirmation_002.ogg)
+https://kenney.nl/assets/interface-sounds
+License: CC0 1.0 Universal (https://creativecommons.org/publicdomain/zero/1.0/)
+Layered over: assets/audio/sfx/battle/death_shatter.wav (project's own sound)
+Adaptation: confirmation_002 trimmed to 0.5 s with 0.1 s fade, mixed at -8 dB, delayed 0.04 s after death_shatter; mono, 44100 Hz, peak normalized to -3 dBFS. No Dota 2 audio is used.
+Replaces: battle_victory.mp3 (5.2 s jingle, kept on disk, no longer referenced)
+Retrieved: 2026-11-05
