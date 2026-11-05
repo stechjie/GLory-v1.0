@@ -46,10 +46,17 @@ static func entry(nodes: Array, base_delay: float = 0.0) -> void:
 
 
 # 物品图浮动：node 必须挂在非容器父节点下（否则容器会把 position 改回去）。
-static func bob(node: Control, amplitude: float, phase: float) -> void:
+#
+# ★ node 要传 Node2D，不要传 Control（11.05 用户反馈「物品浮动很卡」）：
+# 工程开着 gui/common/snap_controls_to_pixels（默认值），Control 的位置会被取整到整像素。
+# 4px 的慢浮动于是变成「停住不动 → 跳 1 像素 → 再停住」，一个来回只有 8 档。
+# 实测：动画从 -3.57 走到 -4.00 的整段，屏幕上的图一个像素都没动；关掉取整后连续移动。
+# Node2D 的位置不被取整，所以把物品图挂在一个 Node2D 下面、动这个 Node2D。
+# （不全局关掉取整：那会让全游戏的 UI 文字发虚。）
+static func bob(node: CanvasItem, amplitude: float, phase: float) -> void:
 	if not enabled() or node == null:
 		return
-	var base_y := node.position.y
+	var base_y: float = node.position.y
 	var period := 2.6 + fmod(phase * 0.37, 0.8)
 	var tw := node.create_tween().set_loops()
 	# 先按相位走到起点，避免所有卡同一时刻从同一高度出发
