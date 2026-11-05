@@ -120,6 +120,7 @@ const CUE_MONSTER_KILL_REWARD := "monster_kill_reward"
 # These two accents are played only by BattleCombatFeedback, never by death VFX.
 const CUE_LANE_CLEAR_ACCENT := "lane_clear_accent"
 
+const CUE_PET_DRAW_SUCCESS := "pet_draw_success"
 const CUE_MERC_SUMMON := "merc_summon"
 const CUE_UPGRADE_STONE_DRAW := "upgrade_stone_draw"
 const CUE_CARROT_FARM_UPGRADE := "carrot_farm_upgrade"
@@ -368,6 +369,7 @@ const CUES := {
 	CUE_STAR4_BOMB_SKILL: "res://assets/audio/sfx/battle/star4_bomb_skill.mp3",
 	CUE_STAR4_DEATH_SERVANT_SKILL: "res://assets/audio/sfx/battle/star4_death_servant_skill.mp3",
 
+	CUE_PET_DRAW_SUCCESS: "res://assets/audio/sfx/ui/pet_draw_success.wav",
 	CUE_MERC_SUMMON: "res://assets/audio/sfx/camp/merc_summon.mp3",
 	CUE_UPGRADE_STONE_DRAW: "res://assets/audio/sfx/camp/upgrade_stone_draw.mp3",
 	CUE_CARROT_FARM_UPGRADE: "res://assets/audio/sfx/camp/carrot_farm_upgrade.wav",

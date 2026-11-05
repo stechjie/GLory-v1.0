@@ -382,14 +382,22 @@ static func _apply_element_set_burst(attacker: Dictionary, target: Dictionary, s
 	DamageService.restore_hit_context(saved_hit)
 
 
-static func _apply_frenzy_assault(attacker: Dictionary, target: Dictionary) -> void:
-	var target_uid := str(target.get("uid", ""))
+static func _frenzy_select_target(attacker: Dictionary, target_uid: String) -> void:
 	if str(attacker.get("frenzy_target_uid", "")) != target_uid:
 		attacker.frenzy_target_uid = target_uid
 		attacker.frenzy_stacks = 0
-	attacker.frenzy_stacks = int(attacker.get("frenzy_stacks", 0)) + 1
-	# 独立倍率由 StatusEffectService 计算，不永久污染基础攻速。
-	attacker.frenzy_stacks = mini(int(attacker.frenzy_stacks), 64)
+
+static func _apply_frenzy_assault(attacker: Dictionary, target: Dictionary) -> void:
+	var target_uid := str(target.get("uid", ""))
+	if target_uid.is_empty():
+		return
+	_frenzy_select_target(attacker, target_uid)
+	var stacks := clampi(int(attacker.get("frenzy_stacks", 0)), 0, 7)
+	var before := minf(pow(1.15, stacks), 2.5)
+	var after := minf(pow(1.15, mini(stacks + 1, 7)), 2.5)
+	# Only this target's segment is capped. Keep gains from previous targets.
+	attacker.frenzy_speed_multiplier = float(attacker.get("frenzy_speed_multiplier", 1.0)) * after / before
+	attacker.frenzy_stacks = mini(stacks + 1, 7)
 
 static func _apply_defender_reaction(attacker: Dictionary, target: Dictionary, dealt: int, state: Dictionary = {}) -> void:
 	var d: Dictionary = target.get("def", {})

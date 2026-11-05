@@ -124,8 +124,8 @@
   "atk_frenzy_assault": {
    "name": "狂暴进攻",
    "name_en": "Frenzy Assault",
-   "effect": "攻击同一目标时自身攻速 x1.15，可叠；换目标重置",
-   "effect_en": "Attacking the same target stacks attack speed ×1.15; resets on target switch",
+   "effect": "每次普攻自身攻速×1.15；同一目标最多提升至开始攻击该目标时的2.5倍。换目标清零层数，保留已有攻速并可重新叠加。",
+   "effect_en": "Each basic attack multiplies attack speed by 1.15, up to 2.5 times its starting value for each target. Switching targets resets stacks but keeps earned speed and allows a new 2.5x segment.",
    "trigger": "攻击时",
    "trigger_en": "On attack"
   },

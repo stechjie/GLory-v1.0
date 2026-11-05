@@ -1076,7 +1076,7 @@ func _setup_voice_controls() -> void:
 	# 此前这里没传 panel_context，于是「队友」按钮既不计人数、打开的面板也拿不到
 	# 上下文 —— 玩家在战斗里点它，看不出自己当前在哪一档（关 / 只听 / 开麦）。
 	# 与 PrepUI._build_voice_button() 传 "prep" 同一个道理，这里传 "battle"。
-	_voice_controls.build(self, VOICE_BTN_SIZE, VOICE_BTN_SIZE, 14, {"panel_context": "battle"})
+	_voice_controls.build(self, VOICE_BTN_SIZE, VOICE_BTN_SIZE, 14, {"panel_context": "battle", "scope_art": true})
 	var top := VOICE_BTN_TOP
 	for button in [_voice_controls.voice_button, _voice_controls.audience_button, _voice_controls.members_button]:
 		var control := button as Button

@@ -2526,6 +2526,7 @@ func _build_room_state(room: Dictionary, slot: int) -> Dictionary:
 	return {
 		# --- 房间 ---
 		"phase": str(room.get("state", ROOM_LOBBY)),
+		"mode": str(room.get("mode", "custom")),
 		"prep_seconds_left": PrepDeadline.remaining(room, _now()),
 		"round_id": round_id,
 		"ruleset": str(room.get("ruleset", "normal")),
@@ -2879,16 +2880,17 @@ func _rpc_team_chat(slot: int, phrase_id: int, team_only: bool) -> void:
 static func chat_recipients(room: Dictionary, sender_slot: int, team_only: bool) -> Array[int]:
 	var out: Array[int] = []
 	var peer_slot: Dictionary = room.get("peer_slot", {})
+	var restricted := team_only and not (str(room.get("state", "")) == ROOM_LOBBY \
+		and str(room.get("mode", "custom")) == "custom")
 	for peer in peer_slot.keys():
-		if chat_reaches(sender_slot, int(peer_slot[peer]), team_only):
+		if chat_reaches(sender_slot, int(peer_slot[peer]), restricted):
 			out.append(int(peer))
 	return out
 
-# 选手的聊天转给观战者：**只转全体聊天**。队内聊天是战术讨论，观战者看得到的话，
-# 私下转告另一队就绕过了延迟一回合的保护。反方向（观战者 → 选手）根本没有通路：
-# 观战者的话只走 _rpc_spectate_chat_submit，收件人只有观战者。
+# 自定义房间开局前，座位和观战席共用交流范围；开局后隔离观战聊天。
+# 队内战术消息不向对局观战者转发。
 static func spectator_chat_recipients(room: Dictionary, team_only: bool) -> Array[int]:
-	if team_only or str(room.get("state", "")) != ROOM_LOBBY:
+	if str(room.get("state", "")) != ROOM_LOBBY or (team_only and str(room.get("mode", "custom")) != "custom"):
 		return []
 	return SpectatorService.peers(room)
 
@@ -3393,7 +3395,7 @@ func _rpc_spectate_leave() -> void:
 
 # 把一条连接从观战席上摘下来（主动离开、掉线、坐下、换房都走这里）。
 # 房间还在就广播一次，让两边的观战列表少一行。返回是否真的摘了。
-func _spectate_detach(peer_id: int) -> bool:
+func _spectate_detach(peer_id: int, keep_lobby_voice: bool = false) -> bool:
 	if not _peer_spectate.has(peer_id):
 		return false
 	var room_id := int(_peer_spectate[peer_id])
@@ -3401,7 +3403,7 @@ func _spectate_detach(peer_id: int) -> bool:
 	var room: Dictionary = _rooms.get(room_id, {})
 	if room.is_empty():
 		return true
-	if _voice_admin != null and bool(room.get("voice_used", false)):
+	if _voice_admin != null and bool(room.get("voice_used", false)) and not (keep_lobby_voice and str(room.get("state", "")) == ROOM_LOBBY):
 		var old_sid := SpectatorService.sid_of_peer(room, peer_id)
 		_voice_admin.remove_participant(spectator_voice_room_name(room), spectator_voice_identity(SpectatorService.entry_of_peer(room, peer_id), old_sid))
 	if SpectatorService.remove_peer(room, peer_id).is_empty():
@@ -3533,6 +3535,7 @@ func _build_spectate_state(room: Dictionary, sid: int) -> Dictionary:
 	return {
 		# --- 房间（与选手同一批公开字段）---
 		"phase": str(room.get("state", ROOM_LOBBY)),
+		"mode": str(room.get("mode", "custom")),
 		"prep_seconds_left": PrepDeadline.remaining(room, _now()),
 		"round_id": round_id,
 		"ruleset": str(room.get("ruleset", "normal")),
@@ -3661,6 +3664,8 @@ func _rpc_spectate_state(envelope: Dictionary) -> void:
 		SaveManager.clear_reconnect()
 		_clear_pending_ready("confirmed spectator admission")
 	spectating = true
+	team_active = true
+	match_mode = str(payload.get("mode", "custom"))
 	spectate_room_id = room_id
 	spectate_sid = int(payload.get("my_sid", -1))
 	spectate_state = payload
@@ -3909,6 +3914,12 @@ func _voice_seat_released(room: Dictionary, slot: int, identity: String) -> void
 		return
 	if not bool(room.get("voice_used", false)):
 		return
+	# Switching between a seat and spectating keeps the same lobby voice identity.
+	# An asynchronous kick here would eject the freshly switched participant.
+	if str(room.get("state", "")) == ROOM_LOBBY:
+		for sid in SpectatorService.list(room):
+			if spectator_voice_identity(SpectatorService.list(room)[sid], int(sid)) == identity:
+				return
 	_voice_admin.remove_participant(voice_room_name(room), identity)
 
 
@@ -6163,7 +6174,7 @@ func _join_custom_room(sender: int, room_id: int, public_id: String, seat_card: 
 	if str(room.get("state", "")) != ROOM_LOBBY:
 		_send_custom_room_failure(sender, "room_started")
 		return
-	if bool(room.get("suspended", false)) or _room_player_count(room) <= 0:
+	if (bool(room.get("suspended", false)) or _room_player_count(room) <= 0) and SpectatorService.sid_of_peer(room, sender) < 0:
 		_send_custom_room_failure(sender, "room_not_found")
 		return
 	var existing := _room_for_peer(sender)
@@ -7339,7 +7350,7 @@ func _assign_peer_to_room(peer_id: int, room: Dictionary = {}, public_id: String
 		return
 	# 观战者坐下（大厅阶段点空位，走的就是普通的加入房间）：先离开观战席，
 	# 同一条连接不能既是观战者又是选手 —— 否则他会同时收到两份状态、还占着一个观战位。
-	_spectate_detach(peer_id)
+	_spectate_detach(peer_id, int(_peer_spectate.get(peer_id, 0)) == int(room.get("id", 0)))
 	var states: Array = room.get("slot_states", [])
 	var ready: Array = room.get("ready", [])
 	var peer_slot: Dictionary = room.get("peer_slot", {})

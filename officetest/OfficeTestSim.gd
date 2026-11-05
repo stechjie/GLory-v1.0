@@ -339,15 +339,16 @@ static func _capture_live_stats(state: Dictionary, frame_index: int, live_stats:
 		var crs := CrimsonRuneService.stack_count(f)
 		# 11.01：永久攻速加成改记在 aspd_bonus_pct（百分比池），不再写进 attack_speed。
 		var abp := float(f.get("aspd_bonus_pct", 0.0))
+		var fsm := StatusEffectService.frenzy_multiplier(f)
 		var prev: Variant = last_live.get(uid, null)
 		var changed := true
-		if typeof(prev) == TYPE_ARRAY and (prev as Array).size() == 7:
+		if typeof(prev) == TYPE_ARRAY and (prev as Array).size() == 8:
 			var p: Array = prev
 			changed = int(p[0]) != atk or absf(float(p[1]) - aspd) > 1e-6 \
-				or int(p[2]) != dfn or absf(float(p[3]) - cb) > 1e-6 or int(p[4]) != cps or int(p[5]) != crs or absf(float(p[6]) - abp) > 1e-6
+				or int(p[2]) != dfn or absf(float(p[3]) - cb) > 1e-6 or int(p[4]) != cps or int(p[5]) != crs or absf(float(p[6]) - abp) > 1e-6 or absf(float(p[7]) - fsm) > 1e-6
 		if not changed:
 			continue
-		last_live[uid] = [atk, aspd, dfn, cb, cps, crs, abp]
+		last_live[uid] = [atk, aspd, dfn, cb, cps, crs, abp, fsm]
 		if not live_stats.has(uid):
 			live_stats[uid] = []
 		(live_stats[uid] as Array).append({
@@ -359,6 +360,7 @@ static func _capture_live_stats(state: Dictionary, frame_index: int, live_stats:
 			"cps": cps,
 			"crs": crs,
 			"abp": abp,
+			"fsm": fsm,
 		})
 
 
