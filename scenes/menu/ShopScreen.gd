@@ -34,6 +34,9 @@ const SfxService := preload("res://ui/services/SfxService.gd")
 # MainMenu._start_menu_music() 会把 menu_music 切回来 —— 各页各播各的，
 # 播放器是同一个（MusicService），所以不会叠。
 const MusicService := preload("res://ui/services/MusicService.gd")
+# 11.05 动效：卡片入场 / 浮动 / 悬停按压 / 选中呼吸 / 购买庆祝 / 余额滚动，背景灯光与光尘。
+const Motion := preload("res://scenes/menu/ShopMotion.gd")
+const Ambient := preload("res://scenes/menu/ShopAmbient.gd")
 const SHOP_MUSIC_PATH := "res://assets/audio/bgm/shop_music.mp3"
 const ConfirmDialog := preload("res://ui/components/GloryConfirmDialog.gd")
 # 新按钮一律实例化组件，不写 Button.new()：procedural_ui_ratchet 按文件只许降。
@@ -167,6 +170,10 @@ var _event_dot: Label
 # 整页背景与底色。棋子页把整页背景换成那一族的图（不是在面板里再叠一张），离开时换回商城图。
 var _page_bg: TextureRect
 var _dim: ColorRect
+# 下一次 _render 要不要播卡片入场（切分类 / 首次载完才播；点卡切详情也会整页重画，那次不播）
+var _play_entry := true
+# 购买庆祝的十字星挂在这层上（最上层、不拦点击），不会被卡片 / 滚动区裁掉
+var _fx_layer: Control
 
 
 func _ready() -> void:
@@ -202,6 +209,15 @@ func _build() -> void:
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(dim)
+
+	# 背景氛围：挂灯暖光呼吸 + 光尘（压在压暗层上面、所有面板下面）
+	var ambient: Control = Ambient.new()
+	ambient.set("background", bg)
+	ambient.set("shop_texture", MENU_BG_TEX)
+	add_child(ambient)
+	if not _motion_on():
+		ambient.visible = false
+		ambient.set_process(false)
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -271,6 +287,18 @@ func _build() -> void:
 	_special_content.add_theme_constant_override("separation", Tokens.GAP_M)
 	_special_scroll.add_child(_special_content)
 	_special_panel.hide()
+
+	_fx_layer = Control.new()
+	_fx_layer.name = "FxLayer"
+	_fx_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_fx_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_fx_layer)
+
+
+# 动效开关：玩家开了「减少动态」就全关；开发截图（ui_capture_fixture）默认也关，保证视觉回归图稳定，
+# 要录动效的截图工具另外打 ui_capture_motion 标记。
+func _motion_on() -> bool:
+	return Motion.enabled() and (not has_meta("ui_capture_fixture") or has_meta("ui_capture_motion"))
 
 
 func _hero() -> Control:
@@ -611,6 +639,7 @@ func _reload() -> void:
 		var result: Dictionary = wish_results[wish_skin]
 		if int(result.get("code", 0)) / 100 == 2:
 			_wish_states[wish_skin] = result.get("body", {})
+	_play_entry = true
 
 	if int(catalog.get("code", 0)) / 100 != 2:
 		_set_notice(str(catalog.get("error", _t("商城打不开", "The shop failed to load"))), true)
@@ -680,6 +709,7 @@ func _render() -> void:
 			_render_units()
 		else:
 			_render_appearance()
+		_consume_entry(_special_content.get_children())
 		return
 	_catalog_title_label.text = (_t("珍藏头像框", "Collector frames")
 		if _active_category == CATEGORY_FRAMES else _t("金币宠物", "Coin companions"))
@@ -709,6 +739,19 @@ func _render() -> void:
 		_grid.add_child(_card(raw as Dictionary))
 	if _active_category == CATEGORY_FRAMES:
 		_render_detail(_selected_item(visible_items))
+	var entering: Array = _grid.get_children()
+	if _summon_panel_control.visible:
+		entering.append(_summon_panel_control)
+	_consume_entry(entering)
+
+
+# 切分类 / 首次载完后的那一次重画才播入场；之后点卡切详情的重画不播（否则每点一下整页闪一次）。
+func _consume_entry(nodes: Array) -> void:
+	if not _play_entry or _loading:
+		return
+	_play_entry = false
+	if _motion_on():
+		Motion.entry(nodes)
 
 
 func _style_category_button(button: Button, selected: bool) -> void:
@@ -1180,6 +1223,11 @@ func _card(item: Dictionary) -> Control:
 			_select_item(item)
 		elif event is InputEventScreenTouch and event.pressed:
 			_select_item(item))
+	panel.set_meta("shop_item_id", _item_id(item))
+	if _motion_on():
+		Motion.attach_press(panel)
+		if selected:
+			Motion.selected_pulse(panel)
 
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", Tokens.GAP_S)
@@ -1284,10 +1332,20 @@ func _preview_stage(item: Dictionary, owned: bool, preview_size: Vector2) -> Con
 	var preview := _preview(item, false, preview_size)
 	preview.custom_minimum_size = preview_size
 	_ignore_mouse_tree(preview)
-	center.add_child(preview)
+	# 物品图套一层普通 Control：容器会把直接子节点的 position 改回去，浮动要动的是这层里面的图。
+	var holder := Control.new()
+	holder.custom_minimum_size = preview_size
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	center.add_child(holder)
+	holder.add_child(preview)
+	preview.position = Vector2.ZERO
+	preview.size = preview_size
+	if _motion_on():
+		Motion.bob(preview, 4.0, float(absi(hash(_item_id(item))) % 628) / 100.0)
 
 	if owned:
 		var badge := Label.new()
+		badge.name = "OwnedBadge"
 		badge.text = _t("  已拥有  ", "  OWNED  ")
 		badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -1450,6 +1508,7 @@ func _select_category(category: String) -> void:
 		return
 	_active_category = category
 	_selected_item_id = ""
+	_play_entry = true
 	_render()
 
 
@@ -1643,6 +1702,7 @@ func open_units(race: String = "") -> void:
 		_unit_race = race
 	_active_category = CATEGORY_UNITS
 	_selected_item_id = ""
+	_play_entry = true
 	_render()
 
 
@@ -2047,6 +2107,8 @@ func _buy(item: Dictionary) -> void:
 			SfxService.play(SfxService.CUE_UI_CURRENCY_GAIN if diamond_after > _diamond else SfxService.CUE_UI_CURRENCY_SPEND)
 		elif coin_after != _coin:
 			SfxService.play(SfxService.CUE_UI_CURRENCY_GAIN if coin_after > _coin else SfxService.CUE_UI_CURRENCY_SPEND)
+		var diamond_before := _diamond
+		var coin_before := _coin
 		_diamond = diamond_after
 		_coin = coin_after
 		_owned[str(receipt.get("granted", ""))] = true
@@ -2064,6 +2126,7 @@ func _buy(item: Dictionary) -> void:
 		else:
 			_set_notice(_t("购买成功", "Purchased"), false)
 		_render()
+		_celebrate_purchase(_item_id(item), diamond_before, coin_before)
 		if str(item.get("kind", "")) == "unit":
 			await _after_unit_purchase(str(receipt.get("granted", "")), receipt)
 		return
@@ -2084,6 +2147,24 @@ func _buy(item: Dictionary) -> void:
 	_set_notice(message, true)
 	# 余额和拥有状态可能已经变了（比如在另一台设备上买过），重新拉一次。
 	await _reload()
+
+
+# 购买成功的反馈：余额数字滚到新值、那张卡弹跳 + 金色十字星 + 「已拥有」章盖下。
+# 卡片在 _render 里刚重建，等一帧让容器排好版再取位置。
+func _celebrate_purchase(item_id: String, diamond_before: int, coin_before: int) -> void:
+	var fmt := func(v: int) -> String: return Currency.comma(v)
+	Motion.roll_label(_diamond_label, diamond_before, _diamond, fmt)
+	Motion.roll_label(_coin_label, coin_before, _coin, fmt)
+	if not _motion_on():
+		return
+	await get_tree().process_frame
+	if not is_inside_tree():
+		return
+	for card in _grid.get_children():
+		if str((card as Control).get_meta("shop_item_id", "")) == item_id:
+			var badge := (card as Node).find_child("OwnedBadge", true, false) as Control
+			Motion.celebrate(card as Control, _fx_layer, badge)
+			return
 
 
 # --- 小工具 -------------------------------------------------------------------

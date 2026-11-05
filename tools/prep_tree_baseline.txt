@@ -8,7 +8,6 @@
 /PrepScreen/PrepRiverArenaLayer/@SubViewport@3/PrepRiverArenaWorld/PrepRiverStageRoot/PrepBoardModelRoot [Node3D]
 /PrepScreen/PrepRiverArenaLayer/@SubViewport@3/PrepRiverArenaWorld/PrepRiverStageRoot/PrepStandbyModelRoot [Node3D]
 /PrepScreen/PrepRiverArenaLayer/@SubViewport@3/PrepRiverArenaWorld/PrepRiverStageRoot/PrepRelationLinkRoot [Node3D]
-/PrepScreen/PrepRiverArenaLayer/@SubViewport@3/PrepRiverArenaWorld/PrepBaseLayer [MeshInstance3D]
 /PrepScreen/PrepRiverArenaLayer/@SubViewport@3/PrepRiverArenaWorld/PrepRiverBottomLayer [MeshInstance3D]
 /PrepScreen/PrepRiverArenaLayer/@SubViewport@3/PrepRiverArenaWorld/PrepRiverFlowBottom [MeshInstance3D]
 /PrepScreen/PrepRiverArenaLayer/@SubViewport@3/PrepRiverArenaWorld/PrepCellMark0 [MeshInstance3D]

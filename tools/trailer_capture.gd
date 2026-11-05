@@ -1389,11 +1389,10 @@ func _build_card_offer(cue: Dictionary, cue_index: int) -> void:
 	cue["cards"] = cards
 
 
-# 宝藏三选一：跟备战抽宝藏时弹的是同一套卡图（assets/ui/treasure_cards/<名字>[_en].png，
-# 整张石框卡、3:4）。点中元素宝藏，另两张退场，选中的飞到底部宝藏条它自己那一格，
+# 宝藏三选一：跟备战抽宝藏时弹的是同一种卡（TreasureCardView，代码画框，3:4）。点中元素宝藏，另两张退场，选中的飞到底部宝藏条它自己那一格，
 # 缩成 logo 落位 —— 落位那一帧正好是 _update_treasure_bar 把 logo 弹出来的那一帧。
 # 陪衬卡挑非元素宝藏，免得观众以为四元素是随便哪张都行。
-const TREASURE_CARD_DIR := "res://assets/ui/treasure_cards/"
+const TreasureCardView := preload("res://scenes/prep/panels/TreasureCardView.gd")
 const TREASURE_CARD_HEIGHT_RATIO := 0.30
 
 
@@ -1416,16 +1415,13 @@ func _build_treasure_offer(cue: Dictionary, cue_index: int) -> void:
 	var cards: Array = []
 	for slot in 3:
 		var tid := str(layout[slot])
-		var card := TextureRect.new()
+		# 外层容器给入场 / 飞入动画用；卡面本身（TreasureCardView）自带呼吸缩放，两者不能动同一个节点。
+		var card := Control.new()
 		card.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		var tname := _treasure_name(tid)
-		var tex := load(TREASURE_CARD_DIR + tname + ("_en" if _locale == "en" else "") + ".png") as Texture2D
-		if tex == null:
-			tex = load(TREASURE_CARD_DIR + tname + ".png") as Texture2D
-		card.texture = tex
-		card.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		card.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		card.size = Vector2(w, h)
+		var face := TreasureCardView.create(tid)
+		face.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		card.add_child(face)
 		card.pivot_offset = card.size * 0.5
 		card.visible = false
 		overlay.add_child(card)

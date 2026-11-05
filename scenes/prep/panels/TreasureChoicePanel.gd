@@ -17,7 +17,7 @@ extends Control
 const PrepWidgets := preload("res://scenes/prep/PrepWidgets.gd")
 const SfxService := preload("res://ui/services/SfxService.gd")
 const SoftEdgeGlowScript := preload("res://ui/components/SoftEdgeGlow.gd")
-const TREASURE_CARD_DIRECTORY := "res://assets/ui/treasure_cards"
+const TreasureCardView := preload("res://scenes/prep/panels/TreasureCardView.gd")
 
 # 三选一层的 ModalStack 合同（C-11 的 C2）。
 # 70：高于纯播报的 pvp_warning=60，低于战斗加载 80 与确认框 100 ——
@@ -121,41 +121,17 @@ func refresh() -> void:
 	var cands: Array = GameState.pending_treasure.get("candidates", [])
 	for i in cands.size():
 		var tid := str(cands[i])
-		var t := TreasureService.treasure_by_id(tid)
-		var tname := str(t.get("name", tid))
 		var card := Button.new()
 		card.custom_minimum_size = _treasure_card_size(cands.size())
 		card.focus_mode = Control.FOCUS_NONE
 		PrepWidgets.apply_empty_button_styles(card)
 		PrepWidgets.configure_unframed_portrait_card(card, hover_handler)
 		_wire_candidate_card(card, tid)
-		var tex := TextureRect.new()
-		tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		tex.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		tex.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		var _card_suffix := "_en" if LocaleManager.get_locale() == "en" else ""
-		var _tex_path := "%s/%s%s.png" % [TREASURE_CARD_DIRECTORY, tname, _card_suffix]
-		var _loaded_tex := PrepWidgets.cached_texture(_tex_path)
-		if _loaded_tex == null:
-			_loaded_tex = PrepWidgets.cached_texture("%s/%s.png" % [TREASURE_CARD_DIRECTORY, tname])
-		tex.texture = _loaded_tex
-		card.add_child(tex)
-		# Safety net: if the card art is missing, never leave the card invisible —
-		# show the treasure name so it stays selectable.
-		if _loaded_tex == null:
-			var fallback := Label.new()
-			fallback.text = PrepWidgets.unit_name(t)
-			fallback.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			fallback.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			fallback.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-			fallback.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			fallback.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-			fallback.add_theme_font_size_override("font_size", 28)
-			fallback.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
-			fallback.add_theme_constant_override("outline_size", 4)
-			card.add_child(fallback)
+		# 卡面由代码排版（卡底 + 图标 + 名字 + 短效果 + 联动徽记），见 TreasureCardView。
+		# 名字和文字都是 Label，卡底缺图时名字照样显示，卡仍可选。
+		var view := TreasureCardView.create(tid)
+		view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		card.add_child(view)
 		_treasure_choice_row.add_child(card)
 	var cost := TreasureService.refresh_cost(int(GameState.pending_treasure.get("refresh_index", 0)), false)
 	_treasure_refresh_btn.text = tr("ui_treasure_refresh_free") if cost == 0 else tr("ui_treasure_refresh_cost") % cost

@@ -58,13 +58,19 @@ const READY_TONE_DONE_TEXT := Color(0.702, 1.000, 0.973)
 const READY_BTN_TEXT_DEFAULT := Color(1.0, 0.90, 0.60)        # 木牌金（原色，非联机时用）
 const STATS_BTN_PATH := "res://assets/ui/buttons/btn_stats.png"           # 统计/战力石板框（高清透明）
 const STATS_BTN_SIZE := Vector2(140, 94)                                  # 比例 1.5
-const REFRESH_BTN_PATH := "res://assets/ui/buttons/btn_refresh_fire_lowpoly.png"
+# 11.05 起刷新按钮是空心金框，中间图案按皮肤用代码画（PrepRefreshEmblem）。
+const REFRESH_BTN_PATH := "res://assets/ui/buttons/btn_refresh_blank.png"
+const PrepRefreshEmblem := preload("res://scenes/prep/PrepRefreshEmblem.gd")
+const TOP_POWER_BTN_PATH := "res://assets/ui/buttons/btn_top_power.png"
+const TOP_STATS_BTN_PATH := "res://assets/ui/buttons/btn_top_last_battle.png"
+const TOP_SETTINGS_BTN_PATH := "res://assets/ui/buttons/btn_top_settings.png"
 const MERC_BTN_PATH := "res://assets/ui/buttons/btn_merc_lowpoly.png"
 const TEAM_MERCS_BTN_PATH := "res://assets/ui/buttons/btn_team_mercs_lowpoly.png"
 const CARROT_BTN_PATH := "res://assets/props/carrot_system/ui/button_carrot_camp.png"
 # 局内聊天入口。**刻意与主界面用同一张图**（MainMenu.TEX_CHAT），
 # 让「聊天」这个入口在两个界面里长得一样 —— 换图要两处一起换。
-const CHAT_BTN_PATH := "res://assets/ui/main_menu_live/chat.png"
+# 11.05：右下角通讯一排换成跟队友 / 所有人同一套金框（用户出的图），不再用主界面那张。
+const CHAT_BTN_PATH := "res://assets/ui/buttons/btn_chat_prep.png"
 const CARROT_CURRENCY_ICON_PATH := "res://assets/props/carrot_system/ui/icon_carrot_currency.png"
 const TEAM_MERCS_STAGE_BACKGROUND_PATH := "res://assets/ui/prep/team_mercs_stage.png"
 const MERC_BTN_SIZE := Vector2(132, 132)                                  # 方形
@@ -695,6 +701,9 @@ func reapply_prep_skin() -> void:
 				Color(tint.r, tint.g, tint.b, 0.85),
 				Color(tint.r, tint.g, tint.b, 0.0)])
 			(fireflies as CPUParticles3D).color_ramp = ramp
+	# 刷新按钮中间的图案跟皮肤走（火焰 / 雪花 / 樱花 / 月牙）。
+	if _shop != null and _shop.refresh_emblem != null and is_instance_valid(_shop.refresh_emblem):
+		_shop.refresh_emblem.sync()
 	# 萤火虫还是樱花瓣（PrepSkin.ambient）。刷新特效不用这里管：每次点刷新时现问皮肤。
 	_apply_prep_ambient_kind(fireflies, find_child("PrepPetalFall", true, false))
 
@@ -1200,6 +1209,12 @@ func _build_sell_zone_and_refresh(body: HBoxContainer, center_host: Control) -> 
 	refresh_frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	refresh_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	refresh_shop.add_child(refresh_frame)
+	# 框中间的图案：青草地火焰 / 冰雪雪花 / 樱花 / 夜荧光月牙，跟着皮肤换。
+	var refresh_emblem := PrepRefreshEmblem.new()
+	refresh_emblem.name = "PrepRefreshEmblem"
+	refresh_emblem.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	refresh_shop.add_child(refresh_emblem)
+	_shop.refresh_emblem = refresh_emblem
 	refresh_shop.pressed.connect(_on_refresh_shop_control_pressed)
 	_shop.side_controls.add_child(refresh_shop)
 	# 外挂层铺满屏幕，刷新按钮需独立避开刘海、圆角与手势条。
@@ -1228,17 +1243,19 @@ func _build_sell_zone_and_refresh(body: HBoxContainer, center_host: Control) -> 
 	_shop.refresh_cost_label = refresh_cost_label
 	refresh_cost_label.text = tr("ui_free")
 	refresh_cost_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 11.05 用户要求：「免费 / 价格」写在按钮外面 —— 放在框底下、「刷新」两字的下一行。
+	# 框里只留按皮肤画的图案（PrepRefreshEmblem）。
 	refresh_cost_label.anchor_left = 0.5
-	refresh_cost_label.anchor_top = 0.5
+	refresh_cost_label.anchor_top = 1.0
 	refresh_cost_label.anchor_right = 0.5
-	refresh_cost_label.anchor_bottom = 0.5
-	refresh_cost_label.offset_left = -28
-	refresh_cost_label.offset_top = 18
-	refresh_cost_label.offset_right = 28
-	refresh_cost_label.offset_bottom = 40
+	refresh_cost_label.anchor_bottom = 1.0
+	refresh_cost_label.offset_left = -40
+	refresh_cost_label.offset_top = 22
+	refresh_cost_label.offset_right = 40
+	refresh_cost_label.offset_bottom = 48
 	refresh_cost_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	refresh_cost_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	refresh_cost_label.pivot_offset = Vector2(28, 11)
+	refresh_cost_label.pivot_offset = Vector2(40, 13)
 	refresh_cost_label.rotation_degrees = -4.0
 	refresh_cost_label.add_theme_font_size_override("font_size", 18)
 	refresh_cost_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.30))
@@ -1252,8 +1269,8 @@ func _build_sell_zone_and_refresh(body: HBoxContainer, center_host: Control) -> 
 	refresh_action_label.anchor_top = 1.0
 	refresh_action_label.anchor_right = 1.0
 	refresh_action_label.anchor_bottom = 1.0
-	refresh_action_label.offset_top = 0
-	refresh_action_label.offset_bottom = 28
+	refresh_action_label.offset_top = -4
+	refresh_action_label.offset_bottom = 24
 	refresh_action_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	refresh_action_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	refresh_action_label.add_theme_font_size_override("font_size", 19)
@@ -1318,9 +1335,13 @@ func _build_top_actions() -> void:
 	top_row.z_index = 20
 	add_child(top_row)
 	SafeArea.track(top_row)
-	top_row.add_child(PrepWidgets.make_menu_button(tr("ui_power"), TOP_ROW_BTN_SIZE, 13, _stats.show_power_recommendation))
-	top_row.add_child(PrepWidgets.make_menu_button(tr("ui_stats"), TOP_ROW_BTN_SIZE, 13, _stats.show_last_battle))
-	var settings_btn := PrepWidgets.make_menu_button(tr("ui_settings"), TOP_ROW_BTN_SIZE, 13, _open_settings)
+	# 11.05 换成用户出的整张图（金框 + 图标），字压在框里下沿。
+	top_row.add_child(PrepWidgets.make_art_caption_button(tr("ui_power"), TOP_POWER_BTN_PATH,
+		TOP_ROW_BTN_SIZE, 13, _stats.show_power_recommendation))
+	top_row.add_child(PrepWidgets.make_art_caption_button(tr("ui_stats"), TOP_STATS_BTN_PATH,
+		TOP_ROW_BTN_SIZE, 13, _stats.show_last_battle))
+	var settings_btn := PrepWidgets.make_art_caption_button(tr("ui_settings"), TOP_SETTINGS_BTN_PATH,
+		TOP_ROW_BTN_SIZE, 13, _open_settings)
 	settings_btn.name = "SettingsButton"
 	top_row.add_child(settings_btn)
 
@@ -1548,7 +1569,11 @@ func _build_top_actions() -> void:
 
 const ChatPhrases := preload("res://scripts/multiplayer/ChatPhrases.gd")
 
-const CHAT_BTN_SIZE := Vector2(72, 72)
+# 11.05 右下角通讯一整排：麦克风 | 扬声器 | 队友/所有人 | 聊天，四个一样大的方键、等间距，
+# 底下不再垫深色底板（用户：「后面那个黑色 UI 就不要了」）。
+const COMMS_BTN_SIZE := Vector2(68, 68)
+const COMMS_BTN_GAP := 8.0
+const CHAT_BTN_SIZE := COMMS_BTN_SIZE
 
 # 语音聊天底板与右上角快捷按钮右边缘对齐，收在安全区底部。
 # 720 高的布局仍须让开顶部向下排列的萝卜计数器。
@@ -1556,7 +1581,7 @@ const CHAT_RIGHT := 18.0
 const COMMS_DOCK_WIDTH := 308.0
 const COMMS_DOCK_HEIGHT := 88.0
 const COMMS_DOCK_BOTTOM := -8.0
-const CHAT_BTN_BOTTOM := COMMS_DOCK_BOTTOM - 8.0
+const CHAT_BTN_BOTTOM := COMMS_DOCK_BOTTOM - 4.0
 const CHAT_LOG_RIGHT := 148.0  # 消息记录仍让开佣兵/萝卜侧栏。
 const CHAT_LOG_WIDTH := 288.0
 const CHAT_PANEL_WIDTH := 360.0
@@ -1683,12 +1708,12 @@ func _build_chat_record_window() -> void:
 
 # 语音、范围、成员和聊天按钮都满足触控尺寸；三档状态由 VoiceControls 维护。
 const VoiceControls := preload("res://ui/components/VoiceControls.gd")
-const VOICE_BTN_SIZE := Vector2(64, 56)
+const VOICE_BTN_SIZE := COMMS_BTN_SIZE
 const VOICE_AUDIENCE_SIZE := VOICE_BTN_SIZE
 const VOICE_MEMBERS_SIZE := VOICE_BTN_SIZE
-const VOICE_BTN_GAP := 8.0
-const VOICE_INNER_GAP := 8.0
-const VOICE_BTN_BOTTOM := CHAT_BTN_BOTTOM - 8.0
+const VOICE_BTN_GAP := COMMS_BTN_GAP
+const VOICE_INNER_GAP := COMMS_BTN_GAP
+const VOICE_BTN_BOTTOM := CHAT_BTN_BOTTOM      # 跟聊天键同一条底线
 const VOICE_BTN_FONT := 13
 var _voice_controls: VoiceControls = null
 
@@ -1699,21 +1724,23 @@ func _build_comms_dock() -> void:
 	_comms_dock.anchor_right = 1.0
 	_comms_dock.anchor_top = 1.0
 	_comms_dock.anchor_bottom = 1.0
-	_comms_dock.offset_right = -CHAT_RIGHT + 10.0
-	_comms_dock.offset_left = _comms_dock.offset_right - COMMS_DOCK_WIDTH
-	_comms_dock.offset_bottom = COMMS_DOCK_BOTTOM
-	_comms_dock.offset_top = COMMS_DOCK_BOTTOM - COMMS_DOCK_HEIGHT
+	# 11.05 起是**透明**的：只当这一排四个键的外框（商店开时整簇一起收、布局门禁量它），
+	# 不画任何底色。大小正好包住一排，四周各留 4px。
+	var row_w := COMMS_BTN_SIZE.x * 4.0 + COMMS_BTN_GAP * 3.0
+	_comms_dock.offset_right = -CHAT_RIGHT + 4.0
+	_comms_dock.offset_left = -CHAT_RIGHT - row_w - 4.0
+	_comms_dock.offset_bottom = CHAT_BTN_BOTTOM + 4.0
+	_comms_dock.offset_top = CHAT_BTN_BOTTOM - COMMS_BTN_SIZE.y - 4.0
 	_comms_dock.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_comms_dock.z_index = 19
-	_comms_dock.add_theme_stylebox_override("panel",
-		GloryTokens.flat_box(GloryTokens.INK_PANEL, GloryTokens.INK_EDGE, 2, 18))
+	_comms_dock.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	add_child(_comms_dock)
 	SafeArea.track(_comms_dock)
 
 func _build_voice_button() -> void:
 	_voice_controls = VoiceControls.new()
 	_voice_controls.build(self, VOICE_BTN_SIZE, VOICE_MEMBERS_SIZE, VOICE_BTN_FONT,
-		{"panel_context": "prep"})
+		{"panel_context": "prep", "scope_art": true})
 	var right := -CHAT_RIGHT - CHAT_BTN_SIZE.x - VOICE_BTN_GAP
 	_place_voice_button(_voice_controls.members_button, right, VOICE_MEMBERS_SIZE)
 	right -= VOICE_MEMBERS_SIZE.x + VOICE_INNER_GAP
@@ -1721,22 +1748,27 @@ func _build_voice_button() -> void:
 	right -= VOICE_AUDIENCE_SIZE.x + VOICE_INNER_GAP
 	_place_voice_button(_voice_controls.voice_button, right, VOICE_BTN_SIZE)
 	_voice_controls.voice_button.resized.connect(_align_prep_voice_icons)
+	_voice_controls.audience_button.resized.connect(_align_prep_voice_icons)
 	_align_prep_voice_icons()
 
 func _align_prep_voice_icons() -> void:
-	if _voice_controls == null or _voice_controls.voice_button == null:
+	if _voice_controls == null:
 		return
-	var mic := _voice_controls.voice_button
-	var art := mic.get_node_or_null("VoiceIcon") as TextureRect
-	if art == null:
-		return
-	# Gold frames occupy 504px of the normalized 627px atlas canvas. The
-	# speaker-to-Team gap contains one transparent inset, mic-to-speaker two.
-	# Move only the mic art by one inset; touch regions remain non-overlapping.
-	var frame_width := minf(mic.size.x, mic.size.y) * 504.0 / 627.0
-	var inset := maxf(0.0, (mic.size.x - frame_width) * 0.5)
-	art.offset_left = inset
-	art.offset_right = inset
+	# 麦克风 / 扬声器的图集每格是 627px 画布、金框只占中间 504px（VoiceButtonArt）。
+	# 不放大的话这两个框比旁边的队友 / 聊天框小一圈。这里把图往外撑到「金框 = 按钮大小」，
+	# 点击范围还是按钮本身（图不吃点击）。
+	for btn in [_voice_controls.voice_button, _voice_controls.audience_button]:
+		if btn == null or not is_instance_valid(btn):
+			continue
+		var art := (btn as Button).get_node_or_null("VoiceIcon") as TextureRect
+		if art == null:
+			continue
+		var side := minf(btn.size.x, btn.size.y)
+		var grow := side * (627.0 / 504.0 - 1.0) * 0.5
+		art.offset_left = -grow
+		art.offset_right = grow
+		art.offset_top = -grow
+		art.offset_bottom = grow
 
 
 func _place_voice_button(button: Button, right: float, size: Vector2) -> void:
@@ -2782,6 +2814,8 @@ func _on_refresh_shop_control_pressed() -> void:
 	var refresh_cost := EconomyService.shop_refresh_cost(GameState.shop_refresh_uses_this_round, all_free)
 	if GameState.gold < refresh_cost:
 		return
+	if _shop.refresh_emblem != null and is_instance_valid(_shop.refresh_emblem):
+		_shop.refresh_emblem.kick()
 	_shop_refresh_burn.play(Callable(self, "_on_refresh_shop"))
 func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragButton:
 	var card := DragButton.new()
@@ -4093,10 +4127,8 @@ func _show_pvp_warning_overlay() -> void:
 	title.offset_top = 90
 	title.offset_bottom = -70
 	title.add_theme_font_size_override("font_size", 72)
-	var title_base_font: Font = null
-	if LocaleManager.get_locale() != "en":
-		title_base_font = UIFontFallback.chinese_font()
-	title.add_theme_font_override("font", UIFontFallback.bold_font(title_base_font, 1.2))
+	# 11.05 起中英文都走全游戏默认字体（Knewave + 站酷快乐体），这里只加粗。
+	title.add_theme_font_override("font", UIFontFallback.bold_font(null, 1.2))
 	title.add_theme_color_override("font_color", Color(0.29, 0.13, 0.06))
 	title.add_theme_color_override("font_outline_color", Color(1.0, 0.84, 0.56, 0.95))
 	title.add_theme_constant_override("outline_size", 5)

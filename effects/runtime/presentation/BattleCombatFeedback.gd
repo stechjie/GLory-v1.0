@@ -9,7 +9,9 @@ const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const SfxService := preload("res://ui/services/SfxService.gd")
 
 const EARLY_DAMAGE_TIERS := [1000, 3000, 5000, 10000]
-const DISPLAY_FONT := preload("res://ui/fonts/LibreBaskerville-Variable.ttf")
+# 11.05 用户要求战斗伤害数字也换成全游戏那套字体（Knewave + 站酷快乐体，见 UIFontFallback.display_font）。
+# 原来是 Libre Baskerville 压窄 0.78；Knewave 本来就是粗卡通体，压窄只留一点（0.92）免得长数字顶出底板。
+const DAMAGE_WIDTH_SCALE := 0.92
 const PLATE := preload("res://effects/runtime/presentation/DamageCounterPlate.gd")
 const INK_SHADER := preload("res://shaders/damage_counter_ink.gdshader")
 const DAMAGE_TIERS := [10000, 20000, 40000, 80000, 160000, 320000]
@@ -75,20 +77,17 @@ func _ready() -> void:
 	_damage_title.text = "Damage"
 	_damage_depth = _make_label("DamageDepth", Color("090d26"))
 	_damage_label = _make_label("Damage", Color.WHITE)
+	var display: Font = Fonts.display_font()
 	var face := FontVariation.new()
-	face.base_font = DISPLAY_FONT
-	face.variation_opentype = {"wght": 500.0}
-	face.variation_transform = Transform2D(Vector2(0.78,0.0),Vector2(0.0,1.0),Vector2.ZERO)
+	face.base_font = display
+	face.variation_transform = Transform2D(Vector2(DAMAGE_WIDTH_SCALE,0.0),Vector2(0.0,1.0),Vector2.ZERO)
 	face.opentype_features = {"lnum":1,"tnum":1}
 	for label in [_damage_title, _damage_depth, _damage_label]:
 		label.add_theme_font_override("font", face)
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		label.add_theme_color_override("font_outline_color",Color("070a1e"))
 		label.add_theme_constant_override("outline_size",0 if label != _damage_depth else 1)
-	var title_face := FontVariation.new()
-	title_face.base_font = DISPLAY_FONT
-	title_face.variation_opentype = {"wght":500.0}
-	_damage_title.add_theme_font_override("font",title_face)
+	_damage_title.add_theme_font_override("font", display)
 	_damage_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	for label in [_damage_title,_damage_label]:
 		var ink := ShaderMaterial.new()

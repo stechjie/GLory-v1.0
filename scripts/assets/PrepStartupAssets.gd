@@ -7,12 +7,15 @@ const Shop := preload("res://scenes/prep/panels/ShopPanel.gd")
 const Resolver := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
 const Rules := preload("res://scenes/prep/PrepRules.gd")
 const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
+const RaceIcon := preload("res://scenes/prep/PrepShopRaceIcon.gd")
 
 static func paths() -> Array:
 	var out: Array = [
 		Prep.PREP_CELL_MARK_PATH, Prep.PREP_RIVER_TOP_PATH,
 		Prep.PREP_RIVER_TOP_EF_PATH, Prep.PREP_RIVER_BOTTOM_EF_PATH, Prep.PREP_RIVER_FLOW_SHADER,
 		Prep.START_BTN_PATH, Prep.STATS_BTN_PATH, Prep.REFRESH_BTN_PATH,
+		Prep.TOP_POWER_BTN_PATH, Prep.TOP_STATS_BTN_PATH, Prep.TOP_SETTINGS_BTN_PATH,
+		Prep.PrepRefreshEmblem.FIREFLY_PATH,
 		Prep.MERC_BTN_PATH, Prep.TEAM_MERCS_BTN_PATH, Prep.CARROT_BTN_PATH,
 		Prep.CHAT_BTN_PATH, Prep.CARROT_CURRENCY_ICON_PATH,
 		Prep.TEAM_MERCS_STAGE_BACKGROUND_PATH,
@@ -21,6 +24,8 @@ static func paths() -> Array:
 		Shop.PrepMoneyBagIcon.MONEY_BAG_TEXTURE_PATH,
 	]
 	# 棋盘底图、河流、待命区、萝卜、商店按钮与商店背景随皮肤换：预热正在用的那一套。
+	# 刷新键中间的图案按皮肤只用一张：预热正在用的那张。
+	out.append(Prep.PrepRefreshEmblem.EMBLEM_PATH % PrepSkin.refresh_fx())
 	out.append_array(PrepSkin.active_paths())
 	# A restored tutorial can already be at its PvP step. Match the music and
 	# announcement chosen by PrepScreen without warming unrelated future rounds.
@@ -30,7 +35,11 @@ static func paths() -> Array:
 		out.append(Prep.PREP_MUSIC_PATH)
 	out.append_array(Prep.CRYSTAL_FIRE_PATHS)
 	out.append_array(Prep.CRYSTAL_WATER_PATHS)
-	out.append_array(Shop.SHOP_CARD_FRAME_PATHS.values())
+	# 商店卡框 11.04 起是代码画的，不再有框贴图；改为预热商店卡左上角的种族符号。
+	for race in RaceIcon.LOGO_PATHS:
+		var glyph := RaceIcon.GLYPH_DIR + str(race) + ".png"
+		if ResourceLoader.exists(glyph):
+			out.append(glyph)
 	# The farm displays the starter pets even before the player chooses one.
 	var pets: Array = PetService.starter_ids().duplicate()
 	if not PlayerProfile.get_active().is_empty():

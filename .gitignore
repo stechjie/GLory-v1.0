@@ -129,6 +129,34 @@ android/
 /assets/ui/buttons/*
 !/assets/ui/buttons/ready_magic_circle.png
 !/assets/ui/buttons/ready_magic_circle.png.import
+# 11.05 摆放界面新按钮图（刷新空框、右上三键、聊天框、队友 / 全队），代码直接引用，每张约 100 KB。
+!/assets/ui/buttons/btn_refresh_blank.png
+!/assets/ui/buttons/btn_refresh_blank.png.import
+!/assets/ui/buttons/btn_top_power.png
+!/assets/ui/buttons/btn_top_power.png.import
+!/assets/ui/buttons/btn_top_last_battle.png
+!/assets/ui/buttons/btn_top_last_battle.png.import
+!/assets/ui/buttons/btn_top_settings.png
+!/assets/ui/buttons/btn_top_settings.png.import
+!/assets/ui/buttons/btn_chat_prep.png
+!/assets/ui/buttons/btn_chat_prep.png.import
+# 刷新键中间按皮肤换的图案（tools/gen_refresh_emblems.py 生成）
+!/assets/ui/buttons/refresh_emblem_fire.png
+!/assets/ui/buttons/refresh_emblem_fire.png.import
+!/assets/ui/buttons/refresh_emblem_frost.png
+!/assets/ui/buttons/refresh_emblem_frost.png.import
+!/assets/ui/buttons/refresh_emblem_petal.png
+!/assets/ui/buttons/refresh_emblem_petal.png.import
+!/assets/ui/buttons/refresh_emblem_wisp.png
+!/assets/ui/buttons/refresh_emblem_wisp.png.import
+!/assets/ui/buttons/refresh_firefly.png
+!/assets/ui/buttons/refresh_firefly.png.import
+!/assets/ui/voice/
+/assets/ui/voice/*
+!/assets/ui/voice/voice_scope_team.png
+!/assets/ui/voice/voice_scope_team.png.import
+!/assets/ui/voice/voice_scope_all.png
+!/assets/ui/voice/voice_scope_all.png.import
 
 # Crimson test-race art is required by the hand cards and portrait battle fallback.
 !/assets/ui/unit_portraits/
@@ -155,6 +183,10 @@ android/
 !/assets/ui/race_logos/crimson.png.import
 !/assets/ui/race_logos/crimson_lantern.png
 !/assets/ui/race_logos/crimson_lantern.png.import
+# 11.04 商店卡用的种族符号（从同名 logo 抠出、不带圆章外框）
+!/assets/ui/race_logos/glyph/
+/assets/ui/race_logos/glyph/*
+!/assets/ui/race_logos/glyph/*.png
 
 # Seven-day shop art is a runtime dependency of ShopScreen and PrepSkin.
 # Keep this small set with the code while the rest of the large art bundle stays external.
@@ -313,6 +345,23 @@ glory_server_key*.pem
 !/assets/ui/mercenary_portraits/
 /assets/ui/mercenary_portraits/*
 !/assets/ui/mercenary_portraits/*.png
+# 11.04 宝藏图标 + 选宝卡联动徽记：代码按名字 / 联动 id 拼路径加载，缺了图鉴、宝藏栏、
+# 选宝卡全是空的。以前靠手动同步，同事那边一直没有这个目录，所以改为进 git。
+# 徽记带 .import：卡上只显示约 60px，要靠 mipmaps/generate=true 才不出锯齿。
+!/assets/ui/treasure_logos/
+/assets/ui/treasure_logos/*
+!/assets/ui/treasure_logos/*.png
+!/assets/ui/treasure_cards/
+/assets/ui/treasure_cards/*
+!/assets/ui/treasure_cards/emblems/
+/assets/ui/treasure_cards/emblems/*
+!/assets/ui/treasure_cards/emblems/*.png
+!/assets/ui/treasure_cards/emblems/*.png.import
+# 11.05 图鉴图（怪物 / Boss / 法阵友军 / 宠物 / 元素）：CodexService 按名字拼路径加载，
+# 同事那边一直没有这个目录，图鉴这些分类是空的，所以改为进 git（38 张约 26MB）。
+!/assets/ui/codex_portraits/
+/assets/ui/codex_portraits/*
+!/assets/ui/codex_portraits/*.png
 # Human unit refinements: native runtime meshes, materials and atlases.
 !/assets/models/units/human_refined/
 !/assets/models/units/human_refined/**

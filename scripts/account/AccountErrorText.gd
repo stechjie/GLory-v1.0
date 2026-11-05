@@ -242,4 +242,9 @@ static func localize(message: String, locale: String) -> String:
 		if parts.size() == 2 and message.begins_with(parts[0]) and message.ends_with(parts[1]):
 			var value := message.substr(parts[0].length(), message.length() - parts[0].length() - parts[1].length())
 			return str(EN[template]).replace("%d", value).replace("%s", value)
+	# New server errors may arrive before their English mapping ships.
+	for i in message.length():
+		var codepoint := message.unicode_at(i)
+		if (codepoint >= 0x3400 and codepoint <= 0x9fff) or (codepoint >= 0xf900 and codepoint <= 0xfaff):
+			return "The server could not complete this request. Please try again later."
 	return message

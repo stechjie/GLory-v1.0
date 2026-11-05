@@ -835,6 +835,8 @@ const PREP_BOARD_GROUND_SIZE := Vector2(8.0, 4.5)
 # 位置：x=左右（负=左 / 正=右）、z=前后（负=远/靠上，正=近/靠下）、y=高度（一般不动）。
 const PREP_BOARD_GROUND_CENTER := Vector3(-0.0, -0.10, -0.6)
 const PREP_BOARD_GROUND_FLIP_V := false                  # 若图上下颠倒则改 true（翻转贴图 V）
+# 草地底图要不要贴在 3D 地面上。false = 只用满屏 2D 背景（不变形），见 _add_prep_art_layers。
+const PREP_BASE_LAYER_IN_3D := false
 # 河流流动高光层（贴在棋盘上方、横向滚动的波光）
 const PREP_RIVER_FLOW_SHADER := "res://assets/shaders/prep_river_flow.gdshader"
 const PREP_RIVER_TOP_EF_PATH := "res://assets/board/prep_2_5d/prep20_river_top_ef.png"
@@ -1426,7 +1428,12 @@ func _carrot_pet_aabb(root: Node3D) -> AABB:
 
 func _add_prep_art_layers(world: Node3D) -> void:
 	# v4 横向竞技场，一层一层贴在平躺 3D 平面上（保留 2.5D 倾斜）
-	_add_prep_texture_plane(world, "PrepBaseLayer", PrepSkin.path("board"), 0.000, 0)
+	# 草地底图（board）11.05 起不再贴 3D 地面：它是一张正面画的平面图（树是立着画的），
+	# 平躺后被斜俯视的相机压扁、远处缩小，舞台 x/z 缩放还不一样（3.5 / 3.2），左上的树比例会跑掉。
+	# 改由 PrepUI 的满屏 2D 背景（同一张图、KEEP_ASPECT_COVERED、不变形）直接露出来；
+	# 3D 视口本来就是透明底。河流 / 待命区 / 格子仍然贴在 3D 地面上，位置不变。
+	if PREP_BASE_LAYER_IN_3D:
+		_add_prep_texture_plane(world, "PrepBaseLayer", PrepSkin.path("board"), 0.000, 0)
 	# 下河流：黑底贴图，flow shader 键透明 + 横向滚动流动
 	_add_prep_texture_plane(world, "PrepRiverBottomLayer", PrepSkin.path("river"), 0.002, 2, river_z_offset())
 	# 流动波光是照草地河道画的，皮肤可以关掉它（data/prep_skins.json 的 river_glow）。
