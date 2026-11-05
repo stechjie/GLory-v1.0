@@ -15,6 +15,7 @@ static func paths() -> Array:
 		Prep.PREP_RIVER_TOP_EF_PATH, Prep.PREP_RIVER_BOTTOM_EF_PATH, Prep.PREP_RIVER_FLOW_SHADER,
 		Prep.START_BTN_PATH, Prep.STATS_BTN_PATH, Prep.REFRESH_BTN_PATH,
 		Prep.TOP_POWER_BTN_PATH, Prep.TOP_STATS_BTN_PATH, Prep.TOP_SETTINGS_BTN_PATH,
+		Prep.PrepRefreshEmblem.FIREFLY_PATH,
 		Prep.MERC_BTN_PATH, Prep.TEAM_MERCS_BTN_PATH, Prep.CARROT_BTN_PATH,
 		Prep.CHAT_BTN_PATH, Prep.CARROT_CURRENCY_ICON_PATH,
 		Prep.TEAM_MERCS_STAGE_BACKGROUND_PATH,
@@ -23,6 +24,8 @@ static func paths() -> Array:
 		Shop.PrepMoneyBagIcon.MONEY_BAG_TEXTURE_PATH,
 	]
 	# 棋盘底图、河流、待命区、萝卜、商店按钮与商店背景随皮肤换：预热正在用的那一套。
+	# 刷新键中间的图案按皮肤只用一张：预热正在用的那张。
+	out.append(Prep.PrepRefreshEmblem.EMBLEM_PATH % PrepSkin.refresh_fx())
 	out.append_array(PrepSkin.active_paths())
 	# A restored tutorial can already be at its PvP step. Match the music and
 	# announcement chosen by PrepScreen without warming unrelated future rounds.

@@ -63,8 +63,9 @@ func _ready() -> void:
 func _section_build(prep: Control) -> void:
 	h.expect(_path_of_slot(prep, "PrepFullscreenBackground") == _def("board"),
 		"build_bg2d_default", "默认皮肤下满屏 2D 垫底应是默认棋盘图")
-	h.expect(_plane_path(prep, "PrepBaseLayer") == _def("board"),
-		"build_base3d_default", "默认皮肤下 3D 底图应是默认棋盘图")
+	# 11.05 起草地底图只走满屏 2D 背景（贴 3D 地面会被斜相机压扁、树比例跑掉），3D 里不该再有这层。
+	h.expect(prep.find_child("PrepBaseLayer", true, false) == null,
+		"build_no_base3d", "草地底图不应再贴在 3D 地面上（只用 2D 满屏背景）")
 	h.expect(_plane_path(prep, "PrepRiverBottomLayer") == _def("river"),
 		"build_river_default", "默认皮肤下河流应是默认图")
 	h.expect(_plane_path(prep, "PrepStandbyBgLayer") == _def("bench"),
@@ -80,8 +81,6 @@ func _section_arrive(prep: Control) -> void:
 	await _settle(prep, 6)
 	h.expect(_path_of_slot(prep, "PrepFullscreenBackground") == _own(ICE, "board"),
 		"arrive_bg2d_ice", "皮肤晚到后 2D 垫底应换成冰雪棋盘图（原来一直是青草地 ⇒ 本反馈）")
-	h.expect(_plane_path(prep, "PrepBaseLayer") == _own(ICE, "board"),
-		"arrive_base3d_ice", "皮肤晚到后 3D 底图应换成冰雪棋盘图")
 	h.expect(_plane_path(prep, "PrepRiverBottomLayer") == _own(ICE, "river"),
 		"arrive_river_ice", "皮肤晚到后河流应换成冰雪图")
 	h.expect(_plane_path(prep, "PrepStandbyBgLayer") == _own(ICE, "bench"),
@@ -138,8 +137,6 @@ func _section_revert(prep: Control) -> void:
 	await _settle(prep, 6)
 	h.expect(_path_of_slot(prep, "PrepFullscreenBackground") == _def("board"),
 		"revert_bg2d_default", "换回默认后 2D 垫底应回到默认棋盘图")
-	h.expect(_plane_path(prep, "PrepBaseLayer") == _def("board"),
-		"revert_base3d_default", "换回默认后 3D 底图应回到默认棋盘图")
 	var flow := prep.find_child("PrepRiverFlowBottom", true, false)
 	if is_instance_valid(flow):
 		h.expect((flow as Node3D).visible, "revert_river_glow_on",

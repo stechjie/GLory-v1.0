@@ -140,6 +140,17 @@ android/
 !/assets/ui/buttons/btn_top_settings.png.import
 !/assets/ui/buttons/btn_chat_prep.png
 !/assets/ui/buttons/btn_chat_prep.png.import
+# 刷新键中间按皮肤换的图案（tools/gen_refresh_emblems.py 生成）
+!/assets/ui/buttons/refresh_emblem_fire.png
+!/assets/ui/buttons/refresh_emblem_fire.png.import
+!/assets/ui/buttons/refresh_emblem_frost.png
+!/assets/ui/buttons/refresh_emblem_frost.png.import
+!/assets/ui/buttons/refresh_emblem_petal.png
+!/assets/ui/buttons/refresh_emblem_petal.png.import
+!/assets/ui/buttons/refresh_emblem_wisp.png
+!/assets/ui/buttons/refresh_emblem_wisp.png.import
+!/assets/ui/buttons/refresh_firefly.png
+!/assets/ui/buttons/refresh_firefly.png.import
 !/assets/ui/voice/
 /assets/ui/voice/*
 !/assets/ui/voice/voice_scope_team.png
