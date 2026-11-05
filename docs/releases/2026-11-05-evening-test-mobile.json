@@ -81,23 +81,31 @@
     "built": true,
     "sha256": "6f6e7825baf1a1d0fc79cc33b4081feca4b4c8dea90b1b64e73a264c99dbae84",
     "bytes": 570644648,
-    "uploaded": false,
+    "uploaded": true,
     "internal_group_assigned": false,
-    "internal_state": "pending",
+    "internal_state": "pending_browser_access",
     "server_environment": "test",
     "upload_started": true,
-    "transporter_state": "Uploading",
+    "transporter_state": "Delivered",
     "notes_prepared": true,
     "baseline_registered": true,
     "base_id": "glory-20261105-evening-test-refresh",
     "includes_seq": 4,
-    "patch_action": "none"
+    "patch_action": "none",
+    "delivered_at_local": "2026-11-05 19:59 Asia/Shanghai",
+    "apple_processing": "complete_reported_by_Transporter",
+    "notes_saved": false,
+    "apple_processing_label": "APP 已完成处理。",
+    "app_store_connect_ui_verified": false,
+    "external_group_assigned": false,
+    "physical_device_gameplay_verified": false
   },
   "browser": {
     "state": "disabled_in_Work_settings",
     "tool_message": "Local browser use is disabled in Work settings",
     "user_enable_request_sent": true,
-    "last_connection_check": "Local browser use is disabled in Work settings"
+    "last_connection_check": "Local browser use is disabled in Work settings",
+    "requires_user_action": "Enable local Chrome browser access in Settings > Computer use"
   },
   "validation": {
     "source_commit": "f335b472205d13fe8075df18479dbf0df67b945d",
@@ -124,12 +132,11 @@
     "physical_device_gameplay_verified": false
   },
   "pending": [
-    "Android59 Google Drive whole-file upload and readback",
+    "Android59 Google Drive whole-file upload and full SHA256 readback",
     "fixed QR download entry switch after Drive upload",
-    "iOS85 Transporter upload and Apple processing",
-    "iOS85 GLory internal group assignment and Testing readback"
+    "iOS85 test notes and GLory internal group assignment with Testing readback"
   ],
-  "updated_at": "2026-11-05T11:50:12.960335+00:00",
+  "updated_at": "2026-11-05T12:05:55.926922+00:00",
   "retention": {
     "android_prod": [
       54,
