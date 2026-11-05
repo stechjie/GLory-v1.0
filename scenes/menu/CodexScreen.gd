@@ -702,13 +702,13 @@ func _four_star_skill_text(entry: Dictionary) -> String:
 
 func _build_stats(entry: Dictionary, unlocked: bool) -> Control:
 	var grid := GridContainer.new()
-	grid.columns = 3
+	grid.columns = 4
 	grid.add_theme_constant_override("h_separation", _sp(6))
 	grid.add_theme_constant_override("v_separation", _sp(4))
 
 	var stats: Dictionary = entry.get("stats", {})
 	var rows := [
-		["codex_stat_hp", "hp"], ["codex_stat_atk", "atk"], ["codex_stat_def", "def"],
+		["codex_stat_hp", "hp"], ["codex_stat_atk", "atk"], ["codex_stat_def", "def"], ["codex_stat_mres", "mres"],
 		["codex_stat_speed", "attack_speed"], ["codex_stat_range", "range"], ["codex_stat_move", "move_speed"],
 	]
 	for row in rows:

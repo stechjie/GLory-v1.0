@@ -110,6 +110,8 @@ static func apply_to_def(d: Dictionary, mult: float) -> void:
 	d["hp"] = maxi(1, int(round(float(d.get("hp", 1)) * mult)))
 	d["atk"] = maxi(1, int(round(float(d.get("atk", 1)) * mult)))
 	d["def"] = maxi(0, int(round(float(d.get("def", 0)) * mult)))
+	if d.has("mres"):
+		d["mres"] = maxi(0, int(round(float(d.get("mres", 0)) * mult)))
 
 
 static func apply_king_attack_speed_to_def(d: Dictionary, cell: Dictionary) -> void:

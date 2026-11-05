@@ -35,7 +35,7 @@ def text(value):
 
 def star_stat(base, star, unit, key):
     multiplier = (1.0, 1.5, 3.0, 3.0 * max(1.0, float(unit.get("star4_multiplier", 1.15))))[star - 1]
-    value = max(0 if key == "def" else 1, math.floor(base * multiplier + 0.5))
+    value = max(0 if key in ("def", "mres") else 1, math.floor(base * multiplier + 0.5))
     return 1 if key == "atk" and unit["id"] == "human_death_servant" else value
 
 
@@ -84,6 +84,7 @@ def build():
                     "hp": star_stat(int(b[6]), star, unit, "hp"),
                     "atk": star_stat(int(b[10]), star, unit, "atk"),
                     "defense": star_stat(int(b[14]), star, unit, "def"),
+                    "mres": star_stat(int(b[29]), star, unit, "mres"),
                 }
                 for star in range(1, 5)
             },

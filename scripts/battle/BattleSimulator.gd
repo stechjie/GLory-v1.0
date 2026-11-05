@@ -756,6 +756,8 @@ static func _tutorial_enemy_def(source: Dictionary, hp: int, atk: int, defense: 
 	d.hp = hp
 	d.atk = atk
 	d.def = defense
+	# 教学敌人的强度按脚本定，魔抗跟着指定的防御走，不沿用原单位的魔抗。
+	d.mres = defense
 	d.erase("skill_id")
 	d.erase("skill_damage")
 	return d
@@ -1576,6 +1578,7 @@ static func _maybe_spawn_parasite_clone(killer: Dictionary, victim: Dictionary, 
 	clone.max_hp = clone.hp
 	clone.atk = maxi(1, int(round(float(victim.atk) / inherited_money_multiplier * float(killer.get("def", {}).get("clone_atk_def_pct", 0.50)))))
 	clone.defense = maxi(0, int(round(float(victim.defense) * float(killer.get("def", {}).get("clone_atk_def_pct", 0.50)))))
+	clone.mres = maxi(0, int(round(float(victim.get("mres", victim.defense)) * float(killer.get("def", {}).get("clone_atk_def_pct", 0.50)))))
 	clone.alive = true
 	clone.statuses = {}
 	clone.erase("money_set_multiplier")

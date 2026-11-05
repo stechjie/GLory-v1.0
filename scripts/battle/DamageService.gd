@@ -395,6 +395,20 @@ static func effective_defense(target: Dictionary) -> int:
 	base -= float(target.get("crimson_def_break", 0))
 	return maxi(0, int(round(base * StatusEffectService.defense_multiplier(target))))
 
+# 11.05 魔抗（参考 LoL / TFT 的物理 / 魔法 / 真伤三分）：技能伤害走魔抗，普攻走防御，
+# 真伤（ignore_defense）两样都不吃。减伤公式与防御相同：魔抗 ÷ (100 + 魔抗)。
+# 没填魔抗的单位（教学敌人、部分召唤物等）按自身防御算，不会变成技能纸片。
+static func effective_magic_resist(target: Dictionary) -> int:
+	if target.has("mres"):
+		return maxi(0, int(target.get("mres", 0)))
+	return maxi(0, int(target.get("defense", 0)))
+
+
+# 这一击是否按技能（魔法）伤害结算：施法派发里统一打的 "skill" 标记，或调用方显式指定。
+static func is_magic_hit(force_magic: bool = false) -> bool:
+	return force_magic or _hit_kind == "skill"
+
+
 static func skill_hit_lands(target: Dictionary) -> bool:
 	if not bool(target.get("alive", true)):
 		return false
@@ -410,7 +424,7 @@ static func skill_hit_lands(target: Dictionary) -> bool:
 # skip_dodge is reserved for a multi-pulse hit that already rolled its one dodge
 # check when the cast landed. Invulnerability, defense, shields and damage-taken
 # modifiers are still evaluated independently for every pulse.
-static func apply_damage(target: Dictionary, amount: int, ignore_defense: bool = false, skip_dodge: bool = false) -> int:
+static func apply_damage(target: Dictionary, amount: int, ignore_defense: bool = false, skip_dodge: bool = false, magic: bool = false) -> int:
 	if amount <= 0 or not bool(target.get("alive", true)):
 		return 0
 
@@ -434,7 +448,8 @@ static func apply_damage(target: Dictionary, amount: int, ignore_defense: bool =
 	if not _stat_source_uid.is_empty():
 		remaining = maxi(MIN_HP_DAMAGE, int(round(float(remaining) * BattleFrenzy.damage_multiplier(current_battle_elapsed()))))
 	if not ignore_defense:
-		remaining = int(ceil(float(remaining) * (1.0 - damage_reduction(effective_defense(target)))))
+		var resist := effective_magic_resist(target) if is_magic_hit(magic) else effective_defense(target)
+		remaining = int(ceil(float(remaining) * (1.0 - damage_reduction(resist))))
 	remaining = maxi(MIN_HP_DAMAGE, int(ceil(float(remaining) * status_damage_taken_multiplier(target))))
 	if int(target.get("shield", 0)) > 0:
 		var absorbed := mini(int(target.shield), remaining)

@@ -166,9 +166,11 @@ func _bomb_fixture(state: Dictionary, code_prefix: String) -> Dictionary:
 	var vd: Dictionary = bomb.get("def", {})
 	_h.expect(str(vd.get("skill_id", "")) == "death_poison_explosion", code_prefix + "_skill_id_missing",
 		"自爆灵的 skill_id 不是 death_poison_explosion（实际 %s）—— 夹具变了" % str(vd.get("skill_id", "")))
-	var want := maxi(1, int(round(float(bomb.get("atk", 0)) * float(vd.get("damage_atk_pct", 2.5)))))
+	var raw := maxi(1, int(round(float(bomb.get("atk", 0)) * float(vd.get("damage_atk_pct", 2.5)))))
 	bomb.pos = tgt.pos + Vector2(40.0, 0.0)
 	StatusEffectService.ensure_status(tgt)
+	# 11.05：毒爆从真伤改成技能伤害，吃目标魔抗（与 DamageService.apply_damage 同一取整）。
+	var want := int(ceil(float(raw) * (1.0 - DamageService.damage_reduction(DamageService.effective_magic_resist(tgt)))))
 	return {"bomb": bomb, "tgt": tgt, "want": want}
 
 

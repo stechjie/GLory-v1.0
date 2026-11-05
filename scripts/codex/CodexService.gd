@@ -401,6 +401,8 @@ static func _boss_stats(d: Dictionary) -> Dictionary:
 	out.hp = maxi(1, int(round(float(out.hp) * mul)))
 	out.atk = maxi(1, int(round(float(out.atk) * mul)))
 	out.def = maxi(0, int(round(float(out.def) * mul)))
+	if out.has("mres"):
+		out.mres = maxi(0, int(round(float(out.mres) * mul)))
 	return out
 
 # The treasure text table carries both languages per field (effect, trigger,
@@ -418,6 +420,7 @@ static func _stats(d: Dictionary) -> Dictionary:
 		"hp": int(d.get("hp", 0)),
 		"atk": int(d.get("atk", 0)),
 		"def": int(d.get("def", 0)),
+		"mres": int(d.get("mres", d.get("def", 0))),
 		"attack_speed": float(d.get("attack_speed", 0.0)),
 		"range": int(d.get("range", 0)),
 		"move_speed": float(d.get("move_speed", 0.0)),
