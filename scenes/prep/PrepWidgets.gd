@@ -147,6 +147,52 @@ static func make_menu_button(label_text: String, size: Vector2, font_size: int, 
 	return btn
 
 
+# 「整张图按钮 + 下沿小字」（11.05 右上角战力 / 统计 / 设定）：图标画在框的上半，
+# 字压在框里下方那条空白上。button.text 留空、文案进 tooltip，免得默认文字再画一遍。
+static func make_art_caption_button(label_text: String, art_path: String, size: Vector2,
+		font_size: int, on_press: Callable) -> Button:
+	var btn := Button.new()
+	btn.flat = true
+	btn.text = ""
+	btn.tooltip_text = label_text
+	btn.custom_minimum_size = size
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
+		btn.add_theme_stylebox_override(state, StyleBoxEmpty.new())
+	if on_press.is_valid():
+		btn.pressed.connect(on_press)
+	var art := TextureRect.new()
+	art.name = "Art"
+	art.texture = cached_texture(art_path)
+	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	btn.add_child(art)
+	var lbl := Label.new()
+	lbl.name = "Caption"
+	lbl.text = label_text
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lbl.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	lbl.anchor_top = 0.60
+	lbl.anchor_bottom = 0.86
+	lbl.add_theme_font_size_override("font_size", font_size)
+	lbl.add_theme_color_override("font_color", Color("fff1cd"))
+	lbl.add_theme_color_override("font_outline_color", Color("29180b"))
+	lbl.add_theme_constant_override("outline_size", 3)
+	btn.add_child(lbl)
+	# 按下缩一下、松开回弹，跟其它图按钮一样有手感。
+	btn.button_down.connect(func():
+		btn.pivot_offset = btn.size * 0.5
+		btn.create_tween().tween_property(btn, "scale", Vector2(0.92, 0.92), 0.06))
+	btn.button_up.connect(func():
+		btn.create_tween().tween_property(btn, "scale", Vector2.ONE, 0.14) 			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT))
+	return btn
+
+
 # 「带贴图框文字按钮」：高清框背景 + 居中文字。商店 / 佣兵用它（保留原贴图框）。
 static func make_framed_text_button(label_text: String, frame_path: String, size: Vector2, font_size: int, on_press: Callable) -> Button:
 	var btn := Button.new()

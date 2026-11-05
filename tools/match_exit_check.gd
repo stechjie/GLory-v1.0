@@ -370,7 +370,9 @@ func _case_prep_settings() -> void:
 	add_child(prep)
 	await _settle(12)
 	var settings_btn := prep.find_child("SettingsButton", true, false) as Button
-	if not _h.expect(settings_btn != null and settings_btn.text == "设定", "prep_settings_button",
+	# 11.05 起右上三键是整张图按钮，文字在子节点 Caption 里（button.text 留空，免得画两遍）。
+	var settings_caption := settings_btn.get_node_or_null("Caption") as Label if settings_btn != null else null
+	if not _h.expect(settings_caption != null and settings_caption.text == "设定", "prep_settings_button",
 			"摆放界面右上角应是「设定」"):
 		prep.queue_free()
 		await _settle(2)

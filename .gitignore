@@ -129,6 +129,23 @@ android/
 /assets/ui/buttons/*
 !/assets/ui/buttons/ready_magic_circle.png
 !/assets/ui/buttons/ready_magic_circle.png.import
+# 11.05 摆放界面新按钮图（刷新空框、右上三键、聊天框、队友 / 全队），代码直接引用，每张约 100 KB。
+!/assets/ui/buttons/btn_refresh_blank.png
+!/assets/ui/buttons/btn_refresh_blank.png.import
+!/assets/ui/buttons/btn_top_power.png
+!/assets/ui/buttons/btn_top_power.png.import
+!/assets/ui/buttons/btn_top_last_battle.png
+!/assets/ui/buttons/btn_top_last_battle.png.import
+!/assets/ui/buttons/btn_top_settings.png
+!/assets/ui/buttons/btn_top_settings.png.import
+!/assets/ui/buttons/btn_chat_prep.png
+!/assets/ui/buttons/btn_chat_prep.png.import
+!/assets/ui/voice/
+/assets/ui/voice/*
+!/assets/ui/voice/voice_scope_team.png
+!/assets/ui/voice/voice_scope_team.png.import
+!/assets/ui/voice/voice_scope_all.png
+!/assets/ui/voice/voice_scope_all.png.import
 
 # Crimson test-race art is required by the hand cards and portrait battle fallback.
 !/assets/ui/unit_portraits/

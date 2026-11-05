@@ -36,6 +36,14 @@ var _panel_context := ""
 var _awaiting_mic := false
 var _speaker_hold_started := -1
 var _speaker_hold_opened := false
+# 11.05 摆放界面：「队友 / 所有人」用用户出的两张图（盾牌+队友 / 地球），不写字。
+# 只有传了 options.scope_art 的界面这样画；大厅和战斗界面还是原来的文字键。
+const SCOPE_TEAM_ART := "res://assets/ui/voice/voice_scope_team.png"
+const SCOPE_ALL_ART := "res://assets/ui/voice/voice_scope_all.png"
+const SCOPE_ALL_COLOR := Color(1.0, 0.56, 0.20)        # 对手也听得到 = 橙色（跟文字聊天「发给：全部」同色系）
+var _scope_art := false
+var _scope_shown := -1                                 # 当前画的是哪张（0 队友 / 1 所有人），切换时才弹
+var _scope_ring: Panel = null
 
 
 func build(owner: Node, voice_size: Vector2, members_size: Vector2, font_size: int,
@@ -64,6 +72,11 @@ func build(owner: Node, voice_size: Vector2, members_size: Vector2, font_size: i
 
 	VoiceButtonArt.use_art_as_button_background(voice_button)
 	VoiceButtonArt.use_art_as_button_background(audience_button)
+	_scope_art = bool(options.get("scope_art", false))
+	if _scope_art:
+		members_button.text = ""
+		VoiceButtonArt.use_art_as_button_background(members_button)
+		_build_scope_ring()
 
 	if not VoiceService.mode_changed.is_connected(_on_mode_changed):
 		VoiceService.mode_changed.connect(_on_mode_changed)
@@ -111,6 +124,9 @@ func refresh() -> void:
 	if not VoiceService.last_error().is_empty():
 		voice_button.tooltip_text += "\n" + VoiceService.last_error()
 		audience_button.tooltip_text += "\n" + VoiceService.last_error()
+	if _scope_art:
+		_refresh_scope_art()
+		return
 	if VoiceService.lobby_open_to_room():
 		members_button.text = _text("全房间", "Room")
 	else:
@@ -206,6 +222,8 @@ func _on_audience_pressed() -> void:
 		return
 	VoiceService.toggle_audience()
 	refresh()
+	if _scope_art:
+		_show_scope_toast()
 
 
 func _on_audience_changed(_audience: int) -> void:
@@ -292,3 +310,139 @@ static func show_speaking_mic(avatar: Control, speaking: bool) -> void:
 	var badge := avatar.get_node_or_null(SPEAKING_NODE) as Control
 	if badge != null:
 		badge.visible = speaking
+
+
+# --- 摆放界面的「队友 / 所有人」图标键（11.05） ------------------------------------------
+#
+# 两张图本身就不一样（盾牌里的队友 / 发声的地球），不靠斜杠表示状态 —— 斜杠在游戏里是「关掉」。
+# 切换时：新图从 0.7 倍弹回原大，上方冒一句「说话：只有队友能听到 / 对手也能听到」。
+# 开着麦又切在「所有人」时，麦克风键外圈有一道慢慢呼吸的橙色光环，提醒对面听得到。
+# 图用运行时 load()：战斗服务器包不带导入过的贴图（同本文件下方 SpeakingMic 的理由）。
+
+func _refresh_scope_art() -> void:
+	var lobby_room := VoiceService.lobby_open_to_room()
+	var all := lobby_room or VoiceService.audience == VoiceService.Audience.ALL
+	var key := 1 if all else 0
+	var art := members_button.get_node_or_null("ScopeIcon") as TextureRect
+	if art == null:
+		art = TextureRect.new()
+		art.name = "ScopeIcon"
+		art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		members_button.add_child(art)
+		art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	if key != _scope_shown:
+		art.texture = load(SCOPE_ALL_ART if all else SCOPE_TEAM_ART) as Texture2D
+		if _scope_shown != -1 and art.is_inside_tree():
+			art.pivot_offset = art.size * 0.5
+			art.scale = Vector2(0.7, 0.7)
+			art.create_tween().tween_property(art, "scale", Vector2.ONE, 0.28) 				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		_scope_shown = key
+	# 框里下沿那条空白写字（11.05 用户定）：中文「队友 / 全队」，英文「Team / All」。
+	var caption := art.get_node_or_null("ScopeCaption") as Label
+	if caption == null:
+		caption = Label.new()
+		caption.name = "ScopeCaption"
+		caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		caption.add_theme_font_size_override("font_size", 12)
+		caption.add_theme_color_override("font_outline_color", Color(0.12, 0.05, 0.01))
+		caption.add_theme_constant_override("outline_size", 3)
+		art.add_child(caption)
+		caption.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		caption.anchor_top = 0.66
+		caption.anchor_bottom = 0.84
+	caption.text = _text("全队", "All") if all else _text("队友", "Team")
+	caption.add_theme_color_override("font_color", SCOPE_ALL_COLOR if all else Color(1.0, 0.94, 0.78))
+	# 开局前全房间本来就互通、没得选：图压暗，点了弹说明（_on_audience_pressed）。
+	art.modulate = Color(1, 1, 1, 0.55) if lobby_room else Color.WHITE
+	if lobby_room:
+		members_button.tooltip_text = _text("开局前全房间都听得到", "Everyone in the room hears you before the match")
+	elif all:
+		members_button.tooltip_text = _text("现在：所有人（对手也听得到）
+点一下改成只对队友", "Now: everyone (enemies too)
+Tap for team only")
+	else:
+		members_button.tooltip_text = _text("现在：只对队友
+点一下改成所有人", "Now: team only
+Tap for everyone")
+	if _scope_ring != null and is_instance_valid(_scope_ring):
+		_scope_ring.visible = (not lobby_room and VoiceService.audience == VoiceService.Audience.ALL
+			and VoiceService.mode == VoiceService.Mode.TALK)
+
+
+func _build_scope_ring() -> void:
+	_scope_ring = Panel.new()
+	_scope_ring.name = "ScopeAllRing"
+	_scope_ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_scope_ring.visible = false
+	var ring := StyleBoxFlat.new()
+	ring.bg_color = Color(0, 0, 0, 0)
+	ring.border_color = SCOPE_ALL_COLOR
+	ring.set_border_width_all(3)
+	ring.set_corner_radius_all(16)
+	ring.shadow_color = Color(SCOPE_ALL_COLOR.r, SCOPE_ALL_COLOR.g, SCOPE_ALL_COLOR.b, 0.45)
+	ring.shadow_size = 6
+	_scope_ring.add_theme_stylebox_override("panel", ring)
+	voice_button.add_child(_scope_ring)
+	_scope_ring.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	for side in ["left", "top"]:
+		_scope_ring.set("offset_" + side, -3.0)
+	for side in ["right", "bottom"]:
+		_scope_ring.set("offset_" + side, 3.0)
+	# 慢呼吸：1.2 秒一个来回（不闪，闪会让人以为出错了）。
+	var pulse := _scope_ring.create_tween().set_loops()
+	pulse.tween_property(_scope_ring, "modulate:a", 0.35, 0.6).set_trans(Tween.TRANS_SINE)
+	pulse.tween_property(_scope_ring, "modulate:a", 1.0, 0.6).set_trans(Tween.TRANS_SINE)
+
+
+func _show_scope_toast() -> void:
+	if members_button == null or not is_instance_valid(members_button) or not members_button.is_inside_tree():
+		return
+	var old := members_button.get_node_or_null("ScopeToast")
+	if old != null:
+		old.free()
+	var all := VoiceService.audience == VoiceService.Audience.ALL
+	var toast := PanelContainer.new()
+	toast.name = "ScopeToast"
+	toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	toast.z_index = 30
+	var box := StyleBoxFlat.new()
+	box.bg_color = Color(0.17, 0.09, 0.04, 0.94)
+	box.border_color = SCOPE_ALL_COLOR if all else Color(0.86, 0.66, 0.28)
+	box.set_border_width_all(2)
+	box.set_corner_radius_all(10)
+	box.content_margin_left = 12
+	box.content_margin_right = 12
+	box.content_margin_top = 5
+	box.content_margin_bottom = 5
+	toast.add_theme_stylebox_override("panel", box)
+	var label := Label.new()
+	label.text = (_text("说话：对手也能听到", "Voice: everyone hears you") if all
+		else _text("说话：只有队友能听到", "Voice: team only"))
+	label.add_theme_font_size_override("font_size", 15)
+	label.add_theme_color_override("font_color", SCOPE_ALL_COLOR if all else Color(1.0, 0.94, 0.78))
+	label.add_theme_color_override("font_outline_color", Color(0.12, 0.05, 0.01))
+	label.add_theme_constant_override("outline_size", 3)
+	toast.add_child(label)
+	members_button.add_child(toast)
+	# 贴在按钮正上方、右边跟这一排右缘差不多齐（不往屏幕外伸）。
+	var min_size := toast.get_combined_minimum_size()
+	var x := members_button.size.x * 0.5 - min_size.x * 0.5
+	var global_right := members_button.global_position.x + x + min_size.x
+	var screen_right := members_button.get_viewport_rect().size.x - 8.0
+	if global_right > screen_right:
+		x -= global_right - screen_right
+	toast.position = Vector2(x, -min_size.y - 6.0)
+	toast.size = min_size
+	toast.modulate.a = 0.0
+	var rest_y := toast.position.y
+	toast.position.y = rest_y + 8.0
+	var tw := toast.create_tween()
+	tw.tween_property(toast, "modulate:a", 1.0, 0.12)
+	tw.parallel().tween_property(toast, "position:y", rest_y, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_interval(1.4)
+	tw.tween_property(toast, "modulate:a", 0.0, 0.3)
+	tw.tween_callback(toast.queue_free)

@@ -56,6 +56,7 @@ var side_controls: Control             # 原 _shop_side_controls：商店"外挂
                                        #（钱袋A购买键 + 刷新），挂屏幕上、不受商店面板矩形限制
 var refresh_button: Button             # 原 _refresh_shop_button
 var refresh_icon: Label                # 原 _refresh_shop_icon
+var refresh_emblem: Control             # 刷新框中间按皮肤画的图案（PrepRefreshEmblem）
 var refresh_cost_label: Label          # 原 _refresh_shop_cost_label
 
 # --- 每个卡位一份的子控件（下标与 GameState.shop_offers 对齐）------------------
@@ -574,10 +575,12 @@ func refresh() -> void:
 		var refresh_cost := EconomyService.shop_refresh_cost(GameState.shop_refresh_uses_this_round, all_free)
 		refresh_button.disabled = GameState.gold < refresh_cost
 		refresh_icon.modulate = Color(0.46, 0.46, 0.46) if refresh_button.disabled else Color.WHITE
+		if refresh_emblem != null and is_instance_valid(refresh_emblem):
+			refresh_emblem.modulate = refresh_icon.modulate
 		refresh_cost_label.text = tr("ui_free") if refresh_cost == 0 else str(refresh_cost)
 		if refresh_cost == 0:
 			refresh_cost_label.remove_theme_font_override("font")
-			refresh_cost_label.add_theme_font_size_override("font_size", 14)
+			refresh_cost_label.add_theme_font_size_override("font_size", 17)
 			refresh_cost_label.rotation_degrees = 0.0
 		else:
 			refresh_cost_label.add_theme_font_override("font", GOLD_NUMBER_FONT)
