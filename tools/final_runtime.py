@@ -88,7 +88,7 @@ def check_business_pages(workbook, tables: dict[str, object]) -> list[str]:
             continue
         item = units[unit_id]
         for col, key in [(1, "name"), (4, "tier"), (5, "cost"), (6, "hp"),
-                         (10, "atk"), (14, "def"), (28, "skill_id")]:
+                         (10, "atk"), (14, "def"), (28, "skill_id"), (29, "mres")]:
             expect(f"01_棋子基础 {unit_id} {key}", row[col], item.get(key))
 
     monsters = index("data/pve/pve_monsters.json", "monsters")
@@ -100,7 +100,7 @@ def check_business_pages(workbook, tables: dict[str, object]) -> list[str]:
             errors.append(f"05_野怪: unknown id {row[0]}")
             continue
         for col, key in [(1, "name"), (4, "hp"), (5, "atk"), (6, "def"),
-                         (7, "attack_speed"), (13, "skill_id")]:
+                         (7, "attack_speed"), (13, "skill_id"), (20, "mres")]:
             expect(f"05_野怪 {row[0]} {key}", row[col], item.get(key))
 
     bosses = index("data/boss/bosses.json", "bosses")
@@ -113,7 +113,7 @@ def check_business_pages(workbook, tables: dict[str, object]) -> list[str]:
             continue
         for col, key in [(1, "name"), (18, "attack_speed"), (23, "skill_id")]:
             expect(f"06_Boss {row[0]} {key}", row[col], item.get(key))
-        for col, key in [(3, "hp"), (4, "atk"), (14, "def")]:
+        for col, key in [(3, "hp"), (4, "atk"), (14, "def"), (29, "mres")]:
             expect(f"06_Boss {row[0]} first_spawn_{key}", row[col],
                    godot_round(item[key] * 1.5))
 
@@ -127,7 +127,7 @@ def check_business_pages(workbook, tables: dict[str, object]) -> list[str]:
             continue
         for col, key in [(1, "name"), (2, "carrot_cost"), (3, "cost"),
                          (5, "hp"), (6, "atk"), (7, "def"),
-                         (8, "attack_speed"), (17, "skill_id")]:
+                         (8, "attack_speed"), (17, "skill_id"), (24, "mres")]:
             expect(f"07_佣兵 {row[0]} {key}", row[col], item.get(key))
 
     pets_table = tables["data/pets/pets.json"]

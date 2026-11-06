@@ -1,6 +1,7 @@
 extends "res://scenes/battle/BattleUI.gd"
 const PresentationSettings := preload("res://effects/runtime/presentation/PresentationSettings.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
+const BattleBackgroundCatalog := preload("res://scripts/assets/BattleBackgroundCatalog.gd")
 
 const BossProceduralVFX3D := preload("res://effects/BossProceduralVFX3D.gd")
 const CrystalRibbon3D := preload("res://effects/CrystalRibbon3D.gd")
@@ -378,13 +379,16 @@ func _uses_pvp_battlefield() -> bool:
 
 
 func _battlefield_base_path() -> String:
-	match _battlefield_kind():
-		"final":
-			return BATTLE_2_5D_FINAL_BASE_PATH
-		"pvp":
-			return BATTLE_2_5D_PVP_BASE_PATH
-		_:
-			return BATTLE_2_5D_BASE_PATH
+	# Room identity is available before the replay arrives and survives reconnects.
+	# Do not use the rotating battle seed here: _build can run before it arrives.
+	var room_id := NetworkService.team_room_id
+	if NetworkService.spectate_room_id > 0:
+		room_id = NetworkService.spectate_room_id
+	var match_key := "room:%d" % room_id
+	if room_id <= 0:
+		match_key = "local:%s" % GameState.run_nonce
+	return BattleBackgroundCatalog.path_for(
+		_battlefield_kind(), GameState.round_index, GameState.FINAL_ROUND, match_key)
 
 func _add_battlefield_sprite(sprite_name: String, texture_path: String, layer_z: int) -> Sprite2D:
 	var sprite := Sprite2D.new()

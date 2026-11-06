@@ -370,6 +370,8 @@ static func _append_lane_monsters(out: Array, lane: int, count: int, template: D
 		d.hp = maxi(1, int(round(float(d.get("hp", 1)) * float(growth.hp))))
 		d.atk = maxi(1, int(round(float(d.get("atk", 1)) * float(growth.atk))))
 		d.def = maxi(0, int(round(float(d.get("def", 0)) * float(growth.def))))
+		if d.has("mres"):
+			d.mres = maxi(0, int(round(float(d.mres) * float(growth.def))))
 		var f := _fighter_from_def(d, 2 + n, "enemy", n, count)
 		# 密集方阵：每排 4 只，间距略大于身体直径，开打后由推开逻辑散开。
 		var lane_x: float = TEAM_LANE_CENTERS[lane] + (float(n % 4) - 1.5) * MONSTER_SPACING
@@ -394,6 +396,8 @@ static func _append_lane_boss(out: Array, lane: int, template: Dictionary) -> vo
 	d.hp = maxi(1, int(round(float(d.get("hp", 1)) * float(growth.hp) * boss_mul)))
 	d.atk = maxi(1, int(round(float(d.get("atk", 1)) * float(growth.atk) * boss_mul)))
 	d.def = maxi(0, int(round(float(d.get("def", 0)) * float(growth.def) * boss_mul)))
+	if d.has("mres"):
+		d.mres = maxi(0, int(round(float(d.mres) * float(growth.get("mres", growth.def)) * boss_mul)))
 	if d.has("skill_damage"):
 		d.skill_damage = maxi(1, int(round(float(d.get("skill_damage", 0)) * float(growth.skill_damage) * boss_mul)))
 	if d.has("splash_damage"):
@@ -762,6 +766,8 @@ static func _fighter_from_cell(cell: Dictionary, slot: int, team: String, mirror
 		d.hp = maxi(1, int(round(float(d.hp) * multiplier)))
 		d.atk = maxi(1, int(round(float(d.atk) * multiplier)))
 		d.def = maxi(0, int(round(float(d.def) * multiplier)))
+		if d.has("mres"):
+			d.mres = maxi(0, int(round(float(d.mres) * multiplier)))
 		UnitGrowth.apply_king_attack_speed_to_def(d, cell)
 	var f := _fighter_from_def(d, slot, team, slot, GameConstants.CELL_COUNT, int(cell.get("star", 1)), bool(cell.get("is_mercenary", false)), false, mirror_enemy_slot)
 	# 战后要按「哪一枚棋子」认人王死活（_king_outcomes）。fighter.uid 是战斗内编号，会被改写，
@@ -780,7 +786,7 @@ static func _fighter_from_cell(cell: Dictionary, slot: int, team: String, mirror
 static func _fighter_from_def(d: Dictionary, slot: int, team: String, order: int, total: int, star: int = 1, is_mercenary: bool = false, is_formation_ally: bool = false, mirror_enemy_slot: bool = false) -> Dictionary:
 	var pos := _slot_to_pos(slot, team, order, total, mirror_enemy_slot)
 	var hp := int(d.get("hp", 1))
-	return {"uid": "%s_%s_%d" % [team, str(d.get("id", "unit")), order], "id": str(d.get("id", "unit")), "name": str(d.get("name", d.get("id", "unit"))), "name_en": str(d.get("name_en", _english_name_from_def(d))), "team": team, "slot": slot, "def": d, "star": star, "is_mercenary": is_mercenary or bool(d.get("is_mercenary", false)), "is_formation_ally": is_formation_ally, "footprint_cells": maxi(1, int(d.get("footprint_cells", 1))), "hp": hp, "max_hp": hp, "atk": int(d.get("atk", 1)), "defense": int(d.get("def", d.get("defense", 0))), "attack_speed": float(d.get("attack_speed", 1.0)), "range_px": range_px_for(float(d.get("range", 1))), "move_speed_px": float(d.get("move_speed", 3.0)) * 55.0, "pos": pos, "next_attack": 0.0, "alive": true, "shield": 0, "attack_count": 0, "skill_ready": 0.0, "skill_stacks": 0, "linked_target_uid": "", "statuses": {}, "dodge": float(d.get("dodge", 0.0)), "revives_left": int(d.get("revives_per_twin", 0)), "treasure_cd": {}}
+	return {"uid": "%s_%s_%d" % [team, str(d.get("id", "unit")), order], "id": str(d.get("id", "unit")), "name": str(d.get("name", d.get("id", "unit"))), "name_en": str(d.get("name_en", _english_name_from_def(d))), "team": team, "slot": slot, "def": d, "star": star, "is_mercenary": is_mercenary or bool(d.get("is_mercenary", false)), "is_formation_ally": is_formation_ally, "footprint_cells": maxi(1, int(d.get("footprint_cells", 1))), "hp": hp, "max_hp": hp, "atk": int(d.get("atk", 1)), "defense": int(d.get("def", d.get("defense", 0))), "mres": int(d.get("mres", d.get("def", d.get("defense", 0)))), "attack_speed": float(d.get("attack_speed", 1.0)), "range_px": range_px_for(float(d.get("range", 1))), "move_speed_px": float(d.get("move_speed", 3.0)) * 55.0, "pos": pos, "next_attack": 0.0, "alive": true, "shield": 0, "attack_count": 0, "skill_ready": 0.0, "skill_stacks": 0, "linked_target_uid": "", "statuses": {}, "dodge": float(d.get("dodge", 0.0)), "revives_left": int(d.get("revives_per_twin", 0)), "treasure_cd": {}}
 
 
 static func _english_name_from_def(d: Dictionary) -> String:
@@ -1655,6 +1661,7 @@ static func _ensure_base_stats(f: Dictionary) -> void:
 	f.base_uid = str(f.get("uid", ""))
 	f.base_atk = int(f.get("atk", 1))
 	f.base_defense = int(f.get("defense", f.get("def", 0)))
+	f.base_mres = int(f.get("mres", f.base_defense))
 	f.base_attack_speed = float(f.get("attack_speed", 1.0))
 	f.base_max_hp = int(f.get("max_hp", 1))
 
@@ -1682,5 +1689,7 @@ static func _add_base_pct_stats(f: Dictionary, pct: float) -> void:
 	_ensure_base_stats(f)
 	f.atk = maxi(1, int(f.atk) + int(round(float(f.base_atk) * pct)))
 	f.defense = maxi(0, int(f.get("defense", 0)) + int(round(float(f.base_defense) * pct)))
+	# 11.05：魔抗跟防御同进同退（人 7「全属性」、暗 7「攻 / 防 / 攻速」的「防」两样都算）。
+	f.mres = maxi(0, int(f.get("mres", f.base_mres)) + int(round(float(f.base_mres) * pct)))
 	# 攻速进百分比池（StatusEffectService.attack_speed_multiplier 统一相加、统一上下限）。
 	f.aspd_bonus_pct = float(f.get("aspd_bonus_pct", 0.0)) + pct

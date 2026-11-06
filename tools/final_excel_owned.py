@@ -11,8 +11,8 @@ import re
 from decimal import Decimal, InvalidOperation
 
 SPECS = (
-    ("01_棋子基础", "data/units/race_units.json", "units", ((6, "hp"), (10, "atk"), (14, "def"))),
-    ("05_野怪", "data/pve/pve_monsters.json", "monsters", ((4, "hp"), (5, "atk"), (6, "def"))),
+    ("01_棋子基础", "data/units/race_units.json", "units", ((6, "hp"), (10, "atk"), (14, "def"), (29, "mres"))),
+    ("05_野怪", "data/pve/pve_monsters.json", "monsters", ((4, "hp"), (5, "atk"), (6, "def"), (20, "mres"))),
 )
 
 # 06_Boss!B16:E51 is the editable skill input table. Column A stays blank so
@@ -24,7 +24,7 @@ BOSS_SKILL_FIELDS = {
     "boss_holy_priest": ("skill_cd", "heal_pct", "shield_pct"),
     "boss_rage_beast": ("atk_per_hit", "aspd_per_hit", "max_stacks"),
     "boss_blood_demon": ("trigger_hp_pct", "atk_bonus", "aspd_bonus", "lifesteal"),
-    "boss_soul_devourer": ("kill_heal_pct", "atk_stack", "aspd_stack"),
+    "boss_soul_devourer": ("kill_heal_pct", "atk_stack", "aspd_stack", "max_stacks"),
     "boss_twin_gate": ("revive_delay", "revive_hp_pct", "revives_per_twin", "cleave_atk_pct", "cleave_distance", "cleave_start_half_width", "cleave_end_half_width"),
     "boss_apocalypse": ("skill_cd", "charge_sec", "charge_shield_pct", "damage_atk_pct"),
 }
@@ -150,7 +150,7 @@ def overlay_excel_owned(book, tables):
                 raise ValueError(f"{sheet} row {number}: unknown or duplicate ID {item_id!r}")
             seen.add(item_id)
             for column, key in fields:
-                value = positive_int(row[column], f"{sheet} row {number} {item_id}.{key}", allow_zero=key == "def")
+                value = positive_int(row[column], f"{sheet} row {number} {item_id}.{key}", allow_zero=key in ("def", "mres"))
                 if item_id == "human_death_servant" and key == "atk" and value != 1:
                     raise ValueError("01_棋子基础 human_death_servant.atk must remain 1 (fixed in UnitFactory)")
                 update(sheet, file, item_id, items[item_id], key, value)
@@ -165,8 +165,8 @@ def overlay_excel_owned(book, tables):
         if not isinstance(item_id, str) or item_id not in items or item_id in seen:
             raise ValueError(f"{sheet} row {number}: unknown or duplicate ID {item_id!r}")
         seen.add(item_id)
-        for column, key in ((3, "hp"), (4, "atk"), (14, "def")):
-            value = boss_base(row[column], f"{sheet} row {number} {item_id}.{key}", allow_zero=key == "def")
+        for column, key in ((3, "hp"), (4, "atk"), (14, "def"), (29, "mres")):
+            value = boss_base(row[column], f"{sheet} row {number} {item_id}.{key}", allow_zero=key in ("def", "mres"))
             update(sheet, "data/boss/bosses.json", item_id, items[item_id], key, value)
     if seen != set(items):
         raise ValueError(f"{sheet}: missing IDs {sorted(set(items) - seen)}")

@@ -14,7 +14,7 @@
       "cost": 20,
       "skill_id": "curse_attack",
       "skill_name_cn": "诅咒攻击",
-      "skill_cn_1to3": "诅咒攻击：普通攻击附带减攻8%与攻速降低8%，持续4.0秒；暗2会增强效果。",
+      "skill_cn_1to3": "诅咒攻击：普通攻击附带减攻8%与攻速降低8%，持续4.0秒。",
       "skill_cn_4": "诅咒攻击：普通攻击附带减攻32%与攻速降低32%，持续4.0秒。",
       "skill_en_1to3": "Curse Strike: Normal attacks reduce target ATK by 8% and AS by 8% for 4.0s.",
       "skill_raw_params": "aspd_down = 0.08\nattack_down = 0.08\nduration = 4\nmax_stacks = 2\nmodel_idle_animation = res://assets/models/units/dark_imp_motong/dark_imp_motong_idle_zombie.fbx",
@@ -23,22 +23,26 @@
         "1": {
           "hp": 580,
           "atk": 37,
-          "defense": 4
+          "defense": 4,
+          "mres": 5
         },
         "2": {
           "hp": 870,
           "atk": 56,
-          "defense": 6
+          "defense": 6,
+          "mres": 8
         },
         "3": {
           "hp": 1740,
           "atk": 111,
-          "defense": 12
+          "defense": 12,
+          "mres": 15
         },
         "4": {
           "hp": 2001,
           "atk": 128,
-          "defense": 14
+          "defense": 14,
+          "mres": 17
         }
       }
     },
@@ -59,22 +63,26 @@
         "1": {
           "hp": 520,
           "atk": 48,
-          "defense": 3
+          "defense": 3,
+          "mres": 6
         },
         "2": {
           "hp": 780,
           "atk": 72,
-          "defense": 5
+          "defense": 5,
+          "mres": 9
         },
         "3": {
           "hp": 1560,
           "atk": 144,
-          "defense": 9
+          "defense": 9,
+          "mres": 18
         },
         "4": {
           "hp": 1794,
           "atk": 166,
-          "defense": 10
+          "defense": 10,
+          "mres": 21
         }
       }
     },
@@ -86,31 +94,35 @@
       "cost": 30,
       "skill_id": "fear",
       "skill_name_cn": "恐惧",
-      "skill_cn_1to3": "恐惧效果：1–3★ 为 2 秒，4★ 为 3 秒；实际状态为 fear。",
-      "skill_cn_4": "恐惧（冷却4.0秒）：使最近敌人向后逃跑3.0秒，结束后重新接近目标。",
-      "skill_en_1to3": "Fear (CD 6.0s): Make the nearest enemy retreat for 2.0s, then resume approaching its target.",
+      "skill_cn_1to3": "恐惧（冷却6.0秒）：使最近敌人逃跑2.0秒。",
+      "skill_cn_4": "恐惧（冷却4.0秒）：使最近敌人逃跑3.0秒。",
+      "skill_en_1to3": "Fear (CD 6.0s): Make the nearest enemy flee for 2.0s.",
       "skill_raw_params": "fear_sec = 2\nskill_cd = 6",
       "star4_changes": "fear_sec: 2 → 3\nskill_cd: 6 → 4",
       "stats": {
         "1": {
           "hp": 840,
           "atk": 55,
-          "defense": 7
+          "defense": 7,
+          "mres": 9
         },
         "2": {
           "hp": 1260,
           "atk": 83,
-          "defense": 11
+          "defense": 11,
+          "mres": 14
         },
         "3": {
           "hp": 2520,
           "atk": 165,
-          "defense": 21
+          "defense": 21,
+          "mres": 27
         },
         "4": {
           "hp": 2898,
           "atk": 190,
-          "defense": 24
+          "defense": 24,
+          "mres": 31
         }
       }
     },
@@ -131,22 +143,26 @@
         "1": {
           "hp": 920,
           "atk": 68,
-          "defense": 8
+          "defense": 8,
+          "mres": 8
         },
         "2": {
           "hp": 1380,
           "atk": 102,
-          "defense": 12
+          "defense": 12,
+          "mres": 12
         },
         "3": {
           "hp": 2760,
           "atk": 204,
-          "defense": 24
+          "defense": 24,
+          "mres": 24
         },
         "4": {
           "hp": 3174,
           "atk": 235,
-          "defense": 28
+          "defense": 28,
+          "mres": 28
         }
       }
     },
@@ -167,22 +183,26 @@
         "1": {
           "hp": 780,
           "atk": 88,
-          "defense": 6
+          "defense": 6,
+          "mres": 6
         },
         "2": {
           "hp": 1170,
           "atk": 132,
-          "defense": 9
+          "defense": 9,
+          "mres": 9
         },
         "3": {
           "hp": 2340,
           "atk": 264,
-          "defense": 18
+          "defense": 18,
+          "mres": 18
         },
         "4": {
           "hp": 2691,
           "atk": 304,
-          "defense": 21
+          "defense": 21,
+          "mres": 21
         }
       }
     },
@@ -194,7 +214,7 @@
       "cost": 30,
       "skill_id": "stun",
       "skill_name_cn": "暗影击晕",
-      "skill_cn_1to3": "眩晕目标，并造成自身攻击 ×1.5 的技能伤害。",
+      "skill_cn_1to3": "暗影击晕（冷却5.0秒）：眩晕最近敌人1.5秒，并造成自身攻击150%伤害。",
       "skill_cn_4": "暗影击晕（冷却3.5秒）：眩晕最近敌人2.0秒，并造成自身攻击150%伤害。",
       "skill_en_1to3": "Shadow Stun (CD 5.0s): Stun the nearest enemy for 1.5s and deal 150% ATK damage.",
       "skill_raw_params": "damage_atk_pct = 1.5\nskill_cd = 5\nstun_sec = 1.5",
@@ -203,22 +223,26 @@
         "1": {
           "hp": 860,
           "atk": 64,
-          "defense": 7
+          "defense": 7,
+          "mres": 8
         },
         "2": {
           "hp": 1290,
           "atk": 96,
-          "defense": 11
+          "defense": 11,
+          "mres": 12
         },
         "3": {
           "hp": 2580,
           "atk": 192,
-          "defense": 21
+          "defense": 21,
+          "mres": 24
         },
         "4": {
           "hp": 2967,
           "atk": 221,
-          "defense": 24
+          "defense": 24,
+          "mres": 28
         }
       }
     },
@@ -230,31 +254,35 @@
       "cost": 50,
       "skill_id": "shared_hp_link",
       "skill_name_cn": "血链",
-      "skill_cn_1to3": "血链：连接最近非Boss，非唯一棋子且星级不高于自身的敌人并使其变为我方棋子；双方共享受到的生命损失。任一方死亡后清除连接，本回合不再释放。",
-      "skill_cn_4": "血链：连接最近非Boss，非唯一棋子且星级不高于自身的敌人并使其变为我方棋子；双方共享受到的生命损失；连接期间每秒回4%最大生命。任一方死亡后清除连接，本回合不再释放。",
-      "skill_en_1to3": "Blood Chain: Link to the nearest non-Boss, non-unique enemy whose star is no higher than your own, and convert them to your side. Both share HP loss. Link breaks on either death and will not reactivate this round.",
+      "skill_cn_1to3": "血链：把最近一个星级不高于自己的敌人（Boss与唯一棋子除外）变成我方，双方共享伤害；一方死亡即断开，本回合不再释放。",
+      "skill_cn_4": "血链：把最近一个星级不高于自己的敌人（Boss与唯一棋子除外）变成我方，双方共享伤害，连接期间每秒回复4%最大生命；一方死亡即断开，本回合不再释放。",
+      "skill_en_1to3": "Blood Chain: Turn the nearest enemy of equal or lower star (not Bosses or unique units) to your side; both share damage taken. Breaks when either dies; not recast this round.",
       "skill_raw_params": "unique_on_board = true\nuntil_target_death = true",
       "star4_changes": "link_regen_pct: — → 0.04",
       "stats": {
         "1": {
           "hp": 1640,
           "atk": 97,
-          "defense": 16
+          "defense": 16,
+          "mres": 16
         },
         "2": {
           "hp": 2460,
           "atk": 146,
-          "defense": 24
+          "defense": 24,
+          "mres": 24
         },
         "3": {
           "hp": 4920,
           "atk": 291,
-          "defense": 48
+          "defense": 48,
+          "mres": 48
         },
         "4": {
           "hp": 5658,
           "atk": 335,
-          "defense": 55
+          "defense": 55,
+          "mres": 55
         }
       }
     },
@@ -275,22 +303,26 @@
         "1": {
           "hp": 1800,
           "atk": 120,
-          "defense": 14
+          "defense": 14,
+          "mres": 12
         },
         "2": {
           "hp": 2700,
           "atk": 180,
-          "defense": 21
+          "defense": 21,
+          "mres": 18
         },
         "3": {
           "hp": 5400,
           "atk": 360,
-          "defense": 42
+          "defense": 42,
+          "mres": 36
         },
         "4": {
           "hp": 6210,
           "atk": 414,
-          "defense": 48
+          "defense": 48,
+          "mres": 41
         }
       },
       "skill_damage_multiplier_1to3": 1.6,
@@ -313,22 +345,26 @@
         "1": {
           "hp": 640,
           "atk": 31,
-          "defense": 4
+          "defense": 4,
+          "mres": 7
         },
         "2": {
           "hp": 960,
           "atk": 47,
-          "defense": 6
+          "defense": 6,
+          "mres": 11
         },
         "3": {
           "hp": 1920,
           "atk": 93,
-          "defense": 12
+          "defense": 12,
+          "mres": 21
         },
         "4": {
           "hp": 2208,
           "atk": 107,
-          "defense": 14
+          "defense": 14,
+          "mres": 24
         }
       }
     },
@@ -340,31 +376,35 @@
       "cost": 20,
       "skill_id": "nearest_ally_bless",
       "skill_name_cn": "神赐祝福",
-      "skill_cn_1to3": "神赐祝福（冷却6.0秒）：强化最近友军，攻击+8%（按开战攻击）、攻速+15%，并清除负面状态；同一目标最多叠加3层。",
-      "skill_cn_4": "神赐祝福（冷却4.5秒）：强化最近友军，攻击+32%（按开战攻击）、攻速+45%，并清除负面状态；同一目标最多叠加3层。",
-      "skill_en_1to3": "Divine Blessing (CD 6.0s): Buff the nearest ally — ATK +8% (of battle-start ATK), AS +15% — and cleanse their debuffs; stacks up to 3 times per ally.",
+      "skill_cn_1to3": "神赐祝福（冷却6.0秒）：最近友军攻击+8%、攻速+15%，并清除负面状态（同一目标最多3层）。",
+      "skill_cn_4": "神赐祝福（冷却4.5秒）：最近友军攻击+32%、攻速+45%，并清除负面状态（同一目标最多3层）。",
+      "skill_en_1to3": "Divine Blessing (CD 6.0s): The nearest ally gains +8% ATK and +15% AS and is cleansed (up to 3 stacks per ally).",
       "skill_raw_params": "aspd_bonus = 0.15\natk_bonus = 0.08\nskill_cd = 6",
       "star4_changes": "aspd_bonus: 0.15 → 0.45\natk_bonus: 0.08 → 0.32\nskill_cd: 6 → 4.5",
       "stats": {
         "1": {
           "hp": 600,
           "atk": 26,
-          "defense": 4
+          "defense": 4,
+          "mres": 7
         },
         "2": {
           "hp": 900,
           "atk": 39,
-          "defense": 6
+          "defense": 6,
+          "mres": 11
         },
         "3": {
           "hp": 1800,
           "atk": 78,
-          "defense": 12
+          "defense": 12,
+          "mres": 21
         },
         "4": {
           "hp": 2070,
           "atk": 90,
-          "defense": 14
+          "defense": 14,
+          "mres": 24
         }
       }
     },
@@ -376,31 +416,35 @@
       "cost": 30,
       "skill_id": "nearby_ally_heal_buff",
       "skill_name_cn": "光环治疗",
-      "skill_cn_1to3": "光环治疗（冷却7.0秒）：治疗自身周围友军最大生命15%，并给攻击+10%（按开战攻击）、攻速+15%（同一目标最多叠加3层），同时清除负面状态；开场冷却2.0秒。",
-      "skill_cn_4": "光环治疗（冷却5.0秒）：治疗自身周围友军最大生命40%，并给攻击+40%（按开战攻击）、攻速+45%（同一目标最多叠加3层），同时清除负面状态；开场冷却2.0秒。",
-      "skill_en_1to3": "Halo Heal (CD 7.0s): Heal nearby allies for 15% max HP; grant ATK +10% (of battle-start ATK) and AS +15% (up to 3 stacks per ally) and cleanse debuffs; initial cooldown 2.0s.",
+      "skill_cn_1to3": "光环治疗（冷却7.0秒）：周围友军回复15%最大生命、攻击+10%、攻速+15%，并清除负面状态（同一目标最多3层）；开场冷却2.0秒。",
+      "skill_cn_4": "光环治疗（冷却5.0秒）：周围友军回复40%最大生命、攻击+40%、攻速+45%，并清除负面状态（同一目标最多3层）；开场冷却2.0秒。",
+      "skill_en_1to3": "Halo Heal (CD 7.0s): Nearby allies heal 15% max HP, gain +10% ATK and +15% AS, and are cleansed (up to 3 stacks per ally); first cast after 2.0s.",
       "skill_raw_params": "aspd_bonus = 0.15\natk_bonus = 0.1\nheal_pct = 0.15\nopening_cd = 2\nskill_cd = 7",
       "star4_changes": "aspd_bonus: 0.15 → 0.45\natk_bonus: 0.1 → 0.4\ncontrol_immune_sec: — → 2\nheal_pct: 0.15 → 0.4\nskill_cd: 7 → 5",
       "stats": {
         "1": {
           "hp": 1080,
           "atk": 48,
-          "defense": 8
+          "defense": 8,
+          "mres": 10
         },
         "2": {
           "hp": 1620,
           "atk": 72,
-          "defense": 12
+          "defense": 12,
+          "mres": 15
         },
         "3": {
           "hp": 3240,
           "atk": 144,
-          "defense": 24
+          "defense": 24,
+          "mres": 30
         },
         "4": {
           "hp": 3726,
           "atk": 166,
-          "defense": 28
+          "defense": 28,
+          "mres": 35
         }
       }
     },
@@ -412,31 +456,35 @@
       "cost": 30,
       "skill_id": "judgement_strike",
       "skill_name_cn": "审判打击",
-      "skill_cn_1to3": "审判打击（冷却3.0秒）：对最近敌人造成自身攻击220%伤害；每次释放自身防御叠加开战防御的6%，最多5层。",
-      "skill_cn_4": "审判打击（冷却2.0秒）：对最近敌人造成自身攻击440%伤害；每次释放自身防御叠加开战防御的20%，最多5层。",
-      "skill_en_1to3": "Judgement Strike (CD 3.0s): Deal 220% ATK damage to the nearest enemy; each cast permanently stacks own DEF +6% (max 5 stacks).",
+      "skill_cn_1to3": "审判打击（冷却3.0秒）：对最近敌人造成攻击220%伤害，每次释放自身防御+6%（最多5层）。",
+      "skill_cn_4": "审判打击（冷却2.0秒）：对最近敌人造成攻击440%伤害，每次释放自身防御+20%（最多5层）。",
+      "skill_en_1to3": "Judgement Strike (CD 3.0s): Deal 220% ATK damage to the nearest enemy; each cast grants +6% DEF (up to 5 stacks).",
       "skill_raw_params": "damage_atk_pct = 2.2\ndef_stack_pct = 0.06\nmax_stacks = 5\nskill_cd = 3",
       "star4_changes": "damage_atk_pct: 2.2 → 4.4\ndef_stack_pct: 0.06 → 0.2\nskill_cd: 3 → 2",
       "stats": {
         "1": {
           "hp": 1040,
           "atk": 79,
-          "defense": 10
+          "defense": 10,
+          "mres": 10
         },
         "2": {
           "hp": 1560,
           "atk": 119,
-          "defense": 15
+          "defense": 15,
+          "mres": 15
         },
         "3": {
           "hp": 3120,
           "atk": 237,
-          "defense": 30
+          "defense": 30,
+          "mres": 30
         },
         "4": {
           "hp": 3588,
           "atk": 273,
-          "defense": 35
+          "defense": 35,
+          "mres": 35
         }
       }
     },
@@ -457,22 +505,26 @@
         "1": {
           "hp": 720,
           "atk": 77,
-          "defense": 4
+          "defense": 4,
+          "mres": 4
         },
         "2": {
           "hp": 1080,
           "atk": 116,
-          "defense": 6
+          "defense": 6,
+          "mres": 6
         },
         "3": {
           "hp": 2160,
           "atk": 231,
-          "defense": 12
+          "defense": 12,
+          "mres": 12
         },
         "4": {
           "hp": 2484,
           "atk": 266,
-          "defense": 14
+          "defense": 14,
+          "mres": 14
         }
       }
     },
@@ -493,22 +545,26 @@
         "1": {
           "hp": 1520,
           "atk": 46,
-          "defense": 14
+          "defense": 14,
+          "mres": 20
         },
         "2": {
           "hp": 2280,
           "atk": 69,
-          "defense": 21
+          "defense": 21,
+          "mres": 30
         },
         "3": {
           "hp": 4560,
           "atk": 138,
-          "defense": 42
+          "defense": 42,
+          "mres": 60
         },
         "4": {
           "hp": 5244,
           "atk": 159,
-          "defense": 48
+          "defense": 48,
+          "mres": 69
         }
       }
     },
@@ -529,22 +585,26 @@
         "1": {
           "hp": 1700,
           "atk": 73,
-          "defense": 15
+          "defense": 15,
+          "mres": 14
         },
         "2": {
           "hp": 2550,
           "atk": 110,
-          "defense": 23
+          "defense": 23,
+          "mres": 21
         },
         "3": {
           "hp": 5100,
           "atk": 219,
-          "defense": 45
+          "defense": 45,
+          "mres": 42
         },
         "4": {
           "hp": 5865,
           "atk": 252,
-          "defense": 52
+          "defense": 52,
+          "mres": 48
         }
       }
     },
@@ -556,31 +616,35 @@
       "cost": 50,
       "skill_id": "global_divine_blast",
       "skill_name_cn": "神王裁决",
-      "skill_cn_1to3": "神王裁决（冷却8.0秒）：攻击神王所在战线内所有可攻击敌人，在2.0秒内分5次造成自身攻击160%加目标最大生命8%的伤害。",
-      "skill_cn_4": "神王裁决（冷却6.0秒）：攻击神王所在战线内所有可攻击敌人，在2.0秒内分5次造成自身攻击320%加目标最大生命16%的伤害。",
-      "skill_en_1to3": "Divine Judgement (CD 8.0s): Strike all attackable enemies in God King's lane, dealing 160% ATK + 8% of each target's max HP over 5 hits in 2.0s.",
+      "skill_cn_1to3": "神王裁决（冷却8.0秒）：2.0秒内分5次，对本路所有敌人共造成攻击160%+最大生命8%的伤害。",
+      "skill_cn_4": "神王裁决（冷却6.0秒）：2.0秒内分5次，对本路所有敌人共造成攻击320%+最大生命16%的伤害。",
+      "skill_en_1to3": "Divine Judgement (CD 8.0s): Over 2.0s, hit every enemy in this lane 5 times for 160% ATK + 8% max HP in total.",
       "skill_raw_params": "damage_atk_pct = 1.6\ndamage_tick_count = 5\ndamage_tick_interval = 0.5\nmax_hp_bonus_pct = 0.08\nskill_cd = 8\nunique_on_board = true",
       "star4_changes": "damage_atk_pct: 1.6 → 3.2\nmax_hp_bonus_pct: 0.08 → 0.16\nskill_cd: 8 → 6",
       "stats": {
         "1": {
           "hp": 1800,
           "atk": 105,
-          "defense": 16
+          "defense": 16,
+          "mres": 14
         },
         "2": {
           "hp": 2700,
           "atk": 158,
-          "defense": 24
+          "defense": 24,
+          "mres": 21
         },
         "3": {
           "hp": 5400,
           "atk": 315,
-          "defense": 48
+          "defense": 48,
+          "mres": 42
         },
         "4": {
           "hp": 6210,
           "atk": 362,
-          "defense": 55
+          "defense": 55,
+          "mres": 48
         }
       }
     },
@@ -601,22 +665,26 @@
         "1": {
           "hp": 560,
           "atk": 29,
-          "defense": 4
+          "defense": 4,
+          "mres": 4
         },
         "2": {
           "hp": 840,
           "atk": 44,
-          "defense": 6
+          "defense": 6,
+          "mres": 6
         },
         "3": {
           "hp": 1680,
           "atk": 87,
-          "defense": 12
+          "defense": 12,
+          "mres": 12
         },
         "4": {
           "hp": 1932,
           "atk": 100,
-          "defense": 14
+          "defense": 14,
+          "mres": 14
         }
       }
     },
@@ -637,22 +705,26 @@
         "1": {
           "hp": 600,
           "atk": 35,
-          "defense": 5
+          "defense": 5,
+          "mres": 6
         },
         "2": {
           "hp": 900,
           "atk": 53,
-          "defense": 8
+          "defense": 8,
+          "mres": 9
         },
         "3": {
           "hp": 1800,
           "atk": 105,
-          "defense": 15
+          "defense": 15,
+          "mres": 18
         },
         "4": {
           "hp": 2070,
           "atk": 121,
-          "defense": 17
+          "defense": 17,
+          "mres": 21
         }
       }
     },
@@ -673,22 +745,26 @@
         "1": {
           "hp": 860,
           "atk": 70,
-          "defense": 3
+          "defense": 3,
+          "mres": 3
         },
         "2": {
           "hp": 1290,
           "atk": 105,
-          "defense": 5
+          "defense": 5,
+          "mres": 5
         },
         "3": {
           "hp": 2580,
           "atk": 210,
-          "defense": 9
+          "defense": 9,
+          "mres": 9
         },
         "4": {
           "hp": 2967,
           "atk": 241,
-          "defense": 10
+          "defense": 10,
+          "mres": 10
         }
       }
     },
@@ -709,22 +785,26 @@
         "1": {
           "hp": 1200,
           "atk": 48,
-          "defense": 6
+          "defense": 6,
+          "mres": 8
         },
         "2": {
           "hp": 1800,
           "atk": 72,
-          "defense": 9
+          "defense": 9,
+          "mres": 12
         },
         "3": {
           "hp": 3600,
           "atk": 144,
-          "defense": 18
+          "defense": 18,
+          "mres": 24
         },
         "4": {
           "hp": 4140,
           "atk": 166,
-          "defense": 21
+          "defense": 21,
+          "mres": 28
         }
       },
       "skill_heal_multiplier_1to3": 0.1,
@@ -738,31 +818,35 @@
       "cost": 30,
       "skill_id": "left_neighbor_sacrifice",
       "skill_name_cn": "死侍契约",
-      "skill_cn_1to3": "死侍契约：周围一圈友军防御+3持续5.0秒；战斗开始绑定左侧棋子，该棋子首次死亡时死侍代替其死亡并使其满血复活。",
-      "skill_cn_4": "死侍契约：周围一圈友军防御+40%持续8.0秒；战斗开始绑定左右两侧棋子，其中先死亡的棋子首次阵亡时由死侍代替其死亡并使其满血复活（死侍仅能牺牲一次）。",
-      "skill_en_1to3": "Death Pact: Grant surrounding allies DEF +3 for 5.0s. At battle start, bind to the left neighbour — when that unit first dies, this unit sacrifices itself in their place, reviving them at full HP.",
+      "skill_cn_1to3": "死侍契约：周围友军防御+3（5.0秒）；开战绑定左侧棋子，它首次阵亡时由死侍替死并满血复活。",
+      "skill_cn_4": "死侍契约：周围友军防御+40%（8.0秒）；开战绑定左右两侧棋子，先阵亡的那个由死侍替死并满血复活（仅一次）。",
+      "skill_en_1to3": "Death Pact: Nearby allies gain +3 DEF (5.0s). At battle start, bind the left neighbour; when it first dies, this unit dies in its place and revives it at full HP.",
       "skill_raw_params": "ally_def_bonus = 3\nally_def_duration = 5",
       "star4_changes": "ally_def_duration: 5 → 8\nally_def_pct: — → 0.4",
       "stats": {
         "1": {
           "hp": 1640,
           "atk": 1,
-          "defense": 18
+          "defense": 18,
+          "mres": 14
         },
         "2": {
           "hp": 2460,
           "atk": 1,
-          "defense": 27
+          "defense": 27,
+          "mres": 21
         },
         "3": {
           "hp": 4920,
           "atk": 1,
-          "defense": 54
+          "defense": 54,
+          "mres": 42
         },
         "4": {
           "hp": 5658,
           "atk": 1,
-          "defense": 62
+          "defense": 62,
+          "mres": 48
         }
       }
     },
@@ -783,22 +867,26 @@
         "1": {
           "hp": 720,
           "atk": 72,
-          "defense": 3
+          "defense": 3,
+          "mres": 5
         },
         "2": {
           "hp": 1080,
           "atk": 108,
-          "defense": 5
+          "defense": 5,
+          "mres": 8
         },
         "3": {
           "hp": 2160,
           "atk": 216,
-          "defense": 9
+          "defense": 9,
+          "mres": 15
         },
         "4": {
           "hp": 2484,
           "atk": 248,
-          "defense": 10
+          "defense": 10,
+          "mres": 17
         }
       }
     },
@@ -819,22 +907,26 @@
         "1": {
           "hp": 1320,
           "atk": 64,
-          "defense": 10
+          "defense": 10,
+          "mres": 8
         },
         "2": {
           "hp": 1980,
           "atk": 96,
-          "defense": 15
+          "defense": 15,
+          "mres": 12
         },
         "3": {
           "hp": 3960,
           "atk": 192,
-          "defense": 30
+          "defense": 30,
+          "mres": 24
         },
         "4": {
           "hp": 4554,
           "atk": 221,
-          "defense": 35
+          "defense": 35,
+          "mres": 28
         }
       }
     },
@@ -846,31 +938,35 @@
       "cost": 50,
       "skill_id": "unique_king_growth",
       "skill_name_cn": "人王唯一技",
-      "skill_cn_1to3": "人王唯一技：棋盘上只能存在一只人王。若参战且战后仍存活，生命、攻击、防御、攻速永久x1.2（上限5层，战斗攻速上限2.5次/秒）；若死亡则从棋盘移除；升星继承三只材料中成长最高的人王数值。",
-      "skill_cn_4": "人王唯一技：棋盘上只能存在一只人王。若参战且战后仍存活，生命、攻击、防御、攻速永久x1.3（上限8层，战斗攻速上限2.5次/秒）；若死亡则从棋盘移除；升星继承三只材料中成长最高的人王数值。",
-      "skill_en_1to3": "Human King Unique (one on board): If this unit survives a battle, HP/ATK/DEF/AS permanently ×1.2 (cap 5 stacks; battle AS cap 2.5 attacks/s). If it dies, it is removed from the board. On upgrade, inherit the highest growth value from the three materials.",
+      "skill_cn_1to3": "人王（棋盘限1只）：每活过一场，生命、攻击、防御、攻速永久×1.2（最多5层）；阵亡则移出棋盘，升星保留最高成长。",
+      "skill_cn_4": "人王（棋盘限1只）：每活过一场，生命、攻击、防御、攻速永久×1.3（最多8层）；阵亡则移出棋盘，升星保留最高成长。",
+      "skill_en_1to3": "Human King (one per board): Each battle survived permanently multiplies HP/ATK/DEF/AS by 1.2 (up to 5 stacks). If it dies it leaves the board; upgrading keeps the highest growth.",
       "skill_raw_params": "max_stacks = 5\npost_battle_all_stat_growth = 0.2\nremove_on_death = true\nunique_on_board = true",
       "star4_changes": "max_stacks: 5 → 8\npost_battle_all_stat_growth: 0.2 → 0.3",
       "stats": {
         "1": {
           "hp": 720,
           "atk": 55,
-          "defense": 7
+          "defense": 7,
+          "mres": 7
         },
         "2": {
           "hp": 1080,
           "atk": 83,
-          "defense": 11
+          "defense": 11,
+          "mres": 11
         },
         "3": {
           "hp": 2160,
           "atk": 165,
-          "defense": 21
+          "defense": 21,
+          "mres": 21
         },
         "4": {
           "hp": 2484,
           "atk": 190,
-          "defense": 24
+          "defense": 24,
+          "mres": 24
         }
       }
     },
@@ -882,7 +978,7 @@
       "cost": 20,
       "skill_id": "poison_attack",
       "skill_name_cn": "毒击",
-      "skill_cn_1to3": "毒击：普通攻击附带中毒，每秒造成目标最大生命3%伤害，持续4.0秒；灵4毒伤x2。",
+      "skill_cn_1to3": "毒击：普通攻击附带中毒，每秒造成目标最大生命3%伤害，持续4.0秒。",
       "skill_cn_4": "毒击：普通攻击附带中毒，每秒造成目标最大生命6%伤害，持续6.0秒；最多2层，分别扣血。",
       "skill_en_1to3": "Poison Strike: Normal attacks apply poison — 3% max HP per second for 4.0s. Up to 2 stacks tick separately.",
       "skill_raw_params": "poison_duration = 4\npoison_pct_max_hp = 0.03",
@@ -891,22 +987,26 @@
         "1": {
           "hp": 660,
           "atk": 33,
-          "defense": 5
+          "defense": 5,
+          "mres": 5
         },
         "2": {
           "hp": 990,
           "atk": 50,
-          "defense": 8
+          "defense": 8,
+          "mres": 8
         },
         "3": {
           "hp": 1980,
           "atk": 99,
-          "defense": 15
+          "defense": 15,
+          "mres": 15
         },
         "4": {
           "hp": 2277,
           "atk": 114,
-          "defense": 17
+          "defense": 17,
+          "mres": 17
         }
       }
     },
@@ -927,22 +1027,26 @@
         "1": {
           "hp": 600,
           "atk": 24,
-          "defense": 2
+          "defense": 2,
+          "mres": 3
         },
         "2": {
           "hp": 900,
           "atk": 36,
-          "defense": 3
+          "defense": 3,
+          "mres": 5
         },
         "3": {
           "hp": 1800,
           "atk": 72,
-          "defense": 6
+          "defense": 6,
+          "mres": 9
         },
         "4": {
           "hp": 2700,
           "atk": 108,
-          "defense": 9
+          "defense": 9,
+          "mres": 14
         }
       }
     },
@@ -954,31 +1058,35 @@
       "cost": 30,
       "skill_id": "death_poison_explosion",
       "skill_name_cn": "死亡毒爆",
-      "skill_cn_1to3": "死亡毒爆：死亡时对周围敌人造成自身攻击200%真实伤害，并施加中毒（最多2层，分别扣血）。",
-      "skill_cn_4": "死亡毒爆：死亡时对周围敌人造成自身攻击300%真实伤害，已中毒目标受到350%伤害，并施加中毒（最多2层，分别扣血）。",
-      "skill_en_1to3": "Death Poison Burst: On death, deal 200% ATK true damage to surrounding enemies and apply poison (up to 2 separate damage stacks).",
+      "skill_cn_1to3": "死亡毒爆：死亡时对周围敌人造成攻击200%伤害，并使其中毒。",
+      "skill_cn_4": "死亡毒爆：死亡时对周围敌人造成攻击300%伤害（已中毒的目标350%），并使其中毒。",
+      "skill_en_1to3": "Death Burst: On death, deal 200% ATK damage to nearby enemies and poison them.",
       "skill_raw_params": "damage_atk_pct = 2.0",
       "star4_changes": "damage_atk_pct: 2.0 → 3.0；已中毒目标 3.5",
       "stats": {
         "1": {
           "hp": 1200,
           "atk": 145,
-          "defense": 10
+          "defense": 10,
+          "mres": 8
         },
         "2": {
           "hp": 1800,
           "atk": 218,
-          "defense": 15
+          "defense": 15,
+          "mres": 12
         },
         "3": {
           "hp": 3600,
           "atk": 435,
-          "defense": 30
+          "defense": 30,
+          "mres": 24
         },
         "4": {
           "hp": 4140,
           "atk": 500,
-          "defense": 35
+          "defense": 35,
+          "mres": 28
         }
       },
       "skill_damage_multiplier_1to3": 2.0,
@@ -992,7 +1100,7 @@
       "cost": 30,
       "skill_id": "poison_attack",
       "skill_name_cn": "毒击",
-      "skill_cn_1to3": "毒击：普通攻击附带中毒，每秒造成目标最大生命3%伤害，持续4.0秒；灵4毒伤x2。",
+      "skill_cn_1to3": "毒击：普通攻击附带中毒，每秒造成目标最大生命3%伤害，持续4.0秒。",
       "skill_cn_4": "毒击：普通攻击附带中毒，每秒造成目标最大生命6%伤害，持续6.0秒；最多2层，分别扣血。",
       "skill_en_1to3": "Poison Strike: Normal attacks apply poison — 3% max HP per second for 4.0s. Up to 2 stacks tick separately.",
       "skill_raw_params": "poison_duration = 4\npoison_pct_max_hp = 0.03",
@@ -1001,22 +1109,26 @@
         "1": {
           "hp": 760,
           "atk": 66,
-          "defense": 8
+          "defense": 8,
+          "mres": 6
         },
         "2": {
           "hp": 1140,
           "atk": 99,
-          "defense": 12
+          "defense": 12,
+          "mres": 9
         },
         "3": {
           "hp": 2280,
           "atk": 198,
-          "defense": 24
+          "defense": 24,
+          "mres": 18
         },
         "4": {
           "hp": 2622,
           "atk": 228,
-          "defense": 28
+          "defense": 28,
+          "mres": 21
         }
       }
     },
@@ -1028,8 +1140,8 @@
       "cost": 30,
       "skill_id": "parasite_on_kill",
       "skill_name_cn": "寄生",
-      "skill_cn_1to3": "寄生：普攻标记非 Boss 敌人，被标记敌人死亡时，召唤该敌人的分身，生命为原目标20%，攻防为原目标50%。",
-      "skill_cn_4": "寄生：普攻标记非 Boss 敌人，被标记敌人死亡时，召唤该敌人的分身，生命为原目标50%，攻防为原目标75%。",
+      "skill_cn_1to3": "寄生：自身造成非 Boss 敌人死亡时，召唤该敌人的分身，生命为原目标20%，攻防为原目标50%。",
+      "skill_cn_4": "寄生：自身造成非 Boss 敌人死亡时，召唤该敌人的分身，生命为原目标50%，攻防为原目标75%。",
       "skill_en_1to3": "Parasite: When a basic attack kills a non-Boss enemy, summon its clone at 20% HP and 50% ATK/DEF.",
       "skill_raw_params": "clone_atk_def_pct = 0.5\nclone_hp_pct = 0.2",
       "star4_changes": "clone_atk_def_pct: 0.5 → 0.75\nclone_hp_pct: 0.2 → 0.5",
@@ -1037,22 +1149,26 @@
         "1": {
           "hp": 840,
           "atk": 67,
-          "defense": 7
+          "defense": 7,
+          "mres": 6
         },
         "2": {
           "hp": 1260,
           "atk": 101,
-          "defense": 11
+          "defense": 11,
+          "mres": 9
         },
         "3": {
           "hp": 2520,
           "atk": 201,
-          "defense": 21
+          "defense": 21,
+          "mres": 18
         },
         "4": {
           "hp": 2898,
           "atk": 231,
-          "defense": 24
+          "defense": 24,
+          "mres": 21
         }
       }
     },
@@ -1064,7 +1180,7 @@
       "cost": 30,
       "skill_id": "defense_down_attack",
       "skill_name_cn": "腐蚀攻击",
-      "skill_cn_1to3": "腐蚀攻击：普通攻击降低目标防御35%，持续5.0秒；暗2会增强效果。",
+      "skill_cn_1to3": "腐蚀攻击：普通攻击降低目标防御35%，持续5.0秒。",
       "skill_cn_4": "腐蚀攻击：普通攻击降低目标防御60%，持续8.0秒。",
       "skill_en_1to3": "Corrosive Strike: Normal attacks reduce target DEF by 35% for 5.0s.",
       "skill_raw_params": "def_down_pct = 0.35\nduration = 5",
@@ -1073,22 +1189,26 @@
         "1": {
           "hp": 800,
           "atk": 62,
-          "defense": 6
+          "defense": 6,
+          "mres": 4
         },
         "2": {
           "hp": 1200,
           "atk": 93,
-          "defense": 9
+          "defense": 9,
+          "mres": 6
         },
         "3": {
           "hp": 2400,
           "atk": 186,
-          "defense": 18
+          "defense": 18,
+          "mres": 12
         },
         "4": {
           "hp": 2760,
           "atk": 214,
-          "defense": 21
+          "defense": 21,
+          "mres": 14
         }
       }
     },
@@ -1100,31 +1220,35 @@
       "cost": 30,
       "skill_id": "poison_reflect_armor_stack",
       "skill_name_cn": "毒甲",
-      "skill_cn_1to3": "毒甲：受伤后反弹本次伤害15%真实伤害并使攻击者中毒；自身防御每次+7%，最多10层。",
-      "skill_cn_4": "毒甲：受伤后反弹本次伤害30%真实伤害并使攻击者中毒（最多2层，分别扣血）；自身防御每次+10%，最多10层。",
-      "skill_en_1to3": "Toxic Armor: On taking damage, reflect 15% as true damage and poison the attacker (up to 2 separate damage stacks). Own DEF stacks +7% per hit (max 10 stacks).",
+      "skill_cn_1to3": "毒甲：受伤时反弹本次伤害15%的真实伤害并使攻击者中毒；自身防御每次+7%（最多10层）。",
+      "skill_cn_4": "毒甲：受伤时反弹本次伤害30%的真实伤害并使攻击者中毒；自身防御每次+10%（最多10层）。",
+      "skill_en_1to3": "Toxic Armor: When hit, reflect 15% of the damage as true damage and poison the attacker; gain +7% DEF per hit (up to 10 stacks).",
       "skill_raw_params": "armor_per_hit_pct = 0.07\nmax_stacks = 10\nreflect_taken_damage_pct = 0.15",
       "star4_changes": "armor_per_hit_pct: 0.07 → 0.1\nreflect_taken_damage_pct: 0.15 → 0.3",
       "stats": {
         "1": {
           "hp": 1500,
           "atk": 50,
-          "defense": 21
+          "defense": 21,
+          "mres": 8
         },
         "2": {
           "hp": 2250,
           "atk": 75,
-          "defense": 32
+          "defense": 32,
+          "mres": 12
         },
         "3": {
           "hp": 4500,
           "atk": 150,
-          "defense": 63
+          "defense": 63,
+          "mres": 24
         },
         "4": {
           "hp": 5175,
           "atk": 173,
-          "defense": 72
+          "defense": 72,
+          "mres": 28
         }
       }
     },
@@ -1136,31 +1260,35 @@
       "cost": 50,
       "skill_id": "unique_death_execute",
       "skill_name_cn": "母灵处决",
-      "skill_cn_1to3": "母灵：每名玩家最多1只；3v3中多个玩家的母灵可同时生效且各自独立计数。每5个非母灵处决造成的敌军死亡触发一次；1阶/佣兵50%、2阶35%、3阶10%即死，Boss改为20%最大生命伤害。",
-      "skill_cn_4": "母灵：每名玩家最多1只；3v3中多个玩家的母灵可同时生效且各自独立计数。每4个非母灵处决造成的敌军死亡触发一次；1阶/佣兵55%、2阶35%、3阶10%即死，Boss改为30%最大生命伤害。",
-      "skill_en_1to3": "Matron: each player can field 1; in 3v3, each player's Matron works at the same time and counts independently. Every 5 enemy deaths not caused by Matron execute: Tier 1/Merc 50%, Tier 2 35%, Tier 3 10%; vs Boss deal 20% max HP instead.",
+      "skill_cn_1to3": "母灵（每人限1只）：每有5个敌人死亡，处决一名敌人（1阶/佣兵50%、2阶35%、3阶10%）；对Boss改为造成20%最大生命伤害。",
+      "skill_cn_4": "母灵（每人限1只）：每有4个敌人死亡，处决一名敌人（1阶/佣兵55%、2阶35%、3阶10%）；对Boss改为造成30%最大生命伤害。",
+      "skill_en_1to3": "Matron (one per player): Every 5 enemy deaths, execute an enemy (Tier 1/Merc 50%, Tier 2 35%, Tier 3 10%); against a Boss, deal 20% of its max HP instead.",
       "skill_raw_params": "boss_max_hp_damage = 0.2\ndeath_threshold = 5\ntier1_or_merc_chance = 0.5\ntier2_chance = 0.35\ntier3_chance = 0.1\nunique_on_board = true",
       "star4_changes": "boss_max_hp_damage: 0.2 → 0.3\ndeath_threshold: 5 → 4\ntier1_or_merc_chance: 0.5 → 0.55\ntier2_chance: 0.35 → 0.35",
       "stats": {
         "1": {
           "hp": 1600,
           "atk": 110,
-          "defense": 18
+          "defense": 18,
+          "mres": 14
         },
         "2": {
           "hp": 2400,
           "atk": 165,
-          "defense": 27
+          "defense": 27,
+          "mres": 21
         },
         "3": {
           "hp": 4800,
           "atk": 330,
-          "defense": 54
+          "defense": 54,
+          "mres": 42
         },
         "4": {
           "hp": 5520,
           "atk": 379,
-          "defense": 62
+          "defense": 62,
+          "mres": 48
         }
       }
     },
@@ -1172,31 +1300,35 @@
       "cost": 20,
       "skill_id": "block_guard",
       "skill_name_cn": "赤卫格挡",
-      "skill_cn_1to3": "直接普攻或技能命中时有 20% 概率完全格挡，4★ 为 30%；持续伤害跳数不触发。",
-      "skill_cn_4": "赤卫格挡：每次受到普攻或技能直击时，有30%概率完全格挡；持续伤害不触发。",
-      "skill_en_1to3": "Crimson Guard: 20% chance to fully block each direct basic or skill hit; damage-over-time ticks do not trigger it.",
+      "skill_cn_1to3": "赤卫格挡：受到普攻或技能命中时，有20%概率完全格挡（持续伤害不触发）。",
+      "skill_cn_4": "赤卫格挡：受到普攻或技能命中时，有30%概率完全格挡（持续伤害不触发）。",
+      "skill_en_1to3": "Crimson Guard: 20% chance to fully block a basic or skill hit (not damage over time).",
       "skill_raw_params": "block_chance = 0.2",
       "star4_changes": "block_chance: 0.2 → 0.3",
       "stats": {
         "1": {
           "hp": 650,
           "atk": 31,
-          "defense": 7
+          "defense": 7,
+          "mres": 9
         },
         "2": {
           "hp": 975,
           "atk": 47,
-          "defense": 11
+          "defense": 11,
+          "mres": 14
         },
         "3": {
           "hp": 1950,
           "atk": 93,
-          "defense": 21
+          "defense": 21,
+          "mres": 27
         },
         "4": {
           "hp": 2243,
           "atk": 107,
-          "defense": 24
+          "defense": 24,
+          "mres": 31
         }
       }
     },
@@ -1208,31 +1340,35 @@
       "cost": 20,
       "skill_id": "random_ally_buff",
       "skill_name_cn": "赤舞",
-      "skill_cn_1to3": "每 5 秒选 1 名友军，随机令技能剩余冷却 -2 秒，或攻击 / 攻速 +20% 持续 3 秒；4★ 选 2 名。",
-      "skill_cn_4": "赤舞祝福（冷却5.0秒）：随机选择2名不同友军（优先其他存活队友，人数不足时可选自身），各随机获得一种效果：技能剩余冷却-2秒、攻击+20%或攻速+20%，增益持续3.0秒，同类刷新不叠加。",
-      "skill_en_1to3": "Crimson Dance (CD 5.0s): Choose 1 distinct random allies. Each gets one random effect: 2s off remaining skill cooldown, +20% ATK, or +20% attack speed for 3.0s. Same-type buffs refresh.",
+      "skill_cn_1to3": "赤舞祝福（冷却5.0秒）：随机1名友军各获得一种增益：技能冷却-2秒、攻击+20%或攻速+20%（3.0秒）。",
+      "skill_cn_4": "赤舞祝福（冷却5.0秒）：随机2名友军各获得一种增益：技能冷却-2秒、攻击+20%或攻速+20%（3.0秒）。",
+      "skill_en_1to3": "Crimson Dance (CD 5.0s): 1 random allies each gain one buff: -2s skill cooldown, +20% ATK, or +20% AS (3.0s).",
       "skill_raw_params": "ally_count = 1\nbuff_duration = 3\nbuff_pct = 0.2\nskill_cd = 5",
       "star4_changes": "ally_count: 1 → 2",
       "stats": {
         "1": {
           "hp": 540,
           "atk": 28,
-          "defense": 3
+          "defense": 3,
+          "mres": 3
         },
         "2": {
           "hp": 810,
           "atk": 42,
-          "defense": 5
+          "defense": 5,
+          "mres": 5
         },
         "3": {
           "hp": 1620,
           "atk": 84,
-          "defense": 9
+          "defense": 9,
+          "mres": 9
         },
         "4": {
           "hp": 1863,
           "atk": 97,
-          "defense": 10
+          "defense": 10,
+          "mres": 10
         }
       }
     },
@@ -1244,31 +1380,35 @@
       "cost": 30,
       "skill_id": "team_random_stack",
       "skill_name_cn": "战鼓",
-      "skill_cn_1to3": "普攻命中使符合条件的友军攻击和攻速各 +5%，最多 15 层，持续 3 秒且每次刷新；每击有 1/3 概率治疗友军最大生命 5%；4★ 每层 +8%。",
-      "skill_cn_4": "战鼓共振：每次普攻命中使可作用的存活友军同时叠加攻击+8%和攻速+8%，各最多15层；每次叠加刷新该棋子全部战鼓层的3.0秒持续时间。分路战斗先作用本路，开放并连通后可跨路；另有1/3概率立刻回复可作用友军最大生命5%。",
-      "skill_en_1to3": "War Drum: Each landed basic hit gives eligible living allies +5% ATK and +5% attack speed, up to 15 layers each. Every hit refreshes all War Drum layers on each recipient for 3.0s. In team battles it affects the same lane first, then connected lanes once opened; separately has a 1-in-3 chance to heal eligible allies for 5% max HP.",
+      "skill_cn_1to3": "战鼓共振：普攻命中时，友军攻击、攻速各+5%（最多15层，持续3.0秒）；1/3概率为友军回复5%最大生命。",
+      "skill_cn_4": "战鼓共振：普攻命中时，友军攻击、攻速各+8%（最多15层，持续3.0秒）；1/3概率为友军回复5%最大生命。",
+      "skill_en_1to3": "War Drum: Each basic hit gives allies +5% ATK and +5% AS (up to 15 stacks, 3.0s); 1-in-3 chance to heal allies for 5% max HP.",
       "skill_raw_params": "heal_pct = 0.05\nmax_stacks = 15\nstack_duration = 3\nstack_pct = 0.05",
       "star4_changes": "stack_pct: 0.05 → 0.08",
       "stats": {
         "1": {
           "hp": 980,
           "atk": 52,
-          "defense": 9
+          "defense": 9,
+          "mres": 9
         },
         "2": {
           "hp": 1470,
           "atk": 78,
-          "defense": 14
+          "defense": 14,
+          "mres": 14
         },
         "3": {
           "hp": 2940,
           "atk": 156,
-          "defense": 27
+          "defense": 27,
+          "mres": 27
         },
         "4": {
           "hp": 3381,
           "atk": 179,
-          "defense": 31
+          "defense": 31,
+          "mres": 31
         }
       }
     },
@@ -1280,31 +1420,35 @@
       "cost": 30,
       "skill_id": "current_hp_strike",
       "skill_name_cn": "血猎",
-      "skill_cn_1to3": "普攻附加目标受击前当前生命 10% 伤害，Boss 为 5%，不暴击；4★ 增加低血处决。",
-      "skill_cn_4": "血猎：普攻额外造成目标受击前当前生命10%的伤害，Boss为5%；额外伤害不暴击。目标受击前生命低于30%时，再造成自身攻击50%伤害。",
-      "skill_en_1to3": "Blood Hunt: Basics deal extra damage equal to 10% of the target's pre-hit current HP (5% against bosses); the extra damage cannot crit.",
+      "skill_cn_1to3": "血猎：普攻额外造成目标当前生命10%的伤害（Boss为5%）。",
+      "skill_cn_4": "血猎：普攻额外造成目标当前生命10%的伤害（Boss为5%）；目标生命低于30%时，再造成攻击50%伤害。",
+      "skill_en_1to3": "Blood Hunt: Basics deal extra damage equal to 10% of the target's current HP (5% vs Bosses).",
       "skill_raw_params": "boss_hp_pct = 0.05\ncurrent_hp_pct = 0.1",
       "star4_changes": "execute_atk_pct: — → 0.5\nexecute_threshold: — → 0.3",
       "stats": {
         "1": {
           "hp": 760,
           "atk": 56,
-          "defense": 4
+          "defense": 4,
+          "mres": 4
         },
         "2": {
           "hp": 1140,
           "atk": 84,
-          "defense": 6
+          "defense": 6,
+          "mres": 6
         },
         "3": {
           "hp": 2280,
           "atk": 168,
-          "defense": 12
+          "defense": 12,
+          "mres": 12
         },
         "4": {
           "hp": 2622,
           "atk": 193,
-          "defense": 14
+          "defense": 14,
+          "mres": 14
         }
       }
     },
@@ -1316,31 +1460,35 @@
       "cost": 30,
       "skill_id": "stacking_def_break",
       "skill_name_cn": "破甲",
-      "skill_cn_1to3": "每次普攻命中永久降低目标防御 2 点，可叠至零；4★ 每次降低 4 点。",
-      "skill_cn_4": "破甲：每次普攻命中有100%概率使目标防御永久降低4点，可叠加，最低为0。",
-      "skill_en_1to3": "Armor Break: Each landed basic has a 100% chance to permanently reduce target DEF by 2, stacking down to zero.",
+      "skill_cn_1to3": "破甲：普攻使目标防御永久-2（最低为0）。",
+      "skill_cn_4": "破甲：普攻使目标防御永久-4（最低为0）。",
+      "skill_en_1to3": "Armor Break: Basics permanently reduce target DEF by 2 (down to 0).",
       "skill_raw_params": "break_amount = 2\nbreak_chance = 1",
       "star4_changes": "break_amount: 2 → 4",
       "stats": {
         "1": {
           "hp": 1180,
           "atk": 54,
-          "defense": 12
+          "defense": 12,
+          "mres": 9
         },
         "2": {
           "hp": 1770,
           "atk": 81,
-          "defense": 18
+          "defense": 18,
+          "mres": 14
         },
         "3": {
           "hp": 3540,
           "atk": 162,
-          "defense": 36
+          "defense": 36,
+          "mres": 27
         },
         "4": {
           "hp": 4071,
           "atk": 186,
-          "defense": 41
+          "defense": 41,
+          "mres": 31
         }
       }
     },
@@ -1352,31 +1500,35 @@
       "cost": 30,
       "skill_id": "frost_status",
       "skill_name_cn": "霜印",
-      "skill_cn_1to3": "每 6 秒对目标周围两格敌人造成攻击 110% 伤害并附加 3 秒冰弱：受伤 +25%，Boss +13%；4★ 伤害 150%、持续 5 秒。",
-      "skill_cn_4": "霜印（冷却6.0秒）：以当前目标为中心，对2格范围内每名敌人造成自身攻击150%技能伤害，并附加冰易伤5.0秒，使其受到的伤害+25%（Boss为+13%）。",
-      "skill_en_1to3": "Frost Mark (CD 6.0s): Deal 110% ATK skill damage to each enemy within two cells of the target and apply Ice Vulnerable for 3.0s. Damage taken +25% (+13% for bosses).",
+      "skill_cn_1to3": "霜印（冷却6.0秒）：对目标周围2格的敌人造成攻击110%伤害，并使其受到的伤害+25%（3.0秒）。",
+      "skill_cn_4": "霜印（冷却6.0秒）：对目标周围2格的敌人造成攻击150%伤害，并使其受到的伤害+25%（5.0秒）。",
+      "skill_en_1to3": "Frost Mark (CD 6.0s): Deal 110% ATK damage to enemies within 2 cells of the target and make them take +25% damage for 3.0s.",
       "skill_raw_params": "aoe_radius = 144\ndamage_atk_pct = 1.1\nice_duration = 3\nice_vulnerable_pct = 0.25\nskill_cd = 6",
       "star4_changes": "damage_atk_pct: 1.1 → 1.5\nice_duration: 3 → 5",
       "stats": {
         "1": {
           "hp": 780,
           "atk": 68,
-          "defense": 4
+          "defense": 4,
+          "mres": 5
         },
         "2": {
           "hp": 1170,
           "atk": 102,
-          "defense": 6
+          "defense": 6,
+          "mres": 8
         },
         "3": {
           "hp": 2340,
           "atk": 204,
-          "defense": 12
+          "defense": 12,
+          "mres": 15
         },
         "4": {
           "hp": 2691,
           "atk": 235,
-          "defense": 14
+          "defense": 14,
+          "mres": 17
         }
       }
     },
@@ -1388,31 +1540,35 @@
       "cost": 50,
       "skill_id": "line_pierce",
       "skill_name_cn": "穿云连射",
-      "skill_cn_1to3": "普攻最多穿透一线 4 个目标，依次造成攻击 100% / 80% / 60% / 40% 伤害；4★ 衰减改为每目标 10%。分别结算防御和属性。",
-      "skill_cn_4": "穿云：普攻沿直线最多命中4名敌人，第1至第4名分别受到自身攻击的100%、90%、80%、70%伤害，各自计算防御与元素克制。",
-      "skill_en_1to3": "Skypierce: Basics strike up to 4 enemies in a line for 100%, 80%, 60%, and 40% ATK damage. DEF and element are calculated separately.",
+      "skill_cn_1to3": "穿云：普攻穿透一线最多4个敌人，伤害依次为攻击的100%/80%/60%/40%。",
+      "skill_cn_4": "穿云：普攻穿透一线最多4个敌人，伤害依次为攻击的100%/90%/80%/70%。",
+      "skill_en_1to3": "Skypierce: Basics pierce up to 4 enemies in a line for 100%/80%/60%/40% ATK damage.",
       "skill_raw_params": "pierce_falloff = 0.2\npierce_targets = 4",
       "star4_changes": "pierce_falloff: 0.2 → 0.1",
       "stats": {
         "1": {
           "hp": 1500,
           "atk": 104,
-          "defense": 10
+          "defense": 10,
+          "mres": 8
         },
         "2": {
           "hp": 2250,
           "atk": 156,
-          "defense": 15
+          "defense": 15,
+          "mres": 12
         },
         "3": {
           "hp": 4500,
           "atk": 312,
-          "defense": 30
+          "defense": 30,
+          "mres": 24
         },
         "4": {
           "hp": 5175,
           "atk": 359,
-          "defense": 35
+          "defense": 35,
+          "mres": 28
         }
       }
     },
@@ -1424,31 +1580,35 @@
       "cost": 50,
       "skill_id": "aoe_silence",
       "skill_name_cn": "赤灯沉默",
-      "skill_cn_1to3": "开场沉默可选中路线的所有敌人 3 秒，期间攻速 -30%；4★ 沉默 4 秒、冷却 9 秒。",
-      "skill_cn_4": "赤灯禁言（冷却9.0秒）：开战立即释放，使当前可攻击路线的所有敌人沉默4.0秒；沉默期间无法释放主动技能，攻速降低30%，普攻与被动正常。本路清空后，后续施法可按分路规则影响其他路（Boss控制时长减半）。",
-      "skill_en_1to3": "Crimson Lantern (CD 10.0s): Cast at battle start and silence all enemies in currently targetable lanes for 3.0s. While silenced, active skills are blocked and attack speed is reduced by 30%; basic attacks and passives work normally. Later casts can affect other lanes after the caster's lane is cleared (boss control duration is halved).",
+      "skill_cn_1to3": "赤灯禁言（冷却10.0秒）：开战立刻沉默敌人3.0秒，期间无法释放技能、攻速-30%。",
+      "skill_cn_4": "赤灯禁言（冷却9.0秒）：开战立刻沉默敌人4.0秒，期间无法释放技能、攻速-30%。",
+      "skill_en_1to3": "Crimson Lantern (CD 10.0s): At battle start, silence enemies for 3.0s: no skills and -30% AS.",
       "skill_raw_params": "silence_duration = 3\nskill_cd = 10\nskill_global = true\nunique_on_board = true",
       "star4_changes": "silence_duration: 3 → 4\nskill_cd: 10 → 9",
       "stats": {
         "1": {
           "hp": 1720,
           "atk": 82,
-          "defense": 16
+          "defense": 16,
+          "mres": 14
         },
         "2": {
           "hp": 2580,
           "atk": 123,
-          "defense": 24
+          "defense": 24,
+          "mres": 21
         },
         "3": {
           "hp": 5160,
           "atk": 246,
-          "defense": 48
+          "defense": 48,
+          "mres": 42
         },
         "4": {
           "hp": 5934,
           "atk": 283,
-          "defense": 55
+          "defense": 55,
+          "mres": 48
         }
       }
     }
@@ -1701,7 +1861,7 @@
     "atk_frenzy_assault": {
       "name_cn": "狂暴进攻",
       "category_cn": "攻击",
-      "effect_cn": "每次普攻自身攻速 ×1.15（封顶 2.5）；换目标层数清零但攻速不回退",
+      "effect_cn": "每次普攻自身攻速+15%，最多提升至初始攻速的2.5倍。",
       "hu_pai_text_cn": "—"
     },
     "money_compound": {
@@ -1816,6 +1976,6 @@
       "effect_cn": "需要：生命丰碑 + 黄金祭坛 + 震荡余波 + 血契之刃 + 狂怒阵容。生命丰碑 ×1.20→×1.40；震荡余波眩晕 1→2 秒；血契之刃 ×1.25→×1.50；狂怒阵容上限 8→9。黄金祭坛使用不扣法阵 HP；选到胡牌手立即回复法阵 HP +2（上限 50）。\n表内字段：positive_effect_multiplier = 2"
     }
   },
-  "balance_version": "31264a60d213f87a159f2ffe97dc45814638e58b421a163806deee8bfbd93f5d",
-  "final_workbook_sha256": "68fbcfc9c54383c48085988446813fed2cca561cff00ba991640e57c4d3fbc0a"
+  "balance_version": "b0cd48e4f474edea713d96e3ecf25a9d53b7eb889aa8fd30a4fe270c58a977be",
+  "final_workbook_sha256": "7dd063b4c167f3107bc0757e74ba9276d08614faf0089fa8985371d593577e27"
 }

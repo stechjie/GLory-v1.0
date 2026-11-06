@@ -90,7 +90,8 @@ static func apply_death_poison_explosion(victim: Dictionary, vd: Dictionary, ene
 		var damage_pct := float(vd.get("damage_atk_pct", 2.5))
 		if vd.has("poisoned_damage_atk_pct") and StatusEffectService.has_status(o, "poison"):
 			damage_pct = float(vd.poisoned_damage_atk_pct)
-		DamageService.apply_damage(o, maxi(1, int(round(float(victim.atk) * damage_pct))), true)
+		# 11.05：毒爆从真伤改成技能伤害，吃目标魔抗（以前与神王、黑龙叠在一起一轮清场）。
+		DamageService.apply_damage(o, maxi(1, int(round(float(victim.atk) * damage_pct))), false, false, true)
 		StatusEffectService.add_poison(o, 4.0, 0.03, 0.0, true)
 		exploded = true
 	DamageService.restore_hit_context(saved_hit)
@@ -381,14 +382,14 @@ static func _apply_element_set_burst(attacker: Dictionary, target: Dictionary, s
 	DamageService.restore_hit_context(saved_hit)
 
 
-static func _apply_frenzy_assault(attacker: Dictionary, target: Dictionary) -> void:
-	var target_uid := str(target.get("uid", ""))
-	if str(attacker.get("frenzy_target_uid", "")) != target_uid:
-		attacker.frenzy_target_uid = target_uid
-		attacker.frenzy_stacks = 0
-	attacker.frenzy_stacks = int(attacker.get("frenzy_stacks", 0)) + 1
-	# 独立倍率由 StatusEffectService 计算，不永久污染基础攻速。
-	attacker.frenzy_stacks = mini(int(attacker.frenzy_stacks), 64)
+# Target selection does not reset this battle-long treasure gain.
+static func _frenzy_select_target(attacker: Dictionary, target_uid: String) -> void:
+	attacker.frenzy_target_uid = target_uid
+
+static func _apply_frenzy_assault(attacker: Dictionary, _target: Dictionary) -> void:
+	var stacks := mini(clampi(int(attacker.get("frenzy_stacks", 0)), 0, 10) + 1, 10)
+	attacker.frenzy_stacks = stacks
+	attacker.frenzy_speed_multiplier = minf(1.0 + 0.15 * stacks, 2.5)
 
 static func _apply_defender_reaction(attacker: Dictionary, target: Dictionary, dealt: int, state: Dictionary = {}) -> void:
 	var d: Dictionary = target.get("def", {})
@@ -666,11 +667,14 @@ static func _apply_soul_devour_on_death(state: Dictionary, victim: Dictionary) -
 		if not friendly_monster and not hostile_piece:
 			continue
 		var d: Dictionary = boss.get("def", {})
-		boss.soul_devour_stacks = int(boss.get("soul_devour_stacks", 0)) + 1
+		# 11.05：层数封顶（默认 10 层 = 入场攻击 ×3）。以前没有上限，死 18 个就是 ×4.6。
+		# 满层后每次死亡照样回血，只是不再加攻击和攻速。
 		_heal_unit(boss, maxi(1, int(round(float(boss.max_hp) * float(d.get("kill_heal_pct", 0.20))))))
-		boss.atk = maxi(1, int(round(float(d.get("atk", boss.atk)) * (1.0 + float(boss.soul_devour_stacks) * float(d.get("atk_stack", 0.20))))))
-		# 11.01：每层 +20% 攻速进百分比池（以前是 +0.20 次/秒绝对值）。
-		boss.aspd_bonus_pct = float(boss.get("aspd_bonus_pct", 0.0)) + float(d.get("aspd_stack", 0.20))
+		if int(boss.get("soul_devour_stacks", 0)) < int(d.get("max_stacks", 10)):
+			boss.soul_devour_stacks = int(boss.get("soul_devour_stacks", 0)) + 1
+			boss.atk = maxi(1, int(round(float(d.get("atk", boss.atk)) * (1.0 + float(boss.soul_devour_stacks) * float(d.get("atk_stack", 0.20))))))
+			# 11.01：每层 +20% 攻速进百分比池（以前是 +0.20 次/秒绝对值）。
+			boss.aspd_bonus_pct = float(boss.get("aspd_bonus_pct", 0.0)) + float(d.get("aspd_stack", 0.20))
 		_emit_sfx_proc(state, "soul_devour", boss, victim)
 
 

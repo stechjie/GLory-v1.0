@@ -37,7 +37,7 @@ var _awaiting_mic := false
 var _speaker_hold_started := -1
 var _speaker_hold_opened := false
 # 11.05 摆放界面：「队友 / 所有人」用用户出的两张图（盾牌+队友 / 地球），不写字。
-# 只有传了 options.scope_art 的界面这样画；大厅和战斗界面还是原来的文字键。
+# 备战和战斗均传 options.scope_art 使用同套图片；大厅保留文字键。
 const SCOPE_TEAM_ART := "res://assets/ui/voice/voice_scope_team.png"
 const SCOPE_ALL_ART := "res://assets/ui/voice/voice_scope_all.png"
 const SCOPE_ALL_COLOR := Color(1.0, 0.56, 0.20)        # 对手也听得到 = 橙色（跟文字聊天「发给：全部」同色系）

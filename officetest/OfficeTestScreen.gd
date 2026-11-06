@@ -1210,6 +1210,7 @@ static func patched_with_live_stats(f: Dictionary, live_stats: Dictionary, frame
 	out["crimson_pulse_stacks"] = int(best.get("cps", 0))
 	out["crimson_rune_stacks"] = int(best.get("crs", 0))
 	out["aspd_bonus_pct"] = float(best.get("abp", 0.0))
+	out["frenzy_speed_multiplier"] = float(best.get("fsm", 1.0))
 	return out
 
 
@@ -1283,18 +1284,19 @@ func _refresh_stat_panel() -> void:
 # 第一版只做了「优先读活字段、def 兜底」，但那只解决「就地改过的裸值」。
 # 玩家截图里「状态：攻速提升 1.1秒」在生效、面板攻速却纹丝不动 —— 因为战斗真正用的
 # 是**乘完状态乘数之后**的值（BattleSimulator.gd:730）：
-#     aspd = clamp(f.attack_speed * StatusEffectService.attack_speed_multiplier(f)
-#                                 * _dynamic_attack_speed_multiplier(f), 0.25, 2.5)
-# 而 speed_bonus / slow / frenzy_stacks / blood_rampage 全都只活在那个乘数里，
+#     aspd = StatusEffectService.effective_attack_speed(f, dynamic_pct)
+# 普通攻速按原上限计算，再乘狂暴进攻跨目标保留的独立倍率。
+# 而 speed_bonus / slow / frenzy_speed_multiplier / blood_rampage 全都只活在那个乘数里，
 # **不写回 f.attack_speed**，所以「读裸值」恒等于基准值。
 # ★ 口径铁律：**面板直接调用战斗同一个函数**，不许自己再拼一遍公式
 #   （拼一遍就会漏项：漏 speed_bonus 漏 frenzy 漏 blood_rampage，就是这次的复发原因）。
 
 # 攻速：与 BattleSimulator 普攻间隔同一个式子（含状态乘数与动态乘数）。
 static func live_attack_speed(f: Dictionary) -> float:
-	var raw := base_attack_speed(f)
-	raw *= StatusEffectService.attack_speed_multiplier(f, BattleSimulator._dynamic_attack_speed_multiplier(f) - 1.0)
-	return clampf(raw, 0.25, 2.5)
+	var live := f.duplicate()
+	live.attack_speed = base_attack_speed(f)
+	return StatusEffectService.effective_attack_speed(live, BattleSimulator._dynamic_attack_speed_multiplier(f) - 1.0)
+
 
 
 # 攻速的「活字段优先、def 兜底」部分，单拆出来便于门禁分别验两件事。

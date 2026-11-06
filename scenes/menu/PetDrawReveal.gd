@@ -40,7 +40,7 @@ func show_reward(pet_id: String, coin_reward: int, replayed: bool) -> void:
 		art.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		_content.add_child(art)
 		_pop(art)
-		SfxService.play(SfxService.CUE_MERC_SUMMON)
+		SfxService.play(SfxService.CUE_PET_DRAW_SUCCESS)
 		_add_label(_t("获得新宠物：%s" % PetService.display_name(pet_id),
 			"New pet: %s" % PetService.display_name(pet_id)), 24)
 	else:

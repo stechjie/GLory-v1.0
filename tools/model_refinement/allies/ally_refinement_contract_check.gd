@@ -89,7 +89,10 @@ func _check_unit(uid: String, path: String, idle_only: bool) -> void:
 		# material: refined body material + outline pass, textures <= 1024, no alpha
 		for mi in node.find_children("*", "MeshInstance3D", true, false):
 			var mat := (mi as MeshInstance3D).get_surface_override_material(0) as ShaderMaterial
-			_ok(mat != null and mat.resource_path.begins_with("res://assets/models/allies_refined/%s/" % uid), "%s %s: refined material" % [uid, action])
+			# the wrapper uses a per-instance copy (body emission pulses with the fire);
+			# the copy records the .tres it came from
+			var mat_src := "" if mat == null else (mat.resource_path if not mat.resource_path.is_empty() else str(mat.get_meta("source_material_path", "")))
+			_ok(mat != null and mat_src.begins_with("res://assets/models/allies_refined/%s/" % uid), "%s %s: refined material" % [uid, action])
 			if mat == null:
 				continue
 			_ok(mat.next_pass is ShaderMaterial and (mat.next_pass as ShaderMaterial).shader.resource_path == "res://shaders/character_outline.gdshader", "%s %s: outline pass" % [uid, action])

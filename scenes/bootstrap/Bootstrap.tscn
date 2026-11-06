@@ -1,7 +1,17 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scenes/bootstrap/Bootstrap.gd" id="1_script"]
 [ext_resource type="Texture2D" path="res://ui/branding/glory_bootstrap.png" id="2_icon"]
+[ext_resource type="Texture2D" path="res://ui/branding/glory_loading.webp" id="3_art"]
+
+[sub_resource type="Gradient" id="Gradient_shade"]
+colors = PackedColorArray(0, 0, 0, 0, 0.02, 0.03, 0.06, 0.82)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_shade"]
+gradient = SubResource("Gradient_shade")
+width = 4
+height = 256
+fill_to = Vector2(0, 1)
 
 [node name="Bootstrap" type="Control"]
 layout_mode = 3
@@ -23,6 +33,31 @@ grow_vertical = 2
 mouse_filter = 2
 color = Color(0.113725, 0.14902, 0.2, 1)
 
+[node name="Art" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("3_art")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="BottomShade" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = -1
+anchor_top = 0.62
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+texture = SubResource("GradientTexture2D_shade")
+expand_mode = 1
+stretch_mode = 0
+
 [node name="SafeMargin" type="MarginContainer" parent="."]
 layout_mode = 1
 anchors_preset = 15
@@ -37,6 +72,7 @@ theme_override_constants/margin_bottom = 36
 
 [node name="Center" type="CenterContainer" parent="SafeMargin"]
 layout_mode = 2
+size_flags_vertical = 8
 
 [node name="Content" type="VBoxContainer" parent="SafeMargin/Center"]
 custom_minimum_size = Vector2(560, 0)
@@ -44,6 +80,7 @@ layout_mode = 2
 theme_override_constants/separation = 14
 
 [node name="Logo" type="TextureRect" parent="SafeMargin/Center/Content"]
+visible = false
 unique_name_in_owner = true
 custom_minimum_size = Vector2(160, 160)
 layout_mode = 2
@@ -52,6 +89,7 @@ expand_mode = 3
 stretch_mode = 5
 
 [node name="Title" type="Label" parent="SafeMargin/Center/Content"]
+visible = false
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.925, 0.757, 0.349, 1)
@@ -60,6 +98,7 @@ text = "GLORY"
 horizontal_alignment = 1
 
 [node name="Subtitle" type="Label" parent="SafeMargin/Center/Content"]
+visible = false
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.722, 0.741, 0.8, 1)
@@ -68,6 +107,7 @@ text = "荣耀启程"
 horizontal_alignment = 1
 
 [node name="Divider" type="ColorRect" parent="SafeMargin/Center/Content"]
+visible = false
 custom_minimum_size = Vector2(0, 2)
 layout_mode = 2
 mouse_filter = 2
@@ -77,6 +117,8 @@ color = Color(0.925, 0.757, 0.349, 0.72)
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.961, 0.941, 0.882, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.85)
+theme_override_constants/outline_size = 6
 theme_override_font_sizes/font_size = 22
 text = "正在启动 Glory"
 horizontal_alignment = 1
@@ -85,6 +127,8 @@ horizontal_alignment = 1
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.722, 0.741, 0.8, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.85)
+theme_override_constants/outline_size = 6
 theme_override_font_sizes/font_size = 16
 text = "正在显示轻量启动画面"
 horizontal_alignment = 1

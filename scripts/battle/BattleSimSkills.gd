@@ -334,13 +334,26 @@ static func _skill_element_meteor(caster: Dictionary, opponents: Array, d: Dicti
 			_apply_attribute_effect(str(d.get("element", "fire")), caster, o)
 
 
-static func _skill_holy_purify(_caster: Dictionary, allies: Array, d: Dictionary) -> void:
+# 11.05 圣愈祭司减强（用户：「完全打不进」）：
+#   * 以前每 5 秒对**全队所有单位（含自己）**清状态 + 回 20% + 加 15% 护盾，护盾还没有上限，
+#     打 30 秒自己就叠到 90% 最大生命的盾，外加每次回 20% 血。
+#   * 现在只作用于自己和身边 HOLY_PURIFY_RADIUS 内的友军；自己只拿护盾、不回血；
+#     护盾刷新到 shield_pct 封顶，不再累加。
+const HOLY_PURIFY_RADIUS := 250.0
+
+static func _skill_holy_purify(caster: Dictionary, allies: Array, d: Dictionary) -> void:
+	var radius := float(d.get("heal_radius", HOLY_PURIFY_RADIUS))
 	for a in allies:
 		if not bool(a.get("alive", false)):
 			continue
+		var is_self := is_same(a, caster)
+		if not is_self and Vector2(caster.pos).distance_to(Vector2(a.pos)) > radius:
+			continue
 		a.statuses = {}
-		_heal_unit(a, maxi(1, int(round(float(a.max_hp) * float(d.get("heal_pct", 0.20))))))
-		_grant_shield(a, maxi(1, int(round(float(a.max_hp) * float(d.get("shield_pct", 0.15))))))
+		if not is_self:
+			_heal_unit(a, maxi(1, int(round(float(a.max_hp) * float(d.get("heal_pct", 0.20))))))
+		var shield_cap := maxi(1, int(round(float(a.max_hp) * float(d.get("shield_pct", 0.15)))))
+		_grant_shield(a, shield_cap, shield_cap)
 
 
 # 9.23 第五批：返回值改成 bool = 「这一下真的开始蓄力了」。
@@ -383,6 +396,7 @@ static func _skill_mirror_clone(caster: Dictionary, state: Dictionary, d: Dictio
 		clone.max_hp = clone.hp
 		clone.atk = maxi(1, int(round(float(caster.atk) / inherited_money_multiplier * float(d.get("clone_atk_pct", 1.00)))))
 		clone.defense = int(d.get("clone_def", 0))
+		clone.mres = int(d.get("clone_def", 0))
 		clone.alive = true
 		clone.statuses = {}
 		clone.erase("money_set_multiplier")
