@@ -78,20 +78,28 @@
     "built": true,
     "sha256": "a215f99a8a4ac282edc9d14d42e33ebc9228f7bf9dd7c59c37f21a07562773ab",
     "bytes": 581588638,
-    "uploaded": false,
-    "internal_group_assigned": false,
-    "internal_state": "pending_upload_and_processing",
+    "uploaded": true,
+    "internal_group_assigned": true,
+    "internal_state": "Testing",
     "server_environment": "test",
-    "transporter_state": "Preparing_upload",
+    "transporter_state": "Delivered",
     "notes_prepared": true,
-    "notes_saved": false,
+    "notes_saved": true,
     "baseline_registered": true,
     "base_id": "glory-20261106-test-refresh",
     "includes_seq": 4,
     "patch_action": "none",
     "external_group_assigned": false,
     "physical_device_gameplay_verified": false,
-    "upload_started": true
+    "upload_started": true,
+    "delivered_at_local": "2026-11-06 15:47 Asia/Shanghai",
+    "apple_processing": "complete_verified_in_App_Store_Connect",
+    "app_store_connect_ui_verified": true,
+    "build_id": "8cfb4d8d-9dad-4ebe-9b52-fff9ce389f5d",
+    "internal_group_id": "90dd8f53-b157-49c4-b899-8da72091b76a",
+    "internal_group_name": "GLory 内部验证",
+    "internal_testers": 10,
+    "verified_at": "2026-11-06T07:56:58.976602+00:00"
   },
   "resource_sync": {
     "status": "success",
@@ -105,10 +113,8 @@
     },
     "errors": []
   },
-  "pending": [
-    "iOS86 upload, Apple processing, test notes and internal Testing readback"
-  ],
-  "updated_at": "2026-11-06T07:31:49.984328+00:00",
+  "pending": [],
+  "updated_at": "2026-11-06T07:58:05.556450+00:00",
   "validation": {
     "asset_inventory_matches": true,
     "asset_inventory_sha256": "a08bc4892d19b4dac4474d86f64bab6f1fe9dfd76152ce2d4bb374c2dbec2cd9",
@@ -116,7 +122,13 @@
     "magic_resist_checks": 19,
     "server_bundle_smoke": "passed",
     "server_live_battle_probe": "passed protocol=45 dtls=pinned",
-    "physical_device_gameplay_verified": false
+    "physical_device_gameplay_verified": false,
+    "drive_full_sha256_readback_verified": true,
+    "public_apk_http_range": "HTTP 206 first 1MiB matches signed APK",
+    "qr_decoded_url": "https://glorytd-api.duckdns.org/beta/",
+    "qr_sha256": "8f06b9ffe436ded23822bc49bced52c5cb89535a253489e74080bde0e2b6807a",
+    "testflight_internal_state": "Testing",
+    "testflight_internal_testers": 10
   },
   "retention": {
     "android_prod": [
@@ -136,5 +148,6 @@
       86
     ],
     "registered_patch_baselines_preserved": true
-  }
+  },
+  "status": "completed"
 }
