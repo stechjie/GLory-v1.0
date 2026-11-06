@@ -1861,7 +1861,7 @@
     "atk_frenzy_assault": {
       "name_cn": "狂暴进攻",
       "category_cn": "攻击",
-      "effect_cn": "每次普攻自身攻速 ×1.15；对同一目标累计最多提升至开始攻击该目标时的2.5倍。换目标层数清零，保留已有攻速，并可重新叠加。",
+      "effect_cn": "每次普攻自身攻速+15%，最多提升至初始攻速的2.5倍。",
       "hu_pai_text_cn": "—"
     },
     "money_compound": {

@@ -426,13 +426,15 @@ static func attack_speed_multiplier(fighter: Dictionary, extra_pct: float = 0.0)
 	return (1.0 + clampf(pct, ASPD_PCT_MIN, ASPD_PCT_MAX)) * frenzy_multiplier(fighter)
 
 static func frenzy_multiplier(fighter: Dictionary) -> float:
-	return maxf(1.0, float(fighter.get("frenzy_speed_multiplier", 1.0)))
+	return clampf(float(fighter.get("frenzy_speed_multiplier", 1.0)), 1.0, 2.5)
 
 # Apply the existing ordinary-speed cap before the treasure's persistent gain.
 static func effective_attack_speed(fighter: Dictionary, extra_pct: float = 0.0) -> float:
 	var frenzy := frenzy_multiplier(fighter)
 	var ordinary := float(fighter.get("attack_speed", 1.0)) * attack_speed_multiplier(fighter, extra_pct) / frenzy
-	return clampf(ordinary, 0.25, 2.5) * frenzy
+	if frenzy > 1.0:
+		return minf(clampf(ordinary, 0.25, 2.5) * frenzy, float(fighter.get("attack_speed", 1.0)) * 2.5)
+	return clampf(ordinary, 0.25, 2.5)
 
 
 # 王者光环的暴击跟着它的加速状态走，光环断了暴击也没了（以前写在 crit_bonus 上，永久保留）。
