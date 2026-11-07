@@ -28,6 +28,16 @@
 
 APK 下载文件更小不等于安装占用同幅度下降：native 库安装时会被解压。保留 armv7 和 arm64，避免为了体积缩小设备覆盖范围。
 
+## iOS Game Mode
+
+IPA 入口为后续导出写入 `LSSupportsGameMode=true`，同时保留 `GCSupportsGameMode=true` 兼容 iOS 18.0–18.5。前者从 iOS 18.6 起可用，旧键从 iOS 18.6 起弃用。两个声明都只是让系统识别 Game Mode 支持，用户仍可在控制中心的 Game Overlay 中关闭该模式。
+
+交付校验读取最终 IPA 内的 `Info.plist`，要求两个键均为布尔值 `true`；成功结果包含 `validation.game_mode_support=true`。源码或预设已配置不等于当前手机已启用，需要重新打包安装后检查控制中心。
+
+Game Mode 为前台游戏优化系统资源调度，不能保证切到桌面或锁屏后游戏持续运行、网络不断线。一般应用进入后台后仍会被 iOS 挂起；后台挂机进度应由服务器保存和推进，回到前台后验证连接并恢复状态。本配置不声明额外后台运行模式。
+
+依据：[Apple Game Mode](https://support.apple.com/en-ie/105118)、[LSSupportsGameMode](https://developer.apple.com/documentation/bundleresources/information-property-list/lssupportsgamemode)、[后台执行模式](https://developer.apple.com/documentation/xcode/configuring-background-execution-modes)。
+
 ## 产物与补丁
 
 - APK：`build/apk/`；结果 `build/latest-apk.json`。

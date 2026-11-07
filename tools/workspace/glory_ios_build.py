@@ -33,6 +33,12 @@ DEFAULT_PROFILES = {
 }
 DEFAULT_KEYCHAIN = Path.home() / "Library/Keychains/glory-ios-D5ANXXK2R2.keychain-db"
 PASSWORD_FILE = Path.home() / "Library/Application Support/Glory-iOS/signing/keychain-password"
+# LSSupportsGameMode is available from iOS 18.6; retain the iOS 18.0 key for
+# earlier systems. This opts into foreground Game Mode, not background runtime.
+GAME_MODE_PLIST = (
+    "<key>LSSupportsGameMode</key><true/>\n"
+    "<key>GCSupportsGameMode</key><true/>"
+)
 
 
 def note(message):
@@ -340,6 +346,7 @@ def write_preset(stage, method, profile, cert, version, number):
                "application/code_sign_identity_release": cert["name"],
                "application/provisioning_profile_specifier_release": profile["UUID"],
                "application/short_version": version, "application/version": number,
+               "application/additional_plist_content": GAME_MODE_PLIST,
                "icons/icon_1024x1024": "res://app_icon.png",
                # Godot's template links camera/photo APIs even though gameplay never requests them.
                # Keep these declarations explicit to avoid App Store warning ITMS-90738.
@@ -409,6 +416,12 @@ def pck_file(pack, wanted):
     raise RuntimeError(f"PCK 缺少 {wanted}。")
 
 
+def verify_game_mode_support(info):
+    for key in ("LSSupportsGameMode", "GCSupportsGameMode"):
+        if info.get(key) is not True:
+            raise RuntimeError(f"IPA 缺少启用的 Game Mode 声明：{key}")
+
+
 def verify_ipa(ipa, directory, method, profile, cert, version, number, identity, env):
     with zipfile.ZipFile(ipa) as archive:
         for member in archive.namelist():
@@ -425,6 +438,7 @@ def verify_ipa(ipa, directory, method, profile, cert, version, number, identity,
     info = plistlib.loads((app / "Info.plist").read_bytes())
     if (info.get("CFBundleIdentifier"), info.get("CFBundleShortVersionString"), info.get("CFBundleVersion")) != (BUNDLE, version, number):
         raise RuntimeError("IPA 的 Bundle ID、营销版本或 build number 与本次配置不一致。")
+    verify_game_mode_support(info)
     for key in ("NSCameraUsageDescription", "NSPhotoLibraryUsageDescription", "NSMicrophoneUsageDescription"):
         if not str(info.get(key, "")).strip():
             raise RuntimeError(f"IPA 的权限用途声明为空：{key}")
@@ -462,7 +476,7 @@ def verify_ipa(ipa, directory, method, profile, cert, version, number, identity,
         raise RuntimeError("IPA 中的 Godot PCK 构建身份与本次代码/资源快照不一致。")
     return {"zip_crc": True, "codesign": True, "arm64": True, "embedded_profile_uuid": actual["UUID"],
             "allowed_device_udids": actual.get("ProvisionedDevices", []), "pck_identity": True,
-            "apple_storekit": True}
+            "apple_storekit": True, "game_mode_support": True}
 
 
 def publish(ipa, outdir, summary):

@@ -190,6 +190,37 @@ class IOSBuildTests(unittest.TestCase):
         self.assertIn('icons/icon_1024x1024="res://app_icon.png"', text)
         self.assertNotIn('provisioning_profile_specifier_release="Fixture"', text)
 
+    def test_game_mode_settings_survive_export_preset_serialization(self):
+        for method in ("ad-hoc", "app-store"):
+            with self.subTest(method=method):
+                stage = self.root / method
+                stage.mkdir()
+                (stage / "export_presets.cfg").write_text(
+                    '[preset.0]\nname="Android"\nplatform="Android"\n'
+                    'include_filter=""\nexclude_filter=""\n[preset.0.options]\n'
+                    'package/unique_name="com.glory.game"\n')
+                ios.write_preset(stage, method, self.profile,
+                                 {"name": "iPhone Distribution: Fixture"}, "1.0.2", "89")
+                text = (stage / "export_presets.cfg").read_text()
+                line = next(x for x in text.splitlines()
+                            if x.startswith("application/additional_plist_content="))
+                fragment = json.loads(line.split("=", 1)[1])
+                info = plistlib.loads((
+                    '<?xml version="1.0"?><plist version="1.0"><dict>'
+                    + fragment + '</dict></plist>').encode())
+                ios.verify_game_mode_support(info)
+                self.assertIs(info["LSSupportsGameMode"], True)
+                self.assertIs(info["GCSupportsGameMode"], True)
+                self.assertNotIn("UIBackgroundModes", info)
+
+    def test_game_mode_validation_rejects_missing_disabled_or_string_flags(self):
+        valid = {"LSSupportsGameMode": True, "GCSupportsGameMode": True}
+        ios.verify_game_mode_support(valid)
+        for key in valid:
+            for value in (None, False, "YES", 1):
+                with self.subTest(key=key, value=value), self.assertRaisesRegex(RuntimeError, "Game Mode"):
+                    ios.verify_game_mode_support(dict(valid, **{key: value}))
+
     def test_certificate_extraction_prefix_is_one_option_even_with_spaces(self):
         ipa = self.root / "fixture.ipa"
         destination = self.root / "verify with spaces"
@@ -197,7 +228,8 @@ class IOSBuildTests(unittest.TestCase):
         cert = {"sha1": hashlib.sha1(leaf).hexdigest().upper()}
         identity = {"build_number": "2"}
         info = {"CFBundleIdentifier": ios.BUNDLE, "CFBundleShortVersionString": "0.0.4", "CFBundleVersion": "2",
-                "CFBundleExecutable": "Fixture", "CFBundleSupportedPlatforms": ["iPhoneOS"], "NSMicrophoneUsageDescription": "Voice", "NSCameraUsageDescription": "No camera capture", "NSPhotoLibraryUsageDescription": "No photo library access"}
+                "CFBundleExecutable": "Fixture", "CFBundleSupportedPlatforms": ["iPhoneOS"], "NSMicrophoneUsageDescription": "Voice", "NSCameraUsageDescription": "No camera capture", "NSPhotoLibraryUsageDescription": "No photo library access",
+                "LSSupportsGameMode": True, "GCSupportsGameMode": True}
         with zipfile.ZipFile(ipa, "w") as archive:
             for name, data in {"Info.plist": plistlib.dumps(info), "Fixture": b"arm64 fixture",
                                "Fixture.pck": b"pck fixture", "embedded.mobileprovision": b"profile fixture",
@@ -230,6 +262,7 @@ class IOSBuildTests(unittest.TestCase):
                                dict(identity, engine_info={"patched": True}), {})
         self.assertTrue(result["codesign"])
         self.assertTrue(result["apple_storekit"])
+        self.assertTrue(result["game_mode_support"])
         self.assertTrue((destination / "signer-0").is_file())
 
         # A signed-looking package without the native bridge must never pass.
