@@ -1,8 +1,8 @@
 {
   "ios": {
-    "ready": false,
+    "ready": true,
     "url": "https://testflight.apple.com/join/W2p1ukJp",
-    "version": "1.0.2 (89)",
+    "version": "1.0.2（公开测试版）",
     "pending_version": ""
   },
   "android": {
