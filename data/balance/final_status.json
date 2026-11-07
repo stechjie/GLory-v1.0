@@ -1861,7 +1861,7 @@
     "atk_frenzy_assault": {
       "name_cn": "狂暴进攻",
       "category_cn": "攻击",
-      "effect_cn": "每次普攻自身攻速 ×1.15（封顶 2.5）；换目标层数清零但攻速不回退",
+      "effect_cn": "每次普攻自身攻速+15%，最多提升至初始攻速的2.5倍。",
       "hu_pai_text_cn": "—"
     },
     "money_compound": {
@@ -1976,6 +1976,6 @@
       "effect_cn": "需要：生命丰碑 + 黄金祭坛 + 震荡余波 + 血契之刃 + 狂怒阵容。生命丰碑 ×1.20→×1.40；震荡余波眩晕 1→2 秒；血契之刃 ×1.25→×1.50；狂怒阵容上限 8→9。黄金祭坛使用不扣法阵 HP；选到胡牌手立即回复法阵 HP +2（上限 50）。\n表内字段：positive_effect_multiplier = 2"
     }
   },
-  "balance_version": "d944236fa2e9ef36b95b035dba982ff3ac7c6541beadfd9c6d0d8509c415d633",
-  "final_workbook_sha256": "7dd063b4c167f3107bc0757e74ba9276d08614faf0089fa8985371d593577e27"
+  "balance_version": "5ef4302208816e880720bc6391e2aafe19da868605ae85cf6fe34111c491624a",
+  "final_workbook_sha256": "6bf6d9e9653eca52730cad9f22354a879c1d365c2b6095e505b82aebb25d9d1f"
 }
