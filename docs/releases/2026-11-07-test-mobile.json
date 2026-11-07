@@ -1,0 +1,150 @@
+{
+  "date": "2026-11-07",
+  "scope": "test",
+  "source_commit": "6e62d86af182b57afe1c00f12b7874aa2956746e",
+  "upstream_main": "ec5d75b6",
+  "source_pushed": true,
+  "server": {
+    "status": "deployed",
+    "commit": "6e62d86af182b57afe1c00f12b7874aa2956746e",
+    "project": "project-60c72d94-b558-4e4f-992",
+    "database_project": "tzkysvnpjmgzfbvazugi",
+    "release": "/home/nins17121/Glory/releases/1.0.2-20261107-6e62d86a",
+    "protocol": 45,
+    "idle_checks": [
+      {
+        "battle_connections": 0,
+        "account_online": 0,
+        "room_count": 0,
+        "at": "2026-11-07T07:33:38.011235+00:00"
+      },
+      {
+        "battle_connections": 0,
+        "account_online": 0,
+        "room_count": 0,
+        "at": "2026-11-07T07:33:41.492284+00:00"
+      }
+    ],
+    "services": {
+      "glory-server": "active",
+      "glory-backend": "active",
+      "livekit": "active",
+      "caddy": "active"
+    },
+    "health": {
+      "status": "ok",
+      "environment": "prod",
+      "configured": true,
+      "missing_config": []
+    },
+    "schema_verified": true,
+    "old_pid": "17721",
+    "new_pid": "21659",
+    "backend_pid": "1012",
+    "updated_files": [
+      "data/balance/final_status.json"
+    ],
+    "rollback_directory": "/var/backups/glory/server-20261107-6e62d86a",
+    "verified_at": "2026-11-07T07:33:49.363983+00:00",
+    "device_gameplay_tested": false
+  },
+  "resource_sync": {
+    "status": "success",
+    "scope": "resources",
+    "remote_files": 4427,
+    "counts": {
+      "downloaded": 0,
+      "checked": 706,
+      "skipped": 3705,
+      "local_preserved": 16
+    },
+    "errors": []
+  },
+  "android": {
+    "bytes": 618105894,
+    "sha256": "1adb54f1824af612777c31bfb3ddd37befe274fe8ba4b3573aaa1629f0ef7877",
+    "source_commit": "6e62d86af182b57afe1c00f12b7874aa2956746e",
+    "build": 61,
+    "version": "1.0.2",
+    "built": true,
+    "drive_uploaded": true,
+    "drive_upload_state": "complete",
+    "fixed_qr_switched": true,
+    "direct_url": "https://glorytd-api.duckdns.org/beta/downloads/Glory-1.0.2-61-android.apk",
+    "full_server_sha256_verified": true,
+    "public_range_verified": true,
+    "status": "published",
+    "drive_file_id": "1DtWk2Nnlt1-XwH3tVFE9JudO5hFhVEvd",
+    "drive_url": "https://drive.google.com/file/d/1DtWk2Nnlt1-XwH3tVFE9JudO5hFhVEvd/view",
+    "drive_full_sha256_readback_verified": true,
+    "verified_at": "2026-11-07T08:15:35.946501+00:00"
+  },
+  "ios": {
+    "build": 89,
+    "version": "1.0.2",
+    "uploaded": true,
+    "internal_group_assigned": true,
+    "state": "internal_testing",
+    "built": true,
+    "bytes": 581590936,
+    "sha256": "1fd03f95af67a3cdd189de64c1f3db60dda17fbe1b2ae21d1121179d3861a795",
+    "baseline_registered": true,
+    "game_mode_support": true,
+    "upload_started": true,
+    "transporter_state": "Delivered",
+    "delivered_at_local": "2026-11-07 16:38 Asia/Shanghai",
+    "internal_state": "Testing",
+    "server_environment": "test",
+    "notes_prepared": true,
+    "notes_saved": true,
+    "base_id": "glory-20261107-test-refresh",
+    "includes_seq": 4,
+    "patch_action": "none",
+    "external_group_assigned": false,
+    "physical_device_gameplay_verified": false,
+    "apple_processing": "complete_verified_in_App_Store_Connect",
+    "app_store_connect_ui_verified": true,
+    "build_id": "cdbfbbfc-e7e3-4570-9dec-9dcd13c9dccb",
+    "internal_group_id": "90dd8f53-b157-49c4-b899-8da72091b76a",
+    "internal_group_name": "GLory 内部验证",
+    "internal_testers": 10,
+    "verified_at": "2026-11-07T08:45:57.660323+00:00"
+  },
+  "validation": {
+    "balance_tests": 16,
+    "server_bundle_smoke": "passed",
+    "default_VPN_route_battle_probe": "timed out for new and previous client",
+    "physical_interface_battle_probe": "passed protocol45 DTLS pinned via en0-only UDP relay",
+    "global_network_settings_modified": false,
+    "physical_device_gameplay_verified": false,
+    "asset_inventory_matches": true,
+    "asset_inventory_sha256": "2837725631ad260cfdd87738577fa6ed948cdf0b4b5d014c8cd2784adb183018",
+    "public_apk_http_range": "HTTP 206 first 1MiB matches signed APK",
+    "drive_full_sha256_readback_verified": true,
+    "qr_decoded_url": "https://glorytd-api.duckdns.org/beta/",
+    "qr_sha256": "8f06b9ffe436ded23822bc49bced52c5cb89535a253489e74080bde0e2b6807a",
+    "android_download_page_ui_verified": true
+  },
+  "pending": [],
+  "updated_at": "2026-11-07T08:46:57.680009+00:00",
+  "retention": {
+    "android_prod": [
+      54,
+      56
+    ],
+    "android_test": [
+      60,
+      61
+    ],
+    "ios_prod": [
+      81,
+      82
+    ],
+    "ios_test": [
+      88,
+      89
+    ],
+    "registered_patch_baselines_preserved": true
+  },
+  "status": "completed"
+}
