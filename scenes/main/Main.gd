@@ -1,5 +1,6 @@
 extends Control
 const PlaybackRecovery := preload("res://scripts/battle/BattlePlaybackRecovery.gd")
+const ClientFrameBudget := preload("res://scripts/autoload/ClientFrameBudget.gd")
 const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
 # AI 托管 -> 玩家收回座位的账本落地（10.17 bug 文档第 1 条）。同样不做 class_name：
 # headless 跑检查场景时新全局类还没进 global_script_class_cache。
@@ -885,6 +886,7 @@ func _return_to_login(reason := "") -> void:
 
 
 func _clear() -> void:
+	ClientFrameBudget.apply(false)
 	_resume_replay_generation += 1
 	_resume_replay_pending.clear()
 	_battle_settlement_generation += 1
@@ -2433,6 +2435,7 @@ func _show_ranked_queue() -> void:
 func _show_party_lobby(mode: String, invite_id: String = "", restore_existing: bool = false) -> void:
 	VoiceService.set_mode(VoiceService.Mode.OFF)
 	_clear()
+	ClientFrameBudget.apply(true)
 	# ★ 10.11 第 6 条 j：房间大厅里要能弹邀请气泡（`_clear()` 刚把它清成 false）。
 	# 排位/休闲房本来就能弹（它不进 _match_flow），这一行是为了与自定义房同口径 ——
 	# 判据只有一处（_invite_popup_suppressed），别让两个房间各自记一套。
@@ -2731,6 +2734,7 @@ func _disconnect_matched_handlers() -> void:
 
 func _show_team3v3_lobby() -> void:
 	_clear()
+	ClientFrameBudget.apply(true)
 	_enter_match_flow()
 	# ★★ 10.11 第 6 条 j：**自定义房间里也要能弹邀请气泡**。
 	# 上面 _enter_match_flow() 会让 _invite_popup_suppressed() 判真（那是给备战/战斗/结算
@@ -2843,6 +2847,7 @@ func _show_game_over(local_settlement: Dictionary = {}) -> void:
 	# 对局结束：重连凭证作废，避免下次启动误恢复到已结束的房间
 	SaveManager.clear_reconnect()
 	_clear()
+	ClientFrameBudget.apply(true)
 	_enter_match_flow()
 	# 结算界面仍算「对局中」→ 静音（用户口径：出来大厅才恢复）。
 	_set_chat_sound_suppressed(true)

@@ -2,6 +2,7 @@ extends "res://scenes/prep/PrepShared.gd"
 
 const PREP_RELATION_PARTICLES_SCRIPT := preload("res://scenes/prep/PrepRelationParticles3D.gd")
 const PREP_PETAL_FALL_SCRIPT := preload("res://scenes/prep/effects/PrepPetalFall3D.gd")
+const Budgeted3DView := preload("res://ui/components/Budgeted3DView.gd")
 
 # 9.17 音效。**只在这一层声明一次**：整条继承链
 # PrepBoardModels ← PrepUI ← PrepFlowController ← PrepBoardController ← PrepScreen
@@ -921,17 +922,9 @@ func _on_prep_river_refresh_tick() -> void:
 			_prep_creature_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 func _setup_prep_river_background() -> void:
-	var container := SubViewportContainer.new()
-	container.name = "PrepRiverArenaLayer"
-	container.stretch = true
-	container.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	container.z_index = -19
-	add_child(container)
-
-	_prep_river_viewport = SubViewport.new()
-	_prep_river_viewport.own_world_3d = true
-	_prep_river_viewport.size = PREP_RIVER_VIEWPORT_SIZE
+	_prep_river_viewport = Budgeted3DView.create(self, "PrepRiverArenaLayer", -19,
+		Budgeted3DView.mobile_limit(VFXManager.get_quality_tier(), OS.has_feature("mobile")), false)
+	var container := _prep_river_viewport.get_parent()
 	# Only the high preset adds coverage samples; keep the mobile budgets and
 	# this viewport's 30 Hz refresh unchanged.
 	_prep_river_viewport.msaa_3d = Viewport.MSAA_2X \
@@ -942,7 +935,6 @@ func _setup_prep_river_background() -> void:
 	# 改为每次 UPDATE_ONCE 恰好渲染一帧，由下面的 30Hz Timer 重触发：
 	# AnimationPlayer 照常每引擎帧推进，只是渲染采样降到 30Hz。
 	_prep_river_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
-	container.add_child(_prep_river_viewport)
 
 	var refresh_timer := Timer.new()
 	refresh_timer.name = "PrepRiverRefreshTimer"

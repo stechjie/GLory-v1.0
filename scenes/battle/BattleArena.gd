@@ -2,6 +2,7 @@ extends "res://scenes/battle/BattleUI.gd"
 const PresentationSettings := preload("res://effects/runtime/presentation/PresentationSettings.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
 const BattleBackgroundCatalog := preload("res://scripts/assets/BattleBackgroundCatalog.gd")
+const Budgeted3DView := preload("res://ui/components/Budgeted3DView.gd")
 
 const BossProceduralVFX3D := preload("res://effects/BossProceduralVFX3D.gd")
 const CrystalRibbon3D := preload("res://effects/CrystalRibbon3D.gd")
@@ -776,23 +777,13 @@ func _fit_battle_3d_arena(arena: Node3D) -> void:
 	arena.position += Vector3(-center.x, BATTLE_ARENA_GROUND_Y - fitted_bounds.position.y, -center.z)
 
 func _setup_battle_3d_view(arena_wrap: Control) -> void:
-	var container := SubViewportContainer.new()
-	container.name = "UnitsLayer"
-	container.stretch = true
-	container.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	container.z_index = 40
-	arena_wrap.add_child(container)
-
-	_battle_3d_viewport = SubViewport.new()
-	_battle_3d_viewport.own_world_3d = true
-	_battle_3d_viewport.size = Vector2i(960, 540)
+	_battle_3d_viewport = Budgeted3DView.create(arena_wrap, "UnitsLayer", 40,
+		Budgeted3DView.mobile_limit(VFXManager.get_quality_tier(), OS.has_feature("mobile")), true)
 	# Match preparation's high preset without increasing low/medium GPU cost.
 	_battle_3d_viewport.msaa_3d = Viewport.MSAA_2X \
 		if VFXManager.get_quality_tier() == VFXQualityBudget.Tier.HIGH else Viewport.MSAA_DISABLED
 	_battle_3d_viewport.transparent_bg = true
 	_battle_3d_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	container.add_child(_battle_3d_viewport)
 
 	var world := Node3D.new()
 	world.name = "Battle3DWorld"

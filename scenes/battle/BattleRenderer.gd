@@ -1764,7 +1764,10 @@ func _actor_team_color(f: Dictionary) -> Color:
 func _position_3d_model_node(model_node: Node3D, f: Dictionary, facing_delta: float) -> void:
 	var pos := _sim_to_world_pos(_visual_sim_pos_for_fighter(f))
 	var world_pos := Vector3(pos.x, battle_unit_y_offset, pos.z)
-	model_node.position = world_pos
+	# Node3D setters invalidate every descendant even for identical values.
+	# Keep all movement samples, but leave stationary model trees untouched.
+	if model_node.position != world_pos:
+		model_node.position = world_pos
 	if facing_delta <= 0.0:
 		return
 	_update_model_facing(model_node, f, world_pos, facing_delta)
@@ -1794,11 +1797,17 @@ func _update_model_facing(model_node: Node3D, f: Dictionary, world_pos: Vector3,
 	var target_yaw := atan2(aim.x, aim.y) + deg_to_rad(base_yaw - 180.0)
 	if not bool(model_node.get_meta("facing_ready", false)):
 		model_node.set_meta("facing_ready", true)
-		model_node.rotation.y = target_yaw
+		if absf(wrapf(target_yaw - model_node.rotation.y, -PI, PI)) > 0.000001:
+			model_node.rotation.y = target_yaw
 		return
-	var diff := wrapf(target_yaw - model_node.rotation.y, -PI, PI)
+	var current_yaw := model_node.rotation.y
+	var diff := wrapf(target_yaw - current_yaw, -PI, PI)
 	var max_step := deg_to_rad(MODEL_FACING_TURN_SPEED_DEG) * delta
-	model_node.rotation.y = wrapf(model_node.rotation.y + clampf(diff, -max_step, max_step), -PI, PI)
+	var next_yaw := wrapf(current_yaw + clampf(diff, -max_step, max_step), -PI, PI)
+	# Euler -> basis -> Euler introduces float noise at a settled orientation.
+	# One microradian is invisible but prevents that noise invalidating the tree.
+	if absf(wrapf(next_yaw - current_yaw, -PI, PI)) > 0.000001:
+		model_node.rotation.y = next_yaw
 
 # Where the unit should be looking, as a world-space (x, z) direction:
 # where its feet are going while it closes in, who it is hitting while it
