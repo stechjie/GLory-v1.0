@@ -1,0 +1,46 @@
+{
+  "date": "2026-11-08",
+  "scope": "testflight_external_and_beta_entry",
+  "app_id": "6811578280",
+  "version": "1.0.2",
+  "build": 89,
+  "build_id": "cdbfbbfc-e7e3-4570-9dec-9dcd13c9dccb",
+  "latest_uploaded_build_verified": true,
+  "previous_external_state": "Ready to Submit",
+  "submitted_for_external_review": true,
+  "external_group_id": "77fbf129-88aa-4489-98a0-658698cd4fcf",
+  "external_group_name": "Glory tester",
+  "external_group_testers": 27,
+  "external_group_build_state": "Testing",
+  "app_store_connect_build_state": "Testing",
+  "internal_group_preserved": true,
+  "notes_saved": true,
+  "public_testflight_url": "https://testflight.apple.com/join/W2p1ukJp",
+  "physical_install_verified": false,
+  "verified_at": "2026-11-08T04:22:38.257776+00:00",
+  "qr_entry": "https://glorytd-api.duckdns.org/beta/",
+  "qr_image": "https://glorytd-api.duckdns.org/beta/invite-qr.png",
+  "qr_sha256": "8f06b9ffe436ded23822bc49bced52c5cb89535a253489e74080bde0e2b6807a",
+  "public_config": {
+    "ios": {
+      "ready": true,
+      "url": "https://testflight.apple.com/join/W2p1ukJp",
+      "version": "1.0.2 (89)",
+      "pending_version": ""
+    },
+    "android": {
+      "ready": true,
+      "mode": "apk",
+      "url": "https://glorytd-api.duckdns.org/beta/downloads/Glory-1.0.2-61-android.apk",
+      "version": "1.0.2 (61)",
+      "size_bytes": 618105894,
+      "size_label": "589.5 MiB"
+    }
+  },
+  "public_config_verified": true,
+  "qr_decoded_url": "https://glorytd-api.duckdns.org/beta/",
+  "qr_image_unchanged": true,
+  "android_config_unchanged": true,
+  "status": "external_testing_and_qr_updated",
+  "public_download_page_ui_verified": true
+}
