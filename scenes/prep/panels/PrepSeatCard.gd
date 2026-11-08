@@ -19,6 +19,8 @@ extends PanelContainer
 # 举报面板由 PrepUI 弹（它才是 ModalStack 里这张卡片的 owner）：卡片自己弹的话，
 # owner 只能填 ModalRoot，卡片一收起举报面板就跟着没了。
 signal report_requested(friend_code: String, who: String, clip_id: String)
+# 「查看棋盘」（2026-11-07）：只有同队的人有。切换由 PrepUI 做（它管 3D 层和挡板）。
+signal view_board_requested(slot: int)
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
@@ -60,6 +62,8 @@ static func describe(p_slot: int) -> Dictionary:
 		"can_mute": not is_self and (state == "player" or not who.is_empty()),
 		# 举报要有好友码（账号服务器按它找人）：AI 座位和资料还没到的座位举报不了。
 		"can_report": not is_self and not code.is_empty(),
+		# 看棋盘只限队友（真人或 AI 都行）：对手的棋盘备战时谁都看不到，游戏里没有侦察。
+		"can_view_board": not is_self and (state == "player" or state == "dummy") and _same_team(p_slot),
 		"friend_code": code,
 		"avatar": str(identity.get("avatar", "")),
 		"avatar_frame": str(identity.get("avatar_frame", "")),
@@ -103,6 +107,12 @@ func _ready() -> void:
 	relation.add_theme_color_override("font_color", GameConstants.team_color_of_slot(slot))
 	names.add_child(relation)
 
+	if bool(info.can_view_board):
+		var view := _toggle_button(func() -> void: view_board_requested.emit(slot))
+		view.name = "ViewBoard"
+		view.text = _text("查看棋盘", "View board")
+		view.theme_type_variation = Theming.VARIATION_PRIMARY
+		column.add_child(view)
 	if bool(info.can_mute):
 		_chat_button = _toggle_button(_toggle_chat)
 		_chat_button.name = "MuteChat"
@@ -215,6 +225,11 @@ func _avatar(avatar: String, frame_id: String) -> Control:
 	portrait.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mask.add_child(portrait)
 	return box
+
+
+static func _same_team(p_slot: int) -> bool:
+	var local := int(NetworkService.team_local_slot)
+	return local >= 0 and GameConstants.team_of_slot(p_slot) == GameConstants.team_of_slot(local)
 
 
 static func _text(zh: String, en: String) -> String:

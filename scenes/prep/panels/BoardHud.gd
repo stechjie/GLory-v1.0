@@ -72,13 +72,26 @@ var standby_drop_hover_index := -1
 var _selected_board := -1
 var _selected_bench := -1
 
+# 看队友棋盘时由宿主塞进来（PrepShared.shown_board / shown_bench）。空 Callable = 读自己的 GameState。
+var board_source: Callable
+var bench_source: Callable
+
+
+func _board_cells() -> Array:
+	return board_source.call() if board_source.is_valid() else GameState.board_slots
+
+
+func _bench_cells() -> Array:
+	return bench_source.call() if bench_source.is_valid() else GameState.bench_slots
+
 
 # 原 _refresh_board（PrepUI.gd）
 
 func refresh_board() -> void:
+	var cells := _board_cells()
 	for i in buttons.size():
 		var btn := buttons[i]
-		var cell = GameState.board_slots[i]
+		var cell = cells[i] if i < cells.size() else null
 		if cell == null:
 			btn.text = ""
 			btn.drag_payload = {}
@@ -109,10 +122,11 @@ func refresh_board() -> void:
 # 原 _refresh_bench（PrepUI.gd）
 
 func refresh_bench() -> void:
+	var cells := _bench_cells()
 	for i in bench_buttons.size():
 		var btn := bench_buttons[i]
 		var name_label := bench_card_labels[i]
-		var cell = GameState.bench_slots[i]
+		var cell = cells[i] if i < cells.size() else null
 		btn.disabled = false
 		btn.text = ""
 		if cell == null:

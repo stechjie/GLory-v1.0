@@ -57,8 +57,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from app import party, ranked
-from app.party_match_selection import select as select_party_seats
-from app.ranked_team_queue import TeamQueue, QueuedEntry
+from app.ranked_team_queue import TeamQueue, QueuedEntry, balance_sides
 
 log = logging.getLogger("glory.matchmaking")
 
@@ -112,8 +111,9 @@ MESSAGE_TYPE = "match"
 # --- 人少时 AI 补位（2026-10-19）---------------------------------------------
 #
 # 所有模式先组成三人队，再匹配另一支队伍。满真人队优先即时匹配。
-# 青苗等最早成员10秒、普通与排位等30秒后，补齐本队AI；
-# 对手不足三人时，必须等对手自己的时限，不能因本队到期提前填满对手。
+# 青苗等最早成员10秒、普通与排位等30秒后开桌：拉上人数最多的另一队（不论它到没到点），
+# 再把真人尽量平均分到两边（组队不拆，两边 AI 数最多差 1，见 ranked_team_queue.balance_sides）。
+# 11-07 前是「对手不足三人时必须等对手自己的时限」，五个单排会被拆成两桌纯 AI 局，已改。
 # AI也走确认流程，名字、头像及座位随同一份分配进入战斗服务器。
 # GLORY_MATCH_AI_FILL仍控制是否启用补位；旧时长字段保留为配置兼容项。
 AI_NAMES = (
@@ -136,11 +136,15 @@ def _ai_avatar_pool() -> list[str]:
 
 
 def ai_identities(free: list[tuple[int, int]], rng: random.Random,
-                  avatars: list[str] | None = None) -> list[dict]:
-    """给空座位（队伍, 本队位置）各配一个不重名的 AI。slot = 队伍 * 3 + 位置。"""
+                  avatars: list[str] | None = None, tier: int = 0) -> list[dict]:
+    """给空座位（队伍, 本队位置）各配一个不重名的 AI。slot = 队伍 * 3 + 位置。
+
+    tier：这桌 AI 的难度段位（0 初誓 … 4 荣耀之冠），写进名片，战斗服务器按
+    data/ai/bot_profiles.json 的 tier_levels 换成档位。
+    """
     pool = list(avatars if avatars is not None else _ai_avatar_pool())
     names = rng.sample(AI_NAMES, len(free))
-    return [{"slot": team * TEAM_SIDE_SIZE + seat, "team": team, "seat": seat,
+    return [{"slot": team * TEAM_SIDE_SIZE + seat, "team": team, "seat": seat, "tier": int(tier),
              "name": name, "avatar": rng.choice(pool) if pool else "",
              "avatar_frame": "preset:" + rng.choice(["frame_default"] + [f"avatar_frame_shop_{i:02d}" for i in range(1, 7)])}
             for (team, seat), name in zip(free, names, strict=True)]
@@ -238,8 +242,7 @@ class _Waiter:
     # 断开 WS 的时刻；0 = 还连着。
     dropped_at: float = 0.0
     sent_position: int = 0
-    # 车队成员（含自己）。这一步只有单排，所以永远是一个人 —— 留着是为了
-    # 做车队时 _take_group 不用重写，见文件头最后一节。
+    # 车队成员（含自己）。单排是一个人，组队房是整队。
     party: list[uuid.UUID] = field(default_factory=list)
     # 匹配分。casual 不用（全是 0），ranked 接第 5 步的分数。
     rating: int = 0
@@ -398,7 +401,7 @@ class Matchmaker:
     # --- 排队 -----------------------------------------------------------------
 
     def join(self, player_id: uuid.UUID, mode: str,
-             seedling_races: list[str] | None = None) -> dict:
+             seedling_races: list[str] | None = None, rating: int = 0) -> dict:
         """进队列。已经在待确认里的人**不许重排** —— 那会把自己从那一桌里摘掉。"""
         if player_id in self._party_of:
             return self.state_of(player_id)
@@ -425,7 +428,7 @@ class Matchmaker:
         lineup = {player_id: list(seedling_races)} if seedling_races is not None else {}
         self._queue_serial += 1
         queue[player_id] = _Waiter(mode=mode, joined_at=self._now(), party=[player_id],
-                                   queue_order=self._queue_serial,
+                                   queue_order=self._queue_serial, rating=int(rating),
                                    seedling_races=lineup)
         position = len(queue)
         queue[player_id].sent_position = position
@@ -486,7 +489,7 @@ class Matchmaker:
     def on_disconnect(self, player_id: uuid.UUID) -> None:
         """WS 断了。**不立刻踢出队列** —— 手机切后台是常态不是异常。
 
-        位次保留 QUEUE_GRACE_SEC，期间轮到他就先跳过（_take_group 只取还连着的）。
+        位次保留 QUEUE_GRACE_SEC，期间轮到他就先跳过（_match_teams 只取还连着的）。
         待确认阶段断线则当场解散：让另外五个人早点回队列，比干等 30 秒强。
         """
         now = self._now()
@@ -670,7 +673,7 @@ class Matchmaker:
         coordinator.refresh(entries)
         messages: list[tuple[uuid.UUID, dict]] = []
         for a, b in coordinator.take_pairs(now, self._ai_fill_after is not None):
-            sides = [a.entries, b.entries if b is not None else []]
+            sides = balance_sides([a.entries, b.entries if b is not None else []])
             players: list[uuid.UUID] = []
             teams: list[int] = []
             parties: list[_Waiter] = []
@@ -691,7 +694,10 @@ class Matchmaker:
                     players.extend(waiter.party)
                     teams.extend([team] * len(waiter.party))
             if len(players) < MATCH_SIZE:
-                self._form_with_ai(players, teams, parties, lineups, mode, now)
+                # AI 的难度 = 这桌真人平均分对应的段位，同一桌的 AI 全是这一档（两队对称）。
+                total = sum(w.rating for w in parties) + sum(w.rating for w in solos.values())
+                ai_tier = ranked.tier_of(total // max(1, len(players)))
+                self._form_with_ai(players, teams, parties, lineups, mode, now, ai_tier)
             else:
                 self._form_party(players, teams, parties, lineups, mode, now)
             pending = self._pending[self._pending_of[players[0]]]
@@ -700,33 +706,6 @@ class Matchmaker:
             messages.extend((m.player_id, pending.found_for(m.player_id, ACCEPT_TIMEOUT_SEC))
                             for m in pending.members)
         return messages
-
-    def _take_party_match(self, mode: str) -> tuple[list[uuid.UUID], list[int], list[_Waiter], dict[uuid.UUID, list[str]]] | None:
-        rooms = self._party_queues[mode]
-        active_rooms = [("room", pid, tuple(waiter.party))
-                        for pid, waiter in rooms.items() if waiter.dropped_at <= 0.0]
-        active_solos = [("solo", pid, (pid,))
-                        for pid, waiter in self._queues[mode].items()
-                        if waiter.dropped_at <= 0.0]
-        sides = select_party_seats(active_rooms, active_solos)
-        if sides is None:
-            return None
-        players: list[uuid.UUID] = []
-        teams: list[int] = []
-        parties: list[_Waiter] = []
-        lineups: dict[uuid.UUID, list[str]] = {}
-        for team, side in enumerate(sides):
-            for kind, leader, members in side:
-                waiter = (rooms if kind == "room" else self._queues[mode]).pop(leader)
-                lineups.update(waiter.seedling_races)
-                if kind == "room":
-                    parties.append(waiter)
-                    for pid in members:
-                        self._party_of.pop(pid, None)
-                        self._party_disconnected.discard(pid)
-                players.extend(members)
-                teams.extend([team] * len(members))
-        return players, teams, parties, lineups
 
     def _form_party(self, players: list[uuid.UUID], teams: list[int], parties: list[_Waiter],
                     lineups: dict[uuid.UUID, list[str]],
@@ -766,99 +745,9 @@ class Matchmaker:
                 out[pid] = dict(profile)
         return out
 
-    def _take_group(self, mode: str, now: float) -> tuple[list[uuid.UUID], dict[uuid.UUID, list[str]]] | None:
-        """按先来后到取一桌。**只取还连着的人。**
-
-        断线宽限内的人留在队列里、占着位次，但不会被凑进一桌 ——
-        把一个已经切后台的人凑进来，结果一定是确认超时、整桌解散，
-        白白让另外五个人等 30 秒。
-        """
-        queue = self._queues[mode]
-        picked: list[uuid.UUID] = []
-        for pid, waiter in queue.items():
-            if waiter.dropped_at > 0.0:
-                continue
-            # 一份一份地取：现在每份就是一个人，做车队时这里取的是整个 party。
-            picked.extend(waiter.party or [pid])
-            if len(picked) >= MATCH_SIZE:
-                break
-        if len(picked) < MATCH_SIZE:
-            return None
-        lineups: dict[uuid.UUID, list[str]] = {}
-        for pid in picked:
-            waiter = queue.pop(pid, None)
-            if waiter is not None:
-                lineups.update(waiter.seedling_races)
-        return picked[:MATCH_SIZE], lineups
-
-    def _form(self, players: list[uuid.UUID], lineups: dict[uuid.UUID, list[str]],
-              mode: str, now: float) -> list[tuple[uuid.UUID, dict]]:
-        match_uid = new_match_uid()
-        profiles = self._public_profiles(players)
-        members = [
-            _Member(player_id=pid, team=team, profile=profiles.get(pid, {}),
-                    seedling_races=list(lineups.get(pid, [])))
-            for pid, team in zip(players, assign_teams(players, {}), strict=True)
-        ]
-        pending = _Pending(match_uid=match_uid, mode=mode, members=members,
-                           deadline=now + ACCEPT_TIMEOUT_SEC)
-        self._pending[match_uid] = pending
-        for member in members:
-            self._pending_of[member.player_id] = match_uid
-        log.info("匹配成功 match=%s mode=%s players=%d", match_uid, mode, len(members))
-        return [(m.player_id, found_message(match_uid, mode, ACCEPT_TIMEOUT_SEC))
-                for m in members]
-
-    def _take_short_group(self, mode: str, now: float) -> tuple[list[uuid.UUID], list[int], list[_Waiter], dict[uuid.UUID, list[str]]] | None:
-        """人不够 6 个时取一桌（AI 补位）。等得最久的那份还没满时限就不取。
-
-        单排与组队都算，按进队列的先后；组队整队进同一队，装不下就跳过等下一桌。
-        只取还连着的人 —— 与 _take_group 同一条理由。
-        """
-        entries: list[tuple[float, int, str, uuid.UUID, _Waiter]] = []
-        for index, (pid, waiter) in enumerate(self._queues[mode].items()):
-            if waiter.dropped_at <= 0.0:
-                entries.append((waiter.joined_at, index, "solo", pid, waiter))
-        for index, (leader, waiter) in enumerate(self._party_queues[mode].items()):
-            if waiter.dropped_at <= 0.0 and not any(
-                    pid in self._party_disconnected for pid in waiter.party):
-                entries.append((waiter.joined_at, index, "room", leader, waiter))
-        if not entries:
-            return None
-        entries.sort(key=lambda e: (e[0], e[1]))
-        if now - entries[0][0] < float(self._ai_fill_after or 0.0):
-            return None
-        room_left = [TEAM_SIDE_SIZE, TEAM_SIDE_SIZE]
-        chosen: list[tuple[int, str, uuid.UUID]] = []
-        for _joined, _index, kind, key, waiter in entries:
-            size = len(waiter.party or [key])
-            team = 0 if room_left[0] >= size else (1 if room_left[1] >= size else -1)
-            if team < 0:
-                continue
-            room_left[team] -= size
-            chosen.append((team, kind, key))
-            if room_left == [0, 0]:
-                break
-        players: list[uuid.UUID] = []
-        teams: list[int] = []
-        parties: list[_Waiter] = []
-        lineups: dict[uuid.UUID, list[str]] = {}
-        for team, kind, key in chosen:
-            waiter = (self._party_queues[mode] if kind == "room" else self._queues[mode]).pop(key)
-            lineups.update(waiter.seedling_races)
-            members = waiter.party or [key]
-            if kind == "room":
-                parties.append(waiter)
-                for pid in members:
-                    self._party_of.pop(pid, None)
-                    self._party_disconnected.discard(pid)
-            players.extend(members)
-            teams.extend([team] * len(members))
-        return players, teams, parties, lineups
-
     def _form_with_ai(self, players: list[uuid.UUID], teams: list[int], parties: list[_Waiter],
                       lineups: dict[uuid.UUID, list[str]],
-                      mode: str, now: float) -> list[tuple[uuid.UUID, dict]]:
+                      mode: str, now: float, ai_tier: int = 0) -> list[tuple[uuid.UUID, dict]]:
         """开一桌 AI 补位的对局；所有真人手动确认，AI 在五秒内陆续确认。"""
         match_uid = new_match_uid()
         seats = allocate_seats(players, teams, parties)
@@ -870,7 +759,7 @@ class Matchmaker:
         free = [(team, seat) for team in (0, 1) for seat in range(TEAM_SIDE_SIZE)
                 if (team, seat) not in taken]
         pending = _Pending(match_uid, mode, members, now + ACCEPT_TIMEOUT_SEC, parties,
-                           ai_seats=ai_identities(free, self._rng))
+                           ai_seats=ai_identities(free, self._rng, tier=ai_tier))
         self._pending[match_uid] = pending
         for member in members:
             self._pending_of[member.player_id] = match_uid

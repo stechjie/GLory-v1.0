@@ -244,6 +244,8 @@ func _exit_tree() -> void:
 	if AsyncActionController.action_state_changed.is_connected(_on_async_action_state_changed):
 		AsyncActionController.action_state_changed.disconnect(_on_async_action_state_changed)
 	AsyncActionController.clear_for_owner(self, "prep_scene_exit")
+	if NetworkService.team_prep_boards_changed.is_connected(_on_teammate_board_changed):
+		NetworkService.team_prep_boards_changed.disconnect(_on_teammate_board_changed)
 	# 聊天入口建在 PrepUI 层，但生命周期钩子只有这一层有。
 	_teardown_chat_entry()
 	_close_battle_loading_overlay()
@@ -256,6 +258,8 @@ func _on_team_round_start() -> void:
 		_early_round_start = true
 		return
 	_early_round_start = false
+	# 正在看队友棋盘也要先回来：开打前的自动上阵、存档都按自己的棋盘做。
+	exit_teammate_view()
 	# All players readied -> launch this round's battle.
 	_auto_deploy_at_deadline()
 	RaceRelationService.finalize_for_battle(GameState.board_slots, GameState.bench_slots)

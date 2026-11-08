@@ -151,6 +151,8 @@ async def join_queue(
         mode = matchmaking.RANKED_NORMAL
     async with db.pool().acquire() as conn:
         reason = await ranked.queue_gate(conn, me.player_id, mode)
+        # 休闲也取排位分：AI 补位的难度跟这桌真人的平均段位走（11-07 用户定，暂时这样）。
+        score = await ranked.score_of(conn, me.player_id) if not reason else 0
     if reason:
         raise HTTPException(
             status_code=409, detail=_GATE_TEXT.get(reason, "现在不能排这个模式"),
@@ -172,7 +174,7 @@ async def join_queue(
         except loadout.LoadoutRejected as exc:
             raise HTTPException(status_code=409, detail=exc.message,
                                 headers={"X-Glory-Reason": exc.code}) from None
-    return MatchStateResponse(state=matchmaking.current().join(me.player_id, mode, chosen))
+    return MatchStateResponse(state=matchmaking.current().join(me.player_id, mode, chosen, rating=score))
 
 
 @router.delete("/queue", response_model=MatchStateResponse)

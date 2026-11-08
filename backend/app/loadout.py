@@ -358,6 +358,10 @@ def card_payload(
         if ai_seats:
             payload["ai"] = [[int(ai["slot"]), str(ai["name"])[:16], str(ai.get("avatar", ""))[:16], str(ai.get("avatar_frame", ""))[:64]]
                              for ai in ai_seats if 0 <= int(ai.get("slot", -1)) < 6]
+            # 这桌 AI 的难度段位（11-07，五档难度）：一桌一个数，不进每个座位（名片有长度上限）。
+            # 旧战斗服务器不认识这个字段，AI 照旧用默认档 —— 加字段向后兼容。
+            if "tier" in ai_seats[0]:
+                payload["ai_tier"] = max(0, min(4, int(ai_seats[0]["tier"])))
     if patch_version is not None:
         payload["patch"] = dict(patch_version)
     return payload

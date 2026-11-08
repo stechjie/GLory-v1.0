@@ -5,6 +5,9 @@ class Server extends "res://scripts/autoload/NetworkService.gd":
 	var live := {11: true}
 	var sent: Array = []
 	var signed_count := 0
+	# 打开后签章时顺手记下战报里的座位（账号服务器按它扣分：pid + online_at_end）。
+	var capture_ctx := false
+	var signed_seats: Array = []
 	func _ready() -> void:
 		_reconnect_service.configure(_now, _net_log, {})
 		_room_service.configure(_now, _wall_now, _net_log, func(): return 0, {}, _reconnect_service)
@@ -21,6 +24,8 @@ class Server extends "res://scripts/autoload/NetworkService.gd":
 		sent.append([pid, ms])
 	func _room_sign_report(_r: Dictionary, _n: int, _o: int, _a: int, _b: int, _f: Dictionary) -> String:
 		signed_count += 1
+		if capture_ctx:
+			signed_seats = _room_report_ctx(_r, _n, _o, _a, _b, _f).get("seats", [])
 		return "signed_fixture"
 	func _voice_seat_released(_r: Dictionary, _s: int, _i: String) -> void:
 		pass
@@ -230,6 +235,99 @@ func _ready() -> void:
 	lobby_room.human_offline_since = {0: s.clock - 100.0, 1: s.clock - 100.0, 3: s.clock - 100.0}
 	h.expect(not s._void_room_eligible(lobby_room), "lobby_not_voided", "大厅阶段不该被作废")
 
+	# ---- 2026-11-07：关房前必须先作废（测试服房间 985648）-------------------------
+	# 作废看门狗和房间清理各自每秒一跑。清理先到就直接关房、清掉 seat_pid —— 这局不签战报，
+	# 跑路的人一分不扣。下面**只跑清理、不跑看门狗**，就是「清理先到」那一种。
+	# 用一台新的 Server：上面那台的房间会混进清理里。
+	var t := Server.new()
+	add_child(t)
+	t.capture_ctx = true
+	t.live = {}
+	t._room_service.configure(t._now, t._wall_now, t._net_log, func(): return 0,
+		{"room_suspend_grace_sec": t.ROOM_SUSPEND_GRACE_SEC}, t._reconnect_service)
+	var close_uplink := Uplink.new()
+	t._report_uplink = close_uplink
+	const PID := "f36fcb11-1c53-49b0-b4c1-54cc98b75014"
+	# AI 补位排位局：0 号是唯一的真人，其余 5 个 AI（线上 985648 的 slots 原样）。
+	var make_solo := func(uid: int) -> Dictionary:
+		var room: Dictionary = t._new_room()
+		room.state = "prep"
+		room.round_index = 2
+		room.mode = "ranked"
+		room.match_uid = "%032x" % uid
+		room.initial_seats = ["player", "dummy", "dummy", "dummy", "dummy", "dummy"]
+		room.slot_states = room.initial_seats.duplicate()
+		room.seat_pid = {0: PID}
+		var token := "tok_%x" % uid
+		room.seat_tokens = {0: token}
+		t._token_seat[token] = {"room_id": int(room.id), "slot": 0}
+		room.peer_slot = {21: 0}
+		t._peer_room[21] = int(room.id)
+		return room
+	var charged := func(label: String, room: Dictionary) -> void:
+		h.expect(close_uplink.got.count([str(room.match_uid), "signed_fixture"]) == 1, label + "_report_delivered",
+			"关房前必须先作废并把战报交给账号服务器，实测 %s" % str(close_uplink.got))
+		var seat0: Dictionary = t.signed_seats[0] if not t.signed_seats.is_empty() else {}
+		h.expect(str(seat0.get("pid", "")) == PID and not bool(seat0.get("online_at_end", true)), label + "_seat_charged",
+			"战报里 0 号座位必须是他本人、且结束时不在线（账号服务器才会扣信誉分），实测 %s" % str(seat0))
+		h.expect(str(room.get("state", "")) == "closed", label + "_closed", "作废完照样关房")
+
+	# ① 手动「退出对局」：照 _rpc_manual_exit_seat 的函数体做（门禁里没有 RPC 发送方），然后客户端断开。
+	t.clock = 7000.0
+	var exited: Dictionary = make_solo.call(0x7000)
+	exited.manual_exit_slots = {0: true}
+	exited.human_offline_since = {0: t.clock}
+	t._revoke_seat_credentials(exited, 0)
+	t._room_reserve_peer(exited, 21)
+	h.expect(t._room_live_token_count(exited) == 0 and t._room_online_count(exited) == 0, "close_manual_setup",
+		"退出后应是零有效凭证、零在线（线上就是这样被 empty_no_tokens 关掉的）")
+	t._cleanup_rooms()
+	h.expect(str(exited.get("finished_reason", "")) == "empty_no_tokens", "close_manual_path",
+		"复现的应是线上那条关房路径，实测 %s" % str(exited.get("finished_reason", "")))
+	charged.call("close_manual", exited)
+
+	# ② 杀进程 = 掉线、凭证还在：窗口内只挂起；到 ROOM_SUSPEND_GRACE_SEC 被 suspend_expired 关掉之前要先作废。
+	t.clock = 8000.0
+	close_uplink.got.clear()
+	t.signed_seats = []
+	var killed: Dictionary = make_solo.call(0x8000)
+	t._room_reserve_peer(killed, 21)
+	t.clock += 1.0
+	t._cleanup_rooms()
+	h.expect(bool(killed.get("suspended", false)) and str(killed.state) == "prep" and close_uplink.got.is_empty(),
+		"close_killed_window_kept", "重连窗口内只挂起：不关房、不作废")
+	t.clock = 8000.0 + t.ROOM_SUSPEND_GRACE_SEC
+	t._cleanup_rooms()
+	h.expect(str(killed.get("finished_reason", "")) == "suspend_expired", "close_killed_path",
+		"复现的应是 suspend_expired 关房，实测 %s" % str(killed.get("finished_reason", "")))
+	charged.call("close_killed", killed)
+
+	# ③ 不该补的不补：纯 AI 房、大厅、已经作废过的局（不能交第二份）。
+	close_uplink.got.clear()
+	var bots_close: Dictionary = t._new_room()
+	bots_close.state = "prep"
+	bots_close.match_uid = "%032x" % 0x9000
+	bots_close.initial_seats = ["dummy", "dummy", "dummy", "dummy", "dummy", "dummy"]
+	bots_close.slot_states = bots_close.initial_seats.duplicate()
+	var lobby_close: Dictionary = make_solo.call(0x9001)
+	lobby_close.state = "lobby"
+	lobby_close.peer_slot = {}
+	t._token_seat.erase("tok_9001")
+	lobby_close.seat_tokens = {}
+	var voided: Dictionary = make_solo.call(0x9002)
+	voided.manual_exit_slots = {0: true}
+	t._revoke_seat_credentials(voided, 0)
+	t._room_reserve_peer(voided, 21)
+	t._tick_void_watchdog()
+	h.expect(close_uplink.got.count([str(voided.match_uid), "signed_fixture"]) == 1, "close_watchdog_first",
+		"看门狗先到时照旧由它作废")
+	t._cleanup_rooms()
+	h.expect(str(bots_close.state) == "closed" and str(lobby_close.state) == "closed" and str(voided.state) == "closed",
+		"close_negatives_closed", "三间房都该被清理关掉")
+	h.expect(close_uplink.got.size() == 1, "close_no_extra_report",
+		"纯 AI 房 / 大厅不交战报，已作废的局关房时不交第二份，实测 %s" % str(close_uplink.got))
+	t.queue_free()
+
 	c.queue_free()
 	s.queue_free()
 	# 结构：tick 里必须**真的调到**它（函数定义 ≠ 已接线 —— 只写个 func 永远不会跑）。
@@ -245,4 +343,8 @@ func _ready() -> void:
 	h.expect(ns_src.contains("room[\"manual_exit_slots\"] = manual") and ns_src.contains("manual[slot] = true"),
 		"manual_exit_marked",
 		"手动退出对局的座位必须打 manual_exit_slots 标记（否则最后一人退出后房间永不结束）")
+	var close_src := ns_src.substr(ns_src.find("func _room_close("), 1500)
+	var hook_at := close_src.find("_void_before_close(room, reason)")
+	h.expect(hook_at >= 0 and hook_at < close_src.find("_clear_seat_metadata(room, slot_i)"), "void_before_clear_seats",
+		"_room_close 必须在清座位之前先 _void_before_close —— 清完 seat_pid 再作废，战报里就没有该扣分的人")
 	h.finish(get_tree())

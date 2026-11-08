@@ -72,6 +72,12 @@ def tier_of(score: int) -> int:
     return max(i for i, floor in enumerate(TIER_FLOORS) if value >= floor)
 
 
+async def score_of(conn, player_id: uuid.UUID) -> int:
+    """当前排位分；没打过排位算 0（初誓）。AI 补位按这桌真人的平均段位定难度（11-07）。"""
+    value = await conn.fetchval("select score from player_ranked where player_id = $1", player_id)
+    return int(value or 0)
+
+
 def tier_progress(score: int) -> int:
     """本段已取得的分数；最高档继续累计，不封顶。"""
     return max(0, int(score) - TIER_FLOORS[tier_of(score)])

@@ -175,6 +175,7 @@ const SEAT_CARD_MODAL_PRIORITY := 40
 # `tools/prep_layout_1009_check.gd`：它直接量「金钱宝藏按钮 vs TreasurePanel」有没有重叠。
 const SELL_LEFT_PANEL_TOP_RESERVE := 48.0
 const PrepSeatCard := preload("res://scenes/prep/panels/PrepSeatCard.gd")
+const PrepTeammateBanner := preload("res://scenes/prep/panels/PrepTeammateBanner.gd")
 const ReportDialog := preload("res://ui/components/ReportDialog.gd")
 const PVP_WARNING_DWELL_SEC := 2.0
 const PVP_WARNING_FADE_SEC := 0.18
@@ -2626,6 +2627,7 @@ func open_seat_card(slot: int, badge: Control) -> void:
 	var card := PrepSeatCard.new()
 	card.setup(slot)
 	card.report_requested.connect(_on_seat_report_requested)
+	card.view_board_requested.connect(enter_teammate_view)
 	# 贴在头像下面；靠右的头像也不能让卡片伸出屏幕。
 	var rect := badge.get_global_rect()
 	var view_w := get_viewport_rect().size.x
@@ -2639,6 +2641,109 @@ func open_seat_card(slot: int, badge: Control) -> void:
 		# 同佣兵选择那张：小卡片，不把整个画面压暗。
 		"backdrop_color": Color.TRANSPARENT,
 	})
+
+
+# --- 看队友棋盘（2026-11-07）------------------------------------------------------
+#
+# 头像卡片上点「查看棋盘」→ 3D 棋盘和备战席换成队友的（只读），顶上一条写着在看谁、
+# 带「回到我的棋盘」。自己的 GameState 从头到尾不动：模型层和棋盘格改读 shown_board / shown_bench
+# （PrepShared），交易代码照旧读 GameState，而且整块画面压着一层挡板，什么都点不了。
+# 商店 / 羁绊 / 宝藏栏是自己的数据，看的时候先收起来，回来再放出来。
+# 数据：NetworkService.team_prep_boards（服务器只转同队的；AI 队友由服务器直接发）。
+
+var _teammate_banner: PrepTeammateBanner = null
+var _teammate_shield: Control = null
+var _teammate_hidden: Array[CanvasItem] = []
+var _teammate_view_count := 0
+var _teammate_view_cap := GameConstants.NORMAL_UNIT_CAP
+
+
+func enter_teammate_view(slot: int) -> void:
+	if ModalStack.has(SEAT_CARD_MODAL_ID):
+		ModalStack.pop(SEAT_CARD_MODAL_ID, ModalStack.REASON_PROGRAMMATIC)
+	var local := int(NetworkService.team_local_slot)
+	var teammate := local >= 0 and slot != local and GameConstants.team_of_slot(slot) == GameConstants.team_of_slot(local)
+	if GameState.tutorial_mode or not NetworkService.team_active or not teammate:
+		return
+	if viewing_teammate():
+		exit_teammate_view()
+	teammate_view_slot = slot
+	_board_hud.board_source = shown_board
+	_board_hud.bench_source = shown_bench
+	if not NetworkService.team_prep_boards_changed.is_connected(_on_teammate_board_changed):
+		NetworkService.team_prep_boards_changed.connect(_on_teammate_board_changed)
+	NetworkService.team_request_prep_board(slot)
+	# 挡板：盖住整块画面（棋盘、商店、按钮），只有顶上那一条在它上面。
+	_teammate_shield = Control.new()
+	_teammate_shield.name = "TeammateViewShield"
+	_teammate_shield.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_teammate_shield.mouse_filter = Control.MOUSE_FILTER_STOP
+	_teammate_shield.z_index = 3900
+	add_child(_teammate_shield)
+	_teammate_banner = PrepTeammateBanner.new()
+	_teammate_banner.name = "TeammateViewBanner"
+	_teammate_banner.anchor_left = 0.5
+	_teammate_banner.anchor_right = 0.5
+	_teammate_banner.offset_left = -300
+	_teammate_banner.offset_right = 300
+	_teammate_banner.offset_top = 12
+	_teammate_banner.z_index = 3901
+	_teammate_banner.back_requested.connect(exit_teammate_view)
+	add_child(_teammate_banner)
+	SafeArea.track(_teammate_banner)
+	_teammate_hidden.clear()
+	for panel in [_shop, _synergy, _treasure]:
+		var item := panel as CanvasItem
+		if item != null and is_instance_valid(item) and item.visible:
+			item.visible = false
+			_teammate_hidden.append(item)
+	_apply_teammate_board()
+
+
+func exit_teammate_view() -> void:
+	if not viewing_teammate():
+		return
+	teammate_view_slot = -1
+	teammate_view_board = []
+	teammate_view_bench = []
+	if NetworkService.team_prep_boards_changed.is_connected(_on_teammate_board_changed):
+		NetworkService.team_prep_boards_changed.disconnect(_on_teammate_board_changed)
+	for node in [_teammate_banner, _teammate_shield]:
+		if node != null and is_instance_valid(node):
+			node.queue_free()
+	_teammate_banner = null
+	_teammate_shield = null
+	for item in _teammate_hidden:
+		if is_instance_valid(item):
+			item.visible = true
+	_teammate_hidden.clear()
+	_synergy.show_teammate_board(null)
+	_refresh_all()
+
+
+func _on_teammate_board_changed() -> void:
+	if viewing_teammate():
+		_apply_teammate_board()
+
+
+func _apply_teammate_board() -> void:
+	var entry := NetworkService.team_prep_board(teammate_view_slot)
+	var synced := not entry.is_empty()
+	teammate_view_board = (entry.get("board", []) as Array).duplicate()
+	teammate_view_board.resize(GameConstants.CELL_COUNT)
+	teammate_view_bench = (entry.get("bench", []) as Array).duplicate()
+	teammate_view_bench.resize(GameState.BENCH_SLOTS)
+	_teammate_view_count = 0
+	for cell in teammate_view_board:
+		if cell is Dictionary and not bool((cell as Dictionary).get("is_mercenary", false)):
+			_teammate_view_count += 1
+	_teammate_view_cap = preload("res://scripts/economy/AiHandover.gd").board_cap(entry.get("treasures", []))
+	if _teammate_banner != null and is_instance_valid(_teammate_banner):
+		_teammate_banner.show_state(str(PrepSeatCard.describe(teammate_view_slot).title), teammate_view_board,
+			entry.get("treasures", []), synced)
+	_board_hud.refresh_board()
+	_board_hud.refresh_bench()
+	_synergy.show_teammate_board(teammate_view_board)
 
 
 # 卡片上的「举报」。卡片先收起（举报面板是另一层，叠着看不清下面写了什么），
@@ -3111,6 +3216,28 @@ func _refresh_all() -> void:
 	# 升星表现放在**模型重建之后**：合成那一刻保留的那枚棋子的模型马上要被换掉
 	# （星级变了 ⇒ signature 变了 ⇒ 整个节点 queue_free），当场挂特效立刻就没了。
 	flush_star_upgrades()
+	_maybe_send_prep_board()
+
+
+# 自己的棋盘变了就交一份给服务器转给队友（「查看棋盘」用，2026-11-07）。
+# _refresh_all 一回合要跑很多次，只在棋盘 / 备战席 / 佣兵 / 宝藏真的变了才发；
+# NetworkService 那边再限频（每 0.8 秒最多一份）。
+var _prep_board_sent_signature := ""
+
+
+func _maybe_send_prep_board() -> void:
+	if GameState.tutorial_mode or not NetworkService.team_active or bool(get("spectator_view")):
+		return
+	var parts: PackedStringArray = [str(GameState.round_index)]
+	for source in [GameState.board_slots, GameState.bench_slots, GameState.mercenary_slots]:
+		for cell in source:
+			parts.append("%s:%d" % [(cell as Dictionary).get("id", ""), int((cell as Dictionary).get("star", 1))] if cell is Dictionary else "-")
+	parts.append(",".join(PackedStringArray(GameState.owned_treasures)))
+	var signature := "|".join(parts)
+	if signature == _prep_board_sent_signature:
+		return
+	_prep_board_sent_signature = signature
+	NetworkService.team_send_prep_board()
 func _sync_prep_board_readability_geometry() -> void:
 	if _board_hud.readability_layer == null or not is_instance_valid(_board_hud.readability_layer):
 		return
@@ -3137,7 +3264,11 @@ func _sync_prep_board_readability_state() -> void:
 	var dragging := _board_hud.drop_highlight_active or _board_hud.standby_drop_highlight_active
 	set_prep_cell_marks_visible(dragging)
 	set_prep_deploy_counter_visible(not dragging)
-	set_prep_deploy_counter_values(GameState.normal_unit_count(), GameState.normal_unit_cap())
+	# 看队友棋盘时正中的「上阵数 / 上限」也是队友的。
+	if viewing_teammate():
+		set_prep_deploy_counter_values(_teammate_view_count, _teammate_view_cap)
+	else:
+		set_prep_deploy_counter_values(GameState.normal_unit_count(), GameState.normal_unit_cap())
 	if _board_hud.readability_layer == null or not is_instance_valid(_board_hud.readability_layer):
 		return
 	_board_hud.readability_layer.set_guides_enabled(PlayerProfile.board_readability_enabled)

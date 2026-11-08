@@ -42,7 +42,7 @@ func refresh_four_star_visuals(delta: float) -> void:
 		return
 	_four_star_visual_poll = 0.0
 	sync_prep_treasure_visuals()
-	for source in [[GameState.board_slots, _prep_board_model_nodes], [GameState.bench_slots, _prep_standby_model_nodes]]:
+	for source in [[shown_board(), _prep_board_model_nodes], [shown_bench(), _prep_standby_model_nodes]]:
 		var slots: Array = source[0]
 		var models: Dictionary = source[1]
 		for index in models:
@@ -56,7 +56,8 @@ func _sync_four_star_actor(actor: Node3D, cell: Dictionary) -> void:
 	if not bool(cell.get("is_mercenary", false)):
 		if int(cell.get("star", 1)) == GameState.MAX_UNIT_STAR:
 			state = 2
-		elif (not GameState.tutorial_mode or TutorialMode.allows_carrot_action("four_star")) and NetworkService.four_star_upgrade_available() and NetworkService.four_star_request_id.is_empty() and bool(GameState.four_star_check(cell).get("ok", false)):
+		# 「可以升四星」的提示只对自己的棋子：看队友棋盘时不亮（那是你的石头和金币，不是他的）。
+		elif not viewing_teammate() and (not GameState.tutorial_mode or TutorialMode.allows_carrot_action("four_star")) and NetworkService.four_star_upgrade_available() and NetworkService.four_star_request_id.is_empty() and bool(GameState.four_star_check(cell).get("ok", false)):
 			state = 1
 	var affinity := str(def.get("element", ""))
 	# 10.18：「可升 4★」**不再**打开旧的 FourStarAura3D —— 它给棋子撒一身金色四角星
@@ -397,6 +398,8 @@ var _synergy_fx_layer: CanvasLayer
 
 
 func play_synergy_board_burst(race: String, ultimate: bool) -> void:
+	if viewing_teammate():
+		return
 	var actors: Array = []
 	for index in GameState.board_slots.size():
 		var cell = GameState.board_slots[index]
@@ -591,6 +594,9 @@ func _prep_set_strength(category: String) -> float:
 # 棋盘上吃宝藏的棋子：uid -> 模型，按屏幕从左到右排好（依次淡入用）。
 func _prep_treasure_targets() -> Array:
 	var out: Array = []
+	# 套装脚下纹是**自己的宝藏**：看队友棋盘时一个都不挂（下面的淡出逻辑会把已有的收掉）。
+	if viewing_teammate():
+		return out
 	for index in GameState.board_slots.size():
 		var cell = GameState.board_slots[index]
 		if not (cell is Dictionary):
@@ -767,6 +773,8 @@ func _ensure_prep_creature_canvas() -> bool:
 # 生物可以俯冲的目标：棋盘上吃宝藏的普通棋子（与套装同一口径），给棋盘 UV 坐标。
 func _prep_creature_targets() -> Array:
 	var out: Array = []
+	if viewing_teammate():
+		return out
 	for index in GameState.board_slots.size():
 		var cell = GameState.board_slots[index]
 		if not (cell is Dictionary):
@@ -1934,11 +1942,13 @@ func _apply_prep_model_layout_after_frames(version: int) -> void:
 		_prep_standby_model_root.visible = true
 
 func _reposition_existing_prep_models() -> void:
+	var board := shown_board()
+	var bench := shown_bench()
 	for key in _prep_board_model_nodes.keys():
 		var index := int(key)
-		if index < 0 or index >= GameState.board_slots.size():
+		if index < 0 or index >= board.size():
 			continue
-		var cell_value = GameState.board_slots[index]
+		var cell_value = board[index]
 		if typeof(cell_value) != TYPE_DICTIONARY:
 			continue
 		var model_node := _prep_board_model_nodes.get(key) as Node3D
@@ -1946,9 +1956,9 @@ func _reposition_existing_prep_models() -> void:
 			_position_prep_board_model(model_node, index, _prep_display_unit_def(cell_value as Dictionary))
 	for key in _prep_standby_model_nodes.keys():
 		var index := int(key)
-		if index < 0 or index >= GameState.bench_slots.size():
+		if index < 0 or index >= bench.size():
 			continue
-		var cell_value = GameState.bench_slots[index]
+		var cell_value = bench[index]
 		if typeof(cell_value) != TYPE_DICTIONARY:
 			continue
 		var model_node := _prep_standby_model_nodes.get(key) as Node3D
@@ -1960,8 +1970,9 @@ func _refresh_prep_board_models() -> void:
 	if _prep_model_root == null:
 		return
 	var active_slots: Dictionary = {}
-	for index in GameState.board_slots.size():
-		var cell_value = GameState.board_slots[index]
+	var board := shown_board()
+	for index in board.size():
+		var cell_value = board[index]
 		if typeof(cell_value) != TYPE_DICTIONARY:
 			continue
 		var cell: Dictionary = cell_value
@@ -2005,8 +2016,9 @@ func _refresh_prep_standby_models() -> void:
 	if _prep_standby_model_root == null:
 		return
 	var active_slots: Dictionary = {}
-	for index in mini(GameState.bench_slots.size(), STANDBY_SLOT_COUNT):
-		var cell_value = GameState.bench_slots[index]
+	var bench := shown_bench()
+	for index in mini(bench.size(), STANDBY_SLOT_COUNT):
+		var cell_value = bench[index]
 		if typeof(cell_value) != TYPE_DICTIONARY:
 			continue
 		var cell: Dictionary = cell_value
@@ -2483,17 +2495,18 @@ func _refresh_prep_relation_links() -> void:
 	if _prep_relation_link_root == null:
 		return
 	var active_links: Dictionary = {}
-	for first_index in GameState.board_slots.size():
-		var first_value = GameState.board_slots[first_index]
+	var board := shown_board()
+	for first_index in board.size():
+		var first_value = board[first_index]
 		if typeof(first_value) != TYPE_DICTIONARY or not _prep_board_model_nodes.has(first_index):
 			continue
 		var neighbor_indices: Array[int] = []
-		if first_index % GameConstants.BOARD_COLUMNS < GameConstants.BOARD_COLUMNS - 1 and first_index + 1 < GameState.board_slots.size():
+		if first_index % GameConstants.BOARD_COLUMNS < GameConstants.BOARD_COLUMNS - 1 and first_index + 1 < board.size():
 			neighbor_indices.append(first_index + 1)
-		if first_index + GameConstants.BOARD_COLUMNS < GameState.board_slots.size():
+		if first_index + GameConstants.BOARD_COLUMNS < board.size():
 			neighbor_indices.append(first_index + GameConstants.BOARD_COLUMNS)
 		for second_index in neighbor_indices:
-			var second_value = GameState.board_slots[second_index]
+			var second_value = board[second_index]
 			if typeof(second_value) != TYPE_DICTIONARY or not _prep_board_model_nodes.has(second_index):
 				continue
 			var relation_states := _active_relation_states_between(first_value as Dictionary, second_value as Dictionary)

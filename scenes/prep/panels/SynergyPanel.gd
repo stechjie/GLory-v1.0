@@ -39,13 +39,27 @@ func _outlined(label: Label) -> Label:
 # --- 搬过来的成员 ---
 var _left_panel: VBoxContainer
 var _left_panel_signature := "unset"
+# 看队友棋盘时（PrepUI.enter_teammate_view）是队友那块棋盘，平时是 null（数自己的）。
+var _teammate_board = null
+
+
+# 看队友时左栏只留羁绊：出售提示和两个金钱宝藏按钮都是自己的，留着会以为是队友的。
+func show_teammate_board(board) -> void:
+	_teammate_board = board
+	refresh()
+
+
+func _race_counts() -> Dictionary:
+	return SynergyService.count_races(_teammate_board) if _teammate_board != null else SynergyService.count_races_from_board()
 
 
 # 原 _refresh_left_panel（PrepUI.gd）
 func refresh() -> void:
 	var sig_altar_hp := GameState.team_hp if GameState.team_mode else GameState.player_formation_hp
+	var counts := _race_counts()
 	var sig := JSON.stringify([
-		SynergyService.count_races_from_board(),
+		_teammate_board != null,
+		counts,
 		GameState.owned_treasures,
 		GameState.golden_altar_uses,
 		GameState.gamble_used,
@@ -64,7 +78,9 @@ func refresh() -> void:
 	title.add_theme_font_size_override("font_size", 16)
 	_left_panel.add_child(title)
 
-	_add_synergy_widgets()
+	_add_synergy_widgets(counts)
+	if _teammate_board != null:
+		return
 
 	var sell_hint := _outlined(Label.new())
 	sell_hint.text = tr("ui_sell_hint")
@@ -142,9 +158,8 @@ func _add_money_action(logo_path: String, title: String, desc: String, enabled: 
 # 原 _add_current_synergy_widgets（PrepDetails.gd）
 # ─── synergy widgets ──────────────────────────────────────────────────────────
 
-func _add_synergy_widgets() -> void:
+func _add_synergy_widgets(counts: Dictionary) -> void:
 	_race_widgets.clear()
-	var counts := SynergyService.count_races_from_board()
 	var shown := false
 	var grid := GridContainer.new()
 	grid.name = "SynergyGrid"
@@ -230,7 +245,7 @@ func _apply_tier_style(label: Label, race: String, count: int) -> void:
 # 调用时面板刚被 refresh() 整个重建过，新节点还没排版（size 为 0），
 # 所以先等一帧再设 pivot —— 否则缩放绕左上角，图标会往右下甩。
 func pulse_race(race: String, kind: String) -> void:
-	if not is_inside_tree():
+	if not is_inside_tree() or _teammate_board != null:
 		return
 	var widgets: Dictionary = _race_widgets.get(race, {})
 	if widgets.is_empty():

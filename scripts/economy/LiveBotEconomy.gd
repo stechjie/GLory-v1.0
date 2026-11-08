@@ -1,6 +1,7 @@
 extends RefCounted
 
 const Bot := preload("res://scripts/economy/BotPlayer.gd")
+const Profile := preload("res://scripts/economy/ai/BotProfile.gd")
 
 static func prepare(room: Dictionary) -> Dictionary:
 	var bots: Dictionary = room.get("bot_states", {})
@@ -31,10 +32,66 @@ static func prepare(room: Dictionary) -> Dictionary:
 		bots[slot]["carrot_bonus_rate"] = PetService.carrot_bonus_rate(pet)
 		bots[slot]["stones"] = NetworkService._room_team_stones(room, slot)
 		bots[slot]["team_discount"] = NetworkService._room_team_has_clearance_sale(room, slot)
+		bots[slot]["ai_level"] = level_for_slot(room, slot)
+		_note_human_teammates(room, slot, bots[slot])
 		Bot.prepare_round(bots[slot], round_index)
 		mirror(room, slot, bots[slot])
 	room["bot_states"] = bots
 	return bots
+
+
+# 这个 AI 座位用哪一档（11-07 五档难度，都在服务器上定）：
+#   掉线托管（开局时是真人）→ handover_level（用户定：普通）
+#   匹配补位 → 名片签的这桌段位（room.ai_tier）
+#   自定义房间 → 在座真人段位的平均（没打过排位的算初誓）；一个真人都没有就用默认档
+static func level_for_slot(room: Dictionary, slot: int) -> int:
+	var initial: Array = room.get("initial_seats", [])
+	if slot < initial.size() and str(initial[slot]) == "player":
+		return Profile.handover_level()
+	if room.has("ai_tier"):
+		return Profile.level_for_tier(int(room.ai_tier))
+	var states: Array = room.get("slot_states", [])
+	var profiles: Dictionary = room.get("seat_profiles", {})
+	var total := 0
+	var humans := 0
+	for seat in states.size():
+		if str(states[seat]) != "player":
+			continue
+		var profile: Variant = profiles.get(seat, profiles.get(str(seat), {}))
+		total += maxi(0, int((profile as Dictionary).get("tier", 0))) if typeof(profile) == TYPE_DICTIONARY else 0
+		humans += 1
+	if humans == 0:
+		return Profile.default_level()
+	return Profile.level_for_tier(int(round(float(total) / humans)))
+
+
+# 队伍仓库的规矩要知道队里有没有真人、真人手上有哪些属性的三星（BotCarrots 文件头）。
+# 真人的三星从服务器账本读（没有账本时退回最近一次交的棋盘）—— 都是同队队友，不是对手的信息。
+static func _note_human_teammates(room: Dictionary, slot: int, bot: Dictionary) -> void:
+	var states: Array = room.get("slot_states", [])
+	var team := GameConstants.team_of_slot(slot)
+	var has_humans := false
+	var elements: Array = []
+	for seat in states.size():
+		if seat == slot or GameConstants.team_of_slot(seat) != team or str(states[seat]) != "player":
+			continue
+		has_humans = true
+		var units: Array = []
+		var owned: Dictionary = _prep_for(room, seat).get("roster", {})
+		for uid in owned:
+			var entry: Dictionary = owned[uid]
+			if str(entry.get("kind", "unit")) != "merc":
+				units.append({"def": DataRegistry.canonical_unit_def(str(entry.get("unit_id", ""))), "star": int(entry.get("star", 1))})
+		if owned.is_empty():
+			units = NetProtocol.extract_board(room.get("last_board", {}).get(seat, {}))
+		for unit in units:
+			if not unit is Dictionary or int(unit.get("star", 1)) != GameConstants.MAX_MERGE_STAR:
+				continue
+			var element := str((unit.get("def", {}) as Dictionary).get("element", ""))
+			if not element.is_empty() and not elements.has(element):
+				elements.append(element)
+	bot["team_has_humans"] = has_humans
+	bot["human_stone_elements"] = elements
 
 
 # 座位账本可能以 int 或 String 作键（旧快照 / JSON 往返），两种都认。

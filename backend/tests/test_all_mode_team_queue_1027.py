@@ -46,7 +46,7 @@ def team(match, side):
 @pytest.mark.anyio
 @pytest.mark.parametrize("size", [1, 2, 3])
 @pytest.mark.parametrize("grouped", [False, True])
-async def test_deadline_fills_own_team_and_pure_ai_opponent(queue, size, grouped):
+async def test_deadline_balances_solos_and_keeps_groups_together(queue, size, grouped):
     maker, clock, mode, wait = queue
     players = [pid(i) for i in range(1, size + 1)]
     if grouped:
@@ -60,7 +60,14 @@ async def test_deadline_fills_own_team_and_pure_ai_opponent(queue, size, grouped
     clock[0] += 0.001
     await maker.tick()
     match = pending(maker)
-    assert team(match, 0) == set(players) and not team(match, 1)
+    if grouped:
+        # 组队整份不拆：整队坐 0 号队，对面全是 AI。
+        assert team(match, 0) == set(players) and not team(match, 1)
+    else:
+        # 11-07：单排平均分两边，最晚进队的坐对面（2 = 1 对 1，3 = 2 对 1）。
+        home = (size + 1) // 2
+        assert team(match, 0) == set(players[:home])
+        assert team(match, 1) == set(players[home:])
     assert len(match.ai_seats) == 6 - size
     assert match.mode == mode
 
@@ -93,7 +100,7 @@ async def test_abc_stays_together_when_ef_complete_d_before_deadline(queue):
 
 
 @pytest.mark.anyio
-async def test_own_timeout_does_not_force_fresh_incomplete_opponent(queue):
+async def test_own_timeout_pulls_fresh_incomplete_opponent_into_one_table(queue):
     maker, clock, mode, wait = queue
     for i in [1, 2, 3]:
         maker.join(pid(i), mode)
@@ -103,9 +110,10 @@ async def test_own_timeout_does_not_force_fresh_incomplete_opponent(queue):
     maker.join(pid(5), mode)
     clock[0] += 1
     await maker.tick()
+    # 11-07：不再等对面那队自己到点，五个人同一桌（3 对 2+1AI）。
+    assert len(maker._pending) == 1
     assert team(pending(maker), 0) == {pid(i) for i in [1, 2, 3]}
-    assert not team(pending(maker), 1)
-    assert all(maker.state_of(pid(i))["state"] == "queued" for i in [4, 5])
+    assert team(pending(maker), 1) == {pid(4), pid(5)}
 
 
 @pytest.mark.anyio
@@ -135,7 +143,8 @@ async def test_team_completion_and_cancel_do_not_reset_oldest_wait(queue):
     assert not maker._pending
     clock[0] += 1
     await maker.tick()
-    assert team(pending(maker), 0) == {pid(i) for i in [1, 3, 4]}
+    assert team(pending(maker), 0) | team(pending(maker), 1) == {pid(i) for i in [1, 3, 4]}
+    assert team(pending(maker), 0) == {pid(1), pid(3)}
     assert maker.state_of(pid(2))["state"] == "idle"
 
 

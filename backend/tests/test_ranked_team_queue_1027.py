@@ -72,7 +72,8 @@ async def test_ranked_uses_30_seconds_even_when_old_ai_setting_is_10(setup, elap
 
 
 @pytest.mark.anyio
-async def test_four_players_do_not_drag_a_fresh_opponent_into_ai_match(setup):
+async def test_fresh_fourth_player_joins_the_due_table_two_and_two(setup):
+    # 11-07：到点的一队拉上另一队（不论它到没到点），再平均分：2+1AI 对 2+1AI。
     maker, clock = setup
     for i in [1, 2, 3]:
         maker.join(pid(i), matchmaking.RANKED)
@@ -83,10 +84,10 @@ async def test_four_players_do_not_drag_a_fresh_opponent_into_ai_match(setup):
     clock[0] += 10
     await maker.tick()
     pending = pending_for(maker)
-    assert humans_on(pending, 0) == {pid(1), pid(2), pid(3)}
-    assert humans_on(pending, 1) == set()
-    assert len(pending.ai_seats) == 3
-    assert maker.state_of(pid(4))["state"] == "queued"
+    assert len(maker._pending) == 1
+    assert humans_on(pending, 0) == {pid(1), pid(2)}
+    assert humans_on(pending, 1) == {pid(3), pid(4)}
+    assert len(pending.ai_seats) == 2
 
 
 @pytest.mark.anyio
@@ -106,22 +107,20 @@ async def test_e_and_f_complete_d_team_before_a_deadline(setup):
 
 
 @pytest.mark.anyio
-async def test_two_fresh_opponents_are_not_prematurely_filled(setup):
+async def test_staggered_five_solos_share_one_table_not_two_ai_tables(setup):
+    # 用户 11-07 报的场景：五个单排先后进队，以前拆成「3 对 3AI」+「2+1AI 对 3AI」。
     maker, clock = setup
-    for i in [1, 2, 3]:
+    for i in range(1, 6):
         maker.join(pid(i), matchmaking.RANKED)
+        await maker.tick()
+        clock[0] += 2
+    clock[0] += 22
     await maker.tick()
-    clock[0] += 20
-    for i in [4, 5]:
-        maker.join(pid(i), matchmaking.RANKED)
-    await maker.tick()
-    clock[0] += 10
-    await maker.tick()
-    assert len(pending_for(maker).ai_seats) == 3
-    assert all(maker.state_of(pid(i))["state"] == "queued" for i in [4, 5])
-    clock[0] += 20
-    await maker.tick()
-    assert len(pending_for(maker, 4).ai_seats) == 4
+    pending = pending_for(maker)
+    assert len(maker._pending) == 1
+    assert humans_on(pending, 0) == {pid(1), pid(2), pid(3)}
+    assert humans_on(pending, 1) == {pid(4), pid(5)}
+    assert len(pending.ai_seats) == 1
 
 
 @pytest.mark.anyio
@@ -150,7 +149,10 @@ async def test_full_team_does_not_reset_original_oldest_clock(setup):
     assert not maker._pending
     clock[0] += 1
     await maker.tick()
-    assert humans_on(pending_for(maker), 0) == {pid(i) for i in [1, 2, 3]}
+    # 三个单排凑的队到点后平均分：最晚进队的那个坐对面。
+    pending = pending_for(maker)
+    assert humans_on(pending, 0) == {pid(1), pid(2)}
+    assert humans_on(pending, 1) == {pid(3)}
 
 
 @pytest.mark.anyio
@@ -183,8 +185,11 @@ async def test_duo_is_never_split_and_mode_stages_do_not_mix(setup):
     clock[0] += 30
     await maker.tick()
     assert len(maker._pending) == 2
-    assert humans_on(pending_for(maker), 0) == {pid(i) for i in [1, 2, 3]}
-    assert humans_on(pending_for(maker, 4), 0) == {pid(i) for i in [4, 5, 6]}
+    # 双人队不拆，单排坐对面；另一个模式的三个单排同样 2 对 1。
+    assert humans_on(pending_for(maker), 0) == {pid(1), pid(2)}
+    assert humans_on(pending_for(maker), 1) == {pid(3)}
+    assert humans_on(pending_for(maker, 4), 0) == {pid(4), pid(5)}
+    assert humans_on(pending_for(maker, 4), 1) == {pid(6)}
 
 
 @pytest.mark.anyio
@@ -199,7 +204,8 @@ async def test_cancelled_entry_is_removed_without_resetting_teammates(setup):
     await maker.tick()
     clock[0] += 10
     await maker.tick()
-    assert humans_on(pending_for(maker, 2), 0) == {pid(i) for i in [2, 3, 4]}
+    assert humans_on(pending_for(maker, 2), 0) == {pid(2), pid(3)}
+    assert humans_on(pending_for(maker, 2), 1) == {pid(4)}
     assert maker.state_of(pid(1))["state"] == "idle"
 
 
@@ -250,8 +256,9 @@ async def test_ranked_ai_confirmation_and_battle_assignment_keep_team(setup):
     clock[0] += 5
     await maker.tick()
     a, b = maker.assignment_for(pid(1)), maker.assignment_for(pid(2))
-    assert a.match_uid == b.match_uid and a.team == b.team == 0
-    assert len(a.ai_seats) == 4 and a.seat != b.seat
+    # 两个单排平均分到两边（11-07），各带两个 AI。
+    assert a.match_uid == b.match_uid and {a.team, b.team} == {0, 1}
+    assert len(a.ai_seats) == 4
 
 
 @pytest.mark.anyio
@@ -301,3 +308,82 @@ async def test_ai_disabled_still_allows_full_human_teams(setup):
         maker.join(pid(i), matchmaking.RANKED)
     await maker.tick()
     assert not pending_for(maker).ai_seats
+
+
+# --- 11-07 开桌前平均分 ------------------------------------------------------------
+
+
+def _entries(sizes):
+    from types import SimpleNamespace
+    from app.ranked_team_queue import QueuedEntry
+    out = []
+    for order, size in enumerate(sizes):
+        members = [uuid.uuid4() for _ in range(size)]
+        waiter = SimpleNamespace(party=members, joined_at=1000.0 + order, queue_order=order)
+        out.append(QueuedEntry(members[0], waiter, size > 1))
+    return out
+
+
+@pytest.mark.parametrize("sizes", [
+    [1], [1, 1], [2], [1, 1, 1], [2, 1], [3], [1, 1, 1, 1], [2, 2], [2, 1, 1], [3, 1],
+    [1, 1, 1, 1, 1], [2, 2, 1], [3, 2], [3, 1, 1], [2, 1, 1, 1],
+])
+def test_balance_keeps_groups_whole_and_ai_gap_minimal(sizes):
+    import itertools
+    from app.ranked_team_queue import balance_sides
+    entries = _entries(sizes)
+    sides = balance_sides([entries[:1], entries[1:]])
+    assert sorted(id(e) for side in sides for e in side) == sorted(id(e) for e in entries)
+    counts = [sum(e.size for e in side) for side in sides]
+    assert max(counts) <= 3
+    assert entries[0] in sides[0], "等得最久的那份固定在 0 号队"
+    # 与所有合法分法比：真人数差必须是最小的那个。
+    best = min(abs(sum(s for s, pick in zip(sizes, bits) if pick)
+                   - sum(s for s, pick in zip(sizes, bits) if not pick))
+               for bits in itertools.product([0, 1], repeat=len(sizes))
+               if sum(s for s, pick in zip(sizes, bits) if pick) <= 3
+               and sum(s for s, pick in zip(sizes, bits) if not pick) <= 3)
+    assert abs(counts[0] - counts[1]) == best
+
+
+def test_balance_moves_the_latest_solo_and_leaves_full_humans_alone():
+    from app.ranked_team_queue import balance_sides
+    entries = _entries([1, 1, 1, 1])
+    sides = balance_sides([entries[:3], entries[3:]])
+    assert sides == [entries[:2], entries[2:]]
+    six = _entries([1, 1, 1, 1, 1, 1])
+    assert balance_sides([six[:3], six[3:]]) == [six[:3], six[3:]]
+
+
+# --- 11-07 AI 难度跟段位 -----------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_ai_tier_is_the_average_human_rank_and_same_for_every_ai(setup):
+    maker, clock = setup
+    maker.join(pid(1), matchmaking.RANKED, rating=450)   # 天曜
+    maker.join(pid(2), matchmaking.RANKED, rating=850)   # 荣耀之冠 → 平均 650 = 天曜（3）
+    clock[0] += 30
+    await maker.tick()
+    pending = pending_for(maker)
+    assert len(pending.ai_seats) == 4
+    assert {ai["tier"] for ai in pending.ai_seats} == {ranked.tier_of(650)} == {3}
+
+
+@pytest.mark.anyio
+async def test_party_scores_count_per_member(setup):
+    maker, clock = setup
+    maker.join_group([pid(1), pid(2)], matchmaking.RANKED, ratings={pid(1): 0, pid(2): 0})
+    clock[0] += 30
+    await maker.tick()
+    assert {ai["tier"] for ai in pending_for(maker).ai_seats} == {0}
+
+
+def test_card_carries_one_ai_tier():
+    from app import loadout
+    profile = loadout.Loadout(player_id=str(pid(1)), friend_code="AAAA2222", player_name="a",
+                              avatar="", avatar_frame="", pet="", races=[])
+    ai = matchmaking.ai_identities([(1, 0), (1, 1)], random.Random(1), avatars=["avatar_001"], tier=4)
+    payload = loadout.card_payload(profile, match_uid="f" * 32, team=0, seat=0, ai_seats=ai)
+    assert payload["ai_tier"] == 4
+    assert all(len(entry) == 4 for entry in payload["ai"])

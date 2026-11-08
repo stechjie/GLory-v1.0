@@ -282,6 +282,13 @@ static func ai_seats_of(card: Dictionary) -> Array:
 	return (value as Array).duplicate(true) if typeof(value) == TYPE_ARRAY else []
 
 
+# 这桌 AI 的难度段位（0 初誓 … 4 荣耀之冠，11-07 五档难度）。账号服务器按这桌真人的平均分定，
+# 一桌一个数；-1 = 名片里没有（旧账号服务器），AI 用默认档。换成档位见 BotProfile.level_for_tier。
+static func ai_tier_of(card: Dictionary) -> int:
+	var tier := int(card.get("ai_tier", -1))
+	return tier if tier >= 0 and tier <= 4 else -1
+
+
 # --- 匹配出来的对局（协议 32）---------------------------------------------------
 #
 # 账号服务器匹配好六个人之后，给每人签的名片上多两个字段：

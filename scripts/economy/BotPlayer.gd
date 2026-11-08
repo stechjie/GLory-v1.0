@@ -1,17 +1,17 @@
 extends RefCounted
-## 假想敌（Bot）推演 —— 9.25 新增，替代旧的「按累计金币随机买一堆」模型。
+## 线上 AI 座位的大脑：匹配补位、自定义房间的 AI、掉线托管（LiveBotEconomy 驱动，状态跨回合保存）。
 ##
-## 旧模型的问题：
-##   1. 钱只有真人的 1/10 左右：经济整体进位 ×10 之后，BotEconomyBudget 还在用
-##      每回合 5 金 + 击杀 2 金的旧数（第 11 回合 AI 只有 ~167 金可花）。
-##   2. 站位全随机、不看种族羁绊、每回合阵容重新随机。
-##   3. 没有宝藏 / 升级石 / 4 星；羁绊和宝藏在战斗里也没生效（owner ctx 返回空）。
+## 每回合的步骤和真人一样：采集萝卜 → 四星 → 采集科技 → 萝卜（抽升级石 / 叫佣兵）→ 商店（买、合成、
+## 刷新、卖）→ 宝藏（3 选 1）→ 选人上阵、站位。所有花钱的规则都调同一份 EconomyLedger / EconomyService。
 ##
-## 现在的做法：按真人同一套规则，从第 1 回合一路推演到当前回合：
-##   经济（EconomyService.settle_post_battle_gold，五五开胜率）→ 商店（ShopRoll 同一
-##   条档位曲线，递增刷新价）→ 买牌（主种族优先、凑对升星）→ 合成（2 个一星 = 二星，
-##   3 个二星 = 三星）→ 胡萝卜 / 收获科技 / 升级石 → 4 星 → 宝藏（第 4/8/12/16/20
-##   回合 3 选 1）→ 佣兵 → 选 7 人上阵并按射程站位（近战前排、远程后排）。
+## 11-07：五档难度。每一步「怎么选」都按档位参数走（data/ai/bot_profiles.json，读法见 ai/BotProfile.gd）：
+## 买牌按阵容估值涨多少（ai/BotEval.gd）、萝卜在攒石头和叫佣兵之间取舍（ai/BotCarrots.gd，含
+## 「AI 抽的石头放 2 回合让真人先用」）、站位按坦克 / 输出 / 辅助（ai/BotFormation.gd）。
+## 困难 / 大师和普通只差采集科技上限（11-08 对战台逐项量过，别的「高级」设置都没有可测的好处）。
+## 档位只改决策，**不改任何战斗数值、不多拿钱、不看隐藏信息**。
+##
+## 没有线上状态时的「从第 1 回合推演到当前回合」（教学局、预览、审计、冷启动兜底）用 11-07 之前的
+## 那一版：ai/LegacyBotPlayer.gd（教学数值按它调过，手机上也便宜）。
 ##
 ## 确定性：只用 hash(seed, 座位号) 播种的独立 RNG，结果只取决于
 ## shared_seed + 座位号 + 回合号 —— 所有客户端算出同一个假想敌，也不消耗
@@ -24,27 +24,30 @@ const ShopRoll := preload("res://scripts/economy/ShopRoll.gd")
 const CarrotRules := preload("res://scripts/economy/CarrotEconomy.gd")
 const Handover := preload("res://scripts/economy/AiHandover.gd")
 const RaceRules := preload("res://scripts/units/RacePick.gd")
+const Profile := preload("res://scripts/economy/ai/BotProfile.gd")
+const Eval := preload("res://scripts/economy/ai/BotEval.gd")
+const Carrots := preload("res://scripts/economy/ai/BotCarrots.gd")
+const Formation := preload("res://scripts/economy/ai/BotFormation.gd")
+const Legacy := preload("res://scripts/economy/ai/LegacyBotPlayer.gd")
 
-## 按「跟普通真人差不多」设定：每场五五开。
-const WIN_RATE := 0.5
 const SHOP_SLOTS := 4
-const MAX_REFRESH_PER_ROUND := 8
 const BENCH_CAP := 8
-const MAX_TECH_LEVEL := 3
 const CACHE_LIMIT := 64
-## PvP 击杀金估算：赢了打死约 3 个、输了约 1 个（按 2 档 2 星计）。
-const PVP_KILLS_WIN := 3
-const PVP_KILLS_LOSS := 1
-## 宝藏里带随机的两项（幸运信封、金钱魔法联动）用期望值结算，
-## 否则 EconomyService 里的 Crypto 随机会让各客户端推演出不同的金币。
-const RANDOM_MONEY_TREASURES := ["money_lucky_envelope"]
-const LUCKY_ENVELOPE_EXPECTED := 40
-const MONEY_MAGIC_EXPECTED := 90
-const TIER_WEIGHT := {1: 1.0, 2: 1.6, 3: 2.4}
-const FRONT_SLOTS := [1, 2, 0, 3, 5, 6, 4, 7]      # 第 1、2 行，中间优先
-const BACK_SLOTS := [13, 14, 12, 15, 9, 10, 8, 11]  # 第 4、3 行，中间优先
+# 买牌时对主种族 / 第二种族的偏好（在估值涨幅上再乘）。
+const MAIN_RACE_BIAS := 1.2
+const SECOND_RACE_BIAS := 1.08
+# 卖牌时已上阵的棋子按强度的几倍算（轻易不卖上阵的）。
+const FIELDED_KEEP_WEIGHT := 3.0
+# 决赛全花：刷新次数放开到这么多、刷完至少还剩这么多金（还买得起一张一费卡）。
+const FINAL_PUSH_REFRESHES := 12
+const FINAL_PUSH_MARGIN := 20
+# 从这一回合起，lineup 档不再拿经济宝藏。
+const LATE_MONEY_ROUND := 12
 
 static var _cache: Dictionary = {}
+# 一次备战里同一套阵容的估值只算一次（_prep_round 开头清空）。商店刷新后、买牌前后
+# 会反复估「现在这套」和「买了某张之后那套」，大部分都重复。键 = 上阵上限 + 每个棋子的 id:星级。
+static var _value_memo: Dictionary = {}
 
 
 ## 返回 {board: Array(16), mercs: Array, treasures: Array, syn: Dictionary,
@@ -97,7 +100,7 @@ static func new_state(seed: Variant, slot: int) -> Dictionary:
 		"races": races,
 		"gold": GameState.START_GOLD, "roster": [], "treasures": [],
 		"stones": CarrotRules.empty_stones(), "stones_gained": CarrotRules.empty_stones(),
-		"carrots": 0, "carrot_spent": 0, "tech": 0, "stone_draws": 0,
+		"carrots": 0, "carrot_spent": 0, "tech": 0, "stone_draws": 0, "own_stones": [],
 		"loss_streak": 0, "mercs": [], "gold_spent_this_round": false,
 		"main_race": races[rng.randi_range(0, races.size() - 1)] if not races.is_empty() else ""}
 
@@ -170,67 +173,21 @@ static func settle_round(bot: Dictionary, result: Dictionary, context: Dictionar
 	var settlement := EconomyService.settle_post_battle_breakdown(ctx)
 	bot.gold = int(settlement.gold_after)
 	bot.settled_round = round_index
+	# PvP 输了，下一场左右翻转站位换一种对位（flip_on_loss 的档位才用，见 _arrange_board）。
+	var kind := str(context.get("kind", ""))
+	if (kind == "pvp" or kind == "final") and not bool(context.get("player_wins", false)):
+		bot["formation_flip"] = not bool(bot.get("formation_flip", false))
 	if RoundService.is_treasure_round(round_index) and not bool(bot.get("server_treasures", false)):
 		_pick_treasure(bot, rng)
 	return settlement
 
 
-# ---------------------------------------------------------------- 推演主循环
+# ---------------------------------------------------------------- 后备推演
 
+# 没有线上状态时（教学局、预览、审计、冷启动兜底）从第 1 回合推到当前回合：
+# 用 11-07 之前的那一版（LegacyBotPlayer），理由见那个文件的开头。
 static func _simulate(seed: Variant, slot: int, round_n: int) -> Dictionary:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = hash(["glory_bot_v1", str(seed), slot])
-	var units: Array = DataRegistry.get_table("race_units").get("units", [])
-	if GameState.tutorial_mode:
-		units = units.filter(func(unit: Variant) -> bool:
-			return unit is Dictionary and str(unit.get("race", "")) == "human")
-	var races := _races(units)
-	var bot := {
-		"gold": GameState.START_GOLD,
-		"final_round": GameState.FINAL_ROUND,
-		"roster": [],            # [{id, star, def, cost_basis}]
-		"treasures": [],
-		"stones": CarrotRules.empty_stones(),
-		"stones_gained": CarrotRules.empty_stones(),
-		"carrots": 0,
-		"carrot_spent": 0,
-		"tech": 0,
-		"stone_draws": 0,
-		"loss_streak": 0,
-		"main_race": races[rng.randi_range(0, races.size() - 1)] if not races.is_empty() else "",
-		"mercs": [],
-	}
-	# JSON 数字读进来是 float，Array.has(int) 对不上，先转成 int。
-	var draw_rounds: Array[int] = []
-	for v in DataRegistry.get_table("treasures").get("draw_rounds", [4, 8, 12, 16, 20]):
-		draw_rounds.append(int(v))
-	for r in range(1, round_n + 1):
-		if r > 1:
-			_settle_battle(bot, r - 1, rng)
-			if draw_rounds.has(r - 1):
-				for pick in RoundService.treasure_pick_count(r - 1):
-					_pick_treasure(bot, rng)
-		# Hired mercenaries expire after ONE battle, just like player mercenaries.
-		bot.mercs = []
-		_harvest(bot)
-		_prep_round(bot, r, rng, units)
-	var board := _arrange_board(bot)
-	var counts := {"god": 0, "dark": 0, "undead": 0, "human": 0, "crimson": 0}
-	for cell in board:
-		if typeof(cell) == TYPE_DICTIONARY:
-			var race := str((cell.def as Dictionary).get("race", ""))
-			if counts.has(race):
-				counts[race] += 1
-	return {
-		"board": board,
-		"mercs": (bot.mercs as Array).duplicate(true),
-		"treasures": (bot.treasures as Array).duplicate(),
-		"syn": SynergyService.flags_from_counts(counts),
-		"gold": int(bot.gold),
-		"main_race": str(bot.main_race),
-		"stones": (bot.stones as Dictionary).duplicate(),
-		"stones_gained": (bot.stones_gained as Dictionary).duplicate(),
-	}
+	return Legacy._simulate(seed, slot, round_n)
 
 
 static func _races(units: Array) -> Array[String]:
@@ -243,153 +200,206 @@ static func _races(units: Array) -> Array[String]:
 	return out
 
 
-# ---------------------------------------------------------------- 战后结算
-
-static func _settle_battle(bot: Dictionary, round_index: int, rng: RandomNumberGenerator) -> void:
-	var kind := RoundService.schedule_kind_for_round(round_index)
-	var wins := rng.randf() < WIN_RATE
-	bot.loss_streak = 0 if wins else int(bot.loss_streak) + 1
-	var kill_gold := 0
-	match kind:
-		"pve":
-			var counts: Dictionary = DataRegistry.get_table("pve_monsters").get("enemy_count_by_round", {})
-			var monsters := maxi(0, int(counts.get(str(round_index), 3)))
-			if not wins:
-				monsters = monsters / 2
-			kill_gold = monsters * EconomyService.PVE_MONSTER_KILL_GOLD
-		"pvp", "final":
-			kill_gold = (PVP_KILLS_WIN if wins else PVP_KILLS_LOSS) * EconomyService.pvp_normal_kill_reward(2, 2)
-	var owned: Array = bot.treasures
-	var deterministic_treasures: Array = []
-	for tid in owned:
-		if not RANDOM_MONEY_TREASURES.has(str(tid)):
-			deterministic_treasures.append(tid)
-	var board := _arrange_board(bot)
-	var ctx := {
-		"gold_before": int(bot.gold),
-		"gold_spent_this_round": bool(bot.get("gold_spent_this_round", false)),
-		"kill_gold": kill_gold,
-		"bonus_gold": 0,
-		"kind": kind,
-		"player_wins": wins,
-		"round_index": round_index,
-		"loss_streak_after": int(bot.loss_streak),
-		"boss_hp_current": 1 if wins else 50,
-		"boss_hp_max": 100,
-		"merchant_gold": EconomyService.merchant_gold_from_board(board),
-		# 金钱魔法联动需要幸运信封 → 已被剔除，这里不会触发它的随机分支。
-		"treasures": deterministic_treasures,
-		"pet_id": "",
-		"camp_income": CarrotRules.income_for_spent(int(bot.carrot_spent)),
-	}
-	var gold := EconomyService.settle_post_battle_gold(ctx)
-	if owned.has("money_lucky_envelope"):
-		gold += LUCKY_ENVELOPE_EXPECTED
-	if TreasureService.has_linkage_in(owned, "link_money_magic"):
-		gold += MONEY_MAGIC_EXPECTED
-	bot.gold = gold
-	bot.gold_spent_this_round = false
-
-
-# ---------------------------------------------------------------- 胡萝卜 / 升级石
-
-static func _harvest(bot: Dictionary) -> void:
-	var h := CarrotRules.harvest(int(bot.carrots), int(bot.carrot_spent), int(bot.tech))
-	bot.carrots = int(h.after)
-
-
-# 胡萝卜的用法与真人一致：
-#   * 雇佣兵花胡萝卜（不花金币），同时累计「已花胡萝卜」→ 农场升级 → 容量 / 产量 / 营地收入上涨；
-#   * 升级石每回合最多抽 1 次，花胡萝卜，而且要求农场容量 ≥ 这次的价格。
-# 策略：容量还不够抽石头时，胡萝卜全拿去雇佣兵养农场；够了就攒着抽石头，
-# 抽完剩下的再雇佣兵。
-static func _spend_carrots(bot: Dictionary, round_index: int, rng: RandomNumberGenerator) -> void:
-	if int(bot.get("stone_draw_used_round", -1)) != round_index and round_index >= 3:
-		var ledger := {"carrots": int(bot.carrots), "merc_carrots_spent_total": int(bot.carrot_spent),
-			"stone_draw_count": int(bot.stone_draws), "stone_draw_used_round": int(bot.get("stone_draw_used_round", -1)),
-			"free_stone_claimed": bool(bot.get("free_stone_claimed", false))}
-		var before: Dictionary = bot.stones.duplicate()
-		var draw := EconomyLedger.apply(ledger, "draw_upgrade_stone", {}, {
-			"round_index": round_index, "ruleset": str(bot.get("ruleset", "normal")),
-			"carrot_bonus_rate": float(bot.get("carrot_bonus_rate", 0.0)),
-			"team_stones": bot.stones, "stone_roll": rng.randf()})
-		if bool(draw.get("ok", false)):
-			bot.carrots = int(ledger.carrots)
-			bot.stone_draws = int(ledger.stone_draw_count)
-			bot["stone_draw_used_round"] = round_index
-			bot["free_stone_claimed"] = bool(ledger.get("free_stone_claimed", false))
-			for kind in bot.stones:
-				bot.stones_gained[kind] = int(bot.stones_gained.get(kind, 0)) + maxi(0, int(bot.stones[kind]) - int(before.get(kind, 0)))
-
-	_hire_mercs(bot)
-
-
 # ---------------------------------------------------------------- 备战
 
-static func _reserve(bot: Dictionary, round_index: int) -> int:
+# 决策噪声和抽石开奖用的 RNG，与摇商店的那一条分开：AI 多想一步、少想一步，
+# 都不该改变它接下来刷出来的货（否则对战台比较两档时混进了商店运气）。
+static func _decide_rng(bot: Dictionary, round_index: int) -> RandomNumberGenerator:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(["glory_bot_decide_v1", str(bot.get("seed", "")), int(bot.get("slot", -1)), round_index])
+	return rng
+
+
+static func _reserve(bot: Dictionary, round_index: int, profile: Dictionary = {}) -> int:
+	var p := profile if not profile.is_empty() else Profile.for_bot(bot)
 	if round_index <= 2:
 		return 0
-	var reserve := 30
-	# 手上有三星、也有同属性石头 → 存钱升 4 星。
-	var target := _four_star_candidate(bot)
+	if bool(p.final_all_in) and round_index >= int(bot.get("final_round", 21)):
+		return 0
+	var reserve := 0
+	var losing := int(bot.get("loss_streak", 0)) >= 2
+	match str(p.reserve):
+		"flat":
+			reserve = int(p.flat_reserve)
+		"interest":
+			# 利息 5% 不封顶：平时攒着，Boss / PvP 回合和连败时花出去。
+			reserve = clampi(round_index * 10, 30, 200)
+			if losing or Carrots.important_round(round_index):
+				reserve /= 2
+		"plan":
+			# 关键回合（Boss / PvP / 决赛）前一回合多攒一点，关键回合当回合花下去。
+			reserve = clampi(40 + round_index * 12, 40, 300)
+			if losing or Carrots.important_round(round_index):
+				reserve /= 4
+			elif Carrots.important_round(round_index + 1):
+				reserve = int(reserve * 1.2)
+	# 有可用的石头和三星 → 把四星的金币留出来。试过「四星只花多出来的钱」（11-07 第四批）：
+	# 四星从每座位 0.8 个掉到 0.1 个，对旧 AI 胜率 80% → 63%，三星也没因此多起来 —— 四星值这个钱。
+	var target := _four_star_candidate(bot, round_index, p)
 	if not target.is_empty():
-		reserve += CarrotRules.four_star_gold(int((target.def as Dictionary).get("tier", 1)))
+		reserve += _four_star_cost(bot, target)
 	return reserve
 
 
 static func _prep_round(bot: Dictionary, round_index: int, rng: RandomNumberGenerator, units: Array) -> void:
+	var p := Profile.for_bot(bot)
+	var decide := _decide_rng(bot, round_index)
+	_value_memo.clear()
 	if (bot.treasures as Array).has("money_generous_fate") and int(bot.gold) >= 100 and int(bot.get("gamble_used_round", -1)) != round_index:
 		var gamble := {"gold": int(bot.gold), "gamble_used": false}
 		EconomyLedger.apply(gamble, "gamble", {}, {"gamble_entitled": true,
 			"gamble_linked": TreasureService.has_linkage_in(bot.treasures, "link_fraud_fate"), "roll": rng.randf()})
 		bot.gold = int(gamble.gold)
 		bot["gamble_used_round"] = round_index
-	_try_four_star(bot)
-	_try_tech(bot, round_index)
-	_spend_carrots(bot, round_index, rng)
+	_update_direction(bot, round_index, p)
+	_try_four_star(bot, round_index, p)
+	_try_tech(bot, round_index, p)
+	Carrots.spend(bot, round_index, decide, p)
+	_shop_phase(bot, round_index, rng, decide, units, p)
+	_update_direction(bot, round_index, p)
+	_try_four_star(bot, round_index, p)
+
+
+static func _shop_phase(bot: Dictionary, round_index: int, rng: RandomNumberGenerator,
+		decide: RandomNumberGenerator, units: Array, p: Dictionary) -> void:
 	# 商店：接管真人的座位用**玩家那一批**（bot.shop 由 LiveBotEconomy 从账本搬来），
 	# 纯 bot 座位才自己摇。以前一律 _roll_shop() 重摇，于是玩家回来看到的是一批
 	# 从没被 AI 花过钱的货 —— 商店状态和 AI 打的那一轮对不上（10.17 第 1 条）。
 	var shop := _shop_for_round(bot, round_index, units, rng)
+	var final_push := bool(p.final_all_in) and round_index >= int(bot.get("final_round", 21))
+	var max_refresh := maxi(int(p.max_refresh), FINAL_PUSH_REFRESHES) if final_push else int(p.max_refresh)
+	var margin := FINAL_PUSH_MARGIN if final_push else int(p.refresh_margin)
 	var refreshes := 0
 	while true:
-		var offers: Array = shop["offers"]
-		var sold: Array = shop["sold"]
-		var order: Array = range(offers.size())
-		order.sort_custom(func(a, b): return _offer_priority(bot, offers[a]) > _offer_priority(bot, offers[b]))
-		for i in order:
-			var offer: Dictionary = offers[i] if typeof(offers[i]) == TYPE_DICTIONARY else {}
-			if offer.is_empty():
-				continue
-			if i < sold.size() and bool(sold[i]):
-				continue
-			var cost := EconomyLedger.unit_cost(offer, bot.treasures, bool(bot.get("team_discount", false)))
-			if int(bot.gold) - cost < _reserve(bot, round_index):
-				continue
-			if not _wants(bot, offer):
-				continue
-			bot.gold = int(bot.gold) - cost
-			bot.gold_spent_this_round = true
-			(bot.roster as Array).append({"id": str(offer.get("id", "")), "star": 1, "def": offer, "cost_basis": cost})
-			# 卖掉的那一格只打 sold 标记、**不清空** offer：账本里的商店要原样
-			# 留给回来的玩家（客户端按 sold 格置灰，和真人买过之后一模一样）。
-			if i < sold.size():
-				sold[i] = true
-				shop["sold"] = sold
-			_merge(bot)
-			_trim_roster(bot)
-		if refreshes >= MAX_REFRESH_PER_ROUND:
+		_buy_from_shop(bot, shop, round_index, decide, p)
+		if refreshes >= max_refresh:
 			break
 		var refresh_cost := EconomyService.shop_refresh_cost(int(shop.get("refresh_uses", 0)), false)
-		if int(bot.gold) - _reserve(bot, round_index) < refresh_cost + 60:
+		if int(bot.gold) - _reserve(bot, round_index, p) < refresh_cost + margin:
 			break
 		bot.gold = int(bot.gold) - refresh_cost
 		if refresh_cost > 0:
 			bot.gold_spent_this_round = true
 		refreshes += 1
 		_roll_shop_into(bot, shop, units, round_index, rng)
-	_update_second_race(bot)
-	_try_four_star(bot)
+
+
+# 一批货里反复挑「买了之后阵容估值涨得最多」的那一格，直到没有值得买的或钱不够。
+static func _buy_from_shop(bot: Dictionary, shop: Dictionary, round_index: int,
+		decide: RandomNumberGenerator, p: Dictionary) -> void:
+	var horizon := maxi(0, int(bot.get("final_round", 21)) - round_index)
+	while true:
+		var offers: Array = shop["offers"]
+		var sold: Array = shop["sold"]
+		var base := _roster_score(bot.roster, bot, p, horizon)
+		var reserve := _reserve(bot, round_index, p)
+		var best := -1
+		var best_value := 0.0
+		var best_cost := 0
+		for i in offers.size():
+			var offer: Dictionary = offers[i] if typeof(offers[i]) == TYPE_DICTIONARY else {}
+			if offer.is_empty() or (i < sold.size() and bool(sold[i])):
+				continue
+			# 唯一棋子：已有就不再买。
+			if bool(offer.get("unique_on_board", false)) and _copies(bot, str(offer.get("id", ""))) > 0:
+				continue
+			var cost := EconomyLedger.unit_cost(offer, bot.treasures, bool(bot.get("team_discount", false)))
+			if int(bot.gold) - cost < reserve:
+				continue
+			var value := _offer_gain(bot, offer, cost, base, p, horizon)
+			# 冲动消费（新手 / 简单）：看着顺眼就买，不管阵容用不用得上 —— 备战席塞满了就半价卖掉
+			# 最差的那个。这是新手真实的样子（乱花钱），而不是攒着不花（11-07 首批实测：
+			# 只买严格变强的新手会囤 7800 金，利息不封顶，越滚越多）。
+			var impulse := float(p.get("impulse", 0.0))
+			if impulse > 0.0:
+				value = maxf(value, 0.0) + impulse * Eval.unit_power(offer, 1) * decide.randf()
+			value *= 1.0 + float(p.noise) * decide.randfn()
+			value -= float(p.buy_threshold) * cost
+			if value > best_value:
+				best_value = value
+				best = i
+				best_cost = cost
+		if best < 0:
+			return
+		var offer: Dictionary = offers[best]
+		bot.gold = int(bot.gold) - best_cost
+		bot.gold_spent_this_round = true
+		(bot.roster as Array).append({"id": str(offer.get("id", "")), "star": 1, "def": offer, "cost_basis": best_cost})
+		# 卖掉的那一格只打 sold 标记、**不清空** offer：账本里的商店要原样
+		# 留给回来的玩家（客户端按 sold 格置灰，和真人买过之后一模一样）。
+		if best < sold.size():
+			sold[best] = true
+			shop["sold"] = sold
+		_merge(bot)
+		_trim_roster(bot, p, horizon)
+
+
+static func _roster_score(roster: Array, bot: Dictionary, p: Dictionary, horizon: int) -> float:
+	var cap := Handover.board_cap(bot.treasures)
+	var parts: PackedStringArray = []
+	for u in roster:
+		parts.append("%s:%d" % [u.id, int(u.star)])
+	parts.sort()
+	var key := "%d|%d|%s" % [cap, int(p.level), ",".join(parts)]
+	var cached: Variant = _value_memo.get(key)
+	if cached != null:
+		return float(cached)
+	var value := Eval.roster_value(roster, cap, int(p.synergy_knowledge), float(p.merge_weight), horizon)
+	_value_memo[key] = value
+	return value
+
+
+# 买下这一格之后（合成、超出备战席就卖掉最不值钱的那个）阵容估值涨多少。
+static func _offer_gain(bot: Dictionary, offer: Dictionary, cost: int, base: float, p: Dictionary, horizon: int) -> float:
+	var id := str(offer.get("id", ""))
+	var trial := {"roster": (bot.roster as Array).duplicate(), "treasures": bot.treasures}
+	var owned_copy := false
+	for u in bot.roster:
+		if str(u.id) == id and int(u.star) < GameConstants.MAX_MERGE_STAR:
+			owned_copy = true
+			break
+	(trial.roster as Array).append({"id": id, "star": 1, "def": offer, "cost_basis": cost})
+	_merge(trial)
+	var cap := Handover.board_cap(bot.treasures) + BENCH_CAP
+	while (trial.roster as Array).size() > cap:
+		(trial.roster as Array).remove_at(_least_valuable(trial.roster, bot, p, horizon))
+	var gain := _roster_score(trial.roster, bot, p, horizon) - base
+	if gain <= 0.0:
+		return gain
+	# 方向偏好：主种族 / 第二种族；已有同名的（离升星更近）再往上抬。
+	var race := str(offer.get("race", ""))
+	if race == str(bot.main_race):
+		gain *= MAIN_RACE_BIAS
+	elif race == str(bot.get("second_race", "")):
+		gain *= SECOND_RACE_BIAS
+	if owned_copy:
+		gain *= float(p.get("owned_bonus", 1.0))
+	return gain
+
+
+# 最该卖的那个：没上阵、离升星最远、强度最低。只在超出备战席时调用。
+static func _least_valuable(roster: Array, bot: Dictionary, p: Dictionary, horizon: int) -> int:
+	var fielded := {}
+	for i in Eval.pick_board_indices(roster, Handover.board_cap(bot.treasures), int(p.synergy_knowledge)):
+		fielded[i] = true
+	var copies := {}
+	for u in roster:
+		if int(u.star) < GameConstants.MAX_MERGE_STAR:
+			copies[str(u.id)] = int(copies.get(str(u.id), 0)) + (1 if int(u.star) == 1 else GameConstants.copies_to_upgrade(1))
+	var worst := 0
+	var worst_value := INF
+	for i in roster.size():
+		var u: Dictionary = roster[i]
+		var value := Eval.unit_power(u.def, int(u.star))
+		if fielded.has(i):
+			value *= FIELDED_KEEP_WEIGHT
+		# 凑了一半的同名棋子轻易不卖：每多一份当量，按凑星权重抬高保留价值。
+		if int(u.star) < GameConstants.MAX_MERGE_STAR and horizon > 0:
+			value *= 1.0 + float(p.merge_weight) * 0.5 * float(int(copies.get(str(u.id), 1)) - 1)
+		if value < worst_value or (value == worst_value and str(u.id) > str(roster[worst].id)):
+			worst_value = value
+			worst = i
+	return worst
 
 
 # 这一轮要用的商店。接管来的那一批只在**同一轮**有效：bot.shop 记着自己属于哪一轮，
@@ -448,38 +458,6 @@ static func _copies(bot: Dictionary, id: String) -> int:
 	return n
 
 
-static func _normal_count(bot: Dictionary) -> int:
-	return (bot.roster as Array).size()
-
-
-static func _wants(bot: Dictionary, offer: Dictionary) -> bool:
-	var id := str(offer.get("id", ""))
-	var race := str(offer.get("race", ""))
-	# 唯一棋子：已有就不再买。
-	if bool(offer.get("unique_on_board", false)) and _copies(bot, id) > 0:
-		return false
-	var owned_same := false
-	for u in bot.roster:
-		if str(u.id) == id and int(u.star) < GameConstants.MAX_MERGE_STAR:
-			owned_same = true
-			break
-	var score := 15.0
-	if owned_same:
-		score = 100.0
-	elif race == str(bot.main_race):
-		score = 60.0
-	elif race == str(bot.get("second_race", "")):
-		score = 35.0
-	elif int(offer.get("tier", 1)) >= 3:
-		score = 40.0
-	var size := _normal_count(bot)
-	if size < GameConstants.NORMAL_UNIT_CAP:
-		return true
-	if size < GameConstants.NORMAL_UNIT_CAP + BENCH_CAP:
-		return score >= 35.0
-	return score >= 100.0
-
-
 static func _merge(bot: Dictionary) -> void:
 	var changed := true
 	while changed:
@@ -521,27 +499,11 @@ static func _merge(bot: Dictionary) -> void:
 				break
 
 
-static func _unit_value(bot: Dictionary, u: Dictionary) -> float:
-	var d: Dictionary = u.def
-	var v := float(TIER_WEIGHT.get(int(d.get("tier", 1)), 1.0)) * GameState.star_stat_multiplier(int(u.star), d)
-	var race := str(d.get("race", ""))
-	if race == str(bot.main_race):
-		v *= 1.35
-	elif race == str(bot.get("second_race", "")):
-		v *= 1.15
-	return v
-
-
-static func _trim_roster(bot: Dictionary) -> void:
+static func _trim_roster(bot: Dictionary, profile: Dictionary = {}, horizon: int = 10) -> void:
+	var p := profile if not profile.is_empty() else Profile.for_bot(bot)
 	var cap := Handover.board_cap(bot.treasures) + BENCH_CAP
 	while (bot.roster as Array).size() > cap:
-		var worst := 0
-		var worst_v := INF
-		for i in (bot.roster as Array).size():
-			var v := _unit_value(bot, bot.roster[i])
-			if v < worst_v:
-				worst_v = v
-				worst = i
+		var worst := _least_valuable(bot.roster, bot, p, horizon)
 		var sold: Dictionary = bot.roster[worst]
 		bot.gold = int(bot.gold) + EconomyLedger.sell_refund(int(sold.cost_basis))
 		(bot.roster as Array).remove_at(worst)
@@ -565,78 +527,85 @@ static func _update_second_race(bot: Dictionary) -> void:
 	bot["second_race"] = best
 
 
-static func _try_tech(bot: Dictionary, round_index: int) -> void:
-	if round_index < 3 or int(bot.tech) >= MAX_TECH_LEVEL:
+# 主种族：random 开局定了不改；owned 第 3–8 回合跟着手上最多的那一族；
+# eval 按手上各族的强度合计，别的族比现在的强出 pivot_margin 倍就转。
+static func _update_direction(bot: Dictionary, round_index: int, p: Dictionary) -> void:
+	match str(p.direction):
+		"owned":
+			if round_index >= 3 and round_index <= 8:
+				prioritize_owned_races(bot)
+				return
+		"eval":
+			if round_index >= 3 and not (bot.roster as Array).is_empty():
+				var scores := {}
+				for u in bot.roster:
+					var race := str((u.def as Dictionary).get("race", ""))
+					scores[race] = float(scores.get(race, 0.0)) + Eval.unit_power(u.def, int(u.star))
+				var best := str(bot.main_race)
+				var races := scores.keys()
+				races.sort()
+				for race in races:
+					if float(scores[race]) > float(scores.get(best, 0.0)):
+						best = str(race)
+				if best != str(bot.main_race) and float(scores[best]) > maxf(1.0, float(scores.get(str(bot.main_race), 0.0))) * float(p.pivot_margin):
+					bot["main_race"] = best
+	_update_second_race(bot)
+
+
+static func _try_tech(bot: Dictionary, round_index: int, p: Dictionary) -> void:
+	if round_index < 3 or int(bot.tech) >= int(p.tech_cap):
 		return
 	var price := CarrotRules.tech_price(int(bot.tech))
-	if int(bot.gold) - _reserve(bot, round_index) >= price + 100:
+	if int(bot.gold) - _reserve(bot, round_index, p) >= price + int(p.tech_margin):
 		bot.gold = int(bot.gold) - price
 		bot.gold_spent_this_round = true
 		bot.tech = int(bot.tech) + 1
 
 
-static func _four_star_candidate(bot: Dictionary) -> Dictionary:
+static func _four_star_cost(bot: Dictionary, target: Dictionary) -> int:
+	if str(bot.get("ruleset", "normal")) == "seedling":
+		return CarrotRules.seedling_four_star_gold(int(bot.get("four_star_upgrade_count", 0)))
+	return CarrotRules.four_star_gold(int((target.def as Dictionary).get("tier", 1)))
+
+
+# 现在就能升四星的三星：同属性的石头按队伍规则可用（BotCarrots.usable_stone_count）。
+# greedy 取找到的第一个，value 取升完强度涨得最多的。商人这类经济棋子不值得花 500+ 金。
+static func _four_star_candidate(bot: Dictionary, round_index: int, p: Dictionary) -> Dictionary:
+	if str(p.four_star) == "none":
+		return {}
 	var best: Dictionary = {}
-	var best_v := -1.0
+	var best_gain := -1.0
 	for u in bot.roster:
 		if int(u.star) != GameConstants.MAX_MERGE_STAR:
 			continue
-		# 商人这类经济棋子不值得花 500+ 金升 4 星。
 		if str((u.def as Dictionary).get("skill_id", "")) == "post_battle_gold_by_star":
 			continue
 		var element := str((u.def as Dictionary).get("element", ""))
-		if not CarrotRules.valid_stone_type(element) or int(bot.stones.get(element, 0)) <= 0:
+		if not CarrotRules.valid_stone_type(element) or Carrots.usable_stone_count(bot, element, round_index) <= 0:
 			continue
-		var v := _unit_value(bot, u)
-		if v > best_v:
-			best_v = v
+		if str(p.four_star) == "greedy":
+			return u
+		var gain := Eval.unit_power(u.def, GameConstants.MAX_STAR) - Eval.unit_power(u.def, GameConstants.MAX_MERGE_STAR)
+		if gain > best_gain:
+			best_gain = gain
 			best = u
 	return best
 
 
-static func _try_four_star(bot: Dictionary) -> void:
-	var target := _four_star_candidate(bot)
+static func _try_four_star(bot: Dictionary, round_index: int, p: Dictionary) -> void:
+	var target := _four_star_candidate(bot, round_index, p)
 	if target.is_empty():
 		return
-	var cost := CarrotRules.seedling_four_star_gold(int(bot.get("four_star_upgrade_count", 0))) if str(bot.get("ruleset", "normal")) == "seedling" else CarrotRules.four_star_gold(int((target.def as Dictionary).get("tier", 1)))
+	var cost := _four_star_cost(bot, target)
 	if cost < 0 or int(bot.gold) < cost:
 		return
 	var element := str((target.def as Dictionary).get("element", ""))
 	bot.gold = int(bot.gold) - cost
 	bot.gold_spent_this_round = true
-	bot.stones[element] = int(bot.stones[element]) - 1
+	Carrots.take_stone(bot, element)
 	target.star = GameState.MAX_UNIT_STAR
 	if str(bot.get("ruleset", "normal")) == "seedling":
 		bot["four_star_upgrade_count"] = int(bot.get("four_star_upgrade_count", 0)) + 1
-
-
-static func _hire_mercs(bot: Dictionary) -> void:
-	var table: Array = DataRegistry.get_table("mercenaries").get("mercenaries", []).duplicate()
-	if table.is_empty():
-		return
-	# 同价按 id 排，保证数据表行序变化不改变结果。
-	table.sort_custom(func(a, b):
-		var ca := int(a.get("carrot_cost", 0))
-		var cb := int(b.get("carrot_cost", 0))
-		if ca != cb:
-			return ca < cb
-		return str(a.get("id", "")) < str(b.get("id", ""))
-	)
-	var owned: Array = bot.mercs
-	while owned.size() < GameState.MERCENARY_SLOTS:
-		# 雇得起的里面最贵（最强）的一只。
-		var pick: Dictionary = {}
-		for m in table:
-			var c := int(m.get("carrot_cost", -1))
-			if c >= 0 and c <= int(bot.carrots):
-				pick = m
-		if pick.is_empty():
-			break
-		var carrots := int(pick.get("carrot_cost", 0))
-		bot.carrots = int(bot.carrots) - carrots
-		bot.carrot_spent = int(bot.carrot_spent) + carrots
-		owned.append({"id": str(pick.get("id", "")), "star": 1, "def": (pick as Dictionary).duplicate(true),
-			"is_mercenary": true, "cost_basis": 0, "merc_slot": owned.size()})
 
 
 # ---------------------------------------------------------------- 宝藏
@@ -664,10 +633,19 @@ static func _pick_treasure(bot: Dictionary, rng: RandomNumberGenerator) -> void:
 		owned.append(best)
 
 
+# random：不看就拿（按座位和已有件数定一个，结果可复现）；set：往 4 件套 / 联动凑；
+# lineup：再看自己阵容 —— 多一个上阵位（狂怒名册）最值钱，后期不再拿经济宝藏。
 static func preferred_treasure(bot: Dictionary, candidates: Array) -> String:
+	if candidates.is_empty():
+		return ""
+	var p := Profile.for_bot(bot)
 	var owned: Array = bot.treasures
+	if str(p.treasure) == "random":
+		return str(candidates[absi(hash([str(bot.get("seed", "")), int(bot.get("slot", -1)), owned.size(), candidates])) % candidates.size()])
 	var counts := TreasureService.tag_counts_for(owned)
 	var links: Array = DataRegistry.get_table("treasures").get("linkages", [])
+	var lineup := str(p.treasure) == "lineup"
+	var late := int(bot.get("round", 0)) >= LATE_MONEY_ROUND
 	var best := ""
 	var best_score := -INF
 	for tid in candidates:
@@ -681,6 +659,11 @@ static func preferred_treasure(bot: Dictionary, candidates: Array) -> String:
 						score += 5.0                          # 能直接凑出联动
 		if cat == "money" and owned.size() <= 1:
 			score += 1.5                                      # 早期偏好经济
+		if lineup:
+			if str(tid) == "atk_fury_roster":
+				score += 4.0                                  # 多一个上阵位
+			if cat == "money" and late:
+				score -= 2.0
 		if score > best_score:
 			best_score = score
 			best = tid
@@ -689,60 +672,17 @@ static func preferred_treasure(bot: Dictionary, candidates: Array) -> String:
 
 # ---------------------------------------------------------------- 上阵与站位
 
+# 上阵谁按档位的羁绊认知挑（BotEval.pick_board），放哪按档位的站位方式（BotFormation）。
+# 纯函数：view / board_slots / 结算的商人金都调它，必须每次算出同一个棋盘。
 static func _arrange_board(bot: Dictionary) -> Array:
+	var p := Profile.for_bot(bot)
 	var board: Array = []
 	board.resize(GameConstants.CELL_COUNT)
 	board.fill(null)
-	var ranked: Array = (bot.roster as Array).duplicate()
-	ranked.sort_custom(func(a, b):
-		var va := _unit_value(bot, a)
-		var vb := _unit_value(bot, b)
-		if va != vb:
-			return va > vb
-		if int(a.star) != int(b.star):
-			return int(a.star) > int(b.star)
-		return str(a.id) < str(b.id)
-	)
-	var chosen: Array = []
-	var unique_used := {}
-	for u in ranked:
-		if chosen.size() >= Handover.board_cap(bot.treasures):
-			break
-		var d: Dictionary = u.def
-		if bool(d.get("unique_on_board", false)):
-			if unique_used.has(str(u.id)):
-				continue
-			unique_used[str(u.id)] = true
-		chosen.append(u)
-	var front: Array = []
-	var back: Array = []
-	for u in chosen:
-		var d: Dictionary = u.def
-		if float(d.get("range", 1)) <= 1.5 or str(d.get("skill_id", "")) == "guardian_shield_taunt":
-			front.append(u)
-		else:
-			back.append(u)
-	# 前排：血厚的站中间；后排：攻击高的站中间。
-	front.sort_custom(func(a, b):
-		var ha := float((a.def as Dictionary).get("hp", 1)) * GameState.star_stat_multiplier(int(a.star), a.def)
-		var hb := float((b.def as Dictionary).get("hp", 1)) * GameState.star_stat_multiplier(int(b.star), b.def)
-		if ha != hb:
-			return ha > hb
-		return str(a.id) < str(b.id)
-	)
-	back.sort_custom(func(a, b):
-		var aa := float((a.def as Dictionary).get("atk", 1)) * GameState.star_stat_multiplier(int(a.star), a.def)
-		var ab := float((b.def as Dictionary).get("atk", 1)) * GameState.star_stat_multiplier(int(b.star), b.def)
-		if aa != ab:
-			return aa > ab
-		return str(a.id) < str(b.id)
-	)
-	for i in front.size():
-		var u: Dictionary = front[i]
-		board[int(FRONT_SLOTS[mini(i, FRONT_SLOTS.size() - 1)])] = _cell(u)
-	for i in back.size():
-		var u: Dictionary = back[i]
-		board[int(BACK_SLOTS[mini(i, BACK_SLOTS.size() - 1)])] = _cell(u)
+	var chosen := Eval.pick_board(bot.roster, Handover.board_cap(bot.treasures), int(p.synergy_knowledge))
+	var flip := bool(p.flip_on_loss) and bool(bot.get("formation_flip", false))
+	for pair in Formation.arrange(chosen, str(p.formation), flip):
+		board[int(pair[1])] = _cell(pair[0])
 	return board
 
 
@@ -758,6 +698,19 @@ static func board_slots(bot: Dictionary) -> Dictionary:
 		var uid := str((cell as Dictionary).get("uid", ""))
 		if not uid.is_empty():
 			out[uid] = index
+	return out
+
+
+# 没上阵的那些（备战席），给队友「查看棋盘」用（NetworkService._room_prep_view）。
+static func bench_cells(bot: Dictionary) -> Array:
+	var placed := board_slots(bot)
+	var out: Array = []
+	for u in bot.roster:
+		if out.size() >= BENCH_CAP:
+			break
+		if placed.has(str(u.get("uid", ""))):
+			continue
+		out.append(_cell(u))
 	return out
 
 
@@ -781,12 +734,3 @@ static func prioritize_owned_races(bot: Dictionary) -> void:
 	if not best.is_empty():
 		bot["main_race"] = best
 	_update_second_race(bot)
-
-
-static func _offer_priority(bot: Dictionary, offer: Dictionary) -> float:
-	var id := str(offer.get("id", ""))
-	for u in bot.roster:
-		if str(u.id) == id and int(u.star) < GameConstants.MAX_MERGE_STAR:
-			return 1000.0 + float(u.star)
-	var race := str(offer.get("race", ""))
-	return 100.0 if race == str(bot.main_race) else (50.0 if race == str(bot.get("second_race", "")) else 0.0)
