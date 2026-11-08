@@ -3269,6 +3269,7 @@ func _sync_prep_board_readability_state() -> void:
 		set_prep_deploy_counter_values(_teammate_view_count, _teammate_view_cap)
 	else:
 		set_prep_deploy_counter_values(GameState.normal_unit_count(), GameState.normal_unit_cap())
+	_sync_prep_range_ring()
 	if _board_hud.readability_layer == null or not is_instance_valid(_board_hud.readability_layer):
 		return
 	_board_hud.readability_layer.set_guides_enabled(PlayerProfile.board_readability_enabled)
@@ -3276,30 +3277,55 @@ func _sync_prep_board_readability_state() -> void:
 	_board_hud.readability_layer.set_direction_texts(tr("board_frontline"), tr("board_backline"))
 	_board_hud.readability_layer.set_prep_state(
 		_board_hud._selected_board,
-		_prep_attack_range_indices(_board_hud._selected_board),
 		_board_hud.drop_highlight_active,
 		_board_hud.drop_hover_index,
 		_board_hud.player_color()
 	)
 
-func _prep_attack_range_indices(selected_index: int) -> PackedInt32Array:
-	var result := PackedInt32Array()
-	if selected_index < 0 or selected_index >= GameState.board_slots.size():
-		return result
-	var cell_value = GameState.board_slots[selected_index]
+
+# 射程圈（11-08 用户要求：拖动棋子时显示攻击距离）。两个来源：
+#   * 拖动中：圆心 = 手指悬着的那一格（range_hover_index，能不能放下都算），
+#     射程取**被拖的那只**（棋盘 / 待命 / 商店卡）；手指不在棋盘格上就不画。
+#   * 长按查看属性：圆心 = 检视格（_selected_board），射程取那格上的棋子。
+# 拖动优先（拖动开始会停掉长按，两者本来就互斥，这里只是写明先后）。
+# 跟「战场辅助标记」开关走 —— 它和战斗里点选单位的射程圈是同一类标记，关了就都不画。
+func _sync_prep_range_ring() -> void:
+	var center := -1
+	var definition := {}
+	if PlayerProfile.board_readability_enabled:
+		if _board_hud.drop_highlight_active:
+			center = _board_hud.range_hover_index
+			definition = _prep_drag_payload_unit_def(_active_drag_payload)
+		elif _board_hud._selected_board >= 0 and _board_hud._selected_board < GameState.board_slots.size():
+			center = _board_hud._selected_board
+			var cell_value = GameState.board_slots[center]
+			if typeof(cell_value) == TYPE_DICTIONARY:
+				definition = _prep_display_unit_def(cell_value as Dictionary)
+	if center < 0 or definition.is_empty():
+		set_prep_range_ring(-1, 0.0)
+		return
+	set_prep_range_ring(center, prep_range_px_for_def(definition))
+
+
+# 拖动数据 {"kind", "index"} → 被拖那只棋子的显示用定义（取射程用）。取不到返回空表。
+func _prep_drag_payload_unit_def(payload: Dictionary) -> Dictionary:
+	var index := int(payload.get("index", -1))
+	var cell_value: Variant = null
+	match str(payload.get("kind", "")):
+		"board":
+			if index >= 0 and index < GameState.board_slots.size():
+				cell_value = GameState.board_slots[index]
+		"bench":
+			if index >= 0 and index < GameState.bench_slots.size():
+				cell_value = GameState.bench_slots[index]
+		"shop":
+			# 商店报价本身就是单位定义；买下来是 1 星（与 _buy_or_merge_shop_to_board 同口径）。
+			if index >= 0 and index < GameState.shop_offers.size() and typeof(GameState.shop_offers[index]) == TYPE_DICTIONARY:
+				var offer: Dictionary = GameState.shop_offers[index]
+				cell_value = {"id": str(offer.get("id", "")), "star": 1, "def": offer}
 	if typeof(cell_value) != TYPE_DICTIONARY:
-		return result
-	var definition := _prep_display_unit_def(cell_value as Dictionary)
-	var range_cells := maxf(0.0, float(definition.get("range", 1.0)))
-	var selected_col := selected_index % GameConstants.BOARD_COLUMNS
-	var selected_row := floori(float(selected_index) / float(GameConstants.BOARD_COLUMNS))
-	for index in GameConstants.CELL_COUNT:
-		var col := index % GameConstants.BOARD_COLUMNS
-		var row := floori(float(index) / float(GameConstants.BOARD_COLUMNS))
-		var delta := Vector2(float(col - selected_col), float(row - selected_row))
-		if delta.length() <= range_cells + 0.001:
-			result.append(index)
-	return result
+		return {}
+	return _prep_display_unit_def(cell_value as Dictionary)
 # --- 10.12 bug 文档第 4 条：棋子 轻点 / 长按 / 拖拽 三态分流 ---------------------
 #
 # 需求（用户原话）：

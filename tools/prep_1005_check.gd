@@ -684,16 +684,17 @@ func _case_readability_idle_hidden() -> void:
 		cells.append(PackedVector2Array([Vector2(x, y), Vector2(x + 18, y), Vector2(x + 18, y + 14), Vector2(x, y + 14)]))
 	layer.set_prep_cells(cells)
 
-	layer.set_prep_state(-1, PackedInt32Array(), false, -1, Color(0.2, 0.8, 0.8))
+	layer.set_prep_state(-1, false, -1, Color(0.2, 0.8, 0.8))
 	_h.expect(_drawn_cells(layer) == 0, "idle_draws_nothing",
 		"没拖动、没选中时不该画任何格子（10.05 第 2 条：平时隐藏 16 圆圈与光圈），实际画了 %d 格"
 			% _drawn_cells(layer))
 
-	layer.set_prep_state(5, PackedInt32Array([1, 4]), false, -1, Color(0.2, 0.8, 0.8))
-	_h.expect(_drawn_cells(layer) == 3, "selected_kept",
-		"选中格与射程是点一下才出现的即时反馈，必须保留：期望 3 格，实际 %d 格" % _drawn_cells(layer))
+	# 射程 11-08 起改成 3D 贴地射程圈，这一层只剩检视格（长按查看属性）这一个例外。
+	layer.set_prep_state(5, false, -1, Color(0.2, 0.8, 0.8))
+	_h.expect(_drawn_cells(layer) == 1, "selected_kept",
+		"检视格是长按才出现的即时反馈，必须保留：期望 1 格，实际 %d 格" % _drawn_cells(layer))
 
-	layer.set_prep_state(5, PackedInt32Array([1, 4]), true, 6, Color(0.2, 0.8, 0.8))
+	layer.set_prep_state(5, true, 6, Color(0.2, 0.8, 0.8))
 	_h.expect(_drawn_cells(layer) == BOARD_CELLS, "dragging_shows_all",
 		"拖动棋子上阵时 16 格应当全部出现：实际 %d 格" % _drawn_cells(layer))
 	layer.queue_free()

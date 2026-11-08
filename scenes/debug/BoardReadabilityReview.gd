@@ -53,7 +53,7 @@ func _build_prep_panel(rect: Rect2) -> void:
 		var center := Vector2(300.0 + (float(col) - 1.5) * near_width / 4.0, 118.0 + float(row) * 112.0)
 		cells.append(_ellipse(center, Vector2(41.0 + float(row) * 4.0, 21.0 + float(row) * 2.0), 24))
 	layer.set_prep_cells(cells)
-	layer.set_prep_state(5, PackedInt32Array([1, 4, 5, 6, 9]), true, 6, Color(0.28, 0.86, 0.86))
+	layer.set_prep_state(5, true, 6, Color(0.28, 0.86, 0.86))
 
 
 func _build_battle_panel(rect: Rect2) -> void:

@@ -4654,3 +4654,24 @@ fighter 不记阵营、结果不带人王结局、分路不传老虎成长率、
   `dynamic_call` 41（10.11 记 30，回退我的改动后仍是 41 ⇒ 漂移非本轮带来）、`prep_tree_snapshot` 19、`prep_text_coverage` 1、`battle_loading_layout` 1 —— 均与既有基线一致。
 - ★ **跑不了（环境限制，不是缺陷）**：`tutorial_arrow_alignment_check` 在本工程根直接跑必 `rc=2`（要 `use_custom_user_dir=true` 的隔离副本，README 有记载）；
   它只读 `_board_hud._selected_bench` 字段（自己直接赋值），不经过轻点，本点不改变它的行为。
+
+## 2026-11-08 摆放界面拖动显示射程圈
+
+用户要求：「在摆放界面的时候，玩家拖动棋子会显示棋子的攻击距离」。
+
+- 射程圈是躺在棋盘地面上的 3D 面片（`PrepBoardModels.set_prep_range_ring`），棋子挡在它上面；半径与战斗判定同一个公式
+  （`BattleSimShared.range_px_for` + 体型半格），按「战斗里一列 56、一行 44」逐轴换算到棋盘列宽 / 行深。
+- 拖动中圆心 = 手指悬着的那一格（`BoardHud.range_hover_index`，悬在原格上也画），射程取被拖那只（棋盘 / 待命 / 商店卡）；
+  长按查看属性时圆心 = 检视格。跟「战场辅助标记」开关走。
+- 旧的「按格数点亮射程格」（`PrepUI._prep_attack_range_indices` 与可读性层的 range_indices）已删：它把射程 1 画成五格十字，
+  实际战斗里近战 32px 连隔壁格都够不到。
+
+| 门禁 | 结果 |
+| --- | --- |
+| `tools/prep_range_ring_check`（**新增**） | PASS 26/0：公式与战斗同口径、逐轴换算、面片在棋盘 3D 视口 / 层级 / 离地、拖棋盘（悬别格 / 悬换位格取被拖那只 / 悬回原格 / 离开 / 松手）、拖待命、拖商店卡、没拖时不生效、关开关不画 |
+| `tools/prep_piece_interaction_check` | PASS 32/0（长按那条改断言射程圈：画在检视格、半径 = 射程 1；关框后一起撤） |
+| `tools/board_readability_check` / `prep_1005_check` | PASS 5 / 100（跟新签名；`selected_kept` 期望 3 → 1，射程不再画在这一层） |
+| `board_4x4_smoke` / `prep_drag_threshold` / `prep_swap` / `prep_long_press` / `prep_shop` / `prep_detail_overlay` | PASS 64 / 67 / 30 / 32 / 34 / 32 |
+| `dynamic_call` | 既存红，45 条里落在本次改动文件的只有 `PrepUI.gd:1547-1549`（萝卜 / 升级石的 `Callable(self, ...)`，本次没碰）；本次净减一处按名字调用 |
+
+实渲样片：`scenes/debug/PrepRangeReview.tscn`（F6 看；`-- --capture-prep-range=<目录>` 出图，走真实拖动链路）。

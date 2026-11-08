@@ -64,6 +64,9 @@ var occupied_style: StyleBoxFlat
 var drop_style: StyleBoxFlat
 var drop_highlight_active := false
 var drop_hover_index := -1
+# 拖动时手指悬在哪一格（射程圈的圆心）。与 drop_hover_index 分开：那个只记「能放下」的格子，
+# 悬在棋子自己原来那格上时它是 -1；射程圈在原格上也要显示（玩家会先看一眼现在的射程）。
+var range_hover_index := -1
 var standby_drop_highlight_active := false
 var standby_drop_hover_index := -1
 
@@ -178,6 +181,15 @@ func set_board_drop_hover(board_index: int) -> void:
 			drop_highlight_active,
 			index == drop_hover_index
 		)
+	visuals_dirty.emit("readability")
+
+
+# 射程圈圆心：拖动中手指悬在哪一格（能不能放下都算），离开棋盘格就是 -1。
+func set_board_range_hover(board_index: int) -> void:
+	var next_index := board_index if drop_highlight_active else -1
+	if range_hover_index == next_index:
+		return
+	range_hover_index = next_index
 	visuals_dirty.emit("readability")
 
 

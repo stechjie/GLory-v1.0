@@ -106,6 +106,7 @@ func _on_drag_started(payload: Dictionary) -> void:
 	_set_shop_sell_mode(str(payload.get("kind", "")) in ["board", "bench"])
 	_board_hud.drop_highlight_active = str(payload.get("kind", "")) in ["shop", "board", "bench"]
 	_board_hud.drop_hover_index = -1
+	_board_hud.range_hover_index = -1
 	_board_hud.standby_drop_highlight_active = str(payload.get("kind", "")) in ["shop", "board", "bench"]
 	_board_hud.standby_drop_hover_index = -1
 	_board_hud.refresh_board()
@@ -181,6 +182,7 @@ func _finish_drag_state() -> void:
 	_set_shop_sell_mode(false)
 	_board_hud.drop_highlight_active = false
 	_board_hud.drop_hover_index = -1
+	_board_hud.range_hover_index = -1
 	_board_hud.standby_drop_highlight_active = false
 	_board_hud.standby_drop_hover_index = -1
 	_board_hud.refresh_board()
