@@ -77,7 +77,7 @@
   "ios": {
     "build": 90,
     "built": true,
-    "state": "Apple processing",
+    "state": "processed_awaiting_internal_group",
     "uploaded": true,
     "internal_group_assigned": false,
     "bytes": 581658220,
@@ -89,7 +89,8 @@
     "base_id": "glory-20261109-test-refresh",
     "includes_seq": 4,
     "transporter_state": "Delivered",
-    "delivered_at_local": "2026-11-09 16:54 Asia/Shanghai"
+    "delivered_at_local": "2026-11-09 16:54 Asia/Shanghai",
+    "apple_processing": "complete_verified_in_Transporter"
   },
   "validation": {
     "final_export_check": "passed",
@@ -107,10 +108,10 @@
     "Drive connector rejects APK above 512 MiB"
   ],
   "pending": [
-    "Android62 full Drive upload, metadata and full SHA256 readback, then QR config switch",
-    "iOS90 Apple processing, save notes, assign GLory internal group, verify Testing"
+    "Android62 full Drive upload and hash readback, then QR config switch",
+    "iOS90 save notes, assign GLory internal group, verify Testing"
   ],
-  "updated_at": "2026-11-09T08:59:12.669435+00:00",
+  "updated_at": "2026-11-09T09:00:29.099318+00:00",
   "retention": {
     "android_prod": [
       54,
