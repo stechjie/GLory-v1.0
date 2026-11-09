@@ -32,6 +32,12 @@
 - 客户端源码默认值是测试服（`scripts/account/AccountConfig.gd` 的 `DEFAULT_BACKEND_URL`、`scripts/multiplayer/NetworkConfig.gd` 的 `SERVER_HOST`）。语音地址由服务器下发（战斗服务器和账号服务器各自的 LiveKit 配置里的 `client_url`），客户端不写死。
 - 战斗链路的 DTLS 证书两边不同：客户端 `scripts/multiplayer/NetTLSCert.gd` 里是测试服那张（SHA-256 `F7:73:C1:A5:…:A4:9C:25:0D`），正式服是 2026-10-31 新生成的（SHA-256 `DE:B1:9B:3E:…:0E:CA:53:54`，以服务器上 `~/Glory/keys/dtls_cert.pem` 为准）。切正式服只改域名、不换证书，会卡在连接中直到超时。
 
+## 构建产物存放位置
+
+- 所有平台、正式服和测试服的构建包及其归档产物，必须存放在 GLory 项目文件夹内，默认使用外层工作区的 `/Volumes/repository/github/GLory/build/`，按平台分子目录（如 `build/apk/`、`build/ipa/`）。
+- 不允许把打出的包输出、复制或长期保存在系统目录、系统临时目录或项目外的用户目录中（如 `/tmp/`、`/var/folders/`、桌面、下载目录）；上传和分发时直接使用项目目录内的产物。
+- 调用打包工具时显式核对输出路径；工具默认输出到项目外时，先将输出位置调整到项目目录内再构建。
+
 ## APK / IPA 必须使用精简打包入口
 
 今后构建 APK 和 IPA，必须使用本仓库 `tools/workspace/build_apk.sh` 和
