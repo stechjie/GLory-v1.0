@@ -8,9 +8,9 @@
   "android": {
     "ready": true,
     "mode": "apk",
-    "url": "https://glorytd-api.duckdns.org/beta/downloads/Glory-1.0.2-61-android.apk",
-    "version": "1.0.2 (61)",
-    "size_bytes": 618105894,
+    "url": "https://glorytd-api.duckdns.org/beta/downloads/Glory-1.0.2-62-android.apk",
+    "version": "1.0.2 (62)",
+    "size_bytes": 618172594,
     "size_label": "589.5 MiB"
   }
 }

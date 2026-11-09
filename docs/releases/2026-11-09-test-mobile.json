@@ -72,7 +72,8 @@
     "full_server_sha256_verified": true,
     "public_range_verified": true,
     "drive_uploaded": false,
-    "fixed_qr_switched": false
+    "fixed_qr_switched": true,
+    "distribution_method": "verified_server_direct_download"
   },
   "ios": {
     "build": 90,
@@ -119,9 +120,9 @@
     "Drive connector rejects APK above 512 MiB"
   ],
   "pending": [
-    "Android62 full Drive upload and hash readback, then QR config switch"
+    "Android62 Drive upload remains unconfirmed"
   ],
-  "updated_at": "2026-11-09T12:47:40.225050+00:00",
+  "updated_at": "2026-11-09T13:50:11.952387+00:00",
   "retention": {
     "android_prod": [
       54,
@@ -141,5 +142,5 @@
     ],
     "registered_patch_baselines_preserved": true
   },
-  "status": "ios_internal_testing_ready_android_drive_pending"
+  "status": "mobile_available_drive_backup_pending"
 }
