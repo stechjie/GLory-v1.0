@@ -1701,6 +1701,17 @@ func _unit_items() -> Array:
 
 
 # 从备战页「去商城」进来时直接落在棋子页、看那一族。
+func open_skin_acquisition(skin_id: String) -> void:
+	if skin_id == "prep_skin_ice":
+		_select_category(CATEGORY_EVENT)
+		return
+	for category in WISH_CATEGORIES:
+		if WISH_CATEGORIES[category] == skin_id:
+			_select_category(category)
+			return
+	_select_category(CATEGORY_SKINS)
+
+
 func open_units(race: String = "") -> void:
 	if not race.is_empty():
 		_unit_race = race

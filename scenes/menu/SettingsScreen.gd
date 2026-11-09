@@ -88,7 +88,7 @@ func _build() -> void:
 
 	var layout := VBoxContainer.new()
 	layout.custom_minimum_size = Vector2(1020, 0)
-	layout.add_theme_constant_override("separation", 18)
+	layout.add_theme_constant_override("separation", 10)
 	center.add_child(layout)
 	var columns := HBoxContainer.new()
 	columns.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -100,7 +100,7 @@ func _build() -> void:
 	columns.add_child(panel)
 	var right_column := VBoxContainer.new()
 	right_column.custom_minimum_size = Vector2(440, 0)
-	right_column.add_theme_constant_override("separation", 10)
+	right_column.add_theme_constant_override("separation", 6)
 	columns.add_child(right_column)
 
 	var title := Label.new()
@@ -245,13 +245,12 @@ func _build() -> void:
 	# 但 **iOS 全 App 只有一个 AVAudioSession、只有一条系统音量**，系统层面分不开 ——
 	# 所以在游戏内再给语音一条独立音量。三条平台都生效（乘在每个远端队员的轨道音量上）。
 	#
-	# 放在演出开关这一列的最后，紧挨「背景音乐」：这两个音量就是玩家要分开调的一对。
-	var audio_rows := GridContainer.new()
-	audio_rows.columns = 2
+	# 两条滑块共用一行，把帮助和返回留在首屏。
+	var audio_rows := HBoxContainer.new()
+	audio_rows.alignment = BoxContainer.ALIGNMENT_CENTER
 	audio_rows.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	audio_rows.add_theme_constant_override("h_separation", 12)
-	audio_rows.add_theme_constant_override("v_separation", 8)
-	panel.add_child(audio_rows)
+	audio_rows.add_theme_constant_override("separation", 22)
+	layout.add_child(audio_rows)
 
 	_voice_label = Label.new()
 	_voice_label.custom_minimum_size = Vector2(160, Tokens.TOUCH_MIN)
@@ -288,6 +287,8 @@ func _build() -> void:
 		PlayerProfile.set_music_volume(value)
 		_refresh_music_label())
 	audio_rows.add_child(_music_slider)
+	audio_rows.move_child(_music_label, 0)
+	audio_rows.move_child(_music_slider, 1)
 	_refresh_music_label()
 
 	var help_row := HBoxContainer.new()

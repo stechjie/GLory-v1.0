@@ -1469,8 +1469,8 @@ func _show_pet_screen() -> void:
 	_clear()
 	var pet_screen := _instantiate_screen("res://scenes/menu/PetScreen.tscn")
 	pet_screen.back_requested.connect(_on_pet_back)
-	# 棋盘皮肤页上没买的那张点「去商城」。
-	pet_screen.shop_requested.connect(_show_shop_screen)
+	# 未解锁的棋盘皮肤直接打开对应活动。
+	pet_screen.skin_acquisition_requested.connect(_show_skin_acquisition)
 	# 种族页点了没解锁的种族 -> 商城棋子页那一族。
 	pet_screen.unit_shop_requested.connect(_show_shop_units)
 	# 真机返回键也要走同一套收口：否则系统返回会把 "casual" 的引导又弹回来。
@@ -1546,7 +1546,15 @@ func _show_pet_screen_races(race: String) -> void:
 		screen.show_races(race)
 
 
-# 备战页点了没解锁的种族：打开商城并直接落在棋子页那一族。
+# 备战页点「去获取」：直接打开皮肤活动。
+func _show_skin_acquisition(skin_id: String) -> void:
+	_show_shop_screen()
+	var screen := _newest_screen_with("open_skin_acquisition")
+	if screen != null:
+		screen.open_skin_acquisition(skin_id)
+
+
+# 未解锁的种族从备战页直接打开对应棋子页。
 func _show_shop_units(race: String) -> void:
 	_show_shop_screen()
 	var screen := _newest_screen_with("open_units")

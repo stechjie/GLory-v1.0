@@ -12,6 +12,7 @@ extends Control
 signal join_requested
 signal kick_requested(sid: int)
 signal open_toggled(open: bool)
+signal profile_requested(identity: Dictionary)
 
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
 const Voice := preload("res://ui/components/VoiceControls.gd")
@@ -162,12 +163,18 @@ func _make_row(entry: Dictionary) -> Control:
 	var identity: Dictionary = entry.get("identity", {})
 	var guest := bool(entry.get("guest", true))
 	var sid := int(entry.get("sid", -1))
-	var avatar := TextureRect.new()
+	var avatar := TextureButton.new()
 	avatar.name = "avatar"
-	avatar.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	avatar.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	avatar.texture = AvatarCatalog.texture_for(str(identity.get("avatar", AvatarCatalog.default_avatar())), true)
-	avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	avatar.ignore_texture_size = true
+	avatar.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+	avatar.texture_normal = AvatarCatalog.texture_for(str(identity.get("avatar", AvatarCatalog.default_avatar())), true)
+	if not guest and str(identity.get("friend_code", "")).length() == 8:
+		avatar.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		avatar.tooltip_text = _t("查看玩家资料", "View player profile")
+		avatar.pressed.connect(func(): profile_requested.emit(identity))
+	else:
+		avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		avatar.focus_mode = Control.FOCUS_NONE
 	row.add_child(avatar)
 	Voice.attach_speaking_mic(avatar)
 	row.set_meta("spectator_entry", entry)
