@@ -62,9 +62,11 @@ const EXPECTED_IDS := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 # → 65 -> 67、协议 40 -> 41、指纹变了。
 # 2026-10-22 观战席位：加 10 条 `_rpc_spectate_*`（SpectatorService.gd）→ 67 -> 77、协议 -> 44、指纹变了。
 # 协议号钉子之前停在 42（43 那次没跟），这次一起跟回来。
-const PINNED_RPC_COUNT := 77
-const PINNED_RPC_PROTOCOL := 44
-const PINNED_RPC_SIGNATURES := "5b704b8c459566a4"
+# 2026-11-07 队友棋盘：加 `_rpc_team_prep_board_submit` / `_rpc_team_prep_board_request` / `_rpc_team_prep_board`
+# → 77 -> 80、协议 -> 46、指纹变了（45 那次签名已变、钉子没跟，这次一起跟回来）。
+const PINNED_RPC_COUNT := 80
+const PINNED_RPC_PROTOCOL := 46
+const PINNED_RPC_SIGNATURES := "5b608249e9263387"
 
 var _h: CheckHarness
 

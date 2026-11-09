@@ -1682,6 +1682,18 @@ func _request(
 		# 机器读的原因码（比如绑定冲突的 identity_taken）。detail 是给人看的，别拿它做判断。
 		if body.get("code") is String:
 			failure["reason"] = body["code"]
+		if code == 409:
+			var queue_reason := ""
+			var retry_after := -1
+			for line: String in result[2]:
+				var header := line.get_slice(":", 0).to_lower()
+				var value := line.get_slice(":", 1).strip_edges()
+				if header == "x-glory-reason":
+					queue_reason = value
+				elif header == "retry-after" and value.is_valid_int():
+					retry_after = value.to_int()
+			if queue_reason == "credit_banned" and retry_after >= 0:
+				failure["queue_ban_deadline"] = Time.get_ticks_msec() + retry_after * 1000
 		return failure
 	if code >= 500:
 		return {"code": code, "error": localized_error("服务器出错了（HTTP %d），稍后再试" % code)}
@@ -1692,6 +1704,14 @@ func _request(
 # 那段有 refresh/anonymous 的顺序纪律，不该在重构 HTTP 层时被顺手动到。
 func _post(path: String, payload: Dictionary) -> Dictionary:
 	return await _request(HTTPClient.METHOD_POST, path, payload, false)
+
+
+func queue_ban_text(deadline: int) -> String:
+	var seconds := maxi(0, ceili((deadline - Time.get_ticks_msec()) / 1000.0))
+	var en := TranslationServer.get_locale().begins_with("en")
+	if seconds == 0:
+		return "You can try queuing again." if en else "可以重新尝试匹配了。"
+	return ("Queue restricted. Try again in %d s." if en else "你被暂时禁止排队，请等待%d秒后再试。") % seconds
 
 
 func localized_error(message: String) -> String:

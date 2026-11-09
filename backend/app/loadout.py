@@ -105,11 +105,23 @@ def clean_races(value: object) -> list[str]:
     return out
 
 
+# Same order as the race cards in data/units/race_units.json.
+_PREP_RACE_ORDER = ("god", "dark", "undead", "human", "crimson")
+
+
+def effective_prep_races(saved: list[str] | None, owned: set[str]) -> list[str]:
+    available = [race for race in _PREP_RACE_ORDER if race in owned]
+    picked = [race for race in available if race in (saved or [])]
+    count = min(4, len(available))
+    return picked if len(picked) == count else available[:count]
+
+
 async def read_races(player_id: uuid.UUID) -> list[str] | None:
     async with db.pool().acquire() as conn:
         value = await conn.fetchval(
             "select selected_races from players where player_id = $1", player_id)
-    return list(value) if value else None
+    owned = set(await shop.read_entitlements(player_id))
+    return effective_prep_races(value, owned) or None
 
 
 async def save_races(player_id: uuid.UUID, races: list[str]) -> list[str]:
@@ -120,7 +132,7 @@ async def save_races(player_id: uuid.UUID, races: list[str]) -> list[str]:
     for race in clean:
         if shop.requires_entitlement(race) and race not in owned:
             raise LoadoutRejected("race_not_owned", "你还没有解锁这个种族")
-    available = [r for r in ("human", "god", "dark", "undead", "crimson") if r in owned]
+    available = [r for r in _PREP_RACE_ORDER if r in owned]
     if len(clean) != min(4, len(available)):
         raise LoadoutRejected("bad_races", "请选满当前已解锁的种族，最多 4 个")
     async with db.pool().acquire() as conn:
@@ -233,9 +245,8 @@ async def build_loadout(player_id: uuid.UUID) -> Loadout:
     if pet and not (shop.is_pet(pet) and entitled(pet)):
         pet = ""
 
-    # 种族：有资格的留下，没资格的去掉。去掉之后凑不够数的话，
-    # 战斗服务器按 RacePick 规则会整份换成默认 —— 那是它的事，这里不猜。
-    races = [r for r in (row["selected_races"] or []) if entitled(r)]
+    # The displayed default and the signed battle card must use the same lineup.
+    races = effective_prep_races(row["selected_races"], owned)
 
     return Loadout(
         player_id=str(player_id),
@@ -358,6 +369,10 @@ def card_payload(
         if ai_seats:
             payload["ai"] = [[int(ai["slot"]), str(ai["name"])[:16], str(ai.get("avatar", ""))[:16], str(ai.get("avatar_frame", ""))[:64]]
                              for ai in ai_seats if 0 <= int(ai.get("slot", -1)) < 6]
+            # 这桌 AI 的难度段位（11-07，五档难度）：一桌一个数，不进每个座位（名片有长度上限）。
+            # 旧战斗服务器不认识这个字段，AI 照旧用默认档 —— 加字段向后兼容。
+            if "tier" in ai_seats[0]:
+                payload["ai_tier"] = max(0, min(4, int(ai_seats[0]["tier"])))
     if patch_version is not None:
         payload["patch"] = dict(patch_version)
     return payload

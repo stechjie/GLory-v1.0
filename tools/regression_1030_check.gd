@@ -45,7 +45,7 @@ func _synergy_grid() -> void:
 		panel.setup(DetailProbe.new())
 		panel._left_panel = VBoxContainer.new(); panel._left_panel.size = Vector2(220,400)
 		add_child(panel); panel.add_child(panel._left_panel)
-		panel._add_synergy_widgets()
+		panel._add_synergy_widgets(SynergyService.count_races_from_board())
 		await get_tree().process_frame
 		await get_tree().process_frame
 		var grid := panel._left_panel.get_node("SynergyGrid") as GridContainer

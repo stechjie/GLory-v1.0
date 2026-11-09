@@ -175,6 +175,7 @@ const SEAT_CARD_MODAL_PRIORITY := 40
 # `tools/prep_layout_1009_check.gd`：它直接量「金钱宝藏按钮 vs TreasurePanel」有没有重叠。
 const SELL_LEFT_PANEL_TOP_RESERVE := 48.0
 const PrepSeatCard := preload("res://scenes/prep/panels/PrepSeatCard.gd")
+const PrepTeammateBanner := preload("res://scenes/prep/panels/PrepTeammateBanner.gd")
 const ReportDialog := preload("res://ui/components/ReportDialog.gd")
 const PVP_WARNING_DWELL_SEC := 2.0
 const PVP_WARNING_FADE_SEC := 0.18
@@ -2626,6 +2627,7 @@ func open_seat_card(slot: int, badge: Control) -> void:
 	var card := PrepSeatCard.new()
 	card.setup(slot)
 	card.report_requested.connect(_on_seat_report_requested)
+	card.view_board_requested.connect(enter_teammate_view)
 	# 贴在头像下面；靠右的头像也不能让卡片伸出屏幕。
 	var rect := badge.get_global_rect()
 	var view_w := get_viewport_rect().size.x
@@ -2639,6 +2641,109 @@ func open_seat_card(slot: int, badge: Control) -> void:
 		# 同佣兵选择那张：小卡片，不把整个画面压暗。
 		"backdrop_color": Color.TRANSPARENT,
 	})
+
+
+# --- 看队友棋盘（2026-11-07）------------------------------------------------------
+#
+# 头像卡片上点「查看棋盘」→ 3D 棋盘和备战席换成队友的（只读），顶上一条写着在看谁、
+# 带「回到我的棋盘」。自己的 GameState 从头到尾不动：模型层和棋盘格改读 shown_board / shown_bench
+# （PrepShared），交易代码照旧读 GameState，而且整块画面压着一层挡板，什么都点不了。
+# 商店 / 羁绊 / 宝藏栏是自己的数据，看的时候先收起来，回来再放出来。
+# 数据：NetworkService.team_prep_boards（服务器只转同队的；AI 队友由服务器直接发）。
+
+var _teammate_banner: PrepTeammateBanner = null
+var _teammate_shield: Control = null
+var _teammate_hidden: Array[CanvasItem] = []
+var _teammate_view_count := 0
+var _teammate_view_cap := GameConstants.NORMAL_UNIT_CAP
+
+
+func enter_teammate_view(slot: int) -> void:
+	if ModalStack.has(SEAT_CARD_MODAL_ID):
+		ModalStack.pop(SEAT_CARD_MODAL_ID, ModalStack.REASON_PROGRAMMATIC)
+	var local := int(NetworkService.team_local_slot)
+	var teammate := local >= 0 and slot != local and GameConstants.team_of_slot(slot) == GameConstants.team_of_slot(local)
+	if GameState.tutorial_mode or not NetworkService.team_active or not teammate:
+		return
+	if viewing_teammate():
+		exit_teammate_view()
+	teammate_view_slot = slot
+	_board_hud.board_source = shown_board
+	_board_hud.bench_source = shown_bench
+	if not NetworkService.team_prep_boards_changed.is_connected(_on_teammate_board_changed):
+		NetworkService.team_prep_boards_changed.connect(_on_teammate_board_changed)
+	NetworkService.team_request_prep_board(slot)
+	# 挡板：盖住整块画面（棋盘、商店、按钮），只有顶上那一条在它上面。
+	_teammate_shield = Control.new()
+	_teammate_shield.name = "TeammateViewShield"
+	_teammate_shield.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_teammate_shield.mouse_filter = Control.MOUSE_FILTER_STOP
+	_teammate_shield.z_index = 3900
+	add_child(_teammate_shield)
+	_teammate_banner = PrepTeammateBanner.new()
+	_teammate_banner.name = "TeammateViewBanner"
+	_teammate_banner.anchor_left = 0.5
+	_teammate_banner.anchor_right = 0.5
+	_teammate_banner.offset_left = -300
+	_teammate_banner.offset_right = 300
+	_teammate_banner.offset_top = 12
+	_teammate_banner.z_index = 3901
+	_teammate_banner.back_requested.connect(exit_teammate_view)
+	add_child(_teammate_banner)
+	SafeArea.track(_teammate_banner)
+	_teammate_hidden.clear()
+	for panel in [_shop, _synergy, _treasure]:
+		var item := panel as CanvasItem
+		if item != null and is_instance_valid(item) and item.visible:
+			item.visible = false
+			_teammate_hidden.append(item)
+	_apply_teammate_board()
+
+
+func exit_teammate_view() -> void:
+	if not viewing_teammate():
+		return
+	teammate_view_slot = -1
+	teammate_view_board = []
+	teammate_view_bench = []
+	if NetworkService.team_prep_boards_changed.is_connected(_on_teammate_board_changed):
+		NetworkService.team_prep_boards_changed.disconnect(_on_teammate_board_changed)
+	for node in [_teammate_banner, _teammate_shield]:
+		if node != null and is_instance_valid(node):
+			node.queue_free()
+	_teammate_banner = null
+	_teammate_shield = null
+	for item in _teammate_hidden:
+		if is_instance_valid(item):
+			item.visible = true
+	_teammate_hidden.clear()
+	_synergy.show_teammate_board(null)
+	_refresh_all()
+
+
+func _on_teammate_board_changed() -> void:
+	if viewing_teammate():
+		_apply_teammate_board()
+
+
+func _apply_teammate_board() -> void:
+	var entry := NetworkService.team_prep_board(teammate_view_slot)
+	var synced := not entry.is_empty()
+	teammate_view_board = (entry.get("board", []) as Array).duplicate()
+	teammate_view_board.resize(GameConstants.CELL_COUNT)
+	teammate_view_bench = (entry.get("bench", []) as Array).duplicate()
+	teammate_view_bench.resize(GameState.BENCH_SLOTS)
+	_teammate_view_count = 0
+	for cell in teammate_view_board:
+		if cell is Dictionary and not bool((cell as Dictionary).get("is_mercenary", false)):
+			_teammate_view_count += 1
+	_teammate_view_cap = preload("res://scripts/economy/AiHandover.gd").board_cap(entry.get("treasures", []))
+	if _teammate_banner != null and is_instance_valid(_teammate_banner):
+		_teammate_banner.show_state(str(PrepSeatCard.describe(teammate_view_slot).title), teammate_view_board,
+			entry.get("treasures", []), synced)
+	_board_hud.refresh_board()
+	_board_hud.refresh_bench()
+	_synergy.show_teammate_board(teammate_view_board)
 
 
 # 卡片上的「举报」。卡片先收起（举报面板是另一层，叠着看不清下面写了什么），
@@ -3111,6 +3216,28 @@ func _refresh_all() -> void:
 	# 升星表现放在**模型重建之后**：合成那一刻保留的那枚棋子的模型马上要被换掉
 	# （星级变了 ⇒ signature 变了 ⇒ 整个节点 queue_free），当场挂特效立刻就没了。
 	flush_star_upgrades()
+	_maybe_send_prep_board()
+
+
+# 自己的棋盘变了就交一份给服务器转给队友（「查看棋盘」用，2026-11-07）。
+# _refresh_all 一回合要跑很多次，只在棋盘 / 备战席 / 佣兵 / 宝藏真的变了才发；
+# NetworkService 那边再限频（每 0.8 秒最多一份）。
+var _prep_board_sent_signature := ""
+
+
+func _maybe_send_prep_board() -> void:
+	if GameState.tutorial_mode or not NetworkService.team_active or bool(get("spectator_view")):
+		return
+	var parts: PackedStringArray = [str(GameState.round_index)]
+	for source in [GameState.board_slots, GameState.bench_slots, GameState.mercenary_slots]:
+		for cell in source:
+			parts.append("%s:%d" % [(cell as Dictionary).get("id", ""), int((cell as Dictionary).get("star", 1))] if cell is Dictionary else "-")
+	parts.append(",".join(PackedStringArray(GameState.owned_treasures)))
+	var signature := "|".join(parts)
+	if signature == _prep_board_sent_signature:
+		return
+	_prep_board_sent_signature = signature
+	NetworkService.team_send_prep_board()
 func _sync_prep_board_readability_geometry() -> void:
 	if _board_hud.readability_layer == null or not is_instance_valid(_board_hud.readability_layer):
 		return
@@ -3137,7 +3264,12 @@ func _sync_prep_board_readability_state() -> void:
 	var dragging := _board_hud.drop_highlight_active or _board_hud.standby_drop_highlight_active
 	set_prep_cell_marks_visible(dragging)
 	set_prep_deploy_counter_visible(not dragging)
-	set_prep_deploy_counter_values(GameState.normal_unit_count(), GameState.normal_unit_cap())
+	# 看队友棋盘时正中的「上阵数 / 上限」也是队友的。
+	if viewing_teammate():
+		set_prep_deploy_counter_values(_teammate_view_count, _teammate_view_cap)
+	else:
+		set_prep_deploy_counter_values(GameState.normal_unit_count(), GameState.normal_unit_cap())
+	_sync_prep_range_ring()
 	if _board_hud.readability_layer == null or not is_instance_valid(_board_hud.readability_layer):
 		return
 	_board_hud.readability_layer.set_guides_enabled(PlayerProfile.board_readability_enabled)
@@ -3145,30 +3277,55 @@ func _sync_prep_board_readability_state() -> void:
 	_board_hud.readability_layer.set_direction_texts(tr("board_frontline"), tr("board_backline"))
 	_board_hud.readability_layer.set_prep_state(
 		_board_hud._selected_board,
-		_prep_attack_range_indices(_board_hud._selected_board),
 		_board_hud.drop_highlight_active,
 		_board_hud.drop_hover_index,
 		_board_hud.player_color()
 	)
 
-func _prep_attack_range_indices(selected_index: int) -> PackedInt32Array:
-	var result := PackedInt32Array()
-	if selected_index < 0 or selected_index >= GameState.board_slots.size():
-		return result
-	var cell_value = GameState.board_slots[selected_index]
+
+# 射程圈（11-08 用户要求：拖动棋子时显示攻击距离）。两个来源：
+#   * 拖动中：圆心 = 手指悬着的那一格（range_hover_index，能不能放下都算），
+#     射程取**被拖的那只**（棋盘 / 待命 / 商店卡）；手指不在棋盘格上就不画。
+#   * 长按查看属性：圆心 = 检视格（_selected_board），射程取那格上的棋子。
+# 拖动优先（拖动开始会停掉长按，两者本来就互斥，这里只是写明先后）。
+# 跟「战场辅助标记」开关走 —— 它和战斗里点选单位的射程圈是同一类标记，关了就都不画。
+func _sync_prep_range_ring() -> void:
+	var center := -1
+	var definition := {}
+	if PlayerProfile.board_readability_enabled:
+		if _board_hud.drop_highlight_active:
+			center = _board_hud.range_hover_index
+			definition = _prep_drag_payload_unit_def(_active_drag_payload)
+		elif _board_hud._selected_board >= 0 and _board_hud._selected_board < GameState.board_slots.size():
+			center = _board_hud._selected_board
+			var cell_value = GameState.board_slots[center]
+			if typeof(cell_value) == TYPE_DICTIONARY:
+				definition = _prep_display_unit_def(cell_value as Dictionary)
+	if center < 0 or definition.is_empty():
+		set_prep_range_ring(-1, 0.0)
+		return
+	set_prep_range_ring(center, prep_range_px_for_def(definition))
+
+
+# 拖动数据 {"kind", "index"} → 被拖那只棋子的显示用定义（取射程用）。取不到返回空表。
+func _prep_drag_payload_unit_def(payload: Dictionary) -> Dictionary:
+	var index := int(payload.get("index", -1))
+	var cell_value: Variant = null
+	match str(payload.get("kind", "")):
+		"board":
+			if index >= 0 and index < GameState.board_slots.size():
+				cell_value = GameState.board_slots[index]
+		"bench":
+			if index >= 0 and index < GameState.bench_slots.size():
+				cell_value = GameState.bench_slots[index]
+		"shop":
+			# 商店报价本身就是单位定义；买下来是 1 星（与 _buy_or_merge_shop_to_board 同口径）。
+			if index >= 0 and index < GameState.shop_offers.size() and typeof(GameState.shop_offers[index]) == TYPE_DICTIONARY:
+				var offer: Dictionary = GameState.shop_offers[index]
+				cell_value = {"id": str(offer.get("id", "")), "star": 1, "def": offer}
 	if typeof(cell_value) != TYPE_DICTIONARY:
-		return result
-	var definition := _prep_display_unit_def(cell_value as Dictionary)
-	var range_cells := maxf(0.0, float(definition.get("range", 1.0)))
-	var selected_col := selected_index % GameConstants.BOARD_COLUMNS
-	var selected_row := floori(float(selected_index) / float(GameConstants.BOARD_COLUMNS))
-	for index in GameConstants.CELL_COUNT:
-		var col := index % GameConstants.BOARD_COLUMNS
-		var row := floori(float(index) / float(GameConstants.BOARD_COLUMNS))
-		var delta := Vector2(float(col - selected_col), float(row - selected_row))
-		if delta.length() <= range_cells + 0.001:
-			result.append(index)
-	return result
+		return {}
+	return _prep_display_unit_def(cell_value as Dictionary)
 # --- 10.12 bug 文档第 4 条：棋子 轻点 / 长按 / 拖拽 三态分流 ---------------------
 #
 # 需求（用户原话）：

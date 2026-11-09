@@ -214,6 +214,25 @@ var _treasure: TreasureChoicePanelScript = TreasureChoicePanelScene.instantiate(
 # 棋盘与待命区。原 class BoardPanel 的 17 个字段已并入这个节点。
 var _board_hud: BoardHudScript = BoardHudScene.instantiate()
 
+# 看队友棋盘（2026-11-07，点队友头像 →「查看棋盘」）：这段时间 3D 模型层和棋盘格读这两份，
+# 不读 GameState。**交易代码一律照旧读 GameState** —— 看的时候有挡板，什么都点不了，
+# 退出后自己的棋盘原封不动（GameState 从头到尾没被碰过）。
+var teammate_view_slot := -1
+var teammate_view_board: Array = []
+var teammate_view_bench: Array = []
+
+
+func viewing_teammate() -> bool:
+	return teammate_view_slot >= 0
+
+
+func shown_board() -> Array:
+	return teammate_view_board if teammate_view_slot >= 0 else GameState.board_slots
+
+
+func shown_bench() -> Array:
+	return teammate_view_bench if teammate_view_slot >= 0 else GameState.bench_slots
+
 # ---------------------------------------------------------------------------
 # 商店这一簇的状态与节点引用（D2 第三步）。
 #

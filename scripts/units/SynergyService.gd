@@ -17,8 +17,12 @@ const RACE_THRESHOLDS := {
 }
 
 static func count_races_from_board() -> Dictionary:
+	return count_races(GameState.board_slots)
+
+# 任意一块棋盘（看队友棋盘时左栏数的是队友那一份，见 SynergyPanel.show_teammate_board）。
+static func count_races(cells: Array) -> Dictionary:
 	var counts := {"god": 0, "dark": 0, "undead": 0, "human": 0, "crimson": 0}
-	for cell in GameState.board_slots:
+	for cell in cells:
 		if cell == null:
 			continue
 		var race := str(cell.def.get("race", ""))

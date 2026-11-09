@@ -23,6 +23,11 @@ static func synergy_cn(race: String, threshold: int) -> Dictionary:
 	for row in _section("synergies").get(race, []):
 		if int(row.get("threshold", 0)) == threshold:
 			var display: Dictionary = row.duplicate()
+			if race == "undead" and threshold in [2, 4, 7]:
+				var prefix := "灵%d·" % threshold
+				var name := str(row.get("name_cn", ""))
+				if name.begins_with(prefix):
+					display["name_cn"] = "灵族·" + name.trim_prefix(prefix)
 			display["detail_cn"] = _display_text(row.get("detail_cn", ""))
 			return display
 	return {}
