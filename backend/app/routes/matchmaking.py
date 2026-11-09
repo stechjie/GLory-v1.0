@@ -33,7 +33,9 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
+import math
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -89,6 +91,15 @@ _GATE_TEXT = {
     "matchmaking_disabled": "排位功能暂时关闭",
     "service_unavailable": "服务状态暂时确认不了，请稍后再试",
 }
+
+
+async def _queue_rejection(conn, player_id, reason: str) -> HTTPException:
+    headers = {"X-Glory-Reason": reason}
+    if reason == ranked.GATE_BANNED:
+        until = await conn.fetchval("select banned_until from player_credit where player_id = $1", player_id)
+        if until is not None:
+            headers["Retry-After"] = str(max(0, math.ceil((until - dt.datetime.now(dt.UTC)).total_seconds())))
+    return HTTPException(status_code=409, detail=_GATE_TEXT.get(reason, "现在不能排这个模式"), headers=headers)
 
 
 async def _service_gate() -> None:
@@ -151,12 +162,10 @@ async def join_queue(
         mode = matchmaking.RANKED_NORMAL
     async with db.pool().acquire() as conn:
         reason = await ranked.queue_gate(conn, me.player_id, mode)
-        # 休闲也取排位分：AI 补位的难度跟这桌真人的平均段位走（11-07 用户定，暂时这样）。
-        score = await ranked.score_of(conn, me.player_id) if not reason else 0
-    if reason:
-        raise HTTPException(
-            status_code=409, detail=_GATE_TEXT.get(reason, "现在不能排这个模式"),
-            headers={"X-Glory-Reason": reason})
+        if reason:
+            raise await _queue_rejection(conn, me.player_id, reason)
+        # AI 补位按排位分定难度，休闲也要取分。
+        score = await ranked.score_of(conn, me.player_id)
     chosen = None
     if mode == matchmaking.CASUAL:
         try:

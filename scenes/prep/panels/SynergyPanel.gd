@@ -322,9 +322,9 @@ static func _race_entries(race: String) -> Array:
 		"undead":
 			return [
 				{"threshold": 1, "name": "灵族特性·双毒", "detail": "灵族施加的中毒最多叠加2层，分别计时和造成伤害；两层时目标头顶显示两枚毒标记。"},
-				{"threshold": 2, "name": "灵2·剧毒抑疗", "detail": "目标中毒期间，其治疗与吸血获得的生命减少 30%。"},
-				{"threshold": 4, "name": "灵4·剧毒", "detail": "灵族中毒伤害翻倍。"},
-				{"threshold": 7, "name": "灵7·噬毒", "detail": "灵族单位攻击已中毒的敌人时，每次回复自身 15% 最大生命。"},
+				{"threshold": 2, "name": "灵族·剧毒抑疗", "detail": "目标中毒期间，其治疗与吸血获得的生命减少 30%。"},
+				{"threshold": 4, "name": "灵族·剧毒", "detail": "灵族中毒伤害翻倍。"},
+				{"threshold": 7, "name": "灵族·噬毒", "detail": "灵族单位攻击已中毒的敌人时，每次回复自身 15% 最大生命。"},
 			]
 		"human":
 			return [
@@ -362,9 +362,9 @@ static func _race_entries_en(race: String) -> Array:
 		"undead":
 			return [
 				{"threshold": 1, "name": "Undead Trait: Double Poison", "detail": "Poison applied by Undead units stacks twice. Each stack ticks and expires separately; two poison marks appear above the target at two stacks."},
-				{"threshold": 2, "name": "Undead 2: Venom Suppression", "detail": "While poisoned, the target receives 30% less HP from healing and lifesteal."},
-				{"threshold": 4, "name": "Undead 4: Poison", "detail": "Undead poison deals double damage."},
-				{"threshold": 7, "name": "Undead 7: Venom Feast", "detail": "When Undead units hit a poisoned enemy, they restore 15% of their max HP per hit."},
+				{"threshold": 2, "name": "Undead: Venom Suppression", "detail": "While poisoned, the target receives 30% less HP from healing and lifesteal."},
+				{"threshold": 4, "name": "Undead: Poison", "detail": "Undead poison deals double damage."},
+				{"threshold": 7, "name": "Undead: Venom Feast", "detail": "When Undead units hit a poisoned enemy, they restore 15% of their max HP per hit."},
 			]
 		"human":
 			return [

@@ -368,17 +368,16 @@ func _input(event: InputEvent) -> void:
 			if shop_touch.pressed:
 				shop_pointer = shop_touch.position
 				shop_should_check = true
-		# 点「弹窗 / 商店按钮 / 商店子树里的任何控件」之外才收起。用悬停控件判断是否属于商店
-		# 子树，这样刷新、钱袋等就算被摆到面板矩形【外面】，点它们也不会被误判成关店。
-		# 弹窗非模态、不 return：这次点击继续往下传，可以直接点棋盘/拖单位。
-		var shop_hovered := get_viewport().gui_get_hovered_control()
-		var click_on_shop: bool = _shop.panel.get_global_rect().has_point(shop_pointer) \
-			or (shop_hovered != null and (shop_hovered == _shop.panel or _shop.panel.is_ancestor_of(shop_hovered)))
-		var click_on_shop_btn: bool = _shop.open_button != null and _shop.open_button.get_global_rect().has_point(shop_pointer)
-		# 外挂层（钱袋A购买键 / 刷新）虽然不在商店面板矩形内，但点它们也算"点商店"，不收起。
-		# 只认"悬停控件是它的子孙"——外挂层本身满屏且 IGNORE，不能用矩形判断（否则永远不关店）。
-		var click_on_shop_side: bool = _shop.side_controls != null and _shop.side_controls.visible \
-			and shop_hovered != null and _shop.side_controls.is_ancestor_of(shop_hovered)
+		# Use this event's viewport position. Touch and the first mouse press
+		# may arrive before Godot updates the hovered control.
+		var click_on_shop := _shop_control_contains(_shop.panel, shop_pointer)
+		var click_on_shop_btn := _shop_control_contains(_shop.open_button, shop_pointer)
+		var click_on_shop_side := false
+		if is_instance_valid(_shop.side_controls) and _shop.side_controls.visible:
+			for child in _shop.side_controls.get_children():
+				if _shop_control_contains(child as Control, shop_pointer):
+					click_on_shop_side = true
+					break
 		if shop_should_check and not click_on_shop and not click_on_shop_btn and not click_on_shop_side:
 			_shop.close_picker()
 	# 佣兵选择层原本在这里手写「点面板矩形之外就关」。它已迁进 ModalStack
@@ -386,6 +385,11 @@ func _input(event: InputEvent) -> void:
 	# backdrop 在 _unhandled_input 之前就消费掉那一下点击，这段永远不会再触发。
 	# 而且 _merc_overlay 现在是每次开合重建的瞬时节点，留着这段就是一处读死指针的
 	# 死代码，所以删掉而不是留着。商店那段仍是自建面板，保持原样。
+
+func _shop_control_contains(control: Control, pointer: Vector2) -> bool:
+	return is_instance_valid(control) and control.is_visible_in_tree() \
+		and Rect2(Vector2.ZERO, control.size).has_point(control.get_global_transform_with_canvas().affine_inverse() * pointer)
+
 
 func take_loaded_battle_scene() -> PackedScene:
 	var scene := _loaded_battle_scene

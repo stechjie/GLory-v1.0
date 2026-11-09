@@ -77,8 +77,7 @@ var _pet_tip_pet := ""
 # --- 种族页 ---
 var _race_box: VBoxContainer
 var _race_hint_label: Label
-var _race_count_label: Label
-var _race_save_btn: Button
+var _race_save_busy := false
 var _race_cards: Dictionary = {}   # race -> {"panel", "name", "button", "logo"}
 var _viewed_race := ""
 var _race_roster_title: Label
@@ -95,9 +94,7 @@ var _unit_ownership_ready := false
 
 func tutorial_unit_ownership_ready() -> bool:
 	return _unit_ownership_ready
-# 草稿：玩家在页面上点来点去的那一份。只有凑满 RacePick.required_count() 个、按了「保存」
-# 才交给账号服务器 —— 选到一半（3 个）的状态绝不能存，否则存下来的就是一份不合法的选择。
-# 顺序始终跟 RacePick.all_races() 一致，这样才能直接和已保存的那份比较。
+# 不足四族的换选草稿只留在当前种族页。
 var _race_draft: Array[String] = []
 
 
@@ -494,6 +491,8 @@ func _place_pet_tip(art: Control) -> void:
 
 
 func _switch_tab(tab_id: int) -> void:
+	if _tab == Tab.RACES and tab_id != Tab.RACES and not _race_save_busy:
+		_race_draft = _effective_races()
 	_tab = tab_id
 	_hide_pet_tip()
 	_refresh_chrome()
@@ -716,17 +715,6 @@ func _build_race_box() -> Control:
 	_race_notice_label.add_theme_color_override("font_color", Tokens.PREP_INK)
 	_race_notice.add_child(_race_notice_label)
 
-	_race_count_label = Label.new()
-	_race_count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_race_count_label.add_theme_font_size_override("font_size", 18)
-	_race_count_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
-	_race_box.add_child(_race_count_label)
-	_race_save_btn = ActionButtonScene.instantiate() as Button
-	_race_save_btn.text = tr("race_pick_save")
-	_race_save_btn.custom_minimum_size = Vector2(240, Tokens.TOUCH_MIN)
-	_style_prep_button(_race_save_btn, true)
-	_race_save_btn.pressed.connect(_on_race_save_pressed)
-	_race_box.add_child(_race_save_btn)
 	return _race_box
 
 func _build_race_card(race: String) -> Control:
@@ -765,27 +753,30 @@ func _build_race_card(race: String) -> Control:
 	return card
 
 func _refresh_races() -> void:
-	if _race_count_label == null:
+	if _race_hint_label == null:
 		return
 	var need := mini(RacePick.PICK_COUNT, _available_race_count())
 	var forced := _available_race_count() <= RacePick.PICK_COUNT
-	var saved: Array[String] = PlayerProfile.get_selected_races()
 	if forced:
-		_race_draft = saved
+		_race_draft = _effective_races()
 	_race_hint_label.text = (tr("race_pick_forced") % need) if forced else (tr("race_pick_hint") % need)
 	for race in _race_cards:
 		_refresh_race_card(str(race), forced)
 	_refresh_race_roster()
-	var dirty: bool = _race_draft != saved
-	_race_count_label.text = tr("race_pick_count") % [_race_draft.size(), need]
-	if dirty and not forced:
-		_race_count_label.text += "  ·  " + tr("race_pick_unsaved")
-	_race_save_btn.visible = not forced
-	var all_complete := true
-	for race in _race_draft:
-		if not _race_complete(race):
-			all_complete = false
-	_race_save_btn.disabled = _race_draft.size() != need or not dirty or not all_complete
+
+
+func _effective_races() -> Array[String]:
+	var available: Array[String] = []
+	var picked: Array[String] = []
+	var saved := PlayerProfile.get_selected_races()
+	for race in RacePick.all_races():
+		if _race_complete(race):
+			available.append(race)
+			if saved.has(race):
+				picked.append(race)
+	var need := mini(RacePick.PICK_COUNT, available.size())
+	return picked if picked.size() == need else available.slice(0, need)
+
 
 func _refresh_race_card(race: String, forced: bool) -> void:
 	var parts: Dictionary = _race_cards[race]
@@ -815,7 +806,7 @@ func _refresh_race_card(race: String, forced: bool) -> void:
 		btn.disabled = false
 	else:
 		btn.text = tr("race_pick_deselect") if picked else tr("race_pick_select")
-		btn.disabled = false
+		btn.disabled = _race_save_busy
 	# 10.11 第 4 条：选中态（按钮写着「取消选择」）要带金边，一眼看出这一族已选。
 	# 未解锁的不算选中，不给金边。
 	_style_prep_button(btn, picked and complete)
@@ -911,6 +902,9 @@ func _load_unit_ownership() -> void:
 	for id in ((owned.get("body", {}) as Dictionary).get("items", []) as Array):
 		_owned_content[str(id)] = true
 	await PlayerProfile.refresh_races()
+	if not is_inside_tree():
+		return
+	_race_draft = _effective_races()
 	_refresh_races()
 	_unit_ownership_ready = true
 	unit_ownership_loaded.emit()
@@ -949,6 +943,8 @@ func show_races(race: String = "") -> void:
 #   也会弹一个「XX族羁绊」窗（用户实拍到的就是这个）。羁绊窗现在只由「查看羁绊」
 #   按钮打开 —— 卡片按钮只管选/取消。
 func _on_race_card_pressed(race: String) -> void:
+	if _race_save_busy:
+		return
 	_viewed_race = race
 	_refresh_race_roster()
 	if not _race_complete(race):
@@ -971,6 +967,8 @@ func _on_race_card_pressed(race: String) -> void:
 				next.append(known)
 		_race_draft = next
 	_refresh_races()
+	if _race_draft.size() == need and _race_draft != _effective_races():
+		_save_race_selection()
 
 func _show_race_bond(race: String) -> void:
 	var body: String = SynergyBond.format_synergy_effects(race)
@@ -984,18 +982,20 @@ func _show_race_bond(race: String) -> void:
 	})
 
 
-func _on_race_save_pressed() -> void:
-	# 存要走一次网络。期间先把按钮按住，免得连点发出好几次。
-	_race_save_btn.disabled = true
-	var ok: bool = await PlayerProfile.set_selected_races(_race_draft)
+func _save_race_selection() -> void:
+	_race_save_busy = true
+	_refresh_races()
+	var ok := await PlayerProfile.set_selected_races(_race_draft.duplicate())
 	if not is_inside_tree():
 		return
-	# 没存上时草稿原样留着（页面上仍标「还没保存」），玩家可以直接再点一次。
+	_race_save_busy = false
+	_race_draft = _effective_races()
 	GloryToast.show_text(tr("race_pick_saved") if ok else tr("race_pick_save_failed"))
 	_refresh_races()
 
+
 func _on_races_changed() -> void:
-	_race_draft = PlayerProfile.get_selected_races()
+	_race_draft = _effective_races()
 	_refresh_races()
 
 # --- 棋盘皮肤页 ---------------------------------------------------------------

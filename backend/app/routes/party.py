@@ -15,7 +15,7 @@ from app.config import get_settings
 from app.jwt_verify import Claims
 from app.rate_limit import RateLimited, SlidingWindowLimiter
 from app.routes.me import current_claims
-from app.routes.matchmaking import _GATE_TEXT
+from app.routes.matchmaking import _queue_rejection
 
 log = logging.getLogger("glory.party")
 
@@ -527,9 +527,7 @@ async def start(body: StartBody, claims: Annotated[Claims, Depends(current_claim
         for pid in members:
             reason = await ranked.queue_gate(conn, pid, room.mode)
             if reason:
-                raise HTTPException(status_code=409,
-                                    detail=_GATE_TEXT.get(reason, "现在不能开始匹配"),
-                                    headers={"X-Glory-Reason": reason})
+                raise await _queue_rejection(conn, pid, reason)
         rows = await conn.fetch(
             "select player_id, score from player_ranked where player_id = any($1::uuid[])", members)
     ratings = {row["player_id"]: int(row["score"]) for row in rows}
