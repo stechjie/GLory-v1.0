@@ -1,0 +1,134 @@
+{
+  "date": "2026-11-09",
+  "scope": "test",
+  "source_commit": "05902a63d7207891c22bb66ebf2ff71f1542237a",
+  "source_pushed": true,
+  "upstream_main": "19a1f89d",
+  "server": {
+    "status": "deployed",
+    "commit": "05902a63d7207891c22bb66ebf2ff71f1542237a",
+    "project": "project-60c72d94-b558-4e4f-992",
+    "database_project": "tzkysvnpjmgzfbvazugi",
+    "release": "/home/nins17121/Glory/releases/1.0.2-20261109-05902a63",
+    "protocol": 46,
+    "idle_checks": [
+      {
+        "battle_connections": 0,
+        "account_online": 0,
+        "room_count": 0,
+        "at": "2026-11-09T08:05:05.246542+00:00"
+      },
+      {
+        "battle_connections": 0,
+        "account_online": 0,
+        "room_count": 0,
+        "at": "2026-11-09T08:05:08.733522+00:00"
+      }
+    ],
+    "services": {
+      "glory-server": "active",
+      "glory-backend": "active",
+      "livekit": "active",
+      "caddy": "active"
+    },
+    "health": {
+      "status": "ok",
+      "environment": "prod",
+      "configured": true,
+      "missing_config": []
+    },
+    "schema_verified": true,
+    "old_pid": "24697",
+    "new_pid": "28369",
+    "backend_pid": "28341",
+    "updated_files": [
+      "backend/tests/test_loadout.py",
+      "backend/app/loadout.py",
+      "backend/app/routes/matchmaking.py",
+      "backend/app/routes/party.py",
+      "data/ai/bot_profiles.json"
+    ],
+    "rollback_directory": "/home/nins17121/Glory/delivery/release-20261109-test",
+    "verified_at": "2026-11-09T08:05:18.363070+00:00",
+    "device_gameplay_tested": false
+  },
+  "resource_sync": {
+    "status": "success",
+    "counts": {
+      "downloaded": 0,
+      "checked": 706,
+      "skipped": 3705,
+      "local_preserved": 16
+    },
+    "errors": []
+  },
+  "android": {
+    "build": 62,
+    "version": "1.0.2",
+    "built": true,
+    "bytes": 618172594,
+    "sha256": "f9209499e0cc9b8f3786acb3c9c0e203a12a5fd52046cae6495d93769c027baa",
+    "direct_url": "https://glorytd-api.duckdns.org/beta/downloads/Glory-1.0.2-62-android.apk",
+    "full_server_sha256_verified": true,
+    "public_range_verified": true,
+    "drive_uploaded": false,
+    "fixed_qr_switched": false
+  },
+  "ios": {
+    "build": 90,
+    "built": true,
+    "state": "Apple processing",
+    "uploaded": true,
+    "internal_group_assigned": false,
+    "bytes": 581658220,
+    "sha256": "bf5c314e0a91c7426abcbade963f4c359bb7bfdbd7a5a849de72049b28e0f049",
+    "source_commit": "05902a63d7207891c22bb66ebf2ff71f1542237a",
+    "asset_inventory_sha256": "2837725631ad260cfdd87738577fa6ed948cdf0b4b5d014c8cd2784adb183018",
+    "upload_started": true,
+    "baseline_registered": true,
+    "base_id": "glory-20261109-test-refresh",
+    "includes_seq": 4,
+    "transporter_state": "Delivered",
+    "delivered_at_local": "2026-11-09 16:54 Asia/Shanghai"
+  },
+  "validation": {
+    "final_export_check": "passed",
+    "final_runtime_tests": 16,
+    "backend_tests": 283,
+    "server_bundle_smoke": "passed",
+    "battle_probe": "passed protocol=46 dtls=pinned direct route",
+    "physical_gameplay_verified": false,
+    "asset_inventory_matches": true
+  },
+  "blockers": [
+    "Chrome web clicks and keyboard do not respond despite successful reading/native controls",
+    "Safari Drive password passed; Google requires user two-step verification",
+    "Safari App Store Connect password passed; Apple requires 6-digit device verification",
+    "Drive connector rejects APK above 512 MiB"
+  ],
+  "pending": [
+    "Android62 full Drive upload, metadata and full SHA256 readback, then QR config switch",
+    "iOS90 Apple processing, save notes, assign GLory internal group, verify Testing"
+  ],
+  "updated_at": "2026-11-09T08:59:12.669435+00:00",
+  "retention": {
+    "android_prod": [
+      54,
+      56
+    ],
+    "android_test": [
+      61,
+      62
+    ],
+    "ios_prod": [
+      81,
+      82
+    ],
+    "ios_test": [
+      89,
+      90
+    ],
+    "registered_patch_baselines_preserved": true
+  },
+  "status": "waiting_for_account_verification"
+}
