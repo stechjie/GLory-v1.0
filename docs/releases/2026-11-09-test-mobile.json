@@ -77,9 +77,9 @@
   "ios": {
     "build": 90,
     "built": true,
-    "state": "processed_awaiting_internal_group",
+    "state": "Testing",
     "uploaded": true,
-    "internal_group_assigned": false,
+    "internal_group_assigned": true,
     "bytes": 581658220,
     "sha256": "bf5c314e0a91c7426abcbade963f4c359bb7bfdbd7a5a849de72049b28e0f049",
     "source_commit": "05902a63d7207891c22bb66ebf2ff71f1542237a",
@@ -90,7 +90,19 @@
     "includes_seq": 4,
     "transporter_state": "Delivered",
     "delivered_at_local": "2026-11-09 16:54 Asia/Shanghai",
-    "apple_processing": "complete_verified_in_Transporter"
+    "apple_processing": "complete_verified_in_Transporter",
+    "version": "1.0.2",
+    "build_id": "d35014ce-8805-4db2-bfa3-1843ee150ee9",
+    "internal_group": "GLory 内部验证",
+    "group_id": "90dd8f53-b157-49c4-b899-8da72091b76a",
+    "testers": 10,
+    "notes_saved": true,
+    "verified_at": "2026-11-09T12:47:40.225050+00:00",
+    "evidence": [
+      "testflight90-detail.txt",
+      "testflight90-testing.txt",
+      "testflight90-testing.jpg"
+    ]
   },
   "validation": {
     "final_export_check": "passed",
@@ -104,14 +116,12 @@
   "blockers": [
     "Chrome web clicks and keyboard do not respond despite successful reading/native controls",
     "Safari Drive password passed; Google requires user two-step verification",
-    "Safari App Store Connect password passed; Apple requires 6-digit device verification",
     "Drive connector rejects APK above 512 MiB"
   ],
   "pending": [
-    "Android62 full Drive upload and hash readback, then QR config switch",
-    "iOS90 save notes, assign GLory internal group, verify Testing"
+    "Android62 full Drive upload and hash readback, then QR config switch"
   ],
-  "updated_at": "2026-11-09T09:00:29.099318+00:00",
+  "updated_at": "2026-11-09T12:47:40.225050+00:00",
   "retention": {
     "android_prod": [
       54,
@@ -131,5 +141,5 @@
     ],
     "registered_patch_baselines_preserved": true
   },
-  "status": "waiting_for_account_verification"
+  "status": "ios_internal_testing_ready_android_drive_pending"
 }
