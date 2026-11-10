@@ -5,9 +5,9 @@
   "android": {
     "build": 63,
     "built": true,
-    "drive_uploaded": false,
-    "fixed_qr_switched": false,
-    "state": "uploading_to_drive",
+    "drive_uploaded": true,
+    "fixed_qr_switched": true,
+    "state": "published",
     "version": "1.0.2",
     "bytes": 618172594,
     "sha256": "6ffd1a5f6a70f98f930ed490d8d47b11569c980c35a039efcd6be12bffb1bd20",
@@ -16,14 +16,16 @@
     "direct_url": "https://glorytd-api.duckdns.org/beta/downloads/Glory-1.0.2-63-android.apk",
     "full_server_sha256_verified": true,
     "public_range_verified": true,
-    "upload_method": "Chrome_existing_account_session"
+    "upload_method": "Chrome_existing_account_session",
+    "drive_file_id": "1gb4Uq2GXO4NLDrjWwMWHFx6VWj3haENo",
+    "drive_full_sha256_readback_verified": true
   },
   "ios": {
     "build": 91,
     "built": true,
     "uploaded": false,
     "internal_group_assigned": false,
-    "state": "built_upload_deferred_for_android_priority",
+    "state": "uploading_to_apple",
     "bytes": 581656854,
     "sha256": "492f4e1d6710c5110f415bc2b27712d092dd7e524344aef79ab33f09666657ec",
     "path": "/Volumes/repository/github/GLory/build/ipa/Glory-app-store-20261110-181733-000449-b452523b.ipa",
@@ -268,7 +270,7 @@
     "battle_probe": "passed protocol=46 dtls=pinned direct route"
   },
   "blockers": [],
-  "updated_at": "2026-11-10T10:32:13.236524+00:00",
+  "updated_at": "2026-11-10T11:01:26.058814+00:00",
   "server": {
     "status": "deployed",
     "commit": "b452523b91904707b129d6ea8a471c484c4c8e8b",
