@@ -1574,9 +1574,9 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 				var book_target:Vector3=victim.get("world_foot",mother.get("world_foot",Vector3.ZERO)) if has_victim else mother.get("world_foot",Vector3.ZERO)
 				var book_context:Dictionary=_unit_target_context(mother,victim) if has_victim else _unit_target_context(mother,mother)
 				book_context["has_victim"]=has_victim
-				book_context["heavy"]=has_victim and bool(victim.get("is_boss",false))
-				# 10.18：非 Boss 目标当帧被处决 → 尸体改走「青光定身 → 化成魂火」。
-				if has_victim and not bool(victim.get("is_boss",false)):
+				var heavy := bool(victim.get("is_boss", false)) or bool(event.get("formation_guardian_hit", false))
+				book_context["heavy"] = has_victim and heavy
+				if has_victim and not heavy:
 					_mark_mother_execute_victim(victim_uid)
 				var head_anchor:Variant=_unit_actor_registry.get_anchor(str(mother.get("id","")),"HeadAnchor")
 				if head_anchor is Node3D:

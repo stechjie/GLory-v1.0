@@ -26,7 +26,7 @@ const UnitCollection := preload("res://scripts/account/UnitCollection.gd")
 
 signal back_requested
 signal starter_picked   # 首次三选一选定后发出（用于「进主菜单前的强制关卡」）
-signal shop_requested   # 棋盘皮肤页点了「去商城」
+signal skin_acquisition_requested(skin_id: String)
 signal unit_shop_requested(race: String)   # 种族页点了没解锁的种族 ->「去商城」直接落在棋子页
 signal unit_ownership_loaded
 
@@ -143,12 +143,13 @@ func _apply_tutorial_input_lock(node: Node) -> void:
 
 # --- 棋盘皮肤页 ---
 var _skin_box: VBoxContainer
-var _skin_cards: Dictionary = {}   # skin id -> {"panel", "name", "status", "button"}
-# 哪些皮肤要花钱、买过哪些：进这一页时才拉（商城目录 + 归属）。不在目录里的一律免费。
+var _skin_cards: Dictionary = {}   # skin id -> {"panel", "name", "button"}
+# 进入皮肤页时读取账号归属和商城目录；已知活动皮肤始终需要解锁。
 var _skin_ownership: int = SkinOwnership.NOT_LOADED
 var _skin_sold: Dictionary = {}    # 商城里卖的皮肤 id -> true
 var _skin_owned: Dictionary = {}   # 买过的内容 id -> true
 var _skin_busy := false
+const ACTIVITY_SKINS := ["prep_skin_ice", "prep_skin_sakura", "prep_skin_nightwisp"]
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -1050,12 +1051,6 @@ func _build_skin_card(skin_id: String) -> Control:
 	name_lbl.add_theme_color_override("font_color", Tokens.PREP_TEXT)
 	content.add_child(name_lbl)
 
-	var status_lbl := Label.new()
-	status_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	status_lbl.add_theme_font_size_override("font_size", 16)
-	status_lbl.add_theme_color_override("font_color", Tokens.PREP_TEXT)
-	content.add_child(status_lbl)
-
 	var btn := ActionButtonScene.instantiate() as Button
 	btn.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
 	btn.size_flags_horizontal = Control.SIZE_FILL
@@ -1063,39 +1058,41 @@ func _build_skin_card(skin_id: String) -> Control:
 	btn.pressed.connect(_on_skin_card_pressed.bind(skin_id))
 	content.add_child(btn)
 
-	_skin_cards[skin_id] = {"panel": card, "name": name_lbl, "status": status_lbl, "button": btn}
+	_skin_cards[skin_id] = {"panel": card, "name": name_lbl, "button": btn}
 	return card
 
 # 商城目录 + 归属。只在进这一页时拉，失败下次进来再拉。
 func _load_skin_ownership() -> void:
 	_skin_ownership = SkinOwnership.LOADING
-	var catalog: Dictionary = await AccountManager.fetch_shop()
+	_refresh_skins()
 	var owned: Dictionary = await AccountManager.fetch_entitlements()
 	if not is_inside_tree():
 		return
-	if int(catalog.get("code", 0)) / 100 != 2 or int(owned.get("code", 0)) / 100 != 2:
-		_skin_ownership = SkinOwnership.FAILED
+	if int(owned.get("code", 0)) / 100 == 2:
+		_skin_owned.clear()
+		for id in ((owned.get("body", {}) as Dictionary).get("items", []) as Array):
+			_skin_owned[str(id)] = true
 		_refresh_skins()
+	var catalog: Dictionary = await AccountManager.fetch_shop()
+	if not is_inside_tree():
 		return
-	_skin_sold.clear()
-	for raw in ((catalog.get("body", {}) as Dictionary).get("items", []) as Array):
-		var item := raw as Dictionary
-		if str(item.get("kind", "")) == "prep_skin":
-			_skin_sold[str(item.get("grants", ""))] = true
-	_skin_owned.clear()
-	for id in ((owned.get("body", {}) as Dictionary).get("items", []) as Array):
-		_skin_owned[str(id)] = true
-	_skin_ownership = SkinOwnership.READY
+	if int(catalog.get("code", 0)) / 100 == 2:
+		_skin_sold.clear()
+		for raw in ((catalog.get("body", {}) as Dictionary).get("items", []) as Array):
+			var item := raw as Dictionary
+			if str(item.get("kind", "")) == "prep_skin":
+				_skin_sold[str(item.get("grants", ""))] = true
+	_skin_ownership = SkinOwnership.READY if int(catalog.get("code", 0)) / 100 == 2 and int(owned.get("code", 0)) / 100 == 2 else SkinOwnership.FAILED
 	_refresh_skins()
 
-# 能不能直接用。知道在卖的，买了才能用；不在卖的清单里：拉到了清单就是免费，
-# 没拉到（失败）先当能用 —— 账号服务器会把没买的挡回来，比「网络一抖整页都锁住」好。
+
 func _skin_usable(skin_id: String) -> bool:
-	if skin_id == PrepSkin.DEFAULT_ID:
+	if skin_id == PrepSkin.DEFAULT_ID or _skin_owned.has(skin_id):
 		return true
-	if _skin_sold.has(skin_id):
-		return _skin_owned.has(skin_id)
-	return _skin_ownership == SkinOwnership.READY or _skin_ownership == SkinOwnership.FAILED
+	if skin_id in ACTIVITY_SKINS or _skin_sold.has(skin_id):
+		return false
+	return _skin_ownership == SkinOwnership.READY
+
 
 func _refresh_skins() -> void:
 	if _skin_cards.is_empty():
@@ -1115,39 +1112,28 @@ func _refresh_skin_card(skin_id: String, is_active: bool) -> void:
 	panel.add_theme_stylebox_override("panel",
 		Tokens.panel_box(Tokens.PREP_GLASS,
 			Tokens.GOLD_EDGE if is_active else Tokens.PREP_EDGE, 10))
-	var status_lbl: Label = parts["status"]
 	var btn: Button = parts["button"]
-	var loading := _skin_ownership == SkinOwnership.LOADING or _skin_ownership == SkinOwnership.NOT_LOADED
-	if skin_id == PrepSkin.DEFAULT_ID:
-		status_lbl.text = ""
-	elif _skin_sold.has(skin_id):
-		status_lbl.text = tr("skin_status_owned") if _skin_owned.has(skin_id) else tr("skin_status_locked")
-	elif loading:
-		status_lbl.text = tr("skin_status_loading")
-	elif _skin_ownership == SkinOwnership.FAILED:
-		# 没拉到目录：不知道要不要钱，宁可不写，也别把卖的写成「免费」。
-		status_lbl.text = ""
-	else:
-		status_lbl.text = ""
-	status_lbl.visible = not status_lbl.text.is_empty()
+	var loading := _skin_ownership in [SkinOwnership.NOT_LOADED, SkinOwnership.LOADING]
 	if is_active:
 		btn.text = tr("skin_in_use")
-		btn.disabled = true
-	elif skin_id != PrepSkin.DEFAULT_ID and loading:
-		btn.text = tr("skin_use")
 		btn.disabled = true
 	elif _skin_usable(skin_id):
 		btn.text = tr("skin_use")
 		btn.disabled = _skin_busy
+	elif skin_id in ACTIVITY_SKINS or _skin_sold.has(skin_id):
+		btn.text = tr("skin_get")
+		btn.disabled = _skin_busy
 	else:
-		btn.text = tr("skin_to_shop")
-		btn.disabled = false
-	# 10.11 第 4 条：正在使用的那张（按钮写着「使用中」）要带金边。
+		btn.text = tr("skin_status_loading") if loading else tr("skin_retry")
+		btn.disabled = loading or _skin_busy
 	_style_prep_button(btn, is_active)
 
 func _on_skin_card_pressed(skin_id: String) -> void:
 	if not _skin_usable(skin_id):
-		shop_requested.emit()
+		if skin_id in ACTIVITY_SKINS or _skin_sold.has(skin_id):
+			skin_acquisition_requested.emit(skin_id)
+		elif _skin_ownership == SkinOwnership.FAILED:
+			_load_skin_ownership()
 		return
 	if _skin_busy:
 		return
@@ -1164,7 +1150,6 @@ func _on_skin_card_pressed(skin_id: String) -> void:
 		# 账号服务器说这张要买、还没买（页面以为它免费，比如拿到的商城目录不全）。按它说的算。
 		_skin_sold[skin_id] = true
 		_skin_owned.erase(skin_id)
-		GloryToast.show_text(tr("skin_not_owned"))
 	else:
 		GloryToast.show_text(tr("skin_save_failed"))
 	_refresh_skins()

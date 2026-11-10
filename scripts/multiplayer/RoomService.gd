@@ -432,9 +432,12 @@ func public_room_list() -> Array:
 		# 自定义房间开局时也会有 match_uid（战报要用，见第 1 步），两件事不能混。
 		if bool(room.get("matched", false)) or str(room.get("mode", "custom")) != "custom":
 			continue
+		var players := room_player_count(room)
+		if players == 0 and (room.get("spectators", {}) as Dictionary).is_empty():
+			continue
 		out.append({
 			"id": int(room.get("id", 0)),
-			"players": room_player_count(room),
+			"players": players,
 			"max": team_slots,
 			"state": str(room.get("state", room_lobby)),
 		})

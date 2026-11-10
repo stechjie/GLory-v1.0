@@ -306,7 +306,7 @@ static func format_skill_template_cn(d: Dictionary) -> String:
 			var m_t2 := float(d.get("tier2_chance", 0.35))
 			var m_t3 := float(d.get("tier3_chance", 0.1))
 			var m_boss := float(d.get("boss_max_hp_damage", 0.2))
-			return "母灵（每人限1只）：每有%d个敌人死亡，处决一名敌人（1阶/佣兵%s、2阶%s、3阶%s）；对Boss改为造成%s最大生命伤害。" % [m_th, pct(m_t1), pct(m_t2), pct(m_t3), pct(m_boss)]
+			return "母灵（每人限1只）：每有%d个敌人死亡，处决一名敌人（1阶/佣兵%s、2阶%s、3阶%s）；对Boss或法阵守护者改为造成%s最大生命伤害。" % [m_th, pct(m_t1), pct(m_t2), pct(m_t3), pct(m_boss)]
 		"attack_interrupt":
 			# 9.14：4 星把「打断」（锁普攻 1 秒）换成「眩晕」0.5 秒 —— stun_sec 只写在
 			# 4 星 star4 覆写里。文案按有无 stun_sec 分两支，与 BattleSimulator 的实现同源。
@@ -499,7 +499,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 			var m_t2 := float(d.get("tier2_chance", 0.35))
 			var m_t3 := float(d.get("tier3_chance", 0.1))
 			var m_boss := float(d.get("boss_max_hp_damage", 0.2))
-			return "Matron (one per player): Every %d enemy deaths, execute an enemy (Tier 1/Merc %s, Tier 2 %s, Tier 3 %s); against a Boss, deal %s of its max HP instead." % [m_th, pct(m_t1), pct(m_t2), pct(m_t3), pct(m_boss)]
+			return "Matron (one per player): Every %d enemy deaths, execute an enemy (Tier 1/Merc %s, Tier 2 %s, Tier 3 %s); against a Boss or Formation Guardian, deal %s of its max HP instead." % [m_th, pct(m_t1), pct(m_t2), pct(m_t3), pct(m_boss)]
 		"attack_interrupt":
 			var militia_stun := float(d.get("stun_sec", 0.0))
 			if militia_stun > 0.0:

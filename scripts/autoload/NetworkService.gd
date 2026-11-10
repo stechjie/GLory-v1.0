@@ -3569,6 +3569,13 @@ func _spectate_detach(peer_id: int, keep_lobby_voice: bool = false) -> bool:
 	if SpectatorService.remove_peer(room, peer_id).is_empty():
 		return true
 	_net_log("spectator left room=%d peer=%d count=%d" % [room_id, peer_id, SpectatorService.count(room)])
+	# Same-room seating detaches first, then immediately claims the seat.
+	if not keep_lobby_voice and str(room.get("state", "")) == ROOM_LOBBY \
+			and not bool(room.get("matched", false)) and _room_player_count(room) == 0 \
+			and SpectatorService.count(room) == 0:
+		_room_close(room, "empty_no_tokens")
+		_rooms.erase(room_id)
+		return true
 	if str(room.get("state", "")) != ROOM_CLOSED:
 		_broadcast_room_lobby(room)
 	return true
@@ -6335,7 +6342,9 @@ func _join_custom_room(sender: int, room_id: int, public_id: String, seat_card: 
 	if str(room.get("state", "")) != ROOM_LOBBY:
 		_send_custom_room_failure(sender, "room_started")
 		return
-	if (bool(room.get("suspended", false)) or _room_player_count(room) <= 0) and SpectatorService.sid_of_peer(room, sender) < 0:
+	var has_players := _room_player_count(room) > 0
+	var has_spectators := SpectatorService.count(room) > 0
+	if (not has_players and not has_spectators) or (has_players and bool(room.get("suspended", false)) and SpectatorService.sid_of_peer(room, sender) < 0):
 		_send_custom_room_failure(sender, "room_not_found")
 		return
 	var existing := _room_for_peer(sender)

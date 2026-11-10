@@ -344,7 +344,10 @@ func _on_profile_changed(_profile: Dictionary = {}) -> void:
 func _view_seat_profile(index: int) -> void:
 	if index == _my_slot() or index < 0 or index >= _states().size() or str(_states()[index]) != "player":
 		return
-	var identity := _seat_profile(index)
+	_view_player_profile(_seat_profile(index))
+
+
+func _view_player_profile(identity: Dictionary) -> void:
 	var code := str(identity.get("friend_code", ""))
 	if code.length() != 8:
 		DialogService.info({"owner": self, "body": _room_text("玩家资料正在加载，请稍后重试", "Player profile is loading. Please retry shortly.")})
@@ -1891,6 +1894,7 @@ func _build_spectator_panel() -> void:
 			GloryToastScript.show_text(_room_text("观战人数已满", "The number of spectators is full"))
 		else:
 			NetworkService.spectate_request_join(NetworkService.team_room_id))
+	_spectator_panel.profile_requested.connect(_view_player_profile)
 	_spectator_panel.kick_requested.connect(func(sid: int): NetworkService.team_spectate_kick(sid))
 	_spectator_panel.open_toggled.connect(func(open: bool): NetworkService.team_spectate_set_open(open))
 
