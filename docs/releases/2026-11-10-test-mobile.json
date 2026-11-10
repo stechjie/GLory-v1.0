@@ -23,15 +23,31 @@
   "ios": {
     "build": 91,
     "built": true,
-    "uploaded": false,
-    "internal_group_assigned": false,
-    "state": "uploading_to_apple",
+    "uploaded": true,
+    "internal_group_assigned": true,
+    "state": "Testing",
     "bytes": 581656854,
     "sha256": "492f4e1d6710c5110f415bc2b27712d092dd7e524344aef79ab33f09666657ec",
     "path": "/Volumes/repository/github/GLory/build/ipa/Glory-app-store-20261110-181733-000449-b452523b.ipa",
     "baseline_registered": true,
     "upload_started": true,
-    "delivery_stopped_for_android_priority": true
+    "transporter_state": "Delivered",
+    "delivered_at_local": "2026-11-10 19:26 Asia/Shanghai",
+    "version": "1.0.2",
+    "build_id": "e34f757c-5a02-4961-bcab-7c87807c07b1",
+    "internal_group": "GLory 内部验证",
+    "group_id": "90dd8f53-b157-49c4-b899-8da72091b76a",
+    "testers": 10,
+    "notes_saved": true,
+    "apple_processing": "complete",
+    "verified_at": "2026-11-10T11:39:29.481439+00:00",
+    "evidence": [
+      "transporter91-delivered.jpg",
+      "transporter91-processed.jpg",
+      "testflight91-detail.txt",
+      "testflight91-testing.txt",
+      "testflight91-testing.png"
+    ]
   },
   "resource_sync": {
     "status": "success",
@@ -267,10 +283,11 @@
     "final_export_check": "passed",
     "final_runtime_tests": 16,
     "asset_inventory_matches": true,
-    "battle_probe": "passed protocol=46 dtls=pinned direct route"
+    "battle_probe": "passed protocol=46 dtls=pinned direct route",
+    "physical_gameplay_verified": false
   },
   "blockers": [],
-  "updated_at": "2026-11-10T11:01:26.058814+00:00",
+  "updated_at": "2026-11-10T11:39:29.481439+00:00",
   "server": {
     "status": "deployed",
     "commit": "b452523b91904707b129d6ea8a471c484c4c8e8b",
@@ -331,5 +348,7 @@
       91
     ],
     "registered_patch_baselines_preserved": true
-  }
+  },
+  "status": "complete",
+  "pending": []
 }
