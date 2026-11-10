@@ -5497,6 +5497,7 @@ func _room_report_ctx(room: Dictionary, rounds: int, outcome: int, hp_a: int, hp
 	var ai_rounds: Dictionary = room.get("seat_ai_rounds", {})
 	var slot_gold: Array = room.get("slot_gold", [])
 	var settle_seats: Array = final_data.get("seats", [])
+	var profiles: Dictionary = room.get("seat_profiles", {})
 	# 结束那一刻谁还连着。**这就是排位的跑路判定线** —— 不是「有没有转过 AI」
 	# （座位断线 20 秒就转 AI，但转了之后 _resume_seat 还能回来）。
 	var online_slots := {}
@@ -5513,6 +5514,7 @@ func _room_report_ctx(room: Dictionary, rounds: int, outcome: int, hp_a: int, hp
 		var settle: Dictionary = settle_seats[slot] if slot < settle_seats.size() and settle_seats[slot] is Dictionary else {}
 		seats.append({
 			"pid": str(pids.get(slot, "")),
+			"ai_name": str((profiles.get(slot, {}) as Dictionary).get("player_name", "")) if str(pids.get(slot, "")).is_empty() and slot < states.size() and str(states[slot]) == "dummy" else "",
 			"was_ai": slot < states.size() and str(states[slot]) == "dummy",
 			"online_at_end": online_slots.has(slot),
 			"ai_rounds": int(ai_rounds.get(slot, 0)),

@@ -11,10 +11,7 @@ static func unit_skill_cn(unit_id: String, star: int) -> String:
 	var row: Dictionary = _section("units").get(unit_id, {})
 	if row.is_empty():
 		return ""
-	var description := str(row.get("skill_cn_4" if star >= 4 else "skill_cn_1to3", ""))
-	if unit_id == "undead_mother":
-		return description.replace("对Boss改为", "对Boss或法阵守护者改为")
-	return description
+	return str(row.get("skill_cn_4" if star >= 4 else "skill_cn_1to3", ""))
 
 static func pet_summary_cn(pet_id: String) -> String:
 	return str(_section("pets").get(pet_id, {}).get("summary_cn", ""))

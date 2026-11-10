@@ -287,9 +287,10 @@ static func format_skill_template_cn(d: Dictionary) -> String:
 		"black_hole":
 			return "黑洞%s：牵引周围敌人，眩晕%.1f秒，并造成自身攻击%s伤害。" % [cd, float(d.get("pull_sec", 2.0)), pct(float(d.get("damage_atk_pct", 2.2)))]
 		"poison_attack":
-			return "毒击：普通攻击附带中毒，每秒造成目标最大生命%s伤害，持续%.1f秒；最多2层，分别扣血。" % [pct(float(d.get("poison_pct_max_hp", 0.03))), float(d.get("poison_duration", 4.0))]
+			var description := "毒击：普通攻击附带中毒，每秒造成目标最大生命%s伤害，持续%.1f秒。" % [pct(float(d.get("poison_pct_max_hp", 0.03))), float(d.get("poison_duration", 4.0))]
+			return description.trim_suffix("。") + "；最多2层，分别扣血。" if _show_poison_stack_detail(d) else description
 		"parasite_on_kill":
-			return "寄生：自身造成非 Boss 敌人死亡时，召唤该敌人的分身，生命为原目标%s，攻防为原目标%s。" % [pct(float(d.get("clone_hp_pct", 0.10))), pct(float(d.get("clone_atk_def_pct", 0.50)))]
+			return "寄生：自身普攻击杀非 Boss 敌人时，召唤该敌人的分身，生命为原目标%s，攻防为原目标%s。" % [pct(float(d.get("clone_hp_pct", 0.10))), pct(float(d.get("clone_atk_def_pct", 0.50)))]
 		"defense_down_attack":
 			return "腐蚀攻击：普通攻击降低目标防御%s，持续%.1f秒。" % [pct(float(d.get("def_down_pct", 0.10))), float(d.get("duration", 5.0))]
 		"death_poison_explosion":
@@ -482,9 +483,10 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"black_hole":
 			return "Black Hole%s: Pull surrounding enemies, stun for %.1fs, and deal %s ATK damage." % [cd, float(d.get("pull_sec", 2.0)), pct(float(d.get("damage_atk_pct", 2.2)))]
 		"poison_attack":
-			return "Poison Strike: Normal attacks apply poison — %s max HP per second for %.1fs. Up to 2 stacks tick separately." % [pct(float(d.get("poison_pct_max_hp", 0.03))), float(d.get("poison_duration", 4.0))]
+			var description := "Poison Strike: Normal attacks apply poison — %s max HP per second for %.1fs." % [pct(float(d.get("poison_pct_max_hp", 0.03))), float(d.get("poison_duration", 4.0))]
+			return description + " Up to 2 stacks tick separately." if _show_poison_stack_detail(d) else description
 		"parasite_on_kill":
-			return "Parasite: When this unit kills a non-Boss enemy, summon its clone at %s HP and %s ATK/DEF." % [pct(float(d.get("clone_hp_pct", 0.10))), pct(float(d.get("clone_atk_def_pct", 0.50)))]
+			return "Parasite: When this unit kills a non-Boss enemy with a basic attack, summon its clone at %s HP and %s ATK/DEF." % [pct(float(d.get("clone_hp_pct", 0.10))), pct(float(d.get("clone_atk_def_pct", 0.50)))]
 		"defense_down_attack":
 			return "Corrosive Strike: Normal attacks reduce target DEF by %s for %.1fs." % [pct(float(d.get("def_down_pct", 0.10))), float(d.get("duration", 5.0))]
 		"death_poison_explosion":
@@ -618,6 +620,10 @@ const IMPLICIT_SKILL_CD := {
 	# 9.20 bug 文档第 4 条：佣兵「黄金重骑」同上，硬编码 `+ 7.0`、JSON 无 skill_cd。
 	"gold_charge": 7.0,
 }
+
+
+static func _show_poison_stack_detail(d: Dictionary) -> bool:
+	return int(d.get("star", 1)) >= 4 or str(d.get("id", "")) not in ["undead_poison", "undead_fly"]
 
 
 static func skill_cd_text(d: Dictionary) -> String:

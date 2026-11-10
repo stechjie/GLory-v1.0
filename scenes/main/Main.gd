@@ -1745,16 +1745,28 @@ func _join_invited_room_preserving_current(room_id: int) -> void:
 
 # 聊天卡片里点组队邀请的「加入」（10.11 第 6 条 d）。
 #
-# 与 _join_room_by_id 不同：这里**不先回主菜单**——队伍大厅（PartyLobby）本身就是
-# 主菜单体系里的一页，而 `invite_id` 传给它之后，进房时会带上「加入这支队伍」的意图
-# （与气泡上点「加入」走的是同一条路，见 _show_invite_bubble 的 on_accept）。
-#
-# `mode` 从邀请 payload 里来；取不到（老消息 / payload 不全）时兜底 casual ——
-# 至少把玩家带进大厅，而不是点了没反应。
+# Keep the current screen until the account server accepts the invitation.
+var _joining_party_invite := false
+
 func _join_party_by_id(party_id: String, mode: String) -> void:
-	if party_id.is_empty():
+	if party_id.is_empty() or _joining_party_invite:
 		return
-	_show_party_lobby(mode if not mode.is_empty() else "casual", party_id)
+	_joining_party_invite = true
+	var result: Dictionary = await AccountManager.join_party(party_id)
+	_joining_party_invite = false
+	if not is_inside_tree():
+		return
+	var code := int(result.get("code", 0))
+	if code != 200:
+		var error := str(result.get("error", ""))
+		if str(result.get("reason", "")) == "invite_expired" or error in ["组队邀请已失效", "Invitation expired"]:
+			error = RoomInviteScript.expired_text()
+		if error.is_empty():
+			error = _startup_text("暂时无法加入队伍，请重试", "Unable to join the party. Try again.")
+		preload("res://ui/components/GloryToast.gd").show_text(error)
+		return
+	var state: Dictionary = (result.get("body", {}) as Dictionary).get("state", {})
+	_show_party_lobby(str(state.get("mode", mode if not mode.is_empty() else "casual")), "", true)
 
 
 # 私聊界面（docs/聊天系统设计.md 批次 C）。两个入口：主菜单「聊天」、好友列表每一行的「私聊」。
@@ -1934,7 +1946,7 @@ func _show_invite_bubble(payload: Dictionary, kind: String) -> void:
 				ChatService.mark_seen_locally(sender_code),
 		"on_accept": func(id: String) -> void:
 			if kind == PartyInviteBubble.KIND_TEAM:
-				_show_party_lobby(str(payload.get("mode", "casual")), id)
+				_join_party_by_id(id, str(payload.get("mode", "casual")))
 			else:
 				_accept_room_invite(int(payload.get("room_id", 0))),
 	})

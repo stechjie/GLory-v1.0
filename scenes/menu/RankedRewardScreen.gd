@@ -78,16 +78,15 @@ func _build() -> void:
 	var center := CenterContainer.new()
 	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	center.custom_minimum_size = Vector2(0, 690)
 	scroll.add_child(center)
 	var frame := PanelContainer.new()
 	_frame = frame
 	frame.custom_minimum_size = Vector2(680, 0)
 	frame.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.INK_PANEL, Tokens.GOLD_EDGE, 24))
+		Tokens.INK_PANEL, Tokens.GOLD_EDGE, 18))
 	center.add_child(frame)
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 12)
+	column.add_theme_constant_override("separation", 7)
 	frame.add_child(column)
 
 	var eyebrow := _label(_t("休闲对局 · 金币结算", "CASUAL · COIN REWARD") if _coins_only() else _t("荣耀排位 · 对局结算", "GLORY RANKED · MATCH RESULT"), 16,
@@ -95,7 +94,7 @@ func _build() -> void:
 	column.add_child(eyebrow)
 	var title_color := Tokens.GOLD_HOVER if _result == "win" else (
 		Tokens.CYAN if _result == "draw" else Tokens.TEXT_PRIMARY)
-	var title := _label(_result_title(), 54, title_color, HORIZONTAL_ALIGNMENT_CENTER)
+	var title := _label(_result_title(), 44, title_color, HORIZONTAL_ALIGNMENT_CENTER)
 	title.name = "ResultTitle"
 	_title = title
 	column.add_child(title)
@@ -104,8 +103,20 @@ func _build() -> void:
 	column.add_child(subtitle)
 
 	var emblem_area := Control.new()
-	emblem_area.custom_minimum_size = Vector2(0, 174)
-	column.add_child(emblem_area)
+	emblem_area.custom_minimum_size = Vector2(152, 126)
+	var rank_column := column
+	if _coins_only():
+		column.add_child(emblem_area)
+	else:
+		var rank_row := HBoxContainer.new()
+		rank_row.add_theme_constant_override("separation", 16)
+		column.add_child(rank_row)
+		rank_row.add_child(emblem_area)
+		rank_column = VBoxContainer.new()
+		rank_column.alignment = BoxContainer.ALIGNMENT_CENTER
+		rank_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		rank_column.add_theme_constant_override("separation", 7)
+		rank_row.add_child(rank_column)
 	var glow := TextureRect.new()
 	glow.texture = WARM_GLOW
 	glow.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -119,20 +130,20 @@ func _build() -> void:
 	var emblem := TextureRect.new()
 	_emblem = emblem
 	emblem.texture = Currency.icon("coin") if _coins_only() else RANK_EMBLEM
-	emblem.custom_minimum_size = Vector2(190, 174)
+	emblem.custom_minimum_size = Vector2(152, 126)
 	emblem.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	emblem.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	emblem_center.add_child(emblem)
 	_tier_label = _label(_t("正在确认段位…", "Verifying rank…"), 20,
 		Tokens.GOLD_HOVER, HORIZONTAL_ALIGNMENT_CENTER)
 	_tier_label.visible = not _coins_only()
-	column.add_child(_tier_label)
+	rank_column.add_child(_tier_label)
 
 	var score_panel := PanelContainer.new()
 	score_panel.add_theme_stylebox_override("panel", Tokens.panel_box(
 		Tokens.SURFACE, Tokens.BORDER, 14))
 	score_panel.visible = not _coins_only()
-	column.add_child(score_panel)
+	rank_column.add_child(score_panel)
 	var score_column := VBoxContainer.new()
 	score_column.add_theme_constant_override("separation", 6)
 	score_panel.add_child(score_column)
@@ -152,7 +163,7 @@ func _build() -> void:
 
 	var reward_panel := PanelContainer.new()
 	reward_panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.SURFACE_RAISED, Tokens.GOLD_PRESSED, 18))
+		Tokens.SURFACE_RAISED, Tokens.GOLD_PRESSED, 12))
 	column.add_child(reward_panel)
 	var reward_column := VBoxContainer.new()
 	reward_column.add_theme_constant_override("separation", 4)
@@ -165,11 +176,11 @@ func _build() -> void:
 	reward_column.add_child(amount_row)
 	var coin := TextureRect.new()
 	coin.texture = Currency.icon("coin")
-	coin.custom_minimum_size = Vector2(56, 56)
+	coin.custom_minimum_size = Vector2(44, 44)
 	coin.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	coin.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	amount_row.add_child(coin)
-	_amount = _label("—", 42, Tokens.GOLD_HOVER)
+	_amount = _label("—", 34, Tokens.GOLD_HOVER)
 	amount_row.add_child(_amount)
 	_receipt_status = _label(_t("正在确认到账…", "Verifying your reward…"), 15,
 		Tokens.CYAN, HORIZONTAL_ALIGNMENT_CENTER)
@@ -207,7 +218,7 @@ func _build() -> void:
 	_retry.custom_minimum_size = Vector2(160, 44)
 	_retry.visible = false
 	_retry.pressed.connect(_poll_receipt)
-	column.add_child(_retry)
+	actions.add_child(_retry)
 
 
 func _result_title() -> String:

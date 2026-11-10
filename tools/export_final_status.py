@@ -33,6 +33,29 @@ def text(value):
     return "" if value is None else str(value)
 
 
+def check_unit_skill_copy(unit_id, row_number, row):
+    """Reject obsolete clauses that previously reappeared after workbook export."""
+    if unit_id == "dark_imp":
+        checks = (("G", 6, r"暗[族 ]*2.*增强"),)
+    elif unit_id in ("undead_poison", "undead_fly"):
+        checks = (("G", 6, r"灵[族 ]*4|最多\s*2\s*层"),
+                  ("L", 11, r"\b(?:up to (?:2|two) stacks|undead\s*4)\b"))
+    elif unit_id == "undead_parasite":
+        checks = (("E", 4, r"标记"), ("G", 6, r"标记"), ("M", 12, r"标记"))
+    elif unit_id == "undead_mother":
+        checks = (("G", 6, r"Boss\s*改为"),
+                  ("L", 11, r"against a Boss\s*,"),
+                  ("M", 12, r"Boss\s*改为"))
+    else:
+        return
+
+    for column, index, obsolete in checks:
+        if re.search(obsolete, text(row[index]), re.IGNORECASE):
+            raise ValueError(
+                f"02_棋子技能!{column}{row_number} ({unit_id}): outdated skill description"
+            )
+
+
 def star_stat(base, star, unit, key):
     multiplier = (1.0, 1.5, 3.0, 3.0 * max(1.0, float(unit.get("star4_multiplier", 1.15))))[star - 1]
     value = max(0 if key in ("def", "mres") else 1, math.floor(base * multiplier + 0.5))
@@ -69,8 +92,11 @@ def build():
     }
     basics = {text(r[0]): r for r in records(wb["01_棋子基础"])}
     unit_defs = {item["id"]: item for item in tables["data/units/race_units.json"]["units"]}
-    for r in records(wb["02_棋子技能"]):
+    for row_number, r in enumerate(wb["02_棋子技能"].iter_rows(min_row=4, values_only=True), 4):
+        if not r or r[0] in (None, ""):
+            continue
         unit_id = text(r[0])
+        check_unit_skill_copy(unit_id, row_number, r)
         b = basics[unit_id]
         unit = unit_defs[unit_id]
         out["units"][unit_id] = {
