@@ -65,7 +65,7 @@ class Tests(unittest.TestCase):
   cert=self.stage/'scripts/multiplayer/NetTLSCert.gd';cert.write_bytes((Path(__file__).resolve().parents[2]/'scripts/multiplayer/NetTLSCert.gd').read_bytes());return cert
  def test_prod_pins_prod_battle_certificate(self):
   cert=self.env_stage();target=b.configure_server_environment(self.stage,'prod')
-  self.assertEqual(target['backend_url'],'https://glorytd-prod-api.duckdns.org');self.assertIn(b'"glorytd-prod-battle.duckdns.org"',(self.stage/'scripts/multiplayer/NetworkConfig.gd').read_bytes())
+  self.assertEqual(target['backend_url'],'https://api.gogoglory.com');self.assertIn(b'"battle.gogoglory.com"',(self.stage/'scripts/multiplayer/NetworkConfig.gd').read_bytes())
   self.assertEqual(b.pem_sha256(cert.read_bytes()),b.PROD_DTLS_SHA256)
  def test_test_keeps_source_certificate(self):
   cert=self.env_stage();before=cert.read_bytes();b.configure_server_environment(self.stage,'test');self.assertEqual(cert.read_bytes(),before)
