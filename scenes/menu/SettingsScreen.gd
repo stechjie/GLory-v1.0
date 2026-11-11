@@ -2,6 +2,8 @@ extends Control
 
 # 触控下限从令牌来，不再写字面量：这一页原本有三个控件是 46 / 46 / 40，
 # 都低于 TOUCH_MIN=48 —— 而 P1-04 第 1 条要的正是移动端最小触控尺寸。
+# 11.11 羊皮纸风：主菜单森林背景 + 羊皮纸大面板（ui/theme/ParchmentKit.gd）
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const ActionButtonScene := preload("res://ui/components/GloryActionButton.tscn")
@@ -49,7 +51,7 @@ func _build() -> void:
 	# 这一页此前既没有 theme=，也没有任何 add_theme_stylebox_override，
 	# 而 project.godot 也没有 gui/theme/custom —— 所以按钮走的是引擎
 	# 默认灰色样式，和游戏其它地方长得完全不是一套。
-	theme = Theming.get_theme()
+	theme = Kit.theme()
 	_presentation_btns.clear()
 	_presentation_labels.clear()
 	# 先 remove_child 再 queue_free：本函数现在会被 `_on_locale_changed()` 再调一次，
@@ -59,11 +61,7 @@ func _build() -> void:
 		remove_child(child)
 		child.queue_free()
 
-	var bg := ColorRect.new()
-	bg.color = Color(0.07, 0.08, 0.09)
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
-	bg.z_index = -10
+	Kit.backdrop(self, "", 0.45)
 
 	# 内容比画布高时必须滚得动。
 	#
@@ -89,6 +87,11 @@ func _build() -> void:
 	layout.custom_minimum_size = Vector2(1020, 0)
 	layout.add_theme_constant_override("separation", 18)
 	center.add_child(layout)
+	# 羊皮纸底板直接画在 layout 身后、往外扩一圈 —— 不能再包一层 PanelContainer：
+	# responsive_layout 门禁按「CenterContainer 的第一个子节点的最后一个子节点 = 返回键」量可达性。
+	var parchment := Kit.box("panel")
+	layout.draw.connect(func() -> void:
+		layout.draw_style_box(parchment, Rect2(Vector2(-60, -40), layout.size + Vector2(120, 70))))
 	var columns := HBoxContainer.new()
 	columns.alignment = BoxContainer.ALIGNMENT_CENTER
 	columns.add_theme_constant_override("separation", 40)
@@ -106,17 +109,17 @@ func _build() -> void:
 	title.text = tr("settings_title")
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 24)
-	title.add_theme_color_override("font_color", Color(0.96, 0.96, 0.92))
+	title.add_theme_color_override("font_color", Color("8a4b12"))
 	layout.add_child(title)
 
-	var sep := HSeparator.new()
+	var sep := Kit.separator(22.0)
 	layout.add_child(sep)
 	layout.move_child(columns, 2)
 
 	var lang_label := Label.new()
 	lang_label.text = tr("settings_language")
 	lang_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lang_label.add_theme_color_override("font_color", Color(0.86, 0.9, 0.9))
+	lang_label.add_theme_color_override("font_color", Color("8a4b12"))
 	panel.add_child(lang_label)
 
 	var lang_row := HBoxContainer.new()
@@ -154,7 +157,7 @@ func _build() -> void:
 	var quality_label := Label.new()
 	quality_label.text = tr("settings_quality")
 	quality_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	quality_label.add_theme_color_override("font_color", Color(0.86, 0.9, 0.9))
+	quality_label.add_theme_color_override("font_color", Color("8a4b12"))
 	panel.add_child(quality_label)
 
 	var quality_row := HBoxContainer.new()
@@ -346,7 +349,7 @@ func _refresh_quality_buttons() -> void:
 		var btn := _quality_btns[i]
 		if is_instance_valid(btn):
 			var on := i == current
-			btn.modulate = Color(1.0, 0.85, 0.3) if on else Color(1, 1, 1)
+			btn.modulate = Color(1.0, 0.92, 0.7) if on else Color(0.82, 0.78, 0.72)
 			btn.text = _mark_selected(btn.text, on)
 
 # 10.10 反馈第 4 条：语音音量滑块旁边那行「语音音量 80%」。
@@ -371,7 +374,7 @@ func _refresh_presentation_button(key: String) -> void:
 	var btn := btn_value as CheckButton
 	var on: bool = PlayerProfile.get_presentation_toggle(key)
 	btn.button_pressed = on
-	btn.modulate = Color(1.0, 0.88, 0.48) if on else Color(0.76, 0.78, 0.78)
+	btn.modulate = Color(1.0, 0.95, 0.82) if on else Color(0.78, 0.74, 0.68)
 	# CheckButton 自带的滑块本身就是第二条通道，但它在低对比度屏上不明显；
 	# 再补一句开/关文字，读屏和灰度截图都拿得到。
 	btn.text = _toggle_label(str(_presentation_labels.get(key, "")), on)
@@ -389,7 +392,7 @@ func _refresh_board_guides_button() -> void:
 		return
 	var on := PlayerProfile.board_readability_enabled
 	_board_guides_btn.button_pressed = on
-	_board_guides_btn.modulate = Color(1.0, 0.88, 0.48) if on else Color(0.76, 0.78, 0.78)
+	_board_guides_btn.modulate = Color(1.0, 0.95, 0.82) if on else Color(0.78, 0.74, 0.68)
 	_board_guides_btn.text = _toggle_label(tr("settings_board_guides"), on)
 
 func _refresh_lang_buttons() -> void:
@@ -397,8 +400,8 @@ func _refresh_lang_buttons() -> void:
 		return
 	var locale := LocaleManager.get_locale()
 	var zh_on := locale == "zh"
-	_btn_zh.modulate = Color(1.0, 0.85, 0.3) if zh_on else Color(1, 1, 1)
-	_btn_en.modulate = Color(1.0, 0.85, 0.3) if not zh_on else Color(1, 1, 1)
+	_btn_zh.modulate = Color(1.0, 0.92, 0.7) if zh_on else Color(0.82, 0.78, 0.72)
+	_btn_en.modulate = Color(1.0, 0.92, 0.7) if not zh_on else Color(0.82, 0.78, 0.72)
 	_btn_zh.text = _mark_selected("中文", zh_on)
 	_btn_en.text = _mark_selected("English", not zh_on)
 

@@ -10,6 +10,9 @@ const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const WIN_ART := preload("res://assets/ui/game_over/victory.png")
 const LOSE_ART := preload("res://assets/ui/game_over/defeat.png")
+# 11.11 羊皮纸风：石台背景 + 胜负平横幅（第二批图）+ 羊皮纸正文卡 / 按钮（ui/theme/ParchmentKit.gd）
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
+const UiJuice := preload("res://ui/theme/UiJuice.gd")
 
 var result_kind := "lose"
 var title_text := ""
@@ -43,23 +46,10 @@ func show_tutorial_level_up(gained_xp: int) -> void:
 
 
 func _ready() -> void:
-	theme = Theming.get_theme()
+	theme = Kit.theme()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var accent := Color("f6d583") if result_kind == "win" else Color("bfd3e2")
-	var art := TextureRect.new()
-	art.texture = WIN_ART if result_kind == "win" else LOSE_ART
-	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(art)
-	# The artwork carries the scene. Keep the tint slight and put text directly over
-	# its quiet lower half instead of covering the crest with a dark center panel.
-	var veil := ColorRect.new()
-	veil.color = Color(0.02, 0.025, 0.04, 0.08)
-	veil.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(veil)
+	var accent := Color("8a4b12") if result_kind == "win" else Color("4f5d66")
+	Kit.backdrop(self, "rooms_arena", 0.3)
 
 	# 10.19 教程反馈第 3 条：教学结算界面只保留「返回主菜单」。
 	#   ① 「查看详情」与「返回主菜单」挤在同一行，还会把下方的文字说明压给按钮；
@@ -72,21 +62,33 @@ func _ready() -> void:
 	_region(0.24 if compact else 0.43, 0.46 if compact else 0.67).add_child(heading)
 	var eyebrow := _label(
 		_text("荣耀战绩", "MATCH RESULT") if result_kind == "win" else _text("战局落幕", "MATCH ENDED"),
-		17, accent)
+		18, Color(1.0, 0.95, 0.82))
 	heading.add_child(eyebrow)
-	var title := _label(title_text, 52, accent)
-	heading.add_child(title)
-	var rule := ColorRect.new()
-	rule.color = Color(accent.r, accent.g, accent.b, 0.85)
-	rule.custom_minimum_size = Vector2(560, 2)
-	rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	heading.add_child(rule)
+	# 标题写在横幅上：胜利 / 失败 / 平局三张图，字色随横幅
+	var banner_key := result_kind if result_kind in ["win", "lose", "draw"] else "lose"
+	var banner := Kit.result_banner(banner_key, title_text, 150.0 if not compact else 120.0, 52)
+	heading.add_child(banner)
 
-	var body := _label(body_text, 21, Color("f4f0e6"))
+	# 正文放在一张羊皮纸卡里（原来是白字直接压在大图上）
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", Kit.box("card", Vector4(34, 24, 34, 22)))
+	var body := _label(body_text, 21, Kit.INK)
+	body.add_theme_constant_override("outline_size", 0)
 	_body_label = body
 	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	body.custom_minimum_size = Vector2(700, 70)
-	_region(0.47 if compact else 0.69, 0.61 if compact else 0.82).add_child(body)
+	body.custom_minimum_size = Vector2(640, 54)
+	card.add_child(body)
+	_region(0.47 if compact else 0.69, 0.61 if compact else 0.82).add_child(card)
+
+	# 横幅从大到小砸下来（赢了砸得更有力），正文卡随后弹出
+	banner.pivot_offset = banner.custom_minimum_size * 0.5
+	banner.scale = Vector2.ONE * (1.7 if result_kind == "win" else 1.25)
+	banner.modulate.a = 0.0
+	var slam := banner.create_tween()
+	slam.tween_interval(0.1)
+	slam.tween_property(banner, "modulate:a", 1.0, 0.12)
+	slam.parallel().tween_property(banner, "scale", Vector2.ONE, 0.45).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	UiJuice.pop_in([card], 0.35, 0.0, 0.9)
 
 	var actions := HBoxContainer.new()
 	actions.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -133,31 +135,17 @@ func _label(value: String, font_size: int, color: Color) -> Label:
 	label.add_theme_font_size_override("font_size", font_size)
 	label.add_theme_color_override("font_color", color)
 	label.add_theme_constant_override("outline_size", 5)
-	label.add_theme_color_override("font_outline_color", Color(0.035, 0.025, 0.02, 0.95))
+	label.add_theme_color_override("font_outline_color", Color(0.12, 0.07, 0.025, 0.95))
 	return label
 
 
 func _button(value: String, parent: Node, accent: Color) -> Button:
 	var button := Button.new()
 	button.text = value
-	button.custom_minimum_size = Vector2(190, Tokens.TOUCH_MIN + 4)
+	button.custom_minimum_size = Vector2(200, Tokens.TOUCH_MIN + 6)
 	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	# Match the prep screen's dark brown and bronze button treatment.
-	var normal := StyleBoxFlat.new()
-	normal.bg_color = Color(0.11, 0.075, 0.035, 0.91)
-	normal.border_color = accent
-	normal.set_border_width_all(2)
-	normal.set_corner_radius_all(16)
-	var hover := normal.duplicate() as StyleBoxFlat
-	hover.bg_color = Color(0.28, 0.18, 0.075, 0.96)
-	var pressed := normal.duplicate() as StyleBoxFlat
-	pressed.bg_color = Color(0.07, 0.045, 0.025, 0.98)
-	button.add_theme_stylebox_override("normal", normal)
-	button.add_theme_stylebox_override("hover", hover)
-	button.add_theme_stylebox_override("pressed", pressed)
-	button.add_theme_stylebox_override("focus", hover)
-	button.add_theme_color_override("font_color", Color("f6e8be"))
-	button.add_theme_color_override("font_hover_color", Color.WHITE)
+	# 羊皮纸金色底板（跟其它页面的主按钮一致）
+	Kit.style_plate(button, true)
 	button.add_theme_font_size_override("font_size", 21)
 	parent.add_child(button)
 	return button

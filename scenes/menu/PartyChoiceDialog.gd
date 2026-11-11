@@ -4,10 +4,14 @@ signal selected(value: Variant)
 signal canceled
 
 const RACE_LOGO_PATH := "res://assets/ui/race_logos/%s.png"
-const INK := Color("f8efd7")
-const SUBTLE := Color("c9d1c3")
-const GOLD := Color("e5bf6d")
+# 11.11 羊皮纸风（ui/theme/ParchmentKit.gd）：外框大面板、模式选项纸条卡、种族小框、羊皮纸按钮。
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
+const UiJuice := preload("res://ui/theme/UiJuice.gd")
+const INK := Color("4a2c14")
+const SUBTLE := Color("7a5634")
+const GOLD := Color("8a4b12")
 const DARK := Color("15252a")
+const PICK_TINT := Color(1.0, 0.86, 0.56)
 
 var kind := "mode"
 var current_mode := "casual"
@@ -41,7 +45,7 @@ func _ready() -> void:
 	add_child(center)
 	var frame := PanelContainer.new()
 	frame.custom_minimum_size = Vector2(820, 0)
-	frame.add_theme_stylebox_override("panel", _box(Color("14262b"), GOLD, 26, 3))
+	frame.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(70, 50, 70, 40)))
 	center.add_child(frame)
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 14)
@@ -70,6 +74,7 @@ func _ready() -> void:
 	cancel.pressed.connect(func() -> void: canceled.emit())
 	content.add_child(cancel)
 	cancel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	UiJuice.pop_in([frame], 0.0, 0.0, 0.88)
 
 
 func _build_modes(content: VBoxContainer) -> void:
@@ -88,7 +93,7 @@ func _build_modes(content: VBoxContainer) -> void:
 		content.add_child(card)
 		var title := Label.new()
 		title.text = str(spec[1])
-		title.position = Vector2(19, 10)
+		title.position = Vector2(44, 10)
 		title.size = Vector2(400, 38)
 		title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		title.add_theme_font_size_override("font_size", 28)
@@ -96,7 +101,7 @@ func _build_modes(content: VBoxContainer) -> void:
 		card.add_child(title)
 		var summary := Label.new()
 		summary.text = str(spec[2])
-		summary.position = Vector2(20, 50)
+		summary.position = Vector2(45, 50)
 		summary.size = Vector2(720, 28)
 		summary.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		summary.add_theme_font_size_override("font_size", 17)
@@ -105,7 +110,7 @@ func _build_modes(content: VBoxContainer) -> void:
 		if mode == current_mode:
 			var badge := Label.new()
 			badge.text = _t("当前", "ACTIVE")
-			badge.position = Vector2(640, 12)
+			badge.position = Vector2(560, 12)
 			badge.size = Vector2(90, 32)
 			badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 			badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -192,13 +197,29 @@ func _refresh_races() -> void:
 
 
 func _style_button(button: Button, active: bool) -> void:
-	var fill := Color("45533a") if active else DARK
-	var edge := GOLD if active else Color("62736c")
-	button.add_theme_stylebox_override("normal", _box(fill, edge, 13, 2))
-	button.add_theme_stylebox_override("hover", _box(fill.lightened(0.12), GOLD, 13, 2))
-	button.add_theme_stylebox_override("pressed", _box(fill.darkened(0.12), GOLD, 13, 2))
-	button.add_theme_stylebox_override("focus", _box(fill, GOLD, 13, 2))
-	button.add_theme_stylebox_override("disabled", _box(Color("283331"), Color("667066"), 13, 1))
+	# 三种按钮各用一种羊皮纸部件：
+	#   种族卡（166x180）→ 方形小框，选中染金
+	#   模式卡（整行宽、92 高）→ 纸条，当前模式用金色那条
+	#   其余（返回 / 确认）→ 羊皮纸小底板，可点的主操作用金色
+	var m := button.custom_minimum_size
+	if m.y >= 150.0:
+		var tint := PICK_TINT if active else Color.WHITE
+		button.add_theme_stylebox_override("normal", Kit.box("slot", Vector4(8, 8, 8, 8), tint))
+		button.add_theme_stylebox_override("hover", Kit.box("slot", Vector4(8, 8, 8, 8), tint * Color(1.06, 1.05, 1.0)))
+		button.add_theme_stylebox_override("pressed", Kit.box("slot", Vector4(8, 8, 8, 8), tint * Color(0.9, 0.88, 0.84)))
+		button.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		button.add_theme_stylebox_override("disabled", Kit.box("slot", Vector4(8, 8, 8, 8), Color(0.72, 0.68, 0.62)))
+		UiJuice.attach(button, 1.04, 0.95)
+	elif m.x <= 0.0 and m.y >= 80.0:
+		var piece := "list_row_gold" if active else "list_row"
+		var pad := Vector4(30, 8, 34, 10)
+		button.add_theme_stylebox_override("normal", Kit.box(piece, pad))
+		button.add_theme_stylebox_override("hover", Kit.box(piece, pad, Color(1.06, 1.05, 1.0)))
+		button.add_theme_stylebox_override("pressed", Kit.box(piece, pad, Color(0.9, 0.88, 0.84)))
+		button.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		UiJuice.attach(button, 1.02, 0.97)
+	else:
+		Kit.style_plate(button, active)
 	button.add_theme_color_override("font_color", INK)
 	button.add_theme_color_override("font_hover_color", INK)
 	button.add_theme_color_override("font_pressed_color", INK)

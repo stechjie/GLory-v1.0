@@ -103,6 +103,11 @@ func teardown() -> void:
 		VoiceService.mutes_changed.disconnect(refresh)
 	if VoiceService.mic_permission_result.is_connected(_on_mic_permission_result):
 		VoiceService.mic_permission_result.disconnect(_on_mic_permission_result)
+	# 有的界面刻意不把某颗键放进树（自定义房间藏掉的「全房间」members_button），
+	# 没有父节点就不会随页面一起释放，每进一次大厅漏一个（page_lifecycle 的 orphans +20）。
+	for button in [voice_button, audience_button, members_button]:
+		if button != null and is_instance_valid(button) and button.get_parent() == null:
+			button.free()
 	_awaiting_mic = false
 	if _timer != null and is_instance_valid(_timer):
 		_timer.stop()

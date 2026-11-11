@@ -19,6 +19,8 @@ signal resolved(result: String, request_id: String)
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
+# 11.11 全游戏的确认 / 提示框统一换成羊皮纸风（按钮走 Kit.theme() 的三个变体）。
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
 
 enum Intent {
 	NORMAL,  ## 普通确认：主按钮暖金
@@ -47,7 +49,7 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	# 卡片之外的区域不吃输入 —— 那是 ModalStack 的 backdrop 该管的事。
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	theme = Theming.get_theme()
+	theme = Kit.theme()
 
 
 # spec:
@@ -87,7 +89,7 @@ func _build(spec: Dictionary) -> void:
 	_card = PanelContainer.new()
 	_card.name = "DialogCard"
 	_card.custom_minimum_size = Vector2(Tokens.DIALOG_WIDTH, 0)
-	_card.add_theme_stylebox_override("panel", Tokens.panel_box())
+	_card.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(64, 46, 64, 38)))
 	center.add_child(_card)
 
 	var box := VBoxContainer.new()
@@ -101,7 +103,7 @@ func _build(spec: Dictionary) -> void:
 		_title_label.text = title
 		_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_title_label.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
-		_title_label.add_theme_color_override("font_color", Tokens.GOLD)
+		_title_label.add_theme_color_override("font_color", Color("8a4b12"))
 		box.add_child(_title_label)
 
 	# 正文放进 ScrollContainer：长文（错误码、断线说明）必须能滚，
@@ -123,7 +125,7 @@ func _build(spec: Dictionary) -> void:
 	_body_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_body_label.custom_minimum_size = Vector2(Tokens.DIALOG_WIDTH - Tokens.PAD * 2, 0)
 	_body_label.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
-	_body_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	_body_label.add_theme_color_override("font_color", Kit.INK)
 	scroll.add_child(_body_label)
 
 	# 按钮组居中。组内仍是「取消在左、主操作在右」，改的只是这一组在卡片里的位置。

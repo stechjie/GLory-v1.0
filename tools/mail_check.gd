@@ -362,7 +362,7 @@ func _case_wiring_sources() -> void:
 		"登出时没清邮箱 —— 换号后会看到上一个号的邮件")
 	_h.expect(main_src.contains("MailService.refresh()"), "main_menu_refresh", "回主菜单时没刷新邮箱，红点不会自己亮")
 	var menu_src := FileAccess.get_file_as_string("res://scenes/menu/MainMenu.gd")
-	_h.expect(menu_src.contains("_add_hit(Vector2(1450, 25), Vector2(100, 100), _emit_mail"), "menu_hit_missing",
+	_h.expect(menu_src.contains("_add_hit(Vector2(1452, 14), Vector2(102, 102), _emit_mail"), "menu_hit_missing",
 		"主菜单的邮件图标还是「敬请期待」")
 	# 千分位与货币图标只许有一份（Currency.gd），见那边文件头。
 	for path in ["res://scenes/menu/MainMenu.gd", "res://scenes/menu/ShopScreen.gd", "res://scenes/menu/MailScreen.gd"]:

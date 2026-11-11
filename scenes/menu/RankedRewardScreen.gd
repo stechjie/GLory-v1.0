@@ -9,7 +9,12 @@ const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const RankedTiers := preload("res://scenes/menu/RankedTiers.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
-const BACKGROUND := preload("res://assets/ui/main_menu_live/background.png")
+# 11.11 羊皮纸风：石台背景 + 羊皮纸面板 + 标题缎带（胜利横幅图到了再换）。
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
+const UiJuice := preload("res://ui/theme/UiJuice.gd")
+const WIN_COLOR := Color("8a4b12")
+const LOSE_COLOR := Color("5f5246")
+const DRAW_COLOR := Color("3f5f6a")
 const RANK_EMBLEM := preload("res://assets/ui/ranked/reward_crest.png")
 const Currency := preload("res://scripts/account/Currency.gd")
 const WARM_GLOW := preload("res://assets/ui/main_menu_live/glow_warm.png")
@@ -33,10 +38,12 @@ var _details: Button
 var _retry: Button
 var _frame: Control
 var _polling := false
+var _banner: TextureRect
+var _coin_icon: TextureRect
 
 
 func _ready() -> void:
-	theme = Theming.get_theme()
+	theme = Kit.theme()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_result = _local_result()
 	_build()
@@ -58,18 +65,7 @@ func _local_result() -> String:
 
 
 func _build() -> void:
-	var bg := TextureRect.new()
-	bg.texture = BACKGROUND
-	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
-	var shade := ColorRect.new()
-	shade.color = Color(Tokens.BG_DEEP.r, Tokens.BG_DEEP.g, Tokens.BG_DEEP.b, 0.88)
-	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(shade)
+	Kit.backdrop(self, "rooms_arena", 0.32)
 
 	var scroll := TouchScrollContainer.new()
 	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -82,29 +78,28 @@ func _build() -> void:
 	scroll.add_child(center)
 	var frame := PanelContainer.new()
 	_frame = frame
-	frame.custom_minimum_size = Vector2(680, 0)
-	frame.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.INK_PANEL, Tokens.GOLD_EDGE, 24))
+	frame.custom_minimum_size = Vector2(640, 0)
+	frame.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(64, 46, 64, 34)))
 	center.add_child(frame)
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 12)
+	column.add_theme_constant_override("separation", 5)
 	frame.add_child(column)
 
 	var eyebrow := _label(_t("休闲对局 · 金币结算", "CASUAL · COIN REWARD") if _coins_only() else _t("荣耀排位 · 对局结算", "GLORY RANKED · MATCH RESULT"), 16,
-		Tokens.GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+		Kit.INK_SOFT, HORIZONTAL_ALIGNMENT_CENTER)
 	column.add_child(eyebrow)
-	var title_color := Tokens.GOLD_HOVER if _result == "win" else (
-		Tokens.CYAN if _result == "draw" else Tokens.TEXT_PRIMARY)
-	var title := _label(_result_title(), 54, title_color, HORIZONTAL_ALIGNMENT_CENTER)
-	title.name = "ResultTitle"
-	_title = title
-	column.add_child(title)
+	# 结果写在标题缎带上（胜利 / 平局 / 失败横幅出图后按结果换图）
+	# 胜利 / 失败 / 平局三张横幅（第二批图），字色跟着横幅走
+	_banner = Kit.result_banner(_result, _result_title(), 96.0, 40)
+	_title = _banner.get_node("TitleText") as Label
+	_title.name = "ResultTitle"
+	column.add_child(_banner)
 	var subtitle := _label(_t("属于你的本场荣耀", "YOUR MATCH SUMMARY"), 16,
-		Tokens.TEXT_SECONDARY, HORIZONTAL_ALIGNMENT_CENTER)
+		Kit.INK_SOFT, HORIZONTAL_ALIGNMENT_CENTER)
 	column.add_child(subtitle)
 
 	var emblem_area := Control.new()
-	emblem_area.custom_minimum_size = Vector2(0, 174)
+	emblem_area.custom_minimum_size = Vector2(0, 112)
 	column.add_child(emblem_area)
 	var glow := TextureRect.new()
 	glow.texture = WARM_GLOW
@@ -119,62 +114,58 @@ func _build() -> void:
 	var emblem := TextureRect.new()
 	_emblem = emblem
 	emblem.texture = Currency.icon("coin") if _coins_only() else RANK_EMBLEM
-	emblem.custom_minimum_size = Vector2(190, 174)
+	emblem.custom_minimum_size = Vector2(130, 112)
 	emblem.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	emblem.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	emblem_center.add_child(emblem)
 	_tier_label = _label(_t("正在确认段位…", "Verifying rank…"), 20,
-		Tokens.GOLD_HOVER, HORIZONTAL_ALIGNMENT_CENTER)
+		WIN_COLOR, HORIZONTAL_ALIGNMENT_CENTER)
 	_tier_label.visible = not _coins_only()
 	column.add_child(_tier_label)
 
 	var score_panel := PanelContainer.new()
-	score_panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.SURFACE, Tokens.BORDER, 14))
+	score_panel.add_theme_stylebox_override("panel", Kit.row_box())
 	score_panel.visible = not _coins_only()
 	column.add_child(score_panel)
 	var score_column := VBoxContainer.new()
 	score_column.add_theme_constant_override("separation", 6)
 	score_panel.add_child(score_column)
 	_score = _label(_t("排位积分 · 正在确认", "RANK SCORE · VERIFYING"), 21,
-		Tokens.TEXT_PRIMARY, HORIZONTAL_ALIGNMENT_CENTER)
+		Kit.INK, HORIZONTAL_ALIGNMENT_CENTER)
 	score_column.add_child(_score)
 	_progress = ProgressBar.new()
 	_progress.custom_minimum_size = Vector2(0, 10)
 	_progress.show_percentage = false
 	_progress.max_value = 100
 	_progress.value = 0
-	_progress.add_theme_stylebox_override("background", Tokens.flat_box(
-		Tokens.BG_DEEP, Tokens.BORDER, 0, 5))
-	_progress.add_theme_stylebox_override("fill", Tokens.flat_box(
-		Tokens.GOLD, Tokens.GOLD_EDGE, 0, 5))
+	# 槽和填充色走 Kit.theme()（深棕槽 + 金色）
 	score_column.add_child(_progress)
 
 	var reward_panel := PanelContainer.new()
-	reward_panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.SURFACE_RAISED, Tokens.GOLD_PRESSED, 18))
+	reward_panel.add_theme_stylebox_override("panel", Kit.box("slot", Vector4(22, 14, 22, 14)))
 	column.add_child(reward_panel)
 	var reward_column := VBoxContainer.new()
 	reward_column.add_theme_constant_override("separation", 4)
 	reward_panel.add_child(reward_column)
 	reward_column.add_child(_label(_t("本场游戏币奖励", "MATCH COIN REWARD"), 17,
-		Tokens.TEXT_SECONDARY, HORIZONTAL_ALIGNMENT_CENTER))
+		Kit.INK_SOFT, HORIZONTAL_ALIGNMENT_CENTER))
 	var amount_row := HBoxContainer.new()
 	amount_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	amount_row.add_theme_constant_override("separation", 12)
 	reward_column.add_child(amount_row)
 	var coin := TextureRect.new()
+	_coin_icon = coin
 	coin.texture = Currency.icon("coin")
 	coin.custom_minimum_size = Vector2(56, 56)
 	coin.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	coin.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	amount_row.add_child(coin)
-	_amount = _label("—", 42, Tokens.GOLD_HOVER)
+	_amount = _label("—", 42, WIN_COLOR)
 	amount_row.add_child(_amount)
 	_receipt_status = _label(_t("正在确认到账…", "Verifying your reward…"), 15,
-		Tokens.CYAN, HORIZONTAL_ALIGNMENT_CENTER)
+		Kit.INK_SOFT, HORIZONTAL_ALIGNMENT_CENTER)
 	reward_column.add_child(_receipt_status)
-	_balance = _label("", 14, Tokens.TEXT_SECONDARY, HORIZONTAL_ALIGNMENT_CENTER)
+	_balance = _label("", 14, Kit.INK_SOFT, HORIZONTAL_ALIGNMENT_CENTER)
 	reward_column.add_child(_balance)
 
 	var actions := HBoxContainer.new()
@@ -194,6 +185,7 @@ func _build() -> void:
 	_details.visible = has_details
 	_details.disabled = true
 	_details.pressed.connect(func() -> void: details_requested.emit())
+	Kit.style_plate(_details, true)
 	actions.add_child(_details)
 	_confirm = ACTION_BUTTON.instantiate()
 	_confirm.text = _t("继续", "Continue") if _coins_only() else _t("确认并返回大厅", "Confirm and return")
@@ -201,12 +193,14 @@ func _build() -> void:
 	_confirm.disabled = true
 	_confirm.visible = not has_details
 	_confirm.pressed.connect(func() -> void: confirmed.emit())
+	Kit.style_plate(_confirm, true)
 	actions.add_child(_confirm)
 	_retry = ACTION_BUTTON.instantiate()
 	_retry.text = _t("重试查询", "Retry")
 	_retry.custom_minimum_size = Vector2(160, 44)
 	_retry.visible = false
 	_retry.pressed.connect(_poll_receipt)
+	Kit.style_plate(_retry, false)
 	column.add_child(_retry)
 
 
@@ -231,8 +225,15 @@ func _reveal() -> void:
 	if Tokens.reduced_motion():
 		return
 	_frame.modulate.a = 0.0
+	# 面板弹出；标题缎带稍后从大到小「砸」下来（赢了砸得更有力）
+	UiJuice.pop_in([_frame], 0.0, 0.0, 0.88)
+	_banner.pivot_offset = _banner.custom_minimum_size * 0.5
+	_banner.scale = Vector2.ONE * (1.6 if _result == "win" else 1.2)
+	_banner.modulate.a = 0.0
 	var tween := create_tween()
-	tween.tween_property(_frame, "modulate:a", 1.0, Tokens.motion(0.45))
+	tween.tween_interval(0.18)
+	tween.tween_property(_banner, "modulate:a", 1.0, 0.12)
+	tween.parallel().tween_property(_banner, "scale", Vector2.ONE, 0.42).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
 func _poll_receipt() -> void:
@@ -270,11 +271,10 @@ func _apply_receipt(receipt: Dictionary) -> void:
 	var coins := maxi(0, int(receipt.get("coin", 0)))
 	_result = str(receipt.get("result", _result))
 	_title.text = _result_title()
-	_title.add_theme_color_override("font_color", Tokens.GOLD_HOVER if _result == "win" else (
-		Tokens.CYAN if _result == "draw" else Tokens.TEXT_PRIMARY))
+	Kit.set_result_banner(_banner, _result)
 	_amount.text = "+%d" % coins
 	_receipt_status.text = _t("已加入账户钱包", "Added to your account wallet")
-	_receipt_status.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+	_receipt_status.add_theme_color_override("font_color", WIN_COLOR)
 	if not _coins_only():
 		var before := int(receipt.get("score_before", 0))
 		var after := int(receipt.get("score_after", 0))
@@ -292,7 +292,9 @@ func _apply_receipt(receipt: Dictionary) -> void:
 	if not Tokens.reduced_motion():
 		_amount.pivot_offset = _amount.size * 0.5
 		_amount.scale = Vector2(0.72, 0.72)
-		create_tween().tween_property(_amount, "scale", Vector2.ONE, Tokens.motion(0.35))
+		create_tween().tween_property(_amount, "scale", Vector2.ONE, Tokens.motion(0.35)).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		if coins > 0:
+			_fly_coins.call_deferred(mini(coins, 10))
 
 
 func _show_rank(before: int, after: int) -> void:
@@ -312,7 +314,7 @@ func _show_rank(before: int, after: int) -> void:
 
 func _set_delayed() -> void:
 	_receipt_status.text = _t("结算暂未确认，可稍后在钱包查看", "Settlement delayed; check your wallet later")
-	_receipt_status.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	_receipt_status.add_theme_color_override("font_color", Kit.INK_SOFT)
 	_confirm.disabled = false
 	_details.disabled = false
 	_retry.visible = true
@@ -320,3 +322,38 @@ func _set_delayed() -> void:
 
 func _t(zh: String, en: String) -> String:
 	return en if LocaleManager.get_locale().begins_with("en") else zh
+
+
+# 金币从徽章那里一颗颗飞进奖励栏的金币图标，落下时图标弹一下。纯表现，不碰数字。
+func _fly_coins(count: int) -> void:
+	if _emblem == null or _coin_icon == null or not is_inside_tree():
+		return
+	var from := _emblem.get_global_rect().get_center()
+	var to := _coin_icon.get_global_rect().get_center()
+	for i in count:
+		var c := TextureRect.new()
+		c.texture = Currency.icon("coin")
+		c.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		c.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		c.size = Vector2(34, 34)
+		c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		c.top_level = true
+		add_child(c)
+		var start := from + Vector2(randf_range(-40, 40), randf_range(-24, 24)) - c.size * 0.5
+		c.global_position = start
+		c.modulate.a = 0.0
+		var mid := start.lerp(to - c.size * 0.5, 0.5) + Vector2(randf_range(-60, 60), -70)
+		var tw := c.create_tween()
+		tw.tween_interval(0.06 * i)
+		tw.tween_property(c, "modulate:a", 1.0, 0.08)
+		tw.tween_method(func(t: float) -> void:
+			# 二次贝塞尔：先往上抛再落进图标
+			var a := start.lerp(mid, t)
+			var b := mid.lerp(to - c.size * 0.5, t)
+			c.global_position = a.lerp(b, t), 0.0, 1.0, 0.45).set_ease(Tween.EASE_IN)
+		tw.tween_callback(func() -> void:
+			_coin_icon.pivot_offset = _coin_icon.size * 0.5
+			var bump := _coin_icon.create_tween()
+			bump.tween_property(_coin_icon, "scale", Vector2.ONE * 1.25, 0.06)
+			bump.tween_property(_coin_icon, "scale", Vector2.ONE, 0.14))
+		tw.tween_callback(c.queue_free)

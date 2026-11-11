@@ -15,6 +15,9 @@ extends Control
 
 signal balance_changed(diamond: int)
 
+# 11.11 羊皮纸风（ui/theme/ParchmentKit.gd）
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
+const UiJuice := preload("res://ui/theme/UiJuice.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
@@ -61,7 +64,7 @@ var _guest_panel: Control = null
 
 
 func _ready() -> void:
-	theme = Theming.get_theme()
+	theme = Kit.theme()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build()
 	if has_meta("ui_capture_fixture"):
@@ -138,7 +141,7 @@ func _set_balance(value: int) -> void:
 		return
 	_balance_label.text = Currency.comma(value) if value >= 0 else "-" + Currency.comma(-value)
 	# 欠账时是负数（docs/充值系统设计.md 第七节），标红。
-	_balance_label.add_theme_color_override("font_color", Tokens.GOLD_HOVER if value >= 0 else Tokens.DANGER)
+	_balance_label.add_theme_color_override("font_color", Color("8a4b12") if value >= 0 else Color("a3271a"))
 
 
 func _set_foot(text: String) -> void:
@@ -160,20 +163,17 @@ func _build() -> void:
 	SafeArea.track(center)
 	var shell := PanelContainer.new()
 	shell.custom_minimum_size = Vector2(1130, 445)
-	shell.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.SHOP_MODAL, Tokens.SHOP_EDGE_ACTIVE, Tokens.GAP_L))
+	shell.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(66, 46, 66, 34)))
 	center.add_child(shell)
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", Tokens.GAP_M)
 	shell.add_child(content)
 	var header := HBoxContainer.new()
 	content.add_child(header)
-	var title := Label.new()
-	title.text = _t("钻石宝库", "Diamond vault")
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
-	title.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
-	header.add_child(title)
+	var title_slot := HBoxContainer.new()
+	title_slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_slot.add_child(Kit.title_banner(_t("钻石宝库", "Diamond vault"), 64.0, 26))
+	header.add_child(title_slot)
 	var wallet_icon := TextureRect.new()
 	wallet_icon.texture = Currency.icon("diamond")
 	wallet_icon.custom_minimum_size = Vector2(30, 30)
@@ -188,16 +188,14 @@ func _build() -> void:
 		_set_balance(_balance)
 	else:
 		_balance_label.text = "—"
-		_balance_label.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
-	var close: Button = ACTION_BUTTON.instantiate()
-	close.text = "✕"
-	close.custom_minimum_size = Vector2(Tokens.TOUCH_MIN, Tokens.TOUCH_MIN)
-	close.pressed.connect(queue_free)
+		_balance_label.add_theme_color_override("font_color", Color("8a4b12"))
+	var close := Kit.close_button(queue_free, 50.0)
 	header.add_child(close)
+	UiJuice.pop_in([shell], 0.0, 0.0, 0.88)
 	var subtitle := Label.new()
 	subtitle.text = _t("选择钻石档位 · 每档第一次购买双倍", "Choose a bundle · first purchase of each bundle is doubled")
 	subtitle.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
-	subtitle.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	subtitle.add_theme_color_override("font_color", Kit.INK_SOFT)
 	content.add_child(subtitle)
 	_row = HBoxContainer.new()
 	_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -207,7 +205,7 @@ func _build() -> void:
 	_foot.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_foot.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_foot.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	_foot.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	_foot.add_theme_color_override("font_color", Kit.INK_SOFT)
 	content.add_child(_foot)
 	# 只在等 Steam 确认窗口等久了才出现（STEAM_WEB_OFFER_SEC）。
 	_web_button = ACTION_BUTTON.instantiate()
@@ -230,8 +228,8 @@ func _product_card(product: Dictionary) -> Control:
 	var card := PanelContainer.new()
 	card.custom_minimum_size = Vector2(195, 225)
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	card.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.SHOP_DIAMOND_CARD, Tokens.SHOP_EDGE, Tokens.GAP_S))
+	card.add_theme_stylebox_override("panel", Kit.box("card", Vector4(16, 22, 16, 16),
+		Color(1.0, 0.92, 0.72) if bool(product.get("first_bonus", false)) else Color.WHITE))
 	var col := VBoxContainer.new()
 	col.alignment = BoxContainer.ALIGNMENT_CENTER
 	col.add_theme_constant_override("separation", Tokens.GAP_S)
@@ -246,14 +244,14 @@ func _product_card(product: Dictionary) -> Control:
 	amount.text = Currency.comma(int(product.get("diamond", 0)))
 	amount.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	amount.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
-	amount.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+	amount.add_theme_color_override("font_color", Color("8a4b12"))
 	col.add_child(amount)
 	var extra := Label.new()
 	extra.text = bonus_text(product, LocaleManager.get_locale().begins_with("en"))
 	extra.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	extra.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 	extra.add_theme_color_override("font_color",
-		Tokens.GOLD_HOVER if bool(product.get("first_bonus", false)) else Tokens.TEXT_SECONDARY)
+		Color("8a4b12") if bool(product.get("first_bonus", false)) else Kit.INK_SOFT)
 	col.add_child(extra)
 	var button: Button = ACTION_BUTTON.instantiate()
 	var id := str(product.get("id", ""))
@@ -265,6 +263,7 @@ func _product_card(product: Dictionary) -> Control:
 	# 会被撑宽，比设计的 1130 宽出一截，手机横屏两头钻进灵动岛 / 圆角。
 	button.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
 	button.pressed.connect(func() -> void: _on_buy(product))
+	Kit.style_plate(button, true)
 	col.add_child(button)
 	return card
 
@@ -348,7 +347,7 @@ func _ask_guest(product: Dictionary) -> void:
 	if _guest_panel != null:
 		return
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SHOP_MODAL, Tokens.SHOP_EDGE_ACTIVE, Tokens.GAP_L))
+	panel.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(60, 44, 60, 32)))
 	panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	panel.custom_minimum_size = Vector2(620, 0)
 	var col := VBoxContainer.new()

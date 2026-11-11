@@ -7,8 +7,9 @@ extends RefCounted
 #
 # 不用 class_name：理由见 AccountConfig.gd 顶部（服务器打包的全局类缓存）。
 
-const TEX_GOLD := preload("res://assets/ui/currency/gold.png")
-const TEX_DIAMOND := preload("res://assets/ui/currency/diamond.png")
+# 11.11 全游戏统一换成用户给的新金币 / 钻石图标（跟主菜单货币栏同一张），旧的 currency/ 两张不再用。
+const TEX_GOLD := preload("res://assets/ui/main_menu_v2/coin_icon.png")
+const TEX_DIAMOND := preload("res://assets/ui/main_menu_v2/diamond_icon.png")
 
 # 使用完整的透明独立图标，不再从货币条截取，避免边框与底板残留。
 # 纹理由 ResourceLoader 缓存；所有货币入口共享同一素材。

@@ -16,12 +16,14 @@ const Theming := preload("res://ui/theme/GloryTheme.gd")
 const Text := preload("res://scripts/account/AnnouncementText.gd")
 # 新按钮一律实例化组件，不写 Button.new()：V3 P1-08 的棘轮盯着自绘按钮数，只能降。
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
-const MENU_BG_TEX := preload("res://assets/ui/main_menu_live/background.png")
+# 11.11 换成羊皮纸风（跟主菜单 main_menu_v2 同一套部件，见 ui/theme/ParchmentKit.gd）。
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
+const UiJuice := preload("res://ui/theme/UiJuice.gd")
 
 # 公告图一律 2:1（与登录弹窗共用同一张）。框先按比例占好位置，图下下来时版面不跳。
 const IMAGE_ASPECT := 2.0
 const LIST_WIDTH := 420.0
-const ROW_HEIGHT := 64.0
+const ROW_HEIGHT := 66.0
 const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 
 var _selected_id := 0
@@ -37,6 +39,8 @@ var _title_label: Label
 var _time_label: Label
 var _problem_label: Label
 var _body_label: RichTextLabel
+var _separator: Control
+var _rows_animated := false   # 列表行只在第一次出现时依次弹入，点选重画时不再弹
 
 
 # 在 add_child 之前调：打开时定位到哪一条（0 = 第一条）。
@@ -74,19 +78,7 @@ func select(id: int) -> void:
 # --- 骨架 ---------------------------------------------------------------------
 
 func _build() -> void:
-	var bg := TextureRect.new()
-	bg.texture = MENU_BG_TEX
-	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
-
-	var dim := ColorRect.new()
-	dim.color = Tokens.BACKDROP
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(dim)
+	Kit.backdrop(self, "news_square")
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -99,7 +91,8 @@ func _build() -> void:
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", Tokens.GAP_M)
 	margin.add_child(root)
-	root.add_child(_header())
+	var header := _header()
+	root.add_child(header)
 
 	var body := HBoxContainer.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -108,7 +101,7 @@ func _build() -> void:
 
 	var list_panel := PanelContainer.new()
 	list_panel.custom_minimum_size = Vector2(LIST_WIDTH, 0)
-	list_panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.BORDER, Tokens.GAP_S))
+	list_panel.add_theme_stylebox_override("panel", Kit.box("panel"))
 	body.add_child(list_panel)
 	var list_scroll := TouchScrollContainer.new()
 	list_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -121,7 +114,7 @@ func _build() -> void:
 
 	var detail_panel := PanelContainer.new()
 	detail_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	detail_panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.BORDER, Tokens.GAP_M))
+	detail_panel.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(44, 52, 44, 36)))
 	body.add_child(detail_panel)
 	var detail_scroll := TouchScrollContainer.new()
 	detail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -135,8 +128,7 @@ func _build() -> void:
 	_empty_label.name = "Empty"
 	_empty_label.text = _t("暂时没有公告", "No announcements right now")
 	_empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_empty_label.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
-	_empty_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	Kit.ink(_empty_label, Tokens.FONT_BODY, false, Kit.INK_SOFT)
 	_detail_box.add_child(_empty_label)
 
 	# 图片框：宽度跟着详情栏，高度按 2:1 算（_fit_image_frame）。
@@ -145,21 +137,21 @@ func _build() -> void:
 	_image_frame.name = "ImageFrame"
 	_image_frame.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_image_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_image_frame.add_theme_stylebox_override("panel",
-		Tokens.flat_box(Tokens.BG_DEEP, Tokens.BORDER, 1, Tokens.RADIUS_SMALL))
+	_image_frame.add_theme_stylebox_override("panel", Kit.box("slot", Vector4.ZERO))
 	_image_frame.resized.connect(_fit_image_frame)
 	_detail_box.add_child(_image_frame)
 	_image_rect = TextureRect.new()
 	_image_rect.name = "Image"
-	_image_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# 往里缩一圈，别盖住金框
+	_image_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 12)
 	_image_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	# 比例不对的图居中留边，不拉伸、不裁掉。
 	_image_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_image_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_image_frame.add_child(_image_rect)
 
-	_title_label = _label("Title", Tokens.FONT_TITLE, Tokens.GOLD)
-	_time_label = _label("Time", Tokens.FONT_CAPTION, Tokens.TEXT_SECONDARY)
+	_title_label = _label("Title", Tokens.FONT_TITLE, Kit.INK)
+	_time_label = _label("Time", Tokens.FONT_CAPTION, Kit.INK_SOFT)
 	# 只有预览账号会收到非空的 problem（服务器写回的图片问题等）。
 	_problem_label = _label("Problem", Tokens.FONT_CAPTION, Tokens.DANGER)
 
@@ -173,33 +165,32 @@ func _build() -> void:
 	# PASS：点链接照样能点，手指按在正文上拖也能滚动外面的 ScrollContainer。
 	_body_label.mouse_filter = Control.MOUSE_FILTER_PASS
 	_body_label.add_theme_font_size_override("normal_font_size", Tokens.FONT_BODY)
-	_body_label.add_theme_color_override("default_color", Tokens.TEXT_PRIMARY)
+	_body_label.add_theme_color_override("default_color", Kit.INK)
 	_body_label.meta_clicked.connect(_on_meta_clicked)
+	# 标题 / 时间 与正文之间一条带叶子的金线
+	_separator = Kit.separator()
+	_detail_box.add_child(_separator)
 	_detail_box.add_child(_body_label)
+
+	# 打开时：标题先落下，两块面板依次弹出
+	UiJuice.pop_in([header, list_panel, detail_panel], 0.0, 0.07, 0.9)
 
 
 func _header() -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", Tokens.GAP_M)
 
-	var back: Button = ACTION_BUTTON.instantiate()
-	back.name = "Back"
-	back.text = _t("← 返回", "← Back")
-	back.custom_minimum_size = Vector2(160, Tokens.TOUCH_MIN)
-	back.pressed.connect(func() -> void: back_requested.emit())
+	var back := Kit.back_button(func() -> void: back_requested.emit())
 	row.add_child(back)
 
-	var title := Label.new()
-	title.text = _t("公告 / 活动", "News / Events")
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
-	title.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
-	row.add_child(title)
+	var title_slot := CenterContainer.new()
+	title_slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_slot.add_child(Kit.title_banner(_t("新闻 / 活动", "News / Events"), 76.0, 28))
+	row.add_child(title_slot)
 
 	# 与返回按钮等宽的占位，让标题真正居中。
 	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(160, 0)
+	spacer.custom_minimum_size = Vector2(back.custom_minimum_size.x, 0)
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(spacer)
 	return row
@@ -210,8 +201,7 @@ func _label(node_name: String, font_size: int, color: Color) -> Label:
 	label.name = node_name
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	label.add_theme_font_size_override("font_size", font_size)
-	label.add_theme_color_override("font_color", color)
+	Kit.ink(label, font_size, font_size >= Tokens.FONT_TITLE, color)
 	_detail_box.add_child(label)
 	return label
 
@@ -235,8 +225,14 @@ func _render() -> void:
 	for child in _list_box.get_children():
 		_list_box.remove_child(child)
 		child.queue_free()
+	var rows: Array = []
 	for entry in list:
-		_list_box.add_child(_list_row(entry as Dictionary))
+		var row := _list_row(entry as Dictionary)
+		_list_box.add_child(row)
+		rows.append(row)
+	if not _rows_animated and not rows.is_empty():
+		_rows_animated = true
+		UiJuice.pop_in(rows, 0.18, 0.05, 0.92)
 	_render_detail()
 
 
@@ -254,6 +250,7 @@ func _list_row(item: Dictionary) -> Control:
 	# PASS：手指按在按钮上拖也能滚动列表。
 	button.mouse_filter = Control.MOUSE_FILTER_PASS
 	button.text = Text.row_text(item, _english())
+	Kit.style_list_row(button, Tokens.FONT_BODY)
 	button.pressed.connect(func() -> void: select(id))
 
 	var dot := Label.new()
@@ -261,11 +258,12 @@ func _list_row(item: Dictionary) -> Control:
 	dot.text = "●"
 	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	dot.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
-	dot.add_theme_font_size_override("font_size", 20)
+	dot.add_theme_font_size_override("font_size", 16)
 	dot.visible = AnnouncementService.is_unread(item)
 	button.add_child(dot)
 	dot.set_anchors_and_offsets_preset(Control.PRESET_CENTER_RIGHT)
-	dot.position.x -= Tokens.GAP_S
+	# 让开右端卷边
+	dot.position.x -= 34.0
 	return button
 
 
@@ -276,6 +274,7 @@ func _render_detail() -> void:
 	_title_label.visible = has_item
 	_time_label.visible = has_item
 	_body_label.visible = has_item
+	_separator.visible = has_item
 	if not has_item:
 		_problem_label.visible = false
 		_image_frame.visible = false

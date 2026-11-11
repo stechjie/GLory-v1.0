@@ -30,6 +30,55 @@ const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
 const PetalTexture := preload("res://scenes/prep/effects/PrepPetalTexture.gd")
 const FxTextures := preload("res://scenes/prep/effects/PrepRefreshFxTextures.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
+# 11.11 重做：同画风新背景（中间是大片空地）+ 地上画一圈会转的祈愿法阵当舞台，
+# 卡片 / 按钮换羊皮纸（ui/theme/ParchmentKit.gd）。旧背景里自带的树桩祭坛不再用。
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
+const UiJuice := preload("res://ui/theme/UiJuice.gd")
+
+
+# 地上的祈愿法阵：两圈金线 + 一圈慢转的符点 + 内圈反向转的花瓣 / 星光，呼吸发亮。
+# 纯装饰，不吃输入。color 跟主题走（樱花粉 / 夜荧光紫）。
+class AltarCircle extends Control:
+	var color := Color(1, 0.8, 0.9)
+	var radius := Vector2(230, 70)
+	var _t := 0.0
+
+	func _ready() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _process(delta: float) -> void:
+		_t += delta
+		queue_redraw()
+
+	func _ring(center: Vector2, r: Vector2, c: Color, width: float) -> void:
+		var pts := PackedVector2Array()
+		for i in 73:
+			var a := TAU * float(i) / 72.0
+			pts.append(center + Vector2(cos(a) * r.x, sin(a) * r.y))
+		draw_polyline(pts, c, width, true)
+
+	func _draw() -> void:
+		var c := size * 0.5
+		var pulse := 0.75 + 0.25 * sin(_t * 1.6)
+		# 地面柔光
+		for i in 6:
+			var k := 1.0 - float(i) / 6.0
+			_ring(c, radius * (0.2 + 0.85 * k), Color(color, 0.05 * pulse), radius.y * 0.35)
+		_ring(c, radius, Color(1.0, 0.86, 0.45, 0.85 * pulse), 4.0)
+		_ring(c, radius * 0.86, Color(color, 0.7 * pulse), 2.5)
+		_ring(c, radius * 0.52, Color(1.0, 0.9, 0.6, 0.6 * pulse), 2.0)
+		# 外圈 16 个符点慢慢顺转
+		for i in 16:
+			var a := TAU * float(i) / 16.0 + _t * 0.25
+			var p := c + Vector2(cos(a) * radius.x * 0.93, sin(a) * radius.y * 0.93)
+			draw_circle(p, 5.0 if i % 2 == 0 else 3.0, Color(1.0, 0.92, 0.6, 0.9 * pulse))
+		# 内圈 6 片菱形逆转
+		for i in 6:
+			var a := TAU * float(i) / 6.0 - _t * 0.5
+			var p := c + Vector2(cos(a) * radius.x * 0.69, sin(a) * radius.y * 0.69)
+			var d := Vector2(10, 4)
+			draw_colored_polygon(PackedVector2Array([p + Vector2(0, -d.y * 2), p + Vector2(d.x, 0),
+				p + Vector2(0, d.y * 2), p - Vector2(d.x, 0)]), Color(color.lightened(0.3), 0.85 * pulse))
 
 const DEFAULT_SKIN := "prep_skin_sakura"
 const PRICE := 100
@@ -89,30 +138,30 @@ var _overlay: Control
 static func _themes() -> Dictionary:
 	return {
 		"prep_skin_sakura": {
-			"bg": "res://assets/ui/shop/sakura_wish_bg.png",
+			"bg": "res://assets/ui/page_backgrounds/wish_sakura.png",
 			"title": ["樱花祈愿", "Sakura Wish"],
 			"name": ["樱花棋盘", "Sakura Board"],
 			"shard": ["樱花碎片", "Sakura shards"],
 			"desc": ["整片棋盘落满樱花：摆放界面飘起花瓣，刷新商店时卷轴化作花瓣随风吹散。",
 				"Blossoms across your board: drifting petals in preparation, and a shop scroll that scatters into petals."],
-			"altar_top": Vector2(800, 392), "scroll_center": Vector2(800, 262), "crown_center": Vector2(800, 292),
+			"altar_top": Vector2(800, 452), "scroll_center": Vector2(800, 300), "crown_center": Vector2(800, 330),
 			"bits": "petal",
-			"glass": Tokens.SAKURA_GLASS, "edge": Tokens.SAKURA_EDGE, "accent": Tokens.SAKURA_PINK,
-			"text": Tokens.SAKURA_TEXT, "muted": Tokens.SAKURA_TEXT_MUTED, "text_edge": Tokens.SAKURA_TEXT_EDGE,
+			"glass": Tokens.SAKURA_GLASS, "edge": Tokens.SAKURA_EDGE, "accent": Color("b03f6c"),
+			"text": Kit.INK, "muted": Kit.INK_SOFT, "text_edge": Kit.INK_OUTLINE, "ring": Color("f4a6c6"),
 			"socket": Tokens.SAKURA_SOCKET, "slot_empty": Tokens.SAKURA_SLOT_EMPTY,
 			"flash": Tokens.SAKURA_FLASH, "glow": Tokens.SAKURA_PINK, "bit_color": Color.WHITE,
 		},
 		"prep_skin_nightwisp": {
-			"bg": "res://assets/ui/shop/nightwisp_wish_bg.png",
+			"bg": "res://assets/ui/page_backgrounds/wish_nightwisp.png",
 			"title": ["夜荧光祈愿", "Night Wisp Wish"],
 			"name": ["夜荧光棋盘", "Night Wisp Board"],
 			"shard": ["荧光碎片", "Wisp shards"],
 			"desc": ["月夜下的荧光森林：星光萤火满场飘浮，水晶萝卜与星光祭坛，刷新商店时卷轴化作黄色荧光飞散。",
 				"A moonlit glowing forest: violet wisps drift over your board, crystal carrot and starlit altar, and a shop scroll that dissolves into golden wisps."],
-			"altar_top": Vector2(813, 438), "scroll_center": Vector2(813, 300), "crown_center": Vector2(813, 330),
+			"altar_top": Vector2(800, 452), "scroll_center": Vector2(800, 300), "crown_center": Vector2(800, 330),
 			"bits": "wisp",
-			"glass": Tokens.NIGHT_GLASS, "edge": Tokens.NIGHT_EDGE, "accent": Tokens.NIGHT_ACCENT,
-			"text": Tokens.NIGHT_TEXT, "muted": Tokens.NIGHT_TEXT_MUTED, "text_edge": Tokens.NIGHT_TEXT_EDGE,
+			"glass": Tokens.NIGHT_GLASS, "edge": Tokens.NIGHT_EDGE, "accent": Color("5b3f9a"),
+			"text": Kit.INK, "muted": Kit.INK_SOFT, "text_edge": Kit.INK_OUTLINE, "ring": Color("c9a8ff"),
 			"socket": Tokens.NIGHT_SOCKET, "slot_empty": Tokens.NIGHT_SLOT_EMPTY,
 			"flash": Tokens.NIGHT_FLASH, "glow": Tokens.NIGHT_GLOW, "bit_color": Tokens.NIGHT_STAR,
 		},
@@ -218,15 +267,20 @@ func _build() -> void:
 	_rect(bg, BG_RECT.position.x, BG_RECT.position.y, BG_RECT.size.x, BG_RECT.size.y)
 	_canvas.add_child(bg)
 	_canvas.add_child(_ambient_petals())
+	var altar := AltarCircle.new()
+	altar.color = _th.ring
+	altar.radius = Vector2(250, 74)
+	_rect(altar, _th.altar_top.x - 280, _th.altar_top.y - 90, 560, 180)
+	_canvas.add_child(altar)
 
 	_build_scroll()
 	_build_crown()
 	_build_cards()
 	_build_bottom()
 
-	var title := _label(_txt("title"), 34)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_rect(title, 560, 14, 480, 52)
+	var title := Kit.title_banner(_txt("title"), 70.0, 28)
+	title.position = Vector2(800 - title.custom_minimum_size.x * 0.5, 8)
+	title.size = title.custom_minimum_size
 	_canvas.add_child(title)
 	var balance_row := HBoxContainer.new()
 	balance_row.alignment = BoxContainer.ALIGNMENT_END
@@ -241,11 +295,11 @@ func _build() -> void:
 	diamond_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	balance_row.add_child(diamond_icon)
 	_balance = _label("", 21)
+	Kit.on_backdrop(_balance)
 	_balance.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	balance_row.add_child(_balance)
-	var close := _button("✕", Vector2(56, 56))
+	var close := Kit.close_button(_close, 56.0)
 	_rect(close, 1520, 14, 56, 56)
-	close.pressed.connect(_close)
 	_canvas.add_child(close)
 	_refresh_ui()
 
@@ -259,7 +313,7 @@ func _build_scroll() -> void:
 	_scroll_shadow.size = Vector2(SCROLL_WIDTH * 0.72, 38)
 	_scroll_shadow.pivot_offset = _scroll_shadow.size * 0.5
 	_scroll_shadow.position = _th.altar_top - _scroll_shadow.size * 0.5
-	_scroll_shadow.self_modulate = _th.text_edge
+	_scroll_shadow.self_modulate = Color(0.12, 0.07, 0.03, 0.55)
 	_scroll_shadow.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_canvas.add_child(_scroll_shadow)
 
@@ -365,8 +419,7 @@ func _build_crown() -> void:
 func _build_cards() -> void:
 	# 左：解锁后长什么样
 	var left := PanelContainer.new()
-	left.add_theme_stylebox_override("panel", Tokens.panel_box(
-		_th.glass, _th.edge, 14))
+	left.add_theme_stylebox_override("panel", Kit.box("card", Vector4(36, 34, 34, 26)))
 	left.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_rect(left, 36, 96, 392, 0)
 	_canvas.add_child(left)
@@ -379,7 +432,7 @@ func _build_cards() -> void:
 	var name_label := _label(_txt("name"), 34)
 	lcol.add_child(name_label)
 	var art_frame := Control.new()
-	art_frame.custom_minimum_size = Vector2(364, 205)
+	art_frame.custom_minimum_size = Vector2(336, 190)
 	art_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	lcol.add_child(art_frame)
 	var art := TextureRect.new()
@@ -391,8 +444,7 @@ func _build_cards() -> void:
 	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	art_frame.add_child(art)
 	var badge := PanelContainer.new()
-	badge.add_theme_stylebox_override("panel", Tokens.panel_box(
-		_th.glass, _th.edge, 8))
+	badge.add_theme_stylebox_override("panel", Kit.box("plate_gold", Vector4(14, 4, 14, 4)))
 	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	badge.position = Vector2(10, 10)
 	badge.add_child(_label(_t("已永久拥有", "Owned forever"), 17))
@@ -401,13 +453,12 @@ func _build_cards() -> void:
 	var desc := _label(_txt("desc"), 16)
 	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	desc.add_theme_color_override("font_color", _th.muted)
-	desc.custom_minimum_size.x = 364
+	desc.custom_minimum_size.x = 336
 	lcol.add_child(desc)
 
 	# 右：概率公示（付款前必须看得到）
 	var right := PanelContainer.new()
-	right.add_theme_stylebox_override("panel", Tokens.panel_box(
-		_th.glass, _th.edge, 14))
+	right.add_theme_stylebox_override("panel", Kit.box("card", Vector4(36, 34, 34, 26)))
 	right.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_rect(right, 1172, 96, 392, 0)
 	_canvas.add_child(right)
@@ -421,12 +472,17 @@ func _build_cards() -> void:
 		"每次祈愿消耗 100 钻石\n碎片 ×1  30%\n碎片 ×2  21%\n碎片 ×3  9%\n游戏币 200～300  40%（按 10 一档随机）\n\n第 10 抽碎片不足 10 片时直接补满；集满自动解锁，拥有后不能再祈愿。",
 		"100 gems per wish\n1 shard  30%\n2 shards  21%\n3 shards  9%\nCoins 200–300  40% (in steps of 10)\n\nDraw 10 tops you up to 10 shards. Unlocks automatically; no more wishes once owned."), 17)
 	rule_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	rule_text.custom_minimum_size.x = 364
+	rule_text.custom_minimum_size.x = 336
 	rule_text.add_theme_color_override("font_color", _th.muted)
 	rcol.add_child(rule_text)
 
 
 func _build_bottom() -> void:
+	var plate := PanelContainer.new()
+	plate.add_theme_stylebox_override("panel", Kit.box("list_row", Vector4.ZERO))
+	plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_rect(plate, 520, 514, 560, 74)
+	_canvas.add_child(plate)
 	_progress_label = _label("", 24)
 	_progress_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_rect(_progress_label, 500, 520, 600, 34)
@@ -437,18 +493,20 @@ func _build_bottom() -> void:
 	_rect(_pity_label, 500, 554, 600, 28)
 	_canvas.add_child(_pity_label)
 	_draw_button = _button("", Vector2(380, 76))
-	_draw_button.theme_type_variation = Theming.VARIATION_PRIMARY
+	Kit.style_plate(_draw_button, true)
 	_draw_button.add_theme_font_size_override("font_size", 27)
 	_rect(_draw_button, 610, 594, 380, 76)
 	_draw_button.pressed.connect(_on_draw_pressed)
 	_canvas.add_child(_draw_button)
 	_notice = _label("", 17)
+	Kit.on_backdrop(_notice)
 	_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_rect(_notice, 450, 676, 700, 28)
 	_canvas.add_child(_notice)
 	_retry = _button(_t("重试读取", "Retry"), Vector2(170, 52))
 	_rect(_retry, 1010, 606, 170, 52)
 	_retry.pressed.connect(_load_state)
+	Kit.style_plate(_retry, false)
 	_canvas.add_child(_retry)
 
 
@@ -802,7 +860,7 @@ func _open_overlay_card(rect: Rect2, pivot_y: float) -> VBoxContainer:
 	layer.position = _canvas.position
 	_overlay.add_child(layer)
 	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel", Tokens.panel_box(_th.glass, _th.edge, 24))
+	card.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(60, 46, 60, 34)))
 	_rect(card, rect.position.x, rect.position.y, rect.size.x, rect.size.y)
 	layer.add_child(card)
 	var col := VBoxContainer.new()

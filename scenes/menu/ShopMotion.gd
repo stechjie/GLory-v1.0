@@ -96,7 +96,8 @@ static func selected_pulse(panel: Control) -> void:
 	if not enabled() or panel == null:
 		return
 	var tw := panel.create_tween().set_loops()
-	tw.tween_property(panel, "self_modulate", Color(1.35, 1.25, 1.0), 0.9) \
+	# 11.11 卡片换成浅色羊皮纸：原来的 1.35 倍在浅底上直接变成刺眼的黄，收成轻微的暖光呼吸
+	tw.tween_property(panel, "self_modulate", Color(1.07, 1.04, 0.95), 0.9) \
 		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	tw.tween_property(panel, "self_modulate", Color.WHITE, 0.9) \
 		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)

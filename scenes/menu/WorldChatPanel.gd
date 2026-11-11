@@ -16,6 +16,12 @@ signal profile_requested(friend_code: String)
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
+# 11.11 羊皮纸风（跟 ChatScreen 一起换）：外框是大羊皮纸面板、消息用两种气泡。
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
+const ONLINE_COLOR := Color("2f7d45")
+const MUTED_COLOR := Color("8c7a66")
+const SECTION_COLOR := Color("8a4b12")
+const BAD_COLOR := Color("a3271a")
 const Catalog := preload("res://scripts/account/AvatarCatalog.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const ReportDialog := preload("res://ui/components/ReportDialog.gd")
@@ -43,7 +49,7 @@ var _sending := false
 func _ready() -> void:
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
-	var frame := Tokens.panel_box(Color(0.025, 0.09, 0.12, 0.08), Color(0, 0, 0, 0), Tokens.GAP_S)
+	var frame := Kit.box("panel")
 	frame.content_margin_left = 64
 	frame.content_margin_right = 64
 	add_theme_stylebox_override("panel", frame)
@@ -93,7 +99,7 @@ func _build() -> void:
 	title.text = _text("世界频道 · 所有玩家都看得到", "World · everyone can see this")
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
-	title.add_theme_color_override("font_color", Tokens.GOLD)
+	title.add_theme_color_override("font_color", SECTION_COLOR)
 	head.add_child(title)
 
 	_status = Label.new()
@@ -103,13 +109,12 @@ func _build() -> void:
 	_notice = Label.new()
 	_notice.visible = false
 	_notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_notice.add_theme_color_override("font_color", Tokens.DANGER_HOVER)
+	_notice.add_theme_color_override("font_color", BAD_COLOR)
 	col.add_child(_notice)
 
 	var well := PanelContainer.new()
 	well.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	well.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Color(0.02, 0.07, 0.095, 0.20), Color(0.48, 0.62, 0.61, 0.27), Tokens.GAP_M))
+	well.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	col.add_child(well)
 
 	_scroll = TouchScrollContainer.new()
@@ -123,8 +128,7 @@ func _build() -> void:
 	_scroll.add_child(_list)
 
 	var composer := PanelContainer.new()
-	composer.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Color(0.04, 0.12, 0.15, 0.86), Color(0.54, 0.69, 0.66, 0.42), Tokens.GAP_S))
+	composer.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	col.add_child(composer)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", Tokens.GAP_S)
@@ -158,7 +162,7 @@ func _build() -> void:
 		"ⓘ Kept 7 days · one message per %d s · no contact info or abuse" % int(ChatService.WORLD_COOLDOWN_SEC))
 	rules.clip_text = true
 	rules.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	rules.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
+	rules.add_theme_color_override("font_color", MUTED_COLOR)
 	col.add_child(rules)
 
 
@@ -260,14 +264,14 @@ func _refresh_status() -> void:
 		return
 	if ChatService.kicked:
 		_status.text = _text("已在另一台设备登录", "Signed in elsewhere")
-		_status.add_theme_color_override("font_color", Tokens.GOLD)
+		_status.add_theme_color_override("font_color", SECTION_COLOR)
 	elif RealtimeService.is_online():
 		_status.text = _text("● 实时", "● Live")
-		_status.add_theme_color_override("font_color", Tokens.CYAN)
+		_status.add_theme_color_override("font_color", ONLINE_COLOR)
 	else:
 		# 发送不受影响（走 HTTPS），受影响的只是「新消息实时出现」。
 		_status.text = _text("连接中…", "Connecting…")
-		_status.add_theme_color_override("font_color", Tokens.GOLD)
+		_status.add_theme_color_override("font_color", SECTION_COLOR)
 
 
 # --- 渲染 ---------------------------------------------------------------------
@@ -337,7 +341,7 @@ func _row(message: Dictionary, max_width: float) -> Control:
 	col.add_child(meta)
 	var who := AccountManager.display_name(str(message.get("name", "")), code)
 	if mine:
-		meta.add_child(_caption(_text("我", "Me"), Tokens.GOLD))
+		meta.add_child(_caption(_text("我", "Me"), SECTION_COLOR))
 	else:
 		# 点名字：查看资料 / 举报这一条。按钮做成「看着像名字」的样子（ghost），手机上仍有 48 高的判定区。
 		var name_button := _button(who, _open_actions.bind(message))
@@ -345,7 +349,7 @@ func _row(message: Dictionary, max_width: float) -> Control:
 		name_button.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
 		name_button.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 		meta.add_child(name_button)
-	meta.add_child(_caption(ChatService.format_time(str(message.get("created_at", ""))), Tokens.TEXT_DISABLED))
+	meta.add_child(_caption(ChatService.format_time(str(message.get("created_at", ""))), MUTED_COLOR))
 
 	if ChatService.is_voice(message):
 		# 语音条和私聊共用一个组件（ui/components/VoiceClipBubble.gd）：
@@ -363,13 +367,13 @@ func _row(message: Dictionary, max_width: float) -> Control:
 
 	var bubble := PanelContainer.new()
 	bubble.size_flags_horizontal = Control.SIZE_SHRINK_END if mine else Control.SIZE_SHRINK_BEGIN
-	bubble.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.GOLD_PRESSED.darkened(0.64) if mine else Tokens.SURFACE_RAISED,
-		Tokens.GOLD_PRESSED.darkened(0.18) if mine else Tokens.BORDER.darkened(0.28), 10))
+	bubble.add_theme_stylebox_override("panel", Kit.box("bubble_self", Vector4(26, 20, 34, 24), Color(1.0, 0.86, 0.58))
+		if mine else Kit.box("bubble_other", Vector4(28, 12, 20, 26)))
+	bubble.custom_minimum_size = Vector2(96, 0)  # 短消息也撑到最小宽度，字不压边角装饰
 	col.add_child(bubble)
 	var body := Label.new()
 	body.text = str(message.get("body", ""))
-	body.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	body.add_theme_color_override("font_color", Kit.INK)
 	# 同私聊：短消息按自然宽度，长消息在 max_width 处折行（自动折行的 Label 放在收缩容器里会
 	# 退化成一个字一行，必须给它一个明确的宽度）。
 	var natural := body.get_theme_font("font").get_string_size(
@@ -395,8 +399,8 @@ func _open_actions(message: Dictionary) -> void:
 	var code := str(message.get("from_code", ""))
 	var who := AccountManager.display_name(str(message.get("name", "")), code)
 	var sheet := PanelContainer.new()
-	sheet.theme = Theming.get_theme()
-	sheet.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.GOLD_EDGE, Tokens.PAD))
+	sheet.theme = Kit.theme()
+	sheet.add_theme_stylebox_override("panel", Kit.box("panel"))
 	var width := minf(460.0, get_viewport_rect().size.x - Tokens.PAD * 2.0)
 	sheet.anchor_left = 0.5
 	sheet.anchor_right = 0.5
@@ -412,14 +416,14 @@ func _open_actions(message: Dictionary) -> void:
 	title.text = who
 	title.clip_text = true
 	title.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
-	title.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	title.add_theme_color_override("font_color", Kit.INK)
 	col.add_child(title)
 	var quote := Label.new()
 	# 语音的 body 是服务端写的「[语音 12″]」占位（database/033），直接引用就看得懂。
 	quote.text = "「%s」" % str(message.get("body", ""))
 	quote.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	quote.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	quote.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	quote.add_theme_color_override("font_color", Kit.INK_SOFT)
 	col.add_child(quote)
 	var view := _button(_text("查看资料（加好友 / 屏蔽）", "View profile (add / block)"), func() -> void:
 		ModalStack.pop(ACTIONS_MODAL_ID)
@@ -481,15 +485,14 @@ func _caption(text: String, color: Color) -> Label:
 
 func _hint(message: String) -> Control:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Color(0.035, 0.105, 0.13, 0.72), Color(0.60, 0.70, 0.63, 0.38), Tokens.GAP_M))
+	panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	panel.custom_minimum_size.x = 460
 	panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	var label := Label.new()
 	label.text = message
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	label.add_theme_color_override("font_color", Kit.INK_SOFT)
 	panel.add_child(label)
 	return panel
 
