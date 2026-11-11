@@ -12,9 +12,51 @@
 | 用途 | 测试服 | 正式服（审核服） |
 | --- | --- | --- |
 | IP | `34.124.141.90` | `35.247.132.13` |
-| 账号接口 | `https://glorytd-api.duckdns.org` | `https://glorytd-prod-api.duckdns.org` |
-| 战斗（UDP + DTLS） | `glorytd-battle.duckdns.org:8080` | `glorytd-prod-battle.duckdns.org:8080` |
+| 账号接口 | `https://test-api.gogoglory.com` | `https://glorytd-prod-api.duckdns.org` |
+| 战斗（UDP + DTLS） | `test-battle.gogoglory.com:8080` | `glorytd-prod-battle.duckdns.org:8080` |
 | 语音 | `wss://glorytd-voice.duckdns.org` | `wss://glorytd-prod-voice.duckdns.org` |
+
+### 自有域名 gogoglory.com：测试服已切，正式服还没切
+
+2026-11-11 买了 `gogoglory.com`，起因是 `duckdns.org` 在中国大陆解析不稳、玩家卡在
+「Update incomplete」。用户定的节奏是**先切测试服，测试包验证通过再切正式服**。
+
+DNS 在 Cloudflare（免费版，只做解析）。🔴 **六条记录必须全部是灰云 `DNS only`**：
+战斗走 UDP 8080，Cloudflare 免费版只代理 HTTP/HTTPS；而且账号服务器的 Caddy 用
+`header_up X-Forwarded-For {remote_host}` **覆盖**来源 IP，前面再加一层代理会让所有玩家
+共用一个限流桶（匿名注册每小时 10 次会变成全服 10 次）。
+
+| 子域 | 指向 | 状态 |
+| --- | --- | --- |
+| `test-api` / `test-battle` | `34.124.141.90` | ✅ 打包已使用 |
+| `api` / `battle` | `35.247.132.13` | DNS 与证书就绪，**打包仍用 duckdns** |
+| `test-voice` / `voice` | 各自 IP | DNS 就绪，**服务器还没切** |
+
+两台服务器的 Caddy 站点块现在都是 `旧域名, 新域名 {`，各持两张证书，新旧同时可用。
+DTLS 证书**不用换**（CN 是 `glory-battle`，按指纹 pin、不校验主机名）。
+
+#### 切正式服时要改什么
+
+1. `tools/workspace/glory_build.py` 的 `endpoints` 表里 `prod` 那一行
+2. `tools/workspace/test_glory_build.py` 里那条 prod 断言
+3. `deploy/app-store/release-1.0.0.json` 的 support / privacy 链接（下次提审时）
+
+#### 🔴 撤掉 duckdns 之前必须先做这两件（外部控制台，仓库里改不到）
+
+1. **Supabase 的 Steam OIDC Issuer** —— `update.sh` 从 Caddyfile 的**第一个**域名推出
+   `steam_oidc_issuer`（见 `backend/app/config.py` 那条注释）。旧域名一旦不在第一位或被删，
+   issuer 就会变，Supabase 里登记的必须一字不差地同步改，否则 Steam 登录全挂。
+   撤之前先跑 `update.sh`，照它打印的那一行填。
+2. **Google Cloud Pub/Sub 的 RTDN 推送端点** —— 现在指向
+   `https://glorytd-api.duckdns.org/iap/google/rtdn`，不改的话玩家付了钱收不到到账通知。
+   改完要做一笔沙盒充值验证。
+
+⚠️ **撤旧域名必须排在「新包已经发出去并验证可用」之后。** 域名是烧进安装包里的，
+服务器删不掉；撤早了连你自己手上的包都连不上，没有退路。
+
+语音（`voice`）**故意还留在 duckdns**：语音地址是服务器下发的、客户端不写死，换它对玩家
+零收益，却要重启战斗服务器。撤 duckdns 时用
+`deploy/livekit/install_livekit.sh <新语音域名>` 一起切，跑完要重启战斗服务器。
 
 - 测试服固定使用 Google Cloud 项目 `project-60c72d94-b558-4e4f-992`：
   https://ssh.cloud.google.com/v2/ssh/projects/project-60c72d94-b558-4e4f-992/

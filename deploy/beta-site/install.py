@@ -34,7 +34,7 @@ def validate_config(config, allow_pending=False):
     assert allow_pending or ios['ready'] and android['ready'], 'Both platforms must be verified, or explicitly publish pending status'
     check_url(ios['url'], 'testflight.apple.com', r'/join/[A-Za-z0-9]+/?')
     if android['mode'] == 'apk':
-        check_url(android['url'], 'glorytd-api.duckdns.org', r'/beta/downloads/Glory-[A-Za-z0-9.-]+-android\.apk')
+        check_url(android['url'], 'test-api.gogoglory.com', r'/beta/downloads/Glory-[A-Za-z0-9.-]+-android\.apk')
         return
     assert android['mode'] == 'play_closed'
     check_url(android['group_url'], 'groups.google.com', r'/g/[A-Za-z0-9_-]+(?:/about)?/?')

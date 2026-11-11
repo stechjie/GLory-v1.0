@@ -60,7 +60,7 @@ class Tests(unittest.TestCase):
   (self.model/'idle.fbx').unlink()
   with self.assertRaises(RuntimeError):self.run_check()
  def env_stage(self):
-  for rel,text in (('scripts/account/AccountConfig.gd','const DEFAULT_BACKEND_URL := "https://glorytd-api.duckdns.org"\n'),('scripts/multiplayer/NetworkConfig.gd','const SERVER_HOST := "glorytd-battle.duckdns.org"\n')):
+  for rel,text in (('scripts/account/AccountConfig.gd','const DEFAULT_BACKEND_URL := "https://test-api.gogoglory.com"\n'),('scripts/multiplayer/NetworkConfig.gd','const SERVER_HOST := "test-battle.gogoglory.com"\n')):
    p=self.stage/rel;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(text)
   cert=self.stage/'scripts/multiplayer/NetTLSCert.gd';cert.write_bytes((Path(__file__).resolve().parents[2]/'scripts/multiplayer/NetTLSCert.gd').read_bytes());return cert
  def test_prod_pins_prod_battle_certificate(self):

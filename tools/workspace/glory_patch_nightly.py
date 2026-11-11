@@ -24,7 +24,7 @@ import glory_build as build  # noqa: E402
 from export_patch import export as export_patch  # noqa: E402
 
 RECORD = ROOT / "delivery/patch-release-20261011/release-record.json"
-API = "https://glorytd-api.duckdns.org"
+API = "https://test-api.gogoglory.com"
 FIREBASE = "glory-patches.web.app"
 CHANNEL = "internal"
 KEYCHAIN_SERVICE = "com.glory.patch-uploader"
