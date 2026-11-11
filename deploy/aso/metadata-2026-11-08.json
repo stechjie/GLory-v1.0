@@ -1,0 +1,82 @@
+{
+  "researched_on": "2026-11-08",
+  "status": "proposed_not_uploaded_or_submitted",
+  "scope": "Next-version metadata proposal; no changes to current store submissions",
+  "evidence_limit": "No country-level keyword search-volume export or Apple Ads popularity data was accessed. Priorities are relevance and competitor/region evidence, not measured volume ranks.",
+  "locales": {
+    "en": {
+      "name": "GLory: Auto Chess & Team PvP",
+      "subtitle": "3v3 Battles & Hero Synergies",
+      "keywords": "autobattler,tactics,multiplayer,formation,fantasy,ranked,merge,squad,lineup,summon,boss,arena",
+      "short_description": "Build hero synergies, plan your lineup and team up for 3v3 auto chess battles.",
+      "description": "GLory is a multiplayer auto chess game about building a lineup, combining hero synergies and making tactical choices before automatic battles.\n\nTEAM UP FOR 3v3 BATTLES\nPlay with friends in team matches. Plan your formation, adapt your lineup and work together through PvE encounters and PvP rounds.\n\nBUILD YOUR OWN LINEUP\nRecruit and upgrade units. Explore race synergies, treasures and mercenaries to find combinations that suit your tactics.\n\nPREPARE, THEN AUTO BATTLE\nChoose your positions and spend your resources during preparation. Watch your units fight automatically, then adjust for the next round.\n\nPLAY YOUR WAY\nEnter ranked matches or create custom rooms with friends. Spectate matches and communicate through optional text chat, voice messages and real-time voice. Microphone access is not required to play.\n\nSTART AS A GUEST\nTry the tutorial and start without registering an email account.\n\nThe game interface is available in English and Chinese. An internet connection is required. Optional in-app purchases are available where supported.\n\nSupport: bytegamesg2025@gmail.com",
+      "counts": {
+        "name": 28,
+        "subtitle": 28,
+        "keywords": 93,
+        "short_description": 78,
+        "description": 1088,
+        "keywords_utf8_bytes": 93
+      },
+      "app_store_locale": "en-US",
+      "google_play_locale": "en-US"
+    },
+    "ms": {
+      "name": "GLory: Auto Chess & Team PvP",
+      "subtitle": "Pertempuran 3v3 Bersama Rakan",
+      "keywords": "taktik,wira,pasukan,sinergi,berbilang pemain,autobattler,formasi,arena",
+      "short_description": "Bina sinergi wira untuk pertempuran auto chess 3v3 bersama rakan.",
+      "description": "GLory ialah permainan auto chess berbilang pemain yang mengutamakan susunan pasukan, sinergi wira dan keputusan taktikal sebelum pertempuran automatik.\n\nBERTEMPUR 3v3 BERSAMA RAKAN\nBermain dalam pasukan bersama rakan. Susun formasi dan sesuaikan barisan anda untuk menghadapi musuh PvE serta pusingan PvP.\n\nBINA BARISAN ANDA\nRekrut dan tingkatkan unit. Cuba gabungan kaum, sinergi, khazanah dan askar upahan untuk membentuk taktik anda sendiri.\n\nRANCANG DAHULU, KEMUDIAN BERTEMPUR\nUrus sumber dan kedudukan unit semasa persediaan. Unit bertempur secara automatik; ubah rancangan anda sebelum pusingan seterusnya.\n\nBERMAIN DAN BERHUBUNG\nSertai perlawanan berperingkat atau cipta bilik tersuai bersama rakan. Tonton perlawanan dan gunakan sembang teks, mesej suara atau suara masa nyata secara pilihan. Mikrofon tidak diperlukan untuk bermain.\n\nMulakan sebagai tetamu tanpa mendaftarkan akaun e-mel dan pelajari asas melalui tutorial.\n\nAntara muka permainan tersedia dalam bahasa Inggeris dan Cina sahaja. Sambungan internet diperlukan. Pembelian dalam apl adalah pilihan, tertakluk pada ketersediaan platform dan rantau.\n\nSokongan: bytegamesg2025@gmail.com",
+      "counts": {
+        "name": 28,
+        "subtitle": 29,
+        "keywords": 70,
+        "short_description": 65,
+        "description": 1155,
+        "keywords_utf8_bytes": 70
+      },
+      "app_store_locale": "ms",
+      "google_play_locale": "ms-MY"
+    },
+    "id": {
+      "name": "GLory: Auto Chess & Team PvP",
+      "subtitle": "Strategi 3v3 Bareng Teman",
+      "keywords": "taktik,mabar,hero,tim,sinergi,autobattler,multiplayer,formasi,arena",
+      "short_description": "Racik sinergi hero dan susun formasi untuk auto chess 3v3 bareng teman.",
+      "description": "GLory adalah game auto chess multiplayer yang mengutamakan susunan tim, sinergi hero, dan pilihan taktis sebelum pertarungan otomatis.\n\nMABAR DALAM PERTARUNGAN 3v3\nBentuk tim bersama teman. Atur formasi dan sesuaikan lineup untuk menghadapi musuh PvE serta ronde PvP.\n\nRACIK LINEUP SENDIRI\nRekrut dan tingkatkan unit. Coba kombinasi ras, sinergi, harta, dan tentara bayaran untuk menemukan taktik yang cocok.\n\nSUSUN STRATEGI, LALU AUTO BATTLE\nKelola sumber daya dan posisi unit saat persiapan. Saksikan unit bertarung otomatis, lalu ubah rencana untuk ronde berikutnya.\n\nMAIN DAN TERHUBUNG\nIkuti pertandingan peringkat atau buat ruang khusus bersama teman. Tonton pertandingan dan gunakan chat teks, pesan suara, atau suara real-time secara opsional. Mikrofon tidak wajib untuk bermain.\n\nMulai sebagai tamu tanpa mendaftarkan akun email dan pelajari dasar permainan melalui tutorial.\n\nAntarmuka game hanya tersedia dalam bahasa Inggris dan Mandarin. Memerlukan koneksi internet. Pembelian dalam aplikasi bersifat opsional dan bergantung pada ketersediaan platform serta wilayah.\n\nBantuan: bytegamesg2025@gmail.com",
+      "counts": {
+        "name": 28,
+        "subtitle": 25,
+        "keywords": 67,
+        "short_description": 71,
+        "description": 1113,
+        "keywords_utf8_bytes": 67
+      },
+      "app_store_locale": "id",
+      "google_play_locale": "id"
+    },
+    "zh-Hans": {
+      "name": "GLory 自走棋：3v3组队对战",
+      "subtitle": "种族羁绊与阵容搭配，和好友一起排位",
+      "keywords": "战术,联机,自动战斗,多人,合成,棋子,召唤,奇幻,宝藏,英雄",
+      "short_description": "招募棋子、搭配种族羁绊与宝藏，和好友组队展开3v3自走棋对战。",
+      "description": "GLory 是一款围绕阵容搭配、种族羁绊和自动战斗展开的多人自走棋游戏。招募棋子、调整站位，在每轮备战中做出选择。\n\n和好友组队，展开3v3对战\n通过组队比赛与好友配合，在怪物挑战与玩家对战回合中调整阵容。\n\n组合羁绊，打造自己的阵容\n招募和升级棋子，探索种族羁绊、宝藏与佣兵的搭配，为不同战况准备战术。\n\n备战决策，自动战斗\n在备战阶段分配资源、安排站位，让棋子自动作战，并根据上一轮的表现调整下一轮阵容。\n\n排位与自定义房间\n参与排位比赛，或与好友创建自定义房间。支持观战，以及可选的文字聊天、语音消息和实时语音；游玩不要求开启麦克风。\n\n游客也能开始\n跟随新手教学体验玩法，无需注册邮箱账号即可开始。\n\n游戏界面支持中文和英文，需要联网。支持的地区及平台提供可选应用内购买。\n\n支持：bytegamesg2025@gmail.com",
+      "counts": {
+        "name": 17,
+        "subtitle": 17,
+        "keywords": 31,
+        "short_description": 31,
+        "description": 369,
+        "keywords_utf8_bytes": 75
+      },
+      "app_store_locale": "zh-Hans",
+      "google_play_locale": "zh-CN"
+    }
+  },
+  "notes": [
+    "App Store: use name, subtitle, keywords and description. Google Play: use name, short_description and description; no dedicated keywords field.",
+    "Store localization does not mean in-game language support. Current game UI: English and Chinese.",
+    "Verify all listed modes against the next production candidate before submission.",
+    "Use only locale identifiers offered by the console/API at time of upload."
+  ]
+}
