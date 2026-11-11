@@ -97,8 +97,18 @@ sync_steam_oidc() {
 	fi
 	set_backend_env GLORY_STEAM_OIDC_KEY_FILE "$key_file"
 	# Caddyfile 里账号服务器那个站点块的第一行就是域名（deploy/Caddyfile 的 GLORY_API_DOMAIN_PLACEHOLDER）。
+	#
+	# 2026-11-11 起那一行可能挂**多个**域名，形如
+	#     glorytd-api.duckdns.org, test-api.gogoglory.com {
+	# （换自有域名时新旧并行，见 AGENTS.md）。原来的正则只认 `域名 {`，
+	# 逗号一来就整条匹配不上 —— 而失败是**静默**的：下面那个分支发现
+	# backend.env 里已经有 ISSUER 就原样保留、一声不吭，于是这个函数从此
+	# 不再维护那个值，等真要换 issuer 的那天才发现它早就不工作了。
+	#
+	# 所以这里允许逗号分隔的多域名，并且**取第一个** —— 第一个就是当前对外的
+	# 主域名，issuer 跟着它走；并行期间它仍是旧域名，Supabase 那边不用动。
 	# `|| true`：找不到时 grep 返回 1，在 set -e + pipefail 下会让整个脚本直接退出。
-	domain="$(grep -m1 -E '^[A-Za-z0-9.-]+\.[A-Za-z]{2,}[[:space:]]*\{' /etc/caddy/Caddyfile 2>/dev/null | awk '{print $1}' || true)"
+	domain="$(grep -m1 -E '^[A-Za-z0-9.-]+\.[A-Za-z]{2,}([[:space:]]*,[[:space:]]*[A-Za-z0-9.-]+\.[A-Za-z]{2,})*[[:space:]]*\{' /etc/caddy/Caddyfile 2>/dev/null | awk '{print $1}' | tr -d ',' || true)"
 	if [[ -z "$domain" ]]; then
 		if ! grep -q '^GLORY_STEAM_OIDC_ISSUER=' "$BASE/backend.env" 2>/dev/null; then
 			echo "⚠️  从 /etc/caddy/Caddyfile 读不出域名，Steam 登录没配签发方地址。手动在 $BASE/backend.env 加一行："

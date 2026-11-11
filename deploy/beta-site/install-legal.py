@@ -8,7 +8,7 @@ import re
 import shutil
 import subprocess
 
-FILES = ('privacy.html', 'delete-account.html', 'legal.css')
+FILES = ('privacy.html', 'privacy-en.html', 'support.html', 'delete-account.html', 'legal.css')
 MARKER = '\t# GLory legal privacy pages\n\timport /etc/caddy/glory-legal.caddy\n'
 SNIPPET = '''redir /legal /legal/ 302
 handle_path /legal/* {

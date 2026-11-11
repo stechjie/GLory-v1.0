@@ -287,9 +287,10 @@ static func format_skill_template_cn(d: Dictionary) -> String:
 		"black_hole":
 			return "黑洞%s：牵引周围敌人，眩晕%.1f秒，并造成自身攻击%s伤害。" % [cd, float(d.get("pull_sec", 2.0)), pct(float(d.get("damage_atk_pct", 2.2)))]
 		"poison_attack":
-			return "毒击：普通攻击附带中毒，每秒造成目标最大生命%s伤害，持续%.1f秒；最多2层，分别扣血。" % [pct(float(d.get("poison_pct_max_hp", 0.03))), float(d.get("poison_duration", 4.0))]
+			var description := "毒击：普通攻击附带中毒，每秒造成目标最大生命%s伤害，持续%.1f秒。" % [pct(float(d.get("poison_pct_max_hp", 0.03))), float(d.get("poison_duration", 4.0))]
+			return description.trim_suffix("。") + "；最多2层，分别扣血。" if _show_poison_stack_detail(d) else description
 		"parasite_on_kill":
-			return "寄生：普攻标记非 Boss 敌人，被标记敌人死亡时，召唤该敌人的分身，生命为原目标%s，攻防为原目标%s。" % [pct(float(d.get("clone_hp_pct", 0.10))), pct(float(d.get("clone_atk_def_pct", 0.50)))]
+			return "寄生：自身普攻击杀非 Boss 敌人时，召唤该敌人的分身，生命为原目标%s，攻防为原目标%s。" % [pct(float(d.get("clone_hp_pct", 0.10))), pct(float(d.get("clone_atk_def_pct", 0.50)))]
 		"defense_down_attack":
 			return "腐蚀攻击：普通攻击降低目标防御%s，持续%.1f秒。" % [pct(float(d.get("def_down_pct", 0.10))), float(d.get("duration", 5.0))]
 		"death_poison_explosion":
@@ -306,7 +307,7 @@ static func format_skill_template_cn(d: Dictionary) -> String:
 			var m_t2 := float(d.get("tier2_chance", 0.35))
 			var m_t3 := float(d.get("tier3_chance", 0.1))
 			var m_boss := float(d.get("boss_max_hp_damage", 0.2))
-			return "母灵（每人限1只）：每有%d个敌人死亡，处决一名敌人（1阶/佣兵%s、2阶%s、3阶%s）；对Boss改为造成%s最大生命伤害。" % [m_th, pct(m_t1), pct(m_t2), pct(m_t3), pct(m_boss)]
+			return "母灵（每人限1只）：每有%d个敌人死亡，处决一名敌人（1阶/佣兵%s、2阶%s、3阶%s）；对Boss或法阵守护者改为造成%s最大生命伤害。" % [m_th, pct(m_t1), pct(m_t2), pct(m_t3), pct(m_boss)]
 		"attack_interrupt":
 			# 9.14：4 星把「打断」（锁普攻 1 秒）换成「眩晕」0.5 秒 —— stun_sec 只写在
 			# 4 星 star4 覆写里。文案按有无 stun_sec 分两支，与 BattleSimulator 的实现同源。
@@ -482,9 +483,10 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"black_hole":
 			return "Black Hole%s: Pull surrounding enemies, stun for %.1fs, and deal %s ATK damage." % [cd, float(d.get("pull_sec", 2.0)), pct(float(d.get("damage_atk_pct", 2.2)))]
 		"poison_attack":
-			return "Poison Strike: Normal attacks apply poison — %s max HP per second for %.1fs. Up to 2 stacks tick separately." % [pct(float(d.get("poison_pct_max_hp", 0.03))), float(d.get("poison_duration", 4.0))]
+			var description := "Poison Strike: Normal attacks apply poison — %s max HP per second for %.1fs." % [pct(float(d.get("poison_pct_max_hp", 0.03))), float(d.get("poison_duration", 4.0))]
+			return description + " Up to 2 stacks tick separately." if _show_poison_stack_detail(d) else description
 		"parasite_on_kill":
-			return "Parasite: When a basic attack kills a non-Boss enemy, summon its clone at %s HP and %s ATK/DEF." % [pct(float(d.get("clone_hp_pct", 0.10))), pct(float(d.get("clone_atk_def_pct", 0.50)))]
+			return "Parasite: When this unit kills a non-Boss enemy with a basic attack, summon its clone at %s HP and %s ATK/DEF." % [pct(float(d.get("clone_hp_pct", 0.10))), pct(float(d.get("clone_atk_def_pct", 0.50)))]
 		"defense_down_attack":
 			return "Corrosive Strike: Normal attacks reduce target DEF by %s for %.1fs." % [pct(float(d.get("def_down_pct", 0.10))), float(d.get("duration", 5.0))]
 		"death_poison_explosion":
@@ -499,7 +501,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 			var m_t2 := float(d.get("tier2_chance", 0.35))
 			var m_t3 := float(d.get("tier3_chance", 0.1))
 			var m_boss := float(d.get("boss_max_hp_damage", 0.2))
-			return "Matron (one per player): Every %d enemy deaths, execute an enemy (Tier 1/Merc %s, Tier 2 %s, Tier 3 %s); against a Boss, deal %s of its max HP instead." % [m_th, pct(m_t1), pct(m_t2), pct(m_t3), pct(m_boss)]
+			return "Matron (one per player): Every %d enemy deaths, execute an enemy (Tier 1/Merc %s, Tier 2 %s, Tier 3 %s); against a Boss or Formation Guardian, deal %s of its max HP instead." % [m_th, pct(m_t1), pct(m_t2), pct(m_t3), pct(m_boss)]
 		"attack_interrupt":
 			var militia_stun := float(d.get("stun_sec", 0.0))
 			if militia_stun > 0.0:
@@ -618,6 +620,10 @@ const IMPLICIT_SKILL_CD := {
 	# 9.20 bug 文档第 4 条：佣兵「黄金重骑」同上，硬编码 `+ 7.0`、JSON 无 skill_cd。
 	"gold_charge": 7.0,
 }
+
+
+static func _show_poison_stack_detail(d: Dictionary) -> bool:
+	return int(d.get("star", 1)) >= 4 or str(d.get("id", "")) not in ["undead_poison", "undead_fly"]
 
 
 static func skill_cd_text(d: Dictionary) -> String:

@@ -41,11 +41,10 @@ func _check_prep_contract() -> void:
 		var y := float(index / 4) * 20.0
 		cells.append(PackedVector2Array([Vector2(x, y), Vector2(x + 18, y), Vector2(x + 18, y + 14), Vector2(x, y + 14)]))
 	layer.set_prep_cells(cells)
-	layer.set_prep_state(5, PackedInt32Array([1, 4, 5, 6, 9]), true, 6, Color(0.2, 0.8, 0.8))
+	layer.set_prep_state(5, true, 6, Color(0.2, 0.8, 0.8))
 	var snapshot := layer.contract_snapshot()
 	_expect(int(snapshot.get("prep_cell_count", 0)) == 16, "prep layer must own exactly 16 cells")
 	_expect(int(snapshot.get("prep_selected_index", -1)) == 5, "prep selected cell must propagate")
-	_expect(int(snapshot.get("prep_range_count", 0)) == 5, "prep range cells must propagate")
 	layer.set_guides_enabled(false)
 	_expect(not layer.visible, "setting off must hide the whole layer")
 	layer.queue_free()

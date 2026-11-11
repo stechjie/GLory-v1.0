@@ -17,6 +17,16 @@ test('embedded and manual browsers never redirect',()=>{
  for(const ua of ['iPhone MicroMessenger','Android; wv)','iPhone aweme','Windows NT']) assert.equal(automaticDestination(config,ua,1),'');
  assert.equal(automaticDestination(config,'iPhone',1,true),'');
 });
+test('verified ready first-party APK is downloadable without a group',()=>{
+ const apk='https://glorytd-api.duckdns.org/beta/downloads/Glory-0.0.25-38-android.apk';
+ const c={...config,android:{mode:'apk',ready:true,url:apk}};
+ assert.equal(destinations(c).android,apk);
+ assert.equal(destinations(c).group,'');
+ assert.equal(destinations({...c,android:{...c.android,ready:false}}).android,'');
+ for(const bad of [apk+'?redirect=evil',apk.replace('glorytd-api.duckdns.org','evil.test'),apk.replace('/beta/downloads/','/private/')]) assert.equal(verifiedURL(bad,'apk'),'');
+ const pending={...c,ios:{...c.ios,ready:false}};
+ assert.equal(automaticDestination(pending,'iPhone',1),'');
+});
 test('reject arbitrary redirects and shared APK links',()=>{
  for(const url of ['javascript:alert(1)','https://drive.google.com.evil.test/file/d/a/view','https://user@drive.google.com/file/d/a/view','https://drive.google.com/file/d/a/view?redirect=evil','https://play.google.com/apps/internaltest/1234567890123456789','http://drive.google.com/file/d/a/view','https://drive.google.com/file/d/a/view','https://play.google.com.evil.test/apps/internaltest/123','https://play.google.com/apps/internaltest/123?redirect=evil']) assert.equal(verifiedURL(url,'android'),'');
  assert.equal(verifiedURL(config.android.url+'?usp=sharing','android'),'');

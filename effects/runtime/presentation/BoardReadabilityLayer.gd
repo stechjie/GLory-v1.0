@@ -17,7 +17,6 @@ var _low_quality := false
 
 var _prep_cells: Array[PackedVector2Array] = []
 var _prep_selected_index := -1
-var _prep_range_indices := PackedInt32Array()
 var _prep_drop_active := false
 var _prep_drop_hover_index := -1
 var _prep_player_color := Color(0.28, 0.86, 0.86)
@@ -81,11 +80,12 @@ func set_prep_cells(cells: Array) -> void:
 	queue_redraw()
 
 
-func set_prep_state(selected_index: int, range_indices: PackedInt32Array, drop_active: bool, drop_hover_index: int, player_color: Color) -> void:
+# 摆放界面的射程不在这一层画：11-08 起改成贴地的 3D 射程圈（PrepBoardModels.set_prep_range_ring），
+# 2D 层会整块盖住棋子，而且旧的「按格数点亮」与战斗里的真实距离对不上。
+func set_prep_state(selected_index: int, drop_active: bool, drop_hover_index: int, player_color: Color) -> void:
 	if selected_index != _prep_selected_index:
 		_restart_focus_fade(selected_index >= 0)
 	_prep_selected_index = selected_index
-	_prep_range_indices = range_indices.duplicate()
 	_prep_drop_active = drop_active
 	_prep_drop_hover_index = drop_hover_index
 	_prep_player_color = player_color
@@ -131,7 +131,6 @@ func contract_snapshot() -> Dictionary:
 		"guides_enabled": _guides_enabled,
 		"prep_cell_count": _prep_cells.size(),
 		"prep_selected_index": _prep_selected_index,
-		"prep_range_count": _prep_range_indices.size(),
 		"prep_drawn_cell_count": _prep_drawn_cell_count(),
 		"battle_zone_count": _battle_zones.size(),
 		"battle_focus_id": _battle_focus_id,
@@ -149,8 +148,8 @@ func prep_cell_visible(index: int) -> bool:
 		return false
 	if _prep_drop_active:
 		return true
-	# 选中格与射程是「点一下才出现」的即时反馈，与拖放无关，始终保留。
-	return index == _prep_selected_index or _prep_range_indices.has(index)
+	# 检视格（长按查看属性）是即时反馈，与拖放无关，始终保留。
+	return index == _prep_selected_index
 
 
 func _prep_drawn_cell_count() -> int:
@@ -186,24 +185,16 @@ func _draw() -> void:
 func _draw_prep() -> void:
 	# 10.05 反馈第 2 条：**平时不画 16 个圆圈和玩家色光圈** —— 它们只在拖动棋子上阵
 	# 时出现（那一刻才需要看落点），平时棋盘交给正中的计数图案（PrepDeployCounter）。
-	# 两个例外保留：选中格与攻击射程。它们是玩家点一下才出现的即时反馈，
-	# 藏掉就等于点棋子看不出射程了。
+	# 例外：长按查看属性时的检视格（射程圈在 3D 地面上画，见 set_prep_state 的注释）。
 	for index in _prep_cells.size():
 		if not prep_cell_visible(index):
 			continue
 		var polygon := _prep_cells[index]
 		var selected := index == _prep_selected_index
-		var in_range := _prep_range_indices.has(index)
-		var fill_color: Color
-		var line_color: Color
-		if in_range:
-			fill_color = _alpha(style.range_color, style.prep_range_fill_alpha * _focus_strength)
-			line_color = _alpha(style.range_color, style.prep_range_line_alpha * _focus_strength)
-		else:
-			fill_color = _alpha(_prep_player_color,
-				style.prep_drag_fill_alpha if _prep_drop_active else style.prep_rest_fill_alpha)
-			line_color = _alpha(_prep_player_color,
-				style.prep_drag_line_alpha if _prep_drop_active else style.prep_rest_line_alpha)
+		var fill_color := _alpha(_prep_player_color,
+			style.prep_drag_fill_alpha if _prep_drop_active else style.prep_rest_fill_alpha)
+		var line_color := _alpha(_prep_player_color,
+			style.prep_drag_line_alpha if _prep_drop_active else style.prep_rest_line_alpha)
 		if selected:
 			fill_color = _alpha(style.selection_color, style.prep_selected_fill_alpha * _focus_strength)
 			line_color = _alpha(style.selection_color, style.prep_selected_line_alpha * _focus_strength)
@@ -211,8 +202,6 @@ func _draw_prep() -> void:
 		var outline := _closed(polygon)
 		if selected:
 			draw_polyline(outline, _alpha(style.selection_color, 0.18 * _focus_strength), 12.0, true)
-		elif in_range:
-			draw_polyline(outline, _alpha(style.range_color, 0.09 * _focus_strength), 7.0, true)
 		elif _prep_drop_active:
 			draw_polyline(outline, _alpha(_prep_player_color, 0.18), 8.0, true)
 		draw_polyline(outline, line_color, style.prep_line_width + (1.0 if selected else 0.0), true)

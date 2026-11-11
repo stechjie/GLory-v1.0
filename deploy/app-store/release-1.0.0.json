@@ -1,0 +1,29 @@
+{
+  "version": "1.0.0",
+  "build": "67",
+  "price": "free",
+  "exclude": [
+    "China mainland"
+  ],
+  "release": "manual",
+  "commercial_asset_rights": "confirmed by user 2026-10-24",
+  "en": {
+    "promotional_text": "Recruit units, build your lineup and explore strategic auto battles. Discover synergies, refine your formation and make every preparation count.",
+    "keywords": "auto chess,strategy,autobattler,tactics,units,synergies,multiplayer,formation",
+    "description": "GLory Auto Chess is a strategy game built around team composition and automatic battles.\n\nBUILD YOUR LINEUP\nRecruit units, arrange their positions and improve your team. Explore combinations of races, synergies, treasures and mercenaries.\n\nPREPARE, THEN BATTLE\nMake your choices during preparation and watch your lineup fight. Adapt your strategy for the challenges ahead.\n\nPLAY WITH FRIENDS\nExplore custom rooms, multiplayer matches and spectating. Optional text chat, voice messages and real-time voice let you communicate; microphone access is not required to play.\n\nGET STARTED EASILY\nStart as a guest without registering an email account. Includes a tutorial and Chinese and English interfaces.\n\nAn internet connection is required.\nSupport: https://glorytd-api.duckdns.org/beta/support.html\nPrivacy: https://glorytd-api.duckdns.org/beta/privacy-en.html"
+  },
+  "submission_status": "waiting_for_review",
+  "submission_id": "46b6ba68-d684-4623-8496-603678fec039",
+  "submission_date": "2026-10-24T12:59:00+08:00",
+  "age_rating": "13+",
+  "privacy_types": 14,
+  "evidence": {
+    "review_url": "https://appstoreconnect.apple.com/apps/6811578280/distribution/reviewsubmissions/details/46b6ba68-d684-4623-8496-603678fec039",
+    "testflight_internal_testers": 10,
+    "testflight_external_testers": 18,
+    "testflight_internal_status": "testing",
+    "testflight_external_status": "waiting_for_review",
+    "external_public_link": "https://testflight.apple.com/join/W2p1ukJp",
+    "current_external_approved_build": "0.0.29 (65)"
+  }
+}

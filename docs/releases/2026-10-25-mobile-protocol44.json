@@ -1,0 +1,135 @@
+{
+  "date": "2026-10-25",
+  "upstream": "3641307",
+  "asset_inventory_sha256": "080b8e499ab5b8cc844a108ca004c654993d8e3426e9548d66c3ecf243aca3be",
+  "resources": {
+    "wav_clips": 81,
+    "files": 162,
+    "drive_folder": "1NBMuneDxew-GtCktEGXDDeyI__VYQ6Ou",
+    "sha256_readback_verified": true
+  },
+  "android": {
+    "version": "1.0.1",
+    "version_code": 45,
+    "bytes": 605736966,
+    "sha256": "56991711b05e5e5313693a0042495eb10b0111a8beec1e079cc15288958c18b7",
+    "abis": [
+      "arm64-v8a",
+      "armeabi-v7a"
+    ],
+    "drive_file_id": "19qnP6WQXTYhl43G5BFHFY7gpRPaPbJAk",
+    "drive_uploaded": true,
+    "server_full_sha256_verified": true,
+    "download_url": "https://glorytd-api.duckdns.org/beta/downloads/Glory-1.0.1-45-android.apk",
+    "patch_base": "glory-20261025-protocol44-slim",
+    "device_tested": false
+  },
+  "ios": {
+    "version": "1.0.1",
+    "build": 68,
+    "bytes": 561918887,
+    "sha256": "6e2cfc6913d4ef3dc73a5275a04738cded96f55de0d5aecbfc37dc8e78f85735",
+    "transporter_delivered": true,
+    "apple_processed": true,
+    "internal_group": "GLory 内部验证",
+    "internal_testers": 10,
+    "internal_status": "正在测试",
+    "external_group": "Glory tester",
+    "external_testers": 19,
+    "external_status": "正在等待审核",
+    "auto_notify": true,
+    "current_approved_external": "1.0.0 (67)",
+    "device_tested": false
+  },
+  "server": {
+    "status": "deployed",
+    "commit": "525acf0823e08371986623de83129a9ba49148f3",
+    "source_tree_sha256": "270b5983cb1d03eac1360b5c95bc7d2c96342d836dc63c400dfa7dac83123b5d",
+    "release": "/home/nins17121/Glory/releases/1.0.1-20261025-525acf0",
+    "protocol": 44,
+    "idle_checks": [
+      {
+        "battle_connections": 0,
+        "account_online": 0,
+        "room_count": 0,
+        "checked_at": "2026-10-25T04:30:10.984625+00:00"
+      },
+      {
+        "battle_connections": 0,
+        "account_online": 0,
+        "room_count": 0,
+        "checked_at": "2026-10-25T04:30:14.744785+00:00"
+      }
+    ],
+    "cold_start_passed": true,
+    "services": {
+      "glory-server": "active",
+      "glory-backend": "active",
+      "livekit": "active",
+      "caddy": "active"
+    },
+    "health": {
+      "status": "ok",
+      "environment": "prod",
+      "configured": true,
+      "missing_config": []
+    },
+    "backend_unchanged": true,
+    "site_unchanged_at_deployment": true,
+    "rollback_directory": "/var/backups/glory/server-20261025-525acf0",
+    "device_gameplay_tested": false
+  },
+  "site": {
+    "config": {
+      "ios": {
+        "ready": true,
+        "url": "https://testflight.apple.com/join/W2p1ukJp",
+        "version": "1.0.0 (67)",
+        "pending_version": "1.0.1 (68)"
+      },
+      "android": {
+        "ready": true,
+        "mode": "apk",
+        "url": "https://glorytd-api.duckdns.org/beta/downloads/Glory-1.0.1-45-android.apk",
+        "version": "1.0.1 (45)",
+        "size_bytes": 605736966,
+        "size_label": "577.7 MiB"
+      }
+    },
+    "config_sha256": "3cff7f00dd51e67b98c4e3520a0ebcce74a90c3968a429e515b75a780a55febf",
+    "qr_sha256": "8f06b9ffe436ded23822bc49bced52c5cb89535a253489e74080bde0e2b6807a",
+    "health": {
+      "status": "ok",
+      "environment": "prod",
+      "configured": true,
+      "missing_config": []
+    },
+    "download": {
+      "status": 206,
+      "range": "bytes 0-63/605736966",
+      "bytes_returned": 64
+    },
+    "beta_http_status": 200
+  },
+  "resource_sync": {
+    "status": "success",
+    "finished_at": "2026-10-25T11:56:01.071933",
+    "remote_files": 3441,
+    "errors": []
+  },
+  "validation": {
+    "python_build_tests_passed": 17,
+    "approved_audio_clips_loaded_per_platform": 81,
+    "android_baseline_identical_files": 5767,
+    "ios_signature_and_privacy_purposes_valid": true,
+    "android_arm64_and_armv7_verified": true,
+    "source_assets_deleted": false,
+    "device_gameplay_tested": false,
+    "notes": [
+      "Server deployment waited for two zero-player, zero-connection, zero-room checks.",
+      "TestFlight 68 is internally testable and awaiting external review; approved 67 remains available through the same public link.",
+      "Formal App Store 1.0.0 review submission was not changed by this beta release.",
+      "Drive APK content was verified in full on the production server before the public download configuration changed."
+    ]
+  }
+}

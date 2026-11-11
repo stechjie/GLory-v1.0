@@ -48,6 +48,7 @@ const ACCEPT_SEC := 30.0
 var _hourglass: TextureRect = null
 var _mode := "casual"
 var _party_queue := false
+var _queue_ban_deadline := -1
 # 10.07 第 14 条后取消对全队一视同仁，这个旗标不再决定行为；保留它是为了不
 # 动 configure() 的签名（Main.gd 仍然按原有位置传 host 标记）。
 var _party_host := false
@@ -190,7 +191,9 @@ func _join() -> void:
 		#
 		# 文案用服务器给的那一句（backend/app/routes/matchmaking.py 的 _GATE_TEXT）——
 		# 闸的规则在服务器，文案跟着规则走，客户端再写一份迟早对不上。
-		_fail(str(result.get("error", _text("进不了队列", "Could not join the queue"))))
+		_queue_ban_deadline = int(result.get("queue_ban_deadline", -1))
+		_fail(AccountManager.queue_ban_text(_queue_ban_deadline) if _queue_ban_deadline >= 0 else
+			str(result.get("error", _text("进不了队列", "Could not join the queue"))))
 		return
 	_apply((result.get("body", {}) as Dictionary).get("state", {}))
 
@@ -308,6 +311,12 @@ func _on_realtime_message(payload: Dictionary) -> void:
 
 
 func _process(delta: float) -> void:
+	if _queue_ban_deadline >= 0:
+		var message := AccountManager.queue_ban_text(_queue_ban_deadline)
+		if _detail.text != message:
+			_set_detail(message)
+		if Time.get_ticks_msec() >= _queue_ban_deadline:
+			_queue_ban_deadline = -1
 	if _state == "queued" and not _busy:
 		var elapsed := maxi(1, int((Time.get_ticks_msec() - _queue_started_msec) / 1000) + 1)
 		_set_detail(_text("预计等待时间50s", "Estimated wait: 50s") + "\n%d..." % elapsed)

@@ -1,0 +1,120 @@
+{
+  "checked_at": "2026-10-30T14:51:54.031757+08:00",
+  "app_id": "6811578280",
+  "bundle_id": "com.superforge.glory",
+  "google_play": {
+    "app_id": "4972887235377036284",
+    "one_time_products_found": 0,
+    "source_used": "GLory-v1.0/data/iap_products.json enabled tiers"
+  },
+  "products": [
+    {
+      "product_id": "diamond_pack_1",
+      "apple_id": "6828740146",
+      "diamond": 50,
+      "regular_bonus": 0,
+      "first_purchase_total": 100,
+      "base_country": "MYS",
+      "currency": "MYR",
+      "price": "4.90",
+      "type": "CONSUMABLE",
+      "locales": [
+        "en-US",
+        "zh-Hans"
+      ],
+      "available_territories": 174,
+      "excluded": [
+        "CHN"
+      ],
+      "review_notes_saved": true,
+      "review_screenshot_uploaded": false,
+      "submitted": false
+    },
+    {
+      "product_id": "diamond_pack_2",
+      "apple_id": "6828741659",
+      "diamond": 200,
+      "regular_bonus": 20,
+      "first_purchase_total": 400,
+      "base_country": "MYS",
+      "currency": "MYR",
+      "price": "19.90",
+      "type": "CONSUMABLE",
+      "locales": [
+        "en-US",
+        "zh-Hans"
+      ],
+      "available_territories": 174,
+      "excluded": [
+        "CHN"
+      ],
+      "review_notes_saved": true,
+      "review_screenshot_uploaded": false,
+      "submitted": false
+    },
+    {
+      "product_id": "diamond_pack_3",
+      "apple_id": "6828742233",
+      "diamond": 500,
+      "regular_bonus": 60,
+      "first_purchase_total": 1000,
+      "base_country": "MYS",
+      "currency": "MYR",
+      "price": "49.90",
+      "type": "CONSUMABLE",
+      "locales": [
+        "en-US",
+        "zh-Hans"
+      ],
+      "available_territories": 174,
+      "excluded": [
+        "CHN"
+      ],
+      "review_notes_saved": true,
+      "review_screenshot_uploaded": false,
+      "submitted": false
+    }
+  ],
+  "backend": {
+    "apple_root_installed": "/opt/glory/AppleRootCA-G3.cer",
+    "sha256": "63343abfb89a6a03ebb57e9b3f5fa7be7c4f5c756f3017b3a8c488c3653e9179",
+    "env_backup_created": true,
+    "service_restarted": true,
+    "service_active": true,
+    "health": "ok",
+    "invalid_notification_before": 503,
+    "invalid_notification_after": 400,
+    "purchase_gate_enabled": false
+  },
+  "notifications": {
+    "production": "https://glorytd-api.duckdns.org/iap/apple/notifications",
+    "sandbox": "https://glorytd-api.duckdns.org/iap/apple/notifications",
+    "saved_in_asc": true,
+    "apple_signed_delivery_tested": false,
+    "version_selector_not_exposed_in_current_ui": true
+  },
+  "gates": [
+    "Paid Apps Agreement awaiting user information",
+    "W-8BEN and foreign-status certificate missing",
+    "Bank information processing",
+    "Updated Developer Program agreement requires Account Holder",
+    "iPhone unavailable; no sandbox transaction or wallet credit verified",
+    "Review screenshots and first-IAP submission with app version remain pending"
+  ],
+  "source_commit": "2ce8b3b38fe364cd072cb586664215ba618c8a2d",
+  "resource_sync": {
+    "status": "success",
+    "remote_files": 3603,
+    "downloaded": 0,
+    "errors": [],
+    "new_assets_created_in_iap_task": false,
+    "drive_upload_performed": false
+  },
+  "validation": {
+    "godot_iap_assertions": 65,
+    "backend_iap_tests": 139,
+    "ios_build_tests": 20,
+    "swift_billing_tasks": "passed using SDK doubles",
+    "physical_device_purchase_tested": false
+  }
+}

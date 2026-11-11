@@ -162,12 +162,10 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 	# 不推进游标/播种标记，Go 撤下后的首帧仍会完整播放这些事件。
 	if _pvp_combat_waiting:
 		return
-	# 10.21 审查批次：按模式定战斗层并发上限。PvE 没有「友军 / 其他敌方」两个
-	# 归属，声源更少，上限比 PvP 宽一格（6 → 7）。见 SfxService.set_battle_voice_cap。
+	# 统一四路战斗主声部，给普攻节奏留空间；UI 独立于战斗预算。
 	if not _battle_voice_cap_mode_ready:
 		_battle_voice_cap_mode_ready = true
-		var kind := str(state_snapshot.get("kind", "pve"))
-		SfxService.set_battle_voice_cap(7 if kind in ["pve", "boss"] else 6)
+		SfxService.set_battle_voice_cap(4)
 	var current := _collect_vfx_units(state_snapshot)
 	_update_treasure_set_presentation()
 	_sync_persistent_unit_vfx(current)
@@ -582,7 +580,7 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 	#   换成 `_is_own_or_ally_unit`（owner 与 local_slot 同队），再叠加 `star == 4`
 	#   防止低星单位的普攻上升沿误触发。
 	var _sim_uid := str(unit.get("sim_uid", ""))
-	var _owned := _is_own_or_ally_unit(_sim_uid)
+	var _owned := _is_own_or_ally_unit(_sim_uid) or _important_unit_audio(_sim_uid)
 	if _owned and _is_star4(_sim_uid):
 		# 9.19：末日守卫（`dark_doom`）的技能只响**一次**——它的 `shared_hp_link`
 		# 是一次性技能，`_skill_shared_hp_link()` 命中 `shared_link_spent` 会直接
@@ -599,9 +597,9 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 			# （SilenceSeal 层 delay=0.28s），不再在施法瞬间响。其余四星技能音
 			# 仍在施法边沿立刻播放。
 			if sid == "silence_bolt":
-				_play_sfx_delayed(SfxService.star4_cue_for(uid, true), cue_silence_hit_delay(_sim_uid, str(unit.get("skill_target_uid", ""))), _basic_attack_ownership_db(_sim_uid, ""))
+				_play_sfx_delayed(SfxService.star4_cue_for(uid, true), cue_silence_hit_delay(_sim_uid, str(unit.get("skill_target_uid", ""))), _basic_attack_ownership_db(_sim_uid, ""), _sim_uid)
 			else:
-				SfxService.play(SfxService.star4_cue_for(uid, true), _basic_attack_ownership_db(_sim_uid, ""))
+				_play_unit_audio(SfxService.star4_cue_for(uid, true), _sim_uid)
 	elif _owned:
 		# 9.19 第二批：佣兵专属技能音（星轨猎人 / 泡沫术士 / 圣愈修女）。
 		# **佣兵升不到四星**（`EconomyLedger._use_upgrade_stone` 会拒），所以
@@ -611,7 +609,7 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 		# 两条施法型佣兵技能音并入这里（表在 MERC_SKILL_CUES）。
 		var merc_cue := SfxService.merc_skill_cue_for(uid)
 		if not merc_cue.is_empty():
-			SfxService.play(merc_cue, _basic_attack_ownership_db(_sim_uid, ""))
+			_play_unit_audio(merc_cue, _sim_uid)
 		# 10.21 审查批次：**法师 1~3★ 的技能音。**
 		#
 		# 这是本作唯一的例外 —— 惯例是「普通技能音只给四星」，而法师
@@ -624,8 +622,10 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 		#    四星分支里会让低星永远不响，写在这里正好互补。
 		if not _is_star4(_sim_uid):
 			var low_cue := SfxService.low_star_skill_cue_for(uid)
+			if low_cue.is_empty() and _important_unit_audio(_sim_uid):
+				low_cue = SfxService.star4_cue_for(uid, true)
 			if not low_cue.is_empty():
-				SfxService.play(low_cue, _basic_attack_ownership_db(_sim_uid, ""))
+				_play_unit_audio(low_cue, _sim_uid)
 	# 9.22：boss 技能音 —— **只剩施法边沿这一条通道**。
 	#
 	# ★ **不做归属门控。** 用户口径：「boss 技能音效播放，我方队友都能听见」。
@@ -650,7 +650,7 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 	#   本文件的 `_maybe_play_boss_skill_proc()` 消费（理由见那张表上面的注释）。
 	var boss_cue := SfxService.boss_cast_edge_cue_for(uid)
 	if not boss_cue.is_empty():
-		SfxService.play(boss_cue, _basic_attack_ownership_db(_sim_uid, ""))
+		_play_unit_audio(boss_cue, _sim_uid)
 	var texture_pos: Vector2 = unit.get("cast_pos", Vector2.ZERO)
 	var should_play_texture := true
 	var procedural_played := false
@@ -1409,11 +1409,11 @@ func _maybe_play_sfx_proc(event: Dictionary) -> void:
 	var cue := SfxService.proc_skill_cue_for(skill_id)
 	if not cue.is_empty():
 		if _is_star4(source_uid):
-			SfxService.play(cue, _basic_attack_ownership_db(source_uid, ""))
+			_play_unit_audio(cue, source_uid)
 		return
 	var merc_cue := SfxService.merc_proc_cue_for(skill_id)
 	if not merc_cue.is_empty():
-		SfxService.play(merc_cue, _basic_attack_ownership_db(source_uid, ""))
+		_play_unit_audio(merc_cue, source_uid)
 
 
 # --- 9.23 第五批：boss 技能音的**真事件**通道（消费端）--------------------------
@@ -1451,7 +1451,7 @@ func _maybe_play_boss_skill_proc(event: Dictionary) -> bool:
 		SfxService.stop_cue(stop_cue)
 	var cue := str(action.get("cue", ""))
 	if not cue.is_empty():
-		SfxService.play(cue, _basic_attack_ownership_db(str(event.get("source_uid", "")), ""))
+		_play_unit_audio(cue, str(event.get("source_uid", "")))
 	return true
 
 
@@ -1506,26 +1506,26 @@ func _maybe_play_parasite_skill_sfx(clone: Dictionary) -> void:
 			if str(f.get("id", "")) != "undead_parasite" or not bool(f.get("alive", false)):
 				continue
 			var sim_uid := str(f.get("uid", ""))
-			if not _is_own_or_ally_unit(sim_uid) or not _is_star4(sim_uid):
+			if not _is_own_or_ally_unit(sim_uid) and not _important_unit_audio(sim_uid):
 				continue
-			SfxService.play(SfxService.star4_cue_for("undead_parasite", true), _basic_attack_ownership_db(sim_uid, ""))
+			_play_unit_audio(SfxService.star4_cue_for("undead_parasite", true), sim_uid)
 			return
 
 
 # 自爆灵：死亡毒爆那一刻。挂在 `_refresh_battle_vfx` 的死亡分支里，
 # `sim_uid` 就是这只自爆灵自己的 uid。
 func _maybe_play_bomb_skill_sfx(sim_uid: String) -> void:
-	if not _is_own_or_ally_unit(sim_uid) or not _is_star4(sim_uid):
+	if not _is_own_or_ally_unit(sim_uid) and not _important_unit_audio(sim_uid):
 		return
-	SfxService.play(SfxService.star4_cue_for("undead_bomb", true), _basic_attack_ownership_db(sim_uid, ""))
+	_play_unit_audio(SfxService.star4_cue_for("undead_bomb", true), sim_uid)
 
 
 # 死侍：绑定生效那一下。调用点已经保证了「绑到了人才走到这里」，
 # 所以这里只做归属与星级门控（星级的判据见 `_is_star4`）。
 func _maybe_play_death_servant_bind_sfx(sim_uid: String) -> void:
-	if not _is_own_or_ally_unit(sim_uid) or not _is_star4(sim_uid):
+	if not _is_own_or_ally_unit(sim_uid) and not _important_unit_audio(sim_uid):
 		return
-	SfxService.play(SfxService.star4_cue_for("human_death_servant", true), _basic_attack_ownership_db(sim_uid, ""))
+	_play_unit_audio(SfxService.star4_cue_for("human_death_servant", true), sim_uid, "binding")
 
 func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 	var events: Array = state_snapshot.get("visual_events", [])
@@ -1563,8 +1563,8 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 				# 9.18：母灵（undead_mother）四星专属技「死亡执行」音效。
 				# 9.20 起门控放宽为「自身 + 友军」（原为仅自身）。
 				var _msim := str(event.get("source_uid", ""))
-				if _is_own_or_ally_unit(_msim) and _is_star4(_msim):
-					SfxService.play(SfxService.star4_cue_for("undead_mother", true), _basic_attack_ownership_db(_msim, ""))
+				if _is_own_or_ally_unit(_msim) or _important_unit_audio(_msim):
+					_play_unit_audio(SfxService.star4_cue_for("undead_mother", true), _msim, "critical")
 				var victim_uid:=str(event.get("target_uid",""))
 				var victim:=_vfx_unit_by_sim_uid(current,victim_uid)
 				# 处决当帧目标已经倒下：本帧快照里可能已没有它，退回上一帧的位置（吸魂从它最后站的地方升起）。
@@ -1574,9 +1574,9 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 				var book_target:Vector3=victim.get("world_foot",mother.get("world_foot",Vector3.ZERO)) if has_victim else mother.get("world_foot",Vector3.ZERO)
 				var book_context:Dictionary=_unit_target_context(mother,victim) if has_victim else _unit_target_context(mother,mother)
 				book_context["has_victim"]=has_victim
-				book_context["heavy"]=has_victim and bool(victim.get("is_boss",false))
-				# 10.18：非 Boss 目标当帧被处决 → 尸体改走「青光定身 → 化成魂火」。
-				if has_victim and not bool(victim.get("is_boss",false)):
+				var heavy := bool(victim.get("is_boss", false)) or bool(event.get("formation_guardian_hit", false))
+				book_context["heavy"] = has_victim and heavy
+				if has_victim and not heavy:
 					_mark_mother_execute_victim(victim_uid)
 				var head_anchor:Variant=_unit_actor_registry.get_anchor(str(mother.get("id","")),"HeadAnchor")
 				if head_anchor is Node3D:
@@ -1854,7 +1854,7 @@ func cue_play_attack_audio(event: Dictionary, stage: String) -> bool:
 		for reaction: Dictionary in plan.get("reactions", []):
 			var reacting_uid := str(reaction.get("source_uid", ""))
 			if _is_own_or_ally_unit(reacting_uid):
-				SfxService.play_battle(str(reaction.get("cue", "")), _basic_attack_ownership_db(reacting_uid, str(reaction.get("target_uid", ""))), 2)
+				SfxService.play_battle(str(reaction.get("cue", "")), _basic_attack_ownership_db(reacting_uid, str(reaction.get("target_uid", ""))), 2, 0, _unit_audio_context(reacting_uid, "skill"))
 	var cue := str(plan.get("cue", ""))
 	var source_uid := str(event.get("source_uid", ""))
 	var target_uid := str(plan.get("target_uid", ""))
@@ -1862,10 +1862,12 @@ func cue_play_attack_audio(event: Dictionary, stage: String) -> bool:
 	var expected_stage := str(plan.get("stage", ""))
 	# Preserve the existing ownership gate for dedicated skill assets.
 	# An inaudible enemy skill must not erase that enemy's ordinary attack sound.
-	if (is_skill or bool(plan.get("cast_replacement", false))) and not _is_own_or_ally_unit(source_uid):
+	if (is_skill or bool(plan.get("cast_replacement", false))) and not _is_own_or_ally_unit(source_uid) and not _important_unit_audio(source_uid):
 		is_skill = false
 		cue = SfxService.basic_attack_cue_for(str(plan.get("unit_id", "")), bool(plan.get("ranged", false)))
 		expected_stage = "projectile_spawn" if bool(plan.get("ranged", false)) else "impact"
+	if not is_skill and not bool(plan.get("cast_replacement", false)):
+		expected_stage = "impact"
 	if cue.is_empty() or expected_stage != stage:
 		return false
 	var db := _basic_attack_ownership_db(source_uid, target_uid)
@@ -1883,7 +1885,7 @@ func cue_play_attack_audio(event: Dictionary, stage: String) -> bool:
 		if star < 4 and unit_tier < 3 and int(definition.get("cost", 0)) < 100:
 			weight = 2 if star == 1 and unit_tier == 1 else 1
 	# cue mix level is added exactly once, inside SfxService.play.
-	return SfxService.play_battle(cue, db, tier, weight)
+	return SfxService.play_battle(cue, db, tier, weight, _unit_audio_context(source_uid, "skill" if is_skill else "basic"))
 
 
 # 普攻音的归属响度。返回 **−99.0 = 不出声**（远程飞行声在「其他敌方」下）。
@@ -2082,15 +2084,15 @@ func cue_ranged_flight_time(source_uid: String, target_uid: String) -> float:
 
 # 9.24 #4：把一条 cue 延后 delay 秒再播（用于把命中音对齐弹体落地 / 封印落点）。
 # 纯表现层：只延后播放时刻，不改任何模拟结算。
-func _play_sfx_delayed(cue: String, delay: float, volume_db := 0.0) -> void:
+func _play_sfx_delayed(cue: String, delay: float, volume_db := 0.0, source_uid: String = "") -> void:
 	if cue.is_empty():
 		return
 	if delay <= 0.0 or not is_inside_tree():
-		SfxService.play(cue, volume_db)
+		SfxService.play_battle(cue, volume_db, -1, 0, _unit_audio_context(source_uid, "skill"))
 		return
 	await get_tree().create_timer(delay).timeout
 	if is_inside_tree():
-		SfxService.play(cue, volume_db)
+		SfxService.play_battle(cue, volume_db, -1, 0, _unit_audio_context(source_uid, "skill"))
 
 # 9.24 #4：沉默箭弹体的飞行时长（与 VFXFlipbookProjectile3D 同公式：dist/speed 限幅，
 # speed 取 OgaSkillVFXCatalog「silence」条目的 9.0）。命中音据此对齐箭体落地那一刻。
@@ -3904,7 +3906,7 @@ func _play_crimson_proc(event: Dictionary, current: Dictionary) -> void:
 	# 敌方赤卫也不响。
 	var cue := SfxService.proc_skill_cue_for(skill_id)
 	if not bool(event.get("_attack_audio_managed", false)) and not cue.is_empty() and _is_own_or_ally_unit(source_uid) and _is_star4(source_uid):
-		SfxService.play(cue, _basic_attack_ownership_db(source_uid, ""))
+		_play_unit_audio(cue, source_uid)
 	match skill_id:
 		"block_guard":
 			# source = 格挡成功的赤卫，target = 被挡下的攻击者。
@@ -3985,3 +3987,19 @@ func _play_crimson_event_groups(hp_hits: Dictionary, pierces: Dictionary, curren
 		context["targets"] = positions
 		context["delay"] = _crimson_hit_delay(source_uid, primary_uid if not primary.is_empty() else str(first.get("sim_uid", "")))
 		_play_unit_procedural("line_pierce", start, positions[0], context)
+
+
+func _unit_audio_context(sim_uid: String, kind: String) -> Dictionary:
+	var unit := _state_unit_for(sim_uid)
+	var definition: Dictionary = unit.get("def", {})
+	var lane := int(unit.get("lane", -1))
+	var focus := _local_lane()
+	return {"source_uid": sim_uid, "unit_id": str(unit.get("id", unit.get("unit_id", definition.get("id", "")))),
+		"star": int(unit.get("star", 1)), "kind": kind,
+		"off_focus": lane >= 0 and focus >= 0 and lane != focus}
+
+func _important_unit_audio(sim_uid: String) -> bool:
+	return SfxService.BattleAudioPolicy.unit_weight(str(_unit_audio_context(sim_uid, "skill").unit_id)) == 0
+
+func _play_unit_audio(cue: String, sim_uid: String, kind: String = "skill") -> bool:
+	return SfxService.play_battle(cue, _basic_attack_ownership_db(sim_uid, ""), -1, 0, _unit_audio_context(sim_uid, kind))

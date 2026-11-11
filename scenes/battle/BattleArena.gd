@@ -232,20 +232,6 @@ func _build() -> void:
 	if GameState.tutorial_mode:
 		_add_tutorial_team_portraits()
 
-	# Floating skip button (top-right corner, above the full-screen arena).
-	var skip := Button.new()
-	skip.text = tr("battle_skip")
-	skip.custom_minimum_size = Vector2(120, 36)
-	skip.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	skip.offset_left = -136
-	skip.offset_top = 12
-	skip.offset_right = -16
-	skip.offset_bottom = 48
-	skip.pressed.connect(_skip_animation)
-	add_child(skip)
-	SafeArea.track(skip)
-	skip.z_index = 100
-
 	if GameState.team_mode:
 		var team_hp_lbl := Label.new()
 		# 10.19 教程反馈第 2 条：教学的法阵是 10 点（TUTORIAL_HP），这里原来写死

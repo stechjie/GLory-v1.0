@@ -1469,8 +1469,8 @@ func _show_pet_screen() -> void:
 	_clear()
 	var pet_screen := _instantiate_screen("res://scenes/menu/PetScreen.tscn")
 	pet_screen.back_requested.connect(_on_pet_back)
-	# 棋盘皮肤页上没买的那张点「去商城」。
-	pet_screen.shop_requested.connect(_show_shop_screen)
+	# 未解锁的棋盘皮肤直接打开对应活动。
+	pet_screen.skin_acquisition_requested.connect(_show_skin_acquisition)
 	# 种族页点了没解锁的种族 -> 商城棋子页那一族。
 	pet_screen.unit_shop_requested.connect(_show_shop_units)
 	# 真机返回键也要走同一套收口：否则系统返回会把 "casual" 的引导又弹回来。
@@ -1546,7 +1546,15 @@ func _show_pet_screen_races(race: String) -> void:
 		screen.show_races(race)
 
 
-# 备战页点了没解锁的种族：打开商城并直接落在棋子页那一族。
+# 备战页点「去获取」：直接打开皮肤活动。
+func _show_skin_acquisition(skin_id: String) -> void:
+	_show_shop_screen()
+	var screen := _newest_screen_with("open_skin_acquisition")
+	if screen != null:
+		screen.open_skin_acquisition(skin_id)
+
+
+# 未解锁的种族从备战页直接打开对应棋子页。
 func _show_shop_units(race: String) -> void:
 	_show_shop_screen()
 	var screen := _newest_screen_with("open_units")
@@ -1737,16 +1745,28 @@ func _join_invited_room_preserving_current(room_id: int) -> void:
 
 # 聊天卡片里点组队邀请的「加入」（10.11 第 6 条 d）。
 #
-# 与 _join_room_by_id 不同：这里**不先回主菜单**——队伍大厅（PartyLobby）本身就是
-# 主菜单体系里的一页，而 `invite_id` 传给它之后，进房时会带上「加入这支队伍」的意图
-# （与气泡上点「加入」走的是同一条路，见 _show_invite_bubble 的 on_accept）。
-#
-# `mode` 从邀请 payload 里来；取不到（老消息 / payload 不全）时兜底 casual ——
-# 至少把玩家带进大厅，而不是点了没反应。
+# Keep the current screen until the account server accepts the invitation.
+var _joining_party_invite := false
+
 func _join_party_by_id(party_id: String, mode: String) -> void:
-	if party_id.is_empty():
+	if party_id.is_empty() or _joining_party_invite:
 		return
-	_show_party_lobby(mode if not mode.is_empty() else "casual", party_id)
+	_joining_party_invite = true
+	var result: Dictionary = await AccountManager.join_party(party_id)
+	_joining_party_invite = false
+	if not is_inside_tree():
+		return
+	var code := int(result.get("code", 0))
+	if code != 200:
+		var error := str(result.get("error", ""))
+		if str(result.get("reason", "")) == "invite_expired" or error in ["组队邀请已失效", "Invitation expired"]:
+			error = RoomInviteScript.expired_text()
+		if error.is_empty():
+			error = _startup_text("暂时无法加入队伍，请重试", "Unable to join the party. Try again.")
+		preload("res://ui/components/GloryToast.gd").show_text(error)
+		return
+	var state: Dictionary = (result.get("body", {}) as Dictionary).get("state", {})
+	_show_party_lobby(str(state.get("mode", mode if not mode.is_empty() else "casual")), "", true)
 
 
 # 私聊界面（docs/聊天系统设计.md 批次 C）。两个入口：主菜单「聊天」、好友列表每一行的「私聊」。
@@ -1926,7 +1946,7 @@ func _show_invite_bubble(payload: Dictionary, kind: String) -> void:
 				ChatService.mark_seen_locally(sender_code),
 		"on_accept": func(id: String) -> void:
 			if kind == PartyInviteBubble.KIND_TEAM:
-				_show_party_lobby(str(payload.get("mode", "casual")), id)
+				_join_party_by_id(id, str(payload.get("mode", "casual")))
 			else:
 				_accept_room_invite(int(payload.get("room_id", 0))),
 	})
@@ -2577,11 +2597,10 @@ func _on_matched_lobby_changed() -> void:
 #
 # 🔴 **这个超时的含义和直觉相反，先读懂再改。**
 #
-# 两个 90 秒不是同一个：服务器从**房间创建**算起，这里从**我入座**算起。我得先连上、
-# 过 DTLS、领名片、入座，所以服务器那个总是先到 —— 而它到点做的是
-# **用 AI 补满并开打**（_cleanup_matched_rooms，注释：「关房等于拿一个人的意外去罚
-# 另外五个」）。所以「有人没连上来」这种情况**走不到这里**：服务器先开打，我收到
-# team_start_requested 就直接进对局了。
+# 服务器从建房算 90 秒，客户端从入座起等待更久，给服务端维护 tick 和开局包留余量。
+# 不能假定服务器一定先到：同帧建房/入座时，旧客户端会恰好在服务端补 AI 的边界断线。
+# 2026-10-30 的线上记录因此出现全房暂时离线、开局后立即被无人在线规则作废。
+# 服务端同时保护旧客户端：没有在线真人时保留大厅，等持有效凭证的人回来再补位开局。
 #
 # 真正会走到这里的只剩一种：**六个人都坐齐、对局已经开打，但开局那条推送没到我**。
 # `_rpc_team_start` 是一次性广播，room_state 里的 phase 不会替它补发 —— 唯一能
@@ -2589,7 +2608,7 @@ func _on_matched_lobby_changed() -> void:
 #
 # 所以到点**不能**把玩家扔回房间界面：那一刻对局正在进行、而他在局里，退出 =
 # 跑路（排位要扣信誉分）。先替他重连回对局，连不回去再把选择交给他。
-const MATCHED_ENTERING_TIMEOUT_SEC := 90.0
+const MATCHED_ENTERING_TIMEOUT_SEC := NetworkService.MATCHED_FILL_TIMEOUT_SEC + 15.0
 # 重连进对局的等待上限。超过它还没进去就认为真的回不去了，让玩家自己选。
 const MATCHED_REJOIN_TIMEOUT_SEC := 20.0
 

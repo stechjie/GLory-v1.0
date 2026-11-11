@@ -71,7 +71,11 @@ def failures():
         raise HTTPException(409, str(error)) from None
     except (ValueError, zipfile.BadZipFile) as error:
         raise HTTPException(400, str(error)) from None
-    except (FirebasePublishError, httpx.HTTPError):
+    except (FirebasePublishError, httpx.HTTPError) as error:
+        import logging, traceback
+        from pathlib import Path
+        frames = [(Path(f.filename).name, f.lineno, f.name) for f in traceback.extract_tb(error.__traceback__)]
+        logging.getLogger("glory.patches").warning("patch provider failure type=%s frames=%s", type(error).__name__, frames)
         raise HTTPException(502, "Firebase 上传或回读未成功；当前发布版本未改变") from None
     except OSError:
         raise HTTPException(503, "补丁存储不可用，请检查服务器空间与权限") from None

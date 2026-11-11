@@ -306,7 +306,9 @@ static func seat_name(seat: Dictionary, mine: bool) -> String:
 	if not _seat_pid(seat).is_empty():
 		who = AccountManager.display_name(_json_str(seat.get("player_name")), _json_str(seat.get("friend_code")), false)
 	elif bool(seat.get("was_ai", false)):
-		who = "AI"
+		who = _json_str(seat.get("player_name"))
+		if who.is_empty():
+			who = "AI"
 	else:
 		# 没账号也不是 AI：有棋子 = 没带名片的真人（进程内门禁那条路），没棋子 = 空位。
 		var board: Variant = seat.get("board", [])

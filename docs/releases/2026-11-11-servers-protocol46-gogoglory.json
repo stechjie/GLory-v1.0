@@ -1,0 +1,74 @@
+{
+  "date": "2026-11-11",
+  "scope": "test + prod servers",
+  "source_commit": "a415a9dd762ac39ef7f7706537bf1753da74a1c9",
+  "summary": "Both servers moved to protocol 46; client packaging switched to the own domain gogoglory.com; prod battle server switched from the test DTLS certificate to its own.",
+  "server_bundle": {
+    "tool": "tools/make_server_bundle.py --skip-smoke (Windows has no network isolation provider)",
+    "file": "glory_server_p46_a415a9dd.zip",
+    "sha256": "195465707e74af4497d22d0f9c86d9377a1cc8989c7416b524098ef35f25fd03",
+    "files": 2655,
+    "git_dirty": false,
+    "balance_version": "92bad87e8c880213deeb110ca92970d54cc1919d2f3127bde343e94e3c1e6a7f",
+    "cold_start_smoke": "passed: ServerMain ready + server started protocol=46, zero errors (same smoke() function, no network isolation)"
+  },
+  "test_server": {
+    "project": "project-60c72d94-b558-4e4f-992",
+    "battle": {
+      "status": "deployed",
+      "script": "deploy/releases/20261111/promote_test_p46.py",
+      "release": "/home/nins17121/Glory/releases/p46-20261111-a415a9dd",
+      "previous_release": "/home/nins17121/Glory/releases/1.0.2-20261106-ef09d187 (protocol 45)",
+      "certificate": "test F7:73 (unchanged)"
+    },
+    "account_server": "update.sh run by the user the same day",
+    "user_verified": "login and custom room from the editor client on the user's PC",
+    "live_readonly_probe_from_pc": "passed protocol=46 dtls=pinned(test) host=34.124.141.90, 9/9 heartbeats in 30 s"
+  },
+  "prod_server": {
+    "project": "project-60d2cb8c-3b40-4f95-a67",
+    "database_project": "jiqctertgtxoabvyhbid",
+    "script": "deploy/releases/20261111/promote_prod_p46.py (third version; the first two stopped at step 3 without changing anything)",
+    "migrations": "042-045 combined into one transaction (prod_migrations_042_045.sql, idempotent, verified twice on a local 001-041 database); backend schema check printed SCHEMA ok",
+    "account_server": {
+      "before": "894df5377383e6eb4aacb7af6b32cabda862e62a",
+      "after": "a415a9dd762ac39ef7f7706537bf1753da74a1c9",
+      "steam_oidc_issuer": "https://glorytd-prod-api.duckdns.org/oidc/steam (unchanged)",
+      "health": "ok"
+    },
+    "battle": {
+      "status": "deployed",
+      "release": "/opt/glory/releases/p46-20261111-a415a9dd/battle",
+      "previous_release": "/opt/glory/releases/review-20261102-4055e104/battle (protocol 45)",
+      "unit_file": "/etc/systemd/system/glory-server.service",
+      "started": "server started protocol=46 port=8080 rooms=0",
+      "idle_checks": {"battle_connections": 0, "account_online": 0},
+      "rollback_directory": "/var/backups/glory/prod-20261111-a415a9dd-091444"
+    },
+    "dtls_certificate": {
+      "found": "From 2026-11-02 the prod battle server presented the TEST certificate (F7:73): no --tls-cert, release NetTLSCert.gd was the test one, --tls-key=/opt/glory/battle_tls_key.pem pairs with it. iOS 81 / Android 56 pinned the test certificate too, so they connected. Since ce89606d (11-03) glory_build.py pins the prod certificate for prod builds, so the next prod package would have hung in connecting.",
+      "change": "Switched to the prod pair generated 2026-10-31 (/home/nins17121/Glory/keys/dtls_cert.pem + dtls_key.pem, matched by public key): copied to /opt/glory/battle_tls_prod_cert.pem and battle_tls_prod_key.pem (owner/mode of the old key), ExecStart now has --tls-cert= and the new --tls-key=",
+      "presented_before": "test F7:73 (DTLS handshake on 127.0.0.1)",
+      "presented_after": "prod DE:B1 (DTLS handshake on 127.0.0.1)",
+      "live_readonly_probe_from_pc": {
+        "prod_pin": "passed protocol=46 host=35.247.132.13, room list received, 9/9 heartbeats in 30 s",
+        "test_pin": "failed as expected: session_failed_or_disconnected (old packages cannot connect)"
+      }
+    },
+    "services": {"glory-server": "active", "glory-backend": "active", "livekit": "active", "caddy": "active"}
+  },
+  "client_packaging": {
+    "test": {"backend_url": "https://test-api.gogoglory.com", "battle_host": "test-battle.gogoglory.com"},
+    "prod": {"backend_url": "https://api.gogoglory.com", "battle_host": "battle.gogoglory.com"},
+    "test_package_built": false,
+    "note": "The user skipped the test package. Existing test packages (Android 60, iOS 86) and prod packages (iOS 81, Android 56) are protocol 45 and can no longer enter matches."
+  },
+  "pending": [
+    "Build new prod packages (iOS app-store, Google Play AAB) with --server-environment prod; the prod --patch-config backend_url must become https://api.gogoglory.com",
+    "App Store Connect description: Support / Privacy links to https://test-api.gogoglory.com/beta/support.html and privacy-en.html",
+    "Before retiring duckdns: Supabase Steam OIDC issuer, Google Pub/Sub RTDN subscription address + audience + GLORY_GOOGLE_RTDN_AUDIENCE, battle server --backend-url, voice via deploy/livekit/install_livekit.sh"
+  ],
+  "device_gameplay_tested": false,
+  "updated_at": "2026-11-11T09:23:39Z",
+  "status": "completed"
+}

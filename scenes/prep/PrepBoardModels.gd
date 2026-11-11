@@ -42,7 +42,7 @@ func refresh_four_star_visuals(delta: float) -> void:
 		return
 	_four_star_visual_poll = 0.0
 	sync_prep_treasure_visuals()
-	for source in [[GameState.board_slots, _prep_board_model_nodes], [GameState.bench_slots, _prep_standby_model_nodes]]:
+	for source in [[shown_board(), _prep_board_model_nodes], [shown_bench(), _prep_standby_model_nodes]]:
 		var slots: Array = source[0]
 		var models: Dictionary = source[1]
 		for index in models:
@@ -56,7 +56,8 @@ func _sync_four_star_actor(actor: Node3D, cell: Dictionary) -> void:
 	if not bool(cell.get("is_mercenary", false)):
 		if int(cell.get("star", 1)) == GameState.MAX_UNIT_STAR:
 			state = 2
-		elif (not GameState.tutorial_mode or TutorialMode.allows_carrot_action("four_star")) and NetworkService.four_star_upgrade_available() and NetworkService.four_star_request_id.is_empty() and bool(GameState.four_star_check(cell).get("ok", false)):
+		# 「可以升四星」的提示只对自己的棋子：看队友棋盘时不亮（那是你的石头和金币，不是他的）。
+		elif not viewing_teammate() and (not GameState.tutorial_mode or TutorialMode.allows_carrot_action("four_star")) and NetworkService.four_star_upgrade_available() and NetworkService.four_star_request_id.is_empty() and bool(GameState.four_star_check(cell).get("ok", false)):
 			state = 1
 	var affinity := str(def.get("element", ""))
 	# 10.18：「可升 4★」**不再**打开旧的 FourStarAura3D —— 它给棋子撒一身金色四角星
@@ -397,6 +398,8 @@ var _synergy_fx_layer: CanvasLayer
 
 
 func play_synergy_board_burst(race: String, ultimate: bool) -> void:
+	if viewing_teammate():
+		return
 	var actors: Array = []
 	for index in GameState.board_slots.size():
 		var cell = GameState.board_slots[index]
@@ -591,6 +594,9 @@ func _prep_set_strength(category: String) -> float:
 # 棋盘上吃宝藏的棋子：uid -> 模型，按屏幕从左到右排好（依次淡入用）。
 func _prep_treasure_targets() -> Array:
 	var out: Array = []
+	# 套装脚下纹是**自己的宝藏**：看队友棋盘时一个都不挂（下面的淡出逻辑会把已有的收掉）。
+	if viewing_teammate():
+		return out
 	for index in GameState.board_slots.size():
 		var cell = GameState.board_slots[index]
 		if not (cell is Dictionary):
@@ -767,6 +773,8 @@ func _ensure_prep_creature_canvas() -> bool:
 # 生物可以俯冲的目标：棋盘上吃宝藏的普通棋子（与套装同一口径），给棋盘 UV 坐标。
 func _prep_creature_targets() -> Array:
 	var out: Array = []
+	if viewing_teammate():
+		return out
 	for index in GameState.board_slots.size():
 		var cell = GameState.board_slots[index]
 		if not (cell is Dictionary):
@@ -854,6 +862,36 @@ const BOARD_CELL_RADIUS := 0.22                         # 每个格子圆的大�
 const BOARD_CELL_SEGMENTS := 20                          # 圆的多边形段数
 const BOARD_MODEL_SPREAD_U := 0.95  # Compensate perspective at body height, after live foot anchoring.
 const BOARD_MODEL_SPREAD_V := 1.0
+# ══════ 射程圈（11-08：拖动 / 长按棋子时显示真实攻击距离）══════
+# 半径与战斗判定同一个公式（BattleSimShared.range_px_for），再按「战斗里一列 56px、一行 44px」
+# ↔「棋盘上一列 / 一行的世界长度」逐轴换算 —— 圈压到第几格，战斗里就够到第几格。
+# 做成躺在地面上的 3D 面片（同站位图、上阵计数），棋子不透明、离相机更近，会把它挡在脚下；
+# 画在 2D 可读性层上会整块盖住棋子（10.05 计数图案就是因为这个改成 3D 的）。
+const PREP_RANGE_RING_Y_LIFT := 0.0055         # 站位图(0.005) 之上、待命平台(0.006) 之下
+const PREP_RANGE_RING_RENDER_PRIORITY := 6     # 站位图 / 计数(5) 之上，待命平台(7) 之下
+const PREP_RANGE_RING_SHADER_CODE := """
+shader_type spatial;
+render_mode unshaded, blend_mix, depth_draw_never, cull_disabled, shadows_disabled;
+
+uniform vec4 ring_color : source_color = vec4(0.98, 0.66, 0.22, 1.0);
+uniform float fill_alpha = 0.07;
+uniform float edge_glow_alpha = 0.20;
+uniform float edge_glow_width = 0.16;
+uniform float rim_alpha = 0.92;
+uniform float rim_px = 2.5;
+
+void fragment() {
+	vec2 p = (UV - vec2(0.5)) * 2.0;
+	float d = length(p);
+	float aa = max(fwidth(d), 0.0001);
+	float inside = 1.0 - smoothstep(1.0 - aa, 1.0 + aa, d);
+	float half_rim = rim_px * aa * 0.5;
+	float rim = 1.0 - smoothstep(half_rim, half_rim + aa, abs(d - 1.0 + half_rim));
+	float glow = smoothstep(1.0 - edge_glow_width, 1.0, d) * inside;
+	ALBEDO = ring_color.rgb;
+	ALPHA = clamp(fill_alpha * inside + edge_glow_alpha * glow + rim_alpha * rim, 0.0, 1.0) * ring_color.a;
+}
+"""
 # 待命区：横排 8 个，放在棋盘正下方（前景 v≈0.88，u 横跨 0.31~0.79）。
 # 待命区 8 个格子的地面 UV 落点，参数化：改下面几个数就能整排调位置/间距/大小，
 # 不用手编 8 个点。（格子和棋子模型都用这套值，改一处两个一起动。）
@@ -910,6 +948,10 @@ var _prep_deploy_counter_viewport: SubViewport
 var _prep_deploy_counter_control: PrepDeployCounterScript
 var _prep_deploy_counter_layer: MeshInstance3D
 var _prep_deploy_counter_visible := true
+# 射程圈：一块贴地面片，平时藏着；圆心格 < 0 = 不显示。
+var _prep_range_ring: MeshInstance3D
+var _prep_range_ring_index := -1
+var _prep_range_ring_px := 0.0
 # 模型/动画缓存已移到 BattleAssetService（备战棋盘与战斗共用一份，且跨场景存活）。
 var _prep_layout_refresh_version := 0
 
@@ -1442,6 +1484,8 @@ func _add_prep_art_layers(world: Node3D) -> void:
 	# 棋盘正中「上阵数 / 上限」贴地图案（10.05 第 2 条返工）。放在站位图**之后**建，
 	# 位置与它们同一层地面 —— 与站位图互斥显隐，见 set_prep_cell_marks_visible()。
 	_add_prep_deploy_counter_layer(world)
+	# 射程圈（拖动 / 长按棋子时出现），同一层地面，见 set_prep_range_ring()。
+	_add_prep_range_ring(world)
 	# 待命区背景平台：3D 地面 quad，模型是地面上方 3D 物体，自然盖在它上面（修好被 2D 背景压掉的问题）
 	_add_prep_standby_bg_plane(world)
 	# 氛围层：萤火虫/河面星光粒子
@@ -1619,6 +1663,99 @@ func _count_visible_cell_marks() -> int:
 		if is_instance_valid(node) and node.visible:
 			count += 1
 	return count
+
+
+# ── 射程圈 ──────────────────────────────────────────────────────────
+# 这只棋子在战斗里的攻击距离（模拟像素）。与 BattleSimShared 的判定同口径：
+# 射程按 range_px_for 换算；体型大的单位（footprint_cells > 1）判定时自己再多半格，
+# 见 BattleSimShared._effective_attack_distance（目标那一侧的体型加成看目标，这里不算）。
+static func prep_range_px_for_def(definition: Dictionary) -> float:
+	var footprint := maxi(1, int(definition.get("footprint_cells", 1)))
+	return BattleSimShared.range_px_for(float(definition.get("range", 1.0))) \
+		+ float(footprint - 1) * BattleSimShared.CELL_SPACING * 0.5
+
+
+# 模拟像素半径 → 地面上的世界半径（x = 横向、y = 纵深）。
+# 逐轴换算：战斗里一列 = BOARD_COL_SPACING、一行 = BOARD_ROW_SPACING，
+# 棋盘上一列 / 一行的世界长度由 BOARD_STONE_U/V 与地面尺寸定。两边的列行比不完全一样，
+# 所以地面上是个略扁的椭圆 —— 这样「圈压到哪一格」才和战斗里够到哪一格一致。
+static func prep_range_ring_world_radii(range_px: float) -> Vector2:
+	var col_world := (BOARD_STONE_U.y - BOARD_STONE_U.x) / float(GameConstants.BOARD_COLUMNS) * PREP_BOARD_GROUND_SIZE.x
+	var row_world := (BOARD_STONE_V.y - BOARD_STONE_V.x) / float(GameConstants.BOARD_ROWS) * PREP_BOARD_GROUND_SIZE.y
+	return Vector2(
+		range_px / BattleSimShared.BOARD_COL_SPACING * col_world,
+		range_px / BattleSimShared.BOARD_ROW_SPACING * row_world)
+
+
+func _add_prep_range_ring(world: Node3D) -> void:
+	var ring := MeshInstance3D.new()
+	ring.name = "PrepRangeRing"
+	var plane := PlaneMesh.new()
+	plane.size = Vector2.ONE   # 实际大小靠 scale 撑开，换射程不用重建网格
+	ring.mesh = plane
+	var shader := Shader.new()
+	shader.code = PREP_RANGE_RING_SHADER_CODE
+	var mat := ShaderMaterial.new()
+	mat.shader = shader
+	mat.render_priority = PREP_RANGE_RING_RENDER_PRIORITY
+	# 与战斗里点选单位的射程圈同色（BoardReadabilityStyle.range_color）。
+	var style := BoardReadabilityLayer.DEFAULT_STYLE
+	if style != null:
+		mat.set_shader_parameter("ring_color", style.range_color)
+	ring.material_override = mat
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# 建好就放在它那一层地面上（藏着也一样），别等第一次显示才落地。
+	ring.position = Vector3(0.0, PREP_BOARD_GROUND_CENTER.y + PREP_RANGE_RING_Y_LIFT, 0.0)
+	ring.visible = false
+	world.add_child(ring)
+	_prep_range_ring = ring
+
+
+# 显示 / 隐藏射程圈。center_index = 棋盘格序号（0..15），< 0 或 range_px <= 0 就藏起来。
+# 圆心落在格子圆圈的中心（与站位图同一套 UV），不是模型站位（模型有 SPREAD 修正）。
+func set_prep_range_ring(center_index: int, range_px: float) -> void:
+	var cell_count := GameConstants.BOARD_COLUMNS * GameConstants.BOARD_ROWS
+	if center_index < 0 or center_index >= cell_count or range_px <= 0.0:
+		_prep_range_ring_index = -1
+		_prep_range_ring_px = 0.0
+		if _prep_range_ring != null and is_instance_valid(_prep_range_ring):
+			_prep_range_ring.visible = false
+		return
+	_prep_range_ring_index = center_index
+	_prep_range_ring_px = range_px
+	if _prep_range_ring == null or not is_instance_valid(_prep_range_ring):
+		return
+	var cols := GameConstants.BOARD_COLUMNS
+	var rows := GameConstants.BOARD_ROWS
+	var col := center_index % cols
+	var row := center_index / cols
+	var u := lerpf(BOARD_STONE_U.x, BOARD_STONE_U.y, (float(col) + 0.5) / float(cols))
+	var v := lerpf(BOARD_STONE_V.x, BOARD_STONE_V.y, (float(row) + 0.5) / float(rows))
+	var pos := _board_plane_world_pos(u, v)
+	pos.y = PREP_BOARD_GROUND_CENTER.y + PREP_RANGE_RING_Y_LIFT
+	var radii := prep_range_ring_world_radii(range_px)
+	_prep_range_ring.position = pos
+	_prep_range_ring.scale = Vector3(radii.x * 2.0, 1.0, radii.y * 2.0)
+	_prep_range_ring.visible = true
+
+
+# 契约快照 —— 门禁读它，不直接摸 3D 节点。
+func prep_range_ring_snapshot() -> Dictionary:
+	var valid := _prep_range_ring != null and is_instance_valid(_prep_range_ring)
+	var priority := -1
+	if valid and _prep_range_ring.material_override != null:
+		priority = _prep_range_ring.material_override.render_priority
+	return {
+		"exists": valid,
+		"visible": valid and _prep_range_ring.visible,
+		"center_index": _prep_range_ring_index,
+		"range_px": _prep_range_ring_px,
+		"world_radii": prep_range_ring_world_radii(_prep_range_ring_px) if _prep_range_ring_index >= 0 else Vector2.ZERO,
+		"in_board_world": valid and _prep_range_ring.is_inside_tree() \
+			and _prep_river_viewport != null and _prep_range_ring.get_viewport() == _prep_river_viewport,
+		"render_priority": priority,
+		"y_lift": (_prep_range_ring.position.y - PREP_BOARD_GROUND_CENTER.y) if valid else -1.0,
+	}
 
 func _add_prep_standby_bg_plane(world: Node3D) -> void:
 	# 待命区背景做成 3D 地面 quad：躺在待命格子位置，被模型自然遮挡（模型在地面上方，深度更近）。
@@ -1934,11 +2071,13 @@ func _apply_prep_model_layout_after_frames(version: int) -> void:
 		_prep_standby_model_root.visible = true
 
 func _reposition_existing_prep_models() -> void:
+	var board := shown_board()
+	var bench := shown_bench()
 	for key in _prep_board_model_nodes.keys():
 		var index := int(key)
-		if index < 0 or index >= GameState.board_slots.size():
+		if index < 0 or index >= board.size():
 			continue
-		var cell_value = GameState.board_slots[index]
+		var cell_value = board[index]
 		if typeof(cell_value) != TYPE_DICTIONARY:
 			continue
 		var model_node := _prep_board_model_nodes.get(key) as Node3D
@@ -1946,9 +2085,9 @@ func _reposition_existing_prep_models() -> void:
 			_position_prep_board_model(model_node, index, _prep_display_unit_def(cell_value as Dictionary))
 	for key in _prep_standby_model_nodes.keys():
 		var index := int(key)
-		if index < 0 or index >= GameState.bench_slots.size():
+		if index < 0 or index >= bench.size():
 			continue
-		var cell_value = GameState.bench_slots[index]
+		var cell_value = bench[index]
 		if typeof(cell_value) != TYPE_DICTIONARY:
 			continue
 		var model_node := _prep_standby_model_nodes.get(key) as Node3D
@@ -1960,8 +2099,9 @@ func _refresh_prep_board_models() -> void:
 	if _prep_model_root == null:
 		return
 	var active_slots: Dictionary = {}
-	for index in GameState.board_slots.size():
-		var cell_value = GameState.board_slots[index]
+	var board := shown_board()
+	for index in board.size():
+		var cell_value = board[index]
 		if typeof(cell_value) != TYPE_DICTIONARY:
 			continue
 		var cell: Dictionary = cell_value
@@ -2005,8 +2145,9 @@ func _refresh_prep_standby_models() -> void:
 	if _prep_standby_model_root == null:
 		return
 	var active_slots: Dictionary = {}
-	for index in mini(GameState.bench_slots.size(), STANDBY_SLOT_COUNT):
-		var cell_value = GameState.bench_slots[index]
+	var bench := shown_bench()
+	for index in mini(bench.size(), STANDBY_SLOT_COUNT):
+		var cell_value = bench[index]
 		if typeof(cell_value) != TYPE_DICTIONARY:
 			continue
 		var cell: Dictionary = cell_value
@@ -2483,17 +2624,18 @@ func _refresh_prep_relation_links() -> void:
 	if _prep_relation_link_root == null:
 		return
 	var active_links: Dictionary = {}
-	for first_index in GameState.board_slots.size():
-		var first_value = GameState.board_slots[first_index]
+	var board := shown_board()
+	for first_index in board.size():
+		var first_value = board[first_index]
 		if typeof(first_value) != TYPE_DICTIONARY or not _prep_board_model_nodes.has(first_index):
 			continue
 		var neighbor_indices: Array[int] = []
-		if first_index % GameConstants.BOARD_COLUMNS < GameConstants.BOARD_COLUMNS - 1 and first_index + 1 < GameState.board_slots.size():
+		if first_index % GameConstants.BOARD_COLUMNS < GameConstants.BOARD_COLUMNS - 1 and first_index + 1 < board.size():
 			neighbor_indices.append(first_index + 1)
-		if first_index + GameConstants.BOARD_COLUMNS < GameState.board_slots.size():
+		if first_index + GameConstants.BOARD_COLUMNS < board.size():
 			neighbor_indices.append(first_index + GameConstants.BOARD_COLUMNS)
 		for second_index in neighbor_indices:
-			var second_value = GameState.board_slots[second_index]
+			var second_value = board[second_index]
 			if typeof(second_value) != TYPE_DICTIONARY or not _prep_board_model_nodes.has(second_index):
 				continue
 			var relation_states := _active_relation_states_between(first_value as Dictionary, second_value as Dictionary)

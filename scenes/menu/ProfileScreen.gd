@@ -40,6 +40,7 @@ const SECTION_COLOR := Color("8a4b12")
 const BAD_COLOR := Color("a3271a")
 const RankedTiers := preload("res://scenes/menu/RankedTiers.gd")
 const SignInBridge := preload("res://scripts/account/SignInBridge.gd")
+const GameHelp := preload("res://scripts/account/GameHelp.gd")
 
 signal back_requested
 # 10.19 教程反馈第 4 条：教学引导要看「成长之路」里的「返回」键，
@@ -942,13 +943,13 @@ func _privacy_section() -> Control:
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", Tokens.GAP_S)
 	for entry in [
-		[_text("隐私政策", "Privacy policy"), "https://glorytd-api.duckdns.org/legal/privacy.html"],
-		[_text("账号与数据删除说明", "Account and data deletion"), "https://glorytd-api.duckdns.org/legal/delete-account.html"],
+		[_text("隐私政策", "Privacy policy"), GameHelp.show_privacy],
+		[_text("账号与数据删除说明", "Account and data deletion"), GameHelp.show_deletion],
 	]:
 		var button := ACTION_BUTTON.instantiate() as Button
 		button.text = str(entry[0])
 		button.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
-		button.pressed.connect(_open_privacy_url.bind(str(entry[1])))
+		button.pressed.connect((entry[1] as Callable).bind(self))
 		column.add_child(button)
 	return column
 

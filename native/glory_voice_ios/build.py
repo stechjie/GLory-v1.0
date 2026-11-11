@@ -33,7 +33,8 @@ def make_project(work, cpp, library):
 
     files = []
     compile_files = []
-    for name, kind in [("GloryVoiceNative.swift", "sourcecode.swift"), ("GloryVoiceBridge.mm", "sourcecode.cpp.objcpp")]:
+    for name, kind in [("GloryVoiceNative.swift", "sourcecode.swift"), ("GloryVoiceBridge.mm", "sourcecode.cpp.objcpp"),
+                       ("GloryAppleBilling.swift", "sourcecode.swift"), ("GloryAppleBillingBridge.mm", "sourcecode.cpp.objcpp")]:
         ref = put(name, "PBXFileReference", path=str(SOURCE / name), sourceTree="<absolute>", lastKnownFileType=kind)
         files.append(ref)
         compile_files.append(put(name+"-build", "PBXBuildFile", fileRef=ref))
@@ -98,7 +99,7 @@ def main():
     (cpp/"voice_profile.json").write_text(json.dumps({"enabled_classes":["Object","Engine","OS"]}))
     run([sys.executable,"-m","SCons","platform=ios","arch=arm64","target=template_release",
          "ios_min_version=15.0","build_profile=voice_profile.json","-j6"],cwd=cpp)
-    libraries = list((cpp/"bin").glob("*.a"))
+    libraries = list((cpp/"bin").glob("libgodot-cpp.ios.template_release.arm64.a"))
     if len(libraries) != 1:
         raise RuntimeError("Expected one arm64 godot-cpp static library")
     project = make_project(work, cpp, libraries[0])
@@ -133,6 +134,8 @@ def main():
             manifest["files"][str(file.relative_to(out))]=hashlib.sha256(file.read_bytes()).hexdigest()
     for file in [SOURCE/"GloryVoiceNative.swift",SOURCE/"GloryVoiceNative.h",SOURCE/"GloryVoiceBridge.mm",Path(__file__)]:
         manifest.setdefault("source",{})[file.name]=hashlib.sha256(file.read_bytes()).hexdigest()
+    for file in [SOURCE/"GloryAppleBilling.swift", SOURCE/"GloryAppleBillingNative.h", SOURCE/"GloryAppleBillingBridge.mm"]:
+        manifest["source"][file.name]=hashlib.sha256(file.read_bytes()).hexdigest()
     (out/"build-manifest.json").write_text(json.dumps(manifest,indent=2)+"\n")
     print("iOS voice framework ready:",out)
 

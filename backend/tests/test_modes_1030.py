@@ -42,6 +42,7 @@ async def test_single_ranked_uses_one_queue(monkeypatch, mode):
     monkeypatch.setattr(routes, "_limit", lambda *args: None)
     monkeypatch.setattr(routes.db, "pool", lambda: SimpleNamespace(acquire=lambda: Acquire(SimpleNamespace())))
     monkeypatch.setattr(ranked, "queue_gate", AsyncMock(return_value=""))
+    monkeypatch.setattr(ranked, "score_of", AsyncMock(return_value=0))
     monkeypatch.setattr(loadout, "require_ranked_races", AsyncMock())
     monkeypatch.setattr(matchmaking, "current", lambda: mm)
     result = await routes.join_queue(routes.QueueBody(mode=mode), None)

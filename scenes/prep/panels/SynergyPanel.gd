@@ -39,13 +39,27 @@ func _outlined(label: Label) -> Label:
 # --- 搬过来的成员 ---
 var _left_panel: VBoxContainer
 var _left_panel_signature := "unset"
+# 看队友棋盘时（PrepUI.enter_teammate_view）是队友那块棋盘，平时是 null（数自己的）。
+var _teammate_board = null
+
+
+# 看队友时左栏只留羁绊：出售提示和两个金钱宝藏按钮都是自己的，留着会以为是队友的。
+func show_teammate_board(board) -> void:
+	_teammate_board = board
+	refresh()
+
+
+func _race_counts() -> Dictionary:
+	return SynergyService.count_races(_teammate_board) if _teammate_board != null else SynergyService.count_races_from_board()
 
 
 # 原 _refresh_left_panel（PrepUI.gd）
 func refresh() -> void:
 	var sig_altar_hp := GameState.team_hp if GameState.team_mode else GameState.player_formation_hp
+	var counts := _race_counts()
 	var sig := JSON.stringify([
-		SynergyService.count_races_from_board(),
+		_teammate_board != null,
+		counts,
 		GameState.owned_treasures,
 		GameState.golden_altar_uses,
 		GameState.gamble_used,
@@ -64,7 +78,9 @@ func refresh() -> void:
 	title.add_theme_font_size_override("font_size", 16)
 	_left_panel.add_child(title)
 
-	_add_synergy_widgets()
+	_add_synergy_widgets(counts)
+	if _teammate_board != null:
+		return
 
 	var sell_hint := _outlined(Label.new())
 	sell_hint.text = tr("ui_sell_hint")
@@ -142,9 +158,8 @@ func _add_money_action(logo_path: String, title: String, desc: String, enabled: 
 # 原 _add_current_synergy_widgets（PrepDetails.gd）
 # ─── synergy widgets ──────────────────────────────────────────────────────────
 
-func _add_synergy_widgets() -> void:
+func _add_synergy_widgets(counts: Dictionary) -> void:
 	_race_widgets.clear()
-	var counts := SynergyService.count_races_from_board()
 	var shown := false
 	var grid := GridContainer.new()
 	grid.name = "SynergyGrid"
@@ -230,7 +245,7 @@ func _apply_tier_style(label: Label, race: String, count: int) -> void:
 # 调用时面板刚被 refresh() 整个重建过，新节点还没排版（size 为 0），
 # 所以先等一帧再设 pivot —— 否则缩放绕左上角，图标会往右下甩。
 func pulse_race(race: String, kind: String) -> void:
-	if not is_inside_tree():
+	if not is_inside_tree() or _teammate_board != null:
 		return
 	var widgets: Dictionary = _race_widgets.get(race, {})
 	if widgets.is_empty():
@@ -307,14 +322,14 @@ static func _race_entries(race: String) -> Array:
 		"undead":
 			return [
 				{"threshold": 1, "name": "灵族特性·双毒", "detail": "灵族施加的中毒最多叠加2层，分别计时和造成伤害；两层时目标头顶显示两枚毒标记。"},
-				{"threshold": 2, "name": "灵2·剧毒抑疗", "detail": "目标中毒期间，其治疗与吸血获得的生命减少 30%。"},
-				{"threshold": 4, "name": "灵4·剧毒", "detail": "灵族中毒伤害翻倍。"},
-				{"threshold": 7, "name": "灵7·噬毒", "detail": "灵族单位攻击已中毒的敌人时，每次回复自身 15% 最大生命。"},
+				{"threshold": 2, "name": "灵族·剧毒抑疗", "detail": "目标中毒期间，其治疗与吸血获得的生命减少 30%。"},
+				{"threshold": 4, "name": "灵族·剧毒", "detail": "灵族中毒伤害翻倍。"},
+				{"threshold": 7, "name": "灵族·噬毒", "detail": "灵族单位攻击已中毒的敌人时，每次回复自身 15% 最大生命。"},
 			]
 		"human":
 			return [
 				{"threshold": 1, "name": "人族特性·三连暴击", "detail": "人族单位每第 3 次攻击必定暴击。"},
-				{"threshold": 2, "name": "人2·护盾", "detail": "开战时普通棋子获得等于 8% 最大生命的护盾。"},
+				{"threshold": 2, "name": "人2·护盾", "detail": "开战时普通棋子获得等于 %d%% 最大生命的护盾。" % roundi(BattleSimulator.HUMAN_SHIELD_PCT * 100.0)},
 				{"threshold": 7, "name": "人7·哀兵", "detail": "己方每阵亡 1 个棋子，存活棋子获得 1 层：最大生命/攻击/防御/攻速 +20%、暴击 +20%、暴击伤害 +10%，并回复 20% 生命（可无限叠加）。"},
 			]
 		"crimson":
@@ -334,28 +349,28 @@ static func _race_entries_en(race: String) -> Array:
 		"god":
 			return [
 				{"threshold": 1, "name": "God Trait: Cleanse", "detail": "When a friendly unit dies, one random surviving ally removes all debuffs."},
-				{"threshold": 3, "name": "God 3: Lifesteal", "detail": "God units restore 20% of actual damage dealt as HP."},
-				{"threshold": 7, "name": "God 7: Divine Pulse", "detail": "From 1s into battle, every 5s your whole team is invincible for 1s (blocks attacks and skills; poison/bleed still hurt)."},
+				{"threshold": 3, "name": "God 3: Lifesteal", "detail": "God units heal for 20% of the actual damage they deal with basic attacks."},
+				{"threshold": 7, "name": "God 7: Divine Pulse", "detail": "Starting 1s into battle and every 5s thereafter, your team’s normal units gain 1s of invulnerability against attacks and skills. Poison, bleed, and burn still deal damage."},
 			]
 		"dark":
 			return [
-				{"threshold": 1, "name": "Dark Trait: Kill Stack", "detail": "Every 3 enemy deaths, Dark units gain 1 stack of +6% damage."},
+				{"threshold": 1, "name": "Dark Trait: Kill Stack", "detail": "Every 3 enemy deaths, Dark units gain a stack of +6% basic attack damage. Stacks add together with no limit."},
 				{"threshold": 2, "name": "Dark 2: Debuff Power", "detail": "All debuffs applied by Dark units are 30% stronger; controls without a numeric strength last 30% longer."},
-				{"threshold": 5, "name": "Dark 5: Damage", "detail": "Dark units deal +25% damage."},
+				{"threshold": 5, "name": "Dark 5: Damage", "detail": "Dark units deal +25% basic attack damage."},
 				{"threshold": 7, "name": "Dark 7: Soul Sap", "detail": "Each Dark basic attack reduces the target’s ATK/DEF/AS by 3% and raises the attacker’s by 3% (up to 15 stacks each)."},
 			]
 		"undead":
 			return [
 				{"threshold": 1, "name": "Undead Trait: Double Poison", "detail": "Poison applied by Undead units stacks twice. Each stack ticks and expires separately; two poison marks appear above the target at two stacks."},
-				{"threshold": 2, "name": "Undead 2: Venom Suppression", "detail": "While poisoned, the target receives 30% less HP from healing and lifesteal."},
-				{"threshold": 4, "name": "Undead 4: Poison", "detail": "Undead poison deals double damage."},
-				{"threshold": 7, "name": "Undead 7: Venom Feast", "detail": "When Undead units hit a poisoned enemy, they restore 15% of their max HP per hit."},
+				{"threshold": 2, "name": "Undead: Venom Suppression", "detail": "While poisoned, the target receives 30% less HP from healing and lifesteal."},
+				{"threshold": 4, "name": "Undead: Poison", "detail": "Undead poison deals double damage."},
+				{"threshold": 7, "name": "Undead: Venom Feast", "detail": "When Undead units hit a poisoned enemy, they restore 15% of their max HP per hit."},
 			]
 		"human":
 			return [
 				{"threshold": 1, "name": "Human Trait: Triple Crit", "detail": "Every 3rd attack from a Human unit is a guaranteed critical hit."},
-				{"threshold": 2, "name": "Human 2: Shield", "detail": "At battle start, normal units gain a shield equal to 8% max HP."},
-				{"threshold": 7, "name": "Human 7: Vengeance", "detail": "Each time one of your units dies, survivors gain a stack: max HP/ATK/DEF/AS +20%, Crit +20%, CritDmg +10%, and heal 20% HP (no stack limit)."},
+				{"threshold": 2, "name": "Human 2: Shield", "detail": "At battle start, normal units gain a shield equal to %d%% of their max HP." % roundi(BattleSimulator.HUMAN_SHIELD_PCT * 100.0)},
+				{"threshold": 7, "name": "Human 7: Vengeance", "detail": "When an allied normal unit dies, surviving normal units owned by the same player gain one stack. Each stack adds 20% of their starting max HP, ATK, DEF, and attack speed, plus 20 percentage points of crit chance and 10 percentage points of crit damage. They heal for the max HP gained."},
 			]
 		"crimson":
 			return [
@@ -412,8 +427,17 @@ func format_synergy_detail(race: String, count: int) -> String:
 static func format_synergy_effects(race: String) -> String:
 	var blocks: Array[String] = []
 	for item in _race_entries(race):
-		var approved := FinalStatusCatalog.synergy_cn(race, int(item.get("threshold", 0))) if not PrepWidgets.is_en() else {}
-		blocks.append("%s\n%s" % [str(approved.get("name_cn", item.get("name", ""))), str(approved.get("detail_cn", item.get("detail", "")))])
+		var threshold := int(item.get("threshold", 0))
+		var english := PrepWidgets.is_en()
+		var approved := FinalStatusCatalog.synergy_cn(race, threshold) if not english else {}
+		var title := str(approved.get("name_cn", item.get("name", "")))
+		var detail := str(approved.get("detail_cn", item.get("detail", "")))
+		if english:
+			var prefix := race_name(race)
+			title = title.replace("%s %d:" % [prefix, threshold], prefix + ":")
+			if race == "crimson":
+				detail = detail.replace("Crimson 4 Resonance and Crimson 7 Red Tide", "Resonance and Red Tide")
+		blocks.append("%s\n%s" % [title, detail])
 	return "\n\n".join(blocks)
 
 

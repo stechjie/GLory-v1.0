@@ -61,6 +61,8 @@ func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
 	var can_drop: bool = PrepRules.can_drop_on_board(board_index, data)
 	if hud != null:
 		hud.set_board_drop_hover(board_index if can_drop else -1)
+		# 射程圈跟着手指走：悬在哪格就画在哪格，能不能放下都画（原格上也要看射程）。
+		hud.set_board_range_hover(board_index)
 	return can_drop
 
 func _drop_data(_at_position: Vector2, data: Variant) -> void:
@@ -70,6 +72,7 @@ func _drop_data(_at_position: Vector2, data: Variant) -> void:
 func _on_mouse_exited() -> void:
 	if deployment_visible and hud != null:
 		hud.set_board_drop_hover(-1)
+		hud.set_board_range_hover(-1)
 
 func _draw() -> void:
 	# BoardReadabilityLayer owns all board guide rendering in one CanvasItem.

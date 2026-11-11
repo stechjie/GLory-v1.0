@@ -569,7 +569,7 @@ func effect_text(tid: String) -> String:
 		"atk_fury_roster":      return "普通棋子上限从 7 提高到 8。"
 		"atk_burst_core":       return "开战时我方普通棋子暴击率 +25%。"
 		"atk_wail_resonance":   return "击杀敌人时，对死亡目标周围 180 范围敌人造成其最大生命 15% 真实伤害。"
-		"atk_frenzy_assault":   return "攻击同一目标时自身攻速 x1.15，可叠；换目标重置。"
+		"atk_frenzy_assault":   return "每次普攻自身攻速+15%，最多提升至初始攻速的2.5倍。"
 		"money_compound":       return "战后利息额外 +5% 当前金币；本回合未花金币时再加 +3%。与雷霆加速联动后造成伤害有概率获得金币。"
 		"money_generous_fate":  return "准备阶段每回合可手动参与 1 次赌博：50% 概率胜利使当前金币变为 2.5 倍；50% 概率失败并损失当前金币的 80%。与幻影步伐联动后变为 60% 变为 2.5 倍、40% 损失当前金币 50%。"
 		"money_discount":       return "棋子商店价格 -30%，最低 1 金；与狂怒阵容联动后同队价格 -60%，最低 1 金。"
@@ -593,7 +593,7 @@ func effect_text_en(tid: String) -> String:
 		"def_lifesteal_emblem": return "Friendly normal units restore 20% of actual damage dealt as HP."
 		"def_phantom_step":     return "At battle start, friendly normal units gain Dodge +20%."
 		"ctrl_shockwave":       return "On attack, stun the current target for 1s (CD 5s). With Hu Pai Master: stun 2s."
-		"ctrl_corrosive_needle":return "Every 4th attack causes the target to bleed for 3s (CD 5s). Basic attacks against an already bleeding target deal +%d%% damage." % int(round(TreasureService.corrosive_needle_bleed_bonus() * 100.0))
+		"ctrl_corrosive_needle":return CodexService.treasure_effect_en(tid)
 		"ctrl_interrupt_chain": return "25% chance to disarm the target for 1.5s on attack (CD 3s)."
 		"ctrl_time_compress":   return "Friendly normal units' skill cooldowns are reduced by 25% (multiplied by 0.75)."
 		"ctrl_binding_weight":  return "On attack, reduce target movement by 25%, AS by 20%, and outgoing damage by 20% for 2s (CD 5s)."
@@ -601,7 +601,7 @@ func effect_text_en(tid: String) -> String:
 		"atk_fury_roster":      return "Normal unit board limit increased from 7 to 8."
 		"atk_burst_core":       return "At battle start, friendly normal units gain Crit +25%."
 		"atk_wail_resonance":   return "On kill, deal 15% of the target's max HP as true damage to all enemies within radius 180."
-		"atk_frenzy_assault":   return "Attacking the same target stacks own AS ×1.15 (stackable); resets on target switch."
+		"atk_frenzy_assault":   return CodexService.treasure_effect_en(tid)
 		"money_compound":       return "After battle, gain 5% bonus interest; gain another 3% if no gold was spent this round. Synergy with Thunder Haste: 25% chance to gain 10G on damage."
 		"money_generous_fate":  return "Once per prep phase, gamble: 50% chance to raise current gold to 2.5x; 50% chance to lose 80% of current gold. Synergy with Phantom Step: becomes 60%/40% with 50% loss."
 		"money_discount":       return "Piece shop prices -30%, minimum 1 gold. With Fury Roster, all teammates get -60%, minimum 1 gold."
@@ -623,7 +623,7 @@ func link_effect_text(link_id: String) -> String:
 			return approved
 	if PrepWidgets.is_en():
 		match link_id:
-			"link_phoenix":           return "Friendly normal units revive at 40% max HP with invulnerability for 3s after dying, then die for real."
+			"link_phoenix":           return str(CodexService.link_text(link_id).get("effect_en", ""))
 			"link_money_magic":       return "After battle, gain an extra random 60~80G, with a 10% chance of another 200G."
 			"link_blood_covenant":    return "Flame Shatter true damage increases from 40% ATK to 100% ATK."
 			"link_paralysis_shackles":return "On successful disarm, also apply ice; target takes 25% more damage and receives 75% less healing for 4s."

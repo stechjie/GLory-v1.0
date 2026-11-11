@@ -20,6 +20,7 @@ extends Node
 #      （挪动只剩拖拽一条路：PrepDragButton 起拖 → _drop_on_board/_drop_on_bench）；
 #   3) 射程预览改挂在「长按查看属性」上（PrepUI._inspect_board_cell），详情框一关
 #      （PrepScreen._process → _sync_board_inspect_after_overlay）就撤掉高亮。
+#      （11-08 起射程预览是贴地射程圈，拖动时的那一半由 tools/prep_range_ring_check 守。）
 #
 # 判据（每一条都指着会坏的那一处，且都做了变异验证）：
 #   A 轻点棋子不选中（棋盘 / 空格 / 待命格）
@@ -27,7 +28,7 @@ extends Node
 #   C 长按不穿透：long_press_consumed 那一次绝不能落到业务上（不买入、不选中）；
 #     反向用例证明守卫不会把正常轻点也挡掉
 #   D 拖拽仍能挪动（场→场、待命→场）—— 唯一剩下的挪动路径不能坏
-#   E 长按查看属性会点亮检视格 + 算出射程格；详情框关掉后翻转那一下必须撤掉高亮
+#   E 长按查看属性会点亮检视格 + 画出射程圈；详情框关掉后翻转那一下必须一起撤掉
 #
 # 运行：
 #   Godot_v4.7.2-stable_win64_console.exe --headless --path . tools/prep_piece_interaction_check.tscn
@@ -36,8 +37,7 @@ const CheckHarness := preload("res://tools/CheckHarness.gd")
 
 const CHECK_NAME := "prep_piece_interaction"
 
-# range=1 的单位（射程格 = 本格 + 正交四邻，4×4 下 index 0 → {0,1,4}），
-# 用来把「射程预览算得出东西」判得具体一点，range=4 的会把整盘都盖住。
+# range=1 的单位：射程圈半径 = BattleSimShared.range_px_for(1)，用来把「射程预览」判得具体一点。
 const RANGE1_UNIT := "god_guard"
 const RANGE4_UNIT := "god_priest"
 const OTHER_UNIT := "god_aurora"
@@ -116,6 +116,13 @@ func _selected_board() -> int:
 
 func _selected_bench() -> int:
 	return int(_hud().get("_selected_bench"))
+
+
+# 射程圈的契约快照。直接调（不走 .call("名字")）：方法名写成字符串的调用会被
+# dynamic_call_check 记作「接收者不明」，那个数只许降不许升。
+func _ring_snapshot() -> Dictionary:
+	var screen: Variant = _screen
+	return screen.prep_range_ring_snapshot()
 
 
 func _uid(cell: Variant) -> String:
@@ -303,9 +310,16 @@ func _case_inspect_lights_range_and_clears() -> void:
 	_screen.call("_inspect_board_cell", 0)
 	_h.expect(_selected_board() == 0, "inspect_did_not_light",
 		"长按查看属性没有点亮检视格（_selected_board=%d）—— 玩家看不到射程预览了" % _selected_board())
-	var range_cells: PackedInt32Array = _screen.call("_prep_attack_range_indices", 0)
-	_h.expect(range_cells.size() > 0 and range_cells.has(0), "inspect_range_empty",
-		"检视格算出来的射程格为空 —— 射程预览这条唯一入口断了（range=1 至少应含本格）")
+	# 11-08 起射程预览是贴地的射程圈（PrepBoardModels.set_prep_range_ring），不再点亮格子。
+	var ring := _ring_snapshot()
+	_h.expect(bool(ring.get("visible", false)) and int(ring.get("center_index", -1)) == 0,
+		"inspect_range_ring_missing",
+		"长按查看属性后射程圈没画在检视格上（visible=%s center=%d）—— 射程预览这条入口断了"
+			% [str(ring.get("visible", false)), int(ring.get("center_index", -1))])
+	_h.expect(is_equal_approx(float(ring.get("range_px", 0.0)), BattleSimShared.range_px_for(1.0)),
+		"inspect_range_ring_radius",
+		"射程 1 的棋子，射程圈半径应等于战斗判定的 %.1f 模拟像素，实际 %.1f"
+			% [BattleSimShared.range_px_for(1.0), float(ring.get("range_px", 0.0))])
 
 	var overlay: Variant = _overlay()
 	_h.expect(bool(overlay.call("is_ready")), "overlay_not_ready",
@@ -335,6 +349,9 @@ func _case_inspect_lights_range_and_clears() -> void:
 	_screen.call("_process", 0.016)
 	_h.expect(_selected_board() == -1, "inspect_not_cleared",
 		"详情框关掉后检视高亮没撤 —— 会留下一个「看起来还选中着」的格子，正是第 4 条要消掉的现象")
+	_h.expect(not bool(_ring_snapshot().get("visible", true)),
+		"inspect_range_ring_not_cleared",
+		"详情框关掉后射程圈还留在棋盘上 —— 它应该跟检视格一起撤掉")
 
 
 # --- G 长按弹过属性框之后，同一次手势不许再起拖（用户 10.12 追加口径）-----------

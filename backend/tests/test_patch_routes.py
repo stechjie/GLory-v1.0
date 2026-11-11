@@ -10,13 +10,14 @@ import types
 import os
 from unittest.mock import AsyncMock, patch
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+import httpx
 from fastapi.testclient import TestClient
 
 from app import patch_service
 from app.admin_auth import Admin, current_admin, writing_admin
 from app.patch_firebase import FirebasePublishError, digest_file
-from app.routes.patches import router
+from app.routes.patches import router, failures
 
 
 class Publisher:
@@ -34,6 +35,20 @@ class Publisher:
 
 
 class PatchHTTPTests(unittest.TestCase):
+    def test_provider_diagnostics_never_log_exception_secrets(self):
+        for error in (FirebasePublishError("private-token-example"),
+                      httpx.ConnectError("https://private.invalid/?token=private-token-example")):
+            with self.assertLogs("glory.patches", level="WARNING") as captured:
+                with self.assertRaises(HTTPException) as raised:
+                    with failures():
+                        raise error
+            self.assertEqual(raised.exception.status_code, 502)
+            output = "\n".join(captured.output)
+            self.assertIn(type(error).__name__, output)
+            self.assertIn("test_patch_routes.py", output)
+            self.assertNotIn("private-token-example", output)
+            self.assertNotIn("private.invalid", output)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

@@ -1,0 +1,77 @@
+{
+  "version": "1.0.2",
+  "version_code": 56,
+  "package": "com.glory.game.google",
+  "source_commit": "3f65158145e381c7c346855aa73fb3028e538ecd",
+  "aab": "/Volumes/repository/github/GLory/build/aab/Glory-1.0.2-56-20261103-082146-release.aab",
+  "sha256": "810dff9b704af76cac3651c5f8c5e948dad972b37c5b93596d9a7495dbdc41c3",
+  "bytes": 605360305,
+  "server_target": {
+    "environment": "prod",
+    "backend_url": "https://glorytd-prod-api.duckdns.org",
+    "battle_host": "glorytd-prod-battle.duckdns.org"
+  },
+  "slim_excluded_resources": 362,
+  "slim_excluded_bytes": 907476148,
+  "production_access": {
+    "submitted": true,
+    "submitted_at_local": "2026-11-03T08:28:00+08:00",
+    "status": "under_review",
+    "evidence": "production-access-submission.txt"
+  },
+  "formal_binary_review_submitted": false,
+  "formal_binary_gate": "Production access application is under review; Console production track has no create-release control",
+  "internal_upload_status": "complete_readback_verified",
+  "checks": {
+    "backend_iap_profile_passed": 198,
+    "model_materials_passed": true,
+    "signature_release_arm64_alignment_passed": true,
+    "health_patch_and_pinned_dtls_passed": true,
+    "device_basic_smoke_passed": true
+  },
+  "materials_review": {
+    "submitted": true,
+    "status": "in_review_with_automatic_checks_running",
+    "public_change_count": 4,
+    "changes": [
+      "zh-CN short description",
+      "zh-CN full description",
+      "en-US listing",
+      "Data safety"
+    ],
+    "reviewer_access_instructions_saved": true,
+    "evidence": "materials-submission-status.txt"
+  },
+  "device_verification": {
+    "model": "Infinix X6531",
+    "android": "14",
+    "installed_version_code": 56,
+    "installation": "Google Play generated APKs via ADB replacement; same Play signing certificate; original app data preserved",
+    "passed": [
+      "first launch",
+      "production anonymous login",
+      "main menu and pet selection",
+      "settings",
+      "help",
+      "custom room creation and online lobby",
+      "sideload purchase guard",
+      "forced relaunch restored same production player"
+    ],
+    "billing_purchase_performed": false,
+    "billing_guard": "Purchases require actual Play Store installation; this ADB smoke test did not complete a purchase",
+    "background_process_reclaimed": "Android LOW_MEMORY background process reclaim observed; subsequent login restored same player",
+    "evidence": [
+      "phone56-room.png",
+      "phone56-current-process.log",
+      "phone56-exit-info.txt",
+      "play56-device-apks.json",
+      "phone56-relaunch.log",
+      "phone56-relaunch.png"
+    ]
+  },
+  "pending": [
+    "Google approval of production access",
+    "formal production track release creation and binary review submission after approval"
+  ],
+  "evidence": "outer workspace delivery/google-play-review-20261103/"
+}

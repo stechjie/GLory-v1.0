@@ -7,7 +7,7 @@ import tempfile
 import unittest
 import zipfile
 
-from export_patch import export, verify_pack_export
+from export_patch import export, verify_pack_export, digest
 
 
 class PackExportDiagnosticTests(unittest.TestCase):
@@ -98,9 +98,15 @@ binary_format/architecture="x86_64"
             config = root / "config.json"
             config.write_text(json.dumps({"base_id": "test-base", "channel": "internal",
                 "backend_url": "https://example.com", "firebase_host": "example.web.app"}))
+            (stage / 'assets').mkdir()
+            art = '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="red"/></svg>'
+            for name in ('old', 'reactivated', 'unused'):
+                (stage / 'assets' / (name + '.svg')).write_text(art)
+            (stage / 'scripts').mkdir()
+            (stage / 'scripts/art.gd').write_text('extends Node\nconst ART = "res://assets/old.svg"\n')
             options = dict(stage=stage, engine=Path(engine), preset="PatchFixture", platform=platform, config=config, debug=debug)
             if debug:
-                from glory_build import retain_patch_base, digest
+                from glory_build import retain_patch_base
                 application = root / "fixture.apk"
                 application.write_bytes(b"native package fixture")
                 retained = retain_patch_base(stage, Path(engine), "PatchFixture", platform, config,
@@ -111,7 +117,11 @@ binary_format/architecture="x86_64"
                     export(**{**options, "debug": False}, output=root / "wrong-mode", base=root / "original/base.zip")
             else:
                 export(**options, output=root / "original")
+            base_hash = digest(root / 'original/base.zip')
             with zipfile.ZipFile(root / "original/base.zip") as pack:
+                self.assertIn('assets/old.svg.import', pack.namelist())
+                self.assertNotIn('assets/unused.svg.import', pack.namelist())
+                self.assertNotIn('assets/reactivated.svg.import', pack.namelist())
                 self.assertIn(b'AutoloadPlaceholder.tscn', pack.read('override.cfg'))
                 pack.extractall(root / "installed")
             (root / "runtime_probe.gd").write_text('''extends SceneTree
@@ -138,10 +148,19 @@ func verify():
             self.assertIn("EXPORTED_DEFERRED_AUTOLOAD_PASS", installed.stdout)
             self.assertNotIn("SCRIPT ERROR", installed.stderr)
             (stage / "service.gd").write_text('extends Node\nfunc value() -> int:\n return 42\n')
+            (stage / 'scripts/art.gd').write_text('extends Node\nconst ART = "res://assets/reactivated.svg"\n')
             report = export(**options, output=root / "updated", base=root / "original/base.zip")
+            self.assertEqual(digest(root / 'original/base.zip'), base_hash)
+            slim = json.loads(Path(report['slim_report']).read_text())
+            self.assertIn('assets/old.svg', slim['removed_source_paths'])
+            self.assertIn('assets/unused.svg', slim['removed_source_paths'])
+            self.assertNotIn('assets/reactivated.svg', slim['removed_source_paths'])
             self.assertIn("service.gdc", report["files"])
             with zipfile.ZipFile(root / "updated" / (platform + ".zip")) as pack:
                 self.assertNotIn("project.binary", pack.namelist())
+                self.assertIn('assets/reactivated.svg.import', pack.namelist())
+                self.assertNotIn('assets/old.svg.import', pack.namelist())
+                self.assertNotIn('assets/unused.svg.import', pack.namelist())
             (stage / "probe.gd").write_text('''extends SceneTree
 func _initialize():
  call_deferred("verify")
@@ -163,6 +182,19 @@ func verify():
                                     capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("EXPORTED_PATCH_BYTECODE_PASS", result.stdout)
+            # Reusing the stage must compare preset policy, not stale generated
+            # exclusions; real preset option changes must still require a full build.
+            cfg = stage / 'export_presets.cfg'
+            original_preset = cfg.read_text()
+            cfg.write_text(original_preset + '\ntextures/vram_compression/import_etc2_astc=true\n')
+            with self.assertRaisesRegex(ValueError, 'original base changed'):
+                export(**options, output=root / 'wrong-preset', base=root / 'original/base.zip')
+            cfg.write_text(original_preset)
+            (stage / 'service.gd').write_text('extends Node\nfunc value() -> int:\n return 43\n')
+            (stage / 'scripts/art.gd').write_text('extends Node\nconst ART = "res://assets/old.svg"\n')
+            again = export(**options, output=root / 'updated-again', base=root / 'original/base.zip')
+            self.assertIn('service.gdc', again['files'])
+            self.assertEqual(digest(root / 'original/base.zip'), base_hash)
 
 
 if __name__ == "__main__":

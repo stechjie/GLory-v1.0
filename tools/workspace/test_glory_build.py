@@ -60,12 +60,12 @@ class Tests(unittest.TestCase):
   (self.model/'idle.fbx').unlink()
   with self.assertRaises(RuntimeError):self.run_check()
  def env_stage(self):
-  for rel,text in (('scripts/account/AccountConfig.gd','const DEFAULT_BACKEND_URL := "https://glorytd-api.duckdns.org"\n'),('scripts/multiplayer/NetworkConfig.gd','const SERVER_HOST := "glorytd-battle.duckdns.org"\n')):
+  for rel,text in (('scripts/account/AccountConfig.gd','const DEFAULT_BACKEND_URL := "https://test-api.gogoglory.com"\n'),('scripts/multiplayer/NetworkConfig.gd','const SERVER_HOST := "test-battle.gogoglory.com"\n')):
    p=self.stage/rel;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(text)
   cert=self.stage/'scripts/multiplayer/NetTLSCert.gd';cert.write_bytes((Path(__file__).resolve().parents[2]/'scripts/multiplayer/NetTLSCert.gd').read_bytes());return cert
  def test_prod_pins_prod_battle_certificate(self):
   cert=self.env_stage();target=b.configure_server_environment(self.stage,'prod')
-  self.assertEqual(target['backend_url'],'https://glorytd-prod-api.duckdns.org');self.assertIn(b'"glorytd-prod-battle.duckdns.org"',(self.stage/'scripts/multiplayer/NetworkConfig.gd').read_bytes())
+  self.assertEqual(target['backend_url'],'https://api.gogoglory.com');self.assertIn(b'"battle.gogoglory.com"',(self.stage/'scripts/multiplayer/NetworkConfig.gd').read_bytes())
   self.assertEqual(b.pem_sha256(cert.read_bytes()),b.PROD_DTLS_SHA256)
  def test_test_keeps_source_certificate(self):
   cert=self.env_stage();before=cert.read_bytes();b.configure_server_environment(self.stage,'test');self.assertEqual(cert.read_bytes(),before)

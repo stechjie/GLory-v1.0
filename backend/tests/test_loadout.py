@@ -336,9 +336,9 @@ def test_unowned_sold_avatar_falls_back_to_default(monkeypatch: pytest.MonkeyPat
 
 
 def test_unowned_race_is_dropped(monkeypatch: pytest.MonkeyPatch) -> None:
-    """以后某一族要解锁：没解锁的不上名片。凑不够数由战斗服务器按 RacePick 换默认。"""
-    monkeypatch.setattr(shop, "requires_entitlement", lambda cid: cid == "dragon")
-    _wire(monkeypatch, _row(selected_races=["god", "dragon", "undead", "human"]), owned=[])
+    """Only owned races go on the card, and an invalid selection falls back to the default."""
+    _wire(monkeypatch, _row(selected_races=["god", "dragon", "undead", "human"]),
+          owned=["god", "undead", "human"])
     result = asyncio.run(loadout.build_loadout(PLAYER_A))
     assert result.races == ["god", "undead", "human"]
 

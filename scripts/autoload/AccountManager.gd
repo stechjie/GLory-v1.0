@@ -802,6 +802,14 @@ func _ready() -> void:
 	_presence_timer.autostart = false
 	_presence_timer.timeout.connect(_on_presence_tick)
 	add_child(_presence_timer)
+	# StoreKit updates can arrive while the game stays in the foreground (Ask to
+	# Buy approval, restored connectivity). Keep recovery alive outside shop UI.
+	if BillingBridge.platform() == "apple":
+		var billing_timer := Timer.new()
+		billing_timer.wait_time = 15.0
+		billing_timer.autostart = true
+		billing_timer.timeout.connect(recover_purchases)
+		add_child(billing_timer)
 
 
 # 好友码归一：去空白 + 转大写。**唯一实现** —— 库里一律存大写（database/004），
@@ -1337,6 +1345,17 @@ func confirm_google_purchase(order_id: String, purchase_token: String) -> Dictio
 		{"order_id": order_id, "purchase_token": purchase_token}, true)
 
 
+func confirm_apple_purchase(order_id: String, signed_transaction: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/iap/apple/confirm",
+		{"order_id": order_id, "signed_transaction": signed_transaction}, true)
+
+
+func confirm_store_purchase(order_id: String, proof: String) -> Dictionary:
+	if BillingBridge.platform() == "apple":
+		return await confirm_apple_purchase(order_id, proof)
+	return await confirm_google_purchase(order_id, proof)
+
+
 # Steam 下单：带一张新的 Steam 票，服务器验票、核对这个 Steam 绑在当前号上，再向 Steam 下单。
 # 回的 steam_order_no 用来认确认窗口的回调（SteamBridge.wait_microtxn）。
 # web = true：游戏里的 Steam 确认窗口用不了，改在浏览器里确认 —— 回的 steam_url 由钻石宝库打开。
@@ -1364,9 +1383,9 @@ func fetch_iap_order(order_id: String) -> Dictionary:
 
 # 启动、回到前台时调（Main）：把付了钱、还没处理完的付款交给服务器（BillingBridge.recover）。
 func recover_purchases() -> void:
-	if not is_logged_in() or BillingBridge.platform() != "google":
+	if not is_logged_in() or BillingBridge.platform().is_empty():
 		return
-	await BillingBridge.recover(get_tree(), confirm_google_purchase)
+	await BillingBridge.recover(get_tree(), confirm_store_purchase)
 
 
 # --- 出战配置与出战名片（docs/商城系统设计.md 第五节）----------------------------
@@ -1663,6 +1682,20 @@ func _request(
 		# 机器读的原因码（比如绑定冲突的 identity_taken）。detail 是给人看的，别拿它做判断。
 		if body.get("code") is String:
 			failure["reason"] = body["code"]
+		if code == 409:
+			var queue_reason := ""
+			var retry_after := -1
+			for line: String in result[2]:
+				var header := line.get_slice(":", 0).to_lower()
+				var value := line.get_slice(":", 1).strip_edges()
+				if header == "x-glory-reason":
+					queue_reason = value
+				elif header == "retry-after" and value.is_valid_int():
+					retry_after = value.to_int()
+			if not queue_reason.is_empty() and not failure.has("reason"):
+				failure["reason"] = queue_reason
+			if queue_reason == "credit_banned" and retry_after >= 0:
+				failure["queue_ban_deadline"] = Time.get_ticks_msec() + retry_after * 1000
 		return failure
 	if code >= 500:
 		return {"code": code, "error": localized_error("服务器出错了（HTTP %d），稍后再试" % code)}
@@ -1673,6 +1706,14 @@ func _request(
 # 那段有 refresh/anonymous 的顺序纪律，不该在重构 HTTP 层时被顺手动到。
 func _post(path: String, payload: Dictionary) -> Dictionary:
 	return await _request(HTTPClient.METHOD_POST, path, payload, false)
+
+
+func queue_ban_text(deadline: int) -> String:
+	var seconds := maxi(0, ceili((deadline - Time.get_ticks_msec()) / 1000.0))
+	var en := TranslationServer.get_locale().begins_with("en")
+	if seconds == 0:
+		return "You can try queuing again." if en else "可以重新尝试匹配了。"
+	return ("Queue restricted. Try again in %d s." if en else "你被暂时禁止排队，请等待%d秒后再试。") % seconds
 
 
 func localized_error(message: String) -> String:

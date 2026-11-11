@@ -1,0 +1,88 @@
+{
+  "recorded_at_utc": "2026-11-02T07:51:37.598961+00:00",
+  "source_commit": "51c47800e0532e9432b01ddb7d020f1a5cd80d03",
+  "main_merged": "46ead962",
+  "preserved_local_changes": true,
+  "server_environment": "test",
+  "resource_sync": {
+    "status": "success",
+    "files": 4425,
+    "errors": [],
+    "local_preserved_count": 1
+  },
+  "server": {
+    "status": "deployed",
+    "release": "/home/nins17121/Glory/releases/1.0.2-20261102-51c47800",
+    "protocol": 45,
+    "schema_verified": true,
+    "idle_checks": [
+      {
+        "battle_connections": 0,
+        "account_online": 0,
+        "room_count": 0,
+        "at": "2026-11-02T07:06:47.983166+00:00"
+      },
+      {
+        "battle_connections": 0,
+        "account_online": 0,
+        "room_count": 0,
+        "at": "2026-11-02T07:06:51.395922+00:00"
+      }
+    ],
+    "services": {
+      "glory-server": "active",
+      "glory-backend": "active",
+      "livekit": "active",
+      "caddy": "active"
+    },
+    "database_project": "tzkysvnpjmgzfbvazugi"
+  },
+  "android": {
+    "version": "1.0.2",
+    "code": 55,
+    "bytes": 602804246,
+    "sha256": "32334768a97bfc0cf57a3946d3e06a16980b87a7e4b837fb87c482754140cbcd",
+    "drive_file_id": "1drjrCF3JkCfL4KFY7M1yHLs5JJZ9Fj9E",
+    "drive_upload_complete": true,
+    "download_url": "https://glorytd-api.duckdns.org/beta/downloads/Glory-1.0.2-55-android.apk",
+    "public_download_verified": true,
+    "patch_base": "glory-20261102-test-refresh",
+    "qr_payload": "https://glorytd-api.duckdns.org/beta/",
+    "qr_android_updated": true,
+    "drive_readback": {
+      "sha256": "32334768a97bfc0cf57a3946d3e06a16980b87a7e4b837fb87c482754140cbcd",
+      "bytes": 602804246,
+      "verified": true
+    }
+  },
+  "ios": {
+    "version": "1.0.2",
+    "build": 78,
+    "bytes": 566335241,
+    "sha256": "80a60c2112fe09c87a3d176d0e1a03f33226e21eb6a7321354722f7cf4442fd9",
+    "server_environment": "test",
+    "signed_validated": true,
+    "upload": "complete",
+    "internal": "正在测试",
+    "external": "正在测试",
+    "apple_processing": "complete",
+    "patch_base": "glory-20261102-test-refresh",
+    "build_id": "385b0cdf-8091-4348-83e7-833bebd41f1e",
+    "internal_group": "GLory 内部验证",
+    "internal_testers": 10,
+    "external_group": "Glory tester",
+    "external_testers": 25,
+    "notes_saved": true,
+    "public_url": "https://testflight.apple.com/join/W2p1ukJp",
+    "qr_ios_updated": true
+  },
+  "validation": {
+    "backend_iap_checks": 157,
+    "client_iap_checks": 92,
+    "ios_build_tool_checks": 20,
+    "beta_routing_checks": 5,
+    "physical_device_gameplay_tested": false,
+    "mac_live_dtls_probe": "passed after uploads completed; protocol 45 and pinned DTLS handshake verified"
+  },
+  "evidence": "outer workspace delivery/release-20261102-test/"
+}

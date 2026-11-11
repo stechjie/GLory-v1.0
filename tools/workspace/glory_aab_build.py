@@ -32,8 +32,11 @@ def main():
     p.add_argument('--unsigned', action='store_true', help='Build only; defer signing until the password is available')
     p.add_argument('--check', action='store_true', help='Check local dependencies without building or signing')
     p.add_argument('--sync', action='store_true', help='Update GitHub and Drive before building')
+    p.add_argument('--server-environment', choices=('prod', 'test'), help='Select server endpoints only in the isolated staging copy')
     p.add_argument('--patch-config', type=Path, help='Install the immutable update launcher in the staging copy')
     p.add_argument('--version-code', type=int, help='Override Android versionCode in the isolated build only')
+    p.add_argument('--version', help='Override Android versionName in the isolated build only')
+    p.add_argument('--result-file', type=Path, help='Write the exact build result to this JSON file')
     p.add_argument('--alias', help='Private-key alias in the release keystore')
     p.add_argument('--keystore', type=Path, default=b.ROOT/'build/aab/.signing/glory-release.keystore')
     a = p.parse_args()
@@ -95,6 +98,8 @@ def main():
             baseline.update(application=str(target), application_sha256=result['sha256'])
             b.json_write(manifest, baseline)
         b.json_write(out/'latest-release.json', result)
+        if a.result_file:
+            b.json_write(a.result_file, result)
         print('SIGNED AAB:', target, flush=True)
         return
     stamp = dt.datetime.now().strftime('%Y%m%d-%H%M%S')
@@ -114,6 +119,11 @@ def main():
             if state_path.exists() and json.loads(state_path.read_text()).get('status') in ('running', 'failed'):
                 raise RuntimeError('Resource sync is running or failed; resolve it before building')
             report = b.stage_project(project,b.asset_root(b.ROOT/'res'),stage,log)
+        server_target = b.configure_server_environment(stage, a.server_environment)
+        if a.patch_config and server_target:
+            patch_settings = json.loads(a.patch_config.read_text())
+            if patch_settings.get("backend_url") != server_target["backend_url"]:
+                raise RuntimeError("Patch endpoint does not match selected server environment")
         engine = b.prepare_engine(env,work)
         preset,package = b.export_preset(stage,None)
         # This Play listing uses a distinct, user-selected application ID.
@@ -129,6 +139,8 @@ def main():
             text += f'{key}={value}\n'
         if a.version_code is not None:
             text = re.sub(r'^version/code=\d+', f'version/code={a.version_code}', text, flags=re.M)
+        if a.version is not None:
+            text = re.sub(r'^version/name="[^"]*"', lambda _: 'version/name=' + json.dumps(a.version), text, flags=re.M)
         cfg.write_text(text)
         cfg.chmod(0o600)
         if a.patch_config:
@@ -140,7 +152,7 @@ def main():
         code = int(re.search(r'^version/code=(\d+)',text,re.M)[1])
         identity = dict(build_id=str(uuid.uuid4()),git_commit=commit,dirty_files=len(status.splitlines()),
                         build_utc=dt.datetime.now(dt.timezone.utc).isoformat(),godot_version=env['version'],
-                        package_id=package,version_name=version,version_code=code,export_preset='Google Play Release',
+                        server_target=server_target, package_id=package,version_name=version,version_code=code,export_preset='Google Play Release',
                         asset_inventory_sha256=report['actual_assets_sha256'])
         b.json_write(stage/'build_info.json',identity)
         b.json_write(log/'build_info.json',identity)
@@ -149,6 +161,9 @@ def main():
         imported=b.logged_process([engine,'--headless','--path',stage,'--import'],log/'import.log',child,strict=False)
         materials=b.verify_model_materials(engine,stage,log,child)
         b.verify_import_diagnostics(imported,stage,log,materials)
+        import glory_slim
+        slim = glory_slim.apply(stage, engine, log)
+        print(f"Slim dependency scan: excluded {len(slim['removed_source_paths'])} unreferenced resource paths", flush=True)
         aab=out/f'Glory-{version}-{code}-{stamp}-unsigned.aab'
         command=[engine,'--headless','--path',stage]
         if not (stage/'android/build/config.gradle').exists():
@@ -164,16 +179,20 @@ def main():
             dex=[z.read(n) for n in names if n.endswith('.dex')]
             for required in (b'com/glory/voice/GloryVoicePlugin',b'io/livekit/android/room/Room'):
                 if not any(required in data for data in dex):raise RuntimeError('Missing voice dependency')
-        result=dict(identity,aab=str(aab),signed=False,sha256=b.digest(aab),bytes=aab.stat().st_size,logs=str(log),device_tested=False,play_uploaded=False)
+        result=dict(identity,aab=str(aab),signed=False,sha256=b.digest(aab),bytes=aab.stat().st_size,logs=str(log),device_tested=False,play_uploaded=False,slim=slim)
         if a.patch_config:
             result['patch_base'] = b.retain_patch_base(stage, engine, 'Google Play Release', 'android', a.patch_config,
                 out / (aab.stem + '-patch-base'), aab)
         b.json_write(out/'latest-unsigned.json',result)
+        if a.unsigned and a.result_file:
+            b.json_write(a.result_file, result)
         print('UNSIGNED AAB:',aab,flush=True)
         if not a.unsigned:
             command = [sys.executable, str(Path(__file__).resolve()), '--sign', str(aab), '--keystore', str(a.keystore)]
             if a.alias:
                 command += ['--alias', a.alias]
+            if a.result_file:
+                command += ['--result-file', str(a.result_file)]
             subprocess.run(command, check=True)
 
 if __name__=='__main__':main()

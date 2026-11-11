@@ -1,5 +1,10 @@
 extends RefCounted
 
+const BattleAudioPolicy := preload("res://ui/services/BattleAudioPolicy.gd")
+static var _battle_event_times: Dictionary = {}
+static var _battle_event_ranks: Dictionary = {}
+static var _fade_tails: Array[AudioStreamPlayer] = []
+
 # 全局音效服务（9.17 音效/BGM 接入批次）。
 #
 # ## 为什么不做 autoload
@@ -120,6 +125,7 @@ const CUE_MONSTER_KILL_REWARD := "monster_kill_reward"
 # These two accents are played only by BattleCombatFeedback, never by death VFX.
 const CUE_LANE_CLEAR_ACCENT := "lane_clear_accent"
 
+const CUE_PET_DRAW_SUCCESS := "pet_draw_success"
 const CUE_MERC_SUMMON := "merc_summon"
 const CUE_UPGRADE_STONE_DRAW := "upgrade_stone_draw"
 const CUE_CARROT_FARM_UPGRADE := "carrot_farm_upgrade"
@@ -368,6 +374,7 @@ const CUES := {
 	CUE_STAR4_BOMB_SKILL: "res://assets/audio/sfx/battle/star4_bomb_skill.mp3",
 	CUE_STAR4_DEATH_SERVANT_SKILL: "res://assets/audio/sfx/battle/star4_death_servant_skill.mp3",
 
+	CUE_PET_DRAW_SUCCESS: "res://assets/audio/sfx/ui/pet_draw_success.wav",
 	CUE_MERC_SUMMON: "res://assets/audio/sfx/camp/merc_summon.mp3",
 	CUE_UPGRADE_STONE_DRAW: "res://assets/audio/sfx/camp/upgrade_stone_draw.mp3",
 	CUE_CARROT_FARM_UPGRADE: "res://assets/audio/sfx/camp/carrot_farm_upgrade.wav",
@@ -891,7 +898,7 @@ static var _last_gold := 0
 static var _currency_ready := false
 
 # Battle limit is separate from the eight shared voices; count actual playing nodes.
-static var _battle_voice_cap := 6
+static var _battle_voice_cap := 4
 # 当前被计数器占着的路数（只统计走 play_battle() 的）。
 # 本帧已过期的记账时间表。AudioStreamPlayer 没有「播放完了」的回调可以挂，
 # 所以用「起播时刻 + 时长」估算，每帧扫一次把过期的踢掉。
@@ -942,7 +949,7 @@ static func _watch_currency() -> void:
 #
 # **返回值是给门禁和排障用的，不要拿它当业务判据。** 音效是表现，
 # 业务成不成功在调用它之前就已经定下来了。
-static func play(cue: String, volume_db := 0.0, priority_override := -1, unit_weight := 0) -> bool:
+static func play(cue: String, volume_db := 0.0, priority_override := -1, unit_weight := 0, context: Dictionary = {}) -> bool:
 	if cue.is_empty():
 		# 10.21：`star4_cue_for` 对 STAR4_SILENT_UNITS（人王）返回空串。
 		# 空串是「这个单位刻意不发声」，不是「没登记」—— 不该刷 push_warning。
@@ -960,26 +967,43 @@ static func play(cue: String, volume_db := 0.0, priority_override := -1, unit_we
 	# 每条 cue 的窗口取「40 ms 重触发保护」与「本 cue 自己的节流」里更长的那个。
 	# 默认那条 40 ms 挡的是「同一帧里多条路径都判定成功」；chat_alert 的 10 s
 	# 挡的是「10 秒内收到一串消息只提醒一次」（见 THROTTLE_MSEC_BY_CUE）。
-	var tier := cue_priority(cue) if priority_override < 0 else priority_override
-	var battle := tier >= 0
+	var battle := not context.is_empty() or priority_override >= 0 or cue_priority(cue) >= 0
+	var mix := BattleAudioPolicy.describe(cue, _infer_battle_context(cue, context)) if battle else {}
+	var tier := int(mix.get("tier", -1))
+	var family := str(mix.get("family", "ui"))
+	unit_weight = int(mix.get("weight", unit_weight)) if battle else unit_weight
 	var guard := maxi(RETRIGGER_GUARD_MSEC, int(THROTTLE_MSEC_BY_CUE.get(cue, 0)))
 	if battle:
-		guard = [0, 0, 200, 220, 240, 300, 340, 400][clampi(tier, 0, 7)]
-		if cue == CUE_STAR4_DRUMER_SKILL:
-			guard = 2600
+		guard = 80 if tier <= 3 else 150
+		var actor := str(context.get("source_uid", ""))
+		var actor_key := "actor:" + actor + ":" + family if not actor.is_empty() else "cue:" + cue
+		var family_key := "family:" + family
+		var family_guard := 90 if family in ["impact", "skill"] else 600 if family in ["death", "loot"] else 160
+		var rank := tier * 10000 + int(maxf(0.0, -volume_db) * 100.0) + unit_weight
+		if now - int(_battle_event_times.get(actor_key, -100000)) < int(mix.interval) or (now - int(_battle_event_times.get(family_key, -100000)) < family_guard and rank >= int(_battle_event_ranks.get(family_key, 999999))):
+			return false
 	if now - int(_last_play_msec.get(cue, -guard)) < guard:
-		return false
+		var rank := tier * 10000 + int(maxf(0.0, -volume_db) * 100.0) + unit_weight
+		if not battle or rank >= int(_battle_event_ranks.get("cue:" + cue, 999999)):
+			return false
 
 	var stream := _stream_for(path)
 	if stream == null:
 		return false
 	var recent: Array = _recent_by_cue.get(cue, [])
 	recent = recent.filter(func(t: int) -> bool: return now - t < 600)
-	if battle and tier >= 2 and recent.size() >= 2:
+	if battle and tier == 4 and recent.size() >= 2:
 		return false
-	var voice := _take_priority_voice(tier, volume_db, battle, cue, unit_weight)
+	var voice := _take_priority_voice(tier, volume_db, battle, cue, unit_weight, family)
 	if voice == null:
 		return false
+	if battle:
+		var actor := str(context.get("source_uid", ""))
+		_battle_event_times["actor:" + actor + ":" + family if not actor.is_empty() else "cue:" + cue] = now
+		_battle_event_times["family:" + family] = now
+		_battle_event_ranks["family:" + family] = tier * 10000 + int(maxf(0.0, -volume_db) * 100.0) + unit_weight
+		_battle_event_ranks["cue:" + cue] = _battle_event_ranks["family:" + family]
+		voice.set_meta("sfx_family", family)
 	_last_play_msec[cue] = now
 	_variant_index[cue] = int(_variant_index.get(cue, 0)) + 1
 	_recent_by_cue[cue] = recent + [now]
@@ -992,7 +1016,7 @@ static func play(cue: String, volume_db := 0.0, priority_override := -1, unit_we
 	# 9.22 黄金重骑那一声就是典型：素材没问题，是被 BGM 压住了，
 	# 只要有一个调用点忘了带音量参数，声音就还是听不见。
 	var repeat_db := -3.0 if battle and tier >= 2 and recent.size() == 1 else 0.0
-	var base_db := volume_db + cue_volume_db(cue) + repeat_db - float(unit_weight) * 1.5
+	var base_db := volume_db + cue_volume_db(cue) + repeat_db - float(unit_weight) * 0.7 + float(mix.get("gain", 0.0))
 	voice.set_meta("sfx_priority", tier if battle else 0)
 	voice.set_meta("sfx_battle", battle)
 	voice.set_meta("sfx_rank", (tier if battle else 0) * 10000 + int(maxf(0.0, -volume_db) * 100.0) + unit_weight)
@@ -1045,14 +1069,44 @@ static func cue_priority(cue: String) -> int:
 		return -1
 	if cue.begins_with("star4_") or cue.begins_with("merc_") and cue.ends_with("_skill") or cue.begins_with("boss_") or cue == CUE_MERC_LIBRA_JUDGE_PROC:
 		return 2
+	if str(CUES.get(cue, "")).contains("/battle/") or cue.ends_with("_skill"):
+		return 2
 	return -1
 
 
-static func _take_priority_voice(tier: int, ownership_db: float, battle: bool, cue: String, unit_weight: int) -> AudioStreamPlayer:
+static func _infer_battle_context(cue: String, context: Dictionary) -> Dictionary:
+	var result := context.duplicate()
+	if str(result.get("unit_id", "")).is_empty():
+		for table in [STAR4_SKILL_CUES, STAR4_ATTACK_SKILL_CUES, MERC_SKILL_CUES, LOW_STAR_SKILL_CUES, BOSS_CAST_EDGE_CUES]:
+			for id in table:
+				if str(table[id]) == cue:result["unit_id"] = id;break
+	return result
+
+static func _soft_preempt(voice: AudioStreamPlayer) -> void:
+	# One short outgoing tail at most; main voices stay within the four-slot cap.
+	for old in _fade_tails:
+		if is_instance_valid(old):old.stop();old.queue_free()
+	_fade_tails.clear()
+	if voice.playing and voice.stream != null:
+		var tail := AudioStreamPlayer.new()
+		tail.stream = voice.stream;tail.bus = voice.bus;tail.volume_db = voice.volume_db
+		_tree().root.add_child(tail)
+		tail.play(voice.get_playback_position())
+		_fade_tails.append(tail)
+		var fade := tail.create_tween()
+		fade.tween_property(tail, "volume_db", -60.0, 0.03)
+		fade.tween_callback(func(): tail.stop();tail.queue_free())
+	voice.stop()
+
+static func _take_priority_voice(tier: int, ownership_db: float, battle: bool, cue: String, unit_weight: int, family: String = "") -> AudioStreamPlayer:
 	if not _ensure_voices():
 		return null
-	var live := 0
+	var live := 1 if is_instance_valid(_loop_player) and _loop_player.playing else 0
 	var same := 0
+	var same_family := 0
+	var impacts := 0
+	for active in _voices:
+		if _voice_usable(active) and active.playing and bool(active.get_meta("sfx_battle", false)) and str(active.get_meta("sfx_family", "")) == "impact":impacts += 1
 	var idle: AudioStreamPlayer = null
 	var weakest: AudioStreamPlayer = null
 	var worst_rank := -1
@@ -1068,29 +1122,44 @@ static func _take_priority_voice(tier: int, ownership_db: float, battle: bool, c
 		var voice_battle := bool(voice.get_meta("sfx_battle", false))
 		if voice_battle:
 			live += 1
+			if str(voice.get_meta("sfx_family", "")) == family:same_family += 1
 		if str(voice.get_meta("sfx_cue", "")) == cue:
 			same += 1
 		# Battle audio must not steal a UI voice even at the same tier.
 		if battle and not voice_battle:
 			continue
+		# Keep one basic impact audible unless a critical/transition event arrives.
+		if battle and tier >= 2 and family != "impact" and impacts <= 1 and str(voice.get_meta("sfx_family", "")) == "impact":continue
 		var rank := int(voice.get_meta("sfx_rank", 0))
 		var started := int(voice.get_meta("sfx_started", 0))
 		if rank > worst_rank or rank == worst_rank and started < oldest:
 			weakest = voice
 			worst_rank = rank
 			oldest = started
+	if battle and same_family >= (2 if family in ["skill", "impact"] else 1):
+		idle = null
+		weakest = null
+		worst_rank = -1
+		for candidate in _voices:
+			if _voice_usable(candidate) and candidate.playing and bool(candidate.get_meta("sfx_battle", false)) and str(candidate.get_meta("sfx_family", "")) == family:
+				var rank := int(candidate.get_meta("sfx_rank", 0))
+				if rank > worst_rank:weakest = candidate;worst_rank = rank
 	if battle and tier >= 2 and same >= 2:
 		return null
 	if idle != null and (not battle or _battle_voice_cap <= 0 or live < _battle_voice_cap):
 		return idle
-	if weakest != null and new_rank <= worst_rank:
-		weakest.stop()
+	if weakest != null and (new_rank < worst_rank or battle and family == "impact" and impacts == 0 and int(weakest.get_meta("sfx_priority", 0)) >= 2):
+		_soft_preempt(weakest)
 		return weakest
 	return null
 
 
 static func _update_ducking() -> void:
 	var now := Time.get_ticks_msec()
+	if _battle_event_times.size() > 256:
+		for key in _battle_event_times.keys():
+			if now - int(_battle_event_times[key]) > 5000:
+				_battle_event_times.erase(key);_battle_event_ranks.erase(key)
 	_ducks = _ducks.filter(func(d: Dictionary) -> bool: return int(d.until) > now)
 	for voice in _voices:
 		if not is_instance_valid(voice) or not voice.playing or not bool(voice.get_meta("sfx_battle", false)):
@@ -1099,7 +1168,8 @@ static func _update_ducking() -> void:
 		for duck: Dictionary in _ducks:
 			if int(voice.get_meta("sfx_priority", 7)) > int(duck.tier):
 				duck_db = minf(duck_db, float(duck.db))
-		voice.volume_db = float(voice.get_meta("sfx_base_db", 0.0)) + duck_db
+		var delta := _tree().root.get_process_delta_time()
+		voice.volume_db = move_toward(voice.volume_db, float(voice.get_meta("sfx_base_db", 0.0)) + duck_db, maxf(delta, 0.001) * 90.0)
 
 
 # 能不能拿来播。**「在树里」这一条不能省。**
@@ -1316,8 +1386,7 @@ static func basic_attack_cue_for(unit_id: String, _ranged: bool) -> String:
 	return str(Approved.BASIC_CUES.get(unit_id, ""))
 
 
-# PvP permits six battle voices, PvE seven. Critical events may preempt a
-# weaker voice; changing the cap never erases an already playing voice.
+# Battle scenes share the four-main-voice budget; UI voices remain separate.
 static func set_battle_voice_cap(cap: int) -> void:
 	_battle_voice_cap = maxi(0, cap)
 
@@ -1335,8 +1404,8 @@ static func battle_live_count() -> int:
 
 
 # Attacks supply an explicit event tier and same-owner unit value.
-static func play_battle(cue: String, volume_db := 0.0, priority_override := -1, unit_weight := 0) -> bool:
-	return play(cue, volume_db, priority_override, unit_weight)
+static func play_battle(cue: String, volume_db := 0.0, priority_override := -1, unit_weight := 0, context: Dictionary = {}) -> bool:
+	return play(cue, volume_db, maxi(priority_override, 0), unit_weight, context)
 
 
 # 某条 cue 的音量偏移（dB），缺省 0.0。见 VOLUME_DB_BY_CUE。
@@ -1420,6 +1489,14 @@ static func _start_loop_playback(player: AudioStreamPlayer) -> void:
 	# 会静默失败。它同时给门禁留了一个判据 —— 只有真的起了播，计数才动。
 	if not player.is_inside_tree():
 		return
+	# The sustained formation sound occupies one battle slot too.
+	while battle_live_count() >= _battle_voice_cap and _battle_voice_cap > 0:
+		var weakest: AudioStreamPlayer = null
+		for voice in _voices:
+			if _voice_usable(voice) and voice.playing and bool(voice.get_meta("sfx_battle", false)):
+				if weakest == null or int(voice.get_meta("sfx_rank", 0)) > int(weakest.get_meta("sfx_rank", 0)):weakest = voice
+		if weakest == null:break
+		_soft_preempt(weakest)
 	player.play()
 	_loop_start_count += 1
 
@@ -1577,6 +1654,8 @@ static func cue_ids() -> Array:
 
 static func reset_counters_for_check() -> void:
 	_play_counts.clear()
+	_battle_event_times.clear()
+	_battle_event_ranks.clear()
 	_last_play_msec.clear()
 	_recent_by_cue.clear()
 	_loop_start_count = 0
@@ -1645,6 +1724,11 @@ static func shutdown() -> void:
 	_loop_path = ""
 	_loop_cue = ""
 	_loop_streams.clear()
+	for tail in _fade_tails:
+		if is_instance_valid(tail):tail.stop();tail.free()
+	_fade_tails.clear()
+	_battle_event_times.clear()
+	_battle_event_ranks.clear()
 	_voices.clear()
 	_streams.clear()
 	_recent_by_cue.clear()

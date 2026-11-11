@@ -335,7 +335,8 @@ def test_backend_only_reads_files_deploy_actually_copies() -> None:
 # --- 注销账号 -----------------------------------------------------------------
 
 
-# 注销时**保留**的表（账目与游戏记录）。理由见 database/017_account_deletion.sql 文件头。
+# 注销时不由 erase_player 立即删除的表：账目、游戏记录，以及有独立清理周期的记录。
+# 账目理由见 database/017；语音与准入的保留/清理规则分别见 033、035。
 # 删掉的那一边不在这里列 —— 以 017 的 erase_player() 里实际写的 delete 为准。
 KEPT_ON_DELETE = {
     "player_wallets", "wallet_ledger",               # 钱：退款、对账
@@ -351,6 +352,9 @@ KEPT_ON_DELETE = {
     "skin_draws", "skin_draw_progress",               # 钻石抽皮肤碎片（042）：同上，花钻石的回执与碎片进度
     "player_progression", "level_up_events",         # 等级与奖励领取记录（037）：与钱包流水、棋子归属对账
     "iap_orders", "iap_first_bonus",                 # 真钱订单与首充资格（040）：注销后平台还可能发来退款通知
+    "player_invites", "redeem_claims",               # 043/044：奖励邮件与领取回执，保留审计和一次性领取记录
+    "voice_clips",                                  # 033：7/30 天独立过期清理，举报 hold 延长保留；隐私政策已披露
+    "match_entries",                                # 035：战报/退场清除，陈旧准入由 service_control 定时清理
 }
 
 

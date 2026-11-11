@@ -408,7 +408,6 @@ static func attack_multiplier(fighter: Dictionary) -> float:
 static func attack_speed_multiplier(fighter: Dictionary, extra_pct: float = 0.0) -> float:
 	ensure_status(fighter)
 	var pct := extra_pct + float(fighter.get("aspd_bonus_pct", 0.0))
-	pct += 0.15 * float(clampi(int(fighter.get("frenzy_stacks", 0)), 0, 64))
 	if fighter.statuses.has("slow"):
 		pct -= float(fighter.statuses.slow.get("attack_speed_pct", 0.0))
 	if fighter.statuses.has("silence") and float(fighter.statuses.silence.get("lantern_slow_remaining", 0.0)) > 0.0:
@@ -424,7 +423,19 @@ static func attack_speed_multiplier(fighter: Dictionary, extra_pct: float = 0.0)
 		pct += float((layer as Dictionary).get("pct", 0.0))
 	pct += 0.05 * float(fighter.get("crimson_resonance_stacks", 0))
 	pct += CrimsonRuneService.attack_speed_multiplier(fighter) - 1.0
-	return 1.0 + clampf(pct, ASPD_PCT_MIN, ASPD_PCT_MAX)
+	return (1.0 + clampf(pct, ASPD_PCT_MIN, ASPD_PCT_MAX)) * frenzy_multiplier(fighter)
+
+static func frenzy_multiplier(fighter: Dictionary) -> float:
+	return clampf(float(fighter.get("frenzy_speed_multiplier", 1.0)), 1.0, 2.5)
+
+# Apply the existing ordinary-speed cap before the treasure's persistent gain.
+static func effective_attack_speed(fighter: Dictionary, extra_pct: float = 0.0) -> float:
+	var frenzy := frenzy_multiplier(fighter)
+	var ordinary := float(fighter.get("attack_speed", 1.0)) * attack_speed_multiplier(fighter, extra_pct) / frenzy
+	if frenzy > 1.0:
+		return minf(clampf(ordinary, 0.25, 2.5) * frenzy, float(fighter.get("attack_speed", 1.0)) * 2.5)
+	return clampf(ordinary, 0.25, 2.5)
+
 
 # 王者光环的暴击跟着它的加速状态走，光环断了暴击也没了（以前写在 crit_bonus 上，永久保留）。
 static func status_crit_bonus(fighter: Dictionary) -> float:

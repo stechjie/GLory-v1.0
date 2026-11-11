@@ -1,0 +1,40 @@
+{
+  "commit": "e5e2721234372313276da28efbf11de6e28e0e5c",
+  "upstream": "2fadb3f12065bb57452f0a27cfe60e8e26460f91",
+  "source_tree_sha256": "92b0a2f3c91a7916342e213ba3c2dbe4f1af8b908e4733cf4610a29c78266f96",
+  "protocol": 44,
+  "workbook_check": "existing invalid undead_bomb skill description; committed runtime JSON preserved; no generated balance files overwritten",
+  "handshake_files_unchanged": true,
+  "status": "deployed",
+  "release": "/home/nins17121/Glory/releases/1.0.1-20261025-e5e2721",
+  "cold_start_passed": true,
+  "idle_checks": [
+    {
+      "online": 0,
+      "connections": 0,
+      "rooms": 0
+    },
+    {
+      "online": 0,
+      "connections": 0,
+      "rooms": 0
+    }
+  ],
+  "services": {
+    "glory-server": "active",
+    "glory-backend": "active",
+    "livekit": "active",
+    "caddy": "active"
+  },
+  "public_health": "ok",
+  "backend_unchanged": true,
+  "beta_site_unchanged": true,
+  "rollback_directory": "/var/backups/glory/server-20261025-e5e2721",
+  "device_gameplay_tested": false,
+  "recorded_at": "2026-10-25T06:14:43.021925+00:00",
+  "evidence": "Browser SSH output: delivery/server-20261025-balance/deployed-ui.jpeg; remote authoritative deployment.json in rollback directory",
+  "changed_runtime_files": [
+    "data/units/race_units.json",
+    "data/mercenary/mercenaries.json"
+  ]
+}

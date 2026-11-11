@@ -971,7 +971,7 @@ func _on_battle_finished(result: Dictionary) -> void:
 
 # HUD 全关：只留纯 3D 战斗画面。
 # 判据是「除了装 3D 视口的那个顶层容器，其余顶层 CanvasItem 全隐」，不逐个点名节点 ——
-# 名字会随界面改动漂移，这条判据不会。血条、单位名、Skip 按钮、Top ATK 排行
+# 名字会随界面改动漂移，这条判据不会。血条、单位名、Top ATK 排行
 # 都在那些 2D 层里，一起没掉。
 func _strip_hud() -> void:
 	var viewport := _screen.get("_battle_3d_viewport") as SubViewport

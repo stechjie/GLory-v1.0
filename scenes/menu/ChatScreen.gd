@@ -1095,12 +1095,13 @@ func _invite_bubble(msg: Dictionary, max_width: float) -> Control:
 	return row
 
 
-# 点组队邀请的「加入」（10.07 第 10 条）。与房间邀请不同，这里没有「邀请人还在不在房里」
-# 这一层判据 —— 队伍号失效由队伍服务在 join 时拒绝（party.PartyRejected），
-# 客户端不猜。emit 出去由 Main 接（它会开队伍大厅并 join）。
+# 旧消息不能借用同一队伍后来发出的新邀请；未过期的仍由服务端确认。
 func _on_party_invite_join(msg: Dictionary) -> void:
 	var party_id := RoomInvite.party_id_of(msg)
-	if party_id.is_empty():
+	var timestamp := str(msg.get("created_at", ""))
+	var created := Time.get_unix_time_from_datetime_string(timestamp.substr(0, 19)) if timestamp.length() >= 19 else 0
+	# A fresh invitation for the same room must not make an old message valid again.
+	if party_id.is_empty() or (created > 0 and Time.get_unix_time_from_system() - created >= 120):
 		GloryToastScript.show_text(RoomInvite.expired_text())
 		return
 	# ★ 10.11 第 6 条 g：点「加入」= 已经处理了这条邀请 → 红点当场消失

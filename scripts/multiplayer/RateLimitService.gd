@@ -35,6 +35,8 @@ const LIMITS := {
 	"set_ready": 30,
 	"submit_board": 10,
 	"prep_mercs": 40,
+	# 队友棋盘（协议 46）：客户端自己限频到每 0.8 秒一份，这里给拖棋子的连发留余量；查看时的主动请求也算这一档。
+	"prep_board": 40,
 	"toggle_slot": 30,
 	"kick": 10,
 	"move": 30,

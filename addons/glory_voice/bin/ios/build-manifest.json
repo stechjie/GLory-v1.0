@@ -3,15 +3,15 @@
   "livekit": "2.17.0",
   "architecture": "arm64",
   "files": {
-    "GloryVoice.framework/GloryVoice": "d28d553079184818b1cfe8eb489552083daedb9dc46f545786948c35788ba4c0",
+    "GloryVoice.framework/GloryVoice": "ae3e4e51ef7dcdc022b03fbd5e7c2d144c271a96ad97a2c09b20bd3c09868533",
     "GloryVoice.framework/Headers/GloryVoice-Swift.h": "bd3fa9d415d45cff33c63c501d8964f741e3f15aefebc5c383a975818e8eb3b6",
     "GloryVoice.framework/Info.plist": "e57f66d638b440b8a62d02b42d4dcafc10e6e6d2c5b8db6ced8c0d0f8f9a2986",
     "GloryVoice.framework/LiveKit_LiveKit.bundle/Info.plist": "799d5f5c5ada71b905a645e119a7100c742334d6fbbe3991f0c4d0a860b8a4ed",
     "GloryVoice.framework/LiveKit_LiveKit.bundle/PrivacyInfo.xcprivacy": "7aed2e211fa5ee40e6457423bdb485a3fa0a60b4e182658e9fef5239c918dbc0",
-    "GloryVoice.framework/Modules/GloryVoice.swiftmodule/Project/arm64-apple-ios.swiftsourceinfo": "51e5d22edac1d56b96352c8625d4e2ffd24a4b1fd1c5784d8103d9e5a4c02c1e",
+    "GloryVoice.framework/Modules/GloryVoice.swiftmodule/Project/arm64-apple-ios.swiftsourceinfo": "0c10e56e20e8d229db884f35b151ddeb770178e7980bc9d10f92a7e180d8b184",
     "GloryVoice.framework/Modules/GloryVoice.swiftmodule/arm64-apple-ios.abi.json": "4277ac6b49f8511196028a5ac20f5b1b1dfa754c24615d34068089f0b1739728",
     "GloryVoice.framework/Modules/GloryVoice.swiftmodule/arm64-apple-ios.swiftdoc": "9856b94b3262640fddbb0695ff9820c2ec12ad784cebe77680bdf4b6c5d400d9",
-    "GloryVoice.framework/Modules/GloryVoice.swiftmodule/arm64-apple-ios.swiftmodule": "d0450c2938394b1191c825cb1936841744473cd2f221365b4ef5910a3779a230",
+    "GloryVoice.framework/Modules/GloryVoice.swiftmodule/arm64-apple-ios.swiftmodule": "ac3efa9440ae750ce4126c99db82a048e3b486474de78be5d2674038f9972394",
     "GloryVoice.framework/Modules/module.modulemap": "b8dd196a65d37e5591d672b4f7efbcbca3231c813b0130434c547824cf938a8e",
     "LiveKitWebRTC.framework/Headers/LiveKitWebRTC.h": "8b937fe657b309c1fdaa9fb4121c89b67cca12f3491cacb032d5893589838265",
     "LiveKitWebRTC.framework/Headers/RTCAudioBuffer.h": "c80b4e0e6a5a1d973d2abbf2eb301efad3c01ec1e195b97b1d69603cce51fc47",
@@ -140,7 +140,10 @@
   "source": {
     "GloryVoiceNative.swift": "006bed8c3dd704885c82fc1bcaa01ce1e1546468a16a78636b00547207cef1f4",
     "GloryVoiceNative.h": "e5003fa815d71409f3ba94a11dfbd9826a9a263efa11aa71f64cd31feecab4ea",
-    "GloryVoiceBridge.mm": "eb1b1c20181cb70b67ede8f5995c03f76ce2e9414153c81a9164b134f7c6a350",
-    "build.py": "1663d08df402089b8281088587139681492ebc5e424406cffb5ca12c26e0308f"
+    "GloryVoiceBridge.mm": "320b90fab3ca9b450751dd41b06f28e7445a17cfa3ded178aae71e30c0cf630f",
+    "build.py": "ff79351660ad573cc3b719ff6e51e809953d4527a8f195b8ef486c3c6d3d0bf3",
+    "GloryAppleBilling.swift": "c26015b65e6455401399fdedc20f4909a78bbcbd7e88fbe5669d01e181307185",
+    "GloryAppleBillingNative.h": "63bb825897bc94e7f4f07a53b9eacf0b5756e6dd6c33f5c9e4e5bcf3eb2835bd",
+    "GloryAppleBillingBridge.mm": "fc3137f6a3d76d5fdff1c590c7bc264514e185aa5cfb1744a2d7c72615840ce2"
   }
 }

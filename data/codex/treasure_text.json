@@ -61,7 +61,7 @@
    "name": "腐蚀毒针",
    "name_en": "Corrosive Needle",
    "effect": "每第 4 次攻击使目标失血 3 秒，冷却 5 秒；普攻已失血目标时伤害 +15%",
-   "effect_en": "Every 4th attack bleeds the target for 3s, 5s cooldown; basic attacks against an already bleeding target deal +15% damage",
+   "effect_en": "Every fourth basic attack applies bleed for 3s (5s cooldown), dealing 6% of the target’s current HP per second. Friendly normal units’ basic attacks deal {bleed_bonus}% more damage to targets that were already bleeding before the hit.",
    "trigger": "我方普通棋子攻击时",
    "trigger_en": "When an allied normal piece attacks"
   },
@@ -124,8 +124,8 @@
   "atk_frenzy_assault": {
    "name": "狂暴进攻",
    "name_en": "Frenzy Assault",
-   "effect": "攻击同一目标时自身攻速 x1.15，可叠；换目标重置",
-   "effect_en": "Attacking the same target stacks attack speed ×1.15; resets on target switch",
+   "effect": "每次普攻自身攻速+15%，最多提升至初始攻速的2.5倍。",
+   "effect_en": "Each basic attack adds 15% of initial attack speed, up to 2.5 times initial attack speed.",
    "trigger": "攻击时",
    "trigger_en": "On attack"
   },
@@ -209,7 +209,7 @@
    "requires_text": "哀鸣共鸣 + 亡魂反击",
    "requires_text_en": "Wail Resonance + Soul Counter",
    "effect": "我方普通棋子死亡后以 40% 最大生命复活，获得 3 秒无敌，之后强制死亡",
-   "effect_en": "Allied normal pieces revive at 40% max HP with 3s invulnerability, then die for good"
+   "effect_en": "An allied normal unit revives 0.1s after dying at 40% max HP and gains 3s of invulnerability. It then dies for good. Each unit can revive this way once per battle."
   },
   "link_money_magic": {
    "name": "金钱魔法",

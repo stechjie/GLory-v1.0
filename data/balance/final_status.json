@@ -14,7 +14,7 @@
       "cost": 20,
       "skill_id": "curse_attack",
       "skill_name_cn": "诅咒攻击",
-      "skill_cn_1to3": "诅咒攻击：普通攻击附带减攻8%与攻速降低8%，持续4.0秒；暗2会增强效果。",
+      "skill_cn_1to3": "诅咒攻击：普通攻击附带减攻8%与攻速降低8%，持续4.0秒。",
       "skill_cn_4": "诅咒攻击：普通攻击附带减攻32%与攻速降低32%，持续4.0秒。",
       "skill_en_1to3": "Curse Strike: Normal attacks reduce target ATK by 8% and AS by 8% for 4.0s.",
       "skill_raw_params": "aspd_down = 0.08\nattack_down = 0.08\nduration = 4\nmax_stacks = 2\nmodel_idle_animation = res://assets/models/units/dark_imp_motong/dark_imp_motong_idle_zombie.fbx",
@@ -978,9 +978,9 @@
       "cost": 20,
       "skill_id": "poison_attack",
       "skill_name_cn": "毒击",
-      "skill_cn_1to3": "毒击：普通攻击附带中毒，每秒造成目标最大生命3%伤害，持续4.0秒；灵4毒伤x2。",
+      "skill_cn_1to3": "毒击：普通攻击附带中毒，每秒造成目标最大生命3%伤害，持续4.0秒。",
       "skill_cn_4": "毒击：普通攻击附带中毒，每秒造成目标最大生命6%伤害，持续6.0秒；最多2层，分别扣血。",
-      "skill_en_1to3": "Poison Strike: Normal attacks apply poison — 3% max HP per second for 4.0s. Up to 2 stacks tick separately.",
+      "skill_en_1to3": "Poison Strike: Normal attacks apply poison — 3% max HP per second for 4.0s.",
       "skill_raw_params": "poison_duration = 4\npoison_pct_max_hp = 0.03",
       "star4_changes": "poison_duration: 4 → 6\npoison_pct_max_hp: 0.03 → 0.06",
       "stats": {
@@ -1100,9 +1100,9 @@
       "cost": 30,
       "skill_id": "poison_attack",
       "skill_name_cn": "毒击",
-      "skill_cn_1to3": "毒击：普通攻击附带中毒，每秒造成目标最大生命3%伤害，持续4.0秒；灵4毒伤x2。",
+      "skill_cn_1to3": "毒击：普通攻击附带中毒，每秒造成目标最大生命3%伤害，持续4.0秒。",
       "skill_cn_4": "毒击：普通攻击附带中毒，每秒造成目标最大生命6%伤害，持续6.0秒；最多2层，分别扣血。",
-      "skill_en_1to3": "Poison Strike: Normal attacks apply poison — 3% max HP per second for 4.0s. Up to 2 stacks tick separately.",
+      "skill_en_1to3": "Poison Strike: Normal attacks apply poison — 3% max HP per second for 4.0s.",
       "skill_raw_params": "poison_duration = 4\npoison_pct_max_hp = 0.03",
       "star4_changes": "dodge: 0.25 → 0.4\npoison_duration: 4 → 6\npoison_pct_max_hp: 0.03 → 0.06",
       "stats": {
@@ -1140,9 +1140,9 @@
       "cost": 30,
       "skill_id": "parasite_on_kill",
       "skill_name_cn": "寄生",
-      "skill_cn_1to3": "寄生：普攻标记非 Boss 敌人，被标记敌人死亡时，召唤该敌人的分身，生命为原目标20%，攻防为原目标50%。",
-      "skill_cn_4": "寄生：普攻标记非 Boss 敌人，被标记敌人死亡时，召唤该敌人的分身，生命为原目标50%，攻防为原目标75%。",
-      "skill_en_1to3": "Parasite: When a basic attack kills a non-Boss enemy, summon its clone at 20% HP and 50% ATK/DEF.",
+      "skill_cn_1to3": "寄生：自身普攻击杀非 Boss 敌人时，召唤该敌人的分身，生命为原目标20%，攻防为原目标50%。",
+      "skill_cn_4": "寄生：自身普攻击杀非 Boss 敌人时，召唤该敌人的分身，生命为原目标50%，攻防为原目标75%。",
+      "skill_en_1to3": "Parasite: When this unit kills a non-Boss enemy with a basic attack, summon its clone at 20% HP and 50% ATK/DEF.",
       "skill_raw_params": "clone_atk_def_pct = 0.5\nclone_hp_pct = 0.2",
       "star4_changes": "clone_atk_def_pct: 0.5 → 0.75\nclone_hp_pct: 0.2 → 0.5",
       "stats": {
@@ -1260,9 +1260,9 @@
       "cost": 50,
       "skill_id": "unique_death_execute",
       "skill_name_cn": "母灵处决",
-      "skill_cn_1to3": "母灵（每人限1只）：每有5个敌人死亡，处决一名敌人（1阶/佣兵50%、2阶35%、3阶10%）；对Boss改为造成20%最大生命伤害。",
-      "skill_cn_4": "母灵（每人限1只）：每有4个敌人死亡，处决一名敌人（1阶/佣兵55%、2阶35%、3阶10%）；对Boss改为造成30%最大生命伤害。",
-      "skill_en_1to3": "Matron (one per player): Every 5 enemy deaths, execute an enemy (Tier 1/Merc 50%, Tier 2 35%, Tier 3 10%); against a Boss, deal 20% of its max HP instead.",
+      "skill_cn_1to3": "母灵（每人限1只）：每有5个敌人死亡，处决一名敌人（1阶/佣兵50%、2阶35%、3阶10%）；对Boss或法阵守护者改为造成20%最大生命伤害。",
+      "skill_cn_4": "母灵（每人限1只）：每有4个敌人死亡，处决一名敌人（1阶/佣兵55%、2阶35%、3阶10%）；对Boss或法阵守护者改为造成30%最大生命伤害。",
+      "skill_en_1to3": "Matron (one per player): Every 5 enemy deaths, execute an enemy (Tier 1/Merc 50%, Tier 2 35%, Tier 3 10%); against a Boss or Formation Guardian, deal 20% of its max HP instead.",
       "skill_raw_params": "boss_max_hp_damage = 0.2\ndeath_threshold = 5\ntier1_or_merc_chance = 0.5\ntier2_chance = 0.35\ntier3_chance = 0.1\nunique_on_board = true",
       "star4_changes": "boss_max_hp_damage: 0.2 → 0.3\ndeath_threshold: 5 → 4\ntier1_or_merc_chance: 0.5 → 0.55\ntier2_chance: 0.35 → 0.35",
       "stats": {
@@ -1861,7 +1861,7 @@
     "atk_frenzy_assault": {
       "name_cn": "狂暴进攻",
       "category_cn": "攻击",
-      "effect_cn": "每次普攻自身攻速 ×1.15（封顶 2.5）；换目标层数清零但攻速不回退",
+      "effect_cn": "每次普攻自身攻速+15%，最多提升至初始攻速的2.5倍。",
       "hu_pai_text_cn": "—"
     },
     "money_compound": {
@@ -1976,6 +1976,6 @@
       "effect_cn": "需要：生命丰碑 + 黄金祭坛 + 震荡余波 + 血契之刃 + 狂怒阵容。生命丰碑 ×1.20→×1.40；震荡余波眩晕 1→2 秒；血契之刃 ×1.25→×1.50；狂怒阵容上限 8→9。黄金祭坛使用不扣法阵 HP；选到胡牌手立即回复法阵 HP +2（上限 50）。\n表内字段：positive_effect_multiplier = 2"
     }
   },
-  "balance_version": "b0cd48e4f474edea713d96e3ecf25a9d53b7eb889aa8fd30a4fe270c58a977be",
-  "final_workbook_sha256": "7dd063b4c167f3107bc0757e74ba9276d08614faf0089fa8985371d593577e27"
+  "balance_version": "92bad87e8c880213deeb110ca92970d54cc1919d2f3127bde343e94e3c1e6a7f",
+  "final_workbook_sha256": "fc07d5598207471c480f96ac9f9ba6cd2a609e8a2b017ab2d52fe3a4ec4151a5"
 }

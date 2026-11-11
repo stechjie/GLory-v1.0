@@ -824,9 +824,7 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 		var target := _select_attack_target(f, opponents, target_index, bodies)
 		var navigation := MeleeNavigation.choose(f, target, opponents, bodies, elapsed, state)
 		target = navigation.target
-		if str(f.get("frenzy_target_uid", "")) != str(target.get("uid", "")):
-			f.frenzy_stacks = 0
-			f.frenzy_target_uid = str(target.get("uid", ""))
+		BattleSimTreasures._frenzy_select_target(f, str(target.get("uid", "")))
 		if target.is_empty():
 			continue
 		var delta: Vector2 = target.pos - f.pos
@@ -875,45 +873,51 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 			# 它的输出全部由 _tick_skills 驱动的 random_attribute_bolt 提供。
 			if bool(f.get("def", {}).get("no_basic_attack", false)):
 				continue
-			# Render-only telemetry: preserve the simulator's exact chosen target so
-			# projectiles and hit VFX never have to guess from nearby damaged units.
-			f.vfx_attack_target_uid = str(target.get("uid", ""))
-			CrimsonRuneService.begin_action(f, state)
-			DamageService.begin_stat_context(state, f)
-			var was_alive := bool(target.get("alive", false))
-			var primary_shield_before := int(target.get("shield", 0))
-			var dealt := _perform_attack(f, target, state)
-			_handle_attack_kill(f, target, state, team_units, opponents, was_alive)
-			if (dealt > 0 or int(target.get("shield", 0)) < primary_shield_before) and str(f.get("def", {}).get("skill_id", "")) == "twin_revive":
-				_apply_twin_cleave(f, target, state, team_units, opponents)
-			if str(f.get("def", {}).get("skill_id", "")) == "line_pierce":
-				var pierce_index := 1
-				for pierced: Dictionary in CrimsonCombat.pierce_targets(f, target, opponents):
-					var pierced_alive := bool(pierced.get("alive", false))
-					var coeff := maxf(0.0, 1.0 - float(f.get("def", {}).get("pierce_falloff", 0.20)) * float(pierce_index))
-					var pierce_base := float(f.get("atk", 1)) * StatusEffectService.attack_multiplier(f) * coeff
-					pierce_base *= _element_multiplier(str(f.get("def", {}).get("element", "")), str(pierced.get("def", {}).get("element", "")))
-					if bool(f.get("crimson_last_crit", false)):
-						pierce_base *= float(f.get("def", {}).get("crit_dmg", 1.75)) + float(f.get("crit_dmg_bonus", 0.0)) + CrimsonRuneService.crit_damage_bonus(f)
-					DamageService.set_hit_context("basic", bool(f.get("crimson_last_crit", false)), "crimson", "line_pierce")
-					DamageService.emit_impact(f, pierced, "line_pierce", bool(f.get("crimson_last_crit", false)))
-					DamageService.apply_damage(pierced, maxi(1, int(round(pierce_base))), false)
-					DamageService.clear_hit_context()
-					_handle_attack_kill(f, pierced, state, team_units, opponents, pierced_alive)
-					pierce_index += 1
-			if bool(target.get("alive", false)) and str(f.get("def", {}).get("skill_id", "")) == "every_fourth_combo" and int(f.get("attack_count", 0)) % int(f.get("def", {}).get("every", 4)) == 0:
-				var combo_alive := bool(target.get("alive", false))
-				DamageService.apply_damage(target, maxi(1, int(round(float(f.atk) * float(f.get("def", {}).get("combo_atk_pct", 0.70))))), false)
-				_handle_attack_kill(f, target, state, team_units, opponents, combo_alive)
-			# 4 控制套装（9.24 改）：普攻（含连击）打出最后一下 → 技能冷却立刻清零。
-			if was_alive and not bool(target.get("alive", false)):
-				BattleSimTreasures._control_set_refresh_on_kill(f, state)
-			if str(f.get("def", {}).get("skill_id", "")) == "every_fifth_group_heal" and int(f.get("attack_count", 0)) % int(f.get("def", {}).get("every", 5)) == 0:
-				_group_heal(f, team_units, float(f.get("def", {}).get("heal_pct", 0.05)))
-			var aspd := clampf(float(f.attack_speed) * StatusEffectService.attack_speed_multiplier(f, _dynamic_attack_speed_multiplier(f) - 1.0), 0.25, 2.5)
-			f.next_attack = elapsed + (1.0 / aspd)
-			DamageService.clear_stat_context()
-			CrimsonRuneService.end_action(f)
+			while elapsed + 0.000001 >= float(f.next_attack):
+				var due := maxf(float(f.next_attack), elapsed - TICK_SEC)
+				# Render-only telemetry: preserve the simulator's exact chosen target so
+				# projectiles and hit VFX never have to guess from nearby damaged units.
+				f.vfx_attack_target_uid = str(target.get("uid", ""))
+				CrimsonRuneService.begin_action(f, state)
+				DamageService.begin_stat_context(state, f)
+				var was_alive := bool(target.get("alive", false))
+				var primary_shield_before := int(target.get("shield", 0))
+				var dealt := _perform_attack(f, target, state)
+				_handle_attack_kill(f, target, state, team_units, opponents, was_alive)
+				if (dealt > 0 or int(target.get("shield", 0)) < primary_shield_before) and str(f.get("def", {}).get("skill_id", "")) == "twin_revive":
+					_apply_twin_cleave(f, target, state, team_units, opponents)
+				if str(f.get("def", {}).get("skill_id", "")) == "line_pierce":
+					var pierce_index := 1
+					for pierced: Dictionary in CrimsonCombat.pierce_targets(f, target, opponents):
+						var pierced_alive := bool(pierced.get("alive", false))
+						var coeff := maxf(0.0, 1.0 - float(f.get("def", {}).get("pierce_falloff", 0.20)) * float(pierce_index))
+						var pierce_base := float(f.get("atk", 1)) * StatusEffectService.attack_multiplier(f) * coeff
+						pierce_base *= _element_multiplier(str(f.get("def", {}).get("element", "")), str(pierced.get("def", {}).get("element", "")))
+						if bool(f.get("crimson_last_crit", false)):
+							pierce_base *= float(f.get("def", {}).get("crit_dmg", 1.75)) + float(f.get("crit_dmg_bonus", 0.0)) + CrimsonRuneService.crit_damage_bonus(f)
+						DamageService.set_hit_context("basic", bool(f.get("crimson_last_crit", false)), "crimson", "line_pierce")
+						DamageService.emit_impact(f, pierced, "line_pierce", bool(f.get("crimson_last_crit", false)))
+						DamageService.apply_damage(pierced, maxi(1, int(round(pierce_base))), false)
+						DamageService.clear_hit_context()
+						_handle_attack_kill(f, pierced, state, team_units, opponents, pierced_alive)
+						pierce_index += 1
+				if bool(target.get("alive", false)) and str(f.get("def", {}).get("skill_id", "")) == "every_fourth_combo" and int(f.get("attack_count", 0)) % int(f.get("def", {}).get("every", 4)) == 0:
+					var combo_alive := bool(target.get("alive", false))
+					DamageService.apply_damage(target, maxi(1, int(round(float(f.atk) * float(f.get("def", {}).get("combo_atk_pct", 0.70))))), false)
+					_handle_attack_kill(f, target, state, team_units, opponents, combo_alive)
+				# 4 控制套装（9.24 改）：普攻（含连击）打出最后一下 → 技能冷却立刻清零。
+				if was_alive and not bool(target.get("alive", false)):
+					BattleSimTreasures._control_set_refresh_on_kill(f, state)
+				if str(f.get("def", {}).get("skill_id", "")) == "every_fifth_group_heal" and int(f.get("attack_count", 0)) % int(f.get("def", {}).get("every", 5)) == 0:
+					_group_heal(f, team_units, float(f.get("def", {}).get("heal_pct", 0.05)))
+				var aspd := StatusEffectService.effective_attack_speed(f, _dynamic_attack_speed_multiplier(f) - 1.0)
+				f.next_attack = (due if StatusEffectService.frenzy_multiplier(f) > 1.0 else elapsed) + (1.0 / aspd)
+				DamageService.clear_stat_context()
+				CrimsonRuneService.end_action(f)
+				if StatusEffectService.frenzy_multiplier(f) <= 1.0 or not bool(f.get("alive", false)) or not bool(target.get("alive", false)):
+					break
+				if StatusEffectService.is_stunned(f) or StatusEffectService.has_status(f, "fear") or StatusEffectService.has_status(f, "interrupt"):
+					break
 
 
 # Ordinary walking consumes only the walker's displacement. A following unit

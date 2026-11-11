@@ -341,7 +341,11 @@ def write_preset(stage, method, profile, cert, version, number):
                "application/provisioning_profile_specifier_release": profile["UUID"],
                "application/short_version": version, "application/version": number,
                "icons/icon_1024x1024": "res://app_icon.png",
-               "privacy/microphone_usage_description": "用于队伍语音聊天，仅在您主动开启麦克风时录音。",
+               # Godot's template links camera/photo APIs even though gameplay never requests them.
+               # Keep these declarations explicit to avoid App Store warning ITMS-90738.
+               "privacy/camera_usage_description": "Camera access is not required to play GLory. The game does not take photos or record video.",
+               "privacy/photolibrary_usage_description": "Photo library access is not required to play GLory. The game does not read or upload your photo library.",
+               "privacy/microphone_usage_description": "Allow microphone access when you choose to send a voice message or join voice chat. Microphone access is optional for gameplay.",
                "application/targeted_device_family": 2, "application/min_ios_version": "15.0"}
     render = lambda values: "\n".join(f"{key}={json.dumps(value, ensure_ascii=False)}" for key, value in values.items())
     (stage / "export_presets.cfg").write_text("[preset.0]\n\n" + render(header) + "\n\n[preset.0.options]\n\n" + render(options) + "\n")
@@ -357,6 +361,27 @@ def install_profile(source, profile):
         shutil.copy2(source, temporary)
         temporary.chmod(0o600)
         os.replace(temporary, destination)
+
+
+def verify_apple_billing_binary(binary):
+    data = binary.read_bytes()
+    for marker in (b"GloryAppleBillingNative", b"beginFinishTransaction:", b"StoreKit"):
+        if marker not in data:
+            raise RuntimeError("iOS 框架缺少 Apple StoreKit 支付组件；请重新运行 native/glory_voice_ios/build.py。")
+
+
+def verify_apple_billing_source(project):
+    folder = project / "addons/glory_voice/bin/ios"
+    manifest = json.loads((folder / "build-manifest.json").read_text())
+    source = project / "native/glory_voice_ios"
+    for name in ("GloryAppleBilling.swift", "GloryAppleBillingNative.h", "GloryAppleBillingBridge.mm",
+                 "GloryVoiceBridge.mm", "build.py"):
+        if manifest.get("source", {}).get(name) != shared.digest(source / name):
+            raise RuntimeError("iOS 支付框架与源码不一致：" + name + "；请重新运行 native/glory_voice_ios/build.py。")
+    binary = folder / "GloryVoice.framework/GloryVoice"
+    if manifest.get("files", {}).get("GloryVoice.framework/GloryVoice") != shared.digest(binary):
+        raise RuntimeError("iOS 支付框架指纹不一致。")
+    verify_apple_billing_binary(binary)
 
 
 def pck_file(pack, wanted):
@@ -400,9 +425,13 @@ def verify_ipa(ipa, directory, method, profile, cert, version, number, identity,
     info = plistlib.loads((app / "Info.plist").read_bytes())
     if (info.get("CFBundleIdentifier"), info.get("CFBundleShortVersionString"), info.get("CFBundleVersion")) != (BUNDLE, version, number):
         raise RuntimeError("IPA 的 Bundle ID、营销版本或 build number 与本次配置不一致。")
+    for key in ("NSCameraUsageDescription", "NSPhotoLibraryUsageDescription", "NSMicrophoneUsageDescription"):
+        if not str(info.get(key, "")).strip():
+            raise RuntimeError(f"IPA 的权限用途声明为空：{key}")
     voice = app / "Frameworks/GloryVoice.framework/GloryVoice"
     if not voice.is_file():
         raise RuntimeError("IPA 缺少必需的 iOS 音频/语音扩展 GloryVoice.framework。")
+    verify_apple_billing_binary(voice)
     if voice.exists():
         if not str(info.get("NSMicrophoneUsageDescription", "")).strip():
             raise RuntimeError("IPA 包含 iOS 语音组件，但麦克风用途声明为空。")
@@ -432,7 +461,8 @@ def verify_ipa(ipa, directory, method, profile, cert, version, number, identity,
     if len(packs) != 1 or json.loads(pck_file(packs[0], "build_info.json")) != identity:
         raise RuntimeError("IPA 中的 Godot PCK 构建身份与本次代码/资源快照不一致。")
     return {"zip_crc": True, "codesign": True, "arm64": True, "embedded_profile_uuid": actual["UUID"],
-            "allowed_device_udids": actual.get("ProvisionedDevices", []), "pck_identity": True}
+            "allowed_device_udids": actual.get("ProvisionedDevices", []), "pck_identity": True,
+            "apple_storekit": True}
 
 
 def publish(ipa, outdir, summary):
@@ -471,6 +501,7 @@ def arguments(argv=None):
     parser.add_argument("--templates", help="与 Godot 匹配的 iOS 模板目录")
     parser.add_argument("--keychain", type=Path, default=DEFAULT_KEYCHAIN)
     parser.add_argument("--patch-config", type=Path, help="更新器基础包配置 JSON")
+    parser.add_argument("--server-environment", choices=("prod", "test"), help="只在隔离目录选择正式服或测试服")
     return parser.parse_args(argv)
 
 
@@ -490,6 +521,7 @@ def main(argv=None):
     env = environment(args)
     version = project_version(args.project, args.version)
     profile = read_profile(profile_path, args.method)
+    verify_apple_billing_source(args.project)
     note(f"{env['version']}；{env['xcode'].replace(chr(10), ' / ')}；{args.method}；营销版本 {version}")
     note(f"描述文件 {profile['Name']}，到期 {as_utc(profile['ExpirationDate']).date()}，授权设备 {len(profile.get('ProvisionedDevices', []))} 台。")
     if args.check:
@@ -525,6 +557,11 @@ def main(argv=None):
                 if sync_status.is_file() and json.loads(sync_status.read_text()).get("status") in ("running", "failed"):
                     raise RuntimeError("资源同步尚未成功完成，请先同步。")
                 report = shared.stage_project(args.project, assets, stage, logdir)
+            server_target = shared.configure_server_environment(stage, args.server_environment)
+            if args.patch_config and server_target:
+                patch_settings = json.loads(args.patch_config.read_text(encoding="utf-8"))
+                if patch_settings.get("backend_url", "").rstrip("/") != server_target["backend_url"]:
+                    raise RuntimeError("补丁账号接口与所选服务器环境不一致，停止构建。")
             number = reserve_build_number(work / "build-number.json", args.build_number)
             note(f"本次 build number：{number}；快照：{stage}")
             install_profile(profile_path, profile)
@@ -539,6 +576,7 @@ def main(argv=None):
                         "dirty_files": len(dirty.splitlines()) if dirty else 0,
                         "build_utc": dt.datetime.now(dt.timezone.utc).isoformat(), "godot_version": env["version"],
                         "engine_info": env.get("engine_info", {}),
+                        "server_target": server_target,
                         "package_id": BUNDLE, "export_preset": PRESET, "version": version, "build_number": number,
                         "asset_inventory_sha256": report["actual_assets_sha256"],
                         "asset_inventory_kind": "merged_source_files_sha256"}

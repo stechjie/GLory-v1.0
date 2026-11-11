@@ -14,8 +14,6 @@ extends Resource
 @export_range(0.0, 1.0, 0.01) var prep_rest_line_alpha: float = 0.52
 @export_range(0.0, 0.40, 0.005) var prep_drag_fill_alpha: float = 0.12
 @export_range(0.0, 1.0, 0.01) var prep_drag_line_alpha: float = 0.76
-@export_range(0.0, 0.40, 0.005) var prep_range_fill_alpha: float = 0.07
-@export_range(0.0, 1.0, 0.01) var prep_range_line_alpha: float = 0.38
 @export_range(0.0, 0.50, 0.005) var prep_selected_fill_alpha: float = 0.16
 @export_range(0.0, 1.0, 0.01) var prep_selected_line_alpha: float = 0.96
 @export_range(1.0, 8.0, 0.25) var prep_line_width: float = 2.0

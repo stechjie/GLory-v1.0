@@ -311,13 +311,37 @@ func _show_pet_info(pet_id: String) -> void:
 	if _busy or _reveal != null:
 		return
 	_open_reveal()
-	_reveal.call("show_pet_info", pet_id, _owned.has(pet_id))
+	_reveal.call("show_pet_info", pet_id, _owned.has(pet_id), PlayerProfile.active_pet == pet_id)
+	_refresh_ui()
+
+
+func _use_pool_pet(pet_id: String, action: Button) -> void:
+	if _busy or not _owned.has(pet_id) or PlayerProfile.active_pet == pet_id:
+		return
+	_busy = true
+	action.disabled = true
+	if not PlayerProfile.is_owned(pet_id):
+		await PlayerProfile.refresh_pets()
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
+	var ok := PlayerProfile.active_pet == pet_id
+	if not ok:
+		ok = await PlayerProfile.set_active(pet_id)
+	if not is_inside_tree() or is_queued_for_deletion():
+		return
+	_busy = false
+	if is_instance_valid(action) and not action.is_queued_for_deletion():
+		action.text = _t("使用中", "In use") if ok else _t("使用", "Use")
+		action.disabled = ok
+	if not ok:
+		preload("res://ui/components/GloryToast.gd").show_text(_t("宠物出战设置失败，请重试", "Could not equip pet. Please try again."))
 	_refresh_ui()
 
 
 func _open_reveal() -> void:
 	_reveal = PetDrawReveal.new()
 	_reveal.connect("summon_requested", _commit_draw)
+	_reveal.connect("pet_use_requested", _use_pool_pet)
 	_reveal.connect("dismissed", _on_reveal_dismissed)
 	_canvas.add_child(_reveal)
 	_rect(_reveal, 0, 0, 1600, 720)

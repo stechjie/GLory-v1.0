@@ -50,7 +50,7 @@ func _ready() -> void:
 	await _case_summary_never_says_percentage()
 	await _case_outcome_is_per_seat()
 	await _case_teams_named_red_blue()
-	await _case_gold_caveat_shown()
+	await _case_gold_source_hint_hidden()
 	await _case_offline_uses_online_at_end()
 	await _case_names_are_current()
 	_case_settlement_view_data()
@@ -188,20 +188,21 @@ func _case_teams_named_red_blue() -> void:
 		"源码里没有「蓝队」字面量")
 
 
-# --- 4. 金币不权威时要标出来 -----------------------------------------------------
+# --- 4. 历史记录不显示金币来源提示 -----------------------------------------------
 
-func _case_gold_caveat_shown() -> void:
-	var shadow := await _panel_with([_match(0, "team_a", false)])
-	_h.expect(_texts(shadow).any(func(t): return t.contains("客户端上报")),
-		"gold_caveat_missing",
-		"gold_authoritative=false 时没标明金币来自客户端上报 —— 那就是拿它当权威数字")
-	shadow.queue_free()
-
-	var authoritative := await _panel_with([_match(0, "team_a", true)])
-	_h.expect(not _texts(authoritative).any(func(t): return t.contains("客户端上报")),
-		"gold_caveat_always_on",
-		"gold_authoritative=true 时还在标「客户端上报」—— 那条提示会变成噪音")
-	authoritative.queue_free()
+func _case_gold_source_hint_hidden() -> void:
+	var previous_locale := LocaleManager.get_locale()
+	for lang in ["zh", "en"]:
+		LocaleManager.set_locale(lang)
+		for authoritative in [false, true]:
+			var panel := await _panel_with([_match(0, "team_a", authoritative)])
+			_h.expect(not _texts(panel).any(func(t):
+				var normalized := str(t).to_lower().replace("-", " ")
+				return normalized.contains("客户端上报") or normalized.contains("client reported")),
+				"gold_source_hidden_%s_%s" % [lang, authoritative],
+				"历史对局不显示金币来源提示")
+			panel.queue_free()
+	LocaleManager.set_locale(previous_locale)
 
 
 # --- 4. 「掉线未归」判的是 online_at_end，不是 was_ai --------------------------------

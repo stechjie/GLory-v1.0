@@ -1,0 +1,112 @@
+{
+  "version": "1.0.2",
+  "runtime_source_commit": "66dd488c4f721811787b6e369c6043f1a1ffee5a",
+  "upstream_commit": "b88f8770354908510b37ff717ffadaa0142e5b2a",
+  "protocol": 45,
+  "resource_sync": {
+    "status": "success",
+    "finished_at": "2026-10-28T16:26:11.522150",
+    "remote_files": 3603,
+    "counts": {
+      "downloaded": 0,
+      "checked": 471,
+      "skipped": 3132,
+      "local_preserved": 0
+    },
+    "errors": []
+  },
+  "server": {
+    "status": "deployed",
+    "protocol": 45,
+    "release": "/home/nins17121/Glory/releases/1.0.2-20261028-66dd488",
+    "source_tree_sha256": "c200473464b1654f19d2918e291bcf4dfe0b6515a82fb754dc8d32328608ccd7",
+    "bundle_sha256": "8f95f9fb5f52713a23203d6a0045e794fd95f23d41eae2654c5f813924d4a793",
+    "new_pid": 144573,
+    "backend_pid": 144525,
+    "cold_start_seconds": 8.055,
+    "engine_errors": [],
+    "idle_checks": [
+      "2026-10-28T08:31:06.900538+00:00",
+      "2026-10-28T08:31:10.913413+00:00"
+    ],
+    "account_online": 0,
+    "battle_connections": 0,
+    "room_count": 0,
+    "schema_041_applied": true,
+    "schema_errors_after": [],
+    "services": "glory-server glory-backend livekit caddy active",
+    "health": "ok",
+    "verified_at": "2026-10-28T08:31:29.586629+00:00",
+    "rollback_directory": "/var/backups/glory/server-20261028-66dd488"
+  },
+  "distribution": {
+    "android": "published and public HTTP 206 range bytes verified; server exact SHA256 verified",
+    "testflight": "delivered and processed",
+    "internal": "testing; GLory 内部验证; 10 testers preserved",
+    "external": "testing; Glory tester; 21 testers preserved; review submission completed and external group shows 正在测试",
+    "qr": "public verified; Android 47 and external iOS 71 ready",
+    "testflight_build_id": "6175612c-0577-429f-bf4b-5c79426f9481",
+    "testflight_delivered_at": "2026-10-28 16:46 Asia/Shanghai"
+  },
+  "checks": {
+    "exported_android_client_protocol45": true,
+    "desktop_steam_excluded": true,
+    "android_both_arm_abis": true,
+    "storekit_task_regression": true,
+    "site_tests": 7,
+    "physical_device_tested": false
+  },
+  "android": {
+    "package_id": "com.glory.game.google",
+    "git_commit": "551ebe2778a16bb708849d55cbd81675f3b1f7ba",
+    "apk": "/Volumes/repository/github/GLory/build/apk/Glory-release-slim-20261028-162700-551ebe27.apk",
+    "apk_bytes": 579375881,
+    "apk_sha256": "68650ca8883258fa9d3f0d6d9ea5c1a1d0e74a685ec0b7c44b2e9cff897f76f2",
+    "asset_inventory_sha256": "080b8e499ab5b8cc844a108ca004c654993d8e3426e9548d66c3ecf243aca3be",
+    "signed": true,
+    "built": true,
+    "patch_base": {
+      "sha256": "9d28530dc92862c3bf76e6fae344f3f44d8b9753303c2b66563c31dacf48acf9",
+      "base_id": "glory-20261028-protocol45-slim"
+    },
+    "online_base_registration": {
+      "base_id": "glory-20261028-protocol45-slim",
+      "includes_seq": 4,
+      "action": "none",
+      "older_bases_preserved": true
+    },
+    "version": "1.0.2 (47)"
+  },
+  "ios": {
+    "package_id": "com.superforge.glory",
+    "git_commit": "66dd488c4f721811787b6e369c6043f1a1ffee5a",
+    "version": "1.0.2",
+    "build_number": "71",
+    "ipa": "/Volumes/repository/github/GLory/build/ipa/Glory-app-store-20261028-151715-368934-66dd488c.ipa",
+    "ipa_bytes": 535329970,
+    "ipa_sha256": "0dd812791e9dfd206838a8ecac9f4ca9cdf43d7d4451911f423e1ecd0c8950e6",
+    "asset_inventory_sha256": "080b8e499ab5b8cc844a108ca004c654993d8e3426e9548d66c3ecf243aca3be",
+    "signed": true,
+    "built": true
+  },
+  "public_config": {
+    "ios": {
+      "ready": true,
+      "url": "https://testflight.apple.com/join/W2p1ukJp",
+      "version": "1.0.2 (71)",
+      "pending_version": ""
+    },
+    "android": {
+      "ready": true,
+      "mode": "apk",
+      "url": "https://glorytd-api.duckdns.org/beta/downloads/Glory-1.0.2-47-android.apk",
+      "version": "1.0.2 (47)",
+      "size_bytes": 579375881,
+      "size_label": "552.5 MiB"
+    }
+  },
+  "invitation_page": "https://glorytd-api.duckdns.org/beta/",
+  "qr_url": "https://glorytd-api.duckdns.org/beta/invite-qr.png",
+  "qr_sha256": "8f06b9ffe436ded23822bc49bced52c5cb89535a253489e74080bde0e2b6807a",
+  "evidence_directory": "delivery/release-20261028"
+}

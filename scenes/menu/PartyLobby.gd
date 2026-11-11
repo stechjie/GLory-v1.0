@@ -155,6 +155,7 @@ var _queue_opened := false
 # 这个闩**只在「收到 idle 并处理掉」或「自己离开房间」时才落**，不被
 # `queued=false` 的快照影响 —— 它回答的是「这次 idle 是不是我这次排队的收尾」。
 var _party_queue_active := false
+var _queue_ban_deadline := -1
 var _match_found := false
 # 六个人都确认了（match ready）：队伍房间随即在服务器上关掉（matchmaking._finalise），
 # 而 Main 要等连上战斗服务器、进了对局大厅才收掉本界面。这几秒里本界面不能再轮询 / 复查房间 ——
@@ -576,7 +577,9 @@ func _apply(next: Dictionary) -> void:
 		# 注意：这里只清 `_queue_opened`，**不动** `_party_queue_active` ——
 		# 那一位的语义是「我这次排队还没收尾」，收尾在 `match idle` 那一段。
 		_queue_opened = false
-	if _sticky_notice != "":
+	if _queue_ban_deadline >= 0:
+		_notice.text = AccountManager.queue_ban_text(_queue_ban_deadline)
+	elif _sticky_notice != "":
 		_notice.text = _sticky_notice
 	_style_action()
 	_update_start_pulse(host and not _action.disabled)
@@ -1146,6 +1149,13 @@ func _on_realtime(payload: Dictionary) -> void:
 
 
 func _process(delta: float) -> void:
+	if _queue_ban_deadline >= 0:
+		var message := AccountManager.queue_ban_text(_queue_ban_deadline)
+		if _notice.text != message:
+			_notice.text = message
+		if Time.get_ticks_msec() >= _queue_ban_deadline:
+			_queue_ban_deadline = -1
+			_show_sticky_notice(message)
 	if _preview != "" or _busy or _match_ready:
 		return
 	_poll_elapsed += delta
@@ -1387,8 +1397,11 @@ func _run(action: Callable) -> void:
 	_busy = false
 	if not is_inside_tree():
 		return
+	_queue_ban_deadline = int(result.get("queue_ban_deadline", -1))
 	if int(result.get("code", 0)) == 200:
 		_apply((result.get("body", {}) as Dictionary).get("state", {}))
+	elif _queue_ban_deadline >= 0:
+		_notice.text = AccountManager.queue_ban_text(_queue_ban_deadline)
 	else:
 		_notice.text = str(result.get("error", _text("操作失败", "Action failed")))
 

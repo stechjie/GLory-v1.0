@@ -76,15 +76,19 @@ public:
 };
 
 static GloryVoiceIOS *voice = nullptr;
+void initialize_apple_billing();
+void terminate_apple_billing();
 static void initialize_voice(ModuleInitializationLevel level) {
     if (level != MODULE_INITIALIZATION_LEVEL_SCENE) return;
     GDREGISTER_ABSTRACT_CLASS(GloryVoiceIOS);
     if (Engine::get_singleton()->is_editor_hint()) return;
+    initialize_apple_billing();
     voice = memnew(GloryVoiceIOS);
     Engine::get_singleton()->register_singleton("GloryVoice", voice);
 }
 static void terminate_voice(ModuleInitializationLevel level) {
     if (level != MODULE_INITIALIZATION_LEVEL_SCENE || !voice) return;
+    terminate_apple_billing();
     Engine::get_singleton()->unregister_singleton("GloryVoice");
     voice->leaveRoom();
     memdelete(voice);

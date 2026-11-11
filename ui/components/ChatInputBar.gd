@@ -105,8 +105,8 @@ func _ready() -> void:
 	# 与 ③ 那道校验同一个上限（tools/chat_check.gd 钉着，不许写死）。
 	_input.max_length = ChatText.MAX_CHARS
 	_input.placeholder_text = _text(
-		"说点什么…（最多 %d 字）" % ChatText.MAX_CHARS,
-		"Say something… (max %d)" % ChatText.MAX_CHARS)
+		"（最多%d字）" % ChatText.MAX_CHARS,
+		"(Max %d characters)" % ChatText.MAX_CHARS)
 	_input.text_submitted.connect(func(_submitted: String) -> void: _submit())
 	row.add_child(_input)
 

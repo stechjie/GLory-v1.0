@@ -1,0 +1,274 @@
+{
+  "date": "2026-10-30",
+  "source_commit": "c5e36ae493904f5d6bdfee0fcf89a26b0a5e1c21",
+  "protocol": 45,
+  "resource_sync": {
+    "status": "success",
+    "started_at": "20261030-145809-019616",
+    "finished_at": "2026-10-30T15:00:15.469293",
+    "scope": "resources",
+    "remote_files": 3603,
+    "counts": {
+      "downloaded": 0,
+      "checked": 471,
+      "skipped": 3132,
+      "local_preserved": 0
+    },
+    "errors": [],
+    "local_preserved": [],
+    "local_only_kept": [
+      "assets.bundle.json",
+      "assets.manifest.json",
+      "assets/models/units/dark_doom_animated/dark_doom_attack.fbx",
+      "assets/models/units/dark_doom_animated/dark_doom_attack.fbx.import",
+      "assets/models/units/dark_doom_animated/dark_doom_attack_0.png",
+      "assets/models/units/dark_doom_animated/dark_doom_attack_0.png.import",
+      "assets/models/units/dark_doom_animated/dark_doom_attack_1.png",
+      "assets/models/units/dark_doom_animated/dark_doom_attack_1.png.import",
+      "assets/models/units/dark_doom_animated/dark_doom_attack_2.png",
+      "assets/models/units/dark_doom_animated/dark_doom_attack_2.png.import",
+      "assets/models/units/dark_doom_animated/dark_doom_attack_Baked_BaseColor.png",
+      "assets/models/units/dark_doom_animated/dark_doom_attack_Baked_BaseColor.png.import",
+      "assets/models/units/dark_doom_animated/dark_doom_attack_Baked_Emit.png",
+      "assets/models/units/dark_doom_animated/dark_doom_attack_Baked_Emit.png.import",
+      "assets/models/units/dark_doom_animated/dark_doom_attack_normal.png",
+      "assets/models/units/dark_doom_animated/dark_doom_attack_normal.png.import",
+      "assets/models/units/dark_doom_animated/dark_doom_idle.fbx",
+      "assets/models/units/dark_doom_animated/dark_doom_idle.fbx.import",
+      "assets/models/units/dark_doom_animated/dark_doom_idle_0.png",
+      "assets/models/units/dark_doom_animated/dark_doom_idle_0.png.import",
+      "assets/models/units/dark_doom_animated/dark_doom_idle_1.png",
+      "assets/models/units/dark_doom_animated/dark_doom_idle_1.png.import",
+      "assets/models/units/dark_doom_animated/dark_doom_idle_2.png",
+      "assets/models/units/dark_doom_animated/dark_doom_idle_2.png.import",
+      "assets/models/units/dark_doom_animated/dark_doom_idle_Baked_BaseColor.png",
+      "assets/models/units/dark_doom_animated/dark_doom_idle_Baked_BaseColor.png.import",
+      "assets/models/units/dark_doom_animated/dark_doom_idle_Baked_Emit.png",
+      "assets/models/units/dark_doom_animated/dark_doom_idle_Baked_Emit.png.import",
+      "assets/models/units/dark_doom_animated/dark_doom_idle_normal.png",
+      "assets/models/units/dark_doom_animated/dark_doom_idle_normal.png.import",
+      "assets/models/units/dark_doom_animated/dark_doom_run.fbx",
+      "assets/models/units/dark_doom_animated/dark_doom_run.fbx.import",
+      "assets/models/units/dark_doom_animated/dark_doom_run_Image.png",
+      "assets/models/units/dark_doom_animated/dark_doom_run_Image.png.import",
+      "assets/models/units/dark_dragon.glb",
+      "assets/models/units/dark_dragon.glb.import",
+      "assets/models/units/dark_dragon_0.jpg",
+      "assets/models/units/dark_dragon_0.jpg.import",
+      "assets/models/units/dark_dragon_1.jpg",
+      "assets/models/units/dark_dragon_1.jpg.import",
+      "assets/models/units/dark_dragon_2.jpg",
+      "assets/models/units/dark_dragon_2.jpg.import",
+      "assets/models/units/dark_dragon_3.jpg",
+      "assets/models/units/dark_dragon_3.jpg.import",
+      "assets/models/units/dark_fear.glb",
+      "assets/models/units/dark_fear.glb.import",
+      "assets/models/units/dark_fear_0.jpg",
+      "assets/models/units/dark_fear_0.jpg.import",
+      "assets/models/units/dark_fear_1.jpg",
+      "assets/models/units/dark_fear_1.jpg.import",
+      "assets/models/units/dark_fear_2.jpg",
+      "assets/models/units/dark_fear_2.jpg.import",
+      "assets/models/units/dark_fear_3.jpg",
+      "assets/models/units/dark_fear_3.jpg.import",
+      "assets/models/units/dark_queen_animated/dark_queen_attack.fbx",
+      "assets/models/units/dark_queen_animated/dark_queen_attack.fbx.import",
+      "assets/models/units/dark_queen_animated/dark_queen_idle.fbx",
+      "assets/models/units/dark_queen_animated/dark_queen_idle.fbx.import",
+      "assets/models/units/dark_queen_animated/dark_queen_run.fbx",
+      "assets/models/units/dark_queen_animated/dark_queen_run.fbx.import",
+      "assets/models/units/dark_scythe.glb",
+      "assets/models/units/dark_scythe.glb.import",
+      "assets/models/units/dark_scythe_0.jpg",
+      "assets/models/units/dark_scythe_0.jpg.import",
+      "assets/models/units/dark_scythe_1.jpg",
+      "assets/models/units/dark_scythe_1.jpg.import",
+      "assets/models/units/dark_scythe_2.jpg",
+      "assets/models/units/dark_scythe_2.jpg.import",
+      "assets/models/units/dark_scythe_3.jpg",
+      "assets/models/units/dark_scythe_3.jpg.import"
+    ],
+    "backup_directory": "/Volumes/repository/github/GLory/.glory-sync/backups/20261030-145809-019616"
+  },
+  "artifacts": {
+    "apk": {
+      "git_commit": "c5e36ae493904f5d6bdfee0fcf89a26b0a5e1c21",
+      "build_utc": "2026-10-30T07:01:51.877613+00:00",
+      "asset_inventory_sha256": "bb48d18ca33b637d04d676ecfb4f597195cacc833333d12876ac1cd705e66740",
+      "apk": "/Volumes/repository/github/GLory/build/apk/Glory-release-slim-20261030-150044-c5e36ae4.apk",
+      "apk_bytes": 580683662,
+      "apk_sha256": "ec85cefc3434d9f6c2a40afb0d4223f599fe25addd009e2e2a1528c251e88a79",
+      "signed": true,
+      "built": true,
+      "device_installed": false,
+      "device_tested": false,
+      "patch_base": {
+        "archive": "/Volumes/repository/github/GLory/build/apk/Glory-release-slim-20261030-150044-c5e36ae4-patch-base/base.zip",
+        "manifest": "/Volumes/repository/github/GLory/build/apk/Glory-release-slim-20261030-150044-c5e36ae4-patch-base/base.export.json",
+        "sha256": "65d8e5e62f96d185f409a963aa147868e7a21c6ac20da727dcbf2bf686574c7e",
+        "base_id": "glory-20261030-protocol45-slim",
+        "debug": false,
+        "payload_verification": {
+          "identical_base_files": 5678,
+          "platform": "android",
+          "payload_matches_baseline": true
+        }
+      }
+    },
+    "aab": {
+      "git_commit": "c5e36ae493904f5d6bdfee0fcf89a26b0a5e1c21",
+      "build_utc": "2026-10-30T07:02:24.477291+00:00",
+      "version_name": "1.0.2",
+      "version_code": 49,
+      "asset_inventory_sha256": "bb48d18ca33b637d04d676ecfb4f597195cacc833333d12876ac1cd705e66740",
+      "signed": true,
+      "sha256": "d817e95d8ab60ffc7cab9c5c6356c781848e2e72bfad33a7d46cae2d5a663847",
+      "device_tested": false,
+      "patch_base": {
+        "archive": "/Volumes/repository/github/GLory/build/aab/Glory-1.0.2-49-20261030-150138-unsigned-patch-base/base.zip",
+        "manifest": "/Volumes/repository/github/GLory/build/aab/Glory-1.0.2-49-20261030-150138-unsigned-patch-base/base.export.json",
+        "sha256": "62dfb9d061336a9b6daffa40f819ad77aaca49a23c2265e592ceae5ba068eca1",
+        "base_id": "glory-20261030-protocol45-slim",
+        "debug": false
+      }
+    },
+    "ipa": {
+      "git_commit": "c5e36ae493904f5d6bdfee0fcf89a26b0a5e1c21",
+      "build_utc": "2026-10-30T07:01:52.078806+00:00",
+      "version": "1.0.2",
+      "build_number": "73",
+      "asset_inventory_sha256": "bb48d18ca33b637d04d676ecfb4f597195cacc833333d12876ac1cd705e66740",
+      "signed": true,
+      "built": true,
+      "device_installed": false,
+      "patch_base": {
+        "archive": "/Volumes/repository/github/GLory/build/ios-auto-work/runs/20261030-150047-728141/patch-base/base.zip",
+        "manifest": "/Volumes/repository/github/GLory/build/ios-auto-work/runs/20261030-150047-728141/patch-base/base.export.json",
+        "sha256": "be7a8d8cb2fe88e74f49df6e7cf87fb2fa79e6410b0190a3a8189792fc699ecb",
+        "base_id": "glory-20261030-protocol45-slim",
+        "debug": false,
+        "payload_verification": {
+          "identical_base_files": 5680,
+          "platform": "ios",
+          "payload_matches_baseline": true
+        }
+      },
+      "ipa": "/Volumes/repository/github/GLory/build/ipa/Glory-app-store-20261030-150047-728141-c5e36ae4.ipa",
+      "ipa_bytes": 544222773,
+      "ipa_sha256": "ba97e5cf1c4fb7aa6c9645ff460dcb90d543ade5ef689b865d3edb044bea0630"
+    }
+  },
+  "server": {
+    "host": "glory-server-3",
+    "release": "/home/nins17121/Glory/releases/1.0.2-20261030-c5e36ae4",
+    "deployment_evidence": "/var/backups/glory/server-20261030-c5e36ae4/deployment.json",
+    "source_tree_sha256": "e2aec02540adf6e159e26f046e3991c8b0df16354436fb177f17d1c8e6e98649",
+    "battle_pid": 161048,
+    "backend_pid": 161012,
+    "services_active": [
+      "glory-server",
+      "glory-backend",
+      "livekit",
+      "caddy"
+    ],
+    "schema_probe_passed": true,
+    "isolated_smoke_passed": true,
+    "local_patch_route_fixes_preserved": true
+  },
+  "google_play": {
+    "package": "com.glory.game.google",
+    "sha256": "d817e95d8ab60ffc7cab9c5c6356c781848e2e72bfad33a7d46cae2d5a663847",
+    "version_code": 49,
+    "notes": "同步最新代码与资源，修复已发现的问题。请验证登录、组队、连续对战和语音。",
+    "phase": "complete",
+    "tester_membership_verified": false,
+    "edit": "17578551308214718589",
+    "updated_at": "2026-10-30T07:35:17.339451+00:00",
+    "upload_attempted": true,
+    "internal_track_published": true
+  },
+  "testflight": {
+    "version": "1.0.2",
+    "build": 73,
+    "build_id": "197336f8-d917-4327-b56f-0b82fb75f89f",
+    "delivered": true,
+    "processed": true,
+    "internal": {
+      "group": "GLory 内部验证",
+      "testers": 10,
+      "status": "Testing"
+    },
+    "external": {
+      "group": "Glory tester",
+      "testers": 23,
+      "status": "Testing"
+    },
+    "public_url": "https://testflight.apple.com/join/W2p1ukJp"
+  },
+  "public_verification": {
+    "patches": {
+      "android": {
+        "protocol": 1,
+        "revision": 61,
+        "deployment_id": "423e17109fec430091a2f45fa2fedba60ce393d9b5ee40129f3db51ffd61a669",
+        "channel": "internal",
+        "platform": "android",
+        "hotfix_epoch": 32,
+        "base_id": "glory-20261030-protocol45-slim",
+        "required_patch_seq": 0,
+        "action": "none",
+        "artifact": null,
+        "hotfixes": []
+      },
+      "ios": {
+        "protocol": 1,
+        "revision": 61,
+        "deployment_id": "423e17109fec430091a2f45fa2fedba60ce393d9b5ee40129f3db51ffd61a669",
+        "channel": "internal",
+        "platform": "ios",
+        "hotfix_epoch": 32,
+        "base_id": "glory-20261030-protocol45-slim",
+        "required_patch_seq": 0,
+        "action": "none",
+        "artifact": null,
+        "hotfixes": []
+      }
+    },
+    "config": {
+      "ios": {
+        "ready": true,
+        "url": "https://testflight.apple.com/join/W2p1ukJp",
+        "version": "1.0.2 (73)",
+        "pending_version": ""
+      },
+      "android": {
+        "ready": true,
+        "mode": "apk",
+        "url": "https://glorytd-api.duckdns.org/beta/downloads/Glory-1.0.2-49-android.apk",
+        "version": "1.0.2 (49)",
+        "size_bytes": 580683662,
+        "size_label": "553.8 MiB"
+      }
+    },
+    "qr_sha256": "8f06b9ffe436ded23822bc49bced52c5cb89535a253489e74080bde0e2b6807a",
+    "apk_range_status": 206,
+    "apk_range_bytes_match": true,
+    "health": {
+      "status": "ok",
+      "environment": "prod",
+      "configured": true,
+      "missing_config": []
+    }
+  },
+  "validation": {
+    "backend_tests_passed": 157,
+    "physical_device_installation": false,
+    "live_gameplay_acceptance": false
+  },
+  "evidence_directory": "delivery/release-20261030",
+  "limitations": [
+    "Google Play tester membership and device installation not verified",
+    "Formal App Store review is separate from TestFlight",
+    "In-app payment acceptance is not established by this release"
+  ]
+}

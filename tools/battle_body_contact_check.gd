@@ -18,7 +18,7 @@ func _ready() -> void:
 		h.expect(cells >= 3, "formation_ally_body", "Large formation allies need an explicit simulation footprint")
 		var giant := Sim._fighter_from_def(definition, 0, "player", 0, 26, 1, false, true)
 		var small := fighter("small", Vector2(500,260))
-		h.expect(Sim.body_radius(giant) >= 45.0, "formation_radius", "Formation body must not fall back to a normal 15px radius")
+		h.expect(is_equal_approx(Sim.body_radius(giant), 7.5 * cells), "formation_radius", "Large bodies retain their footprint multiplier at half diameter")
 		h.expect(Sim._effective_attack_distance(giant, small) >= Sim.body_radius(giant) + Sim.body_radius(small), "formation_reach", "A large melee body must still be able to reach its opponent")
 	var pair := [fighter("a", Vector2(500,260),2),fighter("b",Vector2(501,260),2)]
 	for tick in 4: Sim._separate_units(pair, [])
@@ -83,7 +83,7 @@ func _check_walking_pressure() -> void:
 	var mover := fighter("walker",Vector2(400,260))
 	var wall := fighter("blocker",Vector2(500,260))
 	Sim._move_without_pushing(mover, Vector2(250,0), [mover,wall])
-	h.expect(mover.pos.distance_to(wall.pos) >= 29.99,"swept_contact","Fast walking cannot tunnel through a body")
+	h.expect(mover.pos.distance_to(wall.pos) >= Sim.body_radius(mover)+Sim.body_radius(wall)-0.01,"swept_contact","Fast walking cannot tunnel through a body")
 	h.expect(wall.pos == Vector2(500,260),"walking_does_not_move_blocker","Only the walker may move")
 	var a := fighter("a",Vector2(400,260))
 	var b := a.duplicate(true)

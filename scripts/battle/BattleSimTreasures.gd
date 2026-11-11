@@ -382,14 +382,14 @@ static func _apply_element_set_burst(attacker: Dictionary, target: Dictionary, s
 	DamageService.restore_hit_context(saved_hit)
 
 
-static func _apply_frenzy_assault(attacker: Dictionary, target: Dictionary) -> void:
-	var target_uid := str(target.get("uid", ""))
-	if str(attacker.get("frenzy_target_uid", "")) != target_uid:
-		attacker.frenzy_target_uid = target_uid
-		attacker.frenzy_stacks = 0
-	attacker.frenzy_stacks = int(attacker.get("frenzy_stacks", 0)) + 1
-	# 独立倍率由 StatusEffectService 计算，不永久污染基础攻速。
-	attacker.frenzy_stacks = mini(int(attacker.frenzy_stacks), 64)
+# Target selection does not reset this battle-long treasure gain.
+static func _frenzy_select_target(attacker: Dictionary, target_uid: String) -> void:
+	attacker.frenzy_target_uid = target_uid
+
+static func _apply_frenzy_assault(attacker: Dictionary, _target: Dictionary) -> void:
+	var stacks := mini(clampi(int(attacker.get("frenzy_stacks", 0)), 0, 10) + 1, 10)
+	attacker.frenzy_stacks = stacks
+	attacker.frenzy_speed_multiplier = minf(1.0 + 0.15 * stacks, 2.5)
 
 static func _apply_defender_reaction(attacker: Dictionary, target: Dictionary, dealt: int, state: Dictionary = {}) -> void:
 	var d: Dictionary = target.get("def", {})
@@ -564,7 +564,12 @@ static func _mother_execute_on(state: Dictionary, candidates: Array, mother: Dic
 	state.visual_events.append({"type":"mother_execute","source_uid":str(mother.get("uid","")),"target_uid":str(target.get("uid","")),"time":float(state.get("elapsed",0.0))})
 	if target.is_empty():
 		return
-	if bool(target.get("def", {}).get("is_boss", false)) or str(target.get("id", target.get("def", {}).get("id", ""))).begins_with("boss_"):
+	var target_def: Dictionary = target.get("def", {})
+	var target_id := str(target.get("id", target_def.get("id", "")))
+	var guardian := bool(target.get("is_formation_ally", false)) or target_id.begins_with("ally_")
+	if bool(target_def.get("is_boss", false)) or target_id.begins_with("boss_") or guardian:
+		if guardian:
+			state.visual_events.back()["formation_guardian_hit"] = true
 		var dealt := DamageService.apply_damage(target, maxi(1, int(round(float(target.max_hp) * float((mother.get("def", {}) as Dictionary).get("boss_max_hp_damage", 0.20))))), true)
 		DamageService.emit_confirmed_skill_damage(state, mother, target, dealt, "unique_death_execute")
 		return
