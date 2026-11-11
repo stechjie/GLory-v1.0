@@ -11,9 +11,11 @@ const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Action := preload("res://ui/components/GloryActionButton.tscn")
 const Growth := preload("res://scripts/units/UnitGrowth.gd")
 const PROFILE_BG_TEX := preload("res://assets/ui/profile/hall_of_glory.png")
-const GOLD := Color("e8c46a")
-const TEXT := Color("edeff4")
-const MUTED := Color("b8becc")
+# 11.11 羊皮纸风：字色换成羊皮纸上的深色，面板用 ParchmentKit
+const GOLD := Color("8a4b12")
+const TEXT := Color("4a2c14")
+const MUTED := Color("7a5634")
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
 const WIDTHS := [150.0, 310.0, 270.0, 210.0, 150.0, 170.0, 150.0]
 var data: Dictionary = {}
 # 对局历史里复用这个面板时（MatchHistoryPanel「详细战况」），「返回主菜单」换成这里的字，
@@ -38,18 +40,8 @@ func _ready() -> void:
 		element_by_slot = {}
 	preload("res://scripts/multiplayer/FinalSettlementData.gd").update_round_damage(data.get("seats", []), data.get("stats", []), element_by_slot)
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var background := TextureRect.new()
-	background.texture = PROFILE_BG_TEX
-	background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(background)
-	var veil := ColorRect.new()
-	veil.color = Color(0.008, 0.016, 0.031, 0.52)
-	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	veil.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(veil)
+	theme = Kit.theme()
+	Kit.backdrop(self, "rooms_arena", 0.3)
 	var scroll := preload("res://ui/components/TouchScrollContainer.gd").new()
 	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -63,11 +55,13 @@ func _ready() -> void:
 	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	content.add_theme_constant_override("separation", 18)
 	margin.add_child(content)
-	var title := _label(tr("settle_title"), GOLD, 32)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	content.add_child(title)
+	var title_slot := CenterContainer.new()
+	title_slot.add_child(Kit.title_banner(tr("settle_title"), 66.0, 28))
+	content.add_child(title_slot)
 	var outcome := int(data.get("outcome", 2))
-	var winner := _label(tr("settle_win_line") % _team_title(outcome) if outcome in [0, 1] else tr("settle_draw_line"), Color("ff6b5a") if outcome == 0 else Color("4da3ff"), 18)
+	var winner := _label(tr("settle_win_line") % _team_title(outcome) if outcome in [0, 1] else tr("settle_draw_line"), Color("ff9a8c") if outcome == 0 else Color("9cc8ff"), 20)
+	Kit.on_backdrop(winner)
+	winner.add_theme_color_override("font_color", Color("ffb3a3") if outcome == 0 else (Color("b8dcff") if outcome == 1 else Color(1.0, 0.95, 0.82)))
 	winner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	content.add_child(winner)
 	# 10.06 反馈第 5 条：面板一屏塞不下时，底部那排按钮要滚到底才够得着 —— 在上部再放一排
@@ -79,12 +73,17 @@ func _ready() -> void:
 		var own_side := clampi(int(data.get("local_team", GameConstants.team_of_slot(NetworkService.team_local_slot))), 0, 1)
 		for side in [own_side, 1 - own_side]:
 			content.add_child(_team(side))
-		content.add_child(_label(tr("settle_stats_title"), TEXT, 20))
-		content.add_child(_stats())
+		var stats_title := _label(tr("settle_stats_title"), TEXT, 20)
+		Kit.on_backdrop(stats_title)
+		content.add_child(stats_title)
+		var stats_panel := PanelContainer.new()
+		stats_panel.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(72, 54, 72, 36)))
+		stats_panel.add_child(_stats())
+		content.add_child(stats_panel)
 	content.add_child(_button_row())
 	_bubble = PanelContainer.new()
 	_bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_bubble.add_theme_stylebox_override("panel", Tokens.panel_box(Color(0.04, 0.08, 0.14, 0.9), Color.TRANSPARENT, 8))
+	_bubble.add_theme_stylebox_override("panel", Kit.box("plate", Vector4(16, 6, 16, 6)))
 	_bubble_label = _label("", GOLD, 13)
 	_bubble.add_child(_bubble_label)
 	add_child(_bubble)
@@ -161,8 +160,7 @@ func _button_row() -> HBoxContainer:
 		return_party_requested.emit())
 	_party_buttons.append(party_button)
 	var menu := _button(close_text if not close_text.is_empty() else tr("settle_back_menu"), buttons)
-	menu.add_theme_stylebox_override("normal", Tokens.panel_box(Color("e9aa43"), GOLD, 10))
-	menu.add_theme_color_override("font_color", Color("231a0d"))
+	Kit.style_plate(menu, true)
 	menu.pressed.connect(func(): return_menu_requested.emit())
 	return buttons
 
@@ -177,7 +175,7 @@ func _button(value: String, parent: Node) -> Button:
 	var button: Button = Action.instantiate()
 	button.text = value
 	button.custom_minimum_size = Vector2(200, 44)
-	button.add_theme_stylebox_override("normal", Tokens.panel_box(Color("252d40"), Color("586789"), 10))
+	Kit.style_plate(button, false)
 	parent.add_child(button)
 	return button
 
@@ -247,8 +245,8 @@ func _ally_display_name(raw: String) -> String:
 
 func _team(side: int) -> Control:
 	var panel := PanelContainer.new()
-	var color := Color("ff6b5a") if side == 0 else Color("4da3ff")
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Color(0.02, 0.045, 0.08, 0.2), Color.TRANSPARENT, 16))
+	var color := Color("b3362a") if side == 0 else Color("2f5f9e")
+	panel.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(72, 54, 72, 36)))
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 12)
 	panel.add_child(column)
@@ -271,7 +269,7 @@ func _team(side: int) -> Control:
 		var seat: Dictionary = seats[slot]
 		var row := _row(WIDTHS)
 		row.custom_minimum_size.y = 76
-		column.add_child(_row_panel(row, Color(0.025, 0.055, 0.1, 0.46)))
+		column.add_child(_row_panel(row, Color(0.29, 0.17, 0.08, 0.09)))
 		var name_label := _label(_seat_display_name(slot, seat), GameConstants.team_slot_color(slot), 15)
 		name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		row.get_child(0).add_child(name_label)
@@ -299,7 +297,7 @@ func _team(side: int) -> Control:
 				number.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 				icon.add_child(number)
 				stones.add_child(icon)
-		var gold := _label(str(seat.total_gold) if seat.get("total_gold") != null else "—", Color("ffd24d"))
+		var gold := _label(str(seat.total_gold) if seat.get("total_gold") != null else "—", Color("a8650a"))
 		gold.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		gold.set_meta("settlement_column", 6)
 		gold.set_meta("settlement_team", side)
@@ -323,7 +321,7 @@ func _stats() -> Control:
 		label.set_meta("stats_column", i)
 		label.set_meta("settlement_header", true)
 		header.get_child(i).add_child(label)
-	column.add_child(_row_panel(header, Color(0.025, 0.055, 0.1, 0.42)))
+	column.add_child(_row_panel(header, Color(0.29, 0.17, 0.08, 0.08)))
 	var row_index := 0
 	var seats_row: Array = data.get("seats", [])
 	for entry in data.get("stats", []):
@@ -339,12 +337,12 @@ func _stats() -> Control:
 		var owner_name := _seat_display_name(slot, owner_seat)
 		var values := [_stat_unit_name(entry) + _stars_text(star) + (tr("settle_stacks") % stacks if stacks > 0 else ""), owner_name, str(entry.get("damage_dealt", 0)), str(entry.get("damage_taken", 0)), str(entry.get("healing_done", 0))]
 		for i in 5:
-			var label := _label(values[i], color if i < 2 else (GOLD if i == 2 else (Color("62cfa2") if i == 4 else MUTED)), 15)
+			var label := _label(values[i], color if i < 2 else (GOLD if i == 2 else (Color("2f7d45") if i == 4 else MUTED)), 15)
 			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if i >= 2 else HORIZONTAL_ALIGNMENT_LEFT
 			label.set_meta("stats_column", i)
 			label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			row.get_child(i).add_child(label)
-		column.add_child(_row_panel(row, Color(0.025, 0.055, 0.1, 0.42) if row_index % 2 == 0 else Color(0.025, 0.055, 0.1, 0.24)))
+		column.add_child(_row_panel(row, Color(0.29, 0.17, 0.08, 0.08) if row_index % 2 == 0 else Color(0.29, 0.17, 0.08, 0.03)))
 		row_index += 1
 	return column
 
@@ -367,7 +365,7 @@ func _icon(path: String, caption: String, stars: int = 0, pixels: int = 48) -> V
 			_show_bubble(art, caption)
 			art.accept_event())
 	if stars > 0:
-		var label := _label("★".repeat(stars), Color("ffd24d"), 9)
+		var label := _label("★".repeat(stars), Color("d18b0e"), 9)
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		box.add_child(label)
 	return box

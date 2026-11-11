@@ -15,7 +15,7 @@ const UiJuice := preload("res://ui/theme/UiJuice.gd")
 const WIN_COLOR := Color("8a4b12")
 const LOSE_COLOR := Color("5f5246")
 const DRAW_COLOR := Color("3f5f6a")
-const RANK_EMBLEM := preload("res://assets/ui/ranked/reward_crest.png")
+const RANK_EMBLEM := preload("res://assets/ui/ranked/tier_4_crown.png")
 const Currency := preload("res://scripts/account/Currency.gd")
 const WARM_GLOW := preload("res://assets/ui/main_menu_live/glow_warm.png")
 

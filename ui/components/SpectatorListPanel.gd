@@ -18,7 +18,9 @@ const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
 const Voice := preload("res://ui/components/VoiceControls.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
-const TEX_PANEL := preload("res://assets/ui/room_v2/friends.png")
+# 11.11 跟自定义房间一起换成羊皮纸面板（同尺寸合成图，见 room_parchment/）
+const TEX_PANEL := preload("res://assets/ui/room_parchment/friends.png")
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
 
 const REF_SIZE := Vector2(330, 480)
 const ROW_H := 46.0
@@ -51,9 +53,8 @@ func _ready() -> void:
 	_title.clip_text = true
 	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_title.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
-	_title.add_theme_color_override("font_outline_color", Tokens.INK_PANEL)
-	_title.add_theme_constant_override("outline_size", 2)
+	_title.add_theme_color_override("font_color", Color("8a4b12"))
+	_title.add_theme_constant_override("outline_size", 0)
 	add_child(_title)
 	_toggle = Button.new()
 	_toggle.focus_mode = Control.FOCUS_NONE
@@ -65,6 +66,7 @@ func _ready() -> void:
 	_toggle.add_theme_stylebox_override("pressed", _pill(0.95))
 	_toggle.add_theme_stylebox_override("focus", _pill(0.82))
 	_toggle.pressed.connect(func(): open_toggled.emit(not _open))
+	Kit.style_plate(_toggle, false)
 	add_child(_toggle)
 	_join = Button.new()
 	_join.name = "JoinSpectators"
