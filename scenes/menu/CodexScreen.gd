@@ -2,33 +2,19 @@ extends Control
 # Codex ("图鉴"). Opened from the main menu; never touches the prep screen.
 # Laid out as an open book: the left page picks an entry, the right page shows it.
 #   - Left page: category tabs, then a 4-across grid of portraits.
-#   - Right page: portrait with the name beneath, emblems and skill beside it,
+#   - Right page: framed character record, attributes, illustrated ability and four-star upgrade,
 #     stats below. Locked entries reveal nothing at all.
 # Data comes from CodexService; unlock state from PlayerProfile.
 
 signal back_requested
 
-const BOOK_TEX := preload("res://assets/ui/codex/book_spread.png")
+const BOOK_TEX := preload("res://assets/ui/codex/painted/book_spread_painted.png")
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
+const SkillArt := preload("res://ui/components/CodexSkillArt.gd")
 # Same art the main menu paints, so the codex opens over a dimmed menu rather than
 # a black void. The menu itself is freed when the codex opens, so its background is
 # redrawn here instead of kept alive.
-const MENU_BG_TEX := preload("res://assets/ui/main_menu_live/background.png")
-const REF_SIZE := Vector2(1536.0, 896.0)
-
-# Page rectangles measured against the book art, in BOOK_TEX pixels.
-const LEFT_PAGE := Rect2(184.0, 184.0, 492.0, 500.0)
-const RIGHT_PAGE := Rect2(830.0, 184.0, 508.0, 500.0)
-
-# The inked part of BOOK_TEX. The art is drawn on a larger transparent canvas, and
-# fitting that whole canvas to the window is what used to leave the book floating
-# small in the middle of the screen.
-const BOOK_ART := Rect2(98.0, 138.0, 1370.0, 594.0)
-# Parchment kept visible around the pages when the spread is overscanned.
-const SAFE_MARGIN := 40.0
-# The book scale the font sizes and widget sizes below were authored against;
-# _ui is how far the current scale departs from it.
-const UI_REF_SCALE := 0.804
-
+const MENU_BG_TEX := preload("res://assets/ui/main_menu_v2/background.png")
 const GRID_COLUMNS := 4
 # ★ 10.08 反馈第 2 条：分类按钮在中/英下大小不一 —— 因为按钮宽度随文字长度走
 #   （「神」vs「God」、「宝藏」vs「Treasures」）。钉一个统一的最小尺寸，
@@ -56,6 +42,7 @@ var _grid: GridContainer
 var _detail: VBoxContainer
 var _detail_scroll: ScrollContainer
 var _back_btn: Button
+var _page_banner: Control
 
 var _category := "god"
 var _picked := ""
@@ -87,6 +74,7 @@ func _notification(what: int) -> void:
 # --- construction --------------------------------------------------------
 
 func _build() -> void:
+	theme = Kit.theme()
 	var menu_bg := TextureRect.new()
 	menu_bg.texture = MENU_BG_TEX
 	menu_bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -97,7 +85,7 @@ func _build() -> void:
 
 	# Dim overlay: the menu shows through, just darker so the book reads clearly.
 	var dim := ColorRect.new()
-	dim.color = Color(0.03, 0.02, 0.02, 0.55)
+	dim.color = Color(0.08, 0.06, 0.03, 0.30)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(dim)
@@ -166,85 +154,42 @@ func _build() -> void:
 	_detail.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_detail_scroll.add_child(_detail)
 
-	# Added last so it sits above the pages for input picking.
-	_back_btn = Button.new()
-	_back_btn.text = "← " + tr("codex_back")
-	_back_btn.custom_minimum_size = Vector2(_px(120), _px(44))
-	_back_btn.focus_mode = Control.FOCUS_NONE
-	_back_btn.pressed.connect(func(): back_requested.emit())
+	_page_banner = Kit.title_banner("Codex" if UnitDetailFormat.is_en() else "图鉴", 70.0, 26)
+	add_child(_page_banner)
+	_back_btn = Kit.back_button(func(): back_requested.emit(), 56.0)
+	_back_btn.tooltip_text = tr("codex_back")
+	_back_btn.focus_mode = Control.FOCUS_ALL
 	add_child(_back_btn)
 
 	_layout()
 
-# Positions the pages over the book art. The spread is drawn to fill the window:
-# the transparent margin baked around the book is scaled off-screen, and the book
-# is then overscanned as far as the blank page margins allow, so the screen is
-# covered without ever cropping into a page.
+# Keep the two writing areas inside the device safe area. Book art may stretch;
+# all text and portraits remain unscaled controls with readable minimum font sizes.
 func _layout() -> void:
-	if _book == null:
+	if _book == null or size.x <= 1.0 or size.y <= 1.0:
 		return
-	var view := size
-	if view.x <= 1.0 or view.y <= 1.0:
-		return
-	# Cover fills the window; the keep limit is how far we may zoom before the
-	# pages themselves leave the device safe area (notch / Dynamic Island / rounded
-	# corners, ui/services/SafeArea.gd). The smaller of the two wins. The book art
-	# itself still covers the whole window; only the pages have to stay clear.
-	var device_safe := SafeArea.rect()
-	var cover := maxf(view.x / BOOK_ART.size.x, view.y / BOOK_ART.size.y)
-	var keep := _page_keep_rect()
-	var keep_limit := minf(device_safe.size.x / keep.size.x, device_safe.size.y / keep.size.y)
-	var scale := minf(cover, keep_limit)
-	# Screen position of the texture's own origin, so page rects map straight through.
-	var origin := Vector2(
-		-BOOK_ART.position.x * scale + (view.x - BOOK_ART.size.x * scale) * 0.5,
-		-BOOK_ART.position.y * scale + (view.y - BOOK_ART.size.y * scale) * 0.5)
-	# Centring the art can leave the pages under a notch on one side: slide the
-	# spread just far enough to bring them back inside. The scale above guarantees
-	# they fit, so one push per axis is enough.
-	var pages := Rect2(origin + keep.position * scale, keep.size * scale)
-	if pages.position.x < device_safe.position.x:
-		origin.x += device_safe.position.x - pages.position.x
-	elif pages.end.x > device_safe.end.x:
-		origin.x -= pages.end.x - device_safe.end.x
-	if pages.position.y < device_safe.position.y:
-		origin.y += device_safe.position.y - pages.position.y
-	elif pages.end.y > device_safe.end.y:
-		origin.y -= pages.end.y - device_safe.end.y
-	_book.position = origin
-	_book.size = REF_SIZE * scale
-	for pair in [[_left_page, LEFT_PAGE], [_right_page, RIGHT_PAGE]]:
-		var node: Control = pair[0]
-		var rect: Rect2 = pair[1]
-		if node == null:
-			continue
-		node.position = origin + rect.position * scale
-		node.size = rect.size * scale
-	# Fonts and art follow the same scale, so the page keeps its proportions
-	# instead of filling up with a handful of tiny widgets.
-	var ui := scale / UI_REF_SCALE
+	var safe := SafeArea.rect()
+	var ui := clampf(minf(safe.size.x / 1600.0, safe.size.y / 720.0), 0.8, 1.5)
 	var ui_changed := absf(ui - _ui) > 0.005
 	_ui = ui
+	var origin := safe.position + Vector2(_px(12), _px(66))
+	var book_size := safe.size - Vector2(_px(24), _px(72))
+	_book.position = origin
+	_book.size = book_size
+	_left_page.position = origin + book_size * Vector2(0.085, 0.14)
+	_left_page.size = book_size * Vector2(0.375, 0.72)
+	_right_page.position = origin + book_size * Vector2(0.535, 0.14)
+	_right_page.size = book_size * Vector2(0.375, 0.72)
 	if _back_btn != null:
-		_back_btn.custom_minimum_size = Vector2(_px(120), _px(44))
-		_back_btn.add_theme_font_size_override("font_size", _fs(16))
-		_back_btn.size = _back_btn.custom_minimum_size
-		_back_btn.position = Vector2(device_safe.end.x - _px(140), device_safe.position.y + _px(20))
-	if _detail_scroll != null and _back_btn != null and _right_page != null:
-		# The spread now reaches the window edges, so the back button sits over the top
-		# of the right page rather than beside it. Start the detail below it.
-		var btn_bottom := _back_btn.position.y + _back_btn.size.y + _px(8)
-		_detail_scroll.offset_top = maxf(0.0, btn_bottom - _right_page.position.y)
-	# Everything below the pages is built at the current scale, so a window resize
-	# has to lay it out again.
+		_back_btn.position = safe.position + Vector2(_px(24), _px(12))
+		_back_btn.size = Vector2(_px(56), _px(56))
+	if _page_banner != null:
+		_page_banner.size = Vector2(_px(350), _px(70))
+		_page_banner.position = Vector2(safe.get_center().x - _page_banner.size.x * 0.5, safe.position.y)
+	if _detail_scroll != null:
+		_detail_scroll.offset_top = 0
 	if ui_changed and _grid != null and _grid.get_child_count() > 0:
 		_refresh()
-
-# The part of the book art that must stay visible and clear of the notch: both
-# pages plus a little of the parchment margin around them. (Book-art pixels —
-# not the device safe area, which is SafeArea.rect().)
-func _page_keep_rect() -> Rect2:
-	return LEFT_PAGE.merge(RIGHT_PAGE).grow(SAFE_MARGIN)
 
 # --- refresh -------------------------------------------------------------
 
@@ -259,7 +204,15 @@ func _refresh() -> void:
 		if _is_reference_category()
 		else tr("codex_progress") % [progress.x, progress.y])
 
+	if not entries.is_empty():
+		var present := false
+		for candidate in entries:
+			if str(candidate.get("id", "")) == _picked:
+				present = true
+		if not present:
+			_picked = str(entries[0].get("id", ""))
 	for child in _grid.get_children():
+		_grid.remove_child(child)
 		child.queue_free()
 	for entry in entries:
 		_grid.add_child(_build_tile(entry))
@@ -275,15 +228,17 @@ func _refresh() -> void:
 
 func _build_tabs() -> void:
 	for child in _tab_row.get_children():
+		_tab_row.remove_child(child)
 		child.queue_free()
 	for meta in CodexService.CATEGORIES:
 		var key := str(meta.get("key", ""))
 		var btn := Button.new()
 		btn.text = tr("codex_tab_%s" % key)
 		# 统一尺寸：否则按钮宽度随标签长度走，中/英切换后大小不一（10.08 第 2 条）。
-		btn.custom_minimum_size = TAB_BUTTON_SIZE
-		btn.focus_mode = Control.FOCUS_NONE
-		btn.add_theme_font_size_override("font_size", _fs(13))
+		Kit.style_tab(btn, _px(44), _fs(15))
+		btn.custom_minimum_size = Vector2(_px(112), _px(44))
+		btn.focus_mode = Control.FOCUS_ALL
+		btn.add_theme_font_size_override("font_size", _fs(15))
 		btn.toggle_mode = true
 		btn.button_pressed = key == _category
 		btn.pressed.connect(func():
@@ -313,27 +268,39 @@ func _is_reference_category() -> bool:
 func _build_tile(entry: Dictionary) -> Control:
 	var unlocked := CodexService.is_unlocked(entry)
 	var btn := Button.new()
-	btn.focus_mode = Control.FOCUS_NONE
+	btn.focus_mode = Control.FOCUS_ALL
 	# Tall enough that a two-line name does not eat into the portrait.
-	btn.custom_minimum_size = Vector2(_px(0), _px(110))
+	btn.custom_minimum_size = Vector2(_px(0), _px(130))
+	btn.toggle_mode = true
+	btn.button_pressed = str(entry.get("id", "")) == _picked
+	btn.tooltip_text = _entry_name(entry) if unlocked else tr("codex_locked_name")
+	var tile_box := Kit.box("slot", Vector4(8, 8, 8, 8))
+	btn.add_theme_stylebox_override("normal", tile_box)
+	btn.add_theme_stylebox_override("hover", Kit.box("slot", Vector4(8, 8, 8, 8), Color(1.08, 1.04, 0.89)))
+	btn.add_theme_stylebox_override("pressed", Kit.box("slot", Vector4(8, 8, 8, 8), Color(1.0, 0.84, 0.48)))
+	btn.add_theme_stylebox_override("hover_pressed", btn.get_theme_stylebox("pressed"))
+	btn.add_theme_stylebox_override("focus", Kit.box("slot", Vector4(8, 8, 8, 8), Color(1.0, 0.88, 0.60)))
 	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	btn.pressed.connect(func():
 		_picked = str(entry.get("id", ""))
+		_detail_scroll.scroll_vertical = 0
 		_refresh())
 
 	var col := VBoxContainer.new()
 	col.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	col.offset_left = _px(10)
+	col.offset_right = -_px(10)
+	col.offset_top = _px(10)
+	col.offset_bottom = -_px(10)
 	col.add_theme_constant_override("separation", _sp(2))
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	btn.add_child(col)
 
 	var art := TextureRect.new()
 	art.texture = _load_texture(str(entry.get("portrait", "")))
-	art.custom_minimum_size = Vector2(_px(0), _px(62))
+	art.custom_minimum_size = Vector2(_px(0), _px(80))
 	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	art.stretch_mode = (TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		if bool(entry.get("icon_art", false))
-		else TextureRect.STRETCH_KEEP_ASPECT_COVERED)
+	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	art.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	# Locked tiles give nothing away, not even a silhouette.
@@ -352,24 +319,24 @@ func _build_tile(entry: Dictionary) -> Control:
 	name_lbl.max_lines_visible = 2
 	col.add_child(name_lbl)
 
-	if entry.has("cost") and int(entry.get("cost", 0)) > 0:
-		var cost := Label.new()
-		cost.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		cost.add_theme_font_size_override("font_size", _fs(10))
-		cost.add_theme_color_override("font_color", INK_SOFT)
-		cost.text = tr("codex_cost") % int(entry.get("cost", 0))
-		col.add_child(cost)
-
 	return btn
 
 # --- detail page ---------------------------------------------------------
 
 func _build_detail(entry: Dictionary) -> void:
 	for child in _detail.get_children():
+		_detail.remove_child(child)
 		child.queue_free()
 	if entry.is_empty():
 		return
 	var unlocked := CodexService.is_unlocked(entry)
+
+	var detail_title := Label.new()
+	detail_title.text = (("Character record" if UnitDetailFormat.is_en() else "角色档案") if entry.has("raw") else ("Entry details" if UnitDetailFormat.is_en() else "图鉴详情"))
+	detail_title.add_theme_font_size_override("font_size", _fs(23))
+	detail_title.add_theme_color_override("font_color", INK)
+	_detail.add_child(detail_title)
+	_detail.add_child(Kit.separator(_px(16)))
 
 	var top := HBoxContainer.new()
 	top.add_theme_constant_override("separation", _sp(14))
@@ -415,19 +382,20 @@ func _build_detail(entry: Dictionary) -> void:
 
 func _build_portrait_column(entry: Dictionary, unlocked: bool) -> Control:
 	var col := VBoxContainer.new()
-	col.custom_minimum_size = Vector2(_px(150), _px(0))
+	col.custom_minimum_size = Vector2(_px(190), _px(0))
 	col.add_theme_constant_override("separation", _sp(4))
 
 	var art := TextureRect.new()
 	art.texture = _load_texture(str(entry.get("portrait", "")))
-	art.custom_minimum_size = Vector2(_px(150), _px(130))
+	art.custom_minimum_size = Vector2(_px(170), _px(142))
 	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	art.stretch_mode = (TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		if bool(entry.get("icon_art", false))
-		else TextureRect.STRETCH_KEEP_ASPECT_COVERED)
+	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	if not unlocked:
 		art.modulate = Color(0, 0, 0, 0.85)
-	col.add_child(art)
+	var portrait_frame := PanelContainer.new()
+	portrait_frame.add_theme_stylebox_override("panel", Kit.box("slot", Vector4(8, 8, 8, 8)))
+	portrait_frame.add_child(art)
+	col.add_child(portrait_frame)
 
 	var name_lbl := Label.new()
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -443,7 +411,8 @@ func _build_portrait_column(entry: Dictionary, unlocked: bool) -> Control:
 	en.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	en.add_theme_font_size_override("font_size", _fs(12))
 	en.add_theme_color_override("font_color", INK_SOFT)
-	en.text = _entry_subtitle(entry) if unlocked else tr("codex_locked_hint")
+	en.text = (tr("codex_tier") % int(entry.get("tier", 0)) if int(entry.get("tier", 0)) > 0 else "") if unlocked else tr("codex_locked_hint")
+	en.visible = false # Tier is already beside the race/element badges.
 	col.add_child(en)
 
 	# Kept in this column so the numbers always sit under the portrait, whatever
@@ -615,31 +584,34 @@ func _flat_badge(text: String, color: Color) -> Control:
 
 func _build_skill_box(entry: Dictionary, unlocked: bool) -> Control:
 	var panel := PanelContainer.new()
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.85, 0.79, 0.65, 0.55)
-	style.border_color = Color(0.20, 0.15, 0.11, 0.28)
-	style.set_border_width_all(1)
-	style.border_width_left = int(_px(4))
-	style.border_color = BRASS
-	style.set_corner_radius_all(2)
-	style.content_margin_left = _px(10)
-	style.content_margin_right = _px(10)
-	style.content_margin_top = _px(8)
-	style.content_margin_bottom = _px(8)
-	panel.add_theme_stylebox_override("panel", style)
+	panel.add_theme_stylebox_override("panel", Kit.box("card", Vector4(22, 24, 22, 22)))
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", _sp(3))
 	panel.add_child(col)
 
+	var skill_header := HBoxContainer.new()
+	skill_header.add_theme_constant_override("separation", _sp(10))
+	col.add_child(skill_header)
+	var skill_icon: Texture2D = SkillArt.for_entry(entry) if unlocked else null
+	if skill_icon != null:
+		var icon := TextureRect.new()
+		icon.name = "AbilityIcon"
+		icon.texture = skill_icon
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.custom_minimum_size = Vector2(_px(64), _px(64))
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		skill_header.add_child(icon)
 	var head := Label.new()
-	head.add_theme_font_size_override("font_size", _fs(11))
-	head.add_theme_color_override("font_color", INK_SOFT)
+	head.add_theme_font_size_override("font_size", _fs(20))
+	head.add_theme_color_override("font_color", INK)
 	head.text = tr("codex_skill")
-	col.add_child(head)
+	skill_header.add_child(head)
 
 	var body := Label.new()
-	body.add_theme_font_size_override("font_size", _fs(15))
+	body.add_theme_font_size_override("font_size", _fs(17))
 	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body.add_theme_color_override("font_color", INK if unlocked else LOCKED)
 	body.text = (_skill_text(entry)
@@ -649,7 +621,7 @@ func _build_skill_box(entry: Dictionary, unlocked: bool) -> Control:
 	# 10.07 bug 文档第 2 条：补上四星技能说明。
 	# 只在「有 star4 覆写」且已解锁时出现；文案尺寸口径照需求：
 	#   「四级升星后」与上面的「技能」标签同字号（_fs(11)）；
-	#   四星技能正文与上面的一~三星正文同字号（_fs(15)）。
+	#   四星技能正文与上面的一~三星正文同字号（_fs(17)）。
 	var four_star := _four_star_skill_text(entry) if unlocked else ""
 	if not four_star.is_empty():
 		var star_head := Label.new()
@@ -659,7 +631,7 @@ func _build_skill_box(entry: Dictionary, unlocked: bool) -> Control:
 		col.add_child(star_head)
 
 		var star_body := Label.new()
-		star_body.add_theme_font_size_override("font_size", _fs(15))
+		star_body.add_theme_font_size_override("font_size", _fs(17))
 		star_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		star_body.add_theme_color_override("font_color", INK)
 		star_body.text = four_star
@@ -702,9 +674,9 @@ func _four_star_skill_text(entry: Dictionary) -> String:
 
 func _build_stats(entry: Dictionary, unlocked: bool) -> Control:
 	var grid := GridContainer.new()
-	grid.columns = 4
+	grid.columns = 2
 	grid.add_theme_constant_override("h_separation", _sp(6))
-	grid.add_theme_constant_override("v_separation", _sp(4))
+	grid.add_theme_constant_override("v_separation", _sp(2))
 
 	var stats: Dictionary = entry.get("stats", {})
 	var rows := [
@@ -712,15 +684,18 @@ func _build_stats(entry: Dictionary, unlocked: bool) -> Control:
 		["codex_stat_speed", "attack_speed"], ["codex_stat_range", "range"], ["codex_stat_move", "move_speed"],
 	]
 	for row in rows:
-		var cell := VBoxContainer.new()
-		cell.add_theme_constant_override("separation", _sp(0))
+		var cell := HBoxContainer.new()
+		cell.add_theme_constant_override("separation", _sp(6))
 		var key := Label.new()
-		key.add_theme_font_size_override("font_size", _fs(10))
+		key.add_theme_font_size_override("font_size", _fs(14))
+		key.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		key.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		key.add_theme_color_override("font_color", INK_SOFT)
 		key.text = tr(str(row[0]))
 		cell.add_child(key)
 		var value := Label.new()
 		value.add_theme_font_size_override("font_size", _fs(17))
+		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		if not unlocked:
 			value.text = tr("codex_locked_value")
 			value.add_theme_color_override("font_color", LOCKED)
@@ -728,7 +703,18 @@ func _build_stats(entry: Dictionary, unlocked: bool) -> Control:
 			value.text = str(stats.get(str(row[1]), 0))
 			value.add_theme_color_override("font_color", INK)
 		cell.add_child(value)
-		grid.add_child(cell)
+		var plate := PanelContainer.new()
+		plate.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var stat_style := StyleBoxFlat.new()
+		stat_style.bg_color = Color(0.56, 0.38, 0.17, 0.09)
+		stat_style.set_corner_radius_all(3)
+		stat_style.content_margin_left = _px(8)
+		stat_style.content_margin_right = _px(8)
+		stat_style.content_margin_top = _px(1)
+		stat_style.content_margin_bottom = _px(1)
+		plate.add_theme_stylebox_override("panel", stat_style)
+		plate.add_child(cell)
+		grid.add_child(plate)
 	return grid
 
 func _build_text_block(title: String, body: String, unlocked: bool) -> Control:
@@ -779,7 +765,7 @@ func _build_state_line(entry: Dictionary, unlocked: bool) -> Control:
 # Everything the pages draw goes through these, so the book and its contents grow
 # together and a resize never leaves one out of step with the other.
 func _fs(base: float) -> int:
-	return maxi(1, int(round(base * _ui)))
+	return maxi(14, int(round(base * _ui)))
 
 func _px(base: float) -> float:
 	return base * _ui
