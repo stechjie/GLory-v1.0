@@ -98,17 +98,22 @@ func _build() -> void:
 	hero_copy.alignment = BoxContainer.ALIGNMENT_CENTER
 	hero_copy.add_theme_constant_override("separation", 9)
 	hero_row.add_child(hero_copy)
-	hero_copy.add_child(_label(_t("当前等级", "CURRENT LEVEL"), 18, MUTED))
 	_next = _label(_t("正在读取成长进度…", "Loading progress…"), 25, CREAM)
 	hero_copy.add_child(_next)
 	_progress = ProgressBar.new()
-	_progress.custom_minimum_size.y = 20
+	_progress.custom_minimum_size.y = 32
 	_progress.show_percentage = false
-	_progress.add_theme_stylebox_override("background", _box(Color(0.29, 0.17, 0.08, 0.3), Color(0.29, 0.17, 0.08, 0.5), 9, 1, 0))
+	_progress.add_theme_stylebox_override("background", _box(Color("705234"), Color("593d23"), 9, 1, 0))
 	_progress.add_theme_stylebox_override("fill", _box(Color("e9a62b"), Color("e9a62b"), 9, 0, 0))
 	hero_copy.add_child(_progress)
-	_xp_text = _label("0 / 60 XP", 17, MUTED)
-	hero_copy.add_child(_xp_text)
+	_xp_text = _label("—", 17, Color("fff8e8"))
+	_xp_text.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_xp_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_xp_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_xp_text.add_theme_color_override("font_outline_color", Color("39250f"))
+	_xp_text.add_theme_constant_override("outline_size", 5)
+	_xp_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_progress.add_child(_xp_text)
 	var section := HBoxContainer.new()
 	section.custom_minimum_size.y = 34 if _compact else 40
 	column.add_child(section)
@@ -158,7 +163,7 @@ func _show_state(state: Dictionary) -> void:
 	var next_xp = state.get("next_xp", null)
 	if next_xp == null:
 		_next.text = _t("等级已满 · 荣耀之路达成", "Maximum level reached")
-		_progress.value = 100
+		_progress.value = _progress.max_value
 		_xp_text.text = _t("已满级", "MAX LEVEL")
 	else:
 		_next.text = _t("距离 Lv %d 还差 %d 经验" % [_current_level + 1, maxi(0, int(next_xp) - xp)],

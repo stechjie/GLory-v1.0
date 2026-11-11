@@ -269,8 +269,8 @@ func _build_tile(entry: Dictionary) -> Control:
 	var unlocked := CodexService.is_unlocked(entry)
 	var btn := Button.new()
 	btn.focus_mode = Control.FOCUS_ALL
-	# Tall enough that a two-line name does not eat into the portrait.
-	btn.custom_minimum_size = Vector2(_px(0), _px(130))
+	var min_height := _px(130)
+	btn.custom_minimum_size.y = min_height
 	btn.toggle_mode = true
 	btn.button_pressed = str(entry.get("id", "")) == _picked
 	btn.tooltip_text = _entry_name(entry) if unlocked else tr("codex_locked_name")
@@ -313,11 +313,17 @@ func _build_tile(entry: Dictionary) -> Control:
 	name_lbl.add_theme_font_size_override("font_size", _fs(12))
 	name_lbl.add_theme_color_override("font_color", INK if unlocked else LOCKED)
 	name_lbl.text = _entry_name(entry) if unlocked else tr("codex_locked_name")
-	# English names run far longer than the Chinese ones and used to be cut off
-	# mid-word by clip_text. Two lines is enough for every name currently shipped.
 	name_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	name_lbl.max_lines_visible = 2
+	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(name_lbl)
+
+	# Anchored children of a Button do not contribute to its minimum size.
+	# Include the wrapped name and both insets so the grid row grows with the text.
+	var vertical_padding := _px(20)
+	var fit_height := func() -> void:
+		btn.custom_minimum_size.y = maxf(min_height, col.get_combined_minimum_size().y + vertical_padding)
+	col.minimum_size_changed.connect(fit_height)
+	fit_height.call()
 
 	return btn
 
@@ -584,7 +590,7 @@ func _flat_badge(text: String, color: Color) -> Control:
 
 func _build_skill_box(entry: Dictionary, unlocked: bool) -> Control:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Kit.box("card", Vector4(22, 24, 22, 22)))
+	panel.add_theme_stylebox_override("panel", Kit.box("card", Vector4(35, 46, 35, 36)))
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 	var col := VBoxContainer.new()

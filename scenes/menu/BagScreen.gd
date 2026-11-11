@@ -589,7 +589,8 @@ func _render_avatar_detail(value: String) -> void:
 	eyebrow.add_theme_color_override("font_color", SECTION_COLOR)
 	_detail.add_child(eyebrow)
 	var well := PanelContainer.new()
-	well.custom_minimum_size = Vector2(292, 292)
+	well.custom_minimum_size.y = 140
+	well.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	well.add_theme_stylebox_override("panel", Kit.box("slot", Vector4(14, 14, 14, 14)))
 	_detail.add_child(well)
 	var tex := AvatarCatalog.texture_for(value)
@@ -612,7 +613,6 @@ func _render_avatar_detail(value: String) -> void:
 	hint.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 	hint.add_theme_color_override("font_color", Kit.INK_SOFT)
 	_detail.add_child(hint)
-	_detail.add_child(_flex_spacer())
 	var action: Button = ACTION_BUTTON.instantiate()
 	action.text = _t("前往个人资料更换", "Change in Profile")
 	action.theme_type_variation = Theming.VARIATION_PRIMARY
@@ -682,13 +682,6 @@ func _detail_hint(text: String) -> Label:
 	label.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	label.add_theme_color_override("font_color", Kit.INK_SOFT)
 	return label
-
-
-func _flex_spacer() -> Control:
-	var spacer := Control.new()
-	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return spacer
 
 
 func _clear_children(parent: Node) -> void:

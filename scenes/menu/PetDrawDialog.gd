@@ -79,7 +79,7 @@ func _build() -> void:
 	_rect(_fx, 0, 0, 1600, 720)
 	_canvas.add_child(_fx)
 	_build_egg()
-	var title := Kit.title_banner(_t("森林伙伴召唤", "Forest companion summon"), 66.0, 26)
+	var title := Kit.title_banner(_t("森林伙伴召唤", "Companion Summon"), 76.0, 22)
 	title.position = Vector2(800 - title.custom_minimum_size.x * 0.5, 4)
 	title.size = title.custom_minimum_size
 	_canvas.add_child(title)
@@ -108,29 +108,30 @@ func _build() -> void:
 	_summon.pressed.connect(_begin_draw)
 	_canvas.add_child(_summon)
 	var pets_plate := _plate(_canvas, 80, 169, 355, 37, Tokens.SUMMON_TITLE_PLATE)
-	var pets_heading := _label(_t("召唤伙伴 · 点击查看技能", "Companions · tap for skills"), 18)
+	var pets_heading := _label(_t("召唤伙伴 · 点击查看技能", "Companions · tap for skills"), 16)
+	pets_heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	pets_heading.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	pets_heading.add_theme_color_override("font_color", Kit.INK)
 	pets_heading.add_theme_constant_override("outline_size", 0)
-	_rect(pets_heading, 12, 0, 331, 37)
+	_rect(pets_heading, 28, 4, 299, 31)
 	pets_plate.add_child(pets_heading)
 	_pet_card("pet_squirrel", 80, 210)
 	_pet_card("pet_tiger", 80, 391)
 	var energy_plate := _plate(_canvas, 1205, 180, 245, 40, Tokens.SUMMON_TITLE_PLATE)
-	var energy_title := _label(_t("森林能量", "Forest energy"), 22)
+	var energy_title := _label(_t("森林能量", "Forest energy"), 19)
 	energy_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	energy_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	energy_title.add_theme_color_override("font_color", Kit.INK)
 	energy_title.add_theme_constant_override("outline_size", 0)
-	_rect(energy_title, 10, 0, 225, 40)
+	_rect(energy_title, 18, 4, 209, 34)
 	energy_plate.add_child(energy_title)
 	_energy_label = _label("", 18)
 	_energy_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_rect(_energy_label, 1220, 558, 320, 40)
 	_canvas.add_child(_energy_label)
 	_rules = PanelContainer.new()
-	_rules.add_theme_stylebox_override("panel", Kit.box("card", Vector4(30, 18, 30, 14)))
-	_rect(_rules, 475, 573, 650, 119)
+	_rules.add_theme_stylebox_override("panel", Kit.box("card", Vector4(44, 25, 44, 23)))
+	_rect(_rules, 461, 567, 678, 130)
 	_canvas.add_child(_rules)
 	var rule_text := _label(_t(
 		"规则  ·  每抽消耗 75 钻石，普通抽中宠物概率 10%，第 10 抽必得未拥有宠物。\n未中宠物获得 100 金币；提前抽中继续积累能量，保底命中才清零。",
@@ -164,12 +165,12 @@ func _pet_card(pet_id: String, x: float, y: float) -> void:
 	card.add_child(art)
 	var name_plate := _plate(card, 4, 130, 252, 35, Tokens.SUMMON_NAME_PLATE)
 	var name := _label(_t("松鼠", "Squirrel") if pet_id == "pet_squirrel" else
-		_t("老虎", "Tiger"), 22)
+		_t("老虎", "Tiger"), 18)
 	name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	name.add_theme_color_override("font_color", Tokens.SUMMON_DETAIL_INK)
 	name.add_theme_constant_override("outline_size", 0)
-	_rect(name, 0, 0, 252, 35)
+	_rect(name, 20, 4, 212, 29)
 	name_plate.add_child(name)
 	var owned_plate := _plate(card, 8, 8, 96, 32, Tokens.SUMMON_TITLE_PLATE)
 	var owned := _label(_t("已拥有", "Owned"), 18)
@@ -177,7 +178,7 @@ func _pet_card(pet_id: String, x: float, y: float) -> void:
 	owned.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	owned.add_theme_color_override("font_color", Kit.INK)
 	owned.add_theme_constant_override("outline_size", 0)
-	_rect(owned, 0, 0, 96, 32)
+	_rect(owned, 12, 3, 72, 27)
 	owned_plate.add_child(owned)
 	_portraits[pet_id] = {"art": art, "owned": owned_plate, "button": card}
 

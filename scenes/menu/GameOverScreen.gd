@@ -59,7 +59,7 @@ func _ready() -> void:
 	var compact := tutorial_result
 	var heading := VBoxContainer.new()
 	heading.add_theme_constant_override("separation", 8)
-	_region(0.24 if compact else 0.43, 0.46 if compact else 0.67).add_child(heading)
+	_region(0.20 if compact else 0.38, 0.66 if compact else 0.82).add_child(heading)
 	var eyebrow := _label(
 		_text("荣耀战绩", "MATCH RESULT") if result_kind == "win" else _text("战局落幕", "MATCH ENDED"),
 		18, Color(1.0, 0.95, 0.82))
@@ -71,14 +71,15 @@ func _ready() -> void:
 
 	# 正文放在一张羊皮纸卡里（原来是白字直接压在大图上）
 	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel", Kit.box("card", Vector4(34, 24, 34, 22)))
+	card.add_theme_stylebox_override("panel", Kit.box("card", Vector4(44, 36, 44, 34)))
 	var body := _label(body_text, 21, Kit.INK)
 	body.add_theme_constant_override("outline_size", 0)
 	_body_label = body
 	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	body.custom_minimum_size = Vector2(640, 54)
+	body.custom_minimum_size = Vector2(540, 54)
+	Kit.bold_label(body)
 	card.add_child(body)
-	_region(0.47 if compact else 0.69, 0.61 if compact else 0.82).add_child(card)
+	heading.add_child(card)
 
 	# 横幅从大到小砸下来（赢了砸得更有力），正文卡随后弹出
 	banner.pivot_offset = banner.custom_minimum_size * 0.5

@@ -120,8 +120,8 @@ func _k() -> float:
 
 func _relayout() -> void:
 	var k := _k()
-	# 羊皮纸的内区（实测 friends.png 拉到 330×480 时，纸面约在 9%~91% 宽、11%~92% 高）。
-	var inner := Rect2(size.x * 0.10, size.y * 0.09, size.x * 0.80, size.y * 0.83)
+	# 留出侧框及四个卷角，列表宽度只取中间的平整纸面。
+	var inner := Rect2(size.x * 0.18, size.y * 0.13, size.x * 0.64, size.y * 0.72)
 	_title.position = Vector2(inner.position.x, inner.position.y)
 	_title.add_theme_font_size_override("font_size", maxi(13, roundi(24 * k)))
 	_title.size = Vector2(inner.size.x, 40 * k)
@@ -130,15 +130,14 @@ func _relayout() -> void:
 	_join.size = Vector2(40, 40) * k
 	_join.queue_redraw()
 	_toggle.visible = _is_host
-	_toggle.position = Vector2(inner.position.x + inner.size.x * 0.15, inner.position.y + 82 * k)
+	_toggle.position = Vector2(inner.position.x + inner.size.x * 0.05, inner.position.y + 84 * k)
 	# Set font metrics before size: the default font's minimum height otherwise
 	# clamps the first layout, then shrinks only after a seat/state update.
-	_toggle.add_theme_font_size_override("font_size", maxi(13, roundi(17 * k)))
-	_toggle.size = Vector2(inner.size.x * 0.70, 32 * k)
-	# 标题木牌的图案比标题框往下多伸出一截（约 60），列表从它下面开始，否则第一行被压住。
-	var list_top := inner.position.y + (122 if _is_host else 84) * k
-	_scroll.position = Vector2(inner.position.x + 12 * k, list_top)
-	_scroll.size = Vector2(inner.size.x - 12 * k, inner.end.y - list_top)
+	_toggle.add_theme_font_size_override("font_size", maxi(10, roundi(17 * k)))
+	_toggle.size = Vector2(inner.size.x * 0.90, 42 * k)
+	var list_top := inner.position.y + (137 if _is_host else 88) * k
+	_scroll.position = Vector2(inner.position.x, list_top)
+	_scroll.size = Vector2(inner.size.x, maxf(0.0, inner.end.y - list_top))
 	_empty.position = _scroll.position
 	_empty.add_theme_font_size_override("font_size", maxi(13, roundi(18 * k)))
 	_empty.size = Vector2(_scroll.size.x, 80 * k)
@@ -165,12 +164,13 @@ func _make_row(entry: Dictionary) -> Control:
 	var identity: Dictionary = entry.get("identity", {})
 	var guest := bool(entry.get("guest", true))
 	var sid := int(entry.get("sid", -1))
+	var is_self := _my_sid >= 0 and sid == _my_sid
 	var avatar := TextureButton.new()
 	avatar.name = "avatar"
 	avatar.ignore_texture_size = true
 	avatar.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
 	avatar.texture_normal = AvatarCatalog.texture_for(str(identity.get("avatar", AvatarCatalog.default_avatar())), true)
-	if not guest and str(identity.get("friend_code", "")).length() == 8:
+	if not is_self and not guest and str(identity.get("friend_code", "")).length() == 8:
 		avatar.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		avatar.tooltip_text = _t("查看玩家资料", "View player profile")
 		avatar.pressed.connect(func(): profile_requested.emit(identity))
@@ -189,7 +189,7 @@ func _make_row(entry: Dictionary) -> Control:
 	var shown := _t("游客", "Guest") if guest else str(identity.get("player_name", ""))
 	if shown.is_empty():
 		shown = _t("观战者", "Spectator")
-	if sid == _my_sid:
+	if is_self:
 		shown += _t("（我）", " (Me)")
 	name_lbl.text = shown
 	row.add_child(name_lbl)
@@ -222,6 +222,7 @@ func _size_row(row: Control, k: float) -> void:
 	var avatar := row.get_node_or_null("avatar") as Control
 	if avatar != null:
 		avatar.custom_minimum_size = Vector2(AVATAR, AVATAR) * k
+		avatar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var name_lbl := row.get_node_or_null("name") as Label
 	if name_lbl != null:
 		name_lbl.add_theme_font_size_override("font_size", maxi(13, roundi(19 * k)))

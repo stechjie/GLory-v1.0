@@ -12,9 +12,14 @@ const Action := preload("res://ui/components/GloryActionButton.tscn")
 const Growth := preload("res://scripts/units/UnitGrowth.gd")
 const PROFILE_BG_TEX := preload("res://assets/ui/profile/hall_of_glory.png")
 # 11.11 羊皮纸风：字色换成羊皮纸上的深色，面板用 ParchmentKit
-const GOLD := Color("8a4b12")
-const TEXT := Color("4a2c14")
-const MUTED := Color("7a5634")
+const GOLD := Color("74400d")
+# Preserve the six seat colors with enough contrast on parchment.
+const SEAT_INK := [
+	Color("8b2d24"), Color("754600"), Color("235d32"),
+	Color("234f88"), Color("653789"), Color("803f15"),
+]
+const TEXT := Color("382313")
+const MUTED := Color("664629")
 const Kit := preload("res://ui/theme/ParchmentKit.gd")
 const WIDTHS := [150.0, 310.0, 270.0, 210.0, 150.0, 170.0, 150.0]
 var data: Dictionary = {}
@@ -169,6 +174,7 @@ func _label(value: String, color: Color = TEXT, font_size: int = 16) -> Label:
 	label.text = value
 	label.add_theme_color_override("font_color", color)
 	label.add_theme_font_size_override("font_size", font_size)
+	Kit.bold_label(label)
 	return label
 
 func _button(value: String, parent: Node) -> Button:
@@ -254,7 +260,7 @@ func _team(side: int) -> Control:
 	var headers := _row(WIDTHS)
 	var labels := ["settle_col_player", "settle_col_board", "settle_col_merc", "settle_col_treasure", "settle_col_stones", "settle_col_damage", "settle_col_gold"]
 	for i in labels.size():
-		var label := _label(tr(labels[i]), MUTED, 14)
+		var label := _label(tr(labels[i]), TEXT, 16)
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if i >= 5 else HORIZONTAL_ALIGNMENT_LEFT
 		label.set_meta("settlement_column", i)
 		label.set_meta("settlement_team", side)
@@ -270,7 +276,7 @@ func _team(side: int) -> Control:
 		var row := _row(WIDTHS)
 		row.custom_minimum_size.y = 76
 		column.add_child(_row_panel(row, Color(0.29, 0.17, 0.08, 0.09)))
-		var name_label := _label(_seat_display_name(slot, seat), GameConstants.team_slot_color(slot), 15)
+		var name_label := _label(_seat_display_name(slot, seat), SEAT_INK[slot], 17)
 		name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		row.get_child(0).add_child(name_label)
 		for group in 3:
@@ -297,12 +303,12 @@ func _team(side: int) -> Control:
 				number.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 				icon.add_child(number)
 				stones.add_child(icon)
-		var gold := _label(str(seat.total_gold) if seat.get("total_gold") != null else "—", Color("a8650a"))
+		var gold := _label(str(seat.total_gold) if seat.get("total_gold") != null else "—", GOLD, 18)
 		gold.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		gold.set_meta("settlement_column", 6)
 		gold.set_meta("settlement_team", side)
 		row.get_child(6).add_child(gold)
-		var damage := _label(str(seat.get("round_damage", 0)), TEXT)
+		var damage := _label(str(seat.get("round_damage", 0)), TEXT, 18)
 		damage.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		damage.set_meta("settlement_column", 5)
 		damage.set_meta("settlement_team", side)
@@ -316,17 +322,18 @@ func _stats() -> Control:
 	var header := _row(widths)
 	var stat_labels := ["settle_stat_unit", "settle_stat_owner", "settle_stat_dealt", "settle_stat_taken", "settle_stat_heal"]
 	for i in 5:
-		var label := _label(tr(stat_labels[i]), MUTED, 14)
+		var label := _label(tr(stat_labels[i]), TEXT, 16)
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if i >= 2 else HORIZONTAL_ALIGNMENT_LEFT
 		label.set_meta("stats_column", i)
 		label.set_meta("settlement_header", true)
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		header.get_child(i).add_child(label)
 	column.add_child(_row_panel(header, Color(0.29, 0.17, 0.08, 0.08)))
 	var row_index := 0
 	var seats_row: Array = data.get("seats", [])
 	for entry in data.get("stats", []):
 		var slot := int(entry.get("owner_slot", 0))
-		var color := GameConstants.team_slot_color(slot)
+		var color: Color = SEAT_INK[slot] if slot >= 0 and slot < SEAT_INK.size() else TEXT
 		var row := _row(widths)
 		row.custom_minimum_size.y = 44
 		var star := 0 if bool(entry.get("is_mercenary", false)) else int(entry.get("star", 1))
@@ -337,7 +344,7 @@ func _stats() -> Control:
 		var owner_name := _seat_display_name(slot, owner_seat)
 		var values := [_stat_unit_name(entry) + _stars_text(star) + (tr("settle_stacks") % stacks if stacks > 0 else ""), owner_name, str(entry.get("damage_dealt", 0)), str(entry.get("damage_taken", 0)), str(entry.get("healing_done", 0))]
 		for i in 5:
-			var label := _label(values[i], color if i < 2 else (GOLD if i == 2 else (Color("2f7d45") if i == 4 else MUTED)), 15)
+			var label := _label(values[i], color if i < 2 else (GOLD if i == 2 else (Color("245733") if i == 4 else TEXT)), 16)
 			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if i >= 2 else HORIZONTAL_ALIGNMENT_LEFT
 			label.set_meta("stats_column", i)
 			label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -365,7 +372,7 @@ func _icon(path: String, caption: String, stars: int = 0, pixels: int = 48) -> V
 			_show_bubble(art, caption)
 			art.accept_event())
 	if stars > 0:
-		var label := _label("★".repeat(stars), Color("d18b0e"), 9)
+		var label := _label("★".repeat(stars), GOLD, 10)
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		box.add_child(label)
 	return box

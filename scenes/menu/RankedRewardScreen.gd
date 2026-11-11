@@ -78,7 +78,7 @@ func _build() -> void:
 	var frame := PanelContainer.new()
 	_frame = frame
 	frame.custom_minimum_size = Vector2(680, 0)
-	frame.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(64, 46, 64, 34)))
+	frame.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(64, 40, 64, 31)))
 	center.add_child(frame)
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 7)
@@ -89,9 +89,8 @@ func _build() -> void:
 	column.add_child(eyebrow)
 	# 结果写在标题缎带上（胜利 / 平局 / 失败横幅出图后按结果换图）
 	# 胜利 / 失败 / 平局三张横幅（第二批图），字色跟着横幅走
-	_banner = Kit.result_banner(_result, _result_title(), 96.0, 40)
+	_banner = Kit.result_banner(_result, _result_title(), 104.0, 40)
 	_title = _banner.get_node("TitleText") as Label
-	_title.name = "ResultTitle"
 	column.add_child(_banner)
 	var subtitle := _label(_t("属于你的本场荣耀", "YOUR MATCH SUMMARY"), 16,
 		Kit.INK_SOFT, HORIZONTAL_ALIGNMENT_CENTER)
@@ -135,7 +134,7 @@ func _build() -> void:
 	rank_column.add_child(_tier_label)
 
 	var score_panel := PanelContainer.new()
-	score_panel.add_theme_stylebox_override("panel", Kit.row_box())
+	score_panel.add_theme_stylebox_override("panel", Kit.box("slot", Vector4(20, 12, 20, 12)))
 	score_panel.visible = not _coins_only()
 	rank_column.add_child(score_panel)
 	var score_column := VBoxContainer.new()
@@ -143,6 +142,7 @@ func _build() -> void:
 	score_panel.add_child(score_column)
 	_score = _label(_t("排位积分 · 正在确认", "RANK SCORE · VERIFYING"), 21,
 		Kit.INK, HORIZONTAL_ALIGNMENT_CENTER)
+	_score.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	score_column.add_child(_score)
 	_progress = ProgressBar.new()
 	_progress.custom_minimum_size = Vector2(0, 10)
@@ -175,6 +175,7 @@ func _build() -> void:
 	amount_row.add_child(_amount)
 	_receipt_status = _label(_t("正在确认到账…", "Verifying your reward…"), 15,
 		Kit.INK_SOFT, HORIZONTAL_ALIGNMENT_CENTER)
+	_receipt_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	reward_column.add_child(_receipt_status)
 	_balance = _label("", 14, Kit.INK_SOFT, HORIZONTAL_ALIGNMENT_CENTER)
 	reward_column.add_child(_balance)
@@ -229,6 +230,7 @@ func _label(value: String, font_size: int, color: Color,
 	label.horizontal_alignment = align
 	label.add_theme_font_size_override("font_size", font_size)
 	label.add_theme_color_override("font_color", color)
+	Kit.bold_label(label)
 	return label
 
 

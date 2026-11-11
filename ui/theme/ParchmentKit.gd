@@ -167,12 +167,36 @@ static func title_banner(text: String, height := 86.0, font_size := 30) -> Contr
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	# 缎带的纸面偏上，下面是卷边
-	label.offset_bottom = -height * 0.16
+	# 文字落在内侧纸面，绕开两端叶片和卷边。
+	label.anchor_left = 0.12
+	label.anchor_right = 0.88
+	label.anchor_top = 0.25
+	label.anchor_bottom = 0.86
+	label.clip_text = true
+	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ink(label, font_size, true)
 	holder.add_child(label)
+	label.resized.connect(_fit_banner_text.bind(label, font_size))
 	return holder
+
+
+static func _fit_banner_text(label: Label, preferred_size: int, fit_height := false) -> void:
+	var width := label.size.x - 8.0
+	if width <= 0.0:
+		return
+	var font := label.get_theme_font("font")
+	var font_size := preferred_size
+	var height := INF
+	if fit_height:
+		var holder := label.get_parent() as Control
+		height = holder.size.y * (label.anchor_bottom - label.anchor_top) - 4.0
+		if height <= 0.0:
+			return
+	while font_size > 12 and (font.get_string_size(label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > width
+			or font.get_height(font_size) > height):
+		font_size -= 1
+	label.add_theme_font_size_override("font_size", font_size)
 
 
 # 只有图、没有字的圆形键（返回 / 关闭 / 图标键）。
@@ -218,6 +242,10 @@ static func close_button(cb: Callable, side := 48.0) -> Button:
 static func button(text: String, cb: Callable, gold := true, height := 58.0, font_size := 22) -> Button:
 	var b := image_button("button_gold" if gold else "button", cb, height)
 	b.text = text
+	for state in ["normal", "hover", "pressed", "disabled"]:
+		var style := b.get_theme_stylebox(state)
+		style.content_margin_left = height * 0.42
+		style.content_margin_right = height * 0.42
 	for state in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
 		b.add_theme_color_override(state, INK_ON_GOLD if gold else INK)
 	b.add_theme_color_override("font_disabled_color", Color(0.4, 0.33, 0.25, 0.8))
@@ -254,6 +282,9 @@ static func style_tab(b: Button, height := 46.0, font_size := 19) -> void:
 	hover.texture = t
 	var on := StyleBoxTexture.new()
 	on.texture = tex("tab_active")
+	for style in [off, hover, on]:
+		style.content_margin_left = height * 0.35
+		style.content_margin_right = height * 0.35
 	b.add_theme_stylebox_override("normal", off)
 	b.add_theme_stylebox_override("hover", hover)
 	b.add_theme_stylebox_override("pressed", on)
@@ -433,6 +464,13 @@ static func theme() -> Theme:
 	return _theme
 
 
+static func bold_label(label: Label) -> void:
+	var base := label.get_theme_font("font")
+	if not TranslationServer.get_locale().begins_with("en"):
+		base = UIFontFallback.chinese_font()
+	label.add_theme_font_override("font", UIFontFallback.bold_font(base))
+
+
 # 直接压在背景上（不在羊皮纸里）的字：浅色 + 深描边。
 static func on_backdrop(label: Control) -> void:
 	label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.82))
@@ -446,7 +484,9 @@ static func header(title: String, on_back: Callable, right: Control = null) -> H
 	row.name = "Header"
 	row.add_theme_constant_override("separation", 12)
 	var back := back_button(on_back)
-	row.add_child(back)
+	var left_box := HBoxContainer.new()
+	left_box.add_child(back)
+	row.add_child(left_box)
 	var slot := CenterContainer.new()
 	slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	slot.add_child(title_banner(title, 76.0, 28))
@@ -458,6 +498,10 @@ static func header(title: String, on_back: Callable, right: Control = null) -> H
 	if right != null:
 		right_box.add_child(right)
 	row.add_child(right_box)
+	var balance_sides := func() -> void:
+		left_box.custom_minimum_size.x = right_box.get_combined_minimum_size().x
+	right_box.minimum_size_changed.connect(balance_sides)
+	balance_sides.call()
 	return row
 
 
@@ -465,9 +509,9 @@ static func header(title: String, on_back: Callable, right: Control = null) -> H
 # 三张缎带的写字区不在图的正中：胜利上面有颗星、失败下面有把断剑、平局上面有两把剑。
 # [纸面上沿, 纸面下沿]（占图高的比例，python 逐行量的），字放在这段的中间。
 const RESULT_BANNER_TEXT_BAND := {
-	"win": [0.43, 0.78],
-	"lose": [0.12, 0.74],
-	"draw": [0.52, 0.90],
+	"win": [0.43, 0.74],
+	"lose": [0.18, 0.56],
+	"draw": [0.53, 0.78],
 }
 # 失败缎带是灰蓝色，字用浅色；其余两张是浅色纸面，字用深色
 const RESULT_TEXT_COLOR := {
@@ -492,7 +536,12 @@ static func result_banner(result: String, text: String, height := 110.0, font_si
 	label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ink(label, font_size, true)
+	label.anchor_left = 0.20
+	label.anchor_right = 0.80
+	label.clip_text = true
 	holder.add_child(label)
+	bold_label(label)
+	label.resized.connect(_fit_banner_text.bind(label, font_size, true))
 	set_result_banner(holder, result, height)
 	return holder
 

@@ -349,6 +349,8 @@ func _view_seat_profile(index: int) -> void:
 
 func _view_player_profile(identity: Dictionary) -> void:
 	var code := str(identity.get("friend_code", ""))
+	if not code.is_empty() and code == str(AccountManager.profile.get("friend_code", "")):
+		return
 	if code.length() != 8:
 		DialogService.info({"owner": self, "body": _room_text("玩家资料正在加载，请稍后重试", "Player profile is loading. Please retry shortly.")})
 		return
@@ -426,7 +428,9 @@ var _slot_plates: Array = []
 # 木环底图原先 `_add_texture(TEX_SLOT, ...)` 的返回值直接丢掉了，改不动它。
 var _slot_bases: Array = []
 var _slot_frame_bases: Array = []
+var _room_title_plate: TextureRect
 var _status_lbl: Label
+var _start_status_lbl: Label
 var _room_id_lbl: Label
 var _start_btn: Button
 var _start_lbl: Label
@@ -535,7 +539,7 @@ func _process(delta: float) -> void:
 		return
 	if pending == 0:
 		print("[ASSET] 大厅预载完成：缓存 %d 个场景" % BattleAssetService.cached_count())
-		_asset_lbl.text = _room_text("资源已就绪", "Assets ready")
+		_asset_lbl.hide()
 		set_process(false)
 		return
 	var done := maxi(0, _asset_total - pending)
@@ -629,21 +633,15 @@ func _build() -> void:
 	# 左上返回、左下聊天框：锚定屏幕左边（edge="left"）
 	_add_texture(TEX_BACK, Vector2(80, 35), Vector2(143, 83), "left")
 	_add_hit(Vector2(80, 35), Vector2(143, 83), _on_back_pressed, "left", "hit_back")
-	_add_texture(TEX_TITLE, Vector2(599, 21), Vector2(475, 143))
-	# 10.01 反馈（第 3 条）：木牌上的三行字重排。
-	#   ① 原来第三行（状态行）的框底是 142 + 28 = 170，而木牌只到 y=164 —— 溢出 6px，
-	#      字直接压在下边框上（截图里「在线 ｜ 玩家1 AI0 ｜ …」就贴在木牌边缘）；
-	#   ② 房间 ID 用的是写死的暗琥珀 Color(0.45, 0.27, 0.08)，在棕木底上几乎看不清，
-	#      反馈要求与「自定义房间」同色。
-	# 现在三行都按木牌内区（y 32~153）排，行间距统一，第三行框底 142 < 164。
-	# 水平框统一成木牌的 475 宽，三行共用一个居中轴（原来是 372 / 250 / 420 三个宽度，
-	# 各自居中，看起来是歪的）。
-	_room_id_lbl = _add_label("", Vector2(599, 88), Vector2(475, 26), 18, PARCH_INK)
-	_add_label(_room_text("自定义房间", "CUSTOM GAME"), Vector2(599, 40), Vector2(475, 44), 32,
-		PARCH_SECTION, "", false)
+	_room_title_plate = _add_texture(TEX_TITLE, Vector2(599, 17), Vector2(475, 166))
+	_room_title_plate.name = "RoomTitlePlate"
+	_add_room_title_line(_room_text("自定义房间", "CUSTOM GAME"), 39, 28, 22, PARCH_SECTION)
+	_room_id_lbl = _add_room_title_line("", 67, 26, 16, PARCH_INK)
+	_status_lbl = _add_room_title_line("", 88, 26, 15, PARCH_INK)
+	_start_status_lbl = _add_room_title_line("", 109, 26, 15, PARCH_INK)
 	# 右侧朋友列表：锚定屏幕右边（edge="right"）
 	_add_texture(TEX_FRIENDS, Vector2(1340, 180), Vector2(230, 400), "right")
-	_add_label(_room_text("朋友列表", "Friends"), Vector2(1340, 215), Vector2(230, 42), 28,
+	_add_label(_room_text("朋友列表", "Friends"), Vector2(1374, 228), Vector2(162, 35), 24,
 		PARCH_SECTION, "right", false)
 	var friends_scroll := TouchScrollContainer.new()
 	friends_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -674,7 +672,7 @@ func _build() -> void:
 
 	# 右下开始按钮组、自测、提示：锚定屏幕右边（edge="right"）
 	_start_plate = _add_texture(TEX_START, Vector2(1300, 760), Vector2(270, 130), "right")
-	_start_lbl = _add_label("", Vector2(1300, 790), Vector2(270, 95), 28,
+	_start_lbl = _add_label("", Vector2(1328, 794), Vector2(214, 60), 26,
 		Kit.INK_ON_GOLD, "right", false)
 	_start_btn = _add_hit(Vector2(1300, 790), Vector2(270, 95), _on_primary_pressed, "right", "hit_start")
 	# 离线自测专用入口(officetest):开始游戏上方,仅离线显示,纯追加不动原布局。
@@ -685,15 +683,29 @@ func _build() -> void:
 	_selftest_btn.text = _room_text("自测开始", "Self-Test")
 	_selftest_btn.visible = selftest_available() and not _online()
 	_host_hint_lbl = _add_label(_room_text("等待其他玩家准备后可按", "Waiting for players"),
-		Vector2(1285, 880), Vector2(310, 28), 20, Tokens.TEXT_PRIMARY, "right", true)
-	# 状态行：字号 17 → 15、上移到 y=118（框底 142，木牌底 164，留 22px 余量）。
-	# 旧值 (626, 142, 420x28) 的框底 170 已经落到木牌外面了。
-	_status_lbl = _add_label("", Vector2(599, 118), Vector2(475, 24), 15,
-		PARCH_INK, "", false)
+		Vector2(1255, 872), Vector2(360, 58), 18, Tokens.TEXT_PRIMARY, "right", true)
+	_host_hint_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_host_hint_lbl.clip_text = true
 	# 10.11 第 2 条：右上角那颗键从「静音 / 已静音」改成「设定」，打开设置页
 	# （内容 = 对局里的设定少个「退出对局」）。音乐开关在设置页里，静音没丢。
 	_build_settings_button()
 	_build_debug_layer()
+
+func _add_room_title_line(text: String, top: float, height: float, font_size: int, color: Color) -> Label:
+	# 尺寸和字号都按牌匾的参考坐标设置，缩放由父节点统一承担。
+	var label := Label.new()
+	label.text = text
+	label.position = Vector2(53, top)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.clip_text = true
+	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", color)
+	_room_title_plate.add_child(label)
+	label.size = Vector2(369, height)
+	return label
+
 
 func _build_slot(index: int) -> void:
 	var pos: Vector2 = SLOT_POS[index]
@@ -928,7 +940,10 @@ func _refresh() -> void:
 		ai_btn.visible = is_host_seat and i != my_slot and (state == "empty" or state == "dummy")
 		ai_btn.text = "- AI" if state == "dummy" else "+ AI"
 	if _status_lbl != null:
-		_status_lbl.text = _lobby_status_text()
+		var status_text := _lobby_status_text()
+		_status_lbl.text = status_text.get_slice("\n", 0)
+		_start_status_lbl.text = status_text.get_slice("\n", 1)
+		_start_status_lbl.tooltip_text = _start_status_lbl.text
 	if _room_id_lbl != null:
 		_room_id_lbl.text = _room_text("房间 ID：%d", "Room ID: %d") % NetworkService.team_room_id if _online() and NetworkService.team_room_id > 0 else ""
 	if _start_btn != null:
@@ -1070,8 +1085,7 @@ func _lobby_status_text() -> String:
 		elif st == "dummy":
 			ais += 1
 	var mode := _room_text("在线", "Online") if _online() else _room_text("离线", "Offline")
-	var tail := _start_hint_text()
-	return _room_text("%s ｜ 玩家%d AI%d ｜ %s", "%s | Players %d AI %d | %s") % [mode, players, ais, tail]
+	return _room_text("%s ｜ 玩家%d AI%d\n%s", "%s | Players %d AI %d\n%s") % [mode, players, ais, _start_hint_text()]
 
 func _slot_name(index: int, state: String, self_slot: bool) -> String:
 	if state == "empty":
@@ -1227,6 +1241,10 @@ func _apply_placement(item: Dictionary, scale: float, origin: Vector2, safe: Rec
 		resolved_pos = resolved_pos.round()
 		resolved_size = resolved_size.round()
 	node.position = resolved_pos
+	if node == _room_title_plate:
+		node.size = size
+		node.scale = Vector2.ONE * scale
+		return
 	# 字号也要跟着缩放，否则窗口一小文字就撑破按钮框、窗口一大文字又显得过小。
 	# font_size=0 的（纯判定区 _add_hit）没有文字，跳过。
 	if int(item.font_size) > 0 and (node is Label or node is Button):
@@ -1366,28 +1384,19 @@ const VoiceClipRow := preload("res://ui/components/VoiceClipRow.gd")
 # 这样两个界面的短语按钮是**同一份样式代码**，不存在改了一边忘了另一边。
 const PrepWidgets := preload("res://scenes/prep/PrepWidgets.gd")
 
-const CHAT_LINES := 4                              # 210 高的框放得下的行数上限
-const CHAT_LINE_H := 28.0
-# 🔴 文字区不能贴聊天框的边（框是 80,704 430×210），要让开贴图自带的边框装饰。
-# 实测两轮（tools/chat_ui_capture.tscn 出的图）：714 时第一行上半截被压住，
-# 726 仍蹭到，732 才干净；左边同理，96 时首字紧贴边框，收到 104。
-# **这件事在代码里完全看不出来，只有出图才看得见** —— 那个截图工具因此值得留着。
-# 框内可用区约 732 ~ 890：4 行 ×28 = 112 到 844，底下 848 起是短语入口，正好填满。
-const CHAT_FIRST_LINE_Y := 732.0
-const CHAT_ENTRY_Y := 848.0
-const CHAT_TEXT_X := 104.0
-const CHAT_TEXT_W := 392.0                         # 右边界 496，与下面那块判定区一致
-# 🔴 消息那 4 行还要再让开贴图左上角自带的**对话气泡图标**（约 x 97~130、y 725~762）。
-# 上面的 732 / 104 只让开了边框，气泡图标仍压着第一行开头两个字 ——
-# 2026-09-11 把截图放大两倍才看清，原尺寸下它像是边框的一部分。
-# 只动消息列，不动下面的入口行（图标够不到 848 那一行）。
-# 右边界不变（496），一行少放一两个字；折行按 CHAT_MSG_W 算，不会被截断。
-const CHAT_MSG_X := 138.0
-const CHAT_MSG_W := 358.0
+# 消息与两个入口都落在聊天框的纸面内，留出上下边框及四个卷角。
+const CHAT_LINES := 3
+const CHAT_LINE_H := 26.0
+const CHAT_FIRST_LINE_Y := 757.0
+const CHAT_ENTRY_Y := 836.0
+const CHAT_TEXT_X := 143.0
+const CHAT_TEXT_W := 309.0
+const CHAT_MSG_X := CHAT_TEXT_X
+const CHAT_MSG_W := CHAT_TEXT_W
 # 聊天框里的字（消息和下面两个入口）一律用 Tokens.CHAT_INK 黑字：
 # 2026-09-27 用户反映原来沿用的浅棕色（占位文字那个色）在羊皮纸上看不清。
 # 入口那一行对半分：左「快捷短语」、右「打字」（批次 D）。
-const CHAT_ENTRY_SPLIT := 196.0
+const CHAT_ENTRY_SPLIT := 154.0
 
 # 消息从哪来：NetworkService.room_chat_log（整个房间一份，界面重建也不丢）。
 const RoomChatLog := preload("res://scripts/multiplayer/RoomChatLog.gd")
@@ -1419,17 +1428,13 @@ func _build_chat_box() -> void:
 	# 消息直接在原聊天框内滚动，不再弹出独立记录面板。
 	_phrase_btn_label = _add_label(_room_text("＋ 快捷短语", "＋ Quick chat"),
 		Vector2(CHAT_TEXT_X, CHAT_ENTRY_Y), Vector2(CHAT_ENTRY_SPLIT, 40), 20, Tokens.CHAT_INK, "left")
-	_phrase_btn_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_phrase_btn_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_add_hit(Vector2(CHAT_TEXT_X, CHAT_ENTRY_Y), Vector2(CHAT_ENTRY_SPLIT, 40), _toggle_phrase_panel,
 		"left", "hit_chat_phrase")
 	_type_btn_label = _add_label(_room_text("＋ 打字", "＋ Type"),
 		Vector2(CHAT_TEXT_X + CHAT_ENTRY_SPLIT, CHAT_ENTRY_Y),
 		Vector2(CHAT_TEXT_W - CHAT_ENTRY_SPLIT, 40), 20, Tokens.CHAT_INK, "left")
-	_type_btn_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	# 右半边判定区的右边界 496，**刻意把贴图右下角那个黄色箭头也圈进来** ——
-	# 那个箭头是聊天框贴图自带的，看着就是「发送」，玩家一定会去点它。
-	# 圈不进来的话它点了没反应，而没反应的按钮比没有按钮更让人困惑。
-	# 批次 A 时它归「快捷短语」；有了打字之后归「打字」，语义更对得上。
+	_type_btn_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_add_hit(Vector2(CHAT_TEXT_X + CHAT_ENTRY_SPLIT, CHAT_ENTRY_Y),
 		Vector2(CHAT_TEXT_W - CHAT_ENTRY_SPLIT, 40), _open_text_input, "left", "hit_chat_text")
 	_build_voice_button()
@@ -1694,7 +1699,8 @@ func _build_record_panel() -> void:
 	_record_list.add_theme_constant_override("separation", 4)
 	var padding := MarginContainer.new()
 	padding.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	padding.add_theme_constant_override("margin_right", 16)
+	padding.add_theme_constant_override("margin_left", 8)
+	padding.add_theme_constant_override("margin_right", 8)
 	_record_scroll.add_child(padding)
 	padding.add_child(_record_list)
 

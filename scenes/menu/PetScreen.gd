@@ -567,7 +567,7 @@ func _build_card(pet_id: String, starter_mode: bool) -> Control:
 	var card := PanelContainer.new()
 	card.custom_minimum_size = CARD_SIZE
 	# 羊皮纸卡；出战中的那张染金
-	card.add_theme_stylebox_override("panel", Kit.box("card", Vector4(14, 18, 14, 14),
+	card.add_theme_stylebox_override("panel", Kit.box("card", Vector4(22, 21, 22, 27),
 		ACTIVE_TINT if is_active else Color.WHITE))
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 2)
@@ -605,7 +605,13 @@ func _build_card(pet_id: String, starter_mode: bool) -> Control:
 	effect_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	effect_lbl.add_theme_font_size_override("font_size", Tokens.FONT_MIN_READABLE)
 	effect_lbl.add_theme_color_override("font_color", Kit.INK)
-	effect_lbl.text = PetService.effect_text(pet_id)
+	if pet_id == "pet_tiger":
+		var growth := roundi(PetService.tier1_growth_rate(pet_id) * 100.0)
+		var summary := ("Per star-up, Tier 1:\nHP, ATK, DEF +%d%%" if UnitDetailFormat.is_en()
+			else "每次升星：一阶棋子\n生命、攻击、防御 +%d%%")
+		effect_lbl.text = summary % growth
+	else:
+		effect_lbl.text = PetService.effect_text(pet_id)
 	content.add_child(effect_lbl)
 	return card
 

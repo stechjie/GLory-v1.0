@@ -99,8 +99,8 @@ const PROFILE_PLATE_SIZE := Vector2(375, 117)
 const PROFILE_RING_HOLE_FRAC := 289.0 / 420.0
 const PROFILE_RING_HOLE_CENTER := Vector2(205.5 / 420.0, 181.0 / 365.0)
 const PROFILE_PLACEHOLDER_COLOR := Color("4a3220")
-const PROFILE_XP_POS := Vector2(262, 128)
-const PROFILE_XP_SIZE := Vector2(150, 7)
+const PROFILE_XP_POS := Vector2(250, 101)
+const PROFILE_XP_SIZE := Vector2(174, 32)
 const SHOP_POS := Vector2(1412, 132)
 const SHOP_SIZE := Vector2(232, 283)
 const NEWS_POS := Vector2(1412, 420)
@@ -356,18 +356,30 @@ func _build() -> void:
 	_profile_frame_overlay.add_child(_profile_frame_art)
 	# ★ 10.02 三轮：自定义框画在头像**下面**，与默认圆盘同一层次（见 seat_frame_check）。
 	move_child(_profile_frame_overlay, placeholder.get_parent().get_index())
-	_profile_name_label = _add_label("", Vector2(200, 64), Vector2(300, 40), 28, "left")
+	_profile_name_label = _add_label("", Vector2(207, 49), Vector2(260, 36), 26, "left")
 	_ink(_profile_name_label)
-	# 经验条压在卷轴上那道刻线的位置。
+	# 等级与经验文字居中覆盖在同一个进度条上。
 	_profile_xp_bar = _add_container(PROFILE_XP_POS, PROFILE_XP_SIZE, "left")
 	_profile_xp_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_profile_xp_bar.clip_contents = true
+	var xp_track := Panel.new()
+	var xp_track_style := StyleBoxFlat.new()
+	xp_track_style.bg_color = Color("26374c")
+	xp_track_style.set_corner_radius_all(3)
+	xp_track.add_theme_stylebox_override("panel", xp_track_style)
+	xp_track.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	xp_track.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_profile_xp_bar.add_child(xp_track)
 	_profile_xp_fill = ColorRect.new()
-	_profile_xp_fill.color = Color(0.93, 0.68, 0.16, 0.85)
+	_profile_xp_fill.color = Color("79d8ff")
 	_profile_xp_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_profile_xp_fill.anchor_bottom = 1.0
+	_profile_xp_fill.offset_left = 1.0
+	_profile_xp_fill.offset_top = 1.0
+	_profile_xp_fill.offset_right = -1.0
+	_profile_xp_fill.offset_bottom = -1.0
 	_profile_xp_bar.add_child(_profile_xp_fill)
-	_profile_sub_label = _add_label("", Vector2(200, 112), Vector2(300, 24), 17, "left")
+	_profile_sub_label = _add_label("", PROFILE_XP_POS, PROFILE_XP_SIZE, 16, "left")
 	_ink(_profile_sub_label)
 	_profile_dot = _add_dot(Vector2(150, 26), "left")
 	_tutorial_profile_target = _add_hit(Vector2(18, 20), Vector2(520, 160), _emit_profile, "left")
@@ -382,7 +394,7 @@ func _build() -> void:
 
 	# 左侧好友 / 聊天
 	var friends_tex := _add_texture(TEX_FRIENDS, Vector2(24, 296), Vector2(145, 137), "left")
-	var friends_text := _add_label(_menu_text("好友", "Friends"), Vector2(24, 378), Vector2(145, 30), 22, "left")
+	var friends_text := _add_label(_menu_text("好友", "Friends"), Vector2(39, 372), Vector2(115, 30), 22, "left")
 	_ink(friends_text)
 	# 9.17 反馈第 6 条：他人申请加好友时亮小红点，点进朋友后消失。初值不亮，等拉到申请再定。
 	_friends_dot = _add_dot(Vector2(136, 298), "left")
@@ -390,7 +402,7 @@ func _build() -> void:
 	_anim_group([friends_tex, friends_text, _friends_dot], friends_hit, 1, 0.06)
 	# ★★ 10.07h 第 6 / 10 条：房间/组队邀请气泡从「聊天」图标右边引出，见 `chat_invite_anchor()`。
 	_chat_icon = _add_texture(TEX_CHAT, Vector2(24, 440), Vector2(145, 130), "left")
-	var chat_text := _add_label(_menu_text("聊天", "Chat"), Vector2(24, 518), Vector2(145, 30), 22, "left")
+	var chat_text := _add_label(_menu_text("聊天", "Chat"), Vector2(39, 512), Vector2(115, 30), 22, "left")
 	_ink(chat_text)
 	_chat_dot = _add_dot(Vector2(136, 442), "left")
 	_chat_dot.visible = ChatService.any_unread()
@@ -399,12 +411,12 @@ func _build() -> void:
 
 	# 右上角背包 / 邮件 / 设置
 	var bag_tex := _add_texture(TEX_BAG, Vector2(1342, 16), Vector2(102, 98), "right")
-	var bag_text := _add_label(_menu_text("背包", "Bag"), Vector2(1342, 75), Vector2(102, 24), 18, "right")
+	var bag_text := _add_label(_menu_text("背包", "Bag"), Vector2(1353, 69), Vector2(80, 24), 18, "right")
 	_ink(bag_text)
 	var bag_hit := _add_hit(Vector2(1342, 16), Vector2(102, 98), _emit_bag, "right")
 	_anim_group([bag_tex, bag_text], bag_hit, 1, 0.04)
 	var mail_tex := _add_texture(TEX_MAIL, Vector2(1452, 14), Vector2(102, 102), "right")
-	var mail_text := _add_label(_menu_text("邮件", "Mail"), Vector2(1452, 75), Vector2(102, 24), 18, "right")
+	var mail_text := _add_label(_menu_text("邮件", "Mail"), Vector2(1462, 69), Vector2(73, 24), 18, "right")
 	_ink(mail_text)
 	# 有没读的邮件、或者有没领的附件时亮红点（MailService.needs_attention）。
 	_mail_dot = _add_dot(Vector2(1524, 12), "right")
@@ -412,35 +424,36 @@ func _build() -> void:
 	var mail_hit := _add_hit(Vector2(1452, 14), Vector2(102, 102), _emit_mail, "right")
 	_anim_group([mail_tex, mail_text, _mail_dot], mail_hit, 1, 0.08)
 	var settings_tex := _add_texture(TEX_SETTINGS, Vector2(1562, 16), Vector2(102, 100), "right")
-	var settings_text := _add_label(_menu_text("设置", "Settings"), Vector2(1562, 75), Vector2(102, 24), 18, "right")
+	var settings_text := _add_label(_menu_text("设置", "Settings"), Vector2(1572, 69), Vector2(79, 24), 18, "right")
 	_ink(settings_text)
 	var settings_hit := _add_hit(Vector2(1562, 16), Vector2(102, 100), _emit_settings, "right")
 	_anim_group([settings_tex, settings_text], settings_hit, 1, 0.12)
 
 	# 右侧商店 / 新闻
 	var shop_tex := _add_texture(TEX_SHOP, SHOP_POS, SHOP_SIZE, "right")
-	var shop_text := _add_label(_menu_text("商店", "Shop"), SHOP_POS + Vector2(0, 14), Vector2(SHOP_SIZE.x, 32), 24, "right")
+	var shop_text := _add_label(_menu_text("商店", "Shop"), SHOP_POS + Vector2(43, 5), Vector2(146, 32), 23, "right")
 	_ink(shop_text)
 	# 中间那块只轮播宠物手绘图；底部小牌固定写「进入商店」。
 	_shop_preview = _add_container(SHOP_POS + Vector2(22, 58), Vector2(SHOP_SIZE.x - 44, 158), "right")
 	_shop_preview.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
 	var shop_enter := _add_label(_menu_text("进入商店  ›", "ENTER SHOP  ›"),
-		SHOP_POS + Vector2(30, 233), Vector2(SHOP_SIZE.x - 60, 28), 18, "right")
+		SHOP_POS + Vector2(43, 222), Vector2(146, 27), 17, "right")
 	_ink(shop_enter)
 	_shop_dot = _add_dot(SHOP_POS + Vector2(SHOP_SIZE.x - 30, 2), "right")
 	_shop_dot.visible = false
 	var shop_hit := _add_hit(SHOP_POS, SHOP_SIZE, _emit_shop, "right")
 	_anim_group([shop_tex, shop_text, _shop_preview, shop_enter, _shop_dot], shop_hit, 2, 0.10)
 	var news_tex := _add_texture(TEX_NEWS, NEWS_POS, NEWS_SIZE, "right")
-	var news_text := _add_label(_menu_text("新闻 / 活动", "News / Events"), NEWS_POS + Vector2(0, 14), Vector2(NEWS_SIZE.x, 32), 22, "right")
+	var news_text := _add_label(_menu_text("新闻 / 活动", "News / Events"), NEWS_POS + Vector2(43, 5), Vector2(146, 30), 20, "right")
 	_ink(news_text)
 	# 9.27：新闻牌里显示最新一条公告的标题。
-	_news_title = _add_label("", NEWS_POS + Vector2(30, 62), Vector2(NEWS_SIZE.x - 60, 180), 18, "right")
+	_news_title = _add_label("", NEWS_POS + Vector2(36, 62), Vector2(160, 178), 18, "right")
 	_ink(_news_title)
 	_news_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_news_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_news_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_news_title.clip_text = true
+	_news_title.max_lines_visible = 5
+	_news_title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_news_title.visible = false
 	_news_dot = _add_dot(NEWS_POS + Vector2(NEWS_SIZE.x - 30, 2), "right")
 	_news_dot.visible = AnnouncementService.any_unread()
@@ -449,11 +462,11 @@ func _build() -> void:
 
 	# 底部五个模式按钮。排位赛最大、居中，常驻轻浮动 + 盾牌扫光。
 	var mode_specs := [
-		[TEX_PREP, Vector2(195, 668), Vector2(225, 169), _menu_text("备战", "Prep"), 30, 0.70, _emit_prep],
-		[TEX_CASUAL, Vector2(435, 682), Vector2(215, 156), _menu_text("休闲", "Casual"), 30, 0.68, _on_casual],
-		[TEX_RANKED, Vector2(650, 652), Vector2(335, 191), _menu_text("排位赛", "Ranked"), 40, 0.71, _on_ranked],
-		[TEX_CUSTOM, Vector2(995, 658), Vector2(235, 185), _menu_text("自定义", "Custom"), 30, 0.72, _show_room_overlay],
-		[TEX_GALLERY, Vector2(1240, 672), Vector2(245, 168), _menu_text("图鉴", "Gallery"), 30, 0.71, _emit_codex],
+		[TEX_PREP, Vector2(195, 668), Vector2(225, 169), _menu_text("备战", "Prep"), 30, 0.65, _emit_prep],
+		[TEX_CASUAL, Vector2(435, 682), Vector2(215, 156), _menu_text("休闲", "Casual"), 30, 0.64, _on_casual],
+		[TEX_RANKED, Vector2(650, 652), Vector2(335, 191), _menu_text("排位赛", "Ranked"), 38, 0.68, _on_ranked],
+		[TEX_CUSTOM, Vector2(995, 658), Vector2(235, 185), _menu_text("自定义", "Custom"), 30, 0.67, _show_room_overlay],
+		[TEX_GALLERY, Vector2(1240, 672), Vector2(245, 168), _menu_text("图鉴", "Gallery"), 30, 0.66, _emit_codex],
 	]
 	for i in mode_specs.size():
 		var spec: Array = mode_specs[i]
@@ -462,9 +475,9 @@ func _build() -> void:
 		var tex := _add_texture(spec[0], pos, size)
 		var font_px: int = spec[4]
 		var text_center_y: float = pos.y + size.y * float(spec[5])
-		var text := _add_label(spec[3], Vector2(pos.x, text_center_y - font_px * 0.75),
-			Vector2(size.x, font_px * 1.5), font_px)
-		_ink(text, font_px >= 40)
+		var text := _add_label(spec[3], Vector2(pos.x + size.x * 0.12, text_center_y - font_px * 0.75),
+			Vector2(size.x * 0.76, font_px * 1.5), font_px)
+		_ink(text, spec[0] == TEX_RANKED)
 		var hit := _add_hit(pos, size, spec[6])
 		var ranked: bool = spec[0] == TEX_RANKED
 		if ranked:
@@ -1060,13 +1073,16 @@ func _refresh_profile_plate() -> void:
 	if _profile_name_label == null or not is_instance_valid(_profile_name_label):
 		return
 	var profile: Dictionary = AccountManager.profile
+	var show_xp := not profile.is_empty() and _account_level > 0
+	_profile_xp_bar.visible = show_xp
+	_profile_sub_label.add_theme_color_override("font_color", Color("f8fcff") if show_xp else INK_TEXT)
+	_profile_sub_label.add_theme_color_override("font_outline_color", Color("14273e") if show_xp else INK_OUTLINE)
 	if profile.is_empty():
 		# 还没登录 / 还没拉到资料。**不放假名字** —— 玩家看到一个陌生昵称
 		# 比看到一条横线更糟，而且那正是这次要消灭的东西。
 		# 头像同理：宁可空着露出框里的深棕底，也不要先画一个默认头像再跳变。
 		_profile_name_label.text = _menu_text("玩家", "Player")
 		_profile_sub_label.text = "—"
-		_profile_xp_bar.hide()
 		if _profile_portrait != null and is_instance_valid(_profile_portrait):
 			_profile_portrait.texture = null
 		_profile_base_frame.visible = true
@@ -1086,7 +1102,6 @@ func _refresh_profile_plate() -> void:
 			_profile_frame_art.texture = AvatarCatalog.frame_texture_for(
 				str(profile.get("avatar_frame", "")))
 			_place_profile_frame(frame_id)
-	_profile_xp_bar.visible = _account_level > 0
 	_profile_xp_fill.anchor_right = clampf(float(_account_xp_progress) / maxf(1.0, _account_xp_required), 0.0, 1.0) if _account_xp_required > 0 else 1.0
 	# 10.04 bug 文档第 5 条：大厅左上角资料卡只显示昵称（隐藏 #好友码）。
 	_profile_name_label.text = AccountManager.display_name(
@@ -1443,9 +1458,9 @@ func _add_currency_bar(currency: String, pos: Vector2, cb: Callable) -> Label:
 	var icon := _add_texture(TEX_DIAMOND_ICON if currency == "diamond" else TEX_COIN_ICON,
 		pos + Vector2(16, 8), Vector2(50, 50))
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var amount := _add_label("—", pos + Vector2(70, 0), Vector2(122, 62), 24)
+	var amount := _add_label("—", pos + Vector2(70, 0), Vector2(118, 60), 24)
 	_ink(amount)
-	var plus := _add_label("+", pos + Vector2(190, -2), Vector2(36, 62), 34)
+	var plus := _add_label("+", pos + Vector2(192, 0), Vector2(32, 60), 34)
 	_ink(plus, true)
 	var hit: Button = _add_hit(pos, size, cb) if cb.is_valid() else null
 	_anim_group([bar, icon, amount, plus], hit, 0, 0.05)
@@ -1652,6 +1667,8 @@ func _add_screen_band(color: Color, y: float, height: float, from_bottom: bool) 
 func _add_label(text: String, pos: Vector2, size: Vector2, font_size: int, edge: String = "") -> Label:
 	var label := Label.new()
 	label.text = text
+	label.clip_text = true
+	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.add_theme_color_override("font_color", Color(1.0, 0.92, 0.63))

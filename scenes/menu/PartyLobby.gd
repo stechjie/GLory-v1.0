@@ -120,7 +120,8 @@ const CHAT_POS := Vector2(37, 644)
 const CHAT_SIZE := Vector2(430, 270)           # 聊天框宽 430（TEX_CHAT）
 const CHAT_COLLAPSED_LINES := 3                # 收起时显示最近几条
 const CHAT_EXPANDED_H := 437.0
-const CHAT_LIST_TOP := 66.0                    # 标题木条以下
+const CHAT_LIST_TOP := 102.0                   # 羊皮纸页头和卷角以下
+const CHAT_LIST_SIDE_PADDING := 54.0
 const CHAT_INPUT_FROM_BOTTOM := 76.0           # 输入框顶到面板底（底边框约 26）
 # 长按扬声器看语音面板（同 VoiceControls 的 700 毫秒）。
 const SPEAKER_HOLD_MSEC := 700
@@ -334,32 +335,32 @@ func _build() -> void:
 	# 10.19：聊天框换成木框九宫格（标题在顶部深色木条里），收起 / 发送换成图标键（48×48 触控区）。
 	_chat_panel = _frame_panel(_canvas, CHAT_POS, CHAT_SIZE, SOCIAL_CHAT_FRAME,
 		CHAT_FRAME_SRC_W, CHAT_FRAME_MARGINS, CHAT_FRAME_SCALE)
-	_title_label(_chat_panel, _text("队内聊天", "PARTY CHAT"), Vector2(30, 20), Vector2(160, 39), 20)
-	_chat_toggle = _social_icon_button(_chat_panel, Vector2(CHAT_SIZE.x - 76, 16), ICON_UP)
+	_title_label(_chat_panel, _text("队内聊天", "PARTY CHAT"), Vector2(54, 49), Vector2(137, 34), 18)
+	_chat_toggle = _social_icon_button(_chat_panel, Vector2(CHAT_SIZE.x - 90, 43), ICON_UP)
 	_chat_toggle.pressed.connect(_toggle_chat)
 	_chat_scroll = TouchScrollContainer.new()
-	_chat_scroll.position = Vector2(28, CHAT_LIST_TOP)
-	_chat_scroll.size = Vector2(CHAT_SIZE.x - 56, CHAT_SIZE.y - CHAT_INPUT_FROM_BOTTOM - CHAT_LIST_TOP - 4.0)
+	_chat_scroll.position = Vector2(CHAT_LIST_SIDE_PADDING, CHAT_LIST_TOP)
+	_chat_scroll.size = Vector2(CHAT_SIZE.x - CHAT_LIST_SIDE_PADDING * 2.0, CHAT_SIZE.y - CHAT_INPUT_FROM_BOTTOM - CHAT_LIST_TOP - 4.0)
 	_chat_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_chat_panel.add_child(_chat_scroll)
 	_chat_list = VBoxContainer.new()
-	_chat_list.custom_minimum_size.x = CHAT_SIZE.x - 64
+	_chat_list.custom_minimum_size.x = _chat_scroll.size.x - 8.0
 	_chat_list.add_theme_constant_override("separation", 6)
 	_chat_scroll.add_child(_chat_list)
 	_chat_input = LineEdit.new()
 	_chat_input.placeholder_text = _text("给队友发消息…", "Message your team…")
-	_chat_input.position = Vector2(28, CHAT_SIZE.y - CHAT_INPUT_FROM_BOTTOM)
-	_chat_input.size = Vector2(CHAT_SIZE.x - 112, 40)
+	_chat_input.position = Vector2(49, CHAT_SIZE.y - CHAT_INPUT_FROM_BOTTOM)
+	_chat_input.size = Vector2(CHAT_SIZE.x - 146, 40)
 	_style_chat_input(_chat_input)
 	_chat_input.text_submitted.connect(func(_t: String) -> void: _send_chat())
 	_chat_panel.add_child(_chat_input)
 	_send_button = _social_icon_button(_chat_panel,
-		Vector2(CHAT_SIZE.x - 78, CHAT_SIZE.y - CHAT_INPUT_FROM_BOTTOM - 4), ICON_SEND)
+		Vector2(CHAT_SIZE.x - 91, CHAT_SIZE.y - CHAT_INPUT_FROM_BOTTOM - 4), ICON_SEND)
 	_send_button.tooltip_text = _text("发送", "Send")
 	_send_button.pressed.connect(_send_chat)
 	# 10-08：快捷短语（同自定义房间的「＋ 快捷短语」）。点哪句发哪句，走同一个队内聊天接口。
 	# 10.19：入口挪进标题木条，高度随木条缩到 36。
-	_phrase_button = _button(_chat_panel, _text("＋ 快捷短语", "＋ Quick chat"), Vector2(194, 22), PHRASE_ENTRY_SIZE)
+	_phrase_button = _button(_chat_panel, _text("＋ 快捷短语", "＋ Quick chat"), Vector2(188, 47), PHRASE_ENTRY_SIZE)
 	_style_paper_button(_phrase_button, false)
 	_phrase_button.add_theme_font_size_override("font_size", 16)
 	_phrase_button.pressed.connect(_toggle_phrase_panel)
@@ -867,7 +868,7 @@ func _render_chat() -> void:
 	if messages.is_empty():
 		var hint := Label.new()
 		hint.text = _text("还没有消息，点「快捷短语」打个招呼", "No messages yet — try Quick chat")
-		hint.custom_minimum_size.x = _chat_list.custom_minimum_size.x
+		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		hint.add_theme_color_override("font_color", Color("8a7656"))
 		hint.add_theme_font_size_override("font_size", 16)

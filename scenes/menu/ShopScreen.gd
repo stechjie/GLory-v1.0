@@ -53,7 +53,7 @@ const BAD_COLOR := Color("a3271a")
 const GOOD_COLOR := Color("2f7d45")
 const PAGE_DIM := Color(0.08, 0.06, 0.03, 0.14)
 # 商城面板的内边距比通用默认值小：卡片 410 高，默认边距会把卡底的购买按钮挤出可视区
-const PANEL_PAD := Vector4(52, 44, 52, 22)
+const PANEL_PAD := Vector4(60, 58, 60, 32)
 const SELECTED_TINT := Color(1.0, 0.93, 0.76)
 # 种族色：进度环、种族页标题。取各族背景 / logo 的主色。
 const RACE_COLORS := {"undead": Color("3fae96"), "crimson": Color("d8462c"), "dark": Color("8a52d0"),
@@ -80,7 +80,7 @@ const RACE_LOGO_PATH := "res://assets/ui/race_logos/%s.png"
 const UNIT_PORTRAIT_PATH := "res://assets/ui/unit_portraits/%s.png"
 # 1600x720 下分类栏以下只剩 ~430 高：四张卡 + 间距、中间 logo 都要放得进去，不出滚动条。
 const UNIT_CARD_SIZE := Vector2(300, 64)
-const EMBLEM_SIZE := 210.0
+const EMBLEM_SIZE := 185.0
 # 种族 logo 的点亮效果：没买的部分是暗的灰，买一个从下往上亮一截，整体也跟着变亮；
 # 集齐 = 全亮原色。progress = 已集齐 / 总数。
 const RACE_LIGHT_SHADER_CODE := """
@@ -99,8 +99,8 @@ void fragment() {
 }
 """
 
-const CARD_SIZE := Vector2(230, 410)
-const PREVIEW_SIZE := Vector2(255, 230)
+const CARD_SIZE := Vector2(230, 320)
+const PREVIEW_SIZE := Vector2(255, 152)
 const DETAIL_PREVIEW_SIZE := Vector2(280, 180)
 const DETAIL_WIDTH := 316.0
 const COLUMNS := 3
@@ -178,6 +178,7 @@ var _category_buttons: Dictionary = {}
 var _catalog_shell: PanelContainer
 var _summon_panel_control: Control
 var _detail_panel_control: Control
+var _catalog_scroll: ScrollContainer
 var _special_panel: PanelContainer
 	# 活动 / 外观页的纵向滚动容器。这一块的内容比一屏高（七日登录的 DAY 奖励条
 	# 整条掉到窗口外），没有它就只能看到上半截（10.01 反馈第 2 条 1）。
@@ -428,14 +429,14 @@ func _catalog_panel() -> Control:
 	_catalog_count_label.add_theme_color_override("font_color", Kit.INK_SOFT)
 	head.add_child(_catalog_count_label)
 
-	var scroll := preload("res://ui/components/TouchScrollContainer.gd").new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	col.add_child(scroll)
+	_catalog_scroll = preload("res://ui/components/TouchScrollContainer.gd").new()
+	_catalog_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_catalog_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	col.add_child(_catalog_scroll)
 	var holder := VBoxContainer.new()
 	holder.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	holder.add_theme_constant_override("separation", Tokens.GAP_M)
-	scroll.add_child(holder)
+	_catalog_scroll.add_child(holder)
 
 	_empty_label = Label.new()
 	_empty_label.name = "Empty"
@@ -694,6 +695,9 @@ func _reload() -> void:
 func _render() -> void:
 	if _grid == null:
 		return
+	if _play_entry:
+		_catalog_scroll.scroll_vertical = 0
+		_special_scroll.scroll_vertical = 0
 	_diamond_label.text = "—" if _loading else Currency.comma(_diamond)
 	_coin_label.text = "—" if _loading else Currency.comma(_coin)
 
@@ -1004,6 +1008,27 @@ func _render_event() -> void:
 	_section_title(_t("七日登录 · 冰雪觉醒", "Seven days · Frost awakening"), _t(
 		"每天主动领取一次，点亮一片冰雪。累计七天即可永久解锁。",
 		"Claim once per game day. Every claim reveals part of the frost board; day seven unlocks it."))
+	var current := Label.new()
+	current.text = _t("活动状态暂时无法加载", "Event status unavailable") if _login_state.is_empty() else (
+		_t("全部奖励已领取", "All rewards claimed") if bool(_login_state.get("completed", false)) else (
+		_t("今日可领取", "Ready to claim") if bool(_login_state.get("claimable_today", false)) else _t(
+			"明日继续点亮", "Return next game day")))
+	current.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
+	current.add_theme_color_override("font_color", SECTION_COLOR)
+	_special_content.add_child(current)
+	var rewards: Array = _login_state.get("rewards", [])
+	if rewards.is_empty():
+		var fallback: Variant = JSON.parse_string(FileAccess.get_file_as_string(
+			"res://data/seven_day_login.json"))
+		if fallback is Dictionary:
+			rewards = (fallback as Dictionary).get("rewards", [])
+	var strip := HBoxContainer.new()
+	strip.add_theme_constant_override("separation", Tokens.GAP_S)
+	strip.custom_minimum_size.y = 136
+	_special_content.add_child(strip)
+	for raw in rewards:
+		strip.add_child(_reward_card(raw as Dictionary))
+
 	var progress := int(_login_state.get("ice_skin_progress", 0))
 	var top := HBoxContainer.new()
 	top.custom_minimum_size.y = 185
@@ -1045,14 +1070,6 @@ func _render_event() -> void:
 	frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	side.add_child(frame)
-	var current := Label.new()
-	current.text = _t("活动状态暂时无法加载", "Event status unavailable") if _login_state.is_empty() else (
-		_t("全部奖励已领取", "All rewards claimed") if bool(_login_state.get("completed", false)) else (
-		_t("今日可领取", "Ready to claim") if bool(_login_state.get("claimable_today", false)) else _t(
-			"明日继续点亮", "Return next game day")))
-	current.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
-	current.add_theme_color_override("font_color", SECTION_COLOR)
-	side.add_child(current)
 	var note := Label.new()
 	note.text = _t("第 6 天获得限定头像框；第 7 天自动解锁冰雪皮肤。",
 		"Day six grants the exclusive frame. Day seven unlocks the frost skin.")
@@ -1065,18 +1082,6 @@ func _render_event() -> void:
 		equip.theme_type_variation = Theming.VARIATION_PRIMARY
 		equip.pressed.connect(_equip_ice_skin)
 		side.add_child(equip)
-	var rewards: Array = _login_state.get("rewards", [])
-	if rewards.is_empty():
-		var fallback: Variant = JSON.parse_string(FileAccess.get_file_as_string(
-			"res://data/seven_day_login.json"))
-		if fallback is Dictionary:
-			rewards = (fallback as Dictionary).get("rewards", [])
-	var strip := HBoxContainer.new()
-	strip.add_theme_constant_override("separation", Tokens.GAP_S)
-	strip.custom_minimum_size.y = 136
-	_special_content.add_child(strip)
-	for raw in rewards:
-		strip.add_child(_reward_card(raw as Dictionary))
 
 
 func _reward_card(reward: Dictionary) -> Control:
@@ -1427,8 +1432,7 @@ func _render_detail(item: Dictionary) -> void:
 	eyebrow.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 	eyebrow.add_theme_color_override("font_color", SECTION_COLOR)
 	_detail.add_child(eyebrow)
-	_detail.add_child(_preview_stage(item, owned,
-		Vector2(280, 218) if _item_category(item) == CATEGORY_FRAMES else DETAIL_PREVIEW_SIZE))
+	_detail.add_child(_preview_stage(item, owned, DETAIL_PREVIEW_SIZE))
 
 	var name_label := Label.new()
 	name_label.text = _item_name(item)
@@ -1847,6 +1851,15 @@ func _race_emblem(race: String, owned_n: int, total: int, unlocked: bool, missin
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	box.add_theme_constant_override("separation", Tokens.GAP_S)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if unlocked:
+		var go: Button = ACTION_BUTTON.instantiate()
+		go.text = _t("去备战", "Go to Prep")
+		go.custom_minimum_size = Vector2(200, Tokens.TOUCH_MIN)
+		go.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		Kit.style_plate(go, true)
+		go.pressed.connect(func() -> void: prep_races_requested.emit(race))
+		box.add_child(go)
+
 	# 集齐但服务端那一行没发（理论上不会；万一出现就别显示「已解锁」，让玩家联系客服）
 	# —— 按种族那一行算亮度，不按棋子数。老玩家补发时两样都有。
 	var progress := 1.0 if unlocked else (float(owned_n) / float(maxi(total, 1)))
@@ -1928,15 +1941,6 @@ func _race_emblem(race: String, owned_n: int, total: int, unlocked: bool, missin
 			"%s coins to go" % Currency.comma(missing_price))
 		status.add_theme_color_override("font_color", Tokens.SHOP_TEXT)
 	box.add_child(status)
-
-	if unlocked:
-		var go: Button = ACTION_BUTTON.instantiate()
-		go.text = _t("去备战", "Go to Prep")
-		go.custom_minimum_size = Vector2(200, Tokens.TOUCH_MIN)
-		go.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-		Kit.style_plate(go, true)
-		go.pressed.connect(func() -> void: prep_races_requested.emit(race))
-		box.add_child(go)
 	return box
 
 
