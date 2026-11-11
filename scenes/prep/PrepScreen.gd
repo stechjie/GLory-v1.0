@@ -378,7 +378,10 @@ func _input(event: InputEvent) -> void:
 				if _shop_control_contains(child as Control, shop_pointer):
 					click_on_shop_side = true
 					break
-		if shop_should_check and not click_on_shop and not click_on_shop_btn and not click_on_shop_side:
+		# 点在商店属性卡上不算「点商店外面」
+		var click_on_detail_card := _shop_control_contains(_shop_detail_card, shop_pointer)
+		if shop_should_check and not click_on_shop and not click_on_shop_btn and not click_on_shop_side \
+				and not click_on_detail_card:
 			_shop.close_picker()
 	# 佣兵选择层原本在这里手写「点面板矩形之外就关」。它已迁进 ModalStack
 	# （C-11 的 C3），关闭改由 backdrop 的 dismiss_on_backdrop 承担 ——

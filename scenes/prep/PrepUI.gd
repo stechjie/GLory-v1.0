@@ -756,6 +756,11 @@ func _build(staged: bool = false) -> void:
 		_shop.refresh_requested.connect(_on_refresh_shop)
 		_shop.message_requested.connect(show_message)
 		_shop.state_changed.connect(_refresh_all)
+		# 11.11：从商店拖卡 = 要买了，属性卡立刻收起（顺便取消选中，拖回去也不再冒出来）
+		_shop.drag_started.connect(func(payload: Dictionary) -> void:
+			if str(payload.get("kind", "")) == "shop":
+				_shop.selected = -1
+				_sync_shop_detail_card())
 	if not NetworkService.economy_receipt.is_connected(_on_carrot_economy_receipt):
 		NetworkService.economy_receipt.connect(_on_carrot_economy_receipt)
 
@@ -2385,9 +2390,9 @@ func _build_detail_popups() -> void:
 	upgrade_panel.shared_stone_unavailable.connect(func():
 		_overlay.hide_detail()
 		show_message("The spirit stone has been used by a teammate." if LocaleManager.get_locale() == "en" else "灵石已被队友使用"))
+	# 11.11：棋子详情现在是羊皮纸卡，「查看四星」= 整张卡按四星重画
 	upgrade_panel.preview_requested.connect(func(enabled: bool, cell: Dictionary):
-		_detail_text.text = UnitDetailFormat.format_unit_def(cell.get("def", {}), \
-			4 if enabled else int(cell.get("star", 1)), cell))
+		_overlay.preview_unit_star(cell, 4 if enabled else int(cell.get("star", 1))))
 	# 节点造好了，交给详情浮层组件接管（它持有关闭时序等状态）。
 	_overlay.bind(_detail, _detail_text)
 
@@ -2942,7 +2947,8 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 	card.set_meta("can_purchase", can_purchase)
 	card.drag_payload = {}
 	card.pressed.connect(_on_mercenary_purchase_card_pressed.bind(card, index))
-	_overlay.attach_long_press(card, func(): _overlay.show_text(UnitDetailFormat.format_unit_def(mercenary)))
+	# 11.11：佣兵长按 = 横版羊皮纸小卡（不带技能图标）
+	_overlay.attach_long_press(card, func(): _overlay.show_compact({"def": mercenary, "star": 1, "is_mercenary": true}))
 	PrepWidgets.configure_unframed_portrait_card(card, _on_portrait_card_hover)
 	card.modulate = Color.WHITE
 
@@ -3213,6 +3219,7 @@ func _refresh_all() -> void:
 	_check_synergy_activation()
 	# 11.04：套装脚下纹 / 联动光点立刻换到重建后的模型上（见 PrepBoardModels.sync_prep_treasure_visuals）。
 	sync_prep_treasure_visuals.call_deferred()
+	_sync_shop_detail_card()
 	# 升星表现放在**模型重建之后**：合成那一刻保留的那枚棋子的模型马上要被换掉
 	# （星级变了 ⇒ signature 变了 ⇒ 整个节点 queue_free），当场挂特效立刻就没了。
 	flush_star_upgrades()
@@ -4362,6 +4369,57 @@ func _on_shop_card_selected(_index: int) -> void:
 	_board_hud._selected_board = -1
 	_board_hud._selected_bench = -1
 	_refresh_all()
+
+
+# 11.11 商店属性卡：点一下商店卡 = 选中并在商店卷轴上方显示这张属性卡（横版，见 UnitDetailCard）。
+# 卡一直留着，直到：买下（双击 / 钱袋 / 拖到棋盘）、取消选中、关店、刷新后那格空了。
+# 它只跟着 _shop.selected 走 —— 商店 refresh() 会悄悄把卖掉的选中清成 -1（不发信号），
+# 所以每次 _refresh_all 末尾都同步一次。
+var _shop_detail_card: PanelContainer
+var _shop_detail_key := ""
+
+
+func _sync_shop_detail_card() -> void:
+	var index: int = _shop.selected
+	var visible_now: bool = _shop.picker_open and index >= 0 and index < GameState.shop_offers.size() \
+		and not (GameState.shop_offers[index] as Dictionary).is_empty() and not bool(GameState.shop_sold[index])
+	if not visible_now:
+		if _shop_detail_card != null and is_instance_valid(_shop_detail_card):
+			_shop_detail_card.hide()
+		_shop_detail_key = ""
+		return
+	var offer: Dictionary = GameState.shop_offers[index]
+	var key := "%d/%s/%s" % [index, str(offer.get("id", "")), LocaleManager.get_locale()]
+	if _shop_detail_card == null or not is_instance_valid(_shop_detail_card):
+		_shop_detail_card = preload("res://ui/components/UnitDetailCard.gd").new()
+		_shop_detail_card.name = "ShopUnitDetailCard"
+		_shop_detail_card.z_index = 45
+		_shop_detail_card.hide()
+		add_child(_shop_detail_card)
+	if key != _shop_detail_key:
+		_shop_detail_key = key
+		_shop_detail_card.setup({"def": offer, "star": 1}, true)
+	_shop_detail_card.show()
+	_place_shop_detail_card.call_deferred()
+
+
+# 摆在商店卷轴正上方、水平居中对齐商店；卷轴背景比命中框高一圈，再留 34px。
+func _place_shop_detail_card() -> void:
+	if _shop_detail_card == null or not is_instance_valid(_shop_detail_card) or not _shop_detail_card.visible:
+		return
+	_shop_detail_card.reset_size()
+	var card_size := _shop_detail_card.get_combined_minimum_size()
+	_shop_detail_card.size = card_size
+	var view := get_viewport_rect().size
+	var bottom := view.y - 250.0
+	var center_x := view.x * 0.5
+	if _shop.panel != null and is_instance_valid(_shop.panel):
+		var shop_rect: Rect2 = _shop.panel.get_global_rect()
+		bottom = shop_rect.position.y - 34.0
+		center_x = shop_rect.get_center().x
+	_shop_detail_card.global_position = Vector2(
+		clampf(center_x - card_size.x * 0.5, 8.0, maxf(8.0, view.x - card_size.x - 8.0)),
+		maxf(4.0, bottom - card_size.y))
 
 
 # 商店请求买入：找空位、扣钱、合成都在宿主这边（它们要动棋盘与联机同步）。
