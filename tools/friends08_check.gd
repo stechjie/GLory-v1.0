@@ -48,7 +48,8 @@ func _ready() -> void:
 	for entry in entries:
 		var row = friends._friend_row(entry)
 		h.expect(row != null and row.get_child_count() >= 3, "null_room", "空房间号好友仍正常渲染")
-		h.expect(row.get_child(1).get_theme_color("font_color") == (Color.WHITE if entry.online else friends.Tokens.TEXT_DISABLED), "presence_color", "在线好友白色，离线暗色")
+		# 11.11 羊皮纸风：在线深棕、离线浅灰棕（白字压在浅色羊皮纸上看不清）
+		h.expect(row.get_child(1).get_theme_color("font_color") == (friends.Kit.INK if entry.online else friends.OFFLINE_COLOR), "presence_color", "在线好友深色，离线暗色")
 		row.free()
 	var saved := AccountManager.friend_request_seen.duplicate(true)
 	AccountManager.friend_request_seen.clear()

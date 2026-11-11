@@ -3,11 +3,17 @@ extends Control
 signal claimed(go_prep: bool)
 signal revealed()
 
+const Currency := preload("res://scripts/account/Currency.gd")
 const UnitCollection := preload("res://scripts/account/UnitCollection.gd")
 const SfxService := preload("res://ui/services/SfxService.gd")
-const GOLD := Color("f1ce7b")
-const CREAM := Color("fff7e5")
-const MUTED := Color("bac7c6")
+# 11.11 羊皮纸风：浅色羊皮纸上的字色（原来是给深色面板配的浅色字）
+const GOLD := Color("8a4b12")
+const CREAM := Color("4a2c14")
+const MUTED := Color("7a5634")
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
+const UiJuice := preload("res://ui/theme/UiJuice.gd")
+const CHEST_CLOSED := preload("res://assets/ui/parchment_kit/chest_closed.png")
+const CHEST_OPEN := preload("res://assets/ui/parchment_kit/chest_open.png")
 
 
 class BurstEffect extends Control:
@@ -65,6 +71,8 @@ var _reveal_center: CenterContainer
 var _reveal_button: Button
 var _grant_note: Label
 var _action_buttons: HBoxContainer
+# 揭晓前摆在中间的宝箱；揭晓时在原地开箱、冒光、淡出（纯表现层，见 _open_chest）
+var _chest: TextureRect
 
 
 func tutorial_reveal_target() -> Control:
@@ -99,8 +107,8 @@ func _ready() -> void:
 		columns * 250 + 90))
 	var frame := PanelContainer.new()
 	frame.custom_minimum_size.x = panel_width
-	frame.add_theme_stylebox_override("panel", _box(Color("12242c"), GOLD, 22, 3,
-		20 if _compact else 26))
+	frame.add_theme_stylebox_override("panel", Kit.box("panel",
+		Vector4(64, 40, 64, 30) if _compact else Vector4(70, 48, 70, 36)))
 	center.add_child(frame)
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 9)
@@ -108,8 +116,7 @@ func _ready() -> void:
 	var ornament := _label("✦    ✧    ✦", 24, GOLD)
 	ornament.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(ornament)
-	var heading := _label(_t("等级提升", "LEVEL UP"), 34, GOLD)
-	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var heading := Kit.title_banner(_t("等级提升", "LEVEL UP"), 70.0, 28)
 	column.add_child(heading)
 	var reached := 1
 	for raw in _levels:
@@ -117,9 +124,7 @@ func _ready() -> void:
 	var level := _label("Lv %d" % reached, 62, CREAM)
 	level.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(level)
-	var divider := HSeparator.new()
-	divider.add_theme_stylebox_override("separator", _box(Color("8d7954"), Color.TRANSPARENT, 0, 0, 0))
-	column.add_child(divider)
+	column.add_child(Kit.separator(24.0))
 	var subtitle_text := _t("获得 %d 件奖励" % entries.size(),
 		"%d NEW REWARDS" % entries.size())
 	if entries.size() > 3:
@@ -160,9 +165,21 @@ func _ready() -> void:
 	reveal_column.alignment = BoxContainer.ALIGNMENT_CENTER
 	reveal_column.add_theme_constant_override("separation", 15)
 	_reveal_center.add_child(reveal_column)
-	var star := _label("✦", 76, GOLD)
-	star.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	reveal_column.add_child(star)
+	# 关着的宝箱，轻轻上下浮动，提示「点我」
+	var chest_holder := Control.new()
+	chest_holder.custom_minimum_size = Vector2(170, 120 if _compact else 146)
+	chest_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	reveal_column.add_child(chest_holder)
+	_chest = TextureRect.new()
+	_chest.texture = CHEST_CLOSED
+	_chest.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_chest.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_chest.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_chest.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	chest_holder.add_child(_chest)
+	var bob := _chest.create_tween().set_loops()
+	bob.tween_property(_chest, "position:y", -6.0, 0.9).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	bob.tween_property(_chest, "position:y", 0.0, 0.9).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	_reveal_button = _button(_t("点击揭晓奖励", "REVEAL REWARDS"), true)
 	_reveal_button.custom_minimum_size = Vector2(300, 72)
 	_reveal_button.pressed.connect(_reveal_rewards)
@@ -197,19 +214,47 @@ func _ready() -> void:
 		claim.pressed.connect(func() -> void: claimed.emit(false))
 		_action_buttons.add_child(claim)
 	_reveal_button.grab_focus.call_deferred()
+	UiJuice.pop_in([frame], 0.0, 0.0, 0.88)
 
 
 func _reveal_rewards() -> void:
 	if _revealed:
 		return
 	_revealed = true
-	_reveal_center.hide()
+	# 揭晓区（宝箱 + 按钮）不立刻整块藏起来：按钮和提示先藏，宝箱在原地开完再收（_open_chest）
+	_reveal_button.hide()
+	_open_chest()
 	_reward_scroll.show()
 	_action_buttons.show()
 	_burst.play_at(_burst.size * 0.5)
 	SfxService.play(SfxService.CUE_UI_CURRENCY_GAIN)
 	_animate_reward_cards()
 	revealed.emit()
+
+
+# 开箱：宝箱从揭晓区搬到 stage 上方（揭晓区马上要隐藏），抖两下 → 换成打开的图 →
+# 弹一下 + 冒光 → 淡出。状态切换（显示奖励 / 按钮、发 revealed）在 _reveal_rewards 里立刻完成，
+# 这里只是叠在上面的表现，教学引导和检查脚本不用等它。
+func _open_chest() -> void:
+	if _chest == null or not is_instance_valid(_chest):
+		_reveal_center.hide()
+		return
+	var chest := _chest
+	chest.pivot_offset = chest.size * 0.5
+	var tw := chest.create_tween()
+	for i in 2:
+		tw.tween_property(chest, "rotation", deg_to_rad(-7.0), 0.06)
+		tw.tween_property(chest, "rotation", deg_to_rad(7.0), 0.08)
+	tw.tween_property(chest, "rotation", 0.0, 0.05)
+	tw.tween_callback(func() -> void:
+		chest.texture = CHEST_OPEN
+		chest.scale = Vector2.ONE * 1.18)
+	tw.tween_property(chest, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_interval(0.2)
+	tw.tween_property(_reveal_center, "modulate:a", 0.0, 0.25)
+	tw.tween_callback(func() -> void:
+		_reveal_center.hide()
+		_reveal_center.modulate.a = 1.0)
 
 
 func _animate_reward_cards() -> void:
@@ -221,7 +266,7 @@ func _animate_reward_cards() -> void:
 		card.pivot_offset = card.size * 0.5
 		card.scale = Vector2(0.72, 0.72)
 		card.modulate.a = 0.0
-		var delay := minf(float(index) * 0.09, 0.54)
+		var delay := 0.38 + minf(float(index) * 0.09, 0.54)
 		create_tween().tween_property(card, "modulate:a", 1.0, 0.24).set_delay(delay)
 		create_tween().tween_property(card, "scale", Vector2.ONE, 0.4).set_delay(delay).set_trans(
 			Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
@@ -262,16 +307,19 @@ func _flatten_rewards() -> Array:
 func _reward_card(entry: Dictionary) -> Button:
 	var card := Button.new()
 	card.custom_minimum_size = Vector2(235, 228 if _compact else 264)
-	card.add_theme_stylebox_override("normal", _box(Color("274248"), Color("c4a260"), 14, 2, 13))
-	card.add_theme_stylebox_override("hover", _box(Color("34545a"), GOLD, 14, 3, 13))
-	card.add_theme_stylebox_override("pressed", _box(Color("1e353b"), GOLD, 14, 3, 13))
-	card.add_theme_stylebox_override("focus", _box(Color("274248"), CREAM, 14, 3, 13))
+	var pad := Vector4(16, 20, 16, 16)
+	card.add_theme_stylebox_override("normal", Kit.box("card", pad))
+	card.add_theme_stylebox_override("hover", Kit.box("card", pad, Color(1.06, 1.04, 0.98)))
+	card.add_theme_stylebox_override("pressed", Kit.box("card", pad, Color(0.92, 0.88, 0.82)))
+	card.add_theme_stylebox_override("focus", Kit.box("card", pad, Color(1.0, 0.93, 0.76)))
 	card.pressed.connect(_on_reward_card_pressed.bind(card))
 	var column := VBoxContainer.new()
 	column.alignment = BoxContainer.ALIGNMENT_CENTER
 	column.add_theme_constant_override("separation", 5)
 	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(column)
+	# Button 不给子节点排版：内容列要自己铺满卡片（内缩一圈让开金框），图标和字才会居中
+	column.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 14)
 	var kind := str(entry.get("kind", ""))
 	var heading := _t("神族棋子", "DIVINE PIECE") if kind == "unit" else (
 		_t("游戏币", "COINS") if kind == "coin" else _t("免费钻石", "DIAMONDS"))
@@ -282,7 +330,7 @@ func _reward_card(entry: Dictionary) -> Button:
 	art_frame.custom_minimum_size = Vector2(128, 128) if _compact else Vector2(154, 154)
 	art_frame.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	art_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	art_frame.add_theme_stylebox_override("panel", _box(Color("354d50"), GOLD, 12, 2, 7))
+	art_frame.add_theme_stylebox_override("panel", Kit.box("slot", Vector4(10, 10, 10, 10)))
 	column.add_child(art_frame)
 	if kind == "unit":
 		var portrait_path := "res://assets/ui/unit_portraits/%s.png" % str(entry.get("id", ""))
@@ -294,9 +342,12 @@ func _reward_card(entry: Dictionary) -> Button:
 			portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			art_frame.add_child(portrait)
 	else:
-		var symbol := _label("◆" if kind == "diamond" else "G", 72, GOLD)
-		symbol.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		symbol.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		# 11.11：原来是文字符号「G」「◆」，换成全游戏统一的金币 / 钻石图标（Currency.icon）
+		var symbol := TextureRect.new()
+		symbol.texture = Currency.icon("diamond" if kind == "diamond" else "coin")
+		symbol.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		symbol.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		symbol.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		art_frame.add_child(symbol)
 	var name := str(entry.get("name", "")) if kind == "unit" else "× %d" % int(entry.get("amount", 0))
 	var value := _label(name, 23, CREAM)
@@ -309,15 +360,7 @@ func _button(title: String, primary: bool) -> Button:
 	var button := Button.new()
 	button.text = title
 	button.custom_minimum_size = Vector2(252, 64)
-	var fill := Color("dfb45f") if primary else Color("263a40")
-	var font := Color("25302b") if primary else CREAM
-	button.add_theme_stylebox_override("normal", _box(fill, GOLD, 10, 2, 8))
-	button.add_theme_stylebox_override("hover", _box(fill.lightened(0.14), CREAM, 10, 2, 8))
-	button.add_theme_stylebox_override("pressed", _box(fill.darkened(0.10), GOLD, 10, 2, 8))
-	button.add_theme_stylebox_override("focus", _box(fill, CREAM, 10, 3, 8))
-	button.add_theme_color_override("font_color", font)
-	button.add_theme_color_override("font_hover_color", font)
-	button.add_theme_color_override("font_pressed_color", font)
+	Kit.style_plate(button, primary)
 	button.add_theme_font_size_override("font_size", 24)
 	return button
 

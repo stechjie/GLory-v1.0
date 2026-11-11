@@ -1,6 +1,7 @@
 extends Control
 
-const MONEY_BAG_TEXTURE_PATH := "res://assets/ui/buttons/btn_buy_lowpoly.png"
+# 11.11 换成手绘钱袋（跟原低模钱袋同一位置 / 同样大小的留边，见 btn_buy_painted.png）
+const MONEY_BAG_TEXTURE_PATH := "res://assets/ui/buttons/btn_buy_painted.png"
 
 var use_lowpoly_texture := false
 

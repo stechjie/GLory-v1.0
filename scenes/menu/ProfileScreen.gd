@@ -31,7 +31,13 @@ const ProgressionPanel := preload("res://scenes/menu/ProgressionPanel.gd")
 const InviteRedeemPanel := preload("res://scenes/menu/InviteRedeemPanel.gd")
 const ReportDialog := preload("res://ui/components/ReportDialog.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
-const PROFILE_BG_TEX := preload("res://assets/ui/profile/hall_of_glory.png")
+# 11.11 换成羊皮纸风（ui/theme/ParchmentKit.gd），背景用荣誉厅那张。
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
+const UiJuice := preload("res://ui/theme/UiJuice.gd")
+const ONLINE_COLOR := Color("2f7d45")
+const MUTED_COLOR := Color("8c7a66")
+const SECTION_COLOR := Color("8a4b12")
+const BAD_COLOR := Color("a3271a")
 const RankedTiers := preload("res://scenes/menu/RankedTiers.gd")
 const SignInBridge := preload("res://scripts/account/SignInBridge.gd")
 const GameHelp := preload("res://scripts/account/GameHelp.gd")
@@ -162,7 +168,7 @@ func configure_public(friend_code: String, report_context: String = "profile") -
 
 
 func _ready() -> void:
-	theme = Theming.get_theme()
+	theme = Kit.theme()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build()
 	_load()
@@ -184,20 +190,7 @@ func _exit_tree() -> void:
 
 
 func _build() -> void:
-	var bg := TextureRect.new()
-	bg.texture = PROFILE_BG_TEX
-	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
-
-	var dim := ColorRect.new()
-	# A moderate veil keeps text readable while the profile art remains visible.
-	dim.color = Color(0.008, 0.016, 0.031, 0.38)
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(dim)
+	Kit.backdrop(self, "profile_hall")
 
 	# 游戏是 **1600x720 横屏**（project.godot 的 viewport）。
 	# 第一版做成了竖着长的单列，在真实画布上必须往下滚 —— 横屏游戏里
@@ -228,23 +221,25 @@ func _build() -> void:
 		_body.add_child(tabs)
 		_overview_tab = ACTION_BUTTON.instantiate() as Button
 		_overview_tab.text = _text("总览", "Overview")
-		_overview_tab.custom_minimum_size = Vector2(190, Tokens.TOUCH_MIN)
+		Kit.style_tab(_overview_tab, 52.0, 20)
 		_overview_tab.pressed.connect(func() -> void: _select_profile_tab(false))
 		tabs.add_child(_overview_tab)
 		var level_tab := ACTION_BUTTON.instantiate() as Button
 		level_tab.text = _text("等级奖励", "Level Rewards")
-		level_tab.custom_minimum_size = Vector2(190, Tokens.TOUCH_MIN)
+		Kit.style_tab(level_tab, 52.0, 20)
+		level_tab.toggle_mode = false
 		level_tab.pressed.connect(_open_progression)
 		tabs.add_child(level_tab)
 		_level_tab = level_tab
 		var history_tab := ACTION_BUTTON.instantiate() as Button
 		history_tab.text = _text("对局记录", "Match History")
-		history_tab.custom_minimum_size = Vector2(190, Tokens.TOUCH_MIN)
+		Kit.style_tab(history_tab, 52.0, 20)
+		history_tab.toggle_mode = false
 		history_tab.pressed.connect(_open_match_history)
 		tabs.add_child(history_tab)
 		_settings_tab = ACTION_BUTTON.instantiate() as Button
 		_settings_tab.text = _text("资料设置", "Profile Settings")
-		_settings_tab.custom_minimum_size = Vector2(190, Tokens.TOUCH_MIN)
+		Kit.style_tab(_settings_tab, 52.0, 20)
 		_settings_tab.pressed.connect(func() -> void: _select_profile_tab(true))
 		tabs.add_child(_settings_tab)
 
@@ -280,25 +275,18 @@ func _build() -> void:
 	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_status.custom_minimum_size = Vector2(0, 26)
-	_status.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	# 状态行压在背景上（不在羊皮纸里）
+	Kit.on_backdrop(_status)
 	_body.add_child(_status)
+	UiJuice.pop_in(_body.get_children(), 0.0, 0.06, 0.93)
 
 
 func _select_profile_tab(settings: bool) -> void:
 	_overview_panel.visible = not settings
 	_settings_panel.visible = settings
-	for button in [_overview_tab, _settings_tab]:
-		var active: bool = (button == _settings_tab) == settings
-		if active:
-			button.add_theme_stylebox_override("normal", Tokens.button_box(Tokens.SURFACE_RAISED, Tokens.GOLD_EDGE))
-			button.add_theme_stylebox_override("hover", Tokens.button_box(Tokens.SURFACE_RAISED, Tokens.GOLD_EDGE))
-			button.add_theme_color_override("font_color", Tokens.GOLD)
-			button.add_theme_color_override("font_hover_color", Tokens.GOLD)
-		else:
-			button.remove_theme_stylebox_override("normal")
-			button.remove_theme_stylebox_override("hover")
-			button.remove_theme_color_override("font_color")
-			button.remove_theme_color_override("font_hover_color")
+	# 卷轴页签：选中 = 金色那张（button_pressed）
+	_overview_tab.set_pressed_no_signal(not settings)
+	_settings_tab.set_pressed_no_signal(settings)
 
 
 # 一栏。定宽是刻意的：三栏各自内容长度差很多，让它们自己去抢宽度
@@ -314,38 +302,18 @@ func _column(width: float, panels: Array) -> Control:
 
 
 func _header() -> Control:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", Tokens.GAP_M)
-
-	var back := Button.new()
-	back.text = _text("← 返回", "← Back")
-	back.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
-	back.pressed.connect(func() -> void: back_requested.emit())
-	row.add_child(back)
-
-	var title := Label.new()
-	title.text = _text("玩家主页", "Player Profile") if _mode == Mode.SELF \
-		else _text("玩家资料", "Player Profile")
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
-	title.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
-	row.add_child(title)
-
-	# 与返回键等宽的空位，让标题真的居中。
-	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(96, 0)
-	row.add_child(spacer)
-	return row
+	return Kit.header(_text("玩家主页", "Player Profile") if _mode == Mode.SELF
+		else _text("玩家资料", "Player Profile"), func() -> void: back_requested.emit())
 
 
 func _identity_card() -> Control:
 	var panel := PanelContainer.new()
 	if _mode == Mode.SELF:
-		panel.add_theme_stylebox_override("panel", Tokens.panel_box(Color.TRANSPARENT, Color.TRANSPARENT, Tokens.GAP_M))
-		panel.custom_minimum_size = Vector2(400, 430)
+		# 羊皮纸边框本身占高度：内边距收紧、最小高度降一点，1600x720 才放得下不用滚
+		panel.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(66, 40, 66, 26)))
+		panel.custom_minimum_size = Vector2(400, 400)
 	else:
-		panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.GOLD_EDGE, Tokens.GAP_M))
+		panel.add_theme_stylebox_override("panel", Kit.box("card"))
 
 	var content: BoxContainer
 	if _mode == Mode.SELF:
@@ -437,19 +405,19 @@ func _identity_card() -> Control:
 
 	_name_label = Label.new()
 	_name_label.add_theme_font_size_override("font_size", Tokens.FONT_BODY + (9 if _mode == Mode.SELF else 4))
-	_name_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	_name_label.add_theme_color_override("font_color", Kit.INK)
 	if _mode == Mode.SELF:
 		_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(_name_label)
 
 	_days_label = Label.new()
-	_days_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	_days_label.add_theme_color_override("font_color", Kit.INK_SOFT)
 	if _mode == Mode.SELF:
 		_days_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(_days_label)
 
 	_pet_label = Label.new()
-	_pet_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	_pet_label.add_theme_color_override("font_color", Kit.INK_SOFT)
 	if _mode == Mode.SELF:
 		_pet_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(_pet_label)
@@ -468,7 +436,7 @@ func _identity_card() -> Control:
 
 func _name_section() -> Control:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.GOLD_EDGE, Tokens.GAP_M))
+	panel.add_theme_stylebox_override("panel", Kit.box("card"))
 
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", Tokens.GAP_S)
@@ -494,7 +462,7 @@ func _name_section() -> Control:
 
 	_name_hint = Label.new()
 	_name_hint.add_theme_font_size_override("font_size", Tokens.FONT_BODY - 3)
-	_name_hint.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
+	_name_hint.add_theme_color_override("font_color", MUTED_COLOR)
 	_name_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(_name_hint)
 	return panel
@@ -505,7 +473,7 @@ func _name_section() -> Control:
 
 func _bio_section() -> Control:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.GOLD_EDGE, Tokens.GAP_M))
+	panel.add_theme_stylebox_override("panel", Kit.box("card"))
 
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", Tokens.GAP_S)
@@ -575,7 +543,7 @@ func _bio_section() -> Control:
 
 func _public_bio_block() -> Control:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.GOLD_EDGE, Tokens.GAP_M))
+	panel.add_theme_stylebox_override("panel", Kit.box("card"))
 	_public_rows = VBoxContainer.new()
 	_public_rows.add_theme_constant_override("separation", Tokens.GAP_S)
 	panel.add_child(_public_rows)
@@ -721,8 +689,8 @@ func _friend_request_button() -> Control:
 # 信誉分更是只给自己看（docs/排位系统设计.md 第四节：公开等于发一个新的骂人理由）。
 func _record_block() -> Control:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Color.TRANSPARENT, Color.TRANSPARENT, Tokens.GAP_M))
-	panel.custom_minimum_size = Vector2(780, 430)
+	panel.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(66, 40, 66, 26)))
+	panel.custom_minimum_size = Vector2(780, 400)
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", Tokens.GAP_M)
 	panel.add_child(column)
@@ -734,7 +702,7 @@ func _record_block() -> Control:
 	heading.add_child(heading_spacer)
 	_credit_value = Label.new()
 	_credit_value.text = _text("信誉分 —", "Credit —")
-	_credit_value.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	_credit_value.add_theme_color_override("font_color", Kit.INK_SOFT)
 	heading.add_child(_credit_value)
 
 	var rank_row := HBoxContainer.new()
@@ -754,16 +722,16 @@ func _record_block() -> Control:
 	rank_row.add_child(rank_text)
 	var eyebrow := Label.new()
 	eyebrow.text = _text("当前段位", "Current rank")
-	eyebrow.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	eyebrow.add_theme_color_override("font_color", Kit.INK_SOFT)
 	rank_text.add_child(eyebrow)
 	_rank_value = Label.new()
 	_rank_value.text = "—"
 	_rank_value.add_theme_font_size_override("font_size", 34)
-	_rank_value.add_theme_color_override("font_color", Tokens.GOLD)
+	_rank_value.add_theme_color_override("font_color", SECTION_COLOR)
 	rank_text.add_child(_rank_value)
 	_rank_progress_label = Label.new()
 	_rank_progress_label.text = _text("正在读取排位进度…", "Loading rank progress…")
-	_rank_progress_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	_rank_progress_label.add_theme_color_override("font_color", Kit.INK)
 	rank_text.add_child(_rank_progress_label)
 	_rank_progress = ProgressBar.new()
 	_rank_progress.custom_minimum_size = Vector2(0, 18)
@@ -771,7 +739,7 @@ func _record_block() -> Control:
 	_rank_progress.max_value = 100
 	rank_text.add_child(_rank_progress)
 	_next_rank_label = Label.new()
-	_next_rank_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	_next_rank_label.add_theme_color_override("font_color", Kit.INK_SOFT)
 	rank_text.add_child(_next_rank_label)
 
 	var tier_path := HBoxContainer.new()
@@ -816,12 +784,12 @@ func _rank_stat(parent: HBoxContainer, caption: String) -> Label:
 	value.text = "—"
 	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	value.add_theme_font_size_override("font_size", 27)
-	value.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	value.add_theme_color_override("font_color", Kit.INK)
 	box.add_child(value)
 	var name_label := Label.new()
 	name_label.text = caption
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	name_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	name_label.add_theme_color_override("font_color", Kit.INK_SOFT)
 	box.add_child(name_label)
 	return value
 
@@ -833,12 +801,12 @@ func _record_line(column: VBoxContainer, name_text: String, value_text: String,
 	var name_label := Label.new()
 	name_label.text = name_text
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	name_label.add_theme_color_override("font_color", Kit.INK_SOFT)
 	line.add_child(name_label)
 	var value := Label.new()
 	value.text = value_text
 	value.add_theme_color_override("font_color",
-		Tokens.TEXT_DISABLED if dim else Tokens.TEXT_PRIMARY)
+		MUTED_COLOR if dim else Kit.INK)
 	line.add_child(value)
 	column.add_child(line)
 	return value
@@ -908,9 +876,9 @@ func _load_ranked() -> void:
 	# <85 是警告线（第四节）。禁赛中另说，那个更要紧。
 	if int(body.get("banned_sec", 0)) > 0:
 		_credit_value.text = "%s %s" % [_credit_value.text, _text("（禁排位中）", "(suspended)")]
-		_credit_value.add_theme_color_override("font_color", Tokens.DANGER)
+		_credit_value.add_theme_color_override("font_color", BAD_COLOR)
 	elif bool(body.get("credit_warn", false)):
-		_credit_value.add_theme_color_override("font_color", Tokens.DANGER)
+		_credit_value.add_theme_color_override("font_color", BAD_COLOR)
 
 
 # 教学引导目标：玩家主页上的「等级奖励」页签（10.19 教程反馈第 4 条）。
@@ -951,7 +919,7 @@ func _open_match_history() -> void:
 func _placeholder_block(title: String, rows: Array) -> Control:
 	# ⚠️ **只在 SELF 模式出现。** 见文件顶部第 1 条。
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.GOLD_EDGE, Tokens.GAP_M))
+	panel.add_theme_stylebox_override("panel", Kit.box("card"))
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", Tokens.GAP_S)
 	panel.add_child(column)
@@ -961,11 +929,11 @@ func _placeholder_block(title: String, rows: Array) -> Control:
 		var name_label := Label.new()
 		name_label.text = str(row)
 		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		name_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+		name_label.add_theme_color_override("font_color", Kit.INK_SOFT)
 		line.add_child(name_label)
 		var value := Label.new()
 		value.text = _text("敬请期待", "Coming soon")
-		value.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
+		value.add_theme_color_override("font_color", MUTED_COLOR)
 		line.add_child(value)
 		column.add_child(line)
 	return panel
@@ -1004,7 +972,7 @@ func _open_privacy_url(url: String) -> void:
 func _danger_zone() -> Control:
 	var panel := PanelContainer.new()
 	panel.add_theme_stylebox_override(
-		"panel", Tokens.panel_box(Tokens.SURFACE, Tokens.DANGER, Tokens.GAP_M))
+		"panel", Kit.box("card", Vector4(-1, -1, -1, -1), Color(1.0, 0.86, 0.82)))
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", Tokens.GAP_S)
 	panel.add_child(column)
@@ -1012,7 +980,7 @@ func _danger_zone() -> Control:
 	var title := Label.new()
 	title.text = _text("注销账号", "Delete account")
 	title.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
-	title.add_theme_color_override("font_color", Tokens.DANGER_HOVER)
+	title.add_theme_color_override("font_color", BAD_COLOR)
 	column.add_child(title)
 
 	var warn := Label.new()
@@ -1024,7 +992,7 @@ func _danger_zone() -> Control:
 		+ "Some match, item, penalty, report and technical records remain for verification, disputes and abuse prevention. See Account and data deletion.")
 	warn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	warn.add_theme_font_size_override("font_size", Tokens.FONT_BODY - 4)
-	warn.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	warn.add_theme_color_override("font_color", Kit.INK_SOFT)
 	column.add_child(warn)
 
 	_delete_code_edit = LineEdit.new()
@@ -1038,12 +1006,8 @@ func _danger_zone() -> Control:
 	_delete_btn.text = _text("注销账号", "Delete account")
 	_delete_btn.disabled = true
 	_delete_btn.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
-	var box := Tokens.button_box(Tokens.DANGER, Tokens.DANGER_HOVER)
-	_delete_btn.add_theme_stylebox_override("normal", box)
-	_delete_btn.add_theme_stylebox_override("hover",
-		Tokens.button_box(Tokens.DANGER_HOVER, Tokens.DANGER_HOVER))
-	_delete_btn.add_theme_stylebox_override("pressed",
-		Tokens.button_box(Tokens.DANGER_PRESSED, Tokens.DANGER_HOVER))
+	# 危险操作：羊皮纸底板染红（主题里的 GloryDanger 变体）
+	_delete_btn.theme_type_variation = Theming.VARIATION_DANGER
 	_delete_btn.pressed.connect(_on_delete_pressed)
 	column.add_child(_delete_btn)
 	return panel
@@ -1102,7 +1066,7 @@ func _run_delete(code: String) -> void:
 # 第一期只能绑、不能解（10-22 拍板）；想连绑定一起去掉，就用下面的「注销账号」。
 func _account_section() -> Control:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.GOLD_EDGE, Tokens.GAP_M))
+	panel.add_theme_stylebox_override("panel", Kit.box("card"))
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", Tokens.GAP_S)
 	panel.add_child(column)
@@ -1111,7 +1075,7 @@ func _account_section() -> Control:
 	_account_note = Label.new()
 	_account_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_account_note.add_theme_font_size_override("font_size", Tokens.FONT_BODY - 4)
-	_account_note.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	_account_note.add_theme_color_override("font_color", Kit.INK_SOFT)
 	_account_note.text = _text("正在读取…", "Loading…")
 	column.add_child(_account_note)
 
@@ -1196,13 +1160,13 @@ func _render_identities(guest: bool, identities: Array) -> void:
 		_account_note.text = _text(
 			"游客账号：删除游戏或换手机后无法找回。绑定之后，换手机也能用同一个账号登录。",
 			"Guest account: it can't be recovered if you delete the game or change phones. Link an account to keep it.")
-		_account_note.add_theme_color_override("font_color", Tokens.GOLD)
+		_account_note.add_theme_color_override("font_color", SECTION_COLOR)
 		if not can_sign_in:
 			_account_note.text += "\n" + _text("这台设备不能绑定，请在手机上操作。", "This device can't link accounts; use your phone.")
 	else:
 		_account_note.text = _text("换手机时，用下面绑定的账号登录就能接着玩。",
 			"On a new phone, sign in with an account linked below to carry on.")
-		_account_note.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+		_account_note.add_theme_color_override("font_color", Kit.INK_SOFT)
 	_link_google_btn.visible = SignInBridge.google_available() and not has_google
 	_switch_btn.visible = can_sign_in
 	# 在电脑（Steam 版）上自己就是 Steam，不用关联；已经关联过的也不再出。
@@ -1813,7 +1777,7 @@ func _labeled(label_text: String, control: Control) -> Control:
 	label.custom_minimum_size = Vector2(64, 0)
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.add_theme_font_size_override("font_size", Tokens.FONT_BODY - 2)
-	label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	label.add_theme_color_override("font_color", Kit.INK_SOFT)
 	row.add_child(label)
 	control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(control)
@@ -1825,11 +1789,11 @@ func _read_only_row(label_text: String, value_text: String) -> Control:
 	var label := Label.new()
 	label.text = label_text
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	label.add_theme_color_override("font_color", Kit.INK_SOFT)
 	row.add_child(label)
 	var value := Label.new()
 	value.text = value_text
-	value.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	value.add_theme_color_override("font_color", Kit.INK)
 	row.add_child(value)
 	return row
 
@@ -1838,7 +1802,7 @@ func _section_title(text_value: String) -> Control:
 	var label := Label.new()
 	label.text = text_value
 	label.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
-	label.add_theme_color_override("font_color", Tokens.GOLD)
+	label.add_theme_color_override("font_color", SECTION_COLOR)
 	return label
 
 

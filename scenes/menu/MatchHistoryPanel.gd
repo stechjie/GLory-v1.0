@@ -38,6 +38,8 @@ const SfxService := preload("res://ui/services/SfxService.gd")
 const SettlementPanel := preload("res://scenes/menu/FinalSettlementPanel.gd")
 const FinalSettlementData := preload("res://scripts/multiplayer/FinalSettlementData.gd")
 const PROFILE_BG_TEX := preload("res://assets/ui/profile/hall_of_glory.png")
+# 11.11 羊皮纸风（ui/theme/ParchmentKit.gd）：荣誉厅背景 + 纸条对局行
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
 
 # 「详细战况」叠在历史弹窗上面（ProfileScreen 推历史用的是 40）。
 const DETAIL_MODAL_ID := "match_history_detail"
@@ -58,25 +60,14 @@ var _status: Label
 
 
 func _ready() -> void:
-	theme = Theming.get_theme()
+	theme = Kit.theme()
 	_build()
 	_fetch()
 
 
 func _build() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var background := TextureRect.new()
-	background.texture = PROFILE_BG_TEX
-	background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(background)
-	var veil := ColorRect.new()
-	veil.color = Color(0.008, 0.016, 0.031, 0.43)
-	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	veil.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(veil)
+	Kit.backdrop(self, "profile_hall")
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	for edge in ["left", "right"]:
@@ -89,22 +80,21 @@ func _build() -> void:
 	margin.add_child(column)
 	var header := HBoxContainer.new()
 	column.add_child(header)
-	var title := Label.new()
-	title.text = _text("对局历史", "Match History")
-	title.add_theme_font_size_override("font_size", 30)
-	title.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(title)
+	var title_slot := HBoxContainer.new()
+	title_slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_slot.add_child(Kit.title_banner(_text("对局历史", "Match History"), 62.0, 26))
+	header.add_child(title_slot)
 	var close := ACTION_BUTTON.instantiate() as Button
 	close.text = _text("返回", "Back")
 	close.custom_minimum_size = Vector2(130, Tokens.TOUCH_MIN)
+	Kit.style_plate(close, false)
 	close.pressed.connect(func() -> void:
 		SfxService.play(SfxService.CUE_UI_CONFIRM)
 		dismissed.emit())
 	header.add_child(close)
 	_summary = Label.new()
 	_summary.add_theme_font_size_override("font_size", 18)
-	_summary.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	Kit.on_backdrop(_summary)
 	column.add_child(_summary)
 	var list_scroll := TouchScrollContainer.new()
 	list_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -119,7 +109,7 @@ func _build() -> void:
 	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_status.custom_minimum_size = Vector2(0, 26)
-	_status.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	Kit.on_backdrop(_status)
 	column.add_child(_status)
 
 
@@ -211,9 +201,10 @@ func _list_row(index: int) -> Control:
 	row.text = ""
 	row.custom_minimum_size = Vector2(0, 122)
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_theme_stylebox_override("normal", Tokens.flat_box(Color(0.015, 0.04, 0.08, 0.39), Color.TRANSPARENT, 0, 12))
-	row.add_theme_stylebox_override("hover", Tokens.flat_box(Color(0.025, 0.075, 0.13, 0.67), Color.TRANSPARENT, 0, 12))
-	row.add_theme_stylebox_override("pressed", Tokens.flat_box(Color(0.025, 0.075, 0.13, 0.8), Color.TRANSPARENT, 0, 12))
+	# 羊皮纸卡（横向拉长）；悬停稍亮
+	row.add_theme_stylebox_override("normal", Kit.box("list_row", Vector4.ZERO))
+	row.add_theme_stylebox_override("hover", Kit.box("list_row", Vector4.ZERO, Color(1.06, 1.04, 0.98)))
+	row.add_theme_stylebox_override("pressed", Kit.box("list_row", Vector4.ZERO, Color(0.92, 0.88, 0.82)))
 	row.pressed.connect(func() -> void:
 		if available:
 			SfxService.play(SfxService.CUE_UI_POPUP)
@@ -222,9 +213,9 @@ func _list_row(index: int) -> Control:
 	inset.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	inset.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for edge in ["left", "right"]:
-		inset.add_theme_constant_override("margin_" + edge, 18)
+		inset.add_theme_constant_override("margin_" + edge, 58)
 	for edge in ["top", "bottom"]:
-		inset.add_theme_constant_override("margin_" + edge, 10)
+		inset.add_theme_constant_override("margin_" + edge, 18)
 	row.add_child(inset)
 	var content := HBoxContainer.new()
 	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -235,7 +226,7 @@ func _list_row(index: int) -> Control:
 	result_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	content.add_child(result_box)
 	result_box.add_child(_row_label(_outcome_word(outcome), _outcome_color(outcome), 26))
-	result_box.add_child(_row_label("%s · %s %d" % [_mode_word(str(item.get("mode", ""))), _text("回合", "Round"), int(item.get("rounds", 0))], Tokens.TEXT_SECONDARY, 15))
+	result_box.add_child(_row_label("%s · %s %d" % [_mode_word(str(item.get("mode", ""))), _text("回合", "Round"), int(item.get("rounds", 0))], Kit.INK_SOFT, 15))
 	var seats: Array = item.get("seats", []) if typeof(item.get("seats")) == TYPE_ARRAY else []
 	for team in 2:
 		var team_box := VBoxContainer.new()
@@ -243,31 +234,32 @@ func _list_row(index: int) -> Control:
 		team_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		team_box.add_theme_constant_override("separation", 1)
 		content.add_child(team_box)
-		team_box.add_child(_row_label(_text("红队", "Red Team") if team == 0 else _text("蓝队", "Blue Team"), Color("ff8b7f") if team == 0 else Color("82bdff"), 16))
+		team_box.add_child(_row_label(_text("红队", "Red Team") if team == 0 else _text("蓝队", "Blue Team"), Color("b3362a") if team == 0 else Color("2f5f9e"), 16))
 		for seat in seats:
 			if typeof(seat) != TYPE_DICTIONARY or int((seat as Dictionary).get("team", -1)) != team:
 				continue
 			var seat_data := seat as Dictionary
 			var name := seat_name(seat_data, int(seat_data.get("slot", -1)) == int(item.get("my_slot", -1)))
 			var state := _seat_state(seat_data)
-			team_box.add_child(_row_label(name + state, Tokens.TEXT_PRIMARY if state.is_empty() else Tokens.TEXT_SECONDARY, 14))
+			team_box.add_child(_row_label(name + state, Kit.INK if state.is_empty() else Kit.INK_SOFT, 14))
 	var action_box := VBoxContainer.new()
 	action_box.custom_minimum_size.x = 190
 	action_box.alignment = BoxContainer.ALIGNMENT_CENTER
 	action_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	content.add_child(action_box)
-	action_box.add_child(_row_label(_ago_text(int(item.get("age_sec", 0))), Tokens.TEXT_SECONDARY, 14))
+	action_box.add_child(_row_label(_ago_text(int(item.get("age_sec", 0))), Kit.INK_SOFT, 14))
 	if available:
 		var detail := ACTION_BUTTON.instantiate() as Button
 		detail.text = _text("详细战况", "Match details")
 		detail.custom_minimum_size = Vector2(145, 38)
 		detail.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		Kit.style_plate(detail, true)
 		detail.pressed.connect(func() -> void:
 			SfxService.play(SfxService.CUE_UI_POPUP)
 			_open_settlement(item))
 		action_box.add_child(detail)
 	else:
-		action_box.add_child(_row_label(_text("旧版本记录，没有详细战况", "Older record, no match details"), Tokens.TEXT_SECONDARY, 12))
+		action_box.add_child(_row_label(_text("旧版本记录，没有详细战况", "Older record, no match details"), Kit.INK_SOFT, 12))
 	return row
 
 
@@ -306,7 +298,9 @@ static func seat_name(seat: Dictionary, mine: bool) -> String:
 	if not _seat_pid(seat).is_empty():
 		who = AccountManager.display_name(_json_str(seat.get("player_name")), _json_str(seat.get("friend_code")), false)
 	elif bool(seat.get("was_ai", false)):
-		who = "AI"
+		who = _json_str(seat.get("player_name"))
+		if who.is_empty():
+			who = "AI"
 	else:
 		# 没账号也不是 AI：有棋子 = 没带名片的真人（进程内门禁那条路），没棋子 = 空位。
 		var board: Variant = seat.get("board", [])
@@ -470,9 +464,9 @@ func _outcome_word(outcome: String) -> String:
 
 func _outcome_color(outcome: String) -> Color:
 	match outcome:
-		"win": return Color("67dca2")
-		"loss": return Color("ff796f")
-		_: return Tokens.TEXT_SECONDARY
+		"win": return Color("2f7d45")
+		"loss": return Color("a3271a")
+		_: return Color("7a5634")
 
 
 func _mode_word(mode: String) -> String:

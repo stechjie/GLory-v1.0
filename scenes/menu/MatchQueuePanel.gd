@@ -23,6 +23,9 @@ extends Control
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
+# 11.11 羊皮纸风：羊皮纸面板 + 沙漏（排队时翻转）+ 羊皮纸按钮（ui/theme/ParchmentKit.gd）。
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
+const UiJuice := preload("res://ui/theme/UiJuice.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const SfxService := preload("res://ui/services/SfxService.gd")
 # 10.10 bug 第 6 条：确认阶段要画两支队伍的头像（打√表示已确认）。
@@ -42,6 +45,7 @@ const POLL_SEC := 3.0
 # 对不上只是显示不准（真正的时限在服务器，见文件头第 2 条）。
 const ACCEPT_SEC := 30.0
 
+var _hourglass: TextureRect = null
 var _mode := "casual"
 var _party_queue := false
 var _queue_ban_deadline := -1
@@ -83,7 +87,7 @@ func tutorial_roster_target() -> Control:
 
 
 func _ready() -> void:
-	theme = Theming.get_theme()
+	theme = Kit.theme()
 	_build()
 	if _tutorial_ai:
 		_begin_tutorial_ai_queue()
@@ -105,7 +109,7 @@ func _build() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box())
+	panel.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(64, 50, 64, 40)))
 	panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	panel.custom_minimum_size = Vector2(560, 0)
 	panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
@@ -116,17 +120,35 @@ func _build() -> void:
 	column.add_theme_constant_override("separation", Tokens.GAP_M)
 	panel.add_child(column)
 
+	# 沙漏：排队等待时每隔一会儿翻一下；找到对局后收起（见 _apply）
+	_hourglass = TextureRect.new()
+	_hourglass.texture = Kit.icon("hourglass")
+	_hourglass.custom_minimum_size = Vector2(72, 72)
+	_hourglass.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_hourglass.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_hourglass.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_hourglass.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	column.add_child(_hourglass)
+	var flip := _hourglass.create_tween().set_loops()
+	flip.tween_interval(1.1)
+	flip.tween_callback(func() -> void: _hourglass.pivot_offset = _hourglass.size * 0.5)
+	flip.tween_property(_hourglass, "rotation", PI, 0.45).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	flip.tween_interval(1.1)
+	flip.tween_property(_hourglass, "rotation", TAU, 0.45).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	flip.tween_callback(func() -> void: _hourglass.rotation = 0.0)
+	UiJuice.pop_in([panel], 0.0, 0.0, 0.88)
+
 	_title = Label.new()
 	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_title.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
-	_title.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	_title.add_theme_color_override("font_color", Color("8a4b12"))
 	column.add_child(_title)
 
 	_detail = Label.new()
 	_detail.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_detail.custom_minimum_size = Vector2(0, 52)
-	_detail.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	_detail.add_theme_color_override("font_color", Kit.INK_SOFT)
 	column.add_child(_detail)
 
 	# 10.10 bug 第 6 条：两队头像（上=红队三席、下=蓝队三席）。只在 found 状态显示。
@@ -144,11 +166,13 @@ func _build() -> void:
 	_accept_btn.text = _text("确认", "Accept")
 	_accept_btn.visible = false
 	_accept_btn.pressed.connect(_on_accept)
+	Kit.style_plate(_accept_btn, true)
 	row.add_child(_accept_btn)
 
 	_leave_btn = ACTION_BUTTON.instantiate() as Button
 	_leave_btn.text = _text("取消排队", "Leave Queue")
 	_leave_btn.pressed.connect(_on_leave)
+	Kit.style_plate(_leave_btn, false)
 	row.add_child(_leave_btn)
 
 	_apply({"state": "idle"})
@@ -362,6 +386,9 @@ func _apply(state: Dictionary) -> void:
 	if previous != next:
 		print("[MATCH_QUEUE] mode=%s %s -> %s match=%s" % [_mode, previous, next, str(state.get("match_uid", ""))])
 	_state = next
+	# 找到对局 / 进场后沙漏收起，只在等待时转
+	if _hourglass != null:
+		_hourglass.visible = next in ["idle", "queued"]
 	match next:
 		"queued":
 			_accepted = false
@@ -569,6 +596,8 @@ func _seat_chip(seat: Dictionary) -> Control:
 		ai_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		ai_label.add_theme_font_size_override("font_size", 16)
 		ai_label.add_theme_color_override("font_color", Color("fff1d0"))
+		ai_label.add_theme_color_override("font_outline_color", Color(0.12, 0.07, 0.025, 0.9))
+		ai_label.add_theme_constant_override("outline_size", 4)
 		ai_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		ai_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 		ai_label.offset_top = -25.0

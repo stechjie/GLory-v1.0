@@ -1692,6 +1692,8 @@ func _request(
 					queue_reason = value
 				elif header == "retry-after" and value.is_valid_int():
 					retry_after = value.to_int()
+			if not queue_reason.is_empty() and not failure.has("reason"):
+				failure["reason"] = queue_reason
 			if queue_reason == "credit_banned" and retry_after >= 0:
 				failure["queue_ban_deadline"] = Time.get_ticks_msec() + retry_after * 1000
 		return failure

@@ -145,9 +145,17 @@ def configure_server_environment(stage, environment):
     """Select public endpoints in the generated copy, preserving source defaults."""
     if environment is None:
         return None
+    # 2026-11-11 起用自有域名 gogoglory.com（原来是 duckdns，中国大陆解析不稳）。
+    # 旧的 glorytd-*.duckdns.org 仍然解析、服务器上两个域名同时挂着 —— 那是给
+    # **已经发出去的老包**用的（域名烧在安装包里，服务器删不掉）。等老版本基本
+    # 淘汰再撤旧域名；撤之前还要同步改 Supabase 的 Steam OIDC Issuer 和
+    # Google Pub/Sub 的 RTDN 推送端点，见 AGENTS.md。
+    # 先切测试服，11-11 用户在电脑上实测登录 + 自定义房间通过后，正式服也切了。
+    # --patch-config 里的 backend_url 必须和这里一致（main 里有检查，不一致直接停）：
+    # 以前的正式服补丁配置写的是 duckdns，要先改成 https://api.gogoglory.com 才打得出包。
     endpoints = {
-        "prod": ("https://glorytd-prod-api.duckdns.org", "glorytd-prod-battle.duckdns.org", PROD_DTLS_SHA256),
-        "test": ("https://glorytd-api.duckdns.org", "glorytd-battle.duckdns.org", TEST_DTLS_SHA256),
+        "prod": ("https://api.gogoglory.com", "battle.gogoglory.com", PROD_DTLS_SHA256),
+        "test": ("https://test-api.gogoglory.com", "test-battle.gogoglory.com", TEST_DTLS_SHA256),
     }
     backend, battle, cert_sha256 = endpoints[environment]
     for filename, name, value in (

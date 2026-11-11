@@ -83,9 +83,34 @@ const ROOM_FONT_HEAD := 18
 const ROOM_FONT_BODY := 15
 const ROOM_FONT_HINT := 13
 const ROOM_ICON_SIZE := 44
-const TEX_BACKGROUND := preload("res://assets/ui/main_menu_live/background.png")
-const TEX_PROFILE_PANEL := preload("res://assets/ui/main_menu_live/profile_panel.png")
-const TEX_PROFILE_AVATAR := preload("res://assets/ui/main_menu_live/profile_avatar.png")
+const TEX_BACKGROUND := preload("res://assets/ui/main_menu_v2/background.png")
+const TEX_PROFILE_PANEL := preload("res://assets/ui/main_menu_v2/profile_panel.png")
+const TEX_PROFILE_AVATAR := preload("res://assets/ui/main_menu_v2/profile_avatar.png")
+const TEX_SCROLL_BAR := preload("res://assets/ui/main_menu_v2/scroll_bar.png")
+# 11.10 用户给的金币 / 钻石图标（只用在主菜单货币栏）。
+const TEX_COIN_ICON := preload("res://assets/ui/main_menu_v2/coin_icon.png")
+const TEX_DIAMOND_ICON := preload("res://assets/ui/main_menu_v2/diamond_icon.png")
+const SHINE_SHADER := preload("res://shaders/main_menu_shine.gdshader")
+# 11.10 资料卡：名牌卷轴（head exp bar）画在圆环右边，圆环压住它左端。
+const PROFILE_PLATE_POS := Vector2(150, 46)
+const PROFILE_PLATE_SIZE := Vector2(375, 117)
+# 新圆环（head.png 裁边后 420x365）的透明洞：直径 289px、洞心在图的 (205.5, 181)。
+# 换了那张图就要重新量（PIL 从图中心找透明连通块即可）。
+const PROFILE_RING_HOLE_FRAC := 289.0 / 420.0
+const PROFILE_RING_HOLE_CENTER := Vector2(205.5 / 420.0, 181.0 / 365.0)
+const PROFILE_PLACEHOLDER_COLOR := Color("4a3220")
+const PROFILE_XP_POS := Vector2(262, 128)
+const PROFILE_XP_SIZE := Vector2(150, 7)
+const SHOP_POS := Vector2(1412, 132)
+const SHOP_SIZE := Vector2(232, 283)
+const NEWS_POS := Vector2(1412, 420)
+const NEWS_SIZE := Vector2(232, 284)
+# 羊皮纸上的字：深棕、带一圈浅色描边，跟概念图一致。
+const INK_TEXT := Color("4a2c14")
+const INK_OUTLINE := Color(1.0, 0.95, 0.80, 0.75)
+# 11.11 自定义房间面板换成羊皮纸风（ui/theme/ParchmentKit.gd）
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
+const ROOM_SECTION_COLOR := Color("8a4b12")
 const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 # ── 资料卡那组头像的几何（10.02 三轮）────────────────────────────────────
 # 头像 123、圆盘盒 180x175。**自定义框按内孔反推尺寸**（`_profile_hole_target()` +
@@ -104,22 +129,22 @@ const PROFILE_PORTRAIT_SIZE := Vector2(123, 123)
 # 圆盘盒中心。头像与自定义框（的**内孔圆心**）都以它为心。
 const PROFILE_DISC_CENTER := PROFILE_DISC_POS + PROFILE_DISC_BOX * 0.5
 const PROFILE_PORTRAIT_POS := PROFILE_DISC_CENTER - PROFILE_PORTRAIT_SIZE * 0.5
-const TEX_MAIL := preload("res://assets/ui/main_menu_live/mail.png")
+const TEX_MAIL := preload("res://assets/ui/main_menu_v2/mail.png")
 # 千分位与商城、邮件共用这一份（两处显示同一个数，格式不一样很显眼）。
 const Currency := preload("res://scripts/account/Currency.gd")
-const TEX_BAG := preload("res://assets/ui/main_menu_live/bag.png")
-const TEX_SETTINGS := preload("res://assets/ui/main_menu_live/settings.png")
-const TEX_FRIENDS := preload("res://assets/ui/main_menu_live/friends.png")
-const TEX_CHAT := preload("res://assets/ui/main_menu_live/chat.png")
-const TEX_SHOP := preload("res://assets/ui/main_menu_live/shop.png")
-const TEX_NEWS := preload("res://assets/ui/main_menu_live/news.png")
-const TEX_PREP := preload("res://assets/ui/main_menu_live/prep.png")
-const TEX_CASUAL := preload("res://assets/ui/main_menu_live/casual.png")
+const TEX_BAG := preload("res://assets/ui/main_menu_v2/bag.png")
+const TEX_SETTINGS := preload("res://assets/ui/main_menu_v2/settings.png")
+const TEX_FRIENDS := preload("res://assets/ui/main_menu_v2/friends.png")
+const TEX_CHAT := preload("res://assets/ui/main_menu_v2/chat.png")
+const TEX_SHOP := preload("res://assets/ui/main_menu_v2/shop.png")
+const TEX_NEWS := preload("res://assets/ui/main_menu_v2/news.png")
+const TEX_PREP := preload("res://assets/ui/main_menu_v2/prep.png")
+const TEX_CASUAL := preload("res://assets/ui/main_menu_v2/casual.png")
 const LevelUpRewardDialog := preload("res://scenes/menu/LevelUpRewardDialog.gd")
 const LEVEL_REWARD_MODAL_ID := "main_menu_level_rewards"
-const TEX_RANKED := preload("res://assets/ui/main_menu_live/ranked.png")
-const TEX_CUSTOM := preload("res://assets/ui/main_menu_live/custom.png")
-const TEX_GALLERY := preload("res://assets/ui/main_menu_live/gallery.png")
+const TEX_RANKED := preload("res://assets/ui/main_menu_v2/ranked.png")
+const TEX_CUSTOM := preload("res://assets/ui/main_menu_v2/custom.png")
+const TEX_GALLERY := preload("res://assets/ui/main_menu_v2/gallery.png")
 const MAIN_MENU_AMBIENCE := preload("res://scenes/menu/MainMenuAmbience.gd")
 const MAIN_MENU_PET := preload("res://scenes/menu/MainMenuPet.gd")
 const MENU_MUSIC_PATH := "res://assets/audio/bgm/menu_music.mp3"
@@ -300,31 +325,27 @@ func _build() -> void:
 	# 中心草地上的宠物（拥有几只出几只）。加在这里 = 在背景之上、所有 UI 之下。
 	add_child(MAIN_MENU_PET.new() as Control)
 
-	# 左上角个人信息、左侧朋友/聊天：锚定到屏幕左边（edge="left"）
-	# 个人信息按钮 = 资料框 + 头像框两张图叠出来，整组一个判定区。
-	# 头像框压在资料框左边 1/3，因为是正方形所以上下各凸出约 33。
-	# 素材原始比例：资料框 1325x267 (4.96:1)、头像框 850x825 (1.03:1)，
-	# 改尺寸时按比例改，不然 STRETCH_KEEP_ASPECT 会在框里留边错位。
-	# 顺序 = 绘制层级，hit 必须放最后（TextureRect 默认会吃掉点击）。
-	# TODO 以后往头像框里放玩家立绘：要一张圆心透明的头像框，立绘那行插在头像框之前垫底。
-	_add_texture(TEX_PROFILE_PANEL, Vector2(18, 46), Vector2(550, 110), "left")
-	_profile_base_frame = _add_texture(TEX_PROFILE_AVATAR, PROFILE_DISC_POS, PROFILE_DISC_BOX, "left")
-	# 头像画在框**之上**，不是垫在底下。
-	#
-	# 顶部原来那条 TODO 写的是「以后往头像框里放玩家立绘：要一张圆心透明的头像框，
-	# 立绘那行插在头像框之前垫底」—— 但 profile_avatar.png 的圆心**不是透明的洞**，
-	# 实测是不透明深棕（RGB 59,44,25 / alpha 255）。垫在底下会被整个盖住。
-	#
-	# 所以改成盖在上面 + 裁成圆形。等美术出了圆心透明的版本，可以把这行挪到
-	# 上一行之前并去掉裁剪，那样更省一次绘制。
-	#
-	# ★ 10.02 三轮：**只有这一个头像节点**。原先还额外有一个 78x78 的
-	# `_profile_frame_portrait` 专门给「戴了商城框」用 —— 于是同一张立绘，戴框就
-	# 从 123 缩到 78（玩家报的「头像变小」）。现在不管戴什么框都走这一个。
+	# ── 11.10 主菜单换成 main_menu_v2（森林空地 + 羊皮纸卷轴按钮）────────────────
+	# 坐标是对着用户的概念图（同一张 1672x941 参考画布）摆的。按钮底图都是空白的，
+	# 字由代码写（中英文切换）。顺序 = 绘制层级，hit 必须放在同组最后。
+	# 每组按钮用 _anim_group() 登记，进场弹出 / 按下回弹 / 悬停放大都在那里统一做。
+
+	# 左上角资料卡：名牌卷轴垫底，圆环压在它左端。
+	var plate := _add_texture(TEX_PROFILE_PANEL, PROFILE_PLATE_POS, PROFILE_PLATE_SIZE, "left")
+	# 新圆环中间是透明的洞。按「洞的直径 = 默认圆盘内孔（_profile_hole_target）、
+	# 洞心 = 圆盘中心」反推画多大、画在哪 —— 这样自定义框的那套几何（按旧默认圆盘
+	# 内孔反推）完全不用动，戴不戴框头像都一样大。
+	var ring_size := _profile_ring_size()
+	var ring_pos := PROFILE_DISC_CENTER - Vector2(ring_size.x * PROFILE_RING_HOLE_CENTER.x,
+		ring_size.y * PROFILE_RING_HOLE_CENTER.y)
+	_profile_base_frame = _add_texture(TEX_PROFILE_AVATAR, ring_pos, ring_size, "left")
+	# 没头像时洞里垫一块深棕圆盘（概念图里的样子），不然会露出背后的草地。
+	var placeholder := _add_round_portrait(PROFILE_PORTRAIT_POS, PROFILE_PORTRAIT_SIZE, "left")
+	placeholder.texture = _solid_texture(PROFILE_PLACEHOLDER_COLOR)
+	# 头像画在框**之上**、裁成圆形（10.02 三轮：只有这一个头像节点，任何框下都是 123）。
 	_profile_portrait = _add_round_portrait(PROFILE_PORTRAIT_POS, PROFILE_PORTRAIT_SIZE, "left")
 	# 自定义框的容器。**初始是圆盘盒的大小，实际尺寸由 `_refresh_profile_plate()`
-	# 按内孔反推后改**（见 `_profile_hole_target()`）—— 每个框的内孔占比不同，
-	# 竖长的框要画得比圆盘更大，内孔才能和圆盘一样大。
+	# 按内孔反推后改**（见 `_profile_hole_target()`）。
 	_profile_frame_overlay = _add_container(PROFILE_DISC_POS, PROFILE_DISC_BOX, "left")
 	_profile_frame_overlay.visible = false
 	_profile_frame_art = TextureRect.new()
@@ -333,122 +354,128 @@ func _build() -> void:
 	_profile_frame_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_profile_frame_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_profile_frame_overlay.add_child(_profile_frame_art)
-	# ★ 10.02 三轮：把自定义框挪到头像**前面**（= 画在头像下面），与默认圆盘同一层次。
-	# 之前它是后加的 ⇒ 盖在头像上，它那道圆内孔会把头像边缘切掉一圈：内孔是圆的、
-	# 头像也是圆的，两圆心/半径差几像素就吃掉几像素（三轮渲染实测 -0.8% ~ -4.1%），
-	# 于是「戴哪个框」直接改变了头像的可见大小。放到头像下面之后，**头像的可见像素
-	# 在任何框下都逐像素相同** —— 这才是「和默认框一样大」的结构性保证。
-	move_child(_profile_frame_overlay, _profile_portrait.get_parent().get_index())
-	# 这两行**曾经是写死的假数据**（"GloryMaster" / "等级 45"）。等级系统不存在，
-	# 所以第二行现在放注册天数 —— 有真实来源，且比精确注册日期少泄漏一点。
-	# 等级/段位做出来之后再换回去，那时第二行才有真东西可放。
-	_profile_name_label = _add_label("", Vector2(200, 70), Vector2(330, 35), 24, "left")
-	_profile_xp_bar = _add_container(Vector2(200, 104), Vector2(330, 24), "left")
+	# ★ 10.02 三轮：自定义框画在头像**下面**，与默认圆盘同一层次（见 seat_frame_check）。
+	move_child(_profile_frame_overlay, placeholder.get_parent().get_index())
+	_profile_name_label = _add_label("", Vector2(200, 64), Vector2(300, 40), 28, "left")
+	_ink(_profile_name_label)
+	# 经验条压在卷轴上那道刻线的位置。
+	_profile_xp_bar = _add_container(PROFILE_XP_POS, PROFILE_XP_SIZE, "left")
 	_profile_xp_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_profile_xp_bar.clip_contents = true
 	_profile_xp_fill = ColorRect.new()
-	_profile_xp_fill.color = Color(1.0, 0.78, 0.18, 0.36)
+	_profile_xp_fill.color = Color(0.93, 0.68, 0.16, 0.85)
 	_profile_xp_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_profile_xp_fill.anchor_bottom = 1.0
 	_profile_xp_bar.add_child(_profile_xp_fill)
-	_profile_sub_label = _add_label("", Vector2(200, 104), Vector2(330, 24), 18, "left")
-	# 压在头像右上角，同「朋友」「聊天」那两个红点的做法。hit 仍然放在最后。
-	_profile_dot = _add_label("●", Vector2(150, 30), Vector2(32, 32), 26, "left")
-	_profile_dot.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
-	_profile_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_profile_dot.visible = false
-	_tutorial_profile_target = _add_hit(Vector2(18, 12), Vector2(550, 178), _emit_profile, "left")
-	# 这两个数**曾经也是写死的假数据**（"89,450" / "2,350"），同上面名牌那两行。
-	# 现在接的是 GET /v1/me/wallet。拉到之前显示 "—" 而不是 0 ——
-	# 0 是一个**看起来正常的错值**，玩家会以为自己的钱没了。
-	_coin_label = _add_currency_bar("coin", Vector2(645, 35))
-	_diamond_label = _add_currency_bar("diamond", Vector2(885, 35))
-	_add_hit(Vector2(885, 35), Vector2(220, 55),
+	_profile_sub_label = _add_label("", Vector2(200, 112), Vector2(300, 24), 17, "left")
+	_ink(_profile_sub_label)
+	_profile_dot = _add_dot(Vector2(150, 26), "left")
+	_tutorial_profile_target = _add_hit(Vector2(18, 20), Vector2(520, 160), _emit_profile, "left")
+	_anim_group([plate, _profile_base_frame, placeholder.get_parent(), _profile_portrait.get_parent(),
+		_profile_frame_overlay, _profile_name_label, _profile_xp_bar, _profile_sub_label],
+		_tutorial_profile_target, 0, 0.0)
+
+	# 货币：两条空白卷轴 + 图标 + 数字 + 「+」。拉到钱包之前显示 "—"（0 是看起来正常的错值）。
+	_coin_label = _add_currency_bar("coin", Vector2(622, 30), Callable())
+	_diamond_label = _add_currency_bar("diamond", Vector2(872, 30),
 		func() -> void: diamond_shop_requested.emit())
 
-	_add_texture(TEX_FRIENDS, Vector2(28, 300), Vector2(132, 132), "left")
-	_add_label(_menu_text("朋友", "Friends"), Vector2(47, 380), Vector2(94, 30), 21, "left")
-	# 9.17 反馈第 6 条：他人申请加好友时，在「朋友」按键上亮小红点，点进朋友后消失。
-	# 位置照「聊天」那个红点同款偏移（图标左上角 +92/+4），压在图标右上角。
-	# hit 仍然放在最后（顺序 = 绘制层级，见上面那条注释）。
-	_friends_dot = _add_label("●", Vector2(120, 304), Vector2(32, 32), 26, "left")
-	_friends_dot.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
-	_friends_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# 初值先不亮：真实显隐等 _refresh_friend_requests() 拉到申请列表再定。
-	# 先亮再灭会在每次回主菜单时闪一下。
-	_friends_dot.visible = false
-	_add_hit(Vector2(28, 300), Vector2(132, 132), _emit_friends, "left")
-	# ★★ 10.07h 第 6 / 10 条返工（用户真机反馈「房间邀请提示位置要设计在『聊天』UI
-	#    旁边，以信息气泡框的形式引出」）：把图标节点留个引用，好让邀请气泡算锚点。
-	#    见 `chat_invite_anchor()`。
-	_chat_icon = _add_texture(TEX_CHAT, Vector2(28, 440), Vector2(132, 132), "left")
-	_add_label(_menu_text("聊天", "Chat"), Vector2(47, 520), Vector2(94, 30), 21, "left")
-	# 未读红点压在图标右上角。hit 仍然放在最后（见上面「顺序 = 绘制层级」那条）。
-	_chat_dot = _add_label("●", Vector2(120, 444), Vector2(32, 32), 26, "left")
-	_chat_dot.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
-	_chat_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 左侧好友 / 聊天
+	var friends_tex := _add_texture(TEX_FRIENDS, Vector2(24, 296), Vector2(145, 137), "left")
+	var friends_text := _add_label(_menu_text("好友", "Friends"), Vector2(24, 378), Vector2(145, 30), 22, "left")
+	_ink(friends_text)
+	# 9.17 反馈第 6 条：他人申请加好友时亮小红点，点进朋友后消失。初值不亮，等拉到申请再定。
+	_friends_dot = _add_dot(Vector2(136, 298), "left")
+	var friends_hit := _add_hit(Vector2(24, 296), Vector2(145, 137), _emit_friends, "left")
+	_anim_group([friends_tex, friends_text, _friends_dot], friends_hit, 1, 0.06)
+	# ★★ 10.07h 第 6 / 10 条：房间/组队邀请气泡从「聊天」图标右边引出，见 `chat_invite_anchor()`。
+	_chat_icon = _add_texture(TEX_CHAT, Vector2(24, 440), Vector2(145, 130), "left")
+	var chat_text := _add_label(_menu_text("聊天", "Chat"), Vector2(24, 518), Vector2(145, 30), 22, "left")
+	_ink(chat_text)
+	_chat_dot = _add_dot(Vector2(136, 442), "left")
 	_chat_dot.visible = ChatService.any_unread()
-	_add_hit(Vector2(28, 440), Vector2(132, 132), _emit_chat, "left")
+	var chat_hit := _add_hit(Vector2(24, 440), Vector2(145, 130), _emit_chat, "left")
+	_anim_group([_chat_icon, chat_text, _chat_dot], chat_hit, 1, 0.12)
 
-	# 右上角背包/邮件/设置、右侧商店/公告：锚定到屏幕右边（edge="right"）
-	_add_texture(TEX_BAG, Vector2(1340, 25), Vector2(100, 100), "right")
-	_add_label(_menu_text("背包", "Bag"), Vector2(1340, 95), Vector2(100, 7), 7, "right")
-	_add_hit(Vector2(1340, 25), Vector2(100, 100), _emit_bag, "right")
-	_add_texture(TEX_MAIL, Vector2(1450, 25), Vector2(100, 100), "right")
-	_add_label(_menu_text("邮件", "Mail"), Vector2(1450, 95), Vector2(100, 7), 7, "right")
-	# 有没读的邮件、或者有没领的附件时亮红点（MailService.needs_attention）。hit 仍然放在最后。
-	_mail_dot = _add_label("●", Vector2(1522, 22), Vector2(32, 32), 26, "right")
-	_mail_dot.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
-	_mail_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 右上角背包 / 邮件 / 设置
+	var bag_tex := _add_texture(TEX_BAG, Vector2(1342, 16), Vector2(102, 98), "right")
+	var bag_text := _add_label(_menu_text("背包", "Bag"), Vector2(1342, 75), Vector2(102, 24), 18, "right")
+	_ink(bag_text)
+	var bag_hit := _add_hit(Vector2(1342, 16), Vector2(102, 98), _emit_bag, "right")
+	_anim_group([bag_tex, bag_text], bag_hit, 1, 0.04)
+	var mail_tex := _add_texture(TEX_MAIL, Vector2(1452, 14), Vector2(102, 102), "right")
+	var mail_text := _add_label(_menu_text("邮件", "Mail"), Vector2(1452, 75), Vector2(102, 24), 18, "right")
+	_ink(mail_text)
+	# 有没读的邮件、或者有没领的附件时亮红点（MailService.needs_attention）。
+	_mail_dot = _add_dot(Vector2(1524, 12), "right")
 	_mail_dot.visible = MailService.needs_attention()
-	_add_hit(Vector2(1450, 25), Vector2(100, 100), _emit_mail, "right")
-	_add_texture(TEX_SETTINGS, Vector2(1560, 25), Vector2(100, 100), "right")
-	_add_label(_menu_text("设定", "Setting"), Vector2(1560, 95), Vector2(100, 7), 7, "right")
-	_add_hit(Vector2(1560, 25), Vector2(100, 100), _emit_settings, "right")
+	var mail_hit := _add_hit(Vector2(1452, 14), Vector2(102, 102), _emit_mail, "right")
+	_anim_group([mail_tex, mail_text, _mail_dot], mail_hit, 1, 0.08)
+	var settings_tex := _add_texture(TEX_SETTINGS, Vector2(1562, 16), Vector2(102, 100), "right")
+	var settings_text := _add_label(_menu_text("设置", "Settings"), Vector2(1562, 75), Vector2(102, 24), 18, "right")
+	_ink(settings_text)
+	var settings_hit := _add_hit(Vector2(1562, 16), Vector2(102, 100), _emit_settings, "right")
+	_anim_group([settings_tex, settings_text], settings_hit, 1, 0.12)
 
-	_add_texture(TEX_SHOP, Vector2(1380, 140), Vector2(270, 250), "right")
-	_add_label(_menu_text("商店", "Shop"), Vector2(1380, 150), Vector2(270, 34), 24, "right")
-	# 原画内侧金框只轮播宠物手绘图；入口提示固定显示。
-	_shop_preview = _add_container(Vector2(1409, 204), Vector2(212, 132), "right")
+	# 右侧商店 / 新闻
+	var shop_tex := _add_texture(TEX_SHOP, SHOP_POS, SHOP_SIZE, "right")
+	var shop_text := _add_label(_menu_text("商店", "Shop"), SHOP_POS + Vector2(0, 14), Vector2(SHOP_SIZE.x, 32), 24, "right")
+	_ink(shop_text)
+	# 中间那块只轮播宠物手绘图；底部小牌固定写「进入商店」。
+	_shop_preview = _add_container(SHOP_POS + Vector2(22, 58), Vector2(SHOP_SIZE.x - 44, 158), "right")
 	_shop_preview.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
-	_add_label(_menu_text("探索商店  ›", "ENTER SHOP  ›"),
-		Vector2(1404, 349), Vector2(222, 29), 19, "right")
-	_shop_dot = _add_label("●", Vector2(1612, 145), Vector2(32, 32), 26, "right")
-	_shop_dot.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
-	_shop_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var shop_enter := _add_label(_menu_text("进入商店  ›", "ENTER SHOP  ›"),
+		SHOP_POS + Vector2(30, 233), Vector2(SHOP_SIZE.x - 60, 28), 18, "right")
+	_ink(shop_enter)
+	_shop_dot = _add_dot(SHOP_POS + Vector2(SHOP_SIZE.x - 30, 2), "right")
 	_shop_dot.visible = false
-	_add_hit(Vector2(1380, 140), Vector2(270, 250), _emit_shop, "right")
-	_add_texture(TEX_NEWS, Vector2(1380, 400), Vector2(270, 250), "right")
-	_add_label(_menu_text("公告 / 活动", "News / Events"), Vector2(1380, 407), Vector2(270, 34), 22, "right")
-	# 9.27：公告图标内显示最新公告标题。
-	_news_title = _add_label("", Vector2(1404, 452), Vector2(204, 157), 18, "right")
+	var shop_hit := _add_hit(SHOP_POS, SHOP_SIZE, _emit_shop, "right")
+	_anim_group([shop_tex, shop_text, _shop_preview, shop_enter, _shop_dot], shop_hit, 2, 0.10)
+	var news_tex := _add_texture(TEX_NEWS, NEWS_POS, NEWS_SIZE, "right")
+	var news_text := _add_label(_menu_text("新闻 / 活动", "News / Events"), NEWS_POS + Vector2(0, 14), Vector2(NEWS_SIZE.x, 32), 22, "right")
+	_ink(news_text)
+	# 9.27：新闻牌里显示最新一条公告的标题。
+	_news_title = _add_label("", NEWS_POS + Vector2(30, 62), Vector2(NEWS_SIZE.x - 60, 180), 18, "right")
+	_ink(_news_title)
 	_news_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_news_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_news_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_news_title.clip_text = true
 	_news_title.visible = false
-	# 有没看过的公告时亮红点，同聊天那个。hit 仍然放在最后。
-	_news_dot = _add_label("●", Vector2(1612, 404), Vector2(32, 32), 26, "right")
-	_news_dot.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
-	_news_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_news_dot = _add_dot(NEWS_POS + Vector2(NEWS_SIZE.x - 30, 2), "right")
 	_news_dot.visible = AnnouncementService.any_unread()
-	_add_hit(Vector2(1380, 400), Vector2(270, 250), _emit_announcements, "right")
+	var news_hit := _add_hit(NEWS_POS, NEWS_SIZE, _emit_announcements, "right")
+	_anim_group([news_tex, news_text, _news_title, _news_dot], news_hit, 2, 0.16)
 
-	_add_texture(TEX_PREP, Vector2(215, 690), Vector2(220, 190))
-	_add_texture(TEX_CASUAL, Vector2(455, 690), Vector2(220, 190))
-	_add_texture(TEX_RANKED, Vector2(685, 650), Vector2(310, 260))
-	_add_texture(TEX_CUSTOM, Vector2(1025, 690), Vector2(220, 190))
-	_add_texture(TEX_GALLERY, Vector2(1265, 690), Vector2(220, 190))
-	_add_label(_menu_text("备战", "Prep"), Vector2(200, 807), Vector2(220, 36), 26)
-	_add_label(_menu_text("休闲", "Casual"), Vector2(440, 808), Vector2(220, 36), 26)
-	_add_label(_menu_text("排位", "Ranked"), Vector2(680, 820), Vector2(310, 43), 32)
-	_add_label(_menu_text("自定义", "Custom"), Vector2(1010, 809), Vector2(220, 36), 26)
-	_add_label(_menu_text("图鉴", "Gallery"), Vector2(1250, 807), Vector2(220, 36), 26)
-	_tutorial_prep_target = _add_hit(Vector2(200, 690), Vector2(220, 190), _emit_prep)
-	_tutorial_casual_target = _add_hit(Vector2(440, 690), Vector2(220, 190), _on_casual)
-	_add_hit(Vector2(680, 650), Vector2(310, 260), _on_ranked)
-	_add_hit(Vector2(1010, 690), Vector2(220, 190), _show_room_overlay)
-	_add_hit(Vector2(1250, 690), Vector2(220, 190), _emit_codex)
+	# 底部五个模式按钮。排位赛最大、居中，常驻轻浮动 + 盾牌扫光。
+	var mode_specs := [
+		[TEX_PREP, Vector2(195, 668), Vector2(225, 169), _menu_text("备战", "Prep"), 30, 0.70, _emit_prep],
+		[TEX_CASUAL, Vector2(435, 682), Vector2(215, 156), _menu_text("休闲", "Casual"), 30, 0.68, _on_casual],
+		[TEX_RANKED, Vector2(650, 652), Vector2(335, 191), _menu_text("排位赛", "Ranked"), 40, 0.71, _on_ranked],
+		[TEX_CUSTOM, Vector2(995, 658), Vector2(235, 185), _menu_text("自定义", "Custom"), 30, 0.72, _show_room_overlay],
+		[TEX_GALLERY, Vector2(1240, 672), Vector2(245, 168), _menu_text("图鉴", "Gallery"), 30, 0.71, _emit_codex],
+	]
+	for i in mode_specs.size():
+		var spec: Array = mode_specs[i]
+		var pos: Vector2 = spec[1]
+		var size: Vector2 = spec[2]
+		var tex := _add_texture(spec[0], pos, size)
+		var font_px: int = spec[4]
+		var text_center_y: float = pos.y + size.y * float(spec[5])
+		var text := _add_label(spec[3], Vector2(pos.x, text_center_y - font_px * 0.75),
+			Vector2(size.x, font_px * 1.5), font_px)
+		_ink(text, font_px >= 40)
+		var hit := _add_hit(pos, size, spec[6])
+		var ranked: bool = spec[0] == TEX_RANKED
+		if ranked:
+			var shine := ShaderMaterial.new()
+			shine.shader = SHINE_SHADER
+			tex.material = shine
+		_anim_group([tex, text], hit, 3, 0.18 + i * 0.05, ranked)
+		if i == 0:
+			_tutorial_prep_target = hit
+		elif i == 1:
+			_tutorial_casual_target = hit
 
 	# 「离线自测」**只在调试版出现**（编辑器里跑、调试包）。
 	#
@@ -459,15 +486,10 @@ func _build() -> void:
 		offline_btn.text = _menu_text("离线自测", "Offline")
 		offline_btn.focus_mode = Control.FOCUS_NONE
 		offline_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		var ob_style := Tokens.flat_box(Tokens.INK_PANEL, Tokens.INK_EDGE, 2, 26)
-		offline_btn.add_theme_stylebox_override("normal", ob_style)
-		offline_btn.add_theme_stylebox_override("hover", ob_style)
-		offline_btn.add_theme_stylebox_override("pressed", ob_style)
-		offline_btn.add_theme_color_override("font_color", Color(1.0, 0.90, 0.60))
-		offline_btn.add_theme_font_size_override("font_size", 22)
+		_scroll_skin(offline_btn, 22)
 		offline_btn.pressed.connect(_emit_offline)
 		add_child(offline_btn)
-		_track(offline_btn, Vector2(40, 876), Vector2(210, 54), 0, "left")
+		_track(offline_btn, Vector2(36, 862), Vector2(190, 52), 0, "left")
 
 	# 游戏重连：仅在本地存在重连凭证时显示，点击回到上一场。
 	var reconnect_btn := Button.new()
@@ -477,16 +499,8 @@ func _build() -> void:
 	reconnect_btn.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	reconnect_btn.focus_mode = Control.FOCUS_NONE
 	reconnect_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	# 与大厅的深棕底、金色边框一致；三态保持相同的对称留白。
-	reconnect_btn.add_theme_stylebox_override("normal",
-		_room_button_box(Tokens.INK_PANEL, Tokens.INK_EDGE, 3))
-	reconnect_btn.add_theme_stylebox_override("hover",
-		_room_button_box(Tokens.INK_PANEL.lightened(0.12), Tokens.INK_EDGE.lightened(0.2), 3))
-	reconnect_btn.add_theme_stylebox_override("pressed",
-		_room_button_box(Tokens.INK_PANEL.darkened(0.2), Tokens.INK_EDGE, 3))
-	for state in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
-		reconnect_btn.add_theme_color_override(state, Color(1.0, 0.90, 0.60))
-	reconnect_btn.add_theme_font_size_override("font_size", 26)
+	# 11.10：跟货币栏同一条空白卷轴（用户指定），深棕字。
+	_scroll_skin(reconnect_btn, 26)
 	reconnect_btn.pressed.connect(_emit_reconnect)
 	# Active leave requests retain credentials only for the server receipt.
 	reconnect_btn.visible = false # Wait for a verified resumable room, not just a disk token.
@@ -517,7 +531,9 @@ func _build_room_panel() -> Control:
 
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = ROOM_PANEL_SIZE
-	panel.add_theme_stylebox_override("panel", _room_panel_box())
+	# 羊皮纸大面板（原来是深色毛玻璃 _room_panel_box）；主题给输入框 / 滚动条用
+	panel.theme = Kit.theme()
+	panel.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(64, 44, 64, 36)))
 	center.add_child(panel)
 
 	var column := VBoxContainer.new()
@@ -545,11 +561,11 @@ func _build_room_panel() -> Control:
 	_room_id_edit = LineEdit.new()
 	_room_id_edit.placeholder_text = _menu_text("输入房间 ID", "Enter Room ID")
 	_room_id_edit.custom_minimum_size = Vector2(0, ROOM_INPUT_H)
-	_room_id_edit.add_theme_stylebox_override("normal", _room_input_box(false))
-	_room_id_edit.add_theme_stylebox_override("focus", _room_input_box(true))
-	_room_id_edit.add_theme_color_override("font_color", Tokens.MIST_TEXT)
-	_room_id_edit.add_theme_color_override("font_placeholder_color", Tokens.MIST_PLACEHOLDER)
-	_room_id_edit.add_theme_color_override("caret_color", Tokens.MIST_GOLD_BRIGHT)
+	_room_id_edit.add_theme_stylebox_override("normal", Kit.box("plate", Vector4(20, 4, 20, 4), Color(0.93, 0.9, 0.84)))
+	_room_id_edit.add_theme_stylebox_override("focus", Kit.box("plate", Vector4(20, 4, 20, 4)))
+	_room_id_edit.add_theme_color_override("font_color", Kit.INK)
+	_room_id_edit.add_theme_color_override("font_placeholder_color", Color(Kit.INK_SOFT, 0.7))
+	_room_id_edit.add_theme_color_override("caret_color", Kit.INK)
 	_room_id_edit.add_theme_font_size_override("font_size", ROOM_FONT_BODY)
 	left.add_child(_room_id_edit)
 
@@ -559,7 +575,7 @@ func _build_room_panel() -> Control:
 	_room_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_room_status.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_room_status.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-	_room_status.add_theme_color_override("font_color", Tokens.MIST_ACCENT)
+	_room_status.add_theme_color_override("font_color", Color("7a5210"))
 	_room_status.add_theme_font_size_override("font_size", ROOM_FONT_HINT)
 	left.add_child(_room_status)
 
@@ -571,7 +587,7 @@ func _build_room_panel() -> Control:
 	var list_title := Label.new()
 	list_title.text = _menu_text("可加入房间", "Open Rooms")
 	list_title.add_theme_font_size_override("font_size", ROOM_FONT_HEAD)
-	list_title.add_theme_color_override("font_color", Tokens.MIST_TEXT)
+	list_title.add_theme_color_override("font_color", ROOM_SECTION_COLOR)
 	right.add_child(list_title)
 
 	_room_scroll = TouchScrollContainer.new()
@@ -613,24 +629,17 @@ func _room_divider() -> Control:
 	# 1px 金 @40% 细分隔线。用 Panel + 扁 StyleBox 画，不用 ColorRect ——
 	# modal_lifecycle_check 断言 _build_room_panel 的函数体里不得出现 ColorRect.new()
 	# （那是「面板自建 dim」的痕迹，会和 ModalStack 的 backdrop 叠成两层黑）。
-	var line := Panel.new()
-	line.custom_minimum_size = Vector2(0, 1)
-	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	line.add_theme_stylebox_override("panel",
-		Tokens.flat_box(Tokens.MIST_LINE_GOLD, Tokens.MIST_NONE, 0, 0))
-	return line
+	# 11.11：带叶子的金线（羊皮纸部件），不是 ColorRect（理由见上）
+	return Kit.separator(24.0)
 
 func _room_title_row() -> Control:
 	var row := HBoxContainer.new()
 	row.custom_minimum_size = Vector2(0, ROOM_TITLE_ROW_H)
 	row.add_theme_constant_override("separation", 16)
-	var title := Label.new()
-	title.text = _menu_text("自定义房间", "Custom Room")
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", ROOM_FONT_TITLE)
-	title.add_theme_color_override("font_color", Tokens.MIST_TEXT)
-	row.add_child(title)
+	var title_slot := HBoxContainer.new()
+	title_slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_slot.add_child(Kit.title_banner(_menu_text("自定义房间", "Custom Room"), 62.0, 24))
+	row.add_child(title_slot)
 	row.add_child(_dialog_button(_menu_text("刷新", "Refresh"), _emit_room_list, "room_ghost_gold"))
 	return row
 
@@ -662,42 +671,29 @@ func _room_label(text: String, size_px: int, color: Color) -> Label:
 func _room_empty_state() -> Control:
 	var box := PanelContainer.new()
 	box.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	box.add_theme_stylebox_override("panel",
-		Tokens.flat_box(Tokens.MIST_EMPTY_BG, Tokens.MIST_NONE, 0, 12))
+	box.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	var column := VBoxContainer.new()
 	column.alignment = BoxContainer.ALIGNMENT_CENTER
 	column.add_theme_constant_override("separation", 12)
 	box.add_child(column)
 	column.add_child(_room_empty_icon())
 	var hint := _room_label(_menu_text("目前没有可加入房间", "No open rooms"),
-		ROOM_FONT_BODY, Tokens.MIST_TEXT_MUTED)
+		ROOM_FONT_BODY, Kit.INK_SOFT)
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(hint)
 	return box
 
 func _room_empty_icon() -> Control:
-	var wrap := Control.new()
-	wrap.custom_minimum_size = Vector2(ROOM_ICON_SIZE, ROOM_ICON_SIZE)
-	wrap.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	wrap.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var ring := Panel.new()
-	ring.position = Vector2(6, 4)
-	ring.size = Vector2(26, 26)
-	ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	ring.add_theme_stylebox_override("panel",
-		Tokens.flat_box(Tokens.MIST_NONE, Tokens.MIST_TEXT_MUTED, 2, 13))
-	wrap.add_child(ring)
-	var handle := Panel.new()
-	handle.position = Vector2(28, 26)
-	handle.size = Vector2(12, 4)
-	# 绕左端中点转 45°，接在圆环的右下 —— 静止的短横会被读成下划线，不是手柄。
-	handle.pivot_offset = Vector2(1, 2)
-	handle.rotation = deg_to_rad(45)
-	handle.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	handle.add_theme_stylebox_override("panel",
-		Tokens.flat_box(Tokens.MIST_TEXT_MUTED, Tokens.MIST_NONE, 0, 2))
-	wrap.add_child(handle)
-	return wrap
+	# 11.11：用羊皮纸部件里的放大镜图标（原来用两个 Panel 拼）
+	var icon := TextureRect.new()
+	icon.texture = Kit.icon("search")
+	icon.custom_minimum_size = Vector2(ROOM_ICON_SIZE * 1.6, ROOM_ICON_SIZE * 1.6)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon.modulate = Color(1, 1, 1, 0.85)
+	return icon
 
 # 房间行。三态（常态 / 悬停 / 满员）在稿子里是「底色透明度 + 描边 + 人数颜色」三处
 # 同时变，所以三处一起给：底色与描边走 stylebox，人数颜色靠 mouse_entered/exited 切。
@@ -710,25 +706,25 @@ func _room_row(room_id: int, players: int, max_players: int, full: bool) -> Butt
 	row.custom_minimum_size = Vector2(0, ROOM_ROW_H)
 	var line := HBoxContainer.new()
 	line.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	line.offset_left = 16
-	line.offset_right = -16
+	line.offset_left = 30
+	line.offset_right = -32
 	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(line)
 	var name_label := _room_label(_menu_text("房间 %d", "Room %d") % room_id,
-		ROOM_FONT_BODY, Tokens.MIST_TEXT_MUTED if full else Tokens.MIST_ROW_NAME)
+		ROOM_FONT_BODY, Kit.INK_SOFT if full else Kit.INK)
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	line.add_child(name_label)
 	var count_label := _room_label("%d/%d" % [players, max_players],
-		ROOM_FONT_BODY, Tokens.MIST_TEXT_MUTED)
+		ROOM_FONT_BODY, Kit.INK_SOFT)
 	line.add_child(count_label)
 	if full:
 		row.disabled = true
 		return row
-	count_label.add_theme_color_override("font_color", Tokens.MIST_TEXT_MUTED)
+	count_label.add_theme_color_override("font_color", Kit.INK_SOFT)
 	row.mouse_entered.connect(func() -> void:
-		count_label.add_theme_color_override("font_color", Tokens.MIST_GOLD_BRIGHT))
+		count_label.add_theme_color_override("font_color", ROOM_SECTION_COLOR))
 	row.mouse_exited.connect(func() -> void:
-		count_label.add_theme_color_override("font_color", Tokens.MIST_TEXT_MUTED))
+		count_label.add_theme_color_override("font_color", Kit.INK_SOFT))
 	return row
 
 func show_connecting() -> void:
@@ -796,17 +792,17 @@ func _spectate_row(room_id: int, players: int, max_players: int, spectators: int
 	row.custom_minimum_size = Vector2(0, ROOM_ROW_H)
 	var line := HBoxContainer.new()
 	line.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	line.offset_left = 16
-	line.offset_right = -16
+	line.offset_left = 30
+	line.offset_right = -32
 	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(line)
-	var name_label := _room_label(_menu_text("房间 %d", "Room %d") % room_id, ROOM_FONT_BODY, Tokens.MIST_ROW_NAME)
+	var name_label := _room_label(_menu_text("房间 %d", "Room %d") % room_id, ROOM_FONT_BODY, Kit.INK)
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	line.add_child(name_label)
-	line.add_child(_room_label("%d/%d" % [players, max_players], ROOM_FONT_BODY, Tokens.MIST_TEXT_MUTED))
+	line.add_child(_room_label("%d/%d" % [players, max_players], ROOM_FONT_BODY, Kit.INK_SOFT))
 	var full := spectators >= 10
 	var spectate_label := _room_label("  " + _menu_text("观战 %d/10", "Spectate %d/10") % spectators,
-		ROOM_FONT_BODY, Tokens.MIST_TEXT_MUTED if full else Tokens.MIST_GOLD_BRIGHT)
+		ROOM_FONT_BODY, Kit.INK_SOFT if full else ROOM_SECTION_COLOR)
 	line.add_child(spectate_label)
 	# 观战席满了：同满员房间那一行的样子，点不了（服务器也会拒 spectate_full）。
 	if full:
@@ -1430,6 +1426,7 @@ func _apply_item(item: Dictionary) -> void:
 		_:
 			x = origin.x + pos.x * scale
 	node.position = Vector2(x, origin.y + pos.y * scale)
+	item.base_pos = node.position
 	if node is Button:
 		# 整体缩放按钮：文字、内边距、边框和点击区域使用同一比例。
 		# 只缩 size 会让固定字号挤满底板，且被最小尺寸反向撑开。
@@ -1440,18 +1437,165 @@ func _apply_item(item: Dictionary) -> void:
 	if node is Label:
 		node.add_theme_font_size_override("font_size", maxi(10, int(item.font_size * scale)))
 
-func _add_currency_bar(currency: String, pos: Vector2) -> Label:
-	var host := _add_container(pos, Vector2(220, 55))
-	var panel := Panel.new()
-	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(Color("211a0e"), Color("aa7f28"), 10))
-	host.add_child(panel)
-	var icon := _add_texture(Currency.icon(currency), pos + Vector2(5, 3), Vector2(49, 49))
+func _add_currency_bar(currency: String, pos: Vector2, cb: Callable) -> Label:
+	var size := Vector2(240, 65)
+	var bar := _add_texture(TEX_SCROLL_BAR, pos, size)
+	var icon := _add_texture(TEX_DIAMOND_ICON if currency == "diamond" else TEX_COIN_ICON,
+		pos + Vector2(16, 8), Vector2(50, 50))
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var amount := _add_label("—", pos + Vector2(51, 0), Vector2(126, 55), 24)
-	_add_label("+", pos + Vector2(180, 0), Vector2(32, 55), 30)
+	var amount := _add_label("—", pos + Vector2(70, 0), Vector2(122, 62), 24)
+	_ink(amount)
+	var plus := _add_label("+", pos + Vector2(190, -2), Vector2(36, 62), 34)
+	_ink(plus, true)
+	var hit: Button = _add_hit(pos, size, cb) if cb.is_valid() else null
+	_anim_group([bar, icon, amount, plus], hit, 0, 0.05)
 	return amount
+
+
+# 羊皮纸底上的深棕字。big=true 给主按钮那种大字加粗一点描边。
+func _ink(label: Label, big := false) -> void:
+	label.add_theme_color_override("font_color", INK_TEXT)
+	label.add_theme_color_override("font_outline_color", INK_OUTLINE)
+	label.add_theme_constant_override("outline_size", 6 if big else 4)
+
+
+# 未读红点：初值不亮，显隐由各自的服务决定。
+func _add_dot(pos: Vector2, edge: String) -> Label:
+	var dot := _add_label("●", pos, Vector2(32, 32), 26, edge)
+	dot.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
+	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dot.visible = false
+	return dot
+
+
+# 离线自测 / 游戏重连：铺一条空白卷轴当底，文字仍是 Button 自己的 text。
+func _scroll_skin(btn: Button, font_size: int) -> void:
+	for state in ["normal", "hover", "pressed", "disabled"]:
+		var box := StyleBoxTexture.new()
+		box.texture = TEX_SCROLL_BAR
+		match state:
+			"hover":
+				box.modulate_color = Color(1.06, 1.06, 1.0)
+			"pressed":
+				box.modulate_color = Color(0.86, 0.82, 0.74)
+		btn.add_theme_stylebox_override(state, box)
+	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	for state in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+		btn.add_theme_color_override(state, INK_TEXT)
+	btn.add_theme_color_override("font_outline_color", INK_OUTLINE)
+	btn.add_theme_constant_override("outline_size", 4)
+	btn.add_theme_font_size_override("font_size", font_size)
+
+
+func _profile_ring_size() -> Vector2:
+	var w := _profile_hole_target() / PROFILE_RING_HOLE_FRAC
+	return Vector2(w, w * float(TEX_PROFILE_AVATAR.get_height()) / float(TEX_PROFILE_AVATAR.get_width()))
+
+
+func _solid_texture(color: Color) -> Texture2D:
+	var img := Image.create(4, 4, false, Image.FORMAT_RGBA8)
+	img.fill(color)
+	return ImageTexture.create_from_image(img)
+
+
+# ── 按钮动效（11.10）────────────────────────────────────────────────────
+# 一组 = 一个按钮的所有图层（底图、字、红点……），共用一个缩放中心（热区中心）。
+#   进场：按 delay 依次从 0.6 弹到 1（TRANS_BACK 那种过冲），同时淡入
+#   悬停 1.05、按下 0.93，松手用弹簧回弹（带一点过冲）
+#   idle_float：常驻上下浮动（只给排位赛）
+# 只改 scale / pivot / position 偏移 / modulate.a，不碰 _placed 里的布局数据；
+# 布局刷新后 _apply_item 会把 base_pos 记下来，这里每帧在它上面叠偏移。
+const ANIM_ENTER_TIME := 0.42
+const ANIM_HOVER_SCALE := 1.05
+const ANIM_PRESS_SCALE := 0.93
+const ANIM_SPRING_K := 420.0
+const ANIM_SPRING_DAMP := 16.0
+const ANIM_FLOAT_PX := 4.0
+const ANIM_FLOAT_HZ := 0.55
+var _anim_groups: Array[Dictionary] = []
+var _anim_time := 0.0
+
+func _anim_group(nodes: Array, hit: Button, _row: int, delay: float, idle_float := false) -> void:
+	var items: Array = []
+	for node in nodes:
+		for placement in _placed:
+			if placement.node == node:
+				items.append(placement)
+				break
+	if items.is_empty():
+		return
+	# 缩放中心：有热区用热区中心，没有就用第一个图层的中心。
+	var ref: Dictionary = items[0]
+	if hit != null:
+		for placement in _placed:
+			if placement.node == hit:
+				ref = placement
+				break
+	var group := {
+		"items": items, "ref": ref, "delay": delay, "idle": idle_float,
+		"s": 1.0, "v": 0.0, "hover": false, "down": false,
+	}
+	_anim_groups.append(group)
+	for item in items:
+		var node := item.node as CanvasItem
+		node.modulate.a = 0.0
+	if hit != null:
+		hit.mouse_entered.connect(func() -> void: group.hover = true)
+		hit.mouse_exited.connect(func() -> void:
+			group.hover = false
+			group.down = false)
+		hit.button_down.connect(func() -> void: group.down = true)
+		hit.button_up.connect(func() -> void:
+			group.down = false
+			# 松手给一个往外的速度，弹回来时有过冲
+			group.v += 3.2)
+	set_process(true)
+
+
+func _process(delta: float) -> void:
+	if _anim_groups.is_empty():
+		return
+	_anim_time += delta
+	for group in _anim_groups:
+		var target := ANIM_PRESS_SCALE if group.down else (ANIM_HOVER_SCALE if group.hover else 1.0)
+		var s: float = group.s
+		var v: float = group.v
+		v += (target - s) * ANIM_SPRING_K * delta
+		v *= exp(-ANIM_SPRING_DAMP * delta)
+		s += v * delta
+		group.s = s
+		group.v = v
+		var e := clampf((_anim_time - float(group.delay)) / ANIM_ENTER_TIME, 0.0, 1.0)
+		var enter_scale := lerpf(0.6, 1.0, _ease_out_back(e))
+		var alpha := clampf(e * 2.5, 0.0, 1.0)
+		var dy := 0.0
+		if group.idle and e >= 1.0:
+			dy = sin((_anim_time - float(group.delay)) * TAU * ANIM_FLOAT_HZ) * ANIM_FLOAT_PX
+		_apply_group(group, s * enter_scale, alpha, dy)
+
+
+func _apply_group(group: Dictionary, s: float, alpha: float, dy: float) -> void:
+	var ref: Dictionary = group.ref
+	var ref_node := ref.node as Control
+	if ref_node == null or not is_instance_valid(ref_node) or not ref.has("base_pos"):
+		return
+	var ref_size: Vector2 = (ref.size as Vector2) * _layout_scale
+	var center: Vector2 = (ref.base_pos as Vector2) + ref_size * 0.5
+	for item in group.items:
+		var node := item.node as Control
+		if node == null or not is_instance_valid(node) or not item.has("base_pos"):
+			continue
+		var base: Vector2 = item.base_pos
+		node.pivot_offset = center - base
+		node.scale = Vector2.ONE * s
+		node.position = base + Vector2(0.0, dy * _layout_scale)
+		node.modulate.a = alpha
+
+
+static func _ease_out_back(x: float) -> float:
+	const C1 := 1.70158
+	const C3 := C1 + 1.0
+	return 1.0 + C3 * pow(x - 1.0, 3.0) + C1 * pow(x - 1.0, 2.0)
 
 func _add_texture(texture: Texture2D, pos: Vector2, size: Vector2, edge: String = "") -> TextureRect:
 	var rect := TextureRect.new()
@@ -1577,19 +1721,27 @@ func _dialog_button(text: String, cb: Callable, variant: String = "menu") -> But
 		"room_primary":
 			_style_room_button(btn, Tokens.MIST_GOLD_BRIGHT, Tokens.MIST_GOLD_BRIGHT,
 				Tokens.MIST_ON_GOLD, ROOM_BUTTON_H, Tokens.MIST_NONE)
+			Kit.style_plate(btn, true)
 		"room_second":
 			_style_room_button(btn, Tokens.MIST_NONE, Tokens.MIST_GOLD,
 				Tokens.MIST_GOLD_BRIGHT, ROOM_BUTTON_H, Tokens.MIST_HOVER_TINT, 2)
+			Kit.style_plate(btn, false)
 		"room_ghost_gold":
 			_style_room_button(btn, Tokens.MIST_NONE, Tokens.MIST_GOLD,
 				Tokens.MIST_GOLD_BRIGHT, ROOM_TITLE_ROW_H, Tokens.MIST_GHOST_HOVER, 1)
+			Kit.style_plate(btn, false)
 		"room_ghost":
 			_style_room_button(btn, Tokens.MIST_NONE, Tokens.MIST_GHOST_EDGE,
 				Tokens.MIST_TEXT_SOFT, ROOM_BUTTON_H, Tokens.MIST_GHOST_HOVER, 1)
+			Kit.style_plate(btn, false)
 		"room_row":
 			_style_room_row(btn, Tokens.MIST_ROW_IDLE, Tokens.MIST_LINE, Tokens.MIST_ROW_HOVER, Tokens.MIST_GOLD)
+			Kit.style_list_row(btn, ROOM_FONT_BODY)
 		"room_row_full":
 			_style_room_row(btn, Tokens.MIST_ROW_FULL, Tokens.MIST_LINE, Tokens.MIST_ROW_FULL, Tokens.MIST_LINE)
+			Kit.style_list_row(btn, ROOM_FONT_BODY)
+			# 满员：同一张纸条压暗
+			btn.add_theme_stylebox_override("disabled", Kit.box("list_row", Vector4(26, 6, 30, 8), Color(0.78, 0.74, 0.68)))
 		_:
 			btn.custom_minimum_size = Vector2(150, 42)
 			var style := Tokens.flat_box(Tokens.PARCHMENT_BUTTON, Tokens.PARCHMENT_EDGE, 2, 18)

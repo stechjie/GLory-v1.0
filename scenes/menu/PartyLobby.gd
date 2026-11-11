@@ -10,7 +10,11 @@ signal tutorial_mode_selected
 signal tutorial_requested
 
 const REF := Vector2(1672, 941)
-const BG := preload("res://assets/ui/main_menu_live/background.png")
+# 11.11 羊皮纸风：石台竞技场背景 + 羊皮纸部件（ui/theme/ParchmentKit.gd）。
+const BG := preload("res://assets/ui/page_backgrounds/rooms_arena.png")
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
+# 空座位：主菜单那个中间透明的头像圆环
+const SEAT_RING := preload("res://assets/ui/main_menu_v2/profile_avatar.png")
 const PET_STAGE := preload("res://scenes/menu/MainMenuPet.gd")
 const PARTY_VOICE := preload("res://scenes/menu/PartyVoice.gd")
 # 10.10：BGM 压低（开麦时）。排位房的语音是独立 PartyVoice，靠探针接进来。
@@ -1867,36 +1871,25 @@ func _toggle_chat() -> void:
 # 面板改高（聊天框展开、好友抽屉随人数变高）时跟着 resized 重算。
 func _frame_panel(parent: Control, pos: Vector2, dimensions: Vector2, texture: Texture2D,
 		src_width: float, margins: Array, display_scale: float) -> Panel:
+	# 11.11：聊天框 / 好友抽屉 / 快捷短语统一换成羊皮纸面板。原来的参数（木框图 + 原图边距）
+	# 留着不改调用方，这里只认「是哪一种框」：快捷短语面板小，用卡片那张（四角小一号）。
 	var panel := Panel.new()
 	panel.position = pos
 	panel.size = dimensions
 	panel.custom_minimum_size = dimensions
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
-	var tex_scale := float(texture.get_width()) / src_width
-	var frame := NinePatchRect.new()
-	frame.name = "Frame"
-	frame.texture = texture
-	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	frame.patch_margin_left = roundi(float(margins[0]) * tex_scale)
-	frame.patch_margin_top = roundi(float(margins[1]) * tex_scale)
-	frame.patch_margin_right = roundi(float(margins[2]) * tex_scale)
-	frame.patch_margin_bottom = roundi(float(margins[3]) * tex_scale)
-	var node_scale := display_scale / tex_scale
-	frame.scale = Vector2(node_scale, node_scale)
-	panel.add_child(frame)
-	var fit := func() -> void: frame.size = panel.size / node_scale
-	panel.resized.connect(fit)
-	fit.call()
+	var piece := "card" if display_scale <= PHRASE_FRAME_SCALE else "panel"
+	panel.add_theme_stylebox_override("panel", Kit.box(piece, Vector4.ZERO))
 	parent.add_child(panel)
 	return panel
 
 
 # 深色标题木条上的标题：奶油字 + 深描边。
 func _title_label(parent: Control, value: String, pos: Vector2, dimensions: Vector2, font_size: int) -> Label:
-	var label := _label(parent, value, pos, dimensions, font_size, CREAM)
+	# 11.11：标题现在写在羊皮纸上（原来是深色木条），改深棕字
+	var label := _label(parent, value, pos, dimensions, font_size, Color("8a4b12"))
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_color_override("font_outline_color", Color("2c1b11"))
+	label.add_theme_color_override("font_outline_color", Kit.INK_OUTLINE)
 	label.add_theme_constant_override("outline_size", 3)
 	return label
 
@@ -2051,93 +2044,68 @@ func _style_paper_button(button: Button, selected: bool) -> void:
 		Color(0.84, 0.82, 0.78)))
 	button.add_theme_stylebox_override("disabled", _button_plate(BUTTON_SECONDARY,
 		Color(0.66, 0.67, 0.63, 0.74)))
-	button.add_theme_color_override("font_color", CREAM)
-	button.add_theme_color_override("font_hover_color", Color("fff7df"))
-	button.add_theme_color_override("font_pressed_color", CREAM)
-	button.add_theme_color_override("font_disabled_color", Color("d1c8ad"))
-	button.add_theme_color_override("font_outline_color", Color("2c1b11"))
+	button.add_theme_color_override("font_color", Kit.INK)
+	button.add_theme_color_override("font_hover_color", Kit.INK)
+	button.add_theme_color_override("font_pressed_color", Kit.INK)
+	button.add_theme_color_override("font_disabled_color", Color(0.42, 0.35, 0.27, 0.75))
+	button.add_theme_color_override("font_outline_color", Kit.INK_OUTLINE)
 	button.add_theme_constant_override("outline_size", 2)
 	button.add_theme_font_size_override("font_size", 18)
 
 
 func _style_compact_button(button: Button, selected: bool) -> void:
-	var normal := StyleBoxFlat.new()
-	normal.bg_color = Color("a16c30") if selected else Color("684528")
-	normal.border_color = Color("e6c984")
-	normal.set_border_width_all(2)
-	normal.set_corner_radius_all(10)
-	var hover := normal.duplicate() as StyleBoxFlat
-	hover.bg_color = Color("b17a38")
-	var pressed := normal.duplicate() as StyleBoxFlat
-	pressed.bg_color = Color("503c29")
-	for state in ["normal", "focus", "disabled"]:
-		button.add_theme_stylebox_override(state, normal)
-	button.add_theme_stylebox_override("hover", hover)
-	button.add_theme_stylebox_override("pressed", pressed)
-	button.add_theme_stylebox_override("hover_pressed", pressed)
-	button.add_theme_color_override("font_color", CREAM)
-	button.add_theme_color_override("font_hover_color", CREAM)
-	button.add_theme_color_override("font_pressed_color", CREAM)
-	button.add_theme_color_override("font_disabled_color", Color("c5b796"))
+	# 小按钮：羊皮纸小底板，选中的用金色
+	Kit.style_plate(button, selected)
 	button.add_theme_font_size_override("font_size", 18)
 
 
 func _button_plate(texture: Texture2D, tint: Color) -> StyleBoxTexture:
-	var atlas := AtlasTexture.new()
-	atlas.atlas = texture
-	# Crop the generated transparent padding in source-image coordinates.
-	# The region scales with Godot's mobile-friendly texture import size limit.
-	var source_size: Vector2
-	var crop: Rect2
+	# 11.11：旧的四张木牌按钮图换成羊皮纸部件 —— 主操作金色卷轴、次操作羊皮纸卷轴、
+	# 模式页签用卷轴页签（选中金色）。调用方传进来的还是旧常量，只在这里换图。
+	var piece := "button"
 	if texture == BUTTON_PRIMARY:
-		source_size = Vector2(1916, 821)
-		crop = Rect2(26, 96, 1866, 620)
-	elif texture == BUTTON_SECONDARY:
-		source_size = Vector2(1944, 809)
-		crop = Rect2(31, 168, 1886, 472)
+		piece = "button_gold"
 	elif texture == BUTTON_MODE_IDLE:
-		source_size = Vector2(2022, 778)
-		crop = Rect2(27, 135, 1969, 506)
-	else:
-		source_size = Vector2(2023, 777)
-		crop = Rect2(23, 125, 1977, 512)
-	var scale: Vector2 = texture.get_size() / source_size
-	atlas.region = Rect2(crop.position * scale, crop.size * scale)
+		piece = "tab"
+	elif texture == BUTTON_MODE_ACTIVE:
+		piece = "tab_active"
 	var style := StyleBoxTexture.new()
-	style.texture = atlas
+	style.texture = Kit.tex(piece)
 	style.modulate_color = tint
 	return style
 
 
 func _style_chat_input(input: LineEdit) -> void:
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(1.0, 0.98, 0.92, 0.95)
-	style.border_color = Color(BUBBLE_EDGE.r, BUBBLE_EDGE.g, BUBBLE_EDGE.b, 0.55)
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(10)
-	style.content_margin_left = 10
-	style.content_margin_right = 10
-	input.add_theme_stylebox_override("normal", style)
-	input.add_theme_stylebox_override("focus", style)
-	input.add_theme_color_override("font_color", Color("354330"))
-	input.add_theme_color_override("font_placeholder_color", Color("7c816e"))
+	input.add_theme_stylebox_override("normal", Kit.box("plate", Vector4(16, 4, 16, 4), Color(0.93, 0.9, 0.84)))
+	input.add_theme_stylebox_override("focus", Kit.box("plate", Vector4(16, 4, 16, 4)))
+	input.add_theme_color_override("font_color", Kit.INK)
+	input.add_theme_color_override("font_placeholder_color", Color(Kit.INK_SOFT, 0.7))
 
 
 func _style_empty_seat(button: Button) -> void:
-	var normal := StyleBoxFlat.new()
-	normal.bg_color = Color(0.96, 0.91, 0.69, 0.13)
-	normal.border_color = Color(GOLD.r, GOLD.g, GOLD.b, 0.92)
-	normal.set_border_width_all(3)
-	normal.set_corner_radius_all(70)
-	var hover := normal.duplicate() as StyleBoxFlat
-	hover.bg_color = Color(0.96, 0.91, 0.69, 0.31)
-	for state in ["normal", "disabled", "focus"]:
-		button.add_theme_stylebox_override(state, normal)
-	for state in ["hover", "pressed", "hover_pressed"]:
-		button.add_theme_stylebox_override(state, hover)
-	button.add_theme_color_override("font_color", CREAM)
-	button.add_theme_color_override("font_disabled_color", CREAM)
-	button.add_theme_font_size_override("font_size", 64)
+	# 11.11：空座位画成主菜单那个透明孔的头像圆环（等比居中，不拉伸），悬停稍微提亮
+	var empty := StyleBoxEmpty.new()
+	for state in ["normal", "disabled", "focus", "hover", "pressed", "hover_pressed"]:
+		button.add_theme_stylebox_override(state, empty)
+	if button.get_node_or_null("SeatRing") == null:
+		var ring := TextureRect.new()
+		ring.name = "SeatRing"
+		ring.texture = SEAT_RING
+		ring.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		ring.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		ring.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ring.show_behind_parent = true
+		button.add_child(ring)
+		button.mouse_entered.connect(func() -> void: ring.modulate = Color(1.12, 1.1, 1.02))
+		button.mouse_exited.connect(func() -> void: ring.modulate = Color.WHITE)
+	button.text = "+"
+	button.add_theme_color_override("font_color", Color(1.0, 0.95, 0.82))
+	button.add_theme_color_override("font_hover_color", Color(1.0, 0.98, 0.9))
+	button.add_theme_color_override("font_disabled_color", Color(1.0, 0.95, 0.82, 0.55))
+	button.add_theme_color_override("font_outline_color", Color(0.12, 0.07, 0.025, 0.9))
+	button.add_theme_constant_override("outline_size", 6)
+	button.add_theme_font_size_override("font_size", 56)
 
 
 func _label(parent: Control, value: String, pos: Vector2,
@@ -2231,12 +2199,12 @@ func _style_mode(button: Button, selected: bool) -> void:
 		Color(0.87, 0.86, 0.83)))
 	button.add_theme_stylebox_override("disabled", _button_plate(texture,
 		Color(0.64, 0.65, 0.62, 0.72)))
-	var text_color := CREAM
+	var text_color := Kit.INK_ON_GOLD if selected else Kit.INK
 	button.add_theme_color_override("font_color", text_color)
 	button.add_theme_color_override("font_hover_color", text_color)
 	button.add_theme_color_override("font_pressed_color", text_color)
-	button.add_theme_color_override("font_disabled_color", Color("d1c8ad"))
-	button.add_theme_color_override("font_outline_color", Color("342010"))
+	button.add_theme_color_override("font_disabled_color", Color(0.42, 0.35, 0.27, 0.75))
+	button.add_theme_color_override("font_outline_color", Kit.INK_OUTLINE)
 	button.add_theme_constant_override("outline_size", 2)
 	button.add_theme_font_size_override("font_size", 24)
 
@@ -2253,11 +2221,11 @@ func _style_action() -> void:
 		Color(0.85, 0.83, 0.80)))
 	_action.add_theme_stylebox_override("disabled", _button_plate(BUTTON_PRIMARY,
 		Color(0.65, 0.66, 0.63, 0.73)))
-	_action.add_theme_color_override("font_color", CREAM)
-	_action.add_theme_color_override("font_hover_color", Color("fff7df"))
-	_action.add_theme_color_override("font_pressed_color", CREAM)
-	_action.add_theme_color_override("font_disabled_color", Color("d6d0b4"))
-	_action.add_theme_color_override("font_outline_color", Color("342010"))
+	_action.add_theme_color_override("font_color", Kit.INK_ON_GOLD)
+	_action.add_theme_color_override("font_hover_color", Kit.INK_ON_GOLD)
+	_action.add_theme_color_override("font_pressed_color", Kit.INK_ON_GOLD)
+	_action.add_theme_color_override("font_disabled_color", Color(0.42, 0.35, 0.27, 0.8))
+	_action.add_theme_color_override("font_outline_color", Kit.INK_OUTLINE)
 	_action.add_theme_constant_override("outline_size", 3)
 	_action.add_theme_font_size_override("font_size", 28)
 

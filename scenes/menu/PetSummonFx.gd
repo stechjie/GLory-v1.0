@@ -4,6 +4,8 @@ extends Control
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 
 var energy := 0
+# 11.11：召唤舞台换成宠物蛋（PetDrawDialog 自己画），这里只画右侧能量格，不画中间的能量球
+var show_orb := true
 var _time := 0.0
 var _summon_time := -1.0
 var _core_texture: GradientTexture2D
@@ -76,6 +78,9 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 func _draw() -> void:
+	if not show_orb:
+		_draw_progress()
+		return
 	var center := Vector2(810, 324)
 	var charge := clampf(_summon_time / 0.82, 0.0, 1.0) if is_summoning() else 0.0
 	var gathering := smoothstep(0.14, 0.88, charge)

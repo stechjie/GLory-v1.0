@@ -22,6 +22,12 @@ extends RefCounted
 var popup: PopupPanel
 var text_label: RichTextLabel
 var upgrade_panel: VBoxContainer
+# 11.11：长按棋盘 / 待命棋子弹的是羊皮纸详情卡（ui/components/UnitDetailCard.gd），
+# 单独一个透明底 PopupPanel；宝物 / 羁绊 / 战力 / 利息这些文字框还是走上面的 popup。
+var unit_popup: PopupPanel
+const UnitDetailCardScript := preload("res://ui/components/UnitDetailCard.gd")
+var unit_card: PanelContainer
+var _unit_cell: Dictionary = {}
 
 # 关闭时序，见上面「等待松手」。
 var waiting_for_release := false
@@ -41,7 +47,7 @@ func is_ready() -> bool:
 
 
 func is_showing() -> bool:
-	return popup != null and popup.visible
+	return (popup != null and popup.visible) or (unit_popup != null and unit_popup.visible)
 
 
 # 常规详情框（棋子属性、宝物说明、商店卡片）。
@@ -55,23 +61,64 @@ func show_unit(cell: Dictionary, callback: Callable) -> void:
 	gold_interest_open = false
 	waiting_for_release = false
 	release_seen_press = false
-	text_label.text = UnitDetailFormat.format_unit_def(cell.get("def", {}), int(cell.get("star", 1)), cell)
-	text_label.custom_minimum_size = Vector2(500, 290)
-	text_label.size_flags_vertical = Control.SIZE_FILL
-	text_label.size.y = 290
+	# 佣兵升不了四星：用横版小卡，不带四星那块
+	if UnitDetailCardScript.is_mercenary_cell(cell):
+		show_compact(cell)
+		return
+	_ensure_unit_popup()
+	_unit_cell = cell
 	if upgrade_panel != null:
 		upgrade_panel.open_for(cell, callback)
-	# Let nested containers settle before the Window calculates its minimum.
-	# Opening once with the old text layout could retain a >1000px height.
+	unit_card.setup(cell, false, upgrade_panel)
 	_center_unit_popup.call_deferred()
 
+
+# 横版小卡（佣兵长按用）：头部 + 技能在左、属性在右，没有四星块
+func show_compact(cell: Dictionary) -> void:
+	if not is_ready():
+		return
+	popup.hide()
+	gold_interest_open = false
+	waiting_for_release = false
+	release_seen_press = false
+	_ensure_unit_popup()
+	_unit_cell = cell
+	if upgrade_panel != null:
+		upgrade_panel.hide()
+	unit_card.setup(cell, true)
+	_center_unit_popup.call_deferred()
+
+
+# 「查看四星属性与技能」：整张卡按四星重画（四星块本身原样保留）
+func preview_unit_star(cell: Dictionary, star: int) -> void:
+	if unit_card == null or not unit_popup.visible:
+		return
+	var shown := (cell if not cell.is_empty() else _unit_cell).duplicate()
+	shown["star"] = star
+	unit_card.setup(shown, false, upgrade_panel)
+	_center_unit_popup.call_deferred()
+
+
+func _ensure_unit_popup() -> void:
+	if unit_popup != null and is_instance_valid(unit_popup):
+		return
+	unit_popup = PopupPanel.new()
+	unit_popup.name = "UnitDetailPopup"
+	unit_popup.transparent_bg = true
+	unit_popup.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	popup.get_parent().add_child(unit_popup)
+	unit_card = UnitDetailCardScript.new()
+	unit_card.close_requested.connect(hide_detail)
+	unit_popup.add_child(unit_card)
+
+
 func _center_unit_popup() -> void:
-	var control := text_label.get_parent() as Control
-	while control != null:
-		control.reset_size()
-		control = control.get_parent() as Control
-	popup.reset_size()
-	popup.popup_centered(Vector2i(564, 585))
+	if unit_card == null:
+		return
+	unit_card.reset_size()
+	var card_size := unit_card.get_combined_minimum_size()
+	unit_popup.reset_size()
+	unit_popup.popup_centered(Vector2i(ceili(card_size.x), ceili(card_size.y)))
 
 
 # 战力推荐框，比常规的矮一些。
@@ -88,6 +135,8 @@ func _show(text: String, min_size: Vector2, popup_size: Vector2i, is_gold: bool)
 	if not is_ready():
 		return
 	gold_interest_open = is_gold
+	if unit_popup != null and unit_popup.visible:
+		unit_popup.hide()
 	if upgrade_panel != null:
 		upgrade_panel.hide()
 	text_label.custom_minimum_size = min_size
@@ -107,6 +156,8 @@ func refresh_gold_interest(text: String) -> void:
 func hide_detail() -> void:
 	if popup != null and popup.visible:
 		popup.hide()
+	if unit_popup != null and unit_popup.visible:
+		unit_popup.hide()
 	gold_interest_open = false
 	waiting_for_release = false
 	release_seen_press = false
@@ -114,7 +165,7 @@ func hide_detail() -> void:
 
 # 每帧调用：处理「按下再松开才允许关闭」的时序。
 func update_release_state() -> void:
-	if popup == null or not popup.visible:
+	if not is_showing():
 		waiting_for_release = false
 		release_seen_press = false
 		return

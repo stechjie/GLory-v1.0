@@ -12,9 +12,63 @@
 | 用途 | 测试服 | 正式服（审核服） |
 | --- | --- | --- |
 | IP | `34.124.141.90` | `35.247.132.13` |
-| 账号接口 | `https://glorytd-api.duckdns.org` | `https://glorytd-prod-api.duckdns.org` |
-| 战斗（UDP + DTLS） | `glorytd-battle.duckdns.org:8080` | `glorytd-prod-battle.duckdns.org:8080` |
+| 账号接口 | `https://test-api.gogoglory.com` | `https://api.gogoglory.com` |
+| 战斗（UDP + DTLS） | `test-battle.gogoglory.com:8080` | `battle.gogoglory.com:8080` |
 | 语音 | `wss://glorytd-voice.duckdns.org` | `wss://glorytd-prod-voice.duckdns.org` |
+
+### 自有域名 gogoglory.com：打包已全部切换，旧域名还不能撤
+
+2026-11-11 买了 `gogoglory.com`，起因是 `duckdns.org` 在中国大陆解析不稳、玩家卡在
+「Update incomplete」。先切测试服，当天用户在电脑上实测登录 + 自定义房间通过后，
+正式服打包也切了（测试包那一步用户决定跳过）。同一天两台服务器（账号 + 战斗）都更新到了
+协议 46（a415a9dd）—— 从此 iOS 81 / 安卓 56 和现有测试包都进不了对局，要装新包。
+
+DNS 在 Cloudflare（免费版，只做解析）。🔴 **六条记录必须全部是灰云 `DNS only`**：
+战斗走 UDP 8080，Cloudflare 免费版只代理 HTTP/HTTPS；而且账号服务器的 Caddy 用
+`header_up X-Forwarded-For {remote_host}` **覆盖**来源 IP，前面再加一层代理会让所有玩家
+共用一个限流桶（匿名注册每小时 10 次会变成全服 10 次）。
+
+| 子域 | 指向 | 状态 |
+| --- | --- | --- |
+| `test-api` / `test-battle` | `34.124.141.90` | ✅ 打包已使用 |
+| `api` / `battle` | `35.247.132.13` | ✅ 打包已使用（11-11 起） |
+| `test-voice` / `voice` | 各自 IP | DNS 就绪，**服务器还没切** |
+
+两台服务器的 Caddy 站点块现在都是 `旧域名, 新域名 {`，各持两张证书，新旧同时可用。
+DTLS 证书**不用换**（CN 是 `glory-battle`，按指纹 pin、不校验主机名）。
+
+#### 出下一个正式包时要跟着改的
+
+1. `--patch-config` 里的 `backend_url` 改成 `https://api.gogoglory.com`。旧的正式服补丁配置写的是
+   duckdns，不改的话打包入口会因为「补丁接口和所选环境不一致」直接停。
+2. App Store Connect 商店描述里的 Support / Privacy 链接，改成
+   `https://test-api.gogoglory.com/beta/support.html` 和 `.../beta/privacy-en.html`
+   （这两页只放在测试服上，正式服的域名下是 404）。`deploy/app-store/release-1.0.0.json`
+   是 10-24 那次提审的存档记录，不要改它。
+
+#### 🔴 撤掉 duckdns 之前必须先做这三件（前两件在外部控制台，仓库里改不到）
+
+1. **Supabase 的 Steam OIDC Issuer** —— `update.sh` 从 Caddyfile 的**第一个**域名推出
+   `steam_oidc_issuer`（见 `backend/app/config.py` 那条注释）。旧域名一旦不在第一位或被删，
+   issuer 就会变，Supabase 里登记的必须一字不差地同步改，否则 Steam 登录全挂。
+   撤之前先跑 `update.sh`，照它打印的那一行填。11-11 两台打印的分别是
+   `https://glorytd-api.duckdns.org/oidc/steam`（测试服）和
+   `https://glorytd-prod-api.duckdns.org/oidc/steam`（正式服）。
+2. **Google Cloud Pub/Sub 的 RTDN 推送订阅** —— `play-billing-rtdn-push` 的**地址和受众**都是
+   `https://glorytd-api.duckdns.org/iap/google/rtdn`，服务器 `backend.env` 的
+   `GLORY_GOOGLE_RTDN_AUDIENCE` 也是这个值：三处必须一起改，只改地址不改受众，身份校验通不过，
+   通知照样收不到（见 `docs/充值系统设计.md`）。这个地址是**测试服**的；正式服有没有自己的
+   推送订阅没核实过（没有的话正式服只靠每 10 分钟的对账补单）。改完要做一笔沙盒充值验证。
+3. **两台战斗服务器启动命令里的 `--backend-url=`**（战报上传用）—— 正式服是
+   `https://glorytd-prod-api.duckdns.org`，在 `/etc/systemd/system/glory-server.service`；
+   测试服的没核对过。改成新域名，daemon-reload，查过在线再重启战斗服务器。
+
+⚠️ **撤旧域名必须排在「新包已经发出去并验证可用」之后。** 域名是烧进安装包里的，
+服务器删不掉；撤早了连你自己手上的包都连不上，没有退路。
+
+语音（`voice`）**故意还留在 duckdns**：语音地址是服务器下发的、客户端不写死，换它对玩家
+零收益，却要重启战斗服务器。撤 duckdns 时用
+`deploy/livekit/install_livekit.sh <新语音域名>` 一起切，跑完要重启战斗服务器。
 
 - 测试服固定使用 Google Cloud 项目 `project-60c72d94-b558-4e4f-992`：
   https://ssh.cloud.google.com/v2/ssh/projects/project-60c72d94-b558-4e4f-992/
@@ -30,7 +84,10 @@
 - 重启前检查在线玩家；有玩家在线时等待，除非用户明确授权中断。构建、部署、健康检查与真机沙盒支付验收分别记录。
 
 - 客户端源码默认值是测试服（`scripts/account/AccountConfig.gd` 的 `DEFAULT_BACKEND_URL`、`scripts/multiplayer/NetworkConfig.gd` 的 `SERVER_HOST`）。语音地址由服务器下发（战斗服务器和账号服务器各自的 LiveKit 配置里的 `client_url`），客户端不写死。
-- 战斗链路的 DTLS 证书两边不同：客户端 `scripts/multiplayer/NetTLSCert.gd` 里是测试服那张（SHA-256 `F7:73:C1:A5:…:A4:9C:25:0D`），正式服是 2026-10-31 新生成的（SHA-256 `DE:B1:9B:3E:…:0E:CA:53:54`，以服务器上 `~/Glory/keys/dtls_cert.pem` 为准）。切正式服只改域名、不换证书，会卡在连接中直到超时。
+- 战斗链路的 DTLS 证书两边不同：测试服 SHA-256 `F7:73:C1:A5:…:A4:9C:25:0D`（就是客户端源码 `scripts/multiplayer/NetTLSCert.gd` 里那张）；正式服 `DE:B1:9B:3E:…:0E:CA:53:54`（10-31 在正式服上生成，原件在 `/home/nins17121/Glory/keys/`）。`glory_build.py` 按 `--server-environment` 给包换上对应那张；只改域名、不换证书会卡在连接中直到超时。
+  🔴 **2026-11-02 到 11-11，正式服战斗服务器实际出示的是测试服那张**：启动命令没带 `--tls-cert=`，用的是版本目录里的 NetTLSCert.gd。iOS 81 / 安卓 56 打包时还不换证书，固定的也是测试服那张，所以一直能连；11-03 起打包工具给正式包固定正式服那张，却没人核对服务器。11-11 部署协议 46 时发现并换掉：启动命令现在带 `--tls-cert=/opt/glory/battle_tls_prod_cert.pem --tls-key=/opt/glory/battle_tls_prod_key.pem`，从外网用真客户端实测，正式服证书能连、测试服证书连不上。
+  以后要核对**服务器实际出示**哪张，别只看文件：在服务器上跑 `timeout 12 openssl s_client -dtls1_2 -connect 127.0.0.1:8080 </dev/null | openssl x509 -noout -fingerprint -sha256`。（从外网用 openssl 握不上，原因没查；外网验证用 `tools/live_server_readonly_probe`，要带 `--probe-arm=readonly`。）
+- 两台战斗服务器的部署方式不同，换版本前先看清：测试服在 `/home/nins17121/Glory/releases/<名字>`，启动命令在 drop-in `99-glory-current.conf`；正式服在 `/opt/glory/releases/<名字>/battle`，启动命令在主单元 `/etc/systemd/system/glory-server.service`，运行用户家目录是 `/opt/glory`。11-11 的部署脚本在 `deploy/releases/20261111/`：先查在线、逐个文件校验、核对实际出示的证书、失败自动回滚。
 
 ## 构建产物存放位置
 

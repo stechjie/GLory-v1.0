@@ -19,7 +19,9 @@ const SfxService := preload("res://ui/services/SfxService.gd")
 const ConfirmDialog := preload("res://ui/components/GloryConfirmDialog.gd")
 # 新按钮一律实例化组件，不写 Button.new()：procedural_ui_ratchet 按文件只许降。
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
-const MENU_BG_TEX := preload("res://assets/ui/main_menu_live/background.png")
+# 11.11 羊皮纸风（ui/theme/ParchmentKit.gd），背景用广场那张。
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
+const UiJuice := preload("res://ui/theme/UiJuice.gd")
 const Currency := preload("res://scripts/account/Currency.gd")
 
 const LIST_WIDTH := 360.0
@@ -51,7 +53,7 @@ var _delete_read_button: Button
 
 
 func _ready() -> void:
-	theme = Theming.get_theme()
+	theme = Kit.theme()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build()
 	# deferred：mark_read 会发 changed，而它常常发生在列表按钮自己的 pressed 回调里 ——
@@ -80,19 +82,7 @@ func select(id: int) -> void:
 # --- 骨架 ---------------------------------------------------------------------
 
 func _build() -> void:
-	var bg := TextureRect.new()
-	bg.texture = MENU_BG_TEX
-	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
-
-	var dim := ColorRect.new()
-	dim.color = Color(0.015, 0.03, 0.035, 0.08)
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(dim)
+	Kit.backdrop(self, "news_square")
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -105,13 +95,15 @@ func _build() -> void:
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", Tokens.GAP_M)
 	margin.add_child(root)
-	root.add_child(_header())
+	var header := _header()
+	root.add_child(header)
 
 	_notice_label = Label.new()
 	_notice_label.name = "Notice"
 	_notice_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_notice_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_notice_label.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
+	Kit.on_backdrop(_notice_label)
 	_notice_label.visible = false
 	root.add_child(_notice_label)
 
@@ -122,8 +114,7 @@ func _build() -> void:
 
 	var list_panel := PanelContainer.new()
 	list_panel.custom_minimum_size = Vector2(LIST_WIDTH, 0)
-	list_panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Color(0.035, 0.10, 0.12, 0.56), Color(0.55, 0.66, 0.59, 0.42), Tokens.GAP_S))
+	list_panel.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(40, 40, 40, 26)))
 	body.add_child(list_panel)
 	var list_scroll := TouchScrollContainer.new()
 	list_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -145,8 +136,7 @@ func _build() -> void:
 	detail_panel.custom_minimum_size.x = 820
 	detail_panel.custom_minimum_size.y = 420
 	detail_panel.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	detail_panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Color(0.88, 0.80, 0.64, 0.96), Color(0.64, 0.44, 0.20, 0.88), Tokens.GAP_L))
+	detail_panel.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(66, 50, 66, 36)))
 	reading_area.add_child(detail_panel)
 	var right_space := Control.new()
 	right_space.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -185,26 +175,25 @@ func _build() -> void:
 	_delete_button = _button("Delete", _t("删除", "Delete"), Theming.VARIATION_DANGER)
 	_delete_button.pressed.connect(func() -> void: _delete(_selected_id))
 	actions.add_child(_delete_button)
+	UiJuice.pop_in([header, list_panel, detail_panel], 0.0, 0.07, 0.9)
 
 
 func _header() -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", Tokens.GAP_M)
 
-	var back: Button = ACTION_BUTTON.instantiate()
-	back.name = "Back"
-	back.text = _t("← 返回", "← Back")
-	back.custom_minimum_size = Vector2(160, Tokens.TOUCH_MIN)
-	back.pressed.connect(func() -> void: back_requested.emit())
+	var back := Kit.back_button(func() -> void: back_requested.emit())
 	row.add_child(back)
+	# 左边再垫一块，让缎带标题落在两颗右侧按钮与返回键之间的正中
+	var pad := Control.new()
+	pad.custom_minimum_size = Vector2(HEADER_BUTTON_WIDTH * 2 + Tokens.GAP_M - back.custom_minimum_size.x, 0)
+	pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(pad)
 
-	var title := Label.new()
-	title.text = _t("邮件", "Mail")
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
-	title.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
-	row.add_child(title)
+	var title_slot := CenterContainer.new()
+	title_slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_slot.add_child(Kit.title_banner(_t("邮件", "Mail"), 72.0, 28))
+	row.add_child(title_slot)
 
 	_claim_all_button = _button("ClaimAll", _t("一键领取", "Claim all"), Theming.VARIATION_PRIMARY)
 	_claim_all_button.custom_minimum_size = Vector2(HEADER_BUTTON_WIDTH, Tokens.TOUCH_MIN)
@@ -255,7 +244,7 @@ func _render() -> void:
 		_list_box.add_child(_list_row(entry as Dictionary))
 	_notice_label.visible = not _notice.is_empty()
 	_notice_label.text = _notice
-	_notice_label.add_theme_color_override("font_color", Tokens.DANGER if _notice_bad else Tokens.GOLD)
+	_notice_label.add_theme_color_override("font_color", Color("ffb3a3") if _notice_bad else Color("ffe08a"))
 	_claim_all_button.disabled = _busy or MailService.claimable_count() == 0
 	_delete_read_button.disabled = _busy or MailService.deletable_count() == 0
 	_render_detail()
@@ -276,6 +265,7 @@ func _list_row(entry: Dictionary) -> Control:
 	button.mouse_filter = Control.MOUSE_FILTER_PASS
 	button.text = row_text(entry)
 	button.pressed.connect(func() -> void: select(id))
+	Kit.style_list_row(button, Tokens.FONT_BODY)
 
 	# 红点：没读，或者附件没领。
 	var dot := Label.new()
@@ -287,7 +277,8 @@ func _list_row(entry: Dictionary) -> Control:
 	dot.visible = not bool(entry.get("read", false)) or MailService.is_claimable(entry)
 	button.add_child(dot)
 	dot.set_anchors_and_offsets_preset(Control.PRESET_CENTER_RIGHT)
-	dot.position.x -= Tokens.GAP_S
+	# 让开纸条右端的卷边
+	dot.position.x -= 34.0
 	return button
 
 
@@ -384,8 +375,7 @@ func item_text(item: Dictionary) -> String:
 
 func _chip(icon: Texture2D, text: String, dim: bool) -> Control:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Color(0.96, 0.90, 0.77), Color(0.60, 0.45, 0.25), Tokens.GAP_S))
+	panel.add_theme_stylebox_override("panel", Kit.box("plate", Vector4(18, 6, 20, 6)))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", Tokens.GAP_S)
 	panel.add_child(row)

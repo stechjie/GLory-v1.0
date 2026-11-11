@@ -32,6 +32,8 @@ extends PanelContainer
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
+# 11.11 羊皮纸风：输入框 / 按钮走 Kit.theme()，外框是羊皮纸面板
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
 const ChatText := preload("res://scripts/multiplayer/ChatText.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const VoiceRecordButton := preload("res://ui/components/VoiceRecordButton.gd")
@@ -72,7 +74,8 @@ func present(owner: Object, on_submit: Callable, options: Dictionary = {}) -> vo
 
 
 func _ready() -> void:
-	theme = Theming.get_theme()
+	theme = Kit.theme()
+	add_theme_stylebox_override("panel", Kit.box("slot", Vector4(26, 18, 26, 18)))
 	# 顶部居中。宽度按屏幕收：比屏幕还宽的输入条两头会被切掉。
 	var width := minf(BAR_WIDTH, get_viewport_rect().size.x - Tokens.PAD * 2.0)
 	anchor_left = 0.5
@@ -128,7 +131,7 @@ func _ready() -> void:
 	_error.visible = false
 	_error.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_error.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	_error.add_theme_color_override("font_color", Tokens.DANGER_HOVER)
+	_error.add_theme_color_override("font_color", Color("a3271a"))
 	col.add_child(_error)
 
 	# 拿到焦点才会弹出系统键盘。延一帧：ModalStack 可能把挂树推迟到了本帧末。

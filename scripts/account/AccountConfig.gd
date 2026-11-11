@@ -18,7 +18,7 @@ extends RefCounted
 # 本机联调不改这里，用命令行覆盖：
 #   --backend-url=http://127.0.0.1:8099          （开发机自己）
 #   --backend-url=http://192.168.x.x:8099        （手机连开发机，需临时放开明文）
-const DEFAULT_BACKEND_URL := "https://glorytd-api.duckdns.org"
+const DEFAULT_BACKEND_URL := "https://test-api.gogoglory.com"
 
 # 命令行覆盖，方便在不改代码的前提下切环境（同 DeviceHarness 的 --device-baseline）。
 const BACKEND_URL_FLAG := "--backend-url="

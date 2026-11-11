@@ -384,7 +384,7 @@ func build_popup(body: HBoxContainer, center_host: Control) -> void:
 	money_bag_glow.offset_bottom = 69
 	gold_area.add_child(money_bag_glow)
 	money_bag_glow.setup(
-		PrepWidgets.cached_texture("res://assets/ui/buttons/btn_buy_lowpoly.png"),
+		PrepWidgets.cached_texture("res://assets/ui/buttons/btn_buy_painted.png"),
 		MONEY_BAG_GLOW_SHADER
 	)
 	var money_bag: Control = PrepMoneyBagIcon.new()

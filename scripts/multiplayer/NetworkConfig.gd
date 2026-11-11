@@ -11,7 +11,7 @@ extends RefCounted
 # IP 单例里直到进程结束）。为了不在点「连接」时卡主线程，NetworkService 在客户端启动时
 # 先在后台解析一次（_warm_server_dns）。
 # DTLS 不受影响：客户端 pin 的是证书本身、不校验主机名（NetTLS「为什么是 client_unsafe」）。
-const SERVER_HOST := "glorytd-battle.duckdns.org"
+const SERVER_HOST := "test-battle.gogoglory.com"
 const SERVER_PORT := 8080
 const CONNECTION_TIMEOUT := 10.0
 const USE_DEDICATED_SERVER := true

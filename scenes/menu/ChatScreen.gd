@@ -50,7 +50,13 @@ const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const Catalog := preload("res://scripts/account/AvatarCatalog.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
-const MENU_BG_TEX := preload("res://assets/ui/menu_backgrounds/chat.png")
+# 11.11 换成羊皮纸风（ui/theme/ParchmentKit.gd），背景用好友营地那张。
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
+const UiJuice := preload("res://ui/theme/UiJuice.gd")
+const ONLINE_COLOR := Color("2f7d45")
+const MUTED_COLOR := Color("8c7a66")
+const SECTION_COLOR := Color("8a4b12")
+const BAD_COLOR := Color("a3271a")
 
 const LIST_WIDTH := 332.0
 const ROW_HEIGHT := 72.0
@@ -104,7 +110,7 @@ func configure(focus_code: String, tab: String = "") -> void:
 
 
 func _ready() -> void:
-	theme = Theming.get_theme()
+	theme = Kit.theme()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build()
 	_show_tab(_tab if not _tab.is_empty() else ChatService.last_chat_tab)
@@ -137,19 +143,7 @@ func _exit_tree() -> void:
 
 
 func _build() -> void:
-	var bg := TextureRect.new()
-	bg.texture = MENU_BG_TEX
-	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
-
-	var dim := ColorRect.new()
-	dim.color = Color(0.01, 0.025, 0.035, 0.12)
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(dim)
+	Kit.backdrop(self, "friends_camp")
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -162,10 +156,13 @@ func _build() -> void:
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", Tokens.GAP_M)
 	margin.add_child(root)
-	root.add_child(_header())
+	var header := _header()
+	root.add_child(header)
 
 	_notice_label = Label.new()
 	_notice_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# 提示条压在背景上，不在羊皮纸里：浅色字 + 深描边
+	Kit.on_backdrop(_notice_label)
 	_notice_label.visible = false
 	root.add_child(_notice_label)
 
@@ -197,27 +194,27 @@ func _build() -> void:
 	divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	body.add_child(divider)
 	body.add_child(_conversation_panel())
+	UiJuice.pop_in([header, _world_panel, shell], 0.0, 0.07, 0.92)
 
 
 func _header() -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", Tokens.GAP_M)
-	var back := _button(_text("← 返回", "← Back"), func() -> void: back_requested.emit())
-	back.custom_minimum_size = Vector2(HEADER_SIDE_WIDTH, Tokens.TOUCH_MIN)
+	var back := Kit.back_button(func() -> void: back_requested.emit())
 	row.add_child(back)
 
-	# 标题的位置就是两个页签（居中）。私聊页签右上角挂未读红点 —— 只跟 ChatService 走。
+	# 标题的位置就是两个卷轴页签（居中）。私聊页签右上角挂未读红点 —— 只跟 ChatService 走。
 	var tabs := HBoxContainer.new()
 	tabs.alignment = BoxContainer.ALIGNMENT_CENTER
 	tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	tabs.add_theme_constant_override("separation", Tokens.GAP_S)
+	tabs.add_theme_constant_override("separation", Tokens.GAP_M)
 	row.add_child(tabs)
 	_tab_world = _button(_text("世界频道", "World"), func() -> void: _show_tab(TAB_WORLD))
-	_tab_world.custom_minimum_size = Vector2(Tokens.BUTTON_MIN_WIDTH, Tokens.TOUCH_MIN)
+	Kit.style_tab(_tab_world, 58.0, 22)
 	_tab_world.name = "ChatTabWorld"
 	tabs.add_child(_tab_world)
 	_tab_dm = _button(_text("好友私聊", "Friend Chat"), func() -> void: _show_tab(TAB_DM))
-	_tab_dm.custom_minimum_size = Vector2(Tokens.BUTTON_MIN_WIDTH, Tokens.TOUCH_MIN)
+	Kit.style_tab(_tab_dm, 58.0, 22)
 	_tab_dm.name = "ChatTabDm"
 	tabs.add_child(_tab_dm)
 	_dm_tab_dot = Label.new()
@@ -226,13 +223,12 @@ func _header() -> Control:
 	_dm_tab_dot.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
 	_tab_dm.add_child(_dm_tab_dot)
 	_dm_tab_dot.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	_dm_tab_dot.position.x -= 18
+	_dm_tab_dot.position.x -= 34
 	_dm_tab_dot.visible = ChatService.any_unread()
 
-	# 右边垫一块与返回按钮等宽的空白 —— 否则标题会随右边有没有东西左右漂
-	# （第一版把连接状态放在这里，出图一看，标题在两种状态下不在同一个位置）。
+	# 右边垫一块与返回按钮等宽的空白 —— 否则页签会随右边有没有东西左右漂。
 	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(HEADER_SIDE_WIDTH, 0)
+	spacer.custom_minimum_size = Vector2(back.custom_minimum_size.x, 0)
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(spacer)
 	return row
@@ -242,8 +238,7 @@ func _list_panel() -> Control:
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(LIST_WIDTH, 0)
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Color(0.035, 0.10, 0.13, 0.56), Color(0.47, 0.64, 0.64, 0.38), Tokens.GAP_S))
+	panel.add_theme_stylebox_override("panel", Kit.box("panel"))
 
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", Tokens.GAP_S)
@@ -257,12 +252,12 @@ func _list_panel() -> Control:
 	list_title.text = _text("好友", "Friends")
 	list_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	list_title.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
-	list_title.add_theme_color_override("font_color", Tokens.GOLD)
+	list_title.add_theme_color_override("font_color", SECTION_COLOR)
 	list_head.add_child(list_title)
 
 	_friend_count_label = Label.new()
 	_friend_count_label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	_friend_count_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	_friend_count_label.add_theme_color_override("font_color", Kit.INK_SOFT)
 	list_head.add_child(_friend_count_label)
 
 	var scroll := TouchScrollContainer.new()
@@ -285,7 +280,7 @@ func _list_panel() -> Control:
 		"Only your latest %d messages with each friend are kept; after unfriending, they are kept for at most 30 more days." % ChatService.HISTORY_LIMIT)
 	retention.clip_text = true
 	retention.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	retention.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
+	retention.add_theme_color_override("font_color", MUTED_COLOR)
 	col.add_child(retention)
 	return panel
 
@@ -294,8 +289,7 @@ func _conversation_panel() -> Control:
 	var panel := PanelContainer.new()
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Color(0.035, 0.10, 0.13, 0.38), Color(0.47, 0.64, 0.64, 0.38), Tokens.GAP_S))
+	panel.add_theme_stylebox_override("panel", Kit.box("panel"))
 
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", Tokens.GAP_S)
@@ -305,8 +299,7 @@ func _conversation_panel() -> Control:
 	# 它说的是「这段对话的新消息会不会实时出现」，挨着对话才读得懂。
 	var head_panel := PanelContainer.new()
 	head_panel.custom_minimum_size = Vector2(0, 64)
-	head_panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Color(0.055, 0.15, 0.18, 0.78), Color(0.52, 0.69, 0.67, 0.42), Tokens.GAP_S))
+	head_panel.add_theme_stylebox_override("panel", Kit.row_box())
 	col.add_child(head_panel)
 
 	var head := HBoxContainer.new()
@@ -328,18 +321,18 @@ func _conversation_panel() -> Control:
 	_peer_label = Label.new()
 	_peer_label.clip_text = true
 	_peer_label.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
-	_peer_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	_peer_label.add_theme_color_override("font_color", Kit.INK)
 	identity.add_child(_peer_label)
 
 	_peer_code_label = Label.new()
 	_peer_code_label.clip_text = true
 	_peer_code_label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	_peer_code_label.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
+	_peer_code_label.add_theme_color_override("font_color", MUTED_COLOR)
 	identity.add_child(_peer_code_label)
 
 	_status_label = Label.new()
 	_status_label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	_status_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	_status_label.add_theme_color_override("font_color", Kit.INK_SOFT)
 	head.add_child(_status_label)
 
 	_kicked_bar = _build_kicked_bar()
@@ -347,8 +340,7 @@ func _conversation_panel() -> Control:
 
 	var message_well := PanelContainer.new()
 	message_well.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	message_well.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Color(0.025, 0.08, 0.10, 0.28), Color(0.48, 0.63, 0.61, 0.25), Tokens.GAP_S))
+	message_well.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	col.add_child(message_well)
 
 	_msg_scroll = TouchScrollContainer.new()
@@ -362,8 +354,7 @@ func _conversation_panel() -> Control:
 	_msg_scroll.add_child(_msg_box)
 
 	var composer := PanelContainer.new()
-	composer.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Color(0.045, 0.13, 0.16, 0.84), Color(0.54, 0.69, 0.66, 0.40), Tokens.GAP_S))
+	composer.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	col.add_child(composer)
 
 	var input_row := HBoxContainer.new()
@@ -394,8 +385,7 @@ func _conversation_panel() -> Control:
 func _build_kicked_bar() -> Control:
 	var panel := PanelContainer.new()
 	panel.visible = false
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.GOLD_PRESSED.darkened(0.72), Tokens.GOLD_PRESSED, Tokens.GAP_S))
+	panel.add_theme_stylebox_override("panel", Kit.row_box())
 
 	var bar := HBoxContainer.new()
 	bar.add_theme_constant_override("separation", Tokens.GAP_S)
@@ -407,7 +397,7 @@ func _build_kicked_bar() -> Control:
 	icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	icon.custom_minimum_size = Vector2(Tokens.TOUCH_MIN, Tokens.TOUCH_MIN)
 	icon.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
-	icon.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+	icon.add_theme_color_override("font_color", SECTION_COLOR)
 	bar.add_child(icon)
 
 	var reason := Label.new()
@@ -417,7 +407,7 @@ func _build_kicked_bar() -> Control:
 		"Your account signed in on another device, so chat here was disconnected.")
 	reason.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	reason.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	reason.add_theme_color_override("font_color", Tokens.GOLD)
+	reason.add_theme_color_override("font_color", SECTION_COLOR)
 	bar.add_child(reason)
 
 	# 这一下会把另一台设备顶下线 —— 所以只能是玩家亲手点。
@@ -631,8 +621,8 @@ func _show_tab(tab: String) -> void:
 	var world := _tab == TAB_WORLD
 	_dm_shell.visible = not world
 	_world_panel.visible = world
-	_tab_world.theme_type_variation = Theming.VARIATION_PRIMARY if world else Theming.VARIATION_GHOST
-	_tab_dm.theme_type_variation = Theming.VARIATION_GHOST if world else Theming.VARIATION_PRIMARY
+	_tab_world.set_pressed_no_signal(world)
+	_tab_dm.set_pressed_no_signal(not world)
 	# 私聊页的提示（加载失败之类）不带到世界频道那边去。
 	_set_notice("", false)
 
@@ -674,13 +664,13 @@ func _refresh_status() -> void:
 				break
 		_status_label.text = _text("● 在线", "● Online") if peer_online else _text("● 离线", "● Offline")
 		_status_label.add_theme_color_override("font_color",
-			Tokens.CYAN if peer_online else Tokens.TEXT_DISABLED)
+			ONLINE_COLOR if peer_online else MUTED_COLOR)
 	else:
 		# 发送不受影响（走 HTTPS），受影响的只是「新消息实时出现」。
 		_status_label.text = _text("连接中…", "Connecting…")
 		_status_label.tooltip_text = _text(
 			"正在连接，新消息可能晚一点到", "Connecting; new messages may be delayed")
-		_status_label.add_theme_color_override("font_color", Tokens.GOLD)
+		_status_label.add_theme_color_override("font_color", SECTION_COLOR)
 
 
 func _refresh_input() -> void:
@@ -721,22 +711,21 @@ func _chat_row(entry: Dictionary) -> Control:
 	row.toggle_mode = true
 	row.button_pressed = code == _open_code
 	var selected := code == _open_code
-	var base := Tokens.GOLD_PRESSED.darkened(0.72) if selected else Tokens.SURFACE
-	var edge := Tokens.GOLD_PRESSED if selected else Tokens.BORDER.darkened(0.42)
-	row.add_theme_stylebox_override("normal", Tokens.button_box(base, edge))
-	row.add_theme_stylebox_override("hover", Tokens.button_box(
-		Tokens.SURFACE_RAISED, Tokens.GOLD_PRESSED))
-	row.add_theme_stylebox_override("pressed", Tokens.button_box(
-		Tokens.GOLD_PRESSED.darkened(0.78), Tokens.GOLD))
-	row.add_theme_stylebox_override("focus", Tokens.focus_box())
+	# 纸条行；正在聊的那个人用金色那条
+	Kit.style_list_row(row)
+	if selected:
+		row.add_theme_stylebox_override("normal", Kit.box("list_row_gold", Vector4(26, 6, 30, 8)))
 
 	# 按钮不会给子节点排版：内容挂在一个铺满的容器里，且一律不吃点击 ——
 	# 否则点在名字上会被 Label 吞掉，按钮收不到。
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	for side in ["left", "right", "top", "bottom"]:
-		margin.add_theme_constant_override("margin_" + side, Tokens.GAP_S)
+	# 左右让开纸条两端的卷边
+	margin.add_theme_constant_override("margin_left", 26)
+	margin.add_theme_constant_override("margin_right", 28)
+	margin.add_theme_constant_override("margin_top", 6)
+	margin.add_theme_constant_override("margin_bottom", 8)
 	row.add_child(margin)
 
 	var line := HBoxContainer.new()
@@ -748,7 +737,7 @@ func _chat_row(entry: Dictionary) -> Control:
 	avatar_panel.custom_minimum_size = Vector2(AVATAR_SIZE, AVATAR_SIZE)
 	avatar_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	avatar_panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.BG_DEEP, Tokens.GOLD_PRESSED if selected else Tokens.BORDER, 2))
+		Color("f3e2c0"), Color("b07a2a"), 2))
 	line.add_child(avatar_panel)
 
 	var avatar := TextureRect.new()
@@ -774,7 +763,7 @@ func _chat_row(entry: Dictionary) -> Control:
 	online_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	online_dot.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 	online_dot.add_theme_color_override("font_color",
-		Tokens.CYAN if bool(entry.get("online", false)) else Tokens.TEXT_DISABLED)
+		ONLINE_COLOR if bool(entry.get("online", false)) else MUTED_COLOR)
 	name_line.add_child(online_dot)
 
 	var name_label := Label.new()
@@ -784,7 +773,7 @@ func _chat_row(entry: Dictionary) -> Control:
 	name_label.clip_text = true
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	name_label.add_theme_color_override("font_color", Tokens.GOLD if selected else Tokens.TEXT_PRIMARY)
+	name_label.add_theme_color_override("font_color", SECTION_COLOR if selected else Kit.INK)
 	name_line.add_child(name_label)
 
 	var code_label := Label.new()
@@ -792,7 +781,7 @@ func _chat_row(entry: Dictionary) -> Control:
 	code_label.clip_text = true
 	code_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	code_label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	code_label.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
+	code_label.add_theme_color_override("font_color", MUTED_COLOR)
 	name_line.add_child(code_label)
 
 	var preview_line := HBoxContainer.new()
@@ -806,14 +795,14 @@ func _chat_row(entry: Dictionary) -> Control:
 	preview.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	preview.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	preview.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	preview.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	preview.add_theme_color_override("font_color", Kit.INK_SOFT)
 	preview_line.add_child(preview)
 
 	var stamp := Label.new()
 	stamp.text = _friend_time(entry)
 	stamp.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	stamp.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	stamp.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
+	stamp.add_theme_color_override("font_color", MUTED_COLOR)
 	preview_line.add_child(stamp)
 
 	var dot := Label.new()
@@ -885,7 +874,7 @@ func _update_peer_label() -> void:
 	if RealtimeService.is_online() and not ChatService.kicked:
 		_status_label.text = _text("● 在线", "● Online") if peer_online else _text("● 离线", "● Offline")
 		_status_label.add_theme_color_override("font_color",
-			Tokens.CYAN if peer_online else Tokens.TEXT_DISABLED)
+			ONLINE_COLOR if peer_online else MUTED_COLOR)
 
 
 func _render_messages(force_bottom: bool = false) -> void:
@@ -928,15 +917,16 @@ func _bubble(msg: Dictionary, max_width: float) -> Control:
 	row.add_child(col)
 
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.GOLD_PRESSED.darkened(0.64) if mine else Tokens.SURFACE_RAISED,
-		Tokens.GOLD_PRESSED.darkened(0.18) if mine else Tokens.BORDER.darkened(0.28),
-		12))
+	# 自己的：尾巴在右下的暖色气泡；对方的：尾巴在左下的羊皮纸气泡
+	panel.add_theme_stylebox_override("panel", Kit.box("bubble_self", Vector4(26, 20, 34, 24), Color(1.0, 0.86, 0.58))
+		if mine else Kit.box("bubble_other", Vector4(28, 12, 20, 26)))
+	# 气泡九宫格的边角装饰有固定大小：太短的消息（「冲」）要撑到最小宽度，字才不压边
+	panel.custom_minimum_size = Vector2(96, 0)
 	col.add_child(panel)
 
 	var label := Label.new()
 	label.text = str(msg.get("body", ""))
-	label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	label.add_theme_color_override("font_color", Kit.INK)
 	# 短消息按自然宽度，长消息在 max_width 处折行。自动折行的 Label 放在收缩容器里
 	# 会退化成「一个字一行」—— 必须给它一个明确的宽度。
 	var natural := label.get_theme_font("font").get_string_size(
@@ -958,14 +948,14 @@ func _bubble(msg: Dictionary, max_width: float) -> Control:
 	match state:
 		"pending":
 			caption.text = _text("••• 发送中", "••• Sending")
-			caption.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
+			caption.add_theme_color_override("font_color", MUTED_COLOR)
 		"failed":
 			caption.text = _text("未发送", "Not sent")
 			caption.tooltip_text = str(msg.get("error", ""))
-			caption.add_theme_color_override("font_color", Tokens.DANGER_HOVER)
+			caption.add_theme_color_override("font_color", BAD_COLOR)
 		_:
 			caption.text = ChatService.format_time(str(msg.get("created_at", "")))
-			caption.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
+			caption.add_theme_color_override("font_color", MUTED_COLOR)
 	meta.add_child(caption)
 
 	if state == "failed" and not ChatService.kicked:
@@ -1058,8 +1048,7 @@ func _invite_bubble(msg: Dictionary, max_width: float) -> Control:
 	# 长得明显不一样 —— 一眼就是个「卡片」，而不是一段聊天文字（要求：做成方框）。
 	var box := PanelContainer.new()
 	box.custom_minimum_size = Vector2(minf(max_width, 460.0), 0)
-	box.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.SURFACE_RAISED, Tokens.GOLD, 14))
+	box.add_theme_stylebox_override("panel", Kit.box("slot", Vector4(18, 14, 18, 14)))
 	row.add_child(box)
 
 	var col := VBoxContainer.new()
@@ -1072,13 +1061,13 @@ func _invite_bubble(msg: Dictionary, max_width: float) -> Control:
 	var title := Label.new()
 	title.text = RoomInvite.party_title_text() if party else RoomInvite.title_text()
 	title.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	title.add_theme_color_override("font_color", Tokens.GOLD)
+	title.add_theme_color_override("font_color", SECTION_COLOR)
 	col.add_child(title)
 
 	var text := Label.new()
 	text.text = RoomInvite.party_display_text(msg) if party else RoomInvite.display_text(msg)
 	text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	text.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	text.add_theme_color_override("font_color", Kit.INK)
 	col.add_child(text)
 
 	# 右下角：时间在左、按钮在右，按钮贴着框的右下（要求 3 的「右下角有按钮」）。
@@ -1093,7 +1082,7 @@ func _invite_bubble(msg: Dictionary, max_width: float) -> Control:
 	stamp.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	stamp.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	stamp.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	stamp.add_theme_color_override("font_color", Tokens.TEXT_DISABLED)
+	stamp.add_theme_color_override("font_color", MUTED_COLOR)
 	foot.add_child(stamp)
 
 	if not mine:
@@ -1106,12 +1095,13 @@ func _invite_bubble(msg: Dictionary, max_width: float) -> Control:
 	return row
 
 
-# 点组队邀请的「加入」（10.07 第 10 条）。与房间邀请不同，这里没有「邀请人还在不在房里」
-# 这一层判据 —— 队伍号失效由队伍服务在 join 时拒绝（party.PartyRejected），
-# 客户端不猜。emit 出去由 Main 接（它会开队伍大厅并 join）。
+# 旧消息不能借用同一队伍后来发出的新邀请；未过期的仍由服务端确认。
 func _on_party_invite_join(msg: Dictionary) -> void:
 	var party_id := RoomInvite.party_id_of(msg)
-	if party_id.is_empty():
+	var timestamp := str(msg.get("created_at", ""))
+	var created := Time.get_unix_time_from_datetime_string(timestamp.substr(0, 19)) if timestamp.length() >= 19 else 0
+	# A fresh invitation for the same room must not make an old message valid again.
+	if party_id.is_empty() or (created > 0 and Time.get_unix_time_from_system() - created >= 120):
 		GloryToastScript.show_text(RoomInvite.expired_text())
 		return
 	# ★ 10.11 第 6 条 g：点「加入」= 已经处理了这条邀请 → 红点当场消失
@@ -1199,20 +1189,19 @@ func _set_notice(message: String, bad: bool) -> void:
 		return
 	_notice_label.text = message
 	_notice_label.visible = not message.is_empty()
-	_notice_label.add_theme_color_override("font_color", Tokens.DANGER if bad else Tokens.GOLD)
+	_notice_label.add_theme_color_override("font_color", Color("ffb3a3") if bad else Color("ffe08a"))
 
 
 func _hint(message: String) -> Control:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.SURFACE, Tokens.BORDER.darkened(0.55), Tokens.GAP_M))
+	panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 	var label := Label.new()
 	label.text = message
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	label.add_theme_color_override("font_color", Kit.INK_SOFT)
 	panel.add_child(label)
 	return panel
 

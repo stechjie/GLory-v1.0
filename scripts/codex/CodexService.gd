@@ -264,7 +264,9 @@ static func _treasures() -> Array[Dictionary]:
 			continue
 		var id := str(d.get("id", ""))
 		var entry: Dictionary = text.get(id, {})
-		var effect_text := FinalStatusCatalog.treasure_effect_cn(id) if not UnitDetailFormat.is_en() and not FinalStatusCatalog.treasure_effect_cn(id).is_empty() else _localised(entry, "effect")
+		var effect_text := treasure_effect_en(id) if UnitDetailFormat.is_en() else FinalStatusCatalog.treasure_effect_cn(id)
+		if effect_text.is_empty():
+			effect_text = str(entry.get("effect", ""))
 		if id == "money_golden_altar":
 			effect_text = effect_text.replace("{altar_hp_cost}", str(TreasureService.golden_altar_hp_cost()))
 		out.append({
@@ -279,6 +281,14 @@ static func _treasures() -> Array[Dictionary]:
 			"collectible": true,
 		})
 	return out
+
+static func treasure_effect_en(treasure_id: String) -> String:
+	var entry: Dictionary = _text_table().get("treasures", {}).get(treasure_id, {})
+	var effect := str(entry.get("effect_en", ""))
+	if treasure_id == "ctrl_corrosive_needle":
+		effect = effect.replace("{bleed_bonus}", str(roundi(TreasureService.corrosive_needle_bleed_bonus() * 100.0)))
+	return effect
+
 
 static func _linkages() -> Array[Dictionary]:
 	var text: Dictionary = _text_table().get("linkages", {})

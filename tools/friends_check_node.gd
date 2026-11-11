@@ -122,7 +122,7 @@ func _case_menu_button_wired() -> void:
 
 	# 按钮还连着「敬请期待」的话，整个系统根本进不去 —— 而这不会报错。
 	var source := _read("res://scenes/menu/MainMenu.gd")
-	var hit := source.contains("Vector2(28, 300), Vector2(132, 132), _emit_friends")
+	var hit := source.contains("Vector2(24, 296), Vector2(145, 137), _emit_friends")
 	_h.expect(hit, "menu_button_not_wired",
 		"主菜单「朋友」按钮没接到 _emit_friends（还连着 _show_coming_soon？）")
 

@@ -11,6 +11,10 @@ extends Control
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const PROFILE_BG_TEX := preload("res://assets/ui/profile/hall_of_glory.png")
+# 11.11 羊皮纸风：宠物庭院背景 + 羊皮纸卡片 / 卷轴页签（ui/theme/ParchmentKit.gd）。
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
+const UiJuice := preload("res://ui/theme/UiJuice.gd")
+const ACTIVE_TINT := Color(1.0, 0.9, 0.62)
 const RacePick := preload("res://scripts/units/RacePick.gd")
 # 这一页新加的按钮一律实例化这个场景，不写 Button.new() —— procedural_ui_ratchet 按文件只许降。
 const ActionButtonScene := preload("res://ui/components/GloryActionButton.tscn")
@@ -213,15 +217,8 @@ func _build() -> void:
 	# 这一页此前既没有 theme=，也没有任何 add_theme_stylebox_override，
 	# 而 project.godot 也没有 gui/theme/custom —— 所以按钮走的是引擎
 	# 默认灰色样式，和游戏其它地方长得完全不是一套。
-	theme = Theming.get_theme()
-	# 与头像详情页共用完整场景，不裁切成局部装饰。
-	var bg := TextureRect.new()
-	bg.texture = PROFILE_BG_TEX
-	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
+	theme = Kit.theme()
+	Kit.backdrop(self, "pets_courtyard")
 
 	# 内容列：铺满屏，但设为 IGNORE，否则会盖住返回按钮把点击吃掉（卡片内按钮仍可点）。
 	var col := VBoxContainer.new()
@@ -233,15 +230,14 @@ func _build() -> void:
 	# 灵动岛 / 圆角那几条让出来；背景照样铺满（ui/services/SafeArea.gd）。
 	SafeArea.track(col)
 
-	_title_label = Label.new()
-	_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_title_label.add_theme_font_size_override("font_size", 36)
-	_title_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
-	_title_label.add_theme_color_override("font_outline_color", Tokens.PREP_INK)
-	_title_label.add_theme_constant_override("outline_size", 5)
-	col.add_child(_title_label)
+	# 标题写在缎带上（备战 / 选择初始宠物两种文案，由 _refresh_chrome 填）
+	var banner := Kit.title_banner("", 76.0, 30)
+	_title_label = banner.get_node("TitleText") as Label
+	col.add_child(banner)
 
-	col.add_child(_build_tabs())
+	var tabs := _build_tabs()
+	col.add_child(tabs)
+	UiJuice.pop_in([banner, tabs], 0.0, 0.07, 0.9)
 	col.add_child(_build_pet_box())
 	col.add_child(_build_race_box())
 	col.add_child(_build_skin_box())
@@ -254,6 +250,7 @@ func _build() -> void:
 	_back_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	_back_btn.position = Vector2(_back_btn.position.x - 140, 20)
 	_style_prep_button(_back_btn)
+	_back_btn.custom_minimum_size = Vector2(130, 48)
 	_back_btn.pressed.connect(func(): back_requested.emit())
 	add_child(_back_btn)
 	SafeArea.track(_back_btn)
@@ -272,9 +269,7 @@ func _build_tabs() -> Control:
 		var tab_id: int = spec[0]
 		var button := ActionButtonScene.instantiate() as Button
 		button.text = tr(str(spec[1]))
-		button.custom_minimum_size = Vector2(180, Tokens.TOUCH_MIN)
-		button.toggle_mode = true
-		_style_prep_button(button)
+		Kit.style_tab(button, 50.0, 20)
 		button.pressed.connect(func() -> void: _switch_tab(tab_id))
 		_tab_buttons[tab_id] = button
 		_tab_row.add_child(button)
@@ -289,7 +284,7 @@ func _build_pet_box() -> Control:
 	_hint_label = Label.new()
 	_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_hint_label.add_theme_font_size_override("font_size", 18)
-	_hint_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	Kit.on_backdrop(_hint_label)
 	_pet_box.add_child(_hint_label)
 
 	_cards_row = VBoxContainer.new()
@@ -314,7 +309,7 @@ func _build_pet_box() -> Control:
 	_pet_page_label.custom_minimum_size = Vector2(100, 0)
 	_pet_page_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_pet_page_label.add_theme_font_size_override("font_size", 18)
-	_pet_page_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	Kit.on_backdrop(_pet_page_label)
 	pager.add_child(_pet_page_label)
 	_pet_next_btn = ActionButtonScene.instantiate() as Button
 	_pet_next_btn.text = "〉"
@@ -326,7 +321,7 @@ func _build_pet_box() -> Control:
 	_active_label = Label.new()
 	_active_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_active_label.add_theme_font_size_override("font_size", 18)
-	_active_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	Kit.on_backdrop(_active_label)
 	_active_label.add_theme_color_override("font_outline_color", Tokens.PREP_INK)
 	_active_label.add_theme_constant_override("outline_size", 4)
 	_pet_box.add_child(_active_label)
@@ -363,18 +358,18 @@ func _build_pet_tip() -> void:
 	_pet_tip.custom_minimum_size = Vector2(PET_TIP_WIDTH, PET_TIP_MIN_HEIGHT)
 	_pet_tip.size = Vector2(PET_TIP_WIDTH, PET_TIP_MIN_HEIGHT)
 	_pet_tip.add_theme_stylebox_override("panel",
-		Tokens.panel_box(Tokens.INK_PANEL, Tokens.GOLD_EDGE, int(PET_TIP_PAD)))
+		Kit.box("card", Vector4(PET_TIP_PAD + 6, PET_TIP_PAD + 8, PET_TIP_PAD + 6, PET_TIP_PAD)))
 	_pet_tip_rows = []
 
 	var eyebrow := Label.new()
 	eyebrow.text = tr("pet_skill_tip_title")
 	eyebrow.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	eyebrow.add_theme_color_override("font_color", Tokens.GOLD)
+	eyebrow.add_theme_color_override("font_color", Color("8a4b12"))
 	_add_pet_tip_row(eyebrow)
 
 	_pet_tip_name = Label.new()
 	_pet_tip_name.add_theme_font_size_override("font_size", 24)
-	_pet_tip_name.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+	_pet_tip_name.add_theme_color_override("font_color", Color("8a4b12"))
 	_add_pet_tip_row(_pet_tip_name)
 
 	_add_pet_tip_row(HSeparator.new())
@@ -382,13 +377,13 @@ func _build_pet_tip() -> void:
 	_pet_tip_effect = Label.new()
 	_pet_tip_effect.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_pet_tip_effect.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
-	_pet_tip_effect.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	_pet_tip_effect.add_theme_color_override("font_color", Kit.INK)
 	_add_pet_tip_row(_pet_tip_effect)
 
 	_pet_tip_detail = Label.new()
 	_pet_tip_detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_pet_tip_detail.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	_pet_tip_detail.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	_pet_tip_detail.add_theme_color_override("font_color", Kit.INK_SOFT)
 	_add_pet_tip_row(_pet_tip_detail)
 
 	# 整棵子树一律 IGNORE。浮框只是提示，**绝不能吃掉底下的点击**：mouse_filter
@@ -571,8 +566,9 @@ func _build_card(pet_id: String, starter_mode: bool) -> Control:
 
 	var card := PanelContainer.new()
 	card.custom_minimum_size = CARD_SIZE
-	card.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.PREP_GLASS, Tokens.GOLD_EDGE if is_active else Tokens.PREP_EDGE, 4))
+	# 羊皮纸卡；出战中的那张染金
+	card.add_theme_stylebox_override("panel", Kit.box("card", Vector4(14, 18, 14, 14),
+		ACTIVE_TINT if is_active else Color.WHITE))
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 2)
 	card.add_child(content)
@@ -596,7 +592,7 @@ func _build_card(pet_id: String, starter_mode: bool) -> Control:
 	var name_lbl := Label.new()
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_lbl.add_theme_font_size_override("font_size", 19)
-	name_lbl.add_theme_color_override("font_color", Tokens.PREP_TEXT)
+	name_lbl.add_theme_color_override("font_color", Kit.INK)
 	name_lbl.text = PetService.display_name(pet_id)
 	if is_active:
 		name_lbl.text += "  ✓"
@@ -608,7 +604,7 @@ func _build_card(pet_id: String, starter_mode: bool) -> Control:
 	effect_lbl.max_lines_visible = 2
 	effect_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	effect_lbl.add_theme_font_size_override("font_size", Tokens.FONT_MIN_READABLE)
-	effect_lbl.add_theme_color_override("font_color", Tokens.PREP_TEXT)
+	effect_lbl.add_theme_color_override("font_color", Kit.INK)
 	effect_lbl.text = PetService.effect_text(pet_id)
 	content.add_child(effect_lbl)
 	return card
@@ -634,16 +630,12 @@ func _build_card_button(pet_id: String, owned: bool, is_active: bool, starter_mo
 	return btn
 
 func _style_prep_button(btn: Button, primary: bool = false) -> void:
-	# primary = 金框（「出战中」/选宠主操作）。10.10 起 disabled 也跟随 primary，
-	# 否则「出战中」作为 disabled 会被这条覆盖成无框。
-	var idle := Tokens.PREP_GLASS_RAISED if primary else Tokens.PREP_GLASS
-	btn.add_theme_stylebox_override("normal", Tokens.button_box(idle, Tokens.GOLD_EDGE if primary else Tokens.PREP_EDGE))
-	btn.add_theme_stylebox_override("hover", Tokens.button_box(Tokens.PREP_GLASS_RAISED, Tokens.GOLD_EDGE))
-	btn.add_theme_stylebox_override("pressed", Tokens.button_box(Tokens.PREP_GLASS_RAISED, Tokens.GOLD_EDGE))
-	btn.add_theme_stylebox_override("disabled", Tokens.button_box(
-		Tokens.PREP_GLASS, Tokens.GOLD_EDGE if primary else Tokens.PREP_EDGE))
-	for state in ["font_color", "font_hover_color", "font_pressed_color", "font_disabled_color"]:
-		btn.add_theme_color_override(state, Tokens.PREP_TEXT_MUTED if state == "font_disabled_color" else Tokens.PREP_TEXT)
+	# primary = 金色（「出战中」/选宠主操作）。10.10 起 disabled 也跟随 primary，
+	# 否则「出战中」作为 disabled 会被覆盖成普通底板。
+	Kit.style_plate(btn, primary)
+	if primary:
+		btn.add_theme_stylebox_override("disabled", Kit.box("plate_gold", Vector4(16, 6, 16, 6)))
+		btn.add_theme_color_override("font_disabled_color", Kit.INK_ON_GOLD)
 
 # --- 种族页 -------------------------------------------------------------------
 
@@ -656,7 +648,7 @@ func _build_race_box() -> Control:
 	_race_hint_label = Label.new()
 	_race_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_race_hint_label.add_theme_font_size_override("font_size", 17)
-	_race_hint_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	Kit.on_backdrop(_race_hint_label)
 	_race_box.add_child(_race_hint_label)
 
 	var cards := HFlowContainer.new()
@@ -672,7 +664,7 @@ func _build_race_box() -> Control:
 
 	var roster := PanelContainer.new()
 	roster.add_theme_stylebox_override("panel",
-		Tokens.panel_box(Tokens.PREP_GLASS, Tokens.PREP_EDGE, 12))
+		Kit.box("panel", Vector4(56, 44, 56, 30)))
 	roster.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	roster.custom_minimum_size.x = 990
 	_race_box.add_child(roster)
@@ -684,7 +676,7 @@ func _build_race_box() -> Control:
 	roster_col.add_child(roster_header)
 	_race_roster_title = Label.new()
 	_race_roster_title.add_theme_font_size_override("font_size", 20)
-	_race_roster_title.add_theme_color_override("font_color", Tokens.PREP_TEXT)
+	_race_roster_title.add_theme_color_override("font_color", Kit.INK)
 	roster_header.add_child(_race_roster_title)
 	var bond_btn := ActionButtonScene.instantiate() as Button
 	bond_btn.text = tr("race_pick_view_bond")
@@ -705,7 +697,7 @@ func _build_race_box() -> Control:
 
 	_race_notice = PanelContainer.new()
 	_race_notice.add_theme_stylebox_override("panel",
-		Tokens.panel_box(Tokens.PREP_NOTICE, Tokens.PREP_EDGE, 8))
+		Kit.box("plate_gold", Vector4(20, 6, 20, 6)))
 	_race_notice.visible = false
 	_race_notice.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_race_notice.custom_minimum_size.x = 990
@@ -713,7 +705,7 @@ func _build_race_box() -> Control:
 	_race_notice_label = Label.new()
 	_race_notice_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_race_notice_label.add_theme_font_size_override("font_size", 17)
-	_race_notice_label.add_theme_color_override("font_color", Tokens.PREP_INK)
+	_race_notice_label.add_theme_color_override("font_color", Kit.INK_ON_GOLD)
 	_race_notice.add_child(_race_notice_label)
 
 	return _race_box
@@ -740,7 +732,7 @@ func _build_race_card(race: String) -> Control:
 	var name_lbl := Label.new()
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_lbl.add_theme_font_size_override("font_size", 19)
-	name_lbl.add_theme_color_override("font_color", Tokens.PREP_TEXT)
+	name_lbl.add_theme_color_override("font_color", Kit.INK)
 	content.add_child(name_lbl)
 
 	var btn := ActionButtonScene.instantiate() as Button
@@ -792,9 +784,9 @@ func _refresh_race_card(race: String, forced: bool) -> void:
 	if picked:
 		name_lbl.text += "  ✓"
 	var panel: PanelContainer = parts["panel"]
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.PREP_GLASS if complete else Tokens.PREP_GLASS.darkened(0.22),
-		Tokens.GOLD_EDGE if picked and complete else Tokens.PREP_EDGE, 8))
+	# 种族卡：已集齐的羊皮纸、没集齐的压暗；选中出战的染金
+	panel.add_theme_stylebox_override("panel", Kit.box("slot", Vector4(10, 10, 10, 8),
+		(ACTIVE_TINT if picked else Color.WHITE) if complete else Color(0.72, 0.68, 0.62)))
 	var logo: TextureButton = parts["logo"]
 	# 没解锁的种族 logo 压暗，一眼能看出来（点它会弹「去商城」）。
 	logo.modulate = Color.WHITE if complete else Color(0.38, 0.38, 0.38)
@@ -842,9 +834,8 @@ func _build_unit_tile(unit: Dictionary) -> Control:
 		and not (race_of_unit == "human" and _shop_items.is_empty())
 	var tile := PanelContainer.new()
 	tile.custom_minimum_size = UNIT_TILE_SIZE
-	tile.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.PREP_GLASS_RAISED if not missing else Tokens.PREP_GLASS,
-		Tokens.PREP_EDGE, 4))
+	tile.add_theme_stylebox_override("panel", Kit.box("slot", Vector4(6, 6, 6, 6),
+		Color.WHITE if not missing else Color(0.72, 0.68, 0.62)))
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 1)
 	tile.add_child(col)
@@ -865,13 +856,13 @@ func _build_unit_tile(unit: Dictionary) -> Control:
 	var name_lbl := Label.new()
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_lbl.add_theme_font_size_override("font_size", 14)
-	name_lbl.add_theme_color_override("font_color", Tokens.PREP_TEXT)
+	name_lbl.add_theme_color_override("font_color", Kit.INK)
 	name_lbl.text = str(unit.get("name_en", id)) if TranslationServer.get_locale().begins_with("en") else str(unit.get("name", id))
 	col.add_child(name_lbl)
 	var status := Label.new()
 	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	status.add_theme_font_size_override("font_size", Tokens.FONT_MIN_READABLE)
-	status.add_theme_color_override("font_color", Tokens.PREP_TEXT)
+	status.add_theme_color_override("font_color", Kit.INK)
 	status.text = ("Not owned" if missing else "Tier %d" % int(unit.get("tier", 1))) if TranslationServer.get_locale().begins_with("en") else ("未拥有" if missing else "%d 阶" % int(unit.get("tier", 1)))
 	col.add_child(status)
 	return tile
@@ -1010,7 +1001,7 @@ func _build_skin_box() -> Control:
 	var hint := Label.new()
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.add_theme_font_size_override("font_size", 18)
-	hint.add_theme_color_override("font_color", Color(0.75, 0.78, 0.85))
+	Kit.on_backdrop(hint)
 	hint.text = tr("skin_tab_hint")
 	_skin_box.add_child(hint)
 
@@ -1029,7 +1020,7 @@ func _build_skin_card(skin_id: String) -> Control:
 	var card := PanelContainer.new()
 	card.custom_minimum_size = SKIN_CARD_SIZE
 	card.add_theme_stylebox_override("panel",
-		Tokens.panel_box(Tokens.PREP_GLASS, Tokens.PREP_EDGE, 10))
+		Kit.box("card", Vector4(16, 20, 16, 16)))
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 10)
 	card.add_child(content)
@@ -1048,7 +1039,7 @@ func _build_skin_card(skin_id: String) -> Control:
 	var name_lbl := Label.new()
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_lbl.add_theme_font_size_override("font_size", 24)
-	name_lbl.add_theme_color_override("font_color", Tokens.PREP_TEXT)
+	name_lbl.add_theme_color_override("font_color", Kit.INK)
 	content.add_child(name_lbl)
 
 	var btn := ActionButtonScene.instantiate() as Button
@@ -1110,8 +1101,7 @@ func _refresh_skin_card(skin_id: String, is_active: bool) -> void:
 		name_lbl.text += "  ✓"
 	var panel: PanelContainer = parts["panel"]
 	panel.add_theme_stylebox_override("panel",
-		Tokens.panel_box(Tokens.PREP_GLASS,
-			Tokens.GOLD_EDGE if is_active else Tokens.PREP_EDGE, 10))
+		Kit.box("card", Vector4(16, 20, 16, 16), ACTIVE_TINT if is_active else Color.WHITE))
 	var btn: Button = parts["button"]
 	var loading := _skin_ownership in [SkinOwnership.NOT_LOADED, SkinOwnership.LOADING]
 	if is_active:

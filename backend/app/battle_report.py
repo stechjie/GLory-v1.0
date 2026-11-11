@@ -313,7 +313,11 @@ def _validate_settlement(raw: dict, raw_seats: list) -> dict | None:
                 count = _soft_int(stones_raw.get(kind), 0, 999)
                 if count > 0:
                     stones[kind] = count
-        seats.append({"stones": stones, "total_gold": _soft_int(item.get("total_gold"), 0, _INT_MAX)})
+        seat = {"stones": stones, "total_gold": _soft_int(item.get("total_gold"), 0, _INT_MAX)}
+        ai_name = item.get("ai_name")
+        if item.get("ai") and not item.get("pid") and isinstance(ai_name, str) and ai_name.strip():
+            seat["ai_name"] = ai_name.strip()[:MAX_NAME_LEN]
+        seats.append(seat)
     settlement = {"allies": allies, "stats": stats, "seats": seats}
     if raw.get("end_reason"):
         settlement["end_reason"] = str(raw["end_reason"])[:64]
@@ -505,14 +509,22 @@ async def list_for_player(player_id: uuid.UUID, limit: int) -> list[dict]:
             """,
             [r["match_uid"] for r in rows],
         )
+    settlements = {r["match_uid"]: _jsonb(r["settlement"]) for r in rows}
     by_match: dict[str, list[dict]] = {}
     for s in seats:
+        player_name = s["player_name"]
+        if s["was_ai"] and not s["player_id"]:
+            settlement = settlements.get(s["match_uid"])
+            extras = settlement.get("seats", []) if isinstance(settlement, dict) else []
+            slot = s["slot"]
+            if isinstance(extras, list) and 0 <= slot < len(extras) and isinstance(extras[slot], dict):
+                player_name = extras[slot].get("ai_name") or player_name
         by_match.setdefault(s["match_uid"], []).append(
             {
                 "slot": s["slot"],
                 "team": s["team"],
                 "player_id": str(s["player_id"]) if s["player_id"] else None,
-                "player_name": s["player_name"],
+                "player_name": player_name,
                 "friend_code": s["friend_code"],
                 "was_ai": s["was_ai"],
                 "online_at_end": s["online_at_end"],
@@ -539,7 +551,7 @@ async def list_for_player(player_id: uuid.UUID, limit: int) -> list[dict]:
             "gold_authoritative": r["gold_authoritative"],
             "carrot_authoritative": r["carrot_authoritative"],
             # null = 023 之前打的局，没有详细战况。
-            "settlement": _jsonb(r["settlement"]),
+            "settlement": settlements[r["match_uid"]],
             "seats": by_match.get(r["match_uid"], []),
         }
         for r in rows

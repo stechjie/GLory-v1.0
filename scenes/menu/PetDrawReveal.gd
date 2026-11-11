@@ -2,6 +2,8 @@ extends Control
 
 # Transparent result and pet-detail overlay; no reward is decided here.
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
+# 11.11 羊皮纸风
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
 const Currency := preload("res://scripts/account/Currency.gd")
 const PetPreview := preload("res://scripts/pets/PetPreview.gd")
 const PetService := preload("res://scripts/pets/PetService.gd")
@@ -9,6 +11,7 @@ const SfxService := preload("res://ui/services/SfxService.gd")
 
 signal summon_requested
 signal dismissed
+signal pet_use_requested(pet_id: String, action: Button)
 
 var _phase := ""
 var _panel: PanelContainer
@@ -21,7 +24,7 @@ func _ready() -> void:
 	_panel = PanelContainer.new()
 	_panel.position = Vector2(500, 111)
 	_panel.size = Vector2(600, 490)
-	_panel.add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SUMMON_INFO_GLASS, Tokens.GOLD_EDGE, 16))
+	_panel.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(60, 46, 60, 34)))
 	add_child(_panel)
 	_content = VBoxContainer.new()
 	_content.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -68,7 +71,7 @@ func show_reward(pet_id: String, coin_reward: int, replayed: bool) -> void:
 	_add_button(_t("确认", "Confirm"), _dismiss)
 
 
-func show_pet_info(pet_id: String, _owned: bool) -> void:
+func show_pet_info(pet_id: String, owned: bool, active: bool = false) -> void:
 	_phase = "info"
 	_clear()
 	_add_label(PetService.display_name(pet_id), 30)
@@ -93,7 +96,17 @@ func show_pet_info(pet_id: String, _owned: bool) -> void:
 	detail.add_theme_constant_override("line_separation", 4)
 	detail.text = _skill_markup(PetService.skill_detail_text(pet_id))
 	reading_plate.add_child(detail)
-	_add_button(_t("确认", "Confirm"), _dismiss)
+	if not owned:
+		_add_button(_t("确认", "Confirm"), _dismiss)
+		return
+	var actions := HBoxContainer.new()
+	actions.alignment = BoxContainer.ALIGNMENT_CENTER
+	actions.add_theme_constant_override("separation", 12)
+	_content.add_child(actions)
+	var use := _add_button(_t("使用中", "In use") if active else _t("使用", "Use"), Callable(), actions)
+	use.disabled = active
+	use.pressed.connect(func(): pet_use_requested.emit(pet_id, use))
+	_add_button(_t("关闭", "Close"), _dismiss, actions)
 
 
 func _skill_markup(raw: String) -> String:
@@ -144,20 +157,17 @@ func _add_label(value: String, font_size: int) -> Label:
 	return label
 
 
-func _add_button(value: String, callback: Callable) -> void:
+func _add_button(value: String, callback: Callable, parent: Control = null) -> Button:
 	var button := Button.new()
 	button.text = value
 	button.custom_minimum_size = Vector2(220, 51)
 	button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	button.add_theme_stylebox_override("normal", Tokens.panel_box(Tokens.SUMMON_GLASS, Tokens.GOLD_EDGE, 8))
-	button.add_theme_stylebox_override("hover", Tokens.panel_box(Tokens.SUMMON_GLASS_HOVER, Tokens.GOLD_HOVER, 8))
-	button.add_theme_stylebox_override("pressed", Tokens.panel_box(Tokens.SUMMON_GLASS, Tokens.GOLD_PRESSED, 8))
-	button.add_theme_color_override("font_color", Tokens.SUMMON_DETAIL_INK)
-	button.add_theme_color_override("font_hover_color", Tokens.SUMMON_DETAIL_INK)
-	button.add_theme_constant_override("outline_size", 0)
+	Kit.style_plate(button, true)
 	button.add_theme_font_size_override("font_size", 20)
-	button.pressed.connect(callback)
-	_content.add_child(button)
+	if callback.is_valid():
+		button.pressed.connect(callback)
+	(parent if parent != null else _content).add_child(button)
+	return button
 
 
 func _pop(art: Control) -> void:

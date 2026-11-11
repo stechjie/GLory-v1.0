@@ -8,10 +8,13 @@ const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.
 const PROFILE_BG_TEX := preload("res://assets/ui/profile/hall_of_glory.png")
 const Currency := preload("res://scripts/account/Currency.gd")
 const UnitCollection := preload("res://scripts/account/UnitCollection.gd")
-const GOLD := Color("edca79")
-const CREAM := Color("f8f0dc")
-const MUTED := Color("b9c3c0")
+# 11.11 羊皮纸风：荣誉厅背景 + 羊皮纸面板 / 卡片（ui/theme/ParchmentKit.gd）；字色换成羊皮纸上的深色
+const GOLD := Color("8a4b12")
+const CREAM := Color("4a2c14")
+const MUTED := Color("7a5634")
 const DARK := Color("14252b")
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
+const UiJuice := preload("res://ui/theme/UiJuice.gd")
 
 var _headline: Label
 var _next: Label
@@ -42,25 +45,14 @@ var _compact := false
 
 func _ready() -> void:
 	_compact = get_viewport_rect().size.y < 800
-	theme = Theming.get_theme()
+	theme = Kit.theme()
 	_build()
 	_load()
 
 
 func _build() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var background := TextureRect.new()
-	background.texture = PROFILE_BG_TEX
-	background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(background)
-	var veil := ColorRect.new()
-	veil.color = Color(0.012, 0.030, 0.040, 0.76)
-	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	veil.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(veil)
+	Kit.backdrop(self, "profile_hall")
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	for side in ["left", "right"]:
@@ -74,26 +66,28 @@ func _build() -> void:
 	var header := HBoxContainer.new()
 	header.custom_minimum_size.y = 50 if _compact else 58
 	column.add_child(header)
-	var title := _label(_t("成长之路", "PATH OF GROWTH"), 33, CREAM)
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(title)
+	var title_slot := HBoxContainer.new()
+	title_slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_slot.add_child(Kit.title_banner(_t("成长之路", "PATH OF GROWTH"), 62.0, 26))
+	header.add_child(title_slot)
 	var close := ACTION_BUTTON.instantiate() as Button
 	close.text = _t("返回", "Back")
 	close.custom_minimum_size = Vector2(150, 50 if _compact else 58)
+	Kit.style_plate(close, false)
 	close.pressed.connect(func() -> void: dismissed.emit())
 	header.add_child(close)
 	_close_btn = close
 	var hero := PanelContainer.new()
 	hero.custom_minimum_size.y = 145 if _compact else 175
-	hero.add_theme_stylebox_override("panel", _box(Color("162d32"), GOLD, 18, 2,
-		16 if _compact else 23))
+	hero.add_theme_stylebox_override("panel", Kit.box("panel",
+		Vector4(56, 26, 56, 20) if _compact else Vector4(60, 32, 60, 26)))
 	column.add_child(hero)
 	var hero_row := HBoxContainer.new()
 	hero_row.add_theme_constant_override("separation", 25)
 	hero.add_child(hero_row)
 	var emblem := PanelContainer.new()
 	emblem.custom_minimum_size = Vector2(102, 102) if _compact else Vector2(137, 137)
-	emblem.add_theme_stylebox_override("panel", _box(Color("304b46"), GOLD, 68, 4, 8))
+	emblem.add_theme_stylebox_override("panel", _box(Color("f3dfb4"), Color("c8902e"), 68, 4, 8))
 	hero_row.add_child(emblem)
 	_headline = _label("Lv 1", 36 if _compact else 43, GOLD)
 	_headline.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -110,8 +104,8 @@ func _build() -> void:
 	_progress = ProgressBar.new()
 	_progress.custom_minimum_size.y = 20
 	_progress.show_percentage = false
-	_progress.add_theme_stylebox_override("background", _box(Color("0b171c"), Color("5c726d"), 9, 1, 0))
-	_progress.add_theme_stylebox_override("fill", _box(GOLD, GOLD, 9, 0, 0))
+	_progress.add_theme_stylebox_override("background", _box(Color(0.29, 0.17, 0.08, 0.3), Color(0.29, 0.17, 0.08, 0.5), 9, 1, 0))
+	_progress.add_theme_stylebox_override("fill", _box(Color("e9a62b"), Color("e9a62b"), 9, 0, 0))
 	hero_copy.add_child(_progress)
 	_xp_text = _label("0 / 60 XP", 17, MUTED)
 	hero_copy.add_child(_xp_text)
@@ -119,9 +113,12 @@ func _build() -> void:
 	section.custom_minimum_size.y = 34 if _compact else 40
 	column.add_child(section)
 	var section_title := _label(_t("等级奖励", "LEVEL REWARDS"), 25, GOLD)
+	Kit.on_backdrop(section_title)
 	section_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	section.add_child(section_title)
-	section.add_child(_label(_t("选择等级查看奖励", "Select a level to preview its reward"), 17, MUTED))
+	var section_hint := _label(_t("选择等级查看奖励", "Select a level to preview its reward"), 17, MUTED)
+	Kit.on_backdrop(section_hint)
+	section.add_child(section_hint)
 	_track_scroll = TouchScrollContainer.new()
 	_track_scroll.drag_horizontal = true
 	_track_scroll.custom_minimum_size.y = 195 if _compact else 242
@@ -134,11 +131,13 @@ func _build() -> void:
 	var detail_panel := PanelContainer.new()
 	detail_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	detail_panel.custom_minimum_size.y = 150 if _compact else 170
-	detail_panel.add_theme_stylebox_override("panel", _box(Color("13252c"), Color("9c865a"), 15, 2, 21))
+	detail_panel.add_theme_stylebox_override("panel", Kit.box("panel",
+		Vector4(56, 28, 56, 20) if _compact else Vector4(60, 34, 60, 26)))
 	column.add_child(detail_panel)
 	_detail = HBoxContainer.new()
 	_detail.add_theme_constant_override("separation", 24)
 	detail_panel.add_child(_detail)
+	UiJuice.pop_in([header, hero, _track_scroll, detail_panel], 0.0, 0.06, 0.93)
 
 
 func _load() -> void:
@@ -193,9 +192,9 @@ func _make_card(level: int) -> Button:
 	card.pressed.connect(_select_level.bind(level))
 	var body := VBoxContainer.new()
 	body.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	body.offset_left = 10
-	body.offset_right = -10
-	body.offset_top = 6
+	body.offset_left = 14
+	body.offset_right = -14
+	body.offset_top = 8
 	body.offset_bottom = -6
 	body.alignment = BoxContainer.ALIGNMENT_CENTER
 	body.add_theme_constant_override("separation", 3)
@@ -228,12 +227,13 @@ func _select_level(level: int) -> void:
 		var selected := index == level
 		var obtained := index <= _current_level
 		var card: Button = _cards[index]
-		var fill := Color("30494a") if selected else (Color("23383a") if obtained else DARK)
-		var edge := GOLD if selected else (Color("937d55") if obtained else Color("657875"))
-		card.add_theme_stylebox_override("normal", _box(fill, edge, 13, 3 if selected else 1, 8))
-		card.add_theme_stylebox_override("hover", _box(fill.lightened(0.10), GOLD, 13, 2, 8))
-		card.add_theme_stylebox_override("pressed", _box(fill.darkened(0.08), GOLD, 13, 2, 8))
-		card.add_theme_stylebox_override("focus", _box(fill, GOLD, 13, 3, 8))
+		# 羊皮纸卡：选中染金、已获得原色、未解锁压暗
+		var tint := Color(1.0, 0.86, 0.56) if selected else (Color.WHITE if obtained else Color(0.8, 0.76, 0.7))
+		var pad := Vector4(10, 14, 10, 10)
+		card.add_theme_stylebox_override("normal", Kit.box("card", pad, tint))
+		card.add_theme_stylebox_override("hover", Kit.box("card", pad, tint * Color(1.06, 1.05, 1.0)))
+		card.add_theme_stylebox_override("pressed", Kit.box("card", pad, tint * Color(0.92, 0.9, 0.86)))
+		card.add_theme_stylebox_override("focus", Kit.box("card", pad, tint))
 	_render_detail(level)
 
 
@@ -296,7 +296,7 @@ func _detail_reward_art(reward: Dictionary) -> Control:
 func _reward_art(reward: Dictionary, dimension: int) -> Control:
 	var holder := PanelContainer.new()
 	holder.custom_minimum_size = Vector2(dimension + 20, dimension + 20)
-	holder.add_theme_stylebox_override("panel", _box(Color("263d41"), GOLD, 12, 2, 7))
+	holder.add_theme_stylebox_override("panel", Kit.box("slot", Vector4(8, 8, 8, 8)))
 	var level := int(reward.get("level", 0))
 	var units: Array = reward.get("units", [])
 	var path := ""

@@ -211,7 +211,6 @@ func _zh_strings() -> Dictionary:
 		"lobby_slot_dummy": "%s · 假想敌",
 		"lobby_slot_empty": "%s · 空(点击坐下)",
 		# 战斗 HUD
-		"battle_skip": "跳过画面",
 		# C25：面向玩家的措辞统一成"另一队"。3v3 里另一队是**和你同等的真人玩家**，
 		# "敌方 / 观战"这类词把他们说成了不同等级的对象，也和"两队玩家平等待遇"
 		# 这条已确认的产品规则冲突。内部字段名（rival/enemy）保持不变，只作技术映射。
@@ -749,7 +748,6 @@ func _en_strings() -> Dictionary:
 		"lobby_slot_dummy": "%s · AI",
 		"lobby_slot_empty": "%s · Empty (tap to sit)",
 		# Battle HUD
-		"battle_skip": "Skip",
 		"battle_view_rival": "View Other Team",
 		"battle_view_own": "Back to My Team",
 		"battle_team_hp": "Team HP  %d / %d",

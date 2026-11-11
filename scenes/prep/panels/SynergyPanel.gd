@@ -329,7 +329,7 @@ static func _race_entries(race: String) -> Array:
 		"human":
 			return [
 				{"threshold": 1, "name": "人族特性·三连暴击", "detail": "人族单位每第 3 次攻击必定暴击。"},
-				{"threshold": 2, "name": "人2·护盾", "detail": "开战时普通棋子获得等于 8% 最大生命的护盾。"},
+				{"threshold": 2, "name": "人2·护盾", "detail": "开战时普通棋子获得等于 %d%% 最大生命的护盾。" % roundi(BattleSimulator.HUMAN_SHIELD_PCT * 100.0)},
 				{"threshold": 7, "name": "人7·哀兵", "detail": "己方每阵亡 1 个棋子，存活棋子获得 1 层：最大生命/攻击/防御/攻速 +20%、暴击 +20%、暴击伤害 +10%，并回复 20% 生命（可无限叠加）。"},
 			]
 		"crimson":
@@ -349,14 +349,14 @@ static func _race_entries_en(race: String) -> Array:
 		"god":
 			return [
 				{"threshold": 1, "name": "God Trait: Cleanse", "detail": "When a friendly unit dies, one random surviving ally removes all debuffs."},
-				{"threshold": 3, "name": "God 3: Lifesteal", "detail": "God units restore 20% of actual damage dealt as HP."},
-				{"threshold": 7, "name": "God 7: Divine Pulse", "detail": "From 1s into battle, every 5s your whole team is invincible for 1s (blocks attacks and skills; poison/bleed still hurt)."},
+				{"threshold": 3, "name": "God 3: Lifesteal", "detail": "God units heal for 20% of the actual damage they deal with basic attacks."},
+				{"threshold": 7, "name": "God 7: Divine Pulse", "detail": "Starting 1s into battle and every 5s thereafter, your team’s normal units gain 1s of invulnerability against attacks and skills. Poison, bleed, and burn still deal damage."},
 			]
 		"dark":
 			return [
-				{"threshold": 1, "name": "Dark Trait: Kill Stack", "detail": "Every 3 enemy deaths, Dark units gain 1 stack of +6% damage."},
+				{"threshold": 1, "name": "Dark Trait: Kill Stack", "detail": "Every 3 enemy deaths, Dark units gain a stack of +6% basic attack damage. Stacks add together with no limit."},
 				{"threshold": 2, "name": "Dark 2: Debuff Power", "detail": "All debuffs applied by Dark units are 30% stronger; controls without a numeric strength last 30% longer."},
-				{"threshold": 5, "name": "Dark 5: Damage", "detail": "Dark units deal +25% damage."},
+				{"threshold": 5, "name": "Dark 5: Damage", "detail": "Dark units deal +25% basic attack damage."},
 				{"threshold": 7, "name": "Dark 7: Soul Sap", "detail": "Each Dark basic attack reduces the target’s ATK/DEF/AS by 3% and raises the attacker’s by 3% (up to 15 stacks each)."},
 			]
 		"undead":
@@ -369,8 +369,8 @@ static func _race_entries_en(race: String) -> Array:
 		"human":
 			return [
 				{"threshold": 1, "name": "Human Trait: Triple Crit", "detail": "Every 3rd attack from a Human unit is a guaranteed critical hit."},
-				{"threshold": 2, "name": "Human 2: Shield", "detail": "At battle start, normal units gain a shield equal to 8% max HP."},
-				{"threshold": 7, "name": "Human 7: Vengeance", "detail": "Each time one of your units dies, survivors gain a stack: max HP/ATK/DEF/AS +20%, Crit +20%, CritDmg +10%, and heal 20% HP (no stack limit)."},
+				{"threshold": 2, "name": "Human 2: Shield", "detail": "At battle start, normal units gain a shield equal to %d%% of their max HP." % roundi(BattleSimulator.HUMAN_SHIELD_PCT * 100.0)},
+				{"threshold": 7, "name": "Human 7: Vengeance", "detail": "When an allied normal unit dies, surviving normal units owned by the same player gain one stack. Each stack adds 20% of their starting max HP, ATK, DEF, and attack speed, plus 20 percentage points of crit chance and 10 percentage points of crit damage. They heal for the max HP gained."},
 			]
 		"crimson":
 			return [
@@ -427,8 +427,17 @@ func format_synergy_detail(race: String, count: int) -> String:
 static func format_synergy_effects(race: String) -> String:
 	var blocks: Array[String] = []
 	for item in _race_entries(race):
-		var approved := FinalStatusCatalog.synergy_cn(race, int(item.get("threshold", 0))) if not PrepWidgets.is_en() else {}
-		blocks.append("%s\n%s" % [str(approved.get("name_cn", item.get("name", ""))), str(approved.get("detail_cn", item.get("detail", "")))])
+		var threshold := int(item.get("threshold", 0))
+		var english := PrepWidgets.is_en()
+		var approved := FinalStatusCatalog.synergy_cn(race, threshold) if not english else {}
+		var title := str(approved.get("name_cn", item.get("name", "")))
+		var detail := str(approved.get("detail_cn", item.get("detail", "")))
+		if english:
+			var prefix := race_name(race)
+			title = title.replace("%s %d:" % [prefix, threshold], prefix + ":")
+			if race == "crimson":
+				detail = detail.replace("Crimson 4 Resonance and Crimson 7 Red Tide", "Resonance and Red Tide")
+		blocks.append("%s\n%s" % [title, detail])
 	return "\n\n".join(blocks)
 
 

@@ -176,6 +176,7 @@ static func build(ctx: Dictionary) -> Dictionary:
 			# （进程内门禁走的那条路）。账号服务器据此写 null。
 			"pid": str(raw.get("pid", "")).left(MAX_ID_LEN),
 			"ai": bool(raw.get("was_ai", false)),
+			"ai_name": str(raw.get("ai_name", "")).left(MAX_NAME_LEN),
 			"online": bool(raw.get("online_at_end", false)),
 			"ai_rounds": maxi(0, int(raw.get("ai_rounds", 0))),
 			"gold": maxi(0, int(raw.get("gold", 0))),

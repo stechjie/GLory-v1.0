@@ -357,10 +357,16 @@ func _view_player_profile(identity: Dictionary) -> void:
 	var modal_id := "lobby_player_profile"
 	screen.back_requested.connect(func(): ModalStack.pop(modal_id))
 	ModalStack.push(screen, {"id": modal_id, "owner": self, "priority": 50, "dismiss_on_backdrop": false})
-const TEX_BACKGROUND := preload("res://assets/ui/room_v2/background.png")
-const TEX_BACK := preload("res://assets/ui/room_v2/back.png")
-const TEX_TITLE := preload("res://assets/ui/room_v2/title.png")
-const TEX_SLOT := preload("res://assets/ui/room_v2/slot.png")
+# 11.11 换成羊皮纸风：room_parchment/ 下的图是用羊皮纸部件按 room_v2 原图同尺寸合成的，
+# 座位图里的铭牌仍在 SLOT_PLATE_REGION 那个位置（合成脚本见当次会话记录）。背景换成石台竞技场。
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
+# 标题牌 / 按钮现在是浅色羊皮纸：上面的字改深棕
+const PARCH_INK := Color("4a2c14")
+const PARCH_SECTION := Color("8a4b12")
+const TEX_BACKGROUND := preload("res://assets/ui/page_backgrounds/rooms_arena.png")
+const TEX_BACK := preload("res://assets/ui/room_parchment/back.png")
+const TEX_TITLE := preload("res://assets/ui/room_parchment/title.png")
+const TEX_SLOT := preload("res://assets/ui/room_parchment/slot.png")
 # 10.02 bug 文档：玩家的座位头像框展示要与大厅的头像保持一致。
 # 大厅资料卡在「没戴自定义框」时画的是这张 —— 金棕圆盘垫底 + 大圆头像；
 # 戴了自定义框才改画框 + 小头像（MainMenu._refresh_profile_plate）。
@@ -370,10 +376,10 @@ const TEX_SLOT := preload("res://assets/ui/room_v2/slot.png")
 # 若以后换掉 profile_avatar.png，MainMenu 的注释里那句「换了那张框图就要重新量」
 # 同样适用 —— 席位的圆盘内孔与头像直径也是按那张量出来的。
 const TEX_PROFILE_AVATAR := preload("res://assets/ui/main_menu_live/profile_avatar.png")
-const TEX_FRIENDS := preload("res://assets/ui/room_v2/friends.png")
-const TEX_CHAT := preload("res://assets/ui/room_v2/chat.png")
-const TEX_START := preload("res://assets/ui/room_v2/start.png")
-const TEX_VS := preload("res://assets/ui/room/vs.png")
+const TEX_FRIENDS := preload("res://assets/ui/room_parchment/friends.png")
+const TEX_CHAT := preload("res://assets/ui/room_parchment/chat.png")
+const TEX_START := preload("res://assets/ui/room_parchment/start.png")
+const TEX_VS := preload("res://assets/ui/room_parchment/vs.png")
 const MENU_MUSIC_PATH := "res://assets/audio/bgm/menu_music.mp3"
 # 9.17：组队房间此前和主菜单共用 menu_music，这一批给了它独立的 BGM。
 # 两条常量分开而不是让房间读主菜单那条 —— 房间是「等队友」的场景，
@@ -632,13 +638,13 @@ func _build() -> void:
 	# 现在三行都按木牌内区（y 32~153）排，行间距统一，第三行框底 142 < 164。
 	# 水平框统一成木牌的 475 宽，三行共用一个居中轴（原来是 372 / 250 / 420 三个宽度，
 	# 各自居中，看起来是歪的）。
-	_room_id_lbl = _add_label("", Vector2(599, 88), Vector2(475, 26), 18, Tokens.TEXT_PRIMARY)
+	_room_id_lbl = _add_label("", Vector2(599, 88), Vector2(475, 26), 18, PARCH_INK)
 	_add_label(_room_text("自定义房间", "CUSTOM GAME"), Vector2(599, 40), Vector2(475, 44), 32,
-		Tokens.TEXT_PRIMARY, "", true)
+		PARCH_SECTION, "", false)
 	# 右侧朋友列表：锚定屏幕右边（edge="right"）
 	_add_texture(TEX_FRIENDS, Vector2(1340, 180), Vector2(230, 400), "right")
 	_add_label(_room_text("朋友列表", "Friends"), Vector2(1340, 215), Vector2(230, 42), 28,
-		Tokens.GOLD_HOVER, "right", true)
+		PARCH_SECTION, "right", false)
 	var friends_scroll := TouchScrollContainer.new()
 	friends_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	add_child(friends_scroll)
@@ -669,7 +675,7 @@ func _build() -> void:
 	# 右下开始按钮组、自测、提示：锚定屏幕右边（edge="right"）
 	_start_plate = _add_texture(TEX_START, Vector2(1300, 760), Vector2(270, 130), "right")
 	_start_lbl = _add_label("", Vector2(1300, 790), Vector2(270, 95), 28,
-		Color(0.96, 0.87, 0.70), "right", true)
+		Kit.INK_ON_GOLD, "right", false)
 	_start_btn = _add_hit(Vector2(1300, 790), Vector2(270, 95), _on_primary_pressed, "right", "hit_start")
 	# 离线自测专用入口(officetest):开始游戏上方,仅离线显示,纯追加不动原布局。
 	#
@@ -683,7 +689,7 @@ func _build() -> void:
 	# 状态行：字号 17 → 15、上移到 y=118（框底 142，木牌底 164，留 22px 余量）。
 	# 旧值 (626, 142, 420x28) 的框底 170 已经落到木牌外面了。
 	_status_lbl = _add_label("", Vector2(599, 118), Vector2(475, 24), 15,
-		Tokens.TEXT_PRIMARY, "", true)
+		PARCH_INK, "", false)
 	# 10.11 第 2 条：右上角那颗键从「静音 / 已静音」改成「设定」，打开设置页
 	# （内容 = 对局里的设定少个「退出对局」）。音乐开关在设置页里，静音没丢。
 	_build_settings_button()
@@ -1504,6 +1510,7 @@ func _build_settings_button() -> void:
 		MENU_BTN_SIZE, MENU_BTN_FONT, _open_settings)
 	_settings_button = settings_btn
 	settings_btn.name = "SettingsButton"
+	Kit.style_plate(settings_btn, false)
 	# 同语音键：清掉 make_menu_button 设的最小尺寸，否则窗口缩小时被顶回原尺寸。
 	settings_btn.custom_minimum_size = Vector2.ZERO
 	add_child(settings_btn)

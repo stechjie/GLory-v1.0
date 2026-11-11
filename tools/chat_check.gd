@@ -417,7 +417,7 @@ func _case_chat_entry_wired() -> void:
 	if menu_src.is_empty() or main_src.is_empty():
 		_h.fail("entry_source_unreadable", "读不到 MainMenu.gd 或 Main.gd")
 		return
-	_h.expect(menu_src.contains("Vector2(28, 440), Vector2(132, 132), _emit_chat"),
+	_h.expect(menu_src.contains("Vector2(24, 440), Vector2(145, 130), _emit_chat"),
 		"chat_menu_button_not_wired",
 		"主菜单「聊天」按钮没接到 _emit_chat（还连着 _show_coming_soon？）")
 	_h.expect(main_src.contains("_menu.chat_requested.connect(_show_chat_screen)"),

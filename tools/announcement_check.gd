@@ -248,7 +248,7 @@ func _case_images() -> void:
 
 func _case_wiring() -> void:
 	var menu := FileAccess.get_file_as_string("res://scenes/menu/MainMenu.gd")
-	_h.expect(menu.contains("_add_hit(Vector2(1380, 400), Vector2(270, 250), _emit_announcements"),
+	_h.expect(menu.contains("_add_hit(NEWS_POS, NEWS_SIZE, _emit_announcements"),
 		"news_entry_still_coming_soon", "主菜单「公告 / 活动」那块图点了还是「敬请期待」")
 	var main := FileAccess.get_file_as_string("res://scenes/main/Main.gd")
 	_h.expect(main.contains("_menu.announcements_requested.connect(_show_announcements_screen)"),

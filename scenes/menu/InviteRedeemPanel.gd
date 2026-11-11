@@ -13,6 +13,8 @@ extends PanelContainer
 #    奖励一律发到邮箱，这里不碰钱包。
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
+# 11.11 只在资料页用：跟着资料页换成羊皮纸卡片。
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 
 # 门禁注入假的；平时就是 AccountManager（fetch_invite / bind_invite / redeem_code）。
@@ -86,7 +88,7 @@ func apply_status(status: Dictionary) -> void:
 
 
 func _build() -> void:
-	add_theme_stylebox_override("panel", Tokens.panel_box(Tokens.SURFACE, Tokens.GOLD_EDGE, Tokens.GAP_M))
+	add_theme_stylebox_override("panel", Kit.box("card"))
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", Tokens.GAP_S)
 	add_child(column)
@@ -94,7 +96,7 @@ func _build() -> void:
 	var title := Label.new()
 	title.text = _text("邀请与兑换码", "Invites & codes")
 	title.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
-	title.add_theme_color_override("font_color", Tokens.GOLD)
+	title.add_theme_color_override("font_color", Color("8a4b12"))
 	column.add_child(title)
 
 	var code_row := HBoxContainer.new()
@@ -107,7 +109,7 @@ func _build() -> void:
 	code_row.add_child(caption)
 	_code_label = Label.new()
 	_code_label.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
-	_code_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	_code_label.add_theme_color_override("font_color", Kit.INK)
 	_code_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_code_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	code_row.add_child(_code_label)
@@ -222,7 +224,7 @@ func _small(text_value: String) -> Label:
 	label.text = text_value
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.add_theme_font_size_override("font_size", Tokens.FONT_BODY - 4)
-	label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	label.add_theme_color_override("font_color", Kit.INK_SOFT)
 	return label
 
 

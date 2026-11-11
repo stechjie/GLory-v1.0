@@ -1288,9 +1288,14 @@ func _set_stats_group(group: String) -> void:
 	_stats._refresh_popup()
 # ─── unit detail popup ────────────────────────────────────────────────────────
 
+# 11.11：长按商店卡也是显示那张属性卡（= 选中它），不再弹旧的文字框。
 func _show_shop_detail(index: int) -> void:
-	if index >= 0 and index < GameState.shop_offers.size():
-		_overlay.show_text(UnitDetailFormat.format_unit_def(GameState.shop_offers[index]))
+	if index < 0 or index >= GameState.shop_offers.size():
+		return
+	if _shop.selected != index:
+		_shop._on_card_selected(index)
+	else:
+		_sync_shop_detail_card()
 
 func _show_board_detail(index: int) -> void:
 	var cell = GameState.board_slots[index]

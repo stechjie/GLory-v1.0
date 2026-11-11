@@ -13,7 +13,7 @@ from final_runtime import (
     parse_code_rules,
 )
 from final_excel_owned import overlay_excel_owned, patch_json_scalars
-from export_final_status import build, star_stat
+from export_final_status import build, check_unit_skill_copy, star_stat
 
 ROOT = Path(__file__).resolve().parents[1]
 BOOK = ROOT / "docs/balance/final status.xlsx"
@@ -37,6 +37,27 @@ class FinalRuntimeTest(unittest.TestCase):
         self.assertEqual([], check_runtime_files(ROOT, self.tables))
         self.assertEqual([], check_business_pages(self.book, self.tables))
         self.assertEqual([], check_code_rules(ROOT, self.rules))
+
+    def test_obsolete_unit_descriptions_are_rejected_before_export(self) -> None:
+        stale_cells = {
+            ("dark_imp", 4, "G", 6): "持续4.0秒；暗2会增强效果。",
+            ("undead_poison", 28, "G", 6): "持续4.0秒；灵4毒伤×2。",
+            ("undead_fly", 31, "L", 11): "Up to 2 stacks tick separately.",
+            ("undead_parasite", 32, "E", 4): "普攻标记 + 目标死亡时",
+            ("undead_parasite", 32, "G", 6): "寄生：普攻标记非 Boss 敌人。",
+            ("undead_parasite", 32, "M", 12): "被标记敌人死亡时召唤分身。",
+            ("undead_mother", 35, "L", 11): "Against a Boss, deal 20% of its max HP.",
+            ("undead_mother", 35, "M", 12): "对Boss改为造成30%最大生命伤害。",
+        }
+        for (unit_id, row_number, column, index), stale in stale_cells.items():
+            with self.subTest(unit=unit_id, cell=f"{column}{row_number}"):
+                row = list(next(self.book["02_棋子技能"].iter_rows(
+                    min_row=row_number, max_row=row_number, values_only=True)))
+                self.assertEqual(unit_id, row[0])
+                check_unit_skill_copy(unit_id, row_number, row)
+                row[index] = stale
+                with self.assertRaisesRegex(ValueError, f"{column}{row_number}.*{unit_id}"):
+                    check_unit_skill_copy(unit_id, row_number, row)
 
     def test_runtime_drift_is_detected(self) -> None:
         changed = copy.deepcopy(self.tables)

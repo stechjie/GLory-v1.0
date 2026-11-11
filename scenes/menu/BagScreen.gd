@@ -26,7 +26,14 @@ signal profile_requested   # 头像那块点一下 -> 资料页（换装在那�
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
-const MENU_BG_TEX := preload("res://assets/ui/menu_backgrounds/bag.png")
+# 11.11 羊皮纸风：储藏室背景 + 羊皮纸面板 / 格子（ui/theme/ParchmentKit.gd）。
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
+const UiJuice := preload("res://ui/theme/UiJuice.gd")
+const SECTION_COLOR := Color("8a4b12")
+const BAD_COLOR := Color("a3271a")
+const PANEL_PAD := Vector4(66, 46, 60, 26)
+# 选中的格子染一点金，没选中的保持羊皮纸
+const PICK_TINT := Color(1.0, 0.86, 0.56)
 const PetPreview := preload("res://scripts/pets/PetPreview.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
 const PetService := preload("res://scripts/pets/PetService.gd")
@@ -88,7 +95,7 @@ var _pet_tiles: Dictionary = {}      # pet_id -> PanelContainer
 
 
 func _ready() -> void:
-	theme = Theming.get_theme()
+	theme = Kit.theme()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build()
 	_render()
@@ -101,19 +108,7 @@ func _ready() -> void:
 # --- 骨架 ---------------------------------------------------------------------
 
 func _build() -> void:
-	var bg := TextureRect.new()
-	bg.texture = MENU_BG_TEX
-	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
-
-	var dim := ColorRect.new()
-	dim.color = Color(0.015, 0.035, 0.045, 0.10)
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(dim)
+	Kit.backdrop(self, "inventory_storage")
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -126,16 +121,19 @@ func _build() -> void:
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", Tokens.GAP_M)
 	margin.add_child(root)
-	root.add_child(_header())
+	var header := _header()
+	root.add_child(header)
 
 	_notice_label = Label.new()
 	_notice_label.name = "Notice"
 	_notice_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_notice_label.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
+	Kit.on_backdrop(_notice_label)
 	_notice_label.visible = false
 	root.add_child(_notice_label)
 
-	root.add_child(_tab_bar())
+	var tabs := _tab_bar()
+	root.add_child(tabs)
 	_pet_page = _build_pet_page()
 	root.add_child(_pet_page)
 	_avatar_page = HBoxContainer.new()
@@ -148,6 +146,7 @@ func _build() -> void:
 	_avatar_page.add_child(_detail_panel())
 	_avatar_detail = _detail
 	_avatar_page.hide()
+	UiJuice.pop_in([header, tabs, _pet_page, _avatar_page], 0.0, 0.06, 0.93)
 
 
 func _build_pet_page() -> Control:
@@ -165,7 +164,7 @@ func _build_pet_page() -> Control:
 	var caption := Label.new()
 	caption.text = _t("我的伙伴", "MY COMPANIONS")
 	caption.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
-	caption.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+	Kit.on_backdrop(caption)
 	exhibit.add_child(caption)
 	# ★ 10.12 第 1 条：这里**不能用 CenterContainer**。
 	#
@@ -184,7 +183,7 @@ func _build_pet_page() -> Control:
 	exhibit.add_child(_pet_stage)
 	_pet_empty = Label.new()
 	_pet_empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_pet_empty.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	Kit.on_backdrop(_pet_empty)
 	exhibit.add_child(_pet_empty)
 	var information := PanelContainer.new()
 	information.custom_minimum_size.x = DETAIL_WIDTH
@@ -193,8 +192,7 @@ func _build_pet_page() -> Control:
 	# 现在长文案在面板内部滚动，页面高度不再受文案长度影响。
 	information.custom_minimum_size.y = PET_DETAIL_MIN_HEIGHT
 	information.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	information.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Color(0.035, 0.115, 0.14, 0.78), Color(0.74, 0.56, 0.24, 0.76), Tokens.GAP_L))
+	information.add_theme_stylebox_override("panel", Kit.box("panel", PANEL_PAD))
 	content.add_child(information)
 	var info_scroll := TouchScrollContainer.new()
 	info_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -222,10 +220,9 @@ func _build_pet_page() -> Control:
 
 func _tab_bar() -> Control:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Color(0.025, 0.085, 0.11, 0.64), Color(0.45, 0.58, 0.56, 0.34), Tokens.GAP_S))
+	panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", Tokens.GAP_S)
+	row.add_theme_constant_override("separation", Tokens.GAP_M)
 	panel.add_child(row)
 	for entry in [
 		{"id": TAB_PETS, "zh": "宠物", "en": "Pets"},
@@ -234,7 +231,7 @@ func _tab_bar() -> Control:
 		var tab_id := str(entry.id)
 		var button: Button = ACTION_BUTTON.instantiate()
 		button.text = _t(str(entry.zh), str(entry.en))
-		button.custom_minimum_size = Vector2(180, Tokens.TOUCH_MIN)
+		Kit.style_tab(button, 50.0, 20)
 		button.pressed.connect(func() -> void: _select_tab(tab_id))
 		row.add_child(button)
 		_tab_buttons[tab_id] = button
@@ -245,8 +242,8 @@ func _collection_panel() -> Control:
 	var panel := PanelContainer.new()
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Color(0.035, 0.105, 0.13, 0.46), Color(0.52, 0.65, 0.62, 0.34), Tokens.GAP_S))
+	# 头像格一行 8 个，边距用大面板默认值会把整页撑出屏幕：这块收窄
+	panel.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(34, 40, 34, 20)))
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", Tokens.GAP_S)
 	panel.add_child(col)
@@ -258,7 +255,7 @@ func _collection_panel() -> Control:
 	title.text = _t("我的收藏", "My Collection")
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
-	title.add_theme_color_override("font_color", Tokens.GOLD)
+	title.add_theme_color_override("font_color", SECTION_COLOR)
 	head.add_child(title)
 	_pet_count_label = _count_label()
 	head.add_child(_pet_count_label)
@@ -275,7 +272,7 @@ func _collection_panel() -> Control:
 	scroll.add_child(holder)
 	_empty_label = Label.new()
 	_empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_empty_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	_empty_label.add_theme_color_override("font_color", Kit.INK_SOFT)
 	holder.add_child(_empty_label)
 	_grid = GridContainer.new()
 	_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -289,8 +286,7 @@ func _detail_panel() -> Control:
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(DETAIL_WIDTH, 0)
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	panel.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Color(0.035, 0.105, 0.13, 0.78), Color(0.74, 0.56, 0.24, 0.76), Tokens.GAP_M))
+	panel.add_theme_stylebox_override("panel", Kit.box("panel", PANEL_PAD))
 	_detail = VBoxContainer.new()
 	_detail.name = "CollectionDetail"
 	_detail.add_theme_constant_override("separation", Tokens.GAP_S)
@@ -301,35 +297,23 @@ func _detail_panel() -> Control:
 func _count_label() -> Label:
 	var label := Label.new()
 	label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	label.add_theme_color_override("font_color", Kit.INK_SOFT)
 	return label
 
 
 func _header() -> Control:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", Tokens.GAP_M)
-
-	var back: Button = ACTION_BUTTON.instantiate()
-	back.name = "Back"
-	back.text = _t("← 返回", "← Back")
-	back.custom_minimum_size = Vector2(160, Tokens.TOUCH_MIN)
-	back.pressed.connect(func() -> void: back_requested.emit())
-	row.add_child(back)
-
-	var title := Label.new()
-	title.text = _t("收藏背包", "Collection Bag")
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
-	title.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
-	row.add_child(title)
-
 	var profile: Button = ACTION_BUTTON.instantiate()
 	profile.text = _t("个人资料 →", "Profile →")
-	profile.theme_type_variation = Theming.VARIATION_GHOST
-	profile.custom_minimum_size = Vector2(160, Tokens.TOUCH_MIN)
+	profile.custom_minimum_size = Vector2(150, Tokens.TOUCH_MIN)
+	Kit.style_plate(profile, false)
 	profile.pressed.connect(func() -> void: profile_requested.emit())
-	row.add_child(profile)
+	var row := Kit.header(_t("收藏背包", "Collection Bag"), func() -> void: back_requested.emit(), profile)
+	# 右侧那颗按钮比返回键宽：左边垫一块透明占位补齐，标题才在正中（不能去拉返回键本身，会变形）
+	var pad := Control.new()
+	pad.custom_minimum_size = Vector2(150 - (row.get_child(0) as Control).custom_minimum_size.x, 0)
+	pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(pad)
+	row.move_child(pad, 1)
 	return row
 
 
@@ -382,12 +366,11 @@ func _render() -> void:
 	_notice_label.visible = not _notice.is_empty()
 	_notice_label.text = _notice
 	_notice_label.add_theme_color_override(
-		"font_color", Tokens.DANGER if _notice_bad else Tokens.GOLD)
+		"font_color", Color("ffb3a3") if _notice_bad else Color("ffe08a"))
 
 	for tab_id in _tab_buttons:
 		var tab_button := _tab_buttons[tab_id] as Button
-		tab_button.theme_type_variation = (Theming.VARIATION_PRIMARY
-			if str(tab_id) == _active_tab else Theming.VARIATION_GHOST)
+		tab_button.set_pressed_no_signal(str(tab_id) == _active_tab)
 
 	_clear_children(_grid)
 	_clear_children(_detail)
@@ -457,7 +440,7 @@ func _pet_card(pet_id: String) -> Control:
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_label.clip_text = true
 	name_label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	name_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	name_label.add_theme_color_override("font_color", Kit.INK)
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(name_label)
 	return tile
@@ -467,15 +450,14 @@ func _pet_card(pet_id: String) -> Control:
 # 重建会把正在处理这次点击的控件 remove_child + queue_free 掉。
 func _apply_pet_style(tile: PanelContainer, pet_id: String, active: bool) -> void:
 	var selected := pet_id == _selected_pet
-	tile.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Color(0.04, 0.13, 0.16, 0.84),
-		Tokens.GOLD_EDGE if selected else Color(0.5, 0.66, 0.63, 0.55), Tokens.GAP_S))
+	tile.add_theme_stylebox_override("panel", Kit.box("slot", Vector4(10, 10, 10, 8),
+		PICK_TINT if selected else Color.WHITE))
 
 
 func _apply_avatar_style(tile: PanelContainer, value: String) -> void:
 	tile.add_theme_stylebox_override(
-		"panel", Tokens.panel_box(Tokens.SURFACE_RAISED,
-			Tokens.GOLD_EDGE if value == _selected_avatar else Tokens.BORDER, Tokens.GAP_S))
+		"panel", Kit.box("slot", Vector4(8, 8, 8, 8),
+			PICK_TINT if value == _selected_avatar else Color.WHITE))
 
 
 # 玩家能用的头像：目录里没卖的（免费）+ 买到的付费的。见文件头那段。
@@ -518,8 +500,7 @@ func _pet_preview_stage(pet_id: String, preview_size: Vector2, active: bool) -> 
 	var well := PanelContainer.new()
 	well.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	well.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	well.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.BG_DEEP, Tokens.BORDER.darkened(0.45), Tokens.GAP_S))
+	well.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	stage.add_child(well)
 	var center := CenterContainer.new()
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -535,9 +516,8 @@ func _pet_preview_stage(pet_id: String, preview_size: Vector2, active: bool) -> 
 		badge.position = Vector2(-98, 8)
 		badge.size = Vector2(90, 26)
 		badge.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-		badge.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
-		badge.add_theme_stylebox_override("normal", Tokens.panel_box(
-			Tokens.INK_PANEL, Tokens.GOLD_PRESSED, 2))
+		badge.add_theme_color_override("font_color", SECTION_COLOR)
+		badge.add_theme_stylebox_override("normal", Kit.box("plate_gold", Vector4(8, 2, 8, 2)))
 		badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		stage.add_child(badge)
 	return stage
@@ -565,7 +545,7 @@ func _render_pet_detail(pet_id: String) -> void:
 	var eyebrow := Label.new()
 	eyebrow.text = _t("伙伴档案", "COMPANION PROFILE")
 	eyebrow.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	eyebrow.add_theme_color_override("font_color", Tokens.GOLD)
+	eyebrow.add_theme_color_override("font_color", SECTION_COLOR)
 	_detail.add_child(eyebrow)
 	var name_label := Label.new()
 	name_label.text = PetService.display_name(pet_id)
@@ -577,18 +557,18 @@ func _render_pet_detail(pet_id: String) -> void:
 	effect.text = PetService.effect_text(pet_id)
 	effect.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	effect.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
-	effect.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
+	effect.add_theme_color_override("font_color", Kit.INK)
 	_detail.add_child(effect)
 	var pet_detail := PetService.skill_detail_text(pet_id)
 	if not pet_detail.is_empty() and pet_detail != effect.text:
 		var detail_label := Label.new()
 		detail_label.text = pet_detail
 		detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		detail_label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+		detail_label.add_theme_color_override("font_color", Kit.INK_SOFT)
 		_detail.add_child(detail_label)
 	var status := Label.new()
 	status.text = _t("✓ 当前出战宠物", "✓ Currently equipped") if active else _t("可设为出战", "Ready to equip")
-	status.add_theme_color_override("font_color", Tokens.GOLD_HOVER if active else Tokens.TEXT_SECONDARY)
+	status.add_theme_color_override("font_color", SECTION_COLOR if active else Kit.INK_SOFT)
 	_detail.add_child(status)
 	var action: Button = ACTION_BUTTON.instantiate()
 	action.custom_minimum_size = Vector2(0, Tokens.BUTTON_HEIGHT)
@@ -606,12 +586,11 @@ func _render_avatar_detail(value: String) -> void:
 	var eyebrow := Label.new()
 	eyebrow.text = _t("头像预览", "AVATAR PREVIEW")
 	eyebrow.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	eyebrow.add_theme_color_override("font_color", Tokens.GOLD)
+	eyebrow.add_theme_color_override("font_color", SECTION_COLOR)
 	_detail.add_child(eyebrow)
 	var well := PanelContainer.new()
 	well.custom_minimum_size = Vector2(292, 292)
-	well.add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.BG_DEEP, Tokens.BORDER.darkened(0.45), Tokens.GAP_M))
+	well.add_theme_stylebox_override("panel", Kit.box("slot", Vector4(14, 14, 14, 14)))
 	_detail.add_child(well)
 	var tex := AvatarCatalog.texture_for(value)
 	if tex != null:
@@ -631,7 +610,7 @@ func _render_avatar_detail(value: String) -> void:
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	hint.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	hint.add_theme_color_override("font_color", Kit.INK_SOFT)
 	_detail.add_child(hint)
 	_detail.add_child(_flex_spacer())
 	var action: Button = ACTION_BUTTON.instantiate()
@@ -701,7 +680,7 @@ func _detail_hint(text: String) -> Label:
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	label.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
+	label.add_theme_color_override("font_color", Kit.INK_SOFT)
 	return label
 
 
