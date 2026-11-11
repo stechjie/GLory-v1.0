@@ -1,0 +1,399 @@
+{
+  "scope": "test",
+  "source_commit": "0333f771f254ed0fb3258cd8e08c8e7ddd682fe2",
+  "resources": {
+    "status": "success",
+    "started_at": "20261111-201956-750037",
+    "finished_at": "2026-11-11T20:54:25.807893",
+    "scope": "resources",
+    "remote_files": 4427,
+    "counts": {
+      "downloaded": 0,
+      "checked": 706,
+      "skipped": 3705,
+      "local_preserved": 16
+    },
+    "errors": [],
+    "local_preserved": [
+      {
+        "path": "assets/ui/unit_portraits/human_merchant.png",
+        "reason": "remote_mtime_unknown",
+        "local_sha256": "93d223c44d7bbadd6ec87f3c6669406eeb2095ab3df64b808dde1bc87a5c4cee",
+        "local_mtime_ns": 1788726858000000000,
+        "local_content_mtime_ns": null,
+        "local_time_source": "preserved_local_time",
+        "remote_mtime_ns": null,
+        "cloud_copy": "/Volumes/repository/github/GLory/.glory-sync/conflicts/20261111-201956-750037/assets/ui/unit_portraits/human_merchant.png",
+        "local_changed_since_sync": false
+      },
+      {
+        "path": "assets/ui/unit_portraits/human_militia.png",
+        "reason": "remote_mtime_unknown",
+        "local_sha256": "e337c026b9e5e6650e87c0756bd37e9e82fba549522cd47af945a4838b67432f",
+        "local_mtime_ns": 1788726858000000000,
+        "local_content_mtime_ns": null,
+        "local_time_source": "preserved_local_time",
+        "remote_mtime_ns": null,
+        "cloud_copy": "/Volumes/repository/github/GLory/.glory-sync/conflicts/20261111-201956-750037/assets/ui/unit_portraits/human_militia.png",
+        "local_changed_since_sync": false
+      },
+      {
+        "path": "assets/ui/unit_portraits/human_swordsman.png",
+        "reason": "remote_mtime_unknown",
+        "local_sha256": "05e100d8726949ab8312dbe79533a6416675dabe86a03ce3b8d1c66a2b3d4a49",
+        "local_mtime_ns": 1788726858000000000,
+        "local_content_mtime_ns": null,
+        "local_time_source": "preserved_local_time",
+        "remote_mtime_ns": null,
+        "cloud_copy": "/Volumes/repository/github/GLory/.glory-sync/conflicts/20261111-201956-750037/assets/ui/unit_portraits/human_swordsman.png",
+        "local_changed_since_sync": false
+      },
+      {
+        "path": "assets/ui/unit_portraits/hunter.png",
+        "reason": "remote_mtime_unknown",
+        "local_sha256": "56e87df6675f87ef3bcdc80605a64a0501d6b95d78d52d38cc11d639ced6ffc8",
+        "local_mtime_ns": 1791104803489186874,
+        "local_content_mtime_ns": null,
+        "local_time_source": "preserved_local_time",
+        "remote_mtime_ns": null,
+        "cloud_copy": "/Volumes/repository/github/GLory/.glory-sync/conflicts/20261111-201956-750037/assets/ui/unit_portraits/hunter.png",
+        "local_changed_since_sync": false
+      },
+      {
+        "path": "assets/ui/unit_portraits/Icey.png",
+        "reason": "remote_mtime_unknown",
+        "local_sha256": "eb98ab82728769c4c0b8ae1775d14a205f2bd91467a3ea58e9e51898ce1070eb",
+        "local_mtime_ns": 1791104803221552713,
+        "local_content_mtime_ns": null,
+        "local_time_source": "preserved_local_time",
+        "remote_mtime_ns": null,
+        "cloud_copy": "/Volumes/repository/github/GLory/.glory-sync/conflicts/20261111-201956-750037/assets/ui/unit_portraits/Icey.png",
+        "local_changed_since_sync": false
+      },
+      {
+        "path": "assets/ui/unit_portraits/undead_fly.png",
+        "reason": "remote_mtime_unknown",
+        "local_sha256": "061799a2bbda7565d6879b5224cc4e3bb334a8d74046c0d5b99273f670cffde6",
+        "local_mtime_ns": 1789284334367001266,
+        "local_content_mtime_ns": null,
+        "local_time_source": "preserved_local_time",
+        "remote_mtime_ns": null,
+        "cloud_copy": "/Volumes/repository/github/GLory/.glory-sync/conflicts/20261111-201956-750037/assets/ui/unit_portraits/undead_fly.png",
+        "local_changed_since_sync": false
+      },
+      {
+        "path": "assets/ui/unit_portraits/undead_mother.png",
+        "reason": "remote_mtime_unknown",
+        "local_sha256": "adabaa8680d908b0330ca54dc756e1a48fd3fdf700fc58d19f09325d1c3007b9",
+        "local_mtime_ns": 1789284335443663633,
+        "local_content_mtime_ns": null,
+        "local_time_source": "preserved_local_time",
+        "remote_mtime_ns": null,
+        "cloud_copy": "/Volumes/repository/github/GLory/.glory-sync/conflicts/20261111-201956-750037/assets/ui/unit_portraits/undead_mother.png",
+        "local_changed_since_sync": false
+      },
+      {
+        "path": "assets/ui/unit_portraits/undead_bomb.png",
+        "reason": "remote_mtime_unknown",
+        "local_sha256": "6c097d26cd65407df16ef410f50dd453494126dd2ccdcc4f83430850c74db9a9",
+        "local_mtime_ns": 1788726858000000000,
+        "local_content_mtime_ns": null,
+        "local_time_source": "preserved_local_time",
+        "remote_mtime_ns": null,
+        "cloud_copy": "/Volumes/repository/github/GLory/.glory-sync/conflicts/20261111-201956-750037/assets/ui/unit_portraits/undead_bomb.png",
+        "local_changed_since_sync": false
+      },
+      {
+        "path": "assets/ui/unit_portraits/undead_poison.png",
+        "reason": "remote_mtime_unknown",
+        "local_sha256": "7c43c758986c244c38843f9e84e283c30ef8943b8a86ee056eeafe3b5ac20cdf",
+        "local_mtime_ns": 1789284336130203268,
+        "local_content_mtime_ns": null,
+        "local_time_source": "preserved_local_time",
+        "remote_mtime_ns": null,
+        "cloud_copy": "/Volumes/repository/github/GLory/.glory-sync/conflicts/20261111-201956-750037/assets/ui/unit_portraits/undead_poison.png",
+        "local_changed_since_sync": false
+      },
+      {
+        "path": "assets/ui/unit_portraits/undead_small.png",
+        "reason": "remote_mtime_unknown",
+        "local_sha256": "042cb72589102d45abf849d0c86f215c0cdd8af338ee6278f261ec14bff1000f",
+        "local_mtime_ns": 1789284336832024933,
+        "local_content_mtime_ns": null,
+        "local_time_source": "preserved_local_time",
+        "remote_mtime_ns": null,
+        "cloud_copy": "/Volumes/repository/github/GLory/.glory-sync/conflicts/20261111-201956-750037/assets/ui/unit_portraits/undead_small.png",
+        "local_changed_since_sync": false
+      },
+      {
+        "path": "assets/ui/unit_portraits/undead_spike.png",
+        "reason": "remote_mtime_unknown",
+        "local_sha256": "fcd1a9154644aa7a0d18644142b01b4a57060c643d23630952908256063c1621",
+        "local_mtime_ns": 1789284338040742775,
+        "local_content_mtime_ns": null,
+        "local_time_source": "preserved_local_time",
+        "remote_mtime_ns": null,
+        "cloud_copy": "/Volumes/repository/github/GLory/.glory-sync/conflicts/20261111-201956-750037/assets/ui/unit_portraits/undead_spike.png",
+        "local_changed_since_sync": false
+      },
+      {
+        "path": "assets/ui/unit_portraits/undead_titan.png",
+        "reason": "remote_mtime_unknown",
+        "local_sha256": "29029912e925a53cef196dad89175cf09875962c1d760c49d44c55f0324a083b",
+        "local_mtime_ns": 1789284337791737495,
+        "local_content_mtime_ns": null,
+        "local_time_source": "preserved_local_time",
+        "remote_mtime_ns": null,
+        "cloud_copy": "/Volumes/repository/github/GLory/.glory-sync/conflicts/20261111-201956-750037/assets/ui/unit_portraits/undead_titan.png",
+        "local_changed_since_sync": false
+      },
+      {
+        "path": "assets/ui/unit_portraits/undead_parasite.png",
+        "reason": "remote_mtime_unknown",
+        "local_sha256": "f77b09e05be613c7d949a17bea0421cd180e932db9abfb85a03257dd241bf24e",
+        "local_mtime_ns": 1789284336137483253,
+        "local_content_mtime_ns": null,
+        "local_time_source": "preserved_local_time",
+        "remote_mtime_ns": null,
+        "cloud_copy": "/Volumes/repository/github/GLory/.glory-sync/conflicts/20261111-201956-750037/assets/ui/unit_portraits/undead_parasite.png",
+        "local_changed_since_sync": false
+      },
+      {
+        "path": "assets/ui/unit_portraits/lattern.png",
+        "reason": "remote_mtime_unknown",
+        "local_sha256": "81c28c6e37bc9cbd1cf20746be68771cab85391aa853d994473c680c00a42c9e",
+        "local_mtime_ns": 1791104803292748252,
+        "local_content_mtime_ns": null,
+        "local_time_source": "preserved_local_time",
+        "remote_mtime_ns": null,
+        "cloud_copy": "/Volumes/repository/github/GLory/.glory-sync/conflicts/20261111-201956-750037/assets/ui/unit_portraits/lattern.png",
+        "local_changed_since_sync": false
+      },
+      {
+        "path": "assets/ui/unit_portraits/skypierce.png",
+        "reason": "remote_mtime_unknown",
+        "local_sha256": "c46a9666119edef986aa12fdb9f389fdcbd79d6348a2530cbe3d7a52d386f1ac",
+        "local_mtime_ns": 1791104804044965898,
+        "local_content_mtime_ns": null,
+        "local_time_source": "preserved_local_time",
+        "remote_mtime_ns": null,
+        "cloud_copy": "/Volumes/repository/github/GLory/.glory-sync/conflicts/20261111-201956-750037/assets/ui/unit_portraits/skypierce.png",
+        "local_changed_since_sync": false
+      },
+      {
+        "path": "assets/audio/sfx/battle/monster_coin_crisp.wav.import",
+        "reason": "remote_mtime_unknown",
+        "local_sha256": "b98d8e47591b1668464b81c34d7034f45d884b8c2f4a5fd21d135ce53985368e",
+        "local_mtime_ns": 1793442126822741726,
+        "local_content_mtime_ns": null,
+        "local_time_source": "preserved_local_time",
+        "remote_mtime_ns": null,
+        "cloud_copy": "/Volumes/repository/github/GLory/.glory-sync/conflicts/20261111-201956-750037/assets/audio/sfx/battle/monster_coin_crisp.wav.import",
+        "local_changed_since_sync": false
+      }
+    ],
+    "local_only_kept": [
+      "assets.bundle.json",
+      "assets.manifest.json",
+      "assets/models/units/dark_fear.glb",
+      "assets/models/units/dark_fear_0.jpg",
+      "assets/models/units/dark_fear_1.jpg",
+      "assets/models/units/dark_fear_2.jpg",
+      "assets/models/units/dark_fear_2.jpg.import",
+      "assets/models/units/dark_fear_3.jpg",
+      "assets/models/units/dark_fear_3.jpg.import",
+      "assets/models/units/dark_queen_animated/dark_queen_attack.fbx",
+      "assets/models/units/dark_queen_animated/dark_queen_attack.fbx.import",
+      "assets/models/units/dark_queen_animated/dark_queen_idle.fbx",
+      "assets/models/units/dark_queen_animated/dark_queen_idle.fbx.import",
+      "assets/models/units/dark_queen_animated/dark_queen_run.fbx",
+      "assets/models/units/dark_queen_animated/dark_queen_run.fbx.import",
+      "assets/models/units/dark_scythe.glb",
+      "assets/models/units/dark_scythe.glb.import",
+      "assets/models/units/dark_scythe_0.jpg",
+      "assets/models/units/dark_scythe_0.jpg.import",
+      "assets/models/units/dark_scythe_1.jpg",
+      "assets/models/units/dark_scythe_1.jpg.import",
+      "assets/models/units/dark_scythe_2.jpg",
+      "assets/models/units/dark_scythe_2.jpg.import",
+      "assets/models/units/dark_scythe_3.jpg",
+      "assets/models/units/dark_scythe_3.jpg.import",
+      "assets/ui/buttons/btn_buy_lowpoly (1).png",
+      "assets/ui/shop/crimson_units_bg.png",
+      "assets/ui/treasure_logos/4元素.png (1).import",
+      "assets/ui/treasure_logos/4控制.png (1).import",
+      "assets/ui/treasure_logos/4攻击.png (1).import",
+      "assets/ui/treasure_logos/4金钱.png (1).import",
+      "assets/ui/treasure_logos/4防卫.png (1).import",
+      "assets/ui/treasure_logos/亡魂反击.png (1).import",
+      "assets/ui/treasure_logos/冰封霜刃.png (1).import",
+      "assets/ui/treasure_logos/凤凰涅槃.png (1).import"
+    ],
+    "backup_directory": "/Volumes/repository/github/GLory/.glory-sync/backups/20261111-201956-750037"
+  },
+  "android": {
+    "bytes": 698108174,
+    "sha256": "4e34a9c15df1bb717595456ca25c9315e728b13f9096c72ef96eb969d5fd6d83",
+    "source_commit": "0333f771f254ed0fb3258cd8e08c8e7ddd682fe2",
+    "build": 64,
+    "version": "1.0.2",
+    "build_evidence": {
+      "git_commit": "0333f771f254ed0fb3258cd8e08c8e7ddd682fe2",
+      "asset_inventory_sha256": "6bd9c339f327219685c6d95f4934fe19831cb5087e3d1f9e782595e3d484ad15",
+      "server_target": {
+        "environment": "test",
+        "backend_url": "https://test-api.gogoglory.com",
+        "battle_host": "test-battle.gogoglory.com",
+        "dtls_cert_sha256": "f773c1a5e917e3fe7c0c938ee19ed2ecfc0b16ed3ecf8fb8f3fa6987a49c250d"
+      },
+      "signed": true,
+      "built": true,
+      "device_tested": false,
+      "patch_base": {
+        "archive": "/Volumes/repository/github/GLory/build/apk/Glory-release-slim-20261111-205428-0333f771-patch-base/base.zip",
+        "manifest": "/Volumes/repository/github/GLory/build/apk/Glory-release-slim-20261111-205428-0333f771-patch-base/base.export.json",
+        "sha256": "9c9158734f36484eda9354bdf895b1618efa4e81178491a41412b3f865a2f76b",
+        "base_id": "glory-20261111-test-refresh",
+        "debug": false,
+        "payload_verification": {
+          "identical_base_files": 6178,
+          "platform": "android",
+          "payload_matches_baseline": true
+        }
+      }
+    }
+  },
+  "server": {
+    "status": "deployed",
+    "commit": "0333f771f254ed0fb3258cd8e08c8e7ddd682fe2",
+    "project": "project-60c72d94-b558-4e4f-992",
+    "database_project": "tzkysvnpjmgzfbvazugi",
+    "release": "/home/nins17121/Glory/releases/1.0.2-20261111-0333f771",
+    "protocol": 46,
+    "idle_checks": [
+      {
+        "battle_connections": 0,
+        "account_online": 0,
+        "room_count": 0,
+        "at": "2026-11-11T13:08:10.556256+00:00"
+      },
+      {
+        "battle_connections": 0,
+        "account_online": 0,
+        "room_count": 0,
+        "at": "2026-11-11T13:08:13.976014+00:00"
+      }
+    ],
+    "services": {
+      "glory-server": "active",
+      "glory-backend": "active",
+      "livekit": "active",
+      "caddy": "active"
+    },
+    "health": {
+      "status": "ok",
+      "environment": "prod",
+      "configured": true,
+      "missing_config": []
+    },
+    "schema_verified": true,
+    "old_pid": "38309",
+    "new_pid": "39255",
+    "backend_pid": "38258",
+    "updated_files": [
+      "data/codex/treasure_text.json"
+    ],
+    "rollback_directory": "/home/nins17121/Glory/delivery/release-20261111-test",
+    "verified_at": "2026-11-11T13:08:22.574838+00:00",
+    "device_gameplay_tested": false,
+    "actual_dtls_certificate_sha256": "f773c1a5e917e3fe7c0c938ee19ed2ecfc0b16ed3ecf8fb8f3fa6987a49c250d"
+  },
+  "ios": {
+    "build": 92,
+    "version": "1.0.2",
+    "built": true,
+    "signed": true,
+    "uploaded": false,
+    "internal_testing": false,
+    "sha256": "62551cba443144f33c8116c557c64fbd9f3b96401797e9d8f6d94d5c3edbd6a3",
+    "bytes": 661522682,
+    "asset_inventory_sha256": "6bd9c339f327219685c6d95f4934fe19831cb5087e3d1f9e782595e3d484ad15",
+    "upload_started": true,
+    "baseline_registered": true,
+    "build_evidence": {
+      "git_commit": "0333f771f254ed0fb3258cd8e08c8e7ddd682fe2",
+      "asset_inventory_sha256": "6bd9c339f327219685c6d95f4934fe19831cb5087e3d1f9e782595e3d484ad15",
+      "server_target": {
+        "environment": "test",
+        "backend_url": "https://test-api.gogoglory.com",
+        "battle_host": "test-battle.gogoglory.com",
+        "dtls_cert_sha256": "f773c1a5e917e3fe7c0c938ee19ed2ecfc0b16ed3ecf8fb8f3fa6987a49c250d"
+      },
+      "signed": true,
+      "built": true,
+      "device_tested": null,
+      "patch_base": {
+        "archive": "/Volumes/repository/github/GLory/build/ios-auto-work/runs/20261111-211155-442209/patch-base/base.zip",
+        "manifest": "/Volumes/repository/github/GLory/build/ios-auto-work/runs/20261111-211155-442209/patch-base/base.export.json",
+        "sha256": "7e6e38ae4c5e7961a20688429d9a192728931791aa9131603a172dda6181ea73",
+        "base_id": "glory-20261111-test-refresh",
+        "debug": false,
+        "payload_verification": {
+          "identical_base_files": 6180,
+          "platform": "ios",
+          "payload_matches_baseline": true
+        }
+      }
+    }
+  },
+  "android_drive_uploaded": true,
+  "qr_published": true,
+  "validation": {
+    "final_check": true,
+    "runtime_tests": 17,
+    "runtime_subtests": 488,
+    "backend_battle_report_tests": 62,
+    "beta_tests": 7,
+    "mac_external_udp_probe": "timeout under current local network",
+    "physical_gameplay_tested": false
+  },
+  "git_sync_pushed": true,
+  "published": {
+    "status": "published",
+    "config": {
+      "ios": {
+        "ready": true,
+        "url": "https://testflight.apple.com/join/W2p1ukJp",
+        "version": "1.0.2 (89)",
+        "pending_version": ""
+      },
+      "android": {
+        "ready": true,
+        "mode": "apk",
+        "url": "https://test-api.gogoglory.com/beta/downloads/Glory-1.0.2-64-android.apk",
+        "version": "1.0.2 (64)",
+        "size_bytes": 698108174,
+        "size_label": "665.8 MiB"
+      }
+    },
+    "drive": {
+      "upload_complete": true,
+      "size_readback_verified": true,
+      "file_id": "1eDiOUBJ-P0b2yww_qLbn3-P62a9Dq529",
+      "bytes": 698108174,
+      "sha256": "4e34a9c15df1bb717595456ca25c9315e728b13f9096c72ef96eb969d5fd6d83",
+      "account": "bytegamesg2025@gmail.com",
+      "parent": "1xjn5Hpa4AzSS8v7hgECEZstHb3dG6m11",
+      "url": "https://drive.google.com/file/d/1eDiOUBJ-P0b2yww_qLbn3-P62a9Dq529/view?usp=drivesdk"
+    },
+    "drive_full_sha256_readback_verified": true,
+    "server_apk_sha256": "4e34a9c15df1bb717595456ca25c9315e728b13f9096c72ef96eb969d5fd6d83",
+    "server_apk_bytes": 698108174,
+    "base_id": "glory-20261111-test-refresh",
+    "includes_seq": 4,
+    "qr_sha256": "dd3d8cdce298efe0060d783613d9ba5c4f5bb42a7c15b1f76743a8fc0927dab6",
+    "verified_at": "2026-11-11T13:43:50.457426+00:00"
+  },
+  "qr_url": "https://test-api.gogoglory.com/beta/invite-qr.png",
+  "download_page_verified_in_browser": true
+}

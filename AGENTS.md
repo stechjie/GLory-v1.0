@@ -14,9 +14,11 @@
 | IP | `34.124.141.90` | `35.247.132.13` |
 | 账号接口 | `https://test-api.gogoglory.com` | `https://api.gogoglory.com` |
 | 战斗（UDP + DTLS） | `test-battle.gogoglory.com:8080` | `battle.gogoglory.com:8080` |
-| 语音 | `wss://glorytd-voice.duckdns.org` | `wss://glorytd-prod-voice.duckdns.org` |
+| 语音 | `wss://test-voice.gogoglory.com` | `wss://glorytd-prod-voice.duckdns.org` |
 
-### 自有域名 gogoglory.com：打包已全部切换，旧域名还不能撤
+### 自有域名 gogoglory.com：迁移记录
+
+**2026-11-11 晚间测试服实测更新：** 用户已在同日另一个任务授权停用旧 DuckDNS 入口（见 `deploy/releases/20261111/retire_duckdns.py`）。测试服实际仅服务 `test-api.gogoglory.com` 和 `test-voice.gogoglory.com`；旧 API 的 TLS 失败是预期结果，不要为兼容旧包恢复旧站点。新测试包 Android 64 / iOS 92 使用新账号、战斗域名，测试下载页和新二维码统一为 `https://test-api.gogoglory.com/beta/`。下文“旧域名还不能撤”相关内容是停用前的历史检查记录；正式服状态需单独实时核验。
 
 2026-11-11 买了 `gogoglory.com`，起因是 `duckdns.org` 在中国大陆解析不稳、玩家卡在
 「Update incomplete」。先切测试服，当天用户在电脑上实测登录 + 自定义房间通过后，

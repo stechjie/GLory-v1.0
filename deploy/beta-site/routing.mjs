@@ -15,7 +15,7 @@ export function verifiedURL(value, kind) {
       return !u.search && u.hostname === 'play.google.com' && /^\/apps\/testing\/[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+\/?$/.test(u.pathname) ? u.href : '';
     }
     if (kind === 'apk') {
-      return !u.search && u.hostname === 'glorytd-api.duckdns.org' && /^\/beta\/downloads\/Glory-[A-Za-z0-9.-]+-android\.apk$/.test(u.pathname) ? u.href : '';
+      return !u.search && u.hostname === 'test-api.gogoglory.com' && /^\/beta\/downloads\/Glory-[A-Za-z0-9.-]+-android\.apk$/.test(u.pathname) ? u.href : '';
     }
     if (kind === 'group') {
       return !u.search && u.hostname === 'groups.google.com' && /^\/g\/[A-Za-z0-9_-]+(?:\/about)?\/?$/.test(u.pathname) ? u.href : '';

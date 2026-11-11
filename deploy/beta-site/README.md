@@ -1,6 +1,8 @@
 # GLory 测试下载入口
 
-固定地址：`https://glorytd-api.duckdns.org/beta/`。二维码始终编码此地址，中间使用游戏水晶图标。
+2026-11-11 起旧 DuckDNS 入口已停用，旧二维码需要更换。
+
+固定地址：`https://test-api.gogoglory.com/beta/`。二维码始终编码此地址，中间使用游戏水晶图标。
 
 - iPhone/iPad：使用现有 TestFlight 公开测试邀请。仅当 `ios.ready` 为 true 时自动跳转；新版尚待处理或审核时显示等待说明，避免继续安装不兼容的旧客户端。
 - Android：当前使用 `mode: apk`，官网 `/beta/downloads/` 直接提供已签名的精简 APK；不需要测试群组或 Google Play 报名。
@@ -13,7 +15,7 @@
 
 ```sh
 node --test deploy/beta-site/*.test.mjs
-python3 deploy/beta-site/install.py --domain glorytd-api.duckdns.org --check-only
+python3 deploy/beta-site/install.py --domain test-api.gogoglory.com --check-only
 ```
 
 尚未完成对应平台的公开下载验证时保持该平台 `ready: false`。仅在有意发布等待状态时使用 `--allow-pending`。
@@ -21,7 +23,7 @@ python3 deploy/beta-site/install.py --domain glorytd-api.duckdns.org --check-onl
 将本目录复制到服务器后运行：
 
 ```sh
-sudo python3 /已上传目录/install.py --domain glorytd-api.duckdns.org
+sudo python3 /已上传目录/install.py --domain test-api.gogoglory.com
 ```
 
 安装器备份 `/opt/glory/public/beta`、Caddy 配置，验证后热重载；失败则恢复。部署只涉及下载页面，不重启账号或战斗服务。上线验收应包含 HTTPS 页面、APK 大小与 SHA-256、下载响应、TestFlight 实际可用版本、二维码识别及 `/health`；只有切回 Play 模式时才检查群组与报名。

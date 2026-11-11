@@ -18,12 +18,12 @@ test('embedded and manual browsers never redirect',()=>{
  assert.equal(automaticDestination(config,'iPhone',1,true),'');
 });
 test('verified ready first-party APK is downloadable without a group',()=>{
- const apk='https://glorytd-api.duckdns.org/beta/downloads/Glory-0.0.25-38-android.apk';
+ const apk='https://test-api.gogoglory.com/beta/downloads/Glory-0.0.25-38-android.apk';
  const c={...config,android:{mode:'apk',ready:true,url:apk}};
  assert.equal(destinations(c).android,apk);
  assert.equal(destinations(c).group,'');
  assert.equal(destinations({...c,android:{...c.android,ready:false}}).android,'');
- for(const bad of [apk+'?redirect=evil',apk.replace('glorytd-api.duckdns.org','evil.test'),apk.replace('/beta/downloads/','/private/')]) assert.equal(verifiedURL(bad,'apk'),'');
+ for(const bad of [apk.replace('test-api.gogoglory.com','glorytd-api.duckdns.org'),apk+'?redirect=evil',apk.replace('test-api.gogoglory.com','evil.test'),apk.replace('/beta/downloads/','/private/')]) assert.equal(verifiedURL(bad,'apk'),'');
  const pending={...c,ios:{...c.ios,ready:false}};
  assert.equal(automaticDestination(pending,'iPhone',1),'');
 });
