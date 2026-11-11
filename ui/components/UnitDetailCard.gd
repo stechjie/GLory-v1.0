@@ -169,9 +169,9 @@ func setup(cell: Dictionary, p_compact := false, upgrade_panel: Control = null) 
 	col.add_theme_constant_override("separation", 4)
 	add_child(col)
 	col.add_child(_header(d, star))
-	col.add_child(_section_title(_t("属性", "Stats")))
+	col.add_child(_section_title(_t("四星属性", "4-Star Stats") if star >= 4 else _t("属性", "Stats")))
 	col.add_child(_stats(g))
-	col.add_child(_section_title(_t("技能", "Skill")))
+	col.add_child(_section_title(_t("四星技能", "4-Star Skill") if star >= 4 else _t("技能", "Skill")))
 	col.add_child(_skill(d, star))
 	col.add_child(_four_star(d))
 
@@ -427,7 +427,8 @@ func _skill_parts(d: Dictionary, star: int) -> Array:
 	var table = DataRegistry.get_table("final_status")
 	if table is Dictionary:
 		row = table.get("units", {}).get(id, {})
-	var sd := d.duplicate()
+	# 技能数值按星级套一遍（四星参数在 def.star4 里）—— 英文和兜底模板都直接读这些数
+	var sd: Dictionary = d.duplicate() if mercenary else UnitFactory.apply_star_stats(d, star)
 	sd["star"] = star
 	var full := UnitDetailFormat.format_skill_detail(sd)
 	var name := str(row.get("skill_name_en" if UnitDetailFormat.is_en() else "skill_name_cn", ""))

@@ -60,13 +60,25 @@ const STATS_BTN_PATH := "res://assets/ui/buttons/btn_stats.png"           # 统�
 const STATS_BTN_SIZE := Vector2(140, 94)                                  # 比例 1.5
 # 11.05 起刷新按钮是空心金框，中间图案按皮肤用代码画（PrepRefreshEmblem）。
 const REFRESH_BTN_PATH := "res://assets/ui/buttons/btn_refresh_blank.png"
+const REFRESH_RING_PATH := "res://assets/ui/prep_buttons/refresh_ring.png"
 const PrepRefreshEmblem := preload("res://scenes/prep/PrepRefreshEmblem.gd")
-const TOP_POWER_BTN_PATH := "res://assets/ui/buttons/btn_top_power.png"
-const TOP_STATS_BTN_PATH := "res://assets/ui/buttons/btn_top_last_battle.png"
-const TOP_SETTINGS_BTN_PATH := "res://assets/ui/buttons/btn_top_settings.png"
-const MERC_BTN_PATH := "res://assets/ui/buttons/btn_merc_lowpoly.png"
-const TEAM_MERCS_BTN_PATH := "res://assets/ui/buttons/btn_team_mercs_lowpoly.png"
-const CARROT_BTN_PATH := "res://assets/props/carrot_system/ui/button_carrot_camp.png"
+# 11.12 摆放界面按钮换成羊皮纸那一批（assets/ui/prep_buttons，用户出的图，字由代码写）
+const TOP_POWER_BTN_PATH := "res://assets/ui/prep_buttons/top_power.png"
+const TOP_STATS_BTN_PATH := "res://assets/ui/prep_buttons/top_last_battle.png"
+const TOP_SETTINGS_BTN_PATH := "res://assets/ui/prep_buttons/top_settings.png"
+const PREP_BUTTON_INK := Color("4a2608")
+const PREP_BUTTON_OUTLINE := Color("f6e2bd")
+# 11.12 佣兵选择层 = 用户出的整张招募板（assets/ui/prep/merc_panel.png，1672×941，
+# 12 个格子、标题缎带、计数牌、关闭键都画在图上，字和头像由代码按图上的像素位置摆）。
+const MERC_PANEL_ART_PATH := "res://assets/ui/prep/merc_panel.png"
+const MERC_PANEL_ART_SIZE := Vector2(1672, 941)
+const MERC_PANEL_GRID_ORIGIN := Vector2(320, 133)   # 左上第一格的卡片原点（头像框左上 - (37, 12)）
+const MERC_PANEL_CARD_SIZE := Vector2(238, 238)
+const MERC_PANEL_GRID_GAP := Vector2(26, 12)        # 头像框间距 264 × 250 减去卡宽高
+const MERC_RECRUITMENT_INK := Color("4a2608")
+const MERC_BTN_PATH := "res://assets/ui/prep_buttons/merc.png"
+const TEAM_MERCS_BTN_PATH := "res://assets/ui/prep_buttons/team_mercs.png"
+const CARROT_BTN_PATH := "res://assets/ui/prep_buttons/carrot_camp.png"
 # 局内聊天入口。**刻意与主界面用同一张图**（MainMenu.TEX_CHAT），
 # 让「聊天」这个入口在两个界面里长得一样 —— 换图要两处一起换。
 # 11.05：右下角通讯一排换成跟队友 / 所有人同一套金框（用户出的图），不再用主界面那张。
@@ -1208,8 +1220,12 @@ func _build_sell_zone_and_refresh(body: HBoxContainer, center_host: Control) -> 
 	refresh_shop.offset_right = -13
 	refresh_shop.offset_bottom = -70
 	refresh_shop.focus_mode = Control.FOCUS_NONE
-	var refresh_frame := TextureRect.new()    # 循环箭头图标框（箭头已画死）
-	refresh_frame.texture = PrepWidgets.cached_texture(REFRESH_BTN_PATH)
+	# 11.12：换成新的金色圆框（摆放界面那批按钮里的圆框），框里先垫一层代码画的羊皮纸底
+	var refresh_disc := preload("res://scenes/prep/PrepRefreshDisc.gd").new()
+	refresh_disc.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	refresh_shop.add_child(refresh_disc)
+	var refresh_frame := TextureRect.new()
+	refresh_frame.texture = PrepWidgets.cached_texture(REFRESH_RING_PATH)
 	refresh_frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	refresh_frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	refresh_frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -1324,6 +1340,15 @@ func _build_merc_panels(body: HBoxContainer, center_host: Control) -> void:
 	_build_team_mercs_overlay(center_host)
 
 	_build_detail_popups()
+# 摆放界面羊皮纸按钮上的字：思源黑体粗、深棕；压在图上的加一圈浅色细描边
+func _style_prep_button_label(label: Label, font_size: int, outline := true) -> void:
+	label.add_theme_font_override("font", preload("res://ui/components/UnitDetailCard.gd").font(false, 800))
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", PREP_BUTTON_INK)
+	label.add_theme_color_override("font_outline_color", PREP_BUTTON_OUTLINE)
+	label.add_theme_constant_override("outline_size", 3 if outline else 0)
+
+
 func _build_top_actions() -> void:
 	# 右上角横排：战力推荐 | 统计 | 设定（缩小，A 需求）。加到 self 顶层（z 高，不被 body 拦点击）。
 	var top_row := HBoxContainer.new()
@@ -1350,6 +1375,14 @@ func _build_top_actions() -> void:
 		TOP_ROW_BTN_SIZE, 13, _open_settings)
 	settings_btn.name = "SettingsButton"
 	top_row.add_child(settings_btn)
+	# 新卡片是浅色羊皮纸：字改成深棕、浅色细描边，压在图标下面那一截
+	for top_btn in top_row.get_children():
+		var caption := (top_btn as Node).get_node_or_null("Caption") as Label
+		if caption == null:
+			continue
+		caption.anchor_top = 0.66
+		caption.anchor_bottom = 0.9
+		_style_prep_button_label(caption, 12)
 
 	# 佣兵盾牌 / 队伍佣兵：不改，仍竖排，挪到横排下面（A1-a）。宽度保持 140，尺寸不变。
 	var side_col := VBoxContainer.new()
@@ -1374,14 +1407,12 @@ func _build_top_actions() -> void:
 	merc_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	merc_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	merc_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	# 写在盾牌下面那条空白缎带上
 	merc_lbl.anchor_left = 0.2
 	merc_lbl.anchor_right = 0.8
-	merc_lbl.anchor_top = 0.72
-	merc_lbl.anchor_bottom = 0.93
-	merc_lbl.add_theme_font_size_override("font_size", 15)
-	merc_lbl.add_theme_color_override("font_color", Color(0.96, 0.97, 1.0))
-	merc_lbl.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.95))
-	merc_lbl.add_theme_constant_override("outline_size", 3)
+	merc_lbl.anchor_top = 0.66
+	merc_lbl.anchor_bottom = 0.84
+	_style_prep_button_label(merc_lbl, 16, false)
 	merc_btn.add_child(merc_lbl)
 	side_col.add_child(merc_btn)
 	# 队伍佣兵检阅台：教学模式没有队友，直接藏
@@ -1392,14 +1423,11 @@ func _build_top_actions() -> void:
 	team_mercs_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	team_mercs_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	team_mercs_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	team_mercs_lbl.anchor_left = 0.15
-	team_mercs_lbl.anchor_right = 0.85
-	team_mercs_lbl.anchor_top = 0.72
-	team_mercs_lbl.anchor_bottom = 0.93
-	team_mercs_lbl.add_theme_font_size_override("font_size", 14)
-	team_mercs_lbl.add_theme_color_override("font_color", Color(0.96, 0.97, 1.0))
-	team_mercs_lbl.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.95))
-	team_mercs_lbl.add_theme_constant_override("outline_size", 3)
+	team_mercs_lbl.anchor_left = 0.18
+	team_mercs_lbl.anchor_right = 0.82
+	team_mercs_lbl.anchor_top = 0.66
+	team_mercs_lbl.anchor_bottom = 0.84
+	_style_prep_button_label(team_mercs_lbl, 15, false)
 	team_mercs_btn.add_child(team_mercs_lbl)
 	_team_merc_alert = PrepTeamMercAlertScript.new()
 	team_mercs_btn.add_child(_team_merc_alert)
@@ -1470,14 +1498,11 @@ func _build_top_actions() -> void:
 	carrot_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	carrot_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	carrot_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	carrot_lbl.anchor_left = 0.12
-	carrot_lbl.anchor_right = 0.88
-	carrot_lbl.anchor_top = 0.72
-	carrot_lbl.anchor_bottom = 0.93
-	carrot_lbl.add_theme_font_size_override("font_size", 14)
-	carrot_lbl.add_theme_color_override("font_color", Color(1.0, 0.94, 0.78))
-	carrot_lbl.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.95))
-	carrot_lbl.add_theme_constant_override("outline_size", 3)
+	carrot_lbl.anchor_left = 0.18
+	carrot_lbl.anchor_right = 0.82
+	carrot_lbl.anchor_top = 0.66
+	carrot_lbl.anchor_bottom = 0.84
+	_style_prep_button_label(carrot_lbl, 15, false)
 	carrot_btn.add_child(carrot_lbl)
 	carrot_btn.visible = _carrot_ui_visible()
 	side_col.add_child(carrot_btn)
@@ -1541,10 +1566,10 @@ func _build_top_actions() -> void:
 	_carrot_panel.anchor_right = 0.5
 	_carrot_panel.anchor_top = 0.5
 	_carrot_panel.anchor_bottom = 0.5
-	_carrot_panel.offset_left = -380
-	_carrot_panel.offset_right = 380
-	_carrot_panel.offset_top = -260
-	_carrot_panel.offset_bottom = 260
+	_carrot_panel.offset_left = -470
+	_carrot_panel.offset_right = 470
+	_carrot_panel.offset_top = -345
+	_carrot_panel.offset_bottom = 345
 	_carrot_panel.z_index = 35
 	_carrot_panel.visible = false
 	# The concrete economy handlers live farther down the PrepScreen inheritance
@@ -2931,7 +2956,7 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 	var card := DragButton.new()
 	card.drag_owner = self
 	card.drag_allowed = can_edit_formation
-	card.custom_minimum_size = Vector2(120, 120)
+	card.custom_minimum_size = MERC_PANEL_CARD_SIZE
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	card.clip_contents = false
@@ -2951,76 +2976,74 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 	_overlay.attach_long_press(card, func(): _overlay.show_compact({"def": mercenary, "star": 1, "is_mercenary": true}))
 	PrepWidgets.configure_unframed_portrait_card(card, _on_portrait_card_hover)
 	card.modulate = Color.WHITE
-
+	# 卡面（格子、缎带、价格牌）都画在招募板上，这里只摆头像和字；坐标是招募板图上的像素。
 	var portrait := TextureRect.new()
 	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	portrait.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	portrait.offset_left = 4
-	portrait.offset_top = 2
-	portrait.offset_right = -4
-	portrait.offset_bottom = -25
+	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	portrait.position = Vector2(39, 14)
+	portrait.size = Vector2(162, 134)
 	var portrait_path := str(MERCENARY_PORTRAIT_PATHS.get(str(mercenary.get("id", "")), ""))
 	portrait.texture = PrepWidgets.cached_texture(portrait_path)
 	card.add_child(portrait)
-
-	# The hire price is paid in carrots. Keep its icon and number together on the
-	# portrait, where they remain readable while browsing the four-column grid.
-	var price_badge := PanelContainer.new()
-	price_badge.name = "MercenaryCarrotPrice"
-	price_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	price_badge.anchor_left = 1.0
-	price_badge.anchor_right = 1.0
-	price_badge.anchor_top = 1.0
-	price_badge.anchor_bottom = 1.0
-	price_badge.offset_left = -78
-	price_badge.offset_right = -5
-	price_badge.offset_top = -57
-	price_badge.offset_bottom = -27
-	price_badge.add_theme_stylebox_override("panel", GloryTokens.flat_box(
-		Color(0.055, 0.075, 0.045, 0.96), GloryTokens.GOLD_EDGE, 1, 7))
-	card.add_child(price_badge)
+	# 名字写在头像下面那条缎带上
+	var name_label := Label.new()
+	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	name_label.position = Vector2(26, 150)
+	name_label.size = Vector2(186, 44)
+	name_label.text = PrepWidgets.unit_name(mercenary)
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	name_label.clip_text = true
+	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_style_merc_text(name_label, true, 900, 28)
+	card.add_child(name_label)
+	# 价格（萝卜）写在最下面的小金牌上
 	var price_row := HBoxContainer.new()
+	price_row.name = "MercenaryCarrotPrice"
 	price_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	price_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	price_row.add_theme_constant_override("separation", 2)
-	price_badge.add_child(price_row)
+	price_row.add_theme_constant_override("separation", 6)
+	price_row.position = Vector2(58, 196)
+	price_row.size = Vector2(122, 38)
+	card.add_child(price_row)
 	var price_icon := TextureRect.new()
-	price_icon.texture = load(CARROT_CURRENCY_ICON_PATH)
-	price_icon.custom_minimum_size = Vector2(23, 23)
+	price_icon.texture = load("res://assets/ui/carrot_camp/icon_carrot.png")
+	price_icon.custom_minimum_size = Vector2(26, 30)
 	price_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	price_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	price_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	price_row.add_child(price_icon)
 	var price_number := Label.new()
 	price_number.text = str(int(mercenary.get("carrot_cost", 0)))
-	price_number.add_theme_font_size_override("font_size", 19)
-	price_number.add_theme_color_override("font_color", Color(1.0, 0.94, 0.70))
 	price_number.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_style_merc_text(price_number, false, 800, 28)
 	price_row.add_child(price_number)
-
-	var name_label := Label.new()
-	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	name_label.anchor_left = 0.0
-	name_label.anchor_top = 1.0
-	name_label.anchor_right = 1.0
-	name_label.anchor_bottom = 1.0
-	name_label.offset_left = 1
-	name_label.offset_top = -25
-	name_label.offset_right = -1
-	name_label.offset_bottom = 0
-	name_label.text = PrepWidgets.unit_name(mercenary)
-	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	name_label.add_theme_font_size_override("font_size", 18)
-	name_label.add_theme_color_override("font_color", Color.WHITE)
-	name_label.add_theme_color_override("font_outline_color", Color.TRANSPARENT)
-	name_label.add_theme_constant_override("outline_size", 0)
-	card.add_child(name_label)
-
-	var reason_label := _shop._create_purchase_reason_overlay(card)
-	_shop._set_purchase_reason(reason_label, purchase_reason)
+	# 买不了（萝卜不足 / 佣兵已满 / 教学未到）：头像压暗，头像下沿一条半透明牌子写原因，价格变红
+	if not can_purchase:
+		portrait.modulate = Color(0.42, 0.42, 0.46)
+		price_number.add_theme_color_override("font_color", Color("b5401f"))
+		var reason_plate := PanelContainer.new()
+		reason_plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var plate_style := StyleBoxFlat.new()
+		plate_style.bg_color = Color(0.97, 0.86, 0.66, 0.94)
+		plate_style.border_color = Color("c7924c")
+		plate_style.set_border_width_all(2)
+		plate_style.set_corner_radius_all(14)
+		reason_plate.add_theme_stylebox_override("panel", plate_style)
+		reason_plate.position = Vector2(48, 96)
+		reason_plate.size = Vector2(142, 40)
+		card.add_child(reason_plate)
+		var reason_label := Label.new()
+		reason_label.text = purchase_reason
+		reason_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		reason_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		reason_label.clip_text = true
+		reason_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		reason_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_style_merc_text(reason_label, false, 800, 22)
+		reason_label.add_theme_color_override("font_color", Color("8a2a12"))
+		reason_plate.add_child(reason_label)
 	return card
 
 func _on_mercenary_purchase_card_pressed(card: BaseButton, index: int) -> void:
@@ -3486,60 +3509,107 @@ func _close_merc_picker() -> void:
 		return
 	_merc_picker_open = false
 	_refresh_merc_panel()
-# 每次打开现建一份佣兵选择层 content。节点结构、样式、边距、4 列网格与间距
-# 与迁移前逐项一致；唯一的差别是不再设 z_index（ModalStack 的 CanvasLayer 接管层级）。
+# 每次打开现建佣兵选择层：整张招募板图 + 按图上位置摆的标题、计数、关闭键、4 列网格。
+# 板子按 1672×941 的图像素坐标排版，再整体缩放塞进宿主矩形（见 _layout_merc_board）。
 #
-# 根节点**保留 MOUSE_FILTER_STOP**：迁移后 content 只占 center_host 的矩形、不是全屏，
-# 所以它不构成「另一块全屏 STOP」。若改成 IGNORE，卡片之间的 8px 间隙和 12px 边距会
-# 穿透到 backdrop —— 玩家在 4 列网格里挑佣兵时手指偏一点就把面板关掉。
-# 这一点与 C4 的检阅台不同：那一层是纯展示、没有可交互子节点。
+# 根节点**保留 MOUSE_FILTER_STOP**：content 只占 center_host 的矩形、不是全屏，
+# 若改成 IGNORE，卡片之间的间隙会穿透到 backdrop —— 玩家挑佣兵时手指偏一点就把面板关掉。
 func _create_merc_picker_content() -> PanelContainer:
 	var overlay := PanelContainer.new()
 	overlay.name = "MercPickerOverlay"
 	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
-	var overlay_style := StyleBoxFlat.new()
-	overlay_style.bg_color = Color(0.055, 0.065, 0.075, 0.98)
-	overlay_style.border_color = Color(0.42, 0.50, 0.58, 0.92)
-	overlay_style.set_border_width_all(2)
-	overlay_style.set_corner_radius_all(4)
-	overlay.add_theme_stylebox_override("panel", overlay_style)
-	var overlay_margin := MarginContainer.new()
-	overlay_margin.add_theme_constant_override("margin_left", 12)
-	overlay_margin.add_theme_constant_override("margin_top", 10)
-	overlay_margin.add_theme_constant_override("margin_right", 12)
-	overlay_margin.add_theme_constant_override("margin_bottom", 12)
-	overlay.add_child(overlay_margin)
-	var overlay_box := VBoxContainer.new()
-	overlay_box.add_theme_constant_override("separation", 8)
-	overlay_margin.add_child(overlay_box)
-	var overlay_header := HBoxContainer.new()
-	overlay_box.add_child(overlay_header)
-	var overlay_title := Label.new()
-	overlay_title.text = tr("ui_choose_mercenary")
-	overlay_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	overlay_title.add_theme_font_size_override("font_size", 18)
-	overlay_header.add_child(overlay_title)
-	# 右上角「已雇 N/8」：备战界面没有其它已购佣兵的提示，这里是唯一的计数反馈。
+	overlay.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	var holder := Control.new()
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	overlay.add_child(holder)
+	var board := Control.new()
+	board.name = "MercBoard"
+	board.size = MERC_PANEL_ART_SIZE
+	board.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.add_child(board)
+	var art := TextureRect.new()
+	art.texture = PrepWidgets.cached_texture(MERC_PANEL_ART_PATH)
+	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	art.stretch_mode = TextureRect.STRETCH_SCALE
+	art.position = Vector2.ZERO
+	art.size = MERC_PANEL_ART_SIZE
+	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	board.add_child(art)
+	# 标题写在顶上那条缎带上
+	var title := Label.new()
+	title.text = tr("ui_choose_mercenary")
+	title.position = Vector2(636, 22)
+	title.size = Vector2(400, 80)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_style_merc_text(title, true, 900, 56)
+	board.add_child(title)
+	# 右上角计数牌「已雇 N/8」：备战界面没有其它已购佣兵的提示，这里是唯一的计数反馈。
 	_merc_count_label = Label.new()
-	_merc_count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_merc_count_label.position = Vector2(1170, 70)
+	_merc_count_label.size = Vector2(150, 44)
+	_merc_count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_merc_count_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_merc_count_label.add_theme_font_size_override("font_size", 18)
-	_merc_count_label.add_theme_color_override("font_color", Color(0.96, 0.97, 1.0))
-	_merc_count_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.95))
-	_merc_count_label.add_theme_constant_override("outline_size", 3)
-	overlay_header.add_child(_merc_count_label)
+	_merc_count_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_style_merc_text(_merc_count_label, true, 800, 28)
+	board.add_child(_merc_count_label)
+	# 关闭键：图上画好了，这里只放一块透明的点按区
+	var close := Button.new()
+	close.name = "MercPickerClose"
+	close.flat = true
+	close.focus_mode = Control.FOCUS_NONE
+	close.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	for state in ["normal", "hover", "pressed", "focus"]:
+		close.add_theme_stylebox_override(state, StyleBoxEmpty.new())
+	close.position = Vector2(1330, 46)
+	close.size = Vector2(88, 88)
+	close.tooltip_text = tr("ui_close") if TranslationServer.translate("ui_close") != "ui_close" else "关闭"
+	close.pressed.connect(_close_merc_picker)
+	board.add_child(close)
 	_merc_overlay_grid = GridContainer.new()
 	_merc_overlay_grid.columns = 4
-	_merc_overlay_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_merc_overlay_grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_merc_overlay_grid.add_theme_constant_override("h_separation", 8)
-	_merc_overlay_grid.add_theme_constant_override("v_separation", 8)
-	overlay_box.add_child(_merc_overlay_grid)
+	_merc_overlay_grid.position = MERC_PANEL_GRID_ORIGIN
+	_merc_overlay_grid.add_theme_constant_override("h_separation", int(MERC_PANEL_GRID_GAP.x))
+	_merc_overlay_grid.add_theme_constant_override("v_separation", int(MERC_PANEL_GRID_GAP.y))
+	board.add_child(_merc_overlay_grid)
+	overlay.resized.connect(_layout_merc_board.bind(overlay, board))
+	_layout_merc_board.call_deferred(overlay, board)
 	return overlay
 
 
+# 招募板等比缩放、居中塞进宿主矩形（留一点边，别顶到屏幕边）
+func _layout_merc_board(overlay: Control, board: Control) -> void:
+	if not is_instance_valid(overlay) or not is_instance_valid(board):
+		return
+	var avail := overlay.size
+	if avail.x <= 0.0 or avail.y <= 0.0:
+		return
+	var k := minf(avail.x / MERC_PANEL_ART_SIZE.x, avail.y / MERC_PANEL_ART_SIZE.y)
+	board.scale = Vector2(k, k)
+	board.position = (avail - MERC_PANEL_ART_SIZE * k) * 0.5
+
+
+func _style_merc_text(label: Label, serif: bool, weight: int, font_size: int) -> void:
+	label.add_theme_font_override("font", preload("res://ui/components/UnitDetailCard.gd").font(serif, weight))
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", MERC_RECRUITMENT_INK)
+	label.add_theme_color_override("font_outline_color", Color.TRANSPARENT)
+	label.add_theme_constant_override("outline_size", 0)
+
+
+# 招募板按设计图几乎占满屏幕高度：居中、上下各留 10px，宽度按图的比例，
+# 但不超过「屏宽 - 两侧按钮列」—— 内容矩形仍然小于全屏（modal_lifecycle 的判据）。
 func _sync_merc_picker_content_rect() -> void:
-	_sync_modal_content_to_host(_merc_overlay)
+	if _merc_overlay == null or not is_instance_valid(_merc_overlay) or not _merc_overlay.is_inside_tree():
+		return
+	var vp := get_viewport_rect().size
+	var h := vp.y - 20.0
+	var w := minf(h * MERC_PANEL_ART_SIZE.x / MERC_PANEL_ART_SIZE.y, vp.x - 320.0)
+	h = w * MERC_PANEL_ART_SIZE.y / MERC_PANEL_ART_SIZE.x
+	_merc_overlay.set_anchors_preset(Control.PRESET_TOP_LEFT, true)
+	_merc_overlay.global_position = (vp - Vector2(w, h)) * 0.5
+	_merc_overlay.size = Vector2(w, h)
 
 
 # 模态被任何一条路关掉时（点外面、close_all、owner 释放、程序化 pop）都会走到这里。

@@ -197,6 +197,8 @@ const PrepShopRaceIcon = preload("res://scenes/prep/PrepShopRaceIcon.gd")
 var _gold_amount_label: Label
 var _closed_gold_label: Label
 var _shop_scroll_idle: PrepScrollIdleFlipbook
+var _shop_scroll_glint: Control
+const PrepGlintFxScript = preload("res://scenes/prep/effects/PrepGlintFx.gd")
 var _closed_money_bag: Control    # 商店关闭时的钱袋按钮（商店按钮左边）
 var _shop_cards_signature := "unset"
 var _shop_background: TextureRect
@@ -245,6 +247,12 @@ func build_button_and_purse(body: HBoxContainer, center_host: Control, center: C
 		PrepWidgets.cached_texture(SHOP_IDLE_HALO_PATH)
 	)
 	shop_open_btn.add_child(_shop_scroll_idle)
+	_shop_scroll_idle.hide_builtin_glow()
+	# 11.12：卷轴的提示光换成柔光 + 扫光 + 小星星（PrepGlintFx）
+	_shop_scroll_glint = PrepGlintFxScript.new()
+	_shop_scroll_glint.halo_grow = Vector2(1.12, 1.7)
+	_shop_scroll_glint.halo_alpha = Vector2(0.4, 0.7)
+	_shop_scroll_glint.setup(shop_open_btn, PrepWidgets.cached_texture(PrepSkin.path("shop_button")))
 
 	# 钱袋 B（商店关闭时显示）：放在「商店」按钮左边，显示金币，长按看利息。商店打开时隐藏（那时看钱袋 A）。
 	var closed_money_btn := Button.new()
@@ -256,22 +264,24 @@ func build_button_and_purse(body: HBoxContainer, center_host: Control, center: C
 	closed_money_btn.anchor_top = 1.0
 	closed_money_btn.anchor_right = 0.5
 	closed_money_btn.anchor_bottom = 1.0
-	closed_money_btn.offset_left = -SHOP_BTN_SIZE.x * 0.5 - 8 - 60   # 商店按钮左边 8px 间隙，宽 60
+	closed_money_btn.offset_left = -SHOP_BTN_SIZE.x * 0.5 - 8 - 96   # 商店按钮左边 8px 间隙，宽 96（11.12 换成大的手绘钱袋）
 	closed_money_btn.offset_right = -SHOP_BTN_SIZE.x * 0.5 - 8
 	closed_money_btn.offset_top = -SHOP_BTN_SIZE.y - 16
 	closed_money_btn.offset_bottom = -16
 	closed_money_btn.z_index = 6
 	closed_controls.add_child(closed_money_btn)
+	# 11.12：跟商店打开后的钱袋 A 同一张手绘图、同样把金币数写在钱袋的牌子上
 	var closed_bag_icon: Control = PrepMoneyBagIcon.new()
+	closed_bag_icon.set("use_lowpoly_texture", true)
 	closed_bag_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	closed_bag_icon.anchor_left = 0.5
 	closed_bag_icon.anchor_top = 0.5
 	closed_bag_icon.anchor_right = 0.5
 	closed_bag_icon.anchor_bottom = 0.5
-	closed_bag_icon.offset_left = -22
-	closed_bag_icon.offset_top = -34
-	closed_bag_icon.offset_right = 22
-	closed_bag_icon.offset_bottom = 10
+	closed_bag_icon.offset_left = -50
+	closed_bag_icon.offset_top = -56
+	closed_bag_icon.offset_right = 50
+	closed_bag_icon.offset_bottom = 44
 	closed_money_btn.add_child(closed_bag_icon)
 	_closed_gold_label = Label.new()
 	_closed_gold_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -279,18 +289,19 @@ func build_button_and_purse(body: HBoxContainer, center_host: Control, center: C
 	_closed_gold_label.anchor_top = 0.5
 	_closed_gold_label.anchor_right = 0.5
 	_closed_gold_label.anchor_bottom = 0.5
-	_closed_gold_label.offset_left = -30
-	_closed_gold_label.offset_right = 30
-	_closed_gold_label.offset_top = 12
-	_closed_gold_label.offset_bottom = 40
+	_closed_gold_label.offset_left = -38
+	_closed_gold_label.offset_right = 38
+	_closed_gold_label.offset_top = 6
+	_closed_gold_label.offset_bottom = 30
 	_closed_gold_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_closed_gold_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_closed_gold_label.add_theme_font_size_override("font_size", 15)
-	# 10.01 反馈第 7 条：金币数值要加粗。收起态这颗钱袋下面那行「100金」字号只有 15，
-	# 压在木牌上最容易看不清 —— 用合成加粗顶上去（工程没有 Bold 字体资源）。
-	_closed_gold_label.add_theme_font_override("font", UIFontFallback.bold_font())
-	_closed_gold_label.add_theme_color_override("font_color", Color(1.0, 0.84, 0.34))
-	_closed_gold_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	_closed_gold_label.pivot_offset = Vector2(38, 12)
+	_closed_gold_label.rotation_degrees = -4.0
+	# 跟钱袋 A 上的金币数同一套字（Knewave 加粗、金色、深棕描边）
+	_closed_gold_label.add_theme_font_override("font", UIFontFallback.bold_font(GOLD_NUMBER_FONT))
+	_closed_gold_label.add_theme_font_size_override("font_size", 21)
+	_closed_gold_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.30))
+	_closed_gold_label.add_theme_color_override("font_outline_color", Color(0.20, 0.08, 0.01, 0.98))
 	_closed_gold_label.add_theme_constant_override("outline_size", 3)
 	closed_money_btn.add_child(_closed_gold_label)
 	# 长按看利息（短按不做事，纯金币显示）
@@ -373,20 +384,6 @@ func build_popup(body: HBoxContainer, center_host: Control) -> void:
 	gold_area.offset_top = -201
 	gold_area.offset_bottom = -60
 	side_controls.add_child(gold_area)
-	var money_bag_glow := PrepMoneyBagAttentionGlowScript.new()
-	money_bag_glow.anchor_left = 0.5
-	money_bag_glow.anchor_top = 0.5
-	money_bag_glow.anchor_right = 0.5
-	money_bag_glow.anchor_bottom = 0.5
-	money_bag_glow.offset_left = -75
-	money_bag_glow.offset_top = -81
-	money_bag_glow.offset_right = 75
-	money_bag_glow.offset_bottom = 69
-	gold_area.add_child(money_bag_glow)
-	money_bag_glow.setup(
-		PrepWidgets.cached_texture("res://assets/ui/buttons/btn_buy_painted.png"),
-		MONEY_BAG_GLOW_SHADER
-	)
 	var money_bag: Control = PrepMoneyBagIcon.new()
 	money_bag.set("use_lowpoly_texture", true)
 	money_bag.anchor_left = 0.5
@@ -398,6 +395,10 @@ func build_popup(body: HBoxContainer, center_host: Control) -> void:
 	money_bag.offset_right = 58
 	money_bag.offset_bottom = 52
 	gold_area.add_child(money_bag)
+	# 11.12：钱袋 A 的提示光 = 柔光 + 扫光 + 小星星（原来是一圈金色描边一缩一放）
+	var money_bag_glint := PrepGlintFxScript.new()
+	money_bag_glint.halo_grow = Vector2(1.35, 1.35)
+	money_bag_glint.setup(money_bag, PrepWidgets.cached_texture("res://assets/ui/buttons/btn_buy_painted.png"))
 	_gold_amount_label = Label.new()
 	_gold_amount_label.anchor_left = 0.5
 	_gold_amount_label.anchor_top = 0.5
@@ -563,11 +564,11 @@ func build_hand_cards(body: HBoxContainer, center_host: Control) -> void:
 # 原 _refresh_shop（PrepUI.gd）
 
 func refresh() -> void:
-	var gold_text := TutorialMode.GOLD_TEXT if GameState.tutorial_mode else tr("ui_gold_format") % GameState.gold
 	if _gold_amount_label != null:
 		_gold_amount_label.text = TutorialMode.GOLD_TEXT if GameState.tutorial_mode else str(GameState.gold)
 	if _closed_gold_label != null:
-		_closed_gold_label.text = gold_text
+		# 写在钱袋牌子上，只放数字（同钱袋 A）
+		_closed_gold_label.text = TutorialMode.GOLD_TEXT if GameState.tutorial_mode else str(GameState.gold)
 	overlay.refresh_gold_interest(format_gold_interest_detail())
 	if refresh_button != null:
 		# 与 PrepBoardController._on_refresh_shop 共用同一个判定（教学里恒免费）。
@@ -692,6 +693,8 @@ func _refresh_picker() -> void:
 		open_button.visible = not picker_open
 	if _shop_scroll_idle != null:
 		_shop_scroll_idle.set_effect_active(not picker_open)
+	if _shop_scroll_glint != null and is_instance_valid(_shop_scroll_glint):
+		_shop_scroll_glint.call("set_effect_active", not picker_open)
 	if side_controls != null:
 		side_controls.visible = picker_open     # 外挂层（钱袋A+刷新）跟商店一起显隐
 	if _closed_money_bag != null:

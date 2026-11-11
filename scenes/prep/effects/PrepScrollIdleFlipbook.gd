@@ -59,6 +59,16 @@ func setup(target: Control, atlas: Texture2D, halo_texture: Texture2D) -> void:
 	call_deferred("_start_float")
 
 
+# 11.12：原来的黄色光圈和闪光帧动画关掉，只留卷轴上下浮动；提示光改由 PrepGlintFx 画。
+func hide_builtin_glow() -> void:
+	if is_instance_valid(_halo):
+		_halo.visible = false
+	if is_instance_valid(_shine_current):
+		_shine_current.visible = false
+	if is_instance_valid(_shine_next):
+		_shine_next.visible = false
+
+
 func set_effect_active(value: bool) -> void:
 	_active = value
 	visible = value
