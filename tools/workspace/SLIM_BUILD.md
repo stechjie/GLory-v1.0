@@ -39,6 +39,8 @@ iOS 的正式名称固定为 `GLory Auto Chess`，与 App Store Connect 的当�
 `InfoPlist.strings` 覆盖；名称缺失或不一致时构建失败。结果中记录
 `validation.display_name` 与 `validation.localized_display_name_checks`。
 这类名称属于安装包元数据，需要新 build，不能靠资源 patch 修改桌面图标名称。
+iOS 的 `export_patch.py` 同步应用同一名称规则，使手工及 nightly 新建的 stage
+与新 IPA 的不可变工程配置一致；旧基线不改写。
 
 ## iOS Game Mode
 

@@ -123,6 +123,11 @@ def export(stage: Path, engine: Path, preset: str, platform: str, config: Path,
             break
     if selected is None or f'platform="{expected}"' not in selected:
         raise ValueError("Preset does not match the requested platform")
+    if platform == "ios":
+        # Reproduce the full IPA's immutable project settings in fresh patch
+        # stages too; otherwise a renamed base rejects every subsequent patch.
+        from glory_ios_build import configure_display_name
+        configure_display_name(stage)
     boot_file = stage / "patcher/boot.json"
     if boot_file.exists():
         boot = json.loads(boot_file.read_text())
