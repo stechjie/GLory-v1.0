@@ -24,6 +24,7 @@ import glory_build as shared
 ROOT = Path(__file__).resolve().parents[3]
 TEAM = "D5ANXXK2R2"
 BUNDLE = "com.superforge.glory"
+DISPLAY_NAME = "GLory Auto Chess"
 PRESET = "iOS Xcode"
 SCHEME = "GloryIOS"
 SIGNING = ROOT / "ios-signing-20260913/ios_distribution"
@@ -326,6 +327,19 @@ def prepare_engine(env, work):
     return app / "Contents/MacOS/Godot"
 
 
+def configure_display_name(stage):
+    # Only the isolated iOS snapshot is renamed. Desktop/server user:// paths
+    # still depend on the legacy project name and must retain their saves/keys.
+    project = stage / "project.godot"
+    text = project.read_text()
+    section = re.search(r"(?ms)^\[application\]\s*\n(.*?)(?=^\[|\Z)", text)
+    if not section:
+        raise RuntimeError("iOS 工程缺少 application 配置，无法设置正式名称。")
+    body = re.sub(r'^config/name(?:[.][^=\r\n]+|_localized)?=.*\n?', "", section[1], flags=re.M)
+    text = text[:section.start(1)] + 'config/name=' + json.dumps(DISPLAY_NAME) + '\n' + body + text[section.end(1):]
+    project.write_text(text)
+
+
 def write_preset(stage, method, profile, cert, version, number):
     # Reuse Android's proven packaging filters; then replace all platform/signing options.
     shared.export_preset(stage, None)
@@ -422,6 +436,19 @@ def verify_game_mode_support(info):
             raise RuntimeError(f"IPA 缺少启用的 Game Mode 声明：{key}")
 
 
+def verify_display_name(app, info):
+    if info.get("CFBundleDisplayName") != DISPLAY_NAME:
+        raise RuntimeError(f"IPA 桌面名称必须与商店一致：{DISPLAY_NAME}；实际为 {info.get('CFBundleDisplayName')!r}。")
+    localized = []
+    for path in sorted(app.glob("*.lproj/InfoPlist.strings")):
+        # Apple strings files can be binary/XML plists or OpenStep text.
+        values = plistlib.loads(capture(["/usr/bin/plutil", "-convert", "xml1", "-o", "-", path]))
+        if "CFBundleDisplayName" in values and values["CFBundleDisplayName"] != DISPLAY_NAME:
+            raise RuntimeError(f"IPA 本地化桌面名称不一致：{path.parent.name}。")
+        localized.append(path.parent.name)
+    return {"display_name": DISPLAY_NAME, "localized_display_name_checks": localized}
+
+
 def verify_ipa(ipa, directory, method, profile, cert, version, number, identity, env):
     with zipfile.ZipFile(ipa) as archive:
         for member in archive.namelist():
@@ -438,6 +465,7 @@ def verify_ipa(ipa, directory, method, profile, cert, version, number, identity,
     info = plistlib.loads((app / "Info.plist").read_bytes())
     if (info.get("CFBundleIdentifier"), info.get("CFBundleShortVersionString"), info.get("CFBundleVersion")) != (BUNDLE, version, number):
         raise RuntimeError("IPA 的 Bundle ID、营销版本或 build number 与本次配置不一致。")
+    branding = verify_display_name(app, info)
     verify_game_mode_support(info)
     for key in ("NSCameraUsageDescription", "NSPhotoLibraryUsageDescription", "NSMicrophoneUsageDescription"):
         if not str(info.get(key, "")).strip():
@@ -476,7 +504,7 @@ def verify_ipa(ipa, directory, method, profile, cert, version, number, identity,
         raise RuntimeError("IPA 中的 Godot PCK 构建身份与本次代码/资源快照不一致。")
     return {"zip_crc": True, "codesign": True, "arm64": True, "embedded_profile_uuid": actual["UUID"],
             "allowed_device_udids": actual.get("ProvisionedDevices", []), "pck_identity": True,
-            "apple_storekit": True, "game_mode_support": True}
+            "apple_storekit": True, "game_mode_support": True, **branding}
 
 
 def publish(ipa, outdir, summary):
@@ -572,6 +600,7 @@ def main(argv=None):
                     raise RuntimeError("资源同步尚未成功完成，请先同步。")
                 report = shared.stage_project(args.project, assets, stage, logdir)
             server_target = shared.configure_server_environment(stage, args.server_environment)
+            configure_display_name(stage)
             if args.patch_config and server_target:
                 patch_settings = json.loads(args.patch_config.read_text(encoding="utf-8"))
                 if patch_settings.get("backend_url", "").rstrip("/") != server_target["backend_url"]:

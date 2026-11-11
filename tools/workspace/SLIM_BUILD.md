@@ -28,6 +28,18 @@
 
 APK 下载文件更小不等于安装占用同幅度下降：native 库安装时会被解压。保留 armv7 和 arm64，避免为了体积缩小设备覆盖范围。
 
+## iOS 商店与桌面名称
+
+iOS 的正式名称固定为 `GLory Auto Chess`，与 App Store Connect 的当前名称一致。
+源码通过 `config/name.ios` 声明 iOS 名称；IPA 入口还会在隔离 stage 中统一
+`config/name` 并去除过时的名称覆盖，避免导出器回退到 `Glory Beta 0.04`。
+桌面及服务器仍使用原工程名来定位已有存档和服务密钥，不做全平台工程目录迁移。
+
+交付前读取**最终签名 IPA** 的 `CFBundleDisplayName`，并检查各语言的
+`InfoPlist.strings` 覆盖；名称缺失或不一致时构建失败。结果中记录
+`validation.display_name` 与 `validation.localized_display_name_checks`。
+这类名称属于安装包元数据，需要新 build，不能靠资源 patch 修改桌面图标名称。
+
 ## iOS Game Mode
 
 IPA 入口为后续导出写入 `LSSupportsGameMode=true`，同时保留 `GCSupportsGameMode=true` 兼容 iOS 18.0–18.5。前者从 iOS 18.6 起可用，旧键从 iOS 18.6 起弃用。两个声明都只是让系统识别 Game Mode 支持，用户仍可在控制中心的 Game Overlay 中关闭该模式。

@@ -141,6 +141,36 @@ class IOSBuildTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             ios.project_version(self.root, "2.0.0-beta1")
 
+    def test_ios_snapshot_replaces_legacy_and_localized_names_without_changing_other_settings(self):
+        project = self.root / "project.godot"
+        project.write_text(
+            '[application]\nconfig/name="Glory Beta 0.04"\n'
+            'config/name.ios="Another old name"\n'
+            'config/name_localized={"zh_CN": "Old localized name"}\n'
+            'config/version="1.0.2"\n[autoload]\nSaveManager="*res://save.gd"\n')
+        ios.configure_display_name(self.root)
+        expected = ('[application]\nconfig/name="GLory Auto Chess"\n'
+                    'config/version="1.0.2"\n[autoload]\nSaveManager="*res://save.gd"\n')
+        self.assertEqual(project.read_text(), expected)
+        ios.configure_display_name(self.root)
+        self.assertEqual(project.read_text(), expected)
+
+    def test_signed_payload_name_rejects_old_name_and_localization_override(self):
+        app = self.root / "Fixture.app"
+        app.mkdir()
+        for wrong in (None, "Glory Beta 0.04", "$(INFOPLIST_KEY_CFBundleDisplayName)"):
+            with self.subTest(name=wrong), self.assertRaisesRegex(RuntimeError, "桌面名称"):
+                ios.verify_display_name(app, {"CFBundleDisplayName": wrong})
+        self.assertEqual(ios.verify_display_name(app, {"CFBundleDisplayName": ios.DISPLAY_NAME})["display_name"], ios.DISPLAY_NAME)
+        localized = app / "zh-Hans.lproj/InfoPlist.strings"
+        localized.parent.mkdir()
+        for fmt in (plistlib.FMT_BINARY, plistlib.FMT_XML):
+            localized.write_bytes(plistlib.dumps({"CFBundleDisplayName": "Glory Beta 0.04"}, fmt=fmt))
+            with self.assertRaisesRegex(RuntimeError, "本地化桌面名称"):
+                ios.verify_display_name(app, {"CFBundleDisplayName": ios.DISPLAY_NAME})
+        localized.write_text('"CFBundleDisplayName" = "GLory Auto Chess";\n')
+        self.assertEqual(ios.verify_display_name(app, {"CFBundleDisplayName": ios.DISPLAY_NAME})["localized_display_name_checks"], ["zh-Hans.lproj"])
+
     def test_unlock_failure_does_not_disclose_password(self):
         password = self.root / "password"
         password.write_text("DO-NOT-PRINT-THIS-TEST-SECRET\n")
@@ -228,6 +258,7 @@ class IOSBuildTests(unittest.TestCase):
         cert = {"sha1": hashlib.sha1(leaf).hexdigest().upper()}
         identity = {"build_number": "2"}
         info = {"CFBundleIdentifier": ios.BUNDLE, "CFBundleShortVersionString": "0.0.4", "CFBundleVersion": "2",
+                "CFBundleDisplayName": ios.DISPLAY_NAME,
                 "CFBundleExecutable": "Fixture", "CFBundleSupportedPlatforms": ["iPhoneOS"], "NSMicrophoneUsageDescription": "Voice", "NSCameraUsageDescription": "No camera capture", "NSPhotoLibraryUsageDescription": "No photo library access",
                 "LSSupportsGameMode": True, "GCSupportsGameMode": True}
         with zipfile.ZipFile(ipa, "w") as archive:
