@@ -313,13 +313,25 @@
     "version": "1.0.2",
     "built": true,
     "signed": true,
-    "uploaded": false,
-    "internal_testing": false,
+    "uploaded": true,
+    "internal_testing": true,
     "sha256": "62551cba443144f33c8116c557c64fbd9f3b96401797e9d8f6d94d5c3edbd6a3",
     "bytes": 661522682,
     "asset_inventory_sha256": "6bd9c339f327219685c6d95f4934fe19831cb5087e3d1f9e782595e3d484ad15",
     "upload_started": true,
     "baseline_registered": true,
+    "transporter_status": "delivered",
+    "apple_processing": false,
+    "build_id": "70a10a45-2bd3-42a6-b59d-b6f438bb8f35",
+    "processed": true,
+    "notes_saved": true,
+    "group": "GLory 内部验证",
+    "group_id": "90dd8f53-b157-49c4-b899-8da72091b76a",
+    "testers": 10,
+    "status": "正在测试",
+    "external_assigned": false,
+    "device_gameplay_tested": false,
+    "verified_at": "2026-11-11T14:19:16.824Z",
     "build_evidence": {
       "git_commit": "0333f771f254ed0fb3258cd8e08c8e7ddd682fe2",
       "asset_inventory_sha256": "6bd9c339f327219685c6d95f4934fe19831cb5087e3d1f9e782595e3d484ad15",
@@ -348,6 +360,7 @@
   },
   "android_drive_uploaded": true,
   "qr_published": true,
+  "remaining": [],
   "validation": {
     "final_check": true,
     "runtime_tests": 17,
@@ -395,5 +408,110 @@
     "verified_at": "2026-11-11T13:43:50.457426+00:00"
   },
   "qr_url": "https://test-api.gogoglory.com/beta/invite-qr.png",
-  "download_page_verified_in_browser": true
+  "download_page_verified_in_browser": true,
+  "retention": {
+    "retained": [
+      {
+        "platform": "ios",
+        "environment": "prod",
+        "version": "1.0.2",
+        "build": "81",
+        "path": "build/ipa/Glory-app-store-20261103-010452-990355-17d02bee.ipa",
+        "metadata": "build/logs/ipa-app-store-20261103-010452-990355/result.json",
+        "bytes": 566336264,
+        "sha256": "9dd9ad6bfd5fccaa0e7a23e2cd2e4ef2c55ee663116348af2fbdae96d57fd495",
+        "baseline": "build/ios-auto-work/runs/20261103-010452-990355/patch-base/base.zip"
+      },
+      {
+        "platform": "ios",
+        "environment": "prod",
+        "version": "1.0.2",
+        "build": "82",
+        "path": "build/ipa/Glory-ad-hoc-20261103-012059-330448-17d02bee.ipa",
+        "metadata": "build/logs/ipa-ad-hoc-20261103-012059-330448/result.json",
+        "bytes": 566335285,
+        "sha256": "301287b3fa3574d3042183c936a4161b2715c9bf3638d29b08cf6c176cd3a717",
+        "baseline": "build/ios-auto-work/runs/20261103-012059-330448/patch-base/base.zip"
+      },
+      {
+        "platform": "android",
+        "environment": "prod",
+        "version": "1.0.2",
+        "build": "56",
+        "path": "build/aab/Glory-1.0.2-56-20261103-082146-release.aab",
+        "metadata": "build/aab/latest-release.json",
+        "bytes": 605360305,
+        "sha256": "810dff9b704af76cac3651c5f8c5e948dad972b37c5b93596d9a7495dbdc41c3",
+        "baseline": "build/aab/Glory-1.0.2-56-20261103-082146-unsigned-patch-base/base.zip"
+      },
+      {
+        "platform": "android",
+        "environment": "prod",
+        "version": "1.0.2",
+        "build": "54",
+        "path": "build/aab/Glory-1.0.2-54-20261101-213539-release.aab",
+        "metadata": "build/aab/logs/20261101-213539/build_info.json",
+        "bytes": 605338551,
+        "sha256": "54b7702647a7a666586b37a5aea1eed7d010ad749b306ffc3a967a8ef530172e",
+        "baseline": "build/aab/Glory-1.0.2-54-20261101-213539-unsigned-patch-base/base.zip"
+      },
+      {
+        "platform": "android",
+        "environment": "test",
+        "build": "63",
+        "version": "1.0.2",
+        "path": "/Volumes/repository/github/GLory/build/apk/Glory-release-slim-20261110-181146-b452523b.apk",
+        "bytes": 618172594,
+        "sha256": "6ffd1a5f6a70f98f930ed490d8d47b11569c980c35a039efcd6be12bffb1bd20",
+        "baseline": "/Volumes/repository/github/GLory/build/apk/Glory-release-slim-20261110-181146-b452523b-patch-base/base.zip"
+      },
+      {
+        "platform": "ios",
+        "environment": "test",
+        "build": "91",
+        "version": "1.0.2",
+        "path": "/Volumes/repository/github/GLory/build/ipa/Glory-app-store-20261110-181733-000449-b452523b.ipa",
+        "bytes": 581656854,
+        "sha256": "492f4e1d6710c5110f415bc2b27712d092dd7e524344aef79ab33f09666657ec",
+        "baseline": "/Volumes/repository/github/GLory/build/ios-auto-work/runs/20261110-181733-000449/patch-base/base.zip"
+      },
+      {
+        "platform": "android",
+        "environment": "test",
+        "build": "64",
+        "version": "1.0.2",
+        "path": "/Volumes/repository/github/GLory/build/apk/Glory-release-slim-20261111-205428-0333f771.apk",
+        "bytes": 698108174,
+        "sha256": "4e34a9c15df1bb717595456ca25c9315e728b13f9096c72ef96eb969d5fd6d83",
+        "baseline": "/Volumes/repository/github/GLory/build/apk/Glory-release-slim-20261111-205428-0333f771-patch-base/base.zip"
+      },
+      {
+        "platform": "ios",
+        "environment": "test",
+        "build": "92",
+        "version": "1.0.2",
+        "path": "/Volumes/repository/github/GLory/build/ipa/Glory-app-store-20261111-211155-442209-0333f771.ipa",
+        "bytes": 661522682,
+        "sha256": "62551cba443144f33c8116c557c64fbd9f3b96401797e9d8f6d94d5c3edbd6a3",
+        "baseline": "/Volumes/repository/github/GLory/build/ios-auto-work/runs/20261111-211155-442209/patch-base/base.zip"
+      }
+    ],
+    "removed": [
+      "/Volumes/repository/github/GLory/build/ipa/Glory-app-store-20261109-161626-120102-05902a63.ipa",
+      "/Volumes/repository/github/GLory/build/apk/Glory-release-slim-20261109-160354-05902a63.apk",
+      "/Volumes/repository/github/GLory/build/ios-auto-work/runs/20261109-161626-120102/export/GloryIOS.ipa",
+      "/Volumes/repository/github/GLory/delivery/release-20261109-test/Glory-1.0.2-62-android.apk",
+      "/Volumes/repository/github/GLory/build/ios-auto-work/runs/20261109-161626-120102/xcode",
+      "/Volumes/repository/github/GLory/build/ios-auto-work/runs/20261109-161626-120102/verify",
+      "/Volumes/repository/github/GLory/build/ios-auto-work/runs/20261109-161626-120102/export",
+      "/Volumes/repository/github/GLory/build/ios-auto-work/runs/20261109-161626-120102/GloryIOS.xcarchive",
+      "/Volumes/repository/github/GLory/build/ios-auto-work/runs/20261109-161626-120102/ExportOptions.plist"
+    ],
+    "registered_patch_baselines_preserved": true,
+    "retained_hashes_verified": true,
+    "updated_at": "2026-11-11T14:04:22.790566+00:00"
+  },
+  "completed_at": "2026-11-11T14:19:16.905761+00:00",
+  "drive_qr_full_sha256_verified": true,
+  "temporary_transfer_services_stopped": true
 }
