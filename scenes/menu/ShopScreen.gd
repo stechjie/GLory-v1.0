@@ -1390,6 +1390,8 @@ func _preview(item: Dictionary, owned: bool, preview_size: Vector2 = PREVIEW_SIZ
 		return PetPreview.placeholder(preview_size, owned)
 	var rect := TextureRect.new()
 	rect.texture = tex
+	if kind != CATEGORY_SKINS:
+		_make_crisp(rect, preview_size)
 	rect.custom_minimum_size = preview_size
 	rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	rect.stretch_mode = (TextureRect.STRETCH_KEEP_ASPECT_COVERED if kind == CATEGORY_SKINS
@@ -1400,12 +1402,24 @@ func _preview(item: Dictionary, owned: bool, preview_size: Vector2 = PREVIEW_SIZ
 	return rect
 
 
+# 11.12：头像 / 头像框原图很大，缩进小卡片直接画会起颗粒、看着糊 ——
+# 进树后按屏幕实际像素用 Lanczos 预缩一张（scripts/ui/CrispTexture.gd）
+func _make_crisp(rect: TextureRect, box: Vector2) -> void:
+	var source_tex := rect.texture
+	if source_tex == null:
+		return
+	rect.tree_entered.connect(func() -> void:
+		rect.texture = preload("res://scripts/ui/CrispTexture.gd").fit(source_tex, box, rect),
+		CONNECT_ONE_SHOT)
+
+
 func _frame_preview(grants: String, preview_size: Vector2, owned: bool) -> Control:
 	var stage := Control.new()
 	stage.custom_minimum_size = preview_size
 	stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var frame := TextureRect.new()
 	frame.texture = AvatarCatalog.frame_texture_for(grants, false)
+	_make_crisp(frame, preview_size)
 	frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED

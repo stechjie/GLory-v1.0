@@ -2422,9 +2422,27 @@ func _any_four_star_ready() -> bool:
 	return false
 
 
+# 11.12 羊皮纸风的弹窗底板（战力推荐 / 宝藏、羁绊说明 / 金币利息 / 上一局统计共用）：
+# 暖米色纸底 + 金棕描边 + 深色投影。保持 StyleBoxFlat 高不透明（prep_text_coverage 查这一点：
+# 明亮草地不能透过来）。
+func _parchment_popup_style() -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color("f4dfb6")
+	sb.border_color = Color("b07a32")
+	sb.set_border_width_all(3)
+	sb.set_corner_radius_all(16)
+	sb.shadow_color = Color(0.18, 0.1, 0.03, 0.45)
+	sb.shadow_size = 10
+	sb.shadow_offset = Vector2(0, 4)
+	sb.set_content_margin_all(6)
+	sb.anti_aliasing = true
+	return sb
+
+
 func _build_detail_popups() -> void:
 	_detail = PopupPanel.new()
 	_detail.theme = GloryTheme.get_theme()
+	_detail.add_theme_stylebox_override("panel", _parchment_popup_style())
 	add_child(_detail)
 	var detail_margin := MarginContainer.new()
 	detail_margin.add_theme_constant_override("margin_left", GloryTokens.GAP_M)
@@ -2441,7 +2459,9 @@ func _build_detail_popups() -> void:
 	_detail_text.custom_minimum_size = Vector2(500, 340)
 	_detail_text.add_theme_font_size_override("normal_font_size", GloryTokens.FONT_BODY)
 	_detail_text.add_theme_font_size_override("bold_font_size", GloryTokens.FONT_BODY)
-	_detail_text.add_theme_color_override("default_color", GloryTokens.TEXT_PRIMARY)
+	# 羊皮纸底上用深棕字（原来是给深色面板配的浅色字）
+	_detail_text.add_theme_color_override("default_color", Color("4a2c14"))
+	_detail_text.add_theme_font_override("bold_font", preload("res://ui/components/UnitDetailCard.gd").font(false, 900))
 	detail_content.add_child(_detail_text)
 	_detail_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	var upgrade_panel := preload("res://scenes/prep/FourStarUpgradePanel.gd").new()
@@ -2458,12 +2478,13 @@ func _build_detail_popups() -> void:
 	_overlay.bind(_detail, _detail_text)
 
 	_stats._stats_popup = PopupPanel.new()
+	_stats._stats_popup.add_theme_stylebox_override("panel", _parchment_popup_style())
 	add_child(_stats._stats_popup)
 	var stats_margin := MarginContainer.new()
-	stats_margin.add_theme_constant_override("margin_left", 12)
-	stats_margin.add_theme_constant_override("margin_top", 12)
-	stats_margin.add_theme_constant_override("margin_right", 12)
-	stats_margin.add_theme_constant_override("margin_bottom", 12)
+	stats_margin.add_theme_constant_override("margin_left", 18)
+	stats_margin.add_theme_constant_override("margin_top", 14)
+	stats_margin.add_theme_constant_override("margin_right", 18)
+	stats_margin.add_theme_constant_override("margin_bottom", 14)
 	_stats._stats_popup.add_child(stats_margin)
 	var stats_box := VBoxContainer.new()
 	stats_box.add_theme_constant_override("separation", 8)
@@ -2471,15 +2492,28 @@ func _build_detail_popups() -> void:
 	var stats_tabs := HBoxContainer.new()
 	stats_tabs.add_theme_constant_override("separation", 8)
 	stats_box.add_child(stats_tabs)
+	# 页签：羊皮纸页签（选中的是金色那张），同一组互斥
+	var tab_group := ButtonGroup.new()
 	for item in [["player", tr("ui_stats_player")], ["boss", "Boss"]]:
 		var tab := Button.new()
 		tab.text = str(item[1])
-		tab.custom_minimum_size = Vector2(96, 34)
+		preload("res://ui/theme/ParchmentKit.gd").style_tab(tab, 40.0, 18)
+		tab.button_group = tab_group
+		tab.button_pressed = str(item[0]) == "player"
 		tab.pressed.connect(_set_stats_group.bind(str(item[0])))
 		stats_tabs.add_child(tab)
 	_stats._stats_text = RichTextLabel.new()
 	_stats._stats_text.bbcode_enabled = true
 	_stats._stats_text.scroll_active = true
+	_stats._stats_text.add_theme_color_override("default_color", Color("4a2c14"))
+	_stats._stats_text.add_theme_font_size_override("normal_font_size", 17)
+	_stats._stats_text.add_theme_font_size_override("bold_font_size", 18)
+	_stats._stats_text.add_theme_font_override("bold_font", preload("res://ui/components/UnitDetailCard.gd").font(false, 900))
+	# 表格：隔行浅褐色底，单元格留点空
+	_stats._stats_text.add_theme_color_override("table_odd_row_bg", Color(0.55, 0.36, 0.16, 0.10))
+	_stats._stats_text.add_theme_color_override("table_even_row_bg", Color(0, 0, 0, 0))
+	_stats._stats_text.add_theme_constant_override("table_h_separation", 10)
+	_stats._stats_text.add_theme_constant_override("table_v_separation", 6)
 	_stats._stats_text.custom_minimum_size = Vector2(920, 420)
 	stats_box.add_child(_stats._stats_text)
 

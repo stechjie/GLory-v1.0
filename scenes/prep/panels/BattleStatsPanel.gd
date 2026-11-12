@@ -287,8 +287,13 @@ func _display_position(row: Dictionary) -> String:
 
 
 # 原 _stats_color_cell（PrepDetails.gd）
+# 11.12：底板换成浅色羊皮纸，队伍色（黄 / 橙 / 绿偏亮）在米色上看不清 —— 压暗一截再用
 func _color_cell(row: Dictionary, text: String) -> String:
-	return BattleStatsFormat.stats_color_cell(row, text)
+	var owner_slot := int(row.get("owner_slot", -1))
+	if owner_slot < 0:
+		return text
+	var c := GameConstants.team_slot_color(owner_slot).darkened(0.45)
+	return "[color=#%s]%s[/color]" % [c.to_html(false), text]
 
 
 # 原 _next_round_kind_label（PrepDetails.gd）
