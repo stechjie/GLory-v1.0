@@ -169,6 +169,8 @@ const MERC_PICKER_MODAL_PRIORITY := 40
 # 左边三个是自己队、右边三个是对面，中间空一段。
 const READY_AVATAR_SIZE := 56.0 * 1.30
 const READY_AVATAR_GAP := 4
+const READY_AVATAR_INSET := roundi(READY_AVATAR_SIZE * 0.175)
+const CrispTexture := preload("res://scripts/ui/CrispTexture.gd")
 const READY_TEAM_GAP := 18
 const SEAT_CARD_MODAL_ID := "prep_seat_card"
 const SEAT_CARD_MODAL_PRIORITY := 40
@@ -2687,6 +2689,7 @@ func _build_ready_indicator() -> void:
 		_ready_dots.append(badge)
 		VoiceControls.attach_speaking_mic(badge)
 	_refresh_ready_indicator()
+	get_viewport().size_changed.connect(_refresh_ready_indicator, CONNECT_DEFERRED)
 	# 头像上的「正在说话」小麦克风（10-08）：说话状态每 0.25 秒才变一次，这里 0.2 秒看一眼就够。
 	var speaking_timer := Timer.new()
 	speaking_timer.wait_time = 0.2
@@ -2866,7 +2869,7 @@ func _create_ready_avatar_badge() -> Control:
 	badge.add_child(frame)
 
 	# 头像缩进与圆角按尺寸算（原来写死 40 像素时的 7 / 26），放大之后比例不变。
-	var inset := roundi(READY_AVATAR_SIZE * 0.175)
+	var inset := READY_AVATAR_INSET
 	var mask := Panel.new()
 	mask.name = "PortraitMask"
 	mask.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
@@ -2883,7 +2886,7 @@ func _create_ready_avatar_badge() -> Control:
 	badge.add_child(mask)
 
 	var portrait := TextureRect.new()
-	portrait.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	portrait.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	portrait.name = "Portrait"
 	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
@@ -2948,7 +2951,11 @@ func _refresh_ready_indicator() -> void:
 		var identity := _ready_slot_identity(slot)
 		var portrait := badge.get_node("PortraitMask/Portrait") as TextureRect
 		var frame := badge.get_node("Frame") as TextureRect
-		portrait.texture = AvatarCatalog.texture_for(str(identity.get("avatar", "")))
+		var source := AvatarCatalog.texture_for(str(identity.get("avatar", "")))
+		# Keep the source alive so repeated ready-state updates reuse its cached resize.
+		portrait.set_meta("source_portrait", source)
+		var portrait_size := badge.custom_minimum_size.ceil() - Vector2.ONE * (2.0 * READY_AVATAR_INSET)
+		portrait.texture = CrispTexture.fit(source, portrait_size, portrait, true)
 		frame.texture = AvatarCatalog.frame_texture_for(str(identity.get("avatar_frame", "")))
 		var is_ready := st == "dummy" or (slot < ready_arr.size() and bool(ready_arr[slot]))
 		var check := badge.get_node("ReadyCheck") as Label
