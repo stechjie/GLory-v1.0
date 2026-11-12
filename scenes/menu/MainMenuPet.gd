@@ -275,6 +275,13 @@ func _spawn_pet(pet_id: String, index: int, total: int) -> void:
 
 	var shadow := _make_shadow_node()
 	node.add_child(shadow)
+	# 11.12：影子挂在已缩放的模型下面，会跟着缩成几乎看不见（模型原始尺寸大，缩放系数很小）。
+	# 反向缩回世界大小，并把它压到地面 y=0（模型原点不一定在脚底）。
+	var factor := maxf(0.0001, node.scale.x)
+	shadow.scale = Vector3.ONE / factor
+	shadow.position = Vector3(0.0, (0.01 - node.position.y) / factor, 0.0)
+	# 再加一份跟摆放界面棋子一样的投影剪影（朝右下方压扁的身形），脚底软圆负责「踩住」
+	preload("res://effects/runtime/presentation/UnitPlanarShadow.gd").attach(node, 0.0)
 
 	# 9.26 大厅宠物脚步声：每只宠物一个**独立** AudioStreamPlayer，挂在 pet Node3D 下
 	# （不是 root，名字也避开 GlorySfxVoice* / GlorySfxLoopVoice，见本文件顶部说明）。

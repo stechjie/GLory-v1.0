@@ -1958,6 +1958,34 @@ func _race_emblem(race: String, owned_n: int, total: int, unlocked: bool, missin
 	return box
 
 
+# 棋子属性卡浮层：压暗背景 + 居中一张 UnitDetailCard（只能预览四星）。点空白处或右上角关闭键关掉。
+func _show_unit_detail_card(unit: Dictionary) -> void:
+	var layer := Control.new()
+	layer.name = "UnitDetailOverlay"
+	layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	layer.mouse_filter = Control.MOUSE_FILTER_STOP
+	layer.z_index = 50
+	add_child(layer)
+	var dim := ColorRect.new()
+	dim.color = Color(0.03, 0.02, 0.01, 0.55)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	layer.add_child(dim)
+	dim.gui_input.connect(func(event: InputEvent) -> void:
+		if (event is InputEventMouseButton and (event as InputEventMouseButton).pressed) 				or (event is InputEventScreenTouch and (event as InputEventScreenTouch).pressed):
+			layer.queue_free())
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(center)
+	var card = preload("res://ui/components/UnitDetailCard.gd").new()
+	card.mouse_filter = Control.MOUSE_FILTER_STOP
+	center.add_child(card)
+	card.setup_preview({"def": unit, "star": 1})
+	card.close_requested.connect(layer.queue_free)
+	preload("res://ui/theme/UiJuice.gd").pop_in([card], 0.0, 0.0, 0.9)
+
+
 func _unit_card(unit: Dictionary, item: Dictionary) -> Control:
 	var unit_id := str(unit.get("id", ""))
 	var grants := str(item.get("grants", ""))
@@ -1980,7 +2008,16 @@ func _unit_card(unit: Dictionary, item: Dictionary) -> Control:
 	portrait.custom_minimum_size = Vector2(60, 60)
 	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 11.12：点头像看棋子属性卡（跟摆放界面长按棋子同一张，只是不能升四星，只能预览四星）
+	portrait.mouse_filter = Control.MOUSE_FILTER_STOP
+	portrait.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	portrait.tooltip_text = _t("查看属性", "View stats")
+	portrait.gui_input.connect(func(event: InputEvent) -> void:
+		var tapped := (event is InputEventMouseButton and (event as InputEventMouseButton).pressed
+			and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT) 			or (event is InputEventScreenTouch and (event as InputEventScreenTouch).pressed)
+		if tapped:
+			portrait.accept_event()
+			_show_unit_detail_card(unit))
 	var portrait_path := UNIT_PORTRAIT_PATH % unit_id
 	var logo_path := RACE_LOGO_PATH % str(unit.get("race", ""))
 	if ResourceLoader.exists(portrait_path):

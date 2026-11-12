@@ -123,6 +123,26 @@ static func is_mercenary_cell(cell: Dictionary) -> bool:
 # 直接放进「四星升级」框里；不传就画一份静态示意（预览截图用）。
 # 它是外面持有、反复复用的节点，重建前先摘下来，别跟着旧内容一起被释放。
 var _upgrade_panel: Control
+# 只看不升（商城点棋子头像用）：底下只有「查看四星属性与技能」一个按钮，点了整张卡按四星重画，
+# 再点回来。没有升级石 / 金币 / 升级按钮。
+var preview_only := false
+var _preview_cell: Dictionary = {}
+var _previewing_four := false
+
+
+# 商城用：显示一张只能预览四星的卡
+func setup_preview(cell: Dictionary) -> void:
+	preview_only = true
+	_preview_cell = cell.duplicate()
+	_previewing_four = false
+	setup(_preview_cell)
+
+
+func _toggle_four_preview() -> void:
+	_previewing_four = not _previewing_four
+	var shown := _preview_cell.duplicate()
+	shown["star"] = 4 if _previewing_four else int(_preview_cell.get("star", 1))
+	setup(shown)
 
 
 func setup(cell: Dictionary, p_compact := false, upgrade_panel: Control = null) -> void:
@@ -464,6 +484,28 @@ func _four_star(d: Dictionary) -> Control:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 4)
 	four_star_box.add_child(col)
+	if preview_only:
+		# 只留查看四星的卷轴按钮，不要「四星升级」那段
+		var btn := Button.new()
+		btn.custom_minimum_size = Vector2(260, 38)
+		btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		_style_texture_button(btn, "scroll_button", Vector4(80, 0, 80, 0), 38.0 / 150.0)
+		var bh := HBoxContainer.new()
+		bh.alignment = BoxContainer.ALIGNMENT_CENTER
+		bh.add_theme_constant_override("separation", 8)
+		bh.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		bh.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		bh.add_child(_icon(art("icon_scroll"), 24))
+		bh.add_child(_label(_t("返回当前属性", "Back to current stats") if _previewing_four
+			else _t("查看四星属性与技能", "View 4-star stats & skill"), 17, false, 700))
+		btn.add_child(bh)
+		btn.pressed.connect(_toggle_four_preview)
+		four_star_preview = btn
+		var holder := CenterContainer.new()
+		holder.add_child(btn)
+		four_star_box.queue_free()   # 上面先建好的四星底框这里用不上
+		four_star_box = null
+		return holder
 	col.add_child(_section_title(_t("四星升级", "4-Star Upgrade")))
 	if _upgrade_panel != null:
 		_upgrade_panel.show()
