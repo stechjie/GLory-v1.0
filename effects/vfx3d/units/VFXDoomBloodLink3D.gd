@@ -290,7 +290,7 @@ func _pact_burst() -> void:
 	if parent == null:
 		return
 	for t in [0.04, 0.96]:
-		var sparks := VFXBlockRoot.spawn_block(PACT_SPARKS, parent) as VFXMaskedParticle3D
+		var sparks := VFXBlockRoot.spawn_block(PACT_SPARKS, parent, true) as VFXMaskedParticle3D
 		if sparks != null:
 			sparks.play_burst(parent.to_local(to_global(_curve_point(t))), PACT_COLOR, 14, 2.0, 0.46)
 

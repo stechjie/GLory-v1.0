@@ -178,6 +178,7 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 
 	var damage_events: Array[Dictionary] = []
 	var death_events: Array[Dictionary] = []
+	var battle_elapsed := _vfx_battle_elapsed(state_snapshot)
 	# 10.18 控制四件套刷新：冷却骤降的候选先存下，等本帧的死亡全部收齐再判（击杀者可能先于死者被遍历）。
 	var refresh_candidates: Array = []
 
@@ -302,7 +303,7 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 		if bool(now.get("phoenix_used", false)) and bool(now.get("alive", false)) and not _phoenix_rise_played.has(id):
 			_phoenix_rise_played[id] = true
 			_play_unit_procedural("treasure_phoenix_rise", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO), _unit_target_context(now, now))
-		if now_skill_ready > prev_skill_ready + 0.1:
+		if now_skill_ready > prev_skill_ready + 0.1 and _skill_ready_rise_is_cast(sid_now, now_skill_ready, battle_elapsed):
 			_play_skill_cast_vfx(now, prev, damage_events, current)
 		elif prev_skill_ready - now_skill_ready > REFRESH_MIN_DROP_SEC:
 			refresh_candidates.append([prev, now])
@@ -341,6 +342,40 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 	# 的 cue 驱动，原先在这里按 attack_count 增量重建攻击的两条 diff 路径已删除。
 	# 保留在本函数里的仍是尚未迁移的部分：护盾、层数、治疗、Boss 与种族技能演出。
 	_vfx_prev_units = current
+
+# 11.12：`skill_ready` 上升沿**不等于**施法。
+#
+# 赤律族有两处「减冷却」写的是 `skill_ready = maxf(elapsed, skill_ready - N)`
+# （CrimsonCombat.gd 的每 5 秒脉冲，和舞者给随机友军的增益）。对冷却早就转完的单位 ——
+# 被动技单位 skill_ready 一直是 0，主动技单位可能正被沉默 / 够不到人 —— 这句不是减，
+# 而是把 skill_ready **抬**到当前时刻，于是这里看到一次上升沿，凭空演一遍技能：
+# 技能特效、四星技能音，以及下面已经退役的旧贴图兜底（用户报的「无端端引用旧的 png」）。
+#
+# 判据：真施法写的是 `elapsed + 冷却`，落在当前时刻**之后**；假上升沿写的是当时的
+# elapsed，不会晚于当前时刻。模拟器不动（那两句对战斗结果没有影响，改了反而要动
+# 服务器和回放摘要），只在表现层分辨。
+#
+# 例外 blink_low_def_backline：伏击者击杀后刷新写的就是 `skill_ready = elapsed`，
+# 和假上升沿长得一样，分不出来，保持原判。
+const CAST_EDGE_MIN_LEAD_SEC := 0.05
+
+func _skill_ready_rise_is_cast(skill_id: String, now_skill_ready: float, battle_elapsed: float) -> bool:
+	if battle_elapsed <= 0.0 or skill_id == "blink_low_def_backline":
+		return true
+	return now_skill_ready > battle_elapsed + CAST_EDGE_MIN_LEAD_SEC
+
+# 当前战斗时刻（秒）。实时模拟的 state 自带 elapsed；回放的 `_state.elapsed` 不随帧更新，
+# 按「每帧 = 模拟器走一步」从回放游标推。两者都拿不到时返回 0，调用方按「无法判断」处理。
+func _vfx_battle_elapsed(state_snapshot: Dictionary) -> float:
+	var from_state := float(state_snapshot.get("elapsed", 0.0))
+	if from_state > 0.0:
+		return from_state
+	# `_replay_mode` / `_replay_frame` 声明在继承链下游的 BattleScreen.gd，这里只能动态取。
+	# 不经 BattleScreen 直接实例化本层的检查脚本里这两个成员不存在，get() 返回 null。
+	var replay_frame: Variant = get("_replay_frame")
+	if get("_replay_mode") == true and replay_frame is int:
+		return float(replay_frame) * SIM_TICK_SEC
+	return 0.0
 
 func _vfx_hit_stop_active() -> bool:
 	# VFXManager is an autoload: reference it directly. The old has_node/get_node
@@ -651,75 +686,25 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 	var boss_cue := SfxService.boss_cast_edge_cue_for(uid)
 	if not boss_cue.is_empty():
 		_play_unit_audio(boss_cue, _sim_uid)
-	var texture_pos: Vector2 = unit.get("cast_pos", Vector2.ZERO)
-	var should_play_texture := true
-	var procedural_played := false
 	_play_race_unit_skill_procedural(sid, unit, previous, damage_events, current)
-	match sid:
-		"apocalypse_charge", "element_meteor", "mirror_clone", "holy_purify", "overload_counter", "twin_revive", "blood_rage", "soul_devour", "rage_stack":
-			should_play_texture = false
-			if sid == "element_meteor":
-				var meteor_target := _nearest_enemy_target(unit, damage_events, current)
-				var meteor_world: Vector3 = meteor_target.get("world_foot", unit.get("world_foot", Vector3.ZERO))
-				_play_boss_procedural("element_meteor", unit.get("world_cast", Vector3.ZERO), meteor_world, _boss_target_context(meteor_target))
-				procedural_played = true
-			elif sid == "holy_purify":
-				var ally_positions: Array = []
-				for ally_id: String in current.keys():
-					var ally: Dictionary = current[ally_id]
-					if bool(ally.get("alive", false)) and str(ally.get("team", "")) == str(unit.get("team", "")):
-						ally_positions.append(ally.get("world_foot", unit.get("world_foot", Vector3.ZERO)))
-				_play_boss_procedural("holy_purify", unit.get("world_foot", Vector3.ZERO), unit.get("world_foot", Vector3.ZERO), {"targets": ally_positions})
-				procedural_played = true
-		"random_attribute_bolt", "silence_bolt":
-			should_play_texture = false
-			# The OGA projectile/pack composer owns cast, travel and hit. Do not
-			# add the retired role textures underneath it.
-		"bubble_dream", "balance_judge", "gold_charge", "twin_strike", "arrow_rain", "blood_rampage", "steel_order", "time_slow", "death_hunt":
-			should_play_texture = false
-		"king_aura":
-			# Visual-only procedural aura; never spawn the obsolete legacy PNG layer.
-			should_play_texture = false
-		"judgement_strike", "global_divine_blast":
-			# 9.24 #3：裁决者（单体）与神王（全体）的落雷都由 composer 的
-			# _aoe_thunder 全权负责，旧的贴图层一律不再叠加。
-			should_play_texture = false
-		"front_cone_stun":
-			should_play_texture = false
-		"fear", "stun", "blink_low_def_backline":
-			# Fear Demon, Succubus and Ambusher moved to authored layers; the
-			# composer owns them and no legacy plate is added.
-			should_play_texture = false
-		"black_hole":
-			should_play_texture = false
-		"lowest_ally_heal", "nearest_ally_bless", "nearby_ally_heal_buff", "guardian_shield_taunt", "holy_song", "holy_purify":
-			should_play_texture = false
-			# The OGA light/shield pack owns the presentation; legacy holy plates
-			# and HOLY_HEAL/HOLY_SHIELD overlays stay disabled.
-		"curse_attack", "same_target_damage_stack", "poison_attack", "death_poison_explosion", "poison_reflect_armor_stack":
-			should_play_texture = false
-			# Blood/nature/explosion pack route is exclusive: no old role texture.
-		"random_ally_damage_reduction":
-			# Angel's Guard is now fully owned by VFXAngelGuard3D.  The legacy
-			# HOLY_SHIELD 2D scene must not be layered over the new-material route.
-			should_play_texture = false
-		"shell_guard", "apocalypse_charge":
-			should_play_texture = false
-			# Do not fall back to the retired HOLY_SHIELD overlay. These skills keep
-			# their own 3D composer presentation only.
-		"shared_hp_link":
-			should_play_texture = false
-		"random_ally_buff", "frost_status", "aoe_silence":
-			# 赤律族主动技由 VFXCrimsonSkill3D 独占（_play_race_unit_skill_procedural）。
-			should_play_texture = false
-		_:
-			pass
-	# 叠加贴图特效（与程序效果同时显示）
-	if should_play_texture:
-		_play_skill_texture_vfx(unit, texture_pos)
-	elif procedural_played:
-		# The procedural sample owns its full staged animation; do not place a static Boss PNG on top.
-		pass
+	# 这两招的施法演出由 Boss composer 出，其余 Boss 技能走各自的事件 / 层数边沿。
+	if sid == "element_meteor":
+		var meteor_target := _nearest_enemy_target(unit, damage_events, current)
+		var meteor_world: Vector3 = meteor_target.get("world_foot", unit.get("world_foot", Vector3.ZERO))
+		_play_boss_procedural("element_meteor", unit.get("world_cast", Vector3.ZERO), meteor_world, _boss_target_context(meteor_target))
+	elif sid == "holy_purify":
+		var ally_positions: Array = []
+		for ally_id: String in current.keys():
+			var ally: Dictionary = current[ally_id]
+			if bool(ally.get("alive", false)) and str(ally.get("team", "")) == str(unit.get("team", "")):
+				ally_positions.append(ally.get("world_foot", unit.get("world_foot", Vector3.ZERO)))
+		_play_boss_procedural("holy_purify", unit.get("world_foot", Vector3.ZERO), unit.get("world_foot", Vector3.ZERO), {"targets": ally_positions})
+	# 11.12：旧的 2D 贴图层（SkillVFXConfig 里那批 png）在施法这条路上彻底退役。
+	# 原来这里有一张「哪些技能不叠旧贴图」的名单，没点名的就叠一层。剩下没点名的 10 个单位
+	# （极光射手、弓箭手、牧师、死侍、人王、商人、民兵、母灵、寄生灵、刺灵）全是被动技，
+	# 本来走不到这里；实际走到的唯一原因是假上升沿（见 _skill_ready_rise_is_cast），
+	# 播出来的就是和现役特效风格对不上的旧 png。它们的正式表现都在 composer 里，
+	# 新技能没配表现时由 composer 的兜底闪光负责，不再回退到旧贴图。
 
 func _play_boss_procedural(effect_id: String, origin_value: Variant, target_value: Variant, context: Dictionary = {}) -> Node3D:
 	if _battle_3d_vfx_root == null or not is_instance_valid(_battle_3d_vfx_root):

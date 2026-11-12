@@ -181,7 +181,7 @@ var _profile_dot: Label
 var _account_level := 0
 var _account_xp_progress := 0
 var _account_xp_required := 0
-var _profile_xp_fill: ColorRect
+var _profile_xp_fill: Control
 var _profile_xp_bar: Control
 var _coin_label: Label
 var _diamond_label: Label
@@ -362,23 +362,42 @@ func _build() -> void:
 	_profile_xp_bar = _add_container(PROFILE_XP_POS, PROFILE_XP_SIZE, "left")
 	_profile_xp_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_profile_xp_bar.clip_contents = true
+	# 11.12 羊皮纸风：原来是深蓝底 + 亮蓝条，跟羊皮纸名牌不搭。
+	# 现在是嵌进名牌的一道浅褐色凹槽（深棕细边、内侧一道暗边像压下去），里面一条金色进度，
+	# 进度条上沿一道亮线；字是深棕色带浅色描边（同名牌上的名字）。
 	var xp_track := Panel.new()
 	var xp_track_style := StyleBoxFlat.new()
-	xp_track_style.bg_color = Color("26374c")
-	xp_track_style.set_corner_radius_all(3)
+	xp_track_style.bg_color = Color("bf9460")
+	xp_track_style.border_color = Color("8a5a24")
+	xp_track_style.set_border_width_all(2)
+	xp_track_style.set_corner_radius_all(16)
+	xp_track_style.shadow_color = Color(0.35, 0.2, 0.06, 0.35)
+	xp_track_style.shadow_size = 0
+	xp_track_style.anti_aliasing = true
 	xp_track.add_theme_stylebox_override("panel", xp_track_style)
 	xp_track.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	xp_track.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_profile_xp_bar.add_child(xp_track)
-	_profile_xp_fill = ColorRect.new()
-	_profile_xp_fill.color = Color("79d8ff")
+	var fill_clip := Control.new()
+	fill_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fill_clip.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	fill_clip.offset_left = 3.0
+	fill_clip.offset_top = 3.0
+	fill_clip.offset_right = -3.0
+	fill_clip.offset_bottom = -3.0
+	_profile_xp_bar.add_child(fill_clip)
+	_profile_xp_fill = Panel.new()
+	var fill_style := StyleBoxFlat.new()
+	fill_style.bg_color = Color("f0b638")
+	fill_style.border_color = Color("fde08a")
+	fill_style.border_width_top = 2
+	fill_style.border_width_bottom = 0
+	fill_style.set_corner_radius_all(13)
+	fill_style.anti_aliasing = true
+	_profile_xp_fill.add_theme_stylebox_override("panel", fill_style)
 	_profile_xp_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_profile_xp_fill.anchor_bottom = 1.0
-	_profile_xp_fill.offset_left = 1.0
-	_profile_xp_fill.offset_top = 1.0
-	_profile_xp_fill.offset_right = -1.0
-	_profile_xp_fill.offset_bottom = -1.0
-	_profile_xp_bar.add_child(_profile_xp_fill)
+	fill_clip.add_child(_profile_xp_fill)
 	_profile_sub_label = _add_label("", PROFILE_XP_POS, PROFILE_XP_SIZE, 16, "left")
 	_ink(_profile_sub_label)
 	_profile_dot = _add_dot(Vector2(150, 26), "left")
@@ -1075,8 +1094,8 @@ func _refresh_profile_plate() -> void:
 	var profile: Dictionary = AccountManager.profile
 	var show_xp := not profile.is_empty() and _account_level > 0
 	_profile_xp_bar.visible = show_xp
-	_profile_sub_label.add_theme_color_override("font_color", Color("f8fcff") if show_xp else INK_TEXT)
-	_profile_sub_label.add_theme_color_override("font_outline_color", Color("14273e") if show_xp else INK_OUTLINE)
+	_profile_sub_label.add_theme_color_override("font_color", INK_TEXT)
+	_profile_sub_label.add_theme_color_override("font_outline_color", INK_OUTLINE)
 	if profile.is_empty():
 		# 还没登录 / 还没拉到资料。**不放假名字** —— 玩家看到一个陌生昵称
 		# 比看到一条横线更糟，而且那正是这次要消灭的东西。

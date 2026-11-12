@@ -141,10 +141,12 @@ func _section_revert(prep: Control) -> void:
 	if is_instance_valid(flow):
 		h.expect((flow as Node3D).visible, "revert_river_glow_on",
 			"换回草地后河面流动波光应重新显示（草地 river_glow=true）")
-		h.expect(_glow_path(prep) == PrepBoardC.PREP_RIVER_BOTTOM_EF_PATH, "revert_glow_default_ef",
-			"换回草地后波光源应回到那张专门画的高光图，实为 %s" % _glow_path(prep))
-		h.expect(is_equal_approx(_glow_cut(prep), 0.0), "revert_glow_cut_off",
-			"草地那张高光图是黑底，整张都该出，不许切亮度")
+		# 11.12 起默认草地换成手绘河面（自带稀疏高光），跟樱花 / 夜荧光一样用它自己那张当波光源、
+		# 只留最亮的那一点 —— 那张黑底高光图是照旧河道画的，跟新河面对不上了。
+		h.expect(_glow_path(prep) == _def("river"), "revert_glow_default_self_art",
+			"换回草地后波光源应回到草地自己的河面图，实为 %s" % _glow_path(prep))
+		h.expect(_glow_cut(prep) > 0.0, "revert_glow_cut_on",
+			"草地河面图整条都很亮，波光要切亮度，只留最亮的水花")
 		# 草地没有 river_drop：换回来时河面要挪回原位（不是只会往下挪的单向补丁）
 		h.expect(is_equal_approx(_layer_z(prep, "PrepRiverBottomLayer"), PrepBoardC.PREP_BOARD_GROUND_CENTER.z),
 			"revert_river_z", "换回草地后河面应回到原位，实为 %.3f" % _layer_z(prep, "PrepRiverBottomLayer"))

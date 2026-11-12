@@ -27,11 +27,36 @@ func _enter_tree() -> void:
 
 
 func install() -> void:
+	# 11.12 用户：全游戏统一用萝卜营地那套字 —— 思源黑体（NotoSansSC-VF）粗体。
+	# 它自带拉丁字母和中文，直接当引擎默认字体；没单独指定字体的控件全部跟着换。
+	# 金币数字（Knewave）这类单独指定过的保留原样。
+	var game_font := game_font()
+	if game_font != null:
+		ThemeDB.fallback_font = game_font
+		ThemeDB.get_default_theme().default_font = game_font
+		return
 	var cjk := chinese_font()
 	if cjk == null:
 		return
 	_add_fallback(ThemeDB.fallback_font, cjk)
 	_add_fallback(ThemeDB.get_default_theme().default_font, cjk)
+
+
+const GAME_FONT_PATH := "res://ui/fonts/NotoSansSC-VF.ttf"
+const GAME_FONT_WEIGHT := 700
+static var _game_font: FontVariation
+
+
+static func game_font() -> FontVariation:
+	if _game_font == null:
+		var base := load(GAME_FONT_PATH) as FontFile
+		if base == null:
+			return null
+		_game_font = FontVariation.new()
+		_game_font.base_font = base
+		var ts := TextServerManager.get_primary_interface()
+		_game_font.variation_opentype = {ts.name_to_tag("wght"): GAME_FONT_WEIGHT}
+	return _game_font
 
 
 func _add_fallback(font: Font, cjk: FontFile) -> void:

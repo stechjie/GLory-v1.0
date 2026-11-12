@@ -17,7 +17,7 @@ const VFX_ENERGY_BURST:=preload("res://effects/vfx3d/modules/VFXEnergyBurst3D.gd
 const VFX_IMPACT_FLASH:=preload("res://effects/vfx3d/modules/VFXImpactFlash3D.gd")
 const VFX_SPARKS:=preload("res://effects/vfx3d/modules/VFXMaskedParticle3D.gd")
 const VFX_RACE_BASIC_ATTACK:=preload("res://effects/vfx3d/modules/VFXRaceBasicAttack3D.gd")
-const VFX_AUTHORED_UNIT_PROJECTILE:=preload("res://effects/vfx3d/modules/VFXAuthoredUnitProjectile3D.gd")
+const VFX_AUTHORED_PROJECTILE_BATCH:=preload("res://effects/vfx3d/modules/VFXAuthoredProjectileBatch3D.gd")
 const VFX_OGA_PROJECTILE:=preload("res://effects/vfx3d/modules/VFXFlipbookProjectile3D.gd")
 const VFX_OGA_MELEE:=preload("res://effects/vfx3d/modules/VFXFlipbookMelee3D.gd")
 const VFX_OGA_SKILL:=preload("res://effects/vfx3d/modules/VFXFlipbookSkill3D.gd")
@@ -281,7 +281,7 @@ func _basic_attack(origin:Vector3,target:Vector3,race:String,mode:String,context
 	if mode=="ranged":
 		var projectile_spec:Dictionary=OGA_CHESS_CATALOG.projectile_for(uid)
 		if not projectile_spec.is_empty():
-			var projectile:=_block(VFX_OGA_PROJECTILE) as VFXFlipbookProjectile3D
+			var projectile:=_block_capped(VFX_OGA_PROJECTILE) as VFXFlipbookProjectile3D
 			if projectile!=null:
 				last_spawned=projectile
 				var projectile_target:=target
@@ -296,18 +296,14 @@ func _basic_attack(origin:Vector3,target:Vector3,race:String,mode:String,context
 			return
 		var authored_profile := AUTHORED_UNIT_PROJECTILE_PROFILES.get(uid) as VFXProfile3D
 		if authored_profile != null:
-			var authored_projectile := _block(VFX_AUTHORED_UNIT_PROJECTILE) as VFXAuthoredUnitProjectile3D
-			if authored_projectile != null:
-				last_spawned = authored_projectile
-				var authored_context := context.duplicate(true)
-				authored_context["origin"] = origin
-				authored_context["target"] = target
-				authored_projectile.play_profile(authored_profile, authored_context)
+			# 11.12：改走合批渲染（VFXAuthoredProjectileBatch3D），外观照抄原模块，
+			# 不再每发 new 十几个节点，也不再受并发上限、不会被丢弃。
+			_authored_projectile_batch().call("play", authored_profile, origin, target, context.get("target_node"))
 			return
 	else:
 		var melee_spec:Dictionary=OGA_CHESS_CATALOG.melee_for(uid,race)
 		if not melee_spec.is_empty():
-			var melee:=_block(VFX_OGA_MELEE) as VFXFlipbookMelee3D
+			var melee:=_block_capped(VFX_OGA_MELEE) as VFXFlipbookMelee3D
 			if melee!=null:
 				last_spawned=melee
 				melee.play_spec(origin,target,melee_spec,context)
@@ -324,7 +320,7 @@ func _basic_attack(origin:Vector3,target:Vector3,race:String,mode:String,context
 		# 冒出通用斩击，超出「修光之卫士」的范围。
 		if OGA_CHESS_CATALOG.has_painted_melee(uid):
 			var painted_profile:=_basic_profile_for(uid,race)
-			_spawn(VFX_RACE_BASIC_ATTACK,painted_profile,{"origin":origin,"target":target,"target_node":context.get("target_node"),"race":race,"mode":mode,"bolt_kind":_bolt_kind_for(uid),"melee_kind":_melee_kind_for(uid),"bolt_tex":""})
+			_spawn_capped(VFX_RACE_BASIC_ATTACK,painted_profile,{"origin":origin,"target":target,"target_node":context.get("target_node"),"race":race,"mode":mode,"bolt_kind":_bolt_kind_for(uid),"melee_kind":_melee_kind_for(uid),"bolt_tex":""})
 			return
 		# Non-signature player melee pieces intentionally have no generic slash.
 		# Returning here also prevents the retired race effect from resurfacing.
@@ -334,14 +330,14 @@ func _basic_attack(origin:Vector3,target:Vector3,race:String,mode:String,context
 	# 有专属 PNG 箭矢的单位（弓箭手/极光射手），远程普攻用它自己的图当弹体；
 	# 走同一套弹道系统，所以会跟着飞行方向朝向目标（不再横着）。
 	var bolt_tex:=str(PROJECTILE_TEX_BY_UNIT.get(uid,"")) if mode=="ranged" else ""
-	_spawn(VFX_RACE_BASIC_ATTACK,profile,{"origin":origin,"target":target,"target_node":context.get("target_node"),"race":race,"mode":mode,"bolt_kind":_bolt_kind_for(uid),"melee_kind":_melee_kind_for(uid),"bolt_tex":bolt_tex})
+	_spawn_capped(VFX_RACE_BASIC_ATTACK,profile,{"origin":origin,"target":target,"target_node":context.get("target_node"),"race":race,"mode":mode,"bolt_kind":_bolt_kind_for(uid),"melee_kind":_melee_kind_for(uid),"bolt_tex":bolt_tex})
 
 func _crimson_basic_attack(origin:Vector3,target:Vector3,mode:String,context:Dictionary)->void:
 	# 非招牌近战（赤卫）与其它玩家近战棋子同一规则：只靠模型动作 + 伤害数字，
 	# 连一个空节点都不生成，免得白占并发预算。
 	if mode=="melee" and CRIMSON_CATALOG.melee_kind_for(str(context.get("source_unit_id",""))).is_empty():
 		return
-	var attack:Node3D=_block(VFX_CRIMSON_ATTACK)
+	var attack:Node3D=_block_capped(VFX_CRIMSON_ATTACK)
 	if attack==null:
 		return
 	last_spawned=attack
@@ -349,10 +345,9 @@ func _crimson_basic_attack(origin:Vector3,target:Vector3,mode:String,context:Dic
 	attack_context["mode"]=mode
 	attack.call("play_attack",origin,target,attack_context)
 
-# 赤律族技能：一次性表现走普通并发闸门；赤灯使全体禁言是控制类（与
-# guardian / black_hole 同理）必须读到，走 critical 通道。
+# critical=false 只剩神王后续 4 跳的小脉冲在用：高频、便宜，允许被并发上限丢弃。
 func _hero_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary,critical:bool)->void:
-	var effect:Node3D=_block_forced(VFX_HERO_SKILL) if critical else _block(VFX_HERO_SKILL)
+	var effect:Node3D=_block_forced(VFX_HERO_SKILL) if critical else _block_capped(VFX_HERO_SKILL)
 	if effect==null:
 		return
 	last_spawned=effect
@@ -455,8 +450,8 @@ func _treasure_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dicti
 	effect.call("play_treasure",skill_id,origin,target,context)
 
 func _crimson_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var critical:=skill_id=="aoe_silence"
-	var effect:Node3D=_block_forced(VFX_CRIMSON_SKILL) if critical else _block(VFX_CRIMSON_SKILL)
+	# 11.12：技能一律强制生成（见 _block 上的说明），不再只保赤灯使的全体禁言。
+	var effect:Node3D=_block(VFX_CRIMSON_SKILL)
 	if effect==null:
 		return
 	last_spawned=effect
@@ -1962,12 +1957,37 @@ func _death_hunt_kill(origin:Vector3,context:Dictionary)->void:
 # `as <具体类型>`，否则变量被定型成 Node3D，被 tween 的 lambda 捕获后
 # 运行时会报 "Nonexistent function 'play_layer' in base 'Node3D'"。
 # 改造前的 `var x := VFX_PAINTED.new()` 本来就推断出具体类型，转换是为了保持等价。
-func _block(script:Script)->Node3D:
-	return VFXBlockRoot.spawn_block(script,self)
+#
+# 11.12：**默认强制生成，不受并发上限约束。** 原来默认受限、只有少数关键技能点名强制，
+# 结果 Boss 回合实测一场丢 83~267 次，被丢的近一半是技能的手绘图层（普攻只占 4%）——
+# 玩家看到的就是「技能放了但没画面」或者只剩半招。上限的本意是砍便宜的高频特效，
+# 所以现在反过来：技能都保，只有普攻 / 兜底闪光 / 神王小脉冲走 _block_capped。
+# 类型写 Node3D、不写 class_name：新脚本的 class_name 要等编辑器重扫才进全局类缓存，
+# 没扫之前直接引用会让整个 composer 编译失败。
+var _authored_batch:Node3D
 
-# 关键事件专用：跳过并发上限，保证一定生成（母灵处决的书等）。
+func _authored_projectile_batch()->Node3D:
+	if _authored_batch==null or not is_instance_valid(_authored_batch):
+		_authored_batch=VFX_AUTHORED_PROJECTILE_BATCH.new()
+		_authored_batch.name="AuthoredProjectileBatch"
+		add_child(_authored_batch)
+	return _authored_batch
+
+func _block(script:Script)->Node3D:
+	return VFXBlockRoot.spawn_block(script,self,true)
+
+# 与 _block 等价，保留名字给已经点名「关键事件」的调用点。
 func _block_forced(script:Script)->Node3D:
 	return VFXBlockRoot.spawn_block(script,self,true)
+
+# 高频、便宜、丢一两个玩家看不出来的特效专用：受并发上限约束，超限返回 null。
+func _block_capped(script:Script)->Node3D:
+	return VFXBlockRoot.spawn_block(script,self)
+
+func _spawn_capped(script:Script,profile:VFXProfile3D,context:Dictionary)->Node3D:
+	var node:=_block_capped(script)
+	if node==null:return null
+	last_spawned=node;node.call("play_profile",profile,context);return node
 
 func _spawn_forced(script:Script,profile:VFXProfile3D,context:Dictionary)->Node3D:
 	var node:=_block_forced(script)
@@ -2347,7 +2367,7 @@ func _eternal_night(origin:Vector3,context:Dictionary)->void:
 # match 的兜底分支用：一次中性的命中反馈。
 func _generic_hit(target:Vector3)->void:
 	var th := UNIT_HEIGHT_FALLBACK
-	_spawn(VFX_IMPACT_FLASH,_profile(Color(.04,.04,.05),Color(.52,.54,.60),Color(.94,.96,1.0),.44,.32,2.6,5),{"target":_lvl(target,th,LEVEL_BODY)})
+	_spawn_capped(VFX_IMPACT_FLASH,_profile(Color(.04,.04,.05),Color(.52,.54,.60),Color(.94,.96,1.0),.44,.32,2.6,5),{"target":_lvl(target,th,LEVEL_BODY)})
 
 func _spawn(script:Script,profile:VFXProfile3D,context:Dictionary)->Node3D:
 	var node:=_block(script)

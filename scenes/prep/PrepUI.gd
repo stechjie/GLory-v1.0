@@ -25,6 +25,8 @@ const CarrotCampPanelScript := preload("res://scenes/prep/CarrotCampPanelV3.gd")
 const CampEntryGlowScript := preload("res://ui/components/CampEntryGlow.gd")
 const ReadyOrbitGlowScript := preload("res://scenes/prep/effects/ReadyOrbitGlow.gd")
 const READY_RUBY_TEXTURE := preload("res://assets/ui/buttons/ready_ruby_lowpoly.png")
+const START_PLATE_PATH := "res://assets/ui/prep/start_button_v2.png"
+const ROUND_PLATE_PATH := "res://assets/ui/prep/round_plate_v2.png"
 var _ready_orbit_glow: ReadyOrbitGlowScript
 # 入口角标那枚石头图标（通用款，不分天 / 地 / 人 —— 角标说的是「队伍有石头」）。
 const CARROT_ENTRY_STONE_ICON_PATH := "res://assets/props/carrot_system/stones/stone_unknown.png"
@@ -43,7 +45,7 @@ const HP_FRAME_EMPTY_PATH := "res://assets/ui/buttons/btn_hp_empty.png"   # 血�
 const HP_FRAME_RED_PATH := "res://assets/ui/buttons/btn_hp_red.png"       # 血条红条填充贴图
 const HP_FRAME_SIZE := Vector2(246, 82)                                   # 高清框 2172x724，比例 3.0
 const START_BTN_PATH := "res://assets/ui/buttons/btn_start.png"           # 开始战斗木牌框（高清透明）
-const START_BTN_SIZE := Vector2(240, 80)                                  # 比例 3.0
+const START_BTN_SIZE := Vector2(236, 48)                                  # 11.12 双剑金框（左边留给双剑）
 
 # ── 10.04 bug 文档第 2 条（对局）：「准备 / 未准备」原来只差文字尾巴一个「✓」，太不明显 ──
 # 玩家选定「方案 B · 宝石红 / 青」，配色**呼应顶部血条（红）与法条（青）**：
@@ -55,13 +57,14 @@ const READY_TONE_PENDING_TEXT := Color(1.000, 0.737, 0.741)
 const READY_TONE_DONE_EDGE := Color(0.239, 0.859, 0.820)      # 法条青描边
 const READY_TONE_DONE_FILL := Color(0.027, 0.180, 0.180, 0.95)
 const READY_TONE_DONE_TEXT := Color(0.702, 1.000, 0.973)
-const READY_BTN_TEXT_DEFAULT := Color(1.0, 0.90, 0.60)        # 木牌金（原色，非联机时用）
+const READY_BTN_TEXT_DEFAULT := Color("59381c")             # 深棕字配浅色手绘羊皮纸
 const STATS_BTN_PATH := "res://assets/ui/buttons/btn_stats.png"           # 统计/战力石板框（高清透明）
 const STATS_BTN_SIZE := Vector2(140, 94)                                  # 比例 1.5
 # 11.05 起刷新按钮是空心金框，中间图案按皮肤用代码画（PrepRefreshEmblem）。
 const REFRESH_BTN_PATH := "res://assets/ui/buttons/btn_refresh_blank.png"
 const REFRESH_RING_PATH := "res://assets/ui/prep_buttons/refresh_ring.png"
 const PrepRefreshEmblem := preload("res://scenes/prep/PrepRefreshEmblem.gd")
+const PrepSunDappleScript := preload("res://scenes/prep/PrepSunDapple.gd")
 # 11.12 摆放界面按钮换成羊皮纸那一批（assets/ui/prep_buttons，用户出的图，字由代码写）
 const TOP_POWER_BTN_PATH := "res://assets/ui/prep_buttons/top_power.png"
 const TOP_STATS_BTN_PATH := "res://assets/ui/prep_buttons/top_last_battle.png"
@@ -682,12 +685,18 @@ var _sky_background: TextureRect
 func reapply_prep_skin() -> void:
 	if is_instance_valid(_sky_background):
 		_sky_background.texture = PrepWidgets.cached_texture(PrepSkin.path("board"))
+		PrepSunDappleScript.apply(_sky_background, PrepSkin.active_id == PrepSkin.DEFAULT_ID)
+		var lawn_fx := _sky_background.get_node_or_null("PrepLawnFx") as CanvasItem
+		if lawn_fx != null:
+			lawn_fx.visible = PrepSkin.active_id == PrepSkin.DEFAULT_ID
 	_swap_prep_skin_plane("PrepBaseLayer", "board")
 	_swap_prep_skin_plane("PrepRiverBottomLayer", "river")
 	# 河面画得比默认高的皮肤要整体往下游挪（PrepSkin.river_drop）。只换图不挪位置的话，
 	# 晚到的皮肤水面会漫过待命区台子。底图和波光两层用同一个偏移，不然会错开。
 	_move_river_layer("PrepRiverBottomLayer")
 	_move_river_layer("PrepRiverFlowBottom")
+	_move_river_layer("PrepRiverWaterMotion")
+	refresh_prep_river_water()
 	_swap_prep_skin_plane("PrepStandbyBgLayer", "bench")
 	var carrot := find_child("CarrotGeneratedSprite", true, false)
 	if carrot is Sprite3D:
@@ -794,6 +803,12 @@ func _build(staged: bool = false) -> void:
 	_sky_background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_sky_background.z_index = -20
 	add_child(_sky_background)
+	# 11.12：草地上的光斑跟着风一明一暗（默认青草地皮肤才开）
+	PrepSunDappleScript.apply(_sky_background, PrepSkin.active_id == PrepSkin.DEFAULT_ID)
+	# 符文石的光 + 树旁的光蝴蝶（只在默认青草地）
+	var lawn_fx := preload("res://scenes/prep/PrepLawnFx.gd").new()
+	_sky_background.add_child(lawn_fx)
+	lawn_fx.visible = PrepSkin.active_id == PrepSkin.DEFAULT_ID
 	if staged:
 		StartupTrace.mark("tutorial_background_built")
 		await get_tree().process_frame
@@ -872,6 +887,22 @@ func _on_locale_changed(_locale: String) -> void:
 		_carrot_button_label.text = "Carrot Camp" if LocaleManager.get_locale().begins_with("en") else "萝卜营地"
 	_refresh_carrot_counter()
 
+# 横长条九宫格：先把整张图缩到显示高度（切边按贴图像素算），只切左右两端
+func _scaled_slice(path: String, k: float, left: int, right: int) -> StyleBoxTexture:
+	var src := PrepWidgets.cached_texture(path)
+	var image := src.get_image()
+	if image.is_compressed():
+		image.decompress()
+	image.generate_mipmaps()
+	var tex := ImageTexture.create_from_image(image)
+	tex.set_size_override(Vector2i(roundi(image.get_width() * k), roundi(image.get_height() * k)))
+	var sb := StyleBoxTexture.new()
+	sb.texture = tex
+	sb.texture_margin_left = left * k
+	sb.texture_margin_right = right * k
+	return sb
+
+
 func _build_top_bar(root: VBoxContainer) -> void:
 	var top := SellDropPanel.new()
 	top.screen = self
@@ -888,9 +919,9 @@ func _build_top_bar(root: VBoxContainer) -> void:
 	formation_row.anchor_right = 0.5
 	formation_row.anchor_bottom = 0.5
 	formation_row.offset_left = -470
-	formation_row.offset_top = -46
+	formation_row.offset_top = -34
 	formation_row.offset_right = 470
-	formation_row.offset_bottom = 46
+	formation_row.offset_bottom = 40
 	formation_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	formation_row.add_theme_constant_override("separation", 8)
 	top_content.add_child(formation_row)
@@ -916,10 +947,10 @@ func _build_top_bar(root: VBoxContainer) -> void:
 	_ready_orbit_glow = ReadyOrbitGlowScript.new()
 	battle.add_child(_ready_orbit_glow)
 	_ready_orbit_glow.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var ready_art := TextureRect.new()
-	ready_art.texture = READY_RUBY_TEXTURE
-	ready_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	ready_art.stretch_mode = TextureRect.STRETCH_SCALE
+	# 11.12 用户的新图：左端双剑 + 叶子、右端叶子的金框长条（assets/ui/prep/start_button_v2.png，
+	# 1420×200）。九宫格只拉中间，两端花纹不变形；字写在双剑右边的空白里。
+	var ready_art := Panel.new()
+	ready_art.add_theme_stylebox_override("panel", _scaled_slice(START_PLATE_PATH, float(START_BTN_SIZE.y) / 200.0, 290, 120))
 	ready_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	battle.add_child(ready_art)
 	ready_art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -930,41 +961,46 @@ func _build_top_bar(root: VBoxContainer) -> void:
 	battle_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	battle_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	battle_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	battle_label.add_theme_font_size_override("font_size", 20)
+	battle_label.offset_left = 66
+	battle_label.offset_right = -14
+	# 11.12：跟萝卜营地同一套字（思源黑体粗，UnitDetailCard.font）
+	battle_label.add_theme_font_override("font", preload("res://ui/components/UnitDetailCard.gd").font(false, 900))
+	battle_label.add_theme_font_size_override("font_size", 17)
 	battle_label.add_theme_color_override("font_color", READY_BTN_TEXT_DEFAULT)
-	battle_label.add_theme_color_override("font_outline_color", Color(0.18, 0.04, 0.02, 1.0))
-	battle_label.add_theme_constant_override("outline_size", 3)
+	battle_label.add_theme_color_override("font_outline_color", Color(1.0, 0.95, 0.79, 0.65))
+	battle_label.add_theme_constant_override("outline_size", 1)
 	battle.add_child(battle_label)
 	battle.bind_content_label(battle_label)
 	battle.set_idle_text(tr("ui_start_battle_btn"))
 	_start_battle_label = battle_label
 	# (3) Round number + next battle type (PVE / PVP / BOSS), stacked under the button.
 	var battle_col := VBoxContainer.new()
-	battle_col.alignment = BoxContainer.ALIGNMENT_CENTER
-	battle_col.add_theme_constant_override("separation", 1)
+	battle_col.alignment = BoxContainer.ALIGNMENT_BEGIN
+	battle_col.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	battle_col.add_theme_constant_override("separation", 2)
 	battle_col.add_child(battle)
 	var round_lbl := Label.new()
 	round_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	round_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	round_lbl.add_theme_font_size_override("font_size", 22)
-	round_lbl.add_theme_color_override("font_color", Color(0.16, 0.30, 0.23))
+	round_lbl.add_theme_font_override("font", preload("res://ui/components/UnitDetailCard.gd").font(false, 800))
+	round_lbl.add_theme_font_size_override("font_size", 16)
+	round_lbl.add_theme_color_override("font_color", Color("59381c"))
 	round_lbl.add_theme_color_override("font_outline_color", Color(1.0, 0.97, 0.84, 0.45))
 	round_lbl.add_theme_constant_override("outline_size", 1)
 	_round_info_label = round_lbl
 	var round_panel := PanelContainer.new()
 	round_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	round_panel.custom_minimum_size = Vector2(184, 28)
+	round_panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	# Crop only the transparent top/bottom padding in the generated plate.
 	# The original PNG remains intact and text stays independently localized.
-	var round_plate := AtlasTexture.new()
-	round_plate.atlas = load("res://assets/ui/prep/round_plate_lowpoly.png") as Texture2D
-	round_plate.region = Rect2(0, 208, 2172, 308)
-	round_plate.filter_clip = true
-	var round_style := StyleBoxTexture.new()
-	round_style.texture = round_plate
-	round_style.content_margin_left = 12.0
-	round_style.content_margin_right = 12.0
-	round_style.content_margin_top = 3.0
-	round_style.content_margin_bottom = 4.0
+	# 11.12 用户的新图：两头卷起的羊皮纸长条（assets/ui/prep/round_plate_v2.png，1613×200），
+	# 只拉中间，两头的卷轴不变形
+	var round_style := _scaled_slice(ROUND_PLATE_PATH, 28.0 / 200.0, 150, 150)
+	round_style.content_margin_left = 22.0
+	round_style.content_margin_right = 22.0
+	round_style.content_margin_top = 0.0
+	round_style.content_margin_bottom = 0.0
 	round_panel.add_theme_stylebox_override("panel", round_style)
 	round_panel.add_child(round_lbl)
 	battle_col.add_child(round_panel)
@@ -2819,6 +2855,7 @@ func _create_ready_avatar_badge() -> Control:
 	badge.add_child(mask)
 
 	var portrait := TextureRect.new()
+	portrait.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	portrait.name = "Portrait"
 	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
@@ -2978,6 +3015,7 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 	card.modulate = Color.WHITE
 	# 卡面（格子、缎带、价格牌）都画在招募板上，这里只摆头像和字；坐标是招募板图上的像素。
 	var portrait := TextureRect.new()
+	portrait.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED

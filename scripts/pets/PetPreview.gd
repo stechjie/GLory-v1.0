@@ -47,7 +47,11 @@ static func build_illustration(pet_id: String, size: Vector2 = CARD_SIZE,
 	frame.custom_minimum_size = size
 	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var art := TextureRect.new()
+	# 11.12：大图缩小显示 —— 进树后按屏幕实际像素用 Lanczos 预缩一张（CrispTexture），
+	# 不然直接缩会起锯齿颗粒、看着糊
 	art.texture = texture
+	art.tree_entered.connect(func() -> void:
+		art.texture = preload("res://scripts/ui/CrispTexture.gd").fit(texture, size, art), CONNECT_ONE_SHOT)
 	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

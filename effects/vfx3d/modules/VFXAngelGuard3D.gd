@@ -167,7 +167,7 @@ func _shatter() -> void:
 		_spawn_crest("AngelGuardShatterFlash", texture, int(_profile.parameters.get("crest_white_frame", 16)), size * Vector2(1.10, 1.10), Color(1.0, 1.0, 1.0), 0.0, 0.34)
 	var parent := get_parent()
 	if parent != null:
-		var sparks := VFXBlockRoot.spawn_block(SHATTER_SPARKS, parent) as VFXMaskedParticle3D
+		var sparks := VFXBlockRoot.spawn_block(SHATTER_SPARKS, parent, true) as VFXMaskedParticle3D
 		if sparks != null:
 			sparks.play_burst(position, Color(0.62, 0.84, 1.0), 16, 2.0, 0.48)
 

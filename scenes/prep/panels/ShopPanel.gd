@@ -490,6 +490,8 @@ func build_hand_cards(body: HBoxContainer, center_host: Control) -> void:
 
 		# 头像：先加（画在框下面），稍微伸进框梁内侧，由框盖住毛边
 		var portrait := TextureRect.new()
+		# 11.12：大图缩小显示要用 mipmap，不然边缘起颗粒、看着糊
+		portrait.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED

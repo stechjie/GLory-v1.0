@@ -458,11 +458,26 @@ func _check_budget_and_critical(budget: Script) -> void:
 		if str(debug.get("skill", "")) == "aoe_silence":
 			lantern_debug = debug
 	h.expect("aoe_silence" in skills, "lantern_critical_under_saturation", "Mass silence is a control cue and must survive a saturated effect budget")
-	h.expect(not "random_ally_buff" in skills, "normal_cue_respects_cap", "An ordinary buff cue must obey the saturated budget")
+	# 11.12：口径反转。原来断言的是「普通技能在池子满时被丢弃」，那正是用户报的
+	# 「技能放了但不显示」。现在技能一律强制生成，并发上限只砍普攻这类高频便宜特效。
+	h.expect("random_ally_buff" in skills, "ordinary_skill_survives_saturation", "A skill cue must still be drawn when the effect budget is saturated")
+	var attacks_before := composer.get_child_count()
+	composer.call("play_skill", "basic_attack_melee_human", Vector3.ZERO, Vector3(1.0, 0.0, 0.0), {"source_unit_id": "pve_ren_wandering_swordsman"})
+	h.expect(composer.get_child_count() == attacks_before, "basic_attack_respects_cap", "A basic attack is cheap and frequent, so it must still obey the saturated budget")
 	h.expect(int(lantern_debug.get("targets", 99)) <= 4, "low_tier_target_cap", "LOW tier must draw at most 4 of 6 silence targets (got %s)" % str(lantern_debug.get("targets", "?")))
 	for filler: Node in fillers:
 		filler.queue_free()
 	filler_parent.queue_free()
+	# 11.12：减冷却把 skill_ready 抬到「当前时刻」不是施法（CrimsonCombat 的
+	# `maxf(elapsed, skill_ready - N)`），不能凭空演一遍技能；写到当前时刻之后的才是。
+	state["elapsed"] = 5.0
+	var before_fake := _scripts_under(composer, SKILL_PATH).size()
+	dancer["skill_ready"] = 5.0
+	battle.call("_refresh_battle_vfx", state)
+	h.expect(_scripts_under(composer, SKILL_PATH).size() == before_fake, "cooldown_bump_is_not_cast", "skill_ready raised only to the current battle time must not play a skill cue")
+	dancer["skill_ready"] = 10.0
+	battle.call("_refresh_battle_vfx", state)
+	h.expect(_scripts_under(composer, SKILL_PATH).size() > before_fake, "real_cast_still_plays", "skill_ready raised past the current battle time is a cast and must play its cue")
 	battle.queue_free()
 	await process_frame
 	await process_frame

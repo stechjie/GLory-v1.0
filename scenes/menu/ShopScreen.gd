@@ -1962,7 +1962,8 @@ func _unit_card(unit: Dictionary, item: Dictionary) -> Control:
 	panel.add_child(row)
 
 	var portrait := TextureRect.new()
-	portrait.custom_minimum_size = Vector2(52, 52)
+	# 11.12：52 → 60，头像撑满这一行的高度，小图看不清
+	portrait.custom_minimum_size = Vector2(60, 60)
 	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1972,8 +1973,15 @@ func _unit_card(unit: Dictionary, item: Dictionary) -> Control:
 		portrait.texture = load(portrait_path) as Texture2D
 	elif ResourceLoader.exists(logo_path):
 		portrait.texture = load(logo_path) as Texture2D
+	# 11.12：330px 的头像缩进 52px 的格子，直接缩会起颗粒、看着糊 ——
+	# 进树后按屏幕实际像素用 Lanczos 预缩一张（scripts/ui/CrispTexture.gd）
+	var source_tex := portrait.texture
+	portrait.tree_entered.connect(func() -> void:
+		portrait.texture = preload("res://scripts/ui/CrispTexture.gd").fit(source_tex, portrait.custom_minimum_size, portrait),
+		CONNECT_ONE_SHOT)
 	# 没买的暗一点：和中间 logo 一个意思 —— 亮的是你已经有的。
-	portrait.modulate = Color.WHITE if owned else Color(0.55, 0.55, 0.55)
+	# 11.12：0.55 压得太暗，小头像糊成一团；0.75 还看得出「没买」，但认得出是谁
+	portrait.modulate = Color.WHITE if owned else Color(0.75, 0.75, 0.75)
 	row.add_child(portrait)
 
 	var info := VBoxContainer.new()

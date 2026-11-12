@@ -1252,9 +1252,42 @@ func _normalize_carrot_pet(pet: Node3D, pet_id: String, target: Vector3, yaw: fl
 		-pet_box.position.y * pet_scale + PetService.model_y(pet_id) / PREP_RIVER_STAGE_SCALE.y,
 		target.z)
 	pet.rotation_degrees.y = yaw
+	_configure_carrot_pet_shadow(pet, pet_box, pet_scale)
 	pet.visible = true
 	_play_carrot_pet_ambient(pet)
 	refresh_tiger_stack_badge()
+
+# Attach after normalization so the plane does not influence the pet's bounds.
+# Keep it on the gathering ground, compensating the model's scale/foot offset.
+func _configure_carrot_pet_shadow(pet: Node3D, bounds: AABB, pet_scale: float) -> void:
+	var shadow := pet.get_node_or_null("CarrotPetContactShadow") as MeshInstance3D
+	if shadow == null:
+		shadow = UnitContactShadowScript.create("CarrotPetContactShadow", Vector2.ONE)
+		shadow.get_active_material(0).render_priority = 8
+		pet.add_child(shadow)
+	var footprint := Vector2(
+		clampf(bounds.size.x * pet_scale * 0.9, 0.065, 0.14),
+		clampf(bounds.size.z * pet_scale * 0.75, 0.05, 0.10))
+	(shadow.mesh as PlaneMesh).size = footprint / pet_scale
+	shadow.position = Vector3(0.0, (0.0015 - pet.position.y) / pet_scale, 0.0)
+	# 11.12：再给宠物挂一份跟棋盘单位一样的投影剪影影子（朝右下方压扁的身形）。
+	# 只有上面那个脚底软圆的话，宠物才 0.12 高，圆小得几乎看不见（用户：要看到宠物影子）。
+	# 挂了投影后脚底圆缩成小核心，只负责「踩住」，同 _update_prep_model_anchors 的做法。
+	if not bool(pet.get_meta("carrot_planar_shadow_attached", false)) 			and UnitPlanarShadowScript.enabled_for_tier(VFXManager.get_quality_tier()):
+		var visual := pet.get_node_or_null("ModelRoot") as Node3D
+		var feet_y := (pet.global_transform * Vector3(0.0, bounds.position.y, 0.0)).y
+		var ground_key := snappedf(feet_y, 0.0001)
+		if not _prep_planar_shadow_materials.has(ground_key):
+			var material := ShaderMaterial.new()
+			material.shader = UnitPlanarShadowScript.SHADER
+			material.render_priority = 8
+			material.set_shader_parameter("shadow_direction", UnitPlanarShadowScript.SHADOW_DIRECTION)
+			_prep_planar_shadow_materials[ground_key] = material
+		UnitPlanarShadowScript.attach(visual if visual != null else pet, ground_key, _prep_planar_shadow_materials[ground_key])
+		pet.set_meta("carrot_planar_shadow_attached", true)
+		(shadow.mesh as PlaneMesh).size *= UnitPlanarShadowScript.CORE_SCALE
+		shadow.get_active_material(0).render_priority = 9
+
 
 func _play_carrot_pet_ambient(pet: Node3D) -> void:
 	if pet == null or not is_instance_valid(pet) or pet not in _carrot_pet_nodes:
@@ -1443,7 +1476,7 @@ func _carrot_pet_aabb(root: Node3D) -> AABB:
 		var current: Node = stack.pop_back()
 		for child in current.get_children():
 			stack.append(child)
-		if not (current is MeshInstance3D):
+		if current.name == "CarrotPetContactShadow" or not (current is MeshInstance3D):
 			continue
 		var mesh_instance := current as MeshInstance3D
 		if mesh_instance.mesh == null or not PetPreview.shown_under(root, mesh_instance):
@@ -1468,6 +1501,8 @@ func _add_prep_art_layers(world: Node3D) -> void:
 		_add_prep_texture_plane(world, "PrepBaseLayer", PrepSkin.path("board"), 0.000, 0)
 	# 下河流：黑底贴图，flow shader 键透明 + 横向滚动流动
 	_add_prep_texture_plane(world, "PrepRiverBottomLayer", PrepSkin.path("river"), 0.002, 2, river_z_offset())
+	# 11.12：水在流（只画水的像素，石头和岸线不动）。默认青草地皮肤才显示，见 _add_prep_river_water。
+	_add_prep_river_water(world)
 	# 流动波光是照草地河道画的，皮肤可以关掉它（data/prep_skins.json 的 river_glow）。
 	if PrepSkin.river_glow():
 		_add_prep_river_flow(world)
@@ -1797,6 +1832,53 @@ func _add_prep_texture_plane(world: Node3D, node_name: String, texture_path: Str
 	layer.position = PREP_BOARD_GROUND_CENTER + Vector3(0.0, y_lift, z_offset)
 	world.add_child(layer)
 
+# 下河「水在流」那层：同一张河面图，shader 只在青蓝色的水上画扭动 + 往下游漂的焦散亮纹，
+# 石头、岸边草线保持静止（shaders/prep_river_water.gdshader）。夹在河面底图（2）和波光（4）之间。
+# 别的皮肤的河面配色不同，水的判据不一定对，先只给默认青草地开（reapply_prep_skin 跟着切）。
+const PREP_RIVER_WATER_SHADER := "res://shaders/prep_river_water.gdshader"
+
+func _add_prep_river_water(world: Node3D) -> void:
+	var shader := ResourceLoader.load(PREP_RIVER_WATER_SHADER) as Shader
+	if shader == null:
+		return
+	var quad := MeshInstance3D.new()
+	quad.name = "PrepRiverWaterMotion"
+	var plane := PlaneMesh.new()
+	plane.size = PREP_BOARD_GROUND_SIZE
+	quad.mesh = plane
+	var mat := ShaderMaterial.new()
+	mat.shader = shader
+	mat.render_priority = 3
+	# 流纹用的无缝噪声（横向拉长后就是一条条细流纹）
+	var fn := FastNoiseLite.new()
+	fn.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	fn.frequency = 0.02
+	fn.fractal_octaves = 2
+	var noise := NoiseTexture2D.new()
+	noise.noise = fn
+	noise.width = 256
+	noise.height = 256
+	noise.seamless = true
+	noise.normalize = true
+	mat.set_shader_parameter("noise_tex", noise)
+	quad.material_override = mat
+	quad.position = PREP_BOARD_GROUND_CENTER + Vector3(0.0, 0.003, river_z_offset())
+	world.add_child(quad)
+	refresh_prep_river_water()
+
+
+# 换皮肤后调：贴图跟着河面图换，非默认皮肤藏起来
+func refresh_prep_river_water() -> void:
+	var quad := find_child("PrepRiverWaterMotion", true, false) as MeshInstance3D
+	if quad == null:
+		return
+	var on := PrepSkin.active_id == PrepSkin.DEFAULT_ID
+	quad.visible = on
+	if on:
+		var tex := ResourceLoader.load(PrepSkin.path("river")) as Texture2D
+		(quad.material_override as ShaderMaterial).set_shader_parameter("river_tex", tex)
+
+
 # 河面（底图 + 波光两层一起）要往下游挪多少世界单位。见 PrepSkin.river_drop 的注释。
 # 两层必须用同一个值，不然波光会和水面错开。
 static func river_z_offset() -> float:
@@ -1818,7 +1900,8 @@ func _add_prep_river_flow(world: Node3D) -> void:
 # 樱花的河面从 71% 就开始，青蓝流光只盖住下半截，中间还露一条边（10.31 实测）。
 # 所以自带河面图的皮肤改用**它自己那张**当波光源：河道形状、水色自动就对，不用另出美术图。
 func _river_glow_uses_skin_art() -> bool:
-	return PrepSkin.path("river") != str(PrepSkin.SLOTS["river"])
+	# The hand-painted default river also supplies its own sparse highlights.
+	return true
 
 # 皮肤自带河面图时，只有亮度超过这个值的像素才会发光（整条河都很亮，不切就是整条在滚）。
 # 0.965 实测在樱花与夜荧光上都约等于「最亮的 10%」—— 两张图的高光都顶到 1.0，所以共用一个值。

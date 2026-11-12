@@ -203,6 +203,7 @@ func _header(d: Dictionary, star: int) -> Control:
 	if ResourceLoader.exists(portrait_path):
 		var p := TextureRect.new()
 		p.texture = load(portrait_path)
+		p.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		p.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		p.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 		p.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -579,6 +580,7 @@ func _label(text: String, size: int, serif: bool, weight: int) -> Label:
 func _icon(tex: Texture2D, side: float) -> TextureRect:
 	var r := TextureRect.new()
 	r.texture = tex
+	r.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	r.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	r.custom_minimum_size = Vector2(side, side)

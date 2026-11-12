@@ -1141,6 +1141,7 @@ func _t(zh: String, en: String) -> String:
 func _icon(texture: Texture2D, minimum: Vector2) -> TextureRect:
 	var result := TextureRect.new()
 	result.texture = texture
+	result.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	result.custom_minimum_size = minimum
 	result.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	result.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED

@@ -59,7 +59,7 @@ func play_skill(effect_id: String, origin: Vector3, target: Vector3, context: Di
 			# 现在至少给一次可读的命中反馈，并在编辑器里留个警告好定位。
 			if not effect_id.is_empty():
 				push_warning("No boss VFX branch for effect_id: %s" % effect_id)
-				var flash := _block(SLASH_ARC) as VFXSlashArc3D
+				var flash := _block_capped(SLASH_ARC) as VFXSlashArc3D
 				if flash != null:
 					flash.play_profile(_profile(Color(.04,.04,.05), Color(.52,.54,.60), Color(.94,.96,1.0), .48, .32, 2.6), {"target": target + Vector3(0,.30,0), "direction": (target-origin).normalized()})
 	return null
@@ -129,16 +129,20 @@ func _mirror_spawn(target: Vector3) -> void:
 	_painted("boss_mirror_clone.png", {"position": _on_boss(target, .55, .03), "size": Vector2(1.05,1.25) * BOSS_SCALE, "duration": 1.0, "delay": .15, "start_scale": .08, "peak_scale": .92, "dark_tint": Color(.04,.015,.08), "seed": 6.7})
 	_extra("mirror_shatter", target, target, {"target_height": BOSS_H})
 
+# 11.12：这是镜像魔君和分身的**普攻**（一局 150+ 刀），不是技能：两层都走受限入口。
+# 实测它一家占掉全场 1/5 的并发池，其它 Boss 技能改成强制生成后更不能让它无上限。
 func _mirror_slash(origin: Vector3, target: Vector3) -> void:
-	var slash := _block(SLASH_ARC) as VFXSlashArc3D
+	var slash := _block_capped(SLASH_ARC) as VFXSlashArc3D
 	var p := _profile(Color(.05,.015,.09), Color(.56,.20,.88), Color(.98,.82,1), .92, .58, 3.6)
 	if slash != null:
 		slash.play_profile(p, {"target": target + Vector3(0,.35,0), "direction": (target-origin).normalized()})
-	_painted("boss_mirror_slash.png", {"position": target + Vector3(0,.36,.04), "size": Vector2(1.45,1.05), "duration": .50, "rotation_z": rad_to_deg((target-origin).angle_to(Vector3.RIGHT)), "body_tint": Color(.66,.34,.96), "core_tint": Color(1,.90,1), "seed": 5.1})
+	_painted_capped("boss_mirror_slash.png", {"position": target + Vector3(0,.36,.04), "size": Vector2(1.45,1.05), "duration": .50, "rotation_z": rad_to_deg((target-origin).angle_to(Vector3.RIGHT)), "body_tint": Color(.66,.34,.96), "core_tint": Color(1,.90,1), "seed": 5.1})
 
 # ── 圣光祭司 ────────────────────────────────────────────────────────────
 # 10.18：光柱原来细得像针 → 放宽 + 脚下金色光圈；队友身上的护盾换成图鉴里那张蓝金护盾
 # （status_shield_aura.png，原图上色，不走着色器染色）。
+const HOLY_HEAL_SPAWN_STEP := 1.0 / 60.0
+
 func _holy_purify(origin: Vector3, targets: Array) -> void:
 	_painted("boss_holy_purify.png", {"position": _on_boss(origin, .58, .03), "size": Vector2(1.45,1.42) * BOSS_SCALE, "duration": 1.10, "dark_tint": Color(.26,.14,.02), "body_tint": Color(1.0,.78,.26), "core_tint": Color(1,1,.82), "seed": 2.2})
 	var caster_pillar := _block(PILLAR) as VFXFallingPillar3D
@@ -147,7 +151,14 @@ func _holy_purify(origin: Vector3, targets: Array) -> void:
 	_extra("holy_ring", origin, origin, {"origin_height": BOSS_H})
 	for i in targets.size():
 		var at: Vector3 = targets[i]
-		_painted("boss_holy_heal.png", {"position": at + Vector3(0,.48,.03), "size": Vector2(.92,1.0), "duration": .90, "delay": .12, "rise": .22, "dark_tint": Color(.26,.14,.02), "body_tint": Color(1.0,.80,.30), "core_tint": Color(1,1,.82), "seed": float(i)*2.1})
+		# 11.12：三路祭司常在同一拍净化，6 个目标 × 3 路的治疗层原来在同一帧里一次建完（实测峰值 87 块）。
+		# 改为每个目标晚一帧建，同时把层自己的 delay 减掉同样的量 —— 出现时刻仍统一在 0.12s，画面不变。
+		var spawn_at := HOLY_HEAL_SPAWN_STEP * float(i)
+		var heal_params := {"position": at + Vector3(0,.48,.03), "size": Vector2(.92,1.0), "duration": .90, "delay": maxf(0.0, .12 - spawn_at), "rise": .22, "dark_tint": Color(.26,.14,.02), "body_tint": Color(1.0,.80,.30), "core_tint": Color(1,1,.82), "seed": float(i)*2.1}
+		if i == 0:
+			_painted("boss_holy_heal.png", heal_params)
+		else:
+			_after(spawn_at, func() -> void: _painted("boss_holy_heal.png", heal_params))
 		_after(.22 + .05 * float(i), func() -> void:
 			_flip(at + Vector3(0,.44,.02), {"path": SHIELD_AURA, "size": Vector2(.95,.95), "duration": 1.0, "color": Color(1,1,1,.92)}))
 
@@ -299,13 +310,20 @@ func _extra_forced(kind: String, origin: Vector3, target: Vector3, context: Dict
 	fx.call("play_extra", kind, origin, target, context)
 	return fx
 
-# 所有 VFX 块都从这里生成，统一受全局并发上限约束；超限返回 null。
-# 调用方要么判空，要么依赖已有的 is_instance_valid() 守卫（对 null 返回 false）。
+# 所有 VFX 块都从这里生成。
+#
+# 11.12：**默认强制生成，不受并发上限约束。** 原来统一受限，Boss 回合实测一场丢
+# 83~267 次，其中 28% 是 Boss 技能的手绘图层 —— 玩家看到的就是 Boss 技能不显示。
+# 只有镜像魔君的普攻刀光和无分支兜底闪光仍走 _block_capped。
 #
 # 脚本是运行期传进来的，所以这里只能声明成 Node3D；调用点必须显式
 # `as <具体类型>`，否则变量被定型成 Node3D，被 tween 的 lambda 捕获后
 # 运行时会报 "Nonexistent function 'play_layer' in base 'Node3D'"。
 func _block(script: Script) -> Node3D:
+	return VFXBlockRoot.spawn_block(script, self, true)
+
+# 高频、便宜的特效专用：受全局并发上限约束，超限返回 null，调用方必须判空。
+func _block_capped(script: Script) -> Node3D:
 	return VFXBlockRoot.spawn_block(script, self)
 
 # 群体技能的特效目标列表，按画质档位截断。纯表现层：
@@ -316,6 +334,13 @@ func _capped_targets(targets: Array) -> Array:
 
 func _painted(file_name: String, params: Dictionary) -> void:
 	var layer := _block(PAINTED) as VFXBossTextureLayer3D
+	if layer == null:
+		return
+	layer.name = file_name.get_basename().to_pascal_case()
+	layer.play_layer(TEX + file_name, params)
+
+func _painted_capped(file_name: String, params: Dictionary) -> void:
+	var layer := _block_capped(PAINTED) as VFXBossTextureLayer3D
 	if layer == null:
 		return
 	layer.name = file_name.get_basename().to_pascal_case()

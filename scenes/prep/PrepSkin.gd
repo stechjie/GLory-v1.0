@@ -21,7 +21,9 @@ const SKIN_FILE := "res://assets/skins/prep/%s/%s.png"
 const SLOTS := {
 	# 棋盘底图：3D 地面那层，也是满屏 2D 垫底（PrepUI，盖住 3D 视口没铺到的角）
 	"board": "res://assets/board/prep_2_5d/glory_grass_base_2560x1440.png",
-	"river": "res://assets/board/prep_2_5d/prep20_river_bottom.png",  # 下河流：恢复原始窄带高度
+	# 下河流。11.12：用户要水一直铺到屏幕最下面、不露草地 —— 原图水面到 925/941 行就收边了，
+	# _full 是同一张图把最下面那截用上方的水镜像补满（原图 prep20_river_bottom.png 保留不动）。
+	"river": "res://assets/board/prep_2_5d/prep20_river_bottom_full.png",
 	"bench": "res://assets/board/prep_2_5d/standby_bg.png",  # 待命区 8 格平台
 	"carrot": "res://assets/props/prep/carrot_gathering_v1.png",
 	"shop_button": "res://assets/ui/buttons/shop_closed.png",  # 底部商店按钮（图自带框，不叠字）
