@@ -102,9 +102,9 @@
   "ios": {
     "build": 94,
     "built": true,
-    "uploaded": false,
-    "internal_testing": false,
-    "external_review_submitted": false,
+    "uploaded": true,
+    "internal_testing": true,
+    "external_review_submitted": true,
     "build_started": true,
     "signed": true,
     "bytes": 670081757,
@@ -153,7 +153,24 @@
           "payload_matches_baseline": true
         }
       }
-    }
+    },
+    "version": "1.0.2",
+    "build_id": "94a16b21-bbb4-4e27-9737-70dbf20d091d",
+    "processed": true,
+    "internal_group_id": "90dd8f53-b157-49c4-b899-8da72091b76a",
+    "internal_testers": 10,
+    "external_group_id": "77fbf129-88aa-4489-98a0-658698cd4fcf",
+    "external_testers": 27,
+    "external_testing": true,
+    "internal_status": "正在测试",
+    "external_status": "正在测试",
+    "public_link": "https://testflight.apple.com/join/W2p1ukJp",
+    "verified_at": "2026-11-12T13:00:20.737684+00:00",
+    "evidence": [
+      "testflight94-internal.txt",
+      "testflight94-external.txt",
+      "testflight94-public-link.txt"
+    ]
   },
   "validation": {
     "runtime_tests": 17,
@@ -180,7 +197,7 @@
       "ios": {
         "ready": true,
         "url": "https://testflight.apple.com/join/W2p1ukJp",
-        "version": "1.0.2 (89)",
+        "version": "1.0.2 (94)",
         "pending_version": ""
       },
       "android": {
@@ -211,7 +228,49 @@
     "base_id": "glory-20261112-test-refresh",
     "includes_seq": 4,
     "qr_sha256": "dd3d8cdce298efe0060d783613d9ba5c4f5bb42a7c15b1f76743a8fc0927dab6",
-    "verified_at": "2026-11-12T12:24:04.213125+00:00"
+    "verified_at": "2026-11-12T12:24:04.213125+00:00",
+    "ios": {
+      "config": {
+        "ios": {
+          "ready": true,
+          "url": "https://testflight.apple.com/join/W2p1ukJp",
+          "version": "1.0.2 (94)",
+          "pending_version": ""
+        },
+        "android": {
+          "ready": true,
+          "mode": "apk",
+          "url": "https://test-api.gogoglory.com/beta/downloads/Glory-1.0.2-65-android.apk",
+          "version": "1.0.2 (65)",
+          "size_bytes": 706687099,
+          "size_label": "673.9 MiB"
+        }
+      },
+      "testflight": {
+        "version": "1.0.2",
+        "build": 94,
+        "build_id": "94a16b21-bbb4-4e27-9737-70dbf20d091d",
+        "uploaded": true,
+        "processed": true,
+        "internal_testing": true,
+        "internal_group_id": "90dd8f53-b157-49c4-b899-8da72091b76a",
+        "internal_testers": 10,
+        "external_group_id": "77fbf129-88aa-4489-98a0-658698cd4fcf",
+        "external_testers": 27,
+        "external_testing": true,
+        "external_review_submitted": true,
+        "internal_status": "正在测试",
+        "external_status": "正在测试",
+        "public_link": "https://testflight.apple.com/join/W2p1ukJp",
+        "verified_at": "2026-11-12T13:00:20.737684+00:00",
+        "evidence": [
+          "testflight94-internal.txt",
+          "testflight94-external.txt",
+          "testflight94-public-link.txt"
+        ]
+      },
+      "verified_at": "2026-11-12T13:00:36.385132+00:00"
+    }
   },
   "retention": {
     "retained": [
@@ -316,5 +375,6 @@
     "registered_patch_baselines_preserved": true,
     "retained_hashes_verified": true,
     "updated_at": "2026-11-12T12:32:29.893198+00:00"
-  }
+  },
+  "completed_at": "2026-11-12T13:00:54.031908+00:00"
 }
