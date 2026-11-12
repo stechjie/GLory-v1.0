@@ -988,10 +988,11 @@ func _check_merc_picker_modal() -> void:
 			"佣兵网格是 %d 列，应为 4 列" % grid.columns)
 		_h.expect(grid.get_child_count() > 0, "mp_grid_empty",
 			"网格里一张卡都没有，下面的教程目标与购买断言会空过")
-	_h.expect(content.mouse_filter == Control.MOUSE_FILTER_STOP,
-		"mp_content_root_not_stop",
-		("content 根不是 STOP —— 卡片之间的间隙会穿透到 backdrop，"
-			+ "玩家挑佣兵时误触就会把面板关掉"))
+	var hit_area := content.find_child("BoardHitArea", true, false) as Control
+	_h.expect(content.mouse_filter == Control.MOUSE_FILTER_IGNORE and hit_area != null
+			and hit_area.mouse_filter == Control.MOUSE_FILTER_STOP
+			and hit_area.get_global_rect().size.x < rect.size.x,
+		"mp_board_hit_area", "板面内挡住 backdrop，贴图透明边距可点击关闭")
 	_h.expect(content.has_theme_stylebox_override("panel"), "mp_style_lost",
 		"content 的 StyleBoxFlat 边框样式丢了")
 	var row := {}

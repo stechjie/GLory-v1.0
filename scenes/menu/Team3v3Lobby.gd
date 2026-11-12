@@ -10,7 +10,7 @@ const PRESENCE_PUSH := "presence"
 const SLOT_LABELS := ["A", "B", "C", "1", "2", "3"]
 const SLOT_POS := [
 	Vector2(447, 229), Vector2(739, 229), Vector2(1015, 229),
-	Vector2(447, 502), Vector2(739, 502), Vector2(1015, 502),
+	Vector2(447, 539), Vector2(739, 539), Vector2(1015, 539),
 ]
 const SLOT_SIZE := Vector2(184, 175)
 # 10.01 反馈（第 4 条）：座位框换成玩家在大厅佩戴的头像框。
@@ -157,7 +157,9 @@ func _online_friend_row(entry: Dictionary) -> Control:
 	label.text = AccountManager.display_name(str(entry.get("player_name", "")), str(entry.get("friend_code", "")), false)
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.clip_text = true
 	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	label.tooltip_text = label.text
 	label.add_theme_color_override("font_color", Tokens.PARCHMENT_EDGE)
 	label.add_theme_font_size_override("font_size", 15)
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -429,7 +431,6 @@ var _slot_plates: Array = []
 var _slot_bases: Array = []
 var _slot_frame_bases: Array = []
 var _room_title_plate: TextureRect
-var _status_lbl: Label
 var _start_status_lbl: Label
 var _room_id_lbl: Label
 var _start_btn: Button
@@ -635,10 +636,9 @@ func _build() -> void:
 	_add_hit(Vector2(80, 35), Vector2(143, 83), _on_back_pressed, "left", "hit_back")
 	_room_title_plate = _add_texture(TEX_TITLE, Vector2(599, 17), Vector2(475, 166))
 	_room_title_plate.name = "RoomTitlePlate"
-	_add_room_title_line(_room_text("自定义房间", "CUSTOM GAME"), 39, 28, 22, PARCH_SECTION)
-	_room_id_lbl = _add_room_title_line("", 67, 26, 16, PARCH_INK)
-	_status_lbl = _add_room_title_line("", 88, 26, 15, PARCH_INK)
-	_start_status_lbl = _add_room_title_line("", 109, 26, 15, PARCH_INK)
+	_add_room_title_line(_room_text("自定义房间", "CUSTOM GAME"), 53, 28, 22, PARCH_SECTION)
+	_room_id_lbl = _add_room_title_line("", 83, 24, 16, PARCH_INK)
+	_start_status_lbl = _add_room_title_line("", 106, 24, 15, PARCH_INK)
 	# 右侧朋友列表：锚定屏幕右边（edge="right"）
 	_add_texture(TEX_FRIENDS, Vector2(1340, 180), Vector2(230, 400), "right")
 	_add_label(_room_text("朋友列表", "Friends"), Vector2(1374, 228), Vector2(162, 35), 24,
@@ -646,10 +646,8 @@ func _build() -> void:
 	var friends_scroll := TouchScrollContainer.new()
 	friends_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	add_child(friends_scroll)
-	# 9.14 反馈：名字原来从 1350 起，而羊皮纸的内边在 1373 左右 —— 文字压在木框上，
-	# 看着「没在框框里边」。按框内区域（实测约 1373 ~ 1540）重设滚动区，列表项显式
-	# 左对齐后正好贴着纸的左边。右边保持 1539 不变，框内的宽度不受影响。
-	_track(friends_scroll, Vector2(1374, 270), Vector2(165, 290), 0, "right")
+	# 给头像和滚动条留出内边距，避免贴到卷边。
+	_track(friends_scroll, Vector2(1384, 273), Vector2(151, 266), 0, "right")
 	_friends_box = VBoxContainer.new()
 	_friends_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	friends_scroll.add_child(_friends_box)
@@ -939,10 +937,8 @@ func _refresh() -> void:
 		x_btn.visible = is_host_seat and i != my_slot and state != "empty"
 		ai_btn.visible = is_host_seat and i != my_slot and (state == "empty" or state == "dummy")
 		ai_btn.text = "- AI" if state == "dummy" else "+ AI"
-	if _status_lbl != null:
-		var status_text := _lobby_status_text()
-		_status_lbl.text = status_text.get_slice("\n", 0)
-		_start_status_lbl.text = status_text.get_slice("\n", 1)
+	if _start_status_lbl != null:
+		_start_status_lbl.text = _start_hint_text()
 		_start_status_lbl.tooltip_text = _start_status_lbl.text
 	if _room_id_lbl != null:
 		_room_id_lbl.text = _room_text("房间 ID：%d", "Room ID: %d") % NetworkService.team_room_id if _online() and NetworkService.team_room_id > 0 else ""
@@ -1073,19 +1069,6 @@ func selftest_available() -> bool:
 func _start_hint_text() -> String:
 	var reason := _start_block_reason(true)
 	return reason if not reason.is_empty() else (_room_text("可以开始", "Ready to start") if _is_host_seat() else _room_text("等待房主开始游戏", "Waiting for host to start"))
-
-func _lobby_status_text() -> String:
-	var states := _states()
-	var players := 0
-	var ais := 0
-	for i in 6:
-		var st := str(states[i])
-		if st in ["player", "settling"]:
-			players += 1
-		elif st == "dummy":
-			ais += 1
-	var mode := _room_text("在线", "Online") if _online() else _room_text("离线", "Offline")
-	return _room_text("%s ｜ 玩家%d AI%d\n%s", "%s | Players %d AI %d\n%s") % [mode, players, ais, _start_hint_text()]
 
 func _slot_name(index: int, state: String, self_slot: bool) -> String:
 	if state == "empty":

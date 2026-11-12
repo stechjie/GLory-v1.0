@@ -306,8 +306,10 @@ func spectator_speaking(entry: Dictionary) -> bool:
 	var sid := int(entry.get("sid", -1))
 	if NetworkService.spectating and sid == NetworkService.spectate_sid:
 		return mode == Mode.TALK and bool(status().get("self_speaking", false))
-	var identity := NetworkService.spectator_voice_identity(entry, sid)
-	return (status().get("speaking", []) as Array).has(identity)
+	var speaking: Array = status().get("speaking", [])
+	var lobby := NetworkService.server_phase == NetworkService.ROOM_LOBBY
+	return speaking.has(NetworkService.spectator_voice_identity(entry, sid, lobby)) \
+		or (lobby and speaking.has(NetworkService.spectator_voice_identity(entry, sid)))
 
 func slot_speaking(slot: int) -> bool:
 	if not _joined or slot < 0:

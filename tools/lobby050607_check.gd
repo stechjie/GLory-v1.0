@@ -17,6 +17,8 @@ class LobbyProbe:
 
 func _ready() -> void:
 	var h = Harness.new("lobby050607")
+	var previous_locale := LocaleManager.get_locale()
+	LocaleManager.set_locale("zh")
 	var lobby = LobbyProbe.new()
 	lobby._slot_states = ["player", "player", "empty", "empty", "empty", "empty"]
 	lobby._slot_ready = [false, false, false, false, false, false]
@@ -24,14 +26,13 @@ func _ready() -> void:
 	h.expect(lobby.viewed == -1, "self", "本机头像不打开资料")
 	lobby._on_slot_pressed(1)
 	h.expect(lobby.viewed == 1, "other", "其他玩家头像仍打开资料")
-	h.expect(lobby._lobby_status_text().contains("敌我双方至少一个占位"), "priority", "缺阵营优先于未准备")
+	h.expect(lobby._start_hint_text().contains("敌我双方至少一个占位"), "priority", "缺阵营优先于未准备")
 	lobby._slot_states[3] = "dummy"
-	h.expect(lobby._lobby_status_text().contains("有玩家未准备"), "unready", "两侧有占位后检查玩家准备")
+	h.expect(lobby._start_hint_text().contains("有玩家未准备"), "unready", "两侧有占位后检查玩家准备")
 	lobby._slot_ready[1] = true
-	h.expect(lobby._lobby_status_text().contains("可以开始"), "host", "房主无需准备即可显示可以开始")
+	h.expect(lobby._start_hint_text().contains("可以开始"), "host", "房主无需准备即可显示可以开始")
 	lobby._local_slot = 1
-	h.expect(lobby._lobby_status_text().contains("等待房主开始游戏"), "guest", "客人等待房主")
-	h.expect(lobby._lobby_status_text().contains("玩家2"), "count", "保留玩家数")
+	h.expect(lobby._start_hint_text().contains("等待房主开始游戏"), "guest", "客人等待房主")
 	lobby.free()
 	var saved := [NetworkService.team_active, NetworkService.team_local_slot, NetworkService.team_leader_slot, NetworkService.team_ready.duplicate(), NetworkService._pending_ready]
 	var main = load("res://scenes/main/Main.gd").new()
@@ -115,4 +116,5 @@ func _ready() -> void:
 	NetworkService.team_ready = saved[3]
 	NetworkService._pending_ready = saved[4]
 	main.free()
+	LocaleManager.set_locale(previous_locale)
 	h.finish(get_tree())

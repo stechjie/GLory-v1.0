@@ -1454,7 +1454,7 @@ func _set_room_state(room: Dictionary, next_state: String) -> void:
 		# Server removes spectators from the shared lobby channel before gameplay.
 		for sid in SpectatorService.list(room):
 			var entry: Dictionary = SpectatorService.list(room)[sid]
-			_voice_admin.remove_participant(voice_room_name(room), spectator_voice_identity(entry, int(sid)))
+			_voice_admin.remove_participant(voice_room_name(room), spectator_voice_identity(entry, int(sid), true))
 	if next_state == ROOM_PREP and str(room.get("state", "")) != ROOM_PREP:
 		room["prep_timed_out"] = false
 		room["timeout_buys"] = {}
@@ -3521,6 +3521,11 @@ func _spectate_join(sender: int, room_id: int, card: String) -> void:
 		account_pid = str(seat_card.get("pid", ""))
 		if seated_room.is_empty() and _restore_account_seat(sender, room, account_pid) >= 0:
 			return
+	if card.is_empty() and not seated_room.is_empty():
+		var slot := int((room.get("peer_slot", {}) as Dictionary).get(sender, -1))
+		account_pid = str((room.get("seat_pid", {}) as Dictionary).get(slot, ""))
+		if not account_pid.is_empty():
+			identity = public_seat_identity((room.get("seat_profiles", {}) as Dictionary).get(slot, {}))
 	_remove_account_spectators(room, account_pid, str(identity.get("friend_code", "")), sender)
 	var associated := _listed_spectator_peers(room)
 	if not associated.has(sender) and associated.size() >= SpectatorService.MAX_SPECTATORS:
@@ -3565,7 +3570,7 @@ func _spectate_detach(peer_id: int, keep_lobby_voice: bool = false) -> bool:
 		return true
 	if _voice_admin != null and bool(room.get("voice_used", false)) and not (keep_lobby_voice and str(room.get("state", "")) == ROOM_LOBBY):
 		var old_sid := SpectatorService.sid_of_peer(room, peer_id)
-		_voice_admin.remove_participant(spectator_voice_room_name(room), spectator_voice_identity(SpectatorService.entry_of_peer(room, peer_id), old_sid))
+		_voice_admin.remove_participant(spectator_voice_room_name(room), spectator_voice_identity(SpectatorService.entry_of_peer(room, peer_id), old_sid, str(room.get("state", "")) == ROOM_LOBBY))
 	if SpectatorService.remove_peer(room, peer_id).is_empty():
 		return true
 	_net_log("spectator left room=%d peer=%d count=%d" % [room_id, peer_id, SpectatorService.count(room)])
@@ -3584,7 +3589,7 @@ func _spectate_detach(peer_id: int, keep_lobby_voice: bool = false) -> bool:
 func _spectate_end(room: Dictionary, peer_id: int, reason: String) -> void:
 	if _voice_admin != null and bool(room.get("voice_used", false)):
 		var sid := SpectatorService.sid_of_peer(room, peer_id)
-		_voice_admin.remove_participant(spectator_voice_room_name(room), spectator_voice_identity(SpectatorService.entry_of_peer(room, peer_id), sid))
+		_voice_admin.remove_participant(spectator_voice_room_name(room), spectator_voice_identity(SpectatorService.entry_of_peer(room, peer_id), sid, str(room.get("state", "")) == ROOM_LOBBY))
 	SpectatorService.remove_peer(room, peer_id)
 	_peer_spectate.erase(peer_id)
 	_replay_forget_peer(peer_id)
@@ -4020,7 +4025,7 @@ func voice_token_for_peer(room: Dictionary, peer_id: int, now: int) -> Dictionar
 		var target := spectator_voice_room_name(room)
 		room["voice_used"] = true
 		var identity: Dictionary = entry.get("identity", {})
-		var token := LiveKitAuth.join_token(_voice_config, spectator_voice_identity(entry, sid), str(identity.get("player_name", "")), target, now)
+		var token := LiveKitAuth.join_token(_voice_config, spectator_voice_identity(entry, sid, str(room.get("state", "")) == ROOM_LOBBY), str(identity.get("player_name", "")), target, now)
 		return {"url": str(_voice_config.get("client_url", "")), "token": token, "room": target, "error": "", "team": -2}
 	var slot := int((room.get("peer_slot", {}) as Dictionary).get(peer_id, -1))
 	var states: Array = room.get("slot_states", [])
@@ -4059,9 +4064,11 @@ func _voice_identity(room: Dictionary, slot: int) -> String:
 	return code if not code.is_empty() else "seat%d" % slot
 
 
-static func spectator_voice_identity(entry: Dictionary, sid: int) -> String:
+static func spectator_voice_identity(entry: Dictionary, sid: int, lobby := false) -> String:
 	var profile: Dictionary = entry.get("identity", {})
-	var code := str(profile.get("friend_code", ""))
+	var code := str(profile.get("friend_code", "")).strip_edges()
+	if lobby and not code.is_empty():
+		return code
 	return "spec-" + (code if not code.is_empty() else str(sid))
 
 func spectator_voice_room_name(room: Dictionary) -> String:
@@ -4085,7 +4092,7 @@ func _voice_seat_released(room: Dictionary, slot: int, identity: String) -> void
 	# An asynchronous kick here would eject the freshly switched participant.
 	if str(room.get("state", "")) == ROOM_LOBBY:
 		for sid in SpectatorService.list(room):
-			if spectator_voice_identity(SpectatorService.list(room)[sid], int(sid)) == identity:
+			if spectator_voice_identity(SpectatorService.list(room)[sid], int(sid), true) == identity:
 				return
 	_voice_admin.remove_participant(voice_room_name(room), identity)
 

@@ -688,6 +688,28 @@ func _case_kick_hooks() -> void:
 	_h.item()
 	_h.expect(str(admin.removed) == str([["g123456-a1b2c3-all", "AAAA1111"], ["g123456-a1b2c3-all", "DDDD4444"]]),
 		"voice_kick_wrong_room", "应从本局语音房间请出去，实际 %s" % str(admin.removed))
+	room["state"] = NetworkService.ROOM_LOBBY
+	var result := preload("res://scripts/multiplayer/SpectatorService.gd").add(
+		room, 11, {"friend_code": "AAAA1111", "player_name": "小林"}, 1000.0, "test-pid")
+	_h.item()
+	var kicks_before := admin.removed.size()
+	NetworkService._voice_seat_released(room, 0, "AAAA1111")
+	_h.expect(bool(result.get("ok", false)) and admin.removed.size() == kicks_before,
+		"voice_lobby_spectator_no_kick", "同房切到观战席不得踢掉当前语音")
+	var saved_config: Dictionary = NetworkService._voice_config
+	NetworkService._voice_config = TEST_CONFIG.duplicate()
+	var lobby_token := NetworkService.voice_token_for_peer(room, 11, 1000)
+	_h.item()
+	_h.expect(lobby_token.room == "g123456-a1b2c3-all"
+			and LiveKitAuth.decode_payload(str(lobby_token.token)).get("sub") == "AAAA1111",
+		"voice_lobby_spectator_same_identity", "大厅观战语音沿用座位身份")
+	room["state"] = NetworkService.ROOM_PREP
+	var match_token := NetworkService.voice_token_for_peer(room, 11, 1000)
+	_h.item()
+	_h.expect(match_token.room == "g123456-a1b2c3-spectators"
+			and LiveKitAuth.decode_payload(str(match_token.token)).get("sub") == "spec-AAAA1111",
+		"voice_match_spectator_isolation", "开局后观战者切到独立语音房间")
+	NetworkService._voice_config = saved_config
 	NetworkService._voice_rooms_closed(room)
 	_h.item()
 	_h.expect(str(admin.deleted) == str(["g123456-a1b2c3-all"]), "voice_close_rooms",
@@ -1095,6 +1117,17 @@ func _case_state_machine() -> void:
 	_h.item()
 	_h.expect(fake.audience_all and (fake.audience_ids as Array).is_empty() and VoiceService.open_to_room(),
 		"voice_custom_lobby_not_open", "自定义房间开局前，麦克风应对全房间开放")
+	var saved_spectating := NetworkService.spectating
+	var mode_before_spectate := VoiceService.mode
+	NetworkService.spectating = true
+	NetworkService.team_local_slot = -1
+	VoiceService._process(0.1)
+	_h.item()
+	_h.expect(fake.leaves == leaves and fake.joins == joins and fake.joined
+			and int(requests[0]) == before and VoiceService.mode == mode_before_spectate,
+		"voice_lobby_spectator_client_continuity", "大厅切观战时客户端不离房、不重新要钥匙，也不改变麦克风档位")
+	NetworkService.spectating = saved_spectating
+	NetworkService.team_local_slot = 3
 	NetworkService.server_phase = NetworkService.ROOM_PREP
 	VoiceService._process(0.1)
 	_h.item()

@@ -75,6 +75,7 @@ const PREP_BUTTON_OUTLINE := Color("f6e2bd")
 # 12 个格子、标题缎带、计数牌、关闭键都画在图上，字和头像由代码按图上的像素位置摆）。
 const MERC_PANEL_ART_PATH := "res://assets/ui/prep/merc_panel.png"
 const MERC_PANEL_ART_SIZE := Vector2(1672, 941)
+const MERC_PANEL_VISIBLE_RECT := Rect2(203, 6, 1265, 922)
 const MERC_PANEL_GRID_ORIGIN := Vector2(320, 133)   # 左上第一格的卡片原点（头像框左上 - (37, 12)）
 const MERC_PANEL_CARD_SIZE := Vector2(238, 238)
 const MERC_PANEL_GRID_GAP := Vector2(26, 12)        # 头像框间距 264 × 250 减去卡宽高
@@ -3584,13 +3585,11 @@ func _close_merc_picker() -> void:
 	_refresh_merc_panel()
 # 每次打开现建佣兵选择层：整张招募板图 + 按图上位置摆的标题、计数、关闭键、4 列网格。
 # 板子按 1672×941 的图像素坐标排版，再整体缩放塞进宿主矩形（见 _layout_merc_board）。
-#
-# 根节点**保留 MOUSE_FILTER_STOP**：content 只占 center_host 的矩形、不是全屏，
-# 若改成 IGNORE，卡片之间的间隙会穿透到 backdrop —— 玩家挑佣兵时手指偏一点就把面板关掉。
+# 只让可见板面挡住 backdrop，贴图留白仍可点击关闭。
 func _create_merc_picker_content() -> PanelContainer:
 	var overlay := PanelContainer.new()
 	overlay.name = "MercPickerOverlay"
-	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	var holder := Control.new()
 	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -3608,6 +3607,13 @@ func _create_merc_picker_content() -> PanelContainer:
 	art.size = MERC_PANEL_ART_SIZE
 	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	board.add_child(art)
+	# Transparent padding in the texture must pass clicks to the modal backdrop.
+	var hit_area := Control.new()
+	hit_area.name = "BoardHitArea"
+	hit_area.position = MERC_PANEL_VISIBLE_RECT.position
+	hit_area.size = MERC_PANEL_VISIBLE_RECT.size
+	hit_area.mouse_filter = Control.MOUSE_FILTER_STOP
+	board.add_child(hit_area)
 	# 标题写在顶上那条缎带上
 	var title := Label.new()
 	title.text = tr("ui_choose_mercenary")

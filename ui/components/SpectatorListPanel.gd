@@ -67,6 +67,10 @@ func _ready() -> void:
 	_toggle.add_theme_stylebox_override("focus", _pill(0.82))
 	_toggle.pressed.connect(func(): open_toggled.emit(not _open))
 	Kit.style_plate(_toggle, false)
+	for state in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
+		var style := _toggle.get_theme_stylebox(state)
+		style.content_margin_top = 10
+		style.content_margin_bottom = 4
 	add_child(_toggle)
 	_join = Button.new()
 	_join.name = "JoinSpectators"
@@ -133,8 +137,8 @@ func _relayout() -> void:
 	_toggle.position = Vector2(inner.position.x + inner.size.x * 0.05, inner.position.y + 84 * k)
 	# Set font metrics before size: the default font's minimum height otherwise
 	# clamps the first layout, then shrinks only after a seat/state update.
-	_toggle.add_theme_font_size_override("font_size", maxi(10, roundi(17 * k)))
-	_toggle.size = Vector2(inner.size.x * 0.90, 42 * k)
+	_toggle.add_theme_font_size_override("font_size", maxi(10, roundi(14 * k)))
+	_toggle.size = Vector2(inner.size.x * 0.90, 46 * k)
 	var list_top := inner.position.y + (137 if _is_host else 88) * k
 	_scroll.position = Vector2(inner.position.x, list_top)
 	_scroll.size = Vector2(inner.size.x, maxf(0.0, inner.end.y - list_top))

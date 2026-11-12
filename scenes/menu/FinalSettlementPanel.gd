@@ -21,6 +21,7 @@ const SEAT_INK := [
 const TEXT := Color("382313")
 const MUTED := Color("664629")
 const Kit := preload("res://ui/theme/ParchmentKit.gd")
+const UnitDetailCard := preload("res://ui/components/UnitDetailCard.gd")
 const WIDTHS := [150.0, 310.0, 270.0, 210.0, 150.0, 170.0, 150.0]
 var data: Dictionary = {}
 # 对局历史里复用这个面板时（MatchHistoryPanel「详细战况」），「返回主菜单」换成这里的字，
@@ -298,7 +299,7 @@ func _team(side: int) -> Control:
 		for type in ["sky", "land", "ren"]:
 			var count := int(seat.get("stones", {}).get(type, 0))
 			if count > 0:
-				var icon := _icon("res://assets/props/carrot_system/stones/stone_%s.png" % type, tr("settle_stone_%s" % type), 0, 44)
+				var icon := _icon(UnitDetailCard.ART % ("stone_" + type), tr("settle_stone_%s" % type), 0, 44)
 				var number := _label("×%d" % count, GOLD, 13)
 				number.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 				icon.add_child(number)
