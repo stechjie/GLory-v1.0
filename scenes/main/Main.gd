@@ -24,6 +24,7 @@ const VFX_WARMUP := preload("res://effects/vfx3d/VFXWarmup.gd")
 const MATCHED_ENTERING_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const StartupResourceLoader := preload("res://scripts/assets/FrameResourceLoader.gd")
 const PrepStartupAssets := preload("res://scripts/assets/PrepStartupAssets.gd")
+const NicknameSetupScreen := preload("res://scenes/menu/NicknameSetupScreen.gd")
 const StartupLoadingOverlay := preload("res://ui/components/GloryLoadingOverlay.gd")
 const PREP_STARTUP_PATH := "res://scenes/prep/PrepScreen.tscn"
 const STARTUP_LOADING_MODAL_ID := "startup_preparation"
@@ -956,7 +957,34 @@ func _show_language_select() -> void:
 	StartupTrace.mark_input_ready.call_deferred("language_select")
 
 
+func _nickname_setup_pending() -> bool:
+	return AccountManager.is_logged_in() and PlayerProfile.pending_nickname_setup_account == AccountManager.player_id
+
+
+func _show_nickname_setup() -> void:
+	_clear()
+	var screen := NicknameSetupScreen.new()
+	screen.nickname_saved.connect(_finish_nickname_setup)
+	add_child(screen)
+	StartupTrace.mark_input_ready.call_deferred("nickname_setup")
+
+
+func _finish_nickname_setup() -> void:
+	PlayerProfile.pending_nickname_setup_account = ""
+	PlayerProfile.save_profile()
+	_show_menu()
+
+
 func _route_startup() -> void:
+	if _nickname_setup_pending():
+		if not PlayerProfile.language_selected:
+			_show_language_select()
+			return
+		if AccountManager.player_name.is_empty() or AccountManager.player_name == NicknameSetupScreen.DEFAULT_NICKNAME:
+			_show_nickname_setup()
+			return
+		_finish_nickname_setup()
+		return
 	match PlayerProfile.startup_route():
 		PlayerProfile.STARTUP_MENU:
 			if TutorialMode.checkpoint_is_done():
@@ -1131,9 +1159,17 @@ func _startup_text(zh: String, en: String) -> String:
 func _select_language(locale: String) -> void:
 	if _startup_transition_running:
 		return
-	PlayerProfile.select_language(locale)
+	var nickname_pending := _nickname_setup_pending()
+	if not PlayerProfile.select_language(locale) and nickname_pending:
+		PlayerProfile.language_selected = false
+		DialogService.info({"owner": self,
+			"body": _startup_text("无法保存语言设置，请重试。", "Could not save your language. Try again.")})
+		return
 	StartupTrace.mark_first_action("select_language", locale)
-	_show_menu()
+	if nickname_pending:
+		_route_startup()
+	else:
+		_show_menu()
 
 
 # --- V2 P1-08 / V3 P0-09：返回键与 ui_cancel ---------------------------------

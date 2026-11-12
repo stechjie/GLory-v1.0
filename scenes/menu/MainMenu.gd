@@ -99,8 +99,8 @@ const PROFILE_PLATE_SIZE := Vector2(375, 117)
 const PROFILE_RING_HOLE_FRAC := 289.0 / 420.0
 const PROFILE_RING_HOLE_CENTER := Vector2(205.5 / 420.0, 181.0 / 365.0)
 const PROFILE_PLACEHOLDER_COLOR := Color("4a3220")
-const PROFILE_XP_POS := Vector2(250, 101)
-const PROFILE_XP_SIZE := Vector2(174, 32)
+const PROFILE_XP_POS := Vector2(250, 105)
+const PROFILE_XP_SIZE := Vector2(174, 31)
 const SHOP_POS := Vector2(1412, 132)
 const SHOP_SIZE := Vector2(232, 283)
 const NEWS_POS := Vector2(1412, 420)
@@ -356,19 +356,17 @@ func _build() -> void:
 	_profile_frame_overlay.add_child(_profile_frame_art)
 	# ★ 10.02 三轮：自定义框画在头像**下面**，与默认圆盘同一层次（见 seat_frame_check）。
 	move_child(_profile_frame_overlay, placeholder.get_parent().get_index())
-	_profile_name_label = _add_label("", Vector2(207, 49), Vector2(260, 36), 26, "left")
+	_profile_name_label = _add_label("", Vector2(207, 59), Vector2(260, 32), 24, "left")
 	_ink(_profile_name_label)
 	# 等级与经验文字居中覆盖在同一个进度条上。
 	_profile_xp_bar = _add_container(PROFILE_XP_POS, PROFILE_XP_SIZE, "left")
 	_profile_xp_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_profile_xp_bar.clip_contents = true
-	# 11.12 羊皮纸风：原来是深蓝底 + 亮蓝条，跟羊皮纸名牌不搭。
-	# 现在是嵌进名牌的一道浅褐色凹槽（深棕细边、内侧一道暗边像压下去），里面一条金色进度，
-	# 进度条上沿一道亮线；字是深棕色带浅色描边（同名牌上的名字）。
+	# 圆角凹槽与高光沿用新版样式，浅蓝进度在羊皮纸名牌上保持醒目。
 	var xp_track := Panel.new()
 	var xp_track_style := StyleBoxFlat.new()
-	xp_track_style.bg_color = Color("bf9460")
-	xp_track_style.border_color = Color("8a5a24")
+	xp_track_style.bg_color = Color("26374c")
+	xp_track_style.border_color = Color("354b63")
 	xp_track_style.set_border_width_all(2)
 	xp_track_style.set_corner_radius_all(16)
 	xp_track_style.shadow_color = Color(0.35, 0.2, 0.06, 0.35)
@@ -388,8 +386,8 @@ func _build() -> void:
 	_profile_xp_bar.add_child(fill_clip)
 	_profile_xp_fill = Panel.new()
 	var fill_style := StyleBoxFlat.new()
-	fill_style.bg_color = Color("f0b638")
-	fill_style.border_color = Color("fde08a")
+	fill_style.bg_color = Color("79d8ff")
+	fill_style.border_color = Color("beefff")
 	fill_style.border_width_top = 2
 	fill_style.border_width_bottom = 0
 	fill_style.set_corner_radius_all(13)
@@ -398,7 +396,7 @@ func _build() -> void:
 	_profile_xp_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_profile_xp_fill.anchor_bottom = 1.0
 	fill_clip.add_child(_profile_xp_fill)
-	_profile_sub_label = _add_label("", PROFILE_XP_POS, PROFILE_XP_SIZE, 16, "left")
+	_profile_sub_label = _add_label("", PROFILE_XP_POS, PROFILE_XP_SIZE, 15, "left")
 	_ink(_profile_sub_label)
 	_profile_dot = _add_dot(Vector2(150, 26), "left")
 	_tutorial_profile_target = _add_hit(Vector2(18, 20), Vector2(520, 160), _emit_profile, "left")
@@ -1094,8 +1092,8 @@ func _refresh_profile_plate() -> void:
 	var profile: Dictionary = AccountManager.profile
 	var show_xp := not profile.is_empty() and _account_level > 0
 	_profile_xp_bar.visible = show_xp
-	_profile_sub_label.add_theme_color_override("font_color", INK_TEXT)
-	_profile_sub_label.add_theme_color_override("font_outline_color", INK_OUTLINE)
+	_profile_sub_label.add_theme_color_override("font_color", Color("f8fcff") if show_xp else INK_TEXT)
+	_profile_sub_label.add_theme_color_override("font_outline_color", Color("14273e") if show_xp else INK_OUTLINE)
 	if profile.is_empty():
 		# 还没登录 / 还没拉到资料。**不放假名字** —— 玩家看到一个陌生昵称
 		# 比看到一条横线更糟，而且那正是这次要消灭的东西。

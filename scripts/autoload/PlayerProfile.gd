@@ -105,6 +105,7 @@ var voice_volume := 1.0
 var music_volume := 1.0
 var locale := "en"
 var language_selected := false
+var pending_nickname_setup_account := ""
 var onboarding_version := ONBOARDING_VERSION
 var onboarding_status := ONBOARDING_NOT_STARTED
 var tutorial_reward_eligible := true
@@ -168,6 +169,7 @@ func load_profile() -> void:
 	if not SUPPORTED_LOCALES.has(locale):
 		locale = "en"
 	language_selected = bool(data.get("language_selected", false))
+	pending_nickname_setup_account = str(data.get("pending_nickname_setup_account", ""))
 	onboarding_version = int(data.get("onboarding_version", ONBOARDING_VERSION))
 	onboarding_status = _normalise_onboarding_status(
 		str(data.get("onboarding_status", ONBOARDING_LEGACY_UNKNOWN)))
@@ -204,6 +206,7 @@ func save_profile() -> bool:
 		"music_volume": music_volume,
 		"locale": locale,
 		"language_selected": language_selected,
+		"pending_nickname_setup_account": pending_nickname_setup_account,
 		"onboarding_version": onboarding_version,
 		"onboarding_status": onboarding_status,
 		"tutorial_reward_eligible": tutorial_reward_eligible,
@@ -232,6 +235,7 @@ func _reset_defaults() -> void:
 	music_volume = 1.0
 	locale = "en"
 	language_selected = false
+	pending_nickname_setup_account = ""
 	onboarding_version = ONBOARDING_VERSION
 	onboarding_status = ONBOARDING_NOT_STARTED
 	tutorial_reward_eligible = true

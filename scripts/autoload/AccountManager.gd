@@ -467,6 +467,10 @@ func _finish_success(body: Dictionary) -> void:
 	_login_session_id = str(body.get("session_id", ""))
 	player_id = str(body.get("player_id", ""))
 	player_name = str(body.get("player_name", ""))
+	if bool(body.get("created", false)) and not player_id.is_empty():
+		PlayerProfile.pending_nickname_setup_account = player_id
+		PlayerProfile.language_selected = false
+		PlayerProfile.save_profile()
 	_access_token = str(body.get("access_token", ""))
 	_note_token_lifetime(body)
 	_refresh_dead = false
@@ -694,6 +698,7 @@ func cached_display_name() -> String:
 func _remember_profile(result: Dictionary) -> Dictionary:
 	if int(result.get("code", 0)) == 200:
 		profile = result.get("body", {})
+		player_name = str(profile.get("player_name", player_name))
 		profile_changed.emit(profile)
 	return result
 

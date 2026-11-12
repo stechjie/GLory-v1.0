@@ -118,7 +118,6 @@ const BUBBLE_WIDTH := 400.0
 const BUBBLE_MARGIN_X := 14.0
 const BUBBLE_TEXT_WIDTH := BUBBLE_WIDTH - BUBBLE_MARGIN_X * 2.0
 const BUBBLE_MIN_HEIGHT := 72.0
-const BUBBLE_MAX_HEIGHT := 200.0
 
 # V2 P1-09 的版面常量。
 # 气泡与安全区边缘之间的最小间隙。
@@ -1847,14 +1846,13 @@ func _fill_shop_purchasable_count() -> int:
 			n += 1
 	return n
 
-# 按当前文案把气泡收到内容高度，并限死在 BUBBLE_MAX_HEIGHT 内，
-# 避免任何一步的长文案再次把气泡撑成半屏。
+# 按换行后的最小高度定位气泡，让正文和边框使用同一尺寸。
 func _fit_bubble() -> void:
 	if _bubble == null or not is_instance_valid(_bubble):
 		return
 	_bubble.custom_minimum_size = Vector2(BUBBLE_WIDTH, 0.0)
 	var measured := _bubble.get_combined_minimum_size()
-	var height := clampf(measured.y, BUBBLE_MIN_HEIGHT, BUBBLE_MAX_HEIGHT)
+	var height := maxf(measured.y, BUBBLE_MIN_HEIGHT)
 	_bubble.custom_minimum_size = Vector2(BUBBLE_WIDTH, height)
 	_bubble.size = Vector2(BUBBLE_WIDTH, height)
 
@@ -2199,14 +2197,15 @@ func _ensure_overlay() -> void:
 	style.bg_color = Color(0.04, 0.05, 0.06, 0.88)
 	style.border_color = Color(1.0, 0.86, 0.28, 0.95)
 	style.set_border_width_all(2)
+	style.set_content_margin_all(0)
 	style.set_corner_radius_all(8)
 	_bubble.add_theme_stylebox_override("panel", style)
 	_overlay.add_child(_bubble)
 
 	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 14)
+	margin.add_theme_constant_override("margin_left", int(BUBBLE_MARGIN_X))
 	margin.add_theme_constant_override("margin_top", 10)
-	margin.add_theme_constant_override("margin_right", 14)
+	margin.add_theme_constant_override("margin_right", int(BUBBLE_MARGIN_X))
 	margin.add_theme_constant_override("margin_bottom", 10)
 	_bubble.add_child(margin)
 	var box := VBoxContainer.new()
@@ -2225,6 +2224,7 @@ func _ensure_overlay() -> void:
 	_step_name_label = Label.new()
 	_step_name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_step_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_step_name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_step_name_label.add_theme_font_size_override("font_size", 14)
 	_step_name_label.add_theme_color_override("font_color", Color(0.60, 0.65, 0.72))
 	header.add_child(_step_name_label)

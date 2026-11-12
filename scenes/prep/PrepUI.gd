@@ -167,7 +167,7 @@ const MERC_PICKER_MODAL_PRIORITY := 40
 # 左上角准备头像（2026-10-06 用户要求放大 + 点开看名字、不看留言、不听语音）。
 # 原来 40 像素、上下两排；放大到 56 之后两排会压到下面的「羁绊 / 宝藏」栏，所以改成一排：
 # 左边三个是自己队、右边三个是对面，中间空一段。
-const READY_AVATAR_SIZE := 56.0
+const READY_AVATAR_SIZE := 56.0 * 1.30
 const READY_AVATAR_GAP := 4
 const READY_TEAM_GAP := 18
 const SEAT_CARD_MODAL_ID := "prep_seat_card"
@@ -188,7 +188,7 @@ const SEAT_CARD_MODAL_PRIORITY := 40
 #   reserve = (头像底边 124 + 间距 8) − left_drop.y 84 = 48。
 # 改成别的头像尺寸 / 顶栏高度时这个数要跟着动 —— 判据是
 # `tools/prep_layout_1009_check.gd`：它直接量「金钱宝藏按钮 vs TreasurePanel」有没有重叠。
-const SELL_LEFT_PANEL_TOP_RESERVE := 48.0
+const SELL_LEFT_PANEL_TOP_RESERVE := 48.0 + 2.0 * (READY_AVATAR_SIZE - 56.0)
 const PrepSeatCard := preload("res://scenes/prep/panels/PrepSeatCard.gd")
 const PrepTeammateBanner := preload("res://scenes/prep/panels/PrepTeammateBanner.gd")
 const ReportDialog := preload("res://ui/components/ReportDialog.gd")
@@ -2655,8 +2655,7 @@ func _build_ready_indicator() -> void:
 	#
 	# ★ 10.08 反馈第 4 条：改回「两队上下两行」（以前版本就是这样）。
 	#   2026-10-06 曾因为「56px 放大后两排压到下面的羁绊/宝藏栏」而改成一排 ——
-	#   那次没把下方内容让开。这次按用户要求两行，并把行距收进 READY_AVATAR_GAP，
-	#   整体高度仍控制在原来那一排的高度里（两行 = 56*2+4 = 116，见下面 offset_bottom）。
+	#   两行放大时，左栏占位同步增长，给下方羁绊留出空间。
 	_ready_indicator = VBoxContainer.new()
 	# (7) Ready checks live in the empty TOP-LEFT corner, not the right side.
 	_ready_indicator.anchor_left = 0.0
@@ -2666,11 +2665,10 @@ func _build_ready_indicator() -> void:
 	_ready_indicator.offset_left = 16
 	_ready_indicator.offset_right = 16 + READY_AVATAR_SIZE * 3 + READY_AVATAR_GAP * 2
 	_ready_indicator.offset_top = 8
-	_ready_indicator.offset_bottom = 8 + READY_AVATAR_SIZE
+	_ready_indicator.offset_bottom = 8 + READY_AVATAR_SIZE * 2 + READY_AVATAR_GAP
 	_ready_indicator.add_theme_constant_override("separation", READY_AVATAR_GAP)
 	_ready_indicator.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ready_indicator.z_index = 25
-	_ready_indicator.add_theme_constant_override("separation", READY_AVATAR_GAP)
 	add_child(_ready_indicator)
 	SafeArea.track(_ready_indicator)
 	_ready_dots = []
@@ -2688,10 +2686,6 @@ func _build_ready_indicator() -> void:
 		rows[pos / 3].add_child(badge)
 		_ready_dots.append(badge)
 		VoiceControls.attach_speaking_mic(badge)
-	# 整体高度：两行头像 + 一行间距。原来只有一排（高=READY_AVATAR_SIZE），
-	# 现在改两行，这里把 offset_bottom 一并算准，否则 VBox 的 rect 会低估、
-	# 下面的「羁绊/宝藏」栏位置看起来还是老样子（用户第 4 条要求它下移腾位）。
-	_ready_indicator.offset_bottom = 8 + READY_AVATAR_SIZE * 2 + READY_AVATAR_GAP
 	_refresh_ready_indicator()
 	# 头像上的「正在说话」小麦克风（10-08）：说话状态每 0.25 秒才变一次，这里 0.2 秒看一眼就够。
 	var speaking_timer := Timer.new()

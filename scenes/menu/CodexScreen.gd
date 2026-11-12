@@ -154,7 +154,7 @@ func _build() -> void:
 	_detail.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_detail_scroll.add_child(_detail)
 
-	_page_banner = Kit.title_banner("Codex" if UnitDetailFormat.is_en() else "图鉴", 70.0, 26)
+	_page_banner = Kit.title_banner(tr("codex_title"), 70.0, 26)
 	add_child(_page_banner)
 	_back_btn = Kit.back_button(func(): back_requested.emit(), 56.0)
 	_back_btn.tooltip_text = tr("codex_back")

@@ -116,7 +116,7 @@ func _process(_delta: float) -> void:
 		focus.size.x / extent.x, focus.size.y / extent.y))
 	(_dim.material as ShaderMaterial).set_shader_parameter("hole_on", 1.0)
 	_update_second_hole(overlay_rect, extent)
-	_bubble.size = Vector2(347, 112)
+	_bubble.size = Vector2(347, maxf(112.0, _bubble.get_combined_minimum_size().y))
 	var safe := SafeArea.rect()
 	safe.position -= overlay_rect.position
 	safe = safe.intersection(Rect2(Vector2.ZERO, size)).grow(-20.0)

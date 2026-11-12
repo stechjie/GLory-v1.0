@@ -905,7 +905,7 @@ func _en_strings() -> Dictionary:
 		"prep_wait_sync": "Ready. Waiting for online sync.",
 		# Pet system
 		# Codex
-		"codex_title": "Codex",
+		"codex_title": "Gallery",
 		"codex_back": "Back",
 		"codex_progress": "Found %d / %d",
 		"codex_reference_count": "%d entries",
