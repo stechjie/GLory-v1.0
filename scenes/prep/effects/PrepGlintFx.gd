@@ -86,6 +86,10 @@ func setup(target: Control, texture: Texture2D, art_rect := Rect2()) -> void:
 	_layout.call_deferred()
 
 
+func set_art_texture(texture: Texture2D) -> void:
+	_shine.texture = texture
+
+
 func set_effect_active(value: bool) -> void:
 	_active = value
 	visible = value

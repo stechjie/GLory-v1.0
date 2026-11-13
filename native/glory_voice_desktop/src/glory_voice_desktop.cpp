@@ -83,7 +83,7 @@ public:
 	}
 
 	void onReconnected(livekit::Room &, const livekit::ReconnectedEvent &) override {
-		owner_->on_state(gen_, "connected");
+		owner_->on_reconnected(gen_);
 	}
 
 	// 自己 leaveRoom 引起的断开到不了这里（编号已经变了）。
@@ -118,10 +118,23 @@ public:
 		owner_->on_participants(gen_, identities);
 	}
 
-	// 新订阅到的声音按屏蔽表处理（自动订阅会把被屏蔽的人重新订上）。
+	// A replacement track needs the current listening preference even if its owner never left.
+	void onTrackPublished(livekit::Room &, const livekit::TrackPublishedEvent &event) override {
+		if (event.participant && event.publication && event.publication->kind() == livekit::TrackKind::KIND_AUDIO) {
+			owner_->on_remote_audio_changed(gen_, event.participant->identity());
+		}
+	}
+
+	void onTrackUnsubscribed(livekit::Room &, const livekit::TrackUnsubscribedEvent &event) override {
+		if (event.participant && event.publication && event.publication->kind() == livekit::TrackKind::KIND_AUDIO) {
+			owner_->on_remote_audio_changed(gen_, event.participant->identity());
+		}
+	}
+
+	// Auto-subscribe can attach a new track before the mute preference is applied.
 	void onTrackSubscribed(livekit::Room &, const livekit::TrackSubscribedEvent &event) override {
 		if (event.participant != nullptr && event.track && event.track->kind() == livekit::TrackKind::KIND_AUDIO) {
-			owner_->on_track_subscribed(gen_, event.participant->identity());
+			owner_->on_remote_audio_changed(gen_, event.participant->identity());
 		}
 	}
 
@@ -210,7 +223,10 @@ void GloryVoiceDesktop::setParticipantVolume(const String &identity, double volu
 		std::lock_guard<std::mutex> lock(mutex_);
 		volumes_[id] = volume;
 	}
-	post([this, id]() { do_apply_volume(id); });
+	const int gen = generation_.load();
+	post([this, gen, id]() {
+		if (gen == generation_.load()) do_apply_volume(id);
+	});
 }
 
 void GloryVoiceDesktop::setAudience(bool all, const String &identities_json) {
@@ -316,19 +332,22 @@ void GloryVoiceDesktop::on_participants(int gen, const std::vector<std::string> 
 	snapshot_.participants = identities;
 }
 
-void GloryVoiceDesktop::on_track_subscribed(int gen, const std::string &identity) {
-	if (gen != generation_.load()) {
-		return;
-	}
-	bool muted = false;
-	{
-		std::lock_guard<std::mutex> lock(mutex_);
-		auto it = volumes_.find(identity);
-		muted = it != volumes_.end() && it->second <= 0.0;
-	}
-	if (muted) {
-		post([this, identity]() { do_apply_volume(identity); });
-	}
+void GloryVoiceDesktop::on_remote_audio_changed(int gen, const std::string &identity) {
+	post([this, gen, identity]() {
+		if (gen == generation_.load()) do_apply_volume(identity, true);
+	});
+}
+
+void GloryVoiceDesktop::on_reconnected(int gen) {
+	on_state(gen, "connected");
+	post([this, gen]() {
+		if (!room_ || gen != generation_.load()) return;
+		const auto identities = remote_identities(*room_);
+		on_participants(gen, identities);
+		for (const auto &identity : identities) {
+			do_apply_volume(identity, true);
+		}
+	});
 }
 
 // --- 工作线程 ----------------------------------------------------------------------------
@@ -521,7 +540,7 @@ void GloryVoiceDesktop::do_apply_mic(int gen, bool enabled) {
 	}
 }
 
-void GloryVoiceDesktop::do_apply_volume(const std::string &identity) {
+void GloryVoiceDesktop::do_apply_volume(const std::string &identity, bool reconcile) {
 	if (!room_) {
 		return;
 	}
@@ -540,7 +559,11 @@ void GloryVoiceDesktop::do_apply_volume(const std::string &identity) {
 	for (const auto &entry : participant->trackPublications()) {
 		const auto &publication = entry.second;
 		if (publication && publication->kind() == livekit::TrackKind::KIND_AUDIO) {
-			publication->setSubscribed(volume > 0.0);
+			const bool listen = volume > 0.0;
+			// subscribed() records the request. An attached track confirms it took effect.
+			if (!reconcile || static_cast<bool>(publication->track()) != listen) {
+				publication->setSubscribed(listen);
+			}
 		}
 	}
 }

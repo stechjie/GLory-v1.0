@@ -29,7 +29,7 @@ const START_PLATE_PATH := "res://assets/ui/prep/start_button_v2.png"
 const ROUND_PLATE_PATH := "res://assets/ui/prep/round_plate_v2.png"
 var _ready_orbit_glow: ReadyOrbitGlowScript
 # 入口角标那枚石头图标（通用款，不分天 / 地 / 人 —— 角标说的是「队伍有石头」）。
-const CARROT_ENTRY_STONE_ICON_PATH := "res://assets/props/carrot_system/stones/stone_unknown.png"
+const UnitDetailCardScript := preload("res://ui/components/UnitDetailCard.gd")
 const UNIT_TEAM_RING_SHADER := preload("res://shaders/unit_team_ring.gdshader")
 
 # Keep the selector API used by preparation-screen regression checks while the
@@ -726,9 +726,8 @@ func reapply_prep_skin() -> void:
 				Color(tint.r, tint.g, tint.b, 0.85),
 				Color(tint.r, tint.g, tint.b, 0.0)])
 			(fireflies as CPUParticles3D).color_ramp = ramp
-	# 刷新按钮中间的图案跟皮肤走（火焰 / 雪花 / 樱花 / 月牙）。
-	if _shop != null and _shop.refresh_emblem != null and is_instance_valid(_shop.refresh_emblem):
-		_shop.refresh_emblem.sync()
+	if _shop != null:
+		_shop.reapply_skin()
 	# 萤火虫还是樱花瓣（PrepSkin.ambient）。刷新特效不用这里管：每次点刷新时现问皮肤。
 	_apply_prep_ambient_kind(fireflies, find_child("PrepPetalFall", true, false))
 
@@ -1508,7 +1507,7 @@ func _build_top_actions() -> void:
 	carrot_btn.add_child(carrot_badge)
 	_carrot_entry_badge = carrot_badge
 	var badge_icon := TextureRect.new()
-	badge_icon.texture = load(CARROT_ENTRY_STONE_ICON_PATH)
+	badge_icon.texture = UnitDetailCardScript.stone_texture("")
 	badge_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	badge_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	badge_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -3063,14 +3062,13 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 	# 名字写在头像下面那条缎带上
 	var name_label := Label.new()
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	name_label.position = Vector2(26, 150)
-	name_label.size = Vector2(186, 44)
+	name_label.position = Vector2(36, 150)
+	name_label.size = Vector2(166, 44)
 	name_label.text = PrepWidgets.unit_name(mercenary)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	name_label.clip_text = true
-	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	_style_merc_text(name_label, true, 900, 28)
+	_style_merc_text(name_label, true, 900, 28, 166)
 	card.add_child(name_label)
 	# 价格（萝卜）写在最下面的小金牌上
 	var price_row := HBoxContainer.new()
@@ -3113,9 +3111,8 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 		reason_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		reason_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		reason_label.clip_text = true
-		reason_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		reason_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_style_merc_text(reason_label, false, 800, 22)
+		_style_merc_text(reason_label, false, 800, 22, 128)
 		reason_label.add_theme_color_override("font_color", Color("8a2a12"))
 		reason_plate.add_child(reason_label)
 	return card
@@ -3545,6 +3542,7 @@ func _refresh_mercenary_overlay() -> void:
 	# 计数放在下面的签名短路之前，否则签名没变时会漏更新。
 	if _merc_count_label != null:
 		_merc_count_label.text = tr("ui_merc_hired_count") % [_hired_mercenary_count(), GameState.MERCENARY_SLOTS]
+		_style_merc_text(_merc_count_label, true, 800, 28, 134)
 	# 打开状态下只有影响卡片内容的数据变了才重建 12 张卡。
 	# 卡片价格与可买判据在非教学局读的是**萝卜**（_mercenary_purchase_reason），
 	# 签名却只有金币 —— 萝卜变了卡片不重建：涨了还挂着「萝卜不足」点不动，
@@ -3617,12 +3615,13 @@ func _create_merc_picker_content() -> PanelContainer:
 	# 标题写在顶上那条缎带上
 	var title := Label.new()
 	title.text = tr("ui_choose_mercenary")
-	title.position = Vector2(636, 22)
-	title.size = Vector2(400, 80)
+	title.position = Vector2(656, 18)
+	title.size = Vector2(360, 72)
+	title.clip_text = true
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_style_merc_text(title, true, 900, 56)
+	_style_merc_text(title, true, 900, 56, 360)
 	board.add_child(title)
 	# 右上角计数牌「已雇 N/8」：备战界面没有其它已购佣兵的提示，这里是唯一的计数反馈。
 	_merc_count_label = Label.new()
@@ -3631,7 +3630,6 @@ func _create_merc_picker_content() -> PanelContainer:
 	_merc_count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_merc_count_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_merc_count_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_style_merc_text(_merc_count_label, true, 800, 28)
 	board.add_child(_merc_count_label)
 	# 关闭键：图上画好了，这里只放一块透明的点按区
 	var close := Button.new()
@@ -3669,8 +3667,12 @@ func _layout_merc_board(overlay: Control, board: Control) -> void:
 	board.position = (avail - MERC_PANEL_ART_SIZE * k) * 0.5
 
 
-func _style_merc_text(label: Label, serif: bool, weight: int, font_size: int) -> void:
-	label.add_theme_font_override("font", preload("res://ui/components/UnitDetailCard.gd").font(serif, weight))
+func _style_merc_text(label: Label, serif: bool, weight: int, font_size: int, max_width := 0.0) -> void:
+	var font := UnitDetailCardScript.font(serif, weight)
+	label.add_theme_font_override("font", font)
+	if max_width > 0.0:
+		while font_size > 1 and font.get_string_size(label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > max_width:
+			font_size -= 1
 	label.add_theme_font_size_override("font_size", font_size)
 	label.add_theme_color_override("font_color", MERC_RECRUITMENT_INK)
 	label.add_theme_color_override("font_outline_color", Color.TRANSPARENT)
