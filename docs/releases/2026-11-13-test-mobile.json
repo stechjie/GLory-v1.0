@@ -1,0 +1,152 @@
+{
+  "scope": "test",
+  "source_commit": "6e3ea69d7146c9b661c80ca624547739d624bfcb",
+  "server": {
+    "status": "deployed",
+    "commit": "6e3ea69d7146c9b661c80ca624547739d624bfcb",
+    "project": "project-60c72d94-b558-4e4f-992",
+    "database_project": "tzkysvnpjmgzfbvazugi",
+    "release": "/home/nins17121/Glory/releases/1.0.2-20261113-6e3ea69d",
+    "protocol": 46,
+    "idle_checks": [
+      {
+        "battle_connections": 0,
+        "account_online": 0,
+        "room_count": 0,
+        "at": "2026-11-13T12:23:45.459265+00:00"
+      },
+      {
+        "battle_connections": 0,
+        "account_online": 0,
+        "room_count": 0,
+        "at": "2026-11-13T12:23:48.850195+00:00"
+      }
+    ],
+    "services": {
+      "glory-server": "active",
+      "glory-backend": "active",
+      "livekit": "active",
+      "caddy": "active"
+    },
+    "health": {
+      "status": "ok",
+      "environment": "prod",
+      "configured": true,
+      "missing_config": []
+    },
+    "schema_verified": true,
+    "old_pid": "52608",
+    "new_pid": "53477",
+    "backend_pid": "53449",
+    "updated_files": [
+      "backend/admin_web/admin.js",
+      "backend/tests/test_admin.py",
+      "backend/app/admin.py",
+      "backend/app/ranked.py",
+      "backend/app/schema_check.py",
+      "backend/app/routes/admin.py"
+    ],
+    "rollback_directory": "/home/nins17121/Glory/delivery/release-20261113-test",
+    "verified_at": "2026-11-13T12:24:03.778573+00:00",
+    "device_gameplay_tested": false
+  },
+  "database_migration": {
+    "migration": 46,
+    "project": "project-60c72d94-b558-4e4f-992",
+    "database_project": "tzkysvnpjmgzfbvazugi",
+    "applied": true,
+    "row_count_unchanged": true,
+    "columns_verified": true
+  },
+  "android": {
+    "build": 66,
+    "version": "1.0.2",
+    "built": true,
+    "signed": true,
+    "bytes": 705924560,
+    "sha256": "cfe0ffea637810af1d9d50c2accb723f6c8411d3e6c76ead0687f7781f2d8339",
+    "path": "/Volumes/repository/github/GLory/delivery/release-20261113-test/Glory-1.0.2-66-android.apk",
+    "asset_inventory_sha256": "ec5ecf1ffa435a1e1eb361389b45877ed94011fdf1c0e883e2cd8daf01d8d3e7",
+    "server_target": {
+      "environment": "test",
+      "backend_url": "https://test-api.gogoglory.com",
+      "battle_host": "test-battle.gogoglory.com",
+      "dtls_cert_sha256": "f773c1a5e917e3fe7c0c938ee19ed2ecfc0b16ed3ecf8fb8f3fa6987a49c250d"
+    },
+    "patch_base": {
+      "archive": "/Volumes/repository/github/GLory/build/apk/Glory-release-slim-20261113-201903-6e3ea69d-patch-base/base.zip",
+      "manifest": "/Volumes/repository/github/GLory/build/apk/Glory-release-slim-20261113-201903-6e3ea69d-patch-base/base.export.json",
+      "sha256": "3205dfa656755cf98c47afd94d3cb8f92bffc86de61586869bb9774a7c8c8bc5",
+      "base_id": "glory-20261113-test-refresh",
+      "debug": false,
+      "payload_verification": {
+        "identical_base_files": 6230,
+        "platform": "android",
+        "payload_matches_baseline": true
+      }
+    },
+    "uploaded": false,
+    "qr_updated": false
+  },
+  "ios": {
+    "built": false,
+    "uploaded": false,
+    "internal_testing": false,
+    "external_testing": false,
+    "reason": "waiting_for_Android_Drive_upload_before_building_as_requested"
+  },
+  "public_config": {
+    "ios": {
+      "ready": true,
+      "url": "https://testflight.apple.com/join/W2p1ukJp",
+      "version": "1.0.2 (94)",
+      "pending_version": ""
+    },
+    "android": {
+      "ready": true,
+      "mode": "apk",
+      "url": "https://test-api.gogoglory.com/beta/downloads/Glory-1.0.2-65-android.apk",
+      "version": "1.0.2 (65)",
+      "size_bytes": 706687099,
+      "size_label": "673.9 MiB"
+    }
+  },
+  "validation": {
+    "runtime_tests": 17,
+    "backend_admin_passed": 19,
+    "backend_admin_skipped": 16,
+    "beta_tests": 7,
+    "server_cold_start": true,
+    "dtls_fingerprint_verified": true,
+    "account_and_battle_voice_url_verified": true,
+    "device_gameplay_tested": false,
+    "external_client_connection_probe": {
+      "account_logged_in": false,
+      "connected": true,
+      "connected_seconds": 30.014,
+      "dtls": true,
+      "error": "",
+      "host": "34.124.141.90",
+      "list_requested": true,
+      "max_pong_gap_seconds": 4.735,
+      "observed_pings": 9,
+      "observed_pongs": 9,
+      "passed": true,
+      "port": 8080,
+      "protocol": 46,
+      "public_room_count": 0,
+      "reason": "completed",
+      "transport_closed": true,
+      "unseated": true,
+      "user_data_dir": "/Users/luolijing/Library/Application Support/GloryLiveReadOnly-Nov13-Clean"
+    }
+  },
+  "blockers": [
+    {
+      "step": "Drive upload",
+      "reason": "705924560 byte APK exceeds connector limit 536870912 bytes; Computer Use session ended by browser URL restriction",
+      "next_action": "user uploads exact APK to existing Drive folder and provides file URL"
+    }
+  ],
+  "updated_at": "2026-11-13T12:26:51.408786+00:00"
+}
