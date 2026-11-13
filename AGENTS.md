@@ -119,10 +119,11 @@ DTLS 证书**不用换**（CN 是 `glory-battle`，按指纹 pin、不校验主�
    🔴 推送身份**不要用默认计算服务账号**。测试服从此收不到 Google 实时通知，靠每 10 分钟对账补单；
    测试服项目里旧主题 `play-billing-rtdn` 和它的两条订阅已闲置。
 3. **战斗服务器启动命令的 `--backend-url=`**（战报上传）：撤域名脚本已换成新域名。
-4. **待改：App Store 服务器通知 V2**（App Store Connect → App 信息）：生产填
-   `https://api.gogoglory.com/iap/apple/notifications`，沙盒填 `https://test-api.gogoglory.com/iap/apple/notifications`。
-   10-30 两个都填的是测试服的 duckdns 地址，正式服从没收到过苹果通知；苹果这一路没有定时对账兜底，
-   不改的话正式服的退款扣不回来。
+4. **2026-11-14 已配置：App Store 服务器通知 V2**（App Store Connect → App 信息）：生产和沙盒两项均已在 UI 保存为
+   `https://api.gogoglory.com/iap/apple/notifications`。当前正式候选包及其 TestFlight 测试均连接正式服钱包，
+   因此沙盒交易通知也必须回到正式服。Apple 的 `Sandbox` 标记表示交易环境，不表示 GLory 测试数据库；
+   测试服单独包不能仅靠该标记自动切库，应另行明确应用/订单路由。旧域名及沙盒指向测试 API 的记录不作为当前值。
+   端点 GET 返回 405 仅证明路由可达；真实通知投递、交易定位和钱包到账/退款对账仍须分别验收，不能据此称已打通。
 
 - 测试服固定使用 Google Cloud 项目 `project-60c72d94-b558-4e4f-992`：
   https://ssh.cloud.google.com/v2/ssh/projects/project-60c72d94-b558-4e4f-992/
@@ -168,3 +169,15 @@ DTLS 证书**不用换**（CN 是 `glory-battle`，按指纹 pin、不校验主�
 - Patch 同样必须精简：统一通过 `tools/workspace/export_patch.py` 导出；手工和 nightly 构建都在隔离 stage 中重新扫描依赖并输出 `slim-resources.json`。动态引用保守保留，扫描失败停止构建，不允许退回全量导出。原包中已存在的未引用文件只继承原包字节用于差异比较，不重复放入补丁；真正删除原包文件仍需新全量包。不得改写旧基线。
 
 详见 `tools/workspace/SLIM_BUILD.md`。
+
+### 2026-11-14 iOS 100 精简基线（后续 patch 必须保留）
+
+- 正式候选包 `1.0.2 (100)` 的 `base_id` 为 `glory-ios-20261114-prod-review`。
+- 原始不可变归档：外层 `build/ios-auto-work/runs/20261114-005944-339654/patch-base/base.zip`；配套清单为同目录 `base.export.json`。
+- `base.zip` SHA-256：`8e0ccf6e61e2d4f85b18bfc929545a87395a15e9eb2e7b2f7c2b6194855076d0`；成品校验已确认 6,232 个基线文件与 IPA 内容一致。
+- 不改写或删除该基线及清单。后续 patch 必须通过 `tools/workspace/export_patch.py` 重新扫描、精简，并对照这次保留的基线生成差异；不要使用全量资源另造基线。
+- `base_id` 标识唯一已安装基线，不能复用于内容不同的新 IPA。新全量包使用新的 `base_id` 和独立归档。
+- 固定保留目录：外层 `build/patch-baselines/glory-ios-20261114-prod-review/`，含 `base.zip`、`base.export.json`、`ipa-result.json`、`baseline-lock.json`、`README.txt`、`patch-config.json`；`source-snapshot/` 保留导出预设、工程配置、构建身份、精简过滤清单和 `patcher/boot.json`。各项已回读核验 hash。
+- 固定 `patch-config.json` SHA-256 为 `358357f141b68e23e3f2545b8fab4b0dfe6e93e9d2002a41c45919f1e7bbc0eb`；后续 `export_patch.py --config` 使用该文件，具体命令见固定目录的 `README.txt`。
+- `base.zip` 以 hardlink 固定，删除原 run 不会删除此路径；小文件已独立复制。此目录独立于原 run 保留，未来清理必须显式保留整个目录。`baseline-lock.json` 是保留记录，不是自动清理保护机制或文件系统不可变标记。
+- 详细信息见 `docs/releases/2026-11-14-ios-review100.md`；不能把下一次构建会复用的 `build/ios-auto-work/project` 当作本次永久快照。未发布新 patch，也未改 nightly 线上记录。
