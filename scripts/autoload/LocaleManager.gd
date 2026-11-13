@@ -29,7 +29,7 @@ func _add_translation(locale: String, strings: Dictionary) -> void:
 func _zh_strings() -> Dictionary:
 	return {
 		# 主菜单
-		"menu_title": "GLory Auto Chess",
+		"menu_title": "GLory: Auto Chess & Team PvP",
 		"menu_continue": "继续游戏",
 		"menu_new_game": "新游戏",
 		"menu_network": "联机测试",
@@ -567,7 +567,7 @@ func _zh_strings() -> Dictionary:
 func _en_strings() -> Dictionary:
 	return {
 		# Main Menu
-		"menu_title": "GLory Auto Chess",
+		"menu_title": "GLory: Auto Chess & Team PvP",
 		"menu_continue": "Continue",
 		"menu_new_game": "New Game",
 		"menu_network": "Network Test",

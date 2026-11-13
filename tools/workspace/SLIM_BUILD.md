@@ -30,7 +30,7 @@ APK 下载文件更小不等于安装占用同幅度下降：native 库安装时
 
 ## iOS 商店与桌面名称
 
-iOS 的正式名称固定为 `GLory Auto Chess`，与 App Store Connect 的当前名称一致。
+iOS 的正式名称固定为 `GLory: Auto Chess & Team PvP`，与本轮 App Store Connect 英文、马来文和印尼文名称一致。中文商店名为 `GLory 自走棋：3v3组队对战`，保留同一品牌与玩法定位。
 源码通过 `config/name.ios` 声明 iOS 名称；IPA 入口还会在隔离 stage 中统一
 `config/name` 并去除过时的名称覆盖，避免导出器回退到 `Glory Beta 0.04`。
 桌面及服务器仍使用原工程名来定位已有存档和服务密钥，不做全平台工程目录迁移。
