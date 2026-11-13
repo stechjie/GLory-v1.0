@@ -8,9 +8,9 @@
   "android": {
     "ready": true,
     "mode": "apk",
-    "url": "https://test-api.gogoglory.com/beta/downloads/Glory-1.0.2-65-android.apk",
-    "version": "1.0.2 (65)",
-    "size_bytes": 706687099,
-    "size_label": "673.9 MiB"
+    "url": "https://test-api.gogoglory.com/beta/downloads/Glory-1.0.2-66-android.apk",
+    "version": "1.0.2 (66)",
+    "size_bytes": 705924560,
+    "size_label": "673.2 MiB"
   }
 }

@@ -85,8 +85,27 @@
         "payload_matches_baseline": true
       }
     },
-    "uploaded": false,
-    "qr_updated": false
+    "uploaded": true,
+    "qr_updated": true,
+    "upload_started": true,
+    "upload_method": "Chrome Computer Use browser upload",
+    "upload_account": "bytegamesg2025@gmail.com",
+    "upload_folder_id": "1xjn5Hpa4AzSS8v7hgECEZstHb3dG6m11",
+    "upload_status": "complete; metadata, parent and full SHA-256 readback verified",
+    "drive": {
+      "build": 66,
+      "version": "1.0.2",
+      "bytes": 705924560,
+      "sha256": "cfe0ffea637810af1d9d50c2accb723f6c8411d3e6c76ead0687f7781f2d8339",
+      "source_commit": "6e3ea69d7146c9b661c80ca624547739d624bfcb",
+      "upload_complete": true,
+      "size_readback_verified": true,
+      "file_id": "1q12BlXFXVQfY2i_3xcIqVDWVQcN8YemZ",
+      "account": "bytegamesg2025@gmail.com",
+      "parent": "1xjn5Hpa4AzSS8v7hgECEZstHb3dG6m11",
+      "url": "https://drive.google.com/file/d/1q12BlXFXVQfY2i_3xcIqVDWVQcN8YemZ/view"
+    },
+    "drive_full_sha256_readback_verified": true
   },
   "ios": {
     "version": "1.0.2",
@@ -96,8 +115,8 @@
     "uploaded": true,
     "upload_started": true,
     "transporter_status": "delivered",
-    "processed": false,
-    "internal_testing": false,
+    "processed": true,
+    "internal_testing": true,
     "external_testing": false,
     "bytes": 669316106,
     "sha256": "95cafdc82b82321b93f8887ff8daec840d4911ca32e0b3d937e4a1fd478bcc68",
@@ -146,9 +165,16 @@
     "app_id": "6811578280",
     "delivered_at": "2026-11-13T20:54:00+08:00",
     "processing_status": "App 正在处理",
-    "internal_external_status": "not_configured_or_verified_for_build_95_due_to_browser_access_restriction",
+    "internal_external_status": "internal verified; external submitted, final result unverified",
     "evidence": "transporter95-delivered.jpg",
-    "verified_at": "2026-11-13T12:54:52.888277+00:00"
+    "verified_at": "2026-11-13T13:23:34.817864+00:00",
+    "build_id": "9391a8e3-043c-4429-8a55-4b8c70ee7e3a",
+    "internal_group_id": "90dd8f53-b157-49c4-b899-8da72091b76a",
+    "internal_testers": 10,
+    "internal_status": "正在测试",
+    "external_review_submitted": true,
+    "external_group_id": "77fbf129-88aa-4489-98a0-658698cd4fcf",
+    "external_status": "submission clicked; final state awaiting verification while Chrome is in use"
   },
   "public_config": {
     "ios": {
@@ -160,10 +186,10 @@
     "android": {
       "ready": true,
       "mode": "apk",
-      "url": "https://test-api.gogoglory.com/beta/downloads/Glory-1.0.2-65-android.apk",
-      "version": "1.0.2 (65)",
-      "size_bytes": 706687099,
-      "size_label": "673.9 MiB"
+      "url": "https://test-api.gogoglory.com/beta/downloads/Glory-1.0.2-66-android.apk",
+      "version": "1.0.2 (66)",
+      "size_bytes": 705924560,
+      "size_label": "673.2 MiB"
     }
   },
   "validation": {
@@ -198,14 +224,48 @@
   },
   "blockers": [
     {
-      "step": "Drive upload",
-      "reason": "705924560 byte APK exceeds connector limit 536870912 bytes; Computer Use session ended by browser URL restriction",
-      "next_action": "user uploads exact APK to existing Drive folder and provides file URL"
-    },
-    {
       "step": "iOS internal/external testing",
       "reason": "App processing; browser Computer Use access restriction prevents group assignment; no claim of testing enabled"
     }
   ],
-  "updated_at": "2026-11-13T12:54:52.890473+00:00"
+  "updated_at": "2026-11-13T14:32:16.142361+00:00",
+  "published": {
+    "status": "published",
+    "config": {
+      "ios": {
+        "ready": true,
+        "url": "https://testflight.apple.com/join/W2p1ukJp",
+        "version": "1.0.2 (94)",
+        "pending_version": ""
+      },
+      "android": {
+        "ready": true,
+        "mode": "apk",
+        "url": "https://test-api.gogoglory.com/beta/downloads/Glory-1.0.2-66-android.apk",
+        "version": "1.0.2 (66)",
+        "size_bytes": 705924560,
+        "size_label": "673.2 MiB"
+      }
+    },
+    "drive": {
+      "build": 66,
+      "version": "1.0.2",
+      "bytes": 705924560,
+      "sha256": "cfe0ffea637810af1d9d50c2accb723f6c8411d3e6c76ead0687f7781f2d8339",
+      "source_commit": "6e3ea69d7146c9b661c80ca624547739d624bfcb",
+      "upload_complete": true,
+      "size_readback_verified": true,
+      "file_id": "1q12BlXFXVQfY2i_3xcIqVDWVQcN8YemZ",
+      "account": "bytegamesg2025@gmail.com",
+      "parent": "1xjn5Hpa4AzSS8v7hgECEZstHb3dG6m11",
+      "url": "https://drive.google.com/file/d/1q12BlXFXVQfY2i_3xcIqVDWVQcN8YemZ/view"
+    },
+    "drive_full_sha256_readback_verified": true,
+    "server_apk_sha256": "cfe0ffea637810af1d9d50c2accb723f6c8411d3e6c76ead0687f7781f2d8339",
+    "server_apk_bytes": 705924560,
+    "base_id": "glory-20261113-test-refresh",
+    "includes_seq": 4,
+    "qr_sha256": "dd3d8cdce298efe0060d783613d9ba5c4f5bb42a7c15b1f76743a8fc0927dab6",
+    "verified_at": "2026-11-13T14:31:39.307313+00:00"
+  }
 }
