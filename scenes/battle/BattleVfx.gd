@@ -166,6 +166,7 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 	if not _battle_voice_cap_mode_ready:
 		_battle_voice_cap_mode_ready = true
 		SfxService.set_battle_voice_cap(4)
+	_update_focus_lanes()
 	var current := _collect_vfx_units(state_snapshot)
 	_update_treasure_set_presentation()
 	_sync_persistent_unit_vfx(current)
@@ -234,7 +235,7 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 			# can never be layered over them.
 			# Shield gain is unambiguous from the HP-diff (shield only rises on grant),
 			# so its number comes straight off the delta rather than a sim event.
-			_spawn_hit_number(now.get("head_pos", Vector2.ZERO), shield_delta, "shield", false, false)
+			_spawn_hit_number(now.get("head_pos", Vector2.ZERO), shield_delta, "shield", false, false, "", _unit_off_focus(now))
 		if stack_delta > 0 and sid_now in ["rage_stack", "same_target_damage_stack"]:
 			if sid_now == "rage_stack":
 				var rage_stacks := int(now.get("skill_stacks", 0))
@@ -715,13 +716,21 @@ func _play_boss_procedural(effect_id: String, origin_value: Variant, target_valu
 		return null
 	if not _battle_3d_vfx_root.has_method("play"):
 		return null
+	var origin := _boss_world_position(origin_value)
+	var target := _boss_world_position(target_value)
 	var world_context := context.duplicate(false)
 	if world_context.has("targets"):
 		var world_targets: Array = []
 		for value in world_context["targets"]:
 			world_targets.append(_boss_world_position(value))
 		world_context["targets"] = world_targets
-	return _battle_3d_vfx_root.call("play", effect_id, _boss_world_position(origin_value), _boss_world_position(target_value), world_context)
+		_focus_targets_first(world_context)
+	# 起点和落点都不在玩家正在打的路上：这一下如果是小特效（普攻、每刀小装饰、Boss 小提示），
+	# 只能用一部分名额，挤的时候先让（VFXBlockRoot.begin_off_focus）。技能不受影响。
+	VFXBlockRoot.begin_off_focus(_world_off_focus([origin, target]))
+	var spawned: Variant = _battle_3d_vfx_root.call("play", effect_id, origin, target, world_context)
+	VFXBlockRoot.end_off_focus()
+	return spawned
 
 func _play_unit_procedural(effect_id:String,origin:Vector3,target:Vector3,context:Dictionary={})->Node3D:
 	return _play_boss_procedural(effect_id,origin,target,context)
@@ -1693,7 +1702,7 @@ func _play_treasure_gold(event: Dictionary, current: Dictionary) -> void:
 	var context := _unit_target_context(target, target)
 	var head: Vector3 = target.get("world_head", target.get("world_hit", Vector3.ZERO))
 	_play_unit_procedural("treasure_gold_coins", head, head, context)
-	_spawn_hit_number(target.get("head_pos", Vector2.ZERO) + Vector2(0, -26), int(event.get("amount", 10)), "gold", false, false)
+	_spawn_hit_number(target.get("head_pos", Vector2.ZERO) + Vector2(0, -26), int(event.get("amount", 10)), "gold", false, false, "", _unit_off_focus(target))
 
 
 func _collect_treasure_hit(groups: Dictionary, event: Dictionary) -> void:
@@ -1931,7 +1940,7 @@ func cue_spawn_hit_number(target_uid: String, amount: int, kind: String, crit: b
 	if kind == "miss" and _unit_has_treasure_set(target_uid, "defense"):
 		kind = "dodge"
 		_play_set_dodge(target_uid)
-	_spawn_hit_number(target.get("head_pos", Vector2.ZERO), amount, kind, crit, is_skill, race)
+	_spawn_hit_number(target.get("head_pos", Vector2.ZERO), amount, kind, crit, is_skill, race, _unit_off_focus(target))
 	_play_hit_reaction(target_uid, kind, amount, crit, is_skill)
 	return true
 
@@ -2352,7 +2361,7 @@ func _play_set_execute(event: Dictionary, current: Dictionary) -> void:
 	if snapshot.is_empty():
 		snapshot = _vfx_unit_by_sim_uid(_vfx_prev_units, target_uid)
 	if not snapshot.is_empty():
-		_spawn_hit_number(snapshot.get("head_pos", Vector2.ZERO) + Vector2(0, -56), 1, "execute", false, false)
+		_spawn_hit_number(snapshot.get("head_pos", Vector2.ZERO) + Vector2(0, -56), 1, "execute", false, false, "", _unit_off_focus(snapshot))
 	if _battle_3d_vfx_root == null or not is_instance_valid(_battle_3d_vfx_root):
 		return
 	# 目标这一拍已被死亡流程接管（从 _battle_3d_models 摘掉），多数时候取不到模型 ——
@@ -2741,9 +2750,144 @@ func _is_local_lane_clear(victim_uid: String) -> bool:
 func _local_lane() -> int:
 	for side in ["player", "enemy"]:
 		for raw in _state.get(side, []):
-			if raw is Dictionary and _is_local_owned_unit(str(raw.get("uid", ""))):
+			if raw is Dictionary and _owned_by_local_player(raw):
 				return int(raw.get("lane", -1))
 	return LANE_NONE
+
+
+# --- 11.13 显示优先：玩家自己正在打的路 ------------------------------------------
+#
+# 用户口径：「显示主要是玩家自己的要优先，比如玩家是中间的，就中间的需要优先，打完中间后开的
+# 旁边的路就也要优先」。
+#
+# 「正在打的路」= 自己那一路（棋子出生的路）+ 自己还活着的棋子现在站着的路。后一半按模拟坐标
+# 算，不看棋子的 lane 字段：lane 是出生的路，清完自己那一路、隔断打开、棋子走去旁边帮忙以后
+# 它不会变。棋子只去了左路，就只有左路加进来。没有自己的棋子（切去看另一队）时为空，什么都
+# 不分先后，和以前一样。
+#
+# 用到的地方：小特效名额（_play_boss_procedural → VFXBlockRoot.begin_off_focus）、群体技能先画
+# 哪几个目标（_focus_targets_first）、伤害数字挤的时候谁让（_hit_number_slot）、
+# 音效（_unit_audio_context 的 off_focus）。技能本身照样一定画。
+var _focus_lanes: Dictionary = {}
+# 三路中心在 3D 特效坐标里沿分路方向的位置；判断一个特效落在哪一路用。
+# 普通回合三路左右排开（看 x），决赛三路上下排开（看 z，见 BattleSimulator._apply_final_round_left_right_layout）。
+var _lane_axis_centers: Array[float] = []
+var _lane_axis_is_z := false
+
+
+func _update_focus_lanes() -> void:
+	_focus_lanes.clear()
+	var home := LANE_NONE
+	var standing: Array[int] = []
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if not (raw is Dictionary) or not _owned_by_local_player(raw):
+				continue
+			if home == LANE_NONE:
+				home = int(raw.get("lane", -1))
+			if bool(raw.get("alive", false)):
+				standing.append(_sim_lane(_fighter_sim_pos(raw)))
+	if home < 0 or home > 2:
+		return
+	_focus_lanes[home] = true
+	for lane in standing:
+		_focus_lanes[lane] = true
+	_lane_axis_is_z = _final_round_layout()
+	_lane_axis_centers.clear()
+	for lane in 3:
+		var world := _sim_to_world_pos(_lane_sim_center(lane))
+		_lane_axis_centers.append(world.z if _lane_axis_is_z else world.x)
+
+
+func _final_round_layout() -> bool:
+	return GameState.round_index == GameState.FINAL_ROUND
+
+
+# 一路的中心（模拟坐标）。三路等宽，所以「离哪路中心最近」就是「在哪一路里」。
+func _lane_sim_center(lane: int) -> Vector2:
+	if _final_round_layout():
+		return Vector2(BattleSimShared.ARENA_W * 0.5, float(BattleSimShared.FINAL_LANE_CENTERS_Y[lane]))
+	var band := BattleSimShared.lane_band_x(lane)
+	return Vector2((band.x + band.y) * 0.5, BattleSimShared.ARENA_MID_Y)
+
+
+func _sim_lane(pos: Vector2) -> int:
+	var final_round := _final_round_layout()
+	var best := 0
+	var best_dist := INF
+	for lane in 3:
+		var center := _lane_sim_center(lane)
+		var dist := absf((pos.y - center.y) if final_round else (pos.x - center.x))
+		if dist < best_dist:
+			best_dist = dist
+			best = lane
+	return best
+
+
+func _world_lane(pos: Vector3) -> int:
+	if _lane_axis_centers.size() != 3:
+		return -1
+	var axis := pos.z if _lane_axis_is_z else pos.x
+	var best := 0
+	for lane in range(1, 3):
+		if absf(axis - _lane_axis_centers[lane]) < absf(axis - _lane_axis_centers[best]):
+			best = lane
+	return best
+
+
+# 这些点（3D 特效坐标）没有一个落在正在打的路上。没有「正在打的路」时恒为 false。
+func _world_off_focus(points: Array) -> bool:
+	if _focus_lanes.is_empty():
+		return false
+	for point in points:
+		if point is Vector3 and _focus_lanes.has(_world_lane(point)):
+			return false
+	return true
+
+
+# 单位现在不在正在打的路上。单位可以是表现快照（_collect_vfx_units，带 raw_pos）或 _state 里的原始棋子。
+func _unit_off_focus(unit: Dictionary) -> bool:
+	if _focus_lanes.is_empty() or unit.is_empty():
+		return false
+	var pos: Variant = null
+	if unit.has("raw_pos"):
+		pos = unit["raw_pos"]
+	elif unit.has("uid"):
+		pos = _fighter_sim_pos(unit)
+	return pos is Vector2 and not _focus_lanes.has(_sim_lane(pos))
+
+
+# 群体技能在画质档位下只画前几个目标（低画质 4 个、中画质 6 个，有几个技能固定只画前 4 个）。
+# 把站在正在打的路上的目标排到前面；和目标一一对应的数组跟着同样换序。
+# 4 个以内谁都不会被截，原样不动（依次落下的先后也就不变）。
+const _FOCUS_PARALLEL_KEYS := ["target_nodes", "target_sim_uids", "from_positions", "sealed"]
+
+func _focus_targets_first(context: Dictionary) -> void:
+	var targets: Array = context.get("targets", [])
+	if _focus_lanes.is_empty() or targets.size() <= 4:
+		return
+	var order: Array = []
+	var rest: Array = []
+	for i in targets.size():
+		if targets[i] is Vector3 and _focus_lanes.has(_world_lane(targets[i])):
+			order.append(i)
+		else:
+			rest.append(i)
+	if order.is_empty() or rest.is_empty() or int(order[-1]) == order.size() - 1:
+		return
+	order.append_array(rest)
+	context["targets"] = _reordered(targets, order)
+	for key in _FOCUS_PARALLEL_KEYS:
+		var values: Variant = context.get(key)
+		if values is Array and (values as Array).size() == targets.size():
+			context[key] = _reordered(values, order)
+
+
+static func _reordered(values: Array, order: Array) -> Array:
+	var out: Array = []
+	for i in order:
+		out.append(values[int(i)])
+	return out
 
 
 # 击杀者的身体：事件带的 killer_uid 优先；取不到（DOT / 宝藏反应）就用最近一次普攻它的人。
@@ -3494,7 +3638,11 @@ func _human_king_can_grow() -> bool:
 # 而 data/units/race_units.json 里的 id 永远稳定。两条路都查不到就返回 false ——
 # 宁可少响一声，也不要把别人的阵亡音播给人王。
 func _is_local_owned_unit(sim_uid: String) -> bool:
-	var unit := _state_unit_for(sim_uid)
+	return _owned_by_local_player(_state_unit_for(sim_uid))
+
+
+# 同上，直接拿单位字典判断（每帧扫全场时用，免得每个单位再按 uid 扫一遍）。
+func _owned_by_local_player(unit: Dictionary) -> bool:
 	if unit.is_empty():
 		return false
 	if NetworkService.team_active or GameState.team_mode:
@@ -3655,16 +3803,20 @@ const _RACE_NUMBER_COLORS := {
 # Spawns one floating number at a screen-space head anchor. kind is
 # "dmg" | "heal" | "shield" | "miss"; crit/skill tweak damage styling. race colors
 # the normal-attack tier only.
-func _spawn_hit_number(head_pos: Vector2, amount: int, kind: String, crit: bool, is_skill: bool, race: String = "") -> void:
+func _spawn_hit_number(head_pos: Vector2, amount: int, kind: String, crit: bool, is_skill: bool, race: String = "", off_focus := false) -> void:
 	if amount <= 0 and not (kind in ["miss", "dodge", "execute"]):
 		return
 	_ensure_hit_number_layer()
 	if _hit_number_pool.is_empty():
 		return
-	var lbl: Label = _hit_number_pool[_hit_number_cursor]
-	_hit_number_cursor = (_hit_number_cursor + 1) % _hit_number_pool.size()
+	var slot := _hit_number_slot(off_focus)
+	if slot < 0:
+		return
+	var lbl: Label = _hit_number_pool[slot]
+	_hit_number_cursor = (slot + 1) % _hit_number_pool.size()
 	if not is_instance_valid(lbl):
 		return
+	lbl.set_meta("hit_off_focus", off_focus)
 	if lbl.has_meta("hit_tween"):
 		var prev_tween: Variant = lbl.get_meta("hit_tween")
 		if prev_tween is Tween and (prev_tween as Tween).is_valid():
@@ -3778,6 +3930,23 @@ func _spawn_hit_number(head_pos: Vector2, amount: int, kind: String, crit: bool,
 		tw.tween_property(lbl, "scale", Vector2.ONE, 0.10).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.set_parallel(false)
 	tw.tween_callback(lbl.hide)
+
+
+# 数字池（_HIT_NUMBER_POOL_SIZE 个）满了的时候谁让谁（11.13，玩家自己正在打的路优先）：
+# 先用已经飘完的；别的路的数字只能顶掉别的路的数字，顶不了就不显示；正在打的路的数字可以顶掉
+# 别的路的，都不行时才顶掉最早的那一个（就是以前的轮流用）。返回 -1 = 这个数字不显示。
+func _hit_number_slot(off_focus: bool) -> int:
+	var count := _hit_number_pool.size()
+	for step in count:
+		var i := (_hit_number_cursor + step) % count
+		var lbl: Label = _hit_number_pool[i]
+		if not is_instance_valid(lbl) or not lbl.visible:
+			return i
+	for step in count:
+		var i := (_hit_number_cursor + step) % count
+		if bool(_hit_number_pool[i].get_meta("hit_off_focus", false)):
+			return i
+	return -1 if off_focus else _hit_number_cursor
 
 func _spawn_vfx(vfx_id: String, pos: Vector2, config: Dictionary = {}) -> void:
 	VFXManager.spawn_vfx(vfx_id, pos, config)
@@ -4032,11 +4201,11 @@ func _play_crimson_event_groups(hp_hits: Dictionary, pierces: Dictionary, curren
 func _unit_audio_context(sim_uid: String, kind: String) -> Dictionary:
 	var unit := _state_unit_for(sim_uid)
 	var definition: Dictionary = unit.get("def", {})
-	var lane := int(unit.get("lane", -1))
-	var focus := _local_lane()
+	# off_focus：这个单位现在没站在玩家正在打的路上（BattleAudioPolicy 给它压低音量和优先级）。
+	# 11.13 以前看的是单位出生的那一路，自己那一路打完、棋子走去旁边的路以后就不对了。
 	return {"source_uid": sim_uid, "unit_id": str(unit.get("id", unit.get("unit_id", definition.get("id", "")))),
 		"star": int(unit.get("star", 1)), "kind": kind,
-		"off_focus": lane >= 0 and focus >= 0 and lane != focus}
+		"off_focus": _unit_off_focus(unit)}
 
 func _important_unit_audio(sim_uid: String) -> bool:
 	return SfxService.BattleAudioPolicy.unit_weight(str(_unit_audio_context(sim_uid, "skill").unit_id)) == 0
