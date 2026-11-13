@@ -339,6 +339,7 @@ async function showPlayer(playerId, into, flash) {
       h("div", {}, h("span", {}, "最后登录"), fmt(p.last_seen_at)),
       p.deleted_at ? h("div", {}, h("span", {}, "注销于"), fmt(p.deleted_at)) : null));
   into.replaceChildren(header, flash ? notice("ok", flash) : "", banCard(p, d, who, reload), muteCard(p, d, who, reload),
+    creditCard(p, d, who, reload),
     worldCard(d.world_recent, reload, "他最近在世界频道说的（30 条，含已删）"),
     reportsCard(d.reports_against, "别人对他的举报（最近 20 条）"),
     walletCard(p, d, who, reload), iapCard(p, d, who, reload), tagCard(p, d, who, reload), historyCards(d));
@@ -422,6 +423,142 @@ function muteCard(p, d, who, reload) {
         h("td", {}, m.reason), h("td", { class: "muted" }, m.note || ""), h("td", {}, m.actor),
         h("td", {}, m.revoked_at ? `${m.revoked_by} ${fmt(m.revoked_at)}${m.revoke_note ? "：" + m.revoke_note : ""}` : "")))));
   }
+  return card;
+}
+
+// 信誉分与惩罚累加（database/046）。和上面的「禁言」不是一回事：那个是运营手动下的，
+// 这个是系统按最近 7 天的次数自动算的 —— 算错的时候这里是唯一的人工入口。
+//
+// 🔴 次数没有计数器，是在流水上数出来的。所以「清空累加」= 把窗口里那几笔标成已撤销，
+// 「补记一次」= 补写一笔。页面上说的话要对得上这件事，别让人以为有个数字可以改。
+const CREDIT_KINDS = [["abandon", "跑路"], ["no_accept", "没按准备"]];
+const CREDIT_EVENTS = { abandon: "跑路", no_accept: "没按准备", match: "打完一局",
+                        daily: "每天恢复", admin: "管理员改分" };
+// 只有这三种能撤。daily / match 是系统记账，撤它们不影响累加，只会把加过的分扣回去 ——
+// 服务端也拦着（admin._REVOCABLE），这里只是不画那个按钮。
+const CREDIT_REVOCABLE = ["abandon", "no_accept", "admin"];
+
+function creditState(score, lim) {
+  if (score < lim.casual) return ["neg", `排位和休闲都排不了（低于 ${lim.casual}）`];
+  if (score < lim.ranked) return ["neg", `排不了排位（低于 ${lim.ranked}）`];
+  if (score < lim.warn) return ["warn", `接近禁排位线（低于 ${lim.warn}）`];
+  return ["", "正常"];
+}
+
+function creditCard(p, d, who, reload) {
+  const c = d.credit || {};
+  const lim = c.limits || { max: 100, warn: 85, ranked: 70, casual: 60 };
+  const box = h("div", {});
+  const card = h("section", { class: "card" }, h("h2", {}, "信誉分与惩罚累加"), box);
+  const banned = c.banned_until && new Date(c.banned_until) > new Date();
+  const [tone, text] = creditState(c.score, lim);
+
+  card.append(h("p", {}, h("b", {}, `信誉分 ${c.score}`), " · ",
+    h("span", { class: tone }, text),
+    c.fresh ? h("span", { class: "muted" }, "　（还没有记录，按满分算）") : ""));
+
+  // 顺便解除禁赛。banned_until 只是个时间戳，看不出是哪一笔造成的，所以让人自己说。
+  const unban = h("input", { type: "checkbox" });
+  unban.checked = !!banned;
+
+  if (banned) {
+    const btn = h("button", { class: "btn" }, "解除禁赛");
+    btn.addEventListener("click", action(btn, box, async () => {
+      if (!confirm(`解除 ${who} 的自动禁赛？\n只解禁，不改分数、不动累加。`)) return "";
+      await api("POST", `/admin/api/players/${p.player_id}/credit/unban`, { note: "" });
+      reload();
+      return "已解除禁赛";
+    }));
+    card.append(h("div", { class: "row" },
+      notice("warn", `系统自动禁赛到 ${fmt(c.banned_until)}`), btn));
+  }
+
+  if (!p.deleted_at) {
+    const delta = h("input", { type: "number", value: "5", min: `-${lim.max}`, max: `${lim.max}` });
+    const reason = h("input", { maxlength: "200", placeholder: "例如：11-13 服务器故障误判" });
+    const add = h("button", { class: "btn" }, "加减分");
+    add.addEventListener("click", action(add, box, async () => {
+      const n = parseInt(delta.value, 10);
+      if (!n) return "";
+      if (!confirm(`${who} 的信誉分 ${n > 0 ? "+" : ""}${n}？`)) return "";
+      const r = await api("POST", `/admin/api/players/${p.player_id}/credit`,
+        { delta: n, reason: reason.value });
+      reload();
+      return `${r.before} → ${r.after}`;
+    }));
+    const full = h("button", { class: "btn" }, `恢复到 ${lim.max}`);
+    full.addEventListener("click", action(full, box, async () => {
+      if (!confirm(`把 ${who} 的信誉分拉回 ${lim.max}？`)) return "";
+      const r = await api("POST", `/admin/api/players/${p.player_id}/credit`,
+        { restore: true, reason: reason.value });
+      reload();
+      return `${r.before} → ${r.after}`;
+    }));
+    card.append(h("div", { class: "row" }, field("加减", delta),
+      field("原因（玩家看不到）", reason, true), add, full));
+  }
+
+  if (!c.window) {
+    card.append(notice("warn", "数据库还没跑 database/046_credit_admin.sql：累加次数数不出来，也撤销不了。"));
+    return card;
+  }
+
+  card.append(h("h3", {}, `惩罚累加（最近 ${c.window_days} 天）`),
+    h("p", { class: "hint" }, "次数越多，下一次扣得越多、禁得越久。清空 = 把窗口里那几笔标成已撤销，"
+      + "当时扣的分一起退回；补记 = 补写一笔，只加次数不扣分。"),
+    h("label", { class: "hint" }, unban, " 清空 / 撤销时同时解除自动禁赛"));
+
+  for (const [kind, label] of CREDIT_KINDS) {
+    const w = c.window[kind];
+    const reason = h("input", { maxlength: "200", placeholder: "为什么补记" });
+    const clear = h("button", { class: "btn" }, "清空");
+    clear.addEventListener("click", action(clear, box, async () => {
+      if (!confirm(`清空 ${who} 最近 ${c.window_days} 天的「${label}」累加？\n`
+        + `${w.count} 笔会被标成已撤销，当时扣的分一起退回。`)) return "";
+      const r = await api("POST", `/admin/api/players/${p.player_id}/credit/clear`,
+        { kind, note: "", unban: unban.checked });
+      reload();
+      return `撤销 ${r.revoked} 笔，信誉分 ${r.before} → ${r.after}`;
+    }));
+    const strike = h("button", { class: "btn danger" }, "补记一次");
+    strike.addEventListener("click", action(strike, box, async () => {
+      if (!confirm(`给 ${who} 补记一次「${label}」？\n只加次数、不扣分，他下一次会罚得更重。`)) return "";
+      const r = await api("POST", `/admin/api/players/${p.player_id}/credit/strike`,
+        { kind, reason: reason.value });
+      reload();
+      return `现在是第 ${r.count} 次`;
+    }));
+    card.append(h("div", { class: "row" },
+      h("div", { class: "field" }, h("span", {}, label),
+        h("b", {}, w.count === 0 ? "没有记录" : `${w.count} 次`)),
+      h("div", { class: "field grow" }, h("span", {}, "下一次"),
+        h("span", {}, `扣 ${w.next.penalty} 分`
+          + (w.next.ban_minutes ? `、禁赛 ${w.next.ban_minutes} 分钟` : "、不禁赛"))),
+      field("补记原因", reason, true),
+      w.count ? clear : "", p.deleted_at ? "" : strike));
+  }
+
+  card.append(h("h3", {}, "信誉分流水（最近 50 条）"),
+    table(["时间", "什么事", "分", "操作人 / 原因", "撤销"], c.events.map((e) => {
+      const btn = h("button", { class: "btn" }, "撤销");
+      btn.addEventListener("click", action(btn, box, async () => {
+        if (!confirm(`撤销这一笔（${CREDIT_EVENTS[e.kind] || e.kind} ${e.delta}）？\n`
+          + "它不再计入次数，当时扣的分也退回去。")) return "";
+        const r = await api("POST", `/admin/api/players/${p.player_id}/credit/revoke`,
+          { event_id: e.id, note: "", unban: unban.checked });
+        reload();
+        return `信誉分 ${r.before} → ${r.after}`;
+      }));
+      const revoked = !!e.revoked_at;
+      return h("tr", { class: revoked ? "muted" : "" },
+        h("td", {}, fmt(e.created_at)),
+        h("td", {}, CREDIT_EVENTS[e.kind] || e.kind, e.actor ? h("span", { class: "tag" }, "人工") : ""),
+        h("td", { class: e.delta < 0 ? "neg" : "" }, e.delta > 0 ? `+${e.delta}` : `${e.delta}`),
+        h("td", { class: "muted" }, [e.actor, e.reason].filter(Boolean).join("：")),
+        h("td", {}, revoked
+          ? `${e.revoked_by} ${fmt(e.revoked_at)}`
+          : (p.deleted_at || !CREDIT_REVOCABLE.includes(e.kind) ? "" : btn)));
+    })));
   return card;
 }
 
@@ -615,8 +752,7 @@ function historyCards(d) {
     inviteCard(d),
     h("section", { class: "card" }, h("h2", {}, "排位与信誉"),
       h("p", {}, d.ranked ? `第 ${d.ranked.season} 赛季 · ${d.ranked.score} 分（第 ${d.ranked.tier + 1} 段）· ${d.ranked.games} 局 ${d.ranked.wins} 胜` : "没打过排位"),
-      h("p", {}, d.credit ? `信誉分 ${d.credit.score}` + (d.credit.banned_until ? ` · 排位禁赛到 ${fmt(d.credit.banned_until)}` : "") : "信誉分 100（没有记录）"),
-      h("p", { class: "hint" }, "排位禁赛是信誉分系统自动给的，和上面的封号是两回事。"),
+      h("p", { class: "hint" }, "信誉分、自动禁赛和惩罚累加在上面那张「信誉分与惩罚累加」卡片里改。"),
       h("h3", {}, "最近对局"),
       table(["结束", "模式", "回合", "结果", "他在", "终局在线"], d.matches.map((m) => h("tr", {},
         h("td", {}, fmt(m.ended_at)), h("td", {}, m.mode), h("td", {}, m.rounds), h("td", {}, outcome[m.outcome] || m.outcome),

@@ -197,8 +197,12 @@ static func allow_dynamic_light_for(priority: String = "") -> bool:
 	return tier != Tier.LOW
 
 
-# Concurrency share of the global 3D block cap. Critical is uncapped for the same
-# reason force=true exists in VFXBlockRoot: the player must read those cues.
+# Concurrency allowance per kind of effect. Since 11.12 each allowance has its own
+# counter in VFXBlockRoot instead of all three sharing one global count:
+#   important -> skill effects (the default class)
+#   ambient   -> light effects (basic-attack projectiles/slashes, per-hit ticks)
+#   critical  -> uncapped, same reason force=true exists: the player must read those cues.
+# A full ambient allowance can therefore no longer starve a skill.
 static func max_simultaneous_effects_for(priority: String = "") -> int:
 	var resolved := priority if not priority.is_empty() else _cue_priority
 	if resolved == PRIORITY_CRITICAL:

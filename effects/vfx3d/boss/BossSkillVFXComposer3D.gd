@@ -31,11 +31,29 @@ const BOSS_SCALE := 1.5
 const UNIT_H := 0.98
 const BOSS_H := UNIT_H * BOSS_SCALE
 
+# 11.12：招牌技能（陨石 / 反击 / 净化 / 咆哮 / 暴走 / 噬魂 / 复活 / 灭世）不受同屏名额限制。
+# 一场 Boss 战就看这几下，实测它们有 41%~76% 的层被名额拦掉 —— 整招不出，或者只出一半。
+# 只有下面这四个「每挨一下 / 每砍一刀都来一次」的小提示走轻量名额，画面太满时可以少画。
+# 新加的效果不写进这张表就是「永远画」：漏登记的后果是多画，不是又被吃掉。
+const LIGHT_EFFECTS := ["overload_stack", "rage_stack", "blood_lifesteal", "mirror_slash"]
+
 var _apocalypse_warns: Array = []
 var _last_apocalypse_shake_msec := -100000
+# 只在 LIGHT_EFFECTS 的同步生成期间为真（这四个效果没有延迟层）。
+var _light := false
 
 # 返回值只有常驻效果才有（blood_qi：调用方负责在 Boss 死亡时释放），其余为 null。
 func play_skill(effect_id: String, origin: Vector3, target: Vector3, context: Dictionary = {}) -> Node3D:
+	_light = effect_id in LIGHT_EFFECTS
+	if _light:
+		VFXBlockRoot.begin_budget_class(VFXBlockRoot.BudgetClass.LIGHT)
+	var spawned := _play(effect_id, origin, target, context)
+	if _light:
+		VFXBlockRoot.end_budget_class()
+	_light = false
+	return spawned
+
+func _play(effect_id: String, origin: Vector3, target: Vector3, context: Dictionary) -> Node3D:
 	match effect_id:
 		"element_meteor": _meteor_v2(_tracked_target(target, context))
 		"overload_stack": _overload_stack(origin)
@@ -46,7 +64,7 @@ func play_skill(effect_id: String, origin: Vector3, target: Vector3, context: Di
 		"rage_stack": _rage_stack(origin, int(context.get("stacks", 1)))
 		"rage_milestone": _rage_milestone(origin, target, int(context.get("stacks", 5)))
 		"blood_rage": _blood_rage(origin)
-		"blood_qi": return _extra_forced("blood_qi", origin, origin, {"origin_height": BOSS_H, "origin_node": context.get("boss_node")})
+		"blood_qi": return _extra("blood_qi", origin, origin, {"origin_height": BOSS_H, "origin_node": context.get("boss_node")})
 		"blood_lifesteal": _blood_lifesteal(target, origin)
 		"soul_devour": _soul_devour(target, origin, context)
 		"twin_timer": _twin_timer(origin, target)
@@ -74,6 +92,8 @@ func _on_boss(foot: Vector3, y: float, toward := .02) -> Vector3:
 # 预警圈是 VFXGroundSigil3D（其实是火团 + 红烟的命中模块，施法一出手就在落点炸一大团），
 # 换成纯预警圈（VFXBossExtras3D.meteor_warn）；屏震从施法那一刻挪到陨石落地那一刻（BattleVfx 跳过了这招的施法屏震）。
 const METEOR_FALL_SEC := .68
+# 雷核反击：雷球从 Boss 飞到目标头上、落雷劈下来的那一刻。
+const OVERLOAD_STRIKE_SEC := .38
 
 func _meteor_v2(target: Vector3) -> void:
 	_extra("meteor_warn", target, target, {"target_height": UNIT_H, "fall_sec": METEOR_FALL_SEC})
@@ -106,7 +126,7 @@ func _overload_counter(origin: Vector3, target: Vector3, context: Dictionary) ->
 	var tree := get_tree()
 	if tree == null:
 		return
-	await tree.create_timer(.38).timeout
+	await tree.create_timer(OVERLOAD_STRIKE_SEC).timeout
 	if not is_inside_tree() or is_queued_for_deletion():
 		return
 	target = _tracked_target(target, context)
@@ -200,7 +220,7 @@ func _soul_devour(victim: Vector3, boss: Vector3, context: Dictionary) -> void:
 # 否则线只有两者距离的六成，实战里看着是中间一小截。
 func _twin_timer(dead_at: Vector3, partner: Vector3) -> void:
 	# 倒计时由 twin_countdown 的金色计时圈表达；手绘计时盘保留在中心做装饰。
-	_extra_forced("twin_countdown", dead_at, dead_at, {"origin_height": BOSS_H, "revive_sec": 5.0})
+	_extra("twin_countdown", dead_at, dead_at, {"origin_height": BOSS_H, "revive_sec": 5.0})
 	_painted("boss_twin_timer.png", {"position": dead_at + Vector3(0,.20,.02), "ground": true, "size": Vector2(1.15,.92) * BOSS_SCALE, "duration": 4.8, "end_scale": .92, "dark_tint": Color(.20,.12,.0), "body_tint": Color(.92,.70,.22), "core_tint": Color(1,.96,.66), "seed": 2.4})
 	_painted("boss_twin_link.png", {"position": (dead_at+partner)*.5 + Vector3(0,.42*BOSS_SCALE,.03), "size": Vector2(dead_at.distance_to(partner) / VFXBlockRoot.VFX_SIZE_SCALE,.72), "duration": 4.6, "dark_tint": Color(.08,.02,.16), "body_tint": Color(.62,.36,.96), "core_tint": Color(.96,.86,1), "seed": 5.8})
 
@@ -223,7 +243,7 @@ func _apocalypse_charge(origin: Vector3, context: Dictionary) -> void:
 	_painted("boss_apocalypse_shield.png", {"position": _on_boss(origin, .58, .03), "size": Vector2(1.64,1.50) * BOSS_SCALE, "duration": 1.95, "delay": .08, "opacity": .82, "dark_tint": Color(.06,.03,.10), "body_tint": Color(.58,.36,.82), "core_tint": Color(1,.84,.48), "seed": 8.0})
 	var lane: Array = context.get("lane_targets", [])
 	if not lane.is_empty():
-		var warn := _extra_forced("apocalypse_warn", origin, origin, {"targets": lane, "charge_sec": 1.95, "target_height": UNIT_H})
+		var warn := _extra("apocalypse_warn", origin, origin, {"targets": lane, "charge_sec": 1.95, "target_height": UNIT_H})
 		if warn != null:
 			_apocalypse_warns.append({"ref": weakref(warn), "at": origin})
 
@@ -235,7 +255,7 @@ func _apocalypse_complete(origin: Vector3, targets: Array) -> void:
 		var pillar := _block(PILLAR) as VFXFallingPillar3D
 		if pillar != null:
 			pillar.play_pillar(at, _profile(Color(.05,.02,.08), Color(.60,.22,.72), Color(1,.82,.40), 1.0, .86, 3.8))
-	_extra_forced("apocalypse_flash", origin, origin, {"targets": targets, "target_height": UNIT_H})
+	_extra("apocalypse_flash", origin, origin, {"targets": targets, "target_height": UNIT_H})
 	# 三路的灭世往往同一拍落下：屏震卡帧同一拍只给一次，免得叠成三倍。
 	var now := Time.get_ticks_msec()
 	if now - _last_apocalypse_shake_msec > 300:
@@ -301,26 +321,20 @@ func _extra(kind: String, origin: Vector3, target: Vector3, context: Dictionary)
 	fx.call("play_extra", kind, origin, target, context)
 	return fx
 
-# 关键提示（预警圈 / 常驻粒子气 / 全屏闪光）不受并发上限约束。
-func _extra_forced(kind: String, origin: Vector3, target: Vector3, context: Dictionary) -> Node3D:
-	var fx := VFXBlockRoot.spawn_block(EXTRAS, self, true)
-	if fx == null:
-		return null
-	fx.name = "BossExtra" + kind.to_pascal_case()
-	fx.call("play_extra", kind, origin, target, context)
-	return fx
-
 # 所有 VFX 块都从这里生成。
 #
 # 11.12：**默认强制生成，不受并发上限约束。** 原来统一受限，Boss 回合实测一场丢
 # 83~267 次，其中 28% 是 Boss 技能的手绘图层 —— 玩家看到的就是 Boss 技能不显示。
-# 只有镜像魔君的普攻刀光和无分支兜底闪光仍走 _block_capped。
+# 例外两种，没名额时返回 null，调用方要么判空，要么依赖已有的 is_instance_valid() 守卫：
+#   · LIGHT_EFFECTS 那四个高频小提示：同步生成期间走「小特效」名额（VFXBlockRoot.BudgetClass.LIGHT）；
+#   · 镜像魔君的普攻刀光和无分支兜底闪光：走 _block_capped。
+# 原来的 _extra_forced 删了：_extra 本来就走这里，已经是强制生成，两者没有区别了。
 #
 # 脚本是运行期传进来的，所以这里只能声明成 Node3D；调用点必须显式
 # `as <具体类型>`，否则变量被定型成 Node3D，被 tween 的 lambda 捕获后
 # 运行时会报 "Nonexistent function 'play_layer' in base 'Node3D'"。
 func _block(script: Script) -> Node3D:
-	return VFXBlockRoot.spawn_block(script, self, true)
+	return VFXBlockRoot.spawn_block(script, self, not _light)
 
 # 高频、便宜的特效专用：受全局并发上限约束，超限返回 null，调用方必须判空。
 func _block_capped(script: Script) -> Node3D:

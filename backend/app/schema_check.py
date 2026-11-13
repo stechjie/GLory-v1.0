@@ -185,6 +185,16 @@ _PROBES: list[tuple[str, str, str]] = [
         " where attrelid = 'redeem_codes'::regclass and attname = 'max_uses' and not attnotnull",
         "后台批准「不限人数」的兑换码会报错、码建不出来（不会发错钱）",
     ),
+    (
+        "046 credit_events 可撤销、放行 kind = 'admin'",
+        "select 1 from pg_constraint"
+        " where conname = 'credit_event_kind_known'"
+        "   and pg_get_constraintdef(oid) like '%admin%'"
+        " and exists (select 1 from pg_attribute"
+        " where attrelid = 'credit_events'::regclass and attname = 'revoked_at')",
+        "🔴 **排位结算会整笔失败**：window_count 查 revoked_at，旧库上报列不存在 —— "
+        "战报交上来存不进，那一局所有人的积分、信誉分一起回滚。后台也改不了信誉分",
+    ),
 ]
 
 

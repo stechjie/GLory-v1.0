@@ -239,7 +239,9 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 			if sid_now == "rage_stack":
 				var rage_stacks := int(now.get("skill_stacks", 0))
 				var rage_target := _nearest_enemy_target(now, damage_events, current)
-				if rage_stacks > 0 and rage_stacks % 5 == 0:
+				# 每 5 层一次咆哮。按「跨过 5 的倍数」判，不按「正好是 5 的倍数」：卡顿时一帧会补
+				# 好几个 tick，层数从 4 直接到 6，按整除判这一次咆哮就没了。
+				if floori(float(rage_stacks) / 5.0) > floori(float(rage_stacks - stack_delta) / 5.0):
 					_play_boss_procedural("rage_milestone", now.get("world_foot", Vector3.ZERO), rage_target.get("world_foot", now.get("world_foot", Vector3.ZERO)), _boss_target_context(rage_target, {"stacks": rage_stacks}))
 				else:
 					_play_boss_procedural("rage_stack", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO), {"stacks": rage_stacks})
@@ -277,13 +279,7 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 				"type": "sfx_proc", "skill_id": "overload_counter",
 				"source_uid": str(now.get("sim_uid", "")),
 			})
-		var prev_ratio := float(prev.get("hp", 0)) / float(maxi(1, int(prev.get("max_hp", 1))))
-		var now_ratio := float(now.get("hp", 0)) / float(maxi(1, int(now.get("max_hp", 1))))
-		# The new blood-rage visual is synchronized every presentation frame below;
-		# crossing a health step updates that one persistent instance and its pulse.
-		if sid_now == "blood_rage" and prev_ratio > 0.35 and now_ratio <= 0.35:
-			_blood_rage_entered[id] = true
-			_play_boss_procedural("blood_rage", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO))
+		# 血怒魔王进入暴走的演出不在这里判：它跟着模拟器的 blood_rage 事件走（_play_boss_event_vfx）。
 		if sid_now == "twin_revive" and not bool(prev.get("alive", true)) and bool(now.get("alive", false)):
 			_play_boss_procedural("twin_revive", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO))
 			# 9.23 第五批：双生守门人**复活**那一帧的音（用户没点名，但它是同一类
@@ -414,6 +410,8 @@ func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
 			u["alive"] = bool(f.get("alive", true))
 			u["pos"] = base_pos
 			u["sim_pos"] = sim_pos
+			# 模拟里的真实坐标（sim_pos 是画面插值后的位置）。按模拟半径取目标时用它。
+			u["raw_pos"] = _fighter_sim_pos(f)
 			u["foot_pos"] = _unit_anchor_global_position(unit_node, "FootAnchor", base_pos)
 			u["cast_pos"] = _unit_anchor_global_position(unit_node, "CastAnchor", base_pos)
 			u["hit_pos"] = _unit_anchor_global_position(unit_node, "HitAnchor", base_pos)
@@ -440,8 +438,10 @@ func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
 			u["taunt_radius"] = float(f.get("taunt_radius", f.get("def", {}).get("taunt_radius", 0.0)))
 			u["skill_every"] = int(f.get("def", {}).get("every", 0))
 			u["unit_id"] = str(f.get("id", ""))
-			# 母灵处决打到 Boss 时是「重击」而不是吸魂（与模拟器 is_boss 判据一致）。
-			u["is_boss"] = bool(f.get("def", {}).get("is_boss", false))
+			# 母灵处决打到 Boss 时是「重击」而不是吸魂。判据与模拟器 _is_boss_fighter 一致：
+			# Boss 数据表里没有 is_boss 字段，回合 Boss 只能靠 id 前缀认（11.12 以前这里只看字段，
+			# 真实 Boss 永远被当成普通棋子）。
+			u["is_boss"] = bool(f.get("def", {}).get("is_boss", false)) or str(f.get("id", "")).begins_with("boss_")
 			u["skill_stacks"] = int(f.get("skill_stacks", 0))
 			# 人王的持久成长层数，只给天剑定尺寸用。3v3 回放的 roster 不带这个字段，读到 0。
 			u["king_stacks"] = int(f.get("king_growth_stacks", 0))
@@ -531,7 +531,11 @@ func _play_race_basic_attack(attack:Dictionary,target:Dictionary,mode:String,rac
 		if predicted is Vector3:
 			context["archer_straight_target"] = predicted
 			context["archer_travel_time"] = flight
+	# 普攻的弹道 / 刀光走轻量名额（VFXBlockRoot.BudgetClass.LIGHT）：画面太满时先省它们，
+	# 而且再多也占不到技能的名额。
+	VFXBlockRoot.begin_budget_class(VFXBlockRoot.BudgetClass.LIGHT)
 	_play_unit_procedural("basic_attack_%s_%s"%[mode,race],origin,target_world,context)
+	VFXBlockRoot.end_budget_class()
 
 # A replay can supply a target's recorded position at arrow arrival. Live
 # simulation has no future frame and retains its existing tracking behaviour.
@@ -693,11 +697,11 @@ func _play_skill_cast_vfx(unit: Dictionary, previous: Dictionary, damage_events:
 		var meteor_world: Vector3 = meteor_target.get("world_foot", unit.get("world_foot", Vector3.ZERO))
 		_play_boss_procedural("element_meteor", unit.get("world_cast", Vector3.ZERO), meteor_world, _boss_target_context(meteor_target))
 	elif sid == "holy_purify":
-		var ally_positions: Array = []
-		for ally_id: String in current.keys():
-			var ally: Dictionary = current[ally_id]
-			if bool(ally.get("alive", false)) and str(ally.get("team", "")) == str(unit.get("team", "")):
-				ally_positions.append(ally.get("world_foot", unit.get("world_foot", Vector3.ZERO)))
+		# 11.05 起净化只作用于祭司自己和身边 heal_radius 以内的友军（BattleSimSkills._skill_holy_purify）。
+		# 这里以前还按旧规则给全队三路所有人画治疗光 + 护盾：没被治疗的也发光，三只祭司同一拍
+		# 施法要 80 多层，把同屏名额占光。
+		var purify_radius := float((_state_unit_for(_sim_uid).get("def", {}) as Dictionary).get("heal_radius", BattleSimSkills.HOLY_PURIFY_RADIUS))
+		var ally_positions := _nearby_team_world_positions(unit, current, purify_radius)
 		_play_boss_procedural("holy_purify", unit.get("world_foot", Vector3.ZERO), unit.get("world_foot", Vector3.ZERO), {"targets": ally_positions})
 	# 11.12：旧的 2D 贴图层（SkillVFXConfig 里那批 png）在施法这条路上彻底退役。
 	# 原来这里有一张「哪些技能不叠旧贴图」的名单，没点名的就叠一层。剩下没点名的 10 个单位
@@ -903,7 +907,7 @@ func _play_race_unit_skill_procedural(sid:String,unit:Dictionary,previous:Dictio
 			old_node.release_link()
 		context["persistent"]=true
 	if sid=="nearby_ally_heal_buff":
-		context["targets"]=_living_team_world_positions(unit,current)
+		context["targets"]=_nearby_team_world_positions(unit,current,GROUP_HEAL_SIM_RADIUS)
 		target_world=unit.get("world_foot",Vector3.ZERO)
 	elif sid=="global_divine_blast":
 		# 9.24 第四轮订正：目标集合**以模拟器记录为准**（`BattleSimSkills._skill_god_king`
@@ -1060,6 +1064,25 @@ func _exact_skill_target(unit:Dictionary,current:Dictionary)->Dictionary:
 	if not uid.is_empty() and current.has(uid):
 		return current[uid]
 	return {}
+
+# 牧师（every_fifth_group_heal）和天使（nearby_ally_heal_buff）只治疗施法者身边这么远以内的友军：
+# BattleSimShared._group_heal / BattleSimSkills._skill_nearby_ally_heal_buff 里写死的 180。
+# 模拟那边没有具名常量，这里抄一份；tools/boss_battle_vfx_check 直接跑那两个模拟函数把它钉住。
+const GROUP_HEAL_SIM_RADIUS := 180.0
+
+# 施法者身边 sim_radius（模拟距离）以内、还活着的友军脚下位置，含施法者自己。
+# 治疗类技能的光效用它：以前画给全队三路所有人，没被治疗的也发光，牧师一次治疗要 60 多层。
+func _nearby_team_world_positions(unit: Dictionary, current: Dictionary, sim_radius: float) -> Array:
+	var result: Array = []
+	var team := str(unit.get("team", ""))
+	var center: Vector2 = unit.get("raw_pos", Vector2.ZERO)
+	for id: String in current.keys():
+		var candidate: Dictionary = current[id]
+		if not bool(candidate.get("alive", false)) or str(candidate.get("team", "")) != team:
+			continue
+		if center.distance_to(candidate.get("raw_pos", center)) <= sim_radius:
+			result.append(candidate.get("world_foot", Vector3.ZERO))
+	return result
 
 func _living_team_world_positions(unit:Dictionary,current:Dictionary)->Array:
 	var result:Array=[]
@@ -1346,15 +1369,21 @@ func _play_attack_unit_procedural(attack:Dictionary,target:Dictionary,current:Di
 		if predicted is Vector3:
 			context["archer_straight_target"]=predicted
 	if sid=="every_fifth_group_heal":
-		context["targets"]=_living_team_world_positions(source,current)
+		context["targets"]=_nearby_team_world_positions(source,current,GROUP_HEAL_SIM_RADIUS)
 		target_world=origin
 	# Human King's actual attack uses the target-bound vertical heaven sword.
 	# This is visual-only and leaves damage, timing and target selection untouched.
-	if str(attack.get("unit_id", attack.get("source_id", ""))) == "human_king":
+	var is_king := str(attack.get("unit_id", attack.get("source_id", ""))) == "human_king"
+	if is_king:
 		context["king_stacks"] = int(source.get("king_stacks", 0))
-		_play_unit_procedural("unique_king_growth", origin, target_world, context)
-		return
+		sid = "unique_king_growth"
+	# 人王的天剑、第 N 击才触发的技能（弓箭手强化箭 / 牧师群疗）是技能：composer 强制生成，不占名额
+	# （以前和普攻挤一个名额，实测人王的天剑 4 次里有 3 次没出）。其余几个（真伤 / 诅咒 / 中毒 / 破防 /
+	# 每两击一次的裂隙）是每一刀都带的小装饰，和普攻弹道一样走「小特效」名额，画面太满先省它们。
+	var skill_moment := is_king or sid in ["every_fourth_combo", "every_fifth_group_heal"]
+	VFXBlockRoot.begin_budget_class(VFXBlockRoot.BudgetClass.SKILL if skill_moment else VFXBlockRoot.BudgetClass.LIGHT)
 	_play_unit_procedural(sid,origin,target_world,context)
+	VFXBlockRoot.end_budget_class()
 
 # 9.19：「攻击触发型」四星技能音（弓箭手额外伤害 / 牧师治疗 / 极光射手真伤）。
 #
@@ -1529,7 +1558,7 @@ func _play_visual_events(state_snapshot: Dictionary,current:Dictionary) -> void:
 		if _camera_shake_policy.is_candidate(event):
 			var shake_uid := str(event.get("source_uid", ""))
 			if _camera_shake_policy.accepts(event, _state_unit_for(shake_uid), _is_local_owned_unit(shake_uid)):
-				_screen_shake(6.5, 0.20)
+				_skill_screen_shake(str(event.get("skill_id", "")))
 		# Cast-only legacy events intentionally do not shake the camera.
 		if str(event.get("type", "")) == "skill_shake":
 			pass
@@ -2066,6 +2095,23 @@ func cue_ranged_flight_time(source_uid: String, target_uid: String) -> float:
 	var kind := str(_RANGED_BOLT_KIND_BY_UNIT.get(uid, "lance"))
 	var speed := float(_RANGED_BOLT_SPEED.get(kind, 7.6))
 	return clampf(dist / maxf(0.5, speed), _RANGED_MIN_TRAVEL, _RANGED_MAX_TRAVEL)
+
+# 技能伤害的屏震。伤害在模拟里是施法那一刻结算的，但这两招的画面要过一会儿才砸下来
+# （陨石下落、雷球飞过去），屏震跟着画面的落点走，不然先震、过半秒才看到爆炸。
+# 10.18 用户定过「陨石的屏震挪到落地那一刻」；时长取自 composer，改一边另一边自动跟。
+func _skill_screen_shake(skill_id: String) -> void:
+	var delay := 0.0
+	match skill_id:
+		"element_meteor":
+			delay = BossSkillVFXComposer3D.METEOR_FALL_SEC
+		"overload_counter":
+			delay = BossSkillVFXComposer3D.OVERLOAD_STRIKE_SEC
+	if delay > 0.0 and is_inside_tree():
+		await get_tree().create_timer(delay).timeout
+		if not is_inside_tree():
+			return
+	_screen_shake(6.5, 0.20)
+
 
 # 9.24 #4：把一条 cue 延后 delay 秒再播（用于把命中音对齐弹体落地 / 封印落点）。
 # 纯表现层：只延后播放时刻，不改任何模拟结算。
@@ -3091,8 +3137,10 @@ func _play_mother_execute_death(uid: String, actor: Node3D) -> void:
 # MOTHER_ENCASE_SHADER_CODE（同一份着色器），只把 tint 换成绿色、亮度做呼吸。
 const PHOENIX_GHOST_TINT := Color(0.24, 1.0, 0.46)
 var _phoenix_rise_played: Dictionary = {}
-# 10.18：血怒魔王进入暴走后（HP 跌破 35%，模拟里只进一次、不会退出）才有吸血。
-# 回放帧里没有 blood_rage_active，所以客户端在暴走那一格自己记下来。
+# 血怒魔王进入暴走后（模拟里只进一次、不会退出）才有吸血和常驻红气。回放帧里没有
+# blood_rage_active，所以在模拟器的 blood_rage 事件到达时记下来（_play_boss_event_vfx）。
+# 11.12 以前是自己按「血量跌破 35%」猜的：10-19 数值把触发线改成 50% 之后，演出比真正暴走
+# 晚了约 2 秒，吸血把血量拉回去再跌下来还会重复播。触发线是数据，表现层不该抄一份。
 var _blood_rage_entered: Dictionary = {}
 # 暴走后常驻的红色粒子气（sim_uid -> 节点），Boss 死亡 / 消失时释放。
 var _blood_qi_vfx: Dictionary = {}
@@ -3147,7 +3195,7 @@ func _sync_blood_qi_vfx(current: Dictionary) -> void:
 # 事件在单人模拟和回放两条路径上都有，所以这是唯一的派发口。
 func _play_boss_event_vfx(event: Dictionary, current: Dictionary) -> void:
 	var skill_id := str(event.get("skill_id", ""))
-	if not skill_id in ["soul_devour", "apocalypse_charge", "apocalypse_impact", "apocalypse_stop"]:
+	if not skill_id in ["soul_devour", "apocalypse_charge", "apocalypse_impact", "apocalypse_stop", "blood_rage"]:
 		return
 	var boss := _vfx_unit_by_sim_uid(current, str(event.get("source_uid", "")))
 	if boss.is_empty():
@@ -3156,6 +3204,13 @@ func _play_boss_event_vfx(event: Dictionary, current: Dictionary) -> void:
 		return
 	var foot: Vector3 = boss.get("world_foot", Vector3.ZERO)
 	match skill_id:
+		"blood_rage":
+			# 进入暴走的那一刻（模拟器 _activate_blood_rage，每只只发一次）。常驻的红气和吸血
+			# 由 _blood_rage_entered 接着驱动（_sync_blood_qi_vfx / hp 回升那条）。
+			var rage_id := str(boss.get("id", ""))
+			if bool(boss.get("alive", false)) and not _blood_rage_entered.has(rage_id):
+				_blood_rage_entered[rage_id] = true
+				_play_boss_procedural("blood_rage", foot, foot)
 		"soul_devour":
 			# 死者当帧可能已经不在快照里，退回上一帧找。
 			var victim := _vfx_unit_by_sim_uid(current, str(event.get("target_uid", "")))

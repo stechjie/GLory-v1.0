@@ -1973,10 +1973,13 @@ func _authored_projectile_batch()->Node3D:
 		add_child(_authored_batch)
 	return _authored_batch
 
+# 11.13 合并：处在「小特效」名额里时照样过闸门。BattleVfx 给普攻和每刀附带的小装饰（真伤 /
+# 诅咒 / 中毒 / 破防 / 裂隙）包了 VFXBlockRoot.begin_budget_class(LIGHT)：画面太满先省它们，而且它们
+# 只和彼此抢名额，挤不到技能（技能强制生成，不占名额）。其余情况照上面说的强制生成。
 func _block(script:Script)->Node3D:
-	return VFXBlockRoot.spawn_block(script,self,true)
+	return VFXBlockRoot.spawn_block(script,self,VFXBlockRoot.current_budget_class()!=VFXBlockRoot.BudgetClass.LIGHT)
 
-# 与 _block 等价，保留名字给已经点名「关键事件」的调用点。
+# 永远强制生成（在「小特效」名额里也一样），留给已经点名「关键事件」的调用点。
 func _block_forced(script:Script)->Node3D:
 	return VFXBlockRoot.spawn_block(script,self,true)
 

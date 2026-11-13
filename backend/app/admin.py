@@ -153,8 +153,7 @@ async def player_detail(player_id: uuid.UUID) -> dict:
             " where m.player_id = $1 order by m.mail_id desc limit 50", player_id)
         ranked_row = await conn.fetchrow(
             "select season, score, games, wins from player_ranked where player_id = $1", player_id)
-        credit = await conn.fetchrow(
-            "select score, banned_until from player_credit where player_id = $1", player_id)
+        credit = await _credit_view(conn, player_id)
         matches = await conn.fetch(
             "select r.match_uid, r.mode, r.ended_at, r.outcome, r.rounds, s.team, s.was_ai, s.online_at_end"
             " from match_seats s join match_records r on r.match_uid = s.match_uid"
@@ -209,7 +208,7 @@ async def player_detail(player_id: uuid.UUID) -> dict:
         "entitlements": [_row(r) for r in owned],
         "mails": [_row(r) for r in mails],
         "ranked": ranked_out,
-        "credit": None if credit is None else _row(credit),
+        "credit": credit,
         "matches": [_row(r) for r in matches],
         "audit": [_row(r) for r in audit],
         "mute": None if mute is None else mute.to_client(),
@@ -226,10 +225,14 @@ async def player_detail(player_id: uuid.UUID) -> dict:
 
 
 async def _optional(conn: asyncpg.Connection, sql: str, *args) -> list[asyncpg.Record]:
-    """019 的表还不存在时回空（部署时先上账号服务器、后跑 019 的那段时间，玩家页不能整页打不开）。"""
+    """019 的表还不存在时回空（部署时先上账号服务器、后跑 019 的那段时间，玩家页不能整页打不开）。
+
+    列也一样：迁移只加了列的那几次（比如 046），旧库上查新列会报 UndefinedColumn，
+    症状同样是**整个玩家页打不开**。那一页是客服唯一的入口，不能被一栏拖垮。
+    """
     try:
         return await conn.fetch(sql, *args)
-    except asyncpg.UndefinedTableError:
+    except (asyncpg.UndefinedTableError, asyncpg.UndefinedColumnError):
         return []
 
 
@@ -456,6 +459,281 @@ async def unmute(admin: Admin, player_id: uuid.UUID, note: str,
             await _audit(conn, admin, "unmute", player_id,
                          {"revoked": count, "scope": scope, "note": note})
     return {"revoked": count, "scope": scope}
+
+
+# --- 信誉分与惩罚累加（database/046，app/ranked.py）--------------------------------------
+#
+# 014 的惩罚全自动：跑路、没按准备各按最近 7 天的次数升档。算错的时候后台今天
+# 一点办法都没有 —— 这一节就是那个人工入口。
+#
+# 三件事分开，因为后果不一样：
+#
+#   改分      立刻影响他能不能排（<70 排不了排位、<60 连休闲都排不了）
+#   撤销/补记  影响**下一次**罚多重（最近 7 天第 N 次）
+#   解除禁赛   只影响眼下这一会儿
+#
+# 都不用第二个人批：这不是发钱，撤错了改回来就是，而且每一步都进操作记录。
+
+
+_CREDIT_KINDS = {"abandon": "跑路", "no_accept": "没按准备"}
+
+# 流水里能撤销的只有这三种。daily / match 是系统记账（每天 +5、打完一局 +2）——
+# 撤它们不影响任何累加，只是把加过的分悄悄扣回去。
+_REVOCABLE = frozenset({"abandon", "no_accept", "admin"})
+
+_EVENT_LABEL = {**_CREDIT_KINDS, "match": "打完一局", "daily": "每天恢复", "admin": "管理员改分"}
+
+_NEED_046 = "数据库还没跑 database/046_credit_admin.sql，人工干预信誉分用不了"
+
+
+def _credit_kind(value: str) -> str:
+    kind = (value or "").strip()
+    if kind not in _CREDIT_KINDS:
+        raise AdminRejected("不认识的惩罚类型：%s（只能是 abandon / no_accept）" % value)
+    return kind
+
+
+def _next_cost(kind: str, nth: int) -> dict:
+    """窗口里第 nth 次会被罚多重。页面把它显示在次数旁边，免得管理员自己翻设计文档。"""
+    if kind == "abandon":
+        return {"penalty": ranked.abandon_penalty(nth), "ban_minutes": ranked.ban_minutes(nth)}
+    return {"penalty": ranked.no_accept_penalty(nth),
+            "ban_minutes": ranked.no_accept_ban_minutes(nth)}
+
+
+async def _credit_view(conn: asyncpg.Connection, player_id: uuid.UUID) -> dict:
+    """玩家页那一块：分数、自动禁赛、两种累加的次数与下一次的代价、最近的流水。"""
+    row = await conn.fetchrow(
+        "select score, banned_until from player_credit where player_id = $1", player_id)
+    # 没有行 = 从没打过排位，那他就是满分（ranked.queue_gate 也是这么认的）。
+    out: dict = {"score": ranked.CREDIT_START, "banned_until": None, "fresh": True}
+    if row is not None:
+        out = {**_row(row), "fresh": False}
+    out["window_days"] = ranked.PENALTY_WINDOW_DAYS
+    # 门槛从这里下发，页面不另抄一份 —— 抄了改阈值时会漂（同 schema_check 的做法）。
+    out["limits"] = {"max": ranked.CREDIT_MAX, "warn": ranked.CREDIT_WARN,
+                     "ranked": ranked.CREDIT_RANKED_MIN, "casual": ranked.CREDIT_CASUAL_MIN}
+    try:
+        window = {}
+        for kind in _CREDIT_KINDS:
+            n = await ranked.window_count(conn, player_id, kind)
+            window[kind] = {"count": n, "next": _next_cost(kind, n + 1)}
+        out["window"] = window
+        out["events"] = [_row(r) for r in await conn.fetch(
+            "select id, created_at, kind, delta, match_uid, actor, reason,"
+            "       revoked_at, revoked_by, revoke_note"
+            " from credit_events where player_id = $1 order by id desc limit 50", player_id)]
+    except asyncpg.UndefinedColumnError:
+        # 046 还没跑。分数照常显示，累加那一栏页面写「要先跑 046」。
+        out["window"] = None
+        out["events"] = []
+    except asyncpg.UndefinedTableError:
+        # 014 还没跑（新库部署到一半）。整页不能因此打不开。
+        out["window"] = None
+        out["events"] = []
+    return out
+
+
+async def _ensure_credit(conn: asyncpg.Connection, player_id: uuid.UUID) -> int:
+    """取信誉行，没有就按满分建一行。返回当前分数。
+
+    ⚠️ 这里**不补发「每天 +5」**（那是 ranked._credit_row 的事）。后台只改分，
+    顺手补发会让「我改了 -10，怎么变成 -5」这种看不懂的结果。
+    """
+    await conn.execute(
+        "insert into player_credit (player_id, last_daily_grant) values ($1, current_date)"
+        " on conflict do nothing", player_id)
+    return int(await conn.fetchval(
+        "select score from player_credit where player_id = $1", player_id))
+
+
+async def _move_credit(conn: asyncpg.Connection, player_id: uuid.UUID,
+                       delta: int) -> tuple[int, int]:
+    """加减分并夹进 0–100。返回 (改之前, 改之后) —— 夹过的话两者之差不等于 delta。"""
+    before = await _ensure_credit(conn, player_id)
+    after = ranked.apply_credit(before, delta)
+    if after != before:
+        await conn.execute(
+            "update player_credit set score = $2, updated_at = now() where player_id = $1",
+            player_id, after)
+    return before, after
+
+
+async def _clear_ban(conn: asyncpg.Connection, player_id: uuid.UUID) -> dt.datetime | None:
+    """解除自动禁赛。返回原来禁到什么时候（没禁就是 None）。
+
+    🔴 `ranked._write_credit` 的禁赛**只延长不缩短**，所以这里必须直接写 null ——
+    走那条路是解不开的。
+    """
+    return await conn.fetchval(
+        "update player_credit set banned_until = null, updated_at = now()"
+        " where player_id = $1 and banned_until is not null returning banned_until", player_id)
+
+
+async def adjust_credit(admin: Admin, player_id: uuid.UUID, delta: int | None,
+                        restore: bool, reason: str) -> dict:
+    """人工加减信誉分。restore = 直接拉回满分（最常用的那一种，省得先算差多少）。
+
+    不提供「随便设成某个值」：两个管理员同时改会互相覆盖，而加减是可叠加的。
+    """
+    reason = _require_text(reason, "原因", 200)
+    if restore and delta is not None:
+        raise AdminRejected("「恢复满分」和「加减分」只能选一个")
+    if not restore:
+        if not delta:
+            raise AdminRejected("加减不能是 0")
+        if abs(int(delta)) > ranked.CREDIT_MAX:
+            raise AdminRejected("一次最多加减 %d 分" % ranked.CREDIT_MAX)
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            await _live_friend_code(conn, player_id)
+            if restore:
+                before = await _ensure_credit(conn, player_id)
+                delta = ranked.CREDIT_MAX - before
+                if delta == 0:
+                    raise AdminRejected("他已经是满分了")
+            before, after = await _move_credit(conn, player_id, int(delta))
+            try:
+                await conn.execute(
+                    "insert into credit_events (player_id, kind, delta, actor, reason)"
+                    " values ($1, 'admin', $2, $3, $4)",
+                    player_id, after - before, admin.name, reason)
+            except (asyncpg.UndefinedColumnError, asyncpg.CheckViolationError):
+                raise AdminRejected(_NEED_046, 503) from None
+            await _audit(conn, admin, "credit_adjust", player_id,
+                         {"asked": int(delta), "before": before, "after": after,
+                          "restore": restore, "reason": reason})
+    return {"before": before, "after": after}
+
+
+async def _refund_revoked(conn: asyncpg.Connection, player_id: uuid.UUID,
+                          rows: Sequence[asyncpg.Record]) -> tuple[int, int]:
+    """把刚撤销的那几笔当时扣的分退回去。返回 (改之前, 改之后)。
+
+    delta 扣分时是负数，退回的就是相反数。加分的行（正常打完 +2）被撤销时同理要扣
+    回去 —— 直接取相反数，不特判。
+    """
+    if not rows:
+        return 0, 0
+    return await _move_credit(conn, player_id, -sum(int(r["delta"]) for r in rows))
+
+
+async def revoke_credit_event(admin: Admin, player_id: uuid.UUID, event_id: int,
+                              note: str, unban: bool) -> dict:
+    """撤销一笔：**不再计入「最近 7 天第 N 次」，当时扣的分也退回去**。
+
+    两件事必须一起发生（database/046 文件头算过账）：只退分的话那次跑路还压在窗口里，
+    他下次跑路仍按更高一档罚，而退了分的管理员会以为事情已经办完了。
+    """
+    note = (note or "").strip()[:500] or None
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            await _live_friend_code(conn, player_id)
+            try:
+                row = await conn.fetchrow(
+                    "select kind, delta, revoked_at from credit_events"
+                    " where id = $2 and player_id = $1 for update", player_id, event_id)
+            except asyncpg.UndefinedColumnError:
+                raise AdminRejected(_NEED_046, 503) from None
+            if row is None:
+                raise AdminRejected("没有这一笔", 404)
+            if row["revoked_at"] is not None:
+                raise AdminRejected("这一笔已经撤销过了（再撤一次会把分退两遍）")
+            if row["kind"] not in _REVOCABLE:
+                # 撤销「每天恢复」「打完一局」= 悄悄把加过的分扣回去，没有任何正当用途，
+                # 却很容易误点。能撤的只有惩罚和管理员自己改的那几笔。
+                raise AdminRejected(
+                    "「%s」不能撤销：它是系统记账，撤了只会白扣分"
+                    % _EVENT_LABEL.get(row["kind"], row["kind"]))
+            rows = await conn.fetch(
+                "update credit_events set revoked_at = now(), revoked_by = $3, revoke_note = $4"
+                " where id = $2 and player_id = $1 and revoked_at is null"
+                " returning id, kind, delta", player_id, event_id, admin.name, note)
+            before, after = await _refund_revoked(conn, player_id, rows)
+            was_banned = await _clear_ban(conn, player_id) if unban else None
+            await _audit(conn, admin, "credit_revoke", player_id,
+                         {"event_id": event_id, "kind": rows[0]["kind"], "delta": rows[0]["delta"],
+                          "before": before, "after": after,
+                          "unbanned_from": was_banned, "note": note})
+    return {"revoked": 1, "before": before, "after": after,
+            "unbanned": was_banned is not None}
+
+
+async def clear_credit_window(admin: Admin, player_id: uuid.UUID, kind: str,
+                              note: str, unban: bool) -> dict:
+    """清空这一类的累加：把窗口里还算数的那几笔全部撤销（并退分）。
+
+    服务器自己出事、一批人被误判成跑路时走这条。只动窗口内的 —— 窗口外的本来就不计数，
+    退它的分等于白送。
+    """
+    kind = _credit_kind(kind)
+    note = (note or "").strip()[:500] or None
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            await _live_friend_code(conn, player_id)
+            try:
+                rows = await conn.fetch(
+                    "update credit_events set revoked_at = now(), revoked_by = $3, revoke_note = $4"
+                    " where player_id = $1 and kind = $2 and revoked_at is null"
+                    "   and created_at > now() - ($5 || ' days')::interval"
+                    " returning id, delta",
+                    player_id, kind, admin.name, note, str(ranked.PENALTY_WINDOW_DAYS))
+            except asyncpg.UndefinedColumnError:
+                raise AdminRejected(_NEED_046, 503) from None
+            if not rows:
+                raise AdminRejected(
+                    "他最近 %d 天没有还算数的「%s」记录"
+                    % (ranked.PENALTY_WINDOW_DAYS, _CREDIT_KINDS[kind]))
+            before, after = await _refund_revoked(conn, player_id, rows)
+            was_banned = await _clear_ban(conn, player_id) if unban else None
+            await _audit(conn, admin, "credit_clear", player_id,
+                         {"kind": kind, "revoked": len(rows), "before": before, "after": after,
+                          "unbanned_from": was_banned, "note": note})
+    return {"revoked": len(rows), "before": before, "after": after,
+            "unbanned": was_banned is not None}
+
+
+async def add_credit_strike(admin: Admin, player_id: uuid.UUID, kind: str, reason: str) -> dict:
+    """补记一次，让他下一次罚得更重。**只记次数，不扣分**。
+
+    kind 照旧写 abandon / no_accept —— 计数查询只数这两个，另开新 kind 等于没记
+    （database/046 文件头）。靠 actor 不为空能看出这行是人工补的。
+
+    要同时扣分就另外用加减分，两件事分开更好解释给玩家听。
+    """
+    kind = _credit_kind(kind)
+    reason = _require_text(reason, "原因", 200)
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            await _live_friend_code(conn, player_id)
+            try:
+                event_id = await conn.fetchval(
+                    "insert into credit_events (player_id, kind, delta, actor, reason)"
+                    " values ($1, $2, 0, $3, $4) returning id",
+                    player_id, kind, admin.name, reason)
+                count = await ranked.window_count(conn, player_id, kind)
+            except asyncpg.UndefinedColumnError:
+                raise AdminRejected(_NEED_046, 503) from None
+            await _audit(conn, admin, "credit_strike", player_id,
+                         {"event_id": event_id, "kind": kind, "count": count, "reason": reason})
+    return {"event_id": event_id, "count": count, "next": _next_cost(kind, count + 1)}
+
+
+async def clear_credit_ban(admin: Admin, player_id: uuid.UUID, note: str) -> dict:
+    """只解除自动禁赛，不动分数、不动累加。
+
+    ⚠️ 和「人工禁排位」（036 的 ranked 范围）是两回事：那个走 unmute。
+    """
+    note = (note or "").strip()[:500] or None
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            await _live_friend_code(conn, player_id)
+            was = await _clear_ban(conn, player_id)
+            if was is None:
+                raise AdminRejected("他现在没有被系统禁赛")
+            await _audit(conn, admin, "credit_unban", player_id,
+                         {"was_banned_until": was, "note": note})
+    return {"was_banned_until": _jsonable(was)}
 
 
 # --- 内部账号（运营数据排除；database/025，app/analytics.py）-----------------------------------

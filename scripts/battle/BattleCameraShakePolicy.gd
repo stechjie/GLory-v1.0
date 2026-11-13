@@ -20,7 +20,10 @@ func accepts(event: Dictionary, source: Dictionary, local_owned: bool) -> bool:
 	if not is_candidate(event):
 		return false
 	var definition: Dictionary = source.get("def", {})
-	var boss := bool(definition.get("is_boss", false))
+	# Same test as BattleSimulator._is_boss_fighter. The boss table has no is_boss
+	# field, so the flag alone never matched a real round boss and boss skills
+	# never shook the screen (2026-10-24 .. 11-12).
+	var boss := bool(definition.get("is_boss", false)) or str(source.get("id", "")).begins_with("boss_")
 	var skill := str(event.get("skill_id", ""))
 	var rage := str(event.get("type", "")) == "sfx_proc" and boss
 	if not rage:

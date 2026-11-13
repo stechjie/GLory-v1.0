@@ -619,3 +619,174 @@ def test_add_admin_by_email_looks_up_the_supabase_user() -> None:
             assert await conn.fetchval("select count(*) from admin_users") == 1
 
     run_with_db(body)
+
+
+# --- 信誉分与惩罚累加（database/046，app/ranked.py）------------------------------------
+#
+# 最要紧的一条在 test_revoking_a_strike_makes_the_next_one_cheaper_again：
+# 撤销必须同时**退分**和**退档**。只退分的话那一笔还压在 7 天窗口里，他下次跑路照样
+# 按更高一档罚 —— 而退了分的管理员会以为事情已经办完了。
+
+
+def test_credit_adjust_rejects_typos_before_touching_the_database() -> None:
+    """这几条都在碰库之前就该被拒，所以不需要真库。"""
+    pid = uuid.uuid4()
+    for delta, restore, reason in [
+        (0, False, "x"),            # 0 等于没改
+        (None, False, "x"),         # 既没说加减多少，也没说恢复满分
+        (101, False, "x"),          # 超过满分，多半是多打了一位
+        (-101, False, "x"),
+        (5, True, "x"),             # 两种改法只能选一个
+        (5, False, "   "),          # 原因必填：以后要查「这分是谁加的、为什么」
+    ]:
+        with pytest.raises(admin.AdminRejected):
+            asyncio.run(admin.adjust_credit(ALICE, pid, delta, restore, reason))
+
+
+def test_next_cost_follows_the_two_ladders() -> None:
+    """页面上那句「下一次扣几分、禁几分钟」必须和结算时用的是同一套算法。"""
+    from app import ranked
+
+    for nth in (1, 7, 8, 15, 30):
+        assert admin._next_cost("abandon", nth) == {
+            "penalty": ranked.abandon_penalty(nth), "ban_minutes": ranked.ban_minutes(nth)}
+        assert admin._next_cost("no_accept", nth) == {
+            "penalty": ranked.no_accept_penalty(nth),
+            "ban_minutes": ranked.no_accept_ban_minutes(nth)}
+    with pytest.raises(admin.AdminRejected):
+        admin._credit_kind("ban")          # 封号不是信誉分这一套
+    with pytest.raises(admin.AdminRejected):
+        admin._credit_kind("daily")        # 每天 +5 不是惩罚，数不进窗口
+
+
+async def _strike(conn, player_id: uuid.UUID, kind: str, delta: int, days_ago: int = 0) -> int:
+    """直接塞一笔系统判的惩罚（绕开结算，测试只关心计数与撤销）。"""
+    return await conn.fetchval(
+        "insert into credit_events (player_id, kind, delta, created_at)"
+        " values ($1, $2, $3, now() - make_interval(days => $4)) returning id",
+        player_id, kind, delta, days_ago)
+
+
+@requires_pg
+def test_revoking_a_strike_makes_the_next_one_cheaper_again() -> None:
+    from app import ranked
+
+    async def body() -> None:
+        async with db.pool().acquire() as conn:
+            p = await new_player(conn)
+            await conn.execute(
+                "insert into player_credit (player_id, score) values ($1, 60)", p)
+            # 7 次跑路 = 已经升到第 1 档，下一次按 8 分罚。
+            ids = [await _strike(conn, p, "abandon", -5) for _ in range(7)]
+            assert await ranked.window_count(conn, p, "abandon") == 7
+            assert admin._next_cost("abandon", 8)["penalty"] == 8
+
+        out = await admin.revoke_credit_event(ALICE, p, ids[0], "服务器故障", unban=False)
+        assert out["after"] == 65                       # 当时扣的 5 分退回来了
+
+        async with db.pool().acquire() as conn:
+            # 🔴 退档：只剩 6 次，下一次又回到第 0 档的 5 分。
+            assert await ranked.window_count(conn, p, "abandon") == 6
+            assert admin._next_cost("abandon", 7)["penalty"] == 5
+            # 不删行：谁撤的、什么时候撤的都查得到。
+            row = await conn.fetchrow(
+                "select revoked_by, revoke_note from credit_events where id = $1", ids[0])
+            assert row["revoked_by"] == "alice" and row["revoke_note"] == "服务器故障"
+        # 撤过的不能再撤一次（否则分会被退两遍）。
+        with pytest.raises(admin.AdminRejected):
+            await admin.revoke_credit_event(ALICE, p, ids[0], "", unban=False)
+
+        # 🔴 系统记账不给撤：撤「每天恢复」不影响任何累加，只会把加过的 5 分悄悄扣回去。
+        async with db.pool().acquire() as conn:
+            daily = await _strike(conn, p, "daily", 5)
+        with pytest.raises(admin.AdminRejected):
+            await admin.revoke_credit_event(ALICE, p, daily, "", unban=False)
+        async with db.pool().acquire() as conn:
+            assert await conn.fetchval("select score from player_credit where player_id = $1", p) == 65
+
+    run_with_db(body)
+
+
+@requires_pg
+def test_clearing_a_window_only_touches_that_kind_and_only_inside_the_window() -> None:
+    """服务器出事那一批走这条：清跑路不能顺带把「没按准备」也清了。"""
+    from app import ranked
+
+    async def body() -> None:
+        async with db.pool().acquire() as conn:
+            p = await new_player(conn)
+            await conn.execute("insert into player_credit (player_id, score) values ($1, 70)", p)
+            for _ in range(3):
+                await _strike(conn, p, "abandon", -5)
+            await _strike(conn, p, "no_accept", -1)
+            old = await _strike(conn, p, "abandon", -5, days_ago=30)   # 窗口外
+
+        out = await admin.clear_credit_window(ALICE, p, "abandon", "11-13 服务器故障", unban=False)
+        assert out["revoked"] == 3 and out["after"] == 85              # 退回 3×5
+
+        async with db.pool().acquire() as conn:
+            assert await ranked.window_count(conn, p, "abandon") == 0
+            assert await ranked.window_count(conn, p, "no_accept") == 1
+            # 窗口外的那笔本来就不计数，退它的分等于白送，所以不碰。
+            assert await conn.fetchval(
+                "select revoked_at from credit_events where id = $1", old) is None
+        with pytest.raises(admin.AdminRejected):
+            await admin.clear_credit_window(ALICE, p, "abandon", "", unban=False)
+
+    run_with_db(body)
+
+
+@requires_pg
+def test_admin_can_add_a_strike_and_lift_the_automatic_ban() -> None:
+    from app import ranked
+
+    async def body() -> None:
+        async with db.pool().acquire() as conn:
+            p = await new_player(conn)
+            await conn.execute(
+                "insert into player_credit (player_id, score, banned_until)"
+                " values ($1, 80, now() + interval '30 minutes')", p)
+
+        out = await admin.add_credit_strike(ALICE, p, "abandon", "自定义房间里反复挂机")
+        assert out["count"] == 1
+        async with db.pool().acquire() as conn:
+            # 补记只加次数，**不扣分**（要扣分另外用加减分，两件事分开好解释）。
+            assert await conn.fetchval("select score from player_credit where player_id = $1", p) == 80
+            assert await ranked.window_count(conn, p, "abandon") == 1
+            assert await conn.fetchval(
+                "select actor from credit_events where id = $1", out["event_id"]) == "alice"
+
+        # 解禁只动 banned_until。ranked._write_credit 的禁赛只延长不缩短，所以必须直接写 null。
+        assert (await admin.clear_credit_ban(ALICE, p, "误判"))["was_banned_until"]
+        async with db.pool().acquire() as conn:
+            assert await conn.fetchval(
+                "select banned_until from player_credit where player_id = $1", p) is None
+            assert await conn.fetchval("select score from player_credit where player_id = $1", p) == 80
+        with pytest.raises(admin.AdminRejected):
+            await admin.clear_credit_ban(ALICE, p, "")
+
+    run_with_db(body)
+
+
+@requires_pg
+def test_restore_tops_up_to_full_and_writes_one_admin_row() -> None:
+    async def body() -> None:
+        async with db.pool().acquire() as conn:
+            p = await new_player(conn)
+            await conn.execute("insert into player_credit (player_id, score) values ($1, 42)", p)
+
+        out = await admin.adjust_credit(ALICE, p, None, True, "申诉成立")
+        assert (out["before"], out["after"]) == (42, 100)
+        async with db.pool().acquire() as conn:
+            row = await conn.fetchrow(
+                "select kind, delta, actor, reason from credit_events where player_id = $1", p)
+            assert (row["kind"], row["delta"], row["actor"]) == ("admin", 58, "alice")
+            # 管理员改分不是惩罚，不能被「最近 7 天第 N 次」数到。
+            assert await conn.fetchval(
+                "select count(*) from credit_events where player_id = $1"
+                " and kind in ('abandon','no_accept')", p) == 0
+        # 加减分会夹在 0–100：满分的人再恢复一次没意义，直接拒。
+        with pytest.raises(admin.AdminRejected):
+            await admin.adjust_credit(ALICE, p, None, True, "再来一次")
+
+    run_with_db(body)

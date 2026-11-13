@@ -41,10 +41,38 @@ var _finished := false
 var vfx_alpha := 1.0
 var vfx_brightness := 1.0
 
-# 同屏 VFX 块的并发计数。3D 这条路以前完全没有上限（VFXManager 的池和
-# EFFECT_CAPS 只管 2D 老路径），一个 AoE 回合能一次生成几十组节点。
+# ── 同屏名额 ───────────────────────────────────────────────────────────
+# 3D 这条路以前完全没有上限（VFXManager 的池和 EFFECT_CAPS 只管 2D 老路径），
+# 一个 AoE 回合能一次生成几十组节点，所以生成前要过闸门：超限直接不生成，保帧率。
+#
+# 11.12：名额按「这是什么特效」分开算，不再全场共用一个数。
+#
+# 原来只有 _active_blocks 一个计数，凡是继承本类的节点都算进去 —— 挂在棋子身上的常驻
+# 状态、特效内部的子块、强制生成的招牌演出 —— 普攻的弹道还和技能抢同一份。实测三路 Boss
+# 战（每路 7 个棋子）里，中画质 56%~63% 的棋子特效层、41%~76% 的 Boss 技能层被拦掉，
+# 玩家看到的就是「技能有时候被吃掉」。现在：
+#
+#   LIGHT  高频小特效：普攻弹道 / 刀光、每挨一下的小闪光。画面满了先省它们。
+#          调用方用 begin_budget_class(LIGHT) / end_budget_class() 把生成包起来。
+#   SKILL  技能（默认）：有自己的名额，普攻再多也挤不掉。
+#   force  招牌演出（Boss 技能、母灵的书、死亡）和常驻状态：不占名额、不受限。
+#
+# 只有「过了闸门的块」才占名额。直接 new 出来的常驻块、特效内部的子块只进 _active_blocks
+# （诊断用的总数），不再吃掉技能的位置。上限数字没有变（VFXQualityBudget），变的是谁占谁的。
+enum BudgetClass { NONE, LIGHT, SKILL }
+
 static var _active_blocks := 0
 static var _cap_denials := 0
+static var _gated_light := 0
+static var _gated_skill := 0
+static var _class_stack: Array[int] = []
+# 一次 play 里同步生成的各层共用一个放行结果，见 begin_effect()。
+static var _effect_depth := 0
+static var _effect_decided := false
+static var _effect_admitted := false
+
+# 这个块占的是哪一类名额；NONE = 没过闸门（强制 / 常驻 / 子块），不占。
+var _budget_class: int = BudgetClass.NONE
 
 static func active_block_count() -> int:
 	return _active_blocks
@@ -52,33 +80,67 @@ static func active_block_count() -> int:
 static func cap_denial_count() -> int:
 	return _cap_denials
 
-# 生成前的闸门。超限直接不生成——密集回合里少一两个命中闪光玩家看不出来，
-# 但帧率保得住。这和 VFXManager 对 2D 特效的做法是同一个策略。
-#
-# B4：闸门现在按当前 cue 的可见性优先级分档。critical 返回 -1（不设限），
-# 因为 Boss / 死亡 / 控制这类玩家必须读到的提示不该在密集回合里被当成普通
-# 命中闪光丢掉——这和下面 force=true 的存在理由是同一条。
-static func can_spawn_block(priority: String = "") -> bool:
-	var cap: int = QUALITY_BUDGET.max_simultaneous_effects_for(priority)
-	if cap < 0:
-		return true
-	return _active_blocks < cap
+# 某一类现在占着几个名额（门禁和排查用）。
+static func gated_block_count(budget_class: int) -> int:
+	return _gated_light if budget_class == BudgetClass.LIGHT else _gated_skill
 
-# 统一的生成入口：超限返回 null。调用方要么直接判空，
+static func begin_budget_class(budget_class: int) -> void:
+	_class_stack.append(budget_class)
+
+static func end_budget_class() -> void:
+	_class_stack.pop_back()
+
+static func current_budget_class() -> int:
+	return BudgetClass.SKILL if _class_stack.is_empty() else _class_stack[-1]
+
+# 一招通常由好几层组成。名额在第一层那里决定一次，同一次调用里后面的层跟着它：
+# 要么整招画，要么整招不画，不再出现「有预警圈没有爆炸」这种半截特效。
+static func begin_effect() -> void:
+	if _effect_depth == 0:
+		_effect_decided = false
+	_effect_depth += 1
+
+static func end_effect() -> void:
+	_effect_depth = maxi(0, _effect_depth - 1)
+
+# 当前这一类还有没有名额（不看 begin_effect 的整招结果）。
+static func can_spawn_block() -> bool:
+	return _has_room(current_budget_class())
+
+static func _has_room(budget_class: int) -> bool:
+	if budget_class == BudgetClass.LIGHT:
+		return _gated_light < QUALITY_BUDGET.max_simultaneous_effects_for(QUALITY_BUDGET.PRIORITY_AMBIENT)
+	return _gated_skill < QUALITY_BUDGET.max_simultaneous_effects_for(QUALITY_BUDGET.PRIORITY_IMPORTANT)
+
+static func _admit(budget_class: int) -> bool:
+	if _effect_depth > 0 and _effect_decided:
+		return _effect_admitted
+	var admitted := _has_room(budget_class)
+	if _effect_depth > 0:
+		_effect_decided = true
+		_effect_admitted = admitted
+	return admitted
+
+# 统一的生成入口：没名额返回 null。调用方要么直接判空，
 # 要么依赖已有的 is_instance_valid() 守卫（对 null 返回 false）。
 #
-# force=true 跳过并发上限：留给稀有的、玩家必须读到的关键事件（母灵处决的书、
-# Boss 大招等）。这些不该在 6v6 特效密集的回合里被当成普通命中闪光丢掉——
-# 上限是用来砍廉价高频特效的，不是砍招牌演出的。
+# force=true 不过闸门：留给玩家必须读到的招牌演出和常驻状态。名额是用来省廉价高频特效的，
+# 不是省招牌演出的。
 static func spawn_block(script: Script, parent: Node, force := false) -> Node3D:
 	if parent == null or not is_instance_valid(parent):
 		return null
-	if not force and not can_spawn_block():
-		_cap_denials += 1
-		return null
+	var budget_class: int = BudgetClass.NONE
+	if not force:
+		budget_class = current_budget_class()
+		if not _admit(budget_class):
+			_cap_denials += 1
+			return null
 	var block := script.new() as Node3D
 	if block == null:
 		return null
+	var gated := block as VFXBlockRoot
+	if gated != null:
+		gated._budget_class = budget_class
 	parent.add_child(block)
 	return block
 
@@ -100,9 +162,17 @@ func vfx_texture(path: String) -> Texture2D:
 
 func _enter_tree() -> void:
 	_active_blocks += 1
+	if _budget_class == BudgetClass.LIGHT:
+		_gated_light += 1
+	elif _budget_class == BudgetClass.SKILL:
+		_gated_skill += 1
 
 func _exit_tree() -> void:
 	_active_blocks = maxi(0, _active_blocks - 1)
+	if _budget_class == BudgetClass.LIGHT:
+		_gated_light = maxi(0, _gated_light - 1)
+	elif _budget_class == BudgetClass.SKILL:
+		_gated_skill = maxi(0, _gated_skill - 1)
 
 # Timer awaits can outlive a VFX node when a scene changes or a pooled block is
 # released. Capture the SceneTree before creating the timer so a detached node

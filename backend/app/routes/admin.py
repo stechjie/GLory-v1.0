@@ -181,6 +181,58 @@ async def unmute(player_id: uuid.UUID, body: ScopedNoteBody, who: Writer) -> dic
     return await admin.unmute(who, player_id, body.note, body.scope)
 
 
+class CreditBody(BaseModel):
+    # 二选一：delta 加减分，restore 直接拉回满分。不收「设成某个值」——
+    # 两个管理员同时设会互相覆盖，加减则是可叠加的。
+    delta: int | None = None
+    restore: bool = False
+    reason: str = Field(max_length=200)
+
+
+class CreditRevokeBody(BaseModel):
+    event_id: int
+    note: str = Field(default="", max_length=500)
+    # 顺便解除自动禁赛。banned_until 只是个时间戳，看不出是哪一笔造成的，
+    # 所以由页面明确问一句，服务端不猜。
+    unban: bool = False
+
+
+class CreditClearBody(BaseModel):
+    kind: Literal["abandon", "no_accept"]
+    note: str = Field(default="", max_length=500)
+    unban: bool = False
+
+
+class CreditStrikeBody(BaseModel):
+    kind: Literal["abandon", "no_accept"]
+    reason: str = Field(max_length=200)
+
+
+@router.post("/admin/api/players/{player_id}/credit")
+async def credit_adjust(player_id: uuid.UUID, body: CreditBody, who: Writer) -> dict:
+    return await admin.adjust_credit(who, player_id, body.delta, body.restore, body.reason)
+
+
+@router.post("/admin/api/players/{player_id}/credit/revoke")
+async def credit_revoke(player_id: uuid.UUID, body: CreditRevokeBody, who: Writer) -> dict:
+    return await admin.revoke_credit_event(who, player_id, body.event_id, body.note, body.unban)
+
+
+@router.post("/admin/api/players/{player_id}/credit/clear")
+async def credit_clear(player_id: uuid.UUID, body: CreditClearBody, who: Writer) -> dict:
+    return await admin.clear_credit_window(who, player_id, body.kind, body.note, body.unban)
+
+
+@router.post("/admin/api/players/{player_id}/credit/strike")
+async def credit_strike(player_id: uuid.UUID, body: CreditStrikeBody, who: Writer) -> dict:
+    return await admin.add_credit_strike(who, player_id, body.kind, body.reason)
+
+
+@router.post("/admin/api/players/{player_id}/credit/unban")
+async def credit_unban(player_id: uuid.UUID, body: NoteBody, who: Writer) -> dict:
+    return await admin.clear_credit_ban(who, player_id, body.note)
+
+
 class GrantBody(BaseModel):
     kind: Literal["grant_diamonds", "grant_coin"]
     amount: int

@@ -208,6 +208,25 @@ def apply_credit(score: int, delta: int) -> int:
     return max(CREDIT_MIN, min(CREDIT_MAX, int(score) + int(delta)))
 
 
+# 「最近 7 天第 N 次」。两处结算都走这一条，别再各抄一份 —— 抄了就会漂。
+#
+# 🔴 **撤销过的不算**（046）：管理员撤掉一次误判，他下次就该从低一档重新开始。
+# 不排掉的话退分只做了一半 —— 分还回去了，但那一次仍然压在窗口里，
+# 下次正常跑路照样按更高一档罚，而退分的管理员会以为已经办完了。
+_WINDOW_COUNT = """
+    select count(*) from credit_events
+     where player_id = $1 and kind = $2
+       and revoked_at is null
+       and created_at > now() - ($3 || ' days')::interval
+"""
+
+
+async def window_count(conn, player_id: uuid.UUID, kind: str) -> int:
+    """最近 PENALTY_WINDOW_DAYS 天里这一类惩罚记了几次（不含已撤销的）。"""
+    return int(await conn.fetchval(
+        _WINDOW_COUNT, player_id, kind, str(PENALTY_WINDOW_DAYS)) or 0)
+
+
 def daily_grant(score: int, last_grant: dt.date | None, today: dt.date) -> tuple[int, int]:
     """懒惰发放「每天 +5」。返回 (新分数, 补发了多少)。
 
@@ -409,14 +428,7 @@ async def _settle_credit(conn, report: dict, seats: list[dict]) -> None:
             await _write_credit(conn, pid, apply_credit(row["score"], CREDIT_PER_MATCH), None)
             continue
         # 跑路：按 7 天滚动窗口里的第几次定档。count 包含这一次。
-        count = await conn.fetchval(
-            """
-            select count(*) + 1 from credit_events
-             where player_id = $1 and kind = 'abandon'
-               and created_at > now() - ($2 || ' days')::interval
-            """,
-            pid, str(PENALTY_WINDOW_DAYS),
-        )
+        count = await window_count(conn, pid, "abandon") + 1
         penalty = abandon_penalty(int(count))
         minutes = ban_minutes(int(count))
         banned_until = (
@@ -661,14 +673,7 @@ async def punish_no_accept(player_ids: list[uuid.UUID]) -> None:
             if pid not in known:
                 continue
             row = await _credit_row(conn, pid, today)
-            count = await conn.fetchval(
-                """
-                select count(*) + 1 from credit_events
-                 where player_id = $1 and kind = 'no_accept'
-                   and created_at > now() - ($2 || ' days')::interval
-                """,
-                pid, str(PENALTY_WINDOW_DAYS),
-            )
+            count = await window_count(conn, pid, "no_accept") + 1
             penalty = no_accept_penalty(int(count))
             minutes = no_accept_ban_minutes(int(count))
             banned_until = (

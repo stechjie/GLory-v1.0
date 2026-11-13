@@ -14,16 +14,18 @@
 | IP | `34.124.141.90` | `35.247.132.13` |
 | 账号接口 | `https://test-api.gogoglory.com` | `https://api.gogoglory.com` |
 | 战斗（UDP + DTLS） | `test-battle.gogoglory.com:8080` | `battle.gogoglory.com:8080` |
-| 语音 | `wss://test-voice.gogoglory.com` | `wss://glorytd-prod-voice.duckdns.org` |
+| 语音 | `wss://test-voice.gogoglory.com` | `wss://voice.gogoglory.com` |
 
-### 自有域名 gogoglory.com：迁移记录
-
-**2026-11-11 晚间测试服实测更新：** 用户已在同日另一个任务授权停用旧 DuckDNS 入口（见 `deploy/releases/20261111/retire_duckdns.py`）。测试服实际仅服务 `test-api.gogoglory.com` 和 `test-voice.gogoglory.com`；旧 API 的 TLS 失败是预期结果，不要为兼容旧包恢复旧站点。新测试包 Android 64 / iOS 92 使用新账号、战斗域名，测试下载页和新二维码统一为 `https://test-api.gogoglory.com/beta/`。下文“旧域名还不能撤”相关内容是停用前的历史检查记录；正式服状态需单独实时核验。
+### 自有域名 gogoglory.com：11-11 全部切换，duckdns 已撤
 
 2026-11-11 买了 `gogoglory.com`，起因是 `duckdns.org` 在中国大陆解析不稳、玩家卡在
 「Update incomplete」。先切测试服，当天用户在电脑上实测登录 + 自定义房间通过后，
 正式服打包也切了（测试包那一步用户决定跳过）。同一天两台服务器（账号 + 战斗）都更新到了
 协议 46（a415a9dd）—— 从此 iOS 81 / 安卓 56 和现有测试包都进不了对局，要装新包。
+当晚用户定「旧域名现在就撤」（知道当时还没有任何连新域名的手机包）：两台服务器从此只认
+gogoglory.com，写死 duckdns 的旧包连登录都进不去，要等新包。罗利静当晚出的测试包
+安卓 64 / iOS 92（提交 0333f771）已用新域名，测试下载页和新二维码统一为
+`https://test-api.gogoglory.com/beta/`。旧域名 TLS 失败是预期结果，**不要为兼容旧包恢复旧站点**。
 
 DNS 在 Cloudflare（免费版，只做解析）。🔴 **六条记录必须全部是灰云 `DNS only`**：
 战斗走 UDP 8080，Cloudflare 免费版只代理 HTTP/HTTPS；而且账号服务器的 Caddy 用
@@ -34,43 +36,48 @@ DNS 在 Cloudflare（免费版，只做解析）。🔴 **六条记录必须全�
 | --- | --- | --- |
 | `test-api` / `test-battle` | `34.124.141.90` | ✅ 打包已使用 |
 | `api` / `battle` | `35.247.132.13` | ✅ 打包已使用（11-11 起） |
-| `test-voice` / `voice` | 各自 IP | DNS 就绪，**服务器还没切** |
+| `test-voice` / `voice` | 各自 IP | ✅ 服务器已切（11-11） |
 
-两台服务器的 Caddy 站点块现在都是 `旧域名, 新域名 {`，各持两张证书，新旧同时可用。
-DTLS 证书**不用换**（CN 是 `glory-battle`，按指纹 pin、不校验主机名）。
+两台服务器的 Caddy 只剩新域名（语音站点 `/etc/caddy/glory-voice.caddy` 也换成了新语音域名）。
+撤法见 `deploy/releases/20261111/retire_duckdns.py`；每台的一键回滚在
+`/var/backups/glory/retire-duckdns-*/rollback.sh`。DTLS 证书不受域名影响（CN 是 `glory-battle`，
+按指纹 pin、不校验主机名）。
+
+🔴 **DuckDNS 上的名字不要删**：删了以后谁都能注册同名、申请正规证书，旧包就会把登录凭证交给他。
+留着、继续指向我们的机器，服务器不认，旧包只会连不上。
 
 #### 出下一个正式包时要跟着改的
 
 1. `--patch-config` 里的 `backend_url` 改成 `https://api.gogoglory.com`。旧的正式服补丁配置写的是
    duckdns，不改的话打包入口会因为「补丁接口和所选环境不一致」直接停。
-2. App Store Connect 商店描述里的 Support / Privacy 链接，改成
-   `https://test-api.gogoglory.com/beta/support.html` 和 `.../beta/privacy-en.html`
-   （这两页只放在测试服上，正式服的域名下是 404）。`deploy/app-store/release-1.0.0.json`
+2. ✅ App Store Connect 的 Support / Marketing / Privacy 链接，罗利静 11-11 已改成
+   `https://test-api.gogoglory.com/beta/support.html`、`.../beta/privacy-en.html`（中文 `privacy.html`），
+   隐私选择链接是同站 `delete-account.html`（见 `docs/releases/2026-11-11-ios-review-name-fix.md`）。
+   这几页只放在测试服上，正式服的域名下是 404。`deploy/app-store/release-1.0.0.json`
    是 10-24 那次提审的存档记录，不要改它。
 
-#### 🔴 撤掉 duckdns 之前必须先做这三件（前两件在外部控制台，仓库里改不到）
+#### 撤 duckdns 时改过的外部配置（11-11 ~ 11-12，仓库里改不到）
 
-1. **Supabase 的 Steam OIDC Issuer** —— `update.sh` 从 Caddyfile 的**第一个**域名推出
-   `steam_oidc_issuer`（见 `backend/app/config.py` 那条注释）。旧域名一旦不在第一位或被删，
-   issuer 就会变，Supabase 里登记的必须一字不差地同步改，否则 Steam 登录全挂。
-   撤之前先跑 `update.sh`，照它打印的那一行填。11-11 两台打印的分别是
-   `https://glorytd-api.duckdns.org/oidc/steam`（测试服）和
-   `https://glorytd-prod-api.duckdns.org/oidc/steam`（正式服）。
-2. **Google Cloud Pub/Sub 的 RTDN 推送订阅** —— `play-billing-rtdn-push` 的**地址和受众**都是
-   `https://glorytd-api.duckdns.org/iap/google/rtdn`，服务器 `backend.env` 的
-   `GLORY_GOOGLE_RTDN_AUDIENCE` 也是这个值：三处必须一起改，只改地址不改受众，身份校验通不过，
-   通知照样收不到（见 `docs/充值系统设计.md`）。这个地址是**测试服**的；正式服有没有自己的
-   推送订阅没核实过（没有的话正式服只靠每 10 分钟的对账补单）。改完要做一笔沙盒充值验证。
-3. **两台战斗服务器启动命令里的 `--backend-url=`**（战报上传用）—— 正式服是
-   `https://glorytd-prod-api.duckdns.org`，在 `/etc/systemd/system/glory-server.service`；
-   测试服的没核对过。改成新域名，daemon-reload，查过在线再重启战斗服务器。
-
-⚠️ **撤旧域名必须排在「新包已经发出去并验证可用」之后。** 域名是烧进安装包里的，
-服务器删不掉；撤早了连你自己手上的包都连不上，没有退路。
-
-语音（`voice`）**故意还留在 duckdns**：语音地址是服务器下发的、客户端不写死，换它对玩家
-零收益，却要重启战斗服务器。撤 duckdns 时用
-`deploy/livekit/install_livekit.sh <新语音域名>` 一起切，跑完要重启战斗服务器。
+1. **Supabase 的 custom:steam**（测试、正式两个项目各一份）：Issuer 必须和 `update.sh` 打印的
+   签发方一字不差（它从 Caddyfile 第一个域名推出来）：测试服 `https://test-api.gogoglory.com/oidc/steam`、
+   正式服 `https://api.gogoglory.com/oidc/steam`。**Discovery URL 要清空**：原来写死了旧域名，留空就是
+   Issuer + `/.well-known/openid-configuration`，以后换域名不会再漏。
+2. **Google 实时通知（RTDN）搬进了正式服项目**：Play 的主题是
+   `projects/project-60d2cb8c-3b40-4f95-a67/topics/play-billing-rtdn-prod`（给了
+   `google-play-developer-notifications@system.gserviceaccount.com` 发布权限）；订阅
+   `play-billing-rtdn-prod-push` 推到 `https://api.gogoglory.com/iap/google/rtdn`，推送身份是专用账号
+   `glory-rtdn-push@project-60d2cb8c-3b40-4f95-a67.iam.gserviceaccount.com`（不给任何角色），受众同推送地址；
+   正式服 `backend.env` 的 `GLORY_GOOGLE_RTDN_SERVICE_ACCOUNT` / `GLORY_GOOGLE_RTDN_AUDIENCE` 与之一致。
+   11-12 00:08 测试通知在正式服日志里是「推送通道是通的」。
+   以前主题和两条订阅都在**测试服项目**，正式服认的推送身份是测试服项目的默认计算服务账号 ——
+   测试服机器上的程序能冒签，假「退款」通知会让正式服直接扣钻（voided 分支不回查 Google），所以搬走。
+   🔴 推送身份**不要用默认计算服务账号**。测试服从此收不到 Google 实时通知，靠每 10 分钟对账补单；
+   测试服项目里旧主题 `play-billing-rtdn` 和它的两条订阅已闲置。
+3. **战斗服务器启动命令的 `--backend-url=`**（战报上传）：撤域名脚本已换成新域名。
+4. **待改：App Store 服务器通知 V2**（App Store Connect → App 信息）：生产填
+   `https://api.gogoglory.com/iap/apple/notifications`，沙盒填 `https://test-api.gogoglory.com/iap/apple/notifications`。
+   10-30 两个都填的是测试服的 duckdns 地址，正式服从没收到过苹果通知；苹果这一路没有定时对账兜底，
+   不改的话正式服的退款扣不回来。
 
 - 测试服固定使用 Google Cloud 项目 `project-60c72d94-b558-4e4f-992`：
   https://ssh.cloud.google.com/v2/ssh/projects/project-60c72d94-b558-4e4f-992/

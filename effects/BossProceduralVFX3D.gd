@@ -63,6 +63,13 @@ func _ready() -> void:
 	add_child(_mercenary_rework)
 
 func play(skill_id: String, origin: Vector3, target: Vector3, context: Dictionary = {}) -> Node3D:
+	# 一招的各层共用一次放行结果（VFXBlockRoot.begin_effect）：要么整招画，要么整招不画。
+	VFXBlockRoot.begin_effect()
+	var spawned := _route(skill_id, origin, target, context)
+	VFXBlockRoot.end_effect()
+	return spawned
+
+func _route(skill_id: String, origin: Vector3, target: Vector3, context: Dictionary) -> Node3D:
 	if skill_id in MERCENARY_REWORK.SKILLS:
 		return _mercenary_rework.call("play_skill", skill_id, origin, target, context) as Node3D
 	if skill_id in UNIT_SKILLS:
