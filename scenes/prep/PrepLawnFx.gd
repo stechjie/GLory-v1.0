@@ -23,6 +23,15 @@ const TRAIL_SECONDS := 1.1      # 光尾只留最近这么久的轨迹，飞过�
 const TRAIL_STEP := 0.035
 const MOTE_COUNT := 12
 
+# Projection is affine, as are Catmull-Rom, the vertex mean and both core lerps.
+# Build their canonical coordinates once; flap/orientation only change the two
+# projected basis vectors. Vertex counts, paint order and draw calls stay intact.
+const FORE_WING := [Vector2(0.05, 0.15), Vector2(0.35, 0.75), Vector2(0.75, 1.0), Vector2(1.08, 0.85), Vector2(1.12, 0.45), Vector2(0.85, 0.05), Vector2(0.35, -0.08)]
+const HIND_WING := [Vector2(0.05, -0.05), Vector2(0.55, -0.05), Vector2(0.85, -0.3), Vector2(0.8, -0.65), Vector2(0.5, -0.95), Vector2(0.32, -1.25), Vector2(0.18, -0.85), Vector2(0.05, -0.5)]
+
+var _fore_wing: Dictionary = {}
+var _hind_wing: Dictionary = {}
+
 var _time := 0.0
 var _butterflies: Array[Dictionary] = []
 var _motes: Array[Dictionary] = []
@@ -34,6 +43,7 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_rng.seed = 1112
+	_ensure_wing_geometry()
 	for i in BUTTERFLY_COUNT:
 		_butterflies.append({
 			# pos.x / pos.y = 底图 UV（屏幕上的位置），pos.z = 前后深度（-1 在树后面，+1 离镜头近）
@@ -263,15 +273,13 @@ func _draw_butterfly(b: Dictionary) -> void:
 		var w_dir: Vector3 = side * sd * cos(ang) + up * sin(ang)
 		wings.append({"dir": w_dir, "depth": w_dir.z})
 	wings.sort_custom(func(wa, wb): return float(wa.depth) < float(wb.depth))
-	var fore := [Vector2(0.05, 0.15), Vector2(0.35, 0.75), Vector2(0.75, 1.0), Vector2(1.08, 0.85), Vector2(1.12, 0.45), Vector2(0.85, 0.05), Vector2(0.35, -0.08)]
-	var hind := [Vector2(0.05, -0.05), Vector2(0.55, -0.05), Vector2(0.85, -0.3), Vector2(0.8, -0.65), Vector2(0.5, -0.95), Vector2(0.32, -1.25), Vector2(0.18, -0.85), Vector2(0.05, -0.5)]
 	var drew_body := false
 	for w in wings:
 		if not drew_body and float(w.depth) > 0.0:
 			_draw_body3(pos, axis, s, vis)
 			drew_body = true
-		_wing3(pos, axis, w.dir, hind, s, 0.88 * vis)
-		_wing3(pos, axis, w.dir, fore, s, vis)
+		_wing3(pos, axis, w.dir, _hind_wing, s, 0.88 * vis)
+		_wing3(pos, axis, w.dir, _fore_wing, s, vis)
 	if not drew_body:
 		_draw_body3(pos, axis, s, vis)
 
@@ -292,12 +300,35 @@ func _draw_body3(pos: Vector2, axis: Vector3, s: float, vis: float) -> void:
 	draw_line(head, pos + _proj(ant_r, s), Color(1.0, 0.95, 0.72, 0.85 * vis), 1.0, true)
 
 
-# 一片翅膀：shape 里 x = 往外（沿翅膀方向 w_dir），y = 往前（沿身体 axis）
-func _wing3(pos: Vector2, axis: Vector3, w_dir: Vector3, shape: Array, s: float, alpha: float) -> void:
-	var raw := PackedVector2Array()
-	for v in shape:
-		var p: Vector3 = w_dir * float(v.x) + axis * float(v.y)
-		raw.append(pos + _proj(p, s))
+func _ensure_wing_geometry() -> void:
+	if _fore_wing.is_empty():
+		_fore_wing = _canonical_wing(FORE_WING)
+		_hind_wing = _canonical_wing(HIND_WING)
+
+
+func _canonical_wing(shape: Array) -> Dictionary:
+	var raw := PackedVector2Array(shape)
+	var points := _smooth(raw)
+	var center := Vector2.ZERO
+	for point in points:
+		center += point
+	center /= points.size()
+	var core := PackedVector2Array()
+	for point in points:
+		core.append(center.lerp(point, 0.55).lerp(Vector2.ZERO, 0.15))
+	var ring := points.duplicate()
+	ring.append(points[0])
+	return {"raw": raw, "smooth": points, "core": core, "ring": ring}
+
+
+func _wing_projection(pos: Vector2, axis: Vector3, w_dir: Vector3, s: float) -> Transform2D:
+	return Transform2D(_proj(w_dir, s), _proj(axis, s), pos)
+
+
+# 一片翅膀：canonical x = 往外（w_dir），y = 往前（axis）。
+func _wing3(pos: Vector2, axis: Vector3, w_dir: Vector3, geometry: Dictionary, s: float, alpha: float) -> void:
+	var projection := _wing_projection(pos, axis, w_dir, s)
+	var raw: PackedVector2Array = projection * geometry.raw
 	# 侧着看翅膀会变成一条线：面积太小就只画一道亮线（也避免三角化失败）
 	var area := 0.0
 	for i in raw.size():
@@ -307,18 +338,11 @@ func _wing3(pos: Vector2, axis: Vector3, w_dir: Vector3, shape: Array, s: float,
 	if absf(area) < 6.0:
 		draw_polyline(raw, Color(WING_LIGHT, 0.8 * alpha), maxf(1.2, s * 0.08), true)
 		return
-	var pts := _smooth(raw)
+	var pts: PackedVector2Array = projection * geometry.smooth
 	draw_colored_polygon(pts, Color(WING_GOLD, 0.95 * alpha))
-	var center := Vector2.ZERO
-	for v in pts:
-		center += v
-	center /= pts.size()
-	var core := PackedVector2Array()
-	for v in pts:
-		core.append(center.lerp(v, 0.55).lerp(pos, 0.15))
+	var core: PackedVector2Array = projection * geometry.core
 	draw_colored_polygon(core, Color(WING_LIGHT, 0.7 * alpha))
-	var ring := pts.duplicate()
-	ring.append(pts[0])
+	var ring: PackedVector2Array = projection * geometry.ring
 	draw_polyline(ring, Color(WING_LIGHT, 0.9 * alpha), maxf(1.2, s * 0.08), true)
 	draw_polyline(ring, Color(WING_EDGE, 0.5 * alpha), 1.0, true)
 	draw_line(pos, raw[2], Color(WING_EDGE, 0.4 * alpha), 1.0, true)

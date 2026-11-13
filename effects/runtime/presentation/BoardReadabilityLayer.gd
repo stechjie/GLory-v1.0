@@ -12,6 +12,7 @@ const DEFAULT_STYLE: BoardReadabilityStyleScript = preload("res://data/presentat
 @export var style: BoardReadabilityStyleScript = DEFAULT_STYLE
 
 var _mode := LayerMode.PREP
+var _mode_configured := false
 var _guides_enabled := true
 var _low_quality := false
 
@@ -44,27 +45,40 @@ func _ready() -> void:
 
 
 func configure_prep() -> void:
+	if _mode_configured and _mode == LayerMode.PREP:
+		return
 	_mode = LayerMode.PREP
+	_mode_configured = true
 	queue_redraw()
 
 
 func configure_battle() -> void:
+	if _mode_configured and _mode == LayerMode.BATTLE:
+		return
 	_mode = LayerMode.BATTLE
+	_mode_configured = true
 	queue_redraw()
 
 
 func set_guides_enabled(enabled: bool) -> void:
+	if _guides_enabled == enabled and visible == enabled:
+		return
 	_guides_enabled = enabled
 	visible = enabled
 	queue_redraw()
 
 
 func set_low_quality(enabled: bool) -> void:
+	if _low_quality == enabled:
+		return
 	_low_quality = enabled
 	queue_redraw()
 
 
 func set_direction_texts(front_text: String, back_text: String, friendly_text: String = "", enemy_text: String = "") -> void:
+	if _front_text == front_text and _back_text == back_text \
+			and _friendly_text == friendly_text and _enemy_text == enemy_text:
+		return
 	_front_text = front_text
 	_back_text = back_text
 	_friendly_text = friendly_text
@@ -73,16 +87,22 @@ func set_direction_texts(front_text: String, back_text: String, friendly_text: S
 
 
 func set_prep_cells(cells: Array) -> void:
-	_prep_cells.clear()
+	var next_cells: Array[PackedVector2Array] = []
 	for value in cells:
 		if value is PackedVector2Array:
-			_prep_cells.append((value as PackedVector2Array).duplicate())
+			next_cells.append((value as PackedVector2Array).duplicate())
+	if _prep_cells == next_cells:
+		return
+	_prep_cells = next_cells
 	queue_redraw()
 
 
 # 摆放界面的射程不在这一层画：11-08 起改成贴地的 3D 射程圈（PrepBoardModels.set_prep_range_ring），
 # 2D 层会整块盖住棋子，而且旧的「按格数点亮」与战斗里的真实距离对不上。
 func set_prep_state(selected_index: int, drop_active: bool, drop_hover_index: int, player_color: Color) -> void:
+	if _prep_selected_index == selected_index and _prep_drop_active == drop_active \
+			and _prep_drop_hover_index == drop_hover_index and _prep_player_color == player_color:
+		return
 	if selected_index != _prep_selected_index:
 		_restart_focus_fade(selected_index >= 0)
 	_prep_selected_index = selected_index
@@ -93,7 +113,7 @@ func set_prep_state(selected_index: int, drop_active: bool, drop_hover_index: in
 
 
 func set_battle_geometry(zones: Array, center_line: PackedVector2Array) -> void:
-	_battle_zones.clear()
+	var next_zones: Array[Dictionary] = []
 	for value in zones:
 		if typeof(value) != TYPE_DICTIONARY:
 			continue
@@ -101,15 +121,24 @@ func set_battle_geometry(zones: Array, center_line: PackedVector2Array) -> void:
 		var polygon_value = entry.get("polygon", PackedVector2Array())
 		if not (polygon_value is PackedVector2Array):
 			continue
-		_battle_zones.append({
+		next_zones.append({
 			"polygon": (polygon_value as PackedVector2Array).duplicate(),
 			"friendly": bool(entry.get("friendly", false)),
 		})
+	if _battle_zones == next_zones and _battle_center_line == center_line:
+		return
+	_battle_zones = next_zones
 	_battle_center_line = center_line.duplicate()
 	queue_redraw()
 
 
 func set_battle_focus(focus_id: String, source: Vector2, range_polygon: PackedVector2Array, target: Vector2, has_target: bool, focus_color: Color) -> void:
+	# The renderer calls this every frame, including the empty-focus state.
+	# Retain unchanged Canvas commands instead of rebuilding their GPU buffers.
+	if _battle_focus_id == focus_id and _battle_source == source \
+			and _battle_range_polygon == range_polygon and _battle_target == target \
+			and _battle_has_target == has_target and _battle_focus_color == focus_color:
+		return
 	if focus_id != _battle_focus_id:
 		_restart_focus_fade(not focus_id.is_empty())
 	_battle_focus_id = focus_id

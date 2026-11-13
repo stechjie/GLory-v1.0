@@ -399,10 +399,18 @@ func _refresh_text() -> void:
 	var text_width := font.get_string_size(_damage_label.text,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size).x
 	if text_width > _damage_label.size.x:
 		font_size = maxi(roundi(18.0*factor),floori(float(font_size)*_damage_label.size.x/text_width))
-	_damage_label.add_theme_font_size_override("font_size",font_size)
-	_damage_depth.add_theme_font_size_override("font_size",font_size)
+	_set_font_size_if_changed(_damage_label, font_size)
+	_set_font_size_if_changed(_damage_depth, font_size)
 	_refresh_ink_metrics()
 	_clear_label.text = "LANE CLEAR" if english else "本路已清"
+
+
+static func _set_font_size_if_changed(label: Label, font_size: int) -> void:
+	# Even an identical font-size override emits THEME_CHANGED in Godot 4.7,
+	# dirtying the font and scheduling layout. Damage changes far more often than
+	# its fitted size. Keep an explicit override, but update it only when needed.
+	if not label.has_theme_font_size_override("font_size") or label.get_theme_font_size("font_size") != font_size:
+		label.add_theme_font_size_override("font_size", font_size)
 
 
 func _on_locale_changed(_locale: String) -> void:
