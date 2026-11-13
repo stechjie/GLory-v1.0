@@ -89,11 +89,66 @@
     "qr_updated": false
   },
   "ios": {
-    "built": false,
-    "uploaded": false,
+    "version": "1.0.2",
+    "build": 95,
+    "built": true,
+    "signed": true,
+    "uploaded": true,
+    "upload_started": true,
+    "transporter_status": "delivered",
+    "processed": false,
     "internal_testing": false,
     "external_testing": false,
-    "reason": "waiting_for_Android_Drive_upload_before_building_as_requested"
+    "bytes": 669316106,
+    "sha256": "95cafdc82b82321b93f8887ff8daec840d4911ca32e0b3d937e4a1fd478bcc68",
+    "path": "/Volumes/repository/github/GLory/delivery/release-20261113-test/Glory-1.0.2-95-ios.ipa",
+    "git_commit": "4eff0620b7ca69e38b30c0c31b10797be1fbc0aa",
+    "game_code_commit": "6e3ea69d7146c9b661c80ca624547739d624bfcb",
+    "asset_inventory_sha256": "ec5ecf1ffa435a1e1eb361389b45877ed94011fdf1c0e883e2cd8daf01d8d3e7",
+    "server_target": {
+      "environment": "test",
+      "backend_url": "https://test-api.gogoglory.com",
+      "battle_host": "test-battle.gogoglory.com",
+      "dtls_cert_sha256": "f773c1a5e917e3fe7c0c938ee19ed2ecfc0b16ed3ecf8fb8f3fa6987a49c250d"
+    },
+    "patch_base": {
+      "archive": "/Volumes/repository/github/GLory/build/ios-auto-work/runs/20261113-202850-671342/patch-base/base.zip",
+      "manifest": "/Volumes/repository/github/GLory/build/ios-auto-work/runs/20261113-202850-671342/patch-base/base.export.json",
+      "sha256": "0d613cd20dda19a1109e3727adb3584ca80cf18ddea3b7d3a0f43d6092406ced",
+      "base_id": "glory-20261113-test-refresh",
+      "debug": false,
+      "payload_verification": {
+        "identical_base_files": 6232,
+        "platform": "ios",
+        "payload_matches_baseline": true
+      }
+    },
+    "baseline": {
+      "build": 95,
+      "base_id": "glory-20261113-test-refresh",
+      "channel": "internal",
+      "includes_seq": 4,
+      "snapshot": {
+        "protocol": 1,
+        "revision": 107,
+        "deployment_id": "428e5bbf6e0e89621e52d3fbd181d957094c5f08dcec865c82038930c2e90f2e",
+        "channel": "internal",
+        "platform": "ios",
+        "hotfix_epoch": 47,
+        "base_id": "glory-20261113-test-refresh",
+        "required_patch_seq": 0,
+        "action": "none",
+        "artifact": null,
+        "hotfixes": []
+      }
+    },
+    "sequence_override": "user explicitly requested iOS build and App Store Connect upload before Android Drive upload completed",
+    "app_id": "6811578280",
+    "delivered_at": "2026-11-13T20:54:00+08:00",
+    "processing_status": "App 正在处理",
+    "internal_external_status": "not_configured_or_verified_for_build_95_due_to_browser_access_restriction",
+    "evidence": "transporter95-delivered.jpg",
+    "verified_at": "2026-11-13T12:54:52.888277+00:00"
   },
   "public_config": {
     "ios": {
@@ -146,7 +201,11 @@
       "step": "Drive upload",
       "reason": "705924560 byte APK exceeds connector limit 536870912 bytes; Computer Use session ended by browser URL restriction",
       "next_action": "user uploads exact APK to existing Drive folder and provides file URL"
+    },
+    {
+      "step": "iOS internal/external testing",
+      "reason": "App processing; browser Computer Use access restriction prevents group assignment; no claim of testing enabled"
     }
   ],
-  "updated_at": "2026-11-13T12:26:51.408786+00:00"
+  "updated_at": "2026-11-13T12:54:52.890473+00:00"
 }
