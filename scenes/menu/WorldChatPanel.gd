@@ -318,19 +318,25 @@ func _on_load_older() -> void:
 
 func _row(message: Dictionary, max_width: float) -> Control:
 	var mine := ChatService.is_mine(message)
-	var code := str(message.get("from_code", ""))
+	var code := AccountManager.normalize_friend_code(str(message.get("from_code", "")))
 	var row := HBoxContainer.new()
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.alignment = BoxContainer.ALIGNMENT_END if mine else BoxContainer.ALIGNMENT_BEGIN
 	row.add_theme_constant_override("separation", Tokens.GAP_S)
 
-	var avatar := TextureRect.new()
-	avatar.texture = Catalog.texture_for(str(message.get("avatar", "")), true)
+	var avatar := TextureButton.new()
+	avatar.texture_normal = Catalog.texture_for(str(message.get("avatar", "")), true)
 	avatar.custom_minimum_size = Vector2(AVATAR_SIZE, AVATAR_SIZE)
-	avatar.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	avatar.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	avatar.ignore_texture_size = true
+	avatar.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
 	avatar.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if mine or code.is_empty():
+		avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		avatar.focus_mode = Control.FOCUS_NONE
+	else:
+		avatar.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		avatar.accessibility_name = _text("查看玩家资料", "View player profile")
+		avatar.pressed.connect(func() -> void: profile_requested.emit(code))
 
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 2)

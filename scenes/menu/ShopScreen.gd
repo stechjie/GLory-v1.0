@@ -25,6 +25,7 @@ signal wish_requested(skin_id: String)
 # 棋子页：集齐一族后点「去备战」。Main 打开备战页的种族页签并高亮这一族。
 signal prep_races_requested(race: String)
 
+const UnitDetailCard := preload("res://ui/components/UnitDetailCard.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 # 9.17 音效。preload 而不是全局类名，理由见 Main.gd 顶上那条注释。
@@ -1958,34 +1959,6 @@ func _race_emblem(race: String, owned_n: int, total: int, unlocked: bool, missin
 	return box
 
 
-# 棋子属性卡浮层：压暗背景 + 居中一张 UnitDetailCard（只能预览四星）。点空白处或右上角关闭键关掉。
-func _show_unit_detail_card(unit: Dictionary) -> void:
-	var layer := Control.new()
-	layer.name = "UnitDetailOverlay"
-	layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	layer.mouse_filter = Control.MOUSE_FILTER_STOP
-	layer.z_index = 50
-	add_child(layer)
-	var dim := ColorRect.new()
-	dim.color = Color(0.03, 0.02, 0.01, 0.55)
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.mouse_filter = Control.MOUSE_FILTER_STOP
-	layer.add_child(dim)
-	dim.gui_input.connect(func(event: InputEvent) -> void:
-		if (event is InputEventMouseButton and (event as InputEventMouseButton).pressed) 				or (event is InputEventScreenTouch and (event as InputEventScreenTouch).pressed):
-			layer.queue_free())
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	layer.add_child(center)
-	var card = preload("res://ui/components/UnitDetailCard.gd").new()
-	card.mouse_filter = Control.MOUSE_FILTER_STOP
-	center.add_child(card)
-	card.setup_preview({"def": unit, "star": 1})
-	card.close_requested.connect(layer.queue_free)
-	preload("res://ui/theme/UiJuice.gd").pop_in([card], 0.0, 0.0, 0.9)
-
-
 func _unit_card(unit: Dictionary, item: Dictionary) -> Control:
 	var unit_id := str(unit.get("id", ""))
 	var grants := str(item.get("grants", ""))
@@ -2003,21 +1976,13 @@ func _unit_card(unit: Dictionary, item: Dictionary) -> Control:
 	row.add_theme_constant_override("separation", Tokens.GAP_S)
 	panel.add_child(row)
 
+	var preview_area := HBoxContainer.new()
+	preview_area.add_theme_constant_override("separation", Tokens.GAP_S)
 	var portrait := TextureRect.new()
 	# 11.12：52 → 60，头像撑满这一行的高度，小图看不清
 	portrait.custom_minimum_size = Vector2(60, 60)
 	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	# 11.12：点头像看棋子属性卡（跟摆放界面长按棋子同一张，只是不能升四星，只能预览四星）
-	portrait.mouse_filter = Control.MOUSE_FILTER_STOP
-	portrait.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	portrait.tooltip_text = _t("查看属性", "View stats")
-	portrait.gui_input.connect(func(event: InputEvent) -> void:
-		var tapped := (event is InputEventMouseButton and (event as InputEventMouseButton).pressed
-			and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT) 			or (event is InputEventScreenTouch and (event as InputEventScreenTouch).pressed)
-		if tapped:
-			portrait.accept_event()
-			_show_unit_detail_card(unit))
 	var portrait_path := UNIT_PORTRAIT_PATH % unit_id
 	var logo_path := RACE_LOGO_PATH % str(unit.get("race", ""))
 	if ResourceLoader.exists(portrait_path):
@@ -2033,13 +1998,13 @@ func _unit_card(unit: Dictionary, item: Dictionary) -> Control:
 	# 没买的暗一点：和中间 logo 一个意思 —— 亮的是你已经有的。
 	# 11.12：0.55 压得太暗，小头像糊成一团；0.75 还看得出「没买」，但认得出是谁
 	portrait.modulate = Color.WHITE if owned else Color(0.75, 0.75, 0.75)
-	row.add_child(portrait)
+	preview_area.add_child(portrait)
 
 	var info := VBoxContainer.new()
 	info.alignment = BoxContainer.ALIGNMENT_CENTER
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info.add_theme_constant_override("separation", 2)
-	row.add_child(info)
+	preview_area.add_child(info)
 	var name_label := Label.new()
 	name_label.text = str(unit.get("name_en" if _english() else "name", unit_id))
 	name_label.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
@@ -2075,6 +2040,9 @@ func _unit_card(unit: Dictionary, item: Dictionary) -> Control:
 			Kit.INK if affordable or pending else BAD_COLOR)
 		price_row.add_child(price_label)
 
+	var preview := UnitDetailCard.preview_button(preview_area, unit, UnitDetailCard.show_preview.bind(self, unit))
+	preview.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(preview)
 	if not owned:
 		var buy: Button = ACTION_BUTTON.instantiate()
 		buy.custom_minimum_size = Vector2(92, Tokens.TOUCH_MIN)

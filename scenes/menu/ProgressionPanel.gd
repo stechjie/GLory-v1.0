@@ -2,6 +2,7 @@ extends Control
 
 signal dismissed()
 
+const UnitDetailCard := preload("res://ui/components/UnitDetailCard.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
@@ -209,6 +210,7 @@ func _make_card(level: int) -> Button:
 	number.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	body.add_child(number)
 	var art := _reward_art(_rewards.get(level, {}), 48 if _compact else 64)
+	art.mouse_behavior_recursive = Control.MOUSE_BEHAVIOR_DISABLED
 	art.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	body.add_child(art)
 	var name := _label(_summary(level), 15 if _compact else 16, CREAM)
@@ -281,7 +283,7 @@ func _render_detail(level: int) -> void:
 func _detail_reward_art(reward: Dictionary) -> Control:
 	var units: Array = reward.get("units", [])
 	if units.size() <= 1:
-		return _reward_art(reward, 100 if _compact else 130)
+		return _reward_art(reward, 100 if _compact else 130, true)
 	var portraits := HBoxContainer.new()
 	portraits.add_theme_constant_override("separation", 12)
 	for unit_id in units:
@@ -289,7 +291,7 @@ func _detail_reward_art(reward: Dictionary) -> Control:
 		portrait.add_theme_constant_override("separation", 4)
 		portraits.add_child(portrait)
 		var single_reward := {"units": [unit_id]}
-		portrait.add_child(_reward_art(single_reward, 82 if _compact else 98))
+		portrait.add_child(_reward_art(single_reward, 82 if _compact else 98, true))
 		var definition := UnitCollection.unit_def(str(unit_id))
 		var name := str(definition.get("name_en", unit_id)) if _english() else str(definition.get("name", unit_id))
 		var caption := _label(name, 16, CREAM)
@@ -298,7 +300,7 @@ func _detail_reward_art(reward: Dictionary) -> Control:
 	return portraits
 
 
-func _reward_art(reward: Dictionary, dimension: int) -> Control:
+func _reward_art(reward: Dictionary, dimension: int, preview: bool = false) -> Control:
 	var holder := PanelContainer.new()
 	holder.custom_minimum_size = Vector2(dimension + 20, dimension + 20)
 	holder.add_theme_stylebox_override("panel", Kit.box("slot", Vector4(8, 8, 8, 8)))
@@ -323,6 +325,10 @@ func _reward_art(reward: Dictionary, dimension: int) -> Control:
 		image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		holder.add_child(image)
+	if preview and level != 1 and not units.is_empty():
+		var unit := UnitCollection.unit_def(str(units[0]))
+		if not unit.is_empty():
+			return UnitDetailCard.preview_button(holder, unit, UnitDetailCard.show_preview.bind(self, unit))
 	return holder
 
 

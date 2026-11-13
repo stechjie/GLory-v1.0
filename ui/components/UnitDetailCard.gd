@@ -130,7 +130,43 @@ var _preview_cell: Dictionary = {}
 var _previewing_four := false
 
 
-# 商城用：显示一张只能预览四星的卡
+static func preview_button(content: Control, unit: Dictionary, open_preview: Callable) -> Button:
+	var button := Button.new()
+	button.flat = true
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	var english := TranslationServer.get_locale().begins_with("en")
+	button.accessibility_name = str(unit.get("name_en" if english else "name", unit.get("id", "")))
+	button.pressed.connect(open_preview)
+	button.add_child(content)
+	content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	content.mouse_behavior_recursive = Control.MOUSE_BEHAVIOR_DISABLED
+	button.custom_minimum_size = content.get_combined_minimum_size()
+	content.minimum_size_changed.connect(func() -> void:
+		button.custom_minimum_size = content.get_combined_minimum_size())
+	return button
+
+
+static func show_preview(owner: Control, unit: Dictionary) -> void:
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var card = (load("res://ui/components/UnitDetailCard.gd") as GDScript).new()
+	center.add_child(card)
+	card.setup_preview({"def": unit, "star": 1})
+	var parent_modal := ModalStack.top()
+	var parent_content := parent_modal.get("content") as Control
+	var priority := 0
+	if is_instance_valid(parent_content) and (parent_content == owner or parent_content.is_ancestor_of(owner)):
+		priority = int(parent_modal.get("priority", 0))
+	var modal_id := ModalStack.push(center, {"id": "unit_detail_preview", "owner": owner, "priority": priority,
+		"dismiss_on_backdrop": true, "backdrop_color": Color(0.03, 0.02, 0.01, 0.55),
+		"popup_sfx": false})
+	if not modal_id.is_empty():
+		card.close_requested.connect(func() -> void: ModalStack.pop(modal_id))
+		preload("res://ui/theme/UiJuice.gd").pop_in([card], 0.0, 0.0, 0.9)
+
+
+# 棋子图鉴式预览，只读，不提供升星操作。
 func setup_preview(cell: Dictionary) -> void:
 	preview_only = true
 	_preview_cell = cell.duplicate()

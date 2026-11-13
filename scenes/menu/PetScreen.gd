@@ -8,6 +8,7 @@ extends Control
 # 页签和返回按钮都藏起来，选完才放行（用于「进主菜单前的强制关卡」）。
 # 卡片统一规格：手绘插画 + 名字 + 效果。缺图时回退模型预览。
 
+const UnitDetailCard := preload("res://ui/components/UnitDetailCard.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const PROFILE_BG_TEX := preload("res://assets/ui/profile/hall_of_glory.png")
@@ -794,7 +795,7 @@ func _refresh_race_card(race: String, forced: bool) -> void:
 	panel.add_theme_stylebox_override("panel", Kit.box("slot", Vector4(10, 10, 10, 8),
 		(ACTIVE_TINT if picked else Color.WHITE) if complete else Color(0.72, 0.68, 0.62)))
 	var logo: TextureButton = parts["logo"]
-	# 没解锁的种族 logo 压暗，一眼能看出来（点它会弹「去商城」）。
+	# 没解锁的种族 logo 压暗，仍可浏览棋子。
 	logo.modulate = Color.WHITE if complete else Color(0.38, 0.38, 0.38)
 	var btn: Button = parts["button"]
 	if not complete:
@@ -814,8 +815,6 @@ func _select_race_detail(race: String) -> void:
 	_viewed_race = race
 	_race_notice.visible = false
 	_refresh_race_roster()
-	if not _race_complete(race):
-		_prompt_race_shop(race)
 
 func _refresh_race_roster() -> void:
 	if _race_roster_grid == null or _viewed_race.is_empty():
@@ -871,7 +870,9 @@ func _build_unit_tile(unit: Dictionary) -> Control:
 	status.add_theme_color_override("font_color", Kit.INK)
 	status.text = ("Not owned" if missing else "Tier %d" % int(unit.get("tier", 1))) if TranslationServer.get_locale().begins_with("en") else ("未拥有" if missing else "%d 阶" % int(unit.get("tier", 1)))
 	col.add_child(status)
-	return tile
+	return UnitDetailCard.preview_button(tile, unit, func() -> void:
+		if not _tutorial_input_locked:
+			UnitDetailCard.show_preview(self, unit))
 
 func _race_has_products(race: String) -> bool:
 	return UnitCollection.race_requires_purchase(race, _shop_items)
@@ -907,7 +908,7 @@ func _load_unit_ownership() -> void:
 	_unit_ownership_ready = true
 	unit_ownership_loaded.emit()
 
-# 没解锁的种族：点 logo 或卡片按钮都弹这个，「去商城」直接落在棋子页那一族。
+# 「未解锁」按钮打开提示，「去商城」直接进入商城对应种族。
 func _prompt_race_shop(race: String) -> void:
 	var en := TranslationServer.get_locale().begins_with("en")
 	var race_name: String = UnitDetailFormat.unit_race_name(race)
@@ -935,7 +936,7 @@ func show_races(race: String = "") -> void:
 	_switch_tab(Tab.RACES)
 	_refresh_race_roster()
 
-# 种族卡片的按钮：**只改选中草稿**，不再顺手弹羁绊窗。
+# 种族卡片的按钮：未解锁时打开商城提示，已解锁时处理出战选择。
 #
 # ★ 10.11 第 4 条：原来选中和取消两侧都调 `_show_race_bond()`，于是点「取消选择」
 #   也会弹一个「XX族羁绊」窗（用户实拍到的就是这个）。羁绊窗现在只由「查看羁绊」
@@ -943,13 +944,10 @@ func show_races(race: String = "") -> void:
 func _on_race_card_pressed(race: String) -> void:
 	if _race_save_busy:
 		return
-	_viewed_race = race
-	_refresh_race_roster()
+	_select_race_detail(race)
 	if not _race_complete(race):
-		_race_notice.visible = false
 		_prompt_race_shop(race)
 		return
-	_race_notice.visible = false
 	if _available_race_count() <= RacePick.PICK_COUNT:
 		return
 	var need := mini(RacePick.PICK_COUNT, _available_race_count())

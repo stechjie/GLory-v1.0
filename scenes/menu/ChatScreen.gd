@@ -18,8 +18,8 @@ extends Control
 #    自动再连会让两台设备无限互踢。
 
 signal back_requested
-# 世界频道里点别人的名字 →「查看资料」。Main 开他的资料页，返回时回到这里的世界页签。
-signal profile_requested(friend_code: String)
+# 打开公开资料并记录返回时的聊天页签与会话。
+signal profile_requested(friend_code: String, tab: String, conversation: String)
 # 私人消息里的房间邀请点了「立即参与」。Main 复用已有的加入流程
 # （先回主菜单再连，见 Main._join_room_by_id 的注释 —— 那里才有「连接中」与失败提示）。
 signal join_room_requested(room_id: int)
@@ -90,7 +90,7 @@ var _status_label: Label
 var _notice_label: Label
 var _peer_label: Label
 var _peer_code_label: Label
-var _peer_avatar: TextureRect
+var _peer_avatar: TextureButton
 var _kicked_bar: Control
 var _msg_scroll: ScrollContainer
 var _msg_box: VBoxContainer
@@ -170,7 +170,7 @@ func _build() -> void:
 	# 要是先露出来再被 _show_tab 藏回去，等于白订一次、白拉一次。
 	_world_panel = WorldChatPanel.new()
 	_world_panel.visible = false
-	_world_panel.profile_requested.connect(func(code: String) -> void: profile_requested.emit(code))
+	_world_panel.profile_requested.connect(func(code: String) -> void: profile_requested.emit(code, TAB_WORLD, ""))
 	root.add_child(_world_panel)
 
 	# 好友与对话属于同一个通讯面板。统一外框比两个并排的金边黑框更像游戏内设施，
@@ -306,11 +306,8 @@ func _conversation_panel() -> Control:
 	head.add_theme_constant_override("separation", Tokens.GAP_S)
 	head_panel.add_child(head)
 
-	_peer_avatar = TextureRect.new()
+	_peer_avatar = _profile_avatar_button(func() -> void: _open_peer_profile(_open_code))
 	_peer_avatar.custom_minimum_size = Vector2(AVATAR_SIZE, AVATAR_SIZE)
-	_peer_avatar.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_peer_avatar.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	_peer_avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	head.add_child(_peer_avatar)
 
 	var identity := VBoxContainer.new()
@@ -716,8 +713,7 @@ func _chat_row(entry: Dictionary) -> Control:
 	if selected:
 		row.add_theme_stylebox_override("normal", Kit.box("list_row_gold", Vector4(26, 6, 30, 8)))
 
-	# 按钮不会给子节点排版：内容挂在一个铺满的容器里，且一律不吃点击 ——
-	# 否则点在名字上会被 Label 吞掉，按钮收不到。
+	# 头像有独立入口，其他内容将点击交给整行按钮。
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -740,11 +736,11 @@ func _chat_row(entry: Dictionary) -> Control:
 		Color("f3e2c0"), Color("b07a2a"), 2))
 	line.add_child(avatar_panel)
 
-	var avatar := TextureRect.new()
-	avatar.texture = Catalog.texture_for(str(entry.get("avatar", "")), true)
-	avatar.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	avatar.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var avatar := _profile_avatar_button(_open_peer_profile.bind(code))
+	avatar.texture_normal = Catalog.texture_for(str(entry.get("avatar", "")), true)
+	if not _can_open_peer_profile(code):
+		avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		avatar.focus_mode = Control.FOCUS_NONE
 	avatar_panel.add_child(avatar)
 
 	var texts := VBoxContainer.new()
@@ -848,13 +844,35 @@ func _friend_time(entry: Dictionary) -> String:
 	return ChatService.format_time(str((last as Dictionary).get("created_at", "")))
 
 
+func _profile_avatar_button(on_press: Callable) -> TextureButton:
+	var button := TextureButton.new()
+	button.ignore_texture_size = true
+	button.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	button.accessibility_name = _text("查看玩家资料", "View player profile")
+	button.pressed.connect(on_press)
+	return button
+
+
+func _can_open_peer_profile(code: String) -> bool:
+	var target := AccountManager.normalize_friend_code(code)
+	var mine := AccountManager.normalize_friend_code(str(AccountManager.profile.get("friend_code", "")))
+	return not target.is_empty() and target != mine
+
+
+func _open_peer_profile(code: String) -> void:
+	if _can_open_peer_profile(code):
+		profile_requested.emit(code, TAB_DM, _open_code)
+
+
 func _update_peer_label() -> void:
 	if _peer_label == null:
 		return
 	if _open_code.is_empty():
 		_peer_label.text = _text("选择一位好友", "Choose a friend")
 		_peer_code_label.text = _text("从左侧列表开始私聊", "Select someone from the list")
-		_peer_avatar.texture = null
+		_peer_avatar.texture_normal = null
+		_peer_avatar.disabled = true
 		return
 	var peer_name := ""
 	var peer_avatar := ""
@@ -869,7 +887,8 @@ func _update_peer_label() -> void:
 	var code_suffix := " #" + _open_code
 	_peer_label.text = identity_text.trim_suffix(code_suffix)
 	_peer_code_label.text = identity_text.trim_prefix(_peer_label.text).strip_edges()
-	_peer_avatar.texture = Catalog.texture_for(peer_avatar, true)
+	_peer_avatar.texture_normal = Catalog.texture_for(peer_avatar, true)
+	_peer_avatar.disabled = not _can_open_peer_profile(_open_code)
 	_peer_label.tooltip_text = identity_text
 	if RealtimeService.is_online() and not ChatService.kicked:
 		_status_label.text = _text("● 在线", "● Online") if peer_online else _text("● 离线", "● Offline")

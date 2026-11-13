@@ -1825,10 +1825,14 @@ func _show_chat_screen(focus_code: String = "", back_to_friends: bool = false, t
 	# ChatScreen 声明并 emit 了 join_party_requested，全仓却没有任何 connect，
 	# 于是点「加入」什么都不会发生（用户报的「好像未实现，点击无反应」）。
 	screen.join_party_requested.connect(_join_party_by_id)
-	# 世界频道里点别人的名字 →「查看资料」：看完返回回世界频道（不是好友列表 —— 玩家是从那里来的）。
-	# 举报场合记 world：服务器会把他最近的世界频道发言复制进证据。
-	screen.profile_requested.connect(func(code: String) -> void:
-		_show_public_profile(code, func() -> void: _show_chat_screen("", back_to_friends, "world"), "world"))
+	screen.profile_requested.connect(func(code: String, chat_tab: String, conversation: String) -> void:
+		var own_code := str(AccountManager.profile.get("friend_code", ""))
+		var target := AccountManager.normalize_friend_code(code)
+		if target.is_empty() or target == AccountManager.normalize_friend_code(own_code):
+			return
+		var report_context := "world" if chat_tab == "world" else "profile"
+		_show_public_profile(target, func() -> void: _show_chat_screen(conversation, back_to_friends, chat_tab),
+			report_context))
 	_page_back_route = back
 	add_child(screen)
 
