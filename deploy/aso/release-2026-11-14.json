@@ -101,7 +101,8 @@
     "Marketing localization does not add in-game languages; all five descriptions state that the game interface supports Chinese and English only.",
     "No measured keyword search-volume or ranking guarantee is claimed.",
     "Saved App Info names/subtitles, version metadata and privacy links were read back for all five locales. Build 1.0.2 (100) and the three consumable products were submitted and read back as WAITING_FOR_REVIEW on 2026-11-14; this is not approval or release.",
-    "Device display name must exactly equal installed_display_name in the final signed IPA. English store name matches exactly; Malay, Indonesian and Chinese store names retain the GLory brand and localized auto-chess/team gameplay positioning."
+    "Device display name must exactly equal installed_display_name in the final signed IPA. English store name matches exactly; Malay, Indonesian and Chinese store names retain the GLory brand and localized auto-chess/team gameplay positioning.",
+    "On 2026-11-14 the prior submission was withdrawn with user authorization to refresh screenshots. The same build 100 and all three consumables were resubmitted at 10:09 and all four were read back as WAITING_FOR_REVIEW; this is not approval or release."
   ],
   "name_availability_adaptations": {
     "ms": {
@@ -150,16 +151,18 @@
     "audit_input_snapshot_sha256": "9dfad442b453e783d9468ec117858b694f650e33019c09b21e479a4f1ee691e0",
     "processing_complete": true,
     "selected_app_store_build": "1.0.2 (100)",
-    "submitted_local_time": "2026-11-14 01:45 Asia/Shanghai",
-    "submission_id": "5d04af88-0c8d-4206-8519-1538cf1d415a",
-    "submission_url": "https://appstoreconnect.apple.com/apps/6811578280/distribution/reviewsubmissions/details/5d04af88-0c8d-4206-8519-1538cf1d415a",
+    "submitted_local_time": "2026-11-14 10:09 Asia/Shanghai",
+    "submission_id": "eab3149e-0925-4079-b391-54f964b5c888",
+    "submission_url": "https://appstoreconnect.apple.com/apps/6811578280/distribution/reviewsubmissions/details/eab3149e-0925-4079-b391-54f964b5c888",
     "app_review_status": "WAITING_FOR_REVIEW",
     "three_iap_review_status": "WAITING_FOR_REVIEW",
     "submission_evidence": [
-      "review-submitted-100.txt",
-      "review-submitted-100.png",
-      "version-build100-saved.txt",
-      "testflight-100-internal-assigned.txt"
+      "review-resubmitted-four-items.txt",
+      "review-resubmitted-four-items.png",
+      "resubmission-result.json",
+      "media-final-matrix.json",
+      "all-sizes-final-audit.json",
+      "review-notes-readback.json"
     ],
     "release_option": "MANUAL",
     "internal_group": {
@@ -182,7 +185,10 @@
     "device_verification_evidence": "device-100.json",
     "new_build_device_qa_local_time": "2026-11-14 08:22 Asia/Shanghai",
     "new_build_device_storekit_prices_displayed": true,
-    "new_build_full_match_tested": false
+    "new_build_full_match_tested": false,
+    "submission_evidence_directory": "delivery/ios-store-screenshots-20261114",
+    "store_screenshots_five_locales_verified": true,
+    "store_screenshots_other_device_sizes_verified": true
   },
   "sales_availability": {
     "verification_source": "Parent agent reported live App Store Connect readback",
@@ -226,9 +232,9 @@
     "version": "1.0.2",
     "build_number": 100,
     "build_uuid": "f4d39aa0-2943-4e30-9fb6-cf86fcf6c12c",
-    "submission_id": "5d04af88-0c8d-4206-8519-1538cf1d415a",
-    "submission_url": "https://appstoreconnect.apple.com/apps/6811578280/distribution/reviewsubmissions/details/5d04af88-0c8d-4206-8519-1538cf1d415a",
-    "submitted_local_time": "2026-11-14 01:45 Asia/Shanghai",
+    "submission_id": "eab3149e-0925-4079-b391-54f964b5c888",
+    "submission_url": "https://appstoreconnect.apple.com/apps/6811578280/distribution/reviewsubmissions/details/eab3149e-0925-4079-b391-54f964b5c888",
+    "submitted_local_time": "2026-11-14 10:09 Asia/Shanghai",
     "status": "WAITING_FOR_REVIEW",
     "items": [
       {
@@ -265,18 +271,22 @@
       "assigned": true
     },
     "external_group_assigned_this_turn": false,
-    "new_build_device_installed": false,
+    "new_build_device_installed": true,
     "new_build_device_payment_tested": false,
     "demo_attachment": "Reference TestFlight 81 recording accurately labeled in notes",
     "evidence": [
-      "review-submitted-100.txt",
-      "review-submitted-100.png",
-      "version-build100-saved.txt",
-      "testflight-100-internal-assigned.txt"
+      "review-resubmitted-four-items.txt",
+      "review-resubmitted-four-items.png",
+      "resubmission-result.json",
+      "media-final-matrix.json",
+      "all-sizes-final-audit.json",
+      "review-notes-readback.json"
     ],
     "base_id": "glory-ios-20261114-prod-review",
     "retained_baseline_directory": "/Volumes/repository/github/GLory/build/patch-baselines/glory-ios-20261114-prod-review",
-    "ipa_sha256": "4ec3e49257b5398d65f24f52a05530106827aec1bf266194b740cdd849979f7e"
+    "ipa_sha256": "4ec3e49257b5398d65f24f52a05530106827aec1bf266194b740cdd849979f7e",
+    "evidence_directory": "delivery/ios-store-screenshots-20261114",
+    "supersedes_submission_id": "5d04af88-0c8d-4206-8519-1538cf1d415a"
   },
   "qa_evidence_limits": {
     "build_100_new_physical_device_install_performed": true,
@@ -284,7 +294,7 @@
     "build_100_new_physical_device_payment_test_performed": false,
     "build_81_recording_is_reference_only": true,
     "build_99_or_source_physical_tests_do_not_verify_build_100": true,
-    "build_100_checks": "Final signed IPA / source / patch-baseline audit and 326 automated performance assertions, plus 24 iOS build and 8 real patch-export regression checks. After the 01:45 submission, build 100 was installed through TestFlight at 08:10:56, and regular TestFlight launch, icon resume, the installed name, lobby, three USD StoreKit display prices and purchase buttons were verified by 08:22. No purchase, new server order/credit, MYR price, new recording or full match was tested.",
+    "build_100_checks": "Final signed IPA / source / patch-baseline audit and 326 automated performance assertions, plus 24 iOS build and 8 real patch-export regression checks. After the 01:45 submission, build 100 was installed through TestFlight at 08:10:56, and regular TestFlight launch, icon resume, the installed name, lobby, three USD StoreKit display prices and purchase buttons were verified by 08:22. No purchase, new server order/credit, MYR price, new recording or full match was tested. Later, original build-100 physical iPhone screenshots were captured in bot-only custom rooms for the 10:09 resubmission; no new purchase/credit test or full-match acceptance was performed. iPad images are same-version application-scene renders on macOS, not device/Simulator or performance evidence.",
     "review_approved": false,
     "released_to_app_store": false,
     "build_100_physical_device_display_name_verified": true,
@@ -293,7 +303,13 @@
     "build_100_storekit_price_display_verified": true,
     "build_100_server_order_credit_verified": false,
     "build_100_malaysia_myr_prices_verified": false,
-    "build_100_full_match_tested": false
+    "build_100_full_match_tested": false,
+    "build_100_new_physical_device_screenshots_captured": true,
+    "build_100_screenshot_gameplay_verified": [
+      "preparation and recruitment",
+      "automatic team battles",
+      "treasure choices"
+    ]
   },
   "device_verification": {
     "checked_local_time": "2026-11-14 08:22 Asia/Shanghai",
@@ -372,5 +388,115 @@
       "scope": "Source routing plus visible prices/buttons verified; no purchase or wallet-credit verification."
     }
   },
-  "submission_snapshot_scope": "The embedded submission record describes 2026-11-14 01:45 Asia/Shanghai, when build 100 had not yet been installed on the physical device. Current 08:10:56 installation/name verification is recorded separately in device_verification."
+  "submission_snapshot_scope": "Current submission describes the 2026-11-14 10:09 Asia/Shanghai screenshot refresh and resubmission of the same build 100. The 01:45 record is retained in submission_history. No new binary, patch baseline or payment test was created.",
+  "submission_history": [
+    {
+      "app_id": "6811578280",
+      "version": "1.0.2",
+      "build_number": 100,
+      "build_uuid": "f4d39aa0-2943-4e30-9fb6-cf86fcf6c12c",
+      "submission_id": "5d04af88-0c8d-4206-8519-1538cf1d415a",
+      "submission_url": "https://appstoreconnect.apple.com/apps/6811578280/distribution/reviewsubmissions/details/5d04af88-0c8d-4206-8519-1538cf1d415a",
+      "submitted_local_time": "2026-11-14 01:45 Asia/Shanghai",
+      "status": "WAITING_FOR_REVIEW",
+      "items": [
+        {
+          "type": "app",
+          "version": "1.0.2",
+          "build_number": 100,
+          "status": "WAITING_FOR_REVIEW"
+        },
+        {
+          "type": "consumable",
+          "product_id": "diamond_pack_1",
+          "base_diamonds": 50,
+          "status": "WAITING_FOR_REVIEW"
+        },
+        {
+          "type": "consumable",
+          "product_id": "diamond_pack_2",
+          "base_diamonds": 200,
+          "status": "WAITING_FOR_REVIEW"
+        },
+        {
+          "type": "consumable",
+          "product_id": "diamond_pack_3",
+          "base_diamonds": 500,
+          "status": "WAITING_FOR_REVIEW"
+        }
+      ],
+      "release_option": "MANUAL",
+      "uploaded": true,
+      "processing_complete": true,
+      "internal_group": {
+        "name": "GLory 内部验证",
+        "testers": 10,
+        "assigned": true
+      },
+      "external_group_assigned_this_turn": false,
+      "new_build_device_installed": false,
+      "new_build_device_payment_tested": false,
+      "demo_attachment": "Reference TestFlight 81 recording accurately labeled in notes",
+      "evidence": [
+        "review-submitted-100.txt",
+        "review-submitted-100.png",
+        "version-build100-saved.txt",
+        "testflight-100-internal-assigned.txt"
+      ],
+      "base_id": "glory-ios-20261114-prod-review",
+      "retained_baseline_directory": "/Volumes/repository/github/GLory/build/patch-baselines/glory-ios-20261114-prod-review",
+      "ipa_sha256": "4ec3e49257b5398d65f24f52a05530106827aec1bf266194b740cdd849979f7e",
+      "disposition": "withdrawn_for_screenshot_replacement",
+      "evidence_directory": "delivery/app-review-20261114",
+      "superseded_by": "eab3149e-0925-4079-b391-54f964b5c888"
+    }
+  ],
+  "store_screenshots_update": {
+    "submitted_local_time": "2026-11-14 10:09 Asia/Shanghai",
+    "submission_id": "eab3149e-0925-4079-b391-54f964b5c888",
+    "evidence_directory": "delivery/ios-store-screenshots-20261114",
+    "different_png_originals": 6,
+    "iphone_dimensions": [
+      2622,
+      1206
+    ],
+    "ipad_dimensions": [
+      2752,
+      2064
+    ],
+    "iphone_source": "Physical iPhone running TestFlight 1.0.2 (100), original iOS system PNG",
+    "ipad_source": "Same build-100 source/assets application scenes rendered on macOS; not iPad device or Simulator screenshots",
+    "pixel_transforms": "none",
+    "locale_device_views_verified": 10,
+    "other_device_sizes_verified": true,
+    "en_gb_inherits_en_us_verified": true,
+    "review_notes_characters": 3984,
+    "review_notes_saved_and_read_back": true,
+    "new_recording_or_payment_test": false,
+    "binary_changed": false,
+    "baseline_changed": false,
+    "locale_counts": {
+      "zh-Hans": {
+        "iphone": 1,
+        "ipad": 1
+      },
+      "en-US": {
+        "iphone": 3,
+        "ipad": 1
+      },
+      "en-GB": {
+        "iphone": 3,
+        "ipad": 1,
+        "source": "en-US"
+      },
+      "ms": {
+        "iphone": 3,
+        "ipad": 1
+      },
+      "id": {
+        "iphone": 3,
+        "ipad": 1
+      }
+    }
+  }
 }
