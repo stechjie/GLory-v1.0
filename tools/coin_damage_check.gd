@@ -80,10 +80,23 @@ func run() -> void:
 	h.expect(plane.mesh.size == bounds.size and plane.position.x == 0.0 and plane.position.z == 0.0,"lane_bounds","Wave geometry remains inside the supplied lane")
 	var origin: Vector2 = plane.material_override.get_shader_parameter("origin_uv")
 	h.expect(origin.is_equal_approx(Vector2(2.5/3.0,5.5/6.0)),"wave_origin","Wave originates at final enemy rather than lane center")
+	# 11.14：第 21 回合横路 + 皮肤扫光。光幕沿 x 推、转 90°；四种皮肤都能起扫光，块照样 1.05 秒内释放。
+	var sweeps: Array = []
+	for kind in ["fire", "petal", "frost", "wisp"]:
+		var swept := LaneBurst.new()
+		add_child(swept)
+		swept.play_clear(Vector3(1.0,0.0,0.0),Rect2(-3.0,-1.0,6.0,2.0),[],{"from":Vector3(-3.0,0.0,0.0),"to":Vector3(3.0,0.0,0.0),"kind":kind})
+		var front := swept.get_node_or_null("SkinSweepFront")
+		h.expect(front != null and front.get_child_count() >= 3,"skin_sweep_%s" % kind,"Skin sweep front carries a curtain and particles")
+		sweeps.append(swept)
+	var horizontal := sweeps[0].get_node_or_null("LaneClearCurtain0") as Node3D
+	h.expect(horizontal != null and is_equal_approx(horizontal.rotation.y, PI * 0.5),"final_curtain_turned","Horizontal lane curtains are turned to span the lane")
 	await get_tree().create_timer(1.05).timeout
 	await get_tree().process_frame
 	h.expect(not is_instance_valid(fx), "burst_released", "Transient coin burst releases itself")
 	h.expect(not is_instance_valid(wave),"wave_released","Lane clear has no lingering nodes")
+	for swept in sweeps:
+		h.expect(not is_instance_valid(swept),"sweep_released","Skin sweep lane clear has no lingering nodes")
 	var source := FileAccess.get_file_as_string("res://scenes/battle/BattleVfx.gd")
 	h.expect(not source.contains("_record_personal_kill") and not source.contains("show_kills"), "removed_kills", "Old personal Kills counter is removed")
 	h.expect(not FileAccess.get_file_as_string("res://ui/services/SfxService.gd").contains("CUE_KILL_STREAK"), "removed_streak_audio", "Old streak cue is unregistered")

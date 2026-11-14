@@ -748,6 +748,8 @@ func _prepare_battle_models() -> void:
 
 	if is_instance_valid(bar):
 		bar.queue_free()
+	# 11.14：清场皮肤扫光的贴图是代码现画的，开战前画好（有缓存，之后的回合不再花时间）。
+	preload("res://effects/vfx3d/modules/VFXLaneClearBurst3D.gd").warm_skin_textures(_PREP_SKIN.refresh_fx())
 	# 9.17：Boss 登场。放在这里而不是 _start_battle_music() 里 ——
 	# 后者在进场景那一刻就会被调一次（BattleScreen.gd:98），那时 replay 还没到、
 	# 单位模型还没建，声音会比画面早一整段读条。
