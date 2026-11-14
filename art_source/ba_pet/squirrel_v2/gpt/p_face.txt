@@ -1,0 +1,8 @@
+The user has already reviewed and approved this image generation. Generate it now without asking for confirmation, and save the PNG into the current directory as face_decal.png.
+
+The attached image is a squirrel character. Make a FACE DECAL TEXTURE SHEET for its 3D model (used like an anime game "eye + mouth" texture layer):
+- Draw ONLY the two eyes (with eyelashes, big round brown irises, two white highlights each), the small brown nose and the small open smiling mouth with pink tongue, exactly the same design as the attached image.
+- Perfectly front-facing, flat, no head, no fur, no outline of the face.
+- Arranged exactly as they sit on the face (same spacing as the attached image), centered, filling about 70% of the image width.
+- Flat cel colors, crisp clean edges, no shading on the skin, no blush.
+- Plain pure white background, no text.

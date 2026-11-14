@@ -1,0 +1,24 @@
+{
+ "fx": "lightning/zap-hit",
+ "columns": 4,
+ "rows": 5,
+ "frame_count": 19,
+ "fps": 20,
+ "duration": 0.95,
+ "cell_px": [
+  304,
+  194
+ ],
+ "cell_src_px": [
+  202.67,
+  129.33
+ ],
+ "pivot": [
+  0.5197,
+  0.5
+ ],
+ "sheet_px": [
+  1216,
+  970
+ ]
+}

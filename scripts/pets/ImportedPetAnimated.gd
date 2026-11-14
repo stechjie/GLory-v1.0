@@ -10,10 +10,17 @@ extends Node3D
 # loops the run clip). Measured by skinning both meshes at rest pose; every other
 # pet's pair already matches and keeps 1.0.
 @export var run_model_scale := 1.0
+# GLB 自带的是标准 PBR 材质，会吃场景灯光、和另外三只宠物的卡通风格对不上。
+# 开着时按每个面片原来的颜色贴图换成 BA 风格着色（ba_toon + 屏幕像素宽描边 ba_outline）。
+@export var use_ba_toon := true
+
+const BA_TOON_SHADER := preload("res://shaders/ba_toon.gdshader")
+const BA_OUTLINE_SHADER := preload("res://shaders/ba_outline.gdshader")
 
 @onready var model_root: Node3D = $ModelRoot
 var _actions: Dictionary = {}
 var _current := ""
+var _ba_materials: Dictionary = {}  # 颜色贴图 -> 换好的材质，同一张贴图只建一次
 
 func _ready() -> void:
     for entry in [{"name": "idle", "scene": idle_model}, {"name": "run", "scene": run_model}]:
@@ -27,6 +34,8 @@ func _ready() -> void:
         model.visible = false
         if str(entry.name) == "run":
             model.scale *= run_model_scale
+        if use_ba_toon:
+            _apply_ba_toon(model)
         model_root.add_child(model)
         _actions[str(entry.name)] = model
     play_idle()
@@ -62,6 +71,31 @@ func _activate(action: String, restart: bool = false) -> void:
         if animation != null:
             animation.loop_mode = Animation.LOOP_LINEAR
         player.play(animations[0])
+
+func _apply_ba_toon(root: Node) -> void:
+    for found in root.find_children("*", "MeshInstance3D", true, false):
+        var mesh_instance := found as MeshInstance3D
+        if mesh_instance.mesh == null:
+            continue
+        for i in mesh_instance.mesh.get_surface_count():
+            var source := mesh_instance.get_active_material(i) as BaseMaterial3D
+            if source == null or source.albedo_texture == null:
+                continue
+            mesh_instance.set_surface_override_material(i, _ba_material(source.albedo_texture))
+
+func _ba_material(texture: Texture2D) -> ShaderMaterial:
+    if _ba_materials.has(texture):
+        return _ba_materials[texture]
+    var outline := ShaderMaterial.new()
+    outline.shader = BA_OUTLINE_SHADER
+    outline.render_priority = -1
+    outline.set_shader_parameter("albedo_texture", texture)
+    var material := ShaderMaterial.new()
+    material.shader = BA_TOON_SHADER
+    material.set_shader_parameter("albedo_texture", texture)
+    material.next_pass = outline
+    _ba_materials[texture] = material
+    return material
 
 func _find_player(node: Node) -> AnimationPlayer:
     if node is AnimationPlayer:

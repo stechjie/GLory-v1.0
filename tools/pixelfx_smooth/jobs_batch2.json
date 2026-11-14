@@ -1,0 +1,10 @@
+{
+ "out_dir": "assets/vfx/skills/pixelfx",
+ "meta_dir": "tools/pixelfx_smooth/sheets_batch2",
+ "jobs": [
+  {"name": "charm_hearts", "fx": "status/charmed", "fps": 12, "scale": 2, "t1": 2.4, "opts": {"eyes": false}},
+  {"name": "guard_dome", "fx": "scifi/force-field", "fps": 12, "scale": 1.5, "t1": 2.4, "crop": [8, 22, 146, 92], "crop_feather": 14, "opts": {"palette": ["#3b1d2a", "#7a3a2c", "#c4652e", "#f0a040", "#ffd25e", "#fff0a0", "#fffbe0", "#ffffff"], "sparks": ["#ffffff", "#fff0a0", "#ffd25e", "#f0a040"]}},
+  {"name": "guard_runes", "fx": "arcane/rune-circle", "fps": 10, "scale": 1.2, "t1": 3.9, "opts": {"palette": ["#3b1d2a", "#7a3a2c", "#c4652e", "#f0a040", "#ffd25e", "#fff0a0", "#fffbe0", "#ffffff"]}},
+  {"name": "angel_pillar", "fx": "holy/holy-pillar", "fps": 15, "scale": 1, "t0": 0.35, "t1": 2.2}
+ ]
+}

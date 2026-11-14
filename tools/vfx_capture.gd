@@ -73,6 +73,7 @@ var _camera: Camera3D = null
 var _rulers: Dictionary = {}
 var _frame := 0
 var _current_skill := ""
+var _current_attribute := ""
 
 func _initialize() -> void:
 	# 特效模块里有 randf_range（火花方向、翻页速度等）。不定死种子的话
@@ -118,7 +119,12 @@ func _process(_delta: float) -> bool:
 		_play(_skills[index])
 	return false
 
-func _play(skill_id: String) -> void:
+func _play(entry: String) -> void:
+	# --skills 里可以写 skill@属性（如 random_attribute_bolt@fire），给按属性分支的技能指定属性；
+	# 不写 @ 就和原来一样。
+	var parts := entry.split("@", false)
+	var skill_id := parts[0]
+	_current_attribute = parts[1] if parts.size() > 1 else ""
 	_current_skill = skill_id
 	# 并发计数应当在每个技能开播前回到 0。回不去说明有块没被释放，
 	# 上限会越收越紧，最后把后面的技能全部饿死 —— 这条日志就是用来盯这个的。
@@ -140,6 +146,12 @@ func _clear_previous() -> void:
 		child.queue_free()
 
 func _context() -> Dictionary:
+	var context := _base_context()
+	if not _current_attribute.is_empty():
+		context["attribute"] = _current_attribute
+	return context
+
+func _base_context() -> Dictionary:
 	return {
 		"targets": GROUP_POS.duplicate(),
 		"origin_node": _origin_unit.get_node("CastAnchor"),

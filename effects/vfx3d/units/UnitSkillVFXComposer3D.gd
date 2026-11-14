@@ -185,7 +185,7 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 		"true_damage_attack":_true_damage_hit(target)
 		"curse_attack":_oga_pack_skill("curse_attack",origin,target,context)
 		"same_target_damage_stack":_oga_pack_skill("same_target_damage_stack",origin,target,context)
-		"poison_attack":_oga_pack_skill("poison_attack",origin,target,context)
+		"poison_attack":_poison_cloud_attack(origin,target,context)
 		"defense_down_attack":_defense_down_hit(target,context)
 		"every_fourth_combo":_combo_hit(origin,target,context)
 		"every_fifth_group_heal":_holy_group(origin,context)
@@ -505,6 +505,22 @@ func _oga_pack_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dicti
 	last_spawned=effect
 	effect.play_spec(_oga_pack_points(origin,target,context),spec,context)
 
+# 毒灵 / 飞灵的毒每次攻击都会触发。同一目标 POISON_CLOUD_COOLDOWN 秒内只放一次毒云，
+# 否则连续的云叠在一起把棋子整个盖住（11.13 用户反馈）。
+const POISON_CLOUD_COOLDOWN:=1.6
+var _poison_cloud_at:Dictionary={}
+
+func _poison_cloud_attack(origin:Vector3,target:Vector3,context:Dictionary)->void:
+	var node_value:Variant=context.get("target_node")
+	var key:Variant=(node_value as Node).get_instance_id() if is_instance_valid(node_value) and node_value is Node else Vector3i(roundi(target.x*4.0),0,roundi(target.z*4.0))
+	var now:=Time.get_ticks_msec()*0.001
+	if now-float(_poison_cloud_at.get(key,-100.0))<POISON_CLOUD_COOLDOWN:
+		return
+	_poison_cloud_at[key]=now
+	if _poison_cloud_at.size()>64:
+		_poison_cloud_at.clear()
+	_oga_pack_skill("poison_attack",origin,target,context)
+
 func _oga_pack_group_skill(skill_id:String,origin:Vector3,context:Dictionary)->void:
 	var spec:Dictionary=OGA_SKILL_CATALOG.skill_for(skill_id)
 	if spec.is_empty():
@@ -513,10 +529,13 @@ func _oga_pack_group_skill(skill_id:String,origin:Vector3,context:Dictionary)->v
 	cast_spec.erase("target_layers")
 	_oga_pack_skill_from_spec(origin,origin,context,cast_spec)
 	var target_layers:Array=spec.get("target_layers",[])
+	# targets 里是脚底坐标（BattleVfx._living_team_world_positions），而 _oga_pack_points 按「身体锚点」
+	# 推算 target_ground（再减 0.55 身高）。先抬回身体高度，否则天使的莲花会沉到地面以下。
+	var body_lift:=Vector3(0.0,_uh(context)*0.55,0.0)
 	for value:Variant in _capped_targets(context.get("targets",[])).slice(0,4):
 		if not value is Vector3:
 			continue
-		_oga_pack_skill_from_spec(origin,value,context,{"layers":target_layers})
+		_oga_pack_skill_from_spec(origin,(value as Vector3)+body_lift,context,{"layers":target_layers})
 
 func _oga_pack_skill_from_spec(origin:Vector3,target:Vector3,context:Dictionary,spec:Dictionary)->void:
 	var effect:=_block(VFX_OGA_PACK_SKILL) as VFXPackSkill3D
@@ -606,6 +625,9 @@ func _oga_blood_link(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	last_spawned=link
 	link.play_link(_lvl(origin,_uh(context,"origin_height"),LEVEL_BODY),_lvl(target,_uh(context),LEVEL_BODY),context)
 
+# pixelfx 光柱（angel_pillar，t0=0.35 起截）里光束落到地面的时刻。
+const ANGEL_PILLAR_LANDING:=0.5
+
 func _angel_guard(target:Vector3,context:Dictionary)->void:
 	# Dedicated new-material route. Do not call the generic barrier, the old
 	# HOLY_SHIELD scene, or any god_archangel texture from assets/vfx/skills.
@@ -616,12 +638,15 @@ func _angel_guard(target:Vector3,context:Dictionary)->void:
 	# Spawn it through the critical lane so a crowded battle cannot silently drop
 	# the only protection readout for the selected ally.
 	# 10.18「降临」起手：一道蓝白圣光柱落到目标脚下，落地一圈闪光 + 向上溅起的光点，
-	# 护盾在光柱触地那一刻才成形。光柱按 VFXFallingPillar3D 的节奏在 duration*0.24 触地。
+	# 护盾在光柱触地那一刻才成形（11.13 起触地时刻是 ANGEL_PILLAR_LANDING）。
 	var th:=_uh(context)
 	var foot:=_lvl(target,th,LEVEL_FOOT,0.0)
-	var pillar_profile:=_profile(Color(.04,.10,.26),Color(.46,.76,1.0),Color(.95,.99,1.0),.92,.92,3.4,10)
-	_spawn(VFX_FALLING_PILLAR,pillar_profile,{"target":foot})
-	var descend_at:=pillar_profile.duration*.24
+	# 11.13：起手光柱换成 pixelfx 金色光束扇形 + 光柱（OgaSkillVFXCatalog["random_ally_damage_reduction"]），
+	# 光束约 0.5 秒落到脚下，护盾在那一刻成形。原 VFXFallingPillar3D 蓝白光柱停用。
+	var pillar_spec:Dictionary=OGA_SKILL_CATALOG.skill_for("random_ally_damage_reduction")
+	if not pillar_spec.is_empty():
+		_oga_pack_skill_from_spec(target,target,context,pillar_spec)
+	var descend_at:=ANGEL_PILLAR_LANDING
 	var flash:=_block(VFX_IMPACT_FLASH) as VFXImpactFlash3D
 	var sparks:=_block(VFX_SPARKS) as VFXMaskedParticle3D
 	_after(descend_at,func()->void:
@@ -933,47 +958,16 @@ func _attribute_bolt(origin:Vector3,target:Vector3,context:Dictionary)->void:
 	)
 
 func _stun_hit(origin:Vector3,target:Vector3,context:Dictionary)->void:
-	var th := _uh(context)
-	# Succubus stun: a hooked slash, the hook tip gathering above the head, then
-	# an incomplete thorn knot left there.  This used to be an orange EnergyBurst
-	# plus a white flash - a fire palette the dark race should never wear.
-	var flip:=(target-origin).x<0.0
-	var seed:=float(abs(int(target.x*37.0+target.z*19.0))%97)
-	var target_node_value:Variant=context.get("target_node")
-	var slash:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
-	if slash!=null:
-		slash.play_layer(SUC_HOOK_SLASH_TEXTURE,{
-			"name":"SucStun_Hook","position":_lvl(target,th,LEVEL_BODY),
-			"size":Vector2(1.52,1.14),"duration":.40,
-			"start_scale":.14,"peak_scale":.94,"end_scale":1.06,
-			"rotation_z":PI if flip else 0.0,
-			"dark_tint":DARK_EDGE,"body_tint":DARK_BODY,"core_tint":DARK_CORE,
-			"flow_strength":.022,"opacity":.96,"seed":seed
-		})
-	var impact:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
-	if impact!=null:
-		impact.play_layer(SUC_HOOK_IMPACT_TEXTURE,{
-			"name":"SucStun_Impact","position":_lvl(target,th,LEVEL_BODY),
-			"size":Vector2(1.16,.82),"duration":.38,
-			"start_scale":.10,"peak_scale":.78,"end_scale":.92,
-			"rotation_z":-.42,
-			"dark_tint":DARK_EDGE,"body_tint":DARK_BODY,"core_tint":DARK_CORE,
-			"flow_strength":.020,"opacity":.94,"delay":.16,"seed":seed+3.0
-		})
-	var knot:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
-	if knot!=null:
-		# The head-top stun icon still belongs to StatusVFXController; this only
-		# adds a thorn knot that follows the target.
-		knot.play_layer(SUC_BIND_KNOT_TEXTURE,{
-			"name":"SucStun_Knot","position":_lvl(target,th,LEVEL_HEAD),
-			"size":Vector2(.62,.63),
-			"duration":clampf(float(context.get("status_duration",1.0)),.80,2.0),
-			# Peak capped at .68: any larger covers the head and the HP bar (4.3).
-			"start_scale":.16,"peak_scale":.68,"end_scale":.86,
-			"dark_tint":DARK_INK_EDGE,"body_tint":Color(1.0,.76,.90),"core_tint":Color(1.0,.70,.92),
-			"flow_strength":.018,"opacity":.96,"delay":.30,"seed":seed+7.0,
-			"follow_node":target_node_value
-		})
+	# 11.13：魅魔眩晕 = 目标头顶跳动的粉色爱心（OgaSkillVFXCatalog["stun"]，pixelfx 平滑版）。
+	# 旧的钩斩 / 冲击 / 荆棘结三层在战斗镜头里几乎看不见，已停用。爱心按眩晕剩余时长截短。
+	var spec:Dictionary=OGA_SKILL_CATALOG.skill_for("stun")
+	if spec.is_empty():
+		return
+	var hold:=clampf(float(context.get("status_duration",1.2)),1.0,2.4)
+	for layer:Variant in spec.get("layers",[]):
+		if layer is Dictionary:
+			(layer as Dictionary)["duration"]=hold
+	_oga_pack_skill_from_spec(origin,target,context,spec)
 
 func _judgement(origin:Vector3,target:Vector3)->void:
 	var th := UNIT_HEIGHT_FALLBACK

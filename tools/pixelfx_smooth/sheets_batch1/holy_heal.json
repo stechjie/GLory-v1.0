@@ -1,0 +1,24 @@
+{
+ "fx": "holy/heal",
+ "columns": 8,
+ "rows": 4,
+ "frame_count": 29,
+ "fps": 15,
+ "duration": 1.933,
+ "cell_px": [
+  123,
+  224
+ ],
+ "cell_src_px": [
+  61.5,
+  112
+ ],
+ "pivot": [
+  0.4959,
+  0.75
+ ],
+ "sheet_px": [
+  984,
+  896
+ ]
+}

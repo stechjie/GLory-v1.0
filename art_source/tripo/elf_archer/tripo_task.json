@@ -1,0 +1,21 @@
+{
+  "task_id": "3c0e2996-fb2f-4e54-8e31-83f60a534b24",
+  "request": {
+    "type": "image_to_model",
+    "file": {
+      "type": "png",
+      "file_token": "ab3807c7-b967-4777-9f05-2f4b905fede0"
+    },
+    "texture": true,
+    "pbr": false,
+    "texture_quality": "detailed",
+    "texture_alignment": "original_image",
+    "auto_size": true,
+    "orientation": "align_image"
+  },
+  "saved": {
+    "model": "art_source\\tripo\\elf_archer\\model_model.glb",
+    "rendered_image": "art_source\\tripo\\elf_archer\\model_rendered_image.webp"
+  },
+  "consumed_credit": 40
+}

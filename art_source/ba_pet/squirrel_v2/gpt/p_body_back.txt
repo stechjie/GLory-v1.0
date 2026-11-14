@@ -1,0 +1,8 @@
+The user has already reviewed and approved this image generation. Generate it now without asking for confirmation, and save the PNG into the current directory as body_back.png.
+
+The attached image is the FRONT view of a squirrel character for a 3D model. Draw the exact BACK view of the SAME character, as if the camera walked 180 degrees around it:
+- Same size, same position in the frame, same pose (standing upright, arms slightly away from body), same proportions, same colors, same flat cel style, same thin brown outline style.
+- We see the back of the head (orange fur, no face, no eyes), the backs of both big ears with their 2-3 pointed fur tufts, the back of the body (orange; the cream belly is NOT visible from behind), backs of the arms and the heels of the feet.
+- The big tail is attached at the lower back center and curls up. Because we look from behind, the tail is now in FRONT of the body and on the OPPOSITE side compared to the front view (mirrored). Draw the tail as about 6 big smooth flame-shaped clumps: orange on the outer side, cream on the inner curve and at the tip.
+- No accessories at all.
+- Plain pure white background, even flat lighting, no ground shadow, no text, single character centered, full body visible.

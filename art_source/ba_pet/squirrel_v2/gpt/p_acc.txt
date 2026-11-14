@@ -1,0 +1,8 @@
+The user has already reviewed and approved this image generation. Generate it now without asking for confirmation, and save the PNG into the current directory as accessories.png.
+
+The attached illustration shows a squirrel character carrying accessories. Draw ONLY the accessories as separate 3D-modeling reference props, with NO squirrel at all, laid out on a 2x2 grid with lots of empty white space between them (no prop touches another or the image edge):
+- top-left: the green leaf scarf/cape worn around the neck, laid out as if worn, front view, a few big clean leaf shapes, with the small gold bell at the knot.
+- top-right: the rolled parchment scroll / bedroll with its brass ring band, side view.
+- bottom-left: the brown leather belt-satchel strap with its hanging acorns, two small gold bells and the small blue gem, front view, strap shaped as a short open arc.
+- bottom-right: the small glowing lantern with wooden/brass frame and leaf glass, front view, upright.
+Style: clean modern anime 3D game prop concept, flat cel colors with almost no painted shading, no gradients, no brush texture, simple readable shapes, thin brown outlines, colors matching the illustration. Plain pure white background, even flat lighting, no shadows, no text, no labels.

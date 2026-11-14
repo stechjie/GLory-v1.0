@@ -1,0 +1,24 @@
+{
+ "fx": "ice/ice-lance",
+ "columns": 2,
+ "rows": 4,
+ "frame_count": 8,
+ "fps": 15,
+ "duration": 0.533,
+ "cell_px": [
+  255,
+  103
+ ],
+ "cell_src_px": [
+  127.5,
+  51.5
+ ],
+ "pivot": [
+  0.6157,
+  0.4951
+ ],
+ "sheet_px": [
+  510,
+  412
+ ]
+}

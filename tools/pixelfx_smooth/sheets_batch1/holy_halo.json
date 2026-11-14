@@ -1,0 +1,24 @@
+{
+ "fx": "holy/halo",
+ "columns": 4,
+ "rows": 5,
+ "frame_count": 19,
+ "fps": 15,
+ "duration": 1.267,
+ "cell_px": [
+  101,
+  95
+ ],
+ "cell_src_px": [
+  50.5,
+  47.5
+ ],
+ "pivot": [
+  0.495,
+  1.4632
+ ],
+ "sheet_px": [
+  404,
+  475
+ ]
+}

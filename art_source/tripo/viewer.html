@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tripo 模型预览</title>
+<style>
+  :root { --bg:#eef4fb; --panel:#ffffffd9; --ink:#1d2a3a; --accent:#2f8cff; }
+  html,body { margin:0; height:100%; background:linear-gradient(#f7fbff,#dde9f7); color:var(--ink);
+    font-family:"Microsoft YaHei",system-ui,sans-serif; overflow:hidden; }
+  #ui { position:fixed; top:12px; left:12px; background:var(--panel); padding:10px 12px; border-radius:10px;
+    box-shadow:0 2px 10px #0002; font-size:13px; display:flex; flex-direction:column; gap:6px; }
+  #ui button { border:1px solid #c5d3e6; background:#fff; border-radius:6px; padding:4px 10px; cursor:pointer; }
+  #ui button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  #stat { font-size:12px; opacity:.7; }
+</style>
+</head>
+<body>
+<div id="ui">
+  <div>
+    <button data-mode="toon" class="on">卡通（碧蓝档案风）</button>
+    <button data-mode="raw">Tripo 原始</button>
+  </div>
+  <label><input type="checkbox" id="outline" checked> 描边</label>
+  <label><input type="checkbox" id="spin" checked> 自动旋转</label>
+  <div id="stat">加载中…</div>
+</div>
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+const file = new URLSearchParams(location.search).get("m") || "elf_archer/model_model.glb";
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(30, innerWidth/innerHeight, 0.01, 100);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+const hemi = new THREE.HemisphereLight(0xffffff, 0xb8c6dd, 1.6);
+const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+sun.position.set(1.5, 3, 2);
+scene.add(hemi, sun);
+
+// 两档色阶：亮面 1.0、暗面偏冷蓝 —— 碧蓝档案那种干净的赛璐珞阴影
+const ramp = new THREE.DataTexture(new Uint8Array([150,160,185,255, 255,255,255,255]), 2, 1);
+ramp.minFilter = ramp.magFilter = THREE.NearestFilter; ramp.needsUpdate = true;
+
+const root = new THREE.Group(); scene.add(root);
+const meshes = [];
+const outlines = [];
+
+new GLTFLoader().load(file, (g) => {
+  const model = g.scene;
+  let tris = 0;
+  const found = [];
+  model.traverse((o) => { if (o.isMesh) found.push(o); });
+  found.forEach((o) => {
+    const raw = o.material;
+    const map = raw.map;
+    const toon = new THREE.MeshToonMaterial({ map, gradientMap: ramp });
+    o.userData.raw = raw; o.userData.toon = toon;
+    o.material = toon;
+    tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3;
+    meshes.push(o);
+    // 背面外扩描边（inverted hull）
+    const ol = new THREE.Mesh(o.geometry, new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      uniforms: { w: { value: 0.004 }, c: { value: new THREE.Color(0x5a4a3c) } },
+      vertexShader: `uniform float w; void main(){ vec3 p = position + normal * w;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(p,1.0); }`,
+      fragmentShader: `uniform vec3 c; void main(){ gl_FragColor = vec4(c,1.0); }`,
+    }));
+    o.add(ol); outlines.push(ol);
+  });
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3());
+  model.position.sub(center);
+  const s = 1 / size.y; root.scale.setScalar(s);
+  outlines.forEach(ol => ol.material.uniforms.w.value = 0.004 / s);
+  root.add(model);
+  camera.position.set(0, 0.1, 2.6); controls.target.set(0, 0, 0);
+  document.getElementById("stat").textContent =
+    `${file} · ${Math.round(tris).toLocaleString()} 三角面 · 尺寸 ${size.x.toFixed(2)}×${size.y.toFixed(2)}×${size.z.toFixed(2)}`;
+}, undefined, (e) => document.getElementById("stat").textContent = "加载失败: " + e);
+
+function setMode(m) {
+  meshes.forEach(o => o.material = m === "toon" ? o.userData.toon : o.userData.raw);
+  document.querySelectorAll("[data-mode]").forEach(b => b.classList.toggle("on", b.dataset.mode === m));
+}
+document.querySelectorAll("[data-mode]").forEach(b => b.onclick = () => setMode(b.dataset.mode));
+document.getElementById("outline").onchange = (e) => outlines.forEach(o => o.visible = e.target.checked);
+window.setMode = setMode; window.root = root; window.controls = controls; window.camera = camera;
+
+addEventListener("resize", () => { camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight); });
+const spin = document.getElementById("spin");
+renderer.setAnimationLoop(() => { if (spin.checked) root.rotation.y += 0.006; controls.update(); renderer.render(scene, camera); });
+</script>
+</body>
+</html>

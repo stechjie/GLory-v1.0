@@ -1,0 +1,24 @@
+{
+ "fx": "arcane/rune-circle",
+ "columns": 6,
+ "rows": 7,
+ "frame_count": 40,
+ "fps": 10,
+ "duration": 4,
+ "cell_px": [
+  193,
+  145
+ ],
+ "cell_src_px": [
+  160.83,
+  120.83
+ ],
+ "pivot": [
+  0.4953,
+  0.6897
+ ],
+ "sheet_px": [
+  1158,
+  1015
+ ]
+}

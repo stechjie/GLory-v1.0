@@ -1,0 +1,12 @@
+The user has already reviewed and approved this image generation. Generate it now without asking for confirmation, and save the PNG into the current directory as body_front.png.
+
+Use the attached illustration only as the character design reference (same squirrel: proportions, fur colors, face, eyes).
+
+Draw a 3D-modeling reference sheet image of THIS squirrel character's BODY ONLY:
+- Remove ALL accessories: no leaf scarf, no scroll, no bag, no belt, no acorns, no bells, no gem, no lantern. Paws are empty.
+- Exact front view, facing the camera straight on, orthographic feel, standing upright on both feet, arms held slightly away from the body (A-pose) so paws do not touch the body.
+- The big tail stays, curling up behind the body, visible on one side.
+- Style: clean modern anime chibi 3D character concept, like a high-quality anime gacha game model. Flat cel colors with almost no painted shading, no gradients, no texture brush strokes, no fur noise.
+- Fur is drawn as a FEW LARGE SMOOTH CLUMPS with clean silhouettes: ear tufts are 2-3 big pointed clumps, cheek fluff 2-3 clumps per side, the tail is made of about 6 big smooth flame-shaped clumps (orange outside, cream inside curve and tip). No thin flyaway strands.
+- Big round shiny anime eyes, small nose, small open smiling mouth, same as reference.
+- Plain pure white background, even flat lighting, no shadow on the ground, no text, single character centered, full body visible with margin.

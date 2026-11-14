@@ -93,6 +93,19 @@ Starter_Vfx 在 `effects/vfx3d/vfxv2/reference_packages/`。全路径见机器�
 `assets/vfx/oga/atlas_manifest.json`；作者、许可证和原始链接记录在
 `assets/vfx/oga/SOURCE_LICENSES.md`。本批没有导入 CC-BY 的 Leaf spell animation。
 
+### pixelfx 平滑序列帧（2026-11-13）
+
+`assets/vfx/skills/pixelfx/` 的序列帧（11.13 共 27 张），是用开源库 pixelfx 的特效代码**重新渲染**出来的
+（不是它的原图：用 `tools/pixelfx_smooth/` 改成高分辨率抗锯齿的平滑版，部分重新配色），
+**已连接正式战斗**：替换第一批 11 个棋子技能原来的 OGA 贴图（神侍、大祭司、天使、魔童、痛苦女王、
+毒灵、飞灵、巨甲灵、自爆灵、剑士、法师、暗影法师）。第二批（同日）：魅魔眩晕、光之卫士护罩/嘲讽、大天使起手光柱。
+
+- 来源：https://github.com/patch-gg/pixelfx（提交 `5294518`，2026-11-12），本地副本 `third_party/pixelfx/`（带 `.gdignore`，不进 Godot 资源扫描）。
+- 许可证：**MIT** — `third_party/pixelfx/LICENSE` 第 1–4 行，版权人 Patch、Hugo Duprez；
+  `NOTICE.md` 另注明 `sim.js` 与部分特效改编自 Sprite Fusion（Hugo Duprez，MIT）、`act.js` 改编自 Hollow Crown（MIT）。
+- 可再分发：✅ 是（MIT，保留版权声明即可）。`gallery/fonts` 里的 Patch Pixel 字体**不在** MIT 范围内，我们没有使用。
+- 渲染参数逐项记录在 `tools/pixelfx_smooth/jobs_batch1.json`、`jobs_batch2.json`，可重跑。
+
 ### 「仅 debug 路径」是什么意思
 
 `scripts/assets/BattleAssetManifest.gd:19-21` 写明：注册表里有 17 个外部 VFX，

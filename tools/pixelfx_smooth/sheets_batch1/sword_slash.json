@@ -1,0 +1,24 @@
+{
+ "fx": "melee/sword-slash",
+ "columns": 3,
+ "rows": 4,
+ "frame_count": 12,
+ "fps": 20,
+ "duration": 0.6,
+ "cell_px": [
+  237,
+  178
+ ],
+ "cell_src_px": [
+  158,
+  118.67
+ ],
+ "pivot": [
+  0.346,
+  0.7528
+ ],
+ "sheet_px": [
+  711,
+  712
+ ]
+}

@@ -1,0 +1,24 @@
+{
+ "fx": "holy/feather-burst",
+ "columns": 5,
+ "rows": 5,
+ "frame_count": 25,
+ "fps": 12,
+ "duration": 2.083,
+ "cell_px": [
+  255,
+  228
+ ],
+ "cell_src_px": [
+  204,
+  182.4
+ ],
+ "pivot": [
+  0.498,
+  0.4079
+ ],
+ "sheet_px": [
+  1275,
+  1140
+ ]
+}

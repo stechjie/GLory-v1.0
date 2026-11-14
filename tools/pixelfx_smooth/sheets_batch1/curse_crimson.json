@@ -1,0 +1,24 @@
+{
+ "fx": "shadow/curse",
+ "columns": 6,
+ "rows": 5,
+ "frame_count": 27,
+ "fps": 12,
+ "duration": 2.25,
+ "cell_px": [
+  215,
+  244
+ ],
+ "cell_src_px": [
+  134.38,
+  152.5
+ ],
+ "pivot": [
+  0.4958,
+  0.8434
+ ],
+ "sheet_px": [
+  1290,
+  1220
+ ]
+}

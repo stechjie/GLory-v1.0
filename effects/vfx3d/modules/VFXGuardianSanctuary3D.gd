@@ -5,6 +5,11 @@ class_name VFXGuardianSanctuary3D
 
 const SHIELD_SHADER := preload("res://effects/vfx3d/shaders/guardian_sanctuary.gdshader")
 const RANGE_SHADER := preload("res://effects/vfx3d/shaders/guardian_range.gdshader")
+const FLIPBOOK := preload("res://effects/vfx3d/modules/VFXSpriteFlipbook3D.gd")
+const SKILL_CATALOG := preload("res://effects/vfx3d/units/OgaSkillVFXCatalog.gd")
+# 11.13：主色从白改成神族金；护罩外观换成 pixelfx 金色蜂巢半球罩（循环序列帧，跟护罩状态淡入淡出），
+# 脚下加金色符文法阵（循环，跟嘲讽状态，护罩破了仍在）。贴图参数取自 OgaSkillVFXCatalog["guardian_shield_taunt"]。
+const GOLD := Color(1.0, 0.84, 0.42)
 const DEFAULT_WORLD_RADIUS := Vector2(180.0 * 14.5 * 0.88 / 1000.0, 180.0 * 10.0 * 0.88 / 520.0)
 
 var _shield_active := true
@@ -18,7 +23,7 @@ var _age := 0.0
 var _shield_fade := 0.0
 var _range_fade := 0.0
 var _spark_count := 18
-var _main_color := Color(1.0, 0.98, 0.93)
+var _main_color := GOLD
 var _shell: MeshInstance3D
 var _range: MeshInstance3D
 var _seal: MeshInstance3D
@@ -26,6 +31,10 @@ var _sparks: MultiMeshInstance3D
 var _shell_material: ShaderMaterial
 var _range_material: ShaderMaterial
 var _seal_material: ShaderMaterial
+var _gold_shield: VFXSpriteFlipbook3D
+var _gold_runes: VFXSpriteFlipbook3D
+# 符文法阵相对真实脚底（FootAnchor）的偏移：轴心抬高 + 少量朝镜头
+var _runes_ground_offset := Vector3.ZERO
 
 func play_guardian(origin: Vector3, context: Dictionary = {}) -> void:
 	begin()
@@ -35,7 +44,7 @@ func play_guardian(origin: Vector3, context: Dictionary = {}) -> void:
 	_shield_active = bool(context.get("shield_active", true))
 	_taunt_active = bool(context.get("taunt_active", true))
 	_world_radius = context.get("taunt_world_radius", DEFAULT_WORLD_RADIUS)
-	_main_color = context.get("main_color", Color(1.0, 0.98, 0.93))
+	_main_color = context.get("main_color", GOLD)
 	var owner_node: Variant = context.get("origin_node")
 	if is_instance_valid(owner_node) and owner_node is Node3D:
 		_owner = weakref(owner_node)
@@ -112,6 +121,44 @@ func _build() -> void:
 	material.emission_energy_multiplier = 0.7
 	_sparks.material_override = material
 	add_child(_sparks)
+	_build_gold_layers()
+
+# 金色半球罩（跟护罩状态）+ 脚下符文法阵（跟嘲讽状态）。灰色水晶壳 _shell 仍然创建
+# （渲染预热要用到它的 shader），但不再显示。
+func _build_gold_layers() -> void:
+	var foot_y := -_height * 0.55
+	var toward := vfx_toward_camera(0.4) if is_inside_tree() else Vector3.ZERO
+	_gold_shield = _gold_layer("PfxGuardDome", "GoldHexDome", foot_y, toward)
+	# 法阵贴地：只往镜头挪一点，让棋子的脚能自然压在法阵上
+	var runes_toward := vfx_toward_camera(0.15) if is_inside_tree() else Vector3.ZERO
+	_gold_runes = _gold_layer("PfxGuardRunes", "GoldTauntRunes", foot_y, runes_toward)
+	var runes_spec: Dictionary = SKILL_CATALOG.layer_named("guardian_shield_taunt", "PfxGuardRunes")
+	var runes_size: Vector2 = runes_spec.get("size", Vector2.ONE)
+	_runes_ground_offset = Vector3(0.0, (float(runes_spec.get("pivot_y", 0.5)) - 0.5) * runes_size.y, 0.0) + runes_toward
+
+func _gold_layer(spec_name: String, node_name: String, foot_y: float, toward: Vector3) -> VFXSpriteFlipbook3D:
+	var spec: Dictionary = SKILL_CATALOG.layer_named("guardian_shield_taunt", spec_name)
+	var texture := vfx_texture(str(spec.get("path", "")))
+	if texture == null:
+		return null
+	var size: Vector2 = spec.get("size", Vector2.ONE)
+	var layer := FLIPBOOK.new() as VFXSpriteFlipbook3D
+	layer.name = node_name
+	add_child(layer)
+	# 轴心（序列帧里的脚底）对到脚下
+	layer.play_flipbook_advanced(Vector3.ZERO, texture, _flipbook_config(spec,
+		Vector3(0.0, foot_y + (float(spec.get("pivot_y", 0.5)) - 0.5) * size.y, 0.0) + toward))
+	return layer
+
+func _flipbook_config(spec: Dictionary, offset: Vector3) -> Dictionary:
+	return {
+		"columns": int(spec.get("columns", 1)), "rows": int(spec.get("rows", 1)),
+		"frame_count": int(spec.get("frame_count", 1)), "loop": bool(spec.get("loop", false)),
+		"random_start": false, "speed_min": float(spec.get("fps", 12.0)), "speed_max": float(spec.get("fps", 12.0)),
+		"billboard": true, "duration": float(spec.get("duration", 1.0)), "color": spec.get("color", Color.WHITE),
+		"size": spec.get("size", Vector2.ONE), "position_offset": offset,
+		"fade_in": 0.05, "fade_out": 0.3, "emission_scale": float(spec.get("emission_scale", 0.25)),
+	}
 
 func _update_visuals(delta: float) -> void:
 	if _shell == null:
@@ -127,7 +174,15 @@ func _update_visuals(delta: float) -> void:
 	_shell_material.set_shader_parameter("opacity", _shield_fade * vfx_alpha)
 	_shell_material.set_shader_parameter("activation", emphasis)
 	_shell_material.set_shader_parameter("age", _age)
-	_shell.visible = _shield_fade > 0.001
+	_shell.visible = false
+	if is_instance_valid(_gold_shield):
+		_gold_shield.visible = _shield_fade > 0.001
+		_gold_shield.scale = Vector3.ONE * lerpf(0.6, 1.0, opening)
+		_gold_shield.set_vfx_alpha(_shield_fade * vfx_alpha)
+	if is_instance_valid(_gold_runes):
+		_gold_runes.visible = _range_fade > 0.001
+		_gold_runes.scale = Vector3.ONE * lerpf(0.7, 1.0, opening)
+		_gold_runes.set_vfx_alpha(_range_fade * vfx_alpha)
 	# Taunt is active immediately: a quiet, full-radius boundary, never a damage wave.
 	_range.scale = Vector3(_world_radius.x, 1.0, _world_radius.y)
 	_range_material.set_shader_parameter("opacity", _range_fade * vfx_alpha * (0.10 + 0.16 * emphasis))
@@ -154,6 +209,8 @@ func _place_ground_layers() -> void:
 	var ground_node: Variant = _ground_owner.get_ref() if _ground_owner != null else null
 	if is_instance_valid(ground_node) and ground_node is Node3D and ground_node.is_inside_tree():
 		_range.global_position = ground_node.global_position + Vector3.UP * 0.018
+		if is_instance_valid(_gold_runes):
+			_gold_runes.global_position = ground_node.global_position + _runes_ground_offset
 		_seal.global_position = ground_node.global_position + Vector3.UP * 0.024
 	else:
 		# Warmup and standalone callers may provide only a body origin.

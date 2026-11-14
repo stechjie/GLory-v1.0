@@ -65,7 +65,7 @@ func run() -> void:
 		"summon_lane_1": {"id": "undead_titan", "def": {"model": "res://sentinel/summon.tscn", "skill_id": "poison_reflect_armor_stack"}}},
 		"frames": [[["original", 0, 0, 100, true]], [["summon_lane_0", 0, 0, 100, true], ["summon_lane_1", 0, 0, 100, true]]]}
 	var late_paths: Array = Manifest.replay_texture_paths(late)
-	h.expect(late_paths.has("res://assets/vfx/oga/skill_packs/nature_armor.png") and late_paths.has("res://assets/vfx/oga/skill_packs/special_green.png"), "summoned_nested_layers", "Complete roster includes delayed armor skill layers from later summoned fighters")
+	h.expect(late_paths.has("res://assets/vfx/skills/pixelfx/toxic_shield.png"), "summoned_nested_layers", "Complete roster includes delayed armor skill layers from later summoned fighters")
 	h.expect(Manifest.replay_paths(late) == ["res://sentinel/base.tscn", "res://sentinel/summon.tscn"], "summoned_models_unique", "Full summoned roster models preload once per path, independent of UID")
 	var late_jobs: Array[Dictionary] = RenderWarmup.collect_jobs([late])
 	var summoned_skill_count := 0
@@ -76,9 +76,9 @@ func run() -> void:
 	h.expect(RenderWarmup.collect_jobs([{}]).is_empty(), "renderer_empty_roster", "No current fighters means no all-catalog warmup")
 	var single: Array = Manifest.fighter_texture_paths("human_archer", {})
 	h.expect(single.has("res://assets/vfx/oga/projectiles/human_archer_metal_arrow.png") and single.has("res://assets/vfx/oga/impacts/human_archer_hit.png"), "archer_actual_paths", "The actual authored metal arrow and separate delayed impact are both covered")
-	h.expect(not single.has("res://assets/vfx/oga/skill_packs/nature_armor.png"), "current_fighters_only", "An archer does not preload unrelated undead armor or the whole catalog")
+	h.expect(not single.has("res://assets/vfx/skills/pixelfx/toxic_shield.png"), "current_fighters_only", "An archer does not preload unrelated undead armor or the whole catalog")
 	var silence: Array = Manifest.fighter_texture_paths("dark_mage", {"skill_id": "silence_bolt"})
-	h.expect(silence.has("res://assets/vfx/oga/skill_packs/cosmic_orb.png") and silence.has("res://assets/vfx/oga/skill_packs/cosmic_seal.png"), "silence_projectile", "Silence launch and delayed impact both preload")
+	h.expect(silence.has("res://assets/vfx/skills/pixelfx/silence_bolt.png") and silence.has("res://assets/vfx/skills/pixelfx/silence_seal.png"), "silence_projectile", "Silence launch and delayed impact both preload")
 	var doom: Array = Manifest.fighter_texture_paths("dark_doom", {"skill_id": "shared_hp_link"})
 	h.expect(doom.has("res://assets/vfx/skills/dark_doom_link/doom_link_chain.png") and doom.has("res://assets/vfx/skills/dark_doom_link/doom_link_knot.png") and doom.has("res://assets/vfx/skills/dark_doom_link/doom_link_tear.png"), "current_doom_route", "Authored Doom rope, knot and tear replace retired generic link preload")
 	NetworkService.team_active = false
