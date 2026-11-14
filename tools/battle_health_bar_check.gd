@@ -28,7 +28,7 @@ func _ready() -> void:
 	for remaining in [1000, 750, 250, 1, 0]:
 		Renderer._sync_health_segments(hp, {"hp": 1000, "max_hp": 1000, "shield": remaining})
 		h.expect(is_equal_approx(hp.size.x * hp.scale.x + shield.size.x, 66.0), "full_health_black_tail", "Full health with shield left an artificial empty tail")
-		h.expect(bg.size == Vector2(72, 9), "background_extended", "Shield extended the original background")
+		h.expect(bg.size == Vector2(72, 11), "background_extended", "Shield extended the original background")
 		h.expect(shield.size.x <= previous_width, "shield_grew_on_hit", "Blue bar grew while shield was consumed")
 		h.expect(shield.visible == (remaining > 0) and track.visible == (remaining > 0), "shield_visibility", "Shield and icon must disappear together at zero")
 		h.expect(icon.global_position == icon_position, "icon_drift", "Shield icon moved while the shield was consumed")
@@ -75,6 +75,45 @@ func _ready() -> void:
 	Renderer._add_health_bar(enemy, {"hp": 500, "max_hp": 1000, "shield": 200}, "enemy")
 	h.expect((enemy.get_node("HpFill") as ColorRect).color == Color(1.0, 0.18, 0.12), "enemy_color", "Enemy HP must remain red")
 	h.expect((enemy.get_node("ShieldFill") as ColorRect).color == shield.color, "shield_team_color", "Shield must be blue for both teams")
+	# 11.14：同队队友的血条是白色，自己的仍是绿色（颜色只看 teammate 参数，敌方永远红）。
+	var mate := Control.new()
+	add_child(mate)
+	Renderer._add_health_bar(mate, {"hp": 500, "max_hp": 1000, "shield": 0}, "player", true)
+	h.expect((mate.get_node("HpFill") as ColorRect).color == Renderer.HP_TEAMMATE_COLOR, "teammate_color", "Teammate HP must be white")
+	h.expect(Renderer.hp_color_for_display_team("enemy", true) == Color(1.0, 0.18, 0.12), "enemy_never_white", "Enemy HP must stay red even if flagged teammate")
+	h.expect(Renderer.is_teammate_owner(1, 0) and Renderer.is_teammate_owner(2, 0), "same_team_mates", "Slots 1/2 are slot 0's teammates")
+	h.expect(not Renderer.is_teammate_owner(0, 0), "self_not_mate", "Own slot is not a teammate")
+	h.expect(not Renderer.is_teammate_owner(3, 0), "converted_not_mate", "Opposing-team owner (converted unit) is not a teammate")
+	h.expect(not Renderer.is_teammate_owner(1, -1), "solo_no_mates", "Without a viewer slot nobody is a teammate")
+	h.expect(Renderer.is_teammate_owner(4, 3), "blue_team_mates", "Blue team slots 3/4 are teammates")
+	# 外观：底框圆角材质、填充加厚到 5px、亮线/暗线跟着填充缩放。
+	var mate_bg := mate.get_node("HpBg") as ColorRect
+	var mate_hp := mate.get_node("HpFill") as ColorRect
+	h.expect(mate_bg.material is ShaderMaterial, "bg_not_rounded", "HP background must use the rounded-corner material")
+	h.expect(is_equal_approx(mate_hp.size.y, 5.0), "fill_not_thick", "HP fill must be 5px tall")
+	h.expect(mate_hp.has_node("Highlight") and mate_hp.has_node("Shade"), "bevel_missing", "HP fill must carry highlight and shade lines")
+	h.expect(mate_hp.get_node("Highlight").get_parent() == mate_hp, "bevel_not_child", "Bevel must scale with the fill")
+	# 掉血残影：掉血后先停住，再缩回；回血、死亡、无帧间隔立即对齐。
+	var trail := mate.get_node("HpTrail") as ColorRect
+	h.expect(not trail.visible, "trail_idle_visible", "Trail must be hidden before any damage")
+	Renderer._sync_health_segments(mate_hp, {"hp": 1000, "max_hp": 1000, "shield": 0}, 0.016)
+	Renderer._sync_health_segments(mate_hp, {"hp": 500, "max_hp": 1000, "shield": 0}, 0.016)
+	h.expect(trail.visible and is_equal_approx(trail.size.x, 66.0), "trail_not_held", "Trail must hold the lost segment right after a hit")
+	for i in 10:
+		Renderer._sync_health_segments(mate_hp, {"hp": 500, "max_hp": 1000, "shield": 0}, 0.016)
+	h.expect(trail.visible and is_equal_approx(trail.size.x, 66.0), "trail_hold_too_short", "Trail must stay put during the hold window")
+	for i in 30:
+		Renderer._sync_health_segments(mate_hp, {"hp": 500, "max_hp": 1000, "shield": 0}, 0.016)
+	h.expect(trail.size.x < 66.0, "trail_never_shrinks", "Trail must shrink after the hold window")
+	for i in 60:
+		Renderer._sync_health_segments(mate_hp, {"hp": 500, "max_hp": 1000, "shield": 0}, 0.016)
+	h.expect(not trail.visible and is_equal_approx(trail.size.x, 33.0), "trail_not_settled", "Trail must settle onto the current HP")
+	Renderer._sync_health_segments(mate_hp, {"hp": 200, "max_hp": 1000, "shield": 0}, 0.016)
+	Renderer._sync_health_segments(mate_hp, {"hp": 900, "max_hp": 1000, "shield": 0}, 0.016)
+	h.expect(not trail.visible, "trail_on_heal", "Healing must snap the trail away")
+	Renderer._sync_health_segments(mate_hp, {"hp": 300, "max_hp": 1000, "shield": 0}, 0.016)
+	Renderer._sync_health_segments(mate_hp, {"hp": 0, "max_hp": 1000, "shield": 0})
+	h.expect(not trail.visible, "trail_after_death", "Death must hide the trail")
 	h.finish(get_tree())
 
 

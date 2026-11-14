@@ -2302,7 +2302,7 @@ const SET_OTHER_STRENGTH := 0.75
 const SET_EXECUTE_MARK_COLOR := Color(1.0, 0.30, 0.22)
 const SET_EXECUTE_FLASH_COLOR := Color(0.70, 0.04, 0.02)
 const SET_HP_BG_COLOR := Color(0.05, 0.05, 0.05)
-# 血条几何（BattleRenderer._make_unit_node）：HpBg 在 x5、宽 72；HpFill 从 x8 起、宽 66。
+# 血条几何（BattleRenderer._add_health_bar）：HpBg 在 x5、宽 72、高 11；HpFill 从 x8 起、宽 66。
 const SET_HP_FILL_X_IN_BG := 3.0
 const SET_HP_FILL_WIDTH := 66.0
 const SET_DODGE_STEP := 0.12
@@ -2472,7 +2472,7 @@ func _update_treasure_set_presentation() -> void:
 				mark.name = "ExecuteMark"
 				mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
 				mark.color = SET_EXECUTE_MARK_COLOR
-				mark.size = Vector2(2.0, 13.0)
+				mark.size = Vector2(2.0, 15.0)
 				mark.z_index = 2
 				bg.add_child(mark)
 			var hp_max_width := float(bg.get_meta("hp_max_width")) if bg.has_meta("hp_max_width") else SET_HP_FILL_WIDTH

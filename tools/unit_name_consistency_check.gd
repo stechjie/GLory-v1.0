@@ -199,9 +199,11 @@ func _case_battle_replay_uses_full_canonical_names() -> void:
 		"battle_priestess_old_name_survived", "Battle replay still displays High Priestess")
 
 	var unit_node := renderer.call("_make_unit_node", priestess) as Control
-	var head_label := unit_node.get_node_or_null("Name") as Label
-	_h.expect(head_label != null and head_label.text == "Priestess", "battle_head_name_truncated",
-		"Battle head label is not the full canonical Priestess name")
+	# 11.14 用户定：战斗里不再显示棋子名字，只留鼠标悬停提示。
+	_h.expect(unit_node.get_node_or_null("Name") == null, "battle_head_name_shown",
+		"Battle units must not carry a name label any more")
+	_h.expect(unit_node.tooltip_text == "Priestess", "battle_tooltip_name_truncated",
+		"Battle hover tooltip is not the full canonical Priestess name")
 
 	var top_atk := RichTextLabel.new()
 	renderer.set("_top5_atk_lbl", top_atk)

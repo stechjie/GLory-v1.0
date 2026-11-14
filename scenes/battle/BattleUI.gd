@@ -116,6 +116,8 @@ var _return_emitted := false
 var _model_facing_last_msec := 0
 var _battle_3d_viewport: SubViewport
 var _battle_3d_camera: Camera3D
+# 结算收镜头期间为 true：窗口尺寸变化时不把相机拉回原始取景（BattleArena._sync_battle_camera_base_size）。
+var _battle_camera_tightened := false
 var _battle_3d_world: Node3D
 var _battle_3d_root: Node3D
 var _battle_3d_vfx_root: Node3D

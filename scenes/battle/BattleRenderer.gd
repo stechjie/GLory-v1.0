@@ -154,9 +154,9 @@ func _refresh_visuals() -> void:
 			_sync_health_segments(hp_bar, f, facing_delta)
 			# 9.24 #7：血条颜色要跟着**当前**队伍走，不能像原来那样只在建节点时定死。
 			# 末日守卫的血之契约会把敌方目标永久策反成我方棋子，颜色必须同帧变绿
-			# （绿=我方 / 红=敌方，见 _hp_color_for_team）。这里改的是同一帧的填充色，
-			# 不做动画 —— 用户要的是"同步改变"，不是渐变。
-			var want_color: Color = _hp_color_for_team(_display_team(f))
+			# （绿=自己 / 白=同队队友 / 红=敌方，见 _hp_color_for_fighter）。这里改的是同一帧的填充色，
+			# 不做动画 —— 用户要的是"同步改变"，不是渐变。观战切换视角时也靠这里同帧换色。
+			var want_color: Color = _hp_color_for_fighter(f)
 			if hp_bar.color != want_color:
 				hp_bar.color = want_color
 	_update_3v3_dividers()
@@ -381,17 +381,61 @@ static func resolve_display_team(fighter_team: String, color_flip: bool) -> Stri
 	return fighter_team
 
 
-# 同上的纯函数版本：**展示 team → 血条颜色**。绿=我方 / 红=敌方。
-static func hp_color_for_display_team(display_team: String) -> Color:
-	return Color(1.0, 0.18, 0.12) if display_team == "enemy" else Color(0.2, 0.9, 0.25)
+# 同上的纯函数版本：**展示 team → 血条颜色**。绿=自己 / 白=同队队友 / 红=敌方。
+# 11.14 用户定：3v3 里同队另外两人的棋子血条改白，一眼分出哪些是自己的。
+# 白用略带冷灰的 HP_TEAMMATE_COLOR，不用纯白：纯白在雪地战场上会和地面糊在一起，
+# 外圈的深色底框负责把它从雪地里勾出来。
+const HP_SELF_COLOR := Color(0.2, 0.9, 0.25)
+const HP_TEAMMATE_COLOR := Color(0.93, 0.95, 0.97)
+const HP_ENEMY_COLOR := Color(1.0, 0.18, 0.12)
+
+static func hp_color_for_display_team(display_team: String, teammate := false) -> Color:
+	if display_team == "enemy":
+		return HP_ENEMY_COLOR
+	return HP_TEAMMATE_COLOR if teammate else HP_SELF_COLOR
 
 
 func _hp_color_for_team(team: String) -> Color:
 	return hp_color_for_display_team(team)
 
+
+func _hp_color_for_fighter(f: Dictionary) -> Color:
+	var display_team := _display_team(f)
+	return hp_color_for_display_team(display_team,
+		display_team != "enemy" and is_teammate_owner(int(f.get("owner_slot", -1)), _hp_viewer_slot()))
+
+
+# 「我」是哪个座位：观战时是正在看的那位，联机组队是本机座位，离线组队是 0 号；
+# 单人（没有队友）返回 -1，所有我方棋子都按自己算。
+func _hp_viewer_slot() -> int:
+	if NetworkService.spectate_room_id > 0:
+		return NetworkService.spectate_view_slot
+	if NetworkService.team_active:
+		return NetworkService.team_local_slot
+	if GameState.team_mode:
+		return 0
+	return -1
+
+
+# 纯函数：owner_slot 是否属于「我」的同队队友。
+# 只认和我同一队、但不是我的座位。被末日守卫策反过来的敌方棋子 owner_slot 还是对面的
+# 座位（分身也是 duplicate 自受害者），不算队友 —— 它们站在我方，按自己的绿色显示。
+static func is_teammate_owner(owner_slot: int, viewer_slot: int) -> bool:
+	if owner_slot < 0 or viewer_slot < 0 or owner_slot == viewer_slot:
+		return false
+	return GameConstants.team_of_slot(owner_slot) == GameConstants.team_of_slot(viewer_slot)
+
 # One fixed 66px meter: HP then blue shield. Only the internal proportions change;
 # adding a shield must never extend the background or reserve a black side slot.
 const HP_FILL_WIDTH := 66.0
+# 11.14：填充 4px → 5px，底框 9px → 11px（深色描边各宽 3px），四角圆 3px，顶部一条亮线、
+# 底部一条暗线做出立体感；掉血残影（HpTrail）先停 TRAIL_HOLD_SEC 再缩回。
+const HP_FILL_HEIGHT := 5.0
+const HP_BG_SIZE := Vector2(72.0, 11.0)
+const HP_BG_RADIUS := 3.0
+const HP_TRAIL_COLOR := Color(1.0, 0.84, 0.42)
+const TRAIL_HOLD_SEC := 0.25
+const TRAIL_SHRINK_PX_PER_SEC := 120.0
 const SHIELD_MIN_WIDTH := 3.0
 const SHIELD_COLOR := Color("39bafa")
 const SHIELD_DRAIN_SEC := 0.12
@@ -422,7 +466,7 @@ static func _sync_health_segments(hp: ColorRect, fighter: Dictionary, delta := 0
 	var capacity := maxf(maximum, health + shown_shield)
 	var shield_width := clampf(HP_FILL_WIDTH * shown_shield / capacity, SHIELD_MIN_WIDTH, HP_FILL_WIDTH) if has_shield else 0.0
 	var health_width := minf(HP_FILL_WIDTH * health / capacity, HP_FILL_WIDTH - shield_width)
-	hp.size = Vector2(HP_FILL_WIDTH, 4.0)
+	hp.size = Vector2(HP_FILL_WIDTH, HP_FILL_HEIGHT)
 	hp.scale = Vector2(health_width / HP_FILL_WIDTH, 1.0)
 	hp.visible = health > 0.0
 	var background := hp.get_meta("hp_background") as ColorRect if hp.has_meta("hp_background") else null
@@ -434,7 +478,7 @@ static func _sync_health_segments(hp: ColorRect, fighter: Dictionary, delta := 0
 	var shield := hp.get_meta("shield_fill") as ColorRect if hp.has_meta("shield_fill") else null
 	if is_instance_valid(shield):
 		shield.position = hp.position + Vector2(health_width, 0.0)
-		shield.size = Vector2(shield_width, 4.0)
+		shield.size = Vector2(shield_width, HP_FILL_HEIGHT)
 		shield.visible = has_shield
 	var track := hp.get_meta("shield_track") as Control if hp.has_meta("shield_track") else null
 	if is_instance_valid(track):
@@ -446,8 +490,76 @@ static func _sync_health_segments(hp: ColorRect, fighter: Dictionary, delta := 0
 	if is_instance_valid(empty):
 		var filled_width := health_width + shield_width
 		empty.position = hp.position + Vector2(filled_width, 0.0)
-		empty.size = Vector2(maxf(0.0, HP_FILL_WIDTH - filled_width), 4.0)
+		empty.size = Vector2(maxf(0.0, HP_FILL_WIDTH - filled_width), HP_FILL_HEIGHT)
 		empty.visible = health > 0.0 and empty.size.x > 0.0
+	_sync_hp_trail(hp, health_width, health > 0.0, delta)
+
+
+# 掉血残影：血量降下去时，掉的那段先保持 TRAIL_HOLD_SEC，再以固定速度缩回到当前血量。
+# 连续挨打会重新计时，所以一串快速伤害看起来是一整段一起退。
+# 回血、死亡、没有帧间隔的调用（初始化、跳帧、检查脚本）一律直接对齐，不留残影。
+static func _sync_hp_trail(hp: ColorRect, health_width: float, alive: bool, delta: float) -> void:
+	var trail := hp.get_meta("hp_trail") as ColorRect if hp.has_meta("hp_trail") else null
+	if not is_instance_valid(trail):
+		return
+	var shown := float(hp.get_meta("trail_width", health_width))
+	var last := float(hp.get_meta("trail_last_health_width", health_width))
+	if not alive or delta <= 0.0 or health_width >= shown:
+		shown = health_width
+		hp.set_meta("trail_hold", 0.0)
+	else:
+		var hold := float(hp.get_meta("trail_hold", 0.0))
+		if health_width < last - 0.01:
+			hold = TRAIL_HOLD_SEC
+		if hold > 0.0:
+			hold -= delta
+		else:
+			shown = move_toward(shown, health_width, TRAIL_SHRINK_PX_PER_SEC * delta)
+		hp.set_meta("trail_hold", hold)
+	hp.set_meta("trail_width", shown)
+	hp.set_meta("trail_last_health_width", health_width)
+	trail.position = hp.position
+	trail.size = Vector2(shown, HP_FILL_HEIGHT)
+	trail.visible = alive and shown > health_width + 0.5
+
+
+# 底框四角圆角：所有血条共用一份材质（底框尺寸固定为 HP_BG_SIZE）。
+static var _hp_bg_material: ShaderMaterial = null
+
+static func _hp_background_material() -> ShaderMaterial:
+	if _hp_bg_material == null:
+		var shader := Shader.new()
+		shader.code = """shader_type canvas_item;
+uniform vec2 rect_size = vec2(72.0, 11.0);
+uniform float radius = 3.0;
+void fragment() {
+	vec2 p = UV * rect_size;
+	vec2 q = abs(p - rect_size * 0.5) - (rect_size * 0.5 - vec2(radius));
+	float d = length(max(q, vec2(0.0))) - radius;
+	COLOR.a *= clamp(0.5 - d, 0.0, 1.0);
+}
+"""
+		_hp_bg_material = ShaderMaterial.new()
+		_hp_bg_material.shader = shader
+		_hp_bg_material.set_shader_parameter("rect_size", HP_BG_SIZE)
+		_hp_bg_material.set_shader_parameter("radius", HP_BG_RADIUS)
+	return _hp_bg_material
+
+
+# 顶部亮线 + 底部暗线，跟着父色块的宽度走（锚点拉满宽度，scale 缩放时一起缩）。
+static func _add_bar_bevel(bar: Control) -> void:
+	for spec in [[0.0, Color(1.0, 1.0, 1.0, 0.42)], [HP_FILL_HEIGHT - 1.0, Color(0.0, 0.0, 0.0, 0.22)]]:
+		var line := ColorRect.new()
+		line.name = "Highlight" if float(spec[0]) == 0.0 else "Shade"
+		line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		line.color = spec[1]
+		line.anchor_left = 0.0
+		line.anchor_right = 1.0
+		line.offset_left = 0.0
+		line.offset_right = 0.0
+		line.offset_top = float(spec[0])
+		line.offset_bottom = float(spec[0]) + 1.0
+		bar.add_child(line)
 
 
 func _make_unit_node(f: Dictionary) -> Control:
@@ -468,48 +580,51 @@ func _make_unit_node(f: Dictionary) -> Control:
 	# Prevent the parent layout from touching this node
 	root.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
 	_add_unit_anchors(root)
-	_add_health_bar(root, f, _display_team(f))
-	var label := Label.new()
-	label.name = "Name"
-	label.position = Vector2(0, 86)
-	label.size = Vector2(82, 28)
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", 9)
-	label.add_theme_color_override("font_color", Color(0.94, 0.98, 1.0))
-	label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.92))
-	label.add_theme_constant_override("outline_size", 3)
-	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	label.clip_text = true
-	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	# Names don't change mid-battle: set once here instead of every frame.
-	label.text = _fighter_display_name(f)
-	root.add_child(label)
+	var display_team := _display_team(f)
+	_add_health_bar(root, f, display_team,
+		display_team != "enemy" and is_teammate_owner(int(f.get("owner_slot", -1)), _hp_viewer_slot()))
+	# 11.14 用户定：战斗里棋子脚下不再显示名字（满场名字叠在一起是噪音）。
+	# 电脑上鼠标悬停仍能看到名字（上面的 tooltip_text），Top ATK 面板也照常显示。
 	return root
 
 
 # Kept independent of the 3D arena so the real controls can also be previewed.
-static func _add_health_bar(root: Control, fighter: Dictionary, display_team: String) -> void:
+static func _add_health_bar(root: Control, fighter: Dictionary, display_team: String, teammate := false) -> void:
 	var hp_bg := ColorRect.new()
 	hp_bg.name = "HpBg"
 	hp_bg.color = Color(0.05, 0.05, 0.05)
-	hp_bg.position = Vector2(5, 8)
-	hp_bg.size = Vector2(72, 9)
+	hp_bg.position = Vector2(5, 7)
+	hp_bg.size = HP_BG_SIZE
+	hp_bg.material = _hp_background_material()
 	hp_bg.z_index = 20
 	hp_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(hp_bg)
+	# 残影和底框同层、排在底框之后：画在底框上面、血量填充下面，只露出刚掉的那一段。
+	var trail := ColorRect.new()
+	trail.name = "HpTrail"
+	trail.color = HP_TRAIL_COLOR
+	trail.position = Vector2(8, 10)
+	trail.size = Vector2(0, HP_FILL_HEIGHT)
+	trail.visible = false
+	trail.z_index = 20
+	trail.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(trail)
 	var hp := ColorRect.new()
 	hp.name = "HpFill"
-	hp.color = hp_color_for_display_team(display_team)
-	hp.position = Vector2(8, 11)
-	hp.size = Vector2(HP_FILL_WIDTH, 4)
+	hp.color = hp_color_for_display_team(display_team, teammate)
+	hp.position = Vector2(8, 10)
+	hp.size = Vector2(HP_FILL_WIDTH, HP_FILL_HEIGHT)
 	hp.z_index = 21
 	hp.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(hp)
+	_add_bar_bevel(hp)
 	hp.set_meta("hp_background", hp_bg)
+	hp.set_meta("hp_trail", trail)
 	var track := Control.new()
 	track.name = "ShieldTrack"
 	track.position = Vector2(75, 8)
 	track.size = Vector2(8, 9)
+	# 盾牌图标仍是 9px 高，底框加高到 11px 后上下各留 1px，居中不动。
 	track.z_index = 20
 	track.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(track)
@@ -542,6 +657,7 @@ static func _add_health_bar(root: Control, fighter: Dictionary, display_team: St
 	shield.z_index = hp.z_index
 	shield.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(shield)
+	_add_bar_bevel(shield)
 	hp.set_meta("shield_fill", shield)
 	var empty := ReferenceRect.new()
 	empty.name = "HpEmpty"
@@ -1327,9 +1443,11 @@ func _tighten_battle_camera() -> void:
 		return
 	# 从当前 size 起收，而不是从常量起 —— 重复调用（skip 之后又走正常结算）
 	# 不该把镜头一路收下去。
-	var target := BATTLE_CAMERA_SIZE * VICTORY_CAMERA_TIGHTEN
+	# 原始取景随屏幕比例变（窄屏会拉远），收束按当前比例的原始取景算。
+	var target := _battle_camera_base_size() * VICTORY_CAMERA_TIGHTEN
 	if _battle_3d_camera.size <= target + 0.001:
 		return
+	_battle_camera_tightened = true
 	var tween := create_tween()
 	tween.tween_property(_battle_3d_camera, "size", target, VICTORY_CAMERA_SEC) 		.set_ease(Tween.EASE_OUT)
 
@@ -1337,7 +1455,8 @@ func _tighten_battle_camera() -> void:
 # 下一场战斗必须从原始取景开始，否则收束会一场比一场紧。
 func reset_battle_camera_framing() -> void:
 	if _battle_3d_camera != null and is_instance_valid(_battle_3d_camera):
-		_battle_3d_camera.size = BATTLE_CAMERA_SIZE
+		_battle_camera_tightened = false
+		_battle_3d_camera.size = _battle_camera_base_size()
 
 
 func _update_model_animation_state(model_node: Node3D, f: Dictionary) -> void:

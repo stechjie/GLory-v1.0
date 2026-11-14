@@ -25,6 +25,14 @@ const BATTLE_2_5D_FIRE_PATH := "res://assets/board/2_5d/fire_single_source.png"
 const FIRE_FLAME_SOURCE_RECT := Rect2(555.0, 20.0, 125.0, 120.0)
 const FIRE_FLAME_POINTS := [Vector2(526.0, 82.0), Vector2(1162.0, 82.0)]
 const BATTLE_PVP_BACKGROUND_SCALE := 1.0
+# 11.14 电脑版全屏：背景和 3D 棋子必须按同一把尺子缩放。
+# 以前背景按「铺满裁切」缩、3D 正交相机按屏幕高度缩，两套规则只在手机 20:9 上恰好对得上；
+# 换到 16:9 / 16:10 显示器背景相对缩小 20%~30%，第 21 回合棋子站到墙头、踩进岩浆。
+# 现在以 1600x720（20:9 手机）为基准算「每个世界单位多少像素」，背景跟着它走，
+# 只在会露边时再放大（cover 兜底）；比 16:9 更窄的屏（16:10、4:3）把镜头拉远，
+# 保证左右两路完整可见。手机 20:9 画面与改动前逐像素一致。
+const BATTLE_REFERENCE_ARENA_SIZE := Vector2(1600.0, 720.0)
+const BATTLE_MIN_VISIBLE_ASPECT := 16.0 / 9.0
 const BATTLE_VISUAL_SPACE_SCALE := 0.88
 const BATTLE_VISUAL_DOWN_SHIFT_RATIO := 0.1
 const BLUE_CRYSTAL_MODEL_PATH := "res://assets/models/battle_crystals/blue/Meshy_AI_Blue_Crystal_Spire_0717152101_texture_fbx/Meshy_AI_Blue_Crystal_Spire_0717152101_texture.fbx"
@@ -396,11 +404,37 @@ func _fit_battlefield_2_5d() -> void:
 	var arena_size := _arena.size
 	if arena_size.x <= 0.0 or arena_size.y <= 0.0:
 		return
-	var fit_scale := maxf(arena_size.x / _battlefield_2_5d_size.x, arena_size.y / _battlefield_2_5d_size.y)
+	var cover_scale := maxf(arena_size.x / _battlefield_2_5d_size.x, arena_size.y / _battlefield_2_5d_size.y)
+	var reference_cover := maxf(BATTLE_REFERENCE_ARENA_SIZE.x / _battlefield_2_5d_size.x,
+		BATTLE_REFERENCE_ARENA_SIZE.y / _battlefield_2_5d_size.y)
+	var reference_px_per_world := BATTLE_REFERENCE_ARENA_SIZE.y / BATTLE_CAMERA_SIZE
+	var px_per_world := arena_size.y / _battle_camera_base_size()
+	var fit_scale := maxf(cover_scale, reference_cover * px_per_world / reference_px_per_world)
+	_sync_battle_camera_base_size()
 	if _battlefield_kind() == "pvp":
 		fit_scale *= BATTLE_PVP_BACKGROUND_SCALE
 	_battlefield_2_5d_root.scale = Vector2.ONE * fit_scale
 	_battlefield_2_5d_root.position = (arena_size - _battlefield_2_5d_size * fit_scale) * 0.5
+
+
+# 战斗相机的「原始取景」大小（结算收镜头之前）。不低于 16:9 的可见宽度，见常量处说明。
+func _battle_camera_base_size() -> float:
+	if _arena == null:
+		return BATTLE_CAMERA_SIZE
+	var arena_size := _arena.size
+	if arena_size.x <= 0.0 or arena_size.y <= 0.0:
+		return BATTLE_CAMERA_SIZE
+	return BATTLE_CAMERA_SIZE * maxf(1.0, BATTLE_MIN_VISIBLE_ASPECT / (arena_size.x / arena_size.y))
+
+
+# 窗口尺寸变了（切全屏、拖窗口）就把相机拉回新比例下的原始取景。
+# 结算收镜头期间（size 已小于原始值）不打断那段演出。
+func _sync_battle_camera_base_size() -> void:
+	if _battle_3d_camera == null or not is_instance_valid(_battle_3d_camera):
+		return
+	if _battle_camera_tightened:
+		return
+	_battle_3d_camera.size = _battle_camera_base_size()
 
 
 func _add_fire_layer() -> void:
@@ -632,7 +666,8 @@ func _add_battle_grid_overlay(arena_wrap: Control) -> void:
 	_board_readability_layer.configure_battle()
 	_board_readability_layer.set_guides_enabled(PlayerProfile.board_readability_enabled)
 	_board_readability_layer.set_low_quality(VFXManager.get_quality_tier() == VFXQualityBudget.Tier.LOW)
-	_board_readability_layer.set_direction_texts("", "", tr("board_friendly_half"), tr("board_enemy_half"))
+	# 11.14 用户定：战斗里不再写「我方半场 / 敌方半场」，半场底色和中线保留。
+	_board_readability_layer.set_direction_texts("", "", "", "")
 	_board_readability_layer.z_index = 30
 	arena_wrap.add_child(_board_readability_layer)
 	if not arena_wrap.resized.is_connected(_sync_battle_readability_static_geometry):
@@ -658,7 +693,7 @@ func _sync_battle_readability_static_geometry() -> void:
 	_board_readability_static_signature = signature
 	_board_readability_layer.set_guides_enabled(PlayerProfile.board_readability_enabled)
 	_board_readability_layer.set_low_quality(VFXManager.get_quality_tier() == VFXQualityBudget.Tier.LOW)
-	_board_readability_layer.set_direction_texts("", "", tr("board_friendly_half"), tr("board_enemy_half"))
+	_board_readability_layer.set_direction_texts("", "", "", "")
 	var visual_min := _battle_visual_min()
 	var visual_max := _battle_visual_max()
 	var split_y := clampf(SIM_H * 0.5, visual_min.y, visual_max.y)
@@ -800,11 +835,13 @@ func _setup_battle_3d_view(arena_wrap: Control) -> void:
 
 	var camera := Camera3D.new()
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
-	camera.size = BATTLE_CAMERA_SIZE
+	camera.size = _battle_camera_base_size()
 	camera.look_at_from_position(BATTLE_CAMERA_POS, Vector3(0.0, 0.0, 0.0), Vector3.UP)
 	camera.current = true
 	_battle_3d_camera = camera
 	_battle_3d_viewport.add_child(camera)
+	# 背景在相机之前就按 _battle_camera_base_size() 摆好了，这里只是确保两者同一帧对齐。
+	_fit_battlefield_2_5d()
 
 
 # 结算演出用的水晶：红队一座红晶、蓝队一座蓝晶，颜色是队伍的绝对属性，六个

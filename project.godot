@@ -33,6 +33,7 @@ driver/enable_input.ios=true
 [autoload]
 
 StartupTrace="*res://scripts/autoload/StartupTrace.gd"
+DesktopWindow="*res://scripts/autoload/DesktopWindow.gd"
 UIFontFallback="*res://ui/fonts/UIFontFallback.gd"
 LocaleManager="*res://scripts/autoload/LocaleManager.gd"
 GameState="*res://scripts/autoload/GameState.gd"
