@@ -82,6 +82,30 @@ static func acquire_many(paths: Array, owner: String) -> void:
 	for p in paths:
 		acquire(str(p), owner)
 
+
+# 还在排队或后台加载中（没加载完、也没失败）。
+# 🔴 判断「加载失败」的地方必须先问这个：还在排队的资源从来没发过线程请求，
+# ResourceLoader.load_threaded_get_status 会答 INVALID_RESOURCE —— 看起来像失败，其实只是没轮到。
+static func is_pending(path: String) -> bool:
+	return _queue.has(path) or _requested.has(path)
+
+
+# 马上就要用的资源插到队伍最前面（战斗开打前、备战读条时）。不改所有权；已经加载好、
+# 或者正在加载的不受影响。没有这一步，本回合的模型会排在大厅预载 / 未来回合预取后面，
+# 慢电脑上等不到 BattleScreen 的 15 秒期限 —— 那会判负、不结算金币。
+static func prioritize(paths: Array) -> void:
+	var front: Array[String] = []
+	for raw_path in paths:
+		var path := str(raw_path)
+		if _queue.has(path):
+			_queue.erase(path)
+			front.append(path)
+	if front.is_empty():
+		return
+	front.append_array(_queue)
+	_queue = front
+	_pump()
+
 # Adopt an already completed background load without requesting or waiting again.
 static func retain_ready_resource(path: String, resource: Resource, owner: String) -> void:
 	if path.is_empty() or resource == null or owner.is_empty():
