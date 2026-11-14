@@ -47,7 +47,9 @@ func _spawn_layer_after(points: Dictionary, layer: Dictionary, context: Dictiona
 	var anchor_name := str(layer.get("anchor", "target_body"))
 	var at: Vector3 = points.get(anchor_name, points.get("target_body", Vector3.ZERO))
 	var ground := bool(layer.get("ground", anchor_name.ends_with("ground")))
-	at += vfx_toward_camera(0.025 if ground else 0.11)
+	# toward_camera：往镜头方向挪多少（世界单位）。立着的大面片和棋子模型重叠时会被模型挡住，
+	# 平滑序列帧图层给 0.45 左右；不写就是原来的默认值。
+	at += vfx_toward_camera(float(layer.get("toward_camera", 0.025 if ground else 0.11)))
 	var effect := FLIPBOOK.new() as VFXSpriteFlipbook3D
 	effect.name = str(layer.get("name", "OgaPackLayer"))
 	add_child(effect)
@@ -64,7 +66,9 @@ func _spawn_layer_after(points: Dictionary, layer: Dictionary, context: Dictiona
 		"duration": duration,
 		"color": layer.get("color", Color.WHITE),
 		"size": layer.get("size", Vector2.ONE),
-		"position_offset": Vector3.ZERO,
+		# lift：竖直抬高（世界单位）。pixelfx 平滑序列帧的轴心常在单格下部（脚底），
+		# 立着播放时靠它把轴心对到锚点上；旧图层不写这个键，行为不变。
+		"position_offset": Vector3(0.0, float(layer.get("lift", 0.0)), 0.0),
 		"rotation_radians": float(layer.get("rotation", 0.0)),
 		"fade_in": float(layer.get("fade_in", 0.035)),
 		"fade_out": float(layer.get("fade_out", 0.14)),
@@ -84,10 +88,17 @@ func _spawn_layer_after(points: Dictionary, layer: Dictionary, context: Dictiona
 	tween.tween_property(effect, "scale", Vector3.ONE * peak_scale, duration * 0.34)
 	tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
 	tween.tween_property(effect, "scale", Vector3.ONE * end_scale, duration * 0.66)
+	# track_target 跟目标走；track_origin 跟施法者走（如巨甲灵套在自己身上的毒甲）。
+	var follow_key := ""
 	if bool(layer.get("track_target", false)):
-		var node_value: Variant = context.get("target_node")
+		follow_key = "target_node"
+	elif bool(layer.get("track_origin", false)):
+		follow_key = "origin_node"
+	if not follow_key.is_empty():
+		var node_value: Variant = context.get(follow_key)
 		if is_instance_valid(node_value) and node_value is Node3D:
-			_tracked.append({"effect": effect, "node": weakref(node_value), "offset": at - (node_value as Node3D).global_position})
+			# 用图层播放后的实际位置算偏移（含 lift），否则跟随时每帧都会把 lift 冲掉。
+			_tracked.append({"effect": effect, "node": weakref(node_value), "offset": effect.position - (node_value as Node3D).global_position})
 
 
 func _process(delta: float) -> void:

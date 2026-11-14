@@ -831,11 +831,14 @@ func _play_stone_reveal(stone_type: String) -> void:
 	var frames := AtlasTexture.new()
 	frames.atlas = TEX_STONE_REVEAL
 	_stone_reveal.texture = frames
+	_stone_art.texture = Card.stone_texture("")
 	_stone_reveal.visible = true
 	_draw_result.text = _t("正在揭晓……", "Revealing...")
 	for frame in range(16):
 		if serial != _reveal_serial or not is_instance_valid(_stone_reveal):
 			return
+		if frame == 8:
+			_stone_art.texture = Card.stone_texture(stone_type)
 		frames.region = Rect2((frame % 4) * 256, (frame / 4) * 256, 256, 256)
 		await get_tree().create_timer(0.055).timeout
 	# 最后一次 await 期间切场景（备战被释放）就会在已销毁的节点上写属性，引擎报错会让检查变红
@@ -843,7 +846,6 @@ func _play_stone_reveal(stone_type: String) -> void:
 			or not is_instance_valid(_stone_art) or not is_instance_valid(_draw_result):
 		return
 	_stone_reveal.visible = false
-	_stone_art.texture = Card.stone_texture(stone_type)
 	_draw_result.text = _t("获得 %s石 ×1 · 已存入队伍库存", "Got %s Stone ×1 · added to team") % _stone_display(stone_type)
 
 

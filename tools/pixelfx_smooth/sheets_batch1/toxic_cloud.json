@@ -1,0 +1,24 @@
+{
+ "fx": "nature/spore-burst",
+ "columns": 4,
+ "rows": 4,
+ "frame_count": 15,
+ "fps": 12,
+ "duration": 1.25,
+ "cell_px": [
+  178,
+  166
+ ],
+ "cell_src_px": [
+  148.33,
+  138.33
+ ],
+ "pivot": [
+  0.4955,
+  0.7566
+ ],
+ "sheet_px": [
+  712,
+  664
+ ]
+}

@@ -24,7 +24,7 @@ import glory_build as shared
 ROOT = Path(__file__).resolve().parents[3]
 TEAM = "D5ANXXK2R2"
 BUNDLE = "com.superforge.glory"
-DISPLAY_NAME = "GLory Auto Chess"
+DISPLAY_NAME = "GLory: Auto Chess & Team PvP"
 PRESET = "iOS Xcode"
 SCHEME = "GloryIOS"
 SIGNING = ROOT / "ios-signing-20260913/ios_distribution"

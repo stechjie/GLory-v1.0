@@ -1,0 +1,24 @@
+{
+ "fx": "explosions/plasma-explosion",
+ "columns": 5,
+ "rows": 5,
+ "frame_count": 23,
+ "fps": 15,
+ "duration": 1.533,
+ "cell_px": [
+  301,
+  262
+ ],
+ "cell_src_px": [
+  301,
+  262
+ ],
+ "pivot": [
+  0.4983,
+  0.5
+ ],
+ "sheet_px": [
+  1505,
+  1310
+ ]
+}

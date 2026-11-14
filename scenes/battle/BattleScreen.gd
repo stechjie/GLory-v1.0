@@ -554,6 +554,8 @@ func _prepare_replay_assets() -> bool:
 		_fail_team_replay("battle_assets_missing")
 		return false
 	BattleAssetService.acquire_many(model_paths, BattleAssetService.OWNER_BATTLE)
+	# 本回合要用的插队到最前（后台预载是一个一个排队加载的，见 BattleAssetService.MAX_IN_FLIGHT）。
+	BattleAssetService.prioritize(model_paths)
 	BattleAssetService.promote_future_to_battle(GameState.round_index)
 	VFXManager.preload_textures(texture_paths)
 	var started := Time.get_ticks_msec()
@@ -580,6 +582,9 @@ func _prepare_replay_assets() -> bool:
 		var failed: Array[String] = []
 		for path in model_paths + texture_paths:
 			if BattleAssetService.ready_count([path]) + VFXManager.ready_texture_count([path]) > 0:
+				continue
+			# 还在排队 / 加载中的不是失败（排队中的从没发过线程请求，状态会是 INVALID_RESOURCE）。
+			if BattleAssetService.is_pending(path):
 				continue
 			var status := ResourceLoader.load_threaded_get_status(path)
 			if status in [ResourceLoader.THREAD_LOAD_FAILED, ResourceLoader.THREAD_LOAD_INVALID_RESOURCE]:
@@ -743,6 +748,8 @@ func _prepare_battle_models() -> void:
 
 	if is_instance_valid(bar):
 		bar.queue_free()
+	# 11.14：清场皮肤扫光的贴图是代码现画的，开战前画好（有缓存，之后的回合不再花时间）。
+	preload("res://effects/vfx3d/modules/VFXLaneClearBurst3D.gd").warm_skin_textures(_PREP_SKIN.refresh_fx())
 	# 9.17：Boss 登场。放在这里而不是 _start_battle_music() 里 ——
 	# 后者在进场景那一刻就会被调一次（BattleScreen.gd:98），那时 replay 还没到、
 	# 单位模型还没建，声音会比画面早一整段读条。

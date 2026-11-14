@@ -16,6 +16,16 @@
 | 战斗（UDP + DTLS） | `test-battle.gogoglory.com:8080` | `battle.gogoglory.com:8080` |
 | 语音 | `wss://test-voice.gogoglory.com` | `wss://voice.gogoglory.com` |
 
+**2026-11-12 当前域名约定：** 以上地址按用户提供的 Cloudflare DNS 截图更新，六条 A 记录均为灰云 `DNS only`、TTL 为 `Auto`；本次 DNS 查询确认，测试服三个域名均解析到 `34.124.141.90`，正式服三个域名均解析到 `35.247.132.13`。后续配置、构建和文档使用本表的新域名。DNS 记录与解析核验不代表服务器配置、TLS/DTLS、语音或客户端连接已经完成验收，实际运行状态须分别核验。
+
+### 自有域名 gogoglory.com：迁移记录（历史）
+
+以下保留 2026-11-11 的迁移过程、旧值和配套检查项，供排查参考；其中“当时”“迁移前”的状态不作为当前配置依据，当前域名以本节开头的表格为准。
+
+**2026-11-11 晚间测试服实测更新：** 用户已在同日另一个任务授权停用旧 DuckDNS 入口（见 `deploy/releases/20261111/retire_duckdns.py`）。测试服实际仅服务 `test-api.gogoglory.com` 和 `test-voice.gogoglory.com`；旧 API 的 TLS 失败是预期结果，不要为兼容旧包恢复旧站点。新测试包 Android 64 / iOS 92 使用新账号、战斗域名，测试下载页和新二维码统一为 `https://test-api.gogoglory.com/beta/`。下文“旧域名还不能撤”相关内容是停用前的历史检查记录；正式服状态需单独实时核验。
+
+### 2026-11-13 同步的远端补充记录（运行状态仍需现场核验）
+
 ### 自有域名 gogoglory.com：11-11 全部切换，duckdns 已撤
 
 2026-11-11 买了 `gogoglory.com`，起因是 `duckdns.org` 在中国大陆解析不稳、玩家卡在
@@ -36,6 +46,14 @@ DNS 在 Cloudflare（免费版，只做解析）。🔴 **六条记录必须全�
 | --- | --- | --- |
 | `test-api` / `test-battle` | `34.124.141.90` | ✅ 打包已使用 |
 | `api` / `battle` | `35.247.132.13` | ✅ 打包已使用（11-11 起） |
+| `test-voice` | `34.124.141.90` | 晚间记录已切换，见上文测试服实测更新 |
+| `voice` | `35.247.132.13` | DNS 就绪，正式服运行状态需单独实时核验 |
+
+迁移初期，两台服务器的 Caddy 站点块曾使用 `旧域名, 新域名 {`，各持两张证书，新旧同时可用；测试服晚间已停用旧站点，见上文实测更新。
+DTLS 证书**不用换**（CN 是 `glory-battle`，按指纹 pin、不校验主机名）。
+
+### 2026-11-13 同步的远端补充记录（运行状态仍需现场核验）
+
 | `test-voice` / `voice` | 各自 IP | ✅ 服务器已切（11-11） |
 
 两台服务器的 Caddy 只剩新域名（语音站点 `/etc/caddy/glory-voice.caddy` 也换成了新语音域名）。
@@ -46,7 +64,7 @@ DNS 在 Cloudflare（免费版，只做解析）。🔴 **六条记录必须全�
 🔴 **DuckDNS 上的名字不要删**：删了以后谁都能注册同名、申请正规证书，旧包就会把登录凭证交给他。
 留着、继续指向我们的机器，服务器不认，旧包只会连不上。
 
-#### 出下一个正式包时要跟着改的
+#### 迁移时的配套检查项
 
 1. `--patch-config` 里的 `backend_url` 改成 `https://api.gogoglory.com`。旧的正式服补丁配置写的是
    duckdns，不改的话打包入口会因为「补丁接口和所选环境不一致」直接停。
@@ -55,6 +73,33 @@ DNS 在 Cloudflare（免费版，只做解析）。🔴 **六条记录必须全�
    隐私选择链接是同站 `delete-account.html`（见 `docs/releases/2026-11-11-ios-review-name-fix.md`）。
    这几页只放在测试服上，正式服的域名下是 404。`deploy/app-store/release-1.0.0.json`
    是 10-24 那次提审的存档记录，不要改它。
+
+#### 停用 DuckDNS 前的检查清单（历史旧值，当前状态须现场核验）
+
+1. **Supabase 的 Steam OIDC Issuer** —— `update.sh` 从 Caddyfile 的**第一个**域名推出
+   `steam_oidc_issuer`（见 `backend/app/config.py` 那条注释）。旧域名一旦不在第一位或被删，
+   issuer 就会变，Supabase 里登记的必须一字不差地同步改，否则 Steam 登录全挂。
+   撤之前先跑 `update.sh`，照它打印的那一行填。11-11 迁移前两台打印的分别是
+   `https://glorytd-api.duckdns.org/oidc/steam`（测试服）和
+   `https://glorytd-prod-api.duckdns.org/oidc/steam`（正式服）。
+2. **Google Cloud Pub/Sub 的 RTDN 推送订阅** —— 迁移前 `play-billing-rtdn-push` 的**地址和受众**都是
+   `https://glorytd-api.duckdns.org/iap/google/rtdn`，服务器 `backend.env` 的
+   `GLORY_GOOGLE_RTDN_AUDIENCE` 也是这个值：三处必须一起改，只改地址不改受众，身份校验通不过，
+   通知照样收不到（见 `docs/充值系统设计.md`）。这个地址是**测试服**的；正式服有没有自己的
+   推送订阅没核实过（没有的话正式服只靠每 10 分钟的对账补单）。改完要做一笔沙盒充值验证。
+3. **两台战斗服务器启动命令里的 `--backend-url=`**（战报上传用）—— 迁移前正式服是
+   `https://glorytd-prod-api.duckdns.org`，在 `/etc/systemd/system/glory-server.service`；
+   测试服的没核对过。改成新域名，daemon-reload，查过在线再重启战斗服务器。
+
+⚠️ **撤旧域名必须排在「新包已经发出去并验证可用」之后。** 域名是烧进安装包里的，
+服务器删不掉；撤早了连你自己手上的包都连不上，没有退路。
+
+语音地址由服务器下发、客户端不写死；迁移初期曾暂留 DuckDNS，测试语音已在 11-11 晚间切换。
+当前测试服和正式服语音域名分别为 `test-voice.gogoglory.com`、`voice.gogoglory.com`。
+核对战斗服务器和账号服务器各自 LiveKit 配置中的 `client_url` 与本表一致；需切换服务器时使用
+`deploy/livekit/install_livekit.sh <对应环境的新语音域名>`，并在重启战斗服务器前按下文规则检查在线玩家。
+
+### 2026-11-13 同步的远端补充记录（运行状态仍需现场核验）
 
 #### 撤 duckdns 时改过的外部配置（11-11 ~ 11-12，仓库里改不到）
 
@@ -74,10 +119,11 @@ DNS 在 Cloudflare（免费版，只做解析）。🔴 **六条记录必须全�
    🔴 推送身份**不要用默认计算服务账号**。测试服从此收不到 Google 实时通知，靠每 10 分钟对账补单；
    测试服项目里旧主题 `play-billing-rtdn` 和它的两条订阅已闲置。
 3. **战斗服务器启动命令的 `--backend-url=`**（战报上传）：撤域名脚本已换成新域名。
-4. **待改：App Store 服务器通知 V2**（App Store Connect → App 信息）：生产填
-   `https://api.gogoglory.com/iap/apple/notifications`，沙盒填 `https://test-api.gogoglory.com/iap/apple/notifications`。
-   10-30 两个都填的是测试服的 duckdns 地址，正式服从没收到过苹果通知；苹果这一路没有定时对账兜底，
-   不改的话正式服的退款扣不回来。
+4. **2026-11-14 已配置：App Store 服务器通知 V2**（App Store Connect → App 信息）：生产和沙盒两项均已在 UI 保存为
+   `https://api.gogoglory.com/iap/apple/notifications`。当前正式候选包及其 TestFlight 测试均连接正式服钱包，
+   因此沙盒交易通知也必须回到正式服。Apple 的 `Sandbox` 标记表示交易环境，不表示 GLory 测试数据库；
+   测试服单独包不能仅靠该标记自动切库，应另行明确应用/订单路由。旧域名及沙盒指向测试 API 的记录不作为当前值。
+   端点 GET 返回 405 仅证明路由可达；真实通知投递、交易定位和钱包到账/退款对账仍须分别验收，不能据此称已打通。
 
 - 测试服固定使用 Google Cloud 项目 `project-60c72d94-b558-4e4f-992`：
   https://ssh.cloud.google.com/v2/ssh/projects/project-60c72d94-b558-4e4f-992/
@@ -123,3 +169,25 @@ DNS 在 Cloudflare（免费版，只做解析）。🔴 **六条记录必须全�
 - Patch 同样必须精简：统一通过 `tools/workspace/export_patch.py` 导出；手工和 nightly 构建都在隔离 stage 中重新扫描依赖并输出 `slim-resources.json`。动态引用保守保留，扫描失败停止构建，不允许退回全量导出。原包中已存在的未引用文件只继承原包字节用于差异比较，不重复放入补丁；真正删除原包文件仍需新全量包。不得改写旧基线。
 
 详见 `tools/workspace/SLIM_BUILD.md`。
+
+### 2026-11-14 iOS 100 精简基线（后续 patch 必须保留）
+
+- 正式候选包 `1.0.2 (100)` 的 `base_id` 为 `glory-ios-20261114-prod-review`。
+- 原始不可变归档：外层 `build/ios-auto-work/runs/20261114-005944-339654/patch-base/base.zip`；配套清单为同目录 `base.export.json`。
+- `base.zip` SHA-256：`8e0ccf6e61e2d4f85b18bfc929545a87395a15e9eb2e7b2f7c2b6194855076d0`；成品校验已确认 6,232 个基线文件与 IPA 内容一致。
+- 不改写或删除该基线及清单。后续 patch 必须通过 `tools/workspace/export_patch.py` 重新扫描、精简，并对照这次保留的基线生成差异；不要使用全量资源另造基线。
+- `base_id` 标识唯一已安装基线，不能复用于内容不同的新 IPA。新全量包使用新的 `base_id` 和独立归档。
+- 固定保留目录：外层 `build/patch-baselines/glory-ios-20261114-prod-review/`，含 `base.zip`、`base.export.json`、`ipa-result.json`、`baseline-lock.json`、`README.txt`、`patch-config.json`；`source-snapshot/` 保留导出预设、工程配置、构建身份、精简过滤清单和 `patcher/boot.json`。各项已回读核验 hash。
+- 固定 `patch-config.json` SHA-256 为 `358357f141b68e23e3f2545b8fab4b0dfe6e93e9d2002a41c45919f1e7bbc0eb`；后续 `export_patch.py --config` 使用该文件，具体命令见固定目录的 `README.txt`。
+- `base.zip` 以 hardlink 固定，删除原 run 不会删除此路径；小文件已独立复制。此目录独立于原 run 保留，未来清理必须显式保留整个目录。`baseline-lock.json` 是保留记录，不是自动清理保护机制或文件系统不可变标记。
+- 详细信息见 `docs/releases/2026-11-14-ios-review100.md`；不能把下一次构建会复用的 `build/ios-auto-work/project` 当作本次永久快照。未发布新 patch，也未改 nightly 线上记录。
+
+### 2026-11-14 Google Play Android 67 正式精简基线
+
+- 正式候选包为 `com.glory.game.google`、`1.0.2 (67)`，连接 `https://api.gogoglory.com`、`battle.gogoglory.com:8080`，使用正式 DTLS pin、协议 46；语音由服务器下发。
+- 后续 **Android 正式服 patch 默认以此包为基线**。默认指针为外层 `build/patch-baselines/current-android-production.json`；固定目录为 `build/patch-baselines/glory-android-20261114-prod-review67/`，`base_id=glory-android-20261114-prod-review67`、`channel=production`。
+- `base.zip` SHA-256：`10a00547c4e1668e98012193ebdcaf38c6d0c3bd16946f076128b2fca1daf8cc`。6,230 个基线文件已与签名 AAB 的 `assetPackInstallTime/assets/` 内容逐字节核验。
+- 签名 AAB：外层 `build/aab/Glory-1.0.2-67-20261114-080951-release.aab`，SHA-256 `502d6762fe36f028ebfe0ee5640f34dc9de05fad015ae702e1f199e7c0f59492`。固定目录含基线、清单、构建结果、配置、引擎、`source-snapshot/` 与 `baseline-lock.json`。清理时保留整个目录及默认指针；不得覆盖归档或为内容不同的新全量包复用此 ID。
+- 在外层工作区执行 `./tools/build_android_production_patch.sh --check` 核验基线；执行 `./tools/build_android_production_patch.sh` 从当前本地代码、资源生成正式 Android 累积补丁。入口读取上述默认指针，重新精简并调用 `export_patch.py`；输出在 `build/patch-android-production/`。无差异时记录 `no_changes`，不造空补丁。
+- 引擎、原生输入、工程设置、导出策略或不可变启动器不兼容时停止，重新构建全量包；不得用旧快照覆盖不兼容的新输入来强行通过。具体保留规则与调用说明见固定目录 `README.txt`。
+- 此入口只构建本地 patch，不上传、不更新服务器、不自动发布。Android 正式基线与 iOS 100、测试服及旧内部双平台 nightly 独立；不把本次基线写入旧 nightly 任务。构建、上传、提审和获批状态分别以本次 `delivery/google-play-review-20261114/` 证据为准。

@@ -62,6 +62,7 @@ var _clear_band_material: ShaderMaterial
 var _clear_caption_material: ShaderMaterial
 # 本地那一路在屏幕上的锚点（全局坐标）。INF = 没给，落回顶部中间。
 var _clear_anchor := Vector2.INF
+var _clear_anchor_y := false
 
 
 func _ready() -> void:
@@ -195,6 +196,9 @@ func _place_clear_caption(factor: float, top: float) -> void:
 		var half := text_width * 0.5 + 75.0 * factor
 		var left_limit := maxf(half + 16.0, CLEAR_HUD_LEFT_PX * factor + half)
 		center.x = clampf(local.x, minf(left_limit, size.x * 0.5), size.x - half - 16.0)
+		if _clear_anchor_y:
+			# 不能高过顶部 HUD（团队血条 / 狂热条），也不能掉出屏幕底。
+			center.y = clampf(local.y, top + height * 0.5, size.y - height * 0.5 - 8.0)
 	# 标签是 CENTER_TOP 锚点，offset 以顶部中点为原点。
 	_clear_label.offset_left = center.x - size.x * 0.5 - width * 0.5
 	_clear_label.offset_right = center.x - size.x * 0.5 + width * 0.5
@@ -300,11 +304,13 @@ static func damage_tier(total: int, round_index := 11) -> int:
 ## The owner calls once when the local lane is confirmed clear. Repeated calls
 ## are ignored until reset_feedback(), including while the subtitle is fading.
 ## anchor_global：本地那一路在屏幕上的位置（全局坐标），字幕对准它；不给就在顶部中间。
-func show_lane_clear(anchor_global := Vector2.INF) -> void:
+## anchor_y：true 时字幕竖直方向也对准锚点（第 21 回合横路用：压在本路横带上沿）。
+func show_lane_clear(anchor_global := Vector2.INF, anchor_y := false) -> void:
 	if _clear_label == null or _clear_shown:
 		return
 	_clear_shown = true
 	_clear_anchor = anchor_global
+	_clear_anchor_y = anchor_y and anchor_global != Vector2.INF
 	_refresh_text()
 	_layout()
 	if _clear_tween != null:
@@ -366,6 +372,7 @@ func reset_feedback() -> void:
 		_plate.hide()
 	_clear_shown = false
 	_clear_anchor = Vector2.INF
+	_clear_anchor_y = false
 	if is_instance_valid(_clear_band):
 		_clear_band.hide()
 		_clear_band.modulate.a = 1.0
@@ -399,10 +406,18 @@ func _refresh_text() -> void:
 	var text_width := font.get_string_size(_damage_label.text,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size).x
 	if text_width > _damage_label.size.x:
 		font_size = maxi(roundi(18.0*factor),floori(float(font_size)*_damage_label.size.x/text_width))
-	_damage_label.add_theme_font_size_override("font_size",font_size)
-	_damage_depth.add_theme_font_size_override("font_size",font_size)
+	_set_font_size_if_changed(_damage_label, font_size)
+	_set_font_size_if_changed(_damage_depth, font_size)
 	_refresh_ink_metrics()
 	_clear_label.text = "LANE CLEAR" if english else "本路已清"
+
+
+static func _set_font_size_if_changed(label: Label, font_size: int) -> void:
+	# Even an identical font-size override emits THEME_CHANGED in Godot 4.7,
+	# dirtying the font and scheduling layout. Damage changes far more often than
+	# its fitted size. Keep an explicit override, but update it only when needed.
+	if not label.has_theme_font_size_override("font_size") or label.get_theme_font_size("font_size") != font_size:
+		label.add_theme_font_size_override("font_size", font_size)
 
 
 func _on_locale_changed(_locale: String) -> void:

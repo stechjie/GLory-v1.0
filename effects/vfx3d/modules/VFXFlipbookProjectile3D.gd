@@ -147,7 +147,8 @@ func _play_impact(at: Vector3, spec: Dictionary) -> void:
 		"duration":duration,
 		"color":spec.get("impact_color", spec.get("color", Color.WHITE)),
 		"size":spec.get("impact_size", Vector2(0.82, 0.82)),
-		"position_offset":Vector3.ZERO,
+		# impact_lift：竖直抬高，把轴心不在单格中央的平滑序列帧对到命中点；默认 0 不变。
+		"position_offset":Vector3(0.0, float(spec.get("impact_lift", 0.0)), 0.0),
 		"fade_in":0.015,
 		"fade_out":float(spec.get("impact_fade_out", 0.14)),
 		"emission_scale":float(spec.get("impact_emission_scale", spec.get("emission_scale", 0.74))),

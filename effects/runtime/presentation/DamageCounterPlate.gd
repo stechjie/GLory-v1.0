@@ -8,6 +8,8 @@ func _ready() -> void:
 	resized.connect(queue_redraw)
 
 func set_accent(value: Color) -> void:
+	if accent == value:
+		return
 	accent = value
 	queue_redraw()
 

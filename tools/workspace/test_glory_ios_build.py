@@ -149,7 +149,7 @@ class IOSBuildTests(unittest.TestCase):
             'config/name_localized={"zh_CN": "Old localized name"}\n'
             'config/version="1.0.2"\n[autoload]\nSaveManager="*res://save.gd"\n')
         ios.configure_display_name(self.root)
-        expected = ('[application]\nconfig/name="GLory Auto Chess"\n'
+        expected = ('[application]\nconfig/name="GLory: Auto Chess & Team PvP"\n'
                     'config/version="1.0.2"\n[autoload]\nSaveManager="*res://save.gd"\n')
         self.assertEqual(project.read_text(), expected)
         ios.configure_display_name(self.root)
@@ -158,7 +158,7 @@ class IOSBuildTests(unittest.TestCase):
     def test_signed_payload_name_rejects_old_name_and_localization_override(self):
         app = self.root / "Fixture.app"
         app.mkdir()
-        for wrong in (None, "Glory Beta 0.04", "$(INFOPLIST_KEY_CFBundleDisplayName)"):
+        for wrong in (None, "Glory Beta 0.04", "GLory Auto Chess", "$(INFOPLIST_KEY_CFBundleDisplayName)"):
             with self.subTest(name=wrong), self.assertRaisesRegex(RuntimeError, "桌面名称"):
                 ios.verify_display_name(app, {"CFBundleDisplayName": wrong})
         self.assertEqual(ios.verify_display_name(app, {"CFBundleDisplayName": ios.DISPLAY_NAME})["display_name"], ios.DISPLAY_NAME)
@@ -168,7 +168,7 @@ class IOSBuildTests(unittest.TestCase):
             localized.write_bytes(plistlib.dumps({"CFBundleDisplayName": "Glory Beta 0.04"}, fmt=fmt))
             with self.assertRaisesRegex(RuntimeError, "本地化桌面名称"):
                 ios.verify_display_name(app, {"CFBundleDisplayName": ios.DISPLAY_NAME})
-        localized.write_text('"CFBundleDisplayName" = "GLory Auto Chess";\n')
+        localized.write_text('"CFBundleDisplayName" = "GLory: Auto Chess & Team PvP";\n')
         self.assertEqual(ios.verify_display_name(app, {"CFBundleDisplayName": ios.DISPLAY_NAME})["localized_display_name_checks"], ["zh-Hans.lproj"])
 
     def test_unlock_failure_does_not_disclose_password(self):

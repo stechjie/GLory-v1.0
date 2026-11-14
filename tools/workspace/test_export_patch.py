@@ -118,13 +118,13 @@ binary_format/architecture="x86_64"
             else:
                 export(**options, output=root / "original")
             if platform == "ios":
-                self.assertIn('config/name="GLory Auto Chess"', (stage / "project.godot").read_text())
+                self.assertIn('config/name="GLory: Auto Chess & Team PvP"', (stage / "project.godot").read_text())
                 # Nightly starts from fresh source; reproduce that part of the
                 # lifecycle before exporting the next cumulative patch.
                 project = stage / "project.godot"
                 project.write_text(project.read_text().replace(
-                    'config/name="GLory Auto Chess"',
-                    'config/name="Glory Beta 0.04"\nconfig/name.ios="GLory Auto Chess"'))
+                    'config/name="GLory: Auto Chess & Team PvP"',
+                    'config/name="Glory Beta 0.04"\nconfig/name.ios="GLory: Auto Chess & Team PvP"'))
             base_hash = digest(root / 'original/base.zip')
             with zipfile.ZipFile(root / "original/base.zip") as pack:
                 self.assertIn('assets/old.svg.import', pack.namelist())

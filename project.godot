@@ -21,7 +21,7 @@ boot_splash/bg_color=Color(0.113725, 0.14902, 0.2, 1)
 boot_splash/stretch_mode=0
 boot_splash/image="res://ui/branding/glory_bootstrap.png"
 config/icon="res://app_icon.png"
-config/name.ios="GLory Auto Chess"
+config/name.ios="GLory: Auto Chess & Team PvP"
 
 [audio]
 

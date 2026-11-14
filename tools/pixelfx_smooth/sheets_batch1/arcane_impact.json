@@ -1,0 +1,24 @@
+{
+ "fx": "arcane/mana-burst",
+ "columns": 4,
+ "rows": 5,
+ "frame_count": 17,
+ "fps": 12,
+ "duration": 1.417,
+ "cell_px": [
+  273,
+  237
+ ],
+ "cell_src_px": [
+  227.5,
+  197.5
+ ],
+ "pivot": [
+  0.4974,
+  0.7249
+ ],
+ "sheet_px": [
+  1092,
+  1185
+ ]
+}

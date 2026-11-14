@@ -1,0 +1,24 @@
+{
+ "fx": "impacts/crit-hit",
+ "columns": 3,
+ "rows": 5,
+ "frame_count": 13,
+ "fps": 20,
+ "duration": 0.65,
+ "cell_px": [
+  265,
+  172
+ ],
+ "cell_src_px": [
+  265,
+  172
+ ],
+ "pivot": [
+  0.4604,
+  0.6802
+ ],
+ "sheet_px": [
+  795,
+  860
+ ]
+}

@@ -19,6 +19,16 @@ var _rear: GlowLayer
 var _front: GlowLayer
 var _rear_light: GlowLayer
 var _front_light: GlowLayer
+var _cached_size := Vector2(-1.0, -1.0)
+var _segment_angles := PackedFloat64Array()
+var _front_segments := PackedInt32Array()
+var _rear_segments := PackedInt32Array()
+var _orbit_points := PackedVector2Array()
+var _cached_phase := INF
+var _cached_opacity := -1.0
+var _segment_colors := PackedColorArray()
+var _body_rim_color := Color.TRANSPARENT
+var _body_core_color := Color.TRANSPARENT
 
 class GlowLayer extends Control:
 	var effect: Control
@@ -44,6 +54,7 @@ func _ready() -> void:
 	_rear_light = _make_light_layer(false)
 	_front_light = _make_light_layer(true)
 	resized.connect(_redraw)
+	visibility_changed.connect(_on_visibility_changed)
 	visible = _mode != 0
 	set_process(_mode != 0)
 
@@ -88,12 +99,56 @@ func _process(delta: float) -> void:
 		_redraw()
 
 func _redraw() -> void:
+	if not is_visible_in_tree():
+		return
 	if is_instance_valid(_rear):
 		_rear.queue_redraw()
 		_front.queue_redraw()
 		if is_instance_valid(_rear_light):
 			_rear_light.queue_redraw()
 			_front_light.queue_redraw()
+
+func _on_visibility_changed() -> void:
+	if is_visible_in_tree():
+		_redraw()
+
+func _ensure_orbit_geometry() -> void:
+	if _cached_size == size:
+		return
+	_cached_size = size
+	if _segment_angles.is_empty():
+		for i in SEGMENTS:
+			var a := TAU * float(i) / float(SEGMENTS)
+			var b := TAU * float(i + 1) / float(SEGMENTS)
+			_segment_angles.append(a)
+			if sin((a + b) * 0.5) >= 0.0:
+				_front_segments.append(i)
+			else:
+				_rear_segments.append(i)
+	_orbit_points.resize(2 * (SEGMENTS + 1))
+	for orbit in 2:
+		for i in SEGMENTS + 1:
+			_orbit_points[orbit * (SEGMENTS + 1) + i] = _point(TAU * float(i) / float(SEGMENTS), orbit)
+
+func _ensure_segment_colors() -> void:
+	if _cached_phase == _phase and _cached_opacity == _opacity:
+		return
+	_cached_phase = _phase
+	_cached_opacity = _opacity
+	_body_rim_color = Color(0.32, 0.16, 0.01, 0.35 * _opacity)
+	_body_core_color = Color(CRIMSON, 0.88 * _opacity)
+	_segment_colors.resize(2 * SEGMENTS * 3)
+	for orbit in 2:
+		var head := _phase + float(orbit) * PI
+		for i in SEGMENTS:
+			var trail := 1.0 - fposmod(head - _segment_angles[i], TAU) / TAU
+			var trail_power := pow(trail, 4.0)
+			var alpha := (0.48 + 0.52 * trail_power) * _opacity
+			var hot := Color(1.0, 0.84, 0.38).lerp(HOT, trail_power)
+			var offset := (orbit * SEGMENTS + i) * 3
+			_segment_colors[offset] = Color(1.0, 0.61, 0.05, alpha * 0.12)
+			_segment_colors[offset + 1] = Color(1.0, 0.78, 0.16, alpha * 0.23)
+			_segment_colors[offset + 2] = Color(hot, (0.66 + 0.25 * trail) * _opacity)
 
 func _point(angle: float, orbit: int) -> Vector2:
 	var x := cos(angle) * size.x * (0.55 if orbit == 0 else 0.53)
@@ -103,6 +158,8 @@ func _point(angle: float, orbit: int) -> Vector2:
 func paint_layer(layer: Control, front: bool, light: bool) -> void:
 	if _mode == 0 or size.x <= 0.0:
 		return
+	_ensure_orbit_geometry()
+	_ensure_segment_colors()
 	if not front and not light and _loading > 0.001:
 		# The sprite includes a transparent outer margin; the luminous rim fits
 		# between the screen edge and round label without moving the button.
@@ -113,24 +170,19 @@ func paint_layer(layer: Control, front: bool, light: bool) -> void:
 		layer.draw_set_transform(Vector2.ZERO)
 	for orbit in 2:
 		var head := _phase + float(orbit) * PI
-		for i in SEGMENTS:
-			var a := TAU * float(i) / float(SEGMENTS)
-			var b := TAU * float(i + 1) / float(SEGMENTS)
-			if (sin((a + b) * 0.5) >= 0.0) != front:
-				continue
-			var trail := 1.0 - fposmod(head - a, TAU) / TAU
-			var alpha := (0.48 + 0.52 * pow(trail, 4.0)) * _opacity
-			var p := _point(a, orbit)
-			var q := _point(b, orbit)
+		for i in _front_segments if front else _rear_segments:
+			var point_offset := orbit * (SEGMENTS + 1) + i
+			var p := _orbit_points[point_offset]
+			var q := _orbit_points[point_offset + 1]
 			if light:
 				# Soft golden fringe plus a narrow, travelling white-hot core.
-				layer.draw_line(p, q, Color(1.0, 0.61, 0.05, alpha * 0.12), 11.0 + _loading * 2.0, true)
-				layer.draw_line(p, q, Color(1.0, 0.78, 0.16, alpha * 0.23), 6.0, true)
-				var hot := Color(1.0, 0.84, 0.38).lerp(HOT, pow(trail, 4.0))
-				layer.draw_line(p, q, Color(hot, (0.66 + 0.25 * trail) * _opacity), 1.1 + _loading * 0.4, true)
+				var color_offset := (orbit * SEGMENTS + i) * 3
+				layer.draw_line(p, q, _segment_colors[color_offset], 11.0 + _loading * 2.0, true)
+				layer.draw_line(p, q, _segment_colors[color_offset + 1], 6.0, true)
+				layer.draw_line(p, q, _segment_colors[color_offset + 2], 1.1 + _loading * 0.4, true)
 			else:
-				layer.draw_line(p, q, Color(0.32, 0.16, 0.01, 0.35 * _opacity), 5.2, true)
-				layer.draw_line(p, q, Color(CRIMSON, 0.88 * _opacity), 3.0 + _loading * 0.5, true)
+				layer.draw_line(p, q, _body_rim_color, 5.2, true)
+				layer.draw_line(p, q, _body_core_color, 3.0 + _loading * 0.5, true)
 		if light and (sin(head) >= 0.0) == front:
 			_spark(layer, _point(head, orbit), 1.0 + _loading * 0.25)
 	# Three small faceted pink crystals follow the rails, passing behind the
