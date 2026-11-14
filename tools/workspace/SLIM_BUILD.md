@@ -104,7 +104,7 @@ Google Play 正式／审核包使用 `./tools/build_aab.sh --server-environment 
 选择只改隔离 stage，不改源码默认值；AAB 构建记录会保留目标环境。
 正式服账号为 `https://api.gogoglory.com`，战斗为
 `battle.gogoglory.com:8080`（UDP + DTLS），语音由正式服下发
-`wss://glorytd-prod-voice.duckdns.org`（语音暂留 duckdns，见 AGENTS.md）。使用 `--patch-config` 时账号与补丁
+`wss://voice.gogoglory.com`（当前环境约定见 AGENTS.md）。使用 `--patch-config` 时账号与补丁
 接口必须匹配；新版本保留独立基线。
 
 iOS 正式候选包也显式指定 `./tools/build_ipa.sh --method app-store --server-environment prod`。

@@ -181,3 +181,13 @@ DTLS 证书**不用换**（CN 是 `glory-battle`，按指纹 pin、不校验主�
 - 固定 `patch-config.json` SHA-256 为 `358357f141b68e23e3f2545b8fab4b0dfe6e93e9d2002a41c45919f1e7bbc0eb`；后续 `export_patch.py --config` 使用该文件，具体命令见固定目录的 `README.txt`。
 - `base.zip` 以 hardlink 固定，删除原 run 不会删除此路径；小文件已独立复制。此目录独立于原 run 保留，未来清理必须显式保留整个目录。`baseline-lock.json` 是保留记录，不是自动清理保护机制或文件系统不可变标记。
 - 详细信息见 `docs/releases/2026-11-14-ios-review100.md`；不能把下一次构建会复用的 `build/ios-auto-work/project` 当作本次永久快照。未发布新 patch，也未改 nightly 线上记录。
+
+### 2026-11-14 Google Play Android 67 正式精简基线
+
+- 正式候选包为 `com.glory.game.google`、`1.0.2 (67)`，连接 `https://api.gogoglory.com`、`battle.gogoglory.com:8080`，使用正式 DTLS pin、协议 46；语音由服务器下发。
+- 后续 **Android 正式服 patch 默认以此包为基线**。默认指针为外层 `build/patch-baselines/current-android-production.json`；固定目录为 `build/patch-baselines/glory-android-20261114-prod-review67/`，`base_id=glory-android-20261114-prod-review67`、`channel=production`。
+- `base.zip` SHA-256：`10a00547c4e1668e98012193ebdcaf38c6d0c3bd16946f076128b2fca1daf8cc`。6,230 个基线文件已与签名 AAB 的 `assetPackInstallTime/assets/` 内容逐字节核验。
+- 签名 AAB：外层 `build/aab/Glory-1.0.2-67-20261114-080951-release.aab`，SHA-256 `502d6762fe36f028ebfe0ee5640f34dc9de05fad015ae702e1f199e7c0f59492`。固定目录含基线、清单、构建结果、配置、引擎、`source-snapshot/` 与 `baseline-lock.json`。清理时保留整个目录及默认指针；不得覆盖归档或为内容不同的新全量包复用此 ID。
+- 在外层工作区执行 `./tools/build_android_production_patch.sh --check` 核验基线；执行 `./tools/build_android_production_patch.sh` 从当前本地代码、资源生成正式 Android 累积补丁。入口读取上述默认指针，重新精简并调用 `export_patch.py`；输出在 `build/patch-android-production/`。无差异时记录 `no_changes`，不造空补丁。
+- 引擎、原生输入、工程设置、导出策略或不可变启动器不兼容时停止，重新构建全量包；不得用旧快照覆盖不兼容的新输入来强行通过。具体保留规则与调用说明见固定目录 `README.txt`。
+- 此入口只构建本地 patch，不上传、不更新服务器、不自动发布。Android 正式基线与 iOS 100、测试服及旧内部双平台 nightly 独立；不把本次基线写入旧 nightly 任务。构建、上传、提审和获批状态分别以本次 `delivery/google-play-review-20261114/` 证据为准。
