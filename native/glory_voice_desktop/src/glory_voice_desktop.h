@@ -56,7 +56,8 @@ public:
 	void on_failed(int gen, const std::string &code);
 	void on_speakers(int gen, const std::vector<std::string> &identities, const std::string &self_identity);
 	void on_participants(int gen, const std::vector<std::string> &identities);
-	void on_track_subscribed(int gen, const std::string &identity);
+	void on_remote_audio_changed(int gen, const std::string &identity);
+	void on_reconnected(int gen);
 
 	// 退出前由 register_types 调：停工作线程、断开、关掉开发包。
 	void shutdown();
@@ -84,7 +85,7 @@ private:
 	void do_join(int gen, const std::string &url, const std::string &token);
 	void do_apply_mic(int gen, bool enabled);
 	void do_apply_audience(int gen);
-	void do_apply_volume(const std::string &identity);
+	void do_apply_volume(const std::string &identity, bool reconcile = false);
 	void do_teardown();
 
 	std::atomic<int> generation_{0};

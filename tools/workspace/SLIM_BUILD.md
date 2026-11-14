@@ -30,7 +30,7 @@ APK 下载文件更小不等于安装占用同幅度下降：native 库安装时
 
 ## iOS 商店与桌面名称
 
-iOS 的正式名称固定为 `GLory: Auto Chess & Team PvP`，与本轮 App Store Connect 英文、马来文和印尼文名称一致。中文商店名为 `GLory 自走棋：3v3组队对战`，保留同一品牌与玩法定位。
+iOS 的正式名称固定为 `GLory: Auto Chess & Team PvP`，与本轮 App Store Connect 英文名称完全一致。马来文 `GLory Catur Auto PvP 3v3`、印尼文 `GLory Catur Otomatis 3v3` 和中文 `GLory 自走棋：3v3组队对战` 保留同一品牌与玩法定位。
 源码通过 `config/name.ios` 声明 iOS 名称；IPA 入口还会在隔离 stage 中统一
 `config/name` 并去除过时的名称覆盖，避免导出器回退到 `Glory Beta 0.04`。
 桌面及服务器仍使用原工程名来定位已有存档和服务密钥，不做全平台工程目录迁移。
@@ -104,7 +104,7 @@ Google Play 正式／审核包使用 `./tools/build_aab.sh --server-environment 
 选择只改隔离 stage，不改源码默认值；AAB 构建记录会保留目标环境。
 正式服账号为 `https://api.gogoglory.com`，战斗为
 `battle.gogoglory.com:8080`（UDP + DTLS），语音由正式服下发
-`wss://glorytd-prod-voice.duckdns.org`（语音暂留 duckdns，见 AGENTS.md）。使用 `--patch-config` 时账号与补丁
+`wss://voice.gogoglory.com`（当前环境约定见 AGENTS.md）。使用 `--patch-config` 时账号与补丁
 接口必须匹配；新版本保留独立基线。
 
 iOS 正式候选包也显式指定 `./tools/build_ipa.sh --method app-store --server-environment prod`。

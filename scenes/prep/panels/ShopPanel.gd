@@ -197,12 +197,24 @@ const PrepShopRaceIcon = preload("res://scenes/prep/PrepShopRaceIcon.gd")
 var _gold_amount_label: Label
 var _closed_gold_label: Label
 var _shop_scroll_idle: PrepScrollIdleFlipbook
-var _shop_scroll_glint: Control
+var _shop_scroll_glint: PrepGlintFxScript
+var _shop_button_art: TextureRect
 const PrepGlintFxScript = preload("res://scenes/prep/effects/PrepGlintFx.gd")
 var _closed_money_bag: Control    # 商店关闭时的钱袋按钮（商店按钮左边）
 var _shop_cards_signature := "unset"
 var _shop_background: TextureRect
 
+
+
+func reapply_skin() -> void:
+	if is_instance_valid(_shop_button_art):
+		_shop_button_art.texture = PrepWidgets.cached_texture(PrepSkin.path("shop_button"))
+		if is_instance_valid(_shop_scroll_glint):
+			_shop_scroll_glint.set_art_texture(_shop_button_art.texture)
+	if is_instance_valid(_shop_background):
+		_shop_background.texture = PrepWidgets.cached_texture(PrepSkin.path("shop_panel"))
+	if is_instance_valid(refresh_emblem):
+		refresh_emblem.sync()
 
 
 # 原 _build_shop_button_and_purse（PrepUI.gd）
@@ -230,6 +242,7 @@ func build_button_and_purse(body: HBoxContainer, center_host: Control, center: C
 	# 底部「商店」按钮：点击打开/关闭商店弹窗（弹窗打开时被弹窗盖住）。保留 shop_closed.png 贴图框、图自带文字。
 	var shop_open_btn := PrepWidgets.make_framed_text_button("", PrepSkin.path("shop_button"), SHOP_BTN_SIZE, 18, toggle_picker)
 	open_button = shop_open_btn
+	_shop_button_art = shop_open_btn.get_child(0) as TextureRect
 	shop_open_btn.anchor_left = 0.5
 	shop_open_btn.anchor_top = 1.0
 	shop_open_btn.anchor_right = 0.5
@@ -252,7 +265,7 @@ func build_button_and_purse(body: HBoxContainer, center_host: Control, center: C
 	_shop_scroll_glint = PrepGlintFxScript.new()
 	_shop_scroll_glint.halo_grow = Vector2(1.12, 1.7)
 	_shop_scroll_glint.halo_alpha = Vector2(0.4, 0.7)
-	_shop_scroll_glint.setup(shop_open_btn, PrepWidgets.cached_texture(PrepSkin.path("shop_button")))
+	_shop_scroll_glint.setup(shop_open_btn, _shop_button_art.texture)
 
 	# 钱袋 B（商店关闭时显示）：放在「商店」按钮左边，显示金币，长按看利息。商店打开时隐藏（那时看钱袋 A）。
 	var closed_money_btn := Button.new()
