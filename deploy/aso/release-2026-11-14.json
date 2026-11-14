@@ -171,7 +171,18 @@
     "guideline_2_3_8_reply_sent_and_read_back": true,
     "resolution_reply_file": "resolution-reply-final-en.txt",
     "app_info_five_locale_names_reload_verified": true,
-    "app_info_name_readback_evidence": "app-info-name-proof.json"
+    "app_info_name_readback_evidence": "app-info-name-proof.json",
+    "new_build_device_installed": true,
+    "new_build_device_installed_local_time": "2026-11-14 08:10:56 Asia/Shanghai",
+    "new_build_device_display_name_verified": true,
+    "new_build_device_launch_verified": true,
+    "new_build_device_launch_status": "verified_regular_testflight_launch_and_icon_resume",
+    "new_build_device_payment_tested": false,
+    "new_build_demo_recorded": false,
+    "device_verification_evidence": "device-100.json",
+    "new_build_device_qa_local_time": "2026-11-14 08:22 Asia/Shanghai",
+    "new_build_device_storekit_prices_displayed": true,
+    "new_build_full_match_tested": false
   },
   "sales_availability": {
     "verification_source": "Parent agent reported live App Store Connect readback",
@@ -268,13 +279,98 @@
     "ipa_sha256": "4ec3e49257b5398d65f24f52a05530106827aec1bf266194b740cdd849979f7e"
   },
   "qa_evidence_limits": {
-    "build_100_new_physical_device_install_performed": false,
+    "build_100_new_physical_device_install_performed": true,
     "build_100_new_physical_device_recording_captured": false,
     "build_100_new_physical_device_payment_test_performed": false,
     "build_81_recording_is_reference_only": true,
     "build_99_or_source_physical_tests_do_not_verify_build_100": true,
-    "build_100_checks": "Final signed IPA / source / patch-baseline audit and 326 automated performance assertions, plus 24 iOS build and 8 real patch-export regression checks; no new build 100 physical-device or purchase claim.",
+    "build_100_checks": "Final signed IPA / source / patch-baseline audit and 326 automated performance assertions, plus 24 iOS build and 8 real patch-export regression checks. After the 01:45 submission, build 100 was installed through TestFlight at 08:10:56, and regular TestFlight launch, icon resume, the installed name, lobby, three USD StoreKit display prices and purchase buttons were verified by 08:22. No purchase, new server order/credit, MYR price, new recording or full match was tested.",
     "review_approved": false,
-    "released_to_app_store": false
-  }
+    "released_to_app_store": false,
+    "build_100_physical_device_display_name_verified": true,
+    "build_100_physical_device_launch_verified": true,
+    "build_100_physical_device_launch_status": "verified_regular_testflight_launch_and_icon_resume",
+    "build_100_storekit_price_display_verified": true,
+    "build_100_server_order_credit_verified": false,
+    "build_100_malaysia_myr_prices_verified": false,
+    "build_100_full_match_tested": false
+  },
+  "device_verification": {
+    "checked_local_time": "2026-11-14 08:22 Asia/Shanghai",
+    "installation_source": "TestFlight internal group",
+    "update_from_build": 99,
+    "installed_build": 100,
+    "version": "1.0.2",
+    "bundle_identifier": "com.superforge.glory",
+    "installed_display_name": "GLory: Auto Chess & Team PvP",
+    "installation_verified": true,
+    "display_name_verified": true,
+    "app_uninstalled": false,
+    "data_preservation": {
+      "files_checked": 11,
+      "all_unchanged": true,
+      "account_or_save_deleted_by_agent": false,
+      "comparison_scope": "After in-place installation and before the first launch of build 100. This does not assert normal startup will never change caches."
+    },
+    "launch_verified": true,
+    "launch_status": "verified_regular_testflight_launch_and_icon_resume",
+    "device_payment_tested": false,
+    "new_demo_recorded": false,
+    "evidence": [
+      "device-100.json",
+      "device100/app-after.json",
+      "device100/data-preservation-proof.json",
+      "device100/springboard-name-proof.json",
+      "device100/testflight100-installed.jpg",
+      "device100/first-run-nickname.jpg",
+      "device100/lobby100.jpg",
+      "device100/storekit-three-prices.jpg",
+      "device100/lobby-final.jpg"
+    ],
+    "privacy_scope": "Only aggregate data-preservation results are recorded here. No account content, credentials, device identifiers or per-file hashes are included.",
+    "installed_local_time": "2026-11-14 08:10:56 Asia/Shanghai",
+    "springboard_icon_accessibility_name_verified": true,
+    "regular_testflight_launch_verified": true,
+    "regular_icon_resume_verified": true,
+    "initial_screen": "language_and_nickname",
+    "language_selected": "zh",
+    "nickname_entered_by_agent": false,
+    "account_bound_or_deleted_by_agent": false,
+    "lobby_visible": true,
+    "storekit_price_display_verified": true,
+    "storekit_display_prices": [
+      {
+        "product_id": "diamond_pack_1",
+        "base_diamonds": 50,
+        "display_price": "US$0.99"
+      },
+      {
+        "product_id": "diamond_pack_2",
+        "base_diamonds": 200,
+        "display_price": "US$3.99"
+      },
+      {
+        "product_id": "diamond_pack_3",
+        "base_diamonds": 500,
+        "display_price": "US$9.99"
+      }
+    ],
+    "purchase_buttons_enabled": true,
+    "purchase_clicked_by_agent": false,
+    "server_order_credit_verified": false,
+    "malaysia_myr_prices_verified": false,
+    "full_match_tested": false,
+    "final_screen": "lobby",
+    "price_source_audit": {
+      "normal_ios_price_source": "StoreKit Product.displayPrice",
+      "normal_ios_server_price_fallback": false,
+      "source_files": [
+        "native/glory_voice_ios/GloryAppleBilling.swift",
+        "scripts/account/BillingBridge.gd",
+        "scenes/menu/DiamondStoreDialog.gd"
+      ],
+      "scope": "Source routing plus visible prices/buttons verified; no purchase or wallet-credit verification."
+    }
+  },
+  "submission_snapshot_scope": "The embedded submission record describes 2026-11-14 01:45 Asia/Shanghai, when build 100 had not yet been installed on the physical device. Current 08:10:56 installation/name verification is recorded separately in device_verification."
 }
