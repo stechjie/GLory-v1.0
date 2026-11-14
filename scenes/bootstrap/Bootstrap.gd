@@ -35,7 +35,28 @@ const WATCHDOG_PROGRESS_EPSILON := 0.01
 
 enum WatchdogLevel { QUIET, NOTICE, EXPLAIN, STUCK }
 
-enum Phase { FIRST_FRAME, PREPARE_DATA, LOAD_MAIN, ENTRY, READY, FAILED }
+enum Phase { FIRST_FRAME, PREPARE_DATA, LOAD_MAIN, ENTRY, READY, FAILED, PRELOAD }
+
+# --- 登录后先载入战斗资源（电脑版，2026-11-14）----------------------------------
+#
+# 登录成功、进主菜单之前，在这一页把大厅原本要在后台预载的那批（外部特效 + 商店池全部单位）
+# 先载完，进度条显示「载入战斗资源 x/N」。玩家进主菜单、进房间就不再有任何加载。
+# 走 BattleAssetService 的排队（一次一个，见它的 MAX_IN_FLIGHT —— 并发会死锁），
+# 大厅的 _setup_asset_loader 再 acquire 同一批时全部命中缓存，直接跳过。
+#
+# 只在电脑版：手机内存小（手机卡顿的根因是贴图内存），手机维持进房间才在后台载。
+# 无界面运行（门禁、战斗服务器）也不做，门禁行为不变。
+#
+# 🔴 绝不把玩家挡在门外：进度 PRELOAD_STALL_SEC 秒不动就照样放行，剩下的由大厅 / 备战
+# 在后台接着载（BattleScreen 对还在排队的资源不判失败，见 BattleAssetService.is_pending）。
+# 这一阶段不交给看门狗：单个资源首次编译 shader 可能要好几秒，看门狗 15 秒会弹「卡住了」。
+const PRELOAD_STALL_SEC := 20.0
+
+var _preload_total := 0
+var _preload_pending := -1
+var _preload_stall := 0.0
+var _preload_started_ms := 0
+var _preload_done := false
 
 # --- 进门（同时在线上限与排队，2026-09-14）------------------------------------
 #
@@ -143,6 +164,9 @@ func _process(delta: float) -> void:
 	_tick_watchdog(delta)
 	if _phase == Phase.ENTRY:
 		_tick_entry(delta)
+		return
+	if _phase == Phase.PRELOAD:
+		_tick_preload(delta)
 		return
 	if not _load_started or _phase != Phase.LOAD_MAIN:
 		return
@@ -276,6 +300,66 @@ func _finish_loading() -> void:
 
 
 func _enter_ready() -> void:
+	if _should_preload():
+		_begin_preload()
+		return
+	_enter_ready_now()
+
+
+func _should_preload() -> bool:
+	if _preload_done or _phase == Phase.PRELOAD:
+		return false
+	return OS.has_feature("pc") and DisplayServer.get_name() != "headless"
+
+
+func _begin_preload() -> void:
+	_entry_state = ""
+	_error_panel.visible = false
+	var paths: Array[String] = BattleAssetManifest.seed_independent_paths()
+	paths.append_array(BattleAssetManifest.shop_pool_paths())
+	BattleAssetService.acquire_many(paths, BattleAssetService.OWNER_PLAYER)
+	_preload_total = BattleAssetService.pending_count()
+	_preload_pending = _preload_total
+	_preload_stall = 0.0
+	_preload_started_ms = Time.get_ticks_msec()
+	print("[BOOT] 启动预载开始：%d 个资源（外部特效 + 商店池）" % _preload_total)
+	if _preload_total <= 0:
+		_preload_done = true
+		_enter_ready_now()
+		return
+	_set_phase(Phase.PRELOAD, _tr_text("载入战斗资源", "Loading battle assets"),
+		_preload_detail(0), 0.0)
+
+
+func _tick_preload(delta: float) -> void:
+	var pending := BattleAssetService.harvest()
+	if pending != _preload_pending:
+		_preload_pending = pending
+		_preload_stall = 0.0
+	else:
+		_preload_stall += delta
+	var done := clampi(_preload_total - pending, 0, _preload_total)
+	_progress.value = 100.0 * float(done) / float(maxi(1, _preload_total))
+	_detail.text = _preload_detail(done)
+	_detail.visible = true
+	var elapsed := Time.get_ticks_msec() - _preload_started_ms
+	if pending <= 0:
+		print("[BOOT] 启动预载完成：%d 个，用时 %d ms" % [_preload_total, elapsed])
+		_preload_done = true
+		_enter_ready_now()
+	elif _preload_stall >= PRELOAD_STALL_SEC:
+		print("[BOOT] 启动预载 %.0f 秒没进展，先放行（%d/%d，用时 %d ms），剩下的进游戏后在后台载" % [
+			PRELOAD_STALL_SEC, done, _preload_total, elapsed])
+		_preload_done = true
+		_enter_ready_now()
+
+
+func _preload_detail(done: int) -> String:
+	return _tr_text("载入战斗资源 %d/%d" % [done, _preload_total],
+		"Loading battle assets %d/%d" % [done, _preload_total])
+
+
+func _enter_ready_now() -> void:
 	_entry_state = ""
 	_error_panel.visible = false
 	_retry_button.text = _tr_text("重试", "Retry")
@@ -857,7 +941,7 @@ func _poll_service_status() -> void:
 # 15 秒之后仍然不进 Phase.FAILED：线程载入还在跑，随时可能完成，那时
 # _finish_loading() 会照常切场景，玩家自己就走出去了。
 func _tick_watchdog(delta: float) -> void:
-	if _phase == Phase.READY or _phase == Phase.FAILED or _phase == Phase.ENTRY:
+	if _phase == Phase.READY or _phase == Phase.FAILED or _phase == Phase.ENTRY or _phase == Phase.PRELOAD:
 		return
 	var ratio := float(_progress.value) / 100.0
 	if absf(ratio - _watchdog_progress) >= WATCHDOG_PROGRESS_EPSILON:
