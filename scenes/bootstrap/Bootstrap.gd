@@ -9,6 +9,7 @@ const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const AccountConfig := preload("res://scripts/account/AccountConfig.gd")
 const ServiceStatus := preload("res://scripts/account/ServiceStatus.gd")
+const NetDiag := preload("res://scripts/account/NetDiag.gd")
 const SignInBridge := preload("res://scripts/account/SignInBridge.gd")
 
 const DEFAULT_MAIN_SCENE := "res://scenes/main/Main.tscn"
@@ -832,6 +833,8 @@ func _poll_service_status() -> void:
 	request.body_size_limit = 16 * 1024
 	add_child(request)
 	_status_request = request
+	# 和账号请求同一套系统代理（scripts/account/NetDiag.gd）。
+	NetDiag.apply_proxy(request, AccountConfig.endpoint(ServiceStatus.PATH))
 	if request.request(AccountConfig.endpoint(ServiceStatus.PATH)) != OK:
 		request.queue_free()
 		_status_request = null

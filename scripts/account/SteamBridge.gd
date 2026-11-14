@@ -57,6 +57,7 @@ static func available() -> bool:
 		var result: Variant = steam.call("steamInitEx", STEAM_APP_ID, true)
 		var status := int((result as Dictionary).get("status", -1)) if result is Dictionary else -1
 		_init_ok = status == 0
+		print("[STEAM] 初始化 status=%d ok=%s" % [status, str(_init_ok)])
 		if not _init_ok:
 			# 最常见：Steam 客户端没开 / 没登录 / 这个账号库里没有 Glory。
 			push_warning("[STEAM] 初始化失败：%s" % str((result as Dictionary).get("verbal", status) if result is Dictionary else result))
@@ -79,14 +80,22 @@ static func persona_name() -> String:
 #   {"ok": true, "ticket": 十六进制}
 #   {"ok": false, "error": 给人看的一句话}
 # 🔴 票是凭证（几分钟内能拿它登录），不打印、不存盘。
+#
+# 成功时还带 "handle"：服务器验完票之后要交回 cancel_ticket() 作废（Steamworks 的要求，
+# 不作废的票会一直挂在 Steam 客户端里）。🔴 **不能在发给服务器之前作废** —— 服务器要拿它去问 Steam。
+#
+# 每一步都往 godot.log 打一行（不打票的内容）：审核员贴回来的日志以前看不出卡在哪一步。
 static func ticket(tree: SceneTree) -> Dictionary:
 	if not available():
+		print("[STEAM] 取票失败：Steam 不可用（插件不在 / Steam 没开 / 没登录 / 初始化失败）")
 		return {"ok": false, "error": "没有连上 Steam，请先打开并登录 Steam"}
 	var steam := _steam()
 	var waiter := _TicketWaiter.new()
 	steam.connect("get_ticket_for_web_api", waiter.on_ticket)
 	var handle := int(steam.call("getAuthTicketForWebApi", TICKET_IDENTITY))
 	waiter.handle = handle
+	print("[STEAM] 已向 Steam 要登录凭证 handle=%d logged_on=%s" % [handle, _logged_on_text(steam)])
+	var started := Time.get_ticks_msec()
 	var waited := 0.0
 	while not waiter.done and waited < TICKET_TIMEOUT_SEC:
 		await tree.create_timer(0.1).timeout
@@ -94,11 +103,28 @@ static func ticket(tree: SceneTree) -> Dictionary:
 	if steam.is_connected("get_ticket_for_web_api", waiter.on_ticket):
 		steam.disconnect("get_ticket_for_web_api", waiter.on_ticket)
 	if not waiter.done:
+		print("[STEAM] 等了 %.0f 秒 Steam 没回凭证 handle=%d logged_on=%s" % [TICKET_TIMEOUT_SEC, handle, _logged_on_text(steam)])
+		cancel_ticket(handle)
 		return {"ok": false, "error": "Steam 没有回应，请稍后再试"}
 	if waiter.result != RESULT_OK or waiter.buffer.is_empty():
-		push_warning("[STEAM] 拿票失败 result=%d" % waiter.result)
+		print("[STEAM] Steam 回了但没给凭证 handle=%d result=%d size=%d" % [handle, waiter.result, waiter.buffer.size()])
+		cancel_ticket(handle)
 		return {"ok": false, "error": "Steam 没给登录凭证，请稍后再试"}
-	return {"ok": true, "ticket": waiter.buffer.hex_encode()}
+	print("[STEAM] 拿到登录凭证 handle=%d 用时 %d ms" % [handle, Time.get_ticks_msec() - started])
+	return {"ok": true, "ticket": waiter.buffer.hex_encode(), "handle": handle}
+
+
+# 用完的票交回 Steam 作废（服务器已经验完，或者这张票不会再用）。handle <= 0 什么都不做。
+static func cancel_ticket(handle: int) -> void:
+	if handle <= 0:
+		return
+	var steam := _steam()
+	if steam != null and steam.has_method("cancelAuthTicket"):
+		steam.call("cancelAuthTicket", handle)
+
+
+static func _logged_on_text(steam: Object) -> String:
+	return str(bool(steam.call("loggedOn"))) if steam.has_method("loggedOn") else "unknown"
 
 
 class _TicketWaiter extends RefCounted:

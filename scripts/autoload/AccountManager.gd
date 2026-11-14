@@ -26,6 +26,7 @@ extends Node
 const AccountConfig := preload("res://scripts/account/AccountConfig.gd")
 const SignInBridge := preload("res://scripts/account/SignInBridge.gd")
 const SteamBridge := preload("res://scripts/account/SteamBridge.gd")
+const NetDiag := preload("res://scripts/account/NetDiag.gd")
 const BillingBridge := preload("res://scripts/account/BillingBridge.gd")
 
 signal login_started()
@@ -451,7 +452,10 @@ func _steam_post(path: String, proposed_player_id: String) -> Dictionary:
 	var payload := {"ticket": str(ticket.get("ticket", ""))}
 	if not proposed_player_id.is_empty():
 		payload["player_id"] = proposed_player_id
-	return await _post(path, payload)
+	var result := await _post(path, payload)
+	# 服务器已经验完（或这一趟没送到，票也不会再用）：交回 Steam 作废。下次重试会要一张新票。
+	SteamBridge.cancel_ticket(int(ticket.get("handle", 0)))
+	return result
 
 
 func _provider_post(provider: String, id_token: String, nonce: String, proposed_player_id: String) -> Dictionary:
@@ -1368,10 +1372,12 @@ func create_steam_iap_order(client_order_id: String, product_id: String, web: bo
 	var ticket: Dictionary = await SteamBridge.ticket(get_tree())
 	if not bool(ticket.get("ok", false)):
 		return {"code": 0, "error": localized_error(str(ticket.get("error", "")))}
-	return await _request(HTTPClient.METHOD_POST, "/v1/iap/orders", {
+	var result := await _request(HTTPClient.METHOD_POST, "/v1/iap/orders", {
 		"client_order_id": client_order_id, "platform": "steam", "product_id": product_id,
 		"steam_ticket": str(ticket["ticket"]), "steam_web": web,
 		"language": "en" if LocaleManager.get_locale().begins_with("en") else "zh"}, true)
+	SteamBridge.cancel_ticket(int(ticket.get("handle", 0)))
+	return result
 
 
 # 让服务器去问 Steam 这张单现在怎样了（扣款、入账都在服务器那边）。
@@ -1576,6 +1582,9 @@ func auth_header_lines(content_type: String = "application/json") -> PackedStrin
 	return headers
 
 
+# 网络环境（账号服务器域名、系统代理）只在第一次请求时打一行。
+var _net_env_logged := false
+
 func _request(
 	method: int,
 	path: String,
@@ -1606,6 +1615,11 @@ func _request(
 	add_child(http)
 
 	var url := AccountConfig.endpoint(path)
+	# 系统代理（scripts/account/NetDiag.gd 顶部）：没设代理的电脑照旧直连。
+	if not _net_env_logged:
+		_net_env_logged = true
+		print(NetDiag.describe_environment(url))
+	var used_proxy := NetDiag.apply_proxy(http, url)
 	var body_text := "" if payload == null else JSON.stringify(payload)
 	# 快照取在**真正发出去**的这一刻（见上面 headers 那段注释）：
 	# 代次在此之前变化（例如续期期间被顶号）不该作废这次请求。
@@ -1633,6 +1647,8 @@ func _request(
 
 	if outcome != HTTPRequest.RESULT_SUCCESS:
 		# 连不上后端最常见：本机没起服务、真机上填了 127.0.0.1、明文被 Android 拦。
+		# 打进 godot.log：以前只显示在界面上，审核员贴回来的日志看不出卡在哪。
+		print(NetDiag.describe_failure(url, outcome, path, used_proxy))
 		return {"code": 0, "error": localized_error("连不上账号服务器（result=%d）" % outcome)}
 
 	# ⚠️ **不是所有响应体都是 JSON。**
