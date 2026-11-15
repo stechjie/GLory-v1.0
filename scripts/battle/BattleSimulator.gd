@@ -1321,7 +1321,7 @@ static func _apply_opening_unit_skills(player: Array, enemy: Array, event_log: A
 				var servant_slot := int(f.get("slot", -1))
 				var bind_offsets: Array = [-1, 1] if float(d.get("ally_def_pct", 0.0)) > 0.0 else [-1]
 				for offset in bind_offsets:
-					var target := _unit_at_slot(team_units, servant_slot + int(offset))
+					var target := _owned_unit_at_slot(team_units, servant_slot + int(offset), f)
 					if target.is_empty():
 						continue
 					target.sacrifice_guardian = f

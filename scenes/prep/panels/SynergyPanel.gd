@@ -38,6 +38,7 @@ func _outlined(label: Label) -> Label:
 
 # --- 搬过来的成员 ---
 var _left_panel: VBoxContainer
+var tutorial_bond_target: Control
 var _left_panel_signature := "unset"
 # 看队友棋盘时（PrepUI.enter_teammate_view）是队友那块棋盘，平时是 null（数自己的）。
 var _teammate_board = null
@@ -159,6 +160,7 @@ func _add_money_action(logo_path: String, title: String, desc: String, enabled: 
 # ─── synergy widgets ──────────────────────────────────────────────────────────
 
 func _add_synergy_widgets(counts: Dictionary) -> void:
+	tutorial_bond_target = null
 	_race_widgets.clear()
 	var shown := false
 	var grid := GridContainer.new()
@@ -179,6 +181,8 @@ func _add_synergy_widgets(counts: Dictionary) -> void:
 		row.custom_minimum_size = Vector2(106, 54)
 		row.add_theme_constant_override("separation", 4)
 		grid.add_child(row)
+		if tutorial_bond_target == null:
+			tutorial_bond_target = row
 
 		var logo := Button.new()
 		logo.custom_minimum_size = Vector2(48, 48)
@@ -209,6 +213,7 @@ func _add_synergy_widgets(counts: Dictionary) -> void:
 		none.text = "No units on board" if PrepWidgets.is_en() else "棋盘上没有普通棋子"
 		none.modulate = Color(0.55, 0.55, 0.55)
 		_left_panel.add_child(none)
+		tutorial_bond_target = none
 
 
 

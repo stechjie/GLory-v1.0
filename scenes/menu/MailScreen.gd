@@ -25,9 +25,10 @@ const UiJuice := preload("res://ui/theme/UiJuice.gd")
 const Currency := preload("res://scripts/account/Currency.gd")
 
 const LIST_WIDTH := 360.0
-const ROW_HEIGHT := 64.0
+const ROW_HEIGHT := 72.0
 const HEADER_BUTTON_WIDTH := 180.0
-const CHIP_ICON := Vector2(30, 30)
+const CHIP_ICON := Vector2(28, 28)
+const CHIP_TEXT_WIDTH := 240.0
 const DAY_SEC := 86400
 const HOUR_SEC := 3600
 const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
@@ -114,7 +115,7 @@ func _build() -> void:
 
 	var list_panel := PanelContainer.new()
 	list_panel.custom_minimum_size = Vector2(LIST_WIDTH, 0)
-	list_panel.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(40, 40, 40, 26)))
+	list_panel.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(46, 58, 46, 42)))
 	body.add_child(list_panel)
 	var list_scroll := TouchScrollContainer.new()
 	list_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -125,22 +126,11 @@ func _build() -> void:
 	_list_box.add_theme_constant_override("separation", Tokens.GAP_S)
 	list_scroll.add_child(_list_box)
 
-	var reading_area := HBoxContainer.new()
-	reading_area.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	reading_area.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_child(reading_area)
-	var left_space := Control.new()
-	left_space.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	reading_area.add_child(left_space)
 	var detail_panel := PanelContainer.new()
-	detail_panel.custom_minimum_size.x = 820
-	detail_panel.custom_minimum_size.y = 420
-	detail_panel.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	detail_panel.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(66, 50, 66, 36)))
-	reading_area.add_child(detail_panel)
-	var right_space := Control.new()
-	right_space.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	reading_area.add_child(right_space)
+	detail_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	detail_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	detail_panel.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(66, 58, 66, 44)))
+	body.add_child(detail_panel)
 	var detail_scroll := TouchScrollContainer.new()
 	detail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	detail_panel.add_child(detail_scroll)
@@ -266,6 +256,7 @@ func _list_row(entry: Dictionary) -> Control:
 	button.text = row_text(entry)
 	button.pressed.connect(func() -> void: select(id))
 	Kit.style_list_row(button, Tokens.FONT_BODY)
+	button.tooltip_text = button.text
 
 	# 红点：没读，或者附件没领。
 	var dot := Label.new()
@@ -277,8 +268,14 @@ func _list_row(entry: Dictionary) -> Control:
 	dot.visible = not bool(entry.get("read", false)) or MailService.is_claimable(entry)
 	button.add_child(dot)
 	dot.set_anchors_and_offsets_preset(Control.PRESET_CENTER_RIGHT)
-	# 让开纸条右端的卷边
-	dot.position.x -= 34.0
+	# 给卷边和未读圆点分别预留空间，标题最长只到圆点左侧。
+	for state in ["normal", "hover", "pressed", "hover_pressed"]:
+		var style := button.get_theme_stylebox(state).duplicate() as StyleBox
+		style.content_margin_right = 62.0 if dot.visible else 36.0
+		style.content_margin_left = 32.0
+		button.add_theme_stylebox_override(state, style)
+	dot.offset_left = -50.0
+	dot.offset_right = -32.0
 	return button
 
 
@@ -375,7 +372,7 @@ func item_text(item: Dictionary) -> String:
 
 func _chip(icon: Texture2D, text: String, dim: bool) -> Control:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Kit.box("plate", Vector4(18, 6, 20, 6)))
+	panel.add_theme_stylebox_override("panel", Kit.box("plate", Vector4(26, 12, 26, 12)))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", Tokens.GAP_S)
 	panel.add_child(row)
@@ -391,7 +388,12 @@ func _chip(icon: Texture2D, text: String, dim: bool) -> Control:
 	var label := Label.new()
 	label.text = text
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
+	var font_size := Tokens.FONT_CAPTION
+	label.add_theme_font_size_override("font_size", font_size)
+	var font := label.get_theme_font("font")
+	if font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > CHIP_TEXT_WIDTH:
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.custom_minimum_size.x = CHIP_TEXT_WIDTH
 	label.add_theme_color_override("font_color", Color(0.48, 0.42, 0.33) if dim else Color(0.26, 0.23, 0.18))
 	row.add_child(label)
 	return panel

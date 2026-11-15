@@ -165,7 +165,7 @@ func _layout() -> void:
 	_damage_title.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	_damage_title.position = Vector2(84,141) * factor
 	_damage_title.size = Vector2(136,30) * factor
-	_damage_title.add_theme_font_size_override("font_size", roundi(22 * factor))
+	_damage_title.add_theme_font_size_override("font_size", roundi(26 * factor))
 	_damage_depth.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	_damage_depth.position = _damage_label.position + Vector2(0.7,1.1) * factor
 	_damage_depth.size = _damage_label.size

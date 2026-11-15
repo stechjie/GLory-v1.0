@@ -503,13 +503,8 @@ func _tutorial_target_fill_seven() -> Control:
 
 
 func _tutorial_target_bond_row() -> Control:
-	var panel: Control = _synergy._left_panel
-	if panel == null:
-		return null
-	for child in panel.get_children():
-		if child is HBoxContainer and (child as Control).visible:
-			return child as Control
-	return panel
+	var target: Control = _synergy.tutorial_bond_target
+	return target if is_instance_valid(target) and target.is_visible_in_tree() else null
 
 
 func _tutorial_target_treasure_logo() -> Control:

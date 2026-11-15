@@ -1533,9 +1533,15 @@ static func _group_heal(caster: Dictionary, allies: Array, heal_pct: float) -> v
 			_heal_unit(a, maxi(1, int(round(float(a.max_hp) * heal_pct))))
 
 
-static func _unit_at_slot(units: Array, slot: int) -> Dictionary:
+static func _owned_unit_at_slot(units: Array, slot: int, owner: Dictionary) -> Dictionary:
+	if slot < 0:
+		return {}
+	var owner_slot := int(owner.get("owner_slot", -1))
+	var lane := int(owner.get("lane", -1))
 	for u in units:
-		if bool(u.get("alive", false)) and int(u.get("slot", -1)) == slot:
+		if bool(u.get("alive", false)) and int(u.get("slot", -1)) == slot \
+				and int(u.get("owner_slot", -1)) == owner_slot and int(u.get("lane", -1)) == lane \
+				and not bool(u.get("is_mercenary", false)) and not bool(u.get("is_formation_ally", false)):
 			return u
 	return {}
 

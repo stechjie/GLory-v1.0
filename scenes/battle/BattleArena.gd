@@ -226,11 +226,11 @@ func _build() -> void:
 	_top5_atk_lbl.anchor_top = 0.5
 	_top5_atk_lbl.anchor_bottom = 0.5
 	_top5_atk_lbl.offset_left = 12
-	_top5_atk_lbl.offset_right = 232
+	_top5_atk_lbl.offset_right = 312
 	_top5_atk_lbl.offset_top = -96
 	_top5_atk_lbl.offset_bottom = 96
-	_top5_atk_lbl.add_theme_font_size_override("normal_font_size", 15)
-	_top5_atk_lbl.add_theme_font_size_override("bold_font_size", 16)
+	_top5_atk_lbl.add_theme_font_size_override("normal_font_size", 18)
+	_top5_atk_lbl.add_theme_font_size_override("bold_font_size", 19)
 	_top5_atk_lbl.add_theme_color_override("default_color", Color(0.95, 0.95, 0.98))
 	_top5_atk_lbl.add_theme_constant_override("outline_size", 4)
 	_top5_atk_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.92))
