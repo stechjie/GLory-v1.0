@@ -366,3 +366,6 @@ glory_server_key*.pem
 !/assets/models/units/human_refined/
 !/assets/models/units/human_refined/**
 
+
+# 个人文件夹（打好的服务器包、私人笔记），不上传 GitHub
+/.AAA/
