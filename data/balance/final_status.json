@@ -465,25 +465,25 @@
         "1": {
           "hp": 1040,
           "atk": 79,
-          "defense": 10,
+          "defense": 14,
           "mres": 10
         },
         "2": {
           "hp": 1560,
           "atk": 119,
-          "defense": 15,
+          "defense": 21,
           "mres": 15
         },
         "3": {
           "hp": 3120,
           "atk": 237,
-          "defense": 30,
+          "defense": 34,
           "mres": 30
         },
         "4": {
           "hp": 3588,
           "atk": 273,
-          "defense": 35,
+          "defense": 40,
           "mres": 35
         }
       }
@@ -576,8 +576,8 @@
       "cost": 50,
       "skill_id": "random_ally_damage_reduction",
       "skill_name_cn": "天使庇护",
-      "skill_cn_1to3": "天使庇护（冷却6.0秒）：随机友军获得50%减伤，持续6.0秒。",
-      "skill_cn_4": "天使庇护（冷却4.0秒）：随机友军获得65%减伤，持续8.0秒。",
+      "skill_cn_1to3": "天使庇护（冷却4.0秒）：随机友军获得50%减伤，持续6.0秒。",
+      "skill_cn_4": "天使庇护（冷却3.0秒）：随机友军获得65%减伤，持续8.0秒。",
       "skill_en_1to3": "Angel's Guard (CD 6.0s): Grant a random ally 50% damage reduction for 6.0s.",
       "skill_raw_params": "damage_reduction = 0.5\nduration = 6\nskill_cd = 6\nunique_on_board = true",
       "star4_changes": "damage_reduction: 0.5 → 0.65\nduration: 6 → 8\nskill_cd: 6 → 4",
@@ -586,13 +586,13 @@
           "hp": 1700,
           "atk": 73,
           "defense": 15,
-          "mres": 14
+          "mres": 20
         },
         "2": {
           "hp": 2550,
           "atk": 110,
           "defense": 23,
-          "mres": 21
+          "mres": 30
         },
         "3": {
           "hp": 5100,
@@ -908,25 +908,25 @@
           "hp": 1320,
           "atk": 64,
           "defense": 10,
-          "mres": 8
+          "mres": 13
         },
         "2": {
           "hp": 1980,
           "atk": 96,
           "defense": 15,
-          "mres": 12
+          "mres": 20
         },
         "3": {
           "hp": 3960,
           "atk": 192,
           "defense": 30,
-          "mres": 24
+          "mres": 39
         },
         "4": {
           "hp": 4554,
           "atk": 221,
           "defense": 35,
-          "mres": 28
+          "mres": 43
         }
       }
     },
@@ -1149,26 +1149,26 @@
         "1": {
           "hp": 840,
           "atk": 67,
-          "defense": 7,
+          "defense": 12,
           "mres": 6
         },
         "2": {
           "hp": 1260,
           "atk": 101,
-          "defense": 11,
+          "defense": 18,
           "mres": 9
         },
         "3": {
           "hp": 2520,
           "atk": 201,
-          "defense": 21,
+          "defense": 36,
           "mres": 18
         },
         "4": {
           "hp": 2898,
           "atk": 231,
-          "defense": 24,
-          "mres": 21
+          "defense": 40,
+          "mres": 25
         }
       }
     },
@@ -1187,25 +1187,25 @@
       "star4_changes": "def_down_pct: 0.35 → 0.6\nduration: 5 → 8",
       "stats": {
         "1": {
-          "hp": 800,
-          "atk": 62,
+          "hp": 850,
+          "atk": 68,
           "defense": 6,
           "mres": 4
         },
         "2": {
-          "hp": 1200,
+          "hp": 1625,
           "atk": 93,
           "defense": 9,
           "mres": 6
         },
         "3": {
-          "hp": 2400,
+          "hp": 2550,
           "atk": 186,
           "defense": 18,
           "mres": 12
         },
         "4": {
-          "hp": 2760,
+          "hp": 2860,
           "atk": 214,
           "defense": 21,
           "mres": 14
