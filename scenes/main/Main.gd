@@ -3866,6 +3866,10 @@ func _on_team_room_list_received(rooms: Array) -> void:
 			_menu.show_room_list(rooms)
 
 func _on_team_room_action_failed(reason: String) -> void:
+	if reason == "no_empty_seat" and NetworkService.spectating:
+		var english := LocaleManager.get_locale().begins_with("en")
+		preload("res://ui/components/GloryToast.gd").show_text(NetworkService.custom_room_error_text(reason, english))
+		return
 	if reason == "spectate_full" and _in_room_lobby:
 		preload("res://ui/components/GloryToast.gd").show_text("The number of spectators is full" if LocaleManager.get_locale() == "en" else "观战人数已满")
 		return

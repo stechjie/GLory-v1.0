@@ -160,6 +160,31 @@ func run() -> void:
 	t[SS.KEY_OPEN]=false
 	s._spectate_join(501,int(t.id),"")
 	h.expect(SS.sid_of_peer(r,501)>=0 and int(s._peer_spectate[501])==int(r.id),"failed_spectate_switch","Direct observer-switch refusal also retains original identity")
+	s = server()
+	r = s._new_room()
+	observe(s, r, 501)
+	observe(s, r, 502)
+	s.live.erase(501)
+	s._join_custom_room(501, int(r.id), "", {"pid": "observer-501"}, 5)
+	h.expect(r.peer_slot.get(501) == 5 and r.slot_states[0] == "empty",
+		"select_exact_seat", "A spectator in an otherwise empty room takes the clicked seat")
+	h.expect(SS.sid_of_peer(r, 501) < 0 and not s._peer_spectate.has(501),
+		"leave_spectator_list", "A seated player is removed from the spectator list")
+	s.live.erase(502)
+	s._join_custom_room(502, int(r.id), "", {"pid": "observer-502"}, 5)
+	h.expect(r.peer_slot.get(502) == 0 and r.peer_slot.get(501) == 5
+		and SS.sid_of_peer(r, 502) < 0 and s.failures.is_empty(),
+		"fallback_taken_seat", "When the clicked seat is taken, the viewer takes the first empty seat")
+	s._join_custom_room(503, int(r.id), "", {"pid": "new-player"}, 4)
+	h.expect(s.failures.has([503, "room_not_found"]) and r.slot_states[4] == "empty",
+		"require_spectator", "Only a spectator in this room can request a specific seat")
+	s._join_custom_room(503, int(r.id), "", {"pid": "new-player"})
+	h.expect(r.peer_slot.get(503) == 1, "ordinary_join", "Joining by room ID still uses the first empty seat")
+	observe(s, r, 504)
+	r.slot_states = ["player", "player", "dummy", "dummy", "dummy", "player"]
+	s._join_custom_room(504, int(r.id), "", {"pid": "observer-504"}, 5)
+	h.expect(s.failures.has([504, "no_empty_seat"]) and SS.sid_of_peer(r, 504) >= 0
+		and not r.peer_slot.has(504), "fallback_full_room", "A full room keeps the viewer in the spectator list")
 	var panel=PanelScript.new()
 	add_child(panel)
 	for width in [132,165,220,330,495]:

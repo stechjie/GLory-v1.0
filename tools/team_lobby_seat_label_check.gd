@@ -72,6 +72,7 @@ func _ready() -> void:
 	await _case_offline_host_label_on_own_seat()
 	_case_apply_shared_by_layout_and_refresh()
 	await _case_refresh_self_applies_placement()
+	await _case_empty_label_centered()
 	# 前提体检：这五个用例各自至少要贡献一条 checked；总数对不上就是有用例没跑。
 	_h.expect(_h.checked_count() >= 20, "cases_not_executed",
 		"检查项只有 %d 条（应 ≥20）—— 有用例没跑到（多半是忘了 await），门禁在无声失效" % _h.checked_count())
@@ -289,6 +290,22 @@ func _case_refresh_self_applies_placement() -> void:
 
 
 # --- 工具 ---------------------------------------------------------------------
+
+func _case_empty_label_centered() -> void:
+	var lobby := await _build_lobby()
+	var statuses: Array = lobby.get("_slot_status_lbls")
+	var bases: Array = lobby.get("_slot_bases")
+	lobby.set("_slot_states", ["empty", "empty", "empty", "empty", "empty", "empty"])
+	lobby.call("_refresh")
+	for index in 6:
+		var label: Label = statuses[index]
+		var base: Control = bases[index]
+		var center := base.position + base.size * Vector2(197.0 / 400.0, 159.0 / 376.0)
+		_h.expect(label.get_rect().get_center().distance_to(center) <= 1.0
+			and label.horizontal_alignment == HORIZONTAL_ALIGNMENT_CENTER
+			and label.vertical_alignment == VERTICAL_ALIGNMENT_CENTER,
+			"empty_center_%d" % index, "Empty label is centered in the seat artwork")
+
 
 func _build_lobby() -> Control:
 	if _lobby != null and is_instance_valid(_lobby):
