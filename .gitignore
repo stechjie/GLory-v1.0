@@ -369,3 +369,7 @@ glory_server_key*.pem
 
 # 个人文件夹（打好的服务器包、私人笔记），不上传 GitHub
 /.AAA/
+
+# 本机嵌套的独立仓库（另一份工程副本、第三方插件源码），不属于项目
+/GLory-v1.0/
+/third_party/pixelfx/
