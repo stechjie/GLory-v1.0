@@ -554,6 +554,8 @@ func _prepare_replay_assets() -> bool:
 		_fail_team_replay("battle_assets_missing")
 		return false
 	BattleAssetService.acquire_many(model_paths, BattleAssetService.OWNER_BATTLE)
+	# 本回合要用的插队到最前（后台预载是一个一个排队加载的，见 BattleAssetService.MAX_IN_FLIGHT）。
+	BattleAssetService.prioritize(model_paths)
 	BattleAssetService.promote_future_to_battle(GameState.round_index)
 	VFXManager.preload_textures(texture_paths)
 	var started := Time.get_ticks_msec()
@@ -580,6 +582,9 @@ func _prepare_replay_assets() -> bool:
 		var failed: Array[String] = []
 		for path in model_paths + texture_paths:
 			if BattleAssetService.ready_count([path]) + VFXManager.ready_texture_count([path]) > 0:
+				continue
+			# 还在排队 / 加载中的不是失败（排队中的从没发过线程请求，状态会是 INVALID_RESOURCE）。
+			if BattleAssetService.is_pending(path):
 				continue
 			var status := ResourceLoader.load_threaded_get_status(path)
 			if status in [ResourceLoader.THREAD_LOAD_FAILED, ResourceLoader.THREAD_LOAD_INVALID_RESOURCE]:
@@ -743,6 +748,8 @@ func _prepare_battle_models() -> void:
 
 	if is_instance_valid(bar):
 		bar.queue_free()
+	# 11.14：清场皮肤扫光的贴图是代码现画的，开战前画好（有缓存，之后的回合不再花时间）。
+	preload("res://effects/vfx3d/modules/VFXLaneClearBurst3D.gd").warm_skin_textures(_PREP_SKIN.refresh_fx())
 	# 9.17：Boss 登场。放在这里而不是 _start_battle_music() 里 ——
 	# 后者在进场景那一刻就会被调一次（BattleScreen.gd:98），那时 replay 还没到、
 	# 单位模型还没建，声音会比画面早一整段读条。
@@ -988,6 +995,7 @@ func _valid_team_replay(replay: Dictionary) -> bool:
 	return BattleReplayUtil.valid_team_replay(replay)
 
 # --- 切镜头观战敌方队伍 ------------------------------------------------------
+const ViewToggleKit := preload("res://ui/theme/ParchmentKit.gd")
 func _setup_view_toggle() -> void:
 	if _view_toggle_btn != null:
 		return
@@ -1000,12 +1008,18 @@ func _setup_view_toggle() -> void:
 	_view_toggle_btn = Button.new()
 	_view_toggle_btn.disabled = not _battle_setup_ready
 	_view_toggle_btn.text = tr("battle_view_rival")
-	_view_toggle_btn.custom_minimum_size = Vector2(120, 36)
+	# 11.15：原来是引擎默认的灰按钮，很难注意到。换成羊皮纸小底板 + 「眼睛」图标，和全游戏的 UI 一路。
+	ViewToggleKit.style_plate(_view_toggle_btn)
+	_view_toggle_btn.icon = ViewToggleKit.icon("spectate")
+	_view_toggle_btn.expand_icon = true
+	_view_toggle_btn.add_theme_constant_override("icon_max_width", 24)
+	_view_toggle_btn.add_theme_font_size_override("font_size", 15)
+	_view_toggle_btn.custom_minimum_size = Vector2(156, 40)
 	_view_toggle_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	_view_toggle_btn.offset_left = -136
-	_view_toggle_btn.offset_top = 56
+	_view_toggle_btn.offset_left = -172
+	_view_toggle_btn.offset_top = 54
 	_view_toggle_btn.offset_right = -16
-	_view_toggle_btn.offset_bottom = 92
+	_view_toggle_btn.offset_bottom = 94
 	_view_toggle_btn.z_index = 100
 	_view_toggle_btn.pressed.connect(_on_view_toggle_pressed)
 	add_child(_view_toggle_btn)

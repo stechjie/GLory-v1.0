@@ -1,0 +1,24 @@
+{
+ "fx": "projectiles/plasma-shot",
+ "columns": 2,
+ "rows": 4,
+ "frame_count": 8,
+ "fps": 15,
+ "duration": 0.533,
+ "cell_px": [
+  249,
+  125
+ ],
+ "cell_src_px": [
+  124.5,
+  62.5
+ ],
+ "pivot": [
+  0.5622,
+  0.496
+ ],
+ "sheet_px": [
+  498,
+  500
+ ]
+}

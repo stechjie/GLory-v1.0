@@ -121,8 +121,11 @@ func refresh() -> void:
 		_on_members_pressed()
 	voice_button.text = ""
 	audience_button.text = ""
-	_set_icon(voice_button, "mic_on" if VoiceService.mode == VoiceService.Mode.TALK else "mic_off")
-	_set_icon(audience_button, "speaker_on" if VoiceService.speaker_enabled else "speaker_off")
+	var talking := VoiceService.mode == VoiceService.Mode.TALK
+	_set_icon(voice_button, "mic_on" if talking else "mic_off",
+		_text("开麦", "Mic On") if talking else _text("闭麦", "Mic Off"), talking)
+	_set_icon(audience_button, "speaker_on" if VoiceService.speaker_enabled else "speaker_off",
+		_text("声音", "Sound") if VoiceService.speaker_enabled else _text("静音", "Muted"), VoiceService.speaker_enabled)
 	voice_button.tooltip_text = _text("关闭麦克风" if VoiceService.mode == VoiceService.Mode.TALK else "打开麦克风", "Toggle microphone")
 	audience_button.tooltip_text = _text("关闭扬声器" if VoiceService.speaker_enabled else "打开扬声器", "Toggle speaker")
 	audience_button.tooltip_text += _text("\n长按查看语音状态", "\nHold for voice status")
@@ -138,12 +141,21 @@ func refresh() -> void:
 		members_button.text = _text("所有人", "All") if VoiceService.audience == VoiceService.Audience.ALL else _text("队友", "Team")
 	members_button.add_theme_color_override("font_color", ACTIVE_COLOR if VoiceService.open_to_room() else IDLE_COLOR)
 
-func _set_icon(button: Button, key: String) -> void:
+# 图标下面那行字的颜色：开 = 深棕，关 = 暗红（11.15 用户要求按钮下面有字）。浅色描边压在羊皮纸上。
+const CAPTION_ON := Color("4a2c14")
+const CAPTION_OFF := Color("a8321e")
+const CAPTION_OUTLINE := Color(1.0, 0.96, 0.84, 0.9)
+# 板子在图里占中间 504/627（VoiceButtonArt），字写在板子下沿那条空白上。
+const PLATE_INSET := (1.0 - 504.0 / 627.0) * 0.5
+
+func _set_icon(button: Button, key: String, caption_text: String = "", active: bool = true) -> void:
 	var art := button.get_node_or_null("VoiceIcon") as TextureRect
 	if art == null:
 		art = TextureRect.new()
 		art.name = "VoiceIcon"
 		art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		# 240px 的图缩到几十像素显示，要用 mipmap，不然发糊起颗粒
+		art.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		button.add_child(art)
@@ -156,6 +168,30 @@ func _set_icon(button: Button, key: String) -> void:
 	if art.get_meta("voice_icon", "") != key:
 		art.texture = VoiceButtonArt.texture_for(key)
 		art.set_meta("voice_icon", key)
+	var caption := art.get_node_or_null("VoiceCaption") as Label
+	if caption == null:
+		caption = Label.new()
+		caption.name = "VoiceCaption"
+		caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		caption.clip_text = true
+		caption.add_theme_color_override("font_outline_color", CAPTION_OUTLINE)
+		caption.add_theme_constant_override("outline_size", 3)
+		art.add_child(caption)
+		var plate := 1.0 - PLATE_INSET * 2.0
+		caption.anchor_left = PLATE_INSET
+		caption.anchor_right = 1.0 - PLATE_INSET
+		caption.anchor_top = PLATE_INSET + plate * 0.64
+		caption.anchor_bottom = PLATE_INSET + plate * 0.90
+		for side in ["left", "top", "right", "bottom"]:
+			caption.set("offset_" + side, 0.0)
+	if caption.text != caption_text:
+		caption.text = caption_text
+	# 图是保持比例居中的正方形，字号跟着短边走（备战约 60px、战斗约 56px）
+	var plate_px := minf(art.size.x, art.size.y) * (1.0 - PLATE_INSET * 2.0)
+	caption.add_theme_font_size_override("font_size", clampi(roundi(plate_px * 0.21), 9, 15))
+	caption.add_theme_color_override("font_color", CAPTION_ON if active else CAPTION_OFF)
 
 func _on_speaker_pressed() -> void:
 	if _speaker_hold_opened:
@@ -333,6 +369,7 @@ func _refresh_scope_art() -> void:
 		art = TextureRect.new()
 		art.name = "ScopeIcon"
 		art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		art.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		members_button.add_child(art)
@@ -353,14 +390,16 @@ func _refresh_scope_art() -> void:
 		caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		caption.add_theme_font_size_override("font_size", 12)
-		caption.add_theme_color_override("font_outline_color", Color(0.12, 0.05, 0.01))
+		# 11.15：底板换成羊皮纸后，原来的浅色字写在浅色底上看不见，改成深色字 + 浅色描边
+		caption.add_theme_color_override("font_outline_color", CAPTION_OUTLINE)
 		caption.add_theme_constant_override("outline_size", 3)
 		art.add_child(caption)
 		caption.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		caption.anchor_top = 0.66
-		caption.anchor_bottom = 0.84
+		caption.anchor_top = 0.64
+		caption.anchor_bottom = 0.90
 	caption.text = _text("全队", "All") if all else _text("队友", "Team")
-	caption.add_theme_color_override("font_color", SCOPE_ALL_COLOR if all else Color(1.0, 0.94, 0.78))
+	caption.add_theme_color_override("font_color", Color("b4480e") if all else CAPTION_ON)
+	caption.add_theme_font_size_override("font_size", clampi(roundi(minf(art.size.x, art.size.y) * 0.21), 9, 15))
 	# 开局前全房间本来就互通、没得选：图压暗，点了弹说明（_on_audience_pressed）。
 	art.modulate = Color(1, 1, 1, 0.55) if lobby_room else Color.WHITE
 	if lobby_room:

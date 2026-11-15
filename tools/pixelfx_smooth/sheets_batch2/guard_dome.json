@@ -1,0 +1,24 @@
+{
+ "fx": "scifi/force-field",
+ "columns": 4,
+ "rows": 8,
+ "frame_count": 29,
+ "fps": 12,
+ "duration": 2.417,
+ "cell_px": [
+  292,
+  150
+ ],
+ "cell_src_px": [
+  194.67,
+  100
+ ],
+ "pivot": [
+  0.4932,
+  0.7667
+ ],
+ "sheet_px": [
+  1168,
+  1200
+ ]
+}

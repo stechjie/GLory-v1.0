@@ -8,8 +8,8 @@ func _initialize() -> void:
 	var impact_paths := {}
 	if CATALOG.PLAYER_CHESS_UNITS.size() != 32:
 		failures.append("expected_32_player_chess_units")
-	if CATALOG.RANGED_UNIT_ORDER.size() != 12:
-		failures.append("expected_12_ranged_units")
+	if CATALOG.RANGED_UNIT_ORDER.size() != 13:
+		failures.append("expected_13_ranged_units")
 	for unit_id in CATALOG.RANGED_UNIT_ORDER:
 		var spec: Dictionary = CATALOG.projectile_for(unit_id)
 		if spec.is_empty():

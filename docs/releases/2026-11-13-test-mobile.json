@@ -117,7 +117,7 @@
     "transporter_status": "delivered",
     "processed": true,
     "internal_testing": true,
-    "external_testing": false,
+    "external_testing": true,
     "bytes": 669316106,
     "sha256": "95cafdc82b82321b93f8887ff8daec840d4911ca32e0b3d937e4a1fd478bcc68",
     "path": "/Volumes/repository/github/GLory/delivery/release-20261113-test/Glory-1.0.2-95-ios.ipa",
@@ -164,23 +164,31 @@
     "sequence_override": "user explicitly requested iOS build and App Store Connect upload before Android Drive upload completed",
     "app_id": "6811578280",
     "delivered_at": "2026-11-13T20:54:00+08:00",
-    "processing_status": "App 正在处理",
-    "internal_external_status": "internal verified; external submitted, final result unverified",
-    "evidence": "transporter95-delivered.jpg",
-    "verified_at": "2026-11-13T13:23:34.817864+00:00",
+    "processing_status": "processed",
+    "internal_external_status": "internal and external testing verified",
+    "evidence": [
+      "transporter95-delivered.jpg",
+      "testflight95-internal.txt",
+      "testflight95-external.txt",
+      "testflight95-external.jpg",
+      "testflight95-public-link.txt"
+    ],
+    "verified_at": "2026-11-14T03:01:03.999330+00:00",
     "build_id": "9391a8e3-043c-4429-8a55-4b8c70ee7e3a",
     "internal_group_id": "90dd8f53-b157-49c4-b899-8da72091b76a",
     "internal_testers": 10,
     "internal_status": "正在测试",
     "external_review_submitted": true,
     "external_group_id": "77fbf129-88aa-4489-98a0-658698cd4fcf",
-    "external_status": "submission clicked; final state awaiting verification while Chrome is in use"
+    "external_status": "正在测试",
+    "external_testers": 27,
+    "public_link": "https://testflight.apple.com/join/W2p1ukJp"
   },
   "public_config": {
     "ios": {
       "ready": true,
       "url": "https://testflight.apple.com/join/W2p1ukJp",
-      "version": "1.0.2 (94)",
+      "version": "1.0.2 (95)",
       "pending_version": ""
     },
     "android": {
@@ -222,20 +230,15 @@
       "user_data_dir": "/Users/luolijing/Library/Application Support/GloryLiveReadOnly-Nov13-Clean"
     }
   },
-  "blockers": [
-    {
-      "step": "iOS internal/external testing",
-      "reason": "App processing; browser Computer Use access restriction prevents group assignment; no claim of testing enabled"
-    }
-  ],
-  "updated_at": "2026-11-13T14:32:16.142361+00:00",
+  "blockers": [],
+  "updated_at": "2026-11-14T03:02:20.621411+00:00",
   "published": {
     "status": "published",
     "config": {
       "ios": {
         "ready": true,
         "url": "https://testflight.apple.com/join/W2p1ukJp",
-        "version": "1.0.2 (94)",
+        "version": "1.0.2 (95)",
         "pending_version": ""
       },
       "android": {
@@ -266,6 +269,55 @@
     "base_id": "glory-20261113-test-refresh",
     "includes_seq": 4,
     "qr_sha256": "dd3d8cdce298efe0060d783613d9ba5c4f5bb42a7c15b1f76743a8fc0927dab6",
-    "verified_at": "2026-11-13T14:31:39.307313+00:00"
+    "verified_at": "2026-11-13T14:31:39.307313+00:00",
+    "ios": {
+      "config": {
+        "ios": {
+          "ready": true,
+          "url": "https://testflight.apple.com/join/W2p1ukJp",
+          "version": "1.0.2 (95)",
+          "pending_version": ""
+        },
+        "android": {
+          "ready": true,
+          "mode": "apk",
+          "url": "https://test-api.gogoglory.com/beta/downloads/Glory-1.0.2-66-android.apk",
+          "version": "1.0.2 (66)",
+          "size_bytes": 705924560,
+          "size_label": "673.2 MiB"
+        }
+      },
+      "testflight": {
+        "version": "1.0.2",
+        "build": 95,
+        "app_id": "6811578280",
+        "uploaded": true,
+        "transporter_status": "delivered",
+        "delivered_at": "2026-11-13T20:54:00+08:00",
+        "processed": true,
+        "processing_status": "processed",
+        "internal_testing": true,
+        "external_testing": true,
+        "internal_external_status": "internal and external testing verified",
+        "evidence": [
+          "transporter95-delivered.jpg",
+          "testflight95-internal.txt",
+          "testflight95-external.txt",
+          "testflight95-external.jpg",
+          "testflight95-public-link.txt"
+        ],
+        "verified_at": "2026-11-14T03:01:03.999330+00:00",
+        "build_id": "9391a8e3-043c-4429-8a55-4b8c70ee7e3a",
+        "internal_group_id": "90dd8f53-b157-49c4-b899-8da72091b76a",
+        "internal_testers": 10,
+        "internal_status": "正在测试",
+        "external_review_submitted": true,
+        "external_group_id": "77fbf129-88aa-4489-98a0-658698cd4fcf",
+        "external_status": "正在测试",
+        "external_testers": 27,
+        "public_link": "https://testflight.apple.com/join/W2p1ukJp"
+      },
+      "verified_at": "2026-11-14T03:01:48.808858+00:00"
+    }
   }
 }

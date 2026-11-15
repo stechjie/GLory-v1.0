@@ -1,35 +1,22 @@
 extends RefCounted
 
-# One lazy-loaded atlas keeps the existing dedicated-server resource contract.
-# The four plates are offset within their atlas quadrants. Normalize their
-# visible frames while keeping the original 627px canvas and button hit boxes.
-const ATLAS_PATH := "res://assets/ui/voice/voice_controls_lowpoly.png"
-static var _atlas: Texture2D
+# 麦克风 / 扬声器四张按钮图（11.15 换成羊皮纸小方框 + 实心深棕图标，原来是亮金金属图集）。
+# 每张 240px 画布，板子占中间 504/627（沿用旧图集的约定：调用方按这个比例把图往外撑到「板子 = 按钮大小」）。
+# 运行时 load()：战斗服务器包不带导入过的贴图，不能 preload。
+# 生成脚本和画法见 reports/art_unify_20261115/voice_icons.py。
+const ART_DIR := "res://ui/voice_buttons/"
+const KEYS := ["mic_on", "mic_off", "speaker_on", "speaker_off"]
 static var _icons := {}
 
 static func texture_for(key: String) -> Texture2D:
 	if _icons.has(key):
 		return _icons[key]
-	if _atlas == null:
-		_atlas = load("res://assets/ui/voice/voice_controls_lowpoly.png") as Texture2D
-	if _atlas == null:
+	if not KEYS.has(key):
 		return null
-	var origin: Vector2
-	match key:
-		"mic_on": origin = Vector2(84, 76)
-		"mic_off": origin = Vector2(654, 76)
-		"speaker_on": origin = Vector2(84, 654)
-		"speaker_off": origin = Vector2(654, 654)
-		_: return null
-	var sprite := AtlasTexture.new()
-	sprite.atlas = _atlas
-	# Each 512px region contains the whole gold frame. Equal transparent margins
-	# center it on the old 627px canvas without enlarging the visible button.
-	sprite.region = Rect2(origin, Vector2(512, 512))
-	sprite.margin = Rect2(Vector2(57.5, 57.5), Vector2(115, 115))
-	sprite.filter_clip = true
-	_icons[key] = sprite
-	return sprite
+	var texture := load(ART_DIR + key + ".png") as Texture2D
+	if texture != null:
+		_icons[key] = texture
+	return texture
 
 static func use_art_as_button_background(button: Button) -> void:
 	# The art already has its own frame; keep the Button's original hit region.

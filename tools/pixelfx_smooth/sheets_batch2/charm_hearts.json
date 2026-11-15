@@ -1,0 +1,24 @@
+{
+ "fx": "status/charmed",
+ "columns": 6,
+ "rows": 5,
+ "frame_count": 29,
+ "fps": 12,
+ "duration": 2.417,
+ "cell_px": [
+  133,
+  175
+ ],
+ "cell_src_px": [
+  66.5,
+  87.5
+ ],
+ "pivot": [
+  0.4962,
+  0.92
+ ],
+ "sheet_px": [
+  798,
+  875
+ ]
+}

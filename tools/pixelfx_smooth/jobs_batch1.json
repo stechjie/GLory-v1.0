@@ -1,0 +1,29 @@
+{
+ "out_dir": "assets/vfx/skills/pixelfx",
+ "meta_dir": "tools/pixelfx_smooth/sheets_batch1",
+ "jobs": [
+  {"name": "holy_heal", "fx": "holy/heal", "fps": 15, "scale": 2},
+  {"name": "holy_blessing", "fx": "holy/blessing", "fps": 15, "scale": 2, "t1": 1.6},
+  {"name": "holy_halo", "fx": "holy/halo", "fps": 15, "scale": 2, "t1": 1.2},
+  {"name": "holy_feather_burst", "fx": "holy/feather-burst", "fps": 12, "scale": 1.25, "t1": 2.0},
+  {"name": "curse_crimson", "fx": "shadow/curse", "fps": 12, "scale": 1.6, "t0": 0.1, "t1": 2.3, "opts": {"palette": ["#0b0306", "#22060c", "#4a0c18", "#7a1426", "#b0203a", "#e04a5a", "#ff9aa0", "#ffe0e0"], "bone": ["#1a0c0e", "#4a2a2e", "#7f5a5e", "#b89a9c", "#eadcdc"]}},
+  {"name": "pain_burst", "fx": "impacts/crit-hit", "fps": 20, "scale": 1, "t1": 0.6, "opts": {"palette": ["#1e0414", "#4a0a2a", "#861440", "#c42252", "#f0507a", "#ff9ab8", "#ffe6f0", "#ffffff"]}},
+  {"name": "acid_splash", "fx": "nature/acid-splash", "fps": 12, "scale": 1.5, "t1": 2.0},
+  {"name": "toxic_cloud", "fx": "nature/spore-burst", "fps": 12, "scale": 1.2, "t0": 0.75, "t1": 1.95, "opts": {"palette": ["#06140a", "#0e2a12", "#174a1a", "#2a7a22", "#4caa2a", "#86d83a", "#c8f86a", "#f4ffc8"], "toadstool": false}},
+  {"name": "toxic_shield", "fx": "holy/divine-shield", "fps": 15, "scale": 2, "t1": 1.2, "opts": {"palette": ["#0e1d14", "#173320", "#23552e", "#318232", "#55b92f", "#8eea3f", "#cfff63", "#f0ffd0"]}},
+  {"name": "toxic_burst", "fx": "explosions/plasma-explosion", "fps": 15, "scale": 1, "t1": 1.5, "opts": {"palette": ["#04140a", "#0b3b1c", "#14702c", "#2fae3a", "#7ee04c", "#cdfc8a", "#ffffff"], "accent": ["#0e1a06", "#2c4a10", "#5a8a1a", "#9ad02a", "#e2ff7a"]}},
+  {"name": "sword_slash", "fx": "melee/sword-slash", "fps": 20, "scale": 1.5, "t0": 0.05, "t1": 0.6, "symmetric_x": false},
+  {"name": "stun_stars", "fx": "status/stunned", "fps": 15, "scale": 2, "t1": 1.2},
+  {"name": "fire_bolt", "fx": "fire/fireball", "fps": 15, "scale": 2, "t1": 0.6, "crop": [52, 8, 136, 48]},
+  {"name": "fire_impact", "fx": "impacts/crit-hit", "fps": 20, "scale": 1, "t1": 0.6},
+  {"name": "ice_bolt", "fx": "ice/ice-lance", "fps": 15, "scale": 2, "t1": 0.53, "crop": [86, 14, 176, 50]},
+  {"name": "ice_impact", "fx": "ice/snowflake-burst", "fps": 12, "scale": 1.5, "t0": 0.1, "t1": 1.4},
+  {"name": "thunder_bolt", "fx": "projectiles/plasma-shot", "fps": 15, "scale": 2, "t1": 0.53, "crop": [56, 8, 144, 52], "opts": {"palette": ["#06102a", "#0b2a5c", "#1446a0", "#2a78e0", "#58a6ff", "#9ed8ff", "#e4f6ff", "#ffffff"]}},
+  {"name": "thunder_impact", "fx": "lightning/zap-hit", "fps": 20, "scale": 1.5, "t1": 0.9},
+  {"name": "poison_bolt", "fx": "projectiles/plasma-shot", "fps": 15, "scale": 2, "t1": 0.53, "crop": [56, 8, 144, 52]},
+  {"name": "arcane_bolt", "fx": "arcane/arcane-orb", "fps": 15, "scale": 1.5, "t1": 1.0, "crop": [24, 8, 112, 92]},
+  {"name": "arcane_impact", "fx": "arcane/mana-burst", "fps": 12, "scale": 1.2, "t1": 1.4},
+  {"name": "silence_bolt", "fx": "shadow/void-orb", "fps": 15, "scale": 1.2, "t1": 1.0, "crop": [20, 4, 148, 132]},
+  {"name": "silence_seal", "fx": "shadow/hex-sigil", "fps": 12, "scale": 1.5, "t0": 0.2, "t1": 2.6}
+ ]
+}

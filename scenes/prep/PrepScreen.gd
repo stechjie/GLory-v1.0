@@ -569,6 +569,8 @@ func _emit_battle_request_once() -> void:
 func _preload_battle_assets(_request_id: String) -> void:
 	for replay in [NetworkService.team_replay, NetworkService.team_replay_rival]:
 		_queue_preparation_assets(replay)
+		# 这一场马上要打：插队到最前（后台预载一次只跑一个，见 BattleAssetService.MAX_IN_FLIGHT）。
+		BattleAssetService.prioritize(BattleAssetManifest.replay_paths(replay))
 	BattleAssetService.promote_future_to_battle(GameState.round_index)
 	BattleAssetService.harvest()
 	_set_battle_stage("load_battle_assets", tr("battle_load_assets"))

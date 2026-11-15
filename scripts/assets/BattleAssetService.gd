@@ -38,6 +38,19 @@ static var _scenes: Dictionary = {}      # path -> PackedScene
 static var _runtime_resources: Dictionary = {}
 static var _owners: Dictionary = {}      # path -> { owner: true }
 static var _requested: Dictionary = {}   # path -> true（线程请求已发出，尚未收割）
+# 排队等发出的后台请求（按先来后到）。见下面 MAX_IN_FLIGHT。
+static var _queue: Array[String] = []
+
+# 同时在后台加载的资源最多几个。🔴 **必须是 1。**
+#
+# 2026-11-14 实测：全新电脑（没有 shader 缓存）进自定义房间，大厅预载一口气发出 61 个
+# load_threaded_request，Godot 把它们摊到十几个工作线程上同时跑。带脚本的单位
+# （神族祭司 / 女祭司 / 光环，脚本互相 extends、preload）在多个线程里同时编译时互相等待，
+# 整个进程死锁：CPU 0%、窗口「未响应」、永远不恢复。开发机有 shader 缓存，每个资源加载很快，
+# 线程刚好错开，所以一直没被发现；两台测试电脑 + 本机清空缓存后都 100% 复现。
+# 一次只跑一个，线程之间就没有可以互相等的对象。代价是预载变成串行、慢电脑上多花几秒 ——
+# 大厅本来就在等人；没加载完的由 PrepScreen 读条兜底（同 FrameResourceLoader 的做法）。
+const MAX_IN_FLIGHT := 1
 
 # --- 所有权 -------------------------------------------------------------------
 
@@ -47,16 +60,51 @@ static func acquire(path: String, owner: String) -> void:
 		return
 	var set: Dictionary = _owners.get_or_add(path, {})
 	set[owner] = true
-	if _scenes.has(path) or _requested.has(path):
+	if _scenes.has(path) or _requested.has(path) or _queue.has(path):
 		return
 	if not ResourceLoader.exists(path):
 		return
-	if ResourceLoader.load_threaded_request(path) == OK:
-		_requested[path] = true
+	# 不直接发请求：排队，由 _pump() 按 MAX_IN_FLIGHT 一个一个发（理由见 MAX_IN_FLIGHT）。
+	_queue.append(path)
+	_pump()
+
+
+# 有空位就从队列里发下一个后台请求。acquire / harvest / get_scene 都会调。
+static func _pump() -> void:
+	while _requested.size() < MAX_IN_FLIGHT and not _queue.is_empty():
+		var next: String = _queue.pop_front()
+		if _scenes.has(next) or _requested.has(next):
+			continue
+		if ResourceLoader.load_threaded_request(next) == OK:
+			_requested[next] = true
 
 static func acquire_many(paths: Array, owner: String) -> void:
 	for p in paths:
 		acquire(str(p), owner)
+
+
+# 还在排队或后台加载中（没加载完、也没失败）。
+# 🔴 判断「加载失败」的地方必须先问这个：还在排队的资源从来没发过线程请求，
+# ResourceLoader.load_threaded_get_status 会答 INVALID_RESOURCE —— 看起来像失败，其实只是没轮到。
+static func is_pending(path: String) -> bool:
+	return _queue.has(path) or _requested.has(path)
+
+
+# 马上就要用的资源插到队伍最前面（战斗开打前、备战读条时）。不改所有权；已经加载好、
+# 或者正在加载的不受影响。没有这一步，本回合的模型会排在大厅预载 / 未来回合预取后面，
+# 慢电脑上等不到 BattleScreen 的 15 秒期限 —— 那会判负、不结算金币。
+static func prioritize(paths: Array) -> void:
+	var front: Array[String] = []
+	for raw_path in paths:
+		var path := str(raw_path)
+		if _queue.has(path):
+			_queue.erase(path)
+			front.append(path)
+	if front.is_empty():
+		return
+	front.append_array(_queue)
+	_queue = front
+	_pump()
 
 # Adopt an already completed background load without requesting or waiting again.
 static func retain_ready_resource(path: String, resource: Resource, owner: String) -> void:
@@ -82,6 +130,7 @@ static func release_owner(owner: String) -> int:
 		_scenes.erase(path)
 		_runtime_resources.erase(path)
 		_requested.erase(path)
+		_queue.erase(path)
 		freed += 1
 	return freed
 
@@ -113,6 +162,7 @@ static func get_scene(path: String) -> PackedScene:
 			if got != null:
 				_scenes[path] = got
 			_stat_harvest += 1
+			_pump()
 			return got
 		if st == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
 			# 还在加载中就同步等 —— **这条会阻塞主线程**，是预取漏掉时的兜底。
@@ -126,8 +176,12 @@ static func get_scene(path: String) -> PackedScene:
 			_stat_block_us += us
 			if us > 50000:
 				print("[ASSET] 阻塞等待 %.0fms  %s" % [us / 1000.0, path.get_file()])
+			_pump()
 			return got2
 		_requested.erase(path)
+		_pump()
+	# 还在排队、没轮到：从队列里拿掉，下面同步读（和完全没预取一样，统计成 cold）。
+	_queue.erase(path)
 	if not ResourceLoader.exists(path):
 		return null
 	# 完全没预取到：整段同步读盘。这是最贵的一条路，必须能看见。
@@ -181,10 +235,12 @@ static func harvest() -> int:
 			pending += 1
 		else:
 			_requested.erase(path)   # 失败的不要一直挂着
-	return pending
+	_pump()
+	# 读条要算上还在排队的（以前全部请求一次发出，没有队列）。
+	return _requested.size() + _queue.size()
 
 static func pending_count() -> int:
-	return _requested.size()
+	return _requested.size() + _queue.size()
 
 static func cached_count() -> int:
 	return _scenes.size()
@@ -204,3 +260,4 @@ static func reset_run() -> void:
 	_runtime_resources.clear()
 	_owners.clear()
 	_requested.clear()
+	_queue.clear()

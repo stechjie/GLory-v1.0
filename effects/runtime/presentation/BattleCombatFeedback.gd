@@ -13,8 +13,9 @@ const DISPLAY_FONT := preload("res://ui/fonts/LibreBaskerville-Variable.ttf")
 const PLATE := preload("res://effects/runtime/presentation/DamageCounterPlate.gd")
 const INK_SHADER := preload("res://shaders/damage_counter_ink.gdshader")
 const DAMAGE_TIERS := [10000, 20000, 40000, 80000, 160000, 320000]
-const DAMAGE_COLORS := [Color("a6b6e6"), Color("8eafff"), Color("72c7ff"), Color("9d9dff"), Color("b79fff"), Color("b4d8ff"), Color("e5efff")]
-const EARLY_DAMAGE_COLORS := [Color("a6b6e6"), Color("8eafff"), Color("72c7ff"), Color("b09dff"), Color("e5efff")]
+# 11.15：档位色从冷蓝紫换成暖色（铜 → 金 → 橙 → 红金 → 白金），跟木牌底板和全游戏的暖色 UI 一路。
+const DAMAGE_COLORS := [Color("d9b98a"), Color("e8c060"), Color("ffd24a"), Color("ffb03a"), Color("ff8a3a"), Color("ff6a4a"), Color("fff0c0")]
+const EARLY_DAMAGE_COLORS := [Color("d9b98a"), Color("e8c060"), Color("ffd24a"), Color("ff9a3a"), Color("fff0c0")]
 const FLAME_SHADER := preload("res://shaders/damage_counter_fire.gdshader")
 # 10.31 清场字幕加强：原来 43px、0.68 秒、挤在顶部中间，雪地 / 冰蓝底上几乎读不到。
 # 现在字号翻倍、落在本地那一路上方、冲击放大进场 + 一道横扫高光 + 深色底带，停 1.2 秒。
@@ -62,6 +63,7 @@ var _clear_band_material: ShaderMaterial
 var _clear_caption_material: ShaderMaterial
 # 本地那一路在屏幕上的锚点（全局坐标）。INF = 没给，落回顶部中间。
 var _clear_anchor := Vector2.INF
+var _clear_anchor_y := false
 
 
 func _ready() -> void:
@@ -73,7 +75,7 @@ func _ready() -> void:
 	add_child(_plate)
 	_damage_title = _make_label("DamageTitle", Color.WHITE)
 	_damage_title.text = "Damage"
-	_damage_depth = _make_label("DamageDepth", Color("090d26"))
+	_damage_depth = _make_label("DamageDepth", Color("2a1608"))
 	_damage_label = _make_label("Damage", Color.WHITE)
 	var face := FontVariation.new()
 	face.base_font = DISPLAY_FONT
@@ -83,13 +85,13 @@ func _ready() -> void:
 	for label in [_damage_title, _damage_depth, _damage_label]:
 		label.add_theme_font_override("font", face)
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		label.add_theme_color_override("font_outline_color",Color("070a1e"))
+		label.add_theme_color_override("font_outline_color",Color("2a1608"))
 		label.add_theme_constant_override("outline_size",0 if label != _damage_depth else 1)
 	var title_face := FontVariation.new()
 	title_face.base_font = DISPLAY_FONT
 	title_face.variation_opentype = {"wght":500.0}
 	_damage_title.add_theme_font_override("font",title_face)
-	_damage_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_damage_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	for label in [_damage_title,_damage_label]:
 		var ink := ShaderMaterial.new()
 		ink.shader = INK_SHADER
@@ -154,15 +156,16 @@ func _layout() -> void:
 	# this top gap even in a narrow window; the parent applies safe-area insets.
 	var top := maxf(100.0, 100.0 * factor)
 	_damage_label.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	_plate.position = Vector2(8,143)*factor
-	_plate.size = Vector2(286,84)*factor
-	_damage_label.position = Vector2(30,170) * factor
-	_damage_label.size = Vector2(222,58) * factor
+	# 11.15：底板换成 damage_plaque.png（宽高比 3.27），标题、数字按图里两块内面对齐（见 DamageCounterPlate）。
+	_plate.position = Vector2(8,141)*factor
+	_plate.size = Vector2(286,88)*factor
+	_damage_label.position = Vector2(30,166) * factor
+	_damage_label.size = Vector2(228,58) * factor
 	_damage_label.pivot_offset = _damage_label.size * 0.5
 	_damage_title.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	_damage_title.position = Vector2(95,145) * factor
-	_damage_title.size = Vector2(156,30) * factor
-	_damage_title.add_theme_font_size_override("font_size", roundi(26 * factor))
+	_damage_title.position = Vector2(84,141) * factor
+	_damage_title.size = Vector2(136,30) * factor
+	_damage_title.add_theme_font_size_override("font_size", roundi(22 * factor))
 	_damage_depth.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	_damage_depth.position = _damage_label.position + Vector2(0.7,1.1) * factor
 	_damage_depth.size = _damage_label.size
@@ -195,6 +198,9 @@ func _place_clear_caption(factor: float, top: float) -> void:
 		var half := text_width * 0.5 + 75.0 * factor
 		var left_limit := maxf(half + 16.0, CLEAR_HUD_LEFT_PX * factor + half)
 		center.x = clampf(local.x, minf(left_limit, size.x * 0.5), size.x - half - 16.0)
+		if _clear_anchor_y:
+			# 不能高过顶部 HUD（团队血条 / 狂热条），也不能掉出屏幕底。
+			center.y = clampf(local.y, top + height * 0.5, size.y - height * 0.5 - 8.0)
 	# 标签是 CENTER_TOP 锚点，offset 以顶部中点为原点。
 	_clear_label.offset_left = center.x - size.x * 0.5 - width * 0.5
 	_clear_label.offset_right = center.x - size.x * 0.5 + width * 0.5
@@ -300,11 +306,13 @@ static func damage_tier(total: int, round_index := 11) -> int:
 ## The owner calls once when the local lane is confirmed clear. Repeated calls
 ## are ignored until reset_feedback(), including while the subtitle is fading.
 ## anchor_global：本地那一路在屏幕上的位置（全局坐标），字幕对准它；不给就在顶部中间。
-func show_lane_clear(anchor_global := Vector2.INF) -> void:
+## anchor_y：true 时字幕竖直方向也对准锚点（第 21 回合横路用：压在本路横带上沿）。
+func show_lane_clear(anchor_global := Vector2.INF, anchor_y := false) -> void:
 	if _clear_label == null or _clear_shown:
 		return
 	_clear_shown = true
 	_clear_anchor = anchor_global
+	_clear_anchor_y = anchor_y and anchor_global != Vector2.INF
 	_refresh_text()
 	_layout()
 	if _clear_tween != null:
@@ -366,6 +374,7 @@ func reset_feedback() -> void:
 		_plate.hide()
 	_clear_shown = false
 	_clear_anchor = Vector2.INF
+	_clear_anchor_y = false
 	if is_instance_valid(_clear_band):
 		_clear_band.hide()
 		_clear_band.modulate.a = 1.0

@@ -1,0 +1,24 @@
+{
+ "fx": "shadow/hex-sigil",
+ "columns": 5,
+ "rows": 6,
+ "frame_count": 29,
+ "fps": 12,
+ "duration": 2.417,
+ "cell_px": [
+  255,
+  243
+ ],
+ "cell_src_px": [
+  170,
+  162
+ ],
+ "pivot": [
+  0.498,
+  0.8354
+ ],
+ "sheet_px": [
+  1275,
+  1458
+ ]
+}
