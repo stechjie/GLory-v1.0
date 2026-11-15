@@ -995,6 +995,7 @@ func _valid_team_replay(replay: Dictionary) -> bool:
 	return BattleReplayUtil.valid_team_replay(replay)
 
 # --- 切镜头观战敌方队伍 ------------------------------------------------------
+const ViewToggleKit := preload("res://ui/theme/ParchmentKit.gd")
 func _setup_view_toggle() -> void:
 	if _view_toggle_btn != null:
 		return
@@ -1007,12 +1008,18 @@ func _setup_view_toggle() -> void:
 	_view_toggle_btn = Button.new()
 	_view_toggle_btn.disabled = not _battle_setup_ready
 	_view_toggle_btn.text = tr("battle_view_rival")
-	_view_toggle_btn.custom_minimum_size = Vector2(120, 36)
+	# 11.15：原来是引擎默认的灰按钮，很难注意到。换成羊皮纸小底板 + 「眼睛」图标，和全游戏的 UI 一路。
+	ViewToggleKit.style_plate(_view_toggle_btn)
+	_view_toggle_btn.icon = ViewToggleKit.icon("spectate")
+	_view_toggle_btn.expand_icon = true
+	_view_toggle_btn.add_theme_constant_override("icon_max_width", 24)
+	_view_toggle_btn.add_theme_font_size_override("font_size", 15)
+	_view_toggle_btn.custom_minimum_size = Vector2(156, 40)
 	_view_toggle_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	_view_toggle_btn.offset_left = -136
-	_view_toggle_btn.offset_top = 56
+	_view_toggle_btn.offset_left = -172
+	_view_toggle_btn.offset_top = 54
 	_view_toggle_btn.offset_right = -16
-	_view_toggle_btn.offset_bottom = 92
+	_view_toggle_btn.offset_bottom = 94
 	_view_toggle_btn.z_index = 100
 	_view_toggle_btn.pressed.connect(_on_view_toggle_pressed)
 	add_child(_view_toggle_btn)

@@ -237,7 +237,6 @@
                         },
                         {
                             "id":  "merc_aries_blood",
-                            "model_in_place_actions": ["run"],
                             "name":  "狂战先锋",
                             "cost":  450,
                             "carrot_cost": 27,

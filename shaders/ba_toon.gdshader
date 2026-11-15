@@ -28,11 +28,13 @@ uniform vec3 light_dir_view = vec3(0.35, 0.76, 0.55);
 uniform float shadow_threshold : hint_range(0.0, 1.0) = 0.5;
 uniform float band_softness : hint_range(0.0, 0.1) = 0.015;
 // 亮面整体亮度。1.0 = 贴图原色。
-uniform float lit_brightness : hint_range(0.5, 1.5) = 1.0;
+// 11.15：1.0 → 0.94。白毛宠物（猫、兔、雪豹）在亮色手绘背景上整片发白、看不出体积。
+uniform float lit_brightness : hint_range(0.5, 1.5) = 0.94;
 group_uniforms;
 
 group_uniforms Shadow;
-uniform vec4 shadow_tint : source_color = vec4(0.70, 0.72, 0.80, 1.0);
+// 11.15：阴影加深一点、偏青紫（和手绘场景里树荫的色调一致），原值 (0.70, 0.72, 0.80)。
+uniform vec4 shadow_tint : source_color = vec4(0.62, 0.64, 0.80, 1.0);
 uniform bool skin_detect = true;
 uniform vec4 skin_shadow_tint : source_color = vec4(0.94, 0.75, 0.73, 1.0);
 // 皮肤往亮面推多少（加在半兰伯特值上）。
@@ -41,7 +43,8 @@ uniform float backface_tint : hint_range(0.0, 1.0) = 0.42;
 group_uniforms;
 
 group_uniforms Rim;
-uniform float rim_strength : hint_range(0.0, 1.0) = 0.28;
+// 11.15：0.28 → 0.18。边缘光是往白里提的，白毛上会把轮廓洗掉。
+uniform float rim_strength : hint_range(0.0, 1.0) = 0.18;
 uniform float rim_start : hint_range(0.0, 1.0) = 0.62;
 uniform float rim_end : hint_range(0.0, 1.0) = 0.78;
 group_uniforms;

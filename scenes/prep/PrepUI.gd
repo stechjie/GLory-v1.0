@@ -973,6 +973,14 @@ func _build_top_bar(root: VBoxContainer) -> void:
 	battle_label.add_theme_constant_override("outline_size", 1)
 	battle.add_child(battle_label)
 	battle.bind_content_label(battle_label)
+	# 11.15 用户反馈「开始按钮很不显眼」：加一套提示光（背后暖金柔光呼吸 + 每 2.4 秒一道扫光 + 几颗小星星），
+	# 和底部卷轴 / 钱袋的提示光是同一个组件，比它们更亮更勤。只画不吃点击，不改按钮本身的位置和缩放。
+	var start_glint := PrepGlintFx.new()
+	start_glint.halo_alpha = Vector2(0.55, 0.95)
+	start_glint.halo_grow = Vector2(1.28, 2.3)
+	start_glint.sweep_every = 2.4
+	start_glint.sparkle_count = 7
+	start_glint.setup(battle, PrepWidgets.cached_texture(START_PLATE_PATH))
 	battle.set_idle_text(tr("ui_start_battle_btn"))
 	_start_battle_label = battle_label
 	# (3) Round number + next battle type (PVE / PVP / BOSS), stacked under the button.

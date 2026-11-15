@@ -1,17 +1,14 @@
 extends Control
-# 卷轴商店棋子卡的卡框，用代码画（11.04 起替代 assets/ui/shop/card_frame_*.png 三张石框）。
+# 卷轴商店棋子卡的卡框。
 #
-# 画风跟用户的卡通美术走（11.04 金属版被打回「太金属感」）：
-#   深棕粗描边 + 平涂两层明暗（光从左上：上 / 左边亮，下 / 右边暗）+ 按面切块，不用渐变、不用细亮线。
-#   等级靠用户美术里本来就有的元素区分，而不是金属光泽：
-#     T1 普通：灰褐石框，什么都不加；
-#     T2 稀有：蓝灰石框，两个底角长蓝水晶簇；
-#     T3 史诗：暖金框，两个底角长金水晶簇，卡顶一顶小金冠（嵌红宝石）。
-#   卡顶星星数 = 阶（T1 一颗、T2 两颗、T3 金冠上三颗）。
+# 2026-11-15 起：框本体换成贴图（ui/shop_card/frame_t1~3.png，GPT 出图后按用户三轮意见定稿），代码只画贴图之外的东西。
+#   稀有度一眼分开：T1 普通 = 灰石素框；T2 稀有 = 蓝框蓝铭牌 + 底角蓝水晶；T3 史诗 = 金框金铭牌 + 金冠小翅膀 + 底角金晶。
+#   内窗底部一排阶数星（T1 一颗灰、T2 两颗蓝、T3 三颗金）。
+#   铭牌「能量流动」：稀有 / 史诗挂 ui/shop_card/plate_energy.gdshader（稀有不扫光，只流光 + 星光；史诗再加扫光），普通卡静止。
 #   呼吸光是框外一圈柔和光晕：T1 无、T2 慢、T3 快而亮。
+#   右上角大金币（数字由 ShopPanel 叠在圈内）。种族徽章、近战/远程牌子、名字由 ShopPanel 叠上。
 # 升星提示（star_up）：卡顶 12 点方向一团绿色柔光 + 一颗呼吸的大十字星 + 往上飘的小十字星，可冲出卡顶。
 #   判据由 ShopPanel 用 PrepRules.first_merge_target 算，和真正买入时一致。
-# 种族 logo / 价格数字由 ShopPanel 叠在左上 / 右上角；这里画近战远程章和金币底。
 # 近战 / 远程的判据与战斗表现一致：数据表射程 range <= 1 为近战（BattleVfx 同一口径）。
 # 坐标写在 200×200 卡面空间里，按实际尺寸等比缩放；装饰可以画到卡外（slot 不裁切）。
 # 「减少动态」时全部静止。
@@ -19,7 +16,6 @@ extends Control
 const CARD := Vector2(200.0, 200.0)
 
 const OUTLINE := Color("3a2418")       # 深棕描边，和头像 / 宝藏图标的描边同色系
-const CREAM := Color("f4e6c8")
 
 # base = 主色，hi = 亮面（左上），lo = 暗面（右下），plate = 名字条，glow = 呼吸光
 const TIER_STYLE := {
@@ -33,29 +29,50 @@ const GLOW := {
 	2: {"alpha": 0.75, "layers": 6, "step": 2.6, "speed": 1.55, "low": 0.2},
 	3: {"alpha": 1.0, "layers": 9, "step": 2.8, "speed": 3.0, "low": 0.1},
 }
-const CRYSTAL := {
-	2: {"base": Color("4aa0ff"), "hi": Color("a8dcff"), "lo": Color("2a62c4")},
-	3: {"base": Color("f2b630"), "hi": Color("ffe58a"), "lo": Color("c47f14")},
+# 框贴图：1254 画布上卡框本体（不含溢出的金冠 / 水晶）占 (34, 33) 起 1185×1190，按这个映射到 200×200 卡面。
+const FRAME_TEXTURES := {
+	1: preload("res://ui/shop_card/frame_t1.png"),
+	2: preload("res://ui/shop_card/frame_t2.png"),
+	3: preload("res://ui/shop_card/frame_t3.png"),
+}
+const FRAME_SOURCE := 1254.0
+const FRAME_BODY := Rect2(34.0, 33.0, 1185.0, 1190.0)
+# 铭牌能量：遮罩与卡框贴图同一张画布；plate_rect 是铭牌在 UV 里的外接框（由遮罩量出）。
+const PLATE_ENERGY_SHADER := preload("res://ui/shop_card/plate_energy.gdshader")
+const PLATE_ENERGY := {
+	2: {"mask": preload("res://ui/shop_card/plate_mask_t2.png"), "rect": Vector4(0.1212, 0.8325, 0.8700, 0.9330),
+		"sweep_strength": 0.0, "sweep_color": Color(0.82, 0.94, 1.0),
+		"flow_strength": 0.22, "flow_low": 0.58, "flow_color": Color(0.55, 0.84, 1.0),
+		"spark_count": 5, "spark_strength": 0.75, "spark_size": 0.019, "spark_color": Color(0.87, 0.95, 1.0)},
+	3: {"mask": preload("res://ui/shop_card/plate_mask_t3.png"), "rect": Vector4(0.1108, 0.8357, 0.8868, 0.9330),
+		"sweep_strength": 0.55, "sweep_color": Color(1.0, 0.97, 0.82),
+		"flow_strength": 0.32, "flow_low": 0.52, "flow_color": Color(1.0, 0.86, 0.45),
+		"spark_count": 9, "spark_strength": 0.9, "spark_size": 0.022, "spark_color": Color(1.0, 0.97, 0.84)},
+}
+# 阶数星：内窗底部一排
+const TIER_STAR_Y := 152.0
+const TIER_STAR_R := 12.5
+const TIER_STAR_GAP := 25.0
+const TIER_STAR_COLORS := {
+	1: [Color("d8d2c4"), Color("f2eee4")],
+	2: [Color("7fc4ff"), Color("c4e6ff")],
+	3: [Color("ffcf3a"), Color("ffe98a")],
 }
 const GOLD := Color("eab53a")
 const GOLD_HI := Color("ffdc72")
 const GOLD_LO := Color("b9821e")
 
 const OUTER_INSET := 3.0
-const INNER_INSET := 17.0
 const OUTER_RADIUS := 14.0
-const INNER_RADIUS := 7.0
-const NAME_TOP := 158.0
-const COIN_CENTER := Vector2(181.0, 19.0)
-const COIN_RADIUS := 18.0
-const ROLE_CENTER := Vector2(21.0, 64.0)
-const ROLE_RADIUS := 12.0
+# 大金币压右上角（11.15 用户要求价格数字在圈里）
+const COIN_CENTER := Vector2(186.0, 8.0)
+const COIN_RADIUS := 27.0
 const STAR_UP_CENTER := Vector2(100.0, 0.0)   # 12 点方向
 const STAR_UP_COLOR := Color("6dff9a")
 const STAR_UP_SPARKS := 14
 
 var tier := 1
-var ranged := false        # true = 远程（弓），false = 近战（剑）
+var ranged := false        # true = 远程，false = 近战（牌子由 ShopPanel 画；这里留着给刷新判定用）
 var star_up := false       # 买下即升星
 var animated := true:
 	set(value):
@@ -63,6 +80,7 @@ var animated := true:
 			return
 		animated = value
 		_update_process()
+		_configure_energy()
 		_queue_dynamic_redraw()
 var anim_time := 0.0:
 	set(value):
@@ -75,6 +93,7 @@ var anim_phase := 0.0:
 		if anim_phase == value:
 			return
 		anim_phase = value
+		_configure_energy()
 		_queue_dynamic_redraw()
 
 # All layers use the same local card coordinates. Their own _draw callbacks
@@ -93,13 +112,28 @@ class AnimatedLayer extends Control:
 
 var _glow_layer: Control
 var _upgrade_layer: Control
+var _energy_layer: ColorRect
+var _energy_material: ShaderMaterial
 
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 600px 卡框贴图缩到 ~180px 显示，要用 mipmap，不然边缘起颗粒
+	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	_glow_layer = _make_animated_layer("BreathingGlow", false)
 	_glow_layer.show_behind_parent = true
+	_energy_layer = ColorRect.new()
+	_energy_layer.name = "PlateEnergy"
+	_energy_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_energy_layer.focus_mode = Control.FOCUS_NONE
+	_energy_material = ShaderMaterial.new()
+	_energy_material.shader = PLATE_ENERGY_SHADER
+	_energy_layer.material = _energy_material
+	add_child(_energy_layer)
 	_upgrade_layer = _make_animated_layer("StarUpgrade", true)
+	# configure() 可能在进树之前就调过（商店先建卡、后刷新），那时能量层还没建，这里补一次
+	_configure_energy()
+	_layout_energy()
 	resized.connect(_refresh_size)
 	visibility_changed.connect(_refresh_visibility)
 	_update_process()
@@ -128,6 +162,8 @@ func configure(p_tier: int, p_ranged: bool, p_star_up: bool) -> void:
 	ranged = p_ranged
 	star_up = p_star_up
 	_update_process()
+	if glow_changed:
+		_configure_energy()
 	if static_changed:
 		queue_redraw()
 	if glow_changed and is_instance_valid(_glow_layer):
@@ -143,6 +179,7 @@ static func is_ranged(unit_def: Dictionary) -> bool:
 
 func _refresh_size() -> void:
 	queue_redraw()
+	_layout_energy()
 	if is_instance_valid(_glow_layer):
 		_glow_layer.queue_redraw()
 	_queue_dynamic_redraw()
@@ -160,6 +197,40 @@ func _update_process() -> void:
 		_glow_layer.visible = tier >= 2
 	if is_instance_valid(_upgrade_layer):
 		_upgrade_layer.visible = star_up
+	if is_instance_valid(_energy_layer):
+		_energy_layer.visible = tier >= 2
+
+
+# 能量层盖住整张卡框贴图（含溢出部分），UV 与贴图一致。
+func _layout_energy() -> void:
+	if not is_instance_valid(_energy_layer):
+		return
+	var s := card_scale()
+	var r := _frame_rect()
+	_energy_layer.position = (size - CARD * s) * 0.5 + r.position * s
+	_energy_layer.size = r.size * s
+
+
+func _configure_energy() -> void:
+	if not is_instance_valid(_energy_material) or not PLATE_ENERGY.has(tier):
+		return
+	var e: Dictionary = PLATE_ENERGY[tier]
+	_energy_material.set_shader_parameter("plate_mask", e["mask"])
+	_energy_material.set_shader_parameter("plate_rect", e["rect"])
+	_energy_material.set_shader_parameter("phase", fmod(anim_phase * 0.37, 1.0))
+	for key in ["sweep_color", "flow_strength", "flow_low", "flow_color", "spark_color", "spark_size"]:
+		_energy_material.set_shader_parameter(key, e[key])
+	# 减少动态：画面静止，只留流光纹理，不扫光、不飘星
+	_energy_material.set_shader_parameter("speed", 1.0 if animated else 0.0)
+	_energy_material.set_shader_parameter("sweep_strength", e["sweep_strength"] if animated else 0.0)
+	_energy_material.set_shader_parameter("spark_count", int(e["spark_count"]) if animated else 0)
+	_energy_material.set_shader_parameter("spark_strength", e["spark_strength"])
+
+
+# 卡框贴图在 200×200 卡面坐标里的位置（本体对齐卡面，溢出的装饰在外面）。
+func _frame_rect() -> Rect2:
+	var k := Vector2(CARD.x / FRAME_BODY.size.x, CARD.y / FRAME_BODY.size.y)
+	return Rect2(-FRAME_BODY.position * k, Vector2(FRAME_SOURCE, FRAME_SOURCE) * k)
 
 
 func _queue_dynamic_redraw() -> void:
@@ -217,39 +288,21 @@ func _paint_glow(painter: CanvasItem) -> void:
 func _paint_static(painter: CanvasItem) -> void:
 	if not _begin_card_paint(painter):
 		return
-	var st: Dictionary = TIER_STYLE[tier]
+	# 1. 框贴图（本体对齐卡面，金冠 / 水晶溢出到外面）
+	painter.draw_texture_rect(FRAME_TEXTURES[tier], _frame_rect(), false)
 
-	# 2. 名字条：头像下方平涂一块，顶上一道深棕线
-	var plate_col: Color = st["plate"]
-	painter.draw_rect(Rect2(INNER_INSET, NAME_TOP, CARD.x - INNER_INSET * 2.0, CARD.y - INNER_INSET - NAME_TOP), plate_col)
-	painter.draw_rect(Rect2(INNER_INSET, NAME_TOP, CARD.x - INNER_INSET * 2.0, 4.0), plate_col.lightened(0.14))
-	painter.draw_line(Vector2(INNER_INSET, NAME_TOP), Vector2(CARD.x - INNER_INSET, NAME_TOP), OUTLINE, 2.5)
+	# 2. 阶数星：内窗底部一排
+	var cols: Array = TIER_STAR_COLORS[tier]
+	var x0 := CARD.x * 0.5 - TIER_STAR_GAP * float(tier - 1) * 0.5
+	for i in tier:
+		_star(painter, Vector2(x0 + TIER_STAR_GAP * float(i), TIER_STAR_Y), TIER_STAR_R, cols[0], cols[1])
 
-	# 3. 框带：外圆角矩形与内圆角矩形之间的一圈，按面朝向平涂亮 / 主 / 暗
-	_draw_band(painter, st)
-
-	# 4. 等级装饰：T2 / T3 底角水晶簇，T3 金冠，T1/T2 卡顶星星牌
-	if tier >= 2:
-		var cs: Dictionary = CRYSTAL[tier]
-		_crystal_cluster(painter, Vector2(6.0, CARD.y - 2.0), 1.0, cs)
-		_crystal_cluster(painter, Vector2(CARD.x - 6.0, CARD.y - 2.0), -1.0, cs)
-	if tier == 3:
-		_crown(painter, Vector2(100.0, 4.0))
-	else:
-		_star_tab(painter, tier, st)
-
-	# 5. 近战 / 远程小章
-	_disc(painter, ROLE_CENTER, ROLE_RADIUS, Color("2b2230"), st["hi"])
-	if ranged:
-		_draw_bow(painter, ROLE_CENTER, ROLE_RADIUS * 0.72)
-	else:
-		_draw_sword(painter, ROLE_CENTER, ROLE_RADIUS * 0.78)
-
-	# 6. 右上金币（数字由外面叠上）：平涂金 + 左上月牙亮面 + 深棕描边
-	painter.draw_circle(COIN_CENTER, COIN_RADIUS + 2.5, OUTLINE)
+	# 3. 右上大金币（数字由外面叠在圈内）：深棕描边 + 暗金底 + 亮金面（光从左上）+ 内圈细线
+	painter.draw_circle(COIN_CENTER, COIN_RADIUS + 3.0, OUTLINE)
 	painter.draw_circle(COIN_CENTER, COIN_RADIUS, GOLD_LO)
-	painter.draw_circle(COIN_CENTER + Vector2(-1.2, -1.2), COIN_RADIUS - 2.0, GOLD)
-	painter.draw_arc(COIN_CENTER, COIN_RADIUS - 5.0, PI * 1.05, PI * 1.55, 12, GOLD_HI, 2.4, true)
+	painter.draw_circle(COIN_CENTER + Vector2(-1.6, -1.6), COIN_RADIUS - 2.4, GOLD)
+	painter.draw_arc(COIN_CENTER, COIN_RADIUS * 0.78, 0.0, TAU, 32, GOLD_LO, 1.6, true)
+	painter.draw_arc(COIN_CENTER, COIN_RADIUS - 6.0, PI * 1.05, PI * 1.55, 12, GOLD_HI, 2.6, true)
 	painter.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
@@ -258,33 +311,6 @@ func _paint_upgrade(painter: CanvasItem) -> void:
 		return
 	_draw_star_up(painter, anim_time if animated else 0.0)
 	painter.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-
-
-# 框带：外 / 内两条同参数的圆角矩形轮廓，逐段连成四边形；
-# 每段按朝向上色（朝上 / 朝左 = 亮，朝下 / 朝右 = 暗，拐角 = 主色），直边按段交替微调明暗做出切面。
-func _draw_band(painter: CanvasItem, st: Dictionary) -> void:
-	var outer := _rounded(Rect2(Vector2.ZERO, CARD).grow(-OUTER_INSET), OUTER_RADIUS, 6)
-	var inner := _rounded(Rect2(Vector2.ZERO, CARD).grow(-INNER_INSET), INNER_RADIUS, 6)
-	var n := outer.size()
-	var hi: Color = st["hi"]
-	var base: Color = st["base"]
-	var lo: Color = st["lo"]
-	var centre := CARD * 0.5
-	for i in n:
-		var j := (i + 1) % n
-		var m := (outer[i] + outer[j]) * 0.5 - centre
-		var col := base
-		if m.y < -80.0 or m.x < -80.0:
-			col = hi
-		if m.y > 80.0 or m.x > 80.0:
-			col = lo
-		if (m.y < -80.0 and m.x > 80.0) or (m.y > 80.0 and m.x < -80.0):
-			col = base
-		if i % 2 == 1:
-			col = col.darkened(0.10)
-		painter.draw_colored_polygon(PackedVector2Array([outer[i], outer[j], inner[j], inner[i]]), col)
-	_outline(painter, outer, OUTLINE, 3.6)
-	_outline(painter, inner, OUTLINE, 2.6)
 
 
 # 圆角矩形轮廓点（顺时针，左上角起）。直边额外细分 subdiv 段，外 / 内两条点数一致，供框带逐段连接。
@@ -314,92 +340,19 @@ func _rounded(r: Rect2, radius: float, subdiv: int = 1) -> PackedVector2Array:
 	return pts
 
 
-# 水晶簇：三根长短不一的晶柱，从底角往上 / 往里斜长；每根沿中线劈两半（朝左上的一半亮），深棕描边。
-# side = 1 左下角，-1 右下角。
-func _crystal_cluster(painter: CanvasItem, root: Vector2, side: float, cs: Dictionary) -> void:
-	# 尺寸按 180px 卡上能看清来定（11.04 细调：原尺寸太小）
-	var specs := [
-		[Vector2(side * 20.0, 3.0), 0.40, 28.0, 7.5],
-		[Vector2(side * -3.0, -3.0), -0.50, 24.0, 7.0],
-		[Vector2(side * 30.0, 4.0), 0.75, 16.0, 5.5],
-		[Vector2(side * 6.0, 0.0), 0.0, 42.0, 9.5],
-	]
-	for sp in specs:
-		var base_pt: Vector2 = root + (sp[0] as Vector2)
-		var ang: float = -PI * 0.5 + float(sp[1]) * side
-		var length: float = sp[2]
-		var w: float = sp[3]
-		var d := Vector2(cos(ang), sin(ang))
-		var nrm := Vector2(-d.y, d.x)
-		var tip := base_pt + d * length
-		var shoulder := base_pt + d * (length - w * 1.1)
-		var shape := PackedVector2Array([base_pt - nrm * w, base_pt + nrm * w, shoulder + nrm * w, tip, shoulder - nrm * w])
-		var half_a := PackedVector2Array([base_pt, base_pt + nrm * w, shoulder + nrm * w, tip])
-		var half_b := PackedVector2Array([base_pt, tip, shoulder - nrm * w, base_pt - nrm * w])
-		var a_lit := nrm.x < 0.0
-		_fill(painter, shape, OUTLINE)
-		_fill(painter, half_a, cs["hi"] if a_lit else cs["lo"])
-		_fill(painter, half_b, cs["lo"] if a_lit else cs["hi"])
-		# 主色面压在中间，留出亮 / 暗两条
-		var mid_face := PackedVector2Array([base_pt + nrm * w * 0.25, shoulder + nrm * w * 0.25, tip, shoulder - nrm * w * 0.25, base_pt - nrm * w * 0.25])
-		_fill(painter, mid_face, cs["base"])
-		_outline(painter, shape, OUTLINE, 2.2)
-		# 亮面上一点小高光
-		painter.draw_circle(shoulder + nrm * w * (-0.45 if nrm.x > 0.0 else 0.45), w * 0.18, Color(1, 1, 1, 0.75))
-
-
-# 卡顶星星小牌（T1 一颗、T2 两颗）：平涂主色小牌 + 深棕描边。
-func _star_tab(painter: CanvasItem, n: int, st: Dictionary) -> void:
-	var half := 9.0 + 7.0 * float(n)
-	var tab := _rounded(Rect2(100.0 - half, -5.0, half * 2.0, 18.0), 6.0)
-	_fill(painter, tab, st["base"])
-	_fill(painter, _rounded(Rect2(100.0 - half + 3.0, -3.0, half * 2.0 - 6.0, 5.0), 2.0), st["hi"])
-	_outline(painter, tab, OUTLINE, 2.4)
-	var spacing := 14.0
-	var x0 := 100.0 - spacing * float(n - 1) * 0.5
-	for i in n:
-		_star(painter, Vector2(x0 + spacing * float(i), 4.0), 6.0)
-
-
-# T3 小金冠：平涂金 + 左半亮面 + 底边暗带 + 深棕描边，中间红宝石，冠上三颗星。
-func _crown(painter: CanvasItem, c: Vector2) -> void:
-	var pts := PackedVector2Array([
-		c + Vector2(-30, 10), c + Vector2(-34, -14), c + Vector2(-16, -2), c + Vector2(0, -24),
-		c + Vector2(16, -2), c + Vector2(34, -14), c + Vector2(30, 10)])
-	_fill(painter, pts, GOLD)
-	_fill(painter, PackedVector2Array([c + Vector2(-30, 10), c + Vector2(-34, -14), c + Vector2(-16, -2), c + Vector2(0, -24), c + Vector2(0, 10)]), GOLD_HI)
-	_fill(painter, PackedVector2Array([c + Vector2(-30, 4), c + Vector2(30, 4), c + Vector2(30, 10), c + Vector2(-30, 10)]), GOLD_LO)
-	_outline(painter, pts, OUTLINE, 2.6)
-	var g := c + Vector2(0, -6)
-	var gem := PackedVector2Array([g + Vector2(0, -6), g + Vector2(5, 0), g + Vector2(0, 6), g + Vector2(-5, 0)])
-	_fill(painter, gem, Color("e2384f"))
-	_fill(painter, PackedVector2Array([g + Vector2(0, -6), g + Vector2(0, 0), g + Vector2(-5, 0)]), Color("ff8a98"))
-	_outline(painter, gem, OUTLINE, 1.6)
-	for x in [-24.0, 24.0]:
-		_star(painter, c + Vector2(x, -5), 5.0)
-	_star(painter, c + Vector2(0, -26), 5.5)
-
-
 # 五角星：亮黄平涂 + 左半亮面 + 深棕描边。
-func _star(painter: CanvasItem, c: Vector2, r: float) -> void:
+func _star(painter: CanvasItem, c: Vector2, r: float, fill: Color = Color("ffcf3a"), lit: Color = Color("ffe98a")) -> void:
 	var pts := PackedVector2Array()
 	for i in 10:
 		var ang := -PI * 0.5 + float(i) * PI / 5.0
 		var rr := r if i % 2 == 0 else r * 0.46
 		pts.append(c + Vector2(cos(ang), sin(ang)) * rr)
-	_fill(painter, pts, Color("ffcf3a"))
+	_fill(painter, pts, fill)
 	var left := PackedVector2Array([c])
 	for i in range(5, 11):
 		left.append(pts[i % 10])
-	_fill(painter, left, Color("ffe98a"))
+	_fill(painter, left, lit)
 	_outline(painter, pts, OUTLINE, 1.6)
-
-
-# 圆章：深棕描边 + 等级亮色细圈 + 深色底。
-func _disc(painter: CanvasItem, c: Vector2, r: float, fill: Color, ring: Color) -> void:
-	painter.draw_circle(c, r + 2.4, OUTLINE)
-	painter.draw_circle(c, r + 0.8, ring)
-	painter.draw_circle(c, r - 0.6, fill)
 
 
 # 升星：12 点方向的绿色柔光 + 呼吸的大十字星 + 往上飘的小十字星（棋盘特效同款十字闪光），可冲出卡顶。
@@ -434,32 +387,6 @@ func _cross_star(painter: CanvasItem, c: Vector2, r: float, core: Color, halo: C
 		painter.draw_colored_polygon(PackedVector2Array([c + n * w, c + d * r, c - n * w]), Color(halo.r, halo.g, halo.b, 0.85 * a))
 		painter.draw_colored_polygon(PackedVector2Array([c + n * w * 0.5, c + d * r * 0.7, c - n * w * 0.5]), core)
 	painter.draw_circle(c, w * 1.2, core)
-
-
-# 剑：斜放，剑身 + 剑尖 + 护手 + 柄 + 柄头。
-func _draw_sword(painter: CanvasItem, c: Vector2, r: float) -> void:
-	var d := Vector2(1, -1).normalized()     # 剑尖朝右上
-	var n := Vector2(d.y, -d.x) * -1.0
-	var tip := c + d * r
-	var hilt := c - d * r * 0.35
-	var w := r * 0.16
-	painter.draw_colored_polygon(PackedVector2Array([tip, hilt + n * w, hilt - n * w]), CREAM)
-	painter.draw_line(hilt + n * r * 0.42, hilt - n * r * 0.42, CREAM, maxf(1.4, r * 0.16), true)
-	painter.draw_line(hilt, c - d * r * 0.85, CREAM, maxf(1.2, r * 0.13), true)
-	painter.draw_circle(c - d * r * 0.92, r * 0.12, CREAM)
-
-
-# 弓：弓身弧线 + 弦 + 一支箭。
-func _draw_bow(painter: CanvasItem, c: Vector2, r: float) -> void:
-	var w := maxf(1.3, r * 0.15)
-	painter.draw_arc(c + Vector2(-r * 0.35, 0.0), r, -PI * 0.42, PI * 0.42, 16, CREAM, w, true)
-	var top := c + Vector2(-r * 0.35, 0.0) + Vector2(cos(-PI * 0.42), sin(-PI * 0.42)) * r
-	var bot := c + Vector2(-r * 0.35, 0.0) + Vector2(cos(PI * 0.42), sin(PI * 0.42)) * r
-	painter.draw_line(top, bot, Color(CREAM.r, CREAM.g, CREAM.b, 0.75), maxf(1.0, w * 0.55), true)
-	var a0 := c + Vector2(-r * 0.75, 0.0)
-	var a1 := c + Vector2(r * 1.05, 0.0)
-	painter.draw_line(a0, a1, CREAM, maxf(1.0, w * 0.7), true)
-	painter.draw_colored_polygon(PackedVector2Array([a1 + Vector2(r * 0.12, 0.0), a1 - Vector2(r * 0.22, r * 0.2), a1 - Vector2(r * 0.22, -r * 0.2)]), CREAM)
 
 
 func _fill(painter: CanvasItem, pts: PackedVector2Array, col: Color) -> void:

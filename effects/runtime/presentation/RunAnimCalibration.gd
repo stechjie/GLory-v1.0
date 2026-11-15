@@ -58,7 +58,8 @@ const GROUND_SPEED := {
 	"human_militia": {"model": "res://assets/models/units/human_refined/human_militia/human_militia_refined.tscn", "model_scale": 1.0, "clip": "move_run_f", "ground_speed": 0.793},
 	"human_swordsman": {"model": "res://assets/models/units/human_refined/human_swordsman/human_swordsman_refined.tscn", "model_scale": 1.0, "clip": "move_run_f", "ground_speed": 0.671},
 	"merc_aquarius_time": {"model": "res://assets/models/mercenaries/merc_aquarius_time_animated/merc_aquarius_time_animated.tscn", "model_scale": 1.0, "clip": "mixamo_com", "ground_speed": 0.318},
-	"merc_aries_blood": {"model": "res://assets/models/mercenaries/merc_aries_blood_animated/merc_aries_blood_animated.tscn", "model_scale": 1.0, "clip": "move_run_f", "ground_speed": 0.972},
+	# 2026-11-15 换成正式模型（单 GLB，片段 run），重测：左脚 1.128、右脚 0.915，取平均。
+	"merc_aries_blood": {"model": "res://assets/models/mercenaries/merc_aries_blood_animated/merc_aries_blood_animated.tscn", "model_scale": 1.0, "clip": "run", "ground_speed": 1.021},
 	"merc_cancer_shell": {"model": "res://assets/models/mercenaries/merc_cancer_shell_animated/merc_cancer_shell_animated.tscn", "model_scale": 2.0, "clip": "mixamo_com", "ground_speed": 0.853},
 	"merc_capricorn_steel": {"model": "res://assets/models/mercenaries/merc_capricorn_steel_animated/merc_capricorn_steel_animated.tscn", "model_scale": 1.0, "clip": "catwalk-loop-378982", "ground_speed": 0.339},
 	"merc_gemini_assassin": {"model": "res://assets/models/mercenaries/merc_gemini_assassin_animated/merc_gemini_assassin_animated.tscn", "model_scale": 1.0, "clip": "mixamo_com", "ground_speed": 0.446},

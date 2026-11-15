@@ -17,6 +17,9 @@ const PetPreview := preload("res://scripts/pets/PetPreview.gd")
 const UnitVisualResolverScript := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
 const UnitContactShadowScript := preload("res://effects/runtime/presentation/UnitContactShadow.gd")
 const UnitPlanarShadowScript := preload("res://effects/runtime/presentation/UnitPlanarShadow.gd")
+const UnitSceneBlendScript := preload("res://effects/runtime/presentation/UnitSceneBlend.gd")
+const PREP_SHADOW_COLOR := Color(0.02, 0.17, 0.22, 1.0)
+const PREP_SHADOW_ALPHA := 0.36
 const FOUR_STAR_READY_AURA := preload("res://effects/vfx3d/modules/FourStarAura3D.gd")
 const STAR_UPGRADE_BURST := preload("res://scenes/prep/effects/PrepStarUpgradeBurst.gd")
 const FOUR_STAR_READY_GLOW := preload("res://scenes/prep/effects/PrepFourStarReadyGlow.gd")
@@ -971,6 +974,9 @@ func _setup_prep_river_background() -> void:
 	# this viewport's 30 Hz refresh unchanged.
 	_prep_river_viewport.msaa_3d = Viewport.MSAA_2X \
 		if VFXManager.get_quality_tier() == VFXQualityBudget.Tier.HIGH else Viewport.MSAA_DISABLED
+	# 11.15 融合试样：棋子在屏幕上只有七八十像素高，模型细节小于一个像素，不做抗锯齿就是一片噪点，
+	# 和柔和的手绘底图最不搭。FXAA 是一遍全屏后处理，比 MSAA 便宜；手机上的开销还没实测。
+	_prep_river_viewport.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
 	# 透明：棋盘没盖到的角落露出后面的满屏 2D 背景（同一张 base 图，任何屏幕尺寸都铺满），不再露深色兜底
 	_prep_river_viewport.transparent_bg = true
 	# 手机上 UPDATE_ALWAYS 会让这块 3D 视口跟随主帧率全速重渲染（发热大户）。
@@ -2296,6 +2302,10 @@ func _update_prep_model_anchors(model_node: Node3D, attempt: int) -> void:
 			model_node.set_meta("prep_anchor_update_pending", false)
 		return
 	_configure_prep_contact_shadow(model_node)
+	# 11.15 融合试样：统一描边色 + 统一受光层。必须排在投影影子之前（影子接在它的副本后面）。
+	if not bool(model_node.get_meta("prep_scene_blend_attached", false)):
+		UnitSceneBlendScript.apply(visual_root)
+		model_node.set_meta("prep_scene_blend_attached", true)
 	if not bool(model_node.get_meta("prep_planar_shadow_attached", false)) and UnitPlanarShadowScript.enabled_for_tier(VFXManager.get_quality_tier()):
 		var ground_y := model_node.global_position.y
 		var ground_key := snappedf(ground_y, 0.0001)
@@ -2304,6 +2314,10 @@ func _update_prep_model_anchors(model_node: Node3D, attempt: int) -> void:
 			material.shader = UnitPlanarShadowScript.SHADER
 			material.render_priority = 8
 			material.set_shader_parameter("shadow_direction", UnitPlanarShadowScript.SHADOW_DIRECTION)
+			# 11.15 融合试样：影子从近黑改成手绘场景里树荫的青绿（实测亮草 → 树荫草的比例反推）。
+			material.set_shader_parameter("shadow_color", PREP_SHADOW_COLOR)
+			material.set_shader_parameter("shadow_alpha", PREP_SHADOW_ALPHA)
+			material.set_shader_parameter("fade_strength", 0.70)
 			_prep_planar_shadow_materials[ground_key] = material
 		UnitPlanarShadowScript.attach(visual_root, ground_key, _prep_planar_shadow_materials[ground_key])
 		model_node.set_meta("prep_planar_shadow_attached", true)

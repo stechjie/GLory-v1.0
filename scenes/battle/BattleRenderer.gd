@@ -7,6 +7,7 @@ const ModelRootMotionPolicyScript := preload("res://effects/runtime/presentation
 const RunAnimCalibrationScript := preload("res://effects/runtime/presentation/RunAnimCalibration.gd")
 const UnitContactShadowScript := preload("res://effects/runtime/presentation/UnitContactShadow.gd")
 const UnitPlanarShadowScript := preload("res://effects/runtime/presentation/UnitPlanarShadow.gd")
+const UnitSceneBlendScript := preload("res://effects/runtime/presentation/UnitSceneBlend.gd")
 const UNIT_TEAM_RING_SHADER := preload("res://shaders/unit_team_ring.gdshader")
 const FOUR_STAR_AURA := preload("res://effects/vfx3d/modules/FourStarAuraV3_3D.gd")
 const CrimsonDrumBadge := preload("res://scenes/battle/CrimsonDrumBadge.gd")
@@ -1836,6 +1837,10 @@ func _add_3d_unit_readability(pivot: Node3D, f: Dictionary) -> void:
 	var model: Node3D = pivot.get("visual_root") as Node3D if str(pivot.get_meta("visual_kind", "")) == "model" else null
 	var planar := model != null and UnitPlanarShadowScript.enabled_for_tier(VFXManager.get_quality_tier())
 	var shadow_scale := footprint_scale
+	# 11.15：日漫风统一着色（硬边两段式明暗 + 暖深色描边），和备战棋盘同一套。每个表面多画一两遍，
+	# 所以和投影一样只在中 / 高画质开；必须排在投影之前（影子接在它做出的材质副本后面）。
+	if planar:
+		UnitSceneBlendScript.attach(model)
 	if planar:
 		UnitPlanarShadowScript.attach(model, battle_unit_y_offset)
 		shadow_scale *= UnitPlanarShadowScript.CORE_SCALE
