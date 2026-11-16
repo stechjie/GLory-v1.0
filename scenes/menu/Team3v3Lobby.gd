@@ -14,9 +14,9 @@ const SLOT_POS := [
 ]
 const SLOT_SIZE := Vector2(184, 175)
 # slot.png 的内圈中心位于素材的 (197, 159)，换算到席位区域。
-const EMPTY_SLOT_CENTER := Vector2(197.0 / 400.0, 159.0 / 376.0) * SLOT_SIZE
+const SEAT_CIRCLE_CENTER := Vector2(197.0 / 400.0, 159.0 / 376.0) * SLOT_SIZE
 const SLOT_STATUS_SIZE := Vector2(122, 42)
-const EMPTY_SLOT_STATUS_POS := EMPTY_SLOT_CENTER - SLOT_STATUS_SIZE * 0.5
+const SEAT_CIRCLE_STATUS_POS := SEAT_CIRCLE_CENTER - SLOT_STATUS_SIZE * 0.5
 # 10.01 反馈（第 4 条）：座位框换成玩家在大厅佩戴的头像框。
 #
 # 同一席位里的层次（后加的子节点在上面）：
@@ -783,7 +783,7 @@ func _build_slot(index: int) -> void:
 	var name_pos := Vector2(pos.x - 10, pos.y - 46) if index < 3 else Vector2(pos.x - 10, pos.y + SLOT_SIZE.y + 4)
 	_slot_name_lbls[index] = _add_label("", name_pos, Vector2(SLOT_SIZE.x + 20, 36), 28,
 		Tokens.TEXT_PRIMARY, "", true)
-	_slot_status_lbls[index] = _add_label("", pos + EMPTY_SLOT_STATUS_POS, SLOT_STATUS_SIZE, 20, Color(0.42, 0.28, 0.12))
+	_slot_status_lbls[index] = _add_label("", pos + SEAT_CIRCLE_STATUS_POS, SLOT_STATUS_SIZE, 20, Color(0.42, 0.28, 0.12))
 	var x_btn := _add_x_button(pos + Vector2(138, 30), Vector2(38, 38), _on_slot_x.bind(index),
 		"btn_kick_%s" % SLOT_LABELS[index])
 	_slot_x_btns[index] = x_btn
@@ -926,10 +926,10 @@ func _refresh() -> void:
 				placement.font_size = 20 if state in ["player", "settling"] else 28
 				_apply_tracked(placement)
 			if placement.node == status_lbl:
-				var status_pos := Vector2(39, 137) if state in ["player", "settling"] else Vector2(34, 72)
-				placement.pos = SLOT_POS[i] + (EMPTY_SLOT_STATUS_POS if state == "empty" else status_pos)
-				placement.size = Vector2(106, 32) if state in ["player", "settling"] else SLOT_STATUS_SIZE
-				placement.font_size = 17 if state in ["player", "settling"] else 20
+				var has_player := state in ["player", "settling"]
+				placement.pos = SLOT_POS[i] + (Vector2(39, 137) if has_player else SEAT_CIRCLE_STATUS_POS)
+				placement.size = Vector2(106, 32) if has_player else SLOT_STATUS_SIZE
+				placement.font_size = 17 if has_player else 20
 				_apply_tracked(placement)
 		match state:
 			"settling":

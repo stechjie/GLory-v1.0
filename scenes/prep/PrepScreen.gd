@@ -342,25 +342,12 @@ func _input(event: InputEvent) -> void:
 	if not NetworkService.four_star_request_id.is_empty():
 		get_viewport().set_input_as_handled()
 		return
+	# Let modal controls and their backdrops own the complete click.
+	if (is_instance_valid(_carrot_panel) and _carrot_panel.visible) or not ModalStack.top_id().is_empty():
+		return
 	if _detail != null and _detail.visible:
 		# PopupPanel owns outside-click/Escape dismissal. Its input positions
 		# are popup-local, so the main viewport must not reinterpret them.
-		return
-	if _team_mercs_open and _team_mercs_overlay != null and _team_mercs_overlay.visible:
-		var team_pointer := Vector2.ZERO
-		var team_should_check := false
-		if event is InputEventMouseButton:
-			var team_mouse := event as InputEventMouseButton
-			if team_mouse.pressed and team_mouse.button_index == MOUSE_BUTTON_LEFT:
-				team_pointer = team_mouse.position
-				team_should_check = true
-		elif event is InputEventScreenTouch:
-			var team_touch := event as InputEventScreenTouch
-			if team_touch.pressed:
-				team_pointer = team_touch.position
-				team_should_check = true
-		if team_should_check and not _team_mercs_overlay.get_global_rect().has_point(team_pointer):
-			_close_team_mercs_picker()
 		return
 	if _shop.picker_open and _shop.panel != null and _shop.panel.visible:
 		var shop_pointer := Vector2.ZERO

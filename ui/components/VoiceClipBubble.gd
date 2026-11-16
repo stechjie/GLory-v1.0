@@ -1,34 +1,27 @@
-extends PanelContainer
+extends Button
 
-# 聊天里的一条语音（docs/聊天系统设计.md「语音消息」，2026-10-11）。
-#
-# 私聊、世界频道、房间与对局内**共用这一个**：三条投递路不同，但收到之后长得一样，
-# 两套画法迟早会漂（一边有「正在播」一边没有，这种不一致不会报错）。
-#
-# 点一下放，再点一下停。播放由 VoiceClipService 统一管 —— 同时只响一条，
-# 所以这里不自己持播放器，只监听「现在在放哪条」。
-
+# 私聊和世界频道共用语音气泡，播放交给 VoiceClipService。
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
-const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
-
-const PLAY_GLYPH := "▶"
-const STOP_GLYPH := "■"
-# 条宽按秒数长一点，像微信那样一眼看出长短。30 秒封顶。
-const MIN_WIDTH := 92.0
-const MAX_WIDTH := 220.0
+const MIN_WIDTH := 96.0
+const MAX_WIDTH := 224.0
+const TAIL_WIDTH := 7.0
+const INK := Color("4a2c14")
+const EDGE := Color("ae7b34")
+const MINE_FILL := Color("f5c877")
+const OTHER_FILL := Color("f7e4c1")
 
 var _clip_id := ""
 var _media := ""
 var _seconds := 0.0
-# 发送状态（"sent" / "pending" / "failed"）。世界频道来的消息没有这个字段，
-# 一律按 "sent" 处理 —— 那边没有本地乐观回显，不存在「没发出去却画出来」。
+var _mine := false
 var _state := "sent"
-var _button: Button = null
-var _label: Label = null
-var _status: Label = null
+var _playing := false
+var _wave_time := 0.0
+var _body_style := Tokens.flat_box(OTHER_FILL, EDGE, 1, 9)
+var _focus_style := Tokens.focus_box()
+var _status: Label
 
 
-# message 是私聊 / 世界频道那条消息本身（payload 带 clip_id、media、seconds）。
 static func build(message: Dictionary, mine: bool) -> Control:
 	var payload := ChatService.voice_payload(message)
 	var bubble := new()
@@ -41,85 +34,122 @@ static func build(message: Dictionary, mine: bool) -> Control:
 	return bubble
 
 
-func _setup(clip_id: String, media: String, seconds: float, mine: bool,
-		state: String = "sent") -> void:
+func _setup(clip_id: String, media: String, seconds: float, mine: bool, state: String) -> void:
 	_clip_id = clip_id
 	_media = media
-	_seconds = maxf(1.0, seconds)
+	_seconds = clampf(seconds, 1.0, VoiceClipService.MAX_SECONDS)
+	_mine = mine
 	_state = state
-	add_theme_stylebox_override("panel", Tokens.panel_box(
-		Tokens.GOLD_PRESSED.darkened(0.64) if mine else Tokens.SURFACE_RAISED,
-		Tokens.GOLD_PRESSED.darkened(0.18) if mine else Tokens.BORDER.darkened(0.28),
-		12))
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", Tokens.GAP_S)
-	add_child(row)
+	custom_minimum_size = Vector2(lerpf(MIN_WIDTH, MAX_WIDTH, _seconds / VoiceClipService.MAX_SECONDS),
+		44.0 if _state == "sent" else 58.0)
+	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	for style in ["normal", "hover", "pressed", "hover_pressed", "focus", "disabled"]:
+		add_theme_stylebox_override(style, StyleBoxEmpty.new())
+	pressed.connect(_toggle)
+	for appearance_changed in [mouse_entered, mouse_exited, button_down, button_up, focus_entered, focus_exited]:
+		appearance_changed.connect(queue_redraw)
 
-	_button = ACTION_BUTTON.instantiate() as Button
-	_button.text = PLAY_GLYPH
-	_button.custom_minimum_size = Vector2(44, 36)
-	_button.pressed.connect(_toggle)
-	row.add_child(_button)
+	var duration := Label.new()
+	duration.text = "%d″" % roundi(_seconds)
+	duration.add_theme_font_override("font", UIFontFallback.bold_font())
+	duration.add_theme_font_size_override("font_size", 17)
+	duration.add_theme_color_override("font_color", INK)
+	duration.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	duration.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if _mine else HORIZONTAL_ALIGNMENT_LEFT
+	duration.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(duration)
+	duration.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	duration.offset_left = 10.0 if _mine else 41.0
+	duration.offset_right = -41.0 if _mine else -10.0
+	duration.offset_bottom = -16.0 if _state != "sent" else 0.0
 
-	_label = Label.new()
-	_label.text = "%d″" % int(round(_seconds))
-	_label.add_theme_color_override("font_color", Tokens.TEXT_PRIMARY)
-	_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	row.add_child(_label)
-
-	# 🔴 状态行（2026-10-14 加）。以前语音气泡不画状态，于是一条「发送失败」的语音
-	# 和成功的长得**一模一样** —— 这正是 10-14 那个 bug 被测试同学报成「A 显示发送成功」
-	# 的原因：其实服务端根本没收到（见 backend/app/routes/chat.py 的 SendBody）。
-	# 文本气泡一直有这一行（ChatScreen 的 caption），语音这边漏了。
-	# 已发送时不画任何东西，画面与改动前完全一致。
 	if _state != "sent":
 		_status = Label.new()
-		_refresh_status_text()
-		_status.add_theme_color_override("font_color",
-			Tokens.DANGER_HOVER if _state == "failed" else Tokens.TEXT_DISABLED)
-		_status.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-		_status.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		row.add_child(_status)
-		# 没送达的整条压暗：一眼能看出它不是一条「正常」的语音。
-		modulate.a = 0.55
-
-	# 越长的语音条越宽（封顶 30 秒），不用读秒数也能看出长短。
-	custom_minimum_size = Vector2(
-		lerpf(MIN_WIDTH, MAX_WIDTH, clampf(_seconds / VoiceClipService.MAX_SECONDS, 0.0, 1.0)), 0)
+		_status.add_theme_color_override("font_color", Color("902c1d") if _state == "failed" else Color("765332"))
+		_status.add_theme_font_size_override("font_size", 13)
+		_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_status.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(_status)
+		_status.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		_status.anchor_top = 1.0
+		_status.offset_top = -24.0
+		_status.offset_bottom = -4.0
+		_status.offset_left = 6.0
+		_status.offset_right = -6.0
 
 
 func _ready() -> void:
-	LocaleManager.locale_changed.connect(_refresh_status_text)
-	if not VoiceClipService.playback_changed.is_connected(_on_playback_changed):
-		VoiceClipService.playback_changed.connect(_on_playback_changed)
-	_refresh()
+	LocaleManager.locale_changed.connect(_refresh_locale)
+	VoiceClipService.playback_changed.connect(_on_playback_changed)
+	_refresh_playback()
 
 
 func _exit_tree() -> void:
-	# VoiceClipService 是常驻的，活得比这个气泡久 —— 不断开的话，
-	# 滚动久了会攒下一堆指向已销毁节点的连接。
+	if LocaleManager.locale_changed.is_connected(_refresh_locale):
+		LocaleManager.locale_changed.disconnect(_refresh_locale)
 	if VoiceClipService.playback_changed.is_connected(_on_playback_changed):
 		VoiceClipService.playback_changed.disconnect(_on_playback_changed)
 
 
+func _draw() -> void:
+	var body := Rect2(Vector2(0.0 if _mine else TAIL_WIDTH, 0.0),
+		Vector2(size.x - TAIL_WIDTH, size.y))
+	var fill := MINE_FILL if _mine else OTHER_FILL
+	match get_draw_mode():
+		DRAW_PRESSED, DRAW_HOVER_PRESSED:
+			fill = fill.darkened(0.08)
+		DRAW_HOVER:
+			fill = fill.lightened(0.17)
+	_body_style.bg_color = fill
+	draw_style_box(_body_style, body)
+	if has_focus() and not is_hovered():
+		draw_style_box(_focus_style, body.grow(-3.0))
+	var sign_x := 1.0 if _mine else -1.0
+	var tail := Vector2(body.end.x - 2.0 if _mine else body.position.x + 2.0, size.y * 0.5)
+	var tip := tail + Vector2(sign_x * (TAIL_WIDTH + 1.0), 0.0)
+	draw_colored_polygon(PackedVector2Array([tail + Vector2(0, -6), tip, tail + Vector2(0, 6)]), fill)
+	draw_polyline(PackedVector2Array([tail + Vector2(sign_x, -6), tip, tail + Vector2(sign_x, 6)]), EDGE, 1.0, true)
+
+	var wave := Vector2(body.end.x - 16.0 if _mine else body.position.x + 16.0,
+		(size.y - (16.0 if _state != "sent" else 0.0)) * 0.5)
+	draw_circle(wave + Vector2(sign_x * 4.0, 0.0), 1.6, INK, true, -1.0, true)
+	var facing := PI if _mine else 0.0
+	for index in 3:
+		var color := INK
+		if _playing and index > int(_wave_time / 0.16):
+			color.a = 0.27
+		var radius := 4.5 + index * 3.3
+		draw_arc(wave + Vector2(sign_x * 4.0, 0.0), radius,
+			facing - 0.65, facing + 0.65, 12, color, 1.7, true)
+
+
+func _process(delta: float) -> void:
+	_wave_time = fmod(_wave_time + delta, 0.48)
+	queue_redraw()
+
+
 func _toggle() -> void:
-	if _media.is_empty():
-		return
-	VoiceClipService.play(_clip_id, _media)
+	if not _media.is_empty():
+		VoiceClipService.play(_clip_id, _media)
 
 
-func _on_playback_changed(_clip_id_changed: String, _playing: bool) -> void:
-	_refresh()
+func _on_playback_changed(_clip_id_changed: String, _active: bool) -> void:
+	_refresh_playback()
 
 
-func _refresh() -> void:
-	if _button == null or not is_instance_valid(_button):
-		return
-	_button.text = STOP_GLYPH if VoiceClipService.is_playing(_clip_id) else PLAY_GLYPH
+func _refresh_playback() -> void:
+	_playing = VoiceClipService.is_playing(_clip_id)
+	_wave_time = 0.0
+	set_process(_playing)
+	_refresh_locale()
+	queue_redraw()
 
 
-func _refresh_status_text(_locale: String = "") -> void:
-	if _status == null:
-		return
-	var english := LocaleManager.get_locale() == "en"
-	_status.text = ("Not sent" if english else "未发送") if _state == "failed" else ("••• Sending" if english else "••• 发送中")
+func _refresh_locale(_locale: String = "") -> void:
+	var english := LocaleManager.get_locale().begins_with("en")
+	var action := ("Stop voice message" if english else "停止播放语音") if _playing \
+		else ("Play voice message" if english else "播放语音")
+	accessibility_name = "%s · %d″" % [action, roundi(_seconds)]
+	if _status != null:
+		_status.text = ("Not sent" if english else "未发送") if _state == "failed" \
+			else ("Sending…" if english else "发送中…")

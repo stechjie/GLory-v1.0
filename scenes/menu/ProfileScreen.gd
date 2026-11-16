@@ -755,7 +755,6 @@ func _record_block() -> Control:
 		tier_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		tier_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		tier_icon.modulate.a = 0.38
-		tier_icon.tooltip_text = RankedTiers.name_of(tier, _is_en())
 		tier_path.add_child(tier_icon)
 		_tier_icons.append(tier_icon)
 

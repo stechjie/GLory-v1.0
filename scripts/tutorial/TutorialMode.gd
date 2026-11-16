@@ -827,8 +827,9 @@ func update_overlay() -> void:
 		return
 	_overlay.visible = true
 	if _overlay_layer != null:
+		# Keep the tutorial pointers above the camp while its canvas owns clicks.
 		_overlay_layer.layer = 1100 if (ModalStack.has("treasure_choice") or
-			ModalStack.has("mercenary_picker")) else 1
+			ModalStack.has("mercenary_picker")) else (2 if _camp_open else 1)
 	if _passive_round():
 		_show_passive_dog()
 		return

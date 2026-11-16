@@ -283,6 +283,11 @@ func _reindex() -> void:
 			backdrop.mouse_filter = (Control.MOUSE_FILTER_STOP
 				if i == _entries.size() - 1
 				else Control.MOUSE_FILTER_IGNORE)
+	if not _entries.is_empty():
+		var focus_owner := get_viewport().gui_get_focus_owner()
+		var modal_root := _entries.back().get("root") as Control
+		if focus_owner != null and not modal_root.is_ancestor_of(focus_owner):
+			focus_owner.release_focus()
 
 
 func _teardown(entry: Dictionary) -> void:

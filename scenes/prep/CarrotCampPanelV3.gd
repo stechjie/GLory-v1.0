@@ -177,7 +177,6 @@ func attach_stone_rail(parent: Control) -> void:
 	_stone_rail.offset_right = -PANEL_SIZE.x * 0.5 - 6
 	_stone_rail.offset_top = -250
 	_stone_rail.offset_bottom = 250
-	_stone_rail.z_index = 35
 	_stone_rail.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var rail_style := Card.slice(ART % "panel_inventory_rail", 0.72, Vector4(70, 70, 70, 70))
 	rail_style.content_margin_left = 22

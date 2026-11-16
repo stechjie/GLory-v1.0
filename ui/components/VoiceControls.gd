@@ -123,12 +123,8 @@ func refresh() -> void:
 	audience_button.text = ""
 	_set_icon(voice_button, "mic_on" if VoiceService.mode == VoiceService.Mode.TALK else "mic_off")
 	_set_icon(audience_button, "speaker_on" if VoiceService.speaker_enabled else "speaker_off")
-	voice_button.tooltip_text = _text("关闭麦克风" if VoiceService.mode == VoiceService.Mode.TALK else "打开麦克风", "Toggle microphone")
-	audience_button.tooltip_text = _text("关闭扬声器" if VoiceService.speaker_enabled else "打开扬声器", "Toggle speaker")
-	audience_button.tooltip_text += _text("\n长按查看语音状态", "\nHold for voice status")
-	if not VoiceService.last_error().is_empty():
-		voice_button.tooltip_text += "\n" + VoiceService.last_error()
-		audience_button.tooltip_text += "\n" + VoiceService.last_error()
+	voice_button.accessibility_name = _text("关闭麦克风" if VoiceService.mode == VoiceService.Mode.TALK else "打开麦克风", "Toggle microphone")
+	audience_button.accessibility_name = _text("关闭扬声器" if VoiceService.speaker_enabled else "打开扬声器", "Toggle speaker")
 	if _scope_art:
 		_refresh_scope_art()
 		return
@@ -368,13 +364,13 @@ func _refresh_scope_art() -> void:
 	# 开局前全房间本来就互通、没得选：图压暗，点了弹说明（_on_audience_pressed）。
 	art.modulate = Color(1, 1, 1, 0.55) if lobby_room else Color.WHITE
 	if lobby_room:
-		members_button.tooltip_text = _text("开局前全房间都听得到", "Everyone in the room hears you before the match")
+		members_button.accessibility_name = _text("开局前全房间都听得到", "Everyone in the room hears you before the match")
 	elif all:
-		members_button.tooltip_text = _text("现在：所有人（对手也听得到）
+		members_button.accessibility_name = _text("现在：所有人（对手也听得到）
 点一下改成只对队友", "Now: everyone (enemies too)
 Tap for team only")
 	else:
-		members_button.tooltip_text = _text("现在：只对队友
+		members_button.accessibility_name = _text("现在：只对队友
 点一下改成所有人", "Now: team only
 Tap for everyone")
 	if _scope_ring != null and is_instance_valid(_scope_ring):

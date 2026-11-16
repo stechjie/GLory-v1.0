@@ -46,8 +46,7 @@ func _ready() -> void:
 	# 图标为主：这是三个渠道（私聊 / 世界 / 对局内）共用的同一颗按钮，画成麦克风
 	# 一眼就知道是「说话」而不是「发送」——旁边那颗「发送」是字，两颗形状不同才分得开。
 	_apply_mic_icon()
-	# 按住说话这句当 tooltip 留着：图标省地方，但第一次玩的人得知道是「按住」不是「点一下」。
-	_button.tooltip_text = _text("按住说话", "Hold to talk")
+	_button.accessibility_name = _text("按住说话", "Hold to talk")
 	_button.custom_minimum_size = Vector2(ICON_BUTTON_SIZE, Tokens.TOUCH_MIN)
 	_button.button_down.connect(_on_down)
 	_button.button_up.connect(_on_up)

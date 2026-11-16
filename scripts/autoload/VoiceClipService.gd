@@ -73,6 +73,8 @@ var _peak := 0.0
 
 var _play_player: AudioStreamPlayer = null
 var _playing_clip := ""
+var _loading_clip := ""
+var _play_request := 0
 var _cache: Dictionary = {}          # media 文件名 -> PackedByteArray
 var _cache_order: Array[String] = []
 
@@ -366,7 +368,7 @@ static func media_ok(media: String) -> bool:
 
 # 播一条。media 是文件名（payload 里带着），clip_id 只用来标识「现在在放哪条」。
 func play(clip_id: String, media: String) -> void:
-	if is_playing(clip_id):
+	if is_playing(clip_id) or (not _loading_clip.is_empty() and _loading_clip == clip_id):
 		stop_playback()
 		return
 	stop_playback()
@@ -374,7 +376,12 @@ func play(clip_id: String, media: String) -> void:
 		return
 	var bytes: PackedByteArray = _cache.get(media, PackedByteArray())
 	if bytes.is_empty():
+		_loading_clip = clip_id
+		var request := _play_request
 		bytes = await _download(media)
+		if request != _play_request:
+			return
+		_loading_clip = ""
 		if bytes.is_empty():
 			return
 		_remember(media, bytes)
@@ -392,6 +399,8 @@ func play(clip_id: String, media: String) -> void:
 
 
 func stop_playback() -> void:
+	_play_request += 1
+	_loading_clip = ""
 	var was := _playing_clip
 	_playing_clip = ""
 	if _play_player != null and is_instance_valid(_play_player):

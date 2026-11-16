@@ -62,10 +62,15 @@ func _ready() -> void:
 	content.add_theme_constant_override("separation", 18)
 	margin.add_child(content)
 	var title_slot := CenterContainer.new()
-	title_slot.add_child(Kit.title_banner(tr("settle_title"), 66.0, 28))
+	var title_banner := Kit.title_banner(tr("settle_title"), 74.0 if _english() else 66.0, 28)
+	if _english():
+		var title := title_banner.get_node("TitleText") as Label
+		title.add_theme_font_override("font", UnitDetailCard.font(false, 750))
+		title.add_theme_color_override("font_color", TEXT.darkened(0.20))
+	title_slot.add_child(title_banner)
 	content.add_child(title_slot)
 	var outcome := int(data.get("outcome", 2))
-	var winner := _label(tr("settle_win_line") % _team_title(outcome) if outcome in [0, 1] else tr("settle_draw_line"), Color("ff9a8c") if outcome == 0 else Color("9cc8ff"), 20)
+	var winner := _label(tr("settle_win_line") % _team_title(outcome) if outcome in [0, 1] else tr("settle_draw_line"), Color("ff9a8c") if outcome == 0 else Color("9cc8ff"), 20, 750)
 	Kit.on_backdrop(winner)
 	winner.add_theme_color_override("font_color", Color("ffb3a3") if outcome == 0 else (Color("b8dcff") if outcome == 1 else Color(1.0, 0.95, 0.82)))
 	winner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -79,7 +84,7 @@ func _ready() -> void:
 		var own_side := clampi(int(data.get("local_team", GameConstants.team_of_slot(NetworkService.team_local_slot))), 0, 1)
 		for side in [own_side, 1 - own_side]:
 			content.add_child(_team(side))
-		var stats_title := _label(tr("settle_stats_title"), TEXT, 20)
+		var stats_title := _label(tr("settle_stats_title"), TEXT, 20, 750)
 		Kit.on_backdrop(stats_title)
 		content.add_child(stats_title)
 		var stats_panel := PanelContainer.new()
@@ -170,12 +175,16 @@ func _button_row() -> HBoxContainer:
 	menu.pressed.connect(func(): return_menu_requested.emit())
 	return buttons
 
-func _label(value: String, color: Color = TEXT, font_size: int = 16) -> Label:
+func _label(value: String, color: Color = TEXT, font_size: int = 16, english_weight: int = 650) -> Label:
 	var label := Label.new()
 	label.text = value
-	label.add_theme_color_override("font_color", color)
 	label.add_theme_font_size_override("font_size", font_size)
-	Kit.bold_label(label)
+	if _english():
+		label.add_theme_color_override("font_color", color.darkened(0.20))
+		label.add_theme_font_override("font", UnitDetailCard.font(false, english_weight))
+	else:
+		label.add_theme_color_override("font_color", color)
+		Kit.bold_label(label)
 	return label
 
 func _button(value: String, parent: Node) -> Button:
@@ -183,6 +192,8 @@ func _button(value: String, parent: Node) -> Button:
 	button.text = value
 	button.custom_minimum_size = Vector2(200, 44)
 	Kit.style_plate(button, false)
+	if _english():
+		button.add_theme_font_override("font", UnitDetailCard.font(false, 700))
 	parent.add_child(button)
 	return button
 
@@ -257,11 +268,11 @@ func _team(side: int) -> Control:
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 12)
 	panel.add_child(column)
-	column.add_child(_label(_team_title(side), color, 24))
+	column.add_child(_label(_team_title(side), color, 24, 750))
 	var headers := _row(WIDTHS)
 	var labels := ["settle_col_player", "settle_col_board", "settle_col_merc", "settle_col_treasure", "settle_col_stones", "settle_col_damage", "settle_col_gold"]
 	for i in labels.size():
-		var label := _label(tr(labels[i]), TEXT, 16)
+		var label := _label(tr(labels[i]), TEXT, 16, 700)
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if i >= 5 else HORIZONTAL_ALIGNMENT_LEFT
 		label.set_meta("settlement_column", i)
 		label.set_meta("settlement_team", side)
@@ -323,7 +334,7 @@ func _stats() -> Control:
 	var header := _row(widths)
 	var stat_labels := ["settle_stat_unit", "settle_stat_owner", "settle_stat_dealt", "settle_stat_taken", "settle_stat_heal"]
 	for i in 5:
-		var label := _label(tr(stat_labels[i]), TEXT, 16)
+		var label := _label(tr(stat_labels[i]), TEXT, 16, 700)
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if i >= 2 else HORIZONTAL_ALIGNMENT_LEFT
 		label.set_meta("stats_column", i)
 		label.set_meta("settlement_header", true)

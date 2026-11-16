@@ -24,6 +24,8 @@ extends PanelContainer
 # 再用 scope_text 刷新按钮上的字。打到一半发现范围不对，点一下就改，不用关掉重打。
 # 大厅不给（大厅只发全部），版面与以前一样。
 #
+# 备战期传入 on_phrase(phrase_id) 时，录音位置显示快捷短语按钮。选中即按当前聊天范围发送。
+#
 # 可选的语音（2026-10-11）：
 #   {"on_voice": Callable(clip: Dictionary) -> String, "voice_scope": String}
 # 给了就在「发送」左边多一颗「按住说话」。回调的返回值与 on_submit 同一个约定：
@@ -35,6 +37,7 @@ const Theming := preload("res://ui/theme/GloryTheme.gd")
 # 11.11 羊皮纸风：输入框 / 按钮走 Kit.theme()，外框是羊皮纸面板
 const Kit := preload("res://ui/theme/ParchmentKit.gd")
 const ChatText := preload("res://scripts/multiplayer/ChatText.gd")
+const ChatPhrases := preload("res://scripts/multiplayer/ChatPhrases.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
 const VoiceRecordButton := preload("res://ui/components/VoiceRecordButton.gd")
 
@@ -51,11 +54,14 @@ var _on_submit: Callable = Callable()
 var _scope_text: Callable = Callable()
 var _on_scope_pressed: Callable = Callable()
 var _on_voice: Callable = Callable()
+var _on_phrase: Callable = Callable()
 var _voice_scope := ""
+var _transparent_frame := false
 var _input: LineEdit
 var _error: Label
 var _scope_button: Button = null
 var _voice_button: Control = null
+var _phrase_grid: GridContainer
 
 
 func present(owner: Object, on_submit: Callable, options: Dictionary = {}) -> void:
@@ -63,19 +69,30 @@ func present(owner: Object, on_submit: Callable, options: Dictionary = {}) -> vo
 	_scope_text = options.get("scope_text", Callable())
 	_on_scope_pressed = options.get("on_scope_pressed", Callable())
 	_on_voice = options.get("on_voice", Callable())
+	_on_phrase = options.get("on_phrase", Callable())
 	_voice_scope = str(options.get("voice_scope", VoiceClipService.SCOPE_MATCH))
+	_transparent_frame = bool(options.get("transparent_frame", false))
 	ModalStack.push(self, {
 		"id": MODAL_ID,
 		"owner": owner,
 		"priority": MODAL_PRIORITY,
 		# 点外面 = 不打了。这不是危险操作，不需要玩家明确选一边。
 		"dismiss_on_backdrop": true,
+		"backdrop_color": Color.TRANSPARENT if _transparent_frame else Tokens.BACKDROP,
 	})
 
 
 func _ready() -> void:
 	theme = Kit.theme()
-	add_theme_stylebox_override("panel", Kit.box("slot", Vector4(26, 18, 26, 18)))
+	if _transparent_frame:
+		var frame := Tokens.flat_box(Color.TRANSPARENT, Color(Tokens.INK_EDGE, 0.78), 2, 10)
+		frame.content_margin_left = 26
+		frame.content_margin_right = 26
+		frame.content_margin_top = 18
+		frame.content_margin_bottom = 18
+		add_theme_stylebox_override("panel", frame)
+	else:
+		add_theme_stylebox_override("panel", Kit.box("slot", Vector4(26, 18, 26, 18)))
 	# 顶部居中。宽度按屏幕收：比屏幕还宽的输入条两头会被切掉。
 	var width := minf(BAR_WIDTH, get_viewport_rect().size.x - Tokens.PAD * 2.0)
 	anchor_left = 0.5
@@ -113,7 +130,13 @@ func _ready() -> void:
 	_input.text_submitted.connect(func(_submitted: String) -> void: _submit())
 	row.add_child(_input)
 
-	if _on_voice.is_valid():
+	if _on_phrase.is_valid():
+		var phrases := _button("ui_prep_chat_quick_phrases", _toggle_quick_phrases)
+		phrases.name = "ChatQuickPhrases"
+		phrases.custom_minimum_size.x = 156
+		phrases.add_theme_font_size_override("font_size", 16)
+		row.add_child(phrases)
+	elif _on_voice.is_valid():
 		_voice_button = VoiceRecordButton.create(_voice_scope)
 		_voice_button.clip_ready.connect(_on_voice_clip_ready)
 		_voice_button.failed.connect(_show_error)
@@ -131,11 +154,46 @@ func _ready() -> void:
 	_error.visible = false
 	_error.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_error.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	_error.add_theme_color_override("font_color", Color("a3271a"))
+	_error.add_theme_color_override("font_color", Color("fff1d5") if _transparent_frame else Color("a3271a"))
+	if _transparent_frame:
+		_error.add_theme_color_override("font_outline_color", Tokens.INK_PANEL)
+		_error.add_theme_constant_override("outline_size", 4)
 	col.add_child(_error)
+	if _on_phrase.is_valid():
+		_build_quick_phrases(col)
 
 	# 拿到焦点才会弹出系统键盘。延一帧：ModalStack 可能把挂树推迟到了本帧末。
 	_input.grab_focus.call_deferred()
+
+
+func _build_quick_phrases(parent: Control) -> void:
+	_phrase_grid = GridContainer.new()
+	_phrase_grid.name = "ChatQuickPhraseGrid"
+	_phrase_grid.columns = 4
+	_phrase_grid.add_theme_constant_override("h_separation", Tokens.GAP_S)
+	_phrase_grid.add_theme_constant_override("v_separation", Tokens.GAP_S)
+	_phrase_grid.hide()
+	parent.add_child(_phrase_grid)
+	for group in ChatPhrases.GROUP_ORDER:
+		for phrase_id in ChatPhrases.ids_in_group(group):
+			var phrase := _button(ChatPhrases.text(phrase_id), _send_quick_phrase.bind(phrase_id))
+			phrase.name = "ChatPhrase%d" % phrase_id
+			phrase.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			phrase.add_theme_font_size_override("font_size", 16)
+			_phrase_grid.add_child(phrase)
+
+
+func _toggle_quick_phrases() -> void:
+	_phrase_grid.visible = not _phrase_grid.visible
+	if _phrase_grid.visible:
+		_input.release_focus()
+	else:
+		_input.grab_focus()
+
+
+func _send_quick_phrase(phrase_id: int) -> void:
+	_on_phrase.call(phrase_id)
+	_close()
 
 
 func _submit() -> void:
@@ -171,8 +229,9 @@ func _on_scope_button_pressed() -> void:
 		_on_scope_pressed.call()
 	if _scope_button != null and _scope_text.is_valid():
 		_scope_button.text = str(_scope_text.call())
-	# 点按钮可能把焦点从输入框拿走（手机上键盘会跟着收起），还给输入框，接着打。
-	_input.grab_focus()
+	# 展开短语时保持软键盘收起，方便点选短语。
+	if _phrase_grid == null or not _phrase_grid.visible:
+		_input.grab_focus()
 
 
 func _close() -> void:

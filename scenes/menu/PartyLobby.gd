@@ -446,10 +446,7 @@ func _build() -> void:
 	#   玩家点一下看不到任何变化、再点一下（这次 mode 又变了、恰好撞上上一次的 await 返回）
 	#   才见到图标动 —— 真机反馈的「要按两下才切换」就是这么来的。
 	#   这里在信号到达时立刻重画，把视觉反馈从「等网络」解耦成「即时」。
-	_party_voice.state_changed.connect(func(label: String) -> void:
-		if is_instance_valid(_voice_mic):
-			_voice_mic.tooltip_text = label
-		_refresh_voice_icons())
+	_party_voice.state_changed.connect(func(_label: String) -> void: _refresh_voice_icons())
 	add_child(_party_voice)
 	_refresh_voice_icons()
 	# 10-08：语音出错的原因写在两个语音按钮下面。手机上没有悬停提示，原来只写进 tooltip 等于没写。
@@ -2180,10 +2177,10 @@ func _refresh_voice_icons() -> void:
 	_set_voice_icon(_voice_mic, "mic_on" if mic_on else "mic_off")
 	_set_voice_icon(_voice_speaker, "speaker_on" if speaker_on else "speaker_off")
 	if _voice_mic != null:
-		_voice_mic.tooltip_text = _text("关闭麦克风" if mic_on else "打开麦克风", "Toggle microphone")
+		_voice_mic.accessibility_name = _text("关闭麦克风" if mic_on else "打开麦克风", "Toggle microphone")
 		_voice_mic.disabled = _local_only
 	if _voice_speaker != null:
-		_voice_speaker.tooltip_text = _text("关闭扬声器" if speaker_on else "打开扬声器", "Toggle speaker")
+		_voice_speaker.accessibility_name = _text("关闭扬声器" if speaker_on else "打开扬声器", "Toggle speaker")
 		_voice_speaker.disabled = _local_only
 	for b in [_voice_mic, _voice_speaker]:
 		if b != null:
@@ -2261,4 +2258,4 @@ func _refresh_voice_status() -> void:
 		return
 	var error := str(_party_voice.last_error())
 	_voice_status.text = "" if error.is_empty() else _text("队伍语音暂不可用", "Party voice unavailable")
-	_voice_status.tooltip_text = error
+	_voice_status.accessibility_description = error

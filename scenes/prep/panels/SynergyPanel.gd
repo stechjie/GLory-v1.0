@@ -14,7 +14,8 @@ const PrepWidgets := preload("res://scenes/prep/PrepWidgets.gd")
 const PrepShopRaceIcon = preload("res://scenes/prep/PrepShopRaceIcon.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const ParchmentKit := preload("res://ui/theme/ParchmentKit.gd")
-const BOND_ACTIVE_INK := Color("476244")
+const BOND_ACTIVE_INK := Color("29482f")
+const BOND_LOCKED_INK := Color("785e4a")
 
 signal altar_requested                       # 点了黄金祭坛
 signal gamble_requested                      # 点了慷慨命运
@@ -412,10 +413,9 @@ func format_synergy_detail(race: String, count: int) -> String:
 			status = ("Locked · Need %d more" % missing if PrepWidgets.is_en()
 				else "未解锁 · 还差 %d 人" % missing)
 		lines.append("")
-		lines.append("[color=#%s][b]%s[/b][/color]" % [
-			(BOND_ACTIVE_INK if active else ParchmentKit.INK_SOFT).to_html(false), status])
-		lines.append("[color=#%s][b]%s[/b]\n%s[/color]" % [
-			(ParchmentKit.INK if active else ParchmentKit.INK_SOFT).to_html(false),
+		var ink := BOND_ACTIVE_INK if active else BOND_LOCKED_INK
+		lines.append("[color=#%s][b]%s\n%s[/b]\n%s[/color]" % [
+			ink.to_html(false), status,
 			str(approved.get("name_cn", item.get("name", ""))),
 			str(approved.get("detail_cn", item.get("detail", ""))),
 		])
