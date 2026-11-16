@@ -862,6 +862,9 @@ func _should_watch_account_link() -> bool:
 	# 与 Bootstrap._entry_gate_required 同一个判据。
 	if not AccountConfig.auto_login_enabled():
 		return false
+	# Provider login intentionally pauses the old socket; its HTTP timeout exceeds this watchdog.
+	if AccountManager.is_switching_account():
+		return false
 	if _returning_to_login or _in_match_flow:
 		return false
 	if NetworkService.team_active or TutorialMode.active:
@@ -1858,6 +1861,8 @@ func _install_realtime() -> void:
 	# 宠物、出战种族、棋盘皮肤、名额都要按新账号重拉，主菜单上的旧缓存一样都不能留。
 	if not AccountManager.account_switched.is_connected(_on_account_switched):
 		AccountManager.account_switched.connect(_on_account_switched)
+	if not AccountManager.account_deleted.is_connected(_on_account_deleted):
+		AccountManager.account_deleted.connect(_on_account_deleted)
 	if not RealtimeService.kicked_by_other_device.is_connected(_on_realtime_kicked):
 		RealtimeService.kicked_by_other_device.connect(_on_realtime_kicked)
 	if not RealtimeService.service_state_changed.is_connected(_on_service_state):
@@ -2048,6 +2053,23 @@ func _on_realtime_logout() -> void:
 
 func _on_account_switched() -> void:
 	_return_to_login("切换了账号")
+
+
+func _on_account_deleted(apple_revocation_required: bool) -> void:
+	if apple_revocation_required:
+		# 资料页可能在 HTTP 返回前被关闭；由常驻 Main 在页面返回完成后提示。
+		_show_apple_revocation_notice.call_deferred()
+
+
+func _show_apple_revocation_notice() -> void:
+	var english := LocaleManager.get_locale().begins_with("en")
+	DialogService.info({
+		"request_id": "apple_revocation_after_deletion",
+		"title": "Account deleted" if english else "账号已删除",
+		"body": ("To finish revoking access, open your Apple account settings, choose Sign in with Apple, select GLory, and stop using Sign in with Apple."
+			if english else "请在 Apple 账号设置的「通过 Apple 登录」中找到 GLory，选择「停止使用 Apple 账号」，完成授权撤销。"),
+		"owner": self,
+	})
 
 
 # 顶号立即终止游戏流程；启动页保留原因，只有玩家主动确认才能重新登录。

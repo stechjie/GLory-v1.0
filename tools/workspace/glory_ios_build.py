@@ -28,9 +28,10 @@ DISPLAY_NAME = "GLory: Auto Chess & Team PvP"
 PRESET = "iOS Xcode"
 SCHEME = "GloryIOS"
 SIGNING = ROOT / "ios-signing-20260913/ios_distribution"
+SIGNIN_PROFILES = SIGNING / "20261114-apple-signin"
 DEFAULT_PROFILES = {
-    "ad-hoc": SIGNING / "Glory_AdHoc-8ecb8277-1628-489a-9a33-db30366d5338.mobileprovision",
-    "app-store": SIGNING / "Glory_app_store.mobileprovision",
+    "ad-hoc": SIGNIN_PROFILES / "Glory_AdHoc_2026.mobileprovision",
+    "app-store": SIGNIN_PROFILES / "Glory_AppStore_2026.mobileprovision",
 }
 DEFAULT_KEYCHAIN = Path.home() / "Library/Keychains/glory-ios-D5ANXXK2R2.keychain-db"
 PASSWORD_FILE = Path.home() / "Library/Application Support/Glory-iOS/signing/keychain-password"
@@ -40,6 +41,8 @@ GAME_MODE_PLIST = (
     "<key>LSSupportsGameMode</key><true/>\n"
     "<key>GCSupportsGameMode</key><true/>"
 )
+APPLE_SIGNIN_ENTITLEMENT = "com.apple.developer.applesignin"
+APPLE_SIGNIN_PLIST = "<key>com.apple.developer.applesignin</key><array><string>Default</string></array>"
 
 
 def note(message):
@@ -77,6 +80,8 @@ def validate_profile_data(profile, method, now=None):
         raise RuntimeError(f"描述文件 App ID 不匹配，应为 {TEAM}.{BUNDLE}。")
     if entitlements.get("com.apple.developer.team-identifier") != TEAM:
         raise RuntimeError("描述文件 entitlement 中的 Team 不匹配。")
+    if entitlements.get(APPLE_SIGNIN_ENTITLEMENT) != ["Default"]:
+        raise RuntimeError("描述文件没有启用 Sign in with Apple；请为此 App ID 开启能力并重新生成分发描述文件。")
     if not as_utc(profile.get("CreationDate")) <= now < as_utc(profile.get("ExpirationDate")):
         raise RuntimeError("描述文件尚未生效或已经过期，请提供有效版本。")
     if entitlements.get("get-task-allow", False) or profile.get("ProvisionsAllDevices", False):
@@ -340,7 +345,36 @@ def configure_display_name(stage):
     project.write_text(text)
 
 
-def write_preset(stage, method, profile, cert, version, number):
+def google_signin_config(project, ios_client_id=None):
+    """Read public OAuth client IDs; no OAuth client secret belongs in an IPA."""
+    path = project / "scripts/account/AccountConfig.gd"
+    text = path.read_text(encoding="utf-8-sig") if path.is_file() else ""
+
+    def constant(name):
+        match = re.search(r'^const\s+' + name + r'\s*(?::=|=)\s*"([^"\r\n]*)"', text, re.M)
+        return match[1].strip() if match else ""
+
+    ios_id = (ios_client_id or os.environ.get("GLORY_GOOGLE_IOS_CLIENT_ID")
+              or constant("GOOGLE_IOS_CLIENT_ID")).strip()
+    web_id = constant("GOOGLE_WEB_CLIENT_ID")
+    for label, value in (("iOS", ios_id), ("Web", web_id)):
+        if not re.fullmatch(r"[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com", value):
+            raise RuntimeError(f"缺少有效的 Google {label} OAuth 客户端编号。iOS 编号可用 --google-ios-client-id 指定，不能使用 Web/Android 编号替代。")
+    if ios_id == web_id or ios_id.split("-", 1)[0] != web_id.split("-", 1)[0]:
+        raise RuntimeError("Google iOS 和 Web OAuth 客户端须为同一 Google Cloud 登录项目中的两个不同客户端。")
+    return {"ios_client_id": ios_id, "web_client_id": web_id,
+            "reversed_client_id": ".".join(reversed(ios_id.split(".")))}
+
+
+def signin_plist(config):
+    values = {"GIDClientID": config["ios_client_id"], "GIDServerClientID": config["web_client_id"],
+              "CFBundleURLTypes": [{"CFBundleTypeRole": "Editor", "CFBundleURLName": BUNDLE + ".google",
+                                    "CFBundleURLSchemes": [config["reversed_client_id"]]}]}
+    xml = plistlib.dumps(values, fmt=plistlib.FMT_XML, sort_keys=False).decode()
+    return xml.split("<dict>\n", 1)[1].rsplit("</dict>", 1)[0]
+
+
+def write_preset(stage, method, profile, cert, version, number, signin=None):
     # Reuse Android's proven packaging filters; then replace all platform/signing options.
     shared.export_preset(stage, None)
     text = (stage / "export_presets.cfg").read_text()
@@ -360,7 +394,8 @@ def write_preset(stage, method, profile, cert, version, number):
                "application/code_sign_identity_release": cert["name"],
                "application/provisioning_profile_specifier_release": profile["UUID"],
                "application/short_version": version, "application/version": number,
-               "application/additional_plist_content": GAME_MODE_PLIST,
+               "application/additional_plist_content": GAME_MODE_PLIST + "\n" + signin_plist(signin or google_signin_config(stage)),
+               "entitlements/additional": APPLE_SIGNIN_PLIST,
                "icons/icon_1024x1024": "res://app_icon.png",
                # Godot's template links camera/photo APIs even though gameplay never requests them.
                # Keep these declarations explicit to avoid App Store warning ITMS-90738.
@@ -403,6 +438,47 @@ def verify_apple_billing_source(project):
     if manifest.get("files", {}).get("GloryVoice.framework/GloryVoice") != shared.digest(binary):
         raise RuntimeError("iOS 支付框架指纹不一致。")
     verify_apple_billing_binary(binary)
+
+
+def verify_signin_binary(binary):
+    data = binary.read_bytes()
+    for marker in (b"GlorySignInNative", b"beginGoogleSignIn", b"beginAppleSignIn", b"GIDSignIn", b"ASAuthorizationAppleIDProvider"):
+        if marker not in data:
+            raise RuntimeError("iOS 框架缺少 Apple/Google 登录组件；请重新运行 native/glory_voice_ios/build.py。")
+
+
+def verify_signin_source(project):
+    folder = project / "addons/glory_voice/bin/ios"
+    manifest = json.loads((folder / "build-manifest.json").read_text())
+    source = project / "native/glory_voice_ios"
+    for name in ("GlorySignIn.swift", "GlorySignInRequests.swift", "GlorySignInNative.h", "GlorySignInBridge.mm", "GloryVoiceBridge.mm", "build.py"):
+        path = source / name
+        if not path.is_file() or manifest.get("source", {}).get(name) != shared.digest(path):
+            raise RuntimeError("iOS 登录框架与源码不一致：" + name + "；请重新运行 native/glory_voice_ios/build.py。")
+    binary = folder / "GloryVoice.framework/GloryVoice"
+    if manifest.get("files", {}).get("GloryVoice.framework/GloryVoice") != shared.digest(binary):
+        raise RuntimeError("iOS 登录框架指纹不一致。")
+    verify_signin_binary(binary)
+
+
+def verify_signin_config(info, entitlements, config):
+    if info.get("GIDClientID") != config["ios_client_id"] or info.get("GIDServerClientID") != config["web_client_id"]:
+        raise RuntimeError("IPA 的 Google OAuth 客户端编号与本次构建配置不一致。")
+    schemes = [scheme for entry in info.get("CFBundleURLTypes", []) if isinstance(entry, dict)
+               for scheme in entry.get("CFBundleURLSchemes", [])]
+    if config["reversed_client_id"] not in schemes:
+        raise RuntimeError("IPA 缺少 Google 登录回调 URL scheme。")
+    if entitlements.get(APPLE_SIGNIN_ENTITLEMENT) != ["Default"]:
+        raise RuntimeError("IPA 实际签名缺少 Sign in with Apple entitlement。")
+
+
+def verify_google_privacy_bundle(framework):
+    manifests = list(framework.glob("GoogleSignIn*.bundle/PrivacyInfo.xcprivacy"))
+    if not manifests:
+        raise RuntimeError("IPA 缺少 Google Sign-In SDK 的隐私清单资源包。")
+    for path in manifests:
+        if not isinstance(plistlib.loads(path.read_bytes()), dict):
+            raise RuntimeError("IPA 的 Google Sign-In 隐私清单无效。")
 
 
 def pck_file(pack, wanted):
@@ -474,6 +550,8 @@ def verify_ipa(ipa, directory, method, profile, cert, version, number, identity,
     if not voice.is_file():
         raise RuntimeError("IPA 缺少必需的 iOS 音频/语音扩展 GloryVoice.framework。")
     verify_apple_billing_binary(voice)
+    verify_signin_binary(voice)
+    verify_google_privacy_bundle(voice.parent)
     if voice.exists():
         if not str(info.get("NSMicrophoneUsageDescription", "")).strip():
             raise RuntimeError("IPA 包含 iOS 语音组件，但麦克风用途声明为空。")
@@ -488,6 +566,7 @@ def verify_ipa(ipa, directory, method, profile, cert, version, number, identity,
     entitlements = plistlib.loads(entitlement_data)
     if entitlements.get("application-identifier") != f"{TEAM}.{BUNDLE}" or entitlements.get("com.apple.developer.team-identifier") != TEAM or entitlements.get("get-task-allow", False):
         raise RuntimeError("IPA 实际签名 entitlement 与分发配置不一致。")
+    verify_signin_config(info, entitlements, identity["signin"])
     prefix = directory / "signer-"
     # codesign's optional prefix must be attached with '='; a separate token is treated as another input.
     capture(["/usr/bin/codesign", "-d", f"--extract-certificates={prefix}", app])
@@ -504,7 +583,8 @@ def verify_ipa(ipa, directory, method, profile, cert, version, number, identity,
         raise RuntimeError("IPA 中的 Godot PCK 构建身份与本次代码/资源快照不一致。")
     return {"zip_crc": True, "codesign": True, "arm64": True, "embedded_profile_uuid": actual["UUID"],
             "allowed_device_udids": actual.get("ProvisionedDevices", []), "pck_identity": True,
-            "apple_storekit": True, "game_mode_support": True, **branding}
+            "apple_storekit": True, "apple_signin": True, "google_signin": True,
+            "google_signin_privacy_manifest": True, "game_mode_support": True, **branding}
 
 
 def publish(ipa, outdir, summary):
@@ -544,6 +624,7 @@ def arguments(argv=None):
     parser.add_argument("--keychain", type=Path, default=DEFAULT_KEYCHAIN)
     parser.add_argument("--patch-config", type=Path, help="更新器基础包配置 JSON")
     parser.add_argument("--server-environment", choices=("prod", "test"), help="只在隔离目录选择正式服或测试服")
+    parser.add_argument("--google-ios-client-id", help="Google Cloud 为 com.superforge.glory 注册的 iOS OAuth 客户端编号；也可设置 GLORY_GOOGLE_IOS_CLIENT_ID")
     return parser.parse_args(argv)
 
 
@@ -562,8 +643,10 @@ def main(argv=None):
         git_update_ready(args.project)
     env = environment(args)
     version = project_version(args.project, args.version)
+    signin = google_signin_config(args.project, args.google_ios_client_id)
     profile = read_profile(profile_path, args.method)
     verify_apple_billing_source(args.project)
+    verify_signin_source(args.project)
     note(f"{env['version']}；{env['xcode'].replace(chr(10), ' / ')}；{args.method}；营销版本 {version}")
     note(f"描述文件 {profile['Name']}，到期 {as_utc(profile['ExpirationDate']).date()}，授权设备 {len(profile.get('ProvisionedDevices', []))} 台。")
     if args.check:
@@ -592,6 +675,9 @@ def main(argv=None):
                 update_sources(args.project, logdir, env["child"])
                 env = environment(args)
                 version = project_version(args.project, args.version)
+                signin = google_signin_config(args.project, args.google_ios_client_id)
+                verify_apple_billing_source(args.project)
+                verify_signin_source(args.project)
             assets = shared.asset_root(args.assets)
             stage = work / "project"
             with shared.file_lock(ROOT / ".glory-sync/sync.lock", shared=True):
@@ -608,7 +694,7 @@ def main(argv=None):
             number = reserve_build_number(work / "build-number.json", args.build_number)
             note(f"本次 build number：{number}；快照：{stage}")
             install_profile(profile_path, profile)
-            write_preset(stage, args.method, profile, cert, version, number)
+            write_preset(stage, args.method, profile, cert, version, number, signin)
             if args.patch_config:
                 from prepare_patch_base import from_config
                 from_config(stage, args.patch_config, "ios")
@@ -620,6 +706,7 @@ def main(argv=None):
                         "build_utc": dt.datetime.now(dt.timezone.utc).isoformat(), "godot_version": env["version"],
                         "engine_info": env.get("engine_info", {}),
                         "server_target": server_target,
+                        "signin": signin,
                         "package_id": BUNDLE, "export_preset": PRESET, "version": version, "build_number": number,
                         "asset_inventory_sha256": report["actual_assets_sha256"],
                         "asset_inventory_kind": "merged_source_files_sha256"}

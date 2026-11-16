@@ -80,7 +80,9 @@ var _invite_panel: InviteRedeemPanel
 var _account_note: Label
 var _account_rows: VBoxContainer
 var _link_google_btn: Button
+var _link_apple_btn: Button
 var _switch_btn: Button
+var _switch_apple_btn: Button
 # 「关联电脑」：输入电脑（Steam 版）上显示的 6 位码（docs/三方登录设计.md 第八节）。
 var _link_pc_btn: Button
 var _link_pc_row: HBoxContainer
@@ -1045,7 +1047,32 @@ func _on_delete_pressed() -> void:
 
 func _run_delete(code: String) -> void:
 	_begin_submit()
-	var result: Dictionary = await AccountManager.delete_account(code)
+	var apple_code := ""
+	var apple_linked := false
+	# 所有平台都查绑定：旧后端不回撤销状态，需在删号前记住是否应提示手动撤销。
+	# 查询失败不阻止实际删除，也不把 Google 或游客误当成 Apple。
+	var identities: Dictionary = await AccountManager.list_identities()
+	if not is_inside_tree():
+		return
+	var body: Dictionary = identities.get("body", {})
+	var items: Array = body.get("identities", []) if body.get("identities") is Array else []
+	for identity in items:
+		if identity is Dictionary and str(identity.get("provider", "")) == "apple":
+			apple_linked = true
+			break
+	# Apple 授权码只为这次注销获取，不落盘；不能弹 Apple 授权的平台仍可删除。
+	if apple_linked and SignInBridge.apple_available():
+		_set_status(_text("请用 Apple 确认，以撤销登录授权…", "Confirm with Apple to revoke sign-in access…"))
+		var signed: Dictionary = await SignInBridge.sign_in_apple(get_tree())
+		if not is_inside_tree():
+			return
+		if bool(signed.get("cancelled", false)):
+			_busy = false
+			_set_status("")
+			return
+		if bool(signed.get("ok", false)):
+			apple_code = str(signed.get("authorization_code", ""))
+	var result: Dictionary = await AccountManager.delete_account(code, apple_code, apple_linked)
 	_busy = false
 	if not is_inside_tree():
 		return
@@ -1086,6 +1113,9 @@ func _account_section() -> Control:
 	_link_google_btn = _account_button(_text("绑定 Google", "Link Google"))
 	_link_google_btn.pressed.connect(_on_link_google)
 	column.add_child(_link_google_btn)
+	_link_apple_btn = _account_button(_text("绑定 Apple", "Link Apple"))
+	_link_apple_btn.pressed.connect(func() -> void: _on_link_provider("apple"))
+	column.add_child(_link_apple_btn)
 	_link_pc_btn = _account_button(_text("关联电脑（Steam 版）", "Link PC (Steam)"))
 	_link_pc_btn.pressed.connect(func() -> void:
 		_link_pc_row.visible = not _link_pc_row.visible
@@ -1109,9 +1139,12 @@ func _account_section() -> Control:
 	submit.pressed.connect(_on_link_pc_submit)
 	_link_pc_row.add_child(submit)
 	column.add_child(_link_pc_row)
-	_switch_btn = _account_button(_text("切换账号", "Switch account"))
+	_switch_btn = _account_button(_text("用 Google 切换账号", "Switch with Google"))
 	_switch_btn.pressed.connect(_on_switch_account)
 	column.add_child(_switch_btn)
+	_switch_apple_btn = _account_button(_text("用 Apple 切换账号", "Switch with Apple"))
+	_switch_apple_btn.pressed.connect(func() -> void: _on_switch_provider("apple"))
+	column.add_child(_switch_apple_btn)
 	_load_identities()
 	return panel
 
@@ -1142,12 +1175,14 @@ func _render_identities(guest: bool, identities: Array) -> void:
 	for child in _account_rows.get_children():
 		child.queue_free()
 	var has_google := false
+	var has_apple := false
 	var has_steam := false
 	for item in identities:
 		if not (item is Dictionary):
 			continue
 		var provider := str(item.get("provider", ""))
 		has_google = has_google or provider == "google"
+		has_apple = has_apple or provider == "apple"
 		has_steam = has_steam or provider == "steam"
 		var row := Label.new()
 		# 邮箱是后端打过码的（ab***@gmail.com），这里原样显示。Steam 没有邮箱，显示 Steam 昵称。
@@ -1168,7 +1203,9 @@ func _render_identities(guest: bool, identities: Array) -> void:
 			"On a new phone, sign in with an account linked below to carry on.")
 		_account_note.add_theme_color_override("font_color", Kit.INK_SOFT)
 	_link_google_btn.visible = SignInBridge.google_available() and not has_google
-	_switch_btn.visible = can_sign_in
+	_link_apple_btn.visible = SignInBridge.apple_available() and not has_apple
+	_switch_btn.visible = SignInBridge.google_available()
+	_switch_apple_btn.visible = SignInBridge.apple_available()
 	# 在电脑（Steam 版）上自己就是 Steam，不用关联；已经关联过的也不再出。
 	_link_pc_btn.visible = not AccountManager.is_steam_build() and not has_steam
 	if not _link_pc_btn.visible:
@@ -1246,11 +1283,16 @@ func _run_link_pc(code: String) -> void:
 
 
 func _on_link_google() -> void:
+	await _on_link_provider("google")
+
+
+func _on_link_provider(provider: String) -> void:
 	if _busy:
 		return
 	_busy = true
-	_set_status(_text("正在打开 Google 登录…", "Opening Google sign-in…"))
-	var signed: Dictionary = await SignInBridge.sign_in_google(get_tree())
+	var provider_name := _provider_name(provider)
+	_set_status(_text("正在打开 %s 登录…", "Opening %s sign-in…") % provider_name)
+	var signed: Dictionary = await SignInBridge.sign_in(get_tree(), provider)
 	if not is_inside_tree():
 		return
 	if not bool(signed.get("ok", false)):
@@ -1260,17 +1302,17 @@ func _on_link_google() -> void:
 	_set_status(_text("正在绑定…", "Linking…"))
 	var token := str(signed.get("id_token", ""))
 	var nonce := str(signed.get("nonce", ""))
-	var result: Dictionary = await AccountManager.link_provider("google", token, nonce)
+	var result: Dictionary = await AccountManager.link_provider(provider, token, nonce)
 	_busy = false
 	if not is_inside_tree():
 		return
 	if int(result.get("code", 0)) == 200:
-		_set_status(_text("已绑定 Google", "Google linked"))
+		_set_status(_text("已绑定 %s", "%s linked") % provider_name)
 		_load_identities()
 		return
 	if str(result.get("reason", "")) == AccountManager.IDENTITY_TAKEN:
 		_set_status("")
-		_confirm_switch_to_taken("google", token, nonce)
+		_confirm_switch_to_taken(provider, token, nonce)
 		return
 	_set_status(_failure_text(result))
 
@@ -1279,7 +1321,7 @@ func _on_link_google() -> void:
 # 选切换，就拿刚才那张身份证明直接登录那个号（一小时内有效，不用再弹一次 Google）。
 func _confirm_switch_to_taken(provider: String, token: String, nonce: String) -> void:
 	DialogService.confirm({
-		"title": _text("这个 Google 账号已经绑定了另一个游戏账号", "This Google account is linked to another game account"),
+		"title": _text("这个 %s 账号已经绑定了另一个游戏账号", "This %s account is linked to another game account") % _provider_name(provider),
 		"body": _switch_consequence(),
 		"intent": ConfirmDialog.Intent.DANGER,
 		"confirm_text": _text("切换到那个账号", "Switch to that account"),
@@ -1291,18 +1333,22 @@ func _confirm_switch_to_taken(provider: String, token: String, nonce: String) ->
 
 
 func _on_switch_account() -> void:
+	_on_switch_provider("google")
+
+
+func _on_switch_provider(provider: String) -> void:
 	if _busy:
 		return
 	DialogService.confirm({
 		"title": _text("切换账号", "Switch account"),
-		"body": _switch_consequence() + "\n" + _text("接下来会打开 Google 登录。", "Google sign-in opens next."),
+		"body": _switch_consequence() + "\n" + _text("接下来会打开 %s 登录。", "%s sign-in opens next.") % _provider_name(provider),
 		# 游客切走就再也回不来：用 DANGER（暗红主按钮、默认焦点在取消）。
 		"intent": ConfirmDialog.Intent.DANGER if AccountManager.is_guest() else ConfirmDialog.Intent.NORMAL,
 		"confirm_text": _text("继续", "Continue"),
 		"owner": self,
 		"on_result": func(answer: String, _request_id: String) -> void:
 			if answer == ConfirmDialog.RESULT_CONFIRMED:
-				_sign_in_and_switch(),
+				_sign_in_and_switch(provider),
 	})
 
 
@@ -1314,19 +1360,19 @@ func _switch_consequence() -> String:
 		"This account isn't deleted; you can sign back in with its linked sign-in later.")
 
 
-func _sign_in_and_switch() -> void:
+func _sign_in_and_switch(provider: String = "google") -> void:
 	if _busy:
 		return
 	_busy = true
-	_set_status(_text("正在打开 Google 登录…", "Opening Google sign-in…"))
-	var signed: Dictionary = await SignInBridge.sign_in_google(get_tree())
+	_set_status(_text("正在打开 %s 登录…", "Opening %s sign-in…") % _provider_name(provider))
+	var signed: Dictionary = await SignInBridge.sign_in(get_tree(), provider)
 	_busy = false
 	if not is_inside_tree():
 		return
 	if not bool(signed.get("ok", false)):
 		_set_status("" if bool(signed.get("cancelled", false)) else str(signed.get("error", "")))
 		return
-	_run_switch("google", str(signed.get("id_token", "")), str(signed.get("nonce", "")))
+	_run_switch(provider, str(signed.get("id_token", "")), str(signed.get("nonce", "")))
 
 
 func _run_switch(provider: String, token: String, nonce: String) -> void:

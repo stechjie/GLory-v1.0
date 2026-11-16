@@ -14,6 +14,8 @@
 
 示例版本号不是下次发布号；先核对已交付版本。IPA build number 缺省自动递增。签名从本机现有密钥库/钥匙串取得，不把密码放入命令、Git 或日志。
 
+2026-11-14 起，IPA 默认使用外层工作区 `ios-signing-20260913/ios_distribution/20261114-apple-signin/` 中的 `Glory_AppStore_2026.mobileprovision` 和 `Glory_AdHoc_2026.mobileprovision`。两份文件已启用 Apple 登录、匹配现有分发证书；原始下载文件已移出 Downloads。旧描述文件保留在原签名目录供回溯，不作为默认输入。新文件权限为仅本机用户读写；描述文件不放入 Git。
+
 只需本地打包时不加同步参数；需要同步才加 APK `--sync` 或 IPA `--update`。本地修改保留，Git 分歧需先处理。
 
 ## 精简策略

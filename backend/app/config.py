@@ -191,6 +191,13 @@ class Settings(BaseSettings):
     # Steam 只放行用同一个 identity 开出来的票，别的服务拿到这张票也用不了。
     steam_ticket_identity: str = "glory-account"
 
+    # --- Sign in with Apple：注销时换取并撤销授权（app/apple_signin.py）-------
+    # 专用的 Sign in with Apple 密钥，不是 App Store Connect / StoreKit 密钥。
+    # 私钥只存服务器文件；用户授权码、Apple access/refresh token 只在内存里用一次。
+    apple_signin_team_id: str = ""
+    apple_signin_key_id: str = ""
+    apple_signin_key_file: str = ""
+
     # --- 充值（app/iap.py，docs/充值系统设计.md）----------------------------------------
     #
     # 每个平台一个开关，默认关。🔴 **关掉只挡「建新单」**：confirm、平台通知、定时对账一律照常 ——

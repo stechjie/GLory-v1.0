@@ -109,6 +109,9 @@ pooler（端口 6543）—— 那是 pgbouncer transaction 模式，与 asyncpg 
 |---|---|
 | `POST /v1/auth/anonymous` | 客户端**手上没有** refresh token 时（第一次装、或清了数据） |
 | `POST /v1/auth/refresh` | 之后每次启动 |
+| `POST /v1/auth/provider` | 原生 Google / Apple 登录，交 `provider`、`id_token`、原文 `nonce` |
+| `POST /v1/auth/link` | 已登录游客绑定 Google / Apple，保留玩家及游戏进度 |
+| `GET /v1/auth/identities` | 查询当前账号的登录绑定（邮箱打码） |
 
 ```
 有 refresh token -> /refresh；失败(401)或没有 -> /anonymous
@@ -129,6 +132,28 @@ pooler（端口 6543）—— 那是 pgbouncer transaction 模式，与 asyncpg 
 `players` 与 `player_identities` 在**同一个事务**里创建。半执行的后果很具体：
 只建了 players 没建映射，玩家下次登录就解析不到自己 —— 账号等于丢了，
 而那行还占着。外键挡不住这个方向，只能靠事务。
+
+### iOS Apple / Google 配置与注销
+
+两套环境分别在各自 Supabase Auth 中启用提供方并登记允许的 token audience。
+Apple 原生登录的 client ID 是 `com.superforge.glory`；Google 必须登记实际 iOS
+流程签发的受众，并保留 Android 已使用的 Web client ID。nonce 原文只交后端，
+SHA-256 交系统登录；不得通过关闭 nonce 校验来解决配置问题。
+
+`POST /v1/me/delete` 继续要求好友码，并可带 `apple_authorization_code`。
+Apple 绑定玩家在注销前重新确认 Apple 账号取得该一次性码。服务端使用
+`GLORY_APPLE_SIGNIN_TEAM_ID`、`GLORY_APPLE_SIGNIN_KEY_ID`、
+`GLORY_APPLE_SIGNIN_KEY_FILE` 创建短期 client secret，换取 token 后核对 Apple
+用户编号与当前绑定一致，再调用 Apple `/auth/revoke`。这些配置需要专用的
+Sign in with Apple `.p8`；不复用 App Store Connect API 密钥。授权码与 Apple
+token 均不落库、不记日志；不需要数据库迁移。
+
+按照 [Apple TN3194](https://developer.apple.com/documentation/technotes/tn3194-handling-account-deletions-and-revoking-tokens-for-sign-in-with-apple)，
+没有可用码、密钥或 Apple 暂时不可用时仍删除游戏账号，额外返回
+`apple_revocation_required: true`。客户端必须提示玩家前往 Apple 账号的
+「通过 Apple 登录」设置手动停止使用 Glory。选错 Apple 身份时返回 400，
+不撤销其它人的授权、不删除当前游戏账号。部署代码、平台配置、真机登录和
+撤销验收分别核实，不能仅凭上述离线测试判断线上可用。
 
 ## 令牌校验与 `GET /v1/me`
 

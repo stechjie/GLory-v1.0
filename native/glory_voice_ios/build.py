@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCE = Path(__file__).resolve().parent
 CPP_COMMIT = "e83fd0904c13356ed1d4c3d09f8bb9132bdc6b77"
 SDK_VERSION = "2.17.0"
+GOOGLE_SIGNIN_VERSION = "10.1.0"
 
 
 def run(args, **kwargs):
@@ -34,7 +35,9 @@ def make_project(work, cpp, library):
     files = []
     compile_files = []
     for name, kind in [("GloryVoiceNative.swift", "sourcecode.swift"), ("GloryVoiceBridge.mm", "sourcecode.cpp.objcpp"),
-                       ("GloryAppleBilling.swift", "sourcecode.swift"), ("GloryAppleBillingBridge.mm", "sourcecode.cpp.objcpp")]:
+                       ("GloryAppleBilling.swift", "sourcecode.swift"), ("GloryAppleBillingBridge.mm", "sourcecode.cpp.objcpp"),
+                       ("GlorySignIn.swift", "sourcecode.swift"), ("GlorySignInRequests.swift", "sourcecode.swift"),
+                       ("GlorySignInBridge.mm", "sourcecode.cpp.objcpp")]:
         ref = put(name, "PBXFileReference", path=str(SOURCE / name), sourceTree="<absolute>", lastKnownFileType=kind)
         files.append(ref)
         compile_files.append(put(name+"-build", "PBXBuildFile", fileRef=ref))
@@ -46,7 +49,11 @@ def make_project(work, cpp, library):
     package = put("LiveKit-package", "XCRemoteSwiftPackageReference", repositoryURL="https://github.com/livekit/client-sdk-swift.git",
                   requirement={"kind":"exactVersion", "version":SDK_VERSION})
     dependency = put("LiveKit-product", "XCSwiftPackageProductDependency", package=package, productName="LiveKit")
-    linked = [put("cpp-link", "PBXBuildFile", fileRef=lib), put("LiveKit-link", "PBXBuildFile", productRef=dependency)]
+    google_package = put("GoogleSignIn-package", "XCRemoteSwiftPackageReference", repositoryURL="https://github.com/google/GoogleSignIn-iOS.git",
+                         requirement={"kind":"exactVersion", "version":GOOGLE_SIGNIN_VERSION})
+    google_dependency = put("GoogleSignIn-product", "XCSwiftPackageProductDependency", package=google_package, productName="GoogleSignIn")
+    linked = [put("cpp-link", "PBXBuildFile", fileRef=lib), put("LiveKit-link", "PBXBuildFile", productRef=dependency),
+              put("GoogleSignIn-link", "PBXBuildFile", productRef=google_dependency)]
     phases = [put("sources", "PBXSourcesBuildPhase", buildActionMask=2147483647, files=compile_files, runOnlyForDeploymentPostprocessing=0),
               put("frameworks", "PBXFrameworksBuildPhase", buildActionMask=2147483647, files=linked, runOnlyForDeploymentPostprocessing=0),
               put("resources", "PBXResourcesBuildPhase", buildActionMask=2147483647, files=[], runOnlyForDeploymentPostprocessing=0)]
@@ -74,10 +81,10 @@ def make_project(work, cpp, library):
     config_list = put("target-configs", "XCConfigurationList", buildConfigurations=configs, defaultConfigurationIsVisible=0, defaultConfigurationName="Release")
     root_list = put("project-configs", "XCConfigurationList", buildConfigurations=root_configs, defaultConfigurationIsVisible=0, defaultConfigurationName="Release")
     target = put("target", "PBXNativeTarget", name="GloryVoice", productName="GloryVoice", productType="com.apple.product-type.framework",
-                 productReference=product, buildConfigurationList=config_list, buildPhases=phases, buildRules=[], dependencies=[], packageProductDependencies=[dependency])
+                 productReference=product, buildConfigurationList=config_list, buildPhases=phases, buildRules=[], dependencies=[], packageProductDependencies=[dependency,google_dependency])
     project = put("project", "PBXProject", attributes={"LastUpgradeCheck":"2660"}, buildConfigurationList=root_list,
                   compatibilityVersion="Xcode 14.0", developmentRegion="en", knownRegions=["en","Base"], mainGroup=group,
-                  productRefGroup=products, projectDirPath="", projectRoot="", targets=[target], packageReferences=[package])
+                  productRefGroup=products, projectDirPath="", projectRoot="", targets=[target], packageReferences=[package,google_package])
     bundle = work/"GloryVoice.xcodeproj"
     bundle.mkdir(exist_ok=True)
     (bundle/"project.pbxproj").write_bytes(plistlib.dumps({"archiveVersion":"1","classes":{},"objectVersion":"56", "objects":objects,"rootObject":project}))
@@ -126,15 +133,19 @@ def main():
         if target.exists():
             shutil.rmtree(target)
         shutil.copytree(framework,target)
-    for resource in products.glob("LiveKit*.bundle"):
+    # SPM's generated resource accessors look beside the linked framework. Keep
+    # Google/AppAuth privacy manifests and localized UI resources with LiveKit's.
+    for resource in products.glob("*.bundle"):
         shutil.copytree(resource,out/"GloryVoice.framework"/resource.name,dirs_exist_ok=True)
-    manifest = {"godot_cpp":revision,"livekit":SDK_VERSION,"architecture":"arm64", "files":{}}
+    manifest = {"godot_cpp":revision,"livekit":SDK_VERSION,"google_signin":GOOGLE_SIGNIN_VERSION,"architecture":"arm64", "files":{}}
     for file in sorted(out.rglob("*")):
         if file.is_file() and file != out/"build-manifest.json":
             manifest["files"][str(file.relative_to(out))]=hashlib.sha256(file.read_bytes()).hexdigest()
     for file in [SOURCE/"GloryVoiceNative.swift",SOURCE/"GloryVoiceNative.h",SOURCE/"GloryVoiceBridge.mm",Path(__file__)]:
         manifest.setdefault("source",{})[file.name]=hashlib.sha256(file.read_bytes()).hexdigest()
     for file in [SOURCE/"GloryAppleBilling.swift", SOURCE/"GloryAppleBillingNative.h", SOURCE/"GloryAppleBillingBridge.mm"]:
+        manifest["source"][file.name]=hashlib.sha256(file.read_bytes()).hexdigest()
+    for file in [SOURCE/"GlorySignIn.swift", SOURCE/"GlorySignInRequests.swift", SOURCE/"GlorySignInNative.h", SOURCE/"GlorySignInBridge.mm"]:
         manifest["source"][file.name]=hashlib.sha256(file.read_bytes()).hexdigest()
     (out/"build-manifest.json").write_text(json.dumps(manifest,indent=2)+"\n")
     print("iOS voice framework ready:",out)

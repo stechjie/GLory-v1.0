@@ -37,20 +37,37 @@ def _auth_with(handler) -> SupabaseAuth:
 # --- Supabase 客户端层 ---------------------------------------------------------
 
 
-def test_id_token_login_request_shape() -> None:
+@pytest.mark.parametrize("provider", ["google", "apple"])
+def test_id_token_login_request_shape(provider: str) -> None:
     seen: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
         return httpx.Response(200, json=SESSION_PAYLOAD)
 
-    session = asyncio.run(_auth_with(handler).sign_in_with_id_token("google", SECRET_LOOKING_ID_TOKEN))
+    session = asyncio.run(_auth_with(handler).sign_in_with_id_token(provider, SECRET_LOOKING_ID_TOKEN, "raw-nonce"))
     request = seen[0]
     body = json.loads(request.content)
     assert request.url.path == "/auth/v1/token" and request.url.params["grant_type"] == "id_token"
-    assert body == {"provider": "google", "id_token": SECRET_LOOKING_ID_TOKEN}
+    assert body == {"provider": provider, "id_token": SECRET_LOOKING_ID_TOKEN, "nonce": "raw-nonce"}
     assert request.headers["Authorization"] == "Bearer pk_test"  # 登录不带任何用户令牌
     assert session.auth_uid == "auth-uid-1"
+
+
+@pytest.mark.parametrize("link", [False, True])
+def test_id_token_errors_never_echo_upstream_credentials(link: bool) -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"error_code": "bad_jwt", "msg": SECRET_LOOKING_ID_TOKEN + " raw-nonce"})
+
+    client = _auth_with(handler)
+    with pytest.raises(AuthError) as exc:
+        if link:
+            asyncio.run(client.link_identity("access", "apple", SECRET_LOOKING_ID_TOKEN, "raw-nonce"))
+        else:
+            asyncio.run(client.sign_in_with_id_token("apple", SECRET_LOOKING_ID_TOKEN, "raw-nonce"))
+    assert SECRET_LOOKING_ID_TOKEN not in str(exc.value)
+    assert "raw-nonce" not in str(exc.value)
+    assert exc.value.code == "bad_jwt"
 
 
 def test_link_uses_the_players_own_token() -> None:
@@ -99,6 +116,19 @@ def test_linked_identities_only_lists_google_and_apple() -> None:
     assert anonymous is False
     assert linked == [LinkedIdentity("google", "abcdef@gmail.com"),
                       LinkedIdentity("apple", "x@privaterelay.appleid.com")]
+
+
+def test_apple_subject_is_kept_when_repeat_signin_omits_email() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"is_anonymous": False, "identities": [
+            {"provider": "apple", "id": "old-id", "identity_data": {"sub": "stable-apple-id"}},
+        ]})
+
+    anonymous, linked = asyncio.run(_auth_with(handler).linked_identities("player-access"))
+    assert anonymous is False
+    assert linked == [LinkedIdentity("apple", "", subject="stable-apple-id")]
+    # 供客户端显示的登录绑定永远不包含提供方用户编号或完整邮箱。
+    assert auth._identity_out(linked[0]).model_dump() == {"provider": "apple", "email": "", "name": ""}
 
 
 @pytest.mark.parametrize("email,masked", [
@@ -315,11 +345,16 @@ def test_delete_me_removes_the_supabase_user(monkeypatch, fails: bool) -> None:
         if fails:
             raise supabase_admin.AdminUnavailable("boom")
 
+    async def no_apple(_authorization, _code):
+        return False
+
     monkeypatch.setattr(profile_routes, "_current_profile", current)
     monkeypatch.setattr(profile_routes.profile, "delete_player", erase)
     monkeypatch.setattr(supabase_admin, "delete_user", delete_user)
-    out = asyncio.run(profile_routes.delete_me(profile_routes.DeleteRequest(friend_code="abcd2345"), CLAIMS))
-    assert out == {"deleted": True}
+    monkeypatch.setattr(profile_routes, "_apple_revocation_required", no_apple)
+    out = asyncio.run(profile_routes.delete_me(profile_routes.DeleteRequest(friend_code="abcd2345"), CLAIMS,
+                                              "Bearer player-access"))
+    assert out == {"deleted": True, "apple_revocation_required": False}
     assert deleted == [UID]
 
 
