@@ -8,6 +8,9 @@ const PetPreview := preload("res://scripts/pets/PetPreview.gd")
 const PetDrawReveal := preload("res://scenes/menu/PetDrawReveal.gd")
 const PetSummonFx := preload("res://scenes/menu/PetSummonFx.gd")
 const SfxService := preload("res://ui/services/SfxService.gd")
+const MusicService := preload("res://ui/services/MusicService.gd")
+# 打开弹窗前在放的那首（关窗时接回去）。
+var _music_before := ""
 const FOREST := preload("res://assets/ui/page_backgrounds/pets_courtyard.png")
 # 11.11 重做成「宠物蛋孵化」：草窝上一颗蛋，召唤时蛋晃、出裂纹，结果到了破壳发光再弹出结果框。
 # 动画纯表现，奖励只看服务器回执（同原来的能量球）。羊皮纸部件见 ui/theme/ParchmentKit.gd。
@@ -49,6 +52,12 @@ func _ready() -> void:
 	_build()
 	_fit_canvas()
 	_load_state()
+	# 11.16：抽宠物独立 BGM；关掉弹窗接回底下那页的歌、原来的位置。
+	_music_before = MusicService.enter_overlay(MusicService.PET_DRAW_MUSIC)
+
+
+func _exit_tree() -> void:
+	MusicService.leave_overlay(MusicService.PET_DRAW_MUSIC, _music_before)
 
 
 func _notification(what: int) -> void:

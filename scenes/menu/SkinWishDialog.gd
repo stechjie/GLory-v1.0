@@ -26,6 +26,9 @@ const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const Currency := preload("res://scripts/account/Currency.gd")
 const SfxService := preload("res://ui/services/SfxService.gd")
+const MusicService := preload("res://ui/services/MusicService.gd")
+# 打开弹窗前在放的那首（关窗时接回去）。
+var _music_before := ""
 const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
 const PetalTexture := preload("res://scenes/prep/effects/PrepPetalTexture.gd")
 const FxTextures := preload("res://scenes/prep/effects/PrepRefreshFxTextures.gd")
@@ -204,6 +207,17 @@ func _ready() -> void:
 	_build()
 	_fit_canvas()
 	_load_state()
+	# 11.16：暗夜 / 樱花祈愿各自的 BGM；关掉弹窗接回底下那页的歌、原来的位置。
+	_music_before = MusicService.enter_overlay(_wish_music())
+
+
+func _exit_tree() -> void:
+	MusicService.leave_overlay(_wish_music(), _music_before)
+
+
+# 夜荧光（暗夜）放暗夜那首；樱花和不认识的 id（按樱花处理，见 skin_id 注释）放樱花那首。
+func _wish_music() -> String:
+	return MusicService.WISH_DARK_MUSIC if skin_id == "prep_skin_nightwisp" else MusicService.WISH_SAKURA_MUSIC
 
 
 func _notification(what: int) -> void:

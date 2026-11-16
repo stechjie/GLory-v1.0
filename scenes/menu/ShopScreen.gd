@@ -38,7 +38,7 @@ const MusicService := preload("res://ui/services/MusicService.gd")
 # 11.05 动效：卡片入场 / 浮动 / 悬停按压 / 选中呼吸 / 购买庆祝 / 余额滚动，背景灯光与光尘。
 const Motion := preload("res://scenes/menu/ShopMotion.gd")
 const Ambient := preload("res://scenes/menu/ShopAmbient.gd")
-const SHOP_MUSIC_PATH := "res://assets/audio/bgm/shop_music.mp3"
+const SHOP_MUSIC_PATH := "res://assets/audio/bgm/shop.mp3"
 const ConfirmDialog := preload("res://ui/components/GloryConfirmDialog.gd")
 # 新按钮一律实例化组件，不写 Button.new()：procedural_ui_ratchet 按文件只许降。
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
@@ -210,7 +210,8 @@ func _ready() -> void:
 	# 9.17 第二批：商城独立 BGM。放在 _reload() 之后 —— 它只是一条 play()，
 	# 但排在网络请求后面能保证「进页面先看到东西、再听音乐」，不会反过来。
 	# 返回主菜单时由 MainMenu 负责切回 menu_music，这里不需要收尾。
-	MusicService.play(SHOP_MUSIC_PATH)
+	# 11.16：再进商城时从上次离开的位置接着放。
+	MusicService.play(SHOP_MUSIC_PATH, true)
 
 
 # --- 骨架 ---------------------------------------------------------------------
