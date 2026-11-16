@@ -780,7 +780,7 @@ func _four_star_card(candidate: Dictionary) -> Control:
 	var gold_row := HBoxContainer.new()
 	gold_row.add_theme_constant_override("separation", 6)
 	gold_row.add_child(_icon(Card.art("icon_gold_stack"), Vector2(32, 30)))
-	var gold_text := _text(_t("金币：%d", "Gold: %d") % CarrotEconomy.four_star_gold(int(unit_def.get("tier", 0))), 18, true, 800)
+	var gold_text := _text(_t("金币：%d", "Gold: %d") % GameState.four_star_cost(unit_def), 18, true, 800)
 	if not ready and str(check.get("error", "")) == "not_enough_gold":
 		gold_text.add_theme_color_override("font_color", WARN)
 	gold_row.add_child(gold_text)

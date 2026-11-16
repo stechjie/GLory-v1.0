@@ -3,6 +3,7 @@ const Harness = preload("res://tools/CheckHarness.gd")
 const Rules = preload("res://scripts/economy/CarrotEconomy.gd")
 const Ledger = preload("res://scripts/multiplayer/EconomyLedger.gd")
 const Aura = preload("res://effects/vfx3d/modules/FourStarAuraV3_3D.gd")
+const CampPanel = preload("res://scenes/prep/CarrotCampPanelV3.gd")
 var h: RefCounted
 
 func _ready() -> void:
@@ -110,6 +111,22 @@ func _seedling_price_ui(d: Dictionary) -> void:
 		panel.refresh()
 		h.expect(panel.inventory.text.ends_with(" / %d" % expected_cost) and GameState.four_star_check(cell).cost == expected_cost,
 			"seedling_display_cost", str(completed))
+		var camp := CampPanel.new()
+		var saved_locale := LocaleManager.get_locale()
+		for locale in ["zh", "en"]:
+			LocaleManager.set_locale(locale)
+			for has_stone in [true, false]:
+				GameState.team_upgrade_stones[d.element] = 1 if has_stone else 0
+				var check := GameState.four_star_check(cell)
+				var card := camp._four_star_card({"cell": cell, "check": check, "ready": check.ok, "where": "board", "index": 0})
+				var expected_label := ("Gold: %d" if locale == "en" else "金币：%d") % expected_cost
+				var labels := card.find_children("*", "Label", true, false)
+				h.expect(labels.any(func(label): return label.text == expected_label),
+					"camp_seedling_price", "%s #%d stone=%s" % [locale, completed + 1, has_stone])
+				card.free()
+		LocaleManager.set_locale(saved_locale)
+		GameState.team_upgrade_stones[d.element] = 5
+		camp.free()
 	GameState.four_star_upgrade_count = 0
 	panel._pressed()
 	GameState.four_star_upgrade_count = 1

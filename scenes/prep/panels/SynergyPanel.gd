@@ -13,6 +13,8 @@ extends Control
 const PrepWidgets := preload("res://scenes/prep/PrepWidgets.gd")
 const PrepShopRaceIcon = preload("res://scenes/prep/PrepShopRaceIcon.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
+const ParchmentKit := preload("res://ui/theme/ParchmentKit.gd")
+const BOND_ACTIVE_INK := Color("476244")
 
 signal altar_requested                       # 点了黄金祭坛
 signal gamble_requested                      # 点了慷慨命运
@@ -411,9 +413,9 @@ func format_synergy_detail(race: String, count: int) -> String:
 				else "未解锁 · 还差 %d 人" % missing)
 		lines.append("")
 		lines.append("[color=#%s][b]%s[/b][/color]" % [
-			Tokens.GOLD.to_html(false), status])
+			(BOND_ACTIVE_INK if active else ParchmentKit.INK_SOFT).to_html(false), status])
 		lines.append("[color=#%s][b]%s[/b]\n%s[/color]" % [
-			Tokens.TEXT_PRIMARY.to_html(false) if active else Tokens.TEXT_SECONDARY.to_html(false),
+			(ParchmentKit.INK if active else ParchmentKit.INK_SOFT).to_html(false),
 			str(approved.get("name_cn", item.get("name", ""))),
 			str(approved.get("detail_cn", item.get("detail", ""))),
 		])
