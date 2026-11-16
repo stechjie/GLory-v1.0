@@ -147,7 +147,8 @@ const TEX_CUSTOM := preload("res://assets/ui/main_menu_v2/custom.png")
 const TEX_GALLERY := preload("res://assets/ui/main_menu_v2/gallery.png")
 const MAIN_MENU_AMBIENCE := preload("res://scenes/menu/MainMenuAmbience.gd")
 const MAIN_MENU_PET := preload("res://scenes/menu/MainMenuPet.gd")
-const MENU_MUSIC_PATH := "res://assets/audio/bgm/menu_music.mp3"
+# 11.16：主菜单改为 MusicService.MENU_GROUP（主界面 1~3 随机）。旧常量名保留给外部引用，指向第一首。
+const MENU_MUSIC_PATH := "res://assets/audio/bgm/menu_1.mp3"
 # 9.27：右侧「商店」预览最新商品缩略图、「公告 / 活动」预览最新公告标题。
 # AvatarCatalog 已在本文件顶部预加载，不再重复声明。
 const PetPreview := preload("res://scripts/pets/PetPreview.gd")
@@ -304,7 +305,10 @@ func _start_menu_music() -> void:
 	#
 	# 「同一首不重启」由 MusicService 内部判等负责：从子界面返回主菜单会再调
 	# 一次这里，不会把 menu_music 从 0 秒重头播。
-	MusicService.play(MENU_MUSIC_PATH)
+	#
+	# 11.16：主界面 1~3 随机一首。正在放的已是这组里的一首（从房间 / 资料页回来）就接着放；
+	# 从商城 / 备战 / 图鉴回来接回原来那首、原来的位置；打完一局回来才重新随机。
+	MusicService.play_group(MusicService.MENU_GROUP, true)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED:

@@ -388,11 +388,14 @@ const TEX_FRIENDS := preload("res://assets/ui/room_parchment/friends.png")
 const TEX_CHAT := preload("res://assets/ui/room_parchment/chat.png")
 const TEX_START := preload("res://assets/ui/room_parchment/start.png")
 const TEX_VS := preload("res://assets/ui/room_parchment/vs.png")
-const MENU_MUSIC_PATH := "res://assets/audio/bgm/menu_music.mp3"
+const MENU_MUSIC_PATH := "res://assets/audio/bgm/menu_1.mp3"
 # 9.17：组队房间此前和主菜单共用 menu_music，这一批给了它独立的 BGM。
 # 两条常量分开而不是让房间读主菜单那条 —— 房间是「等队友」的场景，
 # 气氛和大厅本就不同，共用一个常量会让以后想分开时改错地方。
-const TEAM_ROOM_MUSIC_PATH := "res://assets/audio/bgm/team_room_music.mp3"
+#
+# 11.16：用户要求自定义 3v3 房间改回和主菜单同一组（MusicService.MENU_GROUP），
+# 从主菜单进房间、房间回主菜单都不换歌、不从头。旧常量名保留给外部引用。
+const TEAM_ROOM_MUSIC_PATH := "res://assets/audio/bgm/menu_1.mp3"
 const SELFTEST_SCENE_PATH := "res://officetest/OfficeTestScreen.tscn"
 
 # 开始按钮「不可开始」时的常暗色调（10.07 第 1 条）。可在亮态(1,1,1,1)与暗态间对比。
@@ -553,7 +556,8 @@ func _process(delta: float) -> void:
 func _start_menu_music() -> void:
 	# 9.17 第二批：改走常驻 MusicService（播放器挂 root，不随页面释放）。
 	# 「同一首不重启」由服务内部判等负责。
-	MusicService.play(TEAM_ROOM_MUSIC_PATH)
+	# 11.16：与主菜单共用主界面 1~3 那一组。
+	MusicService.play_group(MusicService.MENU_GROUP, true)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED:
