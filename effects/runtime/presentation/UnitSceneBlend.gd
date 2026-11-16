@@ -21,6 +21,8 @@ const ADDED_OUTLINE_MAX_PX := 1.0
 static var _blend_material: ShaderMaterial
 static var _copies: Dictionary = {}     # 原材质 instance_id -> 处理过的副本
 static var _made: Dictionary = {}       # 副本 instance_id -> true，防重复处理
+static var _skin_blends: Dictionary = {} # 贴图 instance_id -> 带护脸的受光层材质
+const SKIN_PROTECT := 0.85
 
 
 static func blend_material() -> ShaderMaterial:
@@ -95,7 +97,25 @@ static func blended(material: Material) -> Material:
 		outline.set_shader_parameter("outline_max_pixels", ADDED_OUTLINE_MAX_PX)
 		tail.next_pass = outline
 		tail = outline
-	tail.next_pass = blend_material()
+	tail.next_pass = _blend_for(copy)
 	_copies[key] = copy
 	_made[copy.get_instance_id()] = true
 	return copy
+
+## 身体材质开了 skin_lift（race_body）的单位：受光层也要认皮肤，不然脸在背光侧照样被压暗。
+## 每张贴图一份材质，其余单位共用同一份。
+static func _blend_for(body: Material) -> ShaderMaterial:
+	var shader_body := body as ShaderMaterial
+	if shader_body == null:
+		return blend_material()
+	var lift: Variant = shader_body.get_shader_parameter("skin_lift")
+	var texture := shader_body.get_shader_parameter("albedo_texture") as Texture2D
+	if texture == null or lift == null or float(lift) <= 0.0:
+		return blend_material()
+	var key := texture.get_instance_id()
+	if not _skin_blends.has(key):
+		var material := blend_material().duplicate() as ShaderMaterial
+		material.set_shader_parameter("skin_albedo", texture)
+		material.set_shader_parameter("skin_protect", SKIN_PROTECT * float(lift))
+		_skin_blends[key] = material
+	return _skin_blends[key]

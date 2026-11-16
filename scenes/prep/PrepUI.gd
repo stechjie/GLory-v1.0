@@ -1819,28 +1819,6 @@ func _build_voice_button() -> void:
 	_place_voice_button(_voice_controls.audience_button, right, VOICE_AUDIENCE_SIZE)
 	right -= VOICE_AUDIENCE_SIZE.x + VOICE_INNER_GAP
 	_place_voice_button(_voice_controls.voice_button, right, VOICE_BTN_SIZE)
-	_voice_controls.voice_button.resized.connect(_align_prep_voice_icons)
-	_voice_controls.audience_button.resized.connect(_align_prep_voice_icons)
-	_align_prep_voice_icons()
-
-func _align_prep_voice_icons() -> void:
-	if _voice_controls == null:
-		return
-	# 麦克风 / 扬声器的图集每格是 627px 画布、金框只占中间 504px（VoiceButtonArt）。
-	# 不放大的话这两个框比旁边的队友 / 聊天框小一圈。这里把图往外撑到「金框 = 按钮大小」，
-	# 点击范围还是按钮本身（图不吃点击）。
-	for btn in [_voice_controls.voice_button, _voice_controls.audience_button]:
-		if btn == null or not is_instance_valid(btn):
-			continue
-		var art := (btn as Button).get_node_or_null("VoiceIcon") as TextureRect
-		if art == null:
-			continue
-		var side := minf(btn.size.x, btn.size.y)
-		var grow := side * (627.0 / 504.0 - 1.0) * 0.5
-		art.offset_left = -grow
-		art.offset_right = grow
-		art.offset_top = -grow
-		art.offset_bottom = grow
 
 
 func _place_voice_button(button: Button, right: float, size: Vector2) -> void:

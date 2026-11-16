@@ -25,8 +25,11 @@ group_uniforms Light;
 // 视角空间里的假光源方向（x 右、y 上、z 朝镜头）。默认右上前方。
 uniform vec3 light_dir_view = vec3(0.35, 0.76, 0.55);
 // 半兰伯特阈值：BA 衣物/头发是 0.5。
-uniform float shadow_threshold : hint_range(0.0, 1.0) = 0.5;
-uniform float band_softness : hint_range(0.0, 0.1) = 0.015;
+// 11.15 第三轮：用户反馈宠物「破碎感很重」。原因是硬分界（0.015）落在 AI 生成模型坑坑洼洼的法线上，
+// 明暗交界碎成一片片三角。改成宽过渡（0.5 ≈ 平滑的半兰伯特），阴影同时调浅，碎片就看不出来了。
+// 想要回硬边赛璐璐，得先把模型法线抹平，不能只调这里。
+uniform float shadow_threshold : hint_range(0.0, 1.0) = 0.42;
+uniform float band_softness : hint_range(0.0, 1.0) = 0.5;
 // 亮面整体亮度。1.0 = 贴图原色。
 // 11.15：1.0 → 0.94。白毛宠物（猫、兔、雪豹）在亮色手绘背景上整片发白、看不出体积。
 uniform float lit_brightness : hint_range(0.5, 1.5) = 0.94;
@@ -34,7 +37,7 @@ group_uniforms;
 
 group_uniforms Shadow;
 // 11.15：阴影加深一点、偏青紫（和手绘场景里树荫的色调一致），原值 (0.70, 0.72, 0.80)。
-uniform vec4 shadow_tint : source_color = vec4(0.62, 0.64, 0.80, 1.0);
+uniform vec4 shadow_tint : source_color = vec4(0.78, 0.78, 0.86, 1.0);
 uniform bool skin_detect = true;
 uniform vec4 skin_shadow_tint : source_color = vec4(0.94, 0.75, 0.73, 1.0);
 // 皮肤往亮面推多少（加在半兰伯特值上）。
@@ -44,7 +47,7 @@ group_uniforms;
 
 group_uniforms Rim;
 // 11.15：0.28 → 0.18。边缘光是往白里提的，白毛上会把轮廓洗掉。
-uniform float rim_strength : hint_range(0.0, 1.0) = 0.18;
+uniform float rim_strength : hint_range(0.0, 1.0) = 0.12;
 uniform float rim_start : hint_range(0.0, 1.0) = 0.62;
 uniform float rim_end : hint_range(0.0, 1.0) = 0.78;
 group_uniforms;

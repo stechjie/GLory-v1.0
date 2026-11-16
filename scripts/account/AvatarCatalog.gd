@@ -126,13 +126,13 @@ static func texture_for(value: String, thumb: bool = false) -> Texture2D:
 #   量产脚本：其他/work/_qa_1002c/frame_hole_table.py（同一套算法）。
 const FRAME_HOLE_FRAC := {
 	"frame_default": 0.6271,
-	"avatar_frame_7day_01": 0.6617,
-	"avatar_frame_shop_01": 0.6122,
-	"avatar_frame_shop_02": 0.6333,
-	"avatar_frame_shop_03": 0.5998,
-	"avatar_frame_shop_04": 0.6122,
-	"avatar_frame_shop_05": 0.5741,
-	"avatar_frame_shop_06": 0.5581,
+	"avatar_frame_7day_01": 0.6258,
+	"avatar_frame_shop_01": 0.5595,
+	"avatar_frame_shop_02": 0.5297,
+	"avatar_frame_shop_03": 0.5576,
+	"avatar_frame_shop_04": 0.5290,
+	"avatar_frame_shop_05": 0.5252,
+	"avatar_frame_shop_06": 0.5363,
 }
 
 # 内孔圆心相对**素材图心**的偏移，以图宽 / 图高为单位的分数。
@@ -146,13 +146,13 @@ const FRAME_HOLE_FRAC := {
 #   都等于玩家已经认可的默认框。
 const FRAME_HOLE_OFFSET := {
 	"frame_default": Vector2(-0.00059, -0.00059),
-	"avatar_frame_7day_01": Vector2(-0.00432, -0.02801),
-	"avatar_frame_shop_01": Vector2(0.00818, -0.02432),
-	"avatar_frame_shop_02": Vector2(-0.01021, -0.01385),
-	"avatar_frame_shop_03": Vector2(0.00012, 0.01123),
-	"avatar_frame_shop_04": Vector2(0.00228, -0.00272),
-	"avatar_frame_shop_05": Vector2(-0.01201, -0.00679),
-	"avatar_frame_shop_06": Vector2(-0.00233, -0.00505),
+	"avatar_frame_7day_01": Vector2(-0.00002, 0.00022),
+	"avatar_frame_shop_01": Vector2(-0.00034, 0.00049),
+	"avatar_frame_shop_02": Vector2(-0.00013, 0.00004),
+	"avatar_frame_shop_03": Vector2(-0.00023, -0.00018),
+	"avatar_frame_shop_04": Vector2(0.00041, -0.00025),
+	"avatar_frame_shop_05": Vector2(0.00810, -0.00924),
+	"avatar_frame_shop_06": Vector2(-0.00222, -0.00197),
 }
 # 表里没有的框（美术刚加、还没量）：按默认圆盘估。宁可差一点，也不能算出 0 宽度。
 const FRAME_HOLE_FALLBACK := 0.6271

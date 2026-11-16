@@ -242,7 +242,7 @@ static func format_skill_template_cn(d: Dictionary) -> String:
 		"line_pierce":
 			return "穿云：普攻穿透一线最多%d个敌人，伤害依次为攻击的100%%/%s/%s/%s。" % [int(d.get("pierce_targets", 4)), pct(1.0 - float(d.get("pierce_falloff", 0.20))), pct(1.0 - float(d.get("pierce_falloff", 0.20)) * 2.0), pct(1.0 - float(d.get("pierce_falloff", 0.20)) * 3.0)]
 		"aoe_silence":
-			return "赤灯禁言%s：开战立刻沉默敌人%.1f秒，期间无法释放技能、攻速-30%%。" % [cd, float(d.get("silence_duration", 3.0))]
+			return "赤灯禁言%s：冷却好后沉默敌人%.1f秒，期间无法释放技能、攻速-30%%。" % [cd, float(d.get("silence_duration", 3.0))]
 		"none":
 			return "无主动技能。"
 		"lowest_ally_heal":
@@ -254,7 +254,7 @@ static func format_skill_template_cn(d: Dictionary) -> String:
 		"true_damage_attack":
 			return "圣枪裁决：普通攻击额外造成自身攻击%s真实伤害。" % pct(float(d.get("true_damage_pct", 0.18)))
 		"nearby_ally_heal_buff":
-			return "光环治疗%s：周围友军回复%s最大生命、攻击+%s、攻速+%s，并清除负面状态（同一目标最多%d层）；开场冷却%.1f秒。" % [cd, pct(float(d.get("heal_pct", 0.15))), pct(float(d.get("atk_bonus", 0.10))), pct(float(d.get("aspd_bonus", 0.15))), BattleSimSkills.BLESS_MAX_STACKS, float(d.get("opening_cd", 0.0))]
+			return "光环治疗%s：周围友军回复%s最大生命、攻击+%s、攻速+%s，并清除负面状态（同一目标最多%d层）。" % [cd, pct(float(d.get("heal_pct", 0.15))), pct(float(d.get("atk_bonus", 0.10))), pct(float(d.get("aspd_bonus", 0.15))), BattleSimSkills.BLESS_MAX_STACKS]
 		"judgement_strike":
 			return "审判打击%s：对最近敌人造成攻击%s伤害，每次释放自身防御+%s（最多%d层）。" % [cd, pct(float(d.get("damage_atk_pct", 2.2))), pct(float(d.get("def_stack_pct", 0.06))), int(d.get("max_stacks", 5))]
 		"random_ally_damage_reduction":
@@ -437,7 +437,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"line_pierce":
 			return "Skypierce: Basics pierce up to %d enemies in a line for 100%%/%s/%s/%s ATK damage." % [int(d.get("pierce_targets", 4)), pct(1.0 - float(d.get("pierce_falloff", 0.20))), pct(1.0 - float(d.get("pierce_falloff", 0.20)) * 2.0), pct(1.0 - float(d.get("pierce_falloff", 0.20)) * 3.0)]
 		"aoe_silence":
-			return "Crimson Lantern%s: At battle start, silence enemies for %.1fs: no skills and -30%% AS." % [cd, float(d.get("silence_duration", 3.0))]
+			return "Crimson Lantern%s: Silence enemies for %.1fs: no skills and -30%% AS." % [cd, float(d.get("silence_duration", 3.0))]
 		"none":
 			return "No active skill."
 		"lowest_ally_heal":
@@ -449,7 +449,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"true_damage_attack":
 			return "Holy Lance: Normal attacks deal bonus true damage equal to %s ATK." % pct(float(d.get("true_damage_pct", 0.18)))
 		"nearby_ally_heal_buff":
-			return "Halo Heal%s: Nearby allies heal %s max HP, gain +%s ATK and +%s AS, and are cleansed (up to %d stacks per ally); first cast after %.1fs." % [cd, pct(float(d.get("heal_pct", 0.15))), pct(float(d.get("atk_bonus", 0.10))), pct(float(d.get("aspd_bonus", 0.15))), BattleSimSkills.BLESS_MAX_STACKS, float(d.get("opening_cd", 0.0))]
+			return "Halo Heal%s: Nearby allies heal %s max HP, gain +%s ATK and +%s AS, and are cleansed (up to %d stacks per ally)." % [cd, pct(float(d.get("heal_pct", 0.15))), pct(float(d.get("atk_bonus", 0.10))), pct(float(d.get("aspd_bonus", 0.15))), BattleSimSkills.BLESS_MAX_STACKS]
 		"judgement_strike":
 			return "Judgement Strike%s: Deal %s ATK damage to the nearest enemy; each cast grants +%s DEF (up to %d stacks)." % [cd, pct(float(d.get("damage_atk_pct", 2.2))), pct(float(d.get("def_stack_pct", 0.06))), int(d.get("max_stacks", 5))]
 		"random_ally_damage_reduction":

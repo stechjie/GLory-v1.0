@@ -533,7 +533,7 @@ static func step_state(state: Dictionary) -> void:
 	# 神王裁决的后续段数属于技能伤害：在当帧无敌挂好之后结算，确保每段都读取
 	# 当时真实的护盾、无敌和防御；队列只保存施法时已经选中的目标，不重新选人。
 	BattleSimSkills.tick_pending_skill_damage(state)
-	_tick_opening_lanterns(state)
+	_tick_ready_lanterns(state)
 	_tick_skills(p_alive, e_alive, state)
 	_tick_skills(e_alive, p_alive, state)
 	_process_boss_charges(state)
@@ -1288,12 +1288,12 @@ static func _apply_opening_unit_skills(player: Array, enemy: Array, event_log: A
 			DamageService.begin_stat_context(state, f)
 			var d: Dictionary = f.get("def", {})
 			var sid := str(d.get("skill_id", ""))
-			if d.has("opening_cd"):
-				var open_cd := float(d.get("opening_cd", 0.0))
-				if open_cd > 0.0:
-					f.skill_ready = maxf(float(f.get("skill_ready", 0.0)), open_cd)
-			# 4 星天使：开场若干秒控制免疫。注意 opening_cd 是**开场冷却**，
-			# 与这个是两件事（设计文档里点名过原稿把两者混为一谈）。
+			# 11.16：主动技能开场先走满一次冷却（见 BattleSimShared.ACTIVE_SKILL_DEFAULT_CD）。
+			# 数据里残留的 opening_cd 不再读取。
+			var open_cd := opening_skill_cooldown(f)
+			if open_cd > 0.0:
+				f.skill_ready = maxf(float(f.get("skill_ready", 0.0)), open_cd)
+			# 4 星天使：开场若干秒控制免疫（与冷却无关的另一件事）。
 			var immune_sec := float(d.get("control_immune_sec", 0.0))
 			if immune_sec > 0.0:
 				StatusEffectService.add_status(f, "control_immune", immune_sec, {})
@@ -1334,16 +1334,20 @@ static func _apply_opening_unit_skills(player: Array, enemy: Array, event_log: A
 		event_log.append(TranslationServer.translate("log_deadpool_bind"))
 
 
-# Both opening Lantern casts choose their lanes and targets before either side
-# receives silence. Once committed, both casts complete in the opening phase.
-static func _tick_opening_lanterns(state: Dictionary) -> void:
-	if bool(state.get("lantern_opening_done", false)) or float(state.get("elapsed", 0.0)) > 0.0:
-		return
-	state["lantern_opening_done"] = true
+# 赤灯使双方同 tick 就绪时，先各自选好路和目标再一起结算，谁也不会被对方先沉默掉。
+# 11.16 起不再第 0 秒开场施放：和其它主动技能一样先走满冷却（开场 skill_ready = skill_cd），
+# 冷却一好就在这里结算；_tick_skills 看到 skill_ready 已后移，不会重复施放。
+# 若不这样做，_tick_skills 先跑我方再跑敌方，同冷却的两盏灯永远是我方先手、敌方被沉默。
+static func _tick_ready_lanterns(state: Dictionary) -> void:
+	var elapsed := float(state.get("elapsed", 0.0))
 	var opening: Array = []
 	for team_units in [state.get("player", []), state.get("enemy", [])]:
 		for caster: Dictionary in team_units:
 			if not bool(caster.get("alive", false)) or str(caster.get("def", {}).get("skill_id", "")) != "aoe_silence":
+				continue
+			if elapsed < float(caster.get("skill_ready", 0.0)):
+				continue
+			if StatusEffectService.has_status(caster, "silence") or StatusEffectService.is_stunned(caster) or StatusEffectService.has_status(caster, "fear"):
 				continue
 			var opponents: Array = state.get("enemy", []) if str(caster.get("team", "")) == "player" else state.get("player", [])
 			var targets := CrimsonCombat.lantern_targets(caster, opponents)
@@ -1402,7 +1406,7 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 		#
 		# 例外 skill_global：全场技不吃射程判定。法阵友军里的近战体型（噬兽、厄夜）
 		# 否则要贴到脸上才能放"全场"大招，多半没走到就死了。这批的开场时机改由
-		# opening_cd 把关，不会一到 0 秒就隔着半张地图开。
+		# 开场先走满冷却把关（11.16），不会一到 0 秒就隔着半张地图开。
 		if not bool(d.get("skill_global", false)) and not _skill_target_in_range(caster, opponents, bodies):
 			continue
 		var old_ready := float(caster.get("skill_ready", 0.0))
@@ -1510,12 +1514,13 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 8.0))
 			"gold_charge":
 				BattleSimSkills._skill_gold_charge(caster, opponents, d, state)
-				caster.skill_ready = float(state.elapsed) + 7.0
+				# 11.16 用户定统一 7 秒：mercenaries.json 同步改成 skill_cd 7.0，这里改读数据。
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 7.0))
 			"king_aura":
 				BattleSimSkills._skill_king_aura(caster, casters, d)
 				caster.skill_ready = float(state.elapsed) + 2.0
 			# 法阵友军。全场技在场上没有可打目标时返回 false，此时不进冷却，留到真正
-			# 有敌人时再放——一只只活十几秒的守护者，空放掉一发就等于没有这个技能。
+			# 有敌人时再放，空放掉一发冷却就白走了。
 			"burn_claw":
 				BattleSimSkills._skill_ally_self_sustain(caster, d)
 				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 5.0))
