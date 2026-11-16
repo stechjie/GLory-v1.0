@@ -325,7 +325,7 @@ func _row(message: Dictionary, max_width: float) -> Control:
 	row.add_theme_constant_override("separation", Tokens.GAP_S)
 
 	var avatar := TextureButton.new()
-	avatar.texture_normal = Catalog.texture_for(str(message.get("avatar", "")), true)
+	Catalog.set_avatar_texture(avatar, Catalog.texture_for(str(message.get("avatar", "")), true))
 	avatar.custom_minimum_size = Vector2(AVATAR_SIZE, AVATAR_SIZE)
 	avatar.ignore_texture_size = true
 	avatar.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED

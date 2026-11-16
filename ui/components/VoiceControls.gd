@@ -38,8 +38,8 @@ var _speaker_hold_started := -1
 var _speaker_hold_opened := false
 # 11.05 摆放界面：「队友 / 所有人」用用户出的两张图（盾牌+队友 / 地球），不写字。
 # 备战和战斗均传 options.scope_art 使用同套图片；大厅保留文字键。
-const SCOPE_TEAM_ART := "res://assets/ui/voice/voice_scope_team.png"
-const SCOPE_ALL_ART := "res://assets/ui/voice/voice_scope_all.png"
+const SCOPE_TEAM_ART := "res://ui/voice_buttons/scope_team.png"
+const SCOPE_ALL_ART := "res://ui/voice_buttons/scope_all.png"
 const SCOPE_ALL_COLOR := Color(1.0, 0.56, 0.20)        # 对手也听得到 = 橙色（跟文字聊天「发给：全部」同色系）
 var _scope_art := false
 var _scope_shown := -1                                 # 当前画的是哪张（0 队友 / 1 所有人），切换时才弹
@@ -144,18 +144,34 @@ func _set_icon(button: Button, key: String) -> void:
 		art = TextureRect.new()
 		art.name = "VoiceIcon"
 		art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		# 256px 的图缩到几十像素显示，要用 mipmap，不然发糊起颗粒
+		art.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		button.add_child(art)
 		art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		# Full plate is in the sprite; the original Button keeps its hit box.
-		art.offset_left = 0
-		art.offset_right = 0
-		art.offset_top = 0
-		art.offset_bottom = 0
+		button.resized.connect(_fit_art.bind(button, art, ATLAS_PLATE))
+	_fit_art(button, art, ATLAS_PLATE)
 	if art.get_meta("voice_icon", "") != key:
 		art.texture = VoiceButtonArt.texture_for(key)
 		art.set_meta("voice_icon", key)
+
+# 11.15 用户定：图标下面不写字，图标本身放大。
+# 把图往外撑到「金框 = 按钮短边 × ICON_SCALE」，点击范围还是按钮本身（图不吃点击）。
+# plate = 按钮占图画布的比例：现在六张图都几乎撑满画布（ui/voice_buttons/）。
+const ICON_SCALE := 1.12
+const ATLAS_PLATE := 1.0
+
+func _fit_art(button: Button, art: TextureRect, plate: float) -> void:
+	if not is_instance_valid(button) or not is_instance_valid(art):
+		return
+	var side := minf(button.size.x, button.size.y)
+	var grow := side * (ICON_SCALE / plate - 1.0) * 0.5
+	art.offset_left = -grow
+	art.offset_right = grow
+	art.offset_top = -grow
+	art.offset_bottom = grow
 
 func _on_speaker_pressed() -> void:
 	if _speaker_hold_opened:
@@ -333,10 +349,14 @@ func _refresh_scope_art() -> void:
 		art = TextureRect.new()
 		art.name = "ScopeIcon"
 		art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		# 256px 的图缩到几十像素显示，要用 mipmap，不然发糊起颗粒
+		art.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		members_button.add_child(art)
 		art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		members_button.resized.connect(_fit_art.bind(members_button, art, 1.0))
+	_fit_art(members_button, art, 1.0)
 	if key != _scope_shown:
 		art.texture = load(SCOPE_ALL_ART if all else SCOPE_TEAM_ART) as Texture2D
 		if _scope_shown != -1 and art.is_inside_tree():
@@ -344,23 +364,7 @@ func _refresh_scope_art() -> void:
 			art.scale = Vector2(0.7, 0.7)
 			art.create_tween().tween_property(art, "scale", Vector2.ONE, 0.28) 				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 		_scope_shown = key
-	# 框里下沿那条空白写字（11.05 用户定）：中文「队友 / 全队」，英文「Team / All」。
-	var caption := art.get_node_or_null("ScopeCaption") as Label
-	if caption == null:
-		caption = Label.new()
-		caption.name = "ScopeCaption"
-		caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		caption.add_theme_font_size_override("font_size", 12)
-		caption.add_theme_color_override("font_outline_color", Color(0.12, 0.05, 0.01))
-		caption.add_theme_constant_override("outline_size", 3)
-		art.add_child(caption)
-		caption.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		caption.anchor_top = 0.66
-		caption.anchor_bottom = 0.84
-	caption.text = _text("全队", "All") if all else _text("队友", "Team")
-	caption.add_theme_color_override("font_color", SCOPE_ALL_COLOR if all else Color(1.0, 0.94, 0.78))
+	# 11.15 用户定：图下面不再写「队友 / 全队」，两张图本身就能区分。
 	# 开局前全房间本来就互通、没得选：图压暗，点了弹说明（_on_audience_pressed）。
 	art.modulate = Color(1, 1, 1, 0.55) if lobby_room else Color.WHITE
 	if lobby_room:

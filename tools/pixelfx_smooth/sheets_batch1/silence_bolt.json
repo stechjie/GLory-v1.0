@@ -1,0 +1,24 @@
+{
+ "fx": "shadow/void-orb",
+ "columns": 4,
+ "rows": 4,
+ "frame_count": 16,
+ "fps": 15,
+ "duration": 1.067,
+ "cell_px": [
+  217,
+  216
+ ],
+ "cell_src_px": [
+  180.83,
+  180
+ ],
+ "pivot": [
+  0.4968,
+  0.9537
+ ],
+ "sheet_px": [
+  868,
+  864
+ ]
+}

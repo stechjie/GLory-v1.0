@@ -101,7 +101,7 @@ func _apply_mic_icon() -> void:
 	_button.icon = load(MIC_ON_ICON)
 	# 图标居中放大：默认图标跟着字体大小走，96px 的素材会缩成一小点。
 	_button.expand_icon = true
-	_button.add_theme_constant_override("icon_max_width", 40)
+	_button.add_theme_constant_override("icon_max_width", 28)
 	# 🔴 居中三件套（2026-10-14 用户截图反馈「麦克风不在框里居中」）：
 	#   Godot 的 Button 默认把图标与文字横排左对齐，且垂直也是 TOP —— 按钮被拉宽到
 	#   ICON_BUTTON_SIZE(132) 之后，图标就贴在左上角，右边和下面留一大片空白。

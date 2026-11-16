@@ -69,7 +69,10 @@ func _play_impact(at: Vector3, spec: Dictionary) -> void:
 	var impact := FLIPBOOK.new() as VFXSpriteFlipbook3D
 	impact.name = "OgaMeleeImpact"
 	add_child(impact)
-	impact.play_flipbook_advanced(at + vfx_toward_camera(0.025), texture, {
+	# impact_billboard：命中特效立起来朝镜头（如头顶眩晕星），配 impact_lift 抬到头顶；
+	# 默认仍是贴地平放的碎石/尘土，旧条目不受影响。
+	var impact_billboard := bool(spec.get("impact_billboard", false))
+	impact.play_flipbook_advanced(at + vfx_toward_camera(0.11 if impact_billboard else 0.025), texture, {
 		"columns":int(spec.get("impact_columns", 1)),
 		"rows":int(spec.get("impact_rows", 1)),
 		"frame_count":int(spec.get("impact_frames", 1)),
@@ -77,16 +80,17 @@ func _play_impact(at: Vector3, spec: Dictionary) -> void:
 		"random_start":false,
 		"speed_min":float(spec.get("impact_fps", 16.0)),
 		"speed_max":float(spec.get("impact_fps", 16.0)),
-		"billboard":false,
+		"billboard":impact_billboard,
 		"duration":float(spec.get("impact_duration", 0.40)),
 		"color":spec.get("impact_color", Color.WHITE),
 		"size":spec.get("impact_size", Vector2(0.76, 0.76)),
-		"position_offset":Vector3.ZERO,
+		"position_offset":Vector3(0.0, float(spec.get("impact_lift", 0.0)), 0.0),
 		"fade_in":0.02,
 		"fade_out":0.12,
 		"emission_scale":float(spec.get("impact_emission_scale", 0.58)),
 	})
-	impact.rotation.x = -PI * 0.5
+	if not impact_billboard:
+		impact.rotation.x = -PI * 0.5
 
 func _bind_target(node_value: Variant, target: Vector3) -> void:
 	_target_ref = null

@@ -16,7 +16,7 @@ const PLAYER_CHESS_UNITS: Array[String] = [
 
 const RANGED_UNIT_ORDER: Array[String] = [
 	"god_priest", "god_priestess", "god_angel", "god_archangel", "god_aurora",
-	"dark_mage", "dark_queen",
+	"dark_mage", "dark_queen", "dark_suc",
 	"human_archer", "human_cleric", "human_mage",
 	"undead_spike", "undead_mother",
 ]
@@ -37,6 +37,7 @@ const DISPLAY_NAMES := {
 	"god_aurora": "极光射手",
 	"dark_mage": "暗影法师",
 	"dark_queen": "痛苦女王",
+	"dark_suc": "魅魔",
 	"human_archer": "弓箭手",
 	"human_cleric": "牧师",
 	"human_mage": "法师",
@@ -100,6 +101,18 @@ const PROJECTILES := {
 		"trail_count":1, "trail_spacing":0.075, "trail_size_scale":0.58,
 		"trail_color":Color(0.20,0.08,0.42,0.28), "trail_emission_scale":0.20,
 		"impact_path":"res://assets/vfx/oga/skill_packs/cosmic_seal.png", "impact_columns":5, "impact_rows":1, "impact_frames":5, "impact_fps":15.0, "impact_size":Vector2(0.64,0.64), "impact_color":Color(0.68,0.40,0.96,0.90), "impact_emission_scale":0.66,
+	},
+	# 11.15：魅魔射程 3（远程），之前这里没有它，远程普攻一进 _basic_attack 就因为
+	# 「玩家棋子且没有弹道」直接 return —— 用户报「魅魔攻击没有弹道和特效」。
+	# 弹体 = 粉色心跳爱心（pixelfx pickups/heart-pickup 平滑版，正立不转），命中 = 粉白闪光 + 光环 + 星点
+	#（pickups/collect-burst）。和它的魅惑技能（头顶爱心）同一个意象。导出参数在 reports/succubus_bolt/jobs.json。
+	"dark_suc": {
+		"path":"res://assets/vfx/oga/projectiles/dark_suc_heart.png", "columns":4, "rows":4, "frame_count":15,
+		"fps":12.0, "size":Vector2(1.10,0.99), "speed":7.4, "arc_height":0.10, "wobble":0.030, "upright":true, "loop":true,
+		"emission_scale":0.40,
+		"trail_count":1, "trail_spacing":0.07, "trail_size_scale":0.55,
+		"trail_color":Color(1.0,0.45,0.75,0.30), "trail_emission_scale":0.20,
+		"impact_path":"res://assets/vfx/oga/impacts/dark_suc_hit.png", "impact_columns":4, "impact_rows":3, "impact_frames":12, "impact_fps":18.0, "impact_size":Vector2(1.00,1.07), "impact_emission_scale":0.55,
 	},
 	"dark_queen": {
 		"path":"res://assets/vfx/oga/projectiles/dark_queen_blood_thorn.png", "columns":5, "rows":1, "frame_count":5,

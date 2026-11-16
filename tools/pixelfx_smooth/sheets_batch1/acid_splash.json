@@ -1,0 +1,24 @@
+{
+ "fx": "nature/acid-splash",
+ "columns": 5,
+ "rows": 5,
+ "frame_count": 25,
+ "fps": 12,
+ "duration": 2.083,
+ "cell_px": [
+  223,
+  202
+ ],
+ "cell_src_px": [
+  148.67,
+  134.67
+ ],
+ "pivot": [
+  0.4978,
+  0.7376
+ ],
+ "sheet_px": [
+  1115,
+  1010
+ ]
+}

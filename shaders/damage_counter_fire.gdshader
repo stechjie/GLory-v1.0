@@ -1,9 +1,9 @@
 shader_type canvas_item;
 render_mode blend_add;
-// Horizontal anamorphic flare: concentrated white core, blue skirt, small ghosts.
+// Horizontal anamorphic flare: concentrated white core, warm gold skirt (11.15: was blue), small ghosts.
 // The same sweep drives the letter-face reflection in damage_counter_ink.
 uniform float tier=0.0;
-uniform vec4 flame_color:source_color=vec4(0.50,0.65,1.0,1.0);
+uniform vec4 flame_color:source_color=vec4(1.0,0.82,0.29,1.0);
 uniform float motion=1.0;
 uniform float simple=0.0;
 uniform float promotion=0.0;
@@ -30,7 +30,7 @@ void fragment(){
  float live=(core+crown+spine*0.75+skirt+halo+diagonal+ghost)*promotion+crest_core+crest_line;
  float rest=spot(UV-vec2(0.5,focus_y),vec2(0.44,0.006))*0.045*energy;
  float edge=(1.0-smoothstep(0.40,0.50,abs(UV.x-0.5)))*(1.0-smoothstep(0.38,0.50,abs(UV.y-0.5)));
- vec3 blue=mix(vec3(0.08,0.24,1.0),flame_color.rgb,0.15);
- vec3 hue=mix(blue,vec3(0.83,0.98,1.0),clamp(core*1.7+crown+crest_core*2.0,0.0,1.0));
+ vec3 blue=mix(vec3(1.0,0.52,0.10),flame_color.rgb,0.25);
+ vec3 hue=mix(blue,vec3(1.0,0.97,0.84),clamp(core*1.7+crown+crest_core*2.0,0.0,1.0));
  COLOR=vec4(hue,clamp(live+rest,0.0,1.0)*edge*mix(1.0,0.15,simple));
 }

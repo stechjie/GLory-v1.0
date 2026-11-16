@@ -119,7 +119,7 @@ func _make_cell(entry: Dictionary) -> Control:
 		button.add_theme_stylebox_override(state, box)
 	button.pressed.connect(func() -> void: picked.emit("preset:%s" % id))
 	var icon := TextureRect.new()
-	icon.texture = Catalog.texture_for("preset:%s" % id, true)
+	Catalog.set_avatar_texture(icon, Catalog.texture_for("preset:%s" % id, true))
 	if icon.texture == null:
 		# A thin checkout can lack external art; never equip a blank avatar.
 		button.disabled = true

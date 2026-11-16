@@ -209,6 +209,8 @@ static func unit_element_name(element: String) -> String:
 static func format_skill_detail(d: Dictionary) -> String:
 	if is_en():
 		return format_skill_detail_en(d)
+	if str(d.get("skill_id", "")) == "left_neighbor_sacrifice":
+		return format_skill_template_cn(d)
 	var approved := FinalStatusCatalog.unit_skill_cn(str(d.get("id", "")), int(d.get("star", 1)))
 	if not approved.is_empty():
 		return approved
@@ -240,7 +242,7 @@ static func format_skill_template_cn(d: Dictionary) -> String:
 		"line_pierce":
 			return "穿云：普攻穿透一线最多%d个敌人，伤害依次为攻击的100%%/%s/%s/%s。" % [int(d.get("pierce_targets", 4)), pct(1.0 - float(d.get("pierce_falloff", 0.20))), pct(1.0 - float(d.get("pierce_falloff", 0.20)) * 2.0), pct(1.0 - float(d.get("pierce_falloff", 0.20)) * 3.0)]
 		"aoe_silence":
-			return "赤灯禁言%s：开战立刻沉默敌人%.1f秒，期间无法释放技能、攻速-30%%。" % [cd, float(d.get("silence_duration", 3.0))]
+			return "赤灯禁言%s：冷却好后沉默敌人%.1f秒，期间无法释放技能、攻速-30%%。" % [cd, float(d.get("silence_duration", 3.0))]
 		"none":
 			return "无主动技能。"
 		"lowest_ally_heal":
@@ -252,7 +254,7 @@ static func format_skill_template_cn(d: Dictionary) -> String:
 		"true_damage_attack":
 			return "圣枪裁决：普通攻击额外造成自身攻击%s真实伤害。" % pct(float(d.get("true_damage_pct", 0.18)))
 		"nearby_ally_heal_buff":
-			return "光环治疗%s：周围友军回复%s最大生命、攻击+%s、攻速+%s，并清除负面状态（同一目标最多%d层）；开场冷却%.1f秒。" % [cd, pct(float(d.get("heal_pct", 0.15))), pct(float(d.get("atk_bonus", 0.10))), pct(float(d.get("aspd_bonus", 0.15))), BattleSimSkills.BLESS_MAX_STACKS, float(d.get("opening_cd", 0.0))]
+			return "光环治疗%s：周围友军回复%s最大生命、攻击+%s、攻速+%s，并清除负面状态（同一目标最多%d层）。" % [cd, pct(float(d.get("heal_pct", 0.15))), pct(float(d.get("atk_bonus", 0.10))), pct(float(d.get("aspd_bonus", 0.15))), BattleSimSkills.BLESS_MAX_STACKS]
 		"judgement_strike":
 			return "审判打击%s：对最近敌人造成攻击%s伤害，每次释放自身防御+%s（最多%d层）。" % [cd, pct(float(d.get("damage_atk_pct", 2.2))), pct(float(d.get("def_stack_pct", 0.06))), int(d.get("max_stacks", 5))]
 		"random_ally_damage_reduction":
@@ -342,8 +344,8 @@ static func format_skill_template_cn(d: Dictionary) -> String:
 			var ds_dur := float(d.get("ally_def_duration", 5.0))
 			var ds_pct := float(d.get("ally_def_pct", 0.0))
 			if ds_pct > 0.0:
-				return "死侍契约：周围友军防御+%s（%.1f秒）；开战绑定左右两侧棋子，先阵亡的那个由死侍替死并满血复活（仅一次）。" % [pct(ds_pct), ds_dur]
-			return "死侍契约：周围友军防御+%d（%.1f秒）；开战绑定左侧棋子，它首次阵亡时由死侍替死并满血复活。" % [int(d.get("ally_def_bonus", 3)), ds_dur]
+				return "死侍契约：周围友军防御+%s（%.1f秒）；开战绑定自己棋盘上的左右两侧棋子，先阵亡的那个由死侍替死并满血复活（仅一次）。" % [pct(ds_pct), ds_dur]
+			return "死侍契约：周围友军防御+%d（%.1f秒）；开战绑定自己棋盘上的左侧棋子，它首次阵亡时由死侍替死并满血复活。" % [int(d.get("ally_def_bonus", 3)), ds_dur]
 		"unique_king_growth":
 			# 9.14：1~3 星成长 ×1.2、上限 5 层；4 星 ×1.3、上限 8 层。两者都写进文案，
 			# 数值全部读 def（apply_star_stats 会把 star4 的 0.3 / 8 覆盖上来）。
@@ -367,7 +369,7 @@ static func format_skill_template_cn(d: Dictionary) -> String:
 		"king_aura":
 			return "王者光环：每2秒强化周围友军，攻速+%s、暴击+%s，持续2.2秒。" % [pct(float(d.get("ally_aspd_bonus", 0.25))), pct(float(d.get("ally_crit_bonus", 0.15)))]
 		"arrow_rain":
-			return "箭雨%s：攻击最近%d名敌人，每个目标受到自身攻击85%%伤害。" % [cd, int(d.get("targets", 5))]
+			return "箭雨%s：攻击最近%d名敌人，每个目标受到自身攻击%s伤害。" % [cd, int(d.get("targets", 5)), pct(float(d.get("damage_atk_pct", 0.70)))]
 		"blood_rampage":
 			return "血怒：每损失%s最大生命，攻速+%s、吸血+%s、伤害+3%%。" % [pct(float(d.get("hp_step", 0.10))), pct(float(d.get("aspd_per_step", 0.10))), pct(float(d.get("lifesteal_per_step", 0.05)))]
 		"steel_order":
@@ -435,7 +437,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"line_pierce":
 			return "Skypierce: Basics pierce up to %d enemies in a line for 100%%/%s/%s/%s ATK damage." % [int(d.get("pierce_targets", 4)), pct(1.0 - float(d.get("pierce_falloff", 0.20))), pct(1.0 - float(d.get("pierce_falloff", 0.20)) * 2.0), pct(1.0 - float(d.get("pierce_falloff", 0.20)) * 3.0)]
 		"aoe_silence":
-			return "Crimson Lantern%s: At battle start, silence enemies for %.1fs: no skills and -30%% AS." % [cd, float(d.get("silence_duration", 3.0))]
+			return "Crimson Lantern%s: Silence enemies for %.1fs: no skills and -30%% AS." % [cd, float(d.get("silence_duration", 3.0))]
 		"none":
 			return "No active skill."
 		"lowest_ally_heal":
@@ -447,7 +449,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"true_damage_attack":
 			return "Holy Lance: Normal attacks deal bonus true damage equal to %s ATK." % pct(float(d.get("true_damage_pct", 0.18)))
 		"nearby_ally_heal_buff":
-			return "Halo Heal%s: Nearby allies heal %s max HP, gain +%s ATK and +%s AS, and are cleansed (up to %d stacks per ally); first cast after %.1fs." % [cd, pct(float(d.get("heal_pct", 0.15))), pct(float(d.get("atk_bonus", 0.10))), pct(float(d.get("aspd_bonus", 0.15))), BattleSimSkills.BLESS_MAX_STACKS, float(d.get("opening_cd", 0.0))]
+			return "Halo Heal%s: Nearby allies heal %s max HP, gain +%s ATK and +%s AS, and are cleansed (up to %d stacks per ally)." % [cd, pct(float(d.get("heal_pct", 0.15))), pct(float(d.get("atk_bonus", 0.10))), pct(float(d.get("aspd_bonus", 0.15))), BattleSimSkills.BLESS_MAX_STACKS]
 		"judgement_strike":
 			return "Judgement Strike%s: Deal %s ATK damage to the nearest enemy; each cast grants +%s DEF (up to %d stacks)." % [cd, pct(float(d.get("damage_atk_pct", 2.2))), pct(float(d.get("def_stack_pct", 0.06))), int(d.get("max_stacks", 5))]
 		"random_ally_damage_reduction":
@@ -529,8 +531,8 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 			var ds_dur := float(d.get("ally_def_duration", 5.0))
 			var ds_pct := float(d.get("ally_def_pct", 0.0))
 			if ds_pct > 0.0:
-				return "Death Pact: Nearby allies gain +%s DEF (%.1fs). At battle start, bind both neighbours; whichever dies first is revived at full HP as this unit dies in its place (once)." % [pct(ds_pct), ds_dur]
-			return "Death Pact: Nearby allies gain +%d DEF (%.1fs). At battle start, bind the left neighbour; when it first dies, this unit dies in its place and revives it at full HP." % [int(d.get("ally_def_bonus", 3)), ds_dur]
+				return "Death Pact: Nearby allies gain +%s DEF (%.1fs). At battle start, bind both neighbours on your own board; whichever dies first is revived at full HP as this unit dies in its place (once)." % [pct(ds_pct), ds_dur]
+			return "Death Pact: Nearby allies gain +%d DEF (%.1fs). At battle start, bind the left neighbour on your own board; when it first dies, this unit dies in its place and revives it at full HP." % [int(d.get("ally_def_bonus", 3)), ds_dur]
 		"unique_king_growth":
 			var king_growth := float(d.get("post_battle_all_stat_growth", 0.20))
 			var king_cap := int(d.get("max_stacks", 5))
@@ -550,7 +552,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"king_aura":
 			return "King's Aura: Every 2s, buff nearby allies — AS +%s, Crit +%s for 2.2s." % [pct(float(d.get("ally_aspd_bonus", 0.25))), pct(float(d.get("ally_crit_bonus", 0.15)))]
 		"arrow_rain":
-			return "Arrow Rain%s: Strike the nearest %d enemies, each taking 85%% ATK damage." % [cd, int(d.get("targets", 5))]
+			return "Arrow Rain%s: Strike the nearest %d enemies, each taking %s ATK damage." % [cd, int(d.get("targets", 5)), pct(float(d.get("damage_atk_pct", 0.70)))]
 		"blood_rampage":
 			return "Blood Rage: For every %s max HP lost, gain +%s AS, +%s lifesteal and +3%% damage." % [pct(float(d.get("hp_step", 0.10))), pct(float(d.get("aspd_per_step", 0.10))), pct(float(d.get("lifesteal_per_step", 0.05)))]
 		"steel_order":

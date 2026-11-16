@@ -2981,6 +2981,11 @@ func _show_final_settlement() -> void:
 	# 10.10 bug 第 9 条：排位结算面板的「返回队伍」。
 	panel.return_party_requested.connect(_return_to_party_room)
 	add_child(panel)
+	# 11.16：整局最终结算的详情页按输赢放结算音乐（只在这里放；对局历史里回看详情
+	# 走的是 MatchHistoryPanel 自己的弹窗，不经过这里，所以不会响）。
+	# 输赢口径与「胜利 / 失败」大字页同一处：_game_over_kind()。平局按失败那首。
+	var result_music := MusicService.RESULT_VICTORY_MUSIC if _game_over_kind() == "win" else MusicService.RESULT_DEFEAT_MUSIC
+	MusicService.play(result_music)
 
 
 # 10.10 bug 第 9 条：排位对局结束 → 结算面板「返回队伍」→ 回到排位之前的队伍房间。
@@ -3888,6 +3893,10 @@ func _on_team_room_list_received(rooms: Array) -> void:
 			_menu.show_room_list(rooms)
 
 func _on_team_room_action_failed(reason: String) -> void:
+	if reason == "no_empty_seat" and NetworkService.spectating:
+		var english := LocaleManager.get_locale().begins_with("en")
+		preload("res://ui/components/GloryToast.gd").show_text(NetworkService.custom_room_error_text(reason, english))
+		return
 	if reason == "spectate_full" and _in_room_lobby:
 		preload("res://ui/components/GloryToast.gd").show_text("The number of spectators is full" if LocaleManager.get_locale() == "en" else "观战人数已满")
 		return

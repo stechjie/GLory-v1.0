@@ -175,7 +175,7 @@ func _header() -> Control:
 	# 右上角刷新：图标键（原来是一颗写着「刷新」的深色按钮）
 	var refresh := Kit.image_button("icon_refresh", func() -> void: await _reload(true), 56.0)
 	refresh.name = "Refresh"
-	refresh.tooltip_text = _text("刷新", "Refresh")
+	refresh.accessibility_name = _text("刷新", "Refresh")
 	return Kit.header(_text("好友", "Friends"), func() -> void: back_requested.emit(), refresh)
 
 
@@ -410,7 +410,7 @@ func _friend_row(entry: Dictionary) -> Control:
 
 	var more := ACTION_BUTTON.instantiate() as Button
 	more.text = "⋯"
-	more.tooltip_text = _text("更多操作", "More actions")
+	more.accessibility_name = _text("更多操作", "More actions")
 	more.custom_minimum_size = Vector2(56, Tokens.TOUCH_MIN)
 	_style_quiet_button(more)
 	row.add_child(more)
@@ -432,7 +432,7 @@ func _avatar_stage(entry: Dictionary, code: String) -> Control:
 	var stage := Control.new()
 	stage.custom_minimum_size = Vector2(82, 82)
 	var avatar := TextureRect.new()
-	avatar.texture = Catalog.texture_for(str(entry.get("avatar", "")), true)
+	Catalog.set_avatar_texture(avatar, Catalog.texture_for(str(entry.get("avatar", "")), true))
 	avatar.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	avatar.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -448,7 +448,7 @@ func _avatar_stage(entry: Dictionary, code: String) -> Control:
 	var frame_texture: Texture2D = DEFAULT_FRAME_TEX if frame_id == "frame_default" else Catalog.frame_texture_for(frame_value, false)
 	if frame_texture != null:
 		var frame := TextureRect.new()
-		frame.texture = frame_texture
+		Catalog.set_frame_texture(frame, frame_texture)
 		frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -457,7 +457,7 @@ func _avatar_stage(entry: Dictionary, code: String) -> Control:
 		stage.add_child(frame)
 	var hit := ACTION_BUTTON.instantiate() as Button
 	hit.text = ""
-	hit.tooltip_text = _text("查看资料", "View profile")
+	hit.accessibility_name = _text("查看资料", "View profile")
 	hit.custom_minimum_size = Vector2.ZERO
 	hit.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var clear := Tokens.flat_box(Color.TRANSPARENT, Color.TRANSPARENT, 0)

@@ -154,7 +154,7 @@ func _build() -> void:
 	_stone_page.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	# 右上角圆形关闭键
 	_close_button = _image_button("button_close", Vector2(58, 61))
-	_close_button.tooltip_text = _t("关闭", "Close")
+	_close_button.accessibility_name = _t("关闭", "Close")
 	_close_button.pressed.connect(_close)
 	root.add_child(_close_button)
 	_close_button.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
@@ -780,7 +780,7 @@ func _four_star_card(candidate: Dictionary) -> Control:
 	var gold_row := HBoxContainer.new()
 	gold_row.add_theme_constant_override("separation", 6)
 	gold_row.add_child(_icon(Card.art("icon_gold_stack"), Vector2(32, 30)))
-	var gold_text := _text(_t("金币：%d", "Gold: %d") % CarrotEconomy.four_star_gold(int(unit_def.get("tier", 0))), 18, true, 800)
+	var gold_text := _text(_t("金币：%d", "Gold: %d") % GameState.four_star_cost(unit_def), 18, true, 800)
 	if not ready and str(check.get("error", "")) == "not_enough_gold":
 		gold_text.add_theme_color_override("font_color", WARN)
 	gold_row.add_child(gold_text)

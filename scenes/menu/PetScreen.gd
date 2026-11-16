@@ -1,4 +1,6 @@
 extends Control
+
+const MusicService := preload("res://ui/services/MusicService.gd")
 # 备战界面。从主菜单「备战」按钮进入，三个页签：
 #   - 宠物：展示所有宠物（拥有的可「设为出战」，未拥有置灰）。
 #   - 种族：选定出战种族（RacePick），对局里自己的商店只刷这几族的棋子。
@@ -174,6 +176,8 @@ func _ready() -> void:
 	PlayerProfile.refresh_races()
 	PlayerProfile.refresh_prep_skin()
 	_load_unit_ownership()
+	# 11.16：备战界面（主菜单「备战」按钮进入）独立 BGM。返回主菜单时由 MainMenu 接回。
+	MusicService.play(MusicService.PREP_LOBBY_MUSIC, true)
 
 func _on_resized() -> void:
 	if _cards_row != null:

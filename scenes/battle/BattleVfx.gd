@@ -15,6 +15,8 @@ const _CRIMSON_ADAPTER := preload("res://effects/runtime/presentation/adapters/L
 const _HIT_FEEDBACK := preload("res://effects/runtime/presentation/BattleHitFeedback.gd")
 const _DEATH_FEEDBACK := preload("res://effects/runtime/presentation/BattleDeathFeedback.gd")
 const _DEATH_SHATTER := preload("res://effects/vfx3d/modules/VFXDeathShatter3D.gd")
+# 棋盘皮肤：清场时按皮肤的 refresh_fx 再扫一遍整条路（只读配置，不 load 贴图）。
+const _PREP_SKIN := preload("res://scenes/prep/PrepSkin.gd")
 
 var _vfx_prev_units: Dictionary = {}
 var _vfx_seeded: bool = false
@@ -2300,7 +2302,7 @@ const SET_OTHER_STRENGTH := 0.75
 const SET_EXECUTE_MARK_COLOR := Color(1.0, 0.30, 0.22)
 const SET_EXECUTE_FLASH_COLOR := Color(0.70, 0.04, 0.02)
 const SET_HP_BG_COLOR := Color(0.05, 0.05, 0.05)
-# 血条几何（BattleRenderer._make_unit_node）：HpBg 在 x5、宽 72；HpFill 从 x8 起、宽 66。
+# 血条几何（BattleRenderer._add_health_bar）：HpBg 在 x5、宽 72、高 11；HpFill 从 x8 起、宽 66。
 const SET_HP_FILL_X_IN_BG := 3.0
 const SET_HP_FILL_WIDTH := 66.0
 const SET_DODGE_STEP := 0.12
@@ -2470,7 +2472,7 @@ func _update_treasure_set_presentation() -> void:
 				mark.name = "ExecuteMark"
 				mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
 				mark.color = SET_EXECUTE_MARK_COLOR
-				mark.size = Vector2(2.0, 13.0)
+				mark.size = Vector2(2.0, 15.0)
 				mark.z_index = 2
 				bg.add_child(mark)
 			var hp_max_width := float(bg.get_meta("hp_max_width")) if bg.has_meta("hp_max_width") else SET_HP_FILL_WIDTH
@@ -2844,9 +2846,30 @@ func _spawn_lane_clear_feedback(actor: Node3D) -> void:
 		return
 	var visual_min := _battle_visual_min()
 	var visual_max := _battle_visual_max()
-	var band := BattleSimShared.lane_band_x(lane)
+	# 11.14：第 21 回合战场打横，三路是上中下三条横带（BattleSimulator._apply_final_round_left_right_layout），
+	# 本路范围要按横带算；以前一直按竖条算，光波 / 光幕 / 字幕都框错了地方。
+	var final_round := _battlefield_kind() == "final"
+	var lane_min: Vector2
+	var lane_max: Vector2
+	# 皮肤扫光的起点 / 终点（模拟坐标）：从我方这头扫到敌方那头，跟 PlayerLaneWave 判「我方在哪头」同一套。
+	var sweep_from_sim: Vector2
+	var sweep_to_sim: Vector2
+	if final_round:
+		var lane_h := BattleSimShared.FINAL_ARENA_H / 3.0
+		lane_min = Vector2(visual_min.x, maxf(visual_min.y, lane * lane_h))
+		lane_max = Vector2(visual_max.x, minf(visual_max.y, (lane + 1) * lane_h))
+		var mid_y := (lane_min.y + lane_max.y) * 0.5
+		sweep_from_sim = Vector2(lane_max.x if _color_flip else lane_min.x, mid_y)
+		sweep_to_sim = Vector2(lane_min.x if _color_flip else lane_max.x, mid_y)
+	else:
+		var band := BattleSimShared.lane_band_x(lane)
+		lane_min = Vector2(band.x, visual_min.y)
+		lane_max = Vector2(band.y, visual_max.y)
+		var mid_x := (band.x + band.y) * 0.5
+		sweep_from_sim = Vector2(mid_x, lane_min.y if _color_flip else lane_max.y)
+		sweep_to_sim = Vector2(mid_x, lane_max.y if _color_flip else lane_min.y)
 	var corners: Array[Vector3] = []
-	for sim in [Vector2(band.x, visual_min.y), Vector2(band.y, visual_min.y), Vector2(band.x, visual_max.y), Vector2(band.y, visual_max.y)]:
+	for sim in [lane_min, Vector2(lane_max.x, lane_min.y), Vector2(lane_min.x, lane_max.y), lane_max]:
 		corners.append(_sim_to_world_pos(sim))
 	var a := _battle_3d_vfx_root.to_local(corners[0])
 	var b := _battle_3d_vfx_root.to_local(corners[3])
@@ -2858,7 +2881,10 @@ func _spawn_lane_clear_feedback(actor: Node3D) -> void:
 	var lane_center := screen_rect.get_center()
 	_lane_clear_pivot = lane_center
 	var caption_point := Vector2(lane_center.x, screen_rect.position.y + screen_rect.size.y * LANE_CLEAR_CAPTION_FROM_TOP)
-	feedback.call("show_lane_clear", _arena.get_global_transform() * caption_point)
+	if final_round:
+		# 横路：字幕压在本路那条横带的上沿（固定在棋盘顶会让下路清场也显示在最上面）。
+		caption_point = Vector2(lane_center.x, screen_rect.position.y)
+	feedback.call("show_lane_clear", _arena.get_global_transform() * caption_point, final_round)
 	var cheer_points: Array = []
 	for model in _lane_clear_cheer_actors(lane):
 		cheer_points.append(_battle_3d_vfx_root.to_local(model.global_position))
@@ -2866,7 +2892,11 @@ func _spawn_lane_clear_feedback(actor: Node3D) -> void:
 	var block := VFXBlockRoot.spawn_block(preload("res://effects/vfx3d/modules/VFXLaneClearBurst3D.gd"), _battle_3d_vfx_root, true)
 	if block != null:
 		_death_tail_blocks.append(weakref(block))
-		block.call("play_clear", _battle_3d_vfx_root.to_local(actor.global_position), bounds, cheer_points)
+		block.call("play_clear", _battle_3d_vfx_root.to_local(actor.global_position), bounds, cheer_points, {
+			"from": _battle_3d_vfx_root.to_local(_sim_to_world_pos(sweep_from_sim)),
+			"to": _battle_3d_vfx_root.to_local(_sim_to_world_pos(sweep_to_sim)),
+			"kind": _PREP_SKIN.refresh_fx(),
+		})
 
 
 # 我方在本地那一路还活着的棋子（含队友借位的友军不算 —— 本路只有自己的棋子）。

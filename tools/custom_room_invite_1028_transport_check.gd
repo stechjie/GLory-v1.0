@@ -1,6 +1,7 @@
 extends Node
 const Keys = preload("res://tools/battle_card_test_keys.gd")
 const SS = preload("res://scripts/multiplayer/SpectatorService.gd")
+const LobbyScene := preload("res://scenes/menu/Team3v3Lobby.tscn")
 const PORT := 19944
 const ACCOUNT := "11111111-1111-1111-1111-111111111111"
 class MainProbe extends "res://scenes/main/Main.gd":
@@ -70,8 +71,12 @@ func prepare() -> void:
 		NetworkService._broadcast_room_lobby(old)
 	else:
 		NetworkService._spectate_join(peer_id,int(old.id),Keys.sign(key,Keys.card(ACCOUNT)))
-		old.state = "prep" if step==4 else ("result" if step==6 else "battle")
+		if step < 7:
+			old.state = "prep" if step==4 else ("result" if step==6 else "battle")
 		NetworkService._broadcast_room_lobby(old)
+		if step == 8:
+			# 占用右下角且先不广播，模拟观战者点击尚显示为空的座位。
+			old.slot_states[5] = "dummy"
 	original=old.duplicate(true)
 	target=NetworkService._new_room()
 	target.slot_states[3]="player" # Authoritative host fixture; the joining client is independent.
@@ -86,6 +91,9 @@ func prepare() -> void:
 func begin(index: int,old_id: int,target_id: int,signed_card: String) -> void:
 	step=index
 	card=signed_card
+	if step >= 7:
+		await select_spectator_seat(5 if step == 7 else 0)
+		return
 	var before_nav:=main.navigation
 	var before_menu:=main.menus
 	var before_peer=multiplayer.multiplayer_peer
@@ -106,12 +114,42 @@ func begin(index: int,old_id: int,target_id: int,signed_card: String) -> void:
 		valid=valid and NetworkService.spectating==(step>=3)
 		if step<3:valid=valid and bool(NetworkService.team_ready[NetworkService.team_local_slot])
 	report.rpc_id(1,valid,NetworkService.team_room_id,NetworkService.spectating)
+
+func select_spectator_seat(expected_slot: int) -> void:
+	const SELECTED_SLOT := 5
+	var lobby := LobbyScene.instantiate()
+	add_child(lobby)
+	await get_tree().process_frame
+	var label: Label = lobby.get("_slot_status_lbls")[SELECTED_SLOT]
+	var position := label.get_global_rect().get_center()
+	for pressed in [true, false]:
+		var event := InputEventMouseButton.new()
+		event.button_index = MOUSE_BUTTON_LEFT
+		event.position = position
+		event.global_position = position
+		event.pressed = pressed
+		get_viewport().push_input(event, true)
+	var deadline := Time.get_ticks_msec() + 4000
+	while NetworkService.spectating and Time.get_ticks_msec() < deadline:
+		await get_tree().create_timer(0.025).timeout
+	var seated := NetworkService.team_local_slot == expected_slot
+	report.rpc_id(1, seated, NetworkService.team_room_id, NetworkService.spectating)
+	lobby.queue_free()
+
+
 @rpc("any_peer","call_remote","reliable")
 func report(client_ok: bool,room_id: int,observer: bool) -> void:
 	if not server_role:return
 	var success:=step in [2,5,6]
 	var valid:=client_ok
-	if success:
+	if step >= 7:
+		valid = valid and room_id == int(old.id) and not observer
+		if step == 7:
+			valid = valid and old.peer_slot.get(peer_id) == 5 and old.slot_states[0] == "empty"
+		else:
+			valid = valid and old.peer_slot.get(peer_id) == 0 and old.slot_states[5] == "dummy"
+		valid = valid and SS.sid_of_peer(old, peer_id) < 0
+	elif success:
 		valid=valid and int(room_id)==int(target.id)
 		valid=valid and not (old.peer_slot as Dictionary).has(peer_id) and SS.sid_of_peer(old,peer_id)<0
 		if observer:valid=valid and int(NetworkService._peer_spectate.get(peer_id,0))==int(target.id) and not NetworkService._peer_room.has(peer_id)
@@ -128,7 +166,7 @@ func report(client_ok: bool,room_id: int,observer: bool) -> void:
 		get_tree().quit(1)
 		return
 	step+=1
-	if step<7:
+	if step<9:
 		prepare()
 		return
 	print("INVITE_TRANSPORT_RESULT PASS cases=",reports.size()," actual_auth=true actual_signed_cards=true")

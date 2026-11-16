@@ -67,6 +67,7 @@ var card_frames: Array[Control] = []  # 原 _shop_card_frames；11.04 起是代�
 var card_labels: Array[Label] = []     # 原 _shop_card_labels
 var price_labels: Array[Label] = []    # 原 _shop_price_labels
 var race_icons: Array[Control] = []    # 原 _shop_race_icons
+var role_tags: Array[Label] = []       # 11.15：种族徽章下面的「近战 / 远程」牌子
 var reason_labels: Array[Label] = []   # 原 _shop_reason_labels
 
 # --- 状态 ---------------------------------------------------------------------
@@ -88,6 +89,7 @@ func clear_slot_arrays() -> void:
 	card_labels.clear()
 	price_labels.clear()
 	race_icons.clear()
+	role_tags.clear()
 	reason_labels.clear()
 	_card_press_ms.clear()
 
@@ -180,8 +182,15 @@ const SHOP_CARD_SIZE := Vector2(180, 180)    # 手牌卡尺寸（稀有度框比
 # 两次点击间隔超过它就不算双击，退回「两次独立单击」（各自只切换选中态）。
 const SHOP_DOUBLE_CLICK_WINDOW_MS := 350
 const UNIT_PORTRAIT_DIR := "res://assets/ui/unit_portraits"   # 头像 = <dir>/<unit_id>.png
-# 卡框（11.04 起代码画，替代 assets/ui/shop/card_frame_*.png 三张石框）：
-# 按 tier 分 T1 单线 / T2 双线蓝 / T3 金框，带近战远程章、升星提示。见 ShopCardFrame。
+# 卡框（11.15 起贴图 ui/shop_card/frame_t1~3.png）：T1 灰石 / T2 蓝 / T3 金，稀有和史诗的铭牌带能量流动，
+# 带阶数星、大金币、升星提示。见 ShopCardFrame。卡面上的元素位置都按卡框贴图量出来（内窗、铭牌、金币）。
+# 名字颜色跟铭牌底色走：灰石深棕字、蓝底白字深蓝描边、金底深棕字浅色描边。
+const PLATE_TEXT := {
+	1: [Color("3c2c1e"), Color(0, 0, 0, 0)],
+	2: [Color("f5faff"), Color("183060")],
+	3: [Color("5c3208"), Color("fff0c4")],
+}
+const ROLE_TAG_COLORS := {false: Color("c45c34"), true: Color("468048")}   # 近战红 / 远程绿
 const ShopCardFrameScript := preload("res://scenes/prep/panels/ShopCardFrame.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const PrepScrollIdleFlipbookScript = preload("res://scenes/prep/effects/PrepScrollIdleFlipbook.gd")
@@ -508,10 +517,10 @@ func build_hand_cards(body: HBoxContainer, center_host: Control) -> void:
 		portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-		portrait.anchor_left = 0.09
-		portrait.anchor_top = 0.07
-		portrait.anchor_right = 0.91
-		portrait.anchor_bottom = 0.80
+		portrait.anchor_left = 0.065
+		portrait.anchor_top = 0.088
+		portrait.anchor_right = 0.936
+		portrait.anchor_bottom = 0.823
 		slot.add_child(portrait)
 		portraits.append(portrait)
 
@@ -523,29 +532,42 @@ func build_hand_cards(body: HBoxContainer, center_host: Control) -> void:
 		slot.add_child(card_frame)
 		card_frames.append(card_frame)
 
-		# 左上角种族 logo（复用详情弹窗的静态 logo 控件）：只画符号、不要圆章外框，
-		# 直接压在卡的左上角上（不往里缩）；下面是近战远程章
+		# 左上角种族徽章（11.15 用户要求突出）：整枚带木圈的圆章，约卡宽 40%，往上伸出卡顶；
+		# 左右不出卡边——四张卡间距只有十几像素，往左伸会盖住上一张卡的金币
 		var race_icon: Control = PrepShopRaceIcon.new()
-		race_icon.set("glyph_only", true)
-		race_icon.anchor_left = -0.035
-		race_icon.anchor_top = -0.035
-		race_icon.anchor_right = 0.235
-		race_icon.anchor_bottom = 0.235
+		race_icon.anchor_left = -0.01
+		race_icon.anchor_top = -0.17
+		race_icon.anchor_right = 0.39
+		race_icon.anchor_bottom = 0.23
 		race_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		slot.add_child(race_icon)
 		race_icons.append(race_icon)
 
-		# 右上角价格：写在框画的金币上（金币直接压在右上角；亮金色，用深棕字不加描边）
+		# 徽章正下方的近战 / 远程牌子：深棕描边 + 红（近战）/ 绿（远程）底 + 奶油字
+		var role_tag := Label.new()
+		role_tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		role_tag.anchor_left = 0.05
+		role_tag.anchor_top = 0.225
+		role_tag.anchor_right = 0.33
+		role_tag.anchor_bottom = 0.345
+		role_tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		role_tag.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		role_tag.add_theme_font_size_override("font_size", 15)
+		role_tag.add_theme_color_override("font_color", Color("faeed2"))
+		slot.add_child(role_tag)
+		role_tags.append(role_tag)
+
+		# 右上角价格：写在框画的大金币圈里（11.15 用户要求数字在圈内）
 		var price_label := Label.new()
 		price_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		price_label.anchor_left = 0.81
-		price_label.anchor_top = 0.0
-		price_label.anchor_right = 1.0
-		price_label.anchor_bottom = 0.19
+		price_label.anchor_top = -0.08
+		price_label.anchor_right = 1.05
+		price_label.anchor_bottom = 0.16
 		price_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		price_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		price_label.add_theme_font_override("font", GOLD_NUMBER_FONT)
-		price_label.add_theme_font_size_override("font_size", 19)
+		price_label.add_theme_font_size_override("font_size", 22)
 		price_label.add_theme_color_override("font_color", Color(0.28, 0.16, 0.02))
 		price_label.add_theme_color_override("font_outline_color", Color(1.0, 0.77, 0.20, 0.55))
 		price_label.add_theme_constant_override("outline_size", 1)
@@ -555,10 +577,10 @@ func build_hand_cards(body: HBoxContainer, center_host: Control) -> void:
 		# 底部铭牌：棋子名字（切英文时自动显示英文名）
 		var name_label := Label.new()
 		name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		name_label.anchor_left = 0.12
-		name_label.anchor_top = 0.80
-		name_label.anchor_right = 0.88
-		name_label.anchor_bottom = 0.93
+		name_label.anchor_left = 0.14
+		name_label.anchor_top = 0.85
+		name_label.anchor_right = 0.86
+		name_label.anchor_bottom = 0.965
 		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		name_label.clip_text = true
@@ -643,6 +665,7 @@ func refresh() -> void:
 		var name_label := card_labels[i]
 		var price_label := price_labels[i]
 		var race_icon := race_icons[i]
+		var role_tag := role_tags[i]
 		var reason_label := reason_labels[i]
 		var offer: Dictionary = GameState.shop_offers[i]
 		if offer.is_empty():
@@ -656,6 +679,7 @@ func refresh() -> void:
 			name_label.text = tr("ui_empty_slot")
 			price_label.text = ""
 			race_icon.visible = false
+			role_tag.visible = false
 			_set_purchase_reason(reason_label, tr("ui_no_item"))
 			btn.modulate = Color.WHITE
 			continue
@@ -669,8 +693,14 @@ func refresh() -> void:
 		portrait.texture = PrepWidgets.cached_texture("%s/%s.png" % [UNIT_PORTRAIT_DIR, str(offer.get("id", ""))])
 		portrait.visible = portrait.texture != null
 		card_frame.visible = true
-		card_frame.call("configure", int(offer.get("tier", 1)), ShopCardFrameScript.is_ranged(offer), not sold and _would_star_up(offer))
+		var offer_tier := clampi(int(offer.get("tier", 1)), 1, 3)
+		var offer_ranged := ShopCardFrameScript.is_ranged(offer)
+		card_frame.call("configure", offer_tier, offer_ranged, not sold and _would_star_up(offer))
 		name_label.text = unit_name
+		_style_plate_name(name_label, offer_tier)
+		role_tag.visible = true
+		role_tag.text = tr("ui_role_ranged") if offer_ranged else tr("ui_role_melee")
+		_style_role_tag(role_tag, offer_ranged)
 		price_label.text = str(cost)   # 金币由框画在右上角，这里只写数字
 		race_icon.visible = true
 		race_icon.call("set_race", str(offer.get("race", "")))
@@ -680,13 +710,51 @@ func refresh() -> void:
 		btn.modulate = Color(0.52, 0.64, 0.72, 0.92) if purchase_reason.is_empty() and i == selected else Color.WHITE
 
 
+# 名字颜色跟铭牌底色（PLATE_TEXT）；普通卡灰石底不加描边。
+func _style_plate_name(label: Label, tier: int) -> void:
+	var pair: Array = PLATE_TEXT[tier]
+	label.add_theme_color_override("font_color", pair[0])
+	label.add_theme_color_override("font_outline_color", pair[1])
+	label.add_theme_constant_override("outline_size", 0 if (pair[1] as Color).a <= 0.0 else 4)
+
+
+# 近战 / 远程牌子底色。StyleBox 按射程缓存两份，所有卡共用。
+var _role_tag_styles := {}
+func _style_role_tag(tag: Label, ranged: bool) -> void:
+	if not _role_tag_styles.has(ranged):
+		var box := StyleBoxFlat.new()
+		box.bg_color = ROLE_TAG_COLORS[ranged]
+		box.border_color = Color("3a2418")
+		box.set_border_width_all(2)
+		box.set_corner_radius_all(9)
+		box.content_margin_left = 4
+		box.content_margin_right = 4
+		_role_tag_styles[ranged] = box
+	tag.add_theme_stylebox_override("normal", _role_tag_styles[ranged])
+
+
 # 买下这张会不会立刻合成升星。和真正买入时的自动摆放（PrepBoardController._auto_dispatch_shop_card
 # 的第 ①② 步）用同一个判据 PrepRules.first_merge_target：棋盘或待命区有同名同星、未满星的那一枚。
 func _would_star_up(offer: Dictionary) -> bool:
 	if offer.is_empty() or GameState.tutorial_mode:
 		return false
 	var incoming := {"id": str(offer.get("id", "")), "star": int(offer.get("star", 1))}
-	return PrepRules.first_merge_target(GameState.board_slots, incoming) >= 0 		or PrepRules.first_merge_target(GameState.bench_slots, incoming) >= 0
+	if PrepRules.first_merge_target(GameState.board_slots, incoming) >= 0 			or PrepRules.first_merge_target(GameState.bench_slots, incoming) >= 0:
+		return true
+	# 11.15 用户要求：手上已经有这个棋子的 2 星（或更高、还没满星）时也亮绿光 ——
+	# 这张买下来不会立刻合成，但它是凑下一星要的那一份（2 星升 3 星要三份）。
+	return _owns_upgradable(str(incoming.id))
+
+
+func _owns_upgradable(unit_id: String) -> bool:
+	for slots in [GameState.board_slots, GameState.bench_slots]:
+		for cell in slots:
+			if typeof(cell) != TYPE_DICTIONARY:
+				continue
+			var d: Dictionary = cell
+			if str(d.get("id", "")) == unit_id and int(d.get("star", 1)) < GameState.MAX_MERGE_STAR:
+				return true
+	return false
 
 
 func _star_up_flags() -> Array:

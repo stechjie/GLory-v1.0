@@ -1,35 +1,23 @@
 extends RefCounted
 
-# One lazy-loaded atlas keeps the existing dedicated-server resource contract.
-# The four plates are offset within their atlas quadrants. Normalize their
-# visible frames while keeping the original 627px canvas and button hit boxes.
-const ATLAS_PATH := "res://assets/ui/voice/voice_controls_lowpoly.png"
-static var _atlas: Texture2D
+# 麦克风 / 扬声器四张按钮图。11.15 第三轮：用户要「和原来的 logo 一样、画风跟游戏一样」，
+# 用 ChatGPT 照旧图标 + 备战界面截图重画（羊皮纸底、金木框、两角叶子），符号和开关含义不变。
+# 每张 256px，按钮几乎撑满画布（约 98%）。队友 / 全队两张（scope_team / scope_all）在同一目录，由 VoiceControls 直接 load。
+# 运行时 load()：战斗服务器包不带导入过的贴图，不能 preload。
+# 原图和切图脚本在 reports/art_unify_20261115/round3/voice_gpt/（cut_sheet.py）。旧的金属图集还在 assets/ui/voice/。
+const ART_DIR := "res://ui/voice_buttons/"
+const KEYS := ["mic_on", "mic_off", "speaker_on", "speaker_off"]
 static var _icons := {}
 
 static func texture_for(key: String) -> Texture2D:
 	if _icons.has(key):
 		return _icons[key]
-	if _atlas == null:
-		_atlas = load("res://assets/ui/voice/voice_controls_lowpoly.png") as Texture2D
-	if _atlas == null:
+	if not KEYS.has(key):
 		return null
-	var origin: Vector2
-	match key:
-		"mic_on": origin = Vector2(84, 76)
-		"mic_off": origin = Vector2(654, 76)
-		"speaker_on": origin = Vector2(84, 654)
-		"speaker_off": origin = Vector2(654, 654)
-		_: return null
-	var sprite := AtlasTexture.new()
-	sprite.atlas = _atlas
-	# Each 512px region contains the whole gold frame. Equal transparent margins
-	# center it on the old 627px canvas without enlarging the visible button.
-	sprite.region = Rect2(origin, Vector2(512, 512))
-	sprite.margin = Rect2(Vector2(57.5, 57.5), Vector2(115, 115))
-	sprite.filter_clip = true
-	_icons[key] = sprite
-	return sprite
+	var texture := load(ART_DIR + key + ".png") as Texture2D
+	if texture != null:
+		_icons[key] = texture
+	return texture
 
 static func use_art_as_button_background(button: Button) -> void:
 	# The art already has its own frame; keep the Button's original hit region.

@@ -139,9 +139,9 @@ func _run() -> void:
 
 	# 圆盘素材 == 「默认框」的素材：这是「与大厅保持一致」的**唯一依据**。
 	# 素材一改名/一挪窝，席位画的就不再是默认框那张图 —— 这条会先红。
-	h.expect(AvatarCatalog.frame_source_path("frame_default") == "res://assets/ui/main_menu_live/profile_avatar.png",
+	h.expect(AvatarCatalog.frame_source_path("frame_default") == "res://assets/ui/shop/headframes/frame_default.png",
 		"disc_is_default_frame",
-		"席位用的圆盘不再是 frame_default 的素材，席位与大厅的默认框已经不是同一个东西")
+		"frame_default 不再是那张空心默认框（11.16 起默认框与商城框同一条路、画在头像上面）")
 
 	# ── 形状：框与圆盘都必须**保持长宽比**（10.02 二轮报的「变成椭圆」）────
 	# 五张商城框素材实测 W/H = 0.773~0.889（都是竖长），金棕圆盘 850x825 也不是方的。
@@ -158,13 +158,13 @@ func _run() -> void:
 	#   ① 框画在头像下面（A3 的 frame_below_avatar）
 	#   ② 内孔 ≤ 头像（A3 的 hole_not_larger_than_avatar）
 	#   ③ 反推出来的盒与素材同比例（下面的 drawn_box_matches_art）
+	# ★ 11.16 用户要求反过来：框一律画在头像**上面**（内圈压住头像边缘）。
 	h.expect(menu._profile_frame_overlay.get_index()
-			< menu._profile_portrait.get_parent().get_index(),
-		"lobby_frame_below_portrait",
-		"大厅资料卡的头像框画在头像**上面**了（框 idx=%d ≥ 头像 idx=%d）—— 席位跟着它学"
+			> menu._profile_portrait.get_parent().get_index(),
+		"lobby_frame_above_portrait",
+		"大厅资料卡的头像框没画在头像上面（框 idx=%d ≤ 头像 idx=%d）—— 用户 11.16 要求框在前"
 			% [menu._profile_frame_overlay.get_index(),
-				menu._profile_portrait.get_parent().get_index()]
-		+ "就会把头像边缘切掉，戴不同框头像就不一样大")
+				menu._profile_portrait.get_parent().get_index()])
 	var want_frame_mode: int = menu._profile_frame_art.stretch_mode
 	var want_base_mode: int = menu._profile_base_frame.stretch_mode
 	h.expect(want_frame_mode != TextureRect.STRETCH_SCALE
@@ -209,17 +209,19 @@ func _run() -> void:
 	h.expect(worst_drawn_aspect < 0.01, "drawn_box_matches_art",
 		"按内孔反推出来的绘制盒与素材宽高比不一致（最大偏差 %.4f）⇒ 会被压成椭圆"
 			% worst_drawn_aspect)
-	h.expect(worst_box_gap > 0.1, "non_square_frames_exist",
-		"框素材最大的「离方图」偏差只有 %.4f —— 全是方图的话「盒贴素材比例」与「拉满方盒」"
-			% worst_box_gap + "画出来一样，上面那条判据会失去判别力")
+	# 11.15 起头像框全换成方图，这条判别力前提不再成立：只记一笔，不再判红。
+	# 以后再出现非方素材，上面的 drawn_box_matches_art 会重新有判别力。
+	h.note("框素材最大的「离方图」偏差 %.4f（全是方图时 drawn_box_matches_art 无判别力）"
+		% worst_box_gap)
 
 	# ── A1 玩家席：没自定义框（席位 0，房主） ─────────────────────────────
 	h.expect(not lobby._slot_bases[0].visible, "player0_base_hidden",
 		"玩家席位仍露着头像框后面的座位木环（需求：不再保留）")
-	h.expect(lobby._slot_frame_bases[0].visible, "player0_disc",
-		"玩家没戴自定义框时没画大厅那套金棕圆盘")
-	h.expect(not lobby._slot_frames[0].visible, "player0_no_frame",
-		"玩家没戴自定义框时不该画头像框")
+	# ★ 11.16：旧金棕圆盘不再出现，默认框也是一张空心框、画在头像上面。
+	h.expect(not lobby._slot_frame_bases[0].visible, "player0_no_disc",
+		"玩家戴默认框时还画了旧的金棕圆盘")
+	h.expect(lobby._slot_frames[0].visible, "player0_default_frame",
+		"玩家戴默认框时没画默认头像框")
 	h.expect(lobby._slot_plates[0].visible, "player0_plate",
 		"玩家席位的「房主」铭牌没补上（底图已隐藏，不补就没底）")
 	h.expect(lobby._slot_avatars[0].visible, "player0_avatar",
@@ -265,11 +267,10 @@ func _run() -> void:
 	#
 	# ①+② 合起来 ⇒ 头像的可见像素与戴哪个框**逐像素无关**。这是结构性证明，
 	# 不是「调一调数值碰运气」——渲染量测（`其他/work/_qa_1002c/`）只在佐证它。
-	h.expect(lobby._slot_frames[1].get_index() < lobby._slot_avatars[1].get_index(),
-		"frame_below_avatar",
-		"头像框画在头像**上面**了（框 idx=%d ≥ 头像 idx=%d）—— 它的圆内孔会吃掉头像边缘，"
-			% [lobby._slot_frames[1].get_index(), lobby._slot_avatars[1].get_index()]
-		+ "戴上不同框头像就会不一样大")
+	h.expect(lobby._slot_frames[1].get_index() > lobby._slot_avatars[1].get_index(),
+		"frame_above_avatar",
+		"头像框没画在头像上面（框 idx=%d ≤ 头像 idx=%d）—— 用户 11.16 要求框在前"
+			% [lobby._slot_frames[1].get_index(), lobby._slot_avatars[1].get_index()])
 	h.expect(hole_target <= LobbyScript.SLOT_AVATAR_SIZE.x + 0.001, "hole_not_larger_than_avatar",
 		"目标内孔 %.1f 大于头像 %.1f —— 头像外面会露出背景缝"
 			% [hole_target, LobbyScript.SLOT_AVATAR_SIZE.x])
@@ -375,8 +376,8 @@ func _run() -> void:
 				% [i, lobby._slot_avatars[i].size, want_size])
 	AccountManager.profile = _profile_with_frame("preset:frame_default")
 	lobby._refresh()
-	h.expect(lobby._slot_frame_bases[0].visible and not lobby._slot_frames[0].visible,
-		"switch_back_default", "换回默认框后：圆盘应亮起、头像框应熄灭")
+	h.expect(not lobby._slot_frame_bases[0].visible and lobby._slot_frames[0].visible,
+		"switch_back_default", "换回默认框后：应画默认头像框、旧圆盘保持熄灭")
 	h.expect(lobby._slot_avatars[0].size.is_equal_approx(LobbyScript.SLOT_AVATAR_SIZE * s),
 		"switch_back_size", "换回默认框后头像尺寸不是 %.0f —— 头像尺寸不该随框变"
 			% LobbyScript.SLOT_AVATAR_SIZE.x)
@@ -387,8 +388,9 @@ func _run() -> void:
 	# 空串（没登录 / 老数据没有这个字段）也必须走「默认框」这一支。
 	AccountManager.profile = _profile_with_frame("")
 	lobby._refresh()
-	h.expect(lobby._slot_frame_bases[0].visible and not lobby._slot_bases[0].visible,
-		"empty_frame_value", "avatar_frame 为空串时应按默认框画圆盘（与大厅一致）")
+	h.expect(lobby._slot_frames[0].visible and not lobby._slot_bases[0].visible
+		and not lobby._slot_frame_bases[0].visible,
+		"empty_frame_value", "avatar_frame 为空串时应按默认框画（与大厅一致）")
 
 	# ── B 空位 / 假想敌：逐项与改动前一致 ────────────────────────────────
 	for i in [2, 3, 5]:
@@ -518,8 +520,8 @@ func _check_party_lobby(h) -> void:
 		"party_frame_origin_from_id",
 		"席位框落点 %s != 内孔圆心压在头像圆心的落点 %s"
 			% [frame.position, AvatarCatalog.frame_box_origin(frame_id, hole, disc_center)])
-	h.expect(frame.get_index() < mask.get_index(), "party_frame_below_avatar",
-		"排位房头像框画在头像**上面**了（框 idx=%d ≥ 头像 idx=%d）—— 圆内孔会吃掉头像边缘"
+	h.expect(frame.get_index() > mask.get_index(), "party_frame_above_avatar",
+		"排位房头像框没画在头像上面（框 idx=%d ≤ 头像 idx=%d）—— 用户 11.16 要求框在前"
 			% [frame.get_index(), mask.get_index()])
 	# 判别力：原始值（未归一化）必须算不出尺寸 —— 否则上面那条
 	# `party_frame_drawn_from_id` 就算没归一化也会绿，判据等于空的。

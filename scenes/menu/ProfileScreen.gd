@@ -388,7 +388,7 @@ func _identity_card() -> Control:
 		avatar_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		avatar_btn.focus_mode = Control.FOCUS_NONE
 		avatar_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		avatar_btn.tooltip_text = _text("换头像", "Change avatar")
+		avatar_btn.accessibility_name = _text("换头像", "Change avatar")
 		var clear_box := Tokens.flat_box(Color.TRANSPARENT, Color.TRANSPARENT, 0)
 		for state in ["normal", "hover", "pressed", "hover_pressed", "disabled", "focus"]:
 			avatar_btn.add_theme_stylebox_override(state, clear_box)
@@ -426,7 +426,7 @@ func _identity_card() -> Control:
 	if _mode == Mode.SELF:
 		var frame_button: Button = ACTION_BUTTON.instantiate()
 		frame_button.text = _text("更换头像框", "Change frame")
-		frame_button.custom_minimum_size = Vector2(150, Tokens.TOUCH_MIN)
+		frame_button.custom_minimum_size = Vector2(176 if _is_en() else 150, Tokens.TOUCH_MIN)
 		frame_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		frame_button.pressed.connect(_open_frame_picker)
 		column.add_child(frame_button)
@@ -691,10 +691,10 @@ func _friend_request_button() -> Control:
 # 信誉分更是只给自己看（docs/排位系统设计.md 第四节：公开等于发一个新的骂人理由）。
 func _record_block() -> Control:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(66, 40, 66, 26)))
+	panel.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(66, 56, 66, 34)))
 	panel.custom_minimum_size = Vector2(780, 400)
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", Tokens.GAP_M)
+	column.add_theme_constant_override("separation", Tokens.GAP_S + 4)
 	panel.add_child(column)
 	var heading := HBoxContainer.new()
 	column.add_child(heading)
@@ -771,7 +771,7 @@ func _record_block() -> Control:
 
 	var open := ACTION_BUTTON.instantiate() as Button
 	open.text = _text("查看最近对局", "Recent Matches")
-	open.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+	open.custom_minimum_size = Vector2(192 if _is_en() else 0, Tokens.TOUCH_MIN)
 	open.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	open.pressed.connect(_open_match_history)
 	column.add_child(open)
@@ -1422,7 +1422,7 @@ func _refresh() -> void:
 	var code := _field("friend_code")
 	# 唯一的显示名拼法。见文件顶部第 3 条。
 	_name_label.text = AccountManager.display_name(name_text, code)
-	_avatar_rect.texture = Catalog.texture_for(_field("avatar"))
+	Catalog.set_avatar_texture(_avatar_rect, Catalog.texture_for(_field("avatar")))
 	# 头像框：**默认框也是框**（10.02 反馈：资料页选默认框时整块没有头像框）。
 	#
 	# 改动前这里是
@@ -1473,7 +1473,7 @@ func _place_avatar_frame(frame_id: String) -> void:
 	if frame_id.is_empty():
 		_frame_rect.visible = false
 		return
-	_frame_rect.texture = _profile_frame_texture(frame_id, _field("avatar_frame"))
+	Catalog.set_frame_texture(_frame_rect, _profile_frame_texture(frame_id, _field("avatar_frame")))
 	# 目标内孔直径 = 头像直径（内孔 ≤ 头像，否则头像外会露一圈背景缝）。
 	var target_hole := _disc_diameter
 	var drawn := Catalog.frame_drawn_size(frame_id, target_hole)

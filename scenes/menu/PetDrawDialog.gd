@@ -8,6 +8,9 @@ const PetPreview := preload("res://scripts/pets/PetPreview.gd")
 const PetDrawReveal := preload("res://scenes/menu/PetDrawReveal.gd")
 const PetSummonFx := preload("res://scenes/menu/PetSummonFx.gd")
 const SfxService := preload("res://ui/services/SfxService.gd")
+const MusicService := preload("res://ui/services/MusicService.gd")
+# 打开弹窗前在放的那首（关窗时接回去）。
+var _music_before := ""
 const FOREST := preload("res://assets/ui/page_backgrounds/pets_courtyard.png")
 # 11.11 重做成「宠物蛋孵化」：草窝上一颗蛋，召唤时蛋晃、出裂纹，结果到了破壳发光再弹出结果框。
 # 动画纯表现，奖励只看服务器回执（同原来的能量球）。羊皮纸部件见 ui/theme/ParchmentKit.gd。
@@ -49,6 +52,12 @@ func _ready() -> void:
 	_build()
 	_fit_canvas()
 	_load_state()
+	# 11.16：抽宠物独立 BGM；关掉弹窗接回底下那页的歌、原来的位置。
+	_music_before = MusicService.enter_overlay(MusicService.PET_DRAW_MUSIC)
+
+
+func _exit_tree() -> void:
+	MusicService.leave_overlay(MusicService.PET_DRAW_MUSIC, _music_before)
 
 
 func _notification(what: int) -> void:
@@ -107,35 +116,22 @@ func _build() -> void:
 	_rect(_summon, 650, 486, 300, 72)
 	_summon.pressed.connect(_begin_draw)
 	_canvas.add_child(_summon)
-	var pets_plate := _plate(_canvas, 80, 169, 355, 37, Tokens.SUMMON_TITLE_PLATE)
-	var pets_heading := _label(_t("召唤伙伴 · 点击查看技能", "Companions · tap for skills"), 16)
-	pets_heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	pets_heading.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	pets_heading.add_theme_color_override("font_color", Kit.INK)
-	pets_heading.add_theme_constant_override("outline_size", 0)
-	_rect(pets_heading, 28, 4, 299, 31)
-	pets_plate.add_child(pets_heading)
+	_plate(_canvas, Rect2(80, 159, 355, 44),
+		_t("召唤伙伴 · 点击查看技能", "Companions · tap for skills"), 16)
 	_pet_card("pet_squirrel", 80, 210)
 	_pet_card("pet_tiger", 80, 391)
-	var energy_plate := _plate(_canvas, 1205, 180, 245, 40, Tokens.SUMMON_TITLE_PLATE)
-	var energy_title := _label(_t("森林能量", "Forest energy"), 19)
-	energy_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	energy_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	energy_title.add_theme_color_override("font_color", Kit.INK)
-	energy_title.add_theme_constant_override("outline_size", 0)
-	_rect(energy_title, 18, 4, 209, 34)
-	energy_plate.add_child(energy_title)
+	_plate(_canvas, Rect2(1205, 176, 245, 44), _t("森林能量", "Forest energy"), 17)
 	_energy_label = _label("", 18)
 	_energy_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_rect(_energy_label, 1220, 558, 320, 40)
 	_canvas.add_child(_energy_label)
 	_rules = PanelContainer.new()
-	_rules.add_theme_stylebox_override("panel", Kit.box("card", Vector4(44, 25, 44, 23)))
-	_rect(_rules, 461, 567, 678, 130)
+	_rules.add_theme_stylebox_override("panel", Kit.box("card", Vector4(44, 32, 44, 25)))
+	_rect(_rules, 461, 567, 678, 135)
 	_canvas.add_child(_rules)
 	var rule_text := _label(_t(
 		"规则  ·  每抽消耗 75 钻石，普通抽中宠物概率 10%，第 10 抽必得未拥有宠物。\n未中宠物获得 100 金币；提前抽中继续积累能量，保底命中才清零。",
-		"Rules · 75 gems per draw. 10% pet chance; draw 10 guarantees an unowned pet.\nNo pet: 100 coins. Early pets keep energy; only the guarantee resets it."), 17)
+		"Rules · 75 gems per draw. 10% pet chance; draw 10 guarantees an unowned pet.\nNo pet: 100 coins. Early pets keep energy; only the guarantee resets it."), 16)
 	rule_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	rule_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	rule_text.add_theme_color_override("font_color", Tokens.SUMMON_DETAIL_INK)
@@ -143,7 +139,8 @@ func _build() -> void:
 	_rules.add_child(rule_text)
 	_notice = _label(_t("正在读取奖池…", "Loading summon pool…"), 17)
 	_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_rect(_notice, 540, 440, 520, 40)
+	_notice.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_rect(_notice, 520, 461, 560, 25)
 	_canvas.add_child(_notice)
 	_retry = _button(_t("重试读取", "Retry loading"), Vector2(170, 50))
 	_rect(_retry, 965, 497, 170, 50)
@@ -157,29 +154,16 @@ func _pet_card(pet_id: String, x: float, y: float) -> void:
 	var card := _button("", Vector2(260, 170))
 	card.name = "Card_%s" % pet_id
 	_rect(card, x, y, 260, 170)
-	card.tooltip_text = _t("点击查看宠物介绍", "Tap for pet details")
+	card.accessibility_name = _t("查看%s介绍", "View %s details") % PetService.display_name(pet_id)
 	card.pressed.connect(_show_pet_info.bind(pet_id))
 	_canvas.add_child(card)
 	var art := PetPreview.build_illustration(pet_id, Vector2(210, 125))
 	_rect(art, 25, 2, 210, 125)
 	card.add_child(art)
-	var name_plate := _plate(card, 4, 130, 252, 35, Tokens.SUMMON_NAME_PLATE)
-	var name := _label(_t("松鼠", "Squirrel") if pet_id == "pet_squirrel" else
-		_t("老虎", "Tiger"), 18)
-	name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	name.add_theme_color_override("font_color", Tokens.SUMMON_DETAIL_INK)
-	name.add_theme_constant_override("outline_size", 0)
-	_rect(name, 20, 4, 212, 29)
-	name_plate.add_child(name)
-	var owned_plate := _plate(card, 8, 8, 96, 32, Tokens.SUMMON_TITLE_PLATE)
-	var owned := _label(_t("已拥有", "Owned"), 18)
-	owned.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	owned.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	owned.add_theme_color_override("font_color", Kit.INK)
-	owned.add_theme_constant_override("outline_size", 0)
-	_rect(owned, 12, 3, 72, 27)
-	owned_plate.add_child(owned)
+	_plate(card, Rect2(7, 123, 246, 42), PetService.display_name(pet_id), 17)
+	var owned_plate := Kit.gold_badge(_t("已拥有", "Owned"))
+	owned_plate.position = Vector2(14, 19)
+	card.add_child(owned_plate)
 	_portraits[pet_id] = {"art": art, "owned": owned_plate, "button": card}
 
 
@@ -471,13 +455,18 @@ func _rect(node: Control, x: float, y: float, w: float, h: float) -> void:
 	node.size = Vector2(w, h)
 
 
-func _plate(parent: Control, x: float, y: float, w: float, h: float, fill: Color) -> Panel:
-	var plate := Panel.new()
-	plate.add_theme_stylebox_override("panel", Kit.box("plate", Vector4.ZERO))
+func _plate(parent: Control, bounds: Rect2, text: String, font_size: int) -> void:
+	var plate := PanelContainer.new()
+	plate.add_theme_stylebox_override("panel", Kit.box("plate", Vector4(28, 12, 28, 8)))
 	plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_rect(plate, x, y, w, h)
+	var caption := _label(text, font_size)
+	caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	caption.add_theme_color_override("font_color", Kit.INK)
+	caption.add_theme_constant_override("outline_size", 0)
+	plate.add_child(caption)
+	_rect(plate, bounds.position.x, bounds.position.y, bounds.size.x, bounds.size.y)
 	parent.add_child(plate)
-	return plate
 
 
 func _label(value: String, font_size: int) -> Label:

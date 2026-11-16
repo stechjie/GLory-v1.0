@@ -1,0 +1,24 @@
+{
+ "fx": "arcane/arcane-orb",
+ "columns": 4,
+ "rows": 4,
+ "frame_count": 16,
+ "fps": 15,
+ "duration": 1.067,
+ "cell_px": [
+  187,
+  179
+ ],
+ "cell_src_px": [
+  124.67,
+  119.33
+ ],
+ "pivot": [
+  0.4973,
+  0.9497
+ ],
+ "sheet_px": [
+  748,
+  716
+ ]
+}

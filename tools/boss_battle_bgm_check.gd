@@ -41,9 +41,10 @@ const BattleUIScript := preload("res://scenes/battle/BattleUI.gd")
 
 const CHECK_NAME := "boss_battle_bgm"
 
-const PREP_MUSIC := "res://assets/audio/bgm/prep_music.mp3"
-const PVE_BATTLE_MUSIC := "res://assets/audio/bgm/fighting_music.mp3"
-const PVP_BATTLE_MUSIC := "res://assets/audio/bgm/pvp_battle_music.mp3"
+# 11.16 换新音乐：备战那首取摆放界面组的第一首当夹具；PvE 战斗是两首随机的一组，
+# 断言改成「当前曲目在 PvE 组里」。
+const PREP_MUSIC := "res://assets/audio/bgm/placement_1.mp3"
+const PVP_BATTLE_MUSIC := "res://assets/audio/bgm/battle_pvp.mp3"
 
 const BATTLE_UI_SRC := "res://scenes/battle/BattleUI.gd"
 const BATTLE_SCREEN_SRC := "res://scenes/battle/BattleScreen.gd"
@@ -110,7 +111,7 @@ func _case_non_boss_unaffected() -> void:
 	_h.expect(not ui._boss_intro_pending, "pve_deferred_music",
 		"pve 回合也被推迟了战斗 BGM（_boss_intro_pending 被置起）—— "
 			+ "只有 boss 回合才该等登场音")
-	_h.expect(MusicService.current_path() == PVE_BATTLE_MUSIC, "pve_battle_music_not_started",
+	_h.expect(MusicService.current_path() in MusicService.BATTLE_PVE_GROUP, "pve_battle_music_not_started",
 		"pve 回合 _start_battle_music() 之后当前曲目是 %s（应为 pve 战斗 BGM）—— "
 			% MusicService.current_path() + "非 boss 回合不该有任何等待")
 	_free_ui(ui)
@@ -166,17 +167,17 @@ func _case_boss_timeline() -> void:
 	_h.expect(_resolve_done, "pending_never_resolved",
 		"等了 %.1f 秒 _resolve_pending_battle_music() 都没收口 —— "
 			% waited + "boss 回合整场没有战斗 BGM")
-	_h.expect(MusicService.current_path() == PVE_BATTLE_MUSIC, "boss_battle_music_not_started",
+	_h.expect(MusicService.current_path() in MusicService.BATTLE_PVE_GROUP, "boss_battle_music_not_started",
 		"登场音结束后当前曲目是 %s（应为 pve 战斗 BGM）—— "
 			% MusicService.current_path() + "boss 回合同样要走 pve 那首")
 	_h.expect(not ui._boss_intro_pending, "boss_pending_not_cleared",
 		"_resolve_pending_battle_music() 走完之后 _boss_intro_pending 仍然是 true")
 
 	# 路径选择若漂移（boss 回合被算成 pvp），上面那条会红在这里更直白。
-	_h.expect(ui._battle_music_path() == PVE_BATTLE_MUSIC, "boss_uses_pvp_music",
-		"boss 回合的 _battle_music_path() 是 %s，应该是 pve 那首 %s"
-			% [ui._battle_music_path(), PVE_BATTLE_MUSIC])
-	_h.expect(ui._battle_music_path() != PVP_BATTLE_MUSIC, "boss_music_path_collision",
+	_h.expect(ui._battle_music_group() == MusicService.BATTLE_PVE_GROUP, "boss_uses_pvp_music",
+		"boss 回合的 _battle_music_group() 是 %s，应该是 pve 那组 %s"
+			% [str(ui._battle_music_group()), str(MusicService.BATTLE_PVE_GROUP)])
+	_h.expect(not (PVP_BATTLE_MUSIC in ui._battle_music_group()), "boss_music_path_collision",
 		"boss 回合取到了 pvp 战斗 BGM —— 两首的判据分不开了")
 
 	_free_ui(ui)

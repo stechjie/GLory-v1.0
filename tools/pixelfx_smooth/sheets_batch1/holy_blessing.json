@@ -1,0 +1,24 @@
+{
+ "fx": "holy/blessing",
+ "columns": 9,
+ "rows": 3,
+ "frame_count": 25,
+ "fps": 15,
+ "duration": 1.667,
+ "cell_px": [
+  133,
+  347
+ ],
+ "cell_src_px": [
+  66.5,
+  173.5
+ ],
+ "pivot": [
+  0.4962,
+  0.7666
+ ],
+ "sheet_px": [
+  1197,
+  1041
+ ]
+}

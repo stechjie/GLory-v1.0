@@ -13,6 +13,10 @@ const SLOT_POS := [
 	Vector2(447, 539), Vector2(739, 539), Vector2(1015, 539),
 ]
 const SLOT_SIZE := Vector2(184, 175)
+# slot.png 的内圈中心位于素材的 (197, 159)，换算到席位区域。
+const EMPTY_SLOT_CENTER := Vector2(197.0 / 400.0, 159.0 / 376.0) * SLOT_SIZE
+const SLOT_STATUS_SIZE := Vector2(122, 42)
+const EMPTY_SLOT_STATUS_POS := EMPTY_SLOT_CENTER - SLOT_STATUS_SIZE * 0.5
 # 10.01 反馈（第 4 条）：座位框换成玩家在大厅佩戴的头像框。
 #
 # 同一席位里的层次（后加的子节点在上面）：
@@ -148,7 +152,7 @@ func _online_friend_row(entry: Dictionary) -> Control:
 	row.add_theme_constant_override("separation", 6)
 	var avatar := TextureRect.new()
 	avatar.custom_minimum_size = Vector2(36, 36)
-	avatar.texture = AvatarCatalog.texture_for(str(entry.get("avatar", AvatarCatalog.default_avatar())), true)
+	AvatarCatalog.set_avatar_texture(avatar, AvatarCatalog.texture_for(str(entry.get("avatar", AvatarCatalog.default_avatar())), true))
 	avatar.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	avatar.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -384,11 +388,14 @@ const TEX_FRIENDS := preload("res://assets/ui/room_parchment/friends.png")
 const TEX_CHAT := preload("res://assets/ui/room_parchment/chat.png")
 const TEX_START := preload("res://assets/ui/room_parchment/start.png")
 const TEX_VS := preload("res://assets/ui/room_parchment/vs.png")
-const MENU_MUSIC_PATH := "res://assets/audio/bgm/menu_music.mp3"
+const MENU_MUSIC_PATH := "res://assets/audio/bgm/menu_1.mp3"
 # 9.17：组队房间此前和主菜单共用 menu_music，这一批给了它独立的 BGM。
 # 两条常量分开而不是让房间读主菜单那条 —— 房间是「等队友」的场景，
 # 气氛和大厅本就不同，共用一个常量会让以后想分开时改错地方。
-const TEAM_ROOM_MUSIC_PATH := "res://assets/audio/bgm/team_room_music.mp3"
+#
+# 11.16：用户要求自定义 3v3 房间改回和主菜单同一组（MusicService.MENU_GROUP），
+# 从主菜单进房间、房间回主菜单都不换歌、不从头。旧常量名保留给外部引用。
+const TEAM_ROOM_MUSIC_PATH := "res://assets/audio/bgm/menu_1.mp3"
 const SELFTEST_SCENE_PATH := "res://officetest/OfficeTestScreen.tscn"
 
 # 开始按钮「不可开始」时的常暗色调（10.07 第 1 条）。可在亮态(1,1,1,1)与暗态间对比。
@@ -549,7 +556,8 @@ func _process(delta: float) -> void:
 func _start_menu_music() -> void:
 	# 9.17 第二批：改走常驻 MusicService（播放器挂 root，不随页面释放）。
 	# 「同一首不重启」由服务内部判等负责。
-	MusicService.play(TEAM_ROOM_MUSIC_PATH)
+	# 11.16：与主菜单共用主界面 1~3 那一组。
+	MusicService.play_group(MusicService.MENU_GROUP, true)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED:
@@ -758,7 +766,7 @@ func _build_slot(index: int) -> void:
 	# 差几像素就吃掉几像素（三轮渲染实测：大厅 -0.8% ~ -4.1%），于是「戴哪个框」直接
 	# 改变了头像的可见大小。放到头像下面之后，**头像的可见像素在任何框下都逐像素
 	# 相同**，这才是「和默认框一样大」的结构性保证，而不是靠把内孔调准去碰运气。
-	move_child(frame, avatar.get_index())
+	# ★ 11.16 用户要求框在头像**上面**：不再 move_child，框按添加顺序盖在头像之上。
 	# 铭牌复本：玩家席位一律显示（判定见 _apply_slot_frame）。底下 slot.png 里本来就
 	# 画着这块六边形木牌，但玩家席位的底图整块被隐藏了，不再补一份「房主 / 准备 /
 	# 未准备」就没了底 —— 10.02 反馈明确要求保留这块铭牌。
@@ -775,7 +783,7 @@ func _build_slot(index: int) -> void:
 	var name_pos := Vector2(pos.x - 10, pos.y - 46) if index < 3 else Vector2(pos.x - 10, pos.y + SLOT_SIZE.y + 4)
 	_slot_name_lbls[index] = _add_label("", name_pos, Vector2(SLOT_SIZE.x + 20, 36), 28,
 		Tokens.TEXT_PRIMARY, "", true)
-	_slot_status_lbls[index] = _add_label("", pos + Vector2(34, 72), Vector2(122, 42), 20, Color(0.42, 0.28, 0.12))
+	_slot_status_lbls[index] = _add_label("", pos + EMPTY_SLOT_STATUS_POS, SLOT_STATUS_SIZE, 20, Color(0.42, 0.28, 0.12))
 	var x_btn := _add_x_button(pos + Vector2(138, 30), Vector2(38, 38), _on_slot_x.bind(index),
 		"btn_kick_%s" % SLOT_LABELS[index])
 	_slot_x_btns[index] = x_btn
@@ -880,7 +888,7 @@ func _refresh() -> void:
 		_slot_avatars[i].modulate = Color(1, 1, 1, 0.35 if state == "settling" else 1.0)
 		_slot_avatars[i].visible = state in ["player", "settling"]
 		if state in ["player", "settling"]:
-			_slot_avatars[i].texture = AvatarCatalog.texture_for(str(identity.get("avatar", AvatarCatalog.default_avatar())))
+			AvatarCatalog.set_avatar_texture(_slot_avatars[i], AvatarCatalog.texture_for(str(identity.get("avatar", AvatarCatalog.default_avatar()))))
 			if not identity.is_empty():
 				# 10.04 bug 文档第 5 条：房间座位只显示昵称（隐藏 #好友码）。
 				name_lbl.text = AccountManager.display_name(str(identity.get("player_name", "")), str(identity.get("friend_code", "")), false)
@@ -918,8 +926,9 @@ func _refresh() -> void:
 				placement.font_size = 20 if state in ["player", "settling"] else 28
 				_apply_tracked(placement)
 			if placement.node == status_lbl:
-				placement.pos = SLOT_POS[i] + (Vector2(39, 137) if state in ["player", "settling"] else Vector2(34, 72))
-				placement.size = Vector2(106, 32) if state in ["player", "settling"] else Vector2(122, 42)
+				var status_pos := Vector2(39, 137) if state in ["player", "settling"] else Vector2(34, 72)
+				placement.pos = SLOT_POS[i] + (EMPTY_SLOT_STATUS_POS if state == "empty" else status_pos)
+				placement.size = Vector2(106, 32) if state in ["player", "settling"] else SLOT_STATUS_SIZE
 				placement.font_size = 17 if state in ["player", "settling"] else 20
 				_apply_tracked(placement)
 		match state:
@@ -1006,7 +1015,11 @@ func _apply_slot_frame(index: int, identity: Dictionary, state: String) -> void:
 	var occupied := state in ["player", "settling"]
 	var frame_value := str(identity.get("avatar_frame", ""))
 	var frame_id := AvatarCatalog.id_from_value(frame_value)
-	var custom := occupied and not frame_id.is_empty() and frame_id != "frame_default"
+	# ★ 11.16：默认框也是空心框，与商城框同一条路、画在头像上面；旧的金棕圆盘不再显示。
+	if frame_value.is_empty() or AvatarCatalog.frame_source_path(frame_id).is_empty():
+		frame_value = AvatarCatalog.default_frame()
+		frame_id = AvatarCatalog.id_from_value(frame_value)
+	var custom := occupied
 	if custom:
 		var tex: Texture2D = AvatarCatalog.frame_texture_for(frame_value)
 		var drawn := AvatarCatalog.frame_drawn_size(frame_id, _slot_hole_target())
@@ -1015,7 +1028,7 @@ func _apply_slot_frame(index: int, identity: Dictionary, state: String) -> void:
 			# 也不能留一个「框是空的、头像还被让开一块」的席位。
 			custom = false
 		else:
-			_slot_frames[index].texture = tex
+			AvatarCatalog.set_frame_texture(_slot_frames[index], tex)
 			# 框的**内孔圆心**压在圆盘中心上（= 头像中心），尺寸由内孔反推 ——
 			# 每个框的内孔占比、内孔在图里的位置都不同，所以落点**必须**跟着框走，
 			# 不能只在 _build_slot 里定一次，也不能自己写 `中心 - 尺寸/2`
@@ -1026,7 +1039,7 @@ func _apply_slot_frame(index: int, identity: Dictionary, state: String) -> void:
 				drawn)
 	_slot_frames[index].visible = custom
 	_slot_bases[index].visible = not occupied
-	_slot_frame_bases[index].visible = occupied and not custom
+	_slot_frame_bases[index].visible = false
 	_slot_plates[index].visible = occupied
 
 
@@ -1949,8 +1962,7 @@ func _spectator_take_seat(index: int) -> void:
 	if str(_states()[index]) != "empty":
 		return
 	SfxService.play(SfxService.CUE_ROOM_SEAT_CHANGE)
-	# 走普通的「加入房间」：服务器那边入座时会先把这条连接从观战席上摘下来。
-	NetworkService.team_request_join_room(NetworkService.spectate_room_id)
+	NetworkService.team_request_join_room(NetworkService.spectate_room_id, index)
 
 
 func _on_back_pressed() -> void:
