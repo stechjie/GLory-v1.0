@@ -1376,7 +1376,7 @@ func _refresh() -> void:
 	var code := _field("friend_code")
 	# 唯一的显示名拼法。见文件顶部第 3 条。
 	_name_label.text = AccountManager.display_name(name_text, code)
-	_avatar_rect.texture = Catalog.texture_for(_field("avatar"))
+	Catalog.set_avatar_texture(_avatar_rect, Catalog.texture_for(_field("avatar")))
 	# 头像框：**默认框也是框**（10.02 反馈：资料页选默认框时整块没有头像框）。
 	#
 	# 改动前这里是
@@ -1427,7 +1427,7 @@ func _place_avatar_frame(frame_id: String) -> void:
 	if frame_id.is_empty():
 		_frame_rect.visible = false
 		return
-	_frame_rect.texture = _profile_frame_texture(frame_id, _field("avatar_frame"))
+	Catalog.set_frame_texture(_frame_rect, _profile_frame_texture(frame_id, _field("avatar_frame")))
 	# 目标内孔直径 = 头像直径（内孔 ≤ 头像，否则头像外会露一圈背景缝）。
 	var target_hole := _disc_diameter
 	var drawn := Catalog.frame_drawn_size(frame_id, target_hole)

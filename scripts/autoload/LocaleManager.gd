@@ -216,8 +216,8 @@ func _zh_strings() -> Dictionary:
 		# C25：面向玩家的措辞统一成"另一队"。3v3 里另一队是**和你同等的真人玩家**，
 		# "敌方 / 观战"这类词把他们说成了不同等级的对象，也和"两队玩家平等待遇"
 		# 这条已确认的产品规则冲突。内部字段名（rival/enemy）保持不变，只作技术映射。
-		"battle_view_rival": "查看另一队",
-		"battle_view_own": "返回本队",
+		"battle_view_rival": "偷看",
+		"battle_view_own": "返回",
 		"battle_team_hp": "团队法阵 HP  %d / %d",
 		"battle_state": "我方 %d / 敌方 %d · 时间 %.1fs%s",
 		"battle_ended_suffix": " · 已结束",
@@ -752,8 +752,8 @@ func _en_strings() -> Dictionary:
 		"lobby_slot_dummy": "%s · AI",
 		"lobby_slot_empty": "%s · Empty (tap to sit)",
 		# Battle HUD
-		"battle_view_rival": "View Other Team",
-		"battle_view_own": "Back to My Team",
+		"battle_view_rival": "Peek",
+		"battle_view_own": "Back",
 		"battle_team_hp": "Team HP  %d / %d",
 		"battle_state": "Allies %d / Enemies %d · %.1fs%s",
 		"battle_ended_suffix": " · ended",

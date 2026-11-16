@@ -46,6 +46,26 @@ func run() -> void:
 	h.expect(hud._damage_label.mouse_filter == Control.MOUSE_FILTER_IGNORE, "input_transparent", "HUD cannot block input")
 	hud.show_damage(30, false)
 	h.expect(not hud._fire.visible and hud._damage_total == 30, "seek_absolute", "Seek replaces total and removes higher fire")
+	# 11.16 常驻特效层：强度跟档位走（前 10 回合 4 档映射到满档 6），静默 seek 不留升档冲击，掉回 0 档整层收起。
+	h.expect(not hud._aura.visible and hud._damage_label.scale == Vector2.ONE, "aura_off_below_first_tier", "Below the first tier the persistent aura is hidden and digits rest at 1.0")
+	var aura_levels: Array = []
+	for value in Hud.DAMAGE_TIERS:
+		hud.show_damage(int(value), false, 11)
+		aura_levels.append(float(hud._aura_material.get_shader_parameter("level")))
+	h.expect(aura_levels == [1.0, 2.0, 3.0, 4.0, 5.0, 6.0] and hud._aura.visible, "aura_level_per_tier", "Every tier raises the persistent aura level by one")
+	h.expect(hud._damage_label.scale == Vector2.ONE * Hud.MAX_REST_SCALE and hud._damage_depth.scale == hud._damage_label.scale, "aura_top_rest_scale", "Top tier keeps both digit layers enlarged at rest")
+	hud.show_damage(10000, false, 10)
+	h.expect(is_equal_approx(float(hud._aura_material.get_shader_parameter("level")), Hud.MAX_LEVEL), "aura_early_cap", "Round 1-10 top tier maps to the full aura")
+	hud.show_damage(0, false, 11)
+	hud.show_damage(320000, true, 11)
+	var punch_live := float(hud._aura_material.get_shader_parameter("punch")) < 1.0 or not Hud.Presentation.flash_allowed()
+	var plate_rest: Vector2 = hud._shake_base[0]
+	hud.show_damage(320000 + 1, false, 11)
+	h.expect(punch_live and is_equal_approx(float(hud._aura_material.get_shader_parameter("punch")), 1.0) and hud._plate.position == plate_rest,
+		"aura_silent_seek", "Promotion starts a punch; a silent seek ends the punch and returns the plaque to rest")
+	h.expect(hud._aura.mouse_filter == Control.MOUSE_FILTER_IGNORE and hud._aura.get_index() < hud._plate.get_index(), "aura_behind_plate", "Aura sits behind the plaque and cannot block input")
+	hud.show_damage(30, false)
+	h.expect(not hud._aura.visible, "aura_seek_absolute", "Seek back below the first tier removes the aura")
 	var state := {"kind":"pve", "elapsed":1.0, "player":[], "enemy":[], "visual_events":[], "unit_stats":{
 		"a":{"owner_slot":0,"team":"player","group":"player","damage_dealt":100},
 		"dead":{"owner_slot":0,"team":"player","group":"player","damage_dealt":200},

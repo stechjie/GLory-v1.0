@@ -198,7 +198,7 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 			_treasure_skill(skill_id,origin,target,context)
 		"treasure_element_burst","treasure_soul_counter","treasure_control_refresh","treasure_gold_coins","treasure_phoenix_rise","treasure_phoenix_release":
 			_treasure_skill(skill_id,origin,target,context)
-		"poison_reflect_armor_stack":_oga_pack_skill("poison_reflect_armor_stack",origin,origin,context)
+		"poison_reflect_armor_stack":_titan_parry(origin,context)
 		"parasite_on_kill":_summon(target)
 		"left_neighbor_sacrifice":_tracked_link(origin,target,context,_blood_profile(.76,2.0))
 		"attack_interrupt":_interrupt_hit(target)
@@ -504,6 +504,22 @@ func _oga_pack_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dicti
 		return
 	last_spawned=effect
 	effect.play_spec(_oga_pack_points(origin,target,context),spec,context)
+
+# 巨甲灵每挨一下就叠一层甲，招架闪光要是每次都放就一直在闪（11.16 用户：「不要一直闪，要有间隔的闪」）。
+# 同一只巨甲灵 TITAN_PARRY_INTERVAL 秒内只放一次。
+const TITAN_PARRY_INTERVAL:=1.8
+var _titan_parry_at:Dictionary={}
+
+func _titan_parry(origin:Vector3,context:Dictionary)->void:
+	var node_value:Variant=context.get("origin_node")
+	var key:Variant=(node_value as Node).get_instance_id() if is_instance_valid(node_value) and node_value is Node else str(context.get("source_sim_uid",Vector3i(roundi(origin.x*4.0),0,roundi(origin.z*4.0))))
+	var now:=Time.get_ticks_msec()*0.001
+	if now-float(_titan_parry_at.get(key,-100.0))<TITAN_PARRY_INTERVAL:
+		return
+	_titan_parry_at[key]=now
+	if _titan_parry_at.size()>64:
+		_titan_parry_at.clear()
+	_oga_pack_skill("poison_reflect_armor_stack",origin,origin,context)
 
 # 毒灵 / 飞灵的毒每次攻击都会触发。同一目标 POISON_CLOUD_COOLDOWN 秒内只放一次毒云，
 # 否则连续的云叠在一起把棋子整个盖住（11.13 用户反馈）。

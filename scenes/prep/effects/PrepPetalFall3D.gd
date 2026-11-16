@@ -28,6 +28,10 @@ const FADE_IN_SEC := 0.8
 const FADE_OUT_HEIGHT := 0.18                # 离地这么高开始淡出
 const MAX_ALPHA := 0.92
 
+# 花吹雪（PrepSakuraFx 每阵风写它，0~1）：风来的时候满场的花瓣都被往右带一把、落得慢一点。
+static var gust := 0.0
+const GUST_WIND := 1.5                       # 阵风最强时每秒多往 +X 漂这么多
+
 var _center := Vector3.ZERO
 var _half_extents := Vector2(3.6, 2.0)
 var _ground_y := 0.0
@@ -110,9 +114,9 @@ func _process(delta: float) -> void:
 		p.age += delta
 		var swing: float = p.age * p.sway_freq + p.phase
 		# 摆到两头时下落变慢、摆过中间时快，像真的花瓣在空气里「荡」
-		p.y -= p.fall * delta * (0.55 + 0.65 * absf(cos(swing)))
-		p.x += p.wind * delta
-		p.angle += p.spin * delta
+		p.y -= p.fall * delta * (0.55 + 0.65 * absf(cos(swing))) * (1.0 - 0.6 * gust)
+		p.x += (p.wind + GUST_WIND * gust) * delta
+		p.angle += p.spin * delta * (1.0 + 3.0 * gust)
 		if p.y <= _ground_y or p.x > _center.x + _half_extents.x * 1.25:
 			_respawn(p)
 			swing = p.age * p.sway_freq + p.phase

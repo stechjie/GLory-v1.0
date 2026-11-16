@@ -51,6 +51,7 @@ static func apply(model: Node3D) -> int:
 	if model == null:
 		return 0
 	var changed := 0
+	var tone := _tone_of(model)
 	var stack: Array[Node] = [model]
 	while not stack.is_empty():
 		var node: Node = stack.pop_back()
@@ -62,21 +63,21 @@ static func apply(model: Node3D) -> int:
 		if not mesh_instance.mesh is ArrayMesh:
 			continue
 		if mesh_instance.material_override != null:
-			mesh_instance.material_override = blended(mesh_instance.material_override)
+			mesh_instance.material_override = blended(mesh_instance.material_override, tone)
 			changed += 1
 			continue
 		for surface in mesh_instance.mesh.get_surface_count():
 			var material := mesh_instance.get_active_material(surface)
 			if material != null:
-				mesh_instance.set_surface_override_material(surface, blended(material))
+				mesh_instance.set_surface_override_material(surface, blended(material, tone))
 				changed += 1
 	return changed
 
 
-static func blended(material: Material) -> Material:
+static func blended(material: Material, tone: String = "") -> Material:
 	if _made.has(material.get_instance_id()):
 		return material
-	var key := material.get_instance_id()
+	var key := "%d|%s" % [material.get_instance_id(), tone]
 	if _copies.has(key):
 		return _copies[key]
 	var copy := material.duplicate() as Material
@@ -97,7 +98,7 @@ static func blended(material: Material) -> Material:
 		outline.set_shader_parameter("outline_max_pixels", ADDED_OUTLINE_MAX_PX)
 		tail.next_pass = outline
 		tail = outline
-	tail.next_pass = _blend_for(copy)
+	tail.next_pass = _blend_for(copy) if tone.is_empty() else _tone_material(tone)
 	_copies[key] = copy
 	_made[copy.get_instance_id()] = true
 	return copy
@@ -119,3 +120,52 @@ static func _blend_for(body: Material) -> ShaderMaterial:
 		material.set_shader_parameter("skin_protect", SKIN_PROTECT * float(lift))
 		_skin_blends[key] = material
 	return _skin_blends[key]
+
+
+# --- 按种族调色 ---------------------------------------------------------------
+# 11.16 神族调色。先试过「二之国」式的象牙白 + 暖棕阴影，用户否了：象牙白和装备上的纯白不搭、显脏。
+# 现在定的是「纯白 + 金」：贴图把发灰发黄的中间调分成干净的白和正金色（reports/god_ninokuni/grade.py），
+# 这一层只给白色一点体积——阴影用很浅的冷蓝灰（冷阴影衬得白更白），边缘光用金色。
+# 各神族单位的身体着色器各写各的（6 种），所以调在这一层，一处管全族。
+const TONES := {
+	"god": {
+		"shade_color": Color(0.62, 0.68, 0.86),
+		"shade_strength": 0.30,
+		"shade_tint": 0.45,
+		"band_center": 0.08,
+		"band_softness": 0.10,
+		"warm_strength": 0.0,
+		"rim_color": Color(1.0, 0.84, 0.46),
+		"rim_strength": 0.20,
+	},
+}
+static var _tone_materials: Dictionary = {}
+
+
+## 从模型（或它上面几层）的场景路径认种族；认不出返回空串 = 用默认那套。
+static func _tone_of(model: Node) -> String:
+	var paths: Array[String] = []
+	var up: Node = model
+	for _i in 4:
+		if up == null:
+			break
+		paths.append(up.scene_file_path)
+		up = up.get_parent()
+	for child in model.get_children():
+		paths.append(child.scene_file_path)
+		for grandchild in child.get_children():
+			paths.append(grandchild.scene_file_path)
+	for path in paths:
+		if path.contains("/models/units/god_"):
+			return "god"
+	return ""
+
+
+static func _tone_material(tone: String) -> ShaderMaterial:
+	if not _tone_materials.has(tone):
+		var material := blend_material().duplicate() as ShaderMaterial
+		var params: Dictionary = TONES[tone]
+		for name in params:
+			material.set_shader_parameter(name, params[name])
+		_tone_materials[tone] = material
+	return _tone_materials[tone]

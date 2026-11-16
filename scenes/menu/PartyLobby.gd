@@ -14,14 +14,15 @@ const REF := Vector2(1672, 941)
 const BG := preload("res://assets/ui/page_backgrounds/rooms_arena.png")
 const Kit := preload("res://ui/theme/ParchmentKit.gd")
 # 空座位：主菜单那个中间透明的头像圆环
-const SEAT_RING := preload("res://assets/ui/main_menu_v2/profile_avatar.png")
+# 11.16：空座位也用新的默认框（空心），旧的主菜单圆环不再出现。
+const SEAT_RING := preload("res://assets/ui/shop/headframes/frame_default.png")
 const PET_STAGE := preload("res://scenes/menu/MainMenuPet.gd")
 const PARTY_VOICE := preload("res://scenes/menu/PartyVoice.gd")
 # 10.10：BGM 压低（开麦时）。排位房的语音是独立 PartyVoice，靠探针接进来。
 const MUSIC_SERVICE := preload("res://ui/services/MusicService.gd")
 const AVATARS := preload("res://scripts/account/AvatarCatalog.gd")
 const RANKS := preload("res://scenes/menu/RankedTiers.gd")
-const PROFILE_DISC := preload("res://assets/ui/main_menu_live/profile_avatar.png")
+const PROFILE_DISC := preload("res://assets/ui/shop/headframes/frame_default.png")
 const ACTION := preload("res://ui/components/GloryActionButton.tscn")
 const BUTTON_PRIMARY := preload("res://assets/ui/party_lobby/party_button_primary.png")
 const BUTTON_SECONDARY := preload("res://assets/ui/party_lobby/party_button_secondary.png")
@@ -629,9 +630,9 @@ func _render_seats() -> void:
 			continue
 		var member: Dictionary = by_seat[i]
 		var frame := TextureRect.new()
-		frame.texture = AVATARS.frame_texture_for(str(member.get("avatar_frame", "")))
+		AVATARS.set_frame_texture(frame, AVATARS.frame_texture_for(str(member.get("avatar_frame", ""))))
 		if frame.texture == null:
-			frame.texture = PROFILE_DISC
+			AVATARS.set_frame_texture(frame, PROFILE_DISC)
 		frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
 		frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -644,6 +645,8 @@ func _render_seats() -> void:
 		circle.set_corner_radius_all(55)
 		mask.add_theme_stylebox_override("panel", circle)
 		seat.add_child(mask)
+		# ★ 11.16 用户要求框在头像**上面**（内圈压住头像边缘）：把框挪到头像之后。
+		seat.move_child(frame, mask.get_index())
 		mask.position = Vector2(57, 27)
 		mask.size = Vector2(100, 100)
 		# 10.10：头像框按「内孔对头像圆」定位（与自定义房间同一套 catalog 几何）。
@@ -672,7 +675,7 @@ func _render_seats() -> void:
 			frame.size = SEAT_FRAME_SIZE
 			frame.position = disc_center - frame.size * 0.5
 		var portrait := TextureRect.new()
-		portrait.texture = AVATARS.texture_for(str(member.get("avatar", "")), true)
+		AVATARS.set_avatar_texture(portrait, AVATARS.texture_for(str(member.get("avatar", "")), true))
 		portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
 		mask.add_child(portrait)
@@ -1936,7 +1939,7 @@ func _friend_row_art(row: Control, entry: Dictionary, active: bool) -> void:
 	mask.position = center - Vector2(radius, radius)
 	mask.size = Vector2(radius, radius) * 2.0
 	var portrait := TextureRect.new()
-	portrait.texture = AVATARS.texture_for(str(entry.get("avatar", "")), true)
+	AVATARS.set_avatar_texture(portrait, AVATARS.texture_for(str(entry.get("avatar", "")), true))
 	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2008,7 +2011,7 @@ func _friend_avatar(parent: Control, entry: Dictionary, pos: Vector2, diameter: 
 	mask.position = Vector2(8, 8)
 	mask.size = Vector2(diameter - 16, diameter - 16)
 	var portrait := TextureRect.new()
-	portrait.texture = AVATARS.texture_for(str(entry.get("avatar", "")), true)
+	AVATARS.set_avatar_texture(portrait, AVATARS.texture_for(str(entry.get("avatar", "")), true))
 	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2091,7 +2094,7 @@ func _style_empty_seat(button: Button) -> void:
 	if button.get_node_or_null("SeatRing") == null:
 		var ring := TextureRect.new()
 		ring.name = "SeatRing"
-		ring.texture = SEAT_RING
+		AVATARS.set_frame_texture(ring, SEAT_RING)
 		ring.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		ring.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		ring.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

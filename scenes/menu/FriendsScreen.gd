@@ -432,7 +432,7 @@ func _avatar_stage(entry: Dictionary, code: String) -> Control:
 	var stage := Control.new()
 	stage.custom_minimum_size = Vector2(82, 82)
 	var avatar := TextureRect.new()
-	avatar.texture = Catalog.texture_for(str(entry.get("avatar", "")), true)
+	Catalog.set_avatar_texture(avatar, Catalog.texture_for(str(entry.get("avatar", "")), true))
 	avatar.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	avatar.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -448,7 +448,7 @@ func _avatar_stage(entry: Dictionary, code: String) -> Control:
 	var frame_texture: Texture2D = DEFAULT_FRAME_TEX if frame_id == "frame_default" else Catalog.frame_texture_for(frame_value, false)
 	if frame_texture != null:
 		var frame := TextureRect.new()
-		frame.texture = frame_texture
+		Catalog.set_frame_texture(frame, frame_texture)
 		frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		frame.mouse_filter = Control.MOUSE_FILTER_IGNORE

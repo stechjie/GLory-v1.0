@@ -1,0 +1,7 @@
+{
+ "out_dir": "assets/vfx/skills/pixelfx",
+ "meta_dir": "tools/pixelfx_smooth/sheets_batch3",
+ "jobs": [
+  {"name": "titan_parry", "fx": "impacts/parry", "fps": 15, "scale": 2, "t1": 0.8, "opts": {"palette": ["#0e1d14", "#173320", "#23552e", "#318232", "#55b92f", "#8eea3f", "#cfff63", "#f0ffd0"]}}
+ ]
+}

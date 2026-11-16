@@ -12,11 +12,19 @@ const EARLY_DAMAGE_TIERS := [1000, 3000, 5000, 10000]
 const DISPLAY_FONT := preload("res://ui/fonts/LibreBaskerville-Variable.ttf")
 const PLATE := preload("res://effects/runtime/presentation/DamageCounterPlate.gd")
 const INK_SHADER := preload("res://shaders/damage_counter_ink.gdshader")
-const DAMAGE_TIERS := [10000, 20000, 40000, 80000, 160000, 320000]
+# 11.16：原来是 1/2/4/8/16/32 万，AI 整局实测（tools/damage_tier_probe）后三档基本打不到，按用户定的数下调。
+const DAMAGE_TIERS := [10000, 15000, 25000, 30000, 50000, 80000]
 # 11.15：档位色从冷蓝紫换成暖色（铜 → 金 → 橙 → 红金 → 白金），跟木牌底板和全游戏的暖色 UI 一路。
 const DAMAGE_COLORS := [Color("d9b98a"), Color("e8c060"), Color("ffd24a"), Color("ffb03a"), Color("ff8a3a"), Color("ff6a4a"), Color("fff0c0")]
 const EARLY_DAMAGE_COLORS := [Color("d9b98a"), Color("e8c060"), Color("ffd24a"), Color("ff9a3a"), Color("fff0c0")]
 const FLAME_SHADER := preload("res://shaders/damage_counter_fire.gdshader")
+# 11.16 常驻特效层（垫在木牌后面）：比木牌向上、向右各多出 50，不往下扩（下面是 Top ATK 列表）。
+const AURA_SHADER := preload("res://shaders/damage_counter_blast.gdshader")
+const AURA_EXTENT := Vector2(344, 138)
+const AURA_PLATE_ORIGIN := Vector2(8, 50)
+const MAX_LEVEL := 6.0
+const MAX_REST_SCALE := 1.10
+const SHAKE_GAP_MSEC := 260
 # 10.31 清场字幕加强：原来 43px、0.68 秒、挤在顶部中间，雪地 / 冰蓝底上几乎读不到。
 # 现在字号翻倍、落在本地那一路上方、冲击放大进场 + 一道横扫高光 + 深色底带，停 1.2 秒。
 const CLEAR_HOLD_SEC := 1.2
@@ -57,6 +65,12 @@ var _clear_tween: Tween
 var _damage_total := 0
 var _fire: ColorRect
 var _fire_material: ShaderMaterial
+var _aura: ColorRect
+var _aura_material: ShaderMaterial
+var _shake_tween: Tween
+var _shake_nodes: Array[Control] = []
+var _shake_base: Array[Vector2] = []
+var _shake_at_msec := 0
 var _clear_shown := false
 var _clear_band: ColorRect
 var _clear_band_material: ShaderMaterial
@@ -71,6 +85,15 @@ func _ready() -> void:
 	focus_mode = Control.FOCUS_NONE
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	z_index = 112
+	_aura = ColorRect.new()
+	_aura.name = "DamageAura"
+	_aura.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_aura_material = ShaderMaterial.new()
+	_aura_material.shader = AURA_SHADER
+	_aura_material.set_shader_parameter("extent", AURA_EXTENT)
+	_aura_material.set_shader_parameter("plate_origin", AURA_PLATE_ORIGIN)
+	_aura.material = _aura_material
+	add_child(_aura)
 	_plate = PLATE.new()
 	add_child(_plate)
 	_damage_title = _make_label("DamageTitle", Color.WHITE)
@@ -101,6 +124,7 @@ func _ready() -> void:
 		_ink_materials.append(ink)
 	_damage_label.clip_text = true
 	_damage_depth.clip_text = true
+	_shake_nodes = [_plate, _damage_title, _damage_depth, _damage_label]
 	_fire = ColorRect.new()
 	_fire.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_fire_material = ShaderMaterial.new()
@@ -172,6 +196,12 @@ func _layout() -> void:
 	_damage_depth.pivot_offset = _damage_label.pivot_offset
 	_fire.position = Vector2(8, 131) * factor
 	_fire.size = Vector2(286, 112) * factor
+	_aura.position = (Vector2(8, 141) - AURA_PLATE_ORIGIN) * factor
+	_aura.size = AURA_EXTENT * factor
+	_aura_material.set_shader_parameter("px", 1.0 / factor)
+	_shake_base.clear()
+	for node in _shake_nodes:
+		_shake_base.append(node.position)
 	_place_clear_caption(factor, top)
 	_damage_label.add_theme_font_size_override("font_size", roundi(36.0 * factor))
 	_damage_depth.add_theme_font_size_override("font_size", roundi(36.0 * factor))
@@ -264,12 +294,24 @@ func show_damage(total: int, animate := true, round_index := 11) -> void:
 		ink.set_shader_parameter("accent",accent)
 	_refresh_text()
 	_fire.visible = tier > 0
-	if promoted and animate and _motion_allowed() and Presentation.flash_allowed():
+	# 11.16：level 是 0..6 的表现强度；前 10 回合只有 4 档，按 ×1.5 映射到同一套效果。
+	var level := minf(float(tier) * (1.5 if early else 1.0), MAX_LEVEL)
+	var motion := _motion_allowed()
+	_aura.visible = tier > 0
+	_aura_material.set_shader_parameter("level", level)
+	_aura_material.set_shader_parameter("accent", accent)
+	_aura_material.set_shader_parameter("motion", 1.0 if motion else 0.0)
+	_aura_material.set_shader_parameter("simple", 0.0 if Presentation.flash_allowed() else 1.0)
+	_aura_material.set_shader_parameter("lite", 1.0 if Presentation._low_tier() else 0.0)
+	if promoted and animate and motion and Presentation.flash_allowed():
 		if _accent_tween != null:
 			_accent_tween.kill()
 		_fire_material.set_shader_parameter("promotion", 1.0)
 		_fire_material.set_shader_parameter("sweep", 0.0)
 		_accent_tween = create_tween().set_parallel(true)
+		_aura_material.set_shader_parameter("punch", 0.0)
+		_aura_material.set_shader_parameter("punch_power", level / MAX_LEVEL)
+		_accent_tween.tween_property(_aura_material, "shader_parameter/punch", 1.0, 0.55)
 		_accent_tween.tween_property(_fire_material, "shader_parameter/promotion", 0.0, 0.48).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 		_accent_tween.tween_property(_fire_material, "shader_parameter/sweep", 1.0, 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 		for ink in _ink_materials:
@@ -282,6 +324,7 @@ func show_damage(total: int, animate := true, round_index := 11) -> void:
 			_accent_tween.kill()
 		_fire_material.set_shader_parameter("promotion", 0.0)
 		_fire_material.set_shader_parameter("sweep", 1.0)
+		_aura_material.set_shader_parameter("punch", 1.0)
 		for ink in _ink_materials:
 			ink.set_shader_parameter("promotion",0.0)
 			ink.set_shader_parameter("sweep",1.0)
@@ -289,12 +332,65 @@ func show_damage(total: int, animate := true, round_index := 11) -> void:
 	_fire_material.set_shader_parameter("flame_color", accent)
 	_fire_material.set_shader_parameter("motion", 1.0 if _motion_allowed() else 0.0)
 	_fire_material.set_shader_parameter("simple", 1.0 if not Presentation.flash_allowed() else 0.0)
-	if changed and animate and _motion_allowed():
+	# 满档数字常驻放大；升档时弹出幅度逐档递增（约 10% → 40%），带过冲回落。
+	var rest := Vector2.ONE * (MAX_REST_SCALE if level >= MAX_LEVEL else 1.0)
+	if changed and animate and motion:
 		if _damage_tween != null:
 			_damage_tween.kill()
-		_damage_label.scale = Vector2.ONE * (1.035 if promoted else 1.008)
-		_damage_tween = create_tween()
-		_damage_tween.tween_property(_damage_label, "scale", Vector2.ONE, 0.12)
+		var pop := 1.008
+		if promoted:
+			pop = 1.10 + 0.06 * (level - 1.0)
+		elif level >= 5.0:
+			pop = 1.04
+		_damage_label.scale = rest * pop
+		_damage_depth.scale = rest * pop
+		_damage_tween = create_tween().set_parallel(true)
+		for label in [_damage_label, _damage_depth]:
+			var step := _damage_tween.tween_property(label, "scale", rest, 0.30 if promoted else 0.12)
+			if promoted:
+				step.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		# 只抖木牌，不震屏（群伤震屏像掉帧）：升档必抖，第 5 档起每次伤害跳动也抖，带最小间隔。
+		var now := Time.get_ticks_msec()
+		if promoted:
+			_shake(1.5 + 0.9 * level)
+			_shake_at_msec = now
+		elif level >= 5.0 and now - _shake_at_msec >= SHAKE_GAP_MSEC:
+			_shake(2.2)
+			_shake_at_msec = now
+	elif not animate:
+		if _damage_tween != null:
+			_damage_tween.kill()
+		_damage_label.scale = rest
+		_damage_depth.scale = rest
+		_stop_shake()
+
+
+## 木牌 + 标题 + 数字一起按相位衰减摆动（不是随机抖），amplitude 是设计像素。
+func _shake(amplitude: float) -> void:
+	if _shake_tween != null:
+		_shake_tween.kill()
+	var factor := clampf(minf(size.x / 1600.0, size.y / 720.0), 0.65, 1.4)
+	var reach := amplitude * factor
+	_shake_tween = create_tween()
+	_shake_tween.tween_method(_shake_step.bind(reach), 0.0, 1.0, 0.24)
+
+
+func _shake_step(u: float, reach: float) -> void:
+	_set_shake_offset(Vector2(sin(u * TAU * 3.0), cos(u * TAU * 2.3) * 0.6) * reach * (1.0 - u))
+
+
+func _stop_shake() -> void:
+	if _shake_tween != null:
+		_shake_tween.kill()
+	_shake_tween = null
+	_set_shake_offset(Vector2.ZERO)
+
+
+func _set_shake_offset(offset: Vector2) -> void:
+	for index in range(mini(_shake_nodes.size(), _shake_base.size())):
+		if is_instance_valid(_shake_nodes[index]):
+			_shake_nodes[index].position = _shake_base[index] + offset
+
 
 static func damage_tier(total: int, round_index := 11) -> int:
 	var result := 0
@@ -370,6 +466,12 @@ func reset_feedback() -> void:
 		ink.set_shader_parameter("sweep",1.0)
 	if is_instance_valid(_fire):
 		_fire.hide()
+	_stop_shake()
+	if _aura_material != null:
+		_aura_material.set_shader_parameter("punch", 1.0)
+		_aura_material.set_shader_parameter("level", 0.0)
+	if is_instance_valid(_aura):
+		_aura.hide()
 	if is_instance_valid(_plate):
 		_plate.hide()
 	_clear_shown = false

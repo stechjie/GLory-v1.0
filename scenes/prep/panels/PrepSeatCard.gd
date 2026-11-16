@@ -196,13 +196,13 @@ func _relation_text() -> String:
 	return team + _text(" · 对手", " · opponent")
 
 
-# 和摆放界面左上角的头像同一画法：先画框，再把头像裁圆画在框里。
+# 和摆放界面左上角的头像同一画法：头像裁圆，框盖在头像上面（11.16）。
 func _avatar(avatar: String, frame_id: String) -> Control:
 	var box := Control.new()
 	box.custom_minimum_size = Vector2(AVATAR_SIZE, AVATAR_SIZE)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var frame := TextureRect.new()
-	frame.texture = AvatarCatalog.frame_texture_for(frame_id)
+	AvatarCatalog.set_frame_texture(frame, AvatarCatalog.frame_texture_for(frame_id))
 	frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -218,8 +218,10 @@ func _avatar(avatar: String, frame_id: String) -> Control:
 	mask.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	mask.add_theme_stylebox_override("panel", Tokens.flat_box(Color.WHITE, Color.WHITE, 0, roundi(AVATAR_SIZE)))
 	box.add_child(mask)
+	# ★ 11.16 用户要求框在头像**上面**（内圈压住头像边缘）：把框挪到头像之后。
+	box.move_child(frame, mask.get_index())
 	var portrait := TextureRect.new()
-	portrait.texture = AvatarCatalog.texture_for(avatar)
+	AvatarCatalog.set_avatar_texture(portrait, AvatarCatalog.texture_for(avatar))
 	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	portrait.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

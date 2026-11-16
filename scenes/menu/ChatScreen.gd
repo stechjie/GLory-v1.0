@@ -737,7 +737,7 @@ func _chat_row(entry: Dictionary) -> Control:
 	line.add_child(avatar_panel)
 
 	var avatar := _profile_avatar_button(_open_peer_profile.bind(code))
-	avatar.texture_normal = Catalog.texture_for(str(entry.get("avatar", "")), true)
+	Catalog.set_avatar_texture(avatar, Catalog.texture_for(str(entry.get("avatar", "")), true))
 	if not _can_open_peer_profile(code):
 		avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		avatar.focus_mode = Control.FOCUS_NONE
@@ -871,7 +871,7 @@ func _update_peer_label() -> void:
 	if _open_code.is_empty():
 		_peer_label.text = _text("选择一位好友", "Choose a friend")
 		_peer_code_label.text = _text("从左侧列表开始私聊", "Select someone from the list")
-		_peer_avatar.texture_normal = null
+		Catalog.set_avatar_texture(_peer_avatar, null)
 		_peer_avatar.disabled = true
 		return
 	var peer_name := ""
@@ -887,7 +887,7 @@ func _update_peer_label() -> void:
 	var code_suffix := " #" + _open_code
 	_peer_label.text = identity_text.trim_suffix(code_suffix)
 	_peer_code_label.text = identity_text.trim_prefix(_peer_label.text).strip_edges()
-	_peer_avatar.texture_normal = Catalog.texture_for(peer_avatar, true)
+	Catalog.set_avatar_texture(_peer_avatar, Catalog.texture_for(peer_avatar, true))
 	_peer_avatar.disabled = not _can_open_peer_profile(_open_code)
 	_peer_label.tooltip_text = identity_text
 	if RealtimeService.is_online() and not ChatService.kicked:

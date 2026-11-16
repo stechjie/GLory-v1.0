@@ -65,6 +65,8 @@ const REFRESH_BTN_PATH := "res://assets/ui/buttons/btn_refresh_blank.png"
 const REFRESH_RING_PATH := "res://assets/ui/prep_buttons/refresh_ring.png"
 const PrepRefreshEmblem := preload("res://scenes/prep/PrepRefreshEmblem.gd")
 const PrepSunDappleScript := preload("res://scenes/prep/PrepSunDapple.gd")
+const PrepNightFxScript := preload("res://scenes/prep/PrepNightFx.gd")
+const PrepSakuraFxScript := preload("res://scenes/prep/PrepSakuraFx.gd")
 # 11.12 摆放界面按钮换成羊皮纸那一批（assets/ui/prep_buttons，用户出的图，字由代码写）
 const TOP_POWER_BTN_PATH := "res://assets/ui/prep_buttons/top_power.png"
 const TOP_STATS_BTN_PATH := "res://assets/ui/prep_buttons/top_last_battle.png"
@@ -687,6 +689,13 @@ func reapply_prep_skin() -> void:
 		var lawn_fx := _sky_background.get_node_or_null("PrepLawnFx") as CanvasItem
 		if lawn_fx != null:
 			lawn_fx.visible = PrepSkin.active_id == PrepSkin.DEFAULT_ID
+		var night_fx := _sky_background.get_node_or_null("PrepNightFx") as CanvasItem
+		if night_fx != null:
+			night_fx.visible = PrepSkin.active_id == PrepNightFxScript.SKIN_ID
+		PrepSakuraFxScript.apply_shade(_sky_background, PrepSkin.active_id == PrepSakuraFxScript.SKIN_ID)
+		var sakura_fx := _sky_background.get_node_or_null("PrepSakuraFx") as CanvasItem
+		if sakura_fx != null:
+			sakura_fx.visible = PrepSkin.active_id == PrepSakuraFxScript.SKIN_ID
 	_swap_prep_skin_plane("PrepBaseLayer", "board")
 	_swap_prep_skin_plane("PrepRiverBottomLayer", "river")
 	# 河面画得比默认高的皮肤要整体往下游挪（PrepSkin.river_drop）。只换图不挪位置的话，
@@ -695,6 +704,7 @@ func reapply_prep_skin() -> void:
 	_move_river_layer("PrepRiverFlowBottom")
 	_move_river_layer("PrepRiverWaterMotion")
 	refresh_prep_river_water()
+	refresh_prep_sparkle_tint()
 	_swap_prep_skin_plane("PrepStandbyBgLayer", "bench")
 	var carrot := find_child("CarrotGeneratedSprite", true, false)
 	if carrot is Sprite3D:
@@ -806,6 +816,15 @@ func _build(staged: bool = false) -> void:
 	var lawn_fx := preload("res://scenes/prep/PrepLawnFx.gd").new()
 	_sky_background.add_child(lawn_fx)
 	lawn_fx.visible = PrepSkin.active_id == PrepSkin.DEFAULT_ID
+	# 11.16：夜荧光皮肤自己的一套（星星灯 / 石灯笼 / 荧光蛾 / 蘑菇孢子 / 游走的荧光团）
+	var night_fx := PrepNightFxScript.new()
+	_sky_background.add_child(night_fx)
+	night_fx.visible = PrepSkin.active_id == PrepNightFxScript.SKIN_ID
+	# 11.16：樱花皮肤的一套（树影摇晃 / 石灯笼 / 蝴蝶 / 花吹雪）
+	PrepSakuraFxScript.apply_shade(_sky_background, PrepSkin.active_id == PrepSakuraFxScript.SKIN_ID)
+	var sakura_fx := PrepSakuraFxScript.new()
+	_sky_background.add_child(sakura_fx)
+	sakura_fx.visible = PrepSkin.active_id == PrepSakuraFxScript.SKIN_ID
 	if staged:
 		StartupTrace.mark("tutorial_background_built")
 		await get_tree().process_frame
@@ -2838,11 +2857,11 @@ func _create_ready_avatar_badge() -> Control:
 	badge.mouse_filter = Control.MOUSE_FILTER_STOP
 	badge.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 
-	# 当前默认框的圆心是不透明的，和主菜单一样先画框，再把头像裁圆后画在上面。
+	# 头像裁圆，框盖在头像上面（11.16 起默认框也是空心框）。
 	# 头像缩进在金环内，不会盖住框；未来换框只需更新 avatars.json。
 	var frame := TextureRect.new()
 	frame.name = "Frame"
-	frame.texture = AvatarCatalog.frame_texture_for("")
+	AvatarCatalog.set_frame_texture(frame, AvatarCatalog.frame_texture_for(""))
 	frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -2865,6 +2884,8 @@ func _create_ready_avatar_badge() -> Control:
 	circle.set_corner_radius_all(roundi(READY_AVATAR_SIZE))
 	mask.add_theme_stylebox_override("panel", circle)
 	badge.add_child(mask)
+	# ★ 11.16 用户要求框在头像**上面**（内圈压住头像边缘）：把框挪到头像之后。
+	badge.move_child(frame, mask.get_index())
 
 	var portrait := TextureRect.new()
 	portrait.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
@@ -2937,7 +2958,7 @@ func _refresh_ready_indicator() -> void:
 		portrait.set_meta("source_portrait", source)
 		var portrait_size := badge.custom_minimum_size.ceil() - Vector2.ONE * (2.0 * READY_AVATAR_INSET)
 		portrait.texture = CrispTexture.fit(source, portrait_size, portrait, true)
-		frame.texture = AvatarCatalog.frame_texture_for(str(identity.get("avatar_frame", "")))
+		AvatarCatalog.set_frame_texture(frame, AvatarCatalog.frame_texture_for(str(identity.get("avatar_frame", ""))))
 		var is_ready := st == "dummy" or (slot < ready_arr.size() and bool(ready_arr[slot]))
 		var check := badge.get_node("ReadyCheck") as Label
 		check.visible = is_ready

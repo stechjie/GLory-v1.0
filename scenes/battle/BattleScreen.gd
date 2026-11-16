@@ -712,6 +712,8 @@ func _prepare_battle_models() -> void:
 		_fail_team_replay(str(render_report.get("error", "battle_render_prepare_failed")))
 		return
 	_refresh_visuals()
+	# 棋子已按开局站位摆好、画面还没放出来：满棋盘装不下时在这里把镜头拉远（11.16）。
+	_fit_battle_camera_to_formation()
 	_set_prepare_progress(bar, 90.0)
 	if _battle_3d_root != null:
 		_battle_3d_root.visible = true
@@ -996,6 +998,8 @@ func _valid_team_replay(replay: Dictionary) -> bool:
 
 # --- 切镜头观战敌方队伍 ------------------------------------------------------
 const ViewToggleKit := preload("res://ui/theme/ParchmentKit.gd")
+const VIEW_TOGGLE_TOP := 54.0
+const VIEW_TOGGLE_SIZE := Vector2(68, 68)
 func _setup_view_toggle() -> void:
 	if _view_toggle_btn != null:
 		return
@@ -1012,14 +1016,26 @@ func _setup_view_toggle() -> void:
 	ViewToggleKit.style_plate(_view_toggle_btn)
 	_view_toggle_btn.icon = ViewToggleKit.icon("spectate")
 	_view_toggle_btn.expand_icon = true
-	_view_toggle_btn.add_theme_constant_override("icon_max_width", 24)
+	# 11.16：从「眼睛在左 + 一排字」的长条改成方块：眼睛在上，下面两个字（偷看 / 返回）。
+	_view_toggle_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_view_toggle_btn.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
+	_view_toggle_btn.add_theme_constant_override("icon_max_width", 32)
+	_view_toggle_btn.add_theme_constant_override("h_separation", 0)
 	_view_toggle_btn.add_theme_font_size_override("font_size", 15)
-	_view_toggle_btn.custom_minimum_size = Vector2(156, 40)
+	# style_plate 的左右留白是给长条配的（各 16），方块里会把字挤掉，收到 6。
+	for state in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
+		var plate_box := _view_toggle_btn.get_theme_stylebox(state) as StyleBoxTexture
+		if plate_box != null:
+			plate_box.content_margin_left = 6.0
+			plate_box.content_margin_right = 6.0
+			plate_box.content_margin_top = 11.0
+			plate_box.content_margin_bottom = 7.0
+	_view_toggle_btn.custom_minimum_size = VIEW_TOGGLE_SIZE
 	_view_toggle_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	_view_toggle_btn.offset_left = -172
-	_view_toggle_btn.offset_top = 54
+	_view_toggle_btn.offset_left = -16.0 - VIEW_TOGGLE_SIZE.x
+	_view_toggle_btn.offset_top = VIEW_TOGGLE_TOP
 	_view_toggle_btn.offset_right = -16
-	_view_toggle_btn.offset_bottom = 94
+	_view_toggle_btn.offset_bottom = VIEW_TOGGLE_TOP + VIEW_TOGGLE_SIZE.y
 	_view_toggle_btn.z_index = 100
 	_view_toggle_btn.pressed.connect(_on_view_toggle_pressed)
 	add_child(_view_toggle_btn)
@@ -1073,11 +1089,11 @@ func _advance_spectate(delta: float) -> void:
 		_spectate_done = true
 
 # B8: lightweight on-screen FPS readout for the battle scene.
-# 组队语音（docs/聊天系统设计.md 第九节 v1.1）：右上角「跳过」（y 12~48）「切镜头」（y 56~92）下面，
+# 组队语音（docs/聊天系统设计.md 第九节 v1.1）：右上角「跳过」（y 12~48）「偷看」方块（y 54~122）下面，
 # 竖着放语音与队友两个按钮。只在联机对局里建；档位跨场景保持（VoiceService 是 autoload），
 # 这里只是给玩家一个随手开关。
 const VoiceControls := preload("res://ui/components/VoiceControls.gd")
-const VOICE_BTN_TOP := 100.0
+const VOICE_BTN_TOP := 128.0
 const VOICE_BTN_SIZE := Vector2(120, 56)
 const VOICE_BTN_STEP := 64.0
 var _voice_controls: VoiceControls = null

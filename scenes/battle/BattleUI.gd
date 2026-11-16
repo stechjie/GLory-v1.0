@@ -118,6 +118,9 @@ var _battle_3d_viewport: SubViewport
 var _battle_3d_camera: Camera3D
 # 结算收镜头期间为 true：窗口尺寸变化时不把相机拉回原始取景（BattleArena._sync_battle_camera_base_size）。
 var _battle_camera_tightened := false
+# 11.16 满员拉远：开战时按棋子实际站位算出的镜头放大倍数（>=1，1 = 不拉远）。
+# 只作用于 3D 相机，背景不跟着缩 —— 见 BattleArena._fit_battle_camera_to_formation。
+var _battle_camera_crowd_zoom := 1.0
 var _battle_3d_world: Node3D
 var _battle_3d_root: Node3D
 var _battle_3d_vfx_root: Node3D

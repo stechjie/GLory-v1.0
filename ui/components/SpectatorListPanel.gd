@@ -173,7 +173,7 @@ func _make_row(entry: Dictionary) -> Control:
 	avatar.name = "avatar"
 	avatar.ignore_texture_size = true
 	avatar.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
-	avatar.texture_normal = AvatarCatalog.texture_for(str(identity.get("avatar", AvatarCatalog.default_avatar())), true)
+	AvatarCatalog.set_avatar_texture(avatar, AvatarCatalog.texture_for(str(identity.get("avatar", AvatarCatalog.default_avatar())), true))
 	if not is_self and not guest and str(identity.get("friend_code", "")).length() == 8:
 		avatar.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		avatar.tooltip_text = _t("查看玩家资料", "View player profile")

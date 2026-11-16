@@ -125,7 +125,7 @@ static func texture_for(value: String, thumb: bool = false) -> Texture2D:
 #   换图 / 重裁 / 改内孔而对不上，门禁直接红。别手改这里去迁就一张新图。
 #   量产脚本：其他/work/_qa_1002c/frame_hole_table.py（同一套算法）。
 const FRAME_HOLE_FRAC := {
-	"frame_default": 0.6271,
+	"frame_default": 0.7248,
 	"avatar_frame_7day_01": 0.6258,
 	"avatar_frame_shop_01": 0.5595,
 	"avatar_frame_shop_02": 0.5297,
@@ -145,7 +145,7 @@ const FRAME_HOLE_FRAC := {
 #   补偿之后，自定义框的内孔圆心与默认圆盘的**重合**，于是任何一张框的观感
 #   都等于玩家已经认可的默认框。
 const FRAME_HOLE_OFFSET := {
-	"frame_default": Vector2(-0.00059, -0.00059),
+	"frame_default": Vector2(0.00033, 0.00023),
 	"avatar_frame_7day_01": Vector2(-0.00002, 0.00022),
 	"avatar_frame_shop_01": Vector2(-0.00034, 0.00049),
 	"avatar_frame_shop_02": Vector2(-0.00013, 0.00004),
@@ -175,8 +175,16 @@ static func frame_hole_offset(frame_id: String) -> Vector2:
 # 该值就是那个尺寸的换算系数：内孔直径 = 圆盘盒边长 × 本值。
 # 走本函数而不是在调用方写 `FRAME_HOLE_FRAC["frame_default"]`，是为了让
 # 「默认框换成哪张图」只有 catalog 一个真相（调用方连 id 都不用知道）。
+#
+# ★ 11.16 起这是**版面常量**，不再跟着默认框那张图走：新的朴素默认框环更细（内孔占比
+#   0.7248），若照旧取图的占比，各处目标内孔都会变大、超过头像而露缝（资料页连头像本身
+#   都会变大）。各页面的盒子尺寸都是按 0.6271 调的，所以锁在这里；默认框和商城框一样
+#   按 FRAME_HOLE_FRAC 缩放到这个内孔。
+const LAYOUT_DISC_HOLE_FRACTION := 0.6271
+
+
 static func default_disc_hole_fraction() -> float:
-	return frame_hole_fraction(id_from_value(default_frame()))
+	return LAYOUT_DISC_HOLE_FRACTION
 
 
 # 默认圆盘的内孔圆心相对**圆盘盒**中心的偏移（参考画布 px）。
@@ -228,6 +236,56 @@ static func frame_drawn_size(frame_id: String, target_hole: float) -> Vector2:
 		return Vector2.ZERO
 	var w := target_hole / frame_hole_fraction(frame_id)
 	return Vector2(w, w * src.y / src.x)
+
+
+# 给头像框的 TextureRect 换图，并按它**屏幕上的实际像素**预缩一张（11.16 锯齿）。
+#
+# 框素材是 1100×1100，画出来只有 40~250 逻辑 px：GPU 直接缩 4~15 倍、又没开 mipmap，
+# 粗描边和金边一圈都是台阶锯齿。照宠物立绘那套（scripts/ui/CrispTexture.gd）用 Lanczos
+# 预缩到刚好的像素，1:1 画出来。原图记在 meta 里，控件尺寸变了（布局、换框）就重缩一次；
+# 同一张图同一尺寸只缩一次（CrispTexture 自带缓存）。
+# 凡是画头像框的地方都走这里，别再直接写 `frame.texture = ...`。
+static func set_frame_texture(rect: TextureRect, texture: Texture2D) -> void:
+	_bind_crisp(rect, texture, false)
+
+
+# 头像同理（11.16）：立绘 330/256 px、缩略图 128 px，画到 36~123 逻辑 px 时一样起颗粒。
+# 头像是裁圆铺满的，按「铺满」（cover）算目标尺寸。TextureRect 和 TextureButton 都认。
+# 同一个节点之后要清空头像也走这里（传 null），否则下次尺寸变化会把旧头像缩回来。
+static func set_avatar_texture(node: Control, texture: Texture2D) -> void:
+	_bind_crisp(node, texture, true)
+
+
+static func _bind_crisp(node: Control, texture: Texture2D, cover: bool) -> void:
+	if node == null:
+		return
+	node.set_meta(&"crisp_source", texture)
+	node.set_meta(&"crisp_cover", cover)
+	_put_texture(node, texture)
+	if not node.has_meta(&"crisp_hooked"):
+		node.set_meta(&"crisp_hooked", true)
+		var refit := func() -> void: _refit_crisp(node)
+		node.resized.connect(refit)
+		node.tree_entered.connect(refit)
+	_refit_crisp(node)
+
+
+static func _put_texture(node: Control, texture: Texture2D) -> void:
+	if node is TextureRect:
+		(node as TextureRect).texture = texture
+	elif node is TextureButton:
+		(node as TextureButton).texture_normal = texture
+
+
+static func _refit_crisp(node: Control) -> void:
+	if not is_instance_valid(node) or not node.is_inside_tree():
+		return
+	var source := node.get_meta(&"crisp_source", null) as Texture2D
+	if source == null or node.size.x < 2.0 or node.size.y < 2.0:
+		return
+	# 懒加载：这个脚本服务器也会解析，别让它多依赖一个 UI 脚本。
+	var crisp: GDScript = load("res://scripts/ui/CrispTexture.gd")
+	_put_texture(node, crisp.fit(source, node.size, node, bool(node.get_meta(&"crisp_cover", false))))
 
 
 static func frame_texture_for(value: String, fallback_to_default: bool = true) -> Texture2D:

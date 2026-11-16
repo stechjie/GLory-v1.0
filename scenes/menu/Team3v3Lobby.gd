@@ -152,7 +152,7 @@ func _online_friend_row(entry: Dictionary) -> Control:
 	row.add_theme_constant_override("separation", 6)
 	var avatar := TextureRect.new()
 	avatar.custom_minimum_size = Vector2(36, 36)
-	avatar.texture = AvatarCatalog.texture_for(str(entry.get("avatar", AvatarCatalog.default_avatar())), true)
+	AvatarCatalog.set_avatar_texture(avatar, AvatarCatalog.texture_for(str(entry.get("avatar", AvatarCatalog.default_avatar())), true))
 	avatar.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	avatar.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -762,7 +762,7 @@ func _build_slot(index: int) -> void:
 	# 差几像素就吃掉几像素（三轮渲染实测：大厅 -0.8% ~ -4.1%），于是「戴哪个框」直接
 	# 改变了头像的可见大小。放到头像下面之后，**头像的可见像素在任何框下都逐像素
 	# 相同**，这才是「和默认框一样大」的结构性保证，而不是靠把内孔调准去碰运气。
-	move_child(frame, avatar.get_index())
+	# ★ 11.16 用户要求框在头像**上面**：不再 move_child，框按添加顺序盖在头像之上。
 	# 铭牌复本：玩家席位一律显示（判定见 _apply_slot_frame）。底下 slot.png 里本来就
 	# 画着这块六边形木牌，但玩家席位的底图整块被隐藏了，不再补一份「房主 / 准备 /
 	# 未准备」就没了底 —— 10.02 反馈明确要求保留这块铭牌。
@@ -884,7 +884,7 @@ func _refresh() -> void:
 		_slot_avatars[i].modulate = Color(1, 1, 1, 0.35 if state == "settling" else 1.0)
 		_slot_avatars[i].visible = state in ["player", "settling"]
 		if state in ["player", "settling"]:
-			_slot_avatars[i].texture = AvatarCatalog.texture_for(str(identity.get("avatar", AvatarCatalog.default_avatar())))
+			AvatarCatalog.set_avatar_texture(_slot_avatars[i], AvatarCatalog.texture_for(str(identity.get("avatar", AvatarCatalog.default_avatar()))))
 			if not identity.is_empty():
 				# 10.04 bug 文档第 5 条：房间座位只显示昵称（隐藏 #好友码）。
 				name_lbl.text = AccountManager.display_name(str(identity.get("player_name", "")), str(identity.get("friend_code", "")), false)
@@ -1011,7 +1011,11 @@ func _apply_slot_frame(index: int, identity: Dictionary, state: String) -> void:
 	var occupied := state in ["player", "settling"]
 	var frame_value := str(identity.get("avatar_frame", ""))
 	var frame_id := AvatarCatalog.id_from_value(frame_value)
-	var custom := occupied and not frame_id.is_empty() and frame_id != "frame_default"
+	# ★ 11.16：默认框也是空心框，与商城框同一条路、画在头像上面；旧的金棕圆盘不再显示。
+	if frame_value.is_empty() or AvatarCatalog.frame_source_path(frame_id).is_empty():
+		frame_value = AvatarCatalog.default_frame()
+		frame_id = AvatarCatalog.id_from_value(frame_value)
+	var custom := occupied
 	if custom:
 		var tex: Texture2D = AvatarCatalog.frame_texture_for(frame_value)
 		var drawn := AvatarCatalog.frame_drawn_size(frame_id, _slot_hole_target())
@@ -1020,7 +1024,7 @@ func _apply_slot_frame(index: int, identity: Dictionary, state: String) -> void:
 			# 也不能留一个「框是空的、头像还被让开一块」的席位。
 			custom = false
 		else:
-			_slot_frames[index].texture = tex
+			AvatarCatalog.set_frame_texture(_slot_frames[index], tex)
 			# 框的**内孔圆心**压在圆盘中心上（= 头像中心），尺寸由内孔反推 ——
 			# 每个框的内孔占比、内孔在图里的位置都不同，所以落点**必须**跟着框走，
 			# 不能只在 _build_slot 里定一次，也不能自己写 `中心 - 尺寸/2`
@@ -1031,7 +1035,7 @@ func _apply_slot_frame(index: int, identity: Dictionary, state: String) -> void:
 				drawn)
 	_slot_frames[index].visible = custom
 	_slot_bases[index].visible = not occupied
-	_slot_frame_bases[index].visible = occupied and not custom
+	_slot_frame_bases[index].visible = false
 	_slot_plates[index].visible = occupied
 
 

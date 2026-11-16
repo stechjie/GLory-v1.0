@@ -1,0 +1,24 @@
+{
+ "fx": "impacts/parry",
+ "columns": 3,
+ "rows": 5,
+ "frame_count": 13,
+ "fps": 15,
+ "duration": 0.867,
+ "cell_px": [
+  481,
+  262
+ ],
+ "cell_src_px": [
+  240.5,
+  131
+ ],
+ "pivot": [
+  0.499,
+  0.7328
+ ],
+ "sheet_px": [
+  1443,
+  1310
+ ]
+}

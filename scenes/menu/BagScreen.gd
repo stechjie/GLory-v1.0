@@ -485,7 +485,7 @@ func _avatar_tile(value: String) -> Control:
 		panel.add_child(_detail_hint("?"))
 		return panel
 	var rect := TextureRect.new()
-	rect.texture = tex
+	AvatarCatalog.set_avatar_texture(rect, tex)
 	rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -596,7 +596,7 @@ func _render_avatar_detail(value: String) -> void:
 	var tex := AvatarCatalog.texture_for(value)
 	if tex != null:
 		var rect := TextureRect.new()
-		rect.texture = tex
+		AvatarCatalog.set_avatar_texture(rect, tex)
 		rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
