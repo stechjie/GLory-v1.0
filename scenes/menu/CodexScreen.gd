@@ -126,7 +126,6 @@ func _build() -> void:
 	_head = HBoxContainer.new()
 	_left_col.add_child(_head)
 	_back_btn = Kit.back_button(func(): back_requested.emit(), 56.0)
-	_back_btn.tooltip_text = tr("codex_back")
 	_back_btn.focus_mode = Control.FOCUS_ALL
 	_back_aspect = _back_btn.custom_minimum_size.x / maxf(1.0, _back_btn.custom_minimum_size.y)
 	_head.add_child(_back_btn)

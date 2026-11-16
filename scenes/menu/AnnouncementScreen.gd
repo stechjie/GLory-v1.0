@@ -101,7 +101,7 @@ func _build() -> void:
 
 	var list_panel := PanelContainer.new()
 	list_panel.custom_minimum_size = Vector2(LIST_WIDTH, 0)
-	list_panel.add_theme_stylebox_override("panel", Kit.box("panel"))
+	list_panel.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(62, 58, 62, 56)))
 	body.add_child(list_panel)
 	var list_scroll := TouchScrollContainer.new()
 	list_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -114,7 +114,7 @@ func _build() -> void:
 
 	var detail_panel := PanelContainer.new()
 	detail_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	detail_panel.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(44, 52, 44, 36)))
+	detail_panel.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(68, 56, 68, 56)))
 	body.add_child(detail_panel)
 	var detail_scroll := TouchScrollContainer.new()
 	detail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED

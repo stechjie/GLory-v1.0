@@ -3643,7 +3643,7 @@ func _create_merc_picker_content() -> PanelContainer:
 		close.add_theme_stylebox_override(state, StyleBoxEmpty.new())
 	close.position = Vector2(1330, 46)
 	close.size = Vector2(88, 88)
-	close.tooltip_text = tr("ui_close") if TranslationServer.translate("ui_close") != "ui_close" else "关闭"
+	close.accessibility_name = tr("ui_close") if TranslationServer.translate("ui_close") != "ui_close" else "关闭"
 	close.pressed.connect(_close_merc_picker)
 	board.add_child(close)
 	_merc_overlay_grid = GridContainer.new()

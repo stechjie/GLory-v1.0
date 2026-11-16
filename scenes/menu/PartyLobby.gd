@@ -360,7 +360,6 @@ func _build() -> void:
 	_chat_panel.add_child(_chat_input)
 	_send_button = _social_icon_button(_chat_panel,
 		Vector2(CHAT_SIZE.x - 91, CHAT_SIZE.y - CHAT_INPUT_FROM_BOTTOM - 4), ICON_SEND)
-	_send_button.tooltip_text = _text("发送", "Send")
 	_send_button.pressed.connect(_send_chat)
 	# 10-08：快捷短语（同自定义房间的「＋ 快捷短语」）。点哪句发哪句，走同一个队内聊天接口。
 	# 10.19：入口挪进标题木条，高度随木条缩到 36。
@@ -695,7 +694,7 @@ func _render_seats() -> void:
 			tap.flat = true
 			tap.focus_mode = Control.FOCUS_NONE
 			tap.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-			tap.tooltip_text = _text("查看资料", "View profile")
+			tap.accessibility_name = _text("查看资料", "View profile")
 			tap.pressed.connect(_view_member_profile.bind(code))
 		var name_label := _label(seat, AccountManager.display_name(name, code, false),
 			Vector2(0, 163), Vector2(214, 35), 23, CREAM)
@@ -717,7 +716,7 @@ func _render_seats() -> void:
 		if others_seat and _is_host() and not bool(_room.get("queued", false)):
 			var kick := _button(seat, "×", Vector2(150, 4), KICK_BTN_SIZE)
 			_style_compact_button(kick, false)
-			kick.tooltip_text = _text("移出队伍", "Remove from party")
+			kick.accessibility_name = _text("移出队伍", "Remove from party")
 			kick.pressed.connect(_kick_member.bind(code))
 
 

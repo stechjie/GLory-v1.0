@@ -361,7 +361,7 @@ func _build() -> void:
 	# ★ 11.16 用户要求：框（含默认框）一律画在头像**上面**，框的内圈压住头像边缘。
 	#   所以这里不再 move_child —— 后加的节点自然在上。旧的默认圆环 _profile_base_frame
 	#   不再显示，默认框也走这个 overlay（见 `_refresh_profile_plate`）。
-	_profile_name_label = _add_label("", Vector2(207, 59), Vector2(260, 32), 24, "left")
+	_profile_name_label = _add_label("", Vector2(225, 68), Vector2(224, 28), 22, "left")
 	_ink(_profile_name_label)
 	# 等级与经验文字居中覆盖在同一个进度条上。
 	_profile_xp_bar = _add_container(PROFILE_XP_POS, PROFILE_XP_SIZE, "left")

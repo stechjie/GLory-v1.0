@@ -175,7 +175,7 @@ func _header() -> Control:
 	# 右上角刷新：图标键（原来是一颗写着「刷新」的深色按钮）
 	var refresh := Kit.image_button("icon_refresh", func() -> void: await _reload(true), 56.0)
 	refresh.name = "Refresh"
-	refresh.tooltip_text = _text("刷新", "Refresh")
+	refresh.accessibility_name = _text("刷新", "Refresh")
 	return Kit.header(_text("好友", "Friends"), func() -> void: back_requested.emit(), refresh)
 
 
@@ -410,7 +410,7 @@ func _friend_row(entry: Dictionary) -> Control:
 
 	var more := ACTION_BUTTON.instantiate() as Button
 	more.text = "⋯"
-	more.tooltip_text = _text("更多操作", "More actions")
+	more.accessibility_name = _text("更多操作", "More actions")
 	more.custom_minimum_size = Vector2(56, Tokens.TOUCH_MIN)
 	_style_quiet_button(more)
 	row.add_child(more)
@@ -457,7 +457,7 @@ func _avatar_stage(entry: Dictionary, code: String) -> Control:
 		stage.add_child(frame)
 	var hit := ACTION_BUTTON.instantiate() as Button
 	hit.text = ""
-	hit.tooltip_text = _text("查看资料", "View profile")
+	hit.accessibility_name = _text("查看资料", "View profile")
 	hit.custom_minimum_size = Vector2.ZERO
 	hit.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var clear := Tokens.flat_box(Color.TRANSPARENT, Color.TRANSPARENT, 0)

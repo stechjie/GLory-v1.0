@@ -154,7 +154,7 @@ func _build() -> void:
 	_stone_page.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	# 右上角圆形关闭键
 	_close_button = _image_button("button_close", Vector2(58, 61))
-	_close_button.tooltip_text = _t("关闭", "Close")
+	_close_button.accessibility_name = _t("关闭", "Close")
 	_close_button.pressed.connect(_close)
 	root.add_child(_close_button)
 	_close_button.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)

@@ -59,7 +59,7 @@ const SECTION_COLOR := Color("8a4b12")
 const BAD_COLOR := Color("a3271a")
 
 const LIST_WIDTH := 332.0
-const ROW_HEIGHT := 72.0
+const ROW_HEIGHT := 84.0
 const AVATAR_SIZE := 46.0
 # 标题栏左右两侧等宽：左边是返回按钮，右边垫同样宽的空白，标题才在正中。
 const HEADER_SIDE_WIDTH := 120.0
@@ -278,7 +278,7 @@ func _list_panel() -> Control:
 	retention.tooltip_text = _text(
 		"与每位好友只保留最近 %d 条消息；解除好友后，记录最多再保留 30 天。" % ChatService.HISTORY_LIMIT,
 		"Only your latest %d messages with each friend are kept; after unfriending, they are kept for at most 30 more days." % ChatService.HISTORY_LIMIT)
-	retention.clip_text = true
+	retention.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	retention.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 	retention.add_theme_color_override("font_color", MUTED_COLOR)
 	col.add_child(retention)
@@ -317,6 +317,7 @@ func _conversation_panel() -> Control:
 
 	_peer_label = Label.new()
 	_peer_label.clip_text = true
+	_peer_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_peer_label.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
 	_peer_label.add_theme_color_override("font_color", Kit.INK)
 	identity.add_child(_peer_label)
@@ -720,8 +721,8 @@ func _chat_row(entry: Dictionary) -> Control:
 	# 左右让开纸条两端的卷边
 	margin.add_theme_constant_override("margin_left", 26)
 	margin.add_theme_constant_override("margin_right", 28)
-	margin.add_theme_constant_override("margin_top", 6)
-	margin.add_theme_constant_override("margin_bottom", 8)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_bottom", 12)
 	row.add_child(margin)
 
 	var line := HBoxContainer.new()
@@ -731,6 +732,7 @@ func _chat_row(entry: Dictionary) -> Control:
 
 	var avatar_panel := PanelContainer.new()
 	avatar_panel.custom_minimum_size = Vector2(AVATAR_SIZE, AVATAR_SIZE)
+	avatar_panel.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	avatar_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	avatar_panel.add_theme_stylebox_override("panel", Tokens.panel_box(
 		Color("f3e2c0"), Color("b07a2a"), 2))
@@ -747,6 +749,7 @@ func _chat_row(entry: Dictionary) -> Control:
 	texts.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	texts.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	texts.add_theme_constant_override("separation", 0)
+	texts.alignment = BoxContainer.ALIGNMENT_CENTER
 	line.add_child(texts)
 
 	var name_line := HBoxContainer.new()
@@ -763,43 +766,46 @@ func _chat_row(entry: Dictionary) -> Control:
 	name_line.add_child(online_dot)
 
 	var name_label := Label.new()
-	var identity_text := AccountManager.display_name(str(entry.get("player_name", "")), code)
-	var code_suffix := " #" + code
-	name_label.text = identity_text.trim_suffix(code_suffix)
+	name_label.text = AccountManager.display_name(str(entry.get("player_name", "")), code, false)
 	name_label.clip_text = true
+	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	name_label.add_theme_font_size_override("font_size", 16)
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	name_label.add_theme_color_override("font_color", SECTION_COLOR if selected else Kit.INK)
 	name_line.add_child(name_label)
 
-	var code_label := Label.new()
-	code_label.text = identity_text.trim_prefix(name_label.text).strip_edges()
-	code_label.clip_text = true
-	code_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	code_label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	code_label.add_theme_color_override("font_color", MUTED_COLOR)
-	name_line.add_child(code_label)
-
 	var preview_line := HBoxContainer.new()
 	preview_line.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	preview_line.add_theme_constant_override("separation", Tokens.GAP_S)
+	preview_line.add_theme_constant_override("separation", 3)
 	texts.add_child(preview_line)
 
+	var last: Variant = entry.get("last_message")
+	if last is Dictionary:
+		var sender := Label.new()
+		sender.text = _text("我：", "Me:") if bool(last.get("from_me", false)) else _text("他：", "Them:")
+		sender.add_theme_font_size_override("font_size", 12)
+		sender.add_theme_color_override("font_color", Kit.INK_SOFT)
+		sender.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		preview_line.add_child(sender)
 	var preview := Label.new()
 	preview.text = _preview_text(entry)
 	preview.clip_text = true
+	preview.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	preview.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	preview.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	preview.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+	preview.add_theme_font_size_override("font_size", 12)
 	preview.add_theme_color_override("font_color", Kit.INK_SOFT)
 	preview_line.add_child(preview)
 
-	var stamp := Label.new()
-	stamp.text = _friend_time(entry)
-	stamp.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	stamp.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	stamp.add_theme_color_override("font_color", MUTED_COLOR)
-	preview_line.add_child(stamp)
+	var timestamp := _friend_time(entry)
+	if not timestamp.is_empty():
+		var stamp := Label.new()
+		stamp.text = timestamp
+		stamp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		stamp.add_theme_font_size_override("font_size", 12)
+		stamp.add_theme_color_override("font_color", MUTED_COLOR)
+		texts.add_child(stamp)
 
 	var dot := Label.new()
 	dot.text = "●"
@@ -832,8 +838,6 @@ func _preview_text(entry: Dictionary) -> String:
 			body = _text("[组队邀请]", "[Team invite]")
 		elif RoomInvite.is_invite(msg):
 			body = _text("[房间邀请]", "[Room invite]")
-	if bool(msg.get("from_me", false)):
-		body = _text("我：", "Me: ") + body
 	return body
 
 

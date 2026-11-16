@@ -525,7 +525,7 @@ func _pet_skill_button(pet_id: String, portrait_size: Vector2) -> Button:
 	button.flat = true
 	button.custom_minimum_size = portrait_size
 	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	button.tooltip_text = _t("点击查看技能", "Tap to view skill")
+	button.accessibility_name = _t("查看%s技能", "View %s skill") % PetService.display_name(pet_id)
 	var art := PetPreview.build_illustration(pet_id, portrait_size)
 	button.add_child(art)
 	art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -889,7 +889,7 @@ func _render_wish(skin_id: String) -> void:
 	art_button.flat = true
 	art_button.custom_minimum_size = Vector2(620, 300)
 	art_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	art_button.tooltip_text = _pair(banner.title)
+	art_button.accessibility_name = _pair(banner.title)
 	art_button.pressed.connect(func() -> void: wish_requested.emit(skin_id))
 	row.add_child(art_button)
 	# 横幅和祈愿弹窗同一个画面：祭坛背景 + 悬在祭坛上方、轻轻浮动的卷轴
@@ -1026,7 +1026,7 @@ func _render_event() -> void:
 			rewards = (fallback as Dictionary).get("rewards", [])
 	var strip := HBoxContainer.new()
 	strip.add_theme_constant_override("separation", Tokens.GAP_S)
-	strip.custom_minimum_size.y = 136
+	strip.custom_minimum_size.y = 148
 	_special_content.add_child(strip)
 	for raw in rewards:
 		strip.add_child(_reward_card(raw as Dictionary))
@@ -1052,12 +1052,8 @@ func _render_event() -> void:
 	reveal.set_shader_parameter("progress", float(progress))
 	image.material = reveal
 	stage.add_child(image)
-	var badge := Label.new()
-	badge.text = _t("冰雪点亮  %d / 7" % progress, "FROST REVEALED  %d / 7" % progress)
+	var badge := Kit.gold_badge(_t("冰雪点亮  %d / 7" % progress, "FROST REVEALED  %d / 7" % progress), 16)
 	badge.position = Vector2(16, 12)
-	badge.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
-	badge.add_theme_color_override("font_color", Kit.INK_ON_GOLD)
-	badge.add_theme_stylebox_override("normal", Kit.box("plate_gold", Vector4(16, 4, 16, 4)))
 	stage.add_child(badge)
 	var side_panel := PanelContainer.new()
 	side_panel.custom_minimum_size.x = 325
@@ -1102,17 +1098,17 @@ func _reward_card(reward: Dictionary) -> Control:
 	var ready := day == int(_login_state.get("current_day", 0)) and bool(
 		_login_state.get("claimable_today", false))
 	var card := PanelContainer.new()
-	card.custom_minimum_size = Vector2(137, 136)
+	card.custom_minimum_size = Vector2(137, 148)
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	# 已领取卡片使用更轻的玻璃底色，待领取卡片保留金色描边。
 	# 已领取：压暗；今天能领：金色底；其余：羊皮纸
-	card.add_theme_stylebox_override("panel", Kit.box("slot", Vector4(10, 12, 10, 10),
+	card.add_theme_stylebox_override("panel", Kit.box("slot", Vector4(10, 17, 10, 14),
 		Color(0.78, 0.74, 0.68) if done else (Color(1.0, 0.86, 0.58) if ready else Color.WHITE)))
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 3)
 	card.add_child(col)
 	var title := Label.new()
-	title.text = "DAY %d" % day
+	title.text = _t("第 %d 天", "DAY %d") % day
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 	title.add_theme_color_override("font_color", SECTION_COLOR)
@@ -1134,7 +1130,8 @@ func _reward_card(reward: Dictionary) -> Control:
 	caption.add_theme_color_override("font_color", Kit.INK)
 	col.add_child(caption)
 	var button: Button = ACTION_BUTTON.instantiate()
-	button.custom_minimum_size = Vector2(0, 34)
+	button.custom_minimum_size = Vector2(0, 44)
+	button.add_theme_font_size_override("font_size", 16)
 	button.text = _t("已领取 ✓", "Claimed ✓") if done else (
 		_t("领取", "Claim") if ready else _t("未解锁", "Locked"))
 	button.disabled = not ready
@@ -1300,7 +1297,8 @@ func _card(item: Dictionary) -> Control:
 		price_row.add_child(price_label)
 
 	var button: Button = ACTION_BUTTON.instantiate()
-	button.custom_minimum_size = Vector2(0, Tokens.TOUCH_MIN)
+	button.custom_minimum_size = Vector2(100, Tokens.TOUCH_MIN)
+	button.add_theme_font_size_override("font_size", 18)
 	if owned:
 		if str(item.get("kind", "")) == "pet":
 			var active := grants == _active_pet
@@ -1356,18 +1354,14 @@ func _preview_stage(item: Dictionary, owned: bool, preview_size: Vector2) -> Con
 		Motion.bob(floater, 4.0, float(absi(hash(_item_id(item))) % 628) / 100.0)
 
 	if owned:
-		var badge := Label.new()
+		var badge := Kit.gold_badge(_t("已拥有", "OWNED"))
 		badge.name = "OwnedBadge"
-		badge.text = _t("  已拥有  ", "  OWNED  ")
-		badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		badge.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-		badge.position = Vector2(-90, 8)
-		badge.size = Vector2(82, 26)
-		badge.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-		badge.add_theme_color_override("font_color", SECTION_COLOR)
-		badge.add_theme_stylebox_override("normal", Kit.box("plate_gold", Vector4(8, 2, 8, 2)))
-		badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		badge.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+		badge.offset_left = -10
+		badge.offset_right = -10
+		badge.offset_top = 9
+		badge.offset_bottom = 9
 		stage.add_child(badge)
 	return stage
 
@@ -1461,6 +1455,7 @@ func _render_detail(item: Dictionary) -> void:
 	var kind_label := Label.new()
 	kind_label.text = _kind_label(item)
 	kind_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	kind_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	kind_label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 	kind_label.add_theme_color_override("font_color", Kit.INK_SOFT)
 	_detail.add_child(kind_label)
@@ -1482,7 +1477,8 @@ func _render_detail(item: Dictionary) -> void:
 	_detail.add_child(status)
 
 	var buy: Button = ACTION_BUTTON.instantiate()
-	buy.custom_minimum_size = Vector2(0, Tokens.BUTTON_HEIGHT)
+	buy.custom_minimum_size = Vector2(116, Tokens.BUTTON_HEIGHT)
+	buy.add_theme_font_size_override("font_size", 18)
 	if owned:
 		if str(item.get("kind", "")) == "pet":
 			var active := grants == _active_pet
@@ -1512,6 +1508,7 @@ func _render_detail(item: Dictionary) -> void:
 			% Currency.comma(_balance_of(currency)))
 		balance_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		balance_hint.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+		balance_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		balance_hint.add_theme_color_override("font_color", Kit.INK_SOFT)
 		_detail.add_child(balance_hint)
 
@@ -1813,7 +1810,7 @@ func _render_units() -> void:
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	margin.add_child(col)
 
-	var title := Kit.title_banner(_t("%s · 棋子收藏" % _race_title(race), "%s · Unit collection" % _race_title(race)), 60.0, 22)
+	var title := Kit.title_banner(_t("%s · 棋子收藏" % _race_title(race), "%s Units" % _race_title(race)), 60.0, 22)
 	col.add_child(title)
 	var sub := Label.new()
 	sub.text = _t("集齐全部 %d 个棋子，解锁%s出战。" % [total, _race_title(race)],

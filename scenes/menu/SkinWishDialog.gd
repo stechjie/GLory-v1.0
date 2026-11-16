@@ -433,9 +433,9 @@ func _build_crown() -> void:
 func _build_cards() -> void:
 	# 左：解锁后长什么样
 	var left := PanelContainer.new()
-	left.add_theme_stylebox_override("panel", Kit.box("card", Vector4(36, 34, 34, 26)))
+	left.add_theme_stylebox_override("panel", Kit.box("card", Vector4(36, 43, 34, 30)))
 	left.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_rect(left, 36, 96, 392, 0)
+	_rect(left, 36, 96, 406, 0)
 	_canvas.add_child(left)
 	var lcol := VBoxContainer.new()
 	lcol.add_theme_constant_override("separation", 8)
@@ -457,11 +457,8 @@ func _build_cards() -> void:
 	art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	art_frame.add_child(art)
-	var badge := PanelContainer.new()
-	badge.add_theme_stylebox_override("panel", Kit.box("plate_gold", Vector4(14, 4, 14, 4)))
-	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	badge.position = Vector2(10, 10)
-	badge.add_child(_label(_t("已永久拥有", "Owned forever"), 17))
+	var badge := Kit.gold_badge(_t("已永久拥有", "Owned forever"), 15)
+	badge.position = Vector2(12, 10)
 	art_frame.add_child(badge)
 	_owned_badge = badge
 	var desc := _label(_txt("desc"), 16)
@@ -472,9 +469,9 @@ func _build_cards() -> void:
 
 	# 右：概率公示（付款前必须看得到）
 	var right := PanelContainer.new()
-	right.add_theme_stylebox_override("panel", Kit.box("card", Vector4(36, 34, 34, 26)))
+	right.add_theme_stylebox_override("panel", Kit.box("card", Vector4(36, 43, 34, 30)))
 	right.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_rect(right, 1172, 96, 392, 0)
+	_rect(right, 1158, 96, 406, 0)
 	_canvas.add_child(right)
 	var rcol := VBoxContainer.new()
 	rcol.add_theme_constant_override("separation", 8)
@@ -493,19 +490,23 @@ func _build_cards() -> void:
 
 func _build_bottom() -> void:
 	var plate := PanelContainer.new()
-	plate.add_theme_stylebox_override("panel", Kit.box("list_row", Vector4.ZERO))
+	plate.add_theme_stylebox_override("panel", Kit.box("list_row", Vector4(32, 16, 32, 12)))
 	plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_rect(plate, 520, 514, 560, 74)
+	_rect(plate, 520, 509, 560, 80)
 	_canvas.add_child(plate)
-	_progress_label = _label("", 24)
+	var copy := VBoxContainer.new()
+	copy.alignment = BoxContainer.ALIGNMENT_CENTER
+	copy.add_theme_constant_override("separation", 2)
+	copy.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	plate.add_child(copy)
+	_progress_label = _label("", 22)
 	_progress_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_rect(_progress_label, 500, 520, 600, 34)
-	_canvas.add_child(_progress_label)
-	_pity_label = _label("", 18)
+	_progress_label.add_theme_constant_override("outline_size", 0)
+	copy.add_child(_progress_label)
+	_pity_label = _label("", 16)
 	_pity_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_pity_label.add_theme_color_override("font_color", _th.text)
-	_rect(_pity_label, 500, 554, 600, 28)
-	_canvas.add_child(_pity_label)
+	_pity_label.add_theme_constant_override("outline_size", 0)
+	copy.add_child(_pity_label)
 	_draw_button = _button("", Vector2(380, 76))
 	Kit.style_plate(_draw_button, true)
 	_draw_button.add_theme_font_size_override("font_size", 27)

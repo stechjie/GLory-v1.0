@@ -75,8 +75,6 @@ var _grid: GridContainer
 var _detail: VBoxContainer
 var _empty_label: Label
 var _notice_label: Label
-var _pet_count_label: Label
-var _avatar_count_label: Label
 var _tab_buttons: Dictionary = {}
 var _pet_page: Control
 var _avatar_page: Control
@@ -84,6 +82,8 @@ var _pet_roster: Control
 var _pet_stage: Control
 var _pet_grid: GridContainer
 var _pet_detail: VBoxContainer
+var _pet_info_scroll: ScrollContainer
+var _pet_action: Button
 var _pet_empty: Label
 var _avatar_grid: GridContainer
 var _avatar_detail: VBoxContainer
@@ -192,17 +192,26 @@ func _build_pet_page() -> Control:
 	# 现在长文案在面板内部滚动，页面高度不再受文案长度影响。
 	information.custom_minimum_size.y = PET_DETAIL_MIN_HEIGHT
 	information.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	information.add_theme_stylebox_override("panel", Kit.box("panel", PANEL_PAD))
+	information.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(58, 54, 58, 42)))
 	content.add_child(information)
-	var info_scroll := TouchScrollContainer.new()
-	info_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	info_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	info_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	information.add_child(info_scroll)
+	var info_column := VBoxContainer.new()
+	info_column.add_theme_constant_override("separation", Tokens.GAP_S)
+	information.add_child(info_column)
+	_pet_info_scroll = TouchScrollContainer.new()
+	_pet_info_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_pet_info_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_pet_info_scroll.clip_contents = true
+	info_column.add_child(_pet_info_scroll)
 	_pet_detail = VBoxContainer.new()
 	_pet_detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_pet_detail.add_theme_constant_override("separation", Tokens.GAP_M)
-	info_scroll.add_child(_pet_detail)
+	_pet_info_scroll.add_child(_pet_detail)
+	_pet_action = ACTION_BUTTON.instantiate()
+	_pet_action.custom_minimum_size = Vector2(0, Tokens.BUTTON_HEIGHT)
+	_pet_action.size_flags_horizontal = Control.SIZE_FILL
+	_pet_action.pressed.connect(func() -> void: _set_active(_selected_pet))
+	_pet_action.hide()
+	info_column.add_child(_pet_action)
 	_pet_roster = TouchScrollContainer.new()
 	_pet_roster.custom_minimum_size.y = 120
 	_pet_roster.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -248,8 +257,9 @@ func _collection_panel() -> Control:
 	col.add_theme_constant_override("separation", Tokens.GAP_S)
 	panel.add_child(col)
 
-	var head := HBoxContainer.new()
+	var head := MarginContainer.new()
 	head.custom_minimum_size.y = 34
+	head.add_theme_constant_override("margin_left", 40)
 	col.add_child(head)
 	var title := Label.new()
 	title.text = _t("我的收藏", "My Collection")
@@ -257,10 +267,6 @@ func _collection_panel() -> Control:
 	title.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
 	title.add_theme_color_override("font_color", SECTION_COLOR)
 	head.add_child(title)
-	_pet_count_label = _count_label()
-	head.add_child(_pet_count_label)
-	_avatar_count_label = _count_label()
-	head.add_child(_avatar_count_label)
 
 	var scroll := TouchScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -292,13 +298,6 @@ func _detail_panel() -> Control:
 	_detail.add_theme_constant_override("separation", Tokens.GAP_S)
 	panel.add_child(_detail)
 	return panel
-
-
-func _count_label() -> Label:
-	var label := Label.new()
-	label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	label.add_theme_color_override("font_color", Kit.INK_SOFT)
-	return label
 
 
 func _header() -> Control:
@@ -356,6 +355,7 @@ func _render() -> void:
 	if _grid == null:
 		return
 	var pets := _active_tab == TAB_PETS
+	_pet_action.hide()
 	_pet_page.visible = pets
 	_avatar_page.visible = not pets
 	_grid = _pet_grid if pets else _avatar_grid
@@ -375,8 +375,6 @@ func _render() -> void:
 	_clear_children(_grid)
 	_clear_children(_detail)
 	var avatars := _usable_avatars() if not _loading else []
-	_pet_count_label.text = _t("宠物 %d", "Pets %d") % _owned_pets.size()
-	_avatar_count_label.text = _t("  ·  头像 %d", "  ·  Avatars %d") % avatars.size()
 
 	if _loading:
 		_empty_label.text = _t("正在整理收藏…", "Organizing your collection…")
@@ -509,21 +507,28 @@ func _pet_preview_stage(pet_id: String, preview_size: Vector2, active: bool) -> 
 	_ignore_mouse_tree(preview)
 	center.add_child(preview)
 	if active:
-		var badge := Label.new()
-		badge.text = _t("  出战中  ", "  EQUIPPED  ")
-		badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		badge.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-		badge.position = Vector2(-98, 8)
-		badge.size = Vector2(90, 26)
-		badge.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-		badge.add_theme_color_override("font_color", SECTION_COLOR)
-		badge.add_theme_stylebox_override("normal", Kit.box("plate_gold", Vector4(8, 2, 8, 2)))
+		var badge := PanelContainer.new()
 		badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		badge.set_anchors_preset(Control.PRESET_CENTER_TOP)
+		badge.offset_left = -42
+		badge.offset_right = 42
+		badge.offset_top = 3
+		badge.offset_bottom = 37
+		badge.add_theme_stylebox_override("panel", Kit.box("plate_gold", Vector4(10, 11, 10, 7)))
 		stage.add_child(badge)
+		var caption := Label.new()
+		caption.text = _t("出战中", "EQUIPPED")
+		caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		caption.add_theme_font_size_override("font_size", 11)
+		caption.add_theme_color_override("font_color", SECTION_COLOR)
+		caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		badge.add_child(caption)
 	return stage
 
 
 func _render_pet_detail(pet_id: String) -> void:
+	_pet_info_scroll.set_deferred("scroll_vertical", 0)
 	var active := pet_id == _active_pet
 	var artwork := PetPreview.build_illustration(pet_id, PET_DETAIL_PREVIEW, false)
 	_ignore_mouse_tree(artwork)
@@ -544,6 +549,7 @@ func _render_pet_detail(pet_id: String) -> void:
 	_pet_stage.add_child(artwork)
 	var eyebrow := Label.new()
 	eyebrow.text = _t("伙伴档案", "COMPANION PROFILE")
+	eyebrow.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	eyebrow.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 	eyebrow.add_theme_color_override("font_color", SECTION_COLOR)
 	_detail.add_child(eyebrow)
@@ -568,18 +574,13 @@ func _render_pet_detail(pet_id: String) -> void:
 		_detail.add_child(detail_label)
 	var status := Label.new()
 	status.text = _t("✓ 当前出战宠物", "✓ Currently equipped") if active else _t("可设为出战", "Ready to equip")
+	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	status.add_theme_color_override("font_color", SECTION_COLOR if active else Kit.INK_SOFT)
 	_detail.add_child(status)
-	var action: Button = ACTION_BUTTON.instantiate()
-	action.custom_minimum_size = Vector2(0, Tokens.BUTTON_HEIGHT)
-	if active:
-		action.text = _t("出战中 ✓", "Equipped ✓")
-		action.disabled = true
-	else:
-		action.text = _t("设为出战", "Set Active")
-		action.theme_type_variation = Theming.VARIATION_PRIMARY
-		action.pressed.connect(func() -> void: _set_active(pet_id))
-	_detail.add_child(action)
+	_pet_action.text = _t("出战中 ✓", "Equipped ✓") if active else _t("设为出战", "Set Active")
+	_pet_action.theme_type_variation = &"" if active else Theming.VARIATION_PRIMARY
+	_pet_action.disabled = active
+	_pet_action.show()
 
 
 func _render_avatar_detail(value: String) -> void:

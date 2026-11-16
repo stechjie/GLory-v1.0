@@ -112,6 +112,21 @@ static func box(piece: String, content := Vector4(-1, -1, -1, -1), modulate := C
 	return sb
 
 
+static func gold_badge(text: String, font_size := 14) -> PanelContainer:
+	var badge := PanelContainer.new()
+	badge.add_theme_stylebox_override("panel", box("plate_gold", Vector4(18, 12, 18, 9)))
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var caption := Label.new()
+	caption.text = text
+	caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	caption.add_theme_font_size_override("font_size", font_size)
+	caption.add_theme_color_override("font_color", INK_ON_GOLD)
+	caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.add_child(caption)
+	return badge
+
+
 static func panel(piece := "panel") -> PanelContainer:
 	var p := PanelContainer.new()
 	p.add_theme_stylebox_override("panel", box(piece))
@@ -228,13 +243,14 @@ static func image_button(piece: String, cb: Callable, side := 64.0) -> Button:
 static func back_button(cb: Callable, side := 62.0) -> Button:
 	var b := image_button("back", cb, side)
 	b.name = "Back"
-	b.tooltip_text = "返回"
+	b.accessibility_name = "Back" if TranslationServer.get_locale().begins_with("en") else "返回"
 	return b
 
 
 static func close_button(cb: Callable, side := 48.0) -> Button:
 	var b := image_button("close", cb, side)
 	b.name = "Close"
+	b.accessibility_name = "Close" if TranslationServer.get_locale().begins_with("en") else "关闭"
 	return b
 
 

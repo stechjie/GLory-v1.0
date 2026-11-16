@@ -176,7 +176,7 @@ func _make_row(entry: Dictionary) -> Control:
 	AvatarCatalog.set_avatar_texture(avatar, AvatarCatalog.texture_for(str(identity.get("avatar", AvatarCatalog.default_avatar())), true))
 	if not is_self and not guest and str(identity.get("friend_code", "")).length() == 8:
 		avatar.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		avatar.tooltip_text = _t("查看玩家资料", "View player profile")
+		avatar.accessibility_name = _t("查看玩家资料", "View player profile")
 		avatar.pressed.connect(func(): profile_requested.emit(identity))
 	else:
 		avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
