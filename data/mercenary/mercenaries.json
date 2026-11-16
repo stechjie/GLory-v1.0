@@ -105,7 +105,7 @@
                             "range":  1,
                             "move_speed":  3.4,
                             "skill_id":  "gold_charge",
-                            "skill_cd":  6.0,
+                            "skill_cd":  7.0,
                             "skill_damage":  340,
                             "stun_sec":  2.6,
                             "crit":  0.05,

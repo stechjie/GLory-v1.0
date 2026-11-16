@@ -783,6 +783,66 @@ static func _fighter_from_cell(cell: Dictionary, slot: int, team: String, mirror
 	return f
 
 
+# 11.16 用户定：棋子、佣兵、法阵友军进战斗时，主动技能先走满一次冷却才放第一发
+# （冷却 12 秒就是第 12 秒才开），不再开场即放；opening_cd 也不再生效。
+# 这张表就是「主动技能」名单：血条下的黄色冷却条也只给表里的技能画。
+# 值是缺省冷却，必须与 BattleSimulator._tick_skills 各分支的
+# `d.get("skill_cd", X)` 里的 X **逐字一致**（shell_guard 固定 6 秒、不读 skill_cd）。
+# 不在表里的：被动技能、每秒轮询的伪被动（末日守卫 shared_hp_link、炎阳王者
+# king_aura）、Boss 技能 —— 它们照旧开场即可生效。
+const ACTIVE_SKILL_DEFAULT_CD := {
+	"random_ally_buff": 5.0,
+	"frost_status": 6.0,
+	"aoe_silence": 10.0,
+	"lowest_ally_heal": 4.0,
+	"nearest_ally_bless": 6.0,
+	"nearby_ally_heal_buff": 7.0,
+	"random_attribute_bolt": 2.5,
+	"judgement_strike": 2.0,
+	"random_ally_damage_reduction": 6.0,
+	"global_divine_blast": 8.0,
+	"silence_bolt": 4.0,
+	"fear": 6.0,
+	"stun": 5.0,
+	"black_hole": 8.0,
+	"blink_low_def_backline": 5.0,
+	"front_cone_stun": 5.0,
+	"shell_guard": 6.0,
+	"bubble_dream": 6.0,
+	"holy_song": 10.0,
+	"twin_strike": 10.0,
+	"arrow_rain": 6.0,
+	"steel_order": 8.0,
+	"time_slow": 8.0,
+	"gold_charge": 7.0,
+	"burn_claw": 5.0,
+	"soul_chain": 9.0,
+	"devour_bite": 12.0,
+	"hell_burst": 9.0,
+	"eternal_night": 12.0,
+}
+
+
+static func has_active_cooldown_skill(fighter: Dictionary) -> bool:
+	var d: Dictionary = fighter.get("def", {})
+	var id := str(fighter.get("id", d.get("id", "")))
+	if bool(d.get("is_boss", false)) or id.begins_with("boss_"):
+		return false
+	return ACTIVE_SKILL_DEFAULT_CD.has(str(d.get("skill_id", "")))
+
+
+# 开场第一发要等的秒数（未计宝藏「时间压缩」，那个在 _apply_opening_treasures 里再 ×0.75）。
+static func opening_skill_cooldown(fighter: Dictionary) -> float:
+	if not has_active_cooldown_skill(fighter):
+		return 0.0
+	var d: Dictionary = fighter.get("def", {})
+	var sid := str(d.get("skill_id", ""))
+	var default_cd := float(ACTIVE_SKILL_DEFAULT_CD[sid])
+	if sid == "shell_guard":
+		return default_cd
+	return float(d.get("skill_cd", default_cd))
+
+
 static func _fighter_from_def(d: Dictionary, slot: int, team: String, order: int, total: int, star: int = 1, is_mercenary: bool = false, is_formation_ally: bool = false, mirror_enemy_slot: bool = false) -> Dictionary:
 	var pos := _slot_to_pos(slot, team, order, total, mirror_enemy_slot)
 	var hp := int(d.get("hp", 1))

@@ -20,6 +20,10 @@ uniform float light_threshold : hint_range(0.0, 1.0) = 0.32;
 uniform float band_softness : hint_range(0.0, 0.25) = 0.03;
 uniform float light_energy : hint_range(0.0, 3.0) = 1.25;
 uniform float light_response : hint_range(0.1, 4.0) = 1.5;
+// 11.15：脸偏暗。皮肤（按贴图颜色识别：偏橙粉、中低饱和、够亮）在背光面不再压到 shadow_tint，
+// 改用更亮更暖的 skin_shadow_tint，脸低着头也是亮的（同 ba_toon 的做法）。0 = 关（默认，其他种族不变）。
+uniform float skin_lift : hint_range(0.0, 1.0) = 0.0;
+uniform vec3 skin_shadow_tint : source_color = vec3(0.94, 0.78, 0.74);
 group_uniforms;
 
 group_uniforms Accent;
@@ -56,6 +60,7 @@ uniform float emission_energy : hint_range(0.0, 8.0) = 0.0;
 group_uniforms;
 
 varying float trim_region;
+varying vec3 shadow_floor;
 
 vec3 rgb_to_hsv(vec3 c) {
 	vec4 k = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
@@ -68,6 +73,15 @@ vec3 rgb_to_hsv(vec3 c) {
 vec3 hsv_to_rgb(vec3 c) {
 	vec3 p = abs(fract(c.xxx + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
 	return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
+}
+
+float skin_mask(vec3 hsv) {
+	float h_ok = 1.0 - smoothstep(0.09, 0.12, hsv.x);
+	float s_ok = smoothstep(0.08, 0.14, hsv.y) * (1.0 - smoothstep(0.55, 0.65, hsv.y));
+	float v_ok = smoothstep(0.6, 0.75, hsv.z);
+	// 眼白、牙这类近白色也算进来（打七折）：不然亮起来的脸上眼白还是灰的。白毛边会跟着亮一点。
+	float white = (1.0 - smoothstep(0.08, 0.14, hsv.y)) * smoothstep(0.78, 0.9, hsv.z) * 0.7;
+	return max(h_ok * s_ok * v_ok, white);
 }
 
 void fragment() {
@@ -96,7 +110,8 @@ void fragment() {
 	float fresnel = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), rim_power);
 	float rim = smoothstep(rim_threshold - band_softness, rim_threshold + band_softness, fresnel);
 	// Shadow floor once (key + fill never stack it), then light-independent glow.
-	EMISSION = ALBEDO * shadow_tint
+	shadow_floor = mix(shadow_tint, skin_shadow_tint, skin_mask(hsv) * skin_lift);
+	EMISSION = ALBEDO * shadow_floor
 			+ accent_color * accent * accent_glow * hsv.z
 			+ rim_color * rim * rim_strength
 			+ texture(emission_texture, UV).rgb * emission_energy;
@@ -109,7 +124,7 @@ void light() {
 	vec3 light_tint = (LIGHT_COLOR / max(peak, 0.0001)) * clamp(peak * light_response, 0.0, 1.0);
 	float ndotl = max(dot(normal, light_dir), 0.0) * ATTENUATION;
 	float band = smoothstep(light_threshold - band_softness, light_threshold + band_softness, ndotl);
-	float shadow_level = dot(shadow_tint, vec3(0.2126, 0.7152, 0.0722));
+	float shadow_level = dot(shadow_floor, vec3(0.2126, 0.7152, 0.0722));
 	DIFFUSE_LIGHT += ALBEDO * light_tint * band * light_energy * (1.0 - clamp(shadow_level, 0.0, 1.0));
 	if (trim_highlight > 0.0) {
 		vec3 half_dir = normalize(normalize(VIEW) + light_dir);

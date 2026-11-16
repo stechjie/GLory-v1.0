@@ -31,12 +31,32 @@ uniform float warm_strength : hint_range(0.0, 1.0) = 0.0;
 uniform vec4 rim_color : source_color = vec4(1.0, 0.90, 0.62, 1.0);
 uniform float rim_strength : hint_range(0.0, 2.0) = 0.12;
 uniform float rim_power : hint_range(0.5, 8.0) = 3.6;
+// 11.15：这层不认贴图，脸在背光侧会和衣服一样被压暗。给了贴图（UnitSceneBlend 按材质单独建一份）
+// 就按颜色识别皮肤，皮肤上少压 skin_protect 这么多。默认白图 + 0 = 和原来完全一样。
+uniform sampler2D skin_albedo : source_color, hint_default_white, filter_linear_mipmap, repeat_enable;
+uniform float skin_protect : hint_range(0.0, 1.0) = 0.0;
+
+float blend_skin_mask(vec3 c) {
+	float mx = max(c.r, max(c.g, c.b));
+	float mn = min(c.r, min(c.g, c.b));
+	float d = mx - mn;
+	float s = d / (mx + 1.0e-5);
+	// 只关心橙粉这一段：r 最大、g 不低于 b，色相 = (g - b) / d / 6
+	float h = (c.r >= mx && c.g >= c.b) ? (c.g - c.b) / (6.0 * d + 1.0e-5) : 1.0;
+	float skin = (1.0 - smoothstep(0.09, 0.12, h)) * smoothstep(0.08, 0.14, s) * (1.0 - smoothstep(0.55, 0.65, s)) * smoothstep(0.6, 0.75, mx);
+	// 眼白这类近白色打七折一起护住（和 race_body 的 skin_mask 同一套）
+	float white = (1.0 - smoothstep(0.08, 0.14, s)) * smoothstep(0.78, 0.9, mx) * 0.7;
+	return max(skin, white);
+}
 
 void fragment() {
 	vec3 n = normalize(NORMAL);
 	float ndl = dot(n, normalize(light_dir_view));
 	float lit = smoothstep(band_center - band_softness, band_center + band_softness, ndl);
 	float shade_a = (1.0 - lit) * shade_strength;
+	if (skin_protect > 0.0) {
+		shade_a *= 1.0 - blend_skin_mask(sqrt(max(texture(skin_albedo, UV).rgb, vec3(0.0)))) * skin_protect;
+	}
 	float warm_a = lit * warm_strength;
 	float fresnel = pow(1.0 - clamp(dot(n, normalize(VIEW)), 0.0, 1.0), rim_power);
 	float rim = fresnel * smoothstep(0.0, 0.6, ndl) * rim_strength;
