@@ -113,6 +113,8 @@ static func card_effect_text(tid: String) -> String:
 		return ""
 	if tid == "money_golden_altar":
 		text = text % TreasureService.golden_altar_hp_cost()
+	elif tid == "ctrl_corrosive_needle":
+		text = text % int(round(TreasureService.corrosive_needle_bleed_bonus() * 100.0))
 	return text
 
 

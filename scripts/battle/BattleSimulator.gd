@@ -552,6 +552,7 @@ static func step_state(state: Dictionary) -> void:
 	# 之前，这样「被炸死的单位」能在本 tick 一并结清，不用等下一 tick。
 	BattleSimTreasures._process_death_explosions(state)
 	# 本 tick 所有伤害都结算完了，再补发非普攻致死的击杀金（必须在 _step_team 之后）。
+	_process_pending_kill_effects(state)
 	_process_pending_kill_rewards(state)
 	BattleSimTreasures._process_race_death_traits(state)
 	constrain_battle_positions(state)
@@ -1547,6 +1548,8 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 
 
 static func _on_unit_killed(killer: Dictionary, victim: Dictionary, state: Dictionary, killer_team: Array, victim_team: Array) -> void:
+	# 11.16：击杀类效果已在这里结算，_process_pending_kill_effects 的补扫据此跳过。
+	victim["kill_effects_done"] = true
 	state.total_deaths = int(state.get("total_deaths", 0)) + 1
 	if str(killer.get("def", {}).get("skill_id", "")) == "death_hunt":
 		_heal_unit(killer, maxi(1, int(round(float(killer.max_hp) * float(killer.get("def", {}).get("kill_heal_pct", 0.15))))))
@@ -1592,6 +1595,7 @@ static func _maybe_spawn_parasite_clone(killer: Dictionary, victim: Dictionary, 
 	clone.statuses = {}
 	clone.erase("money_set_multiplier")
 	clone.erase("money_set_hp_multiplier")
+	clone.erase("kill_effects_done")
 	# 10.09 bug 文档第 4 条：分身不在 `unit_stats` 里（每个 uid 只在开场登记一次），
 	# 所以它打出的伤害、它挂的毒一直无人认领（实测见 probe_attr_paths.gd 的 _case_clone_dot）。
 	# 给它打上「无归属来源」标记：归属按击杀者（也就是寄生灵自己）的席位走，进元素旁路。
@@ -1899,6 +1903,42 @@ static func _apply_final_round_left_right_layout(player: Array, enemy: Array) ->
 		if bool(fighter.get("is_formation_ally", false)):
 			fighter.pos = Vector2(805.0, 240.0)
 			fighter["lane"] = 1
+
+
+# 11.16 击杀类效果补结算（用户定：技能打死也要触发）。
+# 凤凰涅槃、双生守门人复活、亡魂反击、哀鸣共鸣原本只挂在 _on_unit_killed 上，
+# 那是**普攻致死**入口；被技能 / AOE / 持续伤害 / 反伤打死时一个都不触发
+# （3v3 模拟：带凤凰的一方 37 次死亡里 9 次没复活，全是被 Boss 技能打死）。
+# 这里与 _process_pending_kill_rewards 同款，每 tick 收尾扫一遍新死亡补上。
+# - 凤凰、双生复活只看死者，任何致死方式都触发（含持续伤害、强制死亡）。
+# - 亡魂反击、哀鸣共鸣需要凶手：按 DamageService 记下的 killer_uid 找回；
+#   无来源的死亡（中毒 / 失血 / 狂暴期衰减 / 凤凰复活体到时强制死亡）不触发这两项。
+# - 普攻致死已在 _on_unit_killed 里即时结算并落 kill_effects_done，这里跳过，不会重复。
+# - 控制套「击杀刷新冷却」、寄生分身、冥界执行者击杀回血仍只认普攻最后一击，不在这里补。
+static func _process_pending_kill_effects(state: Dictionary) -> void:
+	var fighters: Array = state.get("player", []) + state.get("enemy", [])
+	var by_uid := {}
+	for f in fighters:
+		by_uid[str(f.get("uid", ""))] = f
+	for victim in fighters:
+		if bool(victim.get("alive", true)) and int(victim.get("hp", 0)) > 0:
+			continue
+		if bool(victim.get("kill_effects_done", false)):
+			continue
+		victim["kill_effects_done"] = true
+		var victim_team: Array = state.get("enemy", []) if str(victim.get("team", "")) == "enemy" else state.get("player", [])
+		BattleSimTreasures._queue_twin_revive(victim, state)
+		BattleSimTreasures._queue_phoenix_revive(victim, state)
+		var killer_uid := str(victim.get("killer_uid", ""))
+		if killer_uid.is_empty() or killer_uid == str(victim.get("uid", "")) or not by_uid.has(killer_uid):
+			continue
+		var killer: Dictionary = by_uid[killer_uid]
+		var prev_source := DamageService.current_stat_source_uid()
+		DamageService.begin_stat_context(state, victim)
+		BattleSimTreasures._apply_soul_counter_treasure(killer, victim)
+		DamageService.begin_stat_context(state, killer)
+		BattleSimTreasures._apply_kill_treasures(killer, victim, victim_team)
+		DamageService.set_stat_source_uid(prev_source)
 
 
 # 击杀金补结算：普通攻击打死目标时 _handle_attack_kill 会即时结算，但技能 / AOE /

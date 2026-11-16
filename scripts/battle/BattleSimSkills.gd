@@ -476,7 +476,8 @@ static func _skill_arrow_rain(caster: Dictionary, opponents: Array, d: Dictionar
 	caster.vfx_skill_target_uid = ""
 	_mark_vfx_targets(caster, targets)
 	for o in targets:
-		DamageService.apply_damage(o, maxi(1, int(round(float(caster.atk) * 0.85))), false)
+		# 11.16 用户定 70%（以前写死 0.85），改读数据。
+		DamageService.apply_damage(o, maxi(1, int(round(float(caster.atk) * float(d.get("damage_atk_pct", 0.70))))), false)
 
 
 static func _skill_steel_order(caster: Dictionary, allies: Array, d: Dictionary) -> void:

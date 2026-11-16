@@ -369,7 +369,7 @@ static func format_skill_template_cn(d: Dictionary) -> String:
 		"king_aura":
 			return "王者光环：每2秒强化周围友军，攻速+%s、暴击+%s，持续2.2秒。" % [pct(float(d.get("ally_aspd_bonus", 0.25))), pct(float(d.get("ally_crit_bonus", 0.15)))]
 		"arrow_rain":
-			return "箭雨%s：攻击最近%d名敌人，每个目标受到自身攻击85%%伤害。" % [cd, int(d.get("targets", 5))]
+			return "箭雨%s：攻击最近%d名敌人，每个目标受到自身攻击%s伤害。" % [cd, int(d.get("targets", 5)), pct(float(d.get("damage_atk_pct", 0.70)))]
 		"blood_rampage":
 			return "血怒：每损失%s最大生命，攻速+%s、吸血+%s、伤害+3%%。" % [pct(float(d.get("hp_step", 0.10))), pct(float(d.get("aspd_per_step", 0.10))), pct(float(d.get("lifesteal_per_step", 0.05)))]
 		"steel_order":
@@ -552,7 +552,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"king_aura":
 			return "King's Aura: Every 2s, buff nearby allies — AS +%s, Crit +%s for 2.2s." % [pct(float(d.get("ally_aspd_bonus", 0.25))), pct(float(d.get("ally_crit_bonus", 0.15)))]
 		"arrow_rain":
-			return "Arrow Rain%s: Strike the nearest %d enemies, each taking 85%% ATK damage." % [cd, int(d.get("targets", 5))]
+			return "Arrow Rain%s: Strike the nearest %d enemies, each taking %s ATK damage." % [cd, int(d.get("targets", 5)), pct(float(d.get("damage_atk_pct", 0.70)))]
 		"blood_rampage":
 			return "Blood Rage: For every %s max HP lost, gain +%s AS, +%s lifesteal and +3%% damage." % [pct(float(d.get("hp_step", 0.10))), pct(float(d.get("aspd_per_step", 0.10))), pct(float(d.get("lifesteal_per_step", 0.05)))]
 		"steel_order":

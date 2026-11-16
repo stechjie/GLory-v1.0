@@ -345,6 +345,7 @@ static func _queue_phoenix_revive(victim: Dictionary, state: Dictionary) -> void
 	# duplicate() 会把原体的死亡标记一起带过来：清掉，让复活体作为全新单位重新计死。
 	revived.erase("kill_reward_paid")
 	revived.erase("killer_uid")
+	revived.erase("kill_effects_done")
 	var queue: Array = state.get("revive_queue", [])
 	queue.append({"due": float(state.elapsed) + 0.1, "fighter": revived})
 	state.revive_queue = queue
@@ -382,11 +383,20 @@ static func _apply_element_set_burst(attacker: Dictionary, target: Dictionary, s
 	DamageService.restore_hit_context(saved_hit)
 
 
-# Target selection does not reset this battle-long treasure gain.
+# 11.16：恢复「换目标清零」。11-06 改成整场保留后，狂暴进攻几秒就稳定 ×2.5，
+# 平均攻速是雷霆加速的 3~4 倍；清零让它只在盯单个目标（Boss、坦克）时强。
+# 空目标（这一 tick 没找到人）不算换目标，不清层。
 static func _frenzy_select_target(attacker: Dictionary, target_uid: String) -> void:
+	if target_uid.is_empty():
+		return
+	if str(attacker.get("frenzy_target_uid", "")) != target_uid:
+		attacker.frenzy_stacks = 0
+		attacker.frenzy_speed_multiplier = 1.0
 	attacker.frenzy_target_uid = target_uid
 
-static func _apply_frenzy_assault(attacker: Dictionary, _target: Dictionary) -> void:
+static func _apply_frenzy_assault(attacker: Dictionary, target: Dictionary) -> void:
+	# 直接调用（没经过 _frenzy_select_target 的路径）也按同一规则换目标清零。
+	_frenzy_select_target(attacker, str(target.get("uid", "")))
 	var stacks := mini(clampi(int(attacker.get("frenzy_stacks", 0)), 0, 10) + 1, 10)
 	attacker.frenzy_stacks = stacks
 	attacker.frenzy_speed_multiplier = minf(1.0 + 0.15 * stacks, 2.5)
@@ -723,6 +733,7 @@ static func _process_revives(state: Dictionary) -> void:
 			# 复活即清死亡标记：之后再被打死要能重新结算击杀金，也避免用到陈旧的致死来源。
 			f.erase("kill_reward_paid")
 			f.erase("killer_uid")
+			f.erase("kill_effects_done")
 			if str(f.team) == "enemy":
 				state.enemy.append(f)
 			else:
