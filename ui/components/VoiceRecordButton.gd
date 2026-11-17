@@ -119,10 +119,9 @@ func _on_down() -> void:
 		_hint.text = ""
 		failed.emit(reason)
 		return
-	# 移动端首次录音会先弹系统权限框（2026-10-14）。这时麦克风还没开，
-	# 别显示「0″ 松开发送」——玩家会以为已经在录了。等权限回来会自动补开。
-	if VoiceClipService.is_awaiting_permission():
-		_hint.text = _text("正在请求麦克风权限…", "Requesting microphone…")
+	# 授权弹窗会打断按住手势，允许后下一次按住才录音。
+	if not VoiceClipService.is_recording():
+		_hint.text = ""
 		return
 	_hint.text = _text("0″ 松开发送", "0″ release to send")
 
@@ -130,10 +129,7 @@ func _on_down() -> void:
 func _on_up() -> void:
 	if _busy:
 		return
-	# 权限框还开着：玩家松手了（多半是慌了）。权限回调会把这次录音补上，
-	# 这里不要当成「录都没开起来」直接吞掉，也不要走到 finish_and_upload
-	# （那会拿到「没有在录音」的错误）。授权回来如果成了，照常开始录；
-	# 玩家不想录了就直接拖开松手取消 —— 由 _cancelled 分支处理。
+	# 权限弹窗仍在等待时，松手不触发发送。
 	if VoiceClipService.is_awaiting_permission():
 		return
 	if not VoiceClipService.is_recording() and VoiceClipService.recorded_seconds() <= 0.0:

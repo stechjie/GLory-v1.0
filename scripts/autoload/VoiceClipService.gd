@@ -34,10 +34,7 @@ signal permission_denied()
 
 const AccountConfig := preload("res://scripts/account/AccountConfig.gd")
 
-# 🔴 移动端的麦克风权限名。安卓就是这一条；iOS 走同一个字符串（Godot 的
-# OS.request_permission 在 iOS 上把它映射到 AVAudioSession 的录音授权），
-# 与 VoiceService.MIC_PERMISSION 保持同一个字面量，别改成一个 iOS 专用名——
-# Godot 只认这一条。
+# Android 通过 Godot 请求，iOS 由 GloryVoice 调用 AVAudioSession。
 const MIC_PERMISSION := "android.permission.RECORD_AUDIO"
 
 # 🔴 下面三个与 backend/app/voice_clips.py 的同名常量一致（tools/voice_clip_check 钉着）。
@@ -64,7 +61,7 @@ var _capture: AudioEffectCapture = null
 # 麦克风还没开，计时条也就没有数据。
 var _pending_permission := false
 # 玩家按下去的那次录音，等权限回来要不要补开。
-var _want_record_after_permission := false
+var _ios_permission_bridge: Object
 var _resample_ratio := 3.0
 var _rs_pos := 0.0
 var _rs_sum := 0.0
@@ -87,7 +84,7 @@ func _ready() -> void:
 		get_tree().on_request_permissions_result.connect(_on_permission_result)
 
 
-# 权限框是不是正在路上。界面用它决定「正在要权限…」还是「已在录音」。
+# 权限弹窗仍在等待时，界面忽略松手事件。
 func is_awaiting_permission() -> bool:
 	return _pending_permission
 
@@ -112,21 +109,29 @@ func start_recording() -> String:
 	# 🔴 通话中不让录：两边都要麦克风。比起偷偷把通话静音，这个行为更好解释。
 	if VoiceService.mode != VoiceService.Mode.OFF:
 		return _text("通话中不能录语音", "Can't record while voice chat is on")
-	# 🔴 移动端（iOS / Android）先要麦克风权限再碰 AudioStreamMicrophone。
-	# 2026-10-14 修：以前这里直接开录，安卓靠装包时静态授予的权限侥幸能用，
-	# **iOS 上首次录音被系统静默拒绝** —— 表现就是报告里那句「iOS 端语音按键
-	# 无法正常使用」：按下去没反应、松手也没有任何提示，因为麦克风根本没送数据。
-	# 权限已授予时 request_permission 立即回调 true，不会重复弹窗，所以路径上
-	# 只在「还没决定」那一次真正弹一次系统框。
-	if _needs_mic_permission():
-		OS.request_permission(MIC_PERMISSION)
-		# 不 await：Godot 的授权框是异步的，这里先把「正在要权限」的提示交给
-		# 调用方（VoiceRecordButton 的计时提示），这次录音的意图先记下来，
-		# 等授权结果回来再真正开录（见 _on_permission_result）。
-		_pending_permission = true
-		_want_record_after_permission = true
-		_ensure_bus()
+	if _pending_permission:
 		return ""
+	match OS.get_name():
+		"iOS":
+			if not Engine.has_singleton(VoiceService.SINGLETON):
+				return _text("这个版本无法请求麦克风权限", "Microphone permission is unavailable in this build")
+			var bridge := Engine.get_singleton(VoiceService.SINGLETON)
+			if not bridge.has_method("requestRecordPermission") or not bridge.has_method("hasRecordPermission") \
+					or not bridge.has_method("getStatus"):
+				return _text("这个版本无法请求麦克风权限", "Microphone permission is unavailable in this build")
+			if not bool(bridge.call("hasRecordPermission")):
+				_pending_permission = true
+				_ios_permission_bridge = bridge
+				set_process(true)
+				bridge.call("requestRecordPermission")
+				return ""
+		"Android":
+			var granted := OS.get_granted_permissions()
+			if not granted.has(MIC_PERMISSION) and not granted.has("RECORD_AUDIO"):
+				_pending_permission = true
+				if not OS.request_permission(MIC_PERMISSION):
+					return ""
+				_pending_permission = false
 	_ensure_bus()
 	if _capture == null:
 		return _text("麦克风打不开", "Microphone unavailable")
@@ -149,30 +154,14 @@ func start_recording() -> String:
 	return ""
 
 
-# 这个平台要不要在录音前主动要权限。桌面（Windows/Linux/macOS）不需要，
-# 系统的音频输入开关就是权限本身，多问一层反而挡住开发机上的调试。
-func _needs_mic_permission() -> bool:
-	var os_name := OS.get_name()
-	return os_name == "iOS" or os_name == "Android"
-
-
-# 系统权限框回来了。拿到就补开这次录音 —— 玩家按下去、弹窗、点允许，
-# 这一串动作是连续的，不能让这次按键白费。
+# 授权弹窗会打断按住手势，允许后等下一次按住才录音。
 func _on_permission_result(permission: String, granted: bool) -> void:
-	if permission != MIC_PERMISSION:
+	if not _pending_permission or (not permission.ends_with("RECORD_AUDIO") and permission != "microphone"):
 		return
 	_pending_permission = false
-	var wanted := _want_record_after_permission
-	_want_record_after_permission = false
+	_ios_permission_bridge = null
+	set_process(_recording)
 	if not granted:
-		permission_denied.emit()
-		return
-	if not wanted:
-		return
-	# start_recording() 自己会在成功时发 recording_changed，这里不再补发
-	# （重复发一次会让界面把「已开录」处理两遍）。
-	var reason := start_recording()
-	if not reason.is_empty():
 		permission_denied.emit()
 
 
@@ -209,6 +198,11 @@ func _stop_capture() -> void:
 
 
 func _process(_delta: float) -> void:
+	if _pending_permission and _ios_permission_bridge != null:
+		var status: Variant = JSON.parse_string(str(_ios_permission_bridge.call("getStatus")))
+		var permission := str(status.get("permission", "")) if status is Dictionary else ""
+		if permission in ["granted", "denied"]:
+			_on_permission_result(MIC_PERMISSION, permission == "granted")
 	if not _recording or _capture == null:
 		return
 	var available := _capture.get_frames_available()

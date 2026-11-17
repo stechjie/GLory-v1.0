@@ -738,7 +738,9 @@ func _build_slot(index: int) -> void:
 	material.shader = shader
 	avatar.material = material
 	_slot_avatars[index] = avatar
-	VoiceControls.attach_speaking_mic(avatar)
+	var speaking_mic := VoiceControls.attach_speaking_mic(avatar)
+	# 语音标记盖过装饰头像框。
+	speaking_mic.z_index = 1
 	# 玩家的头像框。只画**自定义框**：默认框 / 没框时画的是上面那只金棕圆盘
 	# （10.02 改口径，与 MainMenu / ProfileScreen 完全一致 —— 那两处也只画自定义框，
 	# 默认框走「圆盘 + 大头像」这条路）。
