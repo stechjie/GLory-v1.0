@@ -46,7 +46,7 @@ static func _apply_death_servant_aura(servant: Dictionary, team_units: Array, d:
 	var mres_amount := int(d.get("ally_mres_bonus", 0))
 	if pct <= 0.0 and amount <= 0 and mres_amount <= 0:
 		return
-	# 11.18 用户定：光环范围 = 死侍所在棋盘上前、后、左、右各 1 格（不含斜角）。
+	# 11.18 用户定：光环范围 = 死侍所在棋盘上周围一圈 8 格（前后左右 + 斜角）。
 	# 按行列算，不再用「格子编号差 ≤ 1」—— 那样会把上一排最右和下一排最左当成相邻，
 	# 3v3 里还会算到队友棋盘上同编号的格子。
 	var slot := int(servant.get("slot", -99))
@@ -62,7 +62,8 @@ static func _apply_death_servant_aura(servant: Dictionary, team_units: Array, d:
 		if a_slot < 0 or int(a.get("owner_slot", -1)) != int(servant.get("owner_slot", -1)) \
 				or int(a.get("lane", -1)) != int(servant.get("lane", -1)):
 			continue
-		if absi(a_slot / cols - row) + absi(a_slot % cols - col) != 1:
+		# 周围一圈 8 格（含斜角）：行、列都最多差 1。
+		if maxi(absi(a_slot / cols - row), absi(a_slot % cols - col)) != 1:
 			continue
 		if pct > 0.0:
 			# ⚠️ 必须读 fighter 的 `defense`，不能读 `def`：fighter 字典里的 `def` 是

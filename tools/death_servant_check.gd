@@ -41,7 +41,10 @@ func _ready() -> void:
 	var mate := _fighter("mate", 4, {})
 	mate.owner_slot = 1
 	mate.lane = 1
-	var team := [servant, front, left, right, behind, diagonal, mate]
+	# 格 13 隔了一排；格 3 与格 4 编号相邻但在上一排最右，离死侍两列。
+	var far := _fighter("far", 13, {})
+	var wrap := _fighter("wrap", 3, {})
+	var team := [servant, front, left, right, behind, diagonal, mate, far, wrap]
 	var state := _state(team)
 	var log: Array[String] = []
 	BattleSimulator._apply_opening_unit_skills(team, [], log, state)
@@ -54,9 +57,11 @@ func _ready() -> void:
 	_h.expect(DamageService.effective_defense(front) == 30 and DamageService.effective_magic_resist(behind) == 25
 		and DamageService.effective_defense(behind) == 30,
 		"servant_aura_front_back", "前、后 1 格的队友（含被绑的正后方棋子）也吃到光环")
-	_h.expect(DamageService.effective_defense(diagonal) == 20 and DamageService.effective_magic_resist(diagonal) == 15
-		and DamageService.effective_defense(mate) == 20,
-		"servant_aura_not_diagonal", "斜角格和队友棋盘上的棋子不吃光环")
+	_h.expect(DamageService.effective_defense(diagonal) == 30 and DamageService.effective_magic_resist(diagonal) == 25,
+		"servant_aura_diagonal", "斜角格的队友也吃到光环")
+	_h.expect(DamageService.effective_defense(far) == 20 and DamageService.effective_magic_resist(far) == 15
+		and DamageService.effective_defense(wrap) == 20 and DamageService.effective_defense(mate) == 20,
+		"servant_aura_range", "隔一格的、编号相邻但跨排的、队友棋盘上的棋子不吃光环")
 	StatusEffectService.tick(left, 5.1)
 	_h.expect(DamageService.effective_defense(left) == 20 and DamageService.effective_magic_resist(left) == 15,
 		"servant_aura_expires", "光环 5 秒后必须消失")
