@@ -182,6 +182,12 @@ static func settle_post_battle_breakdown(ctx: Dictionary) -> Dictionary:
 	# (9) 营地固定收入：发生在本次利息之后，避免本场收入再参与利息。
 	income_by_reason["camp"] = maxi(0, int(ctx.get("camp_income", 0)))
 	gold += int(income_by_reason["camp"])
+	# (10) 战斗排名奖励（PvP 伤害前三 / 打怪 Boss 清路前三，见 BattleRankRewards）。
+	# 11-18 用户定：放在利息之后，不生利息。没拿名次就不写这一项，结算面板也就不出这一行。
+	var rank_reward := maxi(0, int(ctx.get("rank_reward", 0)))
+	if rank_reward > 0:
+		income_by_reason["rank_reward"] = rank_reward
+		gold += rank_reward
 	return {"gold_after": maxi(0, gold), "income_by_reason": income_by_reason,
 		"income_total": maxi(0, gold - int(ctx.get("gold_before", 0)))}
 

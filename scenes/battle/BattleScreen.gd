@@ -116,6 +116,8 @@ var _final_round_intro_started := false
 # _replay_own（结算/跳过必须用它），敌方队伍的存在 _replay_rival。
 var _replay_own: Dictionary = {}
 var _replay_rival: Dictionary = {}
+## 伤害前三 / 清路前三 / 左下钱袋（11-18），见 BattleRankHud.gd。组队局才有，教学局没有。
+var _rank_hud: RefCounted = null
 var _view_toggle_btn: Button
 # 9.13 #2：自己这一场已经播完（含"跳过画面"）、正在等其他人结束时置真。
 # 这个状态下允许继续切镜头看另一队的战斗 —— 打完之后切过去只推回放，
@@ -421,6 +423,7 @@ func _start_replay(replay: Dictionary) -> void:
 	_battle_result_reported = false
 	_replay_rival = NetworkService.team_replay_rival if _valid_team_replay(NetworkService.team_replay_rival) else {}
 	_watching_rival = false
+	_setup_rank_hud()
 	_replay_mode = true
 	_replay_frame = 0
 	_replay_events_applied = -1
@@ -751,7 +754,18 @@ func _prepare_battle_models() -> void:
 	if is_instance_valid(bar):
 		bar.queue_free()
 	# 11.14：清场皮肤扫光的贴图是代码现画的，开战前画好（有缓存，之后的回合不再花时间）。
-	preload("res://effects/vfx3d/modules/VFXLaneClearBurst3D.gd").warm_skin_textures(_PREP_SKIN.refresh_fx())
+	# 11.18：别人清路按他的皮肤演，同桌各人的皮肤也一起画好。
+	var lane_clear_vfx := preload("res://effects/vfx3d/modules/VFXLaneClearBurst3D.gd")
+	var skin_kinds := {_PREP_SKIN.refresh_fx(): true}
+	if not NetworkService.team_seat_profiles.is_empty():
+		skin_kinds[_PREP_SKIN.refresh_fx_for(_PREP_SKIN.DEFAULT_ID)] = true  # AI / 默认皮肤的人
+	for profile in NetworkService.team_seat_profiles.values():
+		if profile is Dictionary and profile.has("prep_skin"):
+			skin_kinds[_PREP_SKIN.refresh_fx_for(str(profile["prep_skin"]))] = true
+	for ai_skin in NetworkService.team_seat_ai_skins.values():
+		skin_kinds[_PREP_SKIN.refresh_fx_for(str(ai_skin))] = true
+	for kind in skin_kinds:
+		lane_clear_vfx.warm_skin_textures(kind)
 	# 9.17：Boss 登场。放在这里而不是 _start_battle_music() 里 ——
 	# 后者在进场景那一刻就会被调一次（BattleScreen.gd:98），那时 replay 还没到、
 	# 单位模型还没建，声音会比画面早一整段读条。
@@ -1183,6 +1197,20 @@ func _setup_fps_overlay() -> void:
 	add_child(_fps_label)
 	SafeArea.track(_fps_label)
 
+func _setup_rank_hud() -> void:
+	if _rank_hud != null:
+		_rank_hud.teardown()
+		_rank_hud = null
+	if not GameState.team_mode or GameState.tutorial_mode:
+		return
+	_rank_hud = preload("res://scenes/battle/BattleRankHud.gd").new()
+	var local_slot := NetworkService.team_local_slot if NetworkService.team_active else 0
+	# 局型从回放取（这时 _state 还没按回放重建）；第 21 回合回放里也写 pvp，按回合号认成 final。
+	var kind := "final" if GameState.round_index >= GameState.FINAL_ROUND else str(_replay_own.get("kind", "pve"))
+	_rank_hud.setup(_ensure_combat_feedback(), _replay_own, _replay_rival, kind, GameState.round_index,
+		local_slot, NetworkService.spectating)
+
+
 func _switch_active_replay(replay: Dictionary) -> void:
 	_clear_unit_visuals()
 	_replay = replay
@@ -1451,6 +1479,8 @@ func _apply_replay_frame(i: int) -> void:
 		_state["presentation_slot_damage"] = damage_frames[i]
 	else:
 		_state.erase("presentation_slot_damage")
+	if _rank_hud != null:
+		_rank_hud.refresh(i, _visual_interp_stepping, _voice_controls != null)
 
 
 # War Drum stack counts are presentation-only changes outside the frozen frame
@@ -1646,6 +1676,9 @@ func _finish_replay() -> void:
 	# critical/important cues, including already airborne projectile tails.
 	_presentation_director.begin_draining()
 	_finished = true
+	# 排名定了：最终名次刷一次，自己拿了名次的话金币从木牌 / 绶带飞进左下钱袋。
+	if _rank_hud != null:
+		_rank_hud.finish(_voice_controls != null)
 	_result = _replay.get("result", {})
 	if GameState.tutorial_mode:
 		TutorialMode.coerce_victory(_result)

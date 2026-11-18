@@ -323,9 +323,6 @@ func _zh_strings() -> Dictionary:
 		# 战斗场景
 		"battle_preparing": "战斗准备中...",
 		"battle_sync_failed": "战斗同步失败",
-		"top_atk": "攻击榜",
-		"abbr_atk": "攻",
-		"abbr_dmg": "伤",
 		"log_wait_authoritative": "等待主机权威结算。",
 		# 状态名
 		"status_slow": "减速",
@@ -863,9 +860,6 @@ func _en_strings() -> Dictionary:
 		# Battle scene
 		"battle_preparing": "Preparing Battle...",
 		"battle_sync_failed": "Battle sync failed",
-		"top_atk": "Top ATK",
-		"abbr_atk": "ATK",
-		"abbr_dmg": "DMG",
 		"log_wait_authoritative": "Waiting for host result.",
 		# Status names
 		"status_slow": "Slow",

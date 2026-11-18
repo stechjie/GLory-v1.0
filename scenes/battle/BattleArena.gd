@@ -227,29 +227,6 @@ func _build() -> void:
 	_summary_lbl.visible = false
 	add_child(_summary_lbl)
 
-	# (8) Live "top ATK" leaderboard on the left-middle: top 5 units by attack,
-	# each name in its owner/team color, plus its dealt damage.
-	_top5_atk_lbl = RichTextLabel.new()
-	_top5_atk_lbl.bbcode_enabled = true
-	_top5_atk_lbl.fit_content = true
-	_top5_atk_lbl.scroll_active = false
-	_top5_atk_lbl.anchor_left = 0.0
-	_top5_atk_lbl.anchor_right = 0.0
-	_top5_atk_lbl.anchor_top = 0.5
-	_top5_atk_lbl.anchor_bottom = 0.5
-	_top5_atk_lbl.offset_left = 12
-	_top5_atk_lbl.offset_right = 312
-	_top5_atk_lbl.offset_top = -96
-	_top5_atk_lbl.offset_bottom = 96
-	_top5_atk_lbl.add_theme_font_size_override("normal_font_size", 18)
-	_top5_atk_lbl.add_theme_font_size_override("bold_font_size", 19)
-	_top5_atk_lbl.add_theme_color_override("default_color", Color(0.95, 0.95, 0.98))
-	_top5_atk_lbl.add_theme_constant_override("outline_size", 4)
-	_top5_atk_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.92))
-	_top5_atk_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_top5_atk_lbl.z_index = 90
-	add_child(_top5_atk_lbl)
-	SafeArea.track(_top5_atk_lbl)
 	if GameState.tutorial_mode:
 		_add_tutorial_team_portraits()
 

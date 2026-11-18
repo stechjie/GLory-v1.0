@@ -153,6 +153,8 @@ func new_room() -> Dictionary:
 		"seat_races": {},
 		# slot -> pet id。仅用于营地公开展示；离座/换座必须随座位一起处理。
 		"seat_pets": {},
+		# slot -> 棋盘皮肤 id。只给真 AI 座位（11-18）：第一次下发时随机一张，存着整局不变。
+		"seat_ai_skins": {},
 		# --- 宝物归属（服务端权威）---
 		# 服务端本来就在 _server_pending_treasure 里摇候选并下发，只是从不记录玩家选了
 		# 哪个。记下来之后「这件宝物是不是服务器发给你的」就有了可信来源，不必等 P1
@@ -229,6 +231,7 @@ const SEAT_SLOT_MAPS := [
 	"seat_races",  # 出战种族（协议 28）：换座跟着人走，离座一起清
 	"seat_pets",   # 出战名片的宠物（协议 30 起只有名片能写）：战斗读它，不能让新座位继承
 	"seat_ai_pets",  # AI 座位在营地里展示的宠物。**与 seat_pets 分开**，理由见 NetworkService._ensure_dummy_seat_pet
+	"seat_ai_skins",  # AI 座位的随机棋盘皮肤（清路扫光用），换座跟着走、离座一起清
 	# 名片上的账号 id，战报靠它认人（BattleReport）。2026-09-29 之前漏在这张表外面：
 	# 换座后账号留在旧座位 —— 旧座位补了 AI 就把人记成「AI + 掉线」、胜负跟着错队，
 	# 被真人坐走就整局找不到这个人（还白扣信誉分）。

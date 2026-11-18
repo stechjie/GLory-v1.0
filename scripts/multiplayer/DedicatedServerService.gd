@@ -58,6 +58,8 @@ const PERSISTED_ROOM_FIELDS := [
 	"seat_races",
 	# 萝卜营地展示要保持真实玩家 / AI 的宠物。掉线恢复或进程重启后不能退回默认填充物。
 	"seat_pets",
+	# AI 的随机棋盘皮肤（11-18）：整局不变，进程重启也不能重摇。
+	"seat_ai_skins",
 	# 语音房间名的随机串（docs/语音LiveKit方案.md）：重启后变了的话，已经在语音里的人
 	# 和之后新发的钥匙就不在同一个语音房间了；voice_used 决定换队 / 关房时要不要去 LiveKit 请人出去。
 	"voice_salt", "voice_used",
