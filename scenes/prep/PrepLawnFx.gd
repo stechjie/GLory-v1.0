@@ -65,6 +65,12 @@ func _ready() -> void:
 		_reset_mote(_motes[i], false)
 
 
+# 别的皮肤下这层是藏着的：藏着就不跑 _process（11.16，同 PrepNightFx / PrepSakuraFx）
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_VISIBILITY_CHANGED:
+		set_process(is_visible_in_tree())
+
+
 func _process(delta: float) -> void:
 	if not is_visible_in_tree():
 		return

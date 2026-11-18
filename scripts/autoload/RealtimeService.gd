@@ -97,6 +97,8 @@ var _want_connection := false
 var _kicked := false
 # 建连中（在等令牌续期）。_process 每帧都可能再调 _open()，靠它挡住重入。
 var _opening := false
+# A stopped attempt must never resume after a newer connection has started.
+var _open_generation := 0
 # 连续握手失败的次数（从没收到过 ready 就断了）。服务端在 accept 之前拒绝时，
 # 客户端这边只看得到「握手失败」，分不出是令牌被拒还是网络不通 ——
 # 失败够次数就强制续一次令牌，而不是拿着同一张过期票永远重试。
@@ -155,7 +157,7 @@ func start() -> void:
 	被顶号之后**只能由玩家亲手触发**（ChatService.reconnect_here）——
 	自动再连会让两台设备无限互踢。
 	"""
-	if _want_connection:
+	if _want_connection or AccountManager.is_switching_account():
 		return
 	_want_connection = true
 	_kicked = false
@@ -172,6 +174,22 @@ func stop() -> void:
 	state = State.OFFLINE
 
 
+# Pause only transport; AccountManager retains credentials until provider login succeeds.
+func pause_for_account_switch() -> bool:
+	var resume := _want_connection and not _kicked
+	stop()
+	return resume
+
+
+func resume_after_account_switch(was_wanted: bool) -> void:
+	if not was_wanted or _want_connection or _kicked:
+		return
+	# Unlike start(), failure recovery must not clear the kicked state or claim ownership.
+	_want_connection = true
+	_reconnect_timer = 0.0
+	set_process(true)
+
+
 func send(payload: Dictionary) -> bool:
 	if state != State.ONLINE or _socket == null:
 		return false
@@ -184,12 +202,15 @@ func _open() -> void:
 	if _opening:
 		return
 	_opening = true
+	var opening_generation := _open_generation
 	# 先保证令牌够新（设计文档第二节「token 过期后重连」）。连着失败时强制续一次，
 	# 理由见 _failed_handshakes 的注释。
 	if _failed_handshakes >= FORCE_REFRESH_AFTER_FAILURES:
 		await AccountManager.refresh_session()
 	else:
 		await AccountManager.ensure_fresh_token()
+	if opening_generation != _open_generation:
+		return
 	_opening = false
 	# 等续期的这段时间里可能已经 stop() 了，或者被顶号了。
 	if not _want_connection or _kicked:
@@ -245,6 +266,8 @@ func _admission_intent() -> String:
 
 
 func _close_socket(code: int) -> void:
+	_open_generation += 1
+	_opening = false
 	if _socket != null:
 		_socket.close(code)
 		_socket = null

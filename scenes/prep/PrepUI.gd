@@ -65,6 +65,8 @@ const REFRESH_BTN_PATH := "res://assets/ui/buttons/btn_refresh_blank.png"
 const REFRESH_RING_PATH := "res://assets/ui/prep_buttons/refresh_ring.png"
 const PrepRefreshEmblem := preload("res://scenes/prep/PrepRefreshEmblem.gd")
 const PrepSunDappleScript := preload("res://scenes/prep/PrepSunDapple.gd")
+const PrepNightFxScript := preload("res://scenes/prep/PrepNightFx.gd")
+const PrepSakuraFxScript := preload("res://scenes/prep/PrepSakuraFx.gd")
 # 11.12 摆放界面按钮换成羊皮纸那一批（assets/ui/prep_buttons，用户出的图，字由代码写）
 const TOP_POWER_BTN_PATH := "res://assets/ui/prep_buttons/top_power.png"
 const TOP_STATS_BTN_PATH := "res://assets/ui/prep_buttons/top_last_battle.png"
@@ -214,7 +216,10 @@ var _team_merc_snapshot_round := -1
 var _team_merc_snapshot_initialized := false
 var _carrot_panel
 var _carrot_button: Button
-var _carrot_button_label: Label
+var _localized_prep_captions: Array[Callable] = []
+var _chat_phrase_buttons: Dictionary[int, Button] = {}
+var _chat_record_texts: Dictionary[Label, Callable] = {}
+var _merc_title_label: Label
 var _carrot_counter_label: Label
 # 萝卜数量那块底板。教学里要指着它（收获萝卜那一步），也要跟入口按钮一起显隐。
 var _carrot_counter_panel: PanelContainer
@@ -503,13 +508,8 @@ func _tutorial_target_fill_seven() -> Control:
 
 
 func _tutorial_target_bond_row() -> Control:
-	var panel: Control = _synergy._left_panel
-	if panel == null:
-		return null
-	for child in panel.get_children():
-		if child is HBoxContainer and (child as Control).visible:
-			return child as Control
-	return panel
+	var target: Control = _synergy.tutorial_bond_target
+	return target if is_instance_valid(target) and target.is_visible_in_tree() else null
 
 
 func _tutorial_target_treasure_logo() -> Control:
@@ -692,6 +692,13 @@ func reapply_prep_skin() -> void:
 		var lawn_fx := _sky_background.get_node_or_null("PrepLawnFx") as CanvasItem
 		if lawn_fx != null:
 			lawn_fx.visible = PrepSkin.active_id == PrepSkin.DEFAULT_ID
+		var night_fx := _sky_background.get_node_or_null("PrepNightFx") as CanvasItem
+		if night_fx != null:
+			night_fx.visible = PrepSkin.active_id == PrepNightFxScript.SKIN_ID
+		PrepSakuraFxScript.apply_shade(_sky_background, PrepSkin.active_id == PrepSakuraFxScript.SKIN_ID)
+		var sakura_fx := _sky_background.get_node_or_null("PrepSakuraFx") as CanvasItem
+		if sakura_fx != null:
+			sakura_fx.visible = PrepSkin.active_id == PrepSakuraFxScript.SKIN_ID
 	_swap_prep_skin_plane("PrepBaseLayer", "board")
 	_swap_prep_skin_plane("PrepRiverBottomLayer", "river")
 	# 河面画得比默认高的皮肤要整体往下游挪（PrepSkin.river_drop）。只换图不挪位置的话，
@@ -700,6 +707,7 @@ func reapply_prep_skin() -> void:
 	_move_river_layer("PrepRiverFlowBottom")
 	_move_river_layer("PrepRiverWaterMotion")
 	refresh_prep_river_water()
+	refresh_prep_sparkle_tint()
 	_swap_prep_skin_plane("PrepStandbyBgLayer", "bench")
 	var carrot := find_child("CarrotGeneratedSprite", true, false)
 	if carrot is Sprite3D:
@@ -811,6 +819,15 @@ func _build(staged: bool = false) -> void:
 	var lawn_fx := preload("res://scenes/prep/PrepLawnFx.gd").new()
 	_sky_background.add_child(lawn_fx)
 	lawn_fx.visible = PrepSkin.active_id == PrepSkin.DEFAULT_ID
+	# 11.16：夜荧光皮肤自己的一套（星星灯 / 石灯笼 / 荧光蛾 / 蘑菇孢子 / 游走的荧光团）
+	var night_fx := PrepNightFxScript.new()
+	_sky_background.add_child(night_fx)
+	night_fx.visible = PrepSkin.active_id == PrepNightFxScript.SKIN_ID
+	# 11.16：樱花皮肤的一套（树影摇晃 / 石灯笼 / 蝴蝶 / 花吹雪）
+	PrepSakuraFxScript.apply_shade(_sky_background, PrepSkin.active_id == PrepSakuraFxScript.SKIN_ID)
+	var sakura_fx := PrepSakuraFxScript.new()
+	_sky_background.add_child(sakura_fx)
+	sakura_fx.visible = PrepSkin.active_id == PrepSakuraFxScript.SKIN_ID
 	if staged:
 		StartupTrace.mark("tutorial_background_built")
 		await get_tree().process_frame
@@ -885,9 +902,30 @@ func _build(staged: bool = false) -> void:
 
 
 func _on_locale_changed(_locale: String) -> void:
-	if _carrot_button_label != null and is_instance_valid(_carrot_button_label):
-		_carrot_button_label.text = "Carrot Camp" if LocaleManager.get_locale().begins_with("en") else "萝卜营地"
+	for update_caption in _localized_prep_captions:
+		update_caption.call()
+	_refresh_start_button_label()
+	_refresh_round_info_label()
+	_board_hud.refresh_board()
+	_board_hud.refresh_bench()
+	_shop.refresh()
+	_sync_shop_detail_card()
+	if is_instance_valid(_synergy._left_panel):
+		_synergy.refresh()
+	_refresh_owned_treasure_logos()
+	if _merc_picker_open:
+		_refresh_mercenary_overlay()
+	if _team_mercs_open and is_instance_valid(_team_mercs_empty_label):
+		_team_mercs_empty_label.text = tr("ui_team_mercs_empty")
+		_update_team_mercs_row_labels()
 	_refresh_carrot_counter()
+	_refresh_chat_scope_button()
+	for phrase_id in _chat_phrase_buttons:
+		_chat_phrase_buttons[phrase_id].text = ChatPhrases.text(phrase_id)
+	for label in _chat_record_texts:
+		label.text = _chat_record_texts[label].call()
+	if is_instance_valid(_stats._stats_popup) and _stats._stats_popup.visible:
+		_stats._refresh_popup()
 
 # 横长条九宫格：先把整张图缩到显示高度（切边按贴图像素算），只切左右两端
 func _scaled_slice(path: String, k: float, left: int, right: int) -> StyleBoxTexture:
@@ -973,6 +1011,14 @@ func _build_top_bar(root: VBoxContainer) -> void:
 	battle_label.add_theme_constant_override("outline_size", 1)
 	battle.add_child(battle_label)
 	battle.bind_content_label(battle_label)
+	# 11.15 用户反馈「开始按钮很不显眼」：加一套提示光（背后暖金柔光呼吸 + 每 2.4 秒一道扫光 + 几颗小星星），
+	# 和底部卷轴 / 钱袋的提示光是同一个组件，比它们更亮更勤。只画不吃点击，不改按钮本身的位置和缩放。
+	var start_glint := PrepGlintFx.new()
+	start_glint.halo_alpha = Vector2(0.55, 0.95)
+	start_glint.halo_grow = Vector2(1.28, 2.3)
+	start_glint.sweep_every = 2.4
+	start_glint.sparkle_count = 7
+	start_glint.setup(battle, PrepWidgets.cached_texture(START_PLATE_PATH))
 	battle.set_idle_text(tr("ui_start_battle_btn"))
 	_start_battle_label = battle_label
 	# (3) Round number + next battle type (PVE / PVP / BOSS), stacked under the button.
@@ -1228,7 +1274,7 @@ func _build_sell_zone_and_refresh(body: HBoxContainer, center_host: Control) -> 
 	_shop.sell_overlay.add_theme_stylebox_override("panel", sell_style)
 	center_host.add_child(_shop.sell_overlay)
 	var sell_label := Label.new()
-	sell_label.text = tr("ui_sell_zone")
+	sell_label.text = "ui_sell_zone"
 	sell_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	sell_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	sell_label.add_theme_font_size_override("font_size", 24)
@@ -1246,7 +1292,7 @@ func _build_sell_zone_and_refresh(body: HBoxContainer, center_host: Control) -> 
 	var refresh_shop := Button.new()
 	_shop.refresh_button = refresh_shop
 	refresh_shop.text = ""
-	refresh_shop.tooltip_text = tr("ui_refresh_shop_tooltip")
+	refresh_shop.tooltip_text = "ui_refresh_shop_tooltip"
 	refresh_shop.flat = true                  # 去默认样式，只显示循环箭头框
 	# 直接挂外挂层 =【屏幕坐标】，锚右下角。只剩这一套 offset，改它就能挪按钮。
 	refresh_shop.anchor_left = 1.0           
@@ -1323,7 +1369,7 @@ func _build_sell_zone_and_refresh(body: HBoxContainer, center_host: Control) -> 
 	refresh_cost_label.add_theme_constant_override("outline_size", 3)
 	refresh_shop.add_child(refresh_cost_label)
 	var refresh_action_label := Label.new()
-	refresh_action_label.text = tr("ui_refresh")
+	refresh_action_label.text = "ui_refresh"
 	refresh_action_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	refresh_action_label.anchor_left = 0.0
 	refresh_action_label.anchor_top = 1.0
@@ -1387,6 +1433,19 @@ func _style_prep_button_label(label: Label, font_size: int, outline := true) -> 
 	label.add_theme_constant_override("outline_size", 3 if outline else 0)
 
 
+func _bind_prep_caption(label: Label, key: String, button_size: Vector2, font_size: int) -> void:
+	var available := button_size * Vector2(label.anchor_right - label.anchor_left,
+		label.anchor_bottom - label.anchor_top) - Vector2(6, 2)
+	var update := func():
+		label.text = tr(key)
+		var button := label.get_parent() as Button
+		button.accessibility_name = label.text
+		_fit_prep_caption(label, font_size, available)
+	label.clip_text = true
+	_localized_prep_captions.append(update)
+	update.call()
+
+
 func _build_top_actions() -> void:
 	# 右上角横排：战力推荐 | 统计 | 设定（缩小，A 需求）。加到 self 顶层（z 高，不被 body 拦点击）。
 	var top_row := HBoxContainer.new()
@@ -1405,22 +1464,22 @@ func _build_top_actions() -> void:
 	add_child(top_row)
 	SafeArea.track(top_row)
 	# 11.05 换成用户出的整张图（金框 + 图标），字压在框里下沿。
-	top_row.add_child(PrepWidgets.make_art_caption_button(tr("ui_power"), TOP_POWER_BTN_PATH,
-		TOP_ROW_BTN_SIZE, 13, _stats.show_power_recommendation))
-	top_row.add_child(PrepWidgets.make_art_caption_button(tr("ui_stats"), TOP_STATS_BTN_PATH,
-		TOP_ROW_BTN_SIZE, 13, _stats.show_last_battle))
-	var settings_btn := PrepWidgets.make_art_caption_button(tr("ui_settings"), TOP_SETTINGS_BTN_PATH,
-		TOP_ROW_BTN_SIZE, 13, _open_settings)
-	settings_btn.name = "SettingsButton"
-	top_row.add_child(settings_btn)
-	# 新卡片是浅色羊皮纸：字改成深棕、浅色细描边，压在图标下面那一截
-	for top_btn in top_row.get_children():
-		var caption := (top_btn as Node).get_node_or_null("Caption") as Label
-		if caption == null:
-			continue
+	for item in [
+		["ui_power", TOP_POWER_BTN_PATH, _stats.show_power_recommendation],
+		["ui_stats", TOP_STATS_BTN_PATH, _stats.show_last_battle],
+		["ui_settings", TOP_SETTINGS_BTN_PATH, _open_settings],
+	]:
+		var button := PrepWidgets.make_art_caption_button("", item[1], TOP_ROW_BTN_SIZE, 12, item[2])
+		if item[0] == "ui_settings":
+			button.name = "SettingsButton"
+		top_row.add_child(button)
+		var caption := button.get_node("Caption") as Label
+		caption.anchor_left = 0.08
+		caption.anchor_right = 0.92
 		caption.anchor_top = 0.66
-		caption.anchor_bottom = 0.9
+		caption.anchor_bottom = 0.90
 		_style_prep_button_label(caption, 12)
+		_bind_prep_caption(caption, item[0], TOP_ROW_BTN_SIZE, 12)
 
 	# 佣兵盾牌 / 队伍佣兵：不改，仍竖排，挪到横排下面（A1-a）。宽度保持 140，尺寸不变。
 	var side_col := VBoxContainer.new()
@@ -1441,7 +1500,6 @@ func _build_top_actions() -> void:
 	var merc_btn := PrepWidgets.make_framed_text_button("", MERC_BTN_PATH, MERC_BTN_SIZE, 16, _toggle_merc_picker)
 	_merc_button = merc_btn
 	var merc_lbl := Label.new()
-	merc_lbl.text = tr("ui_mercenary")
 	merc_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	merc_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	merc_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -1452,12 +1510,12 @@ func _build_top_actions() -> void:
 	merc_lbl.anchor_bottom = 0.84
 	_style_prep_button_label(merc_lbl, 16, false)
 	merc_btn.add_child(merc_lbl)
+	_bind_prep_caption(merc_lbl, "ui_mercenary", MERC_BTN_SIZE, 16)
 	side_col.add_child(merc_btn)
 	# 队伍佣兵检阅台：教学模式没有队友，直接藏
 	var team_mercs_btn := PrepWidgets.make_framed_text_button("", TEAM_MERCS_BTN_PATH, MERC_BTN_SIZE, 16, _toggle_team_mercs_picker)
 	_team_mercs_button = team_mercs_btn
 	var team_mercs_lbl := Label.new()
-	team_mercs_lbl.text = tr("ui_team_mercs")
 	team_mercs_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	team_mercs_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	team_mercs_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -1467,6 +1525,7 @@ func _build_top_actions() -> void:
 	team_mercs_lbl.anchor_bottom = 0.84
 	_style_prep_button_label(team_mercs_lbl, 15, false)
 	team_mercs_btn.add_child(team_mercs_lbl)
+	_bind_prep_caption(team_mercs_lbl, "ui_team_mercs", MERC_BTN_SIZE, 15)
 	_team_merc_alert = PrepTeamMercAlertScript.new()
 	team_mercs_btn.add_child(_team_merc_alert)
 	_team_merc_alert.setup(team_mercs_btn, load(TEAM_MERC_ALERT_ATLAS_PATH))
@@ -1531,8 +1590,6 @@ func _build_top_actions() -> void:
 	carrot_badge.add_child(badge_lbl)
 	_carrot_entry_badge_label = badge_lbl
 	var carrot_lbl := Label.new()
-	_carrot_button_label = carrot_lbl
-	carrot_lbl.text = "Carrot Camp" if LocaleManager.get_locale().begins_with("en") else "萝卜营地"
 	carrot_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	carrot_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	carrot_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -1542,6 +1599,7 @@ func _build_top_actions() -> void:
 	carrot_lbl.anchor_bottom = 0.84
 	_style_prep_button_label(carrot_lbl, 15, false)
 	carrot_btn.add_child(carrot_lbl)
+	_bind_prep_caption(carrot_lbl, "ui_carrot_camp", MERC_BTN_SIZE, 15)
 	carrot_btn.visible = _carrot_ui_visible()
 	side_col.add_child(carrot_btn)
 
@@ -1586,17 +1644,24 @@ func _build_top_actions() -> void:
 	side_col.add_child(carrot_counter)
 	_refresh_carrot_counter()
 
-	# The camp is a focused mobile modal.  A restrained scrim keeps the busy
-	# battlefield readable as context while giving the controls clear priority.
+	# Canvas layers control GUI hit order as well as drawing order. The scrim
+	# must sit above the entire board HUD, including controls added after the camp.
+	var camp_layer := CanvasLayer.new()
+	camp_layer.name = "CarrotCampLayer"
+	camp_layer.layer = 1
+	add_child(camp_layer)
+	var camp_host := Control.new()
+	camp_host.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	camp_host.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	camp_layer.add_child(camp_host)
 	_carrot_dimmer = ColorRect.new()
 	_carrot_dimmer.name = "CarrotCampDimmer"
 	_carrot_dimmer.color = Color(0.02, 0.035, 0.025, 0.68)
 	_carrot_dimmer.mouse_filter = Control.MOUSE_FILTER_STOP
 	_carrot_dimmer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_carrot_dimmer.z_index = 34
 	_carrot_dimmer.visible = false
 	_carrot_dimmer.gui_input.connect(_on_carrot_dimmer_input)
-	add_child(_carrot_dimmer)
+	camp_host.add_child(_carrot_dimmer)
 
 	_carrot_panel = _carrot_camp_panel_script().new()
 	_carrot_panel.name = "CarrotCampPanel"
@@ -1608,7 +1673,6 @@ func _build_top_actions() -> void:
 	_carrot_panel.offset_right = 470
 	_carrot_panel.offset_top = -345
 	_carrot_panel.offset_bottom = 345
-	_carrot_panel.z_index = 35
 	_carrot_panel.visible = false
 	# The concrete economy handlers live farther down the PrepScreen inheritance
 	# chain. String callables keep this reusable UI layer independently parsable.
@@ -1617,8 +1681,8 @@ func _build_top_actions() -> void:
 		Callable(self, "request_four_star_upgrade"))
 	_carrot_panel.closed.connect(_close_carrot_camp)
 	_carrot_panel.page_changed.connect(func(_page: int): _report_carrot_camp_state())
-	add_child(_carrot_panel)
-	_carrot_panel.attach_stone_rail(self)
+	camp_host.add_child(_carrot_panel)
+	_carrot_panel.attach_stone_rail(camp_host)
 
 	_build_chat_entry()
 
@@ -1684,6 +1748,7 @@ const CHAT_MENU_FONT_COLOR := Color(1.0, 0.90, 0.60)   # make_menu_button 的默
 
 # 固定聊天窗口始终显示当前房间的记录。
 var _chat_record_page: Control = null
+var _chat_record_input: Button
 var _chat_record_scroll: ScrollContainer = null
 var _chat_record_list: VBoxContainer = null
 var _chat_record_round := -1        # 记录列表里最后一条的回合（追加时判断要不要插分隔线）
@@ -1739,17 +1804,7 @@ func _build_chat_record_window() -> void:
 	# ★★ 10.07b 第 4 条（用户真机反馈「商店最右边那张卡，靠聊天框那一端点不中，
 	#    必须有一点拖动才能选中」）：
 	#
-	# 这里是根因。这个聊天记录窗固定在右下角，`mouse_filter = STOP` ⇒ 它**整块矩形**
-	# 都吃点击。而它左边缘与商店第 4 张手牌卡的右边缘**重叠 14px**
-	# （实测：卡 x∈[998,1178]，窗 x∈[1164,1452]，y 方向也重叠 ⇒ 卡右端 4.5% 面积被盖住）。
-	# 玩家的拇指本来就容易点偏到卡片右端，落在那 14px 上就被这个窗吃掉 ——
-	# 「点一下没反应、要拖一下」正是这么来的（拖动时手指离开那块区域就恢复）。
-	#
-	# 改法：**这个窗是纯展示的**（消息记录，只有那条浮动滚动条要接收拖动），
-	# 所以整块矩形不该吃点击 ⇒ 改 IGNORE。滚动条自己 `top_level = true` +
-	# `MOUSE_FILTER_STOP`（见 FloatingChatScroll.gd），改成 IGNORE 不影响它。
-	#
-	# ⚠️ 别改回 STOP：那 14px 会重新变成「点了没反应」的盲区，而且不报错。
+	# 右侧聊天区域与商店末张卡片的右缘重叠。商店打开时整块隐藏。
 	window.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var style := StyleBoxEmpty.new()
 	style.set_content_margin_all(9)
@@ -1757,15 +1812,29 @@ func _build_chat_record_window() -> void:
 	add_child(window)
 	SafeArea.track(window)
 	_chat_record_page = window
+	var column := VBoxContainer.new()
+	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	column.add_theme_constant_override("separation", 4)
+	window.add_child(column)
+	_chat_record_input = PrepWidgets.make_menu_button("", Vector2(228, 32), 15, _open_text_input)
+	_chat_record_input.name = "PrepChatHistoryType"
+	_chat_record_input.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	for state in ["normal", "hover", "pressed"]:
+		_chat_record_input.add_theme_stylebox_override(state, StyleBoxEmpty.new())
+	_chat_record_input.add_theme_color_override("font_hover_color", GloryTokens.GOLD_HOVER)
+	_chat_record_input.add_theme_color_override("font_pressed_color", GloryTokens.GOLD_HOVER)
+	_chat_record_input.add_theme_color_override("font_outline_color", GloryTokens.INK_PANEL)
+	_chat_record_input.add_theme_constant_override("outline_size", 3)
+	column.add_child(_chat_record_input)
+
 	_chat_record_scroll = preload("res://ui/components/FloatingChatScroll.gd").new()
 	_chat_record_scroll.name = "PrepChatHistoryScroll"
 	_chat_record_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_chat_record_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
-	# 同 window：整块矩形不吃点击（它是纯展示的历史区 + 一条独立浮动滚动条）。
-	# 漏了这一句的话，父窗 IGNORE 了、这个 ScrollContainer 仍会把那 14px 吞掉 ——
-	# 症状一模一样，且没有任何报错。
-	_chat_record_scroll.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	window.add_child(_chat_record_scroll)
+	# 可见时由滚动容器处理滚轮与触摸。开店时随聊天框一起隐藏。
+	_chat_record_scroll.mouse_filter = Control.MOUSE_FILTER_PASS
+	_chat_record_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	column.add_child(_chat_record_scroll)
 	_chat_record_list = VBoxContainer.new()
 	_chat_record_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_chat_record_list.add_theme_constant_override("separation", 4)
@@ -1816,28 +1885,6 @@ func _build_voice_button() -> void:
 	_place_voice_button(_voice_controls.audience_button, right, VOICE_AUDIENCE_SIZE)
 	right -= VOICE_AUDIENCE_SIZE.x + VOICE_INNER_GAP
 	_place_voice_button(_voice_controls.voice_button, right, VOICE_BTN_SIZE)
-	_voice_controls.voice_button.resized.connect(_align_prep_voice_icons)
-	_voice_controls.audience_button.resized.connect(_align_prep_voice_icons)
-	_align_prep_voice_icons()
-
-func _align_prep_voice_icons() -> void:
-	if _voice_controls == null:
-		return
-	# 麦克风 / 扬声器的图集每格是 627px 画布、金框只占中间 504px（VoiceButtonArt）。
-	# 不放大的话这两个框比旁边的队友 / 聊天框小一圈。这里把图往外撑到「金框 = 按钮大小」，
-	# 点击范围还是按钮本身（图不吃点击）。
-	for btn in [_voice_controls.voice_button, _voice_controls.audience_button]:
-		if btn == null or not is_instance_valid(btn):
-			continue
-		var art := (btn as Button).get_node_or_null("VoiceIcon") as TextureRect
-		if art == null:
-			continue
-		var side := minf(btn.size.x, btn.size.y)
-		var grow := side * (627.0 / 504.0 - 1.0) * 0.5
-		art.offset_left = -grow
-		art.offset_right = grow
-		art.offset_top = -grow
-		art.offset_bottom = grow
 
 
 func _place_voice_button(button: Button, right: float, size: Vector2) -> void:
@@ -1881,12 +1928,11 @@ func _build_chat_panel() -> void:
 	col.add_theme_constant_override("separation", 8)
 	_chat_panel.add_child(col)
 	# The persistent history is visible above the controls. This popup is for composing.
-	var en := LocaleManager.get_locale() == "en"
 	var header := HBoxContainer.new()
 	header.add_theme_constant_override("separation", 6)
 	col.add_child(header)
 	var title := Label.new()
-	title.text = "Quick Phrases" if en else "快捷短语"
+	title.text = "ui_prep_chat_quick_phrases"
 	title.add_theme_font_size_override("font_size", 18)
 	title.add_theme_color_override("font_color", GloryTokens.TEXT_SECONDARY)
 	header.add_child(title)
@@ -1905,7 +1951,7 @@ func _build_chat_panel() -> void:
 	top_row.add_theme_constant_override("separation", 6)
 	col.add_child(top_row)
 	var type_button := PrepWidgets.make_menu_button(
-		"✎  Type a message…" if LocaleManager.get_locale() == "en" else "✎  点击输入文字…",
+		"ui_prep_chat_type",
 		Vector2(206, 48), 17, _open_text_input)
 	type_button.name = "PrepChatType"
 	_apply_chat_type_button_style(type_button)
@@ -1920,7 +1966,7 @@ func _build_chat_panel() -> void:
 	phrase_page.add_theme_constant_override("separation", 8)
 	col.add_child(phrase_page)
 	var phrases_label := Label.new()
-	phrases_label.text = "QUICK PHRASES" if en else "快捷短语"
+	phrases_label.text = "ui_prep_chat_phrases_heading"
 	phrases_label.add_theme_font_size_override("font_size", 13)
 	phrases_label.add_theme_color_override("font_color", GloryTokens.TEXT_SECONDARY)
 	phrase_page.add_child(phrases_label)
@@ -1932,9 +1978,10 @@ func _build_chat_panel() -> void:
 	phrase_page.add_child(grid)
 	for group in ChatPhrases.GROUP_ORDER:
 		for phrase_id in ChatPhrases.ids_in_group(group):
-			grid.add_child(PrepWidgets.make_menu_button(
-				ChatPhrases.text(phrase_id), Vector2(160, 38), 15,
-				_send_chat_phrase.bind(int(phrase_id))))
+			var button := PrepWidgets.make_menu_button(ChatPhrases.text(phrase_id), Vector2(160, 38), 15,
+				_send_chat_phrase.bind(int(phrase_id)))
+			_chat_phrase_buttons[phrase_id] = button
+			grid.add_child(button)
 
 
 
@@ -1973,10 +2020,7 @@ func _send_chat_phrase(phrase_id: int) -> void:
 
 # Append to the fixed window without moving its frame or interrupting history browsing.
 func _on_prep_chat_logged(entry: Dictionary) -> void:
-	if _chat_record_round == -1 and _chat_record_list.get_child_count() == 1:
-		var placeholder := _chat_record_list.get_child(0)
-		_chat_record_list.remove_child(placeholder)
-		placeholder.queue_free()
+	_chat_record_input.text = "ui_prep_chat_type"
 	var stick := _chat_record_near_bottom()
 	_append_chat_record_row(entry)
 	if stick:
@@ -1985,35 +2029,30 @@ func _on_prep_chat_logged(entry: Dictionary) -> void:
 
 
 func _render_chat_record() -> void:
+	_chat_record_texts.clear()
 	for child in _chat_record_list.get_children():
 		_chat_record_list.remove_child(child)
 		child.queue_free()
 	_chat_record_round = -1
 	var entries := NetworkService.room_chat_log.entries_for(NetworkService.team_room_id)
-	if entries.is_empty():
-		_chat_record_list.add_child(_chat_record_label(
-			"No messages yet" if LocaleManager.get_locale() == "en" else "还没有人说话",
-			GloryTokens.TEXT_SECONDARY, HORIZONTAL_ALIGNMENT_CENTER))
-		return
+	_chat_record_input.text = "ui_prep_chat_empty" if entries.is_empty() else "ui_prep_chat_type"
 	for entry in entries:
 		_append_chat_record_row(entry)
 	_scroll_chat_record_to_bottom()
 
 
 func _append_chat_record_row(entry: Dictionary) -> void:
-	var en := LocaleManager.get_locale() == "en"
-	if _chat_record_round < 0 and _chat_record_list.get_child_count() > 0:
-		# 列表里只有「还没有人说话」那一行：第一条真消息进来时把它换掉。
-		for child in _chat_record_list.get_children():
-			_chat_record_list.remove_child(child)
-			child.queue_free()
 	var entry_round := int(entry.get("round", 0))
 	if entry_round != _chat_record_round:
-		_chat_record_list.add_child(_chat_record_label("—— %s ——" % RoomChatLog.round_label(entry_round, en),
-			GloryTokens.TEXT_SECONDARY, HORIZONTAL_ALIGNMENT_CENTER))
+		var round_text := func() -> String:
+			return "—— %s ——" % RoomChatLog.round_label(entry_round, PrepWidgets.is_en())
+		var heading := _chat_record_label(round_text.call(), GloryTokens.TEXT_SECONDARY, HORIZONTAL_ALIGNMENT_CENTER)
+		_chat_record_texts[heading] = round_text
+		_chat_record_list.add_child(heading)
 		_chat_record_round = entry_round
-	var line := _chat_record_label(RoomChatLog.line_text(entry, en),
-		Color(0.97, 0.93, 0.81), HORIZONTAL_ALIGNMENT_LEFT)
+	var line_text := func() -> String: return RoomChatLog.line_text(entry, PrepWidgets.is_en())
+	var line := _chat_record_label(line_text.call(), Color(0.97, 0.93, 0.81), HORIZONTAL_ALIGNMENT_LEFT)
+	_chat_record_texts[line] = line_text
 	if RoomChatLog.is_voice_entry(entry):
 		# 语音：那行字前面多一颗播放键（点了才响 —— 对局里不自动响，见 VoiceClipRow 顶部）。
 		_chat_record_list.add_child(VoiceClipRow.wrap(entry, line))
@@ -2064,13 +2103,9 @@ func _open_text_input() -> void:
 		_chat_panel.visible = false
 	var send := func(text: String) -> String:
 		return NetworkService.team_send_text(text, _chat_team_only)
-	# 语音照着文字的范围发：范围按钮改的是同一个 _chat_team_only，
-	# 「发给：队友」时录的语音对面也听不到（战斗服务器按 chat_recipients 转）。
-	var send_voice := func(clip: Dictionary) -> String:
-		return NetworkService.team_send_voice(clip, _chat_team_only)
 	ChatInputBar.new().present(self, send,
 		{"scope_text": _chat_scope_text, "on_scope_pressed": _toggle_chat_scope,
-		"on_voice": send_voice})
+		"on_phrase": _send_chat_phrase, "transparent_frame": true})
 
 
 func _toggle_chat_scope() -> void:
@@ -2153,6 +2188,9 @@ func _toggle_carrot_camp() -> void:
 	if _carrot_dimmer != null:
 		_carrot_dimmer.visible = _carrot_panel.visible
 	if _carrot_panel.visible:
+		var focus_owner := get_viewport().gui_get_focus_owner()
+		if focus_owner != null:
+			focus_owner.release_focus()
 		_close_team_mercs_picker()
 		_close_merc_picker()
 	_report_carrot_camp_state()
@@ -2165,9 +2203,11 @@ func _close_carrot_camp() -> void:
 	_report_carrot_camp_state()
 
 func _on_carrot_dimmer_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed:
-		_close_carrot_camp()
-	elif event is InputEventScreenTouch and event.pressed:
+	var mouse_release: bool = event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed
+	var touch_release: bool = event is InputEventScreenTouch and event.index == 0 and not event.pressed \
+		and not event.canceled and not bool(ProjectSettings.get_setting("input_devices/pointing/emulate_mouse_from_touch", true))
+	if mouse_release or touch_release:
+		_carrot_dimmer.accept_event()
 		_close_carrot_camp()
 
 # 10.04（萝卜交易失败：merc_slot_occupied）：经济动作被拒时的**唯一**文案出口。
@@ -2496,7 +2536,7 @@ func _build_detail_popups() -> void:
 	stats_box.add_child(stats_tabs)
 	# 页签：羊皮纸页签（选中的是金色那张），同一组互斥
 	var tab_group := ButtonGroup.new()
-	for item in [["player", tr("ui_stats_player")], ["boss", "Boss"]]:
+	for item in [["player", "ui_stats_player"], ["boss", "Boss"]]:
 		var tab := Button.new()
 		tab.text = str(item[1])
 		preload("res://ui/theme/ParchmentKit.gd").style_tab(tab, 40.0, 18)
@@ -2857,11 +2897,11 @@ func _create_ready_avatar_badge() -> Control:
 	badge.mouse_filter = Control.MOUSE_FILTER_STOP
 	badge.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 
-	# 当前默认框的圆心是不透明的，和主菜单一样先画框，再把头像裁圆后画在上面。
+	# 头像裁圆，框盖在头像上面（11.16 起默认框也是空心框）。
 	# 头像缩进在金环内，不会盖住框；未来换框只需更新 avatars.json。
 	var frame := TextureRect.new()
 	frame.name = "Frame"
-	frame.texture = AvatarCatalog.frame_texture_for("")
+	AvatarCatalog.set_frame_texture(frame, AvatarCatalog.frame_texture_for(""))
 	frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -2884,6 +2924,8 @@ func _create_ready_avatar_badge() -> Control:
 	circle.set_corner_radius_all(roundi(READY_AVATAR_SIZE))
 	mask.add_theme_stylebox_override("panel", circle)
 	badge.add_child(mask)
+	# ★ 11.16 用户要求框在头像**上面**（内圈压住头像边缘）：把框挪到头像之后。
+	badge.move_child(frame, mask.get_index())
 
 	var portrait := TextureRect.new()
 	portrait.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
@@ -2956,7 +2998,7 @@ func _refresh_ready_indicator() -> void:
 		portrait.set_meta("source_portrait", source)
 		var portrait_size := badge.custom_minimum_size.ceil() - Vector2.ONE * (2.0 * READY_AVATAR_INSET)
 		portrait.texture = CrispTexture.fit(source, portrait_size, portrait, true)
-		frame.texture = AvatarCatalog.frame_texture_for(str(identity.get("avatar_frame", "")))
+		AvatarCatalog.set_frame_texture(frame, AvatarCatalog.frame_texture_for(str(identity.get("avatar_frame", ""))))
 		var is_ready := st == "dummy" or (slot < ready_arr.size() and bool(ready_arr[slot]))
 		var check := badge.get_node("ReadyCheck") as Label
 		check.visible = is_ready
@@ -3062,13 +3104,13 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 	# 名字写在头像下面那条缎带上
 	var name_label := Label.new()
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	name_label.position = Vector2(36, 150)
-	name_label.size = Vector2(166, 44)
+	name_label.position = Vector2(35, 155)
+	name_label.size = Vector2(170, 30)
 	name_label.text = PrepWidgets.unit_name(mercenary)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	name_label.clip_text = true
-	_style_merc_text(name_label, true, 900, 28, 166)
+	_style_merc_text(name_label, true, 900, 26, name_label.size)
 	card.add_child(name_label)
 	# 价格（萝卜）写在最下面的小金牌上
 	var price_row := HBoxContainer.new()
@@ -3076,12 +3118,12 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 	price_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	price_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	price_row.add_theme_constant_override("separation", 6)
-	price_row.position = Vector2(58, 196)
-	price_row.size = Vector2(122, 38)
+	price_row.position = Vector2(68, 201)
+	price_row.size = Vector2(108, 28)
 	card.add_child(price_row)
 	var price_icon := TextureRect.new()
 	price_icon.texture = load("res://assets/ui/carrot_camp/icon_carrot.png")
-	price_icon.custom_minimum_size = Vector2(26, 30)
+	price_icon.custom_minimum_size = Vector2(23, 24)
 	price_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	price_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	price_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -3089,7 +3131,7 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 	var price_number := Label.new()
 	price_number.text = str(int(mercenary.get("carrot_cost", 0)))
 	price_number.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_style_merc_text(price_number, false, 800, 28)
+	_style_merc_text(price_number, false, 800, 25, Vector2(52, 28))
 	price_row.add_child(price_number)
 	# 买不了（萝卜不足 / 佣兵已满 / 教学未到）：头像压暗，头像下沿一条半透明牌子写原因，价格变红
 	if not can_purchase:
@@ -3103,8 +3145,8 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 		plate_style.set_border_width_all(2)
 		plate_style.set_corner_radius_all(14)
 		reason_plate.add_theme_stylebox_override("panel", plate_style)
-		reason_plate.position = Vector2(48, 96)
-		reason_plate.size = Vector2(142, 40)
+		reason_plate.position = Vector2(40, 96)
+		reason_plate.size = Vector2(158, 40)
 		card.add_child(reason_plate)
 		var reason_label := Label.new()
 		reason_label.text = purchase_reason
@@ -3112,7 +3154,7 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 		reason_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		reason_label.clip_text = true
 		reason_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_style_merc_text(reason_label, false, 800, 22, 128)
+		_style_merc_text(reason_label, false, 800, 20, Vector2(142, 30))
 		reason_label.add_theme_color_override("font_color", Color("8a2a12"))
 		reason_plate.add_child(reason_label)
 	return card
@@ -3541,8 +3583,14 @@ func _refresh_mercenary_overlay() -> void:
 		return
 	# 计数放在下面的签名短路之前，否则签名没变时会漏更新。
 	if _merc_count_label != null:
-		_merc_count_label.text = tr("ui_merc_hired_count") % [_hired_mercenary_count(), GameState.MERCENARY_SLOTS]
-		_style_merc_text(_merc_count_label, true, 800, 28, 134)
+		var hired_text := tr("ui_merc_hired_count") % [_hired_mercenary_count(), GameState.MERCENARY_SLOTS]
+		if _merc_count_label.text != hired_text:
+			_merc_count_label.text = hired_text
+			_style_merc_text(_merc_count_label, true, 800, 26, _merc_count_label.size)
+	var title_text := tr("ui_choose_mercenary")
+	if _merc_title_label.text != title_text:
+		_merc_title_label.text = title_text
+		_style_merc_text(_merc_title_label, true, 900, 52, _merc_title_label.size)
 	# 打开状态下只有影响卡片内容的数据变了才重建 12 张卡。
 	# 卡片价格与可买判据在非教学局读的是**萝卜**（_mercenary_purchase_reason），
 	# 签名却只有金币 —— 萝卜变了卡片不重建：涨了还挂着「萝卜不足」点不动，
@@ -3562,6 +3610,7 @@ func _refresh_mercenary_overlay() -> void:
 		return
 	_merc_overlay_signature = sig
 	for child in _merc_overlay_grid.get_children():
+		_merc_overlay_grid.remove_child(child)
 		child.queue_free()
 	var mercs: Array = DataRegistry.get_table("mercenaries").get("mercenaries", [])
 	for i in mercs.size():
@@ -3613,20 +3662,20 @@ func _create_merc_picker_content() -> PanelContainer:
 	hit_area.mouse_filter = Control.MOUSE_FILTER_STOP
 	board.add_child(hit_area)
 	# 标题写在顶上那条缎带上
-	var title := Label.new()
-	title.text = tr("ui_choose_mercenary")
-	title.position = Vector2(656, 18)
-	title.size = Vector2(360, 72)
-	title.clip_text = true
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_style_merc_text(title, true, 900, 56, 360)
-	board.add_child(title)
+	_merc_title_label = Label.new()
+	_merc_title_label.name = "MercPickerTitle"
+	_merc_title_label.position = Vector2(666, 22)
+	_merc_title_label.size = Vector2(338, 62)
+	_merc_title_label.clip_text = true
+	_merc_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_merc_title_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_merc_title_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	board.add_child(_merc_title_label)
 	# 右上角计数牌「已雇 N/8」：备战界面没有其它已购佣兵的提示，这里是唯一的计数反馈。
 	_merc_count_label = Label.new()
-	_merc_count_label.position = Vector2(1170, 70)
-	_merc_count_label.size = Vector2(150, 44)
+	_merc_count_label.position = Vector2(1183, 77)
+	_merc_count_label.size = Vector2(124, 32)
+	_merc_count_label.clip_text = true
 	_merc_count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_merc_count_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_merc_count_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -3641,7 +3690,7 @@ func _create_merc_picker_content() -> PanelContainer:
 		close.add_theme_stylebox_override(state, StyleBoxEmpty.new())
 	close.position = Vector2(1330, 46)
 	close.size = Vector2(88, 88)
-	close.tooltip_text = tr("ui_close") if TranslationServer.translate("ui_close") != "ui_close" else "关闭"
+	close.accessibility_name = tr("ui_close")
 	close.pressed.connect(_close_merc_picker)
 	board.add_child(close)
 	_merc_overlay_grid = GridContainer.new()
@@ -3667,13 +3716,17 @@ func _layout_merc_board(overlay: Control, board: Control) -> void:
 	board.position = (avail - MERC_PANEL_ART_SIZE * k) * 0.5
 
 
-func _style_merc_text(label: Label, serif: bool, weight: int, font_size: int, max_width := 0.0) -> void:
-	var font := UnitDetailCardScript.font(serif, weight)
-	label.add_theme_font_override("font", font)
-	if max_width > 0.0:
-		while font_size > 1 and font.get_string_size(label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > max_width:
-			font_size -= 1
+func _fit_prep_caption(label: Label, font_size: int, available: Vector2) -> void:
+	var font := label.get_theme_font("font")
+	while font_size > 1 and (font.get_height(font_size) > available.y \
+			or font.get_string_size(label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > available.x):
+		font_size -= 1
 	label.add_theme_font_size_override("font_size", font_size)
+
+
+func _style_merc_text(label: Label, serif: bool, weight: int, font_size: int, available: Vector2) -> void:
+	label.add_theme_font_override("font", UnitDetailCardScript.font(serif, weight))
+	_fit_prep_caption(label, font_size, available)
 	label.add_theme_color_override("font_color", MERC_RECRUITMENT_INK)
 	label.add_theme_color_override("font_outline_color", Color.TRANSPARENT)
 	label.add_theme_constant_override("outline_size", 0)
@@ -3708,6 +3761,7 @@ func _merc_picker_teardown_state() -> void:
 	_merc_overlay_signature = "unset"
 	_merc_overlay = null
 	_merc_overlay_grid = null
+	_merc_title_label = null
 	_merc_count_label = null
 
 
@@ -3743,8 +3797,7 @@ func _build_team_mercs_overlay(center_host: Control) -> void:
 		ModalStack.modal_closed.connect(_on_merc_picker_modal_closed)
 
 
-# 每次打开现建一份 content。节点结构、尺寸、背景、灯光、相机、缩放与迁移前逐项一致，
-# 唯一的差别是全链 MOUSE_FILTER_IGNORE：输入拦截交给 ModalStack 的 backdrop。
+# 检阅台只展示，内外点击都交给 ModalStack 的 backdrop 拦截并关闭。
 func _create_team_mercs_content() -> Control:
 	var overlay := PanelContainer.new()
 	overlay.name = "TeamMercsReviewOverlay"
@@ -4000,8 +4053,7 @@ func _refresh_team_mercs_overlay() -> void:
 			"id": TEAM_MERCS_MODAL_ID,
 			"owner": self,
 			"priority": TEAM_MERCS_MODAL_PRIORITY,
-			# 点内容矩形之外即关。迁移前玩家就是靠侧栏那个按钮再点一下关掉的，
-			# 而 backdrop 现在会吃掉那一下 —— 对玩家而言仍是「点它就关」。
+			# 全屏点击都由 backdrop 消费，关闭检阅台。
 			"dismiss_on_backdrop": true,
 			# 迁移前 overlay 之外没有任何变暗，backdrop 再上色就是改视觉。
 			"backdrop_color": Color.TRANSPARENT,
@@ -4177,12 +4229,13 @@ func _make_team_mercs_plate(slot: int, pos: Vector3, shrink: float = 1.0) -> Mes
 func _refresh_owned_treasure_logos() -> void:
 	if _treasure._owned_treasure_box == null:
 		return
-	# 联动与套装的 logo 完全由已拥有宝物推导，所以签名只需 owned_treasures。
-	var sig := JSON.stringify(GameState.owned_treasures)
+	# 图标取决于已拥有宝物，悬停说明随语言更新。
+	var sig := JSON.stringify([GameState.owned_treasures, LocaleManager.get_locale()])
 	if sig == _owned_logos_signature:
 		return
 	_owned_logos_signature = sig
 	for child in _treasure._owned_treasure_box.get_children():
+		_treasure._owned_treasure_box.remove_child(child)
 		child.queue_free()
 	_tray_buttons.clear()
 	# Owned treasures.
@@ -4252,7 +4305,7 @@ func _add_owned_treasure_logo(key: String, logo_name: String, detail: Callable, 
 	if logo_tex == null:
 		push_warning("PrepUI: treasure/linkage logo texture missing at %s" % logo_path)
 		var fallback := Label.new()
-		fallback.text = logo_name
+		fallback.text = b.tooltip_text
 		fallback.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		fallback.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		fallback.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -4641,6 +4694,8 @@ func _on_shop_picker_toggled(is_open: bool) -> void:
 	if is_open:
 		_close_merc_picker()
 		_close_team_mercs_picker()
+	if is_instance_valid(_chat_record_page):
+		_chat_record_page.visible = not is_open
 	var bench_filter := Control.MOUSE_FILTER_IGNORE if is_open else Control.MOUSE_FILTER_STOP
 	for btn in _board_hud.bench_buttons:
 		if btn != null:

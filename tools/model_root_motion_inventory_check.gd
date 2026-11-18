@@ -169,6 +169,15 @@ func _measure(unit_id: String, model_path: String, definition: Dictionary,
 				continue
 			action_roots[action] = child
 			out[action] = _max_planar_span(child, action)
+		# 单模型包装（如 merc_aries_blood：一个 GLB 三段动作）没有按动作命名的子节点，
+		# 改读包装的 action_nodes —— 与 ModelRootMotionPolicy._action_root 的优先顺序一致。
+		if action_roots.is_empty() and "action_nodes" in root and root.get("action_nodes") is Dictionary:
+			var nodes := root.get("action_nodes") as Dictionary
+			for action in ["idle", "attack", "run"]:
+				var node_value: Variant = nodes.get(action)
+				if node_value is Node:
+					action_roots[action] = node_value
+					out[action] = _max_planar_span(node_value as Node, action)
 	elif _count_animation_players(root) == 1:
 		# 单播放器模型（god_guard_refined）：所有动作在同一个播放器里，与策略的回退一致。
 		# 只量播放器里确实有对应片段的动作，没有就不报。

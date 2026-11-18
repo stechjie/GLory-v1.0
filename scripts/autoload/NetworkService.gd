@@ -1197,14 +1197,22 @@ func team_request_create_room() -> void:
 		return
 	_rpc_team_create_room.rpc_id(1, public_token_id, card)
 
-func team_request_join_room(room_id: int) -> void:
+func team_request_join_room(room_id: int, requested_slot: int = -1) -> void:
 	if not _can_send_room_request("join_room"):
 		return
 	AnalyticsService.note_mode("custom")
 	match_mode = "custom"
+	var peer := multiplayer.multiplayer_peer
 	var card := await _fetch_seat_card("join_room")
 	if card.is_empty() or not _can_send_room_request("join_room"):
 		return
+	if requested_slot != -1:
+		if (requested_slot < 0 or requested_slot >= TEAM_SLOTS or not spectating
+				or room_id <= 0 or spectate_room_id != room_id or multiplayer.multiplayer_peer != peer):
+			return
+		# 将指定座位和房间号编码为负值，保留握手校验所用的 RPC 签名。
+		# 旧服务端会返回房间不存在，避免误坐另一个空位。
+		room_id = -(room_id * TEAM_SLOTS + requested_slot)
 	_rpc_team_join_room.rpc_id(1, room_id, public_token_id, card)
 
 # 匹配出来的对局入座（协议 32）。
@@ -6339,11 +6347,16 @@ func _rpc_team_join_room(room_id: int, public_id: String = "", card: String = ""
 	var seat_card := _accept_seat_card(sender, card)
 	if seat_card.is_empty():
 		return
-	_join_custom_room(sender, room_id, _sanitize_public_id(public_id), seat_card)
+	var requested_slot := -1
+	if room_id < 0:
+		requested_slot = -(room_id % TEAM_SLOTS)
+		@warning_ignore("integer_division")
+		room_id = -(room_id / TEAM_SLOTS)
+	_join_custom_room(sender, room_id, _sanitize_public_id(public_id), seat_card, requested_slot)
 
 
 # No await between admission and commit: failed invitations never release the old seat.
-func _join_custom_room(sender: int, room_id: int, public_id: String, seat_card: Dictionary) -> void:
+func _join_custom_room(sender: int, room_id: int, public_id: String, seat_card: Dictionary, requested_slot: int = -1) -> void:
 	var room: Dictionary = _rooms.get(room_id, {})
 	if room.is_empty() or bool(room.get("matched", false)) or bool(room.get("run_over", false)):
 		_send_custom_room_failure(sender, "room_not_found")
@@ -6363,11 +6376,28 @@ func _join_custom_room(sender: int, room_id: int, public_id: String, seat_card: 
 		if str(existing.get("state", "")) != ROOM_LOBBY:
 			_send_custom_room_failure(sender, "already_in_match")
 			return
-	var to_spectate := _room_next_free_slot(room) < 0
+	var choosing_seat := requested_slot != -1
+	if choosing_seat:
+		if SpectatorService.sid_of_peer(room, sender) < 0:
+			_send_custom_room_failure(sender, "room_not_found")
+			return
+		var states: Array = room.get("slot_states", [])
+		if requested_slot < 0 or requested_slot >= TEAM_SLOTS or requested_slot >= states.size():
+			_send_custom_room_failure(sender, "room_not_found")
+			return
+		if str(states[requested_slot]) != "empty":
+			requested_slot = _room_next_free_slot(room)
+			if requested_slot < 0:
+				_send_custom_room_failure(sender, "no_empty_seat")
+				return
+		if str(seat_card.get("pid", "")) in (room.get("seat_pid", {}) as Dictionary).values():
+			_send_custom_room_failure(sender, "seat_busy")
+			return
+	var to_spectate := not choosing_seat and _room_next_free_slot(room) < 0
 	if to_spectate and (not SpectatorService.is_open(room) or (SpectatorService.sid_of_peer(room, sender) < 0 and SpectatorService.count(room) >= SpectatorService.MAX_SPECTATORS)):
 		_send_custom_room_failure(sender, "room_full")
 		return
-	if _restore_account_seat(sender, room, str(seat_card.get("pid", ""))) >= 0:
+	if not choosing_seat and _restore_account_seat(sender, room, str(seat_card.get("pid", ""))) >= 0:
 		return
 	if not _release_stale_seats_for_pid(sender, str(seat_card.get("pid", ""))):
 		return
@@ -6395,7 +6425,7 @@ func _join_custom_room(sender: int, room_id: int, public_id: String, seat_card: 
 	# A new room may have a smaller sequence than the old one.
 	if not existing.is_empty() or _peer_spectate.has(sender):
 		_send_custom_room_switch(sender)
-	_assign_peer_to_room(sender, room, public_id, seat_card)
+	_assign_peer_to_room(sender, room, public_id, seat_card, requested_slot)
 
 func _send_custom_room_failure(peer_id: int, reason: String) -> void:
 	_rpc_team_action_failed.rpc_id(peer_id, reason)
@@ -9285,6 +9315,8 @@ static func custom_room_error_text(reason: String, english: bool) -> String:
 			return "Room does not exist" if english else "房间不存在"
 		"room_full":
 			return "Room is full" if english else "房间已满"
+		"no_empty_seat":
+			return "There are no empty seats. You are still spectating." if english else "房间已无空位，你仍在观战席"
 		"seat_busy":
 			return "Your seat is busy. Please try again." if english else "座位正在恢复，请稍后重试"
 		_:

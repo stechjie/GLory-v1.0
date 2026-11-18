@@ -56,8 +56,11 @@ const SKILLS := {
 	"poison_attack": {"layers": [
 		{"name":"PfxToxicCloud", "path":PFX+"toxic_cloud.png", "columns":4, "rows":4, "frame_count":15, "fps":12.0, "duration":1.25, "anchor":"target_ground", "ground":false, "billboard":true, "size":Vector2(1.33,1.24), "lift":0.32, "toward_camera":0.45, "start_scale":1.0, "peak_scale":1.0, "end_scale":1.0, "fade_in":0.04, "fade_out":0.35, "color":Color(1.0,1.0,1.0,0.72), "emission_scale":0.2, "track_target":true},
 	]},
+	# 11.16 用户把巨甲灵的绿色网格光球（toxic_shield，罩住整个棋子）换成「招架闪光」：
+	# 毒绿色的 X 形刀光 + 一圈断开的光环 + 一扇火花，像挡下一击。jobs_batch3.json 导出。
+	# 每次叠甲都会触发，所以 UnitSkillVFXComposer3D 对同一只巨甲灵 TITAN_PARRY_INTERVAL 秒内只放一次（用户要「有间隔的闪」）。
 	"poison_reflect_armor_stack": {"layers": [
-		{"name":"PfxToxicShield", "path":PFX+"toxic_shield.png", "columns":5, "rows":4, "frame_count":19, "fps":15.0, "duration":1.267, "anchor":"origin_ground", "ground":false, "billboard":true, "size":Vector2(1.09,1.13), "lift":0.26, "toward_camera":0.45, "start_scale":1.0, "peak_scale":1.0, "end_scale":1.0, "fade_in":0.04, "fade_out":0.18, "emission_scale":0.25, "track_origin":true},
+		{"name":"PfxTitanParry", "path":PFX+"titan_parry.png", "columns":3, "rows":5, "frame_count":13, "fps":15.0, "duration":0.867, "anchor":"origin_ground", "ground":false, "billboard":true, "size":Vector2(3.9,2.12), "lift":0.42, "toward_camera":0.45, "start_scale":1.0, "peak_scale":1.0, "end_scale":1.0, "fade_in":0.02, "fade_out":0.2, "emission_scale":0.3, "track_origin":true},
 	]},
 	"death_poison_explosion": {"layers": [
 		{"name":"PfxToxicBurst", "path":PFX+"toxic_burst.png", "columns":5, "rows":5, "frame_count":23, "fps":15.0, "duration":1.533, "anchor":"origin_body", "ground":false, "billboard":true, "size":Vector2(2.41,2.10), "lift":0.00, "toward_camera":0.45, "start_scale":1.0, "peak_scale":1.0, "end_scale":1.0, "fade_in":0.04, "fade_out":0.18, "emission_scale":0.3},

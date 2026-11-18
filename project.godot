@@ -33,6 +33,7 @@ driver/enable_input.ios=true
 [autoload]
 
 StartupTrace="*res://scripts/autoload/StartupTrace.gd"
+DesktopWindow="*res://scripts/autoload/DesktopWindow.gd"
 UIFontFallback="*res://ui/fonts/UIFontFallback.gd"
 LocaleManager="*res://scripts/autoload/LocaleManager.gd"
 GameState="*res://scripts/autoload/GameState.gd"
@@ -66,6 +67,7 @@ window/size/viewport_height=720
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 window/handheld/orientation="landscape"
+window/ios/allow_high_refresh_rate=false
 
 [editor_plugins]
 

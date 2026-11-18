@@ -90,6 +90,8 @@ class LinkedIdentity:
     provider: str
     email: str
     name: str = ""
+    # 提供方自己的用户编号，仅供服务端核对 Apple 撤销授权，不对客户端返回。
+    subject: str = ""
 
 
 class SupabaseAuth:
@@ -200,7 +202,8 @@ class SupabaseAuth:
             resp = await client.post(f"{self._base}/auth/v1/token", headers=headers,
                                      params={"grant_type": "id_token"}, json=body)
         if resp.status_code >= 400:
-            raise AuthError(f"{what}被拒绝（HTTP {resp.status_code}）：{_redact(resp.text)}",
+            # 上游可能把无效的 JWT/nonce 原样写回错误体，不能把它交给客户端或日志。
+            raise AuthError(f"{what}被拒绝（HTTP {resp.status_code}）",
                             resp.status_code, _error_code(resp))
         return self._to_session(resp.json())
 
@@ -253,7 +256,8 @@ class SupabaseAuth:
                 continue
             data = identity.get("identity_data") or {}
             name = str(data.get("name") or data.get("full_name") or "")
-            linked.append(LinkedIdentity(provider, str(identity.get("email") or data.get("email") or ""), name))
+            linked.append(LinkedIdentity(provider, str(identity.get("email") or data.get("email") or ""), name,
+                                         str(data.get("sub") or identity.get("id") or "")))
         return bool(user.get("is_anonymous", False)), linked
 
 

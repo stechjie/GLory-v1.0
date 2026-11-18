@@ -38,11 +38,8 @@ var _stats_group := "player"
 func show_last_battle() -> void:
 	if _stats_popup == null or _stats_text == null:
 		return
-	if GameState.battle_history.is_empty():
-		_stats_text.text = "[b]%s[/b]\n\n%s" % [tr("stats_title"), tr("stats_no_history")]
-		_stats_popup.popup_centered(Vector2i(960, 500))
-		return
-	_stats_group = "player"
+	if not GameState.battle_history.is_empty():
+		_stats_group = "player"
 	_refresh_popup()
 	_stats_popup.popup_centered(Vector2i(960, 500))
 
@@ -92,6 +89,9 @@ func _viewer_group() -> String:
 
 func _refresh_popup() -> void:
 	if _stats_text == null:
+		return
+	if GameState.battle_history.is_empty():
+		_stats_text.text = "[b]%s[/b]\n\n%s" % [tr("stats_title"), tr("stats_no_history")]
 		return
 	var result := _last_result()
 	var stats_value = result.get("unit_stats", {})

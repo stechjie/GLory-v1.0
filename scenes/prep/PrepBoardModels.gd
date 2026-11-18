@@ -17,6 +17,9 @@ const PetPreview := preload("res://scripts/pets/PetPreview.gd")
 const UnitVisualResolverScript := preload("res://effects/runtime/presentation/UnitVisualResolver.gd")
 const UnitContactShadowScript := preload("res://effects/runtime/presentation/UnitContactShadow.gd")
 const UnitPlanarShadowScript := preload("res://effects/runtime/presentation/UnitPlanarShadow.gd")
+const UnitSceneBlendScript := preload("res://effects/runtime/presentation/UnitSceneBlend.gd")
+const PREP_SHADOW_COLOR := Color(0.02, 0.17, 0.22, 1.0)
+const PREP_SHADOW_ALPHA := 0.36
 const FOUR_STAR_READY_AURA := preload("res://effects/vfx3d/modules/FourStarAura3D.gd")
 const STAR_UPGRADE_BURST := preload("res://scenes/prep/effects/PrepStarUpgradeBurst.gd")
 const FOUR_STAR_READY_GLOW := preload("res://scenes/prep/effects/PrepFourStarReadyGlow.gd")
@@ -848,6 +851,22 @@ const PREP_BASE_LAYER_IN_3D := false
 # 河流流动高光层（贴在棋盘上方、横向滚动的波光）
 const PREP_RIVER_FLOW_SHADER := "res://assets/shaders/prep_river_flow.gdshader"
 const PREP_RIVER_BOTTOM_EF_PATH := "res://assets/board/prep_2_5d/prep20_river_bottom_ef.png"
+# 皮肤的 river_glow_style = "pulse" 时用这张代替上面的滑动流光（见 _apply_river_glow_material）
+const PREP_RIVER_NET_PULSE_SHADER := "res://shaders/prep_river_net_pulse.gdshader"
+# 原地流光在各皮肤上的判据（照各自的 river.png 量的；没列的皮肤用 shader 默认 = 夜荧光）。
+# 樱花：水更浅更亮，网线是近白色；漂着的樱花和石头高光也很亮，靠「红比蓝高」排除。
+const RIVER_PULSE_KEYS := ["line_lo", "line_hi", "neutral_lo", "neutral_hi", "cool_min", "node_lo", "node_hi",
+	"shore_v", "glow_color", "glow_gain", "sheen_gain", "use_body", "body_cool", "body_dark", "streak_gain",
+	"petal_count"]
+const RIVER_PULSE_PARAMS := {
+	"prep_skin_sakura": {
+		"line_lo": 0.72, "line_hi": 0.88, "neutral_lo": 0.07, "neutral_hi": 0.16, "cool_min": -0.02,
+		"node_lo": 0.90, "node_hi": 0.99, "shore_v": 0.775,
+		"glow_color": Color(1.0, 0.98, 0.99), "glow_gain": 1.0, "sheen_gain": 0.12,
+		# 浅色水面：加顺流的白流纹和 6 朵漂在水面上的花 / 花瓣（带涟漪和倒影，都在 shader 里画）
+		"use_body": 1.0, "body_cool": 0.0, "body_dark": 0.5, "streak_gain": 0.5, "petal_count": 6,
+	},
+}
 const PREP_CARROT_DIG_PATH := "res://assets/props/carrot_system/vfx/atlas_digging_dust_4x4.png"
 const PREP_CARROT_LEVELUP_PATH := "res://assets/props/carrot_system/vfx/atlas_farm_levelup_4x4.png"
 const CARROT_PET_POSITIONS := [
@@ -971,6 +990,9 @@ func _setup_prep_river_background() -> void:
 	# this viewport's 30 Hz refresh unchanged.
 	_prep_river_viewport.msaa_3d = Viewport.MSAA_2X \
 		if VFXManager.get_quality_tier() == VFXQualityBudget.Tier.HIGH else Viewport.MSAA_DISABLED
+	# 11.15 融合试样：棋子在屏幕上只有七八十像素高，模型细节小于一个像素，不做抗锯齿就是一片噪点，
+	# 和柔和的手绘底图最不搭。FXAA 是一遍全屏后处理，比 MSAA 便宜；手机上的开销还没实测。
+	_prep_river_viewport.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
 	# 透明：棋盘没盖到的角落露出后面的满屏 2D 背景（同一张 base 图，任何屏幕尺寸都铺满），不再露深色兜底
 	_prep_river_viewport.transparent_bg = true
 	# 手机上 UPDATE_ALWAYS 会让这块 3D 视口跟随主帧率全速重渲染（发热大户）。
@@ -1909,6 +1931,24 @@ const RIVER_SELF_GLOW_CUT := 0.965
 
 # 配好波光材质（建板和中途换皮肤共用，免得两处参数走偏）。
 func _apply_river_glow_material(mat: ShaderMaterial) -> void:
+	# 11.16：河面上自己画了发光网纹的皮肤（夜荧光）不滑图，改成网不动、光在网上走。
+	# shader 也在这里换：皮肤晚到时 reapply_prep_skin 走的是同一个函数。
+	var pulse := PrepSkin.river_glow_style() == "pulse"
+	var shader := ResourceLoader.load(PREP_RIVER_NET_PULSE_SHADER if pulse else PREP_RIVER_FLOW_SHADER) as Shader
+	if shader != null and mat.shader != shader:
+		mat.shader = shader
+	if pulse and shader != null:
+		var skin_tex := ResourceLoader.load(PrepSkin.path("river")) as Texture2D
+		if skin_tex != null:
+			mat.set_shader_parameter("river_tex", skin_tex)
+		# 每张河面图的配色不同，「哪些像素是水面上的网」的判据也不同：先全部回到 shader 默认
+		#（= 夜荧光那套），再套这张皮肤自己的。
+		for key in RIVER_PULSE_KEYS:
+			mat.set_shader_parameter(key, null)
+		var own: Dictionary = RIVER_PULSE_PARAMS.get(PrepSkin.active_id, {})
+		for key in own:
+			mat.set_shader_parameter(key, own[key])
+		return
 	var self_art := _river_glow_uses_skin_art()
 	var path := PrepSkin.path("river") if self_art else PREP_RIVER_BOTTOM_EF_PATH
 	var tex := ResourceLoader.load(path) as Texture2D
@@ -1962,14 +2002,41 @@ func _add_prep_ambient_particles(world: Node3D) -> void:
 	world.add_child(_make_prep_drift_particles(
 		"PrepRiverSparkleBottom", dot,
 		bottom_center, Vector3(3.2, 0.02, 0.22),
-		26, 2.6, Color(0.55, 0.90, 1.0), 0.3, 0.8, 0.02
+		26, 2.6, PrepSkin.sparkle_color(RIVER_SPARKLE_DEFAULT), 0.3, 0.8, 0.02
 	))
+
+const RIVER_SPARKLE_DEFAULT := Color(0.55, 0.90, 1.0)   # 河面星光（青）
+const BOARD_GLOW_DEFAULT := Color(0.50, 0.77, 1.0)      # 石台四周往上冒的光点（蓝）
+
+
+# 换皮肤后调：河面星光和石台光点的颜色跟着皮肤走（PrepSkin.sparkle_color，樱花是暖白）。
+func refresh_prep_sparkle_tint() -> void:
+	var sparkle := find_child("PrepRiverSparkleBottom", true, false) as CPUParticles3D
+	if sparkle != null and sparkle.color_ramp != null:
+		var tint := PrepSkin.sparkle_color(RIVER_SPARKLE_DEFAULT)
+		var ramp := sparkle.color_ramp
+		ramp.colors = PackedColorArray([Color(tint, 0.0), Color(tint, 0.85), Color(tint, 0.0)])
+		sparkle.color_ramp = ramp
+	if _prep_board_glow != null and is_instance_valid(_prep_board_glow):
+		_tint_prep_board_glow()
+
+
+func _tint_prep_board_glow() -> void:
+	var tint := PrepSkin.sparkle_color(BOARD_GLOW_DEFAULT)
+	_prep_board_glow.color = Color(tint, 1.0)
+	var ramp := _prep_board_glow.color_ramp
+	if ramp != null:
+		ramp.colors = PackedColorArray([Color(tint, 0.0), Color(tint, 0.9), Color(tint, 0.0)])
+		_prep_board_glow.color_ramp = ramp
+
 
 func _apply_prep_ambient_kind(fireflies: Node, petals: Node) -> void:
 	var use_petals := PrepSkin.ambient() == "petal"
+	# "wisp"（夜荧光）两样都不要：满场光点换成 PrepNightFx 画的游走荧光团。
+	var use_fireflies := PrepSkin.ambient() == "firefly"
 	if fireflies is CPUParticles3D:
-		(fireflies as CPUParticles3D).visible = not use_petals
-		(fireflies as CPUParticles3D).emitting = not use_petals
+		(fireflies as CPUParticles3D).visible = use_fireflies
+		(fireflies as CPUParticles3D).emitting = use_fireflies
 	if petals != null and petals.has_method("set_active"):
 		petals.set_active(use_petals)
 
@@ -2296,6 +2363,10 @@ func _update_prep_model_anchors(model_node: Node3D, attempt: int) -> void:
 			model_node.set_meta("prep_anchor_update_pending", false)
 		return
 	_configure_prep_contact_shadow(model_node)
+	# 11.15 融合试样：统一描边色 + 统一受光层。必须排在投影影子之前（影子接在它的副本后面）。
+	if not bool(model_node.get_meta("prep_scene_blend_attached", false)):
+		UnitSceneBlendScript.apply(visual_root)
+		model_node.set_meta("prep_scene_blend_attached", true)
 	if not bool(model_node.get_meta("prep_planar_shadow_attached", false)) and UnitPlanarShadowScript.enabled_for_tier(VFXManager.get_quality_tier()):
 		var ground_y := model_node.global_position.y
 		var ground_key := snappedf(ground_y, 0.0001)
@@ -2304,6 +2375,10 @@ func _update_prep_model_anchors(model_node: Node3D, attempt: int) -> void:
 			material.shader = UnitPlanarShadowScript.SHADER
 			material.render_priority = 8
 			material.set_shader_parameter("shadow_direction", UnitPlanarShadowScript.SHADOW_DIRECTION)
+			# 11.15 融合试样：影子从近黑改成手绘场景里树荫的青绿（实测亮草 → 树荫草的比例反推）。
+			material.set_shader_parameter("shadow_color", PREP_SHADOW_COLOR)
+			material.set_shader_parameter("shadow_alpha", PREP_SHADOW_ALPHA)
+			material.set_shader_parameter("fade_strength", 0.70)
 			_prep_planar_shadow_materials[ground_key] = material
 		UnitPlanarShadowScript.attach(visual_root, ground_key, _prep_planar_shadow_materials[ground_key])
 		model_node.set_meta("prep_planar_shadow_attached", true)
@@ -2521,6 +2596,7 @@ func _ensure_prep_board_glow() -> void:
 	p.z_index = -5
 	add_child(p)
 	_prep_board_glow = p
+	_tint_prep_board_glow()
 
 func _update_prep_board_glow() -> void:
 	if _prep_river_camera == null or _prep_river_viewport == null or not is_inside_tree():

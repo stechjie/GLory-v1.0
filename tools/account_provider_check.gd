@@ -17,6 +17,7 @@ const CheckHarness := preload("res://tools/CheckHarness.gd")
 const SignInBridge := preload("res://scripts/account/SignInBridge.gd")
 const AccountConfig := preload("res://scripts/account/AccountConfig.gd")
 const Bootstrap := preload("res://scenes/bootstrap/Bootstrap.gd")
+const ProfileScreen := preload("res://scenes/menu/ProfileScreen.gd")
 
 const CHECK_NAME := "account_provider"
 
@@ -44,6 +45,7 @@ var _had_file := false
 
 class FakeBridge extends RefCounted:
 	var available := true
+	var apple := false
 	var begin_result := 7
 	var replies: Array[String] = []
 	var client_id := ""
@@ -51,6 +53,13 @@ class FakeBridge extends RefCounted:
 
 	func isGoogleAvailable() -> bool:
 		return available
+
+	func isAppleAvailable() -> bool:
+		return apple
+
+	func beginAppleSignIn(p_nonce: String) -> int:
+		hashed_nonce = p_nonce
+		return begin_result
 
 	func beginGoogleSignIn(p_client_id: String, p_nonce: String) -> int:
 		client_id = p_client_id
@@ -63,6 +72,18 @@ class FakeBridge extends RefCounted:
 		return replies.pop_front()
 
 
+class CancelledSwitchProfile extends ProfileScreen:
+	var switch_calls := 0
+
+
+	func _ready() -> void:
+		pass
+
+
+	func _run_switch(_provider: String, _token: String, _nonce: String) -> void:
+		switch_calls += 1
+
+
 func _ready() -> void:
 	_h = CheckHarness.new(CHECK_NAME)
 	_case_aar_matches_source()
@@ -71,6 +92,10 @@ func _ready() -> void:
 	_case_kotlin_never_logs_the_token()
 	_case_unavailable_without_plugin()
 	await _case_sign_in_flows()
+	await _case_apple_flows()
+	await _case_cancelled_switch_keeps_session()
+	_case_profile_provider_choices()
+	_case_delete_revocation_compatibility()
 	_case_token_claims()
 	_case_entry_view_choose()
 	_case_returning_account_skips_tutorial()
@@ -181,8 +206,8 @@ func _case_unavailable_without_plugin() -> void:
 	# 无界面跑门禁的这台电脑上没有安卓插件：必须报不可用，启动页和资料页都不出 Google 按钮。
 	_h.expect(not SignInBridge.google_available() and not SignInBridge.any_available(),
 		"available_without_plugin", "没有插件时 SignInBridge 不该报可用")
-	_h.expect(not SignInBridge.apple_available(), "apple_before_ios_phase",
-		"Apple 登录要等 iOS 那一期，现在必须恒为不可用")
+	_h.expect(not SignInBridge.apple_available(), "apple_without_plugin",
+		"没有原生插件时不能显示 Apple 登录")
 
 
 func _case_sign_in_flows() -> void:
@@ -233,6 +258,90 @@ func _case_sign_in_flows() -> void:
 	var unstarted: Dictionary = await SignInBridge.sign_in_google(get_tree())
 	_h.expect(not bool(unstarted.get("ok", true)), "begin_failure_ignored", "发不起来（-1）必须当失败")
 	SignInBridge.bridge_override = null
+
+
+func _case_apple_flows() -> void:
+	var fake := FakeBridge.new()
+	fake.available = false
+	fake.apple = true
+	SignInBridge.bridge_override = fake
+	_h.expect(SignInBridge.apple_available() and SignInBridge.any_available(),
+		"apple_only_unavailable", "只有 Apple 可用时也必须停在登录选择页")
+	fake.replies = ['{"state":"pending"}', '{"state":"ok","id_token":"apple-token","authorization_code":"apple-code"}']
+	var signed: Dictionary = await SignInBridge.sign_in_apple(get_tree())
+	_h.expect(bool(signed.get("ok", false)) and str(signed.get("id_token", "")) == "apple-token"
+		and str(signed.get("authorization_code", "")) == "apple-code", "apple_proof_missing",
+		"Apple 的身份证明和一次性授权码必须保留在内存供登录或注销使用")
+	_h.expect(fake.hashed_nonce == str(signed.get("nonce", "")).sha256_text(),
+		"apple_nonce_mismatch", "交给 Apple 的 nonce 必须是交给后端原文的 SHA-256")
+	fake.replies = ['{"state":"cancelled"}']
+	var cancelled: Dictionary = await SignInBridge.sign_in_apple(get_tree())
+	_h.expect(bool(cancelled.get("cancelled", false)) and not cancelled.has("error"),
+		"apple_cancel_error", "关闭 Apple 授权后应留在原界面，不提示登录失败")
+	fake.replies = ['{"state":"ok","id_token":""}']
+	var empty: Dictionary = await SignInBridge.sign_in_apple(get_tree())
+	_h.expect(not bool(empty.get("ok", true)), "apple_empty_token", "Apple 未返回身份证明不能报成功")
+	SignInBridge.bridge_override = null
+
+
+func _case_cancelled_switch_keeps_session() -> void:
+	var fake := FakeBridge.new()
+	fake.apple = true
+	fake.replies = ['{"state":"cancelled"}']
+	SignInBridge.bridge_override = fake
+	var screen := CancelledSwitchProfile.new()
+	add_child(screen)
+	var generation: int = AccountManager._session_generation
+	var wanted: bool = RealtimeService._want_connection
+	await screen._sign_in_and_switch("apple")
+	_h.expect(screen.switch_calls == 0 and not AccountManager.is_switching_account()
+		and AccountManager._session_generation == generation and RealtimeService._want_connection == wanted,
+		"cancelled_switch_changed_session", "取消 Apple 账号选择不得启动切换、改变会话代次或暂停原实时连接")
+	screen.free()
+	SignInBridge.bridge_override = null
+
+
+func _case_profile_provider_choices() -> void:
+	var fake := FakeBridge.new()
+	fake.apple = true
+	SignInBridge.bridge_override = fake
+	var screen := ProfileScreen.new()
+	screen._account_note = Label.new()
+	screen._account_rows = VBoxContainer.new()
+	screen._link_google_btn = Button.new()
+	screen._link_apple_btn = Button.new()
+	screen._switch_btn = Button.new()
+	screen._switch_apple_btn = Button.new()
+	screen._link_pc_btn = Button.new()
+	screen._link_pc_row = HBoxContainer.new()
+	for control in [screen._account_note, screen._account_rows, screen._link_google_btn, screen._link_apple_btn,
+			screen._switch_btn, screen._switch_apple_btn, screen._link_pc_btn, screen._link_pc_row]:
+		screen.add_child(control)
+	screen._render_identities(false, [{"provider": "google", "email": "a***@gmail.com"}])
+	_h.expect(screen._link_apple_btn.visible and not screen._link_google_btn.visible
+		and screen._switch_btn.visible and screen._switch_apple_btn.visible,
+		"google_linked_ios_choices", "绑过 Google 的 iPhone 玩家仍应能绑定 Apple，并可选择两种方式切换账号")
+	screen._render_identities(false, [{"provider": "apple"}])
+	_h.expect(screen._link_google_btn.visible and not screen._link_apple_btn.visible,
+		"apple_linked_ios_choices", "绑过 Apple 的玩家应隐藏重复绑定 Apple，保留 Google 绑定")
+	fake.apple = false
+	screen._render_identities(true, [])
+	_h.expect(screen._link_google_btn.visible and not screen._link_apple_btn.visible
+		and not screen._switch_apple_btn.visible, "android_shows_apple",
+		"仅有 Google 的安卓设备不能出现 Apple 入口")
+	screen.free()
+	SignInBridge.bridge_override = null
+
+
+func _case_delete_revocation_compatibility() -> void:
+	_h.expect(AccountManager.apple_revocation_needed({"deleted": true}, true),
+		"old_server_apple_notice_missing", "旧后端只回删除成功时，已知绑定 Apple 的账号仍须提示手动撤销")
+	_h.expect(not AccountManager.apple_revocation_needed({"deleted": true}, false),
+		"old_server_nonapple_notice", "旧后端删除 Google、游客或未知绑定时，不能误提示 Apple 撤销")
+	_h.expect(not AccountManager.apple_revocation_needed({"deleted": true, "apple_revocation_required": false}, true),
+		"new_server_revoke_success_ignored", "新后端明确已完成撤销时，不能被本地 Apple 绑定提示覆盖")
+	_h.expect(AccountManager.apple_revocation_needed({"deleted": true, "apple_revocation_required": true}, false),
+		"new_server_revoke_required_ignored", "新后端明确要求手动撤销时，即使本地未查到绑定也应提示")
 
 
 func _case_token_claims() -> void:
@@ -313,4 +422,10 @@ func _case_login_stops_for_choice() -> void:
 	AccountManager.logout()
 	_h.expect(not AccountManager.awaiting_choice, "logout_kept_choice_state",
 		"登出之后「等玩家选」的状态要清掉（下一次 login() 重新判断）")
+	fake.available = false
+	fake.apple = true
+	AccountManager.login()
+	_h.expect(AccountManager.awaiting_choice and AccountManager.state == AccountManager.State.IDLE,
+		"apple_login_did_not_wait", "Apple 可用、Google 不可用的新装必须等玩家选择")
+	AccountManager.logout()
 	SignInBridge.bridge_override = null

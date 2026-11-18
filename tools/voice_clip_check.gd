@@ -243,13 +243,15 @@ func _case_one_bubble_one_button() -> void:
 			"%s 没用 VoiceClipRow —— 语音那行会只剩「[语音 12″]」几个字，点不开听" % path)
 		_h.expect(src.contains("RoomChatLog.is_voice_entry"), "row_branch_missing",
 			"%s 里没有「这条记录是不是语音」的分支" % path)
-	# 录音按钮：四处都走 VoiceRecordButton（局内那两处经 ChatInputBar）。
+	# 世界频道、私聊和自定义房间共用录音控件。
 	for path in [CHAT_SCREEN, WORLD_PANEL, CHAT_INPUT_BAR]:
 		_h.expect(_read(path).contains("VoiceRecordButton"), "record_button_not_shared",
 			"%s 没用 VoiceRecordButton" % path)
-	for path in [LOBBY, PREP_UI]:
-		_h.expect(_read(path).contains("on_voice"), "match_entry_missing",
-			"%s 没把语音接到 ChatInputBar（少了 on_voice）—— 那个界面只能打字" % path)
+	_h.expect(_read(LOBBY).contains("on_voice"), "room_record_entry_missing",
+		"自定义房间仍应提供录音")
+	var prep_src := _read(PREP_UI)
+	_h.expect(prep_src.contains('"on_phrase"') and not prep_src.contains('"on_voice"'),
+		"prep_phrase_entry_missing", "对局输入条使用快捷短语")
 
 	# 按钮与记录行都能真的建起来：load() 过不代表 new() 过（静态函数里引了 autoload）。
 	var button := VoiceRecordButton.create(VoiceClipService.SCOPE_MATCH)

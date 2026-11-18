@@ -147,7 +147,8 @@ const TEX_CUSTOM := preload("res://assets/ui/main_menu_v2/custom.png")
 const TEX_GALLERY := preload("res://assets/ui/main_menu_v2/gallery.png")
 const MAIN_MENU_AMBIENCE := preload("res://scenes/menu/MainMenuAmbience.gd")
 const MAIN_MENU_PET := preload("res://scenes/menu/MainMenuPet.gd")
-const MENU_MUSIC_PATH := "res://assets/audio/bgm/menu_music.mp3"
+# 11.16：主菜单改为 MusicService.MENU_GROUP（主界面 1~3 随机）。旧常量名保留给外部引用，指向第一首。
+const MENU_MUSIC_PATH := "res://assets/audio/bgm/menu_1.mp3"
 # 9.27：右侧「商店」预览最新商品缩略图、「公告 / 活动」预览最新公告标题。
 # AvatarCatalog 已在本文件顶部预加载，不再重复声明。
 const PetPreview := preload("res://scripts/pets/PetPreview.gd")
@@ -304,7 +305,10 @@ func _start_menu_music() -> void:
 	#
 	# 「同一首不重启」由 MusicService 内部判等负责：从子界面返回主菜单会再调
 	# 一次这里，不会把 menu_music 从 0 秒重头播。
-	MusicService.play(MENU_MUSIC_PATH)
+	#
+	# 11.16：主界面 1~3 随机一首。正在放的已是这组里的一首（从房间 / 资料页回来）就接着放；
+	# 从商城 / 备战 / 图鉴回来接回原来那首、原来的位置；打完一局回来才重新随机。
+	MusicService.play_group(MusicService.MENU_GROUP, true)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED:
@@ -354,9 +358,10 @@ func _build() -> void:
 	_profile_frame_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_profile_frame_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_profile_frame_overlay.add_child(_profile_frame_art)
-	# ★ 10.02 三轮：自定义框画在头像**下面**，与默认圆盘同一层次（见 seat_frame_check）。
-	move_child(_profile_frame_overlay, placeholder.get_parent().get_index())
-	_profile_name_label = _add_label("", Vector2(207, 59), Vector2(260, 32), 24, "left")
+	# ★ 11.16 用户要求：框（含默认框）一律画在头像**上面**，框的内圈压住头像边缘。
+	#   所以这里不再 move_child —— 后加的节点自然在上。旧的默认圆环 _profile_base_frame
+	#   不再显示，默认框也走这个 overlay（见 `_refresh_profile_plate`）。
+	_profile_name_label = _add_label("", Vector2(225, 68), Vector2(224, 28), 22, "left")
 	_ink(_profile_name_label)
 	# 等级与经验文字居中覆盖在同一个进度条上。
 	_profile_xp_bar = _add_container(PROFILE_XP_POS, PROFILE_XP_SIZE, "left")
@@ -1101,24 +1106,19 @@ func _refresh_profile_plate() -> void:
 		_profile_name_label.text = _menu_text("玩家", "Player")
 		_profile_sub_label.text = "—"
 		if _profile_portrait != null and is_instance_valid(_profile_portrait):
-			_profile_portrait.texture = null
-		_profile_base_frame.visible = true
+			AvatarCatalog.set_avatar_texture(_profile_portrait, null)
+		_profile_base_frame.visible = false
 		_profile_portrait.visible = true
-		_profile_frame_overlay.visible = false
+		_show_profile_frame(AvatarCatalog.default_frame())
 		return
 	if _profile_portrait != null and is_instance_valid(_profile_portrait):
-		_profile_portrait.texture = AvatarCatalog.texture_for(str(profile.get("avatar", "")))
-		var frame_id := AvatarCatalog.id_from_value(str(profile.get("avatar_frame", "")))
-		var custom_frame := not frame_id.is_empty() and frame_id != "frame_default"
+		AvatarCatalog.set_avatar_texture(_profile_portrait, AvatarCatalog.texture_for(str(profile.get("avatar", ""))))
 		# ★ 10.02 三轮：头像**永远可见、永远是 123**，默认框与自定义框只是换外圈。
 		#   原先 custom_frame 时把头像换成那个 78x78 的副本 ⇒ 同一张立绘戴框就变小。
+		# ★ 11.16：默认框也是一张空心框，和商城框走同一条路、画在头像上面。
 		_profile_portrait.visible = true
-		_profile_base_frame.visible = not custom_frame
-		_profile_frame_overlay.visible = custom_frame
-		if custom_frame:
-			_profile_frame_art.texture = AvatarCatalog.frame_texture_for(
-				str(profile.get("avatar_frame", "")))
-			_place_profile_frame(frame_id)
+		_profile_base_frame.visible = false
+		_show_profile_frame(str(profile.get("avatar_frame", "")))
 	_profile_xp_fill.anchor_right = clampf(float(_account_xp_progress) / maxf(1.0, _account_xp_required), 0.0, 1.0) if _account_xp_required > 0 else 1.0
 	# 10.04 bug 文档第 5 条：大厅左上角资料卡只显示昵称（隐藏 #好友码）。
 	_profile_name_label.text = AccountManager.display_name(
@@ -1152,6 +1152,20 @@ func _profile_hole_target() -> float:
 # 不是「盒心压在圆盘中心上」—— 每个框的内孔在图里的位置都不一样（偏上 2~3%），
 # 少这一步就会在头像外露一圈背景缝（三轮门禁 frame_hole_check 抓到的就是它）。
 # 框可能比画布还高/宽（最厚的炽焰之心约 199x250）⇒ 顶部会被画布裁掉，这是允许的。
+func _show_profile_frame(frame_value: String) -> void:
+	if _profile_frame_overlay == null or not is_instance_valid(_profile_frame_overlay):
+		return
+	if frame_value.is_empty():
+		frame_value = AvatarCatalog.default_frame()
+	var frame_id := AvatarCatalog.id_from_value(frame_value)
+	if AvatarCatalog.frame_source_path(frame_id).is_empty():
+		# 认不出的框（客户端清单比后端旧）：贴图会回落到默认框，几何也得跟着用默认框的。
+		frame_id = AvatarCatalog.id_from_value(AvatarCatalog.default_frame())
+	AvatarCatalog.set_frame_texture(_profile_frame_art, AvatarCatalog.frame_texture_for(frame_value))
+	_profile_frame_overlay.visible = _profile_frame_art.texture != null
+	_place_profile_frame(frame_id)
+
+
 func _place_profile_frame(frame_id: String) -> void:
 	if _profile_frame_overlay == null or not is_instance_valid(_profile_frame_overlay):
 		return

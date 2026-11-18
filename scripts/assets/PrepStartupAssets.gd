@@ -27,6 +27,8 @@ static func paths() -> Array:
 	# 刷新键中间的图案按皮肤只用一张：预热正在用的那张。
 	out.append(Prep.PrepRefreshEmblem.EMBLEM_PATH % PrepSkin.refresh_fx())
 	out.append_array(PrepSkin.active_paths())
+	if PrepSkin.river_glow_style() == "pulse":
+		out.append(Prep.PREP_RIVER_NET_PULSE_SHADER)
 	# A restored tutorial can already be at its PvP step. Match the music and
 	# announcement chosen by PrepScreen without warming unrelated future rounds.
 	if Rules.next_round_kind() in ["pvp", "final"]:

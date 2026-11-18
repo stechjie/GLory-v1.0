@@ -9,6 +9,7 @@ const MAX_TRAVEL_TIME := 0.82
 var _target_ref: WeakRef
 var _target_offset := Vector3.ZERO
 var _art_angle := 0.0
+var _upright := false
 
 func play_spec(origin: Vector3, target: Vector3, spec: Dictionary, context: Dictionary = {}) -> void:
 	begin()
@@ -27,6 +28,8 @@ func play_spec(origin: Vector3, target: Vector3, spec: Dictionary, context: Dict
 	var body_size: Vector2 = spec.get("size", Vector2(0.72, 0.72))
 	# 贴图里弹体本身的朝向（屏幕坐标，y 朝上，0 = 朝右）。斜着画的箭要先减掉这个角度。
 	_art_angle = float(spec.get("art_angle", 0.0))
+	# upright：弹体始终正立、不跟飞行方向转（爱心之类有上下的图，转了会倒过来）。
+	_upright = bool(spec.get("upright", false))
 	var body := FLIPBOOK.new() as VFXSpriteFlipbook3D
 	body.name = "OgaProjectileBody"
 	add_child(body)
@@ -170,6 +173,8 @@ func _tracked_target(fallback: Vector3) -> Vector3:
 	return (node as Node3D).global_position + _target_offset
 
 func _screen_facing(from: Vector3, to: Vector3) -> float:
+	if _upright:
+		return 0.0
 	var direction := to - from
 	var screen_y := direction.y * 0.688 - direction.z * 0.726
 	if absf(direction.x) < 0.0001 and absf(screen_y) < 0.0001:

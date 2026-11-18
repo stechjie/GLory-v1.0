@@ -519,7 +519,7 @@ func _render_roster(seats: Variant) -> void:
 		(rows[team] as HBoxContainer).add_child(_seat_chip(seat))
 
 
-# 画一格头像。**框在头像下面**，头像做圆裁剪后盖住内孔。
+# 画一格头像。头像做圆裁剪；11.16 起框画在头像**上面**（默认框也是空心框了）。
 #
 # ★ 顺序不能反：`frame_default` 的素材中心是**不透明的**金棕圆盘（实测
 #   assets/ui/main_menu_live/profile_avatar.png 中心 alpha=255），框画在头像上面
@@ -533,12 +533,12 @@ func _seat_chip(seat: Dictionary) -> Control:
 	var center := Vector2(SEAT_CHIP, SEAT_CHIP) * 0.5
 
 	var box := Control.new()
-	box.custom_minimum_size = Vector2(SEAT_CHIP, SEAT_CHIP)
+	box.custom_minimum_size = Vector2(SEAT_CHIP, SEAT_CHIP + 24.0)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	# ① 框（在下面）：内孔圆心压在头像圆心上，尺寸由内孔反推。
 	var frame := TextureRect.new()
-	frame.texture = AVATARS.frame_texture_for(frame_value)
+	AVATARS.set_frame_texture(frame, AVATARS.frame_texture_for(frame_value))
 	frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
 	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -563,11 +563,13 @@ func _seat_chip(seat: Dictionary) -> Control:
 	mask.size = Vector2(SEAT_DISC, SEAT_DISC)
 	mask.position = center - mask.size * 0.5
 	box.add_child(mask)
+	# ★ 11.16 用户要求框在头像**上面**（内圈压住头像边缘）：把框挪到头像之后。
+	box.move_child(frame, mask.get_index())
 	var avatar := str(seat.get("avatar", ""))
 	if avatar.is_empty():
 		avatar = AVATARS.default_avatar()
 	var portrait := TextureRect.new()
-	portrait.texture = AVATARS.texture_for(avatar, true)
+	AVATARS.set_avatar_texture(portrait, AVATARS.texture_for(avatar, true))
 	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -585,23 +587,31 @@ func _seat_chip(seat: Dictionary) -> Control:
 		tick.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 		tick.add_theme_constant_override("outline_size", 8)
 		tick.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		tick.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		tick.size = Vector2(SEAT_CHIP, SEAT_CHIP)
 		box.add_child(tick)
 	else:
-		# 还没确认 → 整格（框 + 头像一起）压暗。一眼看出「谁还没按」，省掉那行计数文案。
-		box.modulate = Color(1, 1, 1, 0.32)
-	if bool(seat.get("ai", false)):
-		var ai_label := Label.new()
-		ai_label.text = str(seat.get("name", "AI"))
-		ai_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		ai_label.add_theme_font_size_override("font_size", 16)
-		ai_label.add_theme_color_override("font_color", Color("fff1d0"))
-		ai_label.add_theme_color_override("font_outline_color", Color(0.12, 0.07, 0.025, 0.9))
-		ai_label.add_theme_constant_override("outline_size", 4)
-		ai_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		ai_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-		ai_label.offset_top = -25.0
-		box.add_child(ai_label)
+		frame.modulate.a = 0.32
+		mask.modulate.a = 0.32
+	var seat_name := str(seat.get("name", seat.get("player_name", ""))).strip_edges()
+	if seat_name.is_empty() and bool(seat.get("me", false)):
+		seat_name = str(AccountManager.profile.get("player_name", "")).strip_edges()
+	if seat_name.is_empty():
+		seat_name = "AI" if bool(seat.get("ai", false)) else _text("玩家", "Player")
+	var nickname := Label.new()
+	nickname.name = "SeatNickname"
+	nickname.text = seat_name
+	nickname.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	nickname.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	nickname.clip_text = true
+	nickname.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	nickname.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	nickname.add_theme_font_size_override("font_size", 16)
+	nickname.add_theme_color_override("font_color", Color("fff1d0"))
+	nickname.add_theme_color_override("font_outline_color", Color(0.12, 0.07, 0.025, 0.9))
+	nickname.add_theme_constant_override("outline_size", 4)
+	nickname.position = Vector2(0.0, SEAT_CHIP - 2.0)
+	nickname.size = Vector2(SEAT_CHIP, 26.0)
+	box.add_child(nickname)
 	return box
 
 

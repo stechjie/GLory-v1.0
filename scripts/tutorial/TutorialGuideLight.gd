@@ -8,6 +8,7 @@ const TRAVEL_TIME := 0.66
 var emitter := Vector2.ZERO
 var target_rect := Rect2()
 var reduced_motion := false
+var outline_only := false
 var _elapsed := 0.0
 var _redraw_elapsed := 0.0
 
@@ -17,16 +18,17 @@ func _init() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 
-func aim(from_point: Vector2, to_rect: Rect2, reduce_motion: bool) -> void:
+func aim(from_point: Vector2, to_rect: Rect2, reduce_motion: bool, fixed_outline := false) -> void:
 	emitter = from_point
 	target_rect = to_rect
 	reduced_motion = reduce_motion
+	outline_only = fixed_outline
 	visible = to_rect.size.x > 0.0 and to_rect.size.y > 0.0
 	queue_redraw()
 
 
 func _process(delta: float) -> void:
-	if not visible or reduced_motion:
+	if not visible or reduced_motion or outline_only:
 		return
 	_elapsed = fmod(_elapsed + delta, PERIOD)
 	_redraw_elapsed += delta
@@ -42,6 +44,9 @@ func _curve_point(a: Vector2, b: Vector2, c: Vector2, d: Vector2, t: float) -> V
 
 func _draw() -> void:
 	if target_rect.size.x <= 0.0 or target_rect.size.y <= 0.0:
+		return
+	if outline_only:
+		draw_rect(target_rect.grow(4.0), Color(1.0, 0.88, 0.52, 0.88), false, 2.5)
 		return
 	var end := target_rect.get_center()
 	var delta := end - emitter

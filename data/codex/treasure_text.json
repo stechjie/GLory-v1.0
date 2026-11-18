@@ -36,10 +36,10 @@
   "def_lifesteal_emblem": {
    "name": "吸血纹章",
    "name_en": "Lifesteal Emblem",
-   "effect": "我方普通棋子造成伤害后，回复实际伤害 20% 的生命",
-   "effect_en": "Allied normal pieces heal for 20% of the damage they actually deal",
-   "trigger": "普通棋子造成伤害后",
-   "trigger_en": "After a normal piece deals damage"
+   "effect": "我方普通棋子普攻造成伤害后，回复实际伤害 20% 的生命",
+   "effect_en": "Allied normal pieces heal for 20% of the damage their basic attacks actually deal",
+   "trigger": "普通棋子普攻造成伤害后",
+   "trigger_en": "After a normal piece deals basic attack damage"
   },
   "def_phantom_step": {
    "name": "幻影步伐",
@@ -124,8 +124,8 @@
   "atk_frenzy_assault": {
    "name": "狂暴进攻",
    "name_en": "Frenzy Assault",
-   "effect": "每次普攻自身攻速+15%，最多提升至初始攻速的2.5倍。",
-   "effect_en": "Each basic attack adds 15% of initial attack speed, up to 2.5 times initial attack speed.",
+   "effect": "每次普攻自身攻速+15%，最多提升至初始攻速的2.5倍；更换目标时清零。",
+   "effect_en": "Each basic attack adds 15% of initial attack speed, up to 2.5 times initial attack speed. Resets when switching targets.",
    "trigger": "攻击时",
    "trigger_en": "On attack"
   },
@@ -208,7 +208,7 @@
    "name_en": "Phoenix Rebirth",
    "requires_text": "哀鸣共鸣 + 亡魂反击",
    "requires_text_en": "Wail Resonance + Soul Counter",
-   "effect": "我方普通棋子死亡后以 40% 最大生命复活，获得 3 秒无敌，之后强制死亡",
+   "effect": "我方普通棋子死亡 0.1 秒后以 40% 最大生命复活，获得 3 秒无敌，之后强制死亡；每枚棋子每场限 1 次",
    "effect_en": "An allied normal unit revives 0.1s after dying at 40% max HP and gains 3s of invulnerability. It then dies for good. Each unit can revive this way once per battle."
   },
   "link_money_magic": {
@@ -264,16 +264,16 @@
    "name_en": "Toxic Burst",
    "requires_text": "爆裂核心 + 剧毒蔓延",
    "requires_text_en": "Burst Core + Toxic Spread",
-   "effect": "普通棋子造成伤害时，中毒目标有 50% 概率立即结算剩余毒伤并清除中毒",
-   "effect_en": "When a normal piece deals damage, a poisoned target has a 50% chance to take all remaining poison damage at once and lose the poison"
+   "effect": "普通棋子普攻造成伤害时，中毒目标有 50% 概率立即结算剩余毒伤并清除中毒",
+   "effect_en": "When a normal piece deals basic attack damage, a poisoned target has a 50% chance to take all remaining poison damage at once and lose the poison"
   },
   "link_rich_path": {
    "name": "富裕之路",
    "name_en": "Path of Riches",
    "requires_text": "复利之道 + 雷霆加速",
    "requires_text_en": "Compound Interest + Thunder Haste",
-   "effect": "我方普通棋子造成伤害后 25% 概率 +10 金",
-   "effect_en": "After a friendly normal piece deals damage, 25% chance to gain 10 gold"
+   "effect": "我方普通棋子普攻造成伤害后 25% 概率 +10 金",
+   "effect_en": "After a friendly normal piece deals basic attack damage, 25% chance to gain 10 gold"
   },
   "link_clearance_sale": {
    "name": "清仓特卖",

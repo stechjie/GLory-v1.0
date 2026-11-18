@@ -13,6 +13,9 @@ extends Control
 const PrepWidgets := preload("res://scenes/prep/PrepWidgets.gd")
 const PrepShopRaceIcon = preload("res://scenes/prep/PrepShopRaceIcon.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
+const ParchmentKit := preload("res://ui/theme/ParchmentKit.gd")
+const BOND_ACTIVE_INK := Color("29482f")
+const BOND_LOCKED_INK := Color("785e4a")
 
 signal altar_requested                       # 点了黄金祭坛
 signal gamble_requested                      # 点了慷慨命运
@@ -38,6 +41,7 @@ func _outlined(label: Label) -> Label:
 
 # --- 搬过来的成员 ---
 var _left_panel: VBoxContainer
+var tutorial_bond_target: Control
 var _left_panel_signature := "unset"
 # 看队友棋盘时（PrepUI.enter_teammate_view）是队友那块棋盘，平时是 null（数自己的）。
 var _teammate_board = null
@@ -159,6 +163,7 @@ func _add_money_action(logo_path: String, title: String, desc: String, enabled: 
 # ─── synergy widgets ──────────────────────────────────────────────────────────
 
 func _add_synergy_widgets(counts: Dictionary) -> void:
+	tutorial_bond_target = null
 	_race_widgets.clear()
 	var shown := false
 	var grid := GridContainer.new()
@@ -179,6 +184,8 @@ func _add_synergy_widgets(counts: Dictionary) -> void:
 		row.custom_minimum_size = Vector2(106, 54)
 		row.add_theme_constant_override("separation", 4)
 		grid.add_child(row)
+		if tutorial_bond_target == null:
+			tutorial_bond_target = row
 
 		var logo := Button.new()
 		logo.custom_minimum_size = Vector2(48, 48)
@@ -209,6 +216,7 @@ func _add_synergy_widgets(counts: Dictionary) -> void:
 		none.text = "No units on board" if PrepWidgets.is_en() else "棋盘上没有普通棋子"
 		none.modulate = Color(0.55, 0.55, 0.55)
 		_left_panel.add_child(none)
+		tutorial_bond_target = none
 
 
 
@@ -405,10 +413,9 @@ func format_synergy_detail(race: String, count: int) -> String:
 			status = ("Locked · Need %d more" % missing if PrepWidgets.is_en()
 				else "未解锁 · 还差 %d 人" % missing)
 		lines.append("")
-		lines.append("[color=#%s][b]%s[/b][/color]" % [
-			Tokens.GOLD.to_html(false), status])
-		lines.append("[color=#%s][b]%s[/b]\n%s[/color]" % [
-			Tokens.TEXT_PRIMARY.to_html(false) if active else Tokens.TEXT_SECONDARY.to_html(false),
+		var ink := BOND_ACTIVE_INK if active else BOND_LOCKED_INK
+		lines.append("[color=#%s][b]%s\n%s[/b]\n%s[/color]" % [
+			ink.to_html(false), status,
 			str(approved.get("name_cn", item.get("name", ""))),
 			str(approved.get("detail_cn", item.get("detail", ""))),
 		])

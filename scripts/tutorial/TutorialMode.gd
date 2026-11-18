@@ -827,8 +827,9 @@ func update_overlay() -> void:
 		return
 	_overlay.visible = true
 	if _overlay_layer != null:
+		# Keep the tutorial pointers above the camp while its canvas owns clicks.
 		_overlay_layer.layer = 1100 if (ModalStack.has("treasure_choice") or
-			ModalStack.has("mercenary_picker")) else 1
+			ModalStack.has("mercenary_picker")) else (2 if _camp_open else 1)
 	if _passive_round():
 		_show_passive_dog()
 		return
@@ -844,7 +845,7 @@ func update_overlay() -> void:
 		var to_overlay := _overlay.get_global_transform_with_canvas().affine_inverse() \
 			* target.get_global_transform_with_canvas()
 		rect = to_overlay * Rect2(Vector2.ZERO, target.size)
-	elif _last_target_rect.size.x > 0.0 and _last_target_rect.size.y > 0.0:
+	elif step != Step.BOND_HINT and _last_target_rect.size.x > 0.0 and _last_target_rect.size.y > 0.0:
 		# 9.25 教程优化第 6 条（配套）：目标这一刻解析不出来（上面的空反馈）时，
 		# **沿用上一次的位置**，不要让箭头掉到屏幕中央那个占位矩形上去。
 		# 这样 transient 的空目标对玩家完全不可见：箭头原地不动，下一帧目标回来了自然对上。
@@ -859,7 +860,7 @@ func update_overlay() -> void:
 	# 亮出一块 —— 宁可整幅压暗。
 	var focus := rect
 	if not (target is Control and target.is_inside_tree()) \
-			and not (_last_target_rect.size.x > 0.0 and _last_target_rect.size.y > 0.0):
+			and (step == Step.BOND_HINT or not _last_target_rect.has_area()):
 		focus = Rect2()
 	# 关商店 / 上阵布阵这两处整幅不压暗（反馈 2026-10-15 第二轮，见 focus_mask_disabled_for）。
 	# 做法是**把遮罩整块藏掉**，而不是"给一个填满屏幕的洞" —— 后者会白留一个满屏的
@@ -1242,7 +1243,7 @@ func _update_guide_light(target_rect: Rect2) -> void:
 			or not is_instance_valid(_guide):
 		return
 	var medal := _guide.position + _guide.size * Vector2(0.64, 0.72)
-	_light.aim(medal, target_rect, PlayerProfile.reduced_motion_enabled)
+	_light.aim(medal, target_rect, PlayerProfile.reduced_motion_enabled, step == Step.BOND_HINT)
 
 # V2 P1-09：常驻控件（跳过按钮、进度条所在的气泡）也要落在安全区内。
 # 跳过按钮原本写死在 (16, 44)；横屏时刘海在左边缘，正好压住它。

@@ -1,6 +1,6 @@
 extends RefCounted
 
-# 系统登录弹窗（Google；Apple 在 iOS 那一期）的 GDScript 一侧（docs/三方登录设计.md 第六节）。
+# 系统登录弹窗（Android Google、iOS Apple / Google）的 GDScript 一侧。
 #
 # 安卓插件在 android_plugins/glory_signin/（GlorySignInPlugin.kt）。这里只负责：
 #   1. 这台设备能不能用（插件在不在、有没有 Google 服务）—— 不能用的按钮一律不显示；
@@ -32,12 +32,12 @@ static func _bridge() -> Object:
 
 static func google_available() -> bool:
 	var bridge := _bridge()
-	return bridge != null and bool(bridge.call("isGoogleAvailable"))
+	return bridge != null and bridge.has_method("isGoogleAvailable") and bool(bridge.call("isGoogleAvailable"))
 
 
-# iOS 那一期才有。先恒为 false：按钮不显示，启动页也不会因为它多出一个选项。
 static func apple_available() -> bool:
-	return false
+	var bridge := _bridge()
+	return bridge != null and bridge.has_method("isAppleAvailable") and bool(bridge.call("isAppleAvailable"))
 
 
 static func any_available() -> bool:
@@ -55,17 +55,32 @@ static func new_nonce() -> String:
 #   {"ok": false, "cancelled": true}            玩家自己关了弹窗，什么都不用提示
 #   {"ok": false, "error": "给人看的一句话"}
 static func sign_in_google(tree: SceneTree) -> Dictionary:
+	return await sign_in(tree, "google")
+
+
+static func sign_in_apple(tree: SceneTree) -> Dictionary:
+	return await sign_in(tree, "apple")
+
+
+static func sign_in(tree: SceneTree, provider: String) -> Dictionary:
+	if provider != "google" and provider != "apple":
+		return {"ok": false, "error": "不支持的登录方式"}
+	var name := "Apple" if provider == "apple" else "Google"
 	var bridge := _bridge()
-	if bridge == null:
-		return {"ok": false, "error": "这台设备不支持 Google 登录"}
+	var begin_method := "beginAppleSignIn" if provider == "apple" else "beginGoogleSignIn"
+	if bridge == null or not bridge.has_method(begin_method) or not bridge.has_method("pollSignIn"):
+		return {"ok": false, "error": "这台设备不支持 %s 登录" % name}
 	var nonce := new_nonce()
-	var request_id := int(bridge.call("beginGoogleSignIn", AccountConfig.GOOGLE_WEB_CLIENT_ID, nonce.sha256_text()))
+	var request_id: int
+	if provider == "apple":
+		request_id = int(bridge.call(begin_method, nonce.sha256_text()))
+	else:
+		request_id = int(bridge.call(begin_method, AccountConfig.GOOGLE_WEB_CLIENT_ID, nonce.sha256_text()))
 	if request_id < 0:
-		return {"ok": false, "error": "打不开 Google 登录"}
-	var waited := 0.0
-	while waited < TIMEOUT_SEC:
+		return {"ok": false, "error": "打不开 %s 登录" % name}
+	var deadline := Time.get_ticks_msec() + int(TIMEOUT_SEC * 1000)
+	while Time.get_ticks_msec() < deadline:
 		await tree.create_timer(POLL_SEC).timeout
-		waited += POLL_SEC
 		var result := _parse(str(bridge.call("pollSignIn", request_id)))
 		var state := str(result.get("state", ""))
 		if state == "pending":
@@ -74,18 +89,22 @@ static func sign_in_google(tree: SceneTree) -> Dictionary:
 			"ok":
 				var token := str(result.get("id_token", ""))
 				if token.is_empty():
-					return {"ok": false, "error": "Google 没有返回登录信息"}
-				return {"ok": true, "id_token": token, "nonce": nonce}
+					return {"ok": false, "error": "%s 没有返回登录信息" % name}
+				var signed := {"ok": true, "id_token": token, "nonce": nonce}
+				if provider == "apple":
+					signed["authorization_code"] = str(result.get("authorization_code", ""))
+				return signed
 			"cancelled":
 				return {"ok": false, "cancelled": true}
 			"no_account":
 				return {"ok": false, "error": "这台手机上还没有 Google 账号，请先在系统设置里添加"}
 			_:
-				# 插件给的原因只进日志（里面不会有身份证明），玩家看一句人话。
+				# 不记录原生错误原文：SDK 的错误可能包含授权回调参数。
 				var detail := str(result.get("error", result.get("state", "")))
-				push_warning("[SIGNIN] Google 登录失败：%s" % detail)
-				return {"ok": false, "error": failure_text(detail)}
-	return {"ok": false, "error": "Google 登录等待超时，请再试一次"}
+				return {"ok": false, "error": failure_text(detail) if provider == "google" else "Apple 登录失败，请稍后再试"}
+	if bridge.has_method("cancelSignIn"):
+		bridge.call("cancelSignIn", request_id)
+	return {"ok": false, "error": "%s 登录等待超时，请再试一次" % name}
 
 
 # 「这个安装包没在 Google 登记」单独说：它不是「稍后再试」能好的，而且只有测试包会碰到 ——

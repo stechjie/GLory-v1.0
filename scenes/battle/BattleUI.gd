@@ -56,8 +56,10 @@ const BATTLE_PLAYABLE_DEPTH := 10.0
 const BATTLE_PLAYABLE_OFFSET := Vector3(0.0, 0.0, 0.0)
 const BATTLE_VISUAL_MIN := BattleSimShared.PLAYABLE_MIN
 const BATTLE_VISUAL_MAX := BattleSimShared.PLAYABLE_MAX
-const BATTLE_MUSIC_PATH := "res://assets/audio/bgm/fighting_music.mp3"
-const PVP_BATTLE_MUSIC_PATH := "res://assets/audio/bgm/pvp_battle_music.mp3"
+# 11.16：PvE / Boss 改为 MusicService.BATTLE_PVE_GROUP（战斗演示 1~2 随机），
+# PvP / 最终战改为 MusicService.BATTLE_PVP_MUSIC。旧常量名保留给外部引用。
+const BATTLE_MUSIC_PATH := "res://assets/audio/bgm/battle_pve_1.mp3"
+const PVP_BATTLE_MUSIC_PATH := "res://assets/audio/bgm/battle_pvp.mp3"
 
 # 9.17 音效（boss 登场 / 人王阵亡 / 胜负）。
 #
@@ -116,6 +118,11 @@ var _return_emitted := false
 var _model_facing_last_msec := 0
 var _battle_3d_viewport: SubViewport
 var _battle_3d_camera: Camera3D
+# 结算收镜头期间为 true：窗口尺寸变化时不把相机拉回原始取景（BattleArena._sync_battle_camera_base_size）。
+var _battle_camera_tightened := false
+# 11.16 满员拉远：开战时按棋子实际站位算出的镜头放大倍数（>=1，1 = 不拉远）。
+# 只作用于 3D 相机，背景不跟着缩 —— 见 BattleArena._fit_battle_camera_to_formation。
+var _battle_camera_crowd_zoom := 1.0
 var _battle_3d_world: Node3D
 var _battle_3d_root: Node3D
 var _battle_3d_vfx_root: Node3D
@@ -164,9 +171,12 @@ func _effective_kind() -> String:
 		kind = RoundService.schedule_kind_for_round(GameState.round_index)
 	return kind
 
-func _battle_music_path() -> String:
+# 这一场战斗的 BGM 候选组：PvP / 最终战只有一首，PvE / Boss 两首随机。
+func _battle_music_group() -> Array:
 	var kind := _effective_kind()
-	return PVP_BATTLE_MUSIC_PATH if kind == "pvp" or kind == "final" else BATTLE_MUSIC_PATH
+	if kind == "pvp" or kind == "final":
+		return [MusicService.BATTLE_PVP_MUSIC]
+	return MusicService.BATTLE_PVE_GROUP
 
 # boss 登场的那一下：**先让上一页那首 BGM 让位，再响登场音。**
 #
@@ -266,7 +276,8 @@ func _start_battle_music() -> void:
 		_boss_intro_pending = true
 		return
 	# 「同一首不重启」由 MusicService 内部判等负责：本函数被重复调用是常态。
-	MusicService.play(_battle_music_path())
+	# 11.16：组内已在放的一首就接着放，否则随机挑一首。
+	MusicService.play_group(_battle_music_group())
 
 func _stop_battle_music() -> void:
 	# 10-21：退出战斗必须把 BGM 电平还原 —— 否则主菜单 / 备战 / 商城整片都变小声。

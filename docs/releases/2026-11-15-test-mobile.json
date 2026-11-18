@@ -1,0 +1,182 @@
+{
+  "date": "2026-11-15",
+  "scope": "test",
+  "source": {
+    "snapshot": "/Volumes/repository/github/GLory/build/release-snapshots/20261115-test/GLory-v1.0",
+    "original_head": "4424191d60a1ef02042bf4453a459cecec94dd16",
+    "snapshot_commit": "594365d19974b7c2fcc25aca5c460041080cb9b6",
+    "local_patch_sha256": "7193e03b0d88c6e31ffa275eaf216cc0011ed9d5baa4188334d181c1fa2dbd25",
+    "release_policy": "committed upstream updates only per existing user decision; original local login changes preserved",
+    "original_worktree_preserved": true,
+    "upstream_commit": "f75a477a3947b3aa026a4f0f28c34577a78e055e",
+    "release_alignment": "21 workbook source cells and derived star caches synchronized to upstream runtime JSON; gameplay runtime tables unchanged",
+    "release_branch": "release/20261115-test",
+    "release_branch_pushed": true,
+    "release_source_url": "https://github.com/stechjie/GLory-v1.0/tree/release/20261115-test"
+  },
+  "server": {
+    "status": "deployed",
+    "commit": "594365d19974b7c2fcc25aca5c460041080cb9b6",
+    "project": "project-60c72d94-b558-4e4f-992",
+    "database_project": "tzkysvnpjmgzfbvazugi",
+    "release": "/home/nins17121/Glory/releases/1.0.2-20261115-594365d1",
+    "protocol": 46,
+    "idle_checks": [
+      {
+        "battle_connections": 0,
+        "account_online": 1,
+        "online_account_disconnect_authorized": true,
+        "room_count": 0,
+        "at": "2026-11-15T10:55:40.725976+00:00"
+      },
+      {
+        "battle_connections": 0,
+        "account_online": 1,
+        "online_account_disconnect_authorized": true,
+        "room_count": 0,
+        "at": "2026-11-15T10:55:44.227895+00:00"
+      }
+    ],
+    "services": {
+      "glory-server": "active",
+      "glory-backend": "active",
+      "livekit": "active",
+      "caddy": "active"
+    },
+    "health": {
+      "status": "ok",
+      "environment": "prod",
+      "configured": true,
+      "missing_config": []
+    },
+    "schema_verified": true,
+    "old_pid": "59555",
+    "new_pid": "65416",
+    "backend_pid": "53449",
+    "updated_files": [
+      "data/mercenary/mercenaries.json",
+      "data/units/race_units.json",
+      "data/balance/final_status.json"
+    ],
+    "rollback_directory": "/home/nins17121/Glory/delivery/release-20261115-test",
+    "verified_at": "2026-11-15T10:55:52.986587+00:00",
+    "device_gameplay_tested": false
+  },
+  "android": {
+    "build": 69,
+    "built": true,
+    "uploaded": true,
+    "qr_updated": true,
+    "version": "1.0.2",
+    "bytes": 715824031,
+    "sha256": "34dbacc7097512efbb3faf02bb04ef4c3575ab78d8b5feb63a309caa482ff28c",
+    "source_commit": "594365d19974b7c2fcc25aca5c460041080cb9b6",
+    "asset_inventory_sha256": "a5d906e7c040c3a90b2f0b2b40262e53e12b8b6e34bb7e2727e3e9af890308ad",
+    "signed": true,
+    "baseline_verified": true,
+    "upload_started": true,
+    "upload_started_at": "2026-11-15T11:34:47.613509+00:00",
+    "upload_last_observed_percent": 70,
+    "full_drive_sha256_verified": true,
+    "public_head_ranges_verified": true,
+    "drive": {
+      "build": 69,
+      "version": "1.0.2",
+      "bytes": 715824031,
+      "sha256": "34dbacc7097512efbb3faf02bb04ef4c3575ab78d8b5feb63a309caa482ff28c",
+      "source_commit": "594365d19974b7c2fcc25aca5c460041080cb9b6",
+      "asset_inventory_sha256": "a5d906e7c040c3a90b2f0b2b40262e53e12b8b6e34bb7e2727e3e9af890308ad",
+      "upload_complete": true,
+      "size_readback_verified": true,
+      "file_id": "1xrK5C1dwpjJD7yLuGLoEUmXnY3MPvUnk",
+      "account": "bytegamesg2025@gmail.com",
+      "parent": "1xjn5Hpa4AzSS8v7hgECEZstHb3dG6m11",
+      "url": "https://drive.google.com/file/d/1xrK5C1dwpjJD7yLuGLoEUmXnY3MPvUnk/view",
+      "verified_at": "2026-11-15T11:41:05.619205+00:00"
+    }
+  },
+  "ios": {
+    "built": true,
+    "uploaded": true,
+    "internal_testing": true,
+    "external_testing": true,
+    "sequence": "after Android Drive upload completes",
+    "web_login_pending_otp": false,
+    "build": 107,
+    "build_started": true,
+    "signed": true,
+    "bytes": 679293164,
+    "sha256": "bc733e75b5e5d3ad753db7cb7ccb980fb17f7be869b3bbf4ef30f883e5fcb918",
+    "source_commit": "594365d19974b7c2fcc25aca5c460041080cb9b6",
+    "asset_inventory_sha256": "a5d906e7c040c3a90b2f0b2b40262e53e12b8b6e34bb7e2727e3e9af890308ad",
+    "baseline_verified": true,
+    "upload_started": true,
+    "upload_started_at": "2026-11-15T11:49:24.048333+00:00",
+    "transporter_delivered": true,
+    "delivered_local": "2026-11-15 19:55 Asia/Shanghai",
+    "version": "1.0.2",
+    "processed": true,
+    "external_review_submitted": true,
+    "build_id": "a84efc3f-ac88-4530-8b63-54635806b4af",
+    "internal_group_id": "90dd8f53-b157-49c4-b899-8da72091b76a",
+    "external_group_id": "77fbf129-88aa-4489-98a0-658698cd4fcf",
+    "public_url": "https://testflight.apple.com/join/W2p1ukJp",
+    "status": "testing",
+    "observed_at": "2026-11-15T12:08:04.054660+00:00",
+    "internal_testers": 10,
+    "external_testers": 27,
+    "notes_saved": true,
+    "automatic_external_notification": true,
+    "qr_updated": true
+  },
+  "validation": {
+    "runtime_tests_passed": 17,
+    "server_bundle_smoke": true,
+    "device_gameplay_tested": false,
+    "readonly_battle_probe": {
+      "account_logged_in": false,
+      "connected": true,
+      "connected_seconds": 30.004,
+      "dtls": true,
+      "error": "",
+      "host": "34.124.141.90",
+      "list_requested": true,
+      "max_pong_gap_seconds": 3.967,
+      "observed_pings": 9,
+      "observed_pongs": 9,
+      "passed": true,
+      "port": 8080,
+      "protocol": 46,
+      "public_room_count": 0,
+      "reason": "completed",
+      "transport_closed": true,
+      "unseated": true,
+      "user_data_dir": "/Users/luolijing/Library/Application Support/GloryLiveReadOnly-Nov15-Source"
+    },
+    "actual_dtls_verified": true,
+    "voice_urls_verified": true,
+    "beta_site_tests": 7
+  },
+  "public_config": {
+    "ios": {
+      "ready": true,
+      "url": "https://testflight.apple.com/join/W2p1ukJp",
+      "version": "1.0.2 (107)",
+      "pending_version": ""
+    },
+    "android": {
+      "ready": true,
+      "mode": "apk",
+      "url": "https://test-api.gogoglory.com/beta/downloads/Glory-1.0.2-69-android.apk",
+      "version": "1.0.2 (69)",
+      "size_bytes": 715824031,
+      "size_label": "682.7 MiB"
+    }
+  },
+  "landing_page": "https://test-api.gogoglory.com/beta/",
+  "qr_url": "https://test-api.gogoglory.com/beta/invite-qr.png",
+  "evidence_directory": "../delivery/release-20261115-test",
+  "baseline_directory": "../build/patch-baselines/glory-20261115-test-refresh",
+  "production_unchanged": true,
+  "completed_at": "2026-11-15T12:08:46.901344+00:00"
+}

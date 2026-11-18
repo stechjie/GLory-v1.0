@@ -21,8 +21,10 @@ const MusicService := preload("res://ui/services/MusicService.gd")
 const BattleLoadingOverlayScene := preload("res://ui/components/GloryLoadingOverlay.tscn")
 const BattleLoadingOverlayScript := preload("res://ui/components/GloryLoadingOverlay.gd")
 
-const PREP_MUSIC_PATH := "res://assets/audio/bgm/prep_music.mp3"
-const PREP_PVP_MUSIC_PATH := "res://assets/audio/bgm/pvp_round_music.mp3"
+# 11.16：普通回合改为 MusicService.PLACEMENT_GROUP（摆放界面 1~3 随机），
+# PvP 前改为 MusicService.PLACEMENT_PVP_MUSIC。旧常量名保留给外部引用。
+const PREP_MUSIC_PATH := "res://assets/audio/bgm/placement_1.mp3"
+const PREP_PVP_MUSIC_PATH := "res://assets/audio/bgm/placement_pvp.mp3"
 # Player-facing frame rate only. Build identity remains in the startup log.
 # BattleScreen is prefetched during deployment and retained across rounds.
 const BATTLE_SCREEN_PATH := "res://scenes/battle/BattleScreen.tscn"
@@ -201,7 +203,13 @@ func _ready_spectator() -> void:
 func _start_prep_music() -> void:
 	# 下一回合是 PVP（含最终 PVP）时放专属音乐，否则放普通摆放音乐。
 	var next_kind := PrepRules.next_round_kind()
-	var music_path := PREP_PVP_MUSIC_PATH if next_kind == "pvp" or next_kind == "final" else PREP_MUSIC_PATH
+	# 11.16：进入对局 = 新一局。清掉主菜单那些「接着放」的记录，打完回大厅重新随机。
+	MusicService.new_session()
+	if next_kind == "pvp" or next_kind == "final":
+		MusicService.play(MusicService.PLACEMENT_PVP_MUSIC)
+	else:
+		# 同一回合内重建备战页时，正在放的那首在组里 → 接着放；每回合隔着一场战斗，重新随机。
+		MusicService.play_group(MusicService.PLACEMENT_GROUP)
 	# 9.17 第二批：改走常驻 MusicService（播放器挂 root，不随页面释放）。
 	# 原来这里自建 AudioStreamPlayer 并 add_child 到备战页上；Main._clear() 切页面
 	# 时会把整页释放掉。BGM 由服务统一持有后，「打开子界面音乐断掉」那类问题
@@ -210,7 +218,6 @@ func _start_prep_music() -> void:
 	# 「同一首不重启」由服务内部判等负责：每回合重建备战页时会再调一次这里，
 	# prep_music 不会从 0 秒重头播。load() 的注意事项（Android 导出包只含导入
 	# 产物）也已收进 MusicService._stream_for()。
-	MusicService.play(music_path)
 
 func _setup_fps_overlay() -> void:
 	_fps_label = Label.new()
@@ -335,25 +342,12 @@ func _input(event: InputEvent) -> void:
 	if not NetworkService.four_star_request_id.is_empty():
 		get_viewport().set_input_as_handled()
 		return
+	# Let modal controls and their backdrops own the complete click.
+	if (is_instance_valid(_carrot_panel) and _carrot_panel.visible) or not ModalStack.top_id().is_empty():
+		return
 	if _detail != null and _detail.visible:
 		# PopupPanel owns outside-click/Escape dismissal. Its input positions
 		# are popup-local, so the main viewport must not reinterpret them.
-		return
-	if _team_mercs_open and _team_mercs_overlay != null and _team_mercs_overlay.visible:
-		var team_pointer := Vector2.ZERO
-		var team_should_check := false
-		if event is InputEventMouseButton:
-			var team_mouse := event as InputEventMouseButton
-			if team_mouse.pressed and team_mouse.button_index == MOUSE_BUTTON_LEFT:
-				team_pointer = team_mouse.position
-				team_should_check = true
-		elif event is InputEventScreenTouch:
-			var team_touch := event as InputEventScreenTouch
-			if team_touch.pressed:
-				team_pointer = team_touch.position
-				team_should_check = true
-		if team_should_check and not _team_mercs_overlay.get_global_rect().has_point(team_pointer):
-			_close_team_mercs_picker()
 		return
 	if _shop.picker_open and _shop.panel != null and _shop.panel.visible:
 		var shop_pointer := Vector2.ZERO

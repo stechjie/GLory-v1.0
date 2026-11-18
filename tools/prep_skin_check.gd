@@ -15,7 +15,7 @@ const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
 const CHECK_NAME := "prep_skin"
 const SHOP_PATH := "res://data/shop.json"
 const ALLOWED_KEYS := ["id", "name", "name_en", "firefly_color", "river_glow", "ambient", "refresh_fx",
-	"river_drop"]
+	"river_drop", "river_glow_style", "sparkle_color"]
 
 var _h: RefCounted
 
@@ -66,6 +66,13 @@ func _check_entry(skin_id: String, entry: Dictionary) -> void:
 			"bad_river_drop", "%s 的 river_drop 要是 0~0.25 的数" % skin_id)
 	if entry.has("river_glow"):
 		_h.expect(entry["river_glow"] is bool, "bad_river_glow", "%s 的 river_glow 要是 true / false" % skin_id)
+	if entry.has("sparkle_color"):
+		var sparkle: Variant = entry["sparkle_color"]
+		_h.expect(sparkle is Array and (sparkle as Array).size() == 3, "bad_sparkle_color",
+			"%s 的 sparkle_color 要是 [r, g, b] 三个数" % skin_id)
+	if entry.has("river_glow_style"):
+		_h.expect(str(entry["river_glow_style"]) in PrepSkin.RIVER_GLOW_STYLES, "bad_river_glow_style",
+			"%s 的 river_glow_style 只能是 %s" % [skin_id, str(PrepSkin.RIVER_GLOW_STYLES)])
 	if entry.has("ambient"):
 		_h.expect(str(entry["ambient"]) in PrepSkin.AMBIENT_KINDS, "bad_ambient",
 			"%s 的 ambient 只能是 %s" % [skin_id, str(PrepSkin.AMBIENT_KINDS)])

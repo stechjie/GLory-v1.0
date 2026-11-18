@@ -72,13 +72,15 @@ class IOSBuildTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        self.signin = {"ios_client_id": "123-ios.apps.googleusercontent.com", "web_client_id": "123-web.apps.googleusercontent.com",
+                       "reversed_client_id": "com.googleusercontent.apps.123-ios"}
         self.now = dt.datetime(2026, 9, 13, tzinfo=dt.timezone.utc)
         self.profile = {
             "Name": "Fixture", "UUID": "11111111-2222-3333-4444-555555555555", "TeamIdentifier": [ios.TEAM],
             "CreationDate": self.now - dt.timedelta(days=1), "ExpirationDate": self.now + dt.timedelta(days=30),
             "DeveloperCertificates": [b"public certificate fixture"], "ProvisionedDevices": ["TEST-DEVICE"],
             "Entitlements": {"application-identifier": f"{ios.TEAM}.{ios.BUNDLE}",
-                             "com.apple.developer.team-identifier": ios.TEAM, "get-task-allow": False},
+                             "com.apple.developer.team-identifier": ios.TEAM, "get-task-allow": False, ios.APPLE_SIGNIN_ENTITLEMENT: ["Default"]},
         }
 
     def test_profile_requires_matching_team_app_and_distribution_method(self):
@@ -99,6 +101,77 @@ class IOSBuildTests(unittest.TestCase):
         store = dict(self.profile)
         store.pop("ProvisionedDevices")
         ios.validate_profile_data(store, "app-store", self.now)
+
+    def test_profile_requires_native_apple_signin_capability(self):
+        for value in (None, [], ["Other"], "Default"):
+            profile = copy.deepcopy(self.profile)
+            profile["Entitlements"][ios.APPLE_SIGNIN_ENTITLEMENT] = value
+            with self.subTest(value=value), self.assertRaisesRegex(RuntimeError, "Sign in with Apple"):
+                ios.validate_profile_data(profile, "ad-hoc", self.now)
+
+    def test_google_client_configuration_requires_distinct_same_project_ids(self):
+        project = self.root / "source"
+        account = project / "scripts/account/AccountConfig.gd"
+        account.parent.mkdir(parents=True)
+        account.write_text('const GOOGLE_WEB_CLIENT_ID := "123-web.apps.googleusercontent.com"\n'
+                           'const GOOGLE_IOS_CLIENT_ID := "123-ios.apps.googleusercontent.com"\n')
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(ios.google_signin_config(project), self.signin)
+            for invalid in ("", "123-web.apps.googleusercontent.com", "456-ios.apps.googleusercontent.com", '<bad>&'):
+                account.write_text('const GOOGLE_WEB_CLIENT_ID := "123-web.apps.googleusercontent.com"\n')
+                with self.subTest(client_id=invalid), self.assertRaisesRegex(RuntimeError, "Google"):
+                    ios.google_signin_config(project, invalid)
+            with mock.patch.dict(os.environ, {"GLORY_GOOGLE_IOS_CLIENT_ID": self.signin["ios_client_id"]}):
+                self.assertEqual(ios.google_signin_config(project), self.signin)
+
+    def test_signin_plist_and_entitlements_are_checked_against_build_identity(self):
+        info = plistlib.loads(('<plist version="1.0"><dict>' + ios.signin_plist(self.signin) + '</dict></plist>').encode())
+        ios.verify_signin_config(info, self.profile["Entitlements"], self.signin)
+        for key in ("GIDClientID", "GIDServerClientID", "CFBundleURLTypes"):
+            broken = dict(info)
+            broken.pop(key)
+            with self.subTest(key=key), self.assertRaisesRegex(RuntimeError, "Google"):
+                ios.verify_signin_config(broken, self.profile["Entitlements"], self.signin)
+        with self.assertRaisesRegex(RuntimeError, "Sign in with Apple"):
+            ios.verify_signin_config(info, {}, self.signin)
+
+    def test_native_signin_and_google_privacy_resources_are_required(self):
+        binary = self.root / "GloryVoice"
+        binary.write_bytes(b"GlorySignInNative beginGoogleSignIn beginAppleSignIn GIDSignIn ASAuthorizationAppleIDProvider")
+        ios.verify_signin_binary(binary)
+        binary.write_bytes(b"old voice billing framework")
+        with self.assertRaisesRegex(RuntimeError, "Apple/Google"):
+            ios.verify_signin_binary(binary)
+        with self.assertRaisesRegex(RuntimeError, "隐私清单"):
+            ios.verify_google_privacy_bundle(self.root)
+        manifest = self.root / "GoogleSignIn_GoogleSignIn.bundle/PrivacyInfo.xcprivacy"
+        manifest.parent.mkdir()
+        manifest.write_bytes(plistlib.dumps({"NSPrivacyTracking": False}))
+        ios.verify_google_privacy_bundle(self.root)
+
+    def test_native_signin_rejects_source_or_binary_changed_since_build(self):
+        project = self.root / "native-fixture"
+        source = project / "native/glory_voice_ios"
+        folder = project / "addons/glory_voice/bin/ios"
+        source.mkdir(parents=True)
+        binary = folder / "GloryVoice.framework/GloryVoice"
+        binary.parent.mkdir(parents=True)
+        binary.write_bytes(b"GlorySignInNative beginGoogleSignIn beginAppleSignIn GIDSignIn ASAuthorizationAppleIDProvider")
+        manifest = {"source": {}, "files": {"GloryVoice.framework/GloryVoice": ios.shared.digest(binary)}}
+        for name in ("GlorySignIn.swift", "GlorySignInRequests.swift", "GlorySignInNative.h", "GlorySignInBridge.mm", "GloryVoiceBridge.mm", "build.py"):
+            (source / name).write_text("source " + name)
+            manifest["source"][name] = ios.shared.digest(source / name)
+        (folder / "build-manifest.json").write_text(json.dumps(manifest))
+        ios.verify_signin_source(project)
+        swift = source / "GlorySignIn.swift"
+        original = swift.read_text()
+        swift.write_text("new source")
+        with self.assertRaisesRegex(RuntimeError, "源码不一致"):
+            ios.verify_signin_source(project)
+        swift.write_text(original)
+        binary.write_bytes(binary.read_bytes() + b"unexpected replacement")
+        with self.assertRaisesRegex(RuntimeError, "指纹不一致"):
+            ios.verify_signin_source(project)
 
     def test_naive_apple_plist_dates_are_treated_as_utc(self):
         profile = copy.deepcopy(self.profile)
@@ -212,7 +285,7 @@ class IOSBuildTests(unittest.TestCase):
         preset = stage / "export_presets.cfg"
         preset.write_text('[preset.0]\nname="Android"\nplatform="Android"\ninclude_filter=""\nexclude_filter=""\n[preset.0.options]\npackage/unique_name="com.glory.game"\n')
         cert = {"name": "iPhone Distribution: Fixture"}
-        ios.write_preset(stage, "ad-hoc", self.profile, cert, "0.0.4", "2")
+        ios.write_preset(stage, "ad-hoc", self.profile, cert, "0.0.4", "2", self.signin)
         text = preset.read_text()
         self.assertNotIn("addons/glory_voice/glory_voice.gdextension", text)
         self.assertIn('application/export_method_release=2', text)
@@ -230,7 +303,7 @@ class IOSBuildTests(unittest.TestCase):
                     'include_filter=""\nexclude_filter=""\n[preset.0.options]\n'
                     'package/unique_name="com.glory.game"\n')
                 ios.write_preset(stage, method, self.profile,
-                                 {"name": "iPhone Distribution: Fixture"}, "1.0.2", "89")
+                                 {"name": "iPhone Distribution: Fixture"}, "1.0.2", "89", self.signin)
                 text = (stage / "export_presets.cfg").read_text()
                 line = next(x for x in text.splitlines()
                             if x.startswith("application/additional_plist_content="))
@@ -256,15 +329,17 @@ class IOSBuildTests(unittest.TestCase):
         destination = self.root / "verify with spaces"
         leaf = b"public signing certificate fixture"
         cert = {"sha1": hashlib.sha1(leaf).hexdigest().upper()}
-        identity = {"build_number": "2"}
+        identity = {"build_number": "2", "signin": self.signin}
         info = {"CFBundleIdentifier": ios.BUNDLE, "CFBundleShortVersionString": "0.0.4", "CFBundleVersion": "2",
                 "CFBundleDisplayName": ios.DISPLAY_NAME,
                 "CFBundleExecutable": "Fixture", "CFBundleSupportedPlatforms": ["iPhoneOS"], "NSMicrophoneUsageDescription": "Voice", "NSCameraUsageDescription": "No camera capture", "NSPhotoLibraryUsageDescription": "No photo library access",
                 "LSSupportsGameMode": True, "GCSupportsGameMode": True}
+        info.update(plistlib.loads(('<plist version="1.0"><dict>' + ios.signin_plist(self.signin) + '</dict></plist>').encode()))
         with zipfile.ZipFile(ipa, "w") as archive:
             for name, data in {"Info.plist": plistlib.dumps(info), "Fixture": b"arm64 fixture",
                                "Fixture.pck": b"pck fixture", "embedded.mobileprovision": b"profile fixture",
-                               "Frameworks/GloryVoice.framework/GloryVoice": b"voice fixture GloryAppleBillingNative beginFinishTransaction: StoreKit",
+                               "Frameworks/GloryVoice.framework/GloryVoice": b"voice fixture GloryAppleBillingNative beginFinishTransaction: StoreKit GlorySignInNative beginGoogleSignIn beginAppleSignIn GIDSignIn ASAuthorizationAppleIDProvider",
+                               "Frameworks/GloryVoice.framework/GoogleSignIn_GoogleSignIn.bundle/PrivacyInfo.xcprivacy": plistlib.dumps({}),
                                "Frameworks/LiveKitWebRTC.framework/LiveKitWebRTC": b"rtc fixture",
                                "Frameworks/RustLiveKitUniFFI.framework/RustLiveKitUniFFI": b"ffi fixture"}.items():
                 archive.writestr("Payload/Fixture.app/" + name, data)
@@ -313,6 +388,8 @@ class IOSBuildTests(unittest.TestCase):
         (project / "project.godot").write_text('[application]\nconfig/version="0.0.4"\n')
         with contextlib.ExitStack() as stack:
             stack.enter_context(mock.patch.object(ios, "verify_apple_billing_source"))
+            stack.enter_context(mock.patch.object(ios, "verify_signin_source"))
+            stack.enter_context(mock.patch.object(ios, "google_signin_config", return_value=self.signin))
             stack.enter_context(mock.patch.object(ios, "ROOT", self.root))
             password = self.root / "password"
             password.touch()

@@ -533,7 +533,7 @@ static func step_state(state: Dictionary) -> void:
 	# 神王裁决的后续段数属于技能伤害：在当帧无敌挂好之后结算，确保每段都读取
 	# 当时真实的护盾、无敌和防御；队列只保存施法时已经选中的目标，不重新选人。
 	BattleSimSkills.tick_pending_skill_damage(state)
-	_tick_opening_lanterns(state)
+	_tick_ready_lanterns(state)
 	_tick_skills(p_alive, e_alive, state)
 	_tick_skills(e_alive, p_alive, state)
 	_process_boss_charges(state)
@@ -552,6 +552,7 @@ static func step_state(state: Dictionary) -> void:
 	# 之前，这样「被炸死的单位」能在本 tick 一并结清，不用等下一 tick。
 	BattleSimTreasures._process_death_explosions(state)
 	# 本 tick 所有伤害都结算完了，再补发非普攻致死的击杀金（必须在 _step_team 之后）。
+	_process_pending_kill_effects(state)
 	_process_pending_kill_rewards(state)
 	BattleSimTreasures._process_race_death_traits(state)
 	constrain_battle_positions(state)
@@ -1288,12 +1289,12 @@ static func _apply_opening_unit_skills(player: Array, enemy: Array, event_log: A
 			DamageService.begin_stat_context(state, f)
 			var d: Dictionary = f.get("def", {})
 			var sid := str(d.get("skill_id", ""))
-			if d.has("opening_cd"):
-				var open_cd := float(d.get("opening_cd", 0.0))
-				if open_cd > 0.0:
-					f.skill_ready = maxf(float(f.get("skill_ready", 0.0)), open_cd)
-			# 4 星天使：开场若干秒控制免疫。注意 opening_cd 是**开场冷却**，
-			# 与这个是两件事（设计文档里点名过原稿把两者混为一谈）。
+			# 11.16：主动技能开场先走满一次冷却（见 BattleSimShared.ACTIVE_SKILL_DEFAULT_CD）。
+			# 数据里残留的 opening_cd 不再读取。
+			var open_cd := opening_skill_cooldown(f)
+			if open_cd > 0.0:
+				f.skill_ready = maxf(float(f.get("skill_ready", 0.0)), open_cd)
+			# 4 星天使：开场若干秒控制免疫（与冷却无关的另一件事）。
 			var immune_sec := float(d.get("control_immune_sec", 0.0))
 			if immune_sec > 0.0:
 				StatusEffectService.add_status(f, "control_immune", immune_sec, {})
@@ -1321,7 +1322,7 @@ static func _apply_opening_unit_skills(player: Array, enemy: Array, event_log: A
 				var servant_slot := int(f.get("slot", -1))
 				var bind_offsets: Array = [-1, 1] if float(d.get("ally_def_pct", 0.0)) > 0.0 else [-1]
 				for offset in bind_offsets:
-					var target := _unit_at_slot(team_units, servant_slot + int(offset))
+					var target := _owned_unit_at_slot(team_units, servant_slot + int(offset), f)
 					if target.is_empty():
 						continue
 					target.sacrifice_guardian = f
@@ -1334,16 +1335,20 @@ static func _apply_opening_unit_skills(player: Array, enemy: Array, event_log: A
 		event_log.append(TranslationServer.translate("log_deadpool_bind"))
 
 
-# Both opening Lantern casts choose their lanes and targets before either side
-# receives silence. Once committed, both casts complete in the opening phase.
-static func _tick_opening_lanterns(state: Dictionary) -> void:
-	if bool(state.get("lantern_opening_done", false)) or float(state.get("elapsed", 0.0)) > 0.0:
-		return
-	state["lantern_opening_done"] = true
+# 赤灯使双方同 tick 就绪时，先各自选好路和目标再一起结算，谁也不会被对方先沉默掉。
+# 11.16 起不再第 0 秒开场施放：和其它主动技能一样先走满冷却（开场 skill_ready = skill_cd），
+# 冷却一好就在这里结算；_tick_skills 看到 skill_ready 已后移，不会重复施放。
+# 若不这样做，_tick_skills 先跑我方再跑敌方，同冷却的两盏灯永远是我方先手、敌方被沉默。
+static func _tick_ready_lanterns(state: Dictionary) -> void:
+	var elapsed := float(state.get("elapsed", 0.0))
 	var opening: Array = []
 	for team_units in [state.get("player", []), state.get("enemy", [])]:
 		for caster: Dictionary in team_units:
 			if not bool(caster.get("alive", false)) or str(caster.get("def", {}).get("skill_id", "")) != "aoe_silence":
+				continue
+			if elapsed < float(caster.get("skill_ready", 0.0)):
+				continue
+			if StatusEffectService.has_status(caster, "silence") or StatusEffectService.is_stunned(caster) or StatusEffectService.has_status(caster, "fear"):
 				continue
 			var opponents: Array = state.get("enemy", []) if str(caster.get("team", "")) == "player" else state.get("player", [])
 			var targets := CrimsonCombat.lantern_targets(caster, opponents)
@@ -1402,7 +1407,7 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 		#
 		# 例外 skill_global：全场技不吃射程判定。法阵友军里的近战体型（噬兽、厄夜）
 		# 否则要贴到脸上才能放"全场"大招，多半没走到就死了。这批的开场时机改由
-		# opening_cd 把关，不会一到 0 秒就隔着半张地图开。
+		# 开场先走满冷却把关（11.16），不会一到 0 秒就隔着半张地图开。
 		if not bool(d.get("skill_global", false)) and not _skill_target_in_range(caster, opponents, bodies):
 			continue
 		var old_ready := float(caster.get("skill_ready", 0.0))
@@ -1510,12 +1515,13 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 8.0))
 			"gold_charge":
 				BattleSimSkills._skill_gold_charge(caster, opponents, d, state)
-				caster.skill_ready = float(state.elapsed) + 7.0
+				# 11.16 用户定统一 7 秒：mercenaries.json 同步改成 skill_cd 7.0，这里改读数据。
+				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 7.0))
 			"king_aura":
 				BattleSimSkills._skill_king_aura(caster, casters, d)
 				caster.skill_ready = float(state.elapsed) + 2.0
 			# 法阵友军。全场技在场上没有可打目标时返回 false，此时不进冷却，留到真正
-			# 有敌人时再放——一只只活十几秒的守护者，空放掉一发就等于没有这个技能。
+			# 有敌人时再放，空放掉一发冷却就白走了。
 			"burn_claw":
 				BattleSimSkills._skill_ally_self_sustain(caster, d)
 				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 5.0))
@@ -1542,6 +1548,8 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 
 
 static func _on_unit_killed(killer: Dictionary, victim: Dictionary, state: Dictionary, killer_team: Array, victim_team: Array) -> void:
+	# 11.16：击杀类效果已在这里结算，_process_pending_kill_effects 的补扫据此跳过。
+	victim["kill_effects_done"] = true
 	state.total_deaths = int(state.get("total_deaths", 0)) + 1
 	if str(killer.get("def", {}).get("skill_id", "")) == "death_hunt":
 		_heal_unit(killer, maxi(1, int(round(float(killer.max_hp) * float(killer.get("def", {}).get("kill_heal_pct", 0.15))))))
@@ -1587,6 +1595,7 @@ static func _maybe_spawn_parasite_clone(killer: Dictionary, victim: Dictionary, 
 	clone.statuses = {}
 	clone.erase("money_set_multiplier")
 	clone.erase("money_set_hp_multiplier")
+	clone.erase("kill_effects_done")
 	# 10.09 bug 文档第 4 条：分身不在 `unit_stats` 里（每个 uid 只在开场登记一次），
 	# 所以它打出的伤害、它挂的毒一直无人认领（实测见 probe_attr_paths.gd 的 _case_clone_dot）。
 	# 给它打上「无归属来源」标记：归属按击杀者（也就是寄生灵自己）的席位走，进元素旁路。
@@ -1894,6 +1903,42 @@ static func _apply_final_round_left_right_layout(player: Array, enemy: Array) ->
 		if bool(fighter.get("is_formation_ally", false)):
 			fighter.pos = Vector2(805.0, 240.0)
 			fighter["lane"] = 1
+
+
+# 11.16 击杀类效果补结算（用户定：技能打死也要触发）。
+# 凤凰涅槃、双生守门人复活、亡魂反击、哀鸣共鸣原本只挂在 _on_unit_killed 上，
+# 那是**普攻致死**入口；被技能 / AOE / 持续伤害 / 反伤打死时一个都不触发
+# （3v3 模拟：带凤凰的一方 37 次死亡里 9 次没复活，全是被 Boss 技能打死）。
+# 这里与 _process_pending_kill_rewards 同款，每 tick 收尾扫一遍新死亡补上。
+# - 凤凰、双生复活只看死者，任何致死方式都触发（含持续伤害、强制死亡）。
+# - 亡魂反击、哀鸣共鸣需要凶手：按 DamageService 记下的 killer_uid 找回；
+#   无来源的死亡（中毒 / 失血 / 狂暴期衰减 / 凤凰复活体到时强制死亡）不触发这两项。
+# - 普攻致死已在 _on_unit_killed 里即时结算并落 kill_effects_done，这里跳过，不会重复。
+# - 控制套「击杀刷新冷却」、寄生分身、冥界执行者击杀回血仍只认普攻最后一击，不在这里补。
+static func _process_pending_kill_effects(state: Dictionary) -> void:
+	var fighters: Array = state.get("player", []) + state.get("enemy", [])
+	var by_uid := {}
+	for f in fighters:
+		by_uid[str(f.get("uid", ""))] = f
+	for victim in fighters:
+		if bool(victim.get("alive", true)) and int(victim.get("hp", 0)) > 0:
+			continue
+		if bool(victim.get("kill_effects_done", false)):
+			continue
+		victim["kill_effects_done"] = true
+		var victim_team: Array = state.get("enemy", []) if str(victim.get("team", "")) == "enemy" else state.get("player", [])
+		BattleSimTreasures._queue_twin_revive(victim, state)
+		BattleSimTreasures._queue_phoenix_revive(victim, state)
+		var killer_uid := str(victim.get("killer_uid", ""))
+		if killer_uid.is_empty() or killer_uid == str(victim.get("uid", "")) or not by_uid.has(killer_uid):
+			continue
+		var killer: Dictionary = by_uid[killer_uid]
+		var prev_source := DamageService.current_stat_source_uid()
+		DamageService.begin_stat_context(state, victim)
+		BattleSimTreasures._apply_soul_counter_treasure(killer, victim)
+		DamageService.begin_stat_context(state, killer)
+		BattleSimTreasures._apply_kill_treasures(killer, victim, victim_team)
+		DamageService.set_stat_source_uid(prev_source)
 
 
 # 击杀金补结算：普通攻击打死目标时 _handle_attack_kill 会即时结算，但技能 / AOE /

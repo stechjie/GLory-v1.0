@@ -999,7 +999,7 @@ func _strip_hud() -> void:
 # 那条「隐藏顶层 CanvasItem」的判据够不着（实测第一版录出来血条和灰圈还在）。
 # 必须每帧扫：单位是中途进场的，新建的节点默认可见。
 func _hide_unit_overlays() -> void:
-	# 单位头顶那层只有三个子节点：HpBg / HpFill / Name（BattleRenderer._make_unit_node）。
+	# 单位头顶那层是血条几个色块（11.14 起战斗里已不建 Name 节点，下面的隐藏只对旧节点兜底）。
 	# **血条留着**（用户要），只摘掉名字 —— 整片 61 个单位的名字叠在一起是噪音，
 	# 血条则是看得出谁快死了的战斗读感。
 	var nodes: Dictionary = _screen.get("_unit_nodes")

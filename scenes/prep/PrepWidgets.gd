@@ -148,13 +148,13 @@ static func make_menu_button(label_text: String, size: Vector2, font_size: int, 
 
 
 # 「整张图按钮 + 下沿小字」（11.05 右上角战力 / 统计 / 设定）：图标画在框的上半，
-# 字压在框里下方那条空白上。button.text 留空、文案进 tooltip，免得默认文字再画一遍。
+# 字放在框里下方，按钮的无障碍名称使用同一文案。
 static func make_art_caption_button(label_text: String, art_path: String, size: Vector2,
 		font_size: int, on_press: Callable) -> Button:
 	var btn := Button.new()
 	btn.flat = true
 	btn.text = ""
-	btn.tooltip_text = label_text
+	btn.accessibility_name = label_text
 	btn.custom_minimum_size = size
 	btn.focus_mode = Control.FOCUS_NONE
 	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
