@@ -60,12 +60,15 @@ func _run() -> void:
 	await _wait(0.2)
 	await _capture("m2_kill")
 	await _wait(1.6)
-	# 0.3 秒里连杀三只：合并成一个「+45」。
-	for i in 3:
+	# 连着杀：每 0.15 秒一只，「+15」一个个往上叠。
+	for i in 4:
 		purse.add_kill(15)
-		await _wait(0.1)
-	await _wait(0.15)
-	await _capture("m3_combo")
+		await _wait(0.15)
+	await _capture("m3_chain")
+	# 同一瞬间死三只是一笔「+45」（字大一号），压在那串下面。
+	purse.add_kill(45)
+	await _wait(0.2)
+	await _capture("m3b_aoe")
 	await _wait(1.6)
 	# Kai 第一个清完，自己第二个清完 → 第二名 30 金从绶带飞进钱袋。
 	lane.update_entries(_lane_entries({3: 18.4}), true)

@@ -2,8 +2,11 @@ extends Control
 ## 战斗左下角的钱袋：这一场战斗自己赚到的钱，从 0 开始（11-18 用户定）。
 ## 只算两样：杀怪 / 杀棋子的击杀金（自己拿到的那份，跨路帮杀是一半），和前三名奖励。
 ## 其它收入（胜负奖励、安慰金、商人、宝藏、利息、营地）照旧在结算面板里，不进钱袋。
-## 战斗中的击杀金由调用方按服务器同一套公式逐只算出来（add_kill），战斗结束用服务器结算的准确数
+## 战斗中的击杀金由调用方从回放的击杀金账本逐笔喂进来（add_kill），战斗结束用准确数
 ## set_total 刷一次，保证最后的数和到账一致。
+## 进账提示（11-18 用户定）：不做横出来的签子，每一笔在钱袋数字正上方冒一个「+N」，
+## 新的从下面冒、把旧的往上顶，叠成一串再一个个淡掉（A）；排名奖励是大号「+150」，
+## 上面一行小字「伤害第 1 名」，竖着叠（B）。同一瞬间死几只是一笔（回放按帧记总数），字大一号。
 ## 调用方注意：Boss 局服务器不发击杀金 → 不调 add_kill；第 21 回合（最后一回合）不显示钱袋。
 
 const Presentation := preload("res://effects/runtime/presentation/PresentationSettings.gd")
@@ -15,9 +18,16 @@ const COIN_PATH := "res://assets/ui/unit_detail/icon_gold_stack.png"
 
 const PURSE_SIZE := Vector2(176, 58)
 const ICON_SIZE := 64.0
-## 连杀合并：上一次跳字后这么久之内的击杀，加进同一个「+N」。和击杀金币音效的合并同一个思路。
-const MERGE_SEC := 1.0
 const COUNT_SEC := 0.35
+## 一笔「+N」停留多久再淡掉；排名奖励停久一点。
+const POP_LIFE := 0.9
+const RANK_POP_LIFE := 1.8
+const POP_FADE := 0.3
+## 同时最多叠几个，再多就让最上面（最旧）那个提前淡掉，免得清怪快时叠成一长条挡战场。
+const MAX_POPS := 5
+const POP_GAP := 2.0
+## 一笔达到这个数（同一瞬间死了好几只）字大一号。
+const BIG_KILL := 30
 const FLY_COINS := 7
 const FLY_SEC := 0.5
 
@@ -26,14 +36,8 @@ var _shown := 0.0
 var _icon: TextureRect
 var _number: Label
 var _caption: Label
-## 钱袋右边弹出的进账签：「击杀 +45」「伤害第 1 名 +150」。说清楚钱是哪来的。
-var _toast: Panel
-var _toast_style: StyleBoxFlat
-var _toast_reason: Label
-var _toast_amount: Label
-var _float_amount := 0
-var _float_msec := -100000
-var _float_tween: Tween
+## 正在显示的「+N」，最新的在最前面。
+var _pops: Array[Control] = []
 var _count_tween: Tween
 var _bump_tween: Tween
 var _coin_tex: Texture2D
@@ -100,48 +104,41 @@ func _ready() -> void:
 	_icon.pivot_offset = _icon.size * 0.5
 	_icon.texture = _coin_tex
 	add_child(_icon)
-	_build_toast()
 	_render_number()
 
 
 func reset() -> void:
 	_total = 0
 	_shown = 0.0
-	_float_amount = 0
-	_float_msec = -100000
-	for t in [_float_tween, _count_tween, _bump_tween]:
+	for t in [_count_tween, _bump_tween]:
 		if t != null:
 			(t as Tween).kill()
-	if _toast != null:
-		_toast.hide()
+	for pop in _pops:
+		if is_instance_valid(pop):
+			pop.queue_free()
+	_pops.clear()
 	if _number != null:
 		_render_number()
 
 
-## 杀了一只（或几只同时）：钱袋数字往上滚，右边弹「击杀 +N」；MERGE_SEC 内连杀合并成一个数。
+## 一笔击杀金：钱袋数字往上滚，数字上方冒一个「+N」叠上去。
 func add_kill(amount: int) -> void:
 	if amount <= 0:
 		return
 	_total += amount
-	var now := Time.get_ticks_msec()
-	if now - _float_msec <= int(MERGE_SEC * 1000.0) and _toast.visible:
-		_float_amount += amount
-	else:
-		_float_amount = amount
-	_float_msec = now
-	_show_toast("Kills" if _english() else "击杀", _float_amount, false)
+	_push_pop("", amount, false)
 	_count_to(_total)
 	_bump(1.12)
 
 
-## 前三名奖励：一串金币从 from_global（名次木牌 / 绶带）飞进钱袋，到了再弹「reason +N」。
+## 前三名奖励：一串金币从 from_global（名次木牌 / 绶带）飞进钱袋，到了再冒大号「+N」，上面一行 reason。
 ## reason 由调用方给，如「伤害第 1 名」「清路第 2 名」。
 func fly_in(from_global: Vector2, amount: int, reason: String) -> void:
 	if amount <= 0:
 		return
 	_total += amount
 	if not _motion_allowed() or _coin_tex == null:
-		_show_toast(reason, amount, true)
+		_push_pop(reason, amount, true)
 		_count_to(_total)
 		_bump(1.25)
 		return
@@ -177,7 +174,7 @@ func fly_in(from_global: Vector2, amount: int, reason: String) -> void:
 		tween.tween_callback(coin.queue_free)
 		if i == 0:
 			tween.tween_callback(func() -> void:
-				_show_toast(reason, amount, true)
+				_push_pop(reason, amount, true)
 				_count_to(_total)
 				_bump(1.25))
 		elif i < FLY_COINS - 1:
@@ -221,95 +218,100 @@ func _bump(peak: float) -> void:
 	_bump_tween.tween_property(_icon, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
-func _build_toast() -> void:
-	_toast = Panel.new()
-	_toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_toast_style = StyleBoxFlat.new()
-	_toast_style.set_border_width_all(2)
-	_toast_style.set_corner_radius_all(14)
-	_toast_style.shadow_color = Color(0, 0, 0, 0.4)
-	_toast_style.shadow_size = 4
-	_toast_style.shadow_offset = Vector2(0, 2)
-	_toast_style.content_margin_left = 12
-	_toast_style.content_margin_right = 12
-	_toast.add_theme_stylebox_override("panel", _toast_style)
-	_toast_reason = Label.new()
-	_toast_reason.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_toast_reason.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_toast_reason.add_theme_color_override("font_color", Color("f3e3c0"))
-	var bold := Fonts.bold_font()
-	if bold != null:
-		_toast_reason.add_theme_font_override("font", bold)
-	_toast.add_child(_toast_reason)
-	_toast_amount = Label.new()
-	_toast_amount.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_toast_amount.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_toast_amount.add_theme_font_override("font", _display_font)
-	_toast_amount.add_theme_color_override("font_color", Color("ffe08a"))
-	_toast_amount.add_theme_color_override("font_outline_color", Color("2a1406"))
-	_toast_amount.add_theme_constant_override("outline_size", 4)
-	_toast.add_child(_toast_amount)
-	_toast.hide()
-	add_child(_toast)
+# 冒一个「+N」：新的落在数字正上方，已有的往上让出它的高度，叠成一串。
+func _push_pop(reason: String, amount: int, rank: bool) -> void:
+	var pop := Control.new()
+	pop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pop.z_index = 40
+	var big := rank or amount >= BIG_KILL
+	var amount_size := 32 if rank else (26 if big else 22)
+	var y := 0.0
+	if rank and not reason.is_empty():
+		var reason_label := Label.new()
+		reason_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		reason_label.text = reason
+		reason_label.add_theme_font_size_override("font_size", 14)
+		reason_label.add_theme_color_override("font_color", Color("fff0cf"))
+		reason_label.add_theme_color_override("font_outline_color", Color("2a1406"))
+		reason_label.add_theme_constant_override("outline_size", 5)
+		var bold := Fonts.bold_font()
+		if bold != null:
+			reason_label.add_theme_font_override("font", bold)
+		reason_label.position = Vector2(2, 0)
+		pop.add_child(reason_label)
+		y = 18.0
+	var label := Label.new()
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.text = "+%d" % amount
+	label.position = Vector2(0, y - 4.0)
+	label.add_theme_font_override("font", _display_font)
+	label.add_theme_font_size_override("font_size", amount_size)
+	label.add_theme_color_override("font_color", Color("ffd24a") if rank else Color("ffe08a"))
+	label.add_theme_color_override("font_outline_color", Color("2a1406"))
+	label.add_theme_constant_override("outline_size", 7 if big else 6)
+	label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.45))
+	label.add_theme_constant_override("shadow_offset_y", 2)
+	pop.add_child(label)
+	var height := y + float(amount_size) * 1.05
+	pop.size = Vector2(140, height)
+	pop.set_meta("h", height)
+	pop.pivot_offset = Vector2(0, height)
+	add_child(pop)
+	_pops.push_front(pop)
+	# 太多就让最旧的那个提前走。
+	while _pops.size() > MAX_POPS:
+		_retire_pop(_pops.pop_back(), 0.12)
+	_restack(pop)
+	var motion := _motion_allowed()
+	if motion:
+		pop.scale = Vector2.ONE * (1.35 if big else 1.2)
+		pop.modulate.a = 0.0
+		var appear := pop.create_tween().set_parallel(true)
+		appear.tween_property(pop, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		appear.tween_property(pop, "modulate:a", 1.0, 0.1)
+		if rank and Presentation.flash_allowed():
+			appear.chain().tween_property(pop, "modulate", Color(1.5, 1.35, 1.05, 1.0), 0.08)
+			appear.chain().tween_property(pop, "modulate", Color.WHITE, 0.3)
+	var life := pop.create_tween()
+	life.tween_interval(RANK_POP_LIFE if rank else POP_LIFE)
+	life.tween_callback(func() -> void:
+		if _pops.has(pop):
+			_pops.erase(pop)
+			_retire_pop(pop, POP_FADE))
 
 
-# 进账签从钱袋右边滑出来，停一下再淡掉。big = 排名奖励：签子大一号、暖红底亮金边、停得久。
-func _show_toast(reason: String, amount: int, big: bool) -> void:
-	if _float_tween != null:
-		_float_tween.kill()
-	var reason_size := 15 if big else 13
-	var amount_size := 26 if big else 20
-	var height := 40.0 if big else 32.0
-	_toast_style.bg_color = Color(0.36, 0.11, 0.05, 0.94) if big else Color(0.20, 0.10, 0.035, 0.90)
-	_toast_style.border_color = Color("ffd45c") if big else Color("b98a32")
-	_toast_style.set_corner_radius_all(int(height * 0.5))
-	_toast_reason.text = reason
-	_toast_reason.add_theme_font_size_override("font_size", reason_size)
-	_toast_amount.text = "+%d" % amount
-	_toast_amount.add_theme_font_size_override("font_size", amount_size)
-	var reason_w := _toast_reason.get_theme_font("font").get_string_size(reason, HORIZONTAL_ALIGNMENT_LEFT, -1, reason_size).x
-	var amount_w := _display_font.get_string_size(_toast_amount.text, HORIZONTAL_ALIGNMENT_LEFT, -1, amount_size).x
-	var pad := 12.0
-	var gap := 6.0 if not reason.is_empty() else 0.0
-	_toast.size = Vector2(pad + reason_w + gap + amount_w + pad + 4.0, height)
-	_toast_reason.position = Vector2(pad, 0)
-	_toast_reason.size = Vector2(reason_w + 2.0, height)
-	_toast_amount.position = Vector2(pad + reason_w + gap, -1)
-	_toast_amount.size = Vector2(amount_w + 6.0, height)
-	var base := Vector2(PURSE_SIZE.x + 6.0, (PURSE_SIZE.y - height) * 0.5 + 2.0)
-	_toast.pivot_offset = Vector2(0, height * 0.5)
-	_toast.position = base
-	_toast.modulate = Color.WHITE
-	_toast.scale = Vector2.ONE
-	_toast.show()
-	_float_tween = create_tween()
-	if not _motion_allowed():
-		_float_tween.tween_interval(1.6 if big else 1.0)
-		_float_tween.tween_callback(_toast.hide)
+# 每个「+N」的目标高度：最新的贴着钱袋顶上，往上依次排。
+func _restack(fresh: Control) -> void:
+	var base_x := ICON_SIZE * 0.92
+	var y := 4.0
+	for pop in _pops:
+		var h := float(pop.get_meta("h", 24.0))
+		y -= h + POP_GAP
+		var target := Vector2(base_x, y)
+		if pop == fresh or not _motion_allowed():
+			pop.position = target
+			continue
+		var old: Tween = pop.get_meta("move") if pop.has_meta("move") else null
+		if old != null and old.is_valid():
+			old.kill()
+		var move := pop.create_tween()
+		move.tween_property(pop, "position", target, 0.16).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		pop.set_meta("move", move)
+
+
+func _retire_pop(pop: Control, sec: float) -> void:
+	if not is_instance_valid(pop):
 		return
-	# 同一个签子连杀刷新数字时只轻跳一下，不重新滑出。
-	var refresh: bool = not big and bool(_toast.get_meta("kill_live", false))
-	_toast.set_meta("kill_live", not big)
-	if refresh:
-		_toast.scale = Vector2.ONE * 1.08
-		_float_tween.tween_property(_toast, "scale", Vector2.ONE, 0.15)
-	else:
-		_toast.position = base - Vector2(18, 0)
-		_toast.modulate.a = 0.0
-		_toast.scale = Vector2(0.85, 0.85)
-		_float_tween.set_parallel(true)
-		_float_tween.tween_property(_toast, "position", base, 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-		_float_tween.tween_property(_toast, "scale", Vector2.ONE, 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-		_float_tween.tween_property(_toast, "modulate:a", 1.0, 0.12)
-		if big and Presentation.flash_allowed():
-			_float_tween.chain().tween_property(_toast, "modulate", Color(1.5, 1.35, 1.05, 1.0), 0.08)
-			_float_tween.chain().tween_property(_toast, "modulate", Color.WHITE, 0.35)
-		_float_tween.set_parallel(false)
-	_float_tween.tween_interval(1.5 if big else 0.7)
-	_float_tween.tween_property(_toast, "modulate:a", 0.0, 0.3)
-	_float_tween.tween_callback(func() -> void:
-		_toast.hide()
-		_toast.set_meta("kill_live", false))
+	var move: Tween = pop.get_meta("move") if pop.has_meta("move") else null
+	if move != null and move.is_valid():
+		move.kill()
+	if not _motion_allowed():
+		pop.queue_free()
+		return
+	var fade := pop.create_tween().set_parallel(true)
+	fade.tween_property(pop, "modulate:a", 0.0, sec)
+	fade.tween_property(pop, "position:y", pop.position.y - 10.0, sec)
+	fade.chain().tween_callback(pop.queue_free)
 
 
 func _english() -> bool:
