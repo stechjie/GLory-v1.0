@@ -9,7 +9,7 @@ const BLEED_TICK_SEC := 1.0
 # 带数值的同名状态不再「后来的覆盖前面的」：每次施加记成一个实例，生效值取各字段最强的
 # 那个，时长各算各的。于是 25% 的光环顶不掉 60% 的雷霆，诅咒的「只减攻速」也抹不掉
 # 冰冻的移速减速（两者同在 slow 里，按字段分别取最大）。
-const MERGE_KINDS := ["slow", "attack_down", "damage_down", "defense_down", "defense_flat_down", "defense_flat_up", "heal_reduction", "ice_vulnerable", "speed_bonus", "attack_set_speed_bonus", "damage_reduction", "dodge_bonus", "control_time_reduction", "crimson_attack", "crimson_speed"]
+const MERGE_KINDS := ["slow", "attack_down", "damage_down", "defense_down", "defense_flat_down", "defense_flat_up", "mres_flat_up", "heal_reduction", "ice_vulnerable", "speed_bonus", "attack_set_speed_bonus", "damage_reduction", "dodge_bonus", "control_time_reduction", "crimson_attack", "crimson_speed"]
 const MAX_STATUS_INSTANCES := 4
 # 攻速百分比总和的上下限（所有加速、减速、永久攻速加成相加后再夹）。
 const ASPD_PCT_MIN := -0.60

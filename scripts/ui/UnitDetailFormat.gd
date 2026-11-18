@@ -346,8 +346,8 @@ static func format_skill_template_cn(d: Dictionary) -> String:
 			var ds_dur := float(d.get("ally_def_duration", 5.0))
 			var ds_pct := float(d.get("ally_def_pct", 0.0))
 			if ds_pct > 0.0:
-				return "死侍契约：周围友军防御+%s（%.1f秒）；开战绑定自己棋盘上的左右两侧棋子，先阵亡的那个由死侍替死并满血复活（仅一次）。" % [pct(ds_pct), ds_dur]
-			return "死侍契约：周围友军防御+%d（%.1f秒）；开战绑定自己棋盘上的左侧棋子，它首次阵亡时由死侍替死并满血复活。" % [int(d.get("ally_def_bonus", 3)), ds_dur]
+				return "死侍契约：前后左右1格的友军防御、魔抗+%s（%.1f秒）；开战绑定自己棋盘上正后方的棋子，它首次阵亡时由死侍替死并满血复活（仅一次）；若死侍自己先阵亡，己方全员回复%s最大生命。" % [pct(ds_pct), ds_dur, pct(float(d.get("death_heal_pct", 0.0)))]
+			return "死侍契约：前后左右1格的友军防御+%d、魔抗+%d（%.1f秒）；开战绑定自己棋盘上正后方的棋子，它首次阵亡时由死侍替死并满血复活。" % [int(d.get("ally_def_bonus", 3)), int(d.get("ally_mres_bonus", 0)), ds_dur]
 		"unique_king_growth":
 			# 9.14：1~3 星成长 ×1.2、上限 5 层；4 星 ×1.3、上限 8 层。两者都写进文案，
 			# 数值全部读 def（apply_star_stats 会把 star4 的 0.3 / 8 覆盖上来）。
@@ -535,8 +535,8 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 			var ds_dur := float(d.get("ally_def_duration", 5.0))
 			var ds_pct := float(d.get("ally_def_pct", 0.0))
 			if ds_pct > 0.0:
-				return "Death Pact: Nearby allies gain +%s DEF (%.1fs). At battle start, bind both neighbours on your own board; whichever dies first is revived at full HP as this unit dies in its place (once)." % [pct(ds_pct), ds_dur]
-			return "Death Pact: Nearby allies gain +%d DEF (%.1fs). At battle start, bind the left neighbour on your own board; when it first dies, this unit dies in its place and revives it at full HP." % [int(d.get("ally_def_bonus", 3)), ds_dur]
+				return "Death Pact: Allies 1 cell in front, behind, left and right gain +%s DEF and MRES (%.1fs). At battle start, bind the unit directly behind on your own board; when it first dies, this unit dies in its place and revives it at full HP (once). If this unit dies first, all allies heal %s max HP." % [pct(ds_pct), ds_dur, pct(float(d.get("death_heal_pct", 0.0)))]
+			return "Death Pact: Allies 1 cell in front, behind, left and right gain +%d DEF and +%d MRES (%.1fs). At battle start, bind the unit directly behind on your own board; when it first dies, this unit dies in its place and revives it at full HP." % [int(d.get("ally_def_bonus", 3)), int(d.get("ally_mres_bonus", 0)), ds_dur]
 		"unique_king_growth":
 			var king_growth := float(d.get("post_battle_all_stat_growth", 0.20))
 			var king_cap := int(d.get("max_stacks", 5))

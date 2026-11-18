@@ -612,6 +612,7 @@ static func step_state(state: Dictionary) -> void:
 	BattleSimTreasures._process_death_explosions(state)
 	# 本 tick 所有伤害都结算完了，再补发非普攻致死的击杀金（必须在 _step_team 之后）。
 	_process_pending_kill_effects(state)
+	_process_death_servant_fall(state)
 	_process_pending_kill_rewards(state)
 	BattleSimTreasures._process_race_death_traits(state)
 	constrain_battle_positions(state)
@@ -1374,16 +1375,14 @@ static func _apply_opening_unit_skills(player: Array, enemy: Array, event_log: A
 				_emit_sfx_proc(state, "guardian_shield_taunt", f, f)
 			elif sid == "left_neighbor_sacrifice":
 				BattleSimSkills._apply_death_servant_aura(f, team_units, d)
-				# 3 星只绑左邻；4 星左右各绑一个（设计文档：绑定左邻是这只棋子唯一的
-				# 站位谜题，双向绑定保留博弈、价值翻倍）。死侍只能牺牲一次 ——
-				# DamageService._try_sacrifice_revive 会判 guard.alive，
-				# 先死的那一侧用掉之后另一侧自然失效，不需要额外记账。
+				# 11.18 用户定：所有星级都只绑**自己正后方**的棋子（同一列、往后一排；
+				# 棋盘 row 0 是前排，所以后方 = slot + 列数）。死侍站最后一排就没有可绑的。
+				# 死侍只能牺牲一次 —— DamageService._try_sacrifice_revive 会判 guard.alive。
+				# 4 星另有「死侍自己先阵亡 → 全员回血」，见 _process_death_servant_fall。
 				var servant_slot := int(f.get("slot", -1))
-				var bind_offsets: Array = [-1, 1] if float(d.get("ally_def_pct", 0.0)) > 0.0 else [-1]
-				for offset in bind_offsets:
-					var target := _owned_unit_at_slot(team_units, servant_slot + int(offset), f)
-					if target.is_empty():
-						continue
+				var behind_slot := servant_slot + GameConstants.BOARD_COLUMNS
+				var target := _owned_unit_at_slot(team_units, behind_slot, f) if servant_slot >= 0 and behind_slot < GameConstants.CELL_COUNT else {}
+				if not target.is_empty():
 					target.sacrifice_guardian = f
 					f.guard_target_uid = str(target.get("uid", ""))
 					f.vfx_skill_target_uid = str(target.get("uid", ""))
@@ -2022,6 +2021,32 @@ static func _process_pending_kill_effects(state: Dictionary) -> void:
 		DamageService.begin_stat_context(state, killer)
 		BattleSimTreasures._apply_kill_treasures(killer, victim, victim_team)
 		DamageService.set_stat_source_uid(prev_source)
+
+
+# 11.18 四星死侍（death_heal_pct）：死侍不是替死、而是自己先阵亡时，己方全体存活单位
+# 回复各自最大生命的 death_heal_pct。每只死侍每场只触发一次（凤凰复活后再死不重复）。
+# 每 tick 收尾扫一遍，任何致死方式都算；替死走 DamageService._try_sacrifice_revive，
+# 会打上 sacrificed 标记，这里跳过。
+static func _process_death_servant_fall(state: Dictionary) -> void:
+	for side in ["player", "enemy"]:
+		var team_units: Array = state.get(side, [])
+		for f in team_units:
+			if bool(f.get("alive", true)) and int(f.get("hp", 0)) > 0:
+				continue
+			if bool(f.get("death_heal_done", false)):
+				continue
+			var d: Dictionary = f.get("def", {})
+			if str(d.get("skill_id", "")) != "left_neighbor_sacrifice":
+				continue
+			f["death_heal_done"] = true
+			var heal_pct := float(d.get("death_heal_pct", 0.0))
+			if heal_pct <= 0.0 or bool(f.get("sacrificed", false)):
+				continue
+			DamageService.begin_stat_context(state, f)
+			for a in team_units:
+				if a != f and bool(a.get("alive", false)):
+					_heal_unit(a, maxi(1, int(round(float(a.get("max_hp", 1)) * heal_pct))))
+			DamageService.clear_stat_context()
 
 
 # 击杀金补结算：普通攻击打死目标时 _handle_attack_kill 会即时结算，但技能 / AOE /

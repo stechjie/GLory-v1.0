@@ -930,7 +930,8 @@
                       "model_in_place_actions": ["run", "attack", "idle"],
                       "star4":  {
                           "ally_def_pct":  0.4,
-                          "ally_def_duration":  8
+                          "ally_def_duration":  8,
+                          "death_heal_pct":  0.25
                       },
                       "name":  "死侍",
                       "race":  "human",
@@ -950,7 +951,8 @@
                       "model":  "res://assets/models/units/human_refined/human_death_servant/human_death_servant_refined.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,
-                      "ally_def_bonus":  3,
+                      "ally_def_bonus":  10,
+                      "ally_mres_bonus":  10,
                       "ally_def_duration":  5,
                       "name_en":  "Deathbound"
                   },

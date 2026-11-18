@@ -818,11 +818,11 @@
       "cost": 30,
       "skill_id": "left_neighbor_sacrifice",
       "skill_name_cn": "死侍契约",
-      "skill_cn_1to3": "死侍契约：周围友军防御+3（5.0秒）；开战绑定左侧棋子，它首次阵亡时由死侍替死并满血复活。",
-      "skill_cn_4": "死侍契约：周围友军防御+40%（8.0秒）；开战绑定左右两侧棋子，先阵亡的那个由死侍替死并满血复活（仅一次）。",
-      "skill_en_1to3": "Death Pact: Nearby allies gain +3 DEF (5.0s). At battle start, bind the left neighbour; when it first dies, this unit dies in its place and revives it at full HP.",
-      "skill_raw_params": "ally_def_bonus = 3\nally_def_duration = 5",
-      "star4_changes": "ally_def_duration: 5 → 8\nally_def_pct: — → 0.4",
+      "skill_cn_1to3": "死侍契约：前后左右1格的友军防御+10、魔抗+10（5.0秒）；开战绑定自己棋盘上正后方的棋子，它首次阵亡时由死侍替死并满血复活。",
+      "skill_cn_4": "死侍契约：前后左右1格的友军防御、魔抗+40%（8.0秒）；开战绑定自己棋盘上正后方的棋子，它首次阵亡时由死侍替死并满血复活（仅一次）；若死侍自己先阵亡，己方全员回复25%最大生命。",
+      "skill_en_1to3": "Death Pact: Allies 1 cell in front, behind, left and right gain +10 DEF and +10 MRES (5.0s). At battle start, bind the unit directly behind on your own board; when it first dies, this unit dies in its place and revives it at full HP.",
+      "skill_raw_params": "ally_def_bonus = 10\nally_def_duration = 5\nally_mres_bonus = 10",
+      "star4_changes": "ally_def_duration: 5 → 8\nally_def_pct: — → 0.4\ndeath_heal_pct: — → 0.25",
       "stats": {
         "1": {
           "hp": 1640,
@@ -1976,6 +1976,6 @@
       "effect_cn": "需要：生命丰碑 + 黄金祭坛 + 震荡余波 + 血契之刃 + 狂怒阵容。生命丰碑 ×1.20→×1.40；震荡余波眩晕 1→2 秒；血契之刃 ×1.25→×1.50；狂怒阵容上限 8→9。黄金祭坛使用不扣法阵 HP；选到胡牌手立即回复法阵 HP +2（上限 50）。\n表内字段：positive_effect_multiplier = 2"
     }
   },
-  "balance_version": "a284a3e3fe035c1fc8c83d4520594249ebf6a04c8fdeb537f3f0c176567c6565",
-  "final_workbook_sha256": "27ef6785a870f91474a4a9262a6eed3502c7624a1b51a79796983dde7e9239b6"
+  "balance_version": "765920b56dc216b0c12e51582a934552a65997885c8f3b4ee0ba47f1649f6baa",
+  "final_workbook_sha256": "363ac94648ca748ccf88ce2ba83e3c243d5cb18ee9d955f8035230ed8bfe51b6"
 }

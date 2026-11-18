@@ -1,4 +1,4 @@
-﻿# Beta 0.04 数值总表
+# Beta 0.04 数值总表
 
 更新时间：2026-06-05
 
@@ -135,7 +135,7 @@ Boss 战斗实际值 = 基础值 x Boss 整体倍率 x Boss 成长。
 | human_swordsman | damage_atk_pct 1.5，stun_sec 1.0，model `res://assets/models/units/human_swordsman_animated/human_swordsman_animated.tscn` |
 | human_mage | 无普攻；skill_cd 2.5，damage_atk_pct 3.0，随机火/冰/雷/毒属性伤害，model `res://assets/models/units/human_mage_animated/human_mage_animated.tscn` |
 | human_cleric | every 5，heal_pct 0.05 |
-| human_death_servant | 周围一圈友军 defense_flat_up +3 持续5秒；绑定左侧棋子，该棋子首次死亡时死侍代替死亡并使其满血复活，model `res://assets/models/units/human_death_servant_animated/human_death_servant_animated.tscn` |
+| human_death_servant | 前后左右各 1 格的友军 defense_flat_up +10、mres_flat_up +10 持续5秒；绑定自己棋盘上正后方的棋子，该棋子首次死亡时死侍代替死亡并使其满血复活（2026-11-18 改），model `res://assets/models/units/human_death_servant_animated/human_death_servant_animated.tscn` |
 | human_king | post_battle_all_stat_growth 0.20，unique_on_board true，remove_on_death true；升星继承三只材料中成长最高的人王数值，model `res://assets/models/units/human_king.glb` |
 | 唯一上阵规则 | 所有 `unique_on_board true` 的普通棋子，棋盘上同名只能存在 1 只；可拖到已有同名同星棋子上合成。 |
 | 神族基础特性 | 我方棋子死亡时，随机 1 名我方存活棋子清除负面状态。 |

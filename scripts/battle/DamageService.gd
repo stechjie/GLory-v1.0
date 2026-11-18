@@ -399,9 +399,12 @@ static func effective_defense(target: Dictionary) -> int:
 # 真伤（ignore_defense）两样都不吃。减伤公式与防御相同：魔抗 ÷ (100 + 魔抗)。
 # 没填魔抗的单位（教学敌人、部分召唤物等）按自身防御算，不会变成技能纸片。
 static func effective_magic_resist(target: Dictionary) -> int:
-	if target.has("mres"):
-		return maxi(0, int(target.get("mres", 0)))
-	return maxi(0, int(target.get("defense", 0)))
+	var base := int(target.get("mres", 0)) if target.has("mres") else int(target.get("defense", 0))
+	# 11.18 死侍光环：临时加魔抗（mres_flat_up），与 defense_flat_up 对称。
+	StatusEffectService.ensure_status(target)
+	if target.statuses.has("mres_flat_up"):
+		base += int(round(float(target.statuses.mres_flat_up.get("amount", 0))))
+	return maxi(0, base)
 
 
 # 这一击是否按技能（魔法）伤害结算：施法派发里统一打的 "skill" 标记，或调用方显式指定。
@@ -567,6 +570,8 @@ static func _try_sacrifice_revive(target: Dictionary) -> bool:
 	target.hp = maxi(1, int(target.get("max_hp", target.get("hp", 1))))
 	target.alive = true
 	record_forced_hp_loss(guard)
+	# 替死而亡，不算「死侍自己先阵亡」（4 星的全员回血不触发）。
+	guard["sacrificed"] = true
 	guard.hp = 0
 	guard.alive = false
 	emit_death(guard)

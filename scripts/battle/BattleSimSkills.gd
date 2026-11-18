@@ -42,13 +42,27 @@ static func _apply_death_servant_aura(servant: Dictionary, team_units: Array, d:
 	# ally_def_pct 只在 4 星的 star4 覆写里有，1~3 星仍走绝对值那一支。
 	var pct := float(d.get("ally_def_pct", 0.0))
 	var amount := int(d.get("ally_def_bonus", 3))
-	if pct <= 0.0 and amount <= 0:
+	# 11.18 用户定：1~3 星同时给魔抗固定值（ally_mres_bonus）；4 星魔抗和防御一样按百分比。
+	var mres_amount := int(d.get("ally_mres_bonus", 0))
+	if pct <= 0.0 and amount <= 0 and mres_amount <= 0:
 		return
+	# 11.18 用户定：光环范围 = 死侍所在棋盘上前、后、左、右各 1 格（不含斜角）。
+	# 按行列算，不再用「格子编号差 ≤ 1」—— 那样会把上一排最右和下一排最左当成相邻，
+	# 3v3 里还会算到队友棋盘上同编号的格子。
 	var slot := int(servant.get("slot", -99))
+	if slot < 0:
+		return
+	var cols := GameConstants.BOARD_COLUMNS
+	var row := slot / cols
+	var col := slot % cols
 	for a in team_units:
 		if not bool(a.get("alive", false)) or a == servant:
 			continue
-		if abs(int(a.get("slot", -99)) - slot) > 1:
+		var a_slot := int(a.get("slot", -99))
+		if a_slot < 0 or int(a.get("owner_slot", -1)) != int(servant.get("owner_slot", -1)) \
+				or int(a.get("lane", -1)) != int(servant.get("lane", -1)):
+			continue
+		if absi(a_slot / cols - row) + absi(a_slot % cols - col) != 1:
 			continue
 		if pct > 0.0:
 			# ⚠️ 必须读 fighter 的 `defense`，不能读 `def`：fighter 字典里的 `def` 是
@@ -59,8 +73,14 @@ static func _apply_death_servant_aura(servant: Dictionary, team_units: Array, d:
 			# 百分比支路会走到这一行，3★ 走下面的绝对值支路，所以从来没人踩到。
 			StatusEffectService.add_status(a, "defense_flat_up", duration,
 				{"amount": maxi(1, int(round(float(a.get("defense", 0)) * pct)))})
+			var base_mres := float(a.get("mres", a.get("defense", 0)))
+			StatusEffectService.add_status(a, "mres_flat_up", duration,
+				{"amount": maxi(1, int(round(base_mres * pct)))})
 		else:
-			StatusEffectService.add_status(a, "defense_flat_up", duration, {"amount": amount})
+			if amount > 0:
+				StatusEffectService.add_status(a, "defense_flat_up", duration, {"amount": amount})
+			if mres_amount > 0:
+				StatusEffectService.add_status(a, "mres_flat_up", duration, {"amount": mres_amount})
 
 static func _skill_lowest_ally_heal(caster: Dictionary, allies: Array, d: Dictionary) -> void:
 	var target := _lowest_hp_ratio(allies)
