@@ -116,6 +116,10 @@ static var _positions: Dictionary = {}
 static var _group_last: Dictionary = {}
 # 下一次真正开播时从第几秒开始（play() 换曲时写，_sync() 开播时消费）。
 static var _pending_start := 0.0
+# 11.18：「整局固定一首」。begin_match() 起、end_match() 止算一局。
+# 组的第一条路径 -> 本局挑中的那首（摆放界面组 / PvE 战斗组）。只存内存，闪退重连后重新挑。
+static var _in_match := false
+static var _match_picks: Dictionary = {}
 
 
 # 由 Main._ready() 调一次，幂等。
@@ -169,7 +173,7 @@ static func play(path: String, resume := false) -> void:
 #   这条保证「房间 → 主菜单 → 玩家资料」一路不断、不重来。
 # * resume = true 且这组以前挑过一首 → 回到那一首、从离开的位置接着放
 #   （从商城 / 备战 / 图鉴回主菜单）。
-# * 否则随机挑一首，从头放。打完一局回来的那次走这里（new_session 清掉了记录）。
+# * 否则随机挑一首，从头放。打完一局回来的那次走这里（begin_match 清掉了记录）。
 static func play_group(paths: Array, resume := false) -> void:
 	if paths.is_empty():
 		return
@@ -206,10 +210,38 @@ static func leave_overlay(path: String, previous: String) -> void:
 	play(previous, true)
 
 
-# 一局新对局开始：清掉「接着放」的记录。打完回到主菜单 / 房间时重新随机挑一首。
-static func new_session() -> void:
+# 播本局固定的那一首（11.18：摆放界面 / PvE 战斗「开局随机一次，整场同一首」）。
+#
+# * 本局第一次调这个组 → 随机挑一首记下；之后同一局一直是它。
+# * 每次进来都**从头放**（用户要求）：摆放 ↔ 战斗交替换曲时，回到这首从 0 秒开始。
+#   正在放的就是它（同一回合重建摆放页）→ 不打断。
+static func play_match_group(paths: Array) -> void:
+	if paths.is_empty():
+		return
+	var key := str(paths[0])
+	var pick := str(_match_picks.get(key, ""))
+	if not (pick in paths):
+		pick = str(paths[randi() % paths.size()])
+		_match_picks[key] = pick
+	play(pick)
+
+
+# 进入一局（摆放界面每回合都会调，只有本局第一次生效）：
+# 清掉大厅那些「接着放」的记录和上一局的选曲。打完回大厅重新随机主菜单那首。
+static func begin_match() -> void:
+	if _in_match:
+		return
+	_in_match = true
 	_positions.clear()
 	_group_last.clear()
+	_match_picks.clear()
+
+
+# 回到大厅（主菜单 / 排位组队房 / 自定义 3v3 房间）= 这局结束。下一次 begin_match() 是新的一局。
+# 正常打完、投降、掉线退回大厅都会走到这里。
+static func end_match() -> void:
+	_in_match = false
+	_match_picks.clear()
 
 
 # 停掉 BGM 并清掉当前曲目。下一次 play() 会从头开始（不是 resume）。
@@ -448,6 +480,8 @@ static func shutdown() -> void:
 	_positions.clear()
 	_group_last.clear()
 	_pending_start = 0.0
+	_in_match = false
+	_match_picks.clear()
 	_streams.clear()
 
 

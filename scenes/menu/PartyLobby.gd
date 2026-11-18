@@ -243,6 +243,8 @@ func _ready() -> void:
 	MUSIC_SERVICE.set_talk_probe(_party_voice_talking)
 	# 11.16：排位 / 匹配组队房与主菜单同一组 BGM。从主菜单进来时什么都不变（接着放）；
 	# 对局结算「返回队伍」直接落到这里时，结算那首要换回主菜单这组。
+	# 11.18：回到组队房 = 这局结束，下一局摆放 / 战斗音乐重新随机。
+	MUSIC_SERVICE.end_match()
 	MUSIC_SERVICE.play_group(MUSIC_SERVICE.MENU_GROUP, true)
 	get_viewport().size_changed.connect(_layout)
 	_layout()

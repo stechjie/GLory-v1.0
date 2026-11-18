@@ -40,7 +40,7 @@ const ABSOLUTE_CAPS := {
 	"aspd_bonus": 0.45,
 	# 控制时长（秒）
 	"stun_sec": 3.0,
-	"fear_sec": 3.0,
+	"fear_sec": 3.3,  # 11.18 用户定：恐惧魔 2.3 → 4★ 3.3，恐惧封顶随之放宽到 3.3
 	"silence_sec": 3.0,
 	"control_immune_sec": 3.0,
 	# 概率

@@ -828,6 +828,10 @@ static func has_active_cooldown_skill(fighter: Dictionary) -> bool:
 	var id := str(fighter.get("id", d.get("id", "")))
 	if bool(d.get("is_boss", false)) or id.begins_with("boss_"):
 		return false
+	# 11.18 用户定：偷袭者（recast_on_target_death）没有冷却，开场直接突袭，
+	# 不走「先走满一次冷却」，也不画冷却条。
+	if bool(d.get("recast_on_target_death", false)):
+		return false
 	return ACTIVE_SKILL_DEFAULT_CD.has(str(d.get("skill_id", "")))
 
 

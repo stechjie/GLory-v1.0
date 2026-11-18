@@ -557,6 +557,8 @@ func _start_menu_music() -> void:
 	# 9.17 第二批：改走常驻 MusicService（播放器挂 root，不随页面释放）。
 	# 「同一首不重启」由服务内部判等负责。
 	# 11.16：与主菜单共用主界面 1~3 那一组。
+	# 11.18：回到房间 = 这局结束，下一局摆放 / 战斗音乐重新随机。
+	MusicService.end_match()
 	MusicService.play_group(MusicService.MENU_GROUP, true)
 
 func _notification(what: int) -> void:

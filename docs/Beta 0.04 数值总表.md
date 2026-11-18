@@ -1,4 +1,4 @@
-﻿# Beta 0.04 数值总表
+# Beta 0.04 数值总表
 
 更新时间：2026-06-05
 
@@ -23,7 +23,7 @@
 | 棋子 3 星 | HP / ATK / DEF = 基础值 x 2.25 |
 | Boss 整体倍率 | HP / ATK / DEF / skill_damage 额外 x 1.5 |
 | Boss 成长 | 每完成 1 次 Boss 后：HP x 1.45，ATK x 1.35，DEF x 1.30，skill_damage x 1.45 |
-| PVE 小怪成长 | 每完成 1 次 PVE 后：HP x 1.10，ATK x 1.08，DEF x 1.05，skill_damage x 1.08 |
+| PVE 小怪成长 | 每完成 1 次 PVE 后：HP x 1.09，ATK x 1.06，DEF x 1.04，skill_damage x 1.08（2026-11-18 改；由 `data/pve/pve_monsters.json` 的 `growth_per_completed_pve` 决定） |
 | PVP 回合 | 第 6 / 12 / 18 / 21 回合为玩家对战回合。组队（联机 3v3 与离线自测）按固定排程进入 PVP；对面无人时敌方为空 |
 | 法阵友军 | 第 21 回合最终战根据法阵 HP 召唤，不占普通棋子上限；不吃宝藏，被击杀不给对方金币；进攻不受分路限制 |
 
@@ -111,13 +111,13 @@ Boss 战斗实际值 = 基础值 x Boss 整体倍率 x Boss 成长。
 | god_aurora | true_damage_pct 0.18，model `res://assets/models/units/god_aurora_animated/god_aurora_animated.tscn` |
 | god_angel | skill_cd 7.0，opening_cd 2.0，heal_pct 0.15，atk_bonus 0.10，aspd_bonus 0.15，清除负面状态，model `res://assets/models/units/god_angel_animated/god_angel_animated.tscn` |
 | god_arbiter | skill_cd 2.0，damage_atk_pct 2.2，def_stack_pct 0.06，max_stacks 5，model `res://assets/models/units/god_arbiter_animated/god_arbiter_animated.tscn` |
-| god_archangel | skill_cd 6.0，damage_reduction 0.50，duration 6.0，unique_on_board true，model `res://assets/models/units/god_archangel_animated/god_archangel_animated.tscn` |
+| god_archangel | skill_cd 5.0，damage_reduction 0.50，duration 6.0，unique_on_board true，model `res://assets/models/units/god_archangel_animated/god_archangel_animated.tscn` |
 | god_king | skill_cd 8.0，damage_atk_pct 1.6，max_hp_bonus_pct 0.08，damage_tick_count 5，damage_tick_interval 0.5，unique_on_board true，model `res://assets/models/units/god_king_animated/god_king_animated.tscn` |
 | dark_imp | attack_down 0.08，aspd_down 0.08，duration 4.0，max_stacks 2 |
 | dark_mage | skill_cd 4.0，silence_sec 1.2，damage_atk_pct 1.7，model `res://assets/models/units/dark_mage_violet_necromancer/dark_mage_animated.tscn`，idle/attack/run 动作已接入 |
-| dark_fear | skill_cd 6.0，fear_sec 1.5 |
+| dark_fear | skill_cd 6.0，fear_sec 2.3 |
 | dark_queen | stack_damage 0.06，max_stacks 5 |
-| dark_scythe | damage_atk_pct 2.0，refresh_on_kill true |
+| dark_scythe | damage_atk_pct 2.5，无冷却、开场直接释放（skill_global true），目标死亡后立刻再放（recast_on_target_death true）〔2026-11-18 更新〕 |
 | dark_suc | skill_cd 5.0，stun_sec 1.0，model `res://assets/models/units/dark_suc_animated/dark_suc_animated.tscn`，idle/attack/run 动作已接入；attack 从第 150 帧后开始播放 |
 | dark_doom | 连接最近非Boss敌人并策反为己方；双方共享受到的生命损失；连接目标或末日守卫死亡后清除连接，本回合不再释放；Boss免疫，unique_on_board true |
 | dark_dragon | pull_sec 1.0，damage_atk_pct 2.2，unique_on_board true |
@@ -135,7 +135,7 @@ Boss 战斗实际值 = 基础值 x Boss 整体倍率 x Boss 成长。
 | human_swordsman | damage_atk_pct 1.5，stun_sec 1.0，model `res://assets/models/units/human_swordsman_animated/human_swordsman_animated.tscn` |
 | human_mage | 无普攻；skill_cd 2.5，damage_atk_pct 3.0，随机火/冰/雷/毒属性伤害，model `res://assets/models/units/human_mage_animated/human_mage_animated.tscn` |
 | human_cleric | every 5，heal_pct 0.05 |
-| human_death_servant | 周围一圈友军 defense_flat_up +3 持续5秒；绑定左侧棋子，该棋子首次死亡时死侍代替死亡并使其满血复活，model `res://assets/models/units/human_death_servant_animated/human_death_servant_animated.tscn` |
+| human_death_servant | 周围一圈 8 格（含斜角）的友军 defense_flat_up +10、mres_flat_up +10 持续5秒；绑定自己棋盘上正后方的棋子，该棋子首次死亡时死侍代替死亡并使其满血复活（2026-11-18 改），model `res://assets/models/units/human_death_servant_animated/human_death_servant_animated.tscn` |
 | human_king | post_battle_all_stat_growth 0.20，unique_on_board true，remove_on_death true；升星继承三只材料中成长最高的人王数值，model `res://assets/models/units/human_king.glb` |
 | 唯一上阵规则 | 所有 `unique_on_board true` 的普通棋子，棋盘上同名只能存在 1 只；可拖到已有同名同星棋子上合成。 |
 | 神族基础特性 | 我方棋子死亡时，随机 1 名我方存活棋子清除负面状态。 |

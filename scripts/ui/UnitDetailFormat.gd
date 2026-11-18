@@ -272,6 +272,8 @@ static func format_skill_template_cn(d: Dictionary) -> String:
 		"same_target_damage_stack":
 			return "痛苦凝视：持续攻击同一目标时，每层伤害+%s，最多%d层；换目标重置。" % [pct(float(d.get("stack_damage", 0.06))), int(d.get("max_stacks", 5))]
 		"blink_low_def_backline":
+			if bool(d.get("recast_on_target_death", false)):
+				return "暗影突袭（无冷却）：开战立刻瞬移到低防后排敌人身边，造成自身攻击%s伤害；该目标死亡后立刻突袭下一个。" % [pct(float(d.get("damage_atk_pct", 2.0)))]
 			return "暗影突袭（冷却时间5.0秒）：瞬移到低防后排敌人身边，造成自身攻击%s伤害；击杀后刷新冷却。" % [pct(float(d.get("damage_atk_pct", 2.0)))]
 		"stun":
 			return "暗影击晕%s：眩晕最近敌人%.1f秒，并造成自身攻击%s伤害。" % [cd, float(d.get("stun_sec", 1.0)), pct(float(d.get("damage_atk_pct", 1.5)))]
@@ -344,8 +346,8 @@ static func format_skill_template_cn(d: Dictionary) -> String:
 			var ds_dur := float(d.get("ally_def_duration", 5.0))
 			var ds_pct := float(d.get("ally_def_pct", 0.0))
 			if ds_pct > 0.0:
-				return "死侍契约：周围友军防御+%s（%.1f秒）；开战绑定自己棋盘上的左右两侧棋子，先阵亡的那个由死侍替死并满血复活（仅一次）。" % [pct(ds_pct), ds_dur]
-			return "死侍契约：周围友军防御+%d（%.1f秒）；开战绑定自己棋盘上的左侧棋子，它首次阵亡时由死侍替死并满血复活。" % [int(d.get("ally_def_bonus", 3)), ds_dur]
+				return "死侍契约：周围一圈（含斜角）的友军防御、魔抗+%s（%.1f秒）；开战绑定自己棋盘上正后方的棋子，它首次阵亡时由死侍替死并满血复活（仅一次）；若死侍自己先阵亡，己方全员回复%s最大生命。" % [pct(ds_pct), ds_dur, pct(float(d.get("death_heal_pct", 0.0)))]
+			return "死侍契约：周围一圈（含斜角）的友军防御+%d、魔抗+%d（%.1f秒）；开战绑定自己棋盘上正后方的棋子，它首次阵亡时由死侍替死并满血复活。" % [int(d.get("ally_def_bonus", 3)), int(d.get("ally_mres_bonus", 0)), ds_dur]
 		"unique_king_growth":
 			# 9.14：1~3 星成长 ×1.2、上限 5 层；4 星 ×1.3、上限 8 层。两者都写进文案，
 			# 数值全部读 def（apply_star_stats 会把 star4 的 0.3 / 8 覆盖上来）。
@@ -467,6 +469,8 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"same_target_damage_stack":
 			return "Agonizing Gaze: Consecutive attacks on the same target deal +%s damage per stack (max %d stacks). Resets on target switch." % [pct(float(d.get("stack_damage", 0.06))), int(d.get("max_stacks", 5))]
 		"blink_low_def_backline":
+			if bool(d.get("recast_on_target_death", false)):
+				return "Shadow Ambush (no cooldown): At battle start, blink to the lowest-DEF backline enemy and deal %s ATK damage. When that target dies, immediately ambush the next one." % [pct(float(d.get("damage_atk_pct", 2.0)))]
 			return "Shadow Ambush%s: Blink to the lowest-DEF backline enemy and deal %s ATK damage. Cooldown resets on kill." % [cd, pct(float(d.get("damage_atk_pct", 2.0)))]
 		"stun":
 			return "Shadow Stun%s: Stun the nearest enemy for %.1fs and deal %s ATK damage." % [cd, float(d.get("stun_sec", 1.0)), pct(float(d.get("damage_atk_pct", 1.5)))]
@@ -531,8 +535,8 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 			var ds_dur := float(d.get("ally_def_duration", 5.0))
 			var ds_pct := float(d.get("ally_def_pct", 0.0))
 			if ds_pct > 0.0:
-				return "Death Pact: Nearby allies gain +%s DEF (%.1fs). At battle start, bind both neighbours on your own board; whichever dies first is revived at full HP as this unit dies in its place (once)." % [pct(ds_pct), ds_dur]
-			return "Death Pact: Nearby allies gain +%d DEF (%.1fs). At battle start, bind the left neighbour on your own board; when it first dies, this unit dies in its place and revives it at full HP." % [int(d.get("ally_def_bonus", 3)), ds_dur]
+				return "Death Pact: Allies in the 8 surrounding cells gain +%s DEF and MRES (%.1fs). At battle start, bind the unit directly behind on your own board; when it first dies, this unit dies in its place and revives it at full HP (once). If this unit dies first, all allies heal %s max HP." % [pct(ds_pct), ds_dur, pct(float(d.get("death_heal_pct", 0.0)))]
+			return "Death Pact: Allies in the 8 surrounding cells gain +%d DEF and +%d MRES (%.1fs). At battle start, bind the unit directly behind on your own board; when it first dies, this unit dies in its place and revives it at full HP." % [int(d.get("ally_def_bonus", 3)), int(d.get("ally_mres_bonus", 0)), ds_dur]
 		"unique_king_growth":
 			var king_growth := float(d.get("post_battle_all_stat_growth", 0.20))
 			var king_cap := int(d.get("max_stacks", 5))

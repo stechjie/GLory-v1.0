@@ -95,10 +95,10 @@
       "skill_id": "fear",
       "skill_name_cn": "恐惧",
       "skill_cn_1to3": "恐惧（冷却6.0秒）：使最近敌人逃跑2.3秒。",
-      "skill_cn_4": "恐惧（冷却4.0秒）：使最近敌人逃跑3.0秒。",
+      "skill_cn_4": "恐惧（冷却4.0秒）：使最近敌人逃跑3.3秒。",
       "skill_en_1to3": "Fear (CD 6.0s): Make the nearest enemy flee for 2.3s.",
       "skill_raw_params": "fear_sec = 2.3\nskill_cd = 6",
-      "star4_changes": "fear_sec: 2.3 → 3\nskill_cd: 6 → 4",
+      "star4_changes": "fear_sec: 2.3 → 3.3\nskill_cd: 6 → 4",
       "stats": {
         "1": {
           "hp": 1080,
@@ -174,10 +174,10 @@
       "cost": 30,
       "skill_id": "blink_low_def_backline",
       "skill_name_cn": "暗影突袭",
-      "skill_cn_1to3": "暗影突袭（冷却时间5.0秒）：瞬移到低防后排敌人身边，造成自身攻击250%伤害；击杀后刷新冷却。",
-      "skill_cn_4": "暗影突袭（冷却时间5.0秒）：瞬移到低防后排敌人身边，造成自身攻击500%伤害；击杀后刷新冷却。",
-      "skill_en_1to3": "Shadow Ambush: Blink to the lowest-DEF backline enemy and deal 250% ATK damage. Cooldown resets on kill.",
-      "skill_raw_params": "damage_atk_pct = 2.5\nrefresh_on_kill = true",
+      "skill_cn_1to3": "暗影突袭（无冷却）：开战立刻瞬移到低防后排敌人身边，造成自身攻击250%伤害；该目标死亡后立刻突袭下一个。",
+      "skill_cn_4": "暗影突袭（无冷却）：开战立刻瞬移到低防后排敌人身边，造成自身攻击500%伤害；该目标死亡后立刻突袭下一个。",
+      "skill_en_1to3": "Shadow Ambush (no cooldown): At battle start, blink to the lowest-DEF backline enemy and deal 250% ATK damage. When that target dies, immediately ambush the next one.",
+      "skill_raw_params": "damage_atk_pct = 2.5\nrecast_on_target_death = true\nskill_global = true",
       "star4_changes": "damage_atk_pct: 2.5 → 5\ndef_down_pct: — → 0.25",
       "stats": {
         "1": {
@@ -576,11 +576,11 @@
       "cost": 50,
       "skill_id": "random_ally_damage_reduction",
       "skill_name_cn": "天使庇护",
-      "skill_cn_1to3": "天使庇护（冷却4.0秒）：随机友军获得50%减伤，持续6.0秒。",
+      "skill_cn_1to3": "天使庇护（冷却5.0秒）：随机友军获得50%减伤，持续6.0秒。",
       "skill_cn_4": "天使庇护（冷却4.0秒）：随机友军获得65%减伤，持续8.0秒。",
-      "skill_en_1to3": "Angel's Guard (CD 4.0s): Grant a random ally 50% damage reduction for 6.0s.",
-      "skill_raw_params": "damage_reduction = 0.5\nduration = 6\nskill_cd = 4\nunique_on_board = true",
-      "star4_changes": "damage_reduction: 0.5 → 0.65\nduration: 6 → 8",
+      "skill_en_1to3": "Angel's Guard (CD 5.0s): Grant a random ally 50% damage reduction for 6.0s.",
+      "skill_raw_params": "damage_reduction = 0.5\nduration = 6\nskill_cd = 5\nunique_on_board = true",
+      "star4_changes": "damage_reduction: 0.5 → 0.65\nduration: 6 → 8\nskill_cd: 5 → 4",
       "stats": {
         "1": {
           "hp": 1700,
@@ -818,11 +818,11 @@
       "cost": 30,
       "skill_id": "left_neighbor_sacrifice",
       "skill_name_cn": "死侍契约",
-      "skill_cn_1to3": "死侍契约：周围友军防御+3（5.0秒）；开战绑定左侧棋子，它首次阵亡时由死侍替死并满血复活。",
-      "skill_cn_4": "死侍契约：周围友军防御+40%（8.0秒）；开战绑定左右两侧棋子，先阵亡的那个由死侍替死并满血复活（仅一次）。",
-      "skill_en_1to3": "Death Pact: Nearby allies gain +3 DEF (5.0s). At battle start, bind the left neighbour; when it first dies, this unit dies in its place and revives it at full HP.",
-      "skill_raw_params": "ally_def_bonus = 3\nally_def_duration = 5",
-      "star4_changes": "ally_def_duration: 5 → 8\nally_def_pct: — → 0.4",
+      "skill_cn_1to3": "死侍契约：周围一圈（含斜角）的友军防御+10、魔抗+10（5.0秒）；开战绑定自己棋盘上正后方的棋子，它首次阵亡时由死侍替死并满血复活。",
+      "skill_cn_4": "死侍契约：周围一圈（含斜角）的友军防御、魔抗+40%（8.0秒）；开战绑定自己棋盘上正后方的棋子，它首次阵亡时由死侍替死并满血复活（仅一次）；若死侍自己先阵亡，己方全员回复25%最大生命。",
+      "skill_en_1to3": "Death Pact: Allies in the 8 surrounding cells gain +10 DEF and +10 MRES (5.0s). At battle start, bind the unit directly behind on your own board; when it first dies, this unit dies in its place and revives it at full HP.",
+      "skill_raw_params": "ally_def_bonus = 10\nally_def_duration = 5\nally_mres_bonus = 10",
+      "star4_changes": "ally_def_duration: 5 → 8\nally_def_pct: — → 0.4\ndeath_heal_pct: — → 0.25",
       "stats": {
         "1": {
           "hp": 1640,
@@ -1580,11 +1580,11 @@
       "cost": 50,
       "skill_id": "aoe_silence",
       "skill_name_cn": "赤灯沉默",
-      "skill_cn_1to3": "赤灯禁言（冷却10.0秒）：冷却好后沉默敌人3.0秒，期间无法释放技能、攻速-30%。",
-      "skill_cn_4": "赤灯禁言（冷却9.0秒）：冷却好后沉默敌人4.0秒，期间无法释放技能、攻速-30%。",
-      "skill_en_1to3": "Crimson Lantern (CD 10.0s): Silence enemies for 3.0s: no skills and -30% AS.",
-      "skill_raw_params": "silence_duration = 3\nskill_cd = 10\nskill_global = true\nunique_on_board = true",
-      "star4_changes": "silence_duration: 3 → 4\nskill_cd: 10 → 9",
+      "skill_cn_1to3": "赤灯禁言（冷却5.9秒）：冷却好后沉默敌人2.1秒，期间无法释放技能、攻速-30%。",
+      "skill_cn_4": "赤灯禁言（冷却5.9秒）：冷却好后沉默敌人2.9秒，期间无法释放技能、攻速-30%。",
+      "skill_en_1to3": "Crimson Lantern (CD 5.9s): Silence enemies for 2.1s: no skills and -30% AS.",
+      "skill_raw_params": "silence_duration = 2.1\nskill_cd = 5.9\nskill_global = true\nunique_on_board = true",
+      "star4_changes": "silence_duration: 2.1 → 2.9",
       "stats": {
         "1": {
           "hp": 1720,
@@ -1976,6 +1976,6 @@
       "effect_cn": "需要：生命丰碑 + 黄金祭坛 + 震荡余波 + 血契之刃 + 狂怒阵容。生命丰碑 ×1.20→×1.40；震荡余波眩晕 1→2 秒；血契之刃 ×1.25→×1.50；狂怒阵容上限 8→9。黄金祭坛使用不扣法阵 HP；选到胡牌手立即回复法阵 HP +2（上限 50）。\n表内字段：positive_effect_multiplier = 2"
     }
   },
-  "balance_version": "973f786b56ba708186f120b0f68666c2f04ed3313b9358d6e724c076d69853a0",
-  "final_workbook_sha256": "af7fdc7fc035b498a9cc404f91a76d801361ed041a01d7d2a0e1848a3ad4aa4e"
+  "balance_version": "ff8b58bddf1abcaffb2f3f3bc2a9db349b9563866d35c1ca1bc625a911af8fdd",
+  "final_workbook_sha256": "baf47927bc7a09f200e6735fc182fa5810e3db7a8651d7d694cc43baaedbfb9b"
 }
