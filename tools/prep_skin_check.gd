@@ -15,7 +15,7 @@ const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
 const CHECK_NAME := "prep_skin"
 const SHOP_PATH := "res://data/shop.json"
 const ALLOWED_KEYS := ["id", "name", "name_en", "firefly_color", "river_glow", "ambient", "refresh_fx",
-	"river_drop", "river_glow_style", "sparkle_color"]
+	"river_drop", "river_glow_style", "sparkle_color", "brightness"]
 
 var _h: RefCounted
 
@@ -64,6 +64,11 @@ func _check_entry(skin_id: String, entry: Dictionary) -> void:
 		# 上限 0.25：再多河面就整条滑出棋盘了。PrepSkin.river_drop 也会夹一次，这里是为了当场报错
 		_h.expect((drop is float or drop is int) and float(drop) >= 0.0 and float(drop) <= 0.25,
 			"bad_river_drop", "%s 的 river_drop 要是 0~0.25 的数" % skin_id)
+	if entry.has("brightness"):
+		var bright: Variant = entry["brightness"]
+		# 下限 0.5：再暗就不是「压一压」而是换了张图。PrepSkin.brightness 也会夹一次，这里是为了当场报错
+		_h.expect((bright is float or bright is int) and float(bright) >= 0.5 and float(bright) <= 1.0,
+			"bad_brightness", "%s 的 brightness 要是 0.5~1 的数" % skin_id)
 	if entry.has("river_glow"):
 		_h.expect(entry["river_glow"] is bool, "bad_river_glow", "%s 的 river_glow 要是 true / false" % skin_id)
 	if entry.has("sparkle_color"):

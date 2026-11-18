@@ -12,6 +12,7 @@ uniform vec2 sway_dir = vec2(1.0, 0.35);    // 顺着风的方向来回
 uniform vec3 shadow_tint = vec3(0.85, 0.93, 1.02);   // 影子色 ÷ 草地色（照图量的）
 uniform float gust = 0.0;                   // 阵风强度 0~1
 uniform float gust_front = -1.0;            // 风带现在扫到哪（UV.x + UV.y * 0.25 的值）
+uniform float brightness = 1.0;             // 皮肤目录的 brightness（整张底图压暗到几成）
 
 float ground(vec3 c) {
 	return smoothstep(0.62, 0.72, c.r) * (1.0 - smoothstep(0.64, 0.70, c.g));
@@ -50,5 +51,5 @@ void fragment() {
 		float d = (UV.x + UV.y * 0.25 - gust_front) / 0.14;
 		col += vec3(0.11, 0.10, 0.10) * exp(-d * d) * gust;
 	}
-	COLOR = vec4(col, base.a);
+	COLOR = vec4(col * brightness, base.a);
 }

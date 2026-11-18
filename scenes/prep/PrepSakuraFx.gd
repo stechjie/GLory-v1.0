@@ -19,6 +19,7 @@ const ASPECT := 1672.0 / 941.0
 const PetalFall := preload("res://scenes/prep/effects/PrepPetalFall3D.gd")
 const PetalTexture := preload("res://scenes/prep/effects/PrepPetalTexture.gd")
 const SunDapple := preload("res://scenes/prep/PrepSunDapple.gd")
+const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
 const SHADE_SHADER := preload("res://shaders/prep_sakura_shade.gdshader")
 
 const WARM := Color(1.0, 0.76, 0.36)
@@ -67,12 +68,14 @@ var _gust_t := -1.0       # < 0 = 现在没有风
 static func apply_shade(rect: CanvasItem, enabled: bool) -> void:
 	if not enabled or rect == null or not is_instance_valid(rect):
 		return
-	if rect.material is ShaderMaterial and (rect.material as ShaderMaterial).shader == SHADE_SHADER:
-		return
-	var mat := ShaderMaterial.new()
-	mat.shader = SHADE_SHADER
-	mat.set_shader_parameter("noise_tex", SunDapple._noise_texture())
-	rect.material = mat
+	var mat := rect.material as ShaderMaterial
+	if mat == null or mat.shader != SHADE_SHADER:
+		mat = ShaderMaterial.new()
+		mat.shader = SHADE_SHADER
+		mat.set_shader_parameter("noise_tex", SunDapple._noise_texture())
+		rect.material = mat
+	# 这个 shader 自己写 COLOR，底图的 self_modulate 进不来，皮肤的压暗倍数要单独喂。
+	mat.set_shader_parameter("brightness", PrepSkin.brightness())
 
 
 func _ready() -> void:

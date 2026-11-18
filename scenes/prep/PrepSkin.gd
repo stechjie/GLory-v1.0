@@ -103,6 +103,19 @@ static func sparkle_color(fallback: Color) -> Color:
 	return fallback
 
 
+# 底图 / 河面 / 待命区石台整体压暗到几成（目录里的 brightness，0.5~1，默认 1 = 不动）。
+# 11-18 实渲量过：冰雪、樱花一半以上的画面接近白，棋子名字和白字压在上面看不清，各压到 0.85。
+# 只压这三张垫底的图；棋子、萝卜、按钮、特效不动。
+static func brightness() -> float:
+	return clampf(float(entry(active_id).get("brightness", 1.0)), 0.5, 1.0)
+
+
+# 上面那个倍数做成的染色（贴图材质的 albedo_color / 2D 底图的 self_modulate 直接用）。
+static func tint() -> Color:
+	var value := brightness()
+	return Color(value, value, value)
+
+
 static func river_drop() -> float:
 	return clampf(float(entry(active_id).get("river_drop", 0.0)), 0.0, 0.25)
 

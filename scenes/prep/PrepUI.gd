@@ -688,6 +688,7 @@ var _sky_background: TextureRect
 func reapply_prep_skin() -> void:
 	if is_instance_valid(_sky_background):
 		_sky_background.texture = PrepWidgets.cached_texture(PrepSkin.path("board"))
+		_sky_background.self_modulate = PrepSkin.tint()
 		PrepSunDappleScript.apply(_sky_background, PrepSkin.active_id == PrepSkin.DEFAULT_ID)
 		var lawn_fx := _sky_background.get_node_or_null("PrepLawnFx") as CanvasItem
 		if lawn_fx != null:
@@ -756,6 +757,7 @@ func _swap_prep_skin_plane(node_name: String, slot: String) -> void:
 	var tex := ResourceLoader.load(PrepSkin.path(slot)) as Texture2D
 	if tex != null:
 		(mat as StandardMaterial3D).albedo_texture = tex
+	(mat as StandardMaterial3D).albedo_color = PrepSkin.tint()
 
 func _build(staged: bool = false) -> void:
 	if not LocaleManager.locale_changed.is_connected(_on_locale_changed):
@@ -812,6 +814,9 @@ func _build(staged: bool = false) -> void:
 	_sky_background.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_sky_background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_sky_background.z_index = -20
+	# 皮肤的 brightness。只染这张图自己（self_modulate），挂在它下面的特效不跟着暗。
+	# 挂了自写 shader 的底图不吃这个染色，要 shader 自己乘（樱花的树影 shader 有 brightness 参数）。
+	_sky_background.self_modulate = PrepSkin.tint()
 	add_child(_sky_background)
 	# 11.12：草地上的光斑跟着风一明一暗（默认青草地皮肤才开）
 	PrepSunDappleScript.apply(_sky_background, PrepSkin.active_id == PrepSkin.DEFAULT_ID)

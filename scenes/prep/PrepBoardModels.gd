@@ -1820,11 +1820,12 @@ func _add_prep_standby_bg_plane(world: Node3D) -> void:
 	layer.mesh = plane
 	var mat := StandardMaterial3D.new()
 	mat.albedo_texture = tex
+	mat.albedo_color = PrepSkin.tint()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	mat.render_priority = 7   # 在棋盘各贴图层(0-6)之上；模型是不透明 3D 物体，靠深度自然盖住它
+	mat.render_priority = 7  # 在棋盘各贴图层(0-6)之上；模型是不透明 3D 物体，靠深度自然盖住它
 	layer.material_override = mat
 	var center := _board_plane_world_pos(PREP_STANDBY_BG_CENTER_UV.x, PREP_STANDBY_BG_CENTER_UV.y)
 	center.y = PREP_BOARD_GROUND_CENTER.y + PREP_STANDBY_BG_Y_LIFT
@@ -1843,6 +1844,7 @@ func _add_prep_texture_plane(world: Node3D, node_name: String, texture_path: Str
 	layer.mesh = plane
 	var mat := StandardMaterial3D.new()
 	mat.albedo_texture = tex
+	mat.albedo_color = PrepSkin.tint()   # 皮肤的 brightness：底图 / 河面跟着压暗
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
