@@ -23,7 +23,7 @@
 | 棋子 3 星 | HP / ATK / DEF = 基础值 x 2.25 |
 | Boss 整体倍率 | HP / ATK / DEF / skill_damage 额外 x 1.5 |
 | Boss 成长 | 每完成 1 次 Boss 后：HP x 1.45，ATK x 1.35，DEF x 1.30，skill_damage x 1.45 |
-| PVE 小怪成长 | 每完成 1 次 PVE 后：HP x 1.10，ATK x 1.08，DEF x 1.05，skill_damage x 1.08 |
+| PVE 小怪成长 | 每完成 1 次 PVE 后：HP x 1.09，ATK x 1.06，DEF x 1.04，skill_damage x 1.08（2026-11-18 改；由 `data/pve/pve_monsters.json` 的 `growth_per_completed_pve` 决定） |
 | PVP 回合 | 第 6 / 12 / 18 / 21 回合为玩家对战回合。组队（联机 3v3 与离线自测）按固定排程进入 PVP；对面无人时敌方为空 |
 | 法阵友军 | 第 21 回合最终战根据法阵 HP 召唤，不占普通棋子上限；不吃宝藏，被击杀不给对方金币；进攻不受分路限制 |
 
