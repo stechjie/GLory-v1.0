@@ -308,6 +308,8 @@ func _start_menu_music() -> void:
 	#
 	# 11.16：主界面 1~3 随机一首。正在放的已是这组里的一首（从房间 / 资料页回来）就接着放；
 	# 从商城 / 备战 / 图鉴回来接回原来那首、原来的位置；打完一局回来才重新随机。
+	# 11.18：回到大厅 = 这局结束，下一局摆放 / 战斗音乐重新随机。
+	MusicService.end_match()
 	MusicService.play_group(MusicService.MENU_GROUP, true)
 
 func _notification(what: int) -> void:

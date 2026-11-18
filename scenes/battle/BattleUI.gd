@@ -275,8 +275,8 @@ func _start_battle_music() -> void:
 		_boss_intro_pending = true
 		return
 	# 「同一首不重启」由 MusicService 内部判等负责：本函数被重复调用是常态。
-	# 11.16：组内已在放的一首就接着放，否则随机挑一首。
-	MusicService.play_group(_battle_music_group())
+	# 11.18：PvE / Boss 战斗开局随机一首，整局每场都是它（每场从头放）；PvP 只有一首。
+	MusicService.play_match_group(_battle_music_group())
 
 func _stop_battle_music() -> void:
 	# 10-21：退出战斗必须把 BGM 电平还原 —— 否则主菜单 / 备战 / 商城整片都变小声。

@@ -203,13 +203,13 @@ func _ready_spectator() -> void:
 func _start_prep_music() -> void:
 	# 下一回合是 PVP（含最终 PVP）时放专属音乐，否则放普通摆放音乐。
 	var next_kind := PrepRules.next_round_kind()
-	# 11.16：进入对局 = 新一局。清掉主菜单那些「接着放」的记录，打完回大厅重新随机。
-	MusicService.new_session()
+	# 11.18：本局第一次进摆放界面 = 开局（后面的回合 begin_match 不再生效）。
+	MusicService.begin_match()
 	if next_kind == "pvp" or next_kind == "final":
 		MusicService.play(MusicService.PLACEMENT_PVP_MUSIC)
 	else:
-		# 同一回合内重建备战页时，正在放的那首在组里 → 接着放；每回合隔着一场战斗，重新随机。
-		MusicService.play_group(MusicService.PLACEMENT_GROUP)
+		# 11.18：摆放界面 1~3 开局随机一首，整局都是它；每回合回到这里从头放。
+		MusicService.play_match_group(MusicService.PLACEMENT_GROUP)
 	# 9.17 第二批：改走常驻 MusicService（播放器挂 root，不随页面释放）。
 	# 原来这里自建 AudioStreamPlayer 并 add_child 到备战页上；Main._clear() 切页面
 	# 时会把整页释放掉。BGM 由服务统一持有后，「打开子界面音乐断掉」那类问题

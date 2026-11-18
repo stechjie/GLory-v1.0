@@ -126,6 +126,7 @@ func _build() -> void:
 	_head = HBoxContainer.new()
 	_left_col.add_child(_head)
 	_back_btn = Kit.back_button(func(): back_requested.emit(), 56.0)
+	_back_btn.tooltip_text = tr("codex_back")
 	_back_btn.focus_mode = Control.FOCUS_ALL
 	_back_aspect = _back_btn.custom_minimum_size.x / maxf(1.0, _back_btn.custom_minimum_size.y)
 	_head.add_child(_back_btn)
@@ -336,9 +337,9 @@ func _category_title() -> String:
 	return label
 
 func _is_reference_category() -> bool:
-	# 状态和元素都是**参考物料**：不是收集目标，计数栏写「N 种」而不是
-	# 「已发现 N/M」（10.01 第 11 条把「元素」并进这一档）。
-	return _category == "status" or _category == "element"
+	# 状态是**参考物料**：不是收集目标，计数栏写「N 种」而不是「已发现 N/M」。
+	# （「元素」分类页 11.18 已删，克制说明改成点徽章弹出。）
+	return _category == "status"
 
 # --- grid tiles ----------------------------------------------------------
 
@@ -519,14 +520,17 @@ func _build_badges(entry: Dictionary, unlocked: bool) -> Control:
 	if not race.is_empty():
 		row.add_child(_emblem_badge(
 			CodexService.RACE_LOGO_DIR + race + ".png", tr("codex_tab_%s" % race), race))
+	# ★ 11.18：元素 / 系徽章也能点开（或长按），弹出该元素的克制关系 ——
+	#   和种族徽章弹羁绊说明同一种手势、同一种弹窗。怪物的 series 与它战斗里的
+	#   element 是同一个值（pve_monsters.json 逐条一致），所以弹同一份克制说明。
 	var element := str(entry.get("element", ""))
 	if not element.is_empty():
 		row.add_child(_emblem_badge(_element_icon(element),
-			tr("codex_element_suffix") % tr("codex_elem_%s" % element)))
+			tr("codex_element_suffix") % tr("codex_elem_%s" % element), "", element))
 	var series := str(entry.get("series", ""))
 	if not series.is_empty():
 		row.add_child(_emblem_badge(_element_icon(series),
-			tr("codex_series_suffix") % tr("codex_elem_%s" % series)))
+			tr("codex_series_suffix") % tr("codex_elem_%s" % series), "", series))
 	if int(entry.get("tier", 0)) > 0:
 		row.add_child(_flat_badge(tr("codex_tier") % int(entry.get("tier", 0)), INK))
 	var category := str(entry.get("category", ""))
@@ -537,9 +541,6 @@ func _build_badges(entry: Dictionary, unlocked: bool) -> Control:
 		row.add_child(_flat_badge(
 			tr("codex_buff") if is_buff else tr("codex_debuff"),
 			GOOD if is_buff else BAD))
-	# 元素图鉴的角标是「属性」；状态那条走 buff / debuff（10.01 第 11 条）。
-	if bool(entry.get("attribute", false)):
-		row.add_child(_flat_badge(tr("codex_attr"), INK))
 	return row if row.get_child_count() > 0 else null
 
 # Emblem above, label beneath: the round art identifies the entry, the words only
@@ -547,8 +548,9 @@ func _build_badges(entry: Dictionary, unlocked: bool) -> Control:
 #
 # ★ 10.08 反馈第 2 条：棋子图鉴里的**种族图标**要能**长按**弹出该族的羁绊说明
 #   （文本取自备战里的那一份 —— SynergyPanel.format_synergy_effects，不在这里另抄）。
-#   race 参数只在种族徽章上传（元素 / 系列徽章传空），长按入口也就只装在种族上。
-func _emblem_badge(texture_path: String, label: String, race: String = "") -> Control:
+# ★ 11.18：**元素 / 系图标**同样能点开，弹出该元素的克制关系（element 参数）。
+#   race / element 都为空的徽章不装手势。
+func _emblem_badge(texture_path: String, label: String, race: String = "", element: String = "") -> Control:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", _sp(2))
 	var art := TextureRect.new()
@@ -560,7 +562,12 @@ func _emblem_badge(texture_path: String, label: String, race: String = "") -> Co
 	# 而且完全静默（没有任何报错，只是「按了没反应」）。
 	if not race.is_empty():
 		art.mouse_filter = Control.MOUSE_FILTER_STOP
-		_attach_synergy_bond_long_press(art, race)
+		art.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		_attach_bond_long_press(art, func(): _show_race_bond(race))
+	elif CodexService.ELEMENTS.has(element):
+		art.mouse_filter = Control.MOUSE_FILTER_STOP
+		art.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		_attach_bond_long_press(art, func(): _show_element_bond(element))
 	col.add_child(art)
 	var lbl := Label.new()
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -570,68 +577,89 @@ func _emblem_badge(texture_path: String, label: String, race: String = "") -> Co
 	col.add_child(lbl)
 	return col
 
-# 给种族徽章装「长按 0.7 秒弹羁绊说明」。
+# 给徽章装「轻点或长按 0.7 秒弹说明」，open_popup 是弹哪份说明。
 #
 # 手势状态挂在控件 meta 上（与 PrepDetailOverlay.attach_long_press 同一套约定，
 # 这里只做图鉴需要的那一小份：按下起表、移动超过 8px 取消、松手停表）：
 #   长按常驻说明由 DialogService 的模态接管，所以松手不需要再收掉 —— 不会
 #   像备战浮层那样出现「松手把刚弹出来的说明又关掉」。
-func _attach_synergy_bond_long_press(art: Control, race: String) -> void:
+#
+# ★ 11.18「羁绊说明要按两次才关掉」：手机上 Godot 默认把一次触摸**再模拟成一次
+#   鼠标点击**（emulate_mouse_from_touch），旧代码触摸抬起、鼠标抬起各弹一次，
+#   叠出两个一模一样的框 —— 关掉上面那个，下面还有一个。现在：
+#   ① 一次手势只认**先按下的那一路**（"touch" / "mouse"），另一路的按下 / 抬起都忽略；
+#   ② 弹窗本身再带固定 request_id（见 _show_race_bond / _show_element_bond），
+#      同一份说明已开着时 DialogService 不会再叠第二个 —— 双保险。
+func _attach_bond_long_press(art: Control, open_popup: Callable) -> void:
 	var timer := Timer.new()
 	timer.one_shot = true
 	timer.wait_time = 0.7
 	art.add_child(timer)
-	art.set_meta("race_long_press_timer", timer)
+	art.set_meta("bond_long_press_timer", timer)
+	art.set_meta("bond_press_kind", "")
 	timer.timeout.connect(func():
-		if bool(art.get_meta("race_long_press_cancelled", false)):
+		if bool(art.get_meta("bond_long_press_cancelled", false)):
 			return
-		art.set_meta("race_long_press_fired", true)
-		_show_race_bond(race)
+		art.set_meta("bond_long_press_fired", true)
+		open_popup.call()
 	)
+	var on_press := func(kind: String, pos: Vector2) -> void:
+		var active := str(art.get_meta("bond_press_kind", ""))
+		var since := Time.get_ticks_msec() - int(art.get_meta("bond_press_msec", 0))
+		# 另一路紧跟着到的按下 = 同一次手势的副本（触摸模拟出来的鼠标），不再重开。
+		# 只在 400ms 内认作副本：上一次的抬起若被列表拖动吃掉了（TouchScrollContainer
+		# 会标记已处理），标记会残留，过了这段时间就当新手势，徽章不会从此点不动。
+		if active != "" and active != kind and since < 400:
+			return
+		art.set_meta("bond_press_kind", kind)
+		art.set_meta("bond_press_msec", Time.get_ticks_msec())
+		art.set_meta("bond_long_press_start", pos)
+		art.set_meta("bond_long_press_cancelled", false)
+		art.set_meta("bond_long_press_fired", false)
+		timer.start()
+	var on_release := func(kind: String) -> void:
+		if str(art.get_meta("bond_press_kind", "")) != kind:
+			return # 不是这次手势开头那一路的抬起：忽略，否则会弹第二次
+		art.set_meta("bond_press_kind", "")
+		timer.stop()
+		# 轻点（没长按）也把说明摊开：手机用户不一定会想到要长按，
+		# 而这条说明本来就是「看一眼」的性质，两条路都通不算坏事。
+		if not bool(art.get_meta("bond_long_press_fired", false)) \
+				and not bool(art.get_meta("bond_long_press_cancelled", false)):
+			open_popup.call()
 	art.gui_input.connect(func(event: InputEvent) -> void:
 		if event is InputEventMouseButton:
 			var mb := event as InputEventMouseButton
 			if mb.button_index != MOUSE_BUTTON_LEFT:
 				return
 			if mb.pressed:
-				art.set_meta("race_long_press_start", mb.position)
-				art.set_meta("race_long_press_cancelled", false)
-				art.set_meta("race_long_press_fired", false)
-				timer.start()
+				on_press.call("mouse", mb.position)
 			else:
-				timer.stop()
-				# 轻点（没长按）也把说明摊开：手机用户不一定会想到要长按，
-				# 而这条说明本来就是「看一眼」的性质，两条路都通不算坏事。
-				if not bool(art.get_meta("race_long_press_fired", false)):
-					_show_race_bond(race)
+				on_release.call("mouse")
 			art.accept_event()
 		elif event is InputEventScreenTouch:
 			var touch := event as InputEventScreenTouch
 			if touch.pressed:
-				art.set_meta("race_long_press_start", touch.position)
-				art.set_meta("race_long_press_cancelled", false)
-				art.set_meta("race_long_press_fired", false)
-				timer.start()
+				on_press.call("touch", touch.position)
 			else:
-				timer.stop()
-				if not bool(art.get_meta("race_long_press_fired", false)):
-					_show_race_bond(race)
+				on_release.call("touch")
 			art.accept_event()
 		elif event is InputEventMouseMotion and timer.time_left > 0.0:
 			# 挪动超过 8px = 用户在滑列表，不是长按。
-			var start: Vector2 = art.get_meta("race_long_press_start", Vector2.ZERO)
+			var start: Vector2 = art.get_meta("bond_long_press_start", Vector2.ZERO)
 			if (event as InputEventMouseMotion).position.distance_to(start) > 8.0:
-				art.set_meta("race_long_press_cancelled", true)
+				art.set_meta("bond_long_press_cancelled", true)
 				timer.stop()
 		elif event is InputEventScreenDrag and timer.time_left > 0.0:
-			var start2: Vector2 = art.get_meta("race_long_press_start", Vector2.ZERO)
+			var start2: Vector2 = art.get_meta("bond_long_press_start", Vector2.ZERO)
 			if (event as InputEventScreenDrag).position.distance_to(start2) > 8.0:
-				art.set_meta("race_long_press_cancelled", true)
+				art.set_meta("bond_long_press_cancelled", true)
 				timer.stop()
 	)
 
 # 种族羁绊说明弹窗：正文**直接取备战里那份**（SynergyPanel.format_synergy_effects），
 # 不在图鉴里另抄一份 —— 两处文案以后要一起改的只有一处。
+# request_id 固定：同一族的说明已经开着时不会再叠一个（11.18「要按两次」）。
 func _show_race_bond(race: String) -> void:
 	if race.is_empty():
 		return
@@ -643,6 +671,24 @@ func _show_race_bond(race: String) -> void:
 		"body": body,
 		"confirm_text": tr("codex_bond_gotit"),
 		"owner": self,
+		"request_id": "codex_race_bond_%s" % race,
+	})
+
+# 元素克制说明弹窗（11.18）：正文就是原「元素」分类页里那份
+# codex_element_<id>_desc（倍率与 BattleSimShared._element_multiplier 一致，
+# tools/codex_element_check.gd 逐条核对）。
+func _show_element_bond(element: String) -> void:
+	if not CodexService.ELEMENTS.has(element):
+		return
+	var body := tr("codex_element_%s_desc" % element)
+	if body.is_empty() or body == "codex_element_%s_desc" % element:
+		return
+	DialogService.info({
+		"title": tr("codex_element_suffix") % tr("codex_elem_%s" % element),
+		"body": body,
+		"confirm_text": tr("codex_bond_gotit"),
+		"owner": self,
+		"request_id": "codex_element_bond_%s" % element,
 	})
 
 func _flat_badge(text: String, color: Color) -> Control:
@@ -830,11 +876,7 @@ func _build_state_line(entry: Dictionary, unlocked: bool) -> Control:
 	var lbl := Label.new()
 	lbl.add_theme_font_size_override("font_size", _fs(12))
 	lbl.add_theme_color_override("font_color", INK_SOFT)
-	if bool(entry.get("attribute", false)):
-		# 元素不能复用状态那条：「图标与战斗中显示的完全一致」讲的是战斗
-		# HUD 的减益图标，元素图标只在图鉴里出现，套上去就是文案≠实现。
-		lbl.text = tr("codex_element_reference")
-	elif not bool(entry.get("collectible", true)):
+	if not bool(entry.get("collectible", true)):
 		lbl.text = tr("codex_status_reference")
 	elif unlocked:
 		lbl.text = tr("codex_unlocked_state")

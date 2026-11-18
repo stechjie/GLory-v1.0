@@ -1,22 +1,22 @@
 extends Node
 
-# 第 11 点（10.01 反馈）：图鉴在「状态」后面新增「元素」分类（天 / 地 / 人）。
+# 图鉴「元素」（天 / 地 / 人）门禁。
 #
-# 用户原文：「图鉴功能在状态后面增加一个类别：元素，分为"天""地""人"，图标选自游戏里。
-# 图鉴内容写对应元素的具体克制属性数值。……参考状态分类里的"护盾"，图标改为天元素的
-# 图标，然后名称"护盾"改为"天"，上面的"增益"改为"属性"，效果描述就改成天元素的克制
-# 关系和数值。」
+# 历史：10.01 第 11 条在「状态」后面加了一个「元素」分类页。
+# ★ 11.18 用户要求：删掉那一页，改成查看棋子 / 怪物 / Boss 时，点「元素」或「系」
+#   徽章弹出克制说明（和种族徽章弹羁绊说明一样）；同时修「说明要按两次才关掉」。
 #
 # 五节：
-#   A 纯数据：元素分类的结构与位置（必须排在状态**之后**）
-#   B 本地化键真的翻得出来（漏配时 tr() 原样返回键名，页面上就会冒出 codex_xxx），
-#     中英各扫一遍
-#   C 真实现：Script.new() 直调 CodexScreen 的 _is_reference_category / _build_badges
-#     / _build_detail / _build_state_line。**不 add_child** —— CodexScreen._ready() 会
-#     调 CodexService.sync_owned_pets() 写用户档案，门禁不该碰玩家数据
-#   D 回归：状态分类没被顶掉，「增益 / 异常」角标和它的脚注原样
+#   A 分类页确实删了：CATEGORIES 里没有 element，entries_for("element") 为空
+#   B 本地化键还在（弹窗要用）：元素名 + 克制描述，中英各扫一遍
+#   C 真实现：元素 / 系 / 种族徽章都装了手势；真点一下弹出的是该元素的克制说明；
+#     「触摸 + 模拟鼠标」双路投递只弹**一个**框（11.18「要按两次」的根因）
+#   D 回归：状态分类没被动
 #   E 判别力：文案↔实现（从 BattleSimShared._element_multiplier 反推"谁克谁"，
-#     再断言中文 desc 里点名的就是那个元素）、三族文本互不相同、未知名分类为空
+#     再断言中文 desc 里点名的就是那个元素）、三族文本互不相同
+#
+# CodexScreen 不 add_child —— 它的 _ready() 会调 CodexService.sync_owned_pets()
+# 写用户档案，门禁不该碰玩家数据。徽章行单独挂到本节点下（计时器要在树上才能 start）。
 
 const H := preload("res://tools/CheckHarness.gd")
 const ScreenScript := preload("res://scenes/menu/CodexScreen.gd")
@@ -27,11 +27,8 @@ const ELEM_IDS := ["sky", "land", "ren"]
 const ELEM_CN := {"sky": "天", "land": "地", "ren": "人"}
 const ELEM_EN := {"sky": "Sky", "land": "Land", "ren": "Human"}
 
-# 状态分类的规模，用来证明它没被新分类挤掉。
+# 状态分类的规模，用来证明它没被动。
 const STATUS_COUNT := 14
-
-# 元素条目**不许**带这些字段：带上就会落到「增益 / 异常」的分支去。
-const FORBIDDEN_FIELDS := ["buff"]
 
 var h
 
@@ -40,147 +37,120 @@ func _ready() -> void:
 	h = H.new("codex_element")
 	var saved: String = LocaleManager.get_locale()
 
-	var list: Array[Dictionary] = CodexService.entries_for("element")
-	_section_category(list)
-	_section_locale(list, "zh")
+	_section_category()
+	_section_locale("zh")
 
 	var screen: Control = ScreenScript.new()
-	_section_wiring(screen, list)
+	await _section_wiring(screen)
 	_section_regression(screen)
 
 	LocaleManager.set_locale("en")
-	_section_locale(list, "en")
+	_section_locale("en")
 	LocaleManager.set_locale(saved)
 
-	_section_discrimination(list)
+	_section_discrimination()
 	screen.free()
 
 	h.finish(get_tree())
 
 
-# ── A. 分类结构与位置 ───────────────────────────────────────────────────────
+# ── A. 分类页确实删了 ───────────────────────────────────────────────────────
 
-func _section_category(list: Array[Dictionary]) -> void:
+func _section_category() -> void:
 	var keys: Array[String] = []
 	for c in CodexService.CATEGORIES:
 		keys.append(str(c.get("key", "")))
-
-	h.expect(keys.has("element"), "cat_has_element",
-		"CATEGORIES 里必须有 element 分类")
-	h.expect(keys.find("element") == keys.find("status") + 1, "cat_element_right_after_status",
-		"「元素」必须**紧跟**在「状态」之后（第 11 条：在状态后面增加）")
-	h.expect(not keys.is_empty() and keys[keys.size() - 1] == "element", "cat_element_is_last",
-		"「元素」是最后一个标签页")
-	h.expect(keys.count("element") == 1, "cat_element_once",
-		"element 分类不能重复登记")
-	h.expect(str(CodexService._category("element").get("kind", "")) == "element", "cat_kind",
-		"element 分类的 kind 必须是 element，entries_for 才路由得到")
-
-	h.expect(list.size() == ELEM_IDS.size(), "cat_entry_count",
-		"元素分类正好 %d 条（天 / 地 / 人），实际 %d" % [ELEM_IDS.size(), list.size()])
-
-	for entry in list:
-		var id := str(entry.get("id", ""))
-		h.expect(ELEM_IDS.has(id), "item_%s_id" % id, "条目 id 必须是 sky / land / ren，实际 %s" % id)
-		h.expect(str(entry.get("name_key", "")) == "codex_elem_%s" % id, "item_%s_name_key" % id,
-			"名称走本地化键 codex_elem_%s（静态上下文里 tr() 不可调用）" % id)
-		h.expect(str(entry.get("desc_key", "")) == "codex_element_%s_desc" % id, "item_%s_desc_key" % id,
-			"描述走本地化键 codex_element_%s_desc" % id)
-		var portrait := str(entry.get("portrait", ""))
-		h.expect(portrait == "res://assets/ui/codex_portraits/elem_%s.png" % id, "item_%s_portrait_path" % id,
-			"图标指向 elem_%s.png（第 11 条：图标选自游戏里）" % id)
-		h.expect(ResourceLoader.exists(portrait), "item_%s_portrait_exists" % id,
-			"图标文件必须真的存在：%s" % portrait)
-		h.expect(bool(entry.get("icon_art", false)), "item_%s_icon_art" % id,
-			"icon_art=true（整图不裁切，和状态图标同一种画法）")
-		h.expect(bool(entry.get("attribute", false)), "item_%s_attribute" % id,
-			"attribute=true —— 角标才写「属性」而不是「增益 / 异常」")
-		h.expect(not bool(entry.get("collectible", true)), "item_%s_not_collectible" % id,
-			"参考物料不算收集进度（计数栏写「N 种」）")
-		h.expect(CodexService.is_unlocked(entry), "item_%s_unlocked" % id,
-			"元素永远可读，不参与解锁")
-		for f in FORBIDDEN_FIELDS:
-			# 前提体检：带上 buff 的条目会走「增益 / 异常」分支，
-			# 那下面「角标写属性」的断言就成了走不到的空话。
-			h.expect(not entry.has(f), "item_%s_no_%s" % [id, f],
-				"元素条目不许带 %s 字段，否则落到状态那条角标分支" % f)
+	h.expect(not keys.has("element"), "cat_no_element_tab",
+		"「元素」分类页 11.18 已删除，CATEGORIES 里不该再有 element")
+	h.expect(keys.has("status"), "cat_keeps_status", "「状态」分类还在")
+	h.expect(CodexService.entries_for("element").is_empty(), "cat_element_entries_empty",
+		"entries_for(\"element\") 必须为空（不再有元素条目）")
+	var ids_ok: bool = CodexService.ELEMENTS.size() == ELEM_IDS.size()
+	for id in ELEM_IDS:
+		ids_ok = ids_ok and CodexService.ELEMENTS.has(id)
+	h.expect(ids_ok, "cat_element_ids",
+		"元素 id 列表仍是 sky / land / ren（徽章弹窗靠它判断）")
 
 
-# ── B. 本地化键真的配了 ─────────────────────────────────────────────────────
+# ── B. 本地化键还在（弹窗要用） ─────────────────────────────────────────────
 
-func _section_locale(list: Array[Dictionary], locale: String) -> void:
+func _section_locale(locale: String) -> void:
 	LocaleManager.set_locale(locale)
-	if locale == "zh":
-		h.expect(tr("codex_tab_element") == "元素", "loc_zh_tab", "标签名是「元素」")
-		h.expect(tr("codex_attr") == "属性", "loc_zh_attr", "角标是「属性」而不是「增益」")
-		for id in ELEM_IDS:
-			h.expect(tr("codex_elem_%s" % id) == ELEM_CN[id], "loc_zh_name_%s" % id,
-				"「%s」的中文名必须是 %s" % [id, ELEM_CN[id]])
-	else:
-		h.expect(tr("codex_tab_element") == "Element", "loc_en_tab", "英文标签名是 Element")
-		h.expect(tr("codex_attr") == "Attribute", "loc_en_attr", "英文角标是 Attribute")
-		for id in ELEM_IDS:
-			h.expect(tr("codex_elem_%s" % id) == ELEM_EN[id], "loc_en_name_%s" % id,
-				"「%s」的英文名必须是 %s" % [id, ELEM_EN[id]])
-
+	for id in ELEM_IDS:
+		var want: String = ELEM_CN[id] if locale == "zh" else ELEM_EN[id]
+		h.expect(tr("codex_elem_%s" % id) == want, "loc_%s_name_%s" % [locale, id],
+			"「%s」的名称必须是 %s，实际 %s" % [id, want, tr("codex_elem_%s" % id)])
 	# 漏配时 tr() 原样返回键名 —— 这才是真在查键。
-	for key in ["codex_tab_element", "codex_attr", "codex_element_reference"]:
-		h.expect(tr(key) != key, "loc_%s_%s_missing" % [locale, key], "翻译键漏配：%s" % key)
-	for entry in list:
-		for key_field in ["name_key", "desc_key"]:
-			var key := str(entry.get(key_field, ""))
-			var got := tr(key)
-			h.expect(not got.is_empty() and got != key, "loc_%s_%s_%s" % [locale, entry.get("id", ""), key_field],
-				"翻译键漏配或为空：%s" % key)
+	var keys := ["codex_element_suffix", "codex_series_suffix", "codex_bond_gotit"]
+	for id in ELEM_IDS:
+		keys.append("codex_element_%s_desc" % id)
+	for key in keys:
+		var got := tr(key)
+		h.expect(not got.is_empty() and got != key, "loc_%s_%s" % [locale, key],
+			"翻译键漏配或为空：%s" % key)
 
 
 # ── C. 真实现 ───────────────────────────────────────────────────────────────
 
-func _section_wiring(screen: Control, list: Array[Dictionary]) -> void:
-	# 参考档：计数栏写「N 种」而不是「已发现 N/M」。
-	screen._category = "element"
-	h.expect(screen._is_reference_category(), "wire_element_is_reference",
-		"元素和状态一样是参考物料")
-	screen._category = "god"
-	h.expect(not screen._is_reference_category(), "wire_god_not_reference",
-		"棋子分类不能算参考物料（判别力：这个断言必须有可能为假）")
+func _section_wiring(screen: Control) -> void:
+	# 1) 棋子：种族徽章 + 元素徽章，两个都要能点。
+	var unit_row: Control = screen._build_badges({"race": "god", "element": "sky", "tier": 1}, true)
+	add_child(unit_row)
+	var unit_arts := _clickable_arts(unit_row)
+	h.expect(unit_arts.size() == 2, "wire_unit_two_clickable",
+		"棋子详情里种族 + 元素两个徽章都要能点，实际 %d 个" % unit_arts.size())
 
-	var sky: Dictionary = list[0]
+	# 2) 怪物：「系」徽章也能点（11.18 用户确认要）。
+	var mon_row: Control = screen._build_badges({"series": "land"}, true)
+	add_child(mon_row)
+	h.expect(_clickable_arts(mon_row).size() == 1, "wire_series_clickable",
+		"怪物的「系」徽章要能点")
 
-	# 角标：「属性」。之前这里只有 buff / debuff 两支，元素会一个角标都没有。
-	var badges: Control = screen._build_badges(sky, true)
-	h.expect(badges != null, "wire_badges_not_null",
-		"元素条目必须有角标（没有 attribute 分支时 _build_badges 会因为空行返回 null）")
-	var badge_texts := _label_texts(badges)
-	h.expect(badge_texts.has(tr("codex_attr")), "wire_badge_attribute",
-		"角标文字是「属性」，实际 %s" % str(badge_texts))
-	h.expect(not badge_texts.has(tr("codex_buff")) and not badge_texts.has(tr("codex_debuff")),
-		"wire_badge_not_buff", "元素不能出现「增益 / 异常」角标")
+	# 3) 判别力：未知元素不装手势（不能见到徽章就装）。
+	var bad_row: Control = screen._build_badges({"element": "water"}, true)
+	add_child(bad_row)
+	h.expect(_clickable_arts(bad_row).is_empty(), "wire_unknown_element_inert",
+		"非 sky / land / ren 的元素徽章不该能点")
 
-	# 脚注：元素不能复用状态那句（那句讲的是战斗 HUD 的减益图标）。
-	# 显式标注类型：screen 是 Control，走它的私有方法拿到的是 Variant，
-	# `var line := ...` 推不出类型会直接 Parse Error（GDScript 静默不了的硬错）。
-	var line: Control = screen._build_state_line(sky, true)
-	h.expect(line is Label, "wire_state_is_label", "脚注是一个 Label")
-	h.expect((line as Label).text == tr("codex_element_reference"), "wire_state_copy",
-		"元素脚注走 codex_element_reference")
-	h.expect((line as Label).text != tr("codex_status_reference"), "wire_state_not_status_copy",
-		"元素不能套用状态那句「图标与战斗中显示的完全一致」")
+	# 4) 真点元素徽章：只弹一个框，内容是天元素的克制说明。
+	#    事件顺序模拟手机：触摸按下 → 模拟鼠标按下 → 触摸抬起 → 模拟鼠标抬起。
+	if unit_arts.size() == 2:
+		var sky_art: Control = unit_arts[1]
+		ModalStack.close_all()
+		var before := DialogService.open_count()
+		_tap_dual(sky_art)
+		await _settle()
+		h.expect(DialogService.open_count() == before + 1, "wire_dual_tap_one_dialog",
+			"触摸 + 模拟鼠标双路投递只该弹 1 个框（「要按两次才关」的根因），实际弹了 %d 个"
+				% (DialogService.open_count() - before))
+		var body := _dialog_body_text()
+		h.expect(body == tr("codex_element_sky_desc"), "wire_dialog_is_sky_desc",
+			"弹出来的是天元素的克制说明，实际正文前 40 字：%s" % body.substr(0, 40))
+		h.expect(body.contains("×1.25") and body.contains("×0.85"), "wire_dialog_has_numbers",
+			"弹窗里给出克制倍率 ×1.25 / ×0.85")
 
-	# 右页整页：名称「天」+ 角标「属性」+ 描述里的克制数值。
-	screen._detail = VBoxContainer.new()
-	screen._build_detail(sky)
-	var page := _label_texts(screen._detail)
-	var all := "\n".join(page)
-	h.expect(page.has(ELEM_CN["sky"]), "wire_page_name",
-		"右页名称是「天」，实际 %s" % str(page))
-	h.expect(page.has(tr("codex_attr")), "wire_page_attribute", "右页有「属性」角标")
-	h.expect(all.contains("×1.25"), "wire_page_has_125", "右页描述给出克制倍率 ×1.25")
-	h.expect(all.contains("×0.85"), "wire_page_has_085", "右页描述给出被反制倍率 ×0.85")
-	h.expect(not all.contains("已解锁") and not all.contains("未解锁") and not all.contains("还差"),
-		"wire_page_no_battle_state", "元素描述里不许出现战场达成条件")
-	h.expect(screen._detail.get_child_count() > 0, "wire_page_built",
-		"右页真的建出了内容")
+		# 已开着时再点一次：不能叠第二个框。
+		_tap_mouse(sky_art)
+		await _settle()
+		h.expect(DialogService.open_count() == before + 1, "wire_reopen_no_stack",
+			"同一份说明开着时再点，不能叠出第二个框")
+		ModalStack.close_all()
+		await _settle()
+		h.expect(DialogService.open_count() == before, "wire_dialog_closes",
+			"关一次就全关掉")
+
+		# 种族徽章同样只弹一个（同一条修复）。
+		var race_art: Control = unit_arts[0]
+		_tap_dual(race_art)
+		await _settle()
+		h.expect(DialogService.open_count() == before + 1, "wire_race_dual_tap_one_dialog",
+			"种族徽章双路投递也只弹 1 个框，实际 %d 个" % (DialogService.open_count() - before))
+		ModalStack.close_all()
+		await _settle()
+
+	for row in [unit_row, mon_row, bad_row]:
+		row.queue_free()
+	await get_tree().process_frame
 
 
 # ── D. 回归：状态分类没被动 ─────────────────────────────────────────────────
@@ -189,32 +159,25 @@ func _section_regression(screen: Control) -> void:
 	var st: Array[Dictionary] = CodexService.entries_for("status")
 	h.expect(st.size() == STATUS_COUNT, "reg_status_count",
 		"状态仍是 %d 条，实际 %d" % [STATUS_COUNT, st.size()])
-	var keeps_buff := true
-	for s in st:
-		if not s.has("buff"):
-			keeps_buff = false
-	h.expect(keeps_buff, "reg_status_keeps_buff", "状态条目仍然带 buff 字段")
 	h.expect(CodexService.progress_for("status") == Vector2i(STATUS_COUNT, STATUS_COUNT),
 		"reg_status_progress", "状态仍然全部可读")
-
 	var st_badges := _label_texts(screen._build_badges(st[0], true))
 	h.expect(st_badges.has(tr("codex_buff")) or st_badges.has(tr("codex_debuff")), "reg_status_badge_buff",
 		"状态角标仍然是「增益 / 异常」，实际 %s" % str(st_badges))
-
 	screen._category = "status"
 	h.expect(screen._is_reference_category(), "reg_status_reference", "状态仍然是参考物料")
 	h.expect((screen._build_state_line(st[0], true) as Label).text == tr("codex_status_reference"),
 		"reg_status_state_copy", "状态脚注原样")
-	screen._category = "element"
+	screen._category = "god"
+	h.expect(not screen._is_reference_category(), "reg_god_not_reference",
+		"棋子分类不能算参考物料（判别力：这个断言必须有可能为假）")
 
 
-# ── E. 判别力 ───────────────────────────────────────────────────────────────
+# ── E. 判别力：文案 ↔ 实现 ─────────────────────────────────────────────────
 
-func _section_discrimination(list: Array[Dictionary]) -> void:
-	h.expect(list.size() == ELEM_IDS.size(), "disc_list_size",
-		"入口拿到的就是三条元素条目")
-
-	# 文案 ↔ 实现：谁克谁不是照抄注释，而是现算一遍倍率再回来点名。
+func _section_discrimination() -> void:
+	LocaleManager.set_locale("zh")
+	# 谁克谁不是照抄注释，而是现算一遍倍率再回来点名。
 	for a in ELEM_IDS:
 		var beaten := _pick(a, true)
 		var nemesis := _pick(a, false)
@@ -240,24 +203,15 @@ func _section_discrimination(list: Array[Dictionary]) -> void:
 			"desc 必须交代同元素 ×1.00")
 
 	# 三族文本互不相同（否则就是把同一段抄了三遍）。
-	var texts: Array[String] = []
-	for id in ELEM_IDS:
-		texts.append(tr("codex_element_%s_desc" % id))
 	var uniq := {}
-	for t in texts:
-		uniq[t] = true
+	for id in ELEM_IDS:
+		uniq[tr("codex_element_%s_desc" % id)] = true
 	h.expect(uniq.size() == ELEM_IDS.size(), "disc_texts_differ",
 		"天 / 地 / 人 的克制数值描述必须两两不同，实际 %d 种" % uniq.size())
 
-	# 判别力：未知名分类必须空，不能因为兜底返回全部而假绿。
-	h.expect(CodexService.entries_for("no_such_category").is_empty(), "disc_unknown_empty",
-		"未知分类必须返回空")
-	h.expect(CodexService.entries_for("element").size() == ELEM_IDS.size(), "disc_element_only",
-		"元素分类只出元素条目")
-
 
 # attacker=true: 找 a 攻击谁倍率最高；attacker=false: 找谁攻击 a 倍率最高。
-# weak=true 时反过来找 a 攻击谁倍率最低（被反制的那一个）。
+# weak=true 时反过来找倍率最低的那一个。
 func _pick(a: String, attacker: bool, weak: bool = false) -> String:
 	var best := ""
 	var best_v := 1.0
@@ -274,6 +228,58 @@ func _pick(a: String, attacker: bool, weak: bool = false) -> String:
 			best_v = v
 			best = b
 	return best
+
+
+# ── 辅助 ────────────────────────────────────────────────────────────────────
+
+# 装了手势的徽章图：mouse_filter = STOP 的 TextureRect（没装手势的保持 IGNORE）。
+func _clickable_arts(root: Node) -> Array:
+	var out: Array = []
+	_collect_arts(root, out)
+	return out
+
+
+func _collect_arts(node: Node, out: Array) -> void:
+	if node is TextureRect and (node as Control).mouse_filter == Control.MOUSE_FILTER_STOP:
+		out.append(node)
+	for child in node.get_children():
+		_collect_arts(child, out)
+
+
+# 手机上的一次轻点：触摸一路 + emulate_mouse_from_touch 模拟出来的鼠标一路。
+func _tap_dual(art: Control) -> void:
+	var tp := InputEventScreenTouch.new()
+	tp.pressed = true
+	art.gui_input.emit(tp)
+	var mp := InputEventMouseButton.new()
+	mp.button_index = MOUSE_BUTTON_LEFT
+	mp.pressed = true
+	art.gui_input.emit(mp)
+	var tr_ev := InputEventScreenTouch.new()
+	tr_ev.pressed = false
+	art.gui_input.emit(tr_ev)
+	var mr := InputEventMouseButton.new()
+	mr.button_index = MOUSE_BUTTON_LEFT
+	mr.pressed = false
+	art.gui_input.emit(mr)
+
+
+func _tap_mouse(art: Control) -> void:
+	for pressed in [true, false]:
+		var ev := InputEventMouseButton.new()
+		ev.button_index = MOUSE_BUTTON_LEFT
+		ev.pressed = pressed
+		art.gui_input.emit(ev)
+
+
+func _settle() -> void:
+	for _i in 3:
+		await get_tree().process_frame
+
+
+func _dialog_body_text() -> String:
+	var label := get_tree().root.find_child("DialogBody", true, false) as Label
+	return "" if label == null else label.text
 
 
 # 递归收集一棵子树里所有 Label / Button 的文字。
