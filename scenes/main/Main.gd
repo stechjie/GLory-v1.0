@@ -4041,6 +4041,8 @@ func _on_team_battle_finished(result: Dictionary) -> void:
 		"treasures": GameState.owned_treasures,
 		"pet_id": PlayerProfile.get_active(),
 		"camp_income": GameState.carrot_camp_income(),
+		# 战斗排名奖励（11-18，利息之后）：和战斗服务器同一套规则，见 BattleRankRewards。
+		"rank_reward": _team_local_rank_reward(),
 	})
 	_apply_post_battle_unit_outcomes(result)
 	GameState.battle_history.append(result)
@@ -4230,6 +4232,12 @@ func _apply_team_match_state_payload(state_payload: Dictionary, result: Dictiona
 	GameState.clear_shop()
 	GameState.clear_mercenaries()
 	SaveManager.save_run()
+
+func _team_local_rank_reward() -> int:
+	if not is_instance_valid(_battle):
+		return 0
+	var slot := NetworkService.team_local_slot if NetworkService.team_active else 0
+	return int(NetworkService.local_rank_rewards(_battle._replay_own, _battle._replay_rival).get(maxi(0, slot), 0))
 
 func _team_local_kill_gold(result: Dictionary) -> int:
 	var slot := NetworkService.team_local_slot if NetworkService.team_active else 0

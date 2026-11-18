@@ -82,7 +82,6 @@ var _kind := "pve"
 var _state: Dictionary = {}
 var _result: Dictionary = {}
 var _summary_lbl: RichTextLabel
-var _top5_atk_lbl: RichTextLabel
 # (4) When the local player is on the top (canonical "enemy") side of a PvP replay,
 # flip the arena vertically so THEIR units always appear at the bottom.
 #
@@ -444,6 +443,13 @@ func _settlement_preview(result: Dictionary) -> String:
 	lines.append(tr("settle_interest") % interest)
 	if camp_income > 0:
 		lines.append(("Carrot Camp income +%dG" if LocaleManager.get_locale().begins_with("en") else "萝卜营地收入 +%d金") % camp_income)
+	# 战斗排名奖励（11-18）：利息之后，和到账同一套规则（BattleRankRewards）。
+	var own_replay: Variant = get("_replay_own")
+	var rival_replay: Variant = get("_replay_rival")
+	if own_replay is Dictionary and rival_replay is Dictionary and GameState.team_mode:
+		var rank_reward := int(NetworkService.local_rank_rewards(own_replay, rival_replay).get(maxi(0, slot), 0))
+		if rank_reward > 0:
+			lines.append(("Rank reward +%dG" if LocaleManager.get_locale().begins_with("en") else "排名奖励 +%d金") % rank_reward)
 	var formation_damage := _formation_damage_preview(result, win)
 	lines.append(tr("settle_formation_change") % (tr("settle_enemy_formation") % formation_damage if win else tr("settle_self_formation") % formation_damage))
 	return tr("settle_prefix") + " | ".join(lines)

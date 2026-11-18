@@ -124,7 +124,12 @@ static func ambient() -> String:
 
 
 static func refresh_fx() -> String:
-	var kind := str(entry(active_id).get("refresh_fx", REFRESH_FX_KINDS[0]))
+	return refresh_fx_for(active_id)
+
+
+# 别人的皮肤（对局里别人清路时用，id 来自出战名片）。这个包里没有这张皮肤就是默认。
+static func refresh_fx_for(skin_id: String) -> String:
+	var kind := str(entry(skin_id).get("refresh_fx", REFRESH_FX_KINDS[0]))
 	return kind if kind in REFRESH_FX_KINDS else REFRESH_FX_KINDS[0]
 
 

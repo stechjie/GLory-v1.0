@@ -205,6 +205,7 @@ def test_max_size_card_fits_what_the_battle_server_accepts(card_key) -> None:
         avatar_frame="upload:" + "b" * 64,
         pet="p" * 32,
         races=[("r%02d" % i) + "x" * 29 for i in range(loadout.MAX_RACES)],
+        prep_skin="prep_skin_" + "s" * 54,
     )
     # 匹配对局的名片最长（多了会合键 / 队伍 / 模式 / 位置），按它量。
     card = loadout.sign(loadout.card_payload(fat, match_uid="f" * 32, team=1, mode="ranked", seat=2))
@@ -314,6 +315,32 @@ def test_unowned_pet_is_dropped_from_the_card(monkeypatch: pytest.MonkeyPatch) -
     _wire(monkeypatch, _row(), owned=[])
     result = asyncio.run(loadout.build_loadout(PLAYER_A))
     assert result.pet == ""
+
+
+def test_prep_skin_goes_on_the_card_only_when_owned(monkeypatch: pytest.MonkeyPatch) -> None:
+    """11-18：别人清路时按名片上的皮肤演扫光。卖的皮肤退款收回后不能再带。"""
+    sold_skin = "prep_skin_sakura"
+    monkeypatch.setattr(shop, "requires_entitlement", lambda cid: cid in (sold_skin, SOLD_PET))
+    _wire(monkeypatch, _row(prep_skin=sold_skin), owned=[SOLD_PET, sold_skin])
+    owned = asyncio.run(loadout.build_loadout(PLAYER_A))
+    assert owned.prep_skin == sold_skin
+    assert loadout.card_payload(owned)["skin"] == sold_skin
+    _wire(monkeypatch, _row(prep_skin=sold_skin), owned=[SOLD_PET])
+    assert asyncio.run(loadout.build_loadout(PLAYER_A)).prep_skin == ""
+    _wire(monkeypatch, _row(prep_skin="../etc"), owned=[SOLD_PET])
+    assert asyncio.run(loadout.build_loadout(PLAYER_A)).prep_skin == ""
+
+
+def test_default_prep_skin_is_not_on_the_card(monkeypatch: pytest.MonkeyPatch) -> None:
+    _wire(monkeypatch, _row(prep_skin=None), owned=[SOLD_PET])
+    result = asyncio.run(loadout.build_loadout(PLAYER_A))
+    assert result.prep_skin == ""
+    assert "skin" not in loadout.card_payload(result)
+
+
+def test_card_skin_field_matches_the_battle_server() -> None:
+    """名片字段叫 skin，战斗服务器 BattleCard.skin_of 按这个名取。"""
+    assert 'card.get("skin"' in CARD_GD or 'raw.get("skin"' in CARD_GD
 
 
 def test_free_avatar_needs_no_entitlement(monkeypatch: pytest.MonkeyPatch) -> None:

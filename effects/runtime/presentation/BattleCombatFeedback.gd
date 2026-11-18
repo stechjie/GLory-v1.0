@@ -271,9 +271,23 @@ func _place_label(label: Label, width: float, top: float, height: float) -> void
 	label.pivot_offset = Vector2(width, height) * 0.5
 
 
+## PvP 时左边换成伤害前三榜（scenes/battle/BattleRankHud.gd），这块单人木牌整块收起来。
+## 关掉后 show_damage 不再显示它；清路字幕等其它反馈照常。
+var single_plate := true
+
+
+func set_single_plate_enabled(enabled: bool) -> void:
+	single_plate = enabled
+	if enabled:
+		return
+	for node in [_damage_label, _damage_title, _damage_depth, _plate, _fire, _aura]:
+		if is_instance_valid(node):
+			(node as CanvasItem).hide()
+
+
 ## Absolute authoritative per-round damage, never a hit-number accumulator.
 func show_damage(total: int, animate := true, round_index := 11) -> void:
-	if _damage_label == null:
+	if _damage_label == null or not single_plate:
 		return
 	var changed := total != _damage_total or _round_index != round_index
 	_round_index = round_index

@@ -92,6 +92,7 @@ const MAX_TEXT := {
 }
 const MAX_RACES := 16
 const MAX_RACE_ID := 32
+const MAX_SKIN_ID := 64
 
 static var _key_pem_cache := ""
 static var _key_cache: CryptoKey = null
@@ -211,7 +212,30 @@ static func profile_of(card: Dictionary) -> Dictionary:
 	var tier := tier_of(card)
 	if tier >= 0:
 		out["tier"] = tier
+	# 棋盘皮肤（11-18）：别人清路时按它演扫光。默认皮肤不带。
+	var skin := skin_of(card)
+	if not skin.is_empty():
+		out["prep_skin"] = skin
 	return out
+
+
+# 名片上的棋盘皮肤 id；空串 = 默认。只认 prep_skin_ 开头的小写 id（与账号服务器 _PREP_SKIN_ID 同一个口径），
+# 这个包里没有的皮肤照样传下去 —— 收到的手机自己查不到就演默认的火。
+static func skin_of(card: Dictionary) -> String:
+	return clean_skin_id(card.get("skin", ""))
+
+
+static func clean_skin_id(value: Variant) -> String:
+	if typeof(value) != TYPE_STRING:
+		return ""
+	var skin := str(value)
+	if skin.length() > MAX_SKIN_ID or not skin.begins_with("prep_skin_") or skin == "prep_skin_default":
+		return ""
+	for i in skin.length():
+		var c := skin.unicode_at(i)
+		if not ((c >= 97 and c <= 122) or (c >= 48 and c <= 57) or c == 95):
+			return ""
+	return skin
 
 
 static func _clean(raw: Dictionary) -> Dictionary:
@@ -242,6 +266,8 @@ static func _clean(raw: Dictionary) -> Dictionary:
 	# 段位（第 6 步）。同理 **-1 = 没打过排位**，不是 0 —— 0 是第一段。
 	# 默认成 0 会让每个新玩家在房间里顶着一个没打过的段位。
 	out["tier"] = int(raw.get("tier", -1))
+	# 棋盘皮肤（11-18）。可选字段，不在 MAX_TEXT 里：旧账号服务器的名片没有它。
+	out["skin"] = clean_skin_id(raw.get("skin", ""))
 	out["ai"] = _clean_ai_seats(raw.get("ai", []))
 	return out
 

@@ -146,7 +146,8 @@ async def save_races(player_id: uuid.UUID, races: list[str]) -> list[str]:
 #
 # 在「备战」页换，显示在对局里的摆放界面（docs/棋盘皮肤.md，database/021_prep_skin.sql）。
 #
-# 🔴 **不进名片**：只有自己看得见（游戏里没有看别人摆放界面的功能），战斗服务器用不到它。
+# 11-18 起**进名片**（字段 `skin`，只在不是默认时带）：对局里别人清路时，按那一路主人的皮肤
+# 演扫光（火 / 樱花 / 冰雪 / 夜荧光）。资格在 build_loadout 里和头像宠物一样再过一遍。
 #
 # 皮肤 id 不查目录：卖的皮肤一定在商城目录里（shop.requires_entitlement 管），不在目录里的
 # 一律当免费。手机上没有这张图就显示默认，所以存了一个手机不认识的 id 也不会出事。
@@ -206,6 +207,8 @@ class Loadout:
     # 段位（0..7）。**-1 = 没打过排位**，不是 0 —— 0 是第一段（黑铁），
     # 默认成 0 会让所有新玩家在房间里顶着一个没打过的段位。
     tier: int = -1
+    # 棋盘皮肤 id；空串 = 默认（名片上不带这个字段）。
+    prep_skin: str = ""
 
 
 async def build_loadout(player_id: uuid.UUID) -> Loadout:
@@ -217,8 +220,8 @@ async def build_loadout(player_id: uuid.UUID) -> Loadout:
     """
     async with db.pool().acquire() as conn:
         row = await conn.fetchrow(
-            "select friend_code, player_name, avatar, avatar_frame, showcase_pet, selected_races"
-            " from players where player_id = $1",
+            "select friend_code, player_name, avatar, avatar_frame, showcase_pet, selected_races,"
+            " prep_skin from players where player_id = $1",
             player_id,
         )
         # 段位（第 6 步）。**打过至少一局排位才带** —— 一局没打就顶着「黑铁」
@@ -248,6 +251,11 @@ async def build_loadout(player_id: uuid.UUID) -> Loadout:
     # The displayed default and the signed battle card must use the same lineup.
     races = effective_prep_races(row["selected_races"], owned)
 
+    # 棋盘皮肤：格式不对或没资格（退款收回）就当默认，不进名片。
+    skin = str(row.get("prep_skin") or "")
+    if skin and (skin == PREP_SKIN_DEFAULT or not _PREP_SKIN_ID.match(skin) or not entitled(skin)):
+        skin = ""
+
     return Loadout(
         player_id=str(player_id),
         friend_code=str(row["friend_code"] or ""),
@@ -259,6 +267,7 @@ async def build_loadout(player_id: uuid.UUID) -> Loadout:
         # 换算口径只有一处：ranked.tier_of。客户端和这里都不许再除一遍。
         tier=ranked.tier_of(int(rank_row["score"]))
             if rank_row is not None and int(rank_row["games"]) > 0 else -1,
+        prep_skin=skin,
     )
 
 
@@ -348,6 +357,9 @@ def card_payload(
     # 战斗服务器按名取、缺了不显示徽章。
     if loadout.tier >= 0:
         payload["tier"] = int(loadout.tier)
+    # 棋盘皮肤（11-18）：别人清路时按它演扫光。默认皮肤不带，省名片长度。
+    if loadout.prep_skin:
+        payload["skin"] = loadout.prep_skin
     if match_uid and team >= 0:
         # 会合键：六个人拿着同一个 match 各自连上去，谁先到谁建房，后到的进同一间。
         # 账号服务器说不出「去几号房」—— 房间是客户端连上去才建的（第 4a 步的发现）。

@@ -294,6 +294,8 @@ static func _replay_capture_frame(state: Dictionary, frames: Array, frame_events
 	var damage_frames: Array = state.get("_replay_slot_damage", [])
 	damage_frames.append(slot_damage)
 	state["_replay_slot_damage"] = damage_frames
+	_replay_track_lane_clears(state, tick)
+	_replay_track_kill_gold(state, tick)
 	var frame: Array = []
 	# Keep War Drum HUD data beside the frozen 13-column simulation frames.
 	# Only count changes are recorded, so timed expiry is visible in replays too.
@@ -361,6 +363,61 @@ static func _replay_capture_frame(state: Dictionary, frames: Array, frame_events
 	state["_replay_mother_count_events"] = mother_events
 	state["_replay_mother_count_last"] = mother_last
 
+# 清路排名（11-18，scripts/economy/BattleRankRewards.gd）：打怪 / Boss 局每条路「最后一次清完」的帧号。
+# 打怪局 = 这条路上的敌人（怪 + 对面送来的佣兵）全死；Boss 局 = 这条路的 Boss 死了（双生要两只都死）。
+# 只记开场就有目标、且自己这边有棋子的路：空座位那条路没人打，不能白拿名次。
+# 「最后一次」：Boss 复活 / 后续再出现活敌人就作废重记，最终留下的才是真正清完的那一刻。
+static func _replay_track_lane_clears(state: Dictionary, tick: int) -> void:
+	var kind := str(state.get("kind", ""))
+	if kind != "pve" and kind != "boss":
+		return
+	var slots: Array = state.get("ally_slots", [])
+	if slots.size() < 3:
+		return
+	var ticks: Array = state.get("_replay_lane_clear_ticks", [-1, -1, -1, -1, -1, -1])
+	for lane in 3:
+		var slot := int(slots[lane])
+		if slot < 0 or slot >= 6:
+			continue
+		var has_own := false
+		for f: Dictionary in state.get("player", []):
+			if int(f.get("lane", -1)) == lane:
+				has_own = true
+				break
+		var has_target := false
+		var living := false
+		for f: Dictionary in state.get("enemy", []):
+			if int(f.get("lane", -1)) != lane:
+				continue
+			if kind == "boss" and _stat_group(f) != "boss":
+				continue
+			has_target = true
+			if bool(f.get("alive", false)):
+				living = true
+				break
+		if not has_own or not has_target or living:
+			ticks[slot] = -1
+		elif int(ticks[slot]) < 0:
+			ticks[slot] = tick
+	state["_replay_lane_clear_ticks"] = ticks
+
+
+# 钱袋（11-18，effects/runtime/presentation/BattlePurse.gd）：每个座位击杀金的累计值，只记变化
+# [[帧号, 座位, 累计]]。和结算用的 kill_gold_by_slot 是同一个账本，客户端照着播，不用自己重算公式。
+static func _replay_track_kill_gold(state: Dictionary, tick: int) -> void:
+	var by_slot: Dictionary = state.get("kill_gold_by_slot", {})
+	var last: Dictionary = state.get("_replay_kill_gold_last", {})
+	var events: Array = state.get("_replay_kill_gold_events", [])
+	for key in by_slot:
+		var slot := int(key)
+		var total := int(by_slot[key])
+		if total != int(last.get(slot, 0)):
+			events.append([tick, slot, total])
+			last[slot] = total
+	state["_replay_kill_gold_last"] = last
+	state["_replay_kill_gold_events"] = events
+
+
 static func _team_replay_payload(state: Dictionary, roster: Dictionary, frames: Array, frame_events: Array = []) -> Dictionary:
 	if frames.is_empty() and bool(state.get("finished", false)):
 		# An empty side is an immediate result, not a failed replay transfer.
@@ -370,6 +427,8 @@ static func _team_replay_payload(state: Dictionary, roster: Dictionary, frames: 
 	replay_result["team_heal_rival"] = int(state.get("team_heal_rival", 0))
 	var payload := {"kind": str(state.get("kind", "pve")), "roster": roster, "frames": frames, "frame_events": frame_events, "result": replay_result}
 	payload["frame_slot_damage"] = state.get("_replay_slot_damage", [])
+	payload["lane_clear_ticks"] = state.get("_replay_lane_clear_ticks", [-1, -1, -1, -1, -1, -1])
+	payload["slot_kill_gold_events"] = state.get("_replay_kill_gold_events", [])
 	var drum_events: Array = state.get("_replay_drum_stack_events", [])
 	if not drum_events.is_empty():
 		payload["crimson_drum_stack_events"] = drum_events

@@ -52,7 +52,8 @@ static func warm_skin_textures(kind: String) -> void:
 
 
 ## sweep：{from: Vector3, to: Vector3, kind: String}，VFX 根节点坐标。不给就只有原来那套金光。
-func play_clear(origin: Vector3, bounds: Rect2, cheer_points: Array = [], sweep: Dictionary = {}) -> void:
+## pillar = false：11.18 别人清路的轻量版，只要地面光波 + 光幕 + 皮肤扫光，不要击杀点光柱。
+func play_clear(origin: Vector3, bounds: Rect2, cheer_points: Array = [], sweep: Dictionary = {}, pillar := true) -> void:
 	begin()
 	var has_sweep: bool = sweep.get("from") is Vector3 and sweep.get("to") is Vector3
 	_along_x = false
@@ -81,7 +82,8 @@ func play_clear(origin: Vector3, bounds: Rect2, cheer_points: Array = [], sweep:
 	tween.tween_property(material, "shader_parameter/progress", 1.0, 0.68)
 	var strength := 1.0 if PRESENTATION.flash_allowed() else 0.45
 	_spawn_curtains(origin, bounds, strength)
-	_spawn_pillar(origin, strength)
+	if pillar:
+		_spawn_pillar(origin, strength)
 	for point in cheer_points:
 		if point is Vector3:
 			_spawn_cheer_ring(point, strength)

@@ -205,17 +205,7 @@ func _case_battle_replay_uses_full_canonical_names() -> void:
 	_h.expect(unit_node.tooltip_text == "Priestess", "battle_tooltip_name_truncated",
 		"Battle hover tooltip is not the full canonical Priestess name")
 
-	var top_atk := RichTextLabel.new()
-	renderer.set("_top5_atk_lbl", top_atk)
-	renderer.set("_top5_next_refresh_msec", 0)
-	renderer.set("_state", {"unit_stats": {}})
-	renderer.call("_refresh_top5_atk", [divine, priestess])
-	_h.expect(top_atk.text.contains("Godhand") and top_atk.text.contains("Priestess"),
-		"battle_top_atk_name_truncated", "Top ATK does not contain both full canonical names")
-	_h.expect(not top_atk.text.contains("Divine") and not top_atk.text.contains("High Pr"),
-		"battle_top_atk_old_name_survived", "Top ATK still contains old replay names")
 	unit_node.free()
-	top_atk.free()
 	renderer.free()
 
 

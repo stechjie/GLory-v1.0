@@ -2201,6 +2201,7 @@ func cue_release_corpses() -> void:
 			block.call("stop_vfx", true)
 	_death_tail_blocks.clear()
 	_lane_clear_played = false
+	_other_lane_clears.clear()
 	_reset_treasure_set_presentation()
 	_lane_clear_presented = false
 	_lane_clear_pending_uid = ""
@@ -2224,6 +2225,9 @@ func cue_play_death(victim_uid: String, duration_sec: float = 0.35, killer_uid: 
 	if actor == null or not is_instance_valid(actor):
 		_release_dying_unit_node(victim_uid)
 		return false
+	# 11.18 别人那一路清了：轻量版，当场演（凤凰复活不是真死，不算）。
+	if not _is_phoenix_revived_uid(victim_uid):
+		_maybe_play_other_lane_clear(victim_uid, actor)
 	if _is_fresh_mother_execute_victim(victim_uid):
 		_play_mother_execute_death(victim_uid, actor)
 		return true
@@ -2988,36 +2992,11 @@ func _spawn_lane_clear_feedback(actor: Node3D) -> void:
 			or not is_instance_valid(_battle_3d_vfx_root):
 		feedback.call("show_lane_clear")
 		return
-	var visual_min := _battle_visual_min()
-	var visual_max := _battle_visual_max()
-	# 11.14：第 21 回合战场打横，三路是上中下三条横带（BattleSimulator._apply_final_round_left_right_layout），
-	# 本路范围要按横带算；以前一直按竖条算，光波 / 光幕 / 字幕都框错了地方。
-	var final_round := _battlefield_kind() == "final"
-	var lane_min: Vector2
-	var lane_max: Vector2
-	# 皮肤扫光的起点 / 终点（模拟坐标）：从我方这头扫到敌方那头，跟 PlayerLaneWave 判「我方在哪头」同一套。
-	var sweep_from_sim: Vector2
-	var sweep_to_sim: Vector2
-	if final_round:
-		var lane_h := BattleSimShared.FINAL_ARENA_H / 3.0
-		lane_min = Vector2(visual_min.x, maxf(visual_min.y, lane * lane_h))
-		lane_max = Vector2(visual_max.x, minf(visual_max.y, (lane + 1) * lane_h))
-		var mid_y := (lane_min.y + lane_max.y) * 0.5
-		sweep_from_sim = Vector2(lane_max.x if _color_flip else lane_min.x, mid_y)
-		sweep_to_sim = Vector2(lane_min.x if _color_flip else lane_max.x, mid_y)
-	else:
-		var band := BattleSimShared.lane_band_x(lane)
-		lane_min = Vector2(band.x, visual_min.y)
-		lane_max = Vector2(band.y, visual_max.y)
-		var mid_x := (band.x + band.y) * 0.5
-		sweep_from_sim = Vector2(mid_x, lane_min.y if _color_flip else lane_max.y)
-		sweep_to_sim = Vector2(mid_x, lane_max.y if _color_flip else lane_min.y)
-	var corners: Array[Vector3] = []
-	for sim in [lane_min, Vector2(lane_max.x, lane_min.y), Vector2(lane_min.x, lane_max.y), lane_max]:
-		corners.append(_sim_to_world_pos(sim))
-	var a := _battle_3d_vfx_root.to_local(corners[0])
-	var b := _battle_3d_vfx_root.to_local(corners[3])
-	var bounds := Rect2(Vector2(minf(a.x,b.x),minf(a.z,b.z)),Vector2(absf(b.x-a.x),absf(b.z-a.z)))
+	# 皮肤扫光从我方这头扫到敌方那头，跟 PlayerLaneWave 判「我方在哪头」同一套（_color_flip = 我在 enemy 那边）。
+	var geo := _lane_clear_geometry(lane, "enemy" if _color_flip else "player")
+	var final_round: bool = geo["final_round"]
+	var corners: Array[Vector3] = geo["corners"]
+	var bounds: Rect2 = geo["bounds"]
 	# 本路在屏幕上的范围：四个角投影后取外接框。字幕和推近轴心都对准它。
 	var screen_rect := Rect2(_world_to_arena_point(corners[0]), Vector2.ZERO)
 	for corner in corners:
@@ -3037,10 +3016,129 @@ func _spawn_lane_clear_feedback(actor: Node3D) -> void:
 	if block != null:
 		_death_tail_blocks.append(weakref(block))
 		block.call("play_clear", _battle_3d_vfx_root.to_local(actor.global_position), bounds, cheer_points, {
-			"from": _battle_3d_vfx_root.to_local(_sim_to_world_pos(sweep_from_sim)),
-			"to": _battle_3d_vfx_root.to_local(_sim_to_world_pos(sweep_to_sim)),
-			"kind": _PREP_SKIN.refresh_fx(),
+			"from": geo["from"], "to": geo["to"], "kind": _PREP_SKIN.refresh_fx(),
 		})
+
+
+# 一路的清场范围和扫光起止。side = 清这一路的那一边（"player" / "enemy"），扫光从那一边的底线扫向对面。
+# 模拟坐标里 player 在 y 大的那头（决赛横路在 x 小的那头）。bounds / from / to 是 3D 特效根节点坐标。
+func _lane_clear_geometry(lane: int, side: String) -> Dictionary:
+	var visual_min := _battle_visual_min()
+	var visual_max := _battle_visual_max()
+	# 11.14：第 21 回合战场打横，三路是上中下三条横带（BattleSimulator._apply_final_round_left_right_layout），
+	# 本路范围要按横带算；以前一直按竖条算，光波 / 光幕 / 字幕都框错了地方。
+	var final_round := _battlefield_kind() == "final"
+	var from_enemy := side == "enemy"
+	var lane_min: Vector2
+	var lane_max: Vector2
+	var sweep_from_sim: Vector2
+	var sweep_to_sim: Vector2
+	if final_round:
+		var lane_h := BattleSimShared.FINAL_ARENA_H / 3.0
+		lane_min = Vector2(visual_min.x, maxf(visual_min.y, lane * lane_h))
+		lane_max = Vector2(visual_max.x, minf(visual_max.y, (lane + 1) * lane_h))
+		var mid_y := (lane_min.y + lane_max.y) * 0.5
+		sweep_from_sim = Vector2(lane_max.x if from_enemy else lane_min.x, mid_y)
+		sweep_to_sim = Vector2(lane_min.x if from_enemy else lane_max.x, mid_y)
+	else:
+		var band := BattleSimShared.lane_band_x(lane)
+		lane_min = Vector2(band.x, visual_min.y)
+		lane_max = Vector2(band.y, visual_max.y)
+		var mid_x := (band.x + band.y) * 0.5
+		sweep_from_sim = Vector2(mid_x, lane_min.y if from_enemy else lane_max.y)
+		sweep_to_sim = Vector2(mid_x, lane_max.y if from_enemy else lane_min.y)
+	var corners: Array[Vector3] = []
+	for sim in [lane_min, Vector2(lane_max.x, lane_min.y), Vector2(lane_min.x, lane_max.y), lane_max]:
+		corners.append(_sim_to_world_pos(sim))
+	var a := _battle_3d_vfx_root.to_local(corners[0])
+	var b := _battle_3d_vfx_root.to_local(corners[3])
+	return {
+		"final_round": final_round,
+		"corners": corners,
+		"bounds": Rect2(Vector2(minf(a.x, b.x), minf(a.z, b.z)), Vector2(absf(b.x - a.x), absf(b.z - a.z))),
+		"from": _battle_3d_vfx_root.to_local(_sim_to_world_pos(sweep_from_sim)),
+		"to": _battle_3d_vfx_root.to_local(_sim_to_world_pos(sweep_to_sim)),
+	}
+
+
+# --- 11.18 别人的清路 -------------------------------------------------------------
+#
+# 用户定：队友和对面清路都显示；只演地面光波 + 光幕 + 皮肤扫光（不定格、不震屏、不推近、
+# 不出字幕、没有光柱和欢呼金环）；皮肤按**这一路原主人**（棋子出生在这一路的那个座位），
+# 不按补最后一刀的人 —— 隔断打开后邻居可能过来帮忙收尾。
+# 本地玩家自己那一路仍走原来那套（_is_local_lane_clear / _spawn_lane_clear_feedback）。
+#
+# 判据和 _is_local_lane_clear 同一个口径：这一路对面那边的单位全死，而且死亡 cue 还在排队的
+# 尸体（_cue_corpses / _pending_death_claim_tokens）也算没死完，不然倒数第二个会抢走清场。
+# 每一边每一路每回合只演一次（_other_lane_clears，reset 时清）。
+var _other_lane_clears: Dictionary = {}
+
+
+func _maybe_play_other_lane_clear(victim_uid: String, actor: Node3D) -> void:
+	if not is_instance_valid(actor) or not actor.is_inside_tree() or not is_instance_valid(_battle_3d_vfx_root):
+		return
+	var victim_side := ""
+	var lane := -1
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if raw is Dictionary and str(raw.get("uid", "")) == victim_uid:
+				victim_side = side
+				lane = int(raw.get("lane", -1))
+				break
+		if not victim_side.is_empty():
+			break
+	if victim_side.is_empty() or lane < 0 or lane > 2:
+		return
+	var clear_side := "enemy" if victim_side == "player" else "player"
+	var key := "%s:%d" % [clear_side, lane]
+	if _other_lane_clears.has(key):
+		return
+	for raw in _state.get(victim_side, []):
+		if not (raw is Dictionary) or int(raw.get("lane", -1)) != lane:
+			continue
+		var uid := str(raw.get("uid", ""))
+		if uid == victim_uid:
+			continue
+		if bool(raw.get("alive", false)) or _cue_corpses.has(uid) or _pending_death_claim_tokens.has(uid):
+			return
+	# 这一路的主人：清路那一边出生在这一路的棋子属于哪个座位（取多数）。
+	# 没有座位的（怪物那边）不演；本地玩家自己的路交给原来那套。
+	var owners: Dictionary = {}
+	for raw in _state.get(clear_side, []):
+		if not (raw is Dictionary) or int(raw.get("lane", -1)) != lane:
+			continue
+		if _owned_by_local_player(raw):
+			return
+		var owner := int(raw.get("owner_slot", -1))
+		if owner >= 0:
+			owners[owner] = int(owners.get(owner, 0)) + 1
+	if owners.is_empty():
+		return
+	var owner_slot := -1
+	for slot in owners:
+		if owner_slot < 0 or int(owners[slot]) > int(owners[owner_slot]):
+			owner_slot = int(slot)
+	_other_lane_clears[key] = true
+	var geo := _lane_clear_geometry(lane, clear_side)
+	var block := VFXBlockRoot.spawn_block(preload("res://effects/vfx3d/modules/VFXLaneClearBurst3D.gd"), _battle_3d_vfx_root, true)
+	if block != null:
+		_death_tail_blocks.append(weakref(block))
+		block.call("play_clear", _battle_3d_vfx_root.to_local(actor.global_position), geo["bounds"], [], {
+			"from": geo["from"], "to": geo["to"], "kind": _seat_refresh_fx(owner_slot),
+		}, false)
+
+
+# 某个座位的清路扫光种类：真人用出战名片带来的棋盘皮肤（NetworkService.team_seat_profiles[slot].prep_skin），
+# AI 用服务器随机、整局不变的那张（NetworkService.team_seat_ai_skins）。
+# 旧服务器、这个包里没有的皮肤 → 默认（火）。
+func _seat_refresh_fx(slot: int) -> String:
+	var profiles: Dictionary = NetworkService.team_seat_profiles
+	var profile: Variant = profiles.get(slot, profiles.get(str(slot), {}))
+	var skin := str((profile as Dictionary).get("prep_skin", "")) if profile is Dictionary else ""
+	if skin.is_empty():
+		var ai_skins: Dictionary = NetworkService.team_seat_ai_skins
+		skin = str(ai_skins.get(slot, ai_skins.get(str(slot), "")))
+	return _PREP_SKIN.refresh_fx_for(skin if not skin.is_empty() else _PREP_SKIN.DEFAULT_ID)
 
 
 # 我方在本地那一路还活着的棋子（含队友借位的友军不算 —— 本路只有自己的棋子）。

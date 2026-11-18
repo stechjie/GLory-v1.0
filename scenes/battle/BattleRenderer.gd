@@ -67,7 +67,6 @@ var _hp_fill_by_id: Dictionary = {}
 # 从 _unit_nodes 里搬出来才不会被 _sync_unit_nodes 的剪枝当场释放 ——
 # 和 3D 侧的 _cue_corpses 是同一个套路。
 var _dying_unit_nodes: Dictionary = {}
-var _top5_next_refresh_msec := 0
 var _formation_allies_hidden_for_intro := false
 
 func _fighter_display_name(f: Dictionary) -> String:
@@ -166,7 +165,6 @@ func _refresh_visuals() -> void:
 	_update_3v3_dividers()
 	_sync_battle_readability_static_geometry()
 	_update_battle_readability_focus()
-	_refresh_top5_atk(living)
 	_refresh_damage_counter()
 	if _summary_lbl != null and _summary_lbl.visible:
 		_refresh_summary()
@@ -210,36 +208,8 @@ func _refresh_frenzy_hud() -> void:
 			_frenzy_lbl.text = tr("battle_sudden_death")
 			_frenzy_lbl.add_theme_color_override("font_color", Color(1.0, 0.18, 0.14))
 
-# (8) Left-middle leaderboard: top 5 living units by ATK, colored by owner/team,
-# with the damage each has dealt so far.
-func _refresh_top5_atk(living: Array) -> void:
-	if _top5_atk_lbl == null:
-		return
-	# Rebuilding BBCode text re-parses the whole label; 4x/sec is plenty.
-	var now := Time.get_ticks_msec()
-	if now < _top5_next_refresh_msec:
-		return
-	_top5_next_refresh_msec = now + 250
-	var ranked := living.duplicate()
-	ranked.sort_custom(func(a, b): return _fighter_atk(a) > _fighter_atk(b))
-	var lines: Array[String] = []
-	lines.append("[b]%s[/b]" % tr("top_atk"))
-	var shown := mini(5, ranked.size())
-	for i in shown:
-		var f: Dictionary = ranked[i]
-		var col := _fighter_display_color(f)
-		var name_txt := _fighter_display_name(f)
-		lines.append("[color=#%s]%s  %s %d  %s %d[/color]" % [
-			col.to_html(false),
-			name_txt,
-			tr("abbr_atk"), _fighter_atk(f),
-			tr("abbr_dmg"), _fighter_damage_dealt(f),
-		])
-	var text := "\n".join(lines)
-	# Assigning identical text still re-parses the BBCode — skip it.
-	if _top5_atk_lbl.text != text:
-		_top5_atk_lbl.text = text
-
+# 伤害前三木牌榜（11-18）取代了原来的「攻击力前 5」文字榜，见 scenes/battle/BattleRankHud.gd。
+# _fighter_atk 留着：officetest 的单位面板还在用。
 func _fighter_atk(f: Dictionary) -> int:
 	return int(f.get("atk", f.get("def", {}).get("atk", 0)))
 
@@ -2227,6 +2197,7 @@ func _refresh_damage_counter() -> void:
 		var elemental: Dictionary = _state.get("element_damage_by_slot", {})
 		total += int(elemental.get(local_slot, elemental.get(str(local_slot), 0)))
 	var hud: Control = call("_ensure_combat_feedback")
-	hud.visible = found
+	# PvP 左边是伤害前三榜（BattleRankHud），自己没棋子也要能看到别人排名。
+	hud.visible = found or not bool(hud.get("single_plate"))
 	if found:
 		hud.call("show_damage", total, not bool(_state.get("presentation_damage_silent", false)), GameState.round_index)

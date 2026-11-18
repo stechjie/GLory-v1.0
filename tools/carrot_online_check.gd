@@ -51,7 +51,8 @@ const MY_SLOT := 0
 # 2026-10-22 跟到 44（观战席位：加 10 条观战 RPC、快照多一个只显示用的备战区；经济契约没变，指纹不动）。
 # 2026-11-07 跟到 46（46 = 队友棋盘三条 RPC）。跟的时候契约指纹已从 06Ci0EyHbMMODjyz 变成
 # jMYiPaRYzsP0iRdS —— 46 这次没碰经济动作和状态字段，是 44 之后某次改动带上去、钉子当时落后没报。
-const PINNED_PROTOCOL := 46
+# 2026-11-18 跟到 47（战斗排名奖励：结算多一步、回放多两个字段，没加 RPC）。
+const PINNED_PROTOCOL := 47
 const PINNED_CONTRACT := "jMYiPaRYzsP0iRdS"
 
 var _h: CheckHarness
