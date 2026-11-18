@@ -15,7 +15,11 @@ void vertex() {
 		vec2 pixel_offset = (expanded_clip.xy / expanded_clip.w - original_clip.xy / original_clip.w)
 				* VIEWPORT_SIZE * 0.5;
 		float pixels = length(pixel_offset);
-		pixel_offset *= min(1.0, outline_max_pixels / max(pixels, 0.0001));
+		// The cap is tuned on the design canvas, which is 900 high on a 16:9
+		// desktop window. Views rendered at native resolution (Budgeted3DView)
+		// scale it up, so the line keeps its on-screen width.
+		float max_pixels = outline_max_pixels * max(1.0, VIEWPORT_SIZE.y / 900.0);
+		pixel_offset *= min(1.0, max_pixels / max(pixels, 0.0001));
 		original_clip.xy += pixel_offset * 2.0 / VIEWPORT_SIZE * original_clip.w;
 	}
 	// Keep the original surface depth, so the shell does not move through
