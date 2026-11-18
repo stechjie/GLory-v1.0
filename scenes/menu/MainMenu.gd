@@ -92,15 +92,15 @@ const TEX_COIN_ICON := preload("res://assets/ui/main_menu_v2/coin_icon.png")
 const TEX_DIAMOND_ICON := preload("res://assets/ui/main_menu_v2/diamond_icon.png")
 const SHINE_SHADER := preload("res://shaders/main_menu_shine.gdshader")
 # 11.10 资料卡：名牌卷轴（head exp bar）画在圆环右边，圆环压住它左端。
-const PROFILE_PLATE_POS := Vector2(150, 46)
-const PROFILE_PLATE_SIZE := Vector2(375, 117)
+const PROFILE_PLATE_POS := Vector2(150, 36)
+const PROFILE_PLATE_SIZE := Vector2(375, 140)
 # 新圆环（head.png 裁边后 420x365）的透明洞：直径 289px、洞心在图的 (205.5, 181)。
 # 换了那张图就要重新量（PIL 从图中心找透明连通块即可）。
 const PROFILE_RING_HOLE_FRAC := 289.0 / 420.0
 const PROFILE_RING_HOLE_CENTER := Vector2(205.5 / 420.0, 181.0 / 365.0)
 const PROFILE_PLACEHOLDER_COLOR := Color("4a3220")
-const PROFILE_XP_POS := Vector2(250, 105)
-const PROFILE_XP_SIZE := Vector2(174, 31)
+const PROFILE_XP_POS := Vector2(237, 103)
+const PROFILE_XP_SIZE := Vector2(200, 28)
 const SHOP_POS := Vector2(1412, 132)
 const SHOP_SIZE := Vector2(232, 283)
 const NEWS_POS := Vector2(1412, 420)
@@ -336,6 +336,9 @@ func _build() -> void:
 
 	# 左上角资料卡：名牌卷轴垫底，圆环压在它左端。
 	var plate := _add_texture(TEX_PROFILE_PANEL, PROFILE_PLATE_POS, PROFILE_PLATE_SIZE, "left")
+	# 卷轴上下缘弯曲，增加纸面高度以容纳昵称、经验条及各自的内边距。
+	# KEEP_ASPECT 会把新增高度变成留白，必须让纸面随新的尺寸一起拉伸。
+	plate.stretch_mode = TextureRect.STRETCH_SCALE
 	# 新圆环中间是透明的洞。按「洞的直径 = 默认圆盘内孔（_profile_hole_target）、
 	# 洞心 = 圆盘中心」反推画多大、画在哪 —— 这样自定义框的那套几何（按旧默认圆盘
 	# 内孔反推）完全不用动，戴不戴框头像都一样大。
