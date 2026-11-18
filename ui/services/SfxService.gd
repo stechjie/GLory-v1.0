@@ -354,7 +354,7 @@ const CUES := {
 	CUE_DEATH_SHATTER_HEAVY: "res://assets/audio/sfx/battle/death_shatter_heavy.wav",
 	CUE_DEATH_FALL: "res://assets/audio/sfx/battle/death_fall.wav",
 	CUE_DEATH_LANE_CLEAR: "res://assets/audio/sfx/battle/death_lane_clear.wav",
-	CUE_MONSTER_KILL_REWARD: "res://assets/audio/sfx/battle/monster_coin_crisp.wav",
+	CUE_MONSTER_KILL_REWARD: "res://assets/audio/sfx/battle/monster_coin_stack.wav",
 	CUE_LANE_CLEAR_ACCENT: "res://assets/audio/sfx/battle/lane_clear_accent.wav",
 	CUE_HUMAN_KING_REWARD: "res://assets/audio/sfx/battle/human_king_reward.mp3",
 	CUE_STAR4_SWORDSMAN_SKILL: "res://assets/audio/sfx/battle/star4_swordsman_skill.mp3",
