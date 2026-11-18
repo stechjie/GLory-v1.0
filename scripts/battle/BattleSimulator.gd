@@ -1405,6 +1405,10 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 		# opening_cd 把关，不会一到 0 秒就隔着半张地图开。
 		if not bool(d.get("skill_global", false)) and not _skill_target_in_range(caster, opponents, bodies):
 			continue
+		# 11.18 偷袭者（recast_on_target_death）：没有计时冷却，开场直接突袭；
+		# 上一次突袭的目标还活着就不再放，目标一死（不论被谁打死）立刻突袭下一个。
+		if sid == "blink_low_def_backline" and bool(d.get("recast_on_target_death", false)) and _blink_target_still_alive(caster, opponents):
+			continue
 		var old_ready := float(caster.get("skill_ready", 0.0))
 		CrimsonRuneService.begin_action(caster, state)
 		DamageService.begin_stat_context(state, caster)
@@ -1458,8 +1462,17 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 				BattleSimSkills._skill_black_hole(caster, opponents, d, state)
 				caster.skill_ready = float(state.elapsed) + float(d.get("skill_cd", 8.0))
 			"blink_low_def_backline":
-				var killed := BattleSimSkills._skill_blink_low_def_backline(caster, casters, opponents, d, state)
-				caster.skill_ready = float(state.elapsed) if killed and bool(d.get("refresh_on_kill", false)) else float(state.elapsed) + float(d.get("skill_cd", 5.0))
+				if bool(d.get("recast_on_target_death", false)):
+					# 无冷却：能否再放只看 blink_target_uid 指向的目标是否还活着（见上面的判定）。
+					# 真的突袭到人时把 skill_ready 抬一个 tick，给表现层一个施法上升沿；
+					# 场上没有可突袭的目标时不动，下一 tick 再找。
+					caster.erase("blink_target_uid")
+					BattleSimSkills._skill_blink_low_def_backline(caster, casters, opponents, d, state)
+					if caster.has("blink_target_uid"):
+						caster.skill_ready = float(state.elapsed) + 0.1
+				else:
+					var killed := BattleSimSkills._skill_blink_low_def_backline(caster, casters, opponents, d, state)
+					caster.skill_ready = float(state.elapsed) if killed and bool(d.get("refresh_on_kill", false)) else float(state.elapsed) + float(d.get("skill_cd", 5.0))
 			"shared_hp_link":
 				_skill_shared_hp_link(caster, opponents, d, state)
 				caster.skill_ready = float(state.elapsed) + 1.0
@@ -1711,6 +1724,17 @@ static func _convert_link_target_to_caster_team(caster: Dictionary, target: Dict
 	opponents.erase(target)
 	target.team = caster_team
 	to_team.append(target)
+
+
+static func _blink_target_still_alive(caster: Dictionary, opponents: Array) -> bool:
+	var uid := str(caster.get("blink_target_uid", ""))
+	if uid.is_empty():
+		return false
+	for o: Dictionary in opponents:
+		if str(o.get("uid", "")) == uid:
+			# 目标变成打不到的状态（被转化、不可选中）也算"没了"，否则偷袭者会永远卡住。
+			return bool(o.get("alive", false)) and _can_target(caster, o, opponents)
+	return false
 
 
 static func _lowest_def_backline(caster: Dictionary, opponents: Array) -> Dictionary:

@@ -288,15 +288,15 @@ func _check_lantern() -> void:
 			break
 	_h.expect(not unit_def.is_empty() and bool(unit_def.get("skill_global", false))
 		and not unit_def.has("damage_atk_pct")
-		and is_equal_approx(float(unit_def.get("silence_duration", 0.0)), 3.0)
-		and is_equal_approx(float(unit_def.get("skill_cd", 0.0)), 10.0),
+		and is_equal_approx(float(unit_def.get("silence_duration", 0.0)), 2.1)
+		and is_equal_approx(float(unit_def.get("skill_cd", 0.0)), 5.9),
 		"lantern_base_data", "Lantern base skill data is wrong")
 	if unit_def.is_empty():
 		return
 	var four_def := UnitFactory.apply_star_stats(unit_def, 4)
 	_h.expect(not four_def.has("damage_atk_pct")
-		and is_equal_approx(float(four_def.get("silence_duration", 0.0)), 4.0)
-		and is_equal_approx(float(four_def.get("skill_cd", 0.0)), 9.0),
+		and is_equal_approx(float(four_def.get("silence_duration", 0.0)), 2.9)
+		and is_equal_approx(float(four_def.get("skill_cd", 0.0)), 5.9),
 		"lantern_star4_data", "Lantern fourth-star skill data is wrong")
 
 	var old_team_mode := GameState.team_mode
@@ -332,7 +332,7 @@ func _check_lantern() -> void:
 	next_lane.pos = Vector2(2000, 0)
 	var state := _state([player_lantern, player_ally], [enemy_lantern, enemy_ally, next_lane], 0.0, 0)
 	BattleSimulator._tick_opening_lanterns(state)
-	_h.expect(bool(enemy_lantern.alive) and is_equal_approx(float(enemy_lantern.skill_ready), 10.0)
+	_h.expect(bool(enemy_lantern.alive) and is_equal_approx(float(enemy_lantern.skill_ready), 5.9)
 		and StatusEffectService.has_status(enemy_lantern, "silence")
 		and StatusEffectService.has_status(player_lantern, "silence")
 		and StatusEffectService.has_status(player_ally, "silence"),
@@ -342,15 +342,15 @@ func _check_lantern() -> void:
 		and int(next_lane.hp) == 1000,
 		"lantern_own_lane_first", "The opening cast must hit every enemy in its lane and cannot spill into another lane")
 	_h.expect(is_equal_approx(StatusEffectService.attack_speed_multiplier(player_ally), 0.7)
-		and is_equal_approx(float(player_ally.statuses.silence.remaining), 3.0),
-		"lantern_silence_slow", "Lantern silence must reduce attack speed by 30% for 3.0 seconds")
+		and is_equal_approx(float(player_ally.statuses.silence.remaining), 2.1),
+		"lantern_silence_slow", "Lantern silence must reduce attack speed by 30% for 2.1 seconds")
 	StatusEffectService.add_status(player_ally, "silence", 5.0, {})
 	StatusEffectService.tick(player_ally, 3.0)
 	_h.expect(StatusEffectService.has_status(player_ally, "silence")
 		and is_equal_approx(StatusEffectService.attack_speed_multiplier(player_ally), 1.0),
 		"lantern_slow_independent", "A different silence may extend control but not Lantern's attack-speed penalty")
 	BattleSimulator._tick_opening_lanterns(state)
-	_h.expect(is_equal_approx(float(player_lantern.skill_ready), 10.0),
+	_h.expect(is_equal_approx(float(player_lantern.skill_ready), 5.9),
 		"lantern_opening_once", "Opening Lantern cast must not repeat")
 
 	StatusEffectService.tick(player_lantern, 3.0)
@@ -359,7 +359,7 @@ func _check_lantern() -> void:
 	state.elapsed = 10.0
 	BattleSimulator._tick_skills([player_lantern], state.enemy, state)
 	_h.expect(int(next_lane.hp) == 1000 and StatusEffectService.has_status(next_lane, "silence")
-		and is_equal_approx(float(player_lantern.skill_ready), 20.0),
+		and is_equal_approx(float(player_lantern.skill_ready), 15.9),
 		"lantern_next_cast_cross_lane", "The next cast must reach another lane after the caster's lane is cleared")
 
 	var four := _fighter("lattern_four")
@@ -370,9 +370,9 @@ func _check_lantern() -> void:
 	four_target.lane = 0
 	state = _state([four], [four_target], 0.0, 0)
 	BattleSimulator._tick_opening_lanterns(state)
-	_h.expect(int(four_target.hp) == 1000 and is_equal_approx(float(four_target.statuses.silence.remaining), 4.0)
-		and is_equal_approx(float(four.skill_ready), 9.0),
-		"lantern_star4_opening", "Fourth-star opening must deal no damage and use the 4.0-second silence and 9.0-second cooldown")
+	_h.expect(int(four_target.hp) == 1000 and is_equal_approx(float(four_target.statuses.silence.remaining), 2.9)
+		and is_equal_approx(float(four.skill_ready), 5.9),
+		"lantern_star4_opening", "Fourth-star opening must deal no damage and use the 2.9-second silence and 5.9-second cooldown")
 	var boss := _fighter("boss_lantern_target", "enemy")
 	boss.lane = 0
 	state = _state([four], [boss], 0.0, 0)

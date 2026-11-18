@@ -300,6 +300,7 @@ static func _skill_blink_low_def_backline(caster: Dictionary, allies: Array, opp
 	if target.is_empty():
 		return false
 	_mark_vfx_target(caster, target)
+	caster.blink_target_uid = str(target.get("uid", ""))
 	var side := -1.0 if str(caster.get("team", "")) == "player" else 1.0
 	caster.pos = target.pos + Vector2(28.0 * side, 0.0)
 	var was_alive := bool(target.get("alive", false))

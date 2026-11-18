@@ -94,35 +94,35 @@
       "cost": 30,
       "skill_id": "fear",
       "skill_name_cn": "恐惧",
-      "skill_cn_1to3": "恐惧（冷却6.0秒）：使最近敌人逃跑2.0秒。",
-      "skill_cn_4": "恐惧（冷却4.0秒）：使最近敌人逃跑3.0秒。",
-      "skill_en_1to3": "Fear (CD 6.0s): Make the nearest enemy flee for 2.0s.",
-      "skill_raw_params": "fear_sec = 2\nskill_cd = 6",
-      "star4_changes": "fear_sec: 2 → 3\nskill_cd: 6 → 4",
+      "skill_cn_1to3": "恐惧（冷却6.0秒）：使最近敌人逃跑2.3秒。",
+      "skill_cn_4": "恐惧（冷却4.0秒）：使最近敌人逃跑3.3秒。",
+      "skill_en_1to3": "Fear (CD 6.0s): Make the nearest enemy flee for 2.3s.",
+      "skill_raw_params": "fear_sec = 2.3\nskill_cd = 6",
+      "star4_changes": "fear_sec: 2.3 → 3.3\nskill_cd: 6 → 4",
       "stats": {
         "1": {
-          "hp": 840,
+          "hp": 1080,
           "atk": 55,
           "defense": 7,
-          "mres": 9
+          "mres": 13
         },
         "2": {
-          "hp": 1260,
+          "hp": 1620,
           "atk": 83,
           "defense": 11,
-          "mres": 14
+          "mres": 20
         },
         "3": {
-          "hp": 2520,
+          "hp": 3240,
           "atk": 165,
           "defense": 21,
-          "mres": 27
+          "mres": 39
         },
         "4": {
-          "hp": 2898,
+          "hp": 3726,
           "atk": 190,
           "defense": 24,
-          "mres": 31
+          "mres": 45
         }
       }
     },
@@ -174,10 +174,10 @@
       "cost": 30,
       "skill_id": "blink_low_def_backline",
       "skill_name_cn": "暗影突袭",
-      "skill_cn_1to3": "暗影突袭（冷却时间5.0秒）：瞬移到低防后排敌人身边，造成自身攻击250%伤害；击杀后刷新冷却。",
-      "skill_cn_4": "暗影突袭（冷却时间5.0秒）：瞬移到低防后排敌人身边，造成自身攻击500%伤害；击杀后刷新冷却。",
-      "skill_en_1to3": "Shadow Ambush: Blink to the lowest-DEF backline enemy and deal 250% ATK damage. Cooldown resets on kill.",
-      "skill_raw_params": "damage_atk_pct = 2.5\nrefresh_on_kill = true",
+      "skill_cn_1to3": "暗影突袭（无冷却）：开战立刻瞬移到低防后排敌人身边，造成自身攻击250%伤害；该目标死亡后立刻突袭下一个。",
+      "skill_cn_4": "暗影突袭（无冷却）：开战立刻瞬移到低防后排敌人身边，造成自身攻击500%伤害；该目标死亡后立刻突袭下一个。",
+      "skill_en_1to3": "Shadow Ambush (no cooldown): At battle start, blink to the lowest-DEF backline enemy and deal 250% ATK damage. When that target dies, immediately ambush the next one.",
+      "skill_raw_params": "damage_atk_pct = 2.5\nrecast_on_target_death = true\nskill_global = true",
       "star4_changes": "damage_atk_pct: 2.5 → 5\ndef_down_pct: — → 0.25",
       "stats": {
         "1": {
@@ -264,25 +264,25 @@
           "hp": 1640,
           "atk": 97,
           "defense": 16,
-          "mres": 16
+          "mres": 20
         },
         "2": {
           "hp": 2460,
           "atk": 146,
           "defense": 24,
-          "mres": 24
+          "mres": 30
         },
         "3": {
           "hp": 4920,
           "atk": 291,
           "defense": 48,
-          "mres": 48
+          "mres": 60
         },
         "4": {
           "hp": 5658,
           "atk": 335,
           "defense": 55,
-          "mres": 55
+          "mres": 69
         }
       }
     },
@@ -346,25 +346,25 @@
           "hp": 640,
           "atk": 31,
           "defense": 4,
-          "mres": 7
+          "mres": 11
         },
         "2": {
           "hp": 960,
           "atk": 47,
           "defense": 6,
-          "mres": 11
+          "mres": 17
         },
         "3": {
           "hp": 1920,
           "atk": 93,
           "defense": 12,
-          "mres": 21
+          "mres": 33
         },
         "4": {
           "hp": 2208,
           "atk": 107,
           "defense": 14,
-          "mres": 24
+          "mres": 38
         }
       }
     },
@@ -386,25 +386,25 @@
           "hp": 600,
           "atk": 26,
           "defense": 4,
-          "mres": 7
+          "mres": 11
         },
         "2": {
           "hp": 900,
           "atk": 39,
           "defense": 6,
-          "mres": 11
+          "mres": 17
         },
         "3": {
           "hp": 1800,
           "atk": 78,
           "defense": 12,
-          "mres": 21
+          "mres": 33
         },
         "4": {
           "hp": 2070,
           "atk": 90,
           "defense": 14,
-          "mres": 24
+          "mres": 38
         }
       }
     },
@@ -423,28 +423,28 @@
       "star4_changes": "aspd_bonus: 0.15 → 0.45\natk_bonus: 0.1 → 0.4\ncontrol_immune_sec: — → 2\nheal_pct: 0.15 → 0.4\nskill_cd: 7 → 5",
       "stats": {
         "1": {
-          "hp": 1080,
+          "hp": 1280,
           "atk": 48,
           "defense": 8,
-          "mres": 10
+          "mres": 20
         },
         "2": {
-          "hp": 1620,
+          "hp": 1920,
           "atk": 72,
           "defense": 12,
-          "mres": 15
-        },
-        "3": {
-          "hp": 3240,
-          "atk": 144,
-          "defense": 24,
           "mres": 30
         },
+        "3": {
+          "hp": 3840,
+          "atk": 144,
+          "defense": 24,
+          "mres": 60
+        },
         "4": {
-          "hp": 3726,
+          "hp": 4416,
           "atk": 166,
           "defense": 28,
-          "mres": 35
+          "mres": 69
         }
       }
     },
@@ -463,27 +463,27 @@
       "star4_changes": "damage_atk_pct: 2.2 → 4.4\ndef_stack_pct: 0.06 → 0.2\nskill_cd: 3 → 2",
       "stats": {
         "1": {
-          "hp": 1040,
+          "hp": 1180,
           "atk": 79,
           "defense": 14,
           "mres": 10
         },
         "2": {
-          "hp": 1560,
+          "hp": 1770,
           "atk": 119,
           "defense": 21,
           "mres": 15
         },
         "3": {
-          "hp": 3120,
+          "hp": 3540,
           "atk": 237,
-          "defense": 34,
+          "defense": 42,
           "mres": 30
         },
         "4": {
-          "hp": 3588,
+          "hp": 4071,
           "atk": 273,
-          "defense": 40,
+          "defense": 48,
           "mres": 35
         }
       }
@@ -506,25 +506,25 @@
           "hp": 720,
           "atk": 77,
           "defense": 4,
-          "mres": 4
+          "mres": 9
         },
         "2": {
           "hp": 1080,
           "atk": 116,
           "defense": 6,
-          "mres": 6
+          "mres": 14
         },
         "3": {
           "hp": 2160,
           "atk": 231,
           "defense": 12,
-          "mres": 12
+          "mres": 27
         },
         "4": {
           "hp": 2484,
           "atk": 266,
           "defense": 14,
-          "mres": 14
+          "mres": 31
         }
       }
     },
@@ -576,35 +576,35 @@
       "cost": 50,
       "skill_id": "random_ally_damage_reduction",
       "skill_name_cn": "天使庇护",
-      "skill_cn_1to3": "天使庇护（冷却4.0秒）：随机友军获得50%减伤，持续6.0秒。",
-      "skill_cn_4": "天使庇护（冷却3.0秒）：随机友军获得65%减伤，持续8.0秒。",
-      "skill_en_1to3": "Angel's Guard (CD 6.0s): Grant a random ally 50% damage reduction for 6.0s.",
-      "skill_raw_params": "damage_reduction = 0.5\nduration = 6\nskill_cd = 6\nunique_on_board = true",
-      "star4_changes": "damage_reduction: 0.5 → 0.65\nduration: 6 → 8\nskill_cd: 6 → 4",
+      "skill_cn_1to3": "天使庇护（冷却5.0秒）：随机友军获得50%减伤，持续6.0秒。",
+      "skill_cn_4": "天使庇护（冷却4.0秒）：随机友军获得65%减伤，持续8.0秒。",
+      "skill_en_1to3": "Angel's Guard (CD 5.0s): Grant a random ally 50% damage reduction for 6.0s.",
+      "skill_raw_params": "damage_reduction = 0.5\nduration = 6\nskill_cd = 5\nunique_on_board = true",
+      "star4_changes": "damage_reduction: 0.5 → 0.65\nduration: 6 → 8\nskill_cd: 5 → 4",
       "stats": {
         "1": {
           "hp": 1700,
           "atk": 73,
-          "defense": 15,
-          "mres": 20
+          "defense": 19,
+          "mres": 25
         },
         "2": {
           "hp": 2550,
           "atk": 110,
-          "defense": 23,
-          "mres": 30
+          "defense": 29,
+          "mres": 38
         },
         "3": {
           "hp": 5100,
           "atk": 219,
-          "defense": 45,
-          "mres": 42
+          "defense": 57,
+          "mres": 75
         },
         "4": {
           "hp": 5865,
           "atk": 252,
-          "defense": 52,
-          "mres": 48
+          "defense": 66,
+          "mres": 86
         }
       }
     },
@@ -827,26 +827,26 @@
         "1": {
           "hp": 1640,
           "atk": 1,
-          "defense": 18,
-          "mres": 14
+          "defense": 22,
+          "mres": 18
         },
         "2": {
           "hp": 2460,
           "atk": 1,
-          "defense": 27,
-          "mres": 21
+          "defense": 33,
+          "mres": 27
         },
         "3": {
           "hp": 4920,
           "atk": 1,
-          "defense": 54,
-          "mres": 42
+          "defense": 66,
+          "mres": 54
         },
         "4": {
           "hp": 5658,
           "atk": 1,
-          "defense": 62,
-          "mres": 48
+          "defense": 76,
+          "mres": 62
         }
       }
     },
@@ -865,25 +865,25 @@
       "star4_changes": "damage_atk_pct: 3 → 6\ndouble_element_chance: — → 0.2\nskill_cd: 2.5 → 2",
       "stats": {
         "1": {
-          "hp": 720,
+          "hp": 830,
           "atk": 72,
           "defense": 3,
           "mres": 5
         },
         "2": {
-          "hp": 1080,
+          "hp": 1245,
           "atk": 108,
           "defense": 5,
           "mres": 8
         },
         "3": {
-          "hp": 2160,
+          "hp": 2490,
           "atk": 216,
           "defense": 9,
           "mres": 15
         },
         "4": {
-          "hp": 2484,
+          "hp": 2864,
           "atk": 248,
           "defense": 10,
           "mres": 17
@@ -926,7 +926,7 @@
           "hp": 4554,
           "atk": 221,
           "defense": 35,
-          "mres": 43
+          "mres": 45
         }
       }
     },
@@ -945,28 +945,28 @@
       "star4_changes": "max_stacks: 5 → 8\npost_battle_all_stat_growth: 0.2 → 0.3",
       "stats": {
         "1": {
-          "hp": 720,
+          "hp": 745,
           "atk": 55,
-          "defense": 7,
-          "mres": 7
+          "defense": 9,
+          "mres": 9
         },
         "2": {
-          "hp": 1080,
+          "hp": 1118,
           "atk": 83,
-          "defense": 11,
-          "mres": 11
+          "defense": 14,
+          "mres": 14
         },
         "3": {
-          "hp": 2160,
+          "hp": 2235,
           "atk": 165,
-          "defense": 21,
-          "mres": 21
+          "defense": 27,
+          "mres": 27
         },
         "4": {
-          "hp": 2484,
+          "hp": 2570,
           "atk": 190,
-          "defense": 24,
-          "mres": 24
+          "defense": 31,
+          "mres": 31
         }
       }
     },
@@ -1150,25 +1150,25 @@
           "hp": 840,
           "atk": 67,
           "defense": 12,
-          "mres": 6
+          "mres": 11
         },
         "2": {
           "hp": 1260,
           "atk": 101,
           "defense": 18,
-          "mres": 9
+          "mres": 17
         },
         "3": {
           "hp": 2520,
           "atk": 201,
           "defense": 36,
-          "mres": 18
+          "mres": 33
         },
         "4": {
           "hp": 2898,
           "atk": 231,
-          "defense": 40,
-          "mres": 25
+          "defense": 41,
+          "mres": 38
         }
       }
     },
@@ -1193,20 +1193,20 @@
           "mres": 4
         },
         "2": {
-          "hp": 1625,
-          "atk": 93,
+          "hp": 1275,
+          "atk": 102,
           "defense": 9,
           "mres": 6
         },
         "3": {
           "hp": 2550,
-          "atk": 186,
+          "atk": 204,
           "defense": 18,
           "mres": 12
         },
         "4": {
-          "hp": 2860,
-          "atk": 214,
+          "hp": 2933,
+          "atk": 235,
           "defense": 21,
           "mres": 14
         }
@@ -1580,11 +1580,11 @@
       "cost": 50,
       "skill_id": "aoe_silence",
       "skill_name_cn": "赤灯沉默",
-      "skill_cn_1to3": "赤灯禁言（冷却10.0秒）：开战立刻沉默敌人3.0秒，期间无法释放技能、攻速-30%。",
-      "skill_cn_4": "赤灯禁言（冷却9.0秒）：开战立刻沉默敌人4.0秒，期间无法释放技能、攻速-30%。",
-      "skill_en_1to3": "Crimson Lantern (CD 10.0s): At battle start, silence enemies for 3.0s: no skills and -30% AS.",
-      "skill_raw_params": "silence_duration = 3\nskill_cd = 10\nskill_global = true\nunique_on_board = true",
-      "star4_changes": "silence_duration: 3 → 4\nskill_cd: 10 → 9",
+      "skill_cn_1to3": "赤灯禁言（冷却5.9秒）：开战立刻沉默敌人2.1秒，期间无法释放技能、攻速-30%。",
+      "skill_cn_4": "赤灯禁言（冷却5.9秒）：开战立刻沉默敌人2.9秒，期间无法释放技能、攻速-30%。",
+      "skill_en_1to3": "Crimson Lantern (CD 5.9s): At battle start, silence enemies for 2.1s: no skills and -30% AS.",
+      "skill_raw_params": "silence_duration = 2.1\nskill_cd = 5.9\nskill_global = true\nunique_on_board = true",
+      "star4_changes": "silence_duration: 2.1 → 2.9",
       "stats": {
         "1": {
           "hp": 1720,
@@ -1976,6 +1976,6 @@
       "effect_cn": "需要：生命丰碑 + 黄金祭坛 + 震荡余波 + 血契之刃 + 狂怒阵容。生命丰碑 ×1.20→×1.40；震荡余波眩晕 1→2 秒；血契之刃 ×1.25→×1.50；狂怒阵容上限 8→9。黄金祭坛使用不扣法阵 HP；选到胡牌手立即回复法阵 HP +2（上限 50）。\n表内字段：positive_effect_multiplier = 2"
     }
   },
-  "balance_version": "92bad87e8c880213deeb110ca92970d54cc1919d2f3127bde343e94e3c1e6a7f",
-  "final_workbook_sha256": "fc07d5598207471c480f96ac9f9ba6cd2a609e8a2b017ab2d52fe3a4ec4151a5"
+  "balance_version": "004b8d41d32afef5cb05a8385c249b7d1c4d393487248115516f38eee412b36c",
+  "final_workbook_sha256": "76a077c851de7a44e201c2f84610dab62beda662699c6fbb88e1eb3752f72b61"
 }

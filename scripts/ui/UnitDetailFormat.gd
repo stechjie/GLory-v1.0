@@ -270,6 +270,8 @@ static func format_skill_template_cn(d: Dictionary) -> String:
 		"same_target_damage_stack":
 			return "痛苦凝视：持续攻击同一目标时，每层伤害+%s，最多%d层；换目标重置。" % [pct(float(d.get("stack_damage", 0.06))), int(d.get("max_stacks", 5))]
 		"blink_low_def_backline":
+			if bool(d.get("recast_on_target_death", false)):
+				return "暗影突袭（无冷却）：开战立刻瞬移到低防后排敌人身边，造成自身攻击%s伤害；该目标死亡后立刻突袭下一个。" % [pct(float(d.get("damage_atk_pct", 2.0)))]
 			return "暗影突袭（冷却时间5.0秒）：瞬移到低防后排敌人身边，造成自身攻击%s伤害；击杀后刷新冷却。" % [pct(float(d.get("damage_atk_pct", 2.0)))]
 		"stun":
 			return "暗影击晕%s：眩晕最近敌人%.1f秒，并造成自身攻击%s伤害。" % [cd, float(d.get("stun_sec", 1.0)), pct(float(d.get("damage_atk_pct", 1.5)))]
@@ -465,6 +467,8 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"same_target_damage_stack":
 			return "Agonizing Gaze: Consecutive attacks on the same target deal +%s damage per stack (max %d stacks). Resets on target switch." % [pct(float(d.get("stack_damage", 0.06))), int(d.get("max_stacks", 5))]
 		"blink_low_def_backline":
+			if bool(d.get("recast_on_target_death", false)):
+				return "Shadow Ambush (no cooldown): At battle start, blink to the lowest-DEF backline enemy and deal %s ATK damage. When that target dies, immediately ambush the next one." % [pct(float(d.get("damage_atk_pct", 2.0)))]
 			return "Shadow Ambush%s: Blink to the lowest-DEF backline enemy and deal %s ATK damage. Cooldown resets on kill." % [cd, pct(float(d.get("damage_atk_pct", 2.0)))]
 		"stun":
 			return "Shadow Stun%s: Stun the nearest enemy for %.1fs and deal %s ATK damage." % [cd, float(d.get("stun_sec", 1.0)), pct(float(d.get("damage_atk_pct", 1.5)))]
