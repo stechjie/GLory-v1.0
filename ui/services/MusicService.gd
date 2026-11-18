@@ -39,6 +39,48 @@ const LifecyclePlayer := preload("res://ui/services/MusicPlayer.gd")
 
 const PLAYER_NAME := "GloryMusicPlayer"
 
+# ---------------------------------------------------------------------------
+# BGM 曲目表（11.16 换新音乐）。所有页面都从这里取路径，不再各写各的常量。
+#
+# 「组」= 同一个界面的几首候选，进界面时随机挑一首（见 play_group）。
+# 单曲的界面也写成只有一首的组，调用方式统一。
+# 原中文文件名 → 英文名的对照见 docs/11.16背景音乐替换记录.md。
+# ---------------------------------------------------------------------------
+# 主菜单 / 大厅 / 排位组队房 / 自定义 3v3 房间 / 玩家资料等（主界面 1~3）
+const MENU_GROUP: Array[String] = [
+	"res://assets/audio/bgm/menu_1.mp3",
+	"res://assets/audio/bgm/menu_2.mp3",
+	"res://assets/audio/bgm/menu_3.mp3",
+]
+# 图鉴
+const CODEX_MUSIC := "res://assets/audio/bgm/codex.mp3"
+# 备战界面（主菜单「备战」按钮进入的 PetScreen）
+const PREP_LOBBY_MUSIC := "res://assets/audio/bgm/prep_lobby.mp3"
+# 商城
+const SHOP_MUSIC := "res://assets/audio/bgm/shop.mp3"
+# 摆放界面（对局内摆棋子），下一回合是 PvE（摆放界面 1~3）
+const PLACEMENT_GROUP: Array[String] = [
+	"res://assets/audio/bgm/placement_1.mp3",
+	"res://assets/audio/bgm/placement_2.mp3",
+	"res://assets/audio/bgm/placement_3.mp3",
+]
+# 摆放界面，下一回合是 PvP / 最终战
+const PLACEMENT_PVP_MUSIC := "res://assets/audio/bgm/placement_pvp.mp3"
+# 战斗 PvE / Boss（战斗演示 1~2）
+const BATTLE_PVE_GROUP: Array[String] = [
+	"res://assets/audio/bgm/battle_pve_1.mp3",
+	"res://assets/audio/bgm/battle_pve_2.mp3",
+]
+# 战斗 PvP / 最终战
+const BATTLE_PVP_MUSIC := "res://assets/audio/bgm/battle_pvp.mp3"
+# 抽宠物 / 暗夜祈愿 / 樱花祈愿（盖在商城上的弹窗，关掉后接回商城那首）
+const PET_DRAW_MUSIC := "res://assets/audio/bgm/pet_draw.mp3"
+const WISH_DARK_MUSIC := "res://assets/audio/bgm/wish_dark.mp3"
+const WISH_SAKURA_MUSIC := "res://assets/audio/bgm/wish_sakura.mp3"
+# 整局最终结算的「详情页」（FinalSettlementPanel，只在对局刚结束时放；历史回看不放）
+const RESULT_VICTORY_MUSIC := "res://assets/audio/bgm/result_victory.mp3"
+const RESULT_DEFEAT_MUSIC := "res://assets/audio/bgm/result_defeat.mp3"
+
 # path -> AudioStream（已把 loop 打开的那种）
 static var _streams: Dictionary = {}
 static var _player: AudioStreamPlayer
@@ -67,6 +109,17 @@ static var _talk_probe: Callable = Callable()
 static var _application_suspended := false
 static var _resume_position := 0.0
 static var _resume_path := ""
+# 11.16：「回到同一首歌时接着放，不从头」。
+# path -> 上次离开这首时放到的秒数。只在 play(path, true) 时才会被用上。
+static var _positions: Dictionary = {}
+# 组的第一条路径 -> 这个组上次挑中的那首（play_group(resume=true) 回到同一首用）。
+static var _group_last: Dictionary = {}
+# 下一次真正开播时从第几秒开始（play() 换曲时写，_sync() 开播时消费）。
+static var _pending_start := 0.0
+# 11.18：「整局固定一首」。begin_match() 起、end_match() 止算一局。
+# 组的第一条路径 -> 本局挑中的那首（摆放界面组 / PvE 战斗组）。只存内存，闪退重连后重新挑。
+static var _in_match := false
+static var _match_picks: Dictionary = {}
 
 
 # 由 Main._ready() 调一次，幂等。
@@ -88,7 +141,10 @@ static func is_installed() -> bool:
 
 
 # 播一首 BGM。**同一首重复调用是 no-op**（见文件头「同一首歌不重启」）。
-static func play(path: String) -> void:
+#
+# resume = true：这首以前放过的话，从上次离开时的位置接着放（11.16）。
+# 默认 false = 从头放，与原行为一致。
+static func play(path: String, resume := false) -> void:
 	if path.is_empty():
 		return
 	_ensure_player()
@@ -101,16 +157,116 @@ static func play(path: String) -> void:
 	var stream := _stream_for(path)
 	if stream == null:
 		return
+	_remember_position()
 	_path = path
+	_pending_start = _resume_offset(path, stream) if resume else 0.0
+	# 先停再换：保证 _sync() 走「没在放 → play(起点)」那一支，起点才生效。
+	if is_instance_valid(_player):
+		_player.stop()
 	_player.stream = stream
 	_sync()
 
 
+# 播一组里的某一首（11.16「有 1~3 首的界面随机播放」）。
+#
+# * 正在放的已经是这组里的一首 → 什么都不做，接着放（不换歌、不从头）。
+#   这条保证「房间 → 主菜单 → 玩家资料」一路不断、不重来。
+# * resume = true 且这组以前挑过一首 → 回到那一首、从离开的位置接着放
+#   （从商城 / 备战 / 图鉴回主菜单）。
+# * 否则随机挑一首，从头放。打完一局回来的那次走这里（begin_match 清掉了记录）。
+static func play_group(paths: Array, resume := false) -> void:
+	if paths.is_empty():
+		return
+	if _path in paths:
+		_sync()
+		return
+	var key := str(paths[0])
+	var pick := ""
+	if resume and _group_last.has(key) and str(_group_last[key]) in paths:
+		pick = str(_group_last[key])
+	else:
+		pick = str(paths[randi() % paths.size()])
+		# 新挑的这首一律从头放，不吃以前留下的位置。
+		_positions.erase(pick)
+	_group_last[key] = pick
+	play(pick, resume)
+
+
+# 盖在页面上的弹窗（抽宠物 / 皮肤祈愿）开始放自己的歌。返回原来那首，关窗时还给 leave_overlay。
+static func enter_overlay(path: String) -> String:
+	var previous := _path
+	play(path)
+	return previous
+
+
+# 弹窗关掉：如果还在放弹窗那首，就接回原来那首、从原来的位置接着放。
+# 已经被别的页面换掉了（比如弹窗随整页一起被清掉、主菜单已经起了自己的歌）就不动。
+static func leave_overlay(path: String, previous: String) -> void:
+	if _path != path:
+		return
+	if previous.is_empty():
+		stop()
+		return
+	play(previous, true)
+
+
+# 播本局固定的那一首（11.18：摆放界面 / PvE 战斗「开局随机一次，整场同一首」）。
+#
+# * 本局第一次调这个组 → 随机挑一首记下；之后同一局一直是它。
+# * 每次进来都**从头放**（用户要求）：摆放 ↔ 战斗交替换曲时，回到这首从 0 秒开始。
+#   正在放的就是它（同一回合重建摆放页）→ 不打断。
+static func play_match_group(paths: Array) -> void:
+	if paths.is_empty():
+		return
+	var key := str(paths[0])
+	var pick := str(_match_picks.get(key, ""))
+	if not (pick in paths):
+		pick = str(paths[randi() % paths.size()])
+		_match_picks[key] = pick
+	play(pick)
+
+
+# 进入一局（摆放界面每回合都会调，只有本局第一次生效）：
+# 清掉大厅那些「接着放」的记录和上一局的选曲。打完回大厅重新随机主菜单那首。
+static func begin_match() -> void:
+	if _in_match:
+		return
+	_in_match = true
+	_positions.clear()
+	_group_last.clear()
+	_match_picks.clear()
+
+
+# 回到大厅（主菜单 / 排位组队房 / 自定义 3v3 房间）= 这局结束。下一次 begin_match() 是新的一局。
+# 正常打完、投降、掉线退回大厅都会走到这里。
+static func end_match() -> void:
+	_in_match = false
+	_match_picks.clear()
+
+
 # 停掉 BGM 并清掉当前曲目。下一次 play() 会从头开始（不是 resume）。
 static func stop() -> void:
+	_remember_position()
 	_path = ""
+	_pending_start = 0.0
 	if _player != null and is_instance_valid(_player):
 		_player.stop()
+
+
+# 记下当前这首放到第几秒（换曲 / 停之前调）。
+static func _remember_position() -> void:
+	if _path.is_empty() or _player == null or not is_instance_valid(_player):
+		return
+	if _player.playing or _player.stream_paused:
+		_positions[_path] = _player.get_playback_position()
+
+
+static func _resume_offset(path: String, stream: AudioStream) -> float:
+	var pos := float(_positions.get(path, 0.0))
+	var length := stream.get_length()
+	if length > 0.0:
+		pos = fmod(pos, length)
+	return maxf(pos, 0.0)
 
 
 static func current_path() -> String:
@@ -183,7 +339,8 @@ static func _sync() -> void:
 	var want := _allowed() and not _application_suspended
 	_player.stream_paused = not want
 	if want and not _player.playing:
-		_player.play()
+		_player.play(_pending_start)
+		_pending_start = 0.0
 
 
 # 下一帧再 _sync() 一次（一次性连接，不会积压）。
@@ -320,6 +477,11 @@ static func shutdown() -> void:
 	_application_suspended = false
 	_resume_position = 0.0
 	_resume_path = ""
+	_positions.clear()
+	_group_last.clear()
+	_pending_start = 0.0
+	_in_match = false
+	_match_picks.clear()
 	_streams.clear()
 
 

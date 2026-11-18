@@ -190,16 +190,28 @@ const INDIRECT_ENTRIES: Array[String] = [
 	"boss_cast_edge_cue_for", "boss_event_action_for",
 ]
 
-# 六条 BGM 槽位。team_room_music 是这一批新开的：此前 3v3 组队房间
-# 和主菜单共用 menu_music，zip 里给了独立的《组队房间》。
+# BGM 槽位（11.16 整批换新：18 首，曲目表在 MusicService 顶部）。
+# 旧的 7 首（menu_music / prep_music / pvp_round_music / fighting_music /
+# pvp_battle_music / team_room_music / shop_music）已移到 backups/bgm_before_20261116/。
 const BGM_PATHS: Array[String] = [
-	"res://assets/audio/bgm/menu_music.mp3",
-	"res://assets/audio/bgm/prep_music.mp3",
-	"res://assets/audio/bgm/pvp_round_music.mp3",
-	"res://assets/audio/bgm/fighting_music.mp3",
-	"res://assets/audio/bgm/pvp_battle_music.mp3",
-	"res://assets/audio/bgm/team_room_music.mp3",
-	"res://assets/audio/bgm/shop_music.mp3",
+	"res://assets/audio/bgm/menu_1.mp3",
+	"res://assets/audio/bgm/menu_2.mp3",
+	"res://assets/audio/bgm/menu_3.mp3",
+	"res://assets/audio/bgm/codex.mp3",
+	"res://assets/audio/bgm/prep_lobby.mp3",
+	"res://assets/audio/bgm/shop.mp3",
+	"res://assets/audio/bgm/placement_1.mp3",
+	"res://assets/audio/bgm/placement_2.mp3",
+	"res://assets/audio/bgm/placement_3.mp3",
+	"res://assets/audio/bgm/placement_pvp.mp3",
+	"res://assets/audio/bgm/battle_pve_1.mp3",
+	"res://assets/audio/bgm/battle_pve_2.mp3",
+	"res://assets/audio/bgm/battle_pvp.mp3",
+	"res://assets/audio/bgm/pet_draw.mp3",
+	"res://assets/audio/bgm/wish_dark.mp3",
+	"res://assets/audio/bgm/wish_sakura.mp3",
+	"res://assets/audio/bgm/result_victory.mp3",
+	"res://assets/audio/bgm/result_defeat.mp3",
 ]
 
 var _h: CheckHarness

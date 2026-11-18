@@ -862,6 +862,9 @@ func _should_watch_account_link() -> bool:
 	# 与 Bootstrap._entry_gate_required 同一个判据。
 	if not AccountConfig.auto_login_enabled():
 		return false
+	# Provider login intentionally pauses the old socket; its HTTP timeout exceeds this watchdog.
+	if AccountManager.is_switching_account():
+		return false
 	if _returning_to_login or _in_match_flow:
 		return false
 	if NetworkService.team_active or TutorialMode.active:
@@ -1858,6 +1861,8 @@ func _install_realtime() -> void:
 	# 宠物、出战种族、棋盘皮肤、名额都要按新账号重拉，主菜单上的旧缓存一样都不能留。
 	if not AccountManager.account_switched.is_connected(_on_account_switched):
 		AccountManager.account_switched.connect(_on_account_switched)
+	if not AccountManager.account_deleted.is_connected(_on_account_deleted):
+		AccountManager.account_deleted.connect(_on_account_deleted)
 	if not RealtimeService.kicked_by_other_device.is_connected(_on_realtime_kicked):
 		RealtimeService.kicked_by_other_device.connect(_on_realtime_kicked)
 	if not RealtimeService.service_state_changed.is_connected(_on_service_state):
@@ -2048,6 +2053,23 @@ func _on_realtime_logout() -> void:
 
 func _on_account_switched() -> void:
 	_return_to_login("切换了账号")
+
+
+func _on_account_deleted(apple_revocation_required: bool) -> void:
+	if apple_revocation_required:
+		# 资料页可能在 HTTP 返回前被关闭；由常驻 Main 在页面返回完成后提示。
+		_show_apple_revocation_notice.call_deferred()
+
+
+func _show_apple_revocation_notice() -> void:
+	var english := LocaleManager.get_locale().begins_with("en")
+	DialogService.info({
+		"request_id": "apple_revocation_after_deletion",
+		"title": "Account deleted" if english else "账号已删除",
+		"body": ("To finish revoking access, open your Apple account settings, choose Sign in with Apple, select GLory, and stop using Sign in with Apple."
+			if english else "请在 Apple 账号设置的「通过 Apple 登录」中找到 GLory，选择「停止使用 Apple 账号」，完成授权撤销。"),
+		"owner": self,
+	})
 
 
 # 顶号立即终止游戏流程；启动页保留原因，只有玩家主动确认才能重新登录。
@@ -2959,6 +2981,11 @@ func _show_final_settlement() -> void:
 	# 10.10 bug 第 9 条：排位结算面板的「返回队伍」。
 	panel.return_party_requested.connect(_return_to_party_room)
 	add_child(panel)
+	# 11.16：整局最终结算的详情页按输赢放结算音乐（只在这里放；对局历史里回看详情
+	# 走的是 MatchHistoryPanel 自己的弹窗，不经过这里，所以不会响）。
+	# 输赢口径与「胜利 / 失败」大字页同一处：_game_over_kind()。平局按失败那首。
+	var result_music := MusicService.RESULT_VICTORY_MUSIC if _game_over_kind() == "win" else MusicService.RESULT_DEFEAT_MUSIC
+	MusicService.play(result_music)
 
 
 # 10.10 bug 第 9 条：排位对局结束 → 结算面板「返回队伍」→ 回到排位之前的队伍房间。
@@ -3866,6 +3893,10 @@ func _on_team_room_list_received(rooms: Array) -> void:
 			_menu.show_room_list(rooms)
 
 func _on_team_room_action_failed(reason: String) -> void:
+	if reason == "no_empty_seat" and NetworkService.spectating:
+		var english := LocaleManager.get_locale().begins_with("en")
+		preload("res://ui/components/GloryToast.gd").show_text(NetworkService.custom_room_error_text(reason, english))
+		return
 	if reason == "spectate_full" and _in_room_lobby:
 		preload("res://ui/components/GloryToast.gd").show_text("The number of spectators is full" if LocaleManager.get_locale() == "en" else "观战人数已满")
 		return
@@ -4010,6 +4041,8 @@ func _on_team_battle_finished(result: Dictionary) -> void:
 		"treasures": GameState.owned_treasures,
 		"pet_id": PlayerProfile.get_active(),
 		"camp_income": GameState.carrot_camp_income(),
+		# 战斗排名奖励（11-18，利息之后）：和战斗服务器同一套规则，见 BattleRankRewards。
+		"rank_reward": _team_local_rank_reward(),
 	})
 	_apply_post_battle_unit_outcomes(result)
 	GameState.battle_history.append(result)
@@ -4199,6 +4232,12 @@ func _apply_team_match_state_payload(state_payload: Dictionary, result: Dictiona
 	GameState.clear_shop()
 	GameState.clear_mercenaries()
 	SaveManager.save_run()
+
+func _team_local_rank_reward() -> int:
+	if not is_instance_valid(_battle):
+		return 0
+	var slot := NetworkService.team_local_slot if NetworkService.team_active else 0
+	return int(NetworkService.local_rank_rewards(_battle._replay_own, _battle._replay_rival).get(maxi(0, slot), 0))
 
 func _team_local_kill_gold(result: Dictionary) -> int:
 	var slot := NetworkService.team_local_slot if NetworkService.team_active else 0

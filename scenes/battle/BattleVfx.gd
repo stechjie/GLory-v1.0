@@ -168,6 +168,7 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 	if not _battle_voice_cap_mode_ready:
 		_battle_voice_cap_mode_ready = true
 		SfxService.set_battle_voice_cap(4)
+	_update_focus_lanes()
 	var current := _collect_vfx_units(state_snapshot)
 	_update_treasure_set_presentation()
 	_sync_persistent_unit_vfx(current)
@@ -236,7 +237,7 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 			# can never be layered over them.
 			# Shield gain is unambiguous from the HP-diff (shield only rises on grant),
 			# so its number comes straight off the delta rather than a sim event.
-			_spawn_hit_number(now.get("head_pos", Vector2.ZERO), shield_delta, "shield", false, false)
+			_spawn_hit_number(now.get("head_pos", Vector2.ZERO), shield_delta, "shield", false, false, "", _unit_off_focus(now))
 		if stack_delta > 0 and sid_now in ["rage_stack", "same_target_damage_stack"]:
 			if sid_now == "rage_stack":
 				var rage_stacks := int(now.get("skill_stacks", 0))
@@ -717,13 +718,21 @@ func _play_boss_procedural(effect_id: String, origin_value: Variant, target_valu
 		return null
 	if not _battle_3d_vfx_root.has_method("play"):
 		return null
+	var origin := _boss_world_position(origin_value)
+	var target := _boss_world_position(target_value)
 	var world_context := context.duplicate(false)
 	if world_context.has("targets"):
 		var world_targets: Array = []
 		for value in world_context["targets"]:
 			world_targets.append(_boss_world_position(value))
 		world_context["targets"] = world_targets
-	return _battle_3d_vfx_root.call("play", effect_id, _boss_world_position(origin_value), _boss_world_position(target_value), world_context)
+		_focus_targets_first(world_context)
+	# 起点和落点都不在玩家正在打的路上：这一下如果是小特效（普攻、每刀小装饰、Boss 小提示），
+	# 只能用一部分名额，挤的时候先让（VFXBlockRoot.begin_off_focus）。技能不受影响。
+	VFXBlockRoot.begin_off_focus(_world_off_focus([origin, target]))
+	var spawned: Variant = _battle_3d_vfx_root.call("play", effect_id, origin, target, world_context)
+	VFXBlockRoot.end_off_focus()
+	return spawned
 
 func _play_unit_procedural(effect_id:String,origin:Vector3,target:Vector3,context:Dictionary={})->Node3D:
 	return _play_boss_procedural(effect_id,origin,target,context)
@@ -1695,7 +1704,7 @@ func _play_treasure_gold(event: Dictionary, current: Dictionary) -> void:
 	var context := _unit_target_context(target, target)
 	var head: Vector3 = target.get("world_head", target.get("world_hit", Vector3.ZERO))
 	_play_unit_procedural("treasure_gold_coins", head, head, context)
-	_spawn_hit_number(target.get("head_pos", Vector2.ZERO) + Vector2(0, -26), int(event.get("amount", 10)), "gold", false, false)
+	_spawn_hit_number(target.get("head_pos", Vector2.ZERO) + Vector2(0, -26), int(event.get("amount", 10)), "gold", false, false, "", _unit_off_focus(target))
 
 
 func _collect_treasure_hit(groups: Dictionary, event: Dictionary) -> void:
@@ -1933,7 +1942,7 @@ func cue_spawn_hit_number(target_uid: String, amount: int, kind: String, crit: b
 	if kind == "miss" and _unit_has_treasure_set(target_uid, "defense"):
 		kind = "dodge"
 		_play_set_dodge(target_uid)
-	_spawn_hit_number(target.get("head_pos", Vector2.ZERO), amount, kind, crit, is_skill, race)
+	_spawn_hit_number(target.get("head_pos", Vector2.ZERO), amount, kind, crit, is_skill, race, _unit_off_focus(target))
 	_play_hit_reaction(target_uid, kind, amount, crit, is_skill)
 	return true
 
@@ -2192,6 +2201,7 @@ func cue_release_corpses() -> void:
 			block.call("stop_vfx", true)
 	_death_tail_blocks.clear()
 	_lane_clear_played = false
+	_other_lane_clears.clear()
 	_reset_treasure_set_presentation()
 	_lane_clear_presented = false
 	_lane_clear_pending_uid = ""
@@ -2215,6 +2225,9 @@ func cue_play_death(victim_uid: String, duration_sec: float = 0.35, killer_uid: 
 	if actor == null or not is_instance_valid(actor):
 		_release_dying_unit_node(victim_uid)
 		return false
+	# 11.18 别人那一路清了：轻量版，当场演（凤凰复活不是真死，不算）。
+	if not _is_phoenix_revived_uid(victim_uid):
+		_maybe_play_other_lane_clear(victim_uid, actor)
 	if _is_fresh_mother_execute_victim(victim_uid):
 		_play_mother_execute_death(victim_uid, actor)
 		return true
@@ -2354,7 +2367,7 @@ func _play_set_execute(event: Dictionary, current: Dictionary) -> void:
 	if snapshot.is_empty():
 		snapshot = _vfx_unit_by_sim_uid(_vfx_prev_units, target_uid)
 	if not snapshot.is_empty():
-		_spawn_hit_number(snapshot.get("head_pos", Vector2.ZERO) + Vector2(0, -56), 1, "execute", false, false)
+		_spawn_hit_number(snapshot.get("head_pos", Vector2.ZERO) + Vector2(0, -56), 1, "execute", false, false, "", _unit_off_focus(snapshot))
 	if _battle_3d_vfx_root == null or not is_instance_valid(_battle_3d_vfx_root):
 		return
 	# 目标这一拍已被死亡流程接管（从 _battle_3d_models 摘掉），多数时候取不到模型 ——
@@ -2743,9 +2756,144 @@ func _is_local_lane_clear(victim_uid: String) -> bool:
 func _local_lane() -> int:
 	for side in ["player", "enemy"]:
 		for raw in _state.get(side, []):
-			if raw is Dictionary and _is_local_owned_unit(str(raw.get("uid", ""))):
+			if raw is Dictionary and _owned_by_local_player(raw):
 				return int(raw.get("lane", -1))
 	return LANE_NONE
+
+
+# --- 11.13 显示优先：玩家自己正在打的路 ------------------------------------------
+#
+# 用户口径：「显示主要是玩家自己的要优先，比如玩家是中间的，就中间的需要优先，打完中间后开的
+# 旁边的路就也要优先」。
+#
+# 「正在打的路」= 自己那一路（棋子出生的路）+ 自己还活着的棋子现在站着的路。后一半按模拟坐标
+# 算，不看棋子的 lane 字段：lane 是出生的路，清完自己那一路、隔断打开、棋子走去旁边帮忙以后
+# 它不会变。棋子只去了左路，就只有左路加进来。没有自己的棋子（切去看另一队）时为空，什么都
+# 不分先后，和以前一样。
+#
+# 用到的地方：小特效名额（_play_boss_procedural → VFXBlockRoot.begin_off_focus）、群体技能先画
+# 哪几个目标（_focus_targets_first）、伤害数字挤的时候谁让（_hit_number_slot）、
+# 音效（_unit_audio_context 的 off_focus）。技能本身照样一定画。
+var _focus_lanes: Dictionary = {}
+# 三路中心在 3D 特效坐标里沿分路方向的位置；判断一个特效落在哪一路用。
+# 普通回合三路左右排开（看 x），决赛三路上下排开（看 z，见 BattleSimulator._apply_final_round_left_right_layout）。
+var _lane_axis_centers: Array[float] = []
+var _lane_axis_is_z := false
+
+
+func _update_focus_lanes() -> void:
+	_focus_lanes.clear()
+	var home := LANE_NONE
+	var standing: Array[int] = []
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if not (raw is Dictionary) or not _owned_by_local_player(raw):
+				continue
+			if home == LANE_NONE:
+				home = int(raw.get("lane", -1))
+			if bool(raw.get("alive", false)):
+				standing.append(_sim_lane(_fighter_sim_pos(raw)))
+	if home < 0 or home > 2:
+		return
+	_focus_lanes[home] = true
+	for lane in standing:
+		_focus_lanes[lane] = true
+	_lane_axis_is_z = _final_round_layout()
+	_lane_axis_centers.clear()
+	for lane in 3:
+		var world := _sim_to_world_pos(_lane_sim_center(lane))
+		_lane_axis_centers.append(world.z if _lane_axis_is_z else world.x)
+
+
+func _final_round_layout() -> bool:
+	return GameState.round_index == GameState.FINAL_ROUND
+
+
+# 一路的中心（模拟坐标）。三路等宽，所以「离哪路中心最近」就是「在哪一路里」。
+func _lane_sim_center(lane: int) -> Vector2:
+	if _final_round_layout():
+		return Vector2(BattleSimShared.ARENA_W * 0.5, float(BattleSimShared.FINAL_LANE_CENTERS_Y[lane]))
+	var band := BattleSimShared.lane_band_x(lane)
+	return Vector2((band.x + band.y) * 0.5, BattleSimShared.ARENA_MID_Y)
+
+
+func _sim_lane(pos: Vector2) -> int:
+	var final_round := _final_round_layout()
+	var best := 0
+	var best_dist := INF
+	for lane in 3:
+		var center := _lane_sim_center(lane)
+		var dist := absf((pos.y - center.y) if final_round else (pos.x - center.x))
+		if dist < best_dist:
+			best_dist = dist
+			best = lane
+	return best
+
+
+func _world_lane(pos: Vector3) -> int:
+	if _lane_axis_centers.size() != 3:
+		return -1
+	var axis := pos.z if _lane_axis_is_z else pos.x
+	var best := 0
+	for lane in range(1, 3):
+		if absf(axis - _lane_axis_centers[lane]) < absf(axis - _lane_axis_centers[best]):
+			best = lane
+	return best
+
+
+# 这些点（3D 特效坐标）没有一个落在正在打的路上。没有「正在打的路」时恒为 false。
+func _world_off_focus(points: Array) -> bool:
+	if _focus_lanes.is_empty():
+		return false
+	for point in points:
+		if point is Vector3 and _focus_lanes.has(_world_lane(point)):
+			return false
+	return true
+
+
+# 单位现在不在正在打的路上。单位可以是表现快照（_collect_vfx_units，带 raw_pos）或 _state 里的原始棋子。
+func _unit_off_focus(unit: Dictionary) -> bool:
+	if _focus_lanes.is_empty() or unit.is_empty():
+		return false
+	var pos: Variant = null
+	if unit.has("raw_pos"):
+		pos = unit["raw_pos"]
+	elif unit.has("uid"):
+		pos = _fighter_sim_pos(unit)
+	return pos is Vector2 and not _focus_lanes.has(_sim_lane(pos))
+
+
+# 群体技能在画质档位下只画前几个目标（低画质 4 个、中画质 6 个，有几个技能固定只画前 4 个）。
+# 把站在正在打的路上的目标排到前面；和目标一一对应的数组跟着同样换序。
+# 4 个以内谁都不会被截，原样不动（依次落下的先后也就不变）。
+const _FOCUS_PARALLEL_KEYS := ["target_nodes", "target_sim_uids", "from_positions", "sealed"]
+
+func _focus_targets_first(context: Dictionary) -> void:
+	var targets: Array = context.get("targets", [])
+	if _focus_lanes.is_empty() or targets.size() <= 4:
+		return
+	var order: Array = []
+	var rest: Array = []
+	for i in targets.size():
+		if targets[i] is Vector3 and _focus_lanes.has(_world_lane(targets[i])):
+			order.append(i)
+		else:
+			rest.append(i)
+	if order.is_empty() or rest.is_empty() or int(order[-1]) == order.size() - 1:
+		return
+	order.append_array(rest)
+	context["targets"] = _reordered(targets, order)
+	for key in _FOCUS_PARALLEL_KEYS:
+		var values: Variant = context.get(key)
+		if values is Array and (values as Array).size() == targets.size():
+			context[key] = _reordered(values, order)
+
+
+static func _reordered(values: Array, order: Array) -> Array:
+	var out: Array = []
+	for i in order:
+		out.append(values[int(i)])
+	return out
 
 
 # 击杀者的身体：事件带的 killer_uid 优先；取不到（DOT / 宝藏反应）就用最近一次普攻它的人。
@@ -2844,36 +2992,11 @@ func _spawn_lane_clear_feedback(actor: Node3D) -> void:
 			or not is_instance_valid(_battle_3d_vfx_root):
 		feedback.call("show_lane_clear")
 		return
-	var visual_min := _battle_visual_min()
-	var visual_max := _battle_visual_max()
-	# 11.14：第 21 回合战场打横，三路是上中下三条横带（BattleSimulator._apply_final_round_left_right_layout），
-	# 本路范围要按横带算；以前一直按竖条算，光波 / 光幕 / 字幕都框错了地方。
-	var final_round := _battlefield_kind() == "final"
-	var lane_min: Vector2
-	var lane_max: Vector2
-	# 皮肤扫光的起点 / 终点（模拟坐标）：从我方这头扫到敌方那头，跟 PlayerLaneWave 判「我方在哪头」同一套。
-	var sweep_from_sim: Vector2
-	var sweep_to_sim: Vector2
-	if final_round:
-		var lane_h := BattleSimShared.FINAL_ARENA_H / 3.0
-		lane_min = Vector2(visual_min.x, maxf(visual_min.y, lane * lane_h))
-		lane_max = Vector2(visual_max.x, minf(visual_max.y, (lane + 1) * lane_h))
-		var mid_y := (lane_min.y + lane_max.y) * 0.5
-		sweep_from_sim = Vector2(lane_max.x if _color_flip else lane_min.x, mid_y)
-		sweep_to_sim = Vector2(lane_min.x if _color_flip else lane_max.x, mid_y)
-	else:
-		var band := BattleSimShared.lane_band_x(lane)
-		lane_min = Vector2(band.x, visual_min.y)
-		lane_max = Vector2(band.y, visual_max.y)
-		var mid_x := (band.x + band.y) * 0.5
-		sweep_from_sim = Vector2(mid_x, lane_min.y if _color_flip else lane_max.y)
-		sweep_to_sim = Vector2(mid_x, lane_max.y if _color_flip else lane_min.y)
-	var corners: Array[Vector3] = []
-	for sim in [lane_min, Vector2(lane_max.x, lane_min.y), Vector2(lane_min.x, lane_max.y), lane_max]:
-		corners.append(_sim_to_world_pos(sim))
-	var a := _battle_3d_vfx_root.to_local(corners[0])
-	var b := _battle_3d_vfx_root.to_local(corners[3])
-	var bounds := Rect2(Vector2(minf(a.x,b.x),minf(a.z,b.z)),Vector2(absf(b.x-a.x),absf(b.z-a.z)))
+	# 皮肤扫光从我方这头扫到敌方那头，跟 PlayerLaneWave 判「我方在哪头」同一套（_color_flip = 我在 enemy 那边）。
+	var geo := _lane_clear_geometry(lane, "enemy" if _color_flip else "player")
+	var final_round: bool = geo["final_round"]
+	var corners: Array[Vector3] = geo["corners"]
+	var bounds: Rect2 = geo["bounds"]
 	# 本路在屏幕上的范围：四个角投影后取外接框。字幕和推近轴心都对准它。
 	var screen_rect := Rect2(_world_to_arena_point(corners[0]), Vector2.ZERO)
 	for corner in corners:
@@ -2893,10 +3016,129 @@ func _spawn_lane_clear_feedback(actor: Node3D) -> void:
 	if block != null:
 		_death_tail_blocks.append(weakref(block))
 		block.call("play_clear", _battle_3d_vfx_root.to_local(actor.global_position), bounds, cheer_points, {
-			"from": _battle_3d_vfx_root.to_local(_sim_to_world_pos(sweep_from_sim)),
-			"to": _battle_3d_vfx_root.to_local(_sim_to_world_pos(sweep_to_sim)),
-			"kind": _PREP_SKIN.refresh_fx(),
+			"from": geo["from"], "to": geo["to"], "kind": _PREP_SKIN.refresh_fx(),
 		})
+
+
+# 一路的清场范围和扫光起止。side = 清这一路的那一边（"player" / "enemy"），扫光从那一边的底线扫向对面。
+# 模拟坐标里 player 在 y 大的那头（决赛横路在 x 小的那头）。bounds / from / to 是 3D 特效根节点坐标。
+func _lane_clear_geometry(lane: int, side: String) -> Dictionary:
+	var visual_min := _battle_visual_min()
+	var visual_max := _battle_visual_max()
+	# 11.14：第 21 回合战场打横，三路是上中下三条横带（BattleSimulator._apply_final_round_left_right_layout），
+	# 本路范围要按横带算；以前一直按竖条算，光波 / 光幕 / 字幕都框错了地方。
+	var final_round := _battlefield_kind() == "final"
+	var from_enemy := side == "enemy"
+	var lane_min: Vector2
+	var lane_max: Vector2
+	var sweep_from_sim: Vector2
+	var sweep_to_sim: Vector2
+	if final_round:
+		var lane_h := BattleSimShared.FINAL_ARENA_H / 3.0
+		lane_min = Vector2(visual_min.x, maxf(visual_min.y, lane * lane_h))
+		lane_max = Vector2(visual_max.x, minf(visual_max.y, (lane + 1) * lane_h))
+		var mid_y := (lane_min.y + lane_max.y) * 0.5
+		sweep_from_sim = Vector2(lane_max.x if from_enemy else lane_min.x, mid_y)
+		sweep_to_sim = Vector2(lane_min.x if from_enemy else lane_max.x, mid_y)
+	else:
+		var band := BattleSimShared.lane_band_x(lane)
+		lane_min = Vector2(band.x, visual_min.y)
+		lane_max = Vector2(band.y, visual_max.y)
+		var mid_x := (band.x + band.y) * 0.5
+		sweep_from_sim = Vector2(mid_x, lane_min.y if from_enemy else lane_max.y)
+		sweep_to_sim = Vector2(mid_x, lane_max.y if from_enemy else lane_min.y)
+	var corners: Array[Vector3] = []
+	for sim in [lane_min, Vector2(lane_max.x, lane_min.y), Vector2(lane_min.x, lane_max.y), lane_max]:
+		corners.append(_sim_to_world_pos(sim))
+	var a := _battle_3d_vfx_root.to_local(corners[0])
+	var b := _battle_3d_vfx_root.to_local(corners[3])
+	return {
+		"final_round": final_round,
+		"corners": corners,
+		"bounds": Rect2(Vector2(minf(a.x, b.x), minf(a.z, b.z)), Vector2(absf(b.x - a.x), absf(b.z - a.z))),
+		"from": _battle_3d_vfx_root.to_local(_sim_to_world_pos(sweep_from_sim)),
+		"to": _battle_3d_vfx_root.to_local(_sim_to_world_pos(sweep_to_sim)),
+	}
+
+
+# --- 11.18 别人的清路 -------------------------------------------------------------
+#
+# 用户定：队友和对面清路都显示；只演地面光波 + 光幕 + 皮肤扫光（不定格、不震屏、不推近、
+# 不出字幕、没有光柱和欢呼金环）；皮肤按**这一路原主人**（棋子出生在这一路的那个座位），
+# 不按补最后一刀的人 —— 隔断打开后邻居可能过来帮忙收尾。
+# 本地玩家自己那一路仍走原来那套（_is_local_lane_clear / _spawn_lane_clear_feedback）。
+#
+# 判据和 _is_local_lane_clear 同一个口径：这一路对面那边的单位全死，而且死亡 cue 还在排队的
+# 尸体（_cue_corpses / _pending_death_claim_tokens）也算没死完，不然倒数第二个会抢走清场。
+# 每一边每一路每回合只演一次（_other_lane_clears，reset 时清）。
+var _other_lane_clears: Dictionary = {}
+
+
+func _maybe_play_other_lane_clear(victim_uid: String, actor: Node3D) -> void:
+	if not is_instance_valid(actor) or not actor.is_inside_tree() or not is_instance_valid(_battle_3d_vfx_root):
+		return
+	var victim_side := ""
+	var lane := -1
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if raw is Dictionary and str(raw.get("uid", "")) == victim_uid:
+				victim_side = side
+				lane = int(raw.get("lane", -1))
+				break
+		if not victim_side.is_empty():
+			break
+	if victim_side.is_empty() or lane < 0 or lane > 2:
+		return
+	var clear_side := "enemy" if victim_side == "player" else "player"
+	var key := "%s:%d" % [clear_side, lane]
+	if _other_lane_clears.has(key):
+		return
+	for raw in _state.get(victim_side, []):
+		if not (raw is Dictionary) or int(raw.get("lane", -1)) != lane:
+			continue
+		var uid := str(raw.get("uid", ""))
+		if uid == victim_uid:
+			continue
+		if bool(raw.get("alive", false)) or _cue_corpses.has(uid) or _pending_death_claim_tokens.has(uid):
+			return
+	# 这一路的主人：清路那一边出生在这一路的棋子属于哪个座位（取多数）。
+	# 没有座位的（怪物那边）不演；本地玩家自己的路交给原来那套。
+	var owners: Dictionary = {}
+	for raw in _state.get(clear_side, []):
+		if not (raw is Dictionary) or int(raw.get("lane", -1)) != lane:
+			continue
+		if _owned_by_local_player(raw):
+			return
+		var owner := int(raw.get("owner_slot", -1))
+		if owner >= 0:
+			owners[owner] = int(owners.get(owner, 0)) + 1
+	if owners.is_empty():
+		return
+	var owner_slot := -1
+	for slot in owners:
+		if owner_slot < 0 or int(owners[slot]) > int(owners[owner_slot]):
+			owner_slot = int(slot)
+	_other_lane_clears[key] = true
+	var geo := _lane_clear_geometry(lane, clear_side)
+	var block := VFXBlockRoot.spawn_block(preload("res://effects/vfx3d/modules/VFXLaneClearBurst3D.gd"), _battle_3d_vfx_root, true)
+	if block != null:
+		_death_tail_blocks.append(weakref(block))
+		block.call("play_clear", _battle_3d_vfx_root.to_local(actor.global_position), geo["bounds"], [], {
+			"from": geo["from"], "to": geo["to"], "kind": _seat_refresh_fx(owner_slot),
+		}, false)
+
+
+# 某个座位的清路扫光种类：真人用出战名片带来的棋盘皮肤（NetworkService.team_seat_profiles[slot].prep_skin），
+# AI 用服务器随机、整局不变的那张（NetworkService.team_seat_ai_skins）。
+# 旧服务器、这个包里没有的皮肤 → 默认（火）。
+func _seat_refresh_fx(slot: int) -> String:
+	var profiles: Dictionary = NetworkService.team_seat_profiles
+	var profile: Variant = profiles.get(slot, profiles.get(str(slot), {}))
+	var skin := str((profile as Dictionary).get("prep_skin", "")) if profile is Dictionary else ""
+	if skin.is_empty():
+		var ai_skins: Dictionary = NetworkService.team_seat_ai_skins
+		skin = str(ai_skins.get(slot, ai_skins.get(str(slot), "")))
+	return _PREP_SKIN.refresh_fx_for(skin if not skin.is_empty() else _PREP_SKIN.DEFAULT_ID)
 
 
 # 我方在本地那一路还活着的棋子（含队友借位的友军不算 —— 本路只有自己的棋子）。
@@ -3524,7 +3766,11 @@ func _human_king_can_grow() -> bool:
 # 而 data/units/race_units.json 里的 id 永远稳定。两条路都查不到就返回 false ——
 # 宁可少响一声，也不要把别人的阵亡音播给人王。
 func _is_local_owned_unit(sim_uid: String) -> bool:
-	var unit := _state_unit_for(sim_uid)
+	return _owned_by_local_player(_state_unit_for(sim_uid))
+
+
+# 同上，直接拿单位字典判断（每帧扫全场时用，免得每个单位再按 uid 扫一遍）。
+func _owned_by_local_player(unit: Dictionary) -> bool:
 	if unit.is_empty():
 		return false
 	if NetworkService.team_active or GameState.team_mode:
@@ -3685,16 +3931,20 @@ const _RACE_NUMBER_COLORS := {
 # Spawns one floating number at a screen-space head anchor. kind is
 # "dmg" | "heal" | "shield" | "miss"; crit/skill tweak damage styling. race colors
 # the normal-attack tier only.
-func _spawn_hit_number(head_pos: Vector2, amount: int, kind: String, crit: bool, is_skill: bool, race: String = "") -> void:
+func _spawn_hit_number(head_pos: Vector2, amount: int, kind: String, crit: bool, is_skill: bool, race: String = "", off_focus := false) -> void:
 	if amount <= 0 and not (kind in ["miss", "dodge", "execute"]):
 		return
 	_ensure_hit_number_layer()
 	if _hit_number_pool.is_empty():
 		return
-	var lbl: Label = _hit_number_pool[_hit_number_cursor]
-	_hit_number_cursor = (_hit_number_cursor + 1) % _hit_number_pool.size()
+	var slot := _hit_number_slot(off_focus)
+	if slot < 0:
+		return
+	var lbl: Label = _hit_number_pool[slot]
+	_hit_number_cursor = (slot + 1) % _hit_number_pool.size()
 	if not is_instance_valid(lbl):
 		return
+	lbl.set_meta("hit_off_focus", off_focus)
 	if lbl.has_meta("hit_tween"):
 		var prev_tween: Variant = lbl.get_meta("hit_tween")
 		if prev_tween is Tween and (prev_tween as Tween).is_valid():
@@ -3808,6 +4058,23 @@ func _spawn_hit_number(head_pos: Vector2, amount: int, kind: String, crit: bool,
 		tw.tween_property(lbl, "scale", Vector2.ONE, 0.10).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.set_parallel(false)
 	tw.tween_callback(lbl.hide)
+
+
+# 数字池（_HIT_NUMBER_POOL_SIZE 个）满了的时候谁让谁（11.13，玩家自己正在打的路优先）：
+# 先用已经飘完的；别的路的数字只能顶掉别的路的数字，顶不了就不显示；正在打的路的数字可以顶掉
+# 别的路的，都不行时才顶掉最早的那一个（就是以前的轮流用）。返回 -1 = 这个数字不显示。
+func _hit_number_slot(off_focus: bool) -> int:
+	var count := _hit_number_pool.size()
+	for step in count:
+		var i := (_hit_number_cursor + step) % count
+		var lbl: Label = _hit_number_pool[i]
+		if not is_instance_valid(lbl) or not lbl.visible:
+			return i
+	for step in count:
+		var i := (_hit_number_cursor + step) % count
+		if bool(_hit_number_pool[i].get_meta("hit_off_focus", false)):
+			return i
+	return -1 if off_focus else _hit_number_cursor
 
 func _spawn_vfx(vfx_id: String, pos: Vector2, config: Dictionary = {}) -> void:
 	VFXManager.spawn_vfx(vfx_id, pos, config)
@@ -4062,11 +4329,11 @@ func _play_crimson_event_groups(hp_hits: Dictionary, pierces: Dictionary, curren
 func _unit_audio_context(sim_uid: String, kind: String) -> Dictionary:
 	var unit := _state_unit_for(sim_uid)
 	var definition: Dictionary = unit.get("def", {})
-	var lane := int(unit.get("lane", -1))
-	var focus := _local_lane()
+	# off_focus：这个单位现在没站在玩家正在打的路上（BattleAudioPolicy 给它压低音量和优先级）。
+	# 11.13 以前看的是单位出生的那一路，自己那一路打完、棋子走去旁边的路以后就不对了。
 	return {"source_uid": sim_uid, "unit_id": str(unit.get("id", unit.get("unit_id", definition.get("id", "")))),
 		"star": int(unit.get("star", 1)), "kind": kind,
-		"off_focus": lane >= 0 and focus >= 0 and lane != focus}
+		"off_focus": _unit_off_focus(unit)}
 
 func _important_unit_audio(sim_uid: String) -> bool:
 	return SfxService.BattleAudioPolicy.unit_weight(str(_unit_audio_context(sim_uid, "skill").unit_id)) == 0

@@ -14,8 +14,7 @@ extends Node
 #
 # ## 本检查判什么
 #
-#   1. 结构：聊天记录窗与它内部的滚动容器都必须 `MOUSE_FILTER_IGNORE`
-#      （纯展示区不吃点击）。漏掉内层那个，症状一模一样且不报错。
+#   1. 结构：聊天记录底板不接收输入，开店时整块聊天区隐藏，滚动条和输入入口也随之隐藏。
 #   2. 几何：卡 4 与聊天窗**真的重叠**（重叠存在 ⇒ 上面那条判据才不是空转）；
 #      且吃点击的层级里**没有**控件盖住卡 4 的任一角落。
 #
@@ -72,14 +71,8 @@ func _case_source_contract() -> void:
 		_h.expect(line.contains("IGNORE"), "window_filter_ignore",
 			"★ 聊天记录窗必须 MOUSE_FILTER_IGNORE（纯展示，整块矩形不该吃点击）：%s" % line.strip_edges())
 
-	# 内层 ScrollContainer 同样要 IGNORE —— 漏掉它症状一样、且不报错。
-	var at2 := code.find("_chat_record_scroll.mouse_filter")
-	_h.expect(at2 >= 0, "scroll_filter_set",
-		"★ 内层 _chat_record_scroll 也必须显式设 mouse_filter（父窗 IGNORE 了它仍会吞点击）")
-	if at2 >= 0:
-		var line2: String = code.substr(at2).split(String.chr(10))[0]
-		_h.expect(line2.contains("IGNORE"), "scroll_filter_ignore",
-			"★ _chat_record_scroll 必须 MOUSE_FILTER_IGNORE：%s" % line2.strip_edges())
+	_h.expect(code.contains("_chat_record_page.visible = not is_open"),
+		"chat_hidden_while_shopping", "开店时必须隐藏聊天区及其滚动条和打字入口")
 
 
 # ── 2. 几何：重叠确实存在 + 卡 4 的四角都没被吃点击的控件盖住 ────────────────

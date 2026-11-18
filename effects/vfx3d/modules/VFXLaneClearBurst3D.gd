@@ -52,7 +52,8 @@ static func warm_skin_textures(kind: String) -> void:
 
 
 ## sweep：{from: Vector3, to: Vector3, kind: String}，VFX 根节点坐标。不给就只有原来那套金光。
-func play_clear(origin: Vector3, bounds: Rect2, cheer_points: Array = [], sweep: Dictionary = {}) -> void:
+## pillar = false：11.18 别人清路的轻量版，只要地面光波 + 光幕 + 皮肤扫光，不要击杀点光柱。
+func play_clear(origin: Vector3, bounds: Rect2, cheer_points: Array = [], sweep: Dictionary = {}, pillar := true) -> void:
 	begin()
 	var has_sweep: bool = sweep.get("from") is Vector3 and sweep.get("to") is Vector3
 	_along_x = false
@@ -81,7 +82,8 @@ func play_clear(origin: Vector3, bounds: Rect2, cheer_points: Array = [], sweep:
 	tween.tween_property(material, "shader_parameter/progress", 1.0, 0.68)
 	var strength := 1.0 if PRESENTATION.flash_allowed() else 0.45
 	_spawn_curtains(origin, bounds, strength)
-	_spawn_pillar(origin, strength)
+	if pillar:
+		_spawn_pillar(origin, strength)
 	for point in cheer_points:
 		if point is Vector3:
 			_spawn_cheer_ring(point, strength)
@@ -176,7 +178,9 @@ func _spawn_skin_sweep(from: Vector3, to: Vector3, ground_y: float, bounds: Rect
 	curtain_mat.set_shader_parameter("fade", 0.0)
 	front.add_child(curtain)
 	# 发射范围：横跨整条路宽，沿扫的方向留一点厚度（后半程一帧走得远，太薄会断成一团团）。
-	var extents := Vector3(0.12, 0.02, width * 0.45) if _along_x else Vector3(width * 0.45, 0.02, 0.12)
+	# 火舌是原地长的，一帧 30 fps 消失边要走 0.8 左右，厚度给到 0.4 才连成一片。
+	var depth := 0.4 if kind == "fire" else 0.12
+	var extents := Vector3(depth, 0.02, width * 0.45) if _along_x else Vector3(width * 0.45, 0.02, depth)
 	var low := PRESENTATION.QUALITY.tier == PRESENTATION.QUALITY.Tier.LOW
 	var emitters: Array[CPUParticles3D] = _make_skin_emitters(kind, dir)
 	for p in emitters:
@@ -302,38 +306,136 @@ func _make_skin_emitters(kind: String, dir: Vector3) -> Array[CPUParticles3D]:
 				Color(1.0, 0.76, 0.28, 0.85), Color(1.0, 0.55, 0.12, 0.0)])
 			out.append(swarm)
 		_:
-			# 火墙：软火舌往上蹿、越来越红；火星往上蹦
-			var body := _skin_particles("SkinSweepFireBody", FX_TEXTURES.flame_atlas(), false, 140, 0.32, FX_TEXTURES.FLAME_FRAMES)
-			body.direction = Vector3.UP
-			body.spread = 20.0
-			body.initial_velocity_min = 0.4
-			body.initial_velocity_max = 1.0
-			body.gravity = Vector3(0.0, 3.0, 0.0)
-			body.angle_min = -18.0
-			body.angle_max = 18.0
-			body.scale_amount_min = 1.0
-			body.scale_amount_max = 1.7
-			body.scale_amount_curve = _curve([Vector2(0.0, 0.6), Vector2(0.3, 1.0), Vector2(1.0, 0.65)])
-			body.color_ramp = _ramp([0.0, 0.08, 0.35, 0.7, 1.0], [
-				Color(1.0, 0.86, 0.45, 0.0), Color(1.0, 0.74, 0.30, 0.75),
-				Color(1.0, 0.46, 0.10, 0.65), Color(0.80, 0.18, 0.04, 0.35), Color(0.32, 0.06, 0.03, 0.0)])
-			body.color_initial_ramp = _ramp([0.0, 1.0], [Color(1.0, 1.0, 0.9), Color(1.0, 0.78, 0.7)])
-			out.append(body)
-			var sparks := _skin_particles("SkinSweepFireSparks", FX_TEXTURES.spark(), true, 40, 0.45)
-			sparks.direction = (Vector3.UP - dir * 0.25).normalized()
-			sparks.spread = 35.0
-			sparks.initial_velocity_min = 1.2
-			sparks.initial_velocity_max = 2.4
-			sparks.damping_min = 1.6
-			sparks.damping_max = 2.6
-			sparks.gravity = Vector3(0.0, 0.6, 0.0)
-			sparks.scale_amount_min = 0.9
-			sparks.scale_amount_max = 1.6
-			sparks.scale_amount_curve = _curve([Vector2(0.0, 1.0), Vector2(1.0, 0.25)])
-			sparks.color_ramp = _ramp([0.0, 0.08, 0.5, 1.0], [
-				Color(1.0, 0.95, 0.7, 0.0), Color(1.0, 0.88, 0.45, 1.0),
-				Color(1.0, 0.50, 0.10, 0.85), Color(0.8, 0.18, 0.03, 0.0)])
-			out.append(sparks)
+			out.append_array(_make_flat_fire_emitters(dir))
+	return out
+
+
+# ── 11.16 火：扁平卡通火墙 ─────────────────────────────────────────
+# 原来是写实软火舌贴图 + 加法小火星，在草地上只剩一路橙色小点。改成和法阵友军身上同一套
+# 扁平火（ally_flame.gdshader：暗边 / 主色 / 亮色 / 白热芯四层套叠，分三遍画，相邻火舌融成一团）：
+#   * 火舌：消失边一路「点着」整条路，每根先蹿高再缩没（不变透明），留下一路逐渐熄灭的火；
+#   * 火团：从火舌顶上脱离往上飘的圆火团，随热度降色；
+#   * 火星：同一套圆火团缩小，蹦得更高更散。
+const FLAME_SHADER := preload("res://assets/models/allies_refined/shared/ally_flame.gdshader")
+const FIRE_TONGUE_AMOUNT := 42
+const FIRE_TONGUE_LIFE := 0.30
+const FIRE_PUFF_AMOUNT := 18
+const FIRE_EMBER_AMOUNT := 10
+static var _fire_tongue_material: ShaderMaterial
+static var _fire_puff_material: ShaderMaterial
+static var _fire_tongue_quad: QuadMesh
+static var _fire_puff_quad: QuadMesh
+
+
+static func _fire_base_material() -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = FLAME_SHADER
+	m.set_shader_parameter("sway", 0.18)
+	m.set_shader_parameter("edge_jitter", 0.20)
+	m.set_shader_parameter("rim_alpha", 0.9)
+	m.set_shader_parameter("max_lean", 0.35)
+	return m
+
+
+# 外边 / 主色 / 亮芯三遍（render_priority 递增），和 FormationAllyRefined._get_tongue_material 同一个做法。
+static func fire_tongue_material() -> ShaderMaterial:
+	if _fire_tongue_material == null:
+		var passes: Array = [[0, 0], [1, 1], [2, 3]]
+		var prev: ShaderMaterial = null
+		for i in passes.size():
+			var m := _fire_base_material()
+			m.render_priority = i
+			m.set_shader_parameter("layer_from", passes[i][0])
+			m.set_shader_parameter("layer_to", passes[i][1])
+			if prev == null:
+				_fire_tongue_material = m
+			else:
+				prev.next_pass = m
+			prev = m
+	return _fire_tongue_material
+
+
+static func fire_puff_material() -> ShaderMaterial:
+	if _fire_puff_material == null:
+		_fire_puff_material = _fire_base_material()
+		_fire_puff_material.set_shader_parameter("puff", true)
+		_fire_puff_material.render_priority = 3
+	return _fire_puff_material
+
+
+static func _ensure_fire_quads() -> void:
+	if _fire_tongue_quad == null:
+		_fire_tongue_quad = QuadMesh.new()
+		_fire_tongue_quad.size = Vector2(1.05, 1.0)
+		# 根部压在地面下一点，火舌是从地里冒出来的
+		_fire_tongue_quad.center_offset = Vector3(0.0, 0.36, 0.0)
+	if _fire_puff_quad == null:
+		_fire_puff_quad = QuadMesh.new()
+		_fire_puff_quad.size = Vector2.ONE
+
+
+func _fire_particles(node_name: String, tongue: bool, amount: int, lifetime: float) -> CPUParticles3D:
+	_ensure_fire_quads()
+	var p := CPUParticles3D.new()
+	p.name = node_name
+	p.emitting = false
+	p.local_coords = false
+	p.amount = amount
+	p.lifetime = lifetime
+	p.randomness = 0.35
+	p.draw_order = CPUParticles3D.DRAW_ORDER_VIEW_DEPTH
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	p.mesh = _fire_tongue_quad if tongue else _fire_puff_quad
+	p.material_override = fire_tongue_material() if tongue else fire_puff_material()
+	return p
+
+
+func _make_flat_fire_emitters(dir: Vector3) -> Array[CPUParticles3D]:
+	var out: Array[CPUParticles3D] = []
+	# 火舌：原地长出来，几乎不动；align_y 让火舌顺着（向上的）速度立着
+	var tongues := _fire_particles("SkinSweepFireBody", true, FIRE_TONGUE_AMOUNT, FIRE_TONGUE_LIFE)
+	tongues.particle_flag_align_y = true
+	tongues.direction = (Vector3.UP - dir * 0.15).normalized()
+	tongues.spread = 8.0
+	tongues.initial_velocity_min = 0.05
+	tongues.initial_velocity_max = 0.15
+	tongues.gravity = Vector3(0.0, 0.4, 0.0)
+	tongues.damping_min = 0.3
+	tongues.damping_max = 0.6
+	tongues.scale_amount_min = 1.3
+	tongues.scale_amount_max = 1.9
+	# alpha = 饱满度：先蹿到最高，再慢慢缩没（着色器按它收窄变矮，不变透明）
+	tongues.color_ramp = _ramp([0.0, 0.14, 0.5, 1.0], [
+		Color(1, 1, 1, 0.35), Color(1, 1, 1, 1.0), Color(1, 1, 1, 0.75), Color(1, 1, 1, 0.0)])
+	out.append(tongues)
+	# 火团：从火舌半腰脱离往上飘，带一点往回飘（被扫过去的风带着）
+	var puffs := _fire_particles("SkinSweepFirePuffs", false, FIRE_PUFF_AMOUNT, 0.45)
+	puffs.direction = (Vector3.UP - dir * 0.3).normalized()
+	puffs.spread = 20.0
+	puffs.initial_velocity_min = 0.9
+	puffs.initial_velocity_max = 1.5
+	puffs.damping_min = 0.4
+	puffs.damping_max = 0.9
+	puffs.gravity = Vector3(0.0, 1.2, 0.0)
+	puffs.scale_amount_min = 0.22
+	puffs.scale_amount_max = 0.34
+	puffs.scale_amount_curve = _curve([Vector2(0.0, 0.6), Vector2(0.12, 1.1), Vector2(0.3, 1.0), Vector2(1.0, 0.0)])
+	# alpha = 热度：白 → 黄 → 主色
+	puffs.color_ramp = _ramp([0.0, 1.0], [Color(1, 1, 1, 1.0), Color(1, 1, 1, 0.0)])
+	out.append(puffs)
+	var embers := _fire_particles("SkinSweepFireSparks", false, FIRE_EMBER_AMOUNT, 0.55)
+	embers.direction = (Vector3.UP - dir * 0.2).normalized()
+	embers.spread = 40.0
+	embers.initial_velocity_min = 1.8
+	embers.initial_velocity_max = 3.0
+	embers.damping_min = 1.0
+	embers.damping_max = 2.0
+	embers.gravity = Vector3(0.0, 0.3, 0.0)
+	embers.scale_amount_min = 0.08
+	embers.scale_amount_max = 0.12
+	embers.scale_amount_curve = puffs.scale_amount_curve
+	embers.color_ramp = puffs.color_ramp
+	out.append(embers)
 	return out
 
 

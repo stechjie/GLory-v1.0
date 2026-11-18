@@ -15,6 +15,9 @@ uniform vec4 albedo_color : source_color = vec4(1.0);
 uniform vec4 outline_tint : source_color = vec4(0.30, 0.28, 0.32, 1.0);
 // 描边宽度（像素，按 1080 高的画面换算，分辨率变了宽度跟着等比变）。
 uniform float outline_px : hint_range(0.0, 6.0) = 2.0;
+// 实际画出来至少这么多像素。主菜单宠物的视口只有三四百像素高，按 1080 换算下来不到 1 像素，
+// 描边会断成一截一截的虚线（11.16「线条很锯齿」的原因之一）。
+uniform float min_px : hint_range(0.0, 3.0) = 1.0;
 
 void vertex() {
 	vec4 clip = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));
@@ -24,8 +27,8 @@ void vertex() {
 	if (len > 1.0e-5) {
 		n_clip /= len;
 		// 归一化设备坐标里 2 个单位 = 整个画面高度
-		float px_to_ndc = 2.0 / 1080.0;
-		clip.xy += n_clip * outline_px * px_to_ndc * clip.w * vec2(VIEWPORT_SIZE.y / VIEWPORT_SIZE.x, 1.0);
+		float px = max(outline_px * VIEWPORT_SIZE.y / 1080.0, min_px);
+		clip.xy += n_clip * px * (2.0 / VIEWPORT_SIZE.y) * clip.w * vec2(VIEWPORT_SIZE.y / VIEWPORT_SIZE.x, 1.0);
 	}
 	POSITION = clip;
 }

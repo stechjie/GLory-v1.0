@@ -1,0 +1,5 @@
+Source: provided by the project owner on 2026-11-18 as audio-gold-coin-stack-sound-3-stack.mp3 (from their Downloads folder)
+Origin site and license: NOT RECORDED - confirm before a store release and fill in here.
+Adaptation: removed the 0.753 s of leading silence (2 ms fade-in kept before the first coin), 40 ms fade-out, total 0.713 s; downmixed to mono, 44100 Hz, 16-bit WAV; peak 0.855 (level unchanged from the source).
+Used for: SfxService.CUE_MONSTER_KILL_REWARD, played the moment a monster's death starts (BattleVfx._play_monster_kill_reward).
+Replaces: monster_coin_crisp.wav (synthesized; removed).

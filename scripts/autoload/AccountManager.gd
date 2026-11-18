@@ -39,6 +39,7 @@ signal login_choice_needed()
 # 换成了另一个账号（资料页「切换账号」、绑定冲突时「切换到那个账号」）。
 # Main 收到后回启动页，按新账号把进门那一套重新走一遍。
 signal account_switched()
+signal account_deleted(apple_revocation_required: bool)
 # 绑上了 Google / Apple。资料页的「账号与登录」与主菜单名牌的红点据此刷新。
 signal identities_changed()
 # 账号被封（登录时、游戏中都可能）。info = {"reason", "ends_at"}，ends_at 为 null 是永久。
@@ -116,6 +117,12 @@ var _last_refresh_failed_at := 0.0
 # 登录流程的互斥标志。**只保护登录**，不保护资料等其它请求 ——
 # 那些是可以并发的，见 _request 顶部关于「每次自建 HTTPRequest」的说明。
 var _busy := false
+# 主动切换期间保留旧凭据，暂停旧会话请求与实时连接；不屏蔽真正的被顶号/封禁。
+var _switching_account := false
+
+
+func is_switching_account() -> bool:
+	return _switching_account
 
 # 在等玩家选登录方式（见文件头的启动流程）。Bootstrap 据此显示三个按钮、不自动重试。
 var awaiting_choice := false
@@ -315,13 +322,38 @@ func switch_with_provider(provider: String, id_token: String, nonce: String) -> 
 	if _busy:
 		return {"code": 0, "error": localized_error("正在登录，请稍候")}
 	_busy = true
+	_switching_account = true
+	var previous_generation := _session_generation
+	var previous_player := player_id
+	var previous_session := _login_session_id
+	var resume_realtime := RealtimeService.pause_for_account_switch()
+	# 已在飞的续期可能已轮换 refresh token，先保存它，再隔离旧会话响应。
+	# 新的旧会话请求/续期已被 _switching_account 挡住。
+	if _refreshing:
+		await _refresh_finished
+	if previous_generation != _session_generation or previous_player != player_id \
+			or previous_session != _login_session_id or RealtimeService.is_kicked() or is_banned():
+		_switching_account = false
+		_busy = false
+		return {"code": 0, "error": localized_error("当前登录状态已改变，请重新登录")}
+	# 服务端 /provider 会先撤销旧 sid。已在飞的 presence/profile 等响应必须失效，
+	# 否则它们的旧 sid 409 可能先把这次主动登录误判为被另一台设备顶号。
+	_session_generation += 1
+	var switch_generation := _session_generation
 	# 不带本机 player_id：它正被当前这个号用着，带上去只会撞号。
 	var result := await _provider_post(provider, id_token, nonce, "")
+	_switching_account = false
 	_busy = false
 	if int(result.get("code", 0)) != 200:
+		if switch_generation == _session_generation and previous_session == _login_session_id \
+				and previous_player == player_id and is_logged_in() and not is_banned():
+			# 只尝试恢复原 sid；不重新登录、不清 kicked、不自动取得另一台设备的会话。
+			RealtimeService.resume_after_account_switch(resume_realtime)
 		return result
+	var same_player := str((result.get("body", {}) as Dictionary).get("player_id", "")) == player_id
 	logout()
-	PlayerProfile.reset_account_state()
+	if not same_player:
+		PlayerProfile.reset_account_state()
 	_finish_success(result.get("body", {}))
 	account_switched.emit()
 	return result
@@ -544,6 +576,8 @@ func _token_needs_refresh() -> bool:
 
 # 令牌够新就直接返回 true；快过期了就先续。给 RealtimeService 建连前用。
 func ensure_fresh_token() -> bool:
+	if _switching_account:
+		return false
 	if not is_logged_in():
 		return false
 	if _token_needs_refresh():
@@ -558,6 +592,8 @@ func ensure_fresh_token() -> bool:
 func refresh_session() -> bool:
 	if _refreshing:
 		return await _refresh_finished
+	if _switching_account:
+		return false
 	if not is_logged_in() or _refresh_dead:
 		return false
 	var now := Time.get_unix_time_from_system()
@@ -771,15 +807,27 @@ func fetch_public_profile(friend_code: String) -> Dictionary:
 #
 # 顺序不能反：先删服务器、成功了再动本地。反过来的话，服务器删失败时
 # 本地已经把凭证扔了，玩家会丢失一个**还存在**的账号。
-func delete_account(confirm_friend_code: String) -> Dictionary:
+func delete_account(confirm_friend_code: String, apple_authorization_code: String = "", apple_linked: bool = false) -> Dictionary:
+	var body := {"friend_code": confirm_friend_code}
+	if not apple_authorization_code.is_empty():
+		body["apple_authorization_code"] = apple_authorization_code
 	var result := await _request(
 		HTTPClient.METHOD_POST, "/v1/me/delete",
-		{"friend_code": confirm_friend_code}, true)
+		body, true)
 	if int(result.get("code", 0)) != 200:
 		return result
 	logout()
 	PlayerProfile.reset_account_state()
+	account_deleted.emit(apple_revocation_needed(result.get("body", {}), apple_linked))
 	return result
+
+
+# 新后端的明确状态优先；旧后端缺字段时，用删号前查到的 Apple 绑定提示手动撤销。
+# apple_linked 只在本地传递，不发送、不落盘，也不推断未知账号的提供方。
+static func apple_revocation_needed(body: Dictionary, apple_linked: bool) -> bool:
+	if body.get("apple_revocation_required") is bool:
+		return bool(body["apple_revocation_required"])
+	return apple_linked
 
 
 # --- 交友（docs/交友系统设计.md）------------------------------------------------
@@ -1592,6 +1640,8 @@ func _request(
 	authed: bool = false,
 	allow_refresh: bool = true,
 ) -> Dictionary:
+	if authed and _switching_account:
+		return {"code": 0, "error": ""}
 	# 头只从 auth_header_lines() 取，**不在这里再拼一份** ——
 	# 2026-10-12 的事故就是某条路自己拼、漏了 X-Glory-Session（见那个函数的注释）。
 	var headers := auth_header_lines()
@@ -1604,6 +1654,9 @@ func _request(
 		# 令牌快过期就先续，免得这一趟白跑一次 401（见「令牌续期」那一节）。
 		if allow_refresh and _token_needs_refresh():
 			await refresh_session()
+		# 续期等待期间也可能开始了主动切换，不再发送旧 sid 的业务请求。
+		if _switching_account:
+			return {"code": 0, "error": ""}
 		if _access_token.is_empty():
 			# 本地就能判定的失败，不必往返一次。用 401 是为了让调用方的
 			# 处理路径与「服务端说令牌无效」完全一致。
@@ -1614,7 +1667,7 @@ func _request(
 	http.timeout = AccountConfig.REQUEST_TIMEOUT_SEC
 	add_child(http)
 
-	var url := AccountConfig.endpoint(path)
+	var url := _account_endpoint(path)
 	# 系统代理（scripts/account/NetDiag.gd 顶部）：没设代理的电脑照旧直连。
 	if not _net_env_logged:
 		_net_env_logged = true
@@ -1725,6 +1778,10 @@ func _request(
 
 # 登录那两个调用的薄封装。保留它是为了让登录路径一个字都不用改 ——
 # 那段有 refresh/anonymous 的顺序纪律，不该在重构 HTTP 层时被顺手动到。
+func _account_endpoint(path: String) -> String:
+	return AccountConfig.endpoint(path)
+
+
 func _post(path: String, payload: Dictionary) -> Dictionary:
 	return await _request(HTTPClient.METHOD_POST, path, payload, false)
 

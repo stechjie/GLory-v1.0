@@ -46,8 +46,7 @@ func _ready() -> void:
 	# 图标为主：这是三个渠道（私聊 / 世界 / 对局内）共用的同一颗按钮，画成麦克风
 	# 一眼就知道是「说话」而不是「发送」——旁边那颗「发送」是字，两颗形状不同才分得开。
 	_apply_mic_icon()
-	# 按住说话这句当 tooltip 留着：图标省地方，但第一次玩的人得知道是「按住」不是「点一下」。
-	_button.tooltip_text = _text("按住说话", "Hold to talk")
+	_button.accessibility_name = _text("按住说话", "Hold to talk")
 	_button.custom_minimum_size = Vector2(ICON_BUTTON_SIZE, Tokens.TOUCH_MIN)
 	_button.button_down.connect(_on_down)
 	_button.button_up.connect(_on_up)
@@ -101,7 +100,7 @@ func _apply_mic_icon() -> void:
 	_button.icon = load(MIC_ON_ICON)
 	# 图标居中放大：默认图标跟着字体大小走，96px 的素材会缩成一小点。
 	_button.expand_icon = true
-	_button.add_theme_constant_override("icon_max_width", 40)
+	_button.add_theme_constant_override("icon_max_width", 28)
 	# 🔴 居中三件套（2026-10-14 用户截图反馈「麦克风不在框里居中」）：
 	#   Godot 的 Button 默认把图标与文字横排左对齐，且垂直也是 TOP —— 按钮被拉宽到
 	#   ICON_BUTTON_SIZE(132) 之后，图标就贴在左上角，右边和下面留一大片空白。
@@ -120,10 +119,9 @@ func _on_down() -> void:
 		_hint.text = ""
 		failed.emit(reason)
 		return
-	# 移动端首次录音会先弹系统权限框（2026-10-14）。这时麦克风还没开，
-	# 别显示「0″ 松开发送」——玩家会以为已经在录了。等权限回来会自动补开。
-	if VoiceClipService.is_awaiting_permission():
-		_hint.text = _text("正在请求麦克风权限…", "Requesting microphone…")
+	# 授权弹窗会打断按住手势，允许后下一次按住才录音。
+	if not VoiceClipService.is_recording():
+		_hint.text = ""
 		return
 	_hint.text = _text("0″ 松开发送", "0″ release to send")
 
@@ -131,10 +129,7 @@ func _on_down() -> void:
 func _on_up() -> void:
 	if _busy:
 		return
-	# 权限框还开着：玩家松手了（多半是慌了）。权限回调会把这次录音补上，
-	# 这里不要当成「录都没开起来」直接吞掉，也不要走到 finish_and_upload
-	# （那会拿到「没有在录音」的错误）。授权回来如果成了，照常开始录；
-	# 玩家不想录了就直接拖开松手取消 —— 由 _cancelled 分支处理。
+	# 权限弹窗仍在等待时，松手不触发发送。
 	if VoiceClipService.is_awaiting_permission():
 		return
 	if not VoiceClipService.is_recording() and VoiceClipService.recorded_seconds() <= 0.0:

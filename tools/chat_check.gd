@@ -65,7 +65,8 @@ const EXPECTED_IDS := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 # 2026-11-07 队友棋盘：加 `_rpc_team_prep_board_submit` / `_rpc_team_prep_board_request` / `_rpc_team_prep_board`
 # → 77 -> 80、协议 -> 46、指纹变了（45 那次签名已变、钉子没跟，这次一起跟回来）。
 const PINNED_RPC_COUNT := 80
-const PINNED_RPC_PROTOCOL := 46
+# 2026-11-18 战斗排名奖励：协议 -> 47，没加 / 改 @rpc，数量和指纹不动。
+const PINNED_RPC_PROTOCOL := 47
 const PINNED_RPC_SIGNATURES := "5b608249e9263387"
 
 var _h: CheckHarness

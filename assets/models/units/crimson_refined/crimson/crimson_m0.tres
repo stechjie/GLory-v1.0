@@ -19,6 +19,7 @@ shader_parameter/light_threshold = 0.320
 shader_parameter/band_softness = 0.080
 shader_parameter/light_energy = 1.200
 shader_parameter/light_response = 1.500
+shader_parameter/skin_lift = 1.0
 shader_parameter/accent_color = Color(1.000, 0.160, 0.180, 1)
 shader_parameter/accent_hue = 0.989
 shader_parameter/accent_hue_width = 0.050

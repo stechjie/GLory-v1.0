@@ -19,6 +19,10 @@ func _ready() -> void:
 			"scythe_data", "偷袭者数据必须是无冷却 + 开场直接释放"):
 		_h.finish(get_tree())
 		return
+	# 11.16 的「主动技能开场先走满一次冷却」不适用于偷袭者。
+	_h.expect(is_zero_approx(BattleSimShared.opening_skill_cooldown({"id": "dark_scythe", "def": unit_def}))
+		and not BattleSimShared.has_active_cooldown_skill({"id": "dark_scythe", "def": unit_def}),
+		"scythe_no_opening_wait", "偷袭者开场不等冷却，也不显示冷却条")
 
 	var old_team_mode := GameState.team_mode
 	GameState.team_mode = false

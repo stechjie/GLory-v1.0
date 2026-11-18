@@ -269,8 +269,6 @@ func _run() -> void:
 		for entry in entries:
 			var frow := entry as Dictionary
 			var fid2 := str(frow.get("id", ""))
-			if fid2 == "frame_default":
-				continue  # 默认框画的不是这张框，是圆盘本身
 			var m2 := _measure_cached(str(frow.get("source", "")))
 			var t2 := AvatarCatalog.frame_hole_fraction(fid2)
 			if m2.is_empty() or t2 <= 0.0:

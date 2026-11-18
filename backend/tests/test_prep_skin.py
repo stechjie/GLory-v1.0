@@ -148,9 +148,13 @@ def test_owned_skin_reads_back(monkeypatch: pytest.MonkeyPatch) -> None:
     assert asyncio.run(loadout.read_prep_skin(PLAYER_A)) == SOLD_SKIN
 
 
-def test_skin_is_not_on_the_battle_card() -> None:
-    """只有自己看得见，战斗服务器用不到。要让别人也看见，是改设计，不是顺手加字段。"""
-    assert "prep_skin" not in [f.name for f in loadout.Loadout.__dataclass_fields__.values()]
+def test_skin_is_on_the_battle_card_only_when_not_default() -> None:
+    """11-18 改设计：别人清路时按那一路主人的皮肤演扫光，所以皮肤进名片（字段 skin）。
+    默认皮肤不带，省名片长度；资格过滤见 test_loadout.test_prep_skin_goes_on_the_card_only_when_owned。"""
+    base = dict(player_id=str(PLAYER_A), friend_code="AAAA2222", player_name="a",
+                avatar="", avatar_frame="", pet="", races=[])
+    assert loadout.card_payload(loadout.Loadout(**base, prep_skin=SOLD_SKIN))["skin"] == SOLD_SKIN
+    assert "skin" not in loadout.card_payload(loadout.Loadout(**base))
 
 
 # --- 旧包看不到 -----------------------------------------------------------------

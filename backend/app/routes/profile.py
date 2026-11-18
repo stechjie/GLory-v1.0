@@ -22,12 +22,14 @@ import logging
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+import httpx
+from fastapi import APIRouter, Depends, Header, HTTPException, Path
 from pydantic import BaseModel, Field
 
-from app import avatar_catalog, db, friends, players, profile, shop, supabase_admin, text_guard
+from app import apple_signin, avatar_catalog, db, friends, players, profile, shop, supabase_admin, text_guard
 from app.jwt_verify import Claims
 from app.routes.me import current_claims, optional_claims
+from app.supabase_auth import AuthError
 
 log = logging.getLogger("glory.profile")
 
@@ -368,12 +370,41 @@ class DeleteRequest(BaseModel):
     """
 
     friend_code: str
+    # 仅注销时原生 Apple 再确认取得的一次性码；不记录、不落库。
+    apple_authorization_code: str | None = Field(default=None, min_length=1, max_length=8192)
+
+
+async def _apple_revocation_required(authorization: str, authorization_code: str | None) -> bool:
+    """尽力自动撤销；失败仍允许删除并提示手动撤销（Apple TN3194）。"""
+    from app.routes.auth import _auth_client
+
+    try:
+        _, linked = await _auth_client().linked_identities(authorization.partition(" ")[2].strip())
+    except (AuthError, HTTPException, httpx.HTTPError):
+        # 用户身份已由 current_claims 验证；提供方不可用不能阻止删除本服资料。
+        log.warning("注销前无法读取登录绑定，需要提示手动检查 Apple 授权")
+        return True
+    apple = next((identity for identity in linked if identity.provider == "apple"), None)
+    if apple is None:
+        return False
+    if not authorization_code:
+        return True
+    try:
+        await apple_signin.revoke_authorization(authorization_code, apple.subject)
+    except apple_signin.RevocationError as exc:
+        if exc.wrong_identity:
+            # 不撤销其它 Apple 用户，也不在用户选错账号的情况下删号。
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        log.warning("注销前 Apple 自动撤销未完成，需要提示手动撤销：%s", exc)
+        return True
+    return False
 
 
 @router.post("/me/delete")
 async def delete_me(
     body: DeleteRequest,
     claims: Annotated[Claims, Depends(current_claims)],
+    authorization: Annotated[str, Header()],
 ) -> dict:
     """注销账号。**不可撤销，没有冷静期。**
 
@@ -381,15 +412,15 @@ async def delete_me(
     而 DELETE 带 body 在各家客户端和中间层里的支持参差不齐。
     语义上的洁癖换不来任何东西，出问题却要查很久。
 
-    为什么没有冷静期：今天只有匿名登录 —— 玩家没有邮箱、没有第二种登录方式，
-    冷静期里既收不到通知，也没有第二条路回来撤销。它只是把删除推迟，
-    不产生任何保护。等接了绑定登录再谈冷静期。
+    Apple 绑定先尝试撤销授权；未持有可用授权码或 Apple 不可用时仍履行删除，
+    响应告诉客户端引导玩家在 Apple 账号设置里手动撤销（Apple TN3194）。
     """
     row = await _current_profile(claims)
     if body.friend_code.strip().upper() != row.friend_code:
         # 不回显正确答案。也不区分「打错了」和「格式不对」。
         raise HTTPException(status_code=400, detail="好友码不对，注销未执行")
 
+    apple_revocation_required = await _apple_revocation_required(authorization, body.apple_authorization_code)
     deleted = await profile.delete_player(row.player_id)
     if not deleted:
         # 上一句刚查到这个玩家，这里删不到只可能是并发重复注销。
@@ -404,4 +435,5 @@ async def delete_me(
     except supabase_admin.AdminUnavailable as exc:
         log.error("注销后没删掉 Supabase 用户，需要手动补删 player_id=%s auth_uid=%s：%s",
                   row.player_id, claims.auth_uid, exc)
-    return {"deleted": True}
+    # 显式 false 区别于旧后端缺字段，避免客户端在自动撤销成功后误走手动提示。
+    return {"deleted": True, "apple_revocation_required": apple_revocation_required}

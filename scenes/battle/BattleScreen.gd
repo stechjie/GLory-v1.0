@@ -116,6 +116,8 @@ var _final_round_intro_started := false
 # _replay_own（结算/跳过必须用它），敌方队伍的存在 _replay_rival。
 var _replay_own: Dictionary = {}
 var _replay_rival: Dictionary = {}
+## 伤害前三 / 清路前三 / 左下钱袋（11-18），见 BattleRankHud.gd。组队局才有，教学局没有。
+var _rank_hud: RefCounted = null
 var _view_toggle_btn: Button
 # 9.13 #2：自己这一场已经播完（含"跳过画面"）、正在等其他人结束时置真。
 # 这个状态下允许继续切镜头看另一队的战斗 —— 打完之后切过去只推回放，
@@ -421,6 +423,7 @@ func _start_replay(replay: Dictionary) -> void:
 	_battle_result_reported = false
 	_replay_rival = NetworkService.team_replay_rival if _valid_team_replay(NetworkService.team_replay_rival) else {}
 	_watching_rival = false
+	_setup_rank_hud()
 	_replay_mode = true
 	_replay_frame = 0
 	_replay_events_applied = -1
@@ -712,6 +715,8 @@ func _prepare_battle_models() -> void:
 		_fail_team_replay(str(render_report.get("error", "battle_render_prepare_failed")))
 		return
 	_refresh_visuals()
+	# 棋子已按开局站位摆好、画面还没放出来：满棋盘装不下时在这里把镜头拉远（11.16）。
+	_fit_battle_camera_to_formation()
 	_set_prepare_progress(bar, 90.0)
 	if _battle_3d_root != null:
 		_battle_3d_root.visible = true
@@ -749,7 +754,18 @@ func _prepare_battle_models() -> void:
 	if is_instance_valid(bar):
 		bar.queue_free()
 	# 11.14：清场皮肤扫光的贴图是代码现画的，开战前画好（有缓存，之后的回合不再花时间）。
-	preload("res://effects/vfx3d/modules/VFXLaneClearBurst3D.gd").warm_skin_textures(_PREP_SKIN.refresh_fx())
+	# 11.18：别人清路按他的皮肤演，同桌各人的皮肤也一起画好。
+	var lane_clear_vfx := preload("res://effects/vfx3d/modules/VFXLaneClearBurst3D.gd")
+	var skin_kinds := {_PREP_SKIN.refresh_fx(): true}
+	if not NetworkService.team_seat_profiles.is_empty():
+		skin_kinds[_PREP_SKIN.refresh_fx_for(_PREP_SKIN.DEFAULT_ID)] = true  # AI / 默认皮肤的人
+	for profile in NetworkService.team_seat_profiles.values():
+		if profile is Dictionary and profile.has("prep_skin"):
+			skin_kinds[_PREP_SKIN.refresh_fx_for(str(profile["prep_skin"]))] = true
+	for ai_skin in NetworkService.team_seat_ai_skins.values():
+		skin_kinds[_PREP_SKIN.refresh_fx_for(str(ai_skin))] = true
+	for kind in skin_kinds:
+		lane_clear_vfx.warm_skin_textures(kind)
 	# 9.17：Boss 登场。放在这里而不是 _start_battle_music() 里 ——
 	# 后者在进场景那一刻就会被调一次（BattleScreen.gd:98），那时 replay 还没到、
 	# 单位模型还没建，声音会比画面早一整段读条。
@@ -996,6 +1012,8 @@ func _valid_team_replay(replay: Dictionary) -> bool:
 
 # --- 切镜头观战敌方队伍 ------------------------------------------------------
 const ViewToggleKit := preload("res://ui/theme/ParchmentKit.gd")
+const VIEW_TOGGLE_TOP := 54.0
+const VIEW_TOGGLE_SIZE := Vector2(68, 68)
 func _setup_view_toggle() -> void:
 	if _view_toggle_btn != null:
 		return
@@ -1012,14 +1030,26 @@ func _setup_view_toggle() -> void:
 	ViewToggleKit.style_plate(_view_toggle_btn)
 	_view_toggle_btn.icon = ViewToggleKit.icon("spectate")
 	_view_toggle_btn.expand_icon = true
-	_view_toggle_btn.add_theme_constant_override("icon_max_width", 24)
+	# 11.16：从「眼睛在左 + 一排字」的长条改成方块：眼睛在上，下面两个字（偷看 / 返回）。
+	_view_toggle_btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_view_toggle_btn.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
+	_view_toggle_btn.add_theme_constant_override("icon_max_width", 32)
+	_view_toggle_btn.add_theme_constant_override("h_separation", 0)
 	_view_toggle_btn.add_theme_font_size_override("font_size", 15)
-	_view_toggle_btn.custom_minimum_size = Vector2(156, 40)
+	# style_plate 的左右留白是给长条配的（各 16），方块里会把字挤掉，收到 6。
+	for state in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
+		var plate_box := _view_toggle_btn.get_theme_stylebox(state) as StyleBoxTexture
+		if plate_box != null:
+			plate_box.content_margin_left = 6.0
+			plate_box.content_margin_right = 6.0
+			plate_box.content_margin_top = 11.0
+			plate_box.content_margin_bottom = 7.0
+	_view_toggle_btn.custom_minimum_size = VIEW_TOGGLE_SIZE
 	_view_toggle_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	_view_toggle_btn.offset_left = -172
-	_view_toggle_btn.offset_top = 54
+	_view_toggle_btn.offset_left = -16.0 - VIEW_TOGGLE_SIZE.x
+	_view_toggle_btn.offset_top = VIEW_TOGGLE_TOP
 	_view_toggle_btn.offset_right = -16
-	_view_toggle_btn.offset_bottom = 94
+	_view_toggle_btn.offset_bottom = VIEW_TOGGLE_TOP + VIEW_TOGGLE_SIZE.y
 	_view_toggle_btn.z_index = 100
 	_view_toggle_btn.pressed.connect(_on_view_toggle_pressed)
 	add_child(_view_toggle_btn)
@@ -1073,11 +1103,11 @@ func _advance_spectate(delta: float) -> void:
 		_spectate_done = true
 
 # B8: lightweight on-screen FPS readout for the battle scene.
-# 组队语音（docs/聊天系统设计.md 第九节 v1.1）：右上角「跳过」（y 12~48）「切镜头」（y 56~92）下面，
+# 组队语音（docs/聊天系统设计.md 第九节 v1.1）：右上角「跳过」（y 12~48）「偷看」方块（y 54~122）下面，
 # 竖着放语音与队友两个按钮。只在联机对局里建；档位跨场景保持（VoiceService 是 autoload），
 # 这里只是给玩家一个随手开关。
 const VoiceControls := preload("res://ui/components/VoiceControls.gd")
-const VOICE_BTN_TOP := 100.0
+const VOICE_BTN_TOP := 128.0
 const VOICE_BTN_SIZE := Vector2(120, 56)
 const VOICE_BTN_STEP := 64.0
 var _voice_controls: VoiceControls = null
@@ -1166,6 +1196,20 @@ func _setup_fps_overlay() -> void:
 	_fps_label.z_index = 300
 	add_child(_fps_label)
 	SafeArea.track(_fps_label)
+
+func _setup_rank_hud() -> void:
+	if _rank_hud != null:
+		_rank_hud.teardown()
+		_rank_hud = null
+	if not GameState.team_mode or GameState.tutorial_mode:
+		return
+	_rank_hud = preload("res://scenes/battle/BattleRankHud.gd").new()
+	var local_slot := NetworkService.team_local_slot if NetworkService.team_active else 0
+	# 局型从回放取（这时 _state 还没按回放重建）；第 21 回合回放里也写 pvp，按回合号认成 final。
+	var kind := "final" if GameState.round_index >= GameState.FINAL_ROUND else str(_replay_own.get("kind", "pve"))
+	_rank_hud.setup(_ensure_combat_feedback(), _replay_own, _replay_rival, kind, GameState.round_index,
+		local_slot, NetworkService.spectating)
+
 
 func _switch_active_replay(replay: Dictionary) -> void:
 	_clear_unit_visuals()
@@ -1435,6 +1479,8 @@ func _apply_replay_frame(i: int) -> void:
 		_state["presentation_slot_damage"] = damage_frames[i]
 	else:
 		_state.erase("presentation_slot_damage")
+	if _rank_hud != null:
+		_rank_hud.refresh(i, _visual_interp_stepping, _voice_controls != null)
 
 
 # War Drum stack counts are presentation-only changes outside the frozen frame
@@ -1630,6 +1676,9 @@ func _finish_replay() -> void:
 	# critical/important cues, including already airborne projectile tails.
 	_presentation_director.begin_draining()
 	_finished = true
+	# 排名定了：最终名次刷一次，自己拿了名次的话金币从木牌 / 绶带飞进左下钱袋。
+	if _rank_hud != null:
+		_rank_hud.finish(_voice_controls != null)
 	_result = _replay.get("result", {})
 	if GameState.tutorial_mode:
 		TutorialMode.coerce_victory(_result)

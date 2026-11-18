@@ -16,6 +16,8 @@ var team_seat_profiles: Dictionary = {}
 # assigned to an occupied seat by the authoritative room, never synthesized by
 # the client for an empty seat.
 var team_seat_pets: Dictionary = {}
+# slot -> 棋盘皮肤 id，只有 AI 座位（服务器随机、整局不变，_build_public_seat_ai_skins）。清路扫光用。
+var team_seat_ai_skins: Dictionary = {}
 # slot(int) -> actual carrots harvested in `team_carrot_harvest_round`.
 # This exposes the round result only, never another player's private balance.
 var team_carrot_harvest_gains: Dictionary = {}
@@ -54,6 +56,10 @@ static func public_seat_identity(profile_data: Dictionary) -> Dictionary:
 	var tier := int(profile_data.get("tier", -1))
 	if tier >= 0 and tier <= 7:
 		out["tier"] = tier
+	# 棋盘皮肤（11-18）：别人清路时按它演扫光（BattleVfx._seat_refresh_fx）。默认皮肤不带。
+	var skin := BattleCard.clean_skin_id(profile_data.get("prep_skin", ""))
+	if not skin.is_empty():
+		out["prep_skin"] = skin
 	return out
 
 const ACTIVE_MATCH_HINT := "正在对局中，请进行游戏重连"
@@ -329,6 +335,7 @@ const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
 const BattleCard := preload("res://scripts/multiplayer/BattleCard.gd")
 const BattleReport := preload("res://scripts/multiplayer/BattleReport.gd")
 const BattleReportUplink := preload("res://scripts/multiplayer/BattleReportUplink.gd")
+const BattleRankRewards := preload("res://scripts/economy/BattleRankRewards.gd")
 # 专服：对局结束时把战报直接交给本机账号服务器（BattleReportUplink.gd 文件头）。
 # 门禁换成记账的假对象，所以不写死类型；为空（本地房主 / 门禁默认）就只靠手机转交。
 var _report_uplink: Object = null
@@ -1197,14 +1204,22 @@ func team_request_create_room() -> void:
 		return
 	_rpc_team_create_room.rpc_id(1, public_token_id, card)
 
-func team_request_join_room(room_id: int) -> void:
+func team_request_join_room(room_id: int, requested_slot: int = -1) -> void:
 	if not _can_send_room_request("join_room"):
 		return
 	AnalyticsService.note_mode("custom")
 	match_mode = "custom"
+	var peer := multiplayer.multiplayer_peer
 	var card := await _fetch_seat_card("join_room")
 	if card.is_empty() or not _can_send_room_request("join_room"):
 		return
+	if requested_slot != -1:
+		if (requested_slot < 0 or requested_slot >= TEAM_SLOTS or not spectating
+				or room_id <= 0 or spectate_room_id != room_id or multiplayer.multiplayer_peer != peer):
+			return
+		# 将指定座位和房间号编码为负值，保留握手校验所用的 RPC 签名。
+		# 旧服务端会返回房间不存在，避免误坐另一个空位。
+		room_id = -(room_id * TEAM_SLOTS + requested_slot)
 	_rpc_team_join_room.rpc_id(1, room_id, public_token_id, card)
 
 # 匹配出来的对局入座（协议 32）。
@@ -2471,10 +2486,20 @@ func prepare_local_bots() -> void:
 		"team_upgrade_stones": _local_bot_stones}
 	team_bot_states = LiveBotEconomy.prepare(room)
 
+# 本地 / 房主结算用的排名奖励（与 _room_build_match_states 同一套规则）：{slot: gold}。
+# own / rival 是本地这一队、对面那一队的回放，这里按 A / B 队摆正再交给 BattleRankRewards。
+func local_rank_rewards(own: Dictionary, rival: Dictionary) -> Dictionary:
+	if GameState.round_index >= GameState.FINAL_ROUND:
+		return {}
+	var local_team := GameConstants.team_of_slot(team_local_slot) if team_active else 0
+	var replays: Array = [own, rival] if local_team == 0 else [rival, own]
+	return BattleRankRewards.rewards_by_slot(str(own.get("kind", "pve")), replays)
+
 func settle_local_bots(own: Dictionary, rival: Dictionary) -> void:
 	if team_active and not is_host:
 		return
 	var local_team := GameConstants.team_of_slot(team_local_slot) if team_active else 0
+	var rank_rewards := local_rank_rewards(own, rival)
 	for slot in team_bot_states:
 		var replay := own if GameConstants.team_of_slot(int(slot)) == local_team else rival
 		var result: Dictionary = replay.get("result", {})
@@ -2483,7 +2508,8 @@ func settle_local_bots(own: Dictionary, rival: Dictionary) -> void:
 		var kind := str(result.get("kind", replay.get("kind", "pve")))
 		LiveBotEconomy.Bot.settle_round(team_bot_states[slot], result, {
 			"round_index": GameState.round_index, "kind": kind,
-			"player_wins": TeamOutcome.viewer_wins_battle(result, kind, GameConstants.team_of_slot(int(slot)))})
+			"player_wins": TeamOutcome.viewer_wins_battle(result, kind, GameConstants.team_of_slot(int(slot))),
+			"rank_reward": int(rank_rewards.get(int(slot), 0))})
 
 func _room_maybe_start_round(room: Dictionary) -> void:
 	if str(room.get("state", ROOM_LOBBY)) != ROOM_PREP or not _room_all_ready(room):
@@ -2554,6 +2580,7 @@ func _build_room_state(room: Dictionary, slot: int) -> Dictionary:
 		"slot_states": (room.get("slot_states", []) as Array).duplicate(),
 		"seat_profiles": (room.get("seat_profiles", {}) as Dictionary).duplicate(true),
 		"seat_pets": _build_public_seat_pets(room),
+		"seat_ai_skins": _build_public_seat_ai_skins(room),
 		"carrot_harvest_round": int(room.get("round_index", -1)),
 		"carrot_harvest_gains": _build_public_carrot_harvest_gains(room),
 		"ready": (room.get("ready", []) as Array).duplicate(),
@@ -2639,6 +2666,39 @@ func _build_public_seat_pets(room: Dictionary) -> Dictionary:
 		if not PetService.model_path(pet_id).is_empty():
 			visible[slot] = pet_id
 	return visible
+
+# AI 座位的棋盘皮肤（11-18，用户：AI 要随机皮肤，一局里一直用同一张，不能每回合不一样）。
+# 只给**真 AI**（没有 seat_pid 的 dummy 座位）：掉线被 AI 接手的玩家座位照样用他名片上的皮肤
+# （seat_profiles 里的 prep_skin），不然他重连前后会换皮肤。第一次下发时随机一张写进 seat_ai_skins，
+# 之后原样返回；这张表在 RoomService.SEAT_SLOT_MAPS 里，换座跟着走、离座一起清。
+func _build_public_seat_ai_skins(room: Dictionary) -> Dictionary:
+	var visible: Dictionary = {}
+	var states: Array = room.get("slot_states", [])
+	var pids: Dictionary = room.get("seat_pid", {})
+	var skins: Dictionary = room.get("seat_ai_skins", {})
+	for slot in TEAM_SLOTS:
+		if slot >= states.size() or str(states[slot]) != "dummy" or pids.has(slot) or pids.has(str(slot)):
+			continue
+		# 进程重启后从 JSON 恢复，键会变成字符串，两种都认。
+		var skin := str(skins.get(slot, skins.get(str(slot), "")))
+		if skin.is_empty():
+			skin = _random_ai_skin()
+			if skin.is_empty():
+				continue
+			skins[slot] = skin
+			room["seat_ai_skins"] = skins
+		visible[slot] = skin
+	return visible
+
+
+# 这个包里所有棋盘皮肤（含默认）里随机一张。
+static func _random_ai_skin() -> String:
+	var ids: Array[String] = []
+	for item in preload("res://scenes/prep/PrepSkin.gd").catalog():
+		if item is Dictionary and not str(item.get("id", "")).is_empty():
+			ids.append(str(item["id"]))
+	return ids[randi() % ids.size()] if not ids.is_empty() else ""
+
 
 func _build_public_carrot_harvest_gains(room: Dictionary) -> Dictionary:
 	var gains: Dictionary = {}
@@ -3724,7 +3784,8 @@ func _build_spectate_state(room: Dictionary, sid: int) -> Dictionary:
 		"slot_states": (room.get("slot_states", []) as Array).duplicate(),
 		"seat_profiles": (room.get("seat_profiles", {}) as Dictionary).duplicate(true),
 		"seat_pets": _build_public_seat_pets(room),
-		"ready": (room.get("ready", []) as Array).duplicate(),
+		"seat_ai_skins": _build_public_seat_ai_skins(room),
+		"ready":(room.get("ready", []) as Array).duplicate(),
 		"suspended": bool(room.get("suspended", false)),
 		"run_over": bool(room.get("run_over", false)),
 		# 两队都给：观战者没有「己方」，界面按当前选中的选手决定哪边是己方。
@@ -3849,6 +3910,7 @@ func _rpc_spectate_state(envelope: Dictionary) -> void:
 	team_reconnecting_slots = (payload.get("reconnecting_slots", []) as Array).duplicate()
 	team_ready = (payload.get("ready", []) as Array).duplicate()
 	team_seat_profiles = (payload.get("seat_profiles", {}) as Dictionary).duplicate(true)
+	team_seat_ai_skins = (payload.get("seat_ai_skins", {}) as Dictionary).duplicate(true)
 	team_leader_slot = int(payload.get("leader_slot", 0))
 	server_round_index = int(payload.get("round_id", 0))
 	server_phase = str(payload.get("phase", ""))
@@ -5348,6 +5410,11 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 			if slot_gold[i] == null:
 				slot_gold[i] = GameState.START_GOLD
 	var boards: Dictionary = room.get("boards", {})
+	# 战斗排名奖励（11-18）：PvP 伤害前三 / 打怪 Boss 清路前三，AI 座位也拿。
+	# 回放里的 kind 把第 21 回合也记成 pvp，最后一回合钱没处花，按回合号挡掉。
+	var rank_rewards := {}
+	if completed_round < _room_final_round(room):
+		rank_rewards = BattleRankRewards.rewards_by_slot(kind, [replay_a, replay_b])
 	for slot in TEAM_SLOTS:
 		var replay := replay_a if slot < 3 else replay_b
 		var result: Dictionary = replay.get("result", {})
@@ -5365,11 +5432,13 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 			"loss_streak_after": int(loss_streak[own_team]),
 			"camp_income": CarrotEconomy.income_for_spent(int(_room_prep(room, slot).get("merc_carrots_spent_total", 0))),
 			"gold_spent_this_round": bool(_room_prep(room, slot).get("gold_spent_this_round", false)) if economy_authoritative() else bool(snap.get("gold_spent_this_round", false)),
+			"rank_reward": int(rank_rewards.get(slot, 0)),
 		})
 		var bot: Dictionary = room.get("bot_states", {}).get(slot, {})
 		if not bot.is_empty() and str(room.slot_states[slot]) == "dummy":
 			var bot_settlement := LiveBotEconomy.Bot.settle_round(bot, result, {
-				"kind": kind, "player_wins": bool(team_wins[own_team]), "round_index": completed_round})
+				"kind": kind, "player_wins": bool(team_wins[own_team]), "round_index": completed_round,
+				"rank_reward": int(rank_rewards.get(slot, 0))})
 			if not bot_settlement.is_empty():
 				settlement = bot_settlement
 				gold_before = int(settlement.gold_after) - int(settlement.income_total)
@@ -5397,6 +5466,8 @@ func _room_build_match_states(room: Dictionary, replay_a: Dictionary, replay_b: 
 			"team_hp": hp_a if own_team == 0 else hp_b,
 			"enemy_team_hp": hp_b if own_team == 0 else hp_a,
 			"gold": gold_after,
+			# 这一回合拿到的排名奖励（已经算进 gold）。客户端钱袋 / 结算面板显示用。
+			"rank_reward": int(rank_rewards.get(slot, 0)),
 			# 与 room_state 的 economy 段同一道门。以前这里无条件发萝卜字段、客户端
 			# 只判 has("carrots")，于是开关关掉时每次战后结算都会拿服务端那份没动过的
 			# 零值把客户端的萝卜/科技/消费总额/队伍石头**全部清掉**，且无从察觉。
@@ -5585,6 +5656,7 @@ func _server_gold_breakdown(gold_before: int, result: Dictionary, slot: int, sna
 		"gold_spent_this_round": bool(round_ctx.get("gold_spent_this_round", false)),
 		"pet_id": NetProtocol.extract_pet(snapshot),
 		"camp_income": int(round_ctx.get("camp_income", 0)),
+		"rank_reward": int(round_ctx.get("rank_reward", 0)),
 	})
 
 const TREASURE_OFFER_NONE := {"active": false, "round": 0, "candidates": [], "refresh_index": 0}
@@ -5998,6 +6070,7 @@ func reset() -> void:
 	four_star_request_id = ""
 	four_star_request_uid = ""
 	team_seat_profiles.clear()
+	team_seat_ai_skins.clear()
 	team_seat_pets.clear()
 	team_carrot_harvest_gains.clear()
 	team_carrot_harvest_round = -1
@@ -6339,11 +6412,16 @@ func _rpc_team_join_room(room_id: int, public_id: String = "", card: String = ""
 	var seat_card := _accept_seat_card(sender, card)
 	if seat_card.is_empty():
 		return
-	_join_custom_room(sender, room_id, _sanitize_public_id(public_id), seat_card)
+	var requested_slot := -1
+	if room_id < 0:
+		requested_slot = -(room_id % TEAM_SLOTS)
+		@warning_ignore("integer_division")
+		room_id = -(room_id / TEAM_SLOTS)
+	_join_custom_room(sender, room_id, _sanitize_public_id(public_id), seat_card, requested_slot)
 
 
 # No await between admission and commit: failed invitations never release the old seat.
-func _join_custom_room(sender: int, room_id: int, public_id: String, seat_card: Dictionary) -> void:
+func _join_custom_room(sender: int, room_id: int, public_id: String, seat_card: Dictionary, requested_slot: int = -1) -> void:
 	var room: Dictionary = _rooms.get(room_id, {})
 	if room.is_empty() or bool(room.get("matched", false)) or bool(room.get("run_over", false)):
 		_send_custom_room_failure(sender, "room_not_found")
@@ -6363,11 +6441,28 @@ func _join_custom_room(sender: int, room_id: int, public_id: String, seat_card: 
 		if str(existing.get("state", "")) != ROOM_LOBBY:
 			_send_custom_room_failure(sender, "already_in_match")
 			return
-	var to_spectate := _room_next_free_slot(room) < 0
+	var choosing_seat := requested_slot != -1
+	if choosing_seat:
+		if SpectatorService.sid_of_peer(room, sender) < 0:
+			_send_custom_room_failure(sender, "room_not_found")
+			return
+		var states: Array = room.get("slot_states", [])
+		if requested_slot < 0 or requested_slot >= TEAM_SLOTS or requested_slot >= states.size():
+			_send_custom_room_failure(sender, "room_not_found")
+			return
+		if str(states[requested_slot]) != "empty":
+			requested_slot = _room_next_free_slot(room)
+			if requested_slot < 0:
+				_send_custom_room_failure(sender, "no_empty_seat")
+				return
+		if str(seat_card.get("pid", "")) in (room.get("seat_pid", {}) as Dictionary).values():
+			_send_custom_room_failure(sender, "seat_busy")
+			return
+	var to_spectate := not choosing_seat and _room_next_free_slot(room) < 0
 	if to_spectate and (not SpectatorService.is_open(room) or (SpectatorService.sid_of_peer(room, sender) < 0 and SpectatorService.count(room) >= SpectatorService.MAX_SPECTATORS)):
 		_send_custom_room_failure(sender, "room_full")
 		return
-	if _restore_account_seat(sender, room, str(seat_card.get("pid", ""))) >= 0:
+	if not choosing_seat and _restore_account_seat(sender, room, str(seat_card.get("pid", ""))) >= 0:
 		return
 	if not _release_stale_seats_for_pid(sender, str(seat_card.get("pid", ""))):
 		return
@@ -6395,7 +6490,7 @@ func _join_custom_room(sender: int, room_id: int, public_id: String, seat_card: 
 	# A new room may have a smaller sequence than the old one.
 	if not existing.is_empty() or _peer_spectate.has(sender):
 		_send_custom_room_switch(sender)
-	_assign_peer_to_room(sender, room, public_id, seat_card)
+	_assign_peer_to_room(sender, room, public_id, seat_card, requested_slot)
 
 func _send_custom_room_failure(peer_id: int, reason: String) -> void:
 	_rpc_team_action_failed.rpc_id(peer_id, reason)
@@ -7084,6 +7179,7 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 		if str(payload.get("phase", "")) == ROOM_PREP:
 			GameState.team_hp = incoming_team_hp
 	team_seat_profiles = (payload.get("seat_profiles", {}) as Dictionary).duplicate(true)
+	team_seat_ai_skins = (payload.get("seat_ai_skins", {}) as Dictionary).duplicate(true)
 	# 观战列表（协议 44）：大厅左侧那一栏。只有公开身份，选手和观战者看到的是同一份。
 	team_room_spectators = {"spectators": (payload.get("spectators", []) as Array).duplicate(true),
 		"spectate_open": bool(payload.get("spectate_open", true)), "spectate_max": int(payload.get("spectate_max", 10))}
@@ -9285,6 +9381,8 @@ static func custom_room_error_text(reason: String, english: bool) -> String:
 			return "Room does not exist" if english else "房间不存在"
 		"room_full":
 			return "Room is full" if english else "房间已满"
+		"no_empty_seat":
+			return "There are no empty seats. You are still spectating." if english else "房间已无空位，你仍在观战席"
 		"seat_busy":
 			return "Your seat is busy. Please try again." if english else "座位正在恢复，请稍后重试"
 		_:

@@ -37,8 +37,11 @@ const FIREFLY_DEFAULT := Color(1.0, 0.85, 0.45)  # 金色萤火虫
 # 另外两项是「换一种效果」，取值只能是下面列的（门禁按这里查）：
 #   ambient: "firefly" 满场光点往上飘（默认） / "petal" 樱花瓣往下飘，这时 firefly_color 不用
 #   refresh_fx: "fire" 商店刷新时卷轴烧掉（默认） / "petal" 卷轴化成花瓣吹散
-const AMBIENT_KINDS := ["firefly", "petal"]
+#            "wisp" 不要满场光点，草地上几团慢慢游走的荧光（scenes/prep/PrepNightFx.gd 画的）
+const AMBIENT_KINDS := ["firefly", "petal", "wisp"]
 const REFRESH_FX_KINDS := ["fire", "petal", "frost", "wisp"]
+#   river_glow_style: "slide"（默认） / "pulse"，见 river_glow_style()
+const RIVER_GLOW_STYLES := ["slide", "pulse"]
 
 # 当前用哪张。游戏里只有 PlayerProfile 写它（账号服务器上存的那张）；皮肤预览场景会临时改。
 static var active_id := DEFAULT_ID
@@ -91,6 +94,15 @@ static func firefly_color() -> Color:
 # 待命区台子，看着像台子泡在水里（10.31 玩家反馈「河流跑出上面的位置」）。
 # 这里把整块河面连同岸边石头一起往下游平移，水线就和草地对齐了；河面下沿顺势挂到棋盘外，
 # 底边照样铺满。实测 0.067（= 0.30 世界单位）两张皮肤都正好。
+# 河面星光和石台四周光点的颜色。默认是青蓝（各自的默认色由调用方给），
+# 粉色的樱花皮肤上青蓝很突兀，在目录里写 sparkle_color = [r, g, b] 换掉。
+static func sparkle_color(fallback: Color) -> Color:
+	var raw: Variant = entry(active_id).get("sparkle_color", null)
+	if raw is Array and (raw as Array).size() == 3:
+		return Color(float(raw[0]), float(raw[1]), float(raw[2]))
+	return fallback
+
+
 static func river_drop() -> float:
 	return clampf(float(entry(active_id).get("river_drop", 0.0)), 0.0, 0.25)
 
@@ -99,13 +111,25 @@ static func river_glow() -> bool:
 	return bool(entry(active_id).get("river_glow", true))
 
 
+# 流动波光怎么动："slide" 把高光图横着滑（默认）/ "pulse" 图不动、明暗波顺着水面的网纹走。
+# 河面上自己画了发光网纹、岸边装饰又很亮的皮肤（夜荧光）用 pulse，不然装饰物会拖着重影漂。
+static func river_glow_style() -> String:
+	var kind := str(entry(active_id).get("river_glow_style", RIVER_GLOW_STYLES[0]))
+	return kind if kind in RIVER_GLOW_STYLES else RIVER_GLOW_STYLES[0]
+
+
 static func ambient() -> String:
 	var kind := str(entry(active_id).get("ambient", AMBIENT_KINDS[0]))
 	return kind if kind in AMBIENT_KINDS else AMBIENT_KINDS[0]
 
 
 static func refresh_fx() -> String:
-	var kind := str(entry(active_id).get("refresh_fx", REFRESH_FX_KINDS[0]))
+	return refresh_fx_for(active_id)
+
+
+# 别人的皮肤（对局里别人清路时用，id 来自出战名片）。这个包里没有这张皮肤就是默认。
+static func refresh_fx_for(skin_id: String) -> String:
+	var kind := str(entry(skin_id).get("refresh_fx", REFRESH_FX_KINDS[0]))
 	return kind if kind in REFRESH_FX_KINDS else REFRESH_FX_KINDS[0]
 
 

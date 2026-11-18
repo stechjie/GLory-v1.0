@@ -1,0 +1,457 @@
+class_name CodexService
+extends RefCounted
+# Normalises the eight data tables into one entry shape so the codex UI only ever
+# deals with a single structure. Nothing here reads from PrepScreen or mutates
+# game state; it is a pure read layer over DataRegistry plus PlayerProfile.
+
+const TEXT_PATH := "res://data/codex/treasure_text.json"
+const PORTRAIT_DIR := "res://assets/ui/codex_portraits/"
+const UNIT_PORTRAIT_DIR := "res://assets/ui/unit_portraits/"
+const MERC_PORTRAIT_DIR := "res://assets/ui/mercenary_portraits/"
+const TREASURE_ICON_DIR := "res://assets/ui/treasure_logos/"
+const RACE_LOGO_DIR := "res://assets/ui/race_logos/"
+const STATUS_ICON_DIR := "res://assets/vfx/status/"
+
+# Tab order as shown to the player. Pieces are split by race, matching the four
+# race logos the game already ships.
+const CATEGORIES := [
+	{"key": "god", "kind": "unit", "race": "god"},
+	{"key": "human", "kind": "unit", "race": "human"},
+	{"key": "dark", "kind": "unit", "race": "dark"},
+	{"key": "undead", "kind": "unit", "race": "undead"},
+	{"key": "crimson", "kind": "unit", "race": "crimson"},
+	{"key": "merc", "kind": "merc"},
+	{"key": "treasure", "kind": "treasure"},
+	{"key": "link", "kind": "link"},
+	{"key": "monster", "kind": "monster"},
+	{"key": "boss", "kind": "boss"},
+	{"key": "ally", "kind": "ally"},
+	{"key": "pet", "kind": "pet"},
+	{"key": "status", "kind": "status"},
+	# 10.01 第 11 条：状态之后追加「元素」（天 / 地 / 人）。
+	{"key": "element", "kind": "element"},
+]
+
+# Status effects are reference material rather than a collection goal, so they are
+# always readable. Icons are the same textures the battle HUD uses.
+const STATUSES := [
+	{"id": "shield", "buff": true, "icon": "status_shield_aura.png"},
+	{"id": "stun", "buff": false, "icon": "status_stun_icon_v2.png"},
+	{"id": "silence", "buff": false, "icon": "status_silence_icon_v2.png"},
+	{"id": "poison", "buff": false, "icon": "status_poison_icon_v2.png"},
+	{"id": "bleed", "buff": false, "icon": "status_bleed_icon_v2.png"},
+	{"id": "burn", "buff": false, "icon": "status_burn_icon_v2.png"},
+	{"id": "slow", "buff": false, "icon": "status_slow_icon_v2.png"},
+	{"id": "attack_down", "buff": false, "icon": "status_attack_down_icon_v2.png"},
+	{"id": "defense_down", "buff": false, "icon": "status_defense_down_icon_v2.png"},
+	{"id": "interrupt", "buff": false, "icon": "status_interrupt_icon_v2.png"},
+	{"id": "heal_reduction", "buff": false, "icon": "status_heal_reduction_icon_v2.png"},
+	{"id": "fear", "buff": false, "icon": "status_fear_icon_v2.png"},
+	{"id": "ice_affected", "buff": false, "icon": "status_ice_affected_icon_v2.png"},
+	{"id": "ice_vulnerable", "buff": false, "icon": "status_ice_vulnerable_icon_v2.png"},
+]
+
+# 元素是**参考物料**，和状态一样：三条固定条目、永远可读、不计入收集进度。
+# id 与 race_units / bosses 里的 element 字段同一套（sky / land / ren），
+# 所以徽章图和战斗里认的是同一个东西。
+const ELEMENTS: Array[String] = ["sky", "land", "ren"]
+
+# Linkage display names live only as icon filenames; the data table has ids alone.
+const LINK_ART_NAME := {
+	"link_phoenix": "凤凰涅槃",
+	"link_money_magic": "金钱魔法",
+	"link_blood_covenant": "血之契约",
+	"link_paralysis_shackles": "瘫痪枷锁",
+	"link_oppression_counter": "压迫反击",
+	"link_fraud_fate": "诡诈命运",
+	"link_iron_maiden": "铁处女",
+	"link_toxic_burst": "剧毒爆发",
+	"link_rich_path": "富裕之路",
+	"link_clearance_sale": "清仓特卖",
+	"link_hu_pai_master": "胡牌手",
+}
+
+# Set art was delivered as "4<类别>", and the defense one says 防卫 where the game
+# says 防御. The files are listed (with hashes) in assets.manifest.json, so the codex
+# maps names here instead of renaming them.
+const SET_ART_NAME := {
+	"defense": "4防卫",
+	"control": "4控制",
+	"attack": "4攻击",
+	"money": "4金钱",
+	"element": "4元素",
+}
+
+# Pet art was delivered under nicknames that do not match the data table ids.
+#
+# ★ 10.11 第 1 条：这份「昵称图」只做到了三只，松鼠 / 老虎从没交付过 —— 图鉴里
+#   那两格一直是空白（`PET_ART_NAME.get(id, "")` 落空 ⇒ 路径成了 `.png`）。
+#   缺图时回退到数据表自己的 `icon`（宠物商店 / 背包 / 营地面板同源的那张立绘），
+#   有昵称图的照旧用昵称图 —— 不新增美术文件，也不动已交付那三只的观感。
+const PET_ART_NAME := {
+	"pet_mushroom": "小菇",
+	"pet_cat": "小喵",
+	"pet_rabbit": "小兔",
+}
+
+static var _text_cache: Dictionary = {}
+
+static func _text_table() -> Dictionary:
+	if not _text_cache.is_empty():
+		return _text_cache
+	if not FileAccess.file_exists(TEXT_PATH):
+		push_warning("Codex text table missing: %s" % TEXT_PATH)
+		return {}
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string(TEXT_PATH))
+	if typeof(parsed) == TYPE_DICTIONARY:
+		_text_cache = parsed
+	return _text_cache
+
+# --- entries -------------------------------------------------------------
+
+static func entries_for(category_key: String) -> Array[Dictionary]:
+	var meta := _category(category_key)
+	match str(meta.get("kind", "")):
+		"unit": return _units(str(meta.get("race", "")))
+		"merc": return _mercs()
+		"treasure": return _treasures()
+		"link":
+			# The four-piece sets share the linkage tab: both are bonuses you
+			# unlock by holding the right combination of treasures.
+			var links := _linkages()
+			links.append_array(_sets())
+			return links
+		"monster": return _monsters()
+		"boss": return _bosses()
+		"ally": return _allies()
+		"pet": return _pets()
+		"status": return _statuses()
+		"element": return _elements()
+	return []
+
+static func _category(key: String) -> Dictionary:
+	for c in CATEGORIES:
+		if str(c.get("key", "")) == key:
+			return c
+	return {}
+
+static func _units(race: String) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for raw in DataRegistry.get_table("race_units").get("units", []):
+		var d := raw as Dictionary
+		if d == null or str(d.get("race", "")) != race:
+			continue
+		out.append({
+			"id": str(d.get("id", "")),
+			"name": str(d.get("name", "")),
+			"name_en": str(d.get("name_en", "")),
+			"portrait": UNIT_PORTRAIT_DIR + str(d.get("id", "")) + ".png",
+			"race": race,
+			"element": str(d.get("element", "")),
+			"tier": int(d.get("tier", 0)),
+			"cost": int(d.get("cost", 0)),
+			"stats": _stats(d),
+			"skill_id": str(d.get("skill_id", "")),
+			# 「棋盘唯一」角标：图鉴名称后面要补（唯一），与棋子详情同源。
+			"unique": bool(d.get("unique_on_board", false)),
+			# The source row, kept so the codex can render the same skill copy the
+			# prep screen shows (UnitDetailFormat) instead of a bare skill id.
+			"raw": d,
+			"collectible": true,
+		})
+	return out
+
+static func _mercs() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for raw in DataRegistry.get_table("mercenaries").get("mercenaries", []):
+		var d := raw as Dictionary
+		if d == null:
+			continue
+		out.append({
+			"id": str(d.get("id", "")),
+			"name": str(d.get("name", "")),
+			"name_en": str(d.get("name_en", "")),
+			"portrait": MERC_PORTRAIT_DIR + str(d.get("id", "")) + ".png",
+			"cost": int(d.get("cost", 0)),
+			"stats": _stats(d),
+			"skill_id": str(d.get("skill_id", "")),
+			# The source row, kept so the codex can render the same skill copy the
+			# prep screen shows (UnitDetailFormat) instead of a bare skill id.
+			"raw": d,
+			"collectible": true,
+		})
+	return out
+
+static func _monsters() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for raw in DataRegistry.get_table("pve_monsters").get("monsters", []):
+		var d := raw as Dictionary
+		if d == null:
+			continue
+		out.append({
+			"id": str(d.get("id", "")),
+			"name": str(d.get("name", "")),
+			"name_en": str(d.get("name_en", "")),
+			"portrait": PORTRAIT_DIR + str(d.get("name", "")) + ".png",
+			"series": str(d.get("series", "")),
+			"stats": _stats(d),
+			"growth_note": true,
+			"skill_id": str(d.get("skill_id", "")),
+			# The source row, kept so the codex can render the same skill copy the
+			# prep screen shows (UnitDetailFormat) instead of a bare skill id.
+			"raw": d,
+			"collectible": true,
+		})
+	return out
+
+# Bosses show their skill but never their numbers — the codex prints an infinity
+# glyph instead, so players are left to judge them by reputation.
+static func _bosses() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for raw in DataRegistry.get_table("bosses").get("bosses", []):
+		var d := raw as Dictionary
+		if d == null:
+			continue
+		var skill_def := d.duplicate(true)
+		if skill_def.has("skill_damage"):
+			skill_def.skill_damage = maxi(1, int(round(float(skill_def.skill_damage) * BossService.GLOBAL_STAT_MULTIPLIER)))
+		out.append({
+			"id": str(d.get("id", "")),
+			"name": str(d.get("name", "")),
+			"name_en": str(d.get("name_en", "")),
+			"portrait": PORTRAIT_DIR + str(d.get("name", "")) + ".png",
+			"element": str(d.get("element", "")),
+			"skill_id": str(d.get("skill_id", "")),
+			# The source row, kept so the codex can render the same skill copy the
+			# prep screen shows (UnitDetailFormat) instead of a bare skill id.
+			"raw": skill_def,
+			# What the first boss round actually fields, not the raw table row:
+			# BattleSimShared multiplies every boss by BossService's global factor
+			# before the fight, so the bare numbers here would understate all of
+			# them. Attack speed, range and move speed are not scaled.
+			"stats": _boss_stats(d),
+			"growth_note": true,
+			"collectible": true,
+		})
+	return out
+
+static func _allies() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for raw in DataRegistry.get_table("formation_allies").get("allies", []):
+		var d := raw as Dictionary
+		if d == null:
+			continue
+		out.append({
+			"id": str(d.get("id", "")),
+			"name": str(d.get("name", "")),
+			"name_en": str(d.get("name_en", "")),
+			"portrait": PORTRAIT_DIR + str(d.get("name", "")) + ".png",
+			"stats": _stats(d),
+			"skill_id": str(d.get("skill_id", "")),
+			# The source row, kept so the codex can render the same skill copy the
+			# prep screen shows (UnitDetailFormat) instead of a bare skill id.
+			"raw": d,
+			"collectible": true,
+		})
+	return out
+
+static func _treasures() -> Array[Dictionary]:
+	var text: Dictionary = _text_table().get("treasures", {})
+	var out: Array[Dictionary] = []
+	for raw in DataRegistry.get_table("treasures").get("treasures", []):
+		var d := raw as Dictionary
+		if d == null:
+			continue
+		var id := str(d.get("id", ""))
+		var entry: Dictionary = text.get(id, {})
+		var effect_text := treasure_effect_en(id) if UnitDetailFormat.is_en() else FinalStatusCatalog.treasure_effect_cn(id)
+		if effect_text.is_empty():
+			effect_text = str(entry.get("effect", ""))
+		if id == "money_golden_altar":
+			effect_text = effect_text.replace("{altar_hp_cost}", str(TreasureService.golden_altar_hp_cost()))
+		out.append({
+			"id": id,
+			"name": str(d.get("name", "")),
+			"name_en": str(d.get("name_en", "")),
+			"portrait": TREASURE_ICON_DIR + str(d.get("name", "")) + ".png",
+			"icon_art": true,
+			"category": str(d.get("category", "")),
+			"effect": effect_text,
+			"trigger": _localised(entry, "trigger"),
+			"collectible": true,
+		})
+	return out
+
+static func treasure_effect_en(treasure_id: String) -> String:
+	var entry: Dictionary = _text_table().get("treasures", {}).get(treasure_id, {})
+	var effect := str(entry.get("effect_en", ""))
+	if treasure_id == "ctrl_corrosive_needle":
+		effect = effect.replace("{bleed_bonus}", str(roundi(TreasureService.corrosive_needle_bleed_bonus() * 100.0)))
+	return effect
+
+
+static func _linkages() -> Array[Dictionary]:
+	var text: Dictionary = _text_table().get("linkages", {})
+	var out: Array[Dictionary] = []
+	for raw in DataRegistry.get_table("treasures").get("linkages", []):
+		var d := raw as Dictionary
+		if d == null:
+			continue
+		var id := str(d.get("id", ""))
+		var entry: Dictionary = text.get(id, {})
+		var art := str(LINK_ART_NAME.get(id, ""))
+		out.append({
+			"id": id,
+			"name": str(entry.get("name", art)),
+			"name_en": str(entry.get("name_en", "")),
+			"portrait": TREASURE_ICON_DIR + art + ".png",
+			"icon_art": true,
+			"effect": FinalStatusCatalog.linkage_effect_cn(id) if not UnitDetailFormat.is_en() and not FinalStatusCatalog.linkage_effect_cn(id).is_empty() else _localised(entry, "effect"),
+			"requires_text": _localised(entry, "requires_text"),
+			"collectible": true,
+		})
+	return out
+
+static func _sets() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for category in TreasureService.SET_CATEGORIES:
+		var entry := set_text(category)
+		out.append({
+			"id": TreasureService.set_id(category),
+			"name": str(entry.get("name", "")),
+			"name_en": str(entry.get("name_en", "")),
+			"portrait": TREASURE_ICON_DIR + str(SET_ART_NAME.get(category, "")) + ".png",
+			"icon_art": true,
+			"effect": _localised(entry, "effect"),
+			"requires_text": _localised(entry, "requires_text"),
+			"collectible": true,
+		})
+	return out
+
+# Set copy lives only in the codex text table; the prep screen's treasure detail
+# reads it from here as well, so the two pages cannot drift apart.
+static func set_text(category: String) -> Dictionary:
+	var sets: Dictionary = _text_table().get("sets", {})
+	return sets.get(TreasureService.set_id(category), {})
+
+static func link_text(link_id: String) -> Dictionary:
+	var links: Dictionary = _text_table().get("linkages", {})
+	var entry: Dictionary = links.get(link_id, {}).duplicate()
+	var approved := FinalStatusCatalog.linkage_effect_cn(link_id)
+	if not UnitDetailFormat.is_en() and not approved.is_empty():
+		entry["effect"] = approved
+	return entry
+
+static func _pets() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for raw in DataRegistry.get_table("pets").get("pets", []):
+		var d := raw as Dictionary
+		if d == null:
+			continue
+		var id := str(d.get("id", ""))
+		# 缺昵称图（松鼠 / 老虎）时回退到数据表的 icon，图鉴才有图可画。
+		var pet_art := str(PET_ART_NAME.get(id, ""))
+		var pet_portrait := PORTRAIT_DIR + pet_art + ".png"
+		if pet_art.is_empty() or not ResourceLoader.exists(pet_portrait):
+			pet_portrait = str(d.get("icon", ""))
+		out.append({
+			"id": id,
+			"name": str(d.get("name", "")),
+			"name_en": str(d.get("name_en", "")),
+			"portrait": pet_portrait,
+			"effect_key": str(d.get("effect", "")),
+			"effect_value": float(d.get("value", 0.0)),
+			"collectible": true,
+		})
+	return out
+
+static func _statuses() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for def in STATUSES:
+		var id := str(def.get("id", ""))
+		# Localisation keys rather than translated strings: tr() is not callable
+		# from a static context, and the UI re-translates on locale change anyway.
+		out.append({
+			"id": id,
+			"name_key": "codex_status_%s" % id,
+			"portrait": STATUS_ICON_DIR + str(def.get("icon", "")),
+			"icon_art": true,
+			"buff": bool(def.get("buff", false)),
+			"desc_key": "codex_status_%s_desc" % id,
+			# Reference material: always readable, never counted as collection.
+			"collectible": false,
+		})
+	return out
+
+
+# 元素图鉴（10.01 第 11 条）。只讲**克制关系与数值**，不讲战场达成条件。
+# 形状与 _statuses() 完全一致：name_key + desc_key（静态上下文里 tr() 不可调用），
+# collectible=false 让它永远可读、且计入参考档而不是收集进度。
+static func _elements() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for id in ELEMENTS:
+		out.append({
+			"id": id,
+			"name_key": "codex_elem_%s" % id,
+			"portrait": PORTRAIT_DIR + "elem_%s.png" % id,
+			"icon_art": true,
+			# 角标写「属性」而不是「增益 / 异常」（第 11 条明确要求）。
+			"attribute": true,
+			"desc_key": "codex_element_%s_desc" % id,
+			# Reference material: always readable, never counted as collection.
+			"collectible": false,
+		})
+	return out
+
+# Bosses carry a flat multiplier on top of the table before the first fight; only
+# the three combat stats are affected.
+static func _boss_stats(d: Dictionary) -> Dictionary:
+	var out := _stats(d)
+	var mul := BossService.GLOBAL_STAT_MULTIPLIER
+	out.hp = maxi(1, int(round(float(out.hp) * mul)))
+	out.atk = maxi(1, int(round(float(out.atk) * mul)))
+	out.def = maxi(0, int(round(float(out.def) * mul)))
+	if out.has("mres"):
+		out.mres = maxi(0, int(round(float(out.mres) * mul)))
+	return out
+
+# The treasure text table carries both languages per field (effect, trigger,
+# requires_text). English builds take the "_en" twin where it exists; anything not
+# translated yet falls back to the Chinese rather than going blank.
+static func _localised(entry: Dictionary, field: String) -> String:
+	if UnitDetailFormat.is_en():
+		var en := str(entry.get(field + "_en", ""))
+		if not en.is_empty():
+			return en
+	return str(entry.get(field, ""))
+
+static func _stats(d: Dictionary) -> Dictionary:
+	return {
+		"hp": int(d.get("hp", 0)),
+		"atk": int(d.get("atk", 0)),
+		"def": int(d.get("def", 0)),
+		"mres": int(d.get("mres", d.get("def", 0))),
+		"attack_speed": float(d.get("attack_speed", 0.0)),
+		"range": int(d.get("range", 0)),
+		"move_speed": float(d.get("move_speed", 0.0)),
+	}
+
+# --- unlock state --------------------------------------------------------
+
+static func is_unlocked(entry: Dictionary) -> bool:
+	if not bool(entry.get("collectible", true)):
+		return true
+	return PlayerProfile.has_seen(str(entry.get("id", "")))
+
+static func progress_for(category_key: String) -> Vector2i:
+	var list := entries_for(category_key)
+	var unlocked := 0
+	for e in list:
+		if is_unlocked(e):
+			unlocked += 1
+	return Vector2i(unlocked, list.size())
+
+# Pets are never rendered on the battlefield, so they unlock from ownership
+# instead of from an encounter. Cheap enough to reconcile on every codex open.
+static func sync_owned_pets() -> void:
+	PlayerProfile.mark_seen_many(PlayerProfile.owned_pets)

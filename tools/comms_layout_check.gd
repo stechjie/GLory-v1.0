@@ -111,7 +111,7 @@ func _ready():
  var dock=prep._comms_dock.get_global_rect()
  for b in bs:
   h.expect(dock.encloses(b.get_global_rect()),"prep_in_dock","buttons fit inside dock")
- h.expect(prep._chat_record_page.get_theme_stylebox("panel") is StyleBoxEmpty,"transparent","no chat background")
+ h.expect(prep._chat_record_page.get_theme_stylebox("panel") is StyleBoxEmpty and prep._chat_record_page.mouse_filter == Control.MOUSE_FILTER_IGNORE,"chat_frame","chat history is transparent and its background passes clicks through")
  await scroll_checks(prep._chat_record_scroll,func():NetworkService.team_chat_text_received.emit(0,"备战新消息不打断阅读",true),"prep")
  await shot("prep_latest")
  prep._teardown_chat_entry()

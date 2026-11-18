@@ -11,7 +11,7 @@
 			"id": "frame_default",
 			"name": "默认",
 			"name_en": "Default",
-			"source": "res://assets/ui/main_menu_live/profile_avatar.png"
+			"source": "res://assets/ui/shop/headframes/frame_default.png"
 		},
 		{
 			"id": "avatar_frame_7day_01",

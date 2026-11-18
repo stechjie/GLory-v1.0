@@ -477,7 +477,8 @@ static func _skill_arrow_rain(caster: Dictionary, opponents: Array, d: Dictionar
 	caster.vfx_skill_target_uid = ""
 	_mark_vfx_targets(caster, targets)
 	for o in targets:
-		DamageService.apply_damage(o, maxi(1, int(round(float(caster.atk) * 0.85))), false)
+		# 11.16 用户定 70%（以前写死 0.85），改读数据。
+		DamageService.apply_damage(o, maxi(1, int(round(float(caster.atk) * float(d.get("damage_atk_pct", 0.70))))), false)
 
 
 static func _skill_steel_order(caster: Dictionary, allies: Array, d: Dictionary) -> void:
@@ -534,8 +535,8 @@ static func _skill_shell_guard(caster: Dictionary, d: Dictionary) -> void:
 # --- 法阵友军（终局守护者）---------------------------------------------------
 # 五档按玩家自己的法阵血量发放（FormationAllyService.ally_id_for_hp），每边一只。
 # 除焰爪外全是全场技，靠 skill_global 跳过 _skill_target_in_range 的射程判定 ——
-# 近战体型也能从后排放全场大招；首发时间由 opening_cd 控制。
-# 每只只活 10~20 秒，所以首发时间比冷却更决定它能不能放出来。
+# 近战体型也能从后排放全场大招。11.16 起首发和棋子一样先走满一次 skill_cd
+# （opening_cd 已不再读取）。友军没有存活时限，活多久全看战况。
 
 # 全场技的目标集合。空数组 = 场上没有可打的敌人，调用方据此不消耗冷却。
 static func _living_targets(caster: Dictionary, opponents: Array) -> Array:
@@ -596,8 +597,7 @@ static func _skill_ally_inferno(caster: Dictionary, opponents: Array, d: Diction
 	return true
 
 
-# 深渊魔君·厄夜（41-50 血）：全场流星雨，无视防御。终局的一锤子买卖——它大概只活得
-# 到放一到两发，所以 opening_cd 比 skill_cd 更决定这个技能存不存在。
+# 深渊魔君·厄夜（41-50 血）：全场流星雨，无视防御。11.16 起首发也要先等满 skill_cd。
 static func _skill_ally_meteor(caster: Dictionary, opponents: Array, d: Dictionary) -> bool:
 	var targets := _living_targets(caster, opponents)
 	if targets.is_empty():

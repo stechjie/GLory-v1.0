@@ -679,8 +679,8 @@ def export_preset(stage, wanted):
     if not option_match:
         raise RuntimeError("Android 预设缺少 options。")
     options = option_match[1]
-    options = re.sub(r'(?m)^gradle_build/use_gradle_build=.*\n?', '', options)
-    options = 'gradle_build/use_gradle_build=true\n' + options
+    options = re.sub(r'(?m)^(gradle_build/use_gradle_build|permissions/record_audio)=.*\n?', '', options)
+    options = 'gradle_build/use_gradle_build=true\npermissions/record_audio=true\n' + options
     text = text[:option_match.start(1)] + options + text[option_match.end(1):]
     file.write_text(text, encoding="utf-8")
     file.chmod(0o600)

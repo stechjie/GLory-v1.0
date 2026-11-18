@@ -67,7 +67,6 @@ var _hp_fill_by_id: Dictionary = {}
 # 从 _unit_nodes 里搬出来才不会被 _sync_unit_nodes 的剪枝当场释放 ——
 # 和 3D 侧的 _cue_corpses 是同一个套路。
 var _dying_unit_nodes: Dictionary = {}
-var _top5_next_refresh_msec := 0
 var _formation_allies_hidden_for_intro := false
 
 func _fighter_display_name(f: Dictionary) -> String:
@@ -160,10 +159,12 @@ func _refresh_visuals() -> void:
 			var want_color: Color = _hp_color_for_fighter(f)
 			if hp_bar.color != want_color:
 				hp_bar.color = want_color
+		var cd_fill := node.get_node_or_null("SkillCdFill") as ColorRect
+		if cd_fill != null:
+			sync_skill_cooldown_bar(cd_fill, f, _cooldown_bar_elapsed())
 	_update_3v3_dividers()
 	_sync_battle_readability_static_geometry()
 	_update_battle_readability_focus()
-	_refresh_top5_atk(living)
 	_refresh_damage_counter()
 	if _summary_lbl != null and _summary_lbl.visible:
 		_refresh_summary()
@@ -207,36 +208,8 @@ func _refresh_frenzy_hud() -> void:
 			_frenzy_lbl.text = tr("battle_sudden_death")
 			_frenzy_lbl.add_theme_color_override("font_color", Color(1.0, 0.18, 0.14))
 
-# (8) Left-middle leaderboard: top 5 living units by ATK, colored by owner/team,
-# with the damage each has dealt so far.
-func _refresh_top5_atk(living: Array) -> void:
-	if _top5_atk_lbl == null:
-		return
-	# Rebuilding BBCode text re-parses the whole label; 4x/sec is plenty.
-	var now := Time.get_ticks_msec()
-	if now < _top5_next_refresh_msec:
-		return
-	_top5_next_refresh_msec = now + 250
-	var ranked := living.duplicate()
-	ranked.sort_custom(func(a, b): return _fighter_atk(a) > _fighter_atk(b))
-	var lines: Array[String] = []
-	lines.append("[b]%s[/b]" % tr("top_atk"))
-	var shown := mini(5, ranked.size())
-	for i in shown:
-		var f: Dictionary = ranked[i]
-		var col := _fighter_display_color(f)
-		var name_txt := _fighter_display_name(f)
-		lines.append("[color=#%s]%s  %s %d  %s %d[/color]" % [
-			col.to_html(false),
-			name_txt,
-			tr("abbr_atk"), _fighter_atk(f),
-			tr("abbr_dmg"), _fighter_damage_dealt(f),
-		])
-	var text := "\n".join(lines)
-	# Assigning identical text still re-parses the BBCode — skip it.
-	if _top5_atk_lbl.text != text:
-		_top5_atk_lbl.text = text
-
+# 伤害前三木牌榜（11-18）取代了原来的「攻击力前 5」文字榜，见 scenes/battle/BattleRankHud.gd。
+# _fighter_atk 留着：officetest 的单位面板还在用。
 func _fighter_atk(f: Dictionary) -> int:
 	return int(f.get("atk", f.get("def", {}).get("atk", 0)))
 
@@ -435,6 +408,11 @@ const HP_FILL_HEIGHT := 5.0
 const HP_BG_SIZE := Vector2(72.0, 11.0)
 const HP_BG_RADIUS := 3.0
 const HP_TRAIL_COLOR := Color(1.0, 0.84, 0.42)
+# 技能冷却条：紧贴血条底框下方（底框 y7 高 11 → 从 y18 起）。
+const SKILL_CD_BG_POS := Vector2(5, 18)
+const SKILL_CD_BG_SIZE := Vector2(72.0, 5.0)
+const SKILL_CD_COLOR := Color(0.95, 0.78, 0.12)
+const SKILL_CD_READY_COLOR := Color(1.0, 0.92, 0.35)
 const TRAIL_HOLD_SEC := 0.25
 const TRAIL_SHRINK_PX_PER_SEC := 120.0
 const SHIELD_MIN_WIDTH := 3.0
@@ -670,6 +648,63 @@ static func _add_health_bar(root: Control, fighter: Dictionary, display_team: St
 	root.add_child(empty)
 	hp.set_meta("hp_empty", empty)
 	_sync_health_segments(hp, fighter)
+	_add_skill_cooldown_bar(root, fighter)
+
+
+# 11.16 用户要的技能冷却条：血条正下方一条黄条，满了 = 技能就绪。
+# 只给主动技能（BattleSimShared.ACTIVE_SKILL_DEFAULT_CD）画，被动技能不画。
+# 进度只靠回放帧里已有的 skill_ready 推算（不改帧格式）：skill_ready 往上跳 =
+# 刚放完一发，从这一刻重新计时；往下掉（赤舞者减冷却、宝藏刷新）只缩短剩余时间。
+static func _add_skill_cooldown_bar(root: Control, fighter: Dictionary) -> void:
+	if not BattleSimShared.has_active_cooldown_skill(fighter):
+		return
+	var bg := ColorRect.new()
+	bg.name = "SkillCdBg"
+	bg.color = Color(0.05, 0.05, 0.05)
+	bg.position = SKILL_CD_BG_POS
+	bg.size = SKILL_CD_BG_SIZE
+	bg.z_index = 20
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(bg)
+	var fill := ColorRect.new()
+	fill.name = "SkillCdFill"
+	fill.color = SKILL_CD_COLOR
+	fill.position = SKILL_CD_BG_POS + Vector2(3, 1)
+	fill.size = Vector2(HP_FILL_WIDTH, SKILL_CD_BG_SIZE.y - 2.0)
+	fill.z_index = 21
+	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(fill)
+	fill.set_meta("cd_start", 0.0)
+	fill.set_meta("cd_last_ready", float(fighter.get("skill_ready", 0.0)))
+	sync_skill_cooldown_bar(fill, fighter, 0.0)
+
+
+# 回放的 `_state.elapsed` 不随帧更新（见 BattleVfx._vfx_battle_elapsed），按回放游标推。
+func _cooldown_bar_elapsed() -> float:
+	var from_state := float(_state.get("elapsed", 0.0))
+	if from_state > 0.0:
+		return from_state
+	var replay_frame: Variant = get("_replay_frame")
+	if get("_replay_mode") == true and replay_frame is int:
+		return float(replay_frame) * BattleSimShared.TICK_SEC
+	return 0.0
+
+
+static func sync_skill_cooldown_bar(fill: ColorRect, fighter: Dictionary, elapsed: float) -> void:
+	var ready := float(fighter.get("skill_ready", 0.0))
+	var last_ready := float(fill.get_meta("cd_last_ready", ready))
+	if ready > last_ready + 0.05:
+		fill.set_meta("cd_start", minf(elapsed, ready))
+	fill.set_meta("cd_last_ready", ready)
+	var start := float(fill.get_meta("cd_start", 0.0))
+	var ratio := 1.0
+	# 9000+ 是「永不施法」哨兵（分身等），按空条处理。
+	if ready >= 9000.0:
+		ratio = 0.0
+	elif ready > elapsed and ready > start:
+		ratio = clampf((elapsed - start) / (ready - start), 0.0, 1.0)
+	fill.scale = Vector2(ratio, 1.0)
+	fill.color = SKILL_CD_COLOR if ratio < 1.0 else SKILL_CD_READY_COLOR
 
 
 # 9.14：单位悬停回调，基类空实现。离线自测（OfficeTestScreen）覆写它显示实时数值面板。
@@ -2162,6 +2197,7 @@ func _refresh_damage_counter() -> void:
 		var elemental: Dictionary = _state.get("element_damage_by_slot", {})
 		total += int(elemental.get(local_slot, elemental.get(str(local_slot), 0)))
 	var hud: Control = call("_ensure_combat_feedback")
-	hud.visible = found
+	# PvP 左边是伤害前三榜（BattleRankHud），自己没棋子也要能看到别人排名。
+	hud.visible = found or not bool(hud.get("single_plate"))
 	if found:
 		hud.call("show_damage", total, not bool(_state.get("presentation_damage_silent", false)), GameState.round_index)

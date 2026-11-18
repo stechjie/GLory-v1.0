@@ -14,14 +14,15 @@ const REF := Vector2(1672, 941)
 const BG := preload("res://assets/ui/page_backgrounds/rooms_arena.png")
 const Kit := preload("res://ui/theme/ParchmentKit.gd")
 # 空座位：主菜单那个中间透明的头像圆环
-const SEAT_RING := preload("res://assets/ui/main_menu_v2/profile_avatar.png")
+# 11.16：空座位也用新的默认框（空心），旧的主菜单圆环不再出现。
+const SEAT_RING := preload("res://assets/ui/shop/headframes/frame_default.png")
 const PET_STAGE := preload("res://scenes/menu/MainMenuPet.gd")
 const PARTY_VOICE := preload("res://scenes/menu/PartyVoice.gd")
 # 10.10：BGM 压低（开麦时）。排位房的语音是独立 PartyVoice，靠探针接进来。
 const MUSIC_SERVICE := preload("res://ui/services/MusicService.gd")
 const AVATARS := preload("res://scripts/account/AvatarCatalog.gd")
 const RANKS := preload("res://scenes/menu/RankedTiers.gd")
-const PROFILE_DISC := preload("res://assets/ui/main_menu_live/profile_avatar.png")
+const PROFILE_DISC := preload("res://assets/ui/shop/headframes/frame_default.png")
 const ACTION := preload("res://ui/components/GloryActionButton.tscn")
 const BUTTON_PRIMARY := preload("res://assets/ui/party_lobby/party_button_primary.png")
 const BUTTON_SECONDARY := preload("res://assets/ui/party_lobby/party_button_secondary.png")
@@ -240,6 +241,11 @@ func _ready() -> void:
 	# 本页语音走独立的 PartyVoice（自带 mode，不写 VoiceService.mode），所以给
 	# MusicService 注册一个探针补上这条判据；出树时清掉。
 	MUSIC_SERVICE.set_talk_probe(_party_voice_talking)
+	# 11.16：排位 / 匹配组队房与主菜单同一组 BGM。从主菜单进来时什么都不变（接着放）；
+	# 对局结算「返回队伍」直接落到这里时，结算那首要换回主菜单这组。
+	# 11.18：回到组队房 = 这局结束，下一局摆放 / 战斗音乐重新随机。
+	MUSIC_SERVICE.end_match()
+	MUSIC_SERVICE.play_group(MUSIC_SERVICE.MENU_GROUP, true)
 	get_viewport().size_changed.connect(_layout)
 	_layout()
 	if not RealtimeService.message_received.is_connected(_on_realtime):
@@ -356,7 +362,6 @@ func _build() -> void:
 	_chat_panel.add_child(_chat_input)
 	_send_button = _social_icon_button(_chat_panel,
 		Vector2(CHAT_SIZE.x - 91, CHAT_SIZE.y - CHAT_INPUT_FROM_BOTTOM - 4), ICON_SEND)
-	_send_button.tooltip_text = _text("发送", "Send")
 	_send_button.pressed.connect(_send_chat)
 	# 10-08：快捷短语（同自定义房间的「＋ 快捷短语」）。点哪句发哪句，走同一个队内聊天接口。
 	# 10.19：入口挪进标题木条，高度随木条缩到 36。
@@ -443,10 +448,7 @@ func _build() -> void:
 	#   玩家点一下看不到任何变化、再点一下（这次 mode 又变了、恰好撞上上一次的 await 返回）
 	#   才见到图标动 —— 真机反馈的「要按两下才切换」就是这么来的。
 	#   这里在信号到达时立刻重画，把视觉反馈从「等网络」解耦成「即时」。
-	_party_voice.state_changed.connect(func(label: String) -> void:
-		if is_instance_valid(_voice_mic):
-			_voice_mic.tooltip_text = label
-		_refresh_voice_icons())
+	_party_voice.state_changed.connect(func(_label: String) -> void: _refresh_voice_icons())
 	add_child(_party_voice)
 	_refresh_voice_icons()
 	# 10-08：语音出错的原因写在两个语音按钮下面。手机上没有悬停提示，原来只写进 tooltip 等于没写。
@@ -629,9 +631,9 @@ func _render_seats() -> void:
 			continue
 		var member: Dictionary = by_seat[i]
 		var frame := TextureRect.new()
-		frame.texture = AVATARS.frame_texture_for(str(member.get("avatar_frame", "")))
+		AVATARS.set_frame_texture(frame, AVATARS.frame_texture_for(str(member.get("avatar_frame", ""))))
 		if frame.texture == null:
-			frame.texture = PROFILE_DISC
+			AVATARS.set_frame_texture(frame, PROFILE_DISC)
 		frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
 		frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -644,6 +646,8 @@ func _render_seats() -> void:
 		circle.set_corner_radius_all(55)
 		mask.add_theme_stylebox_override("panel", circle)
 		seat.add_child(mask)
+		# ★ 11.16 用户要求框在头像**上面**（内圈压住头像边缘）：把框挪到头像之后。
+		seat.move_child(frame, mask.get_index())
 		mask.position = Vector2(57, 27)
 		mask.size = Vector2(100, 100)
 		# 10.10：头像框按「内孔对头像圆」定位（与自定义房间同一套 catalog 几何）。
@@ -672,7 +676,7 @@ func _render_seats() -> void:
 			frame.size = SEAT_FRAME_SIZE
 			frame.position = disc_center - frame.size * 0.5
 		var portrait := TextureRect.new()
-		portrait.texture = AVATARS.texture_for(str(member.get("avatar", "")), true)
+		AVATARS.set_avatar_texture(portrait, AVATARS.texture_for(str(member.get("avatar", "")), true))
 		portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
 		mask.add_child(portrait)
@@ -689,7 +693,7 @@ func _render_seats() -> void:
 			tap.flat = true
 			tap.focus_mode = Control.FOCUS_NONE
 			tap.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-			tap.tooltip_text = _text("查看资料", "View profile")
+			tap.accessibility_name = _text("查看资料", "View profile")
 			tap.pressed.connect(_view_member_profile.bind(code))
 		var name_label := _label(seat, AccountManager.display_name(name, code, false),
 			Vector2(0, 163), Vector2(214, 35), 23, CREAM)
@@ -711,7 +715,7 @@ func _render_seats() -> void:
 		if others_seat and _is_host() and not bool(_room.get("queued", false)):
 			var kick := _button(seat, "×", Vector2(150, 4), KICK_BTN_SIZE)
 			_style_compact_button(kick, false)
-			kick.tooltip_text = _text("移出队伍", "Remove from party")
+			kick.accessibility_name = _text("移出队伍", "Remove from party")
 			kick.pressed.connect(_kick_member.bind(code))
 
 
@@ -1936,7 +1940,7 @@ func _friend_row_art(row: Control, entry: Dictionary, active: bool) -> void:
 	mask.position = center - Vector2(radius, radius)
 	mask.size = Vector2(radius, radius) * 2.0
 	var portrait := TextureRect.new()
-	portrait.texture = AVATARS.texture_for(str(entry.get("avatar", "")), true)
+	AVATARS.set_avatar_texture(portrait, AVATARS.texture_for(str(entry.get("avatar", "")), true))
 	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2008,7 +2012,7 @@ func _friend_avatar(parent: Control, entry: Dictionary, pos: Vector2, diameter: 
 	mask.position = Vector2(8, 8)
 	mask.size = Vector2(diameter - 16, diameter - 16)
 	var portrait := TextureRect.new()
-	portrait.texture = AVATARS.texture_for(str(entry.get("avatar", "")), true)
+	AVATARS.set_avatar_texture(portrait, AVATARS.texture_for(str(entry.get("avatar", "")), true))
 	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2091,7 +2095,7 @@ func _style_empty_seat(button: Button) -> void:
 	if button.get_node_or_null("SeatRing") == null:
 		var ring := TextureRect.new()
 		ring.name = "SeatRing"
-		ring.texture = SEAT_RING
+		AVATARS.set_frame_texture(ring, SEAT_RING)
 		ring.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		ring.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		ring.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -2175,10 +2179,10 @@ func _refresh_voice_icons() -> void:
 	_set_voice_icon(_voice_mic, "mic_on" if mic_on else "mic_off")
 	_set_voice_icon(_voice_speaker, "speaker_on" if speaker_on else "speaker_off")
 	if _voice_mic != null:
-		_voice_mic.tooltip_text = _text("关闭麦克风" if mic_on else "打开麦克风", "Toggle microphone")
+		_voice_mic.accessibility_name = _text("关闭麦克风" if mic_on else "打开麦克风", "Toggle microphone")
 		_voice_mic.disabled = _local_only
 	if _voice_speaker != null:
-		_voice_speaker.tooltip_text = _text("关闭扬声器" if speaker_on else "打开扬声器", "Toggle speaker")
+		_voice_speaker.accessibility_name = _text("关闭扬声器" if speaker_on else "打开扬声器", "Toggle speaker")
 		_voice_speaker.disabled = _local_only
 	for b in [_voice_mic, _voice_speaker]:
 		if b != null:
@@ -2256,4 +2260,4 @@ func _refresh_voice_status() -> void:
 		return
 	var error := str(_party_voice.last_error())
 	_voice_status.text = "" if error.is_empty() else _text("队伍语音暂不可用", "Party voice unavailable")
-	_voice_status.tooltip_text = error
+	_voice_status.accessibility_description = error

@@ -416,9 +416,9 @@
       "cost": 30,
       "skill_id": "nearby_ally_heal_buff",
       "skill_name_cn": "光环治疗",
-      "skill_cn_1to3": "光环治疗（冷却7.0秒）：周围友军回复15%最大生命、攻击+10%、攻速+15%，并清除负面状态（同一目标最多3层）；开场冷却2.0秒。",
-      "skill_cn_4": "光环治疗（冷却5.0秒）：周围友军回复40%最大生命、攻击+40%、攻速+45%，并清除负面状态（同一目标最多3层）；开场冷却2.0秒。",
-      "skill_en_1to3": "Halo Heal (CD 7.0s): Nearby allies heal 15% max HP, gain +10% ATK and +15% AS, and are cleansed (up to 3 stacks per ally); first cast after 2.0s.",
+      "skill_cn_1to3": "光环治疗（冷却7.0秒）：周围友军回复15%最大生命、攻击+10%、攻速+15%，并清除负面状态（同一目标最多3层）。",
+      "skill_cn_4": "光环治疗（冷却5.0秒）：周围友军回复40%最大生命、攻击+40%、攻速+45%，并清除负面状态（同一目标最多3层）。",
+      "skill_en_1to3": "Halo Heal (CD 7.0s): Nearby allies heal 15% max HP, gain +10% ATK and +15% AS, and are cleansed (up to 3 stacks per ally).",
       "skill_raw_params": "aspd_bonus = 0.15\natk_bonus = 0.1\nheal_pct = 0.15\nopening_cd = 2\nskill_cd = 7",
       "star4_changes": "aspd_bonus: 0.15 → 0.45\natk_bonus: 0.1 → 0.4\ncontrol_immune_sec: — → 2\nheal_pct: 0.15 → 0.4\nskill_cd: 7 → 5",
       "stats": {
@@ -1580,9 +1580,9 @@
       "cost": 50,
       "skill_id": "aoe_silence",
       "skill_name_cn": "赤灯沉默",
-      "skill_cn_1to3": "赤灯禁言（冷却5.9秒）：开战立刻沉默敌人2.1秒，期间无法释放技能、攻速-30%。",
-      "skill_cn_4": "赤灯禁言（冷却5.9秒）：开战立刻沉默敌人2.9秒，期间无法释放技能、攻速-30%。",
-      "skill_en_1to3": "Crimson Lantern (CD 5.9s): At battle start, silence enemies for 2.1s: no skills and -30% AS.",
+      "skill_cn_1to3": "赤灯禁言（冷却5.9秒）：冷却好后沉默敌人2.1秒，期间无法释放技能、攻速-30%。",
+      "skill_cn_4": "赤灯禁言（冷却5.9秒）：冷却好后沉默敌人2.9秒，期间无法释放技能、攻速-30%。",
+      "skill_en_1to3": "Crimson Lantern (CD 5.9s): Silence enemies for 2.1s: no skills and -30% AS.",
       "skill_raw_params": "silence_duration = 2.1\nskill_cd = 5.9\nskill_global = true\nunique_on_board = true",
       "star4_changes": "silence_duration: 2.1 → 2.9",
       "stats": {
@@ -1789,13 +1789,13 @@
     "def_soul_counter": {
       "name_cn": "亡魂反击",
       "category_cn": "防御",
-      "effect_cn": "击杀你这枚棋子的单位立刻受到 其自身最大生命×35% 真实伤害",
+      "effect_cn": "击杀你这枚棋子的单位立刻受到 其自身最大生命×35% 真实伤害；中毒、流血等无来源的死亡没有凶手，不触发",
       "hu_pai_text_cn": "—"
     },
     "def_lifesteal_emblem": {
       "name_cn": "吸血纹章",
       "category_cn": "防御",
-      "effect_cn": "回复 本次实际伤害×20% 生命",
+      "effect_cn": "回复 本次普攻实际伤害×20% 生命（技能伤害不触发）",
       "hu_pai_text_cn": "—"
     },
     "def_phantom_step": {
@@ -1861,7 +1861,7 @@
     "atk_frenzy_assault": {
       "name_cn": "狂暴进攻",
       "category_cn": "攻击",
-      "effect_cn": "每次普攻自身攻速+15%，最多提升至初始攻速的2.5倍。",
+      "effect_cn": "每次普攻自身攻速+15%，最多提升至初始攻速的2.5倍；更换目标时清零。",
       "hu_pai_text_cn": "—"
     },
     "money_compound": {
@@ -1923,7 +1923,7 @@
     "link_phoenix": {
       "name_cn": "凤凰涅槃",
       "requires_cn": "哀鸣共鸣 + 亡魂反击",
-      "effect_cn": "该棋子死亡 0.1 秒后以最大生命的 40% 复活并获得 3 秒无敌，3.1 秒后强制真死；每枚棋子每场 1 次。"
+      "effect_cn": "该棋子死亡（任何致死方式，含技能、AOE、中毒）0.1 秒后以最大生命的 40% 复活并获得 3 秒无敌，3.1 秒后强制真死；每枚棋子每场 1 次。"
     },
     "link_money_magic": {
       "name_cn": "金钱魔法",
@@ -1936,9 +1936,9 @@
       "effect_cn": "火属性伤害从 攻击×40% 提升到 攻击×100%。\n表内字段：true_damage_atk_pct = 1"
     },
     "link_paralysis_shackles": {
-      "name_cn": "麻痹枷锁",
+      "name_cn": "瘫痪枷锁",
       "requires_cn": "打断锁链 + 冰封霜刃",
-      "effect_cn": "缴械触发时再附加冰效果、冰易伤 +25% 与治疗降低 75%，持续 4 秒。\n表内字段：ice_damage_taken_bonus = 0.25；heal_reduction = 0.75"
+      "effect_cn": "缴械触发时再附加冰效果：目标受到的所有伤害 +25%（Boss +12.5%）、治疗降低 75%，持续 4 秒。\n表内字段：ice_damage_taken_bonus = 0.25；heal_reduction = 0.75"
     },
     "link_oppression_counter": {
       "name_cn": "压迫反击",
@@ -1958,12 +1958,12 @@
     "link_toxic_burst": {
       "name_cn": "剧毒爆发",
       "requires_cn": "爆裂核心 + 剧毒蔓延",
-      "effect_cn": "造成伤害后，若目标中毒则 50% 概率立刻引爆剩余全部毒伤（按剩余跳数一次性结算）并移除中毒。\n表内字段：proc_chance = 0.5"
+      "effect_cn": "普攻造成伤害后，若目标中毒则 50% 概率立刻引爆剩余全部毒伤（按剩余跳数一次性结算）并移除中毒。\n表内字段：proc_chance = 0.5"
     },
     "link_rich_path": {
       "name_cn": "富裕之路",
       "requires_cn": "复利之道 + 雷霆加速",
-      "effect_cn": "每次造成正伤害 25% 概率 +10 金（计入 bonus_gold）。\n表内字段：attack_gold_chance = 0.25"
+      "effect_cn": "每次普攻造成正伤害 25% 概率 +10 金（计入 bonus_gold）。\n表内字段：attack_gold_chance = 0.25"
     },
     "link_clearance_sale": {
       "name_cn": "清仓特卖",
@@ -1976,6 +1976,6 @@
       "effect_cn": "需要：生命丰碑 + 黄金祭坛 + 震荡余波 + 血契之刃 + 狂怒阵容。生命丰碑 ×1.20→×1.40；震荡余波眩晕 1→2 秒；血契之刃 ×1.25→×1.50；狂怒阵容上限 8→9。黄金祭坛使用不扣法阵 HP；选到胡牌手立即回复法阵 HP +2（上限 50）。\n表内字段：positive_effect_multiplier = 2"
     }
   },
-  "balance_version": "004b8d41d32afef5cb05a8385c249b7d1c4d393487248115516f38eee412b36c",
-  "final_workbook_sha256": "76a077c851de7a44e201c2f84610dab62beda662699c6fbb88e1eb3752f72b61"
+  "balance_version": "a284a3e3fe035c1fc8c83d4520594249ebf6a04c8fdeb537f3f0c176567c6565",
+  "final_workbook_sha256": "27ef6785a870f91474a4a9262a6eed3502c7624a1b51a79796983dde7e9239b6"
 }

@@ -67,6 +67,7 @@ window/size/viewport_height=720
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 window/handheld/orientation="landscape"
+window/ios/allow_high_refresh_rate=false
 
 [editor_plugins]
 

@@ -122,9 +122,13 @@ func _ready() -> void:
 func _build_stage() -> void:
 	var container := SubViewportContainer.new()
 	container.name = "PetStage"
-	container.stretch = true
+	# 11.16 用户反馈「主页面的宠物线条很锯齿」。原来 stretch = true：视口按**逻辑尺寸**出图
+	# （1080x360 再乘参考画布缩放），手机屏是逻辑画布的 1.5 倍左右，等于把一张小图放大糊上去，
+	# 而且视口没开抗锯齿。现在自己管视口尺寸：按屏幕**物理像素的 2 倍**出图（_fit_viewport），
+	# 容器反向缩小回逻辑尺寸、线性过滤——每个屏幕像素是 2x2 个渲染像素的平均（超采样）。
+	container.stretch = false
 	container.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	container.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	# ⚠️ **出过第一帧之前不显示。**
 	#
 	# SubViewportContainer 直接把视口的渲染目标画出来，而一个**从未渲染过**的
@@ -145,6 +149,10 @@ func _build_stage() -> void:
 	_viewport.own_world_3d = true
 	_viewport.transparent_bg = true
 	_viewport.size = VIEWPORT_SIZE
+	# 抗锯齿靠超采样（见 _fit_viewport），不开 MSAA：试过 4 倍 MSAA，轮廓和描边抹平了，
+	# 但脚下的投影剪影（unit_planar_shadow，走模板缓冲）边缘还是一格一格的台阶——MSAA 管不到它。
+	# 超采样对轮廓、描边、影子、贴图闪烁一视同仁，显存也和「1 倍 + 4 倍 MSAA」差不多。
+	_viewport.msaa_3d = Viewport.MSAA_DISABLED
 	_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
 	container.add_child(_viewport)
 
@@ -280,8 +288,13 @@ func _spawn_pet(pet_id: String, index: int, total: int) -> void:
 	var factor := maxf(0.0001, node.scale.x)
 	shadow.scale = Vector3.ONE / factor
 	shadow.position = Vector3(0.0, (0.01 - node.position.y) / factor, 0.0)
-	# 再加一份跟摆放界面棋子一样的投影剪影（朝右下方压扁的身形），脚底软圆负责「踩住」
+	# 11.16 用户反馈「影子很奇怪，脚下为什么还有圆盘」：软圆直径 1.15、和宠物差不多宽，
+	# 叠在身形影子上就是脚下一个深色圆盘。现在只留身形影子，软圆藏起来（节点留着，要恢复改这一行）。
+	shadow.visible = false
+	# 跟摆放界面棋子一样的投影剪影（朝右下方压扁的身形）
 	preload("res://effects/runtime/presentation/UnitPlanarShadow.gd").attach(node, 0.0)
+	# 描边加粗要排在影子后面（影子也是 deferred 接材质，先排的先跑）：见 _apply_outline_width。
+	_apply_outline_width.call_deferred(node)
 
 	# 9.26 大厅宠物脚步声：每只宠物一个**独立** AudioStreamPlayer，挂在 pet Node3D 下
 	# （不是 root，名字也避开 GlorySfxVoice* / GlorySfxLoopVoice，见本文件顶部说明）。
@@ -528,3 +541,80 @@ func _layout_area() -> void:
 	var origin := (viewport_size - REF_SIZE * scale) * 0.5
 	position = origin + _area_pos * scale
 	size = _area_size * scale
+	_fit_viewport()
+
+
+# 超采样倍数：每个屏幕像素由 SUPERSAMPLE x SUPERSAMPLE 个渲染像素平均出来。
+const SUPERSAMPLE := 2.0
+# 出图倍数（相对逻辑尺寸）上限：面积按平方涨，高分屏不再往上跟。
+# 手机 1.5 倍屏 x 2 倍超采样 = 3.0，正好到顶；这块视口约 2480x830，颜色 + 深度约 16MB。
+const MAX_RENDER_SCALE := 3.0
+
+## 视口按物理像素出图，容器缩回逻辑尺寸显示。窗口缩放（canvas_items 拉伸）变了要重算。
+func _fit_viewport() -> void:
+	if _viewport == null or _container == null or not is_instance_valid(_container):
+		return
+	var logical := get_viewport_rect().size
+	if logical.x <= 0.0 or size.x <= 0.0 or size.y <= 0.0:
+		return
+	var window := Vector2(get_window().size) if get_window() != null else logical
+	var render_scale := clampf(minf(window.x / logical.x, window.y / logical.y) * SUPERSAMPLE, 1.0, MAX_RENDER_SCALE)
+	var target := Vector2i(maxi(roundi(size.x * render_scale), 2), maxi(roundi(size.y * render_scale), 2))
+	if _viewport.size != target:
+		_viewport.size = target
+	_container.position = Vector2.ZERO
+	_container.size = Vector2(target)
+	_container.scale = Vector2.ONE / render_scale
+	# 描边宽度按「屏幕上多少像素」定，出图倍数变了要跟着换算成渲染像素。
+	_outline_min_px = OUTLINE_SCREEN_PX * render_scale / maxf(minf(window.x / logical.x, window.y / logical.y), 0.001)
+	for item in _pets:
+		_apply_outline_width(item.node as Node3D)
+
+
+# 11.16 用户看过细 / 中 / 粗三档对比后选了「中等」：描边在屏幕上约 1.3 像素。
+# 超采样之后默认描边只剩半个屏幕像素，白色的猫、兔、雪豹和亮草地之间分不开。
+const OUTLINE_SCREEN_PX := 1.3
+const OUTLINE_SHADER_PATH := "res://shaders/ba_outline.gdshader"
+var _outline_min_px := 0.0
+
+## 只加粗**主菜单这几只**的描边。宠物材质是共享资源（备战、战斗、背包预览都在用），
+## 所以把「身体 → 描边」这一段材质链复制一份挂成表面覆盖，再改副本上的 min_px；
+## 描边后面的影子那一遍照旧共用。已经复制过的（meta 标记）只更新数值。
+func _apply_outline_width(node: Node3D) -> void:
+	if node == null or not is_instance_valid(node) or _outline_min_px <= 0.0:
+		return
+	var stack: Array[Node] = [node]
+	while not stack.is_empty():
+		var current: Node = stack.pop_back()
+		stack.append_array(current.get_children())
+		var mesh_instance := current as MeshInstance3D
+		if mesh_instance == null or not mesh_instance.mesh is ArrayMesh:
+			continue
+		for surface in mesh_instance.mesh.get_surface_count():
+			var head := mesh_instance.get_active_material(surface)
+			var outline := _find_outline(head)
+			if outline == null:
+				continue
+			if not outline.has_meta("menu_outline_copy"):
+				head = head.duplicate()
+				var tail := head
+				while tail.next_pass != null:
+					var is_outline := tail.next_pass == outline
+					tail.next_pass = tail.next_pass.duplicate()
+					tail = tail.next_pass
+					if is_outline:
+						break
+				outline = tail as ShaderMaterial
+				outline.set_meta("menu_outline_copy", true)
+				mesh_instance.set_surface_override_material(surface, head)
+			outline.set_shader_parameter("min_px", _outline_min_px)
+
+
+func _find_outline(material: Material) -> ShaderMaterial:
+	var pass_material := material
+	while pass_material != null:
+		var shader_material := pass_material as ShaderMaterial
+		if shader_material != null and shader_material.shader != null and shader_material.shader.resource_path == OUTLINE_SHADER_PATH:
+			return shader_material
+		pass_material = pass_material.next_pass
+	return null

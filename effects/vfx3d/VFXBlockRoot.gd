@@ -64,6 +64,8 @@ enum BudgetClass { NONE, LIGHT, SKILL }
 static var _active_blocks := 0
 static var _cap_denials := 0
 static var _gated_light := 0
+# 其中别的路（不在玩家正在打的路上）占着的个数，见 begin_off_focus()。
+static var _gated_light_off := 0
 static var _gated_skill := 0
 static var _class_stack: Array[int] = []
 # 一次 play 里同步生成的各层共用一个放行结果，见 begin_effect()。
@@ -73,6 +75,8 @@ static var _effect_admitted := false
 
 # 这个块占的是哪一类名额；NONE = 没过闸门（强制 / 常驻 / 子块），不占。
 var _budget_class: int = BudgetClass.NONE
+# 占的是「小特效」名额里别的路那一份。
+var _budget_off_focus := false
 
 static func active_block_count() -> int:
 	return _active_blocks
@@ -84,6 +88,10 @@ static func cap_denial_count() -> int:
 static func gated_block_count(budget_class: int) -> int:
 	return _gated_light if budget_class == BudgetClass.LIGHT else _gated_skill
 
+# 「小特效」名额里别的路占着几个（门禁和排查用）。
+static func off_focus_light_count() -> int:
+	return _gated_light_off
+
 static func begin_budget_class(budget_class: int) -> void:
 	_class_stack.append(budget_class)
 
@@ -92,6 +100,28 @@ static func end_budget_class() -> void:
 
 static func current_budget_class() -> int:
 	return BudgetClass.SKILL if _class_stack.is_empty() else _class_stack[-1]
+
+# 11.13：「小特效」名额里玩家自己正在打的路优先（用户口径：自己的要优先，自己那一路打完、
+# 棋子走到旁边的路，那一路也要优先）。哪一路算「正在打」由 BattleVfx 判断，这里只认一个开关：
+# 别的路的小特效合起来最多占名额的 OFF_FOCUS_LIGHT_SHARE，正在打的路可以用满整个名额。
+# 所以正在打的路至少总有另一半可用；正在打的路闲着时，别的路也只到这一半为止。
+# 不影响技能（技能一律强制生成），也不影响没有「自己的路」的时候（观战另一队、离线预览）。
+const OFF_FOCUS_LIGHT_SHARE := 0.5
+static var _off_focus_stack: Array[bool] = []
+
+static func begin_off_focus(off_focus: bool) -> void:
+	_off_focus_stack.append(off_focus)
+
+static func end_off_focus() -> void:
+	_off_focus_stack.pop_back()
+
+static func is_off_focus() -> bool:
+	return not _off_focus_stack.is_empty() and _off_focus_stack[-1]
+
+# 「小特效」名额的上限；不在正在打的路上时只给一部分。
+static func light_cap(off_focus: bool) -> int:
+	var cap: int = QUALITY_BUDGET.max_simultaneous_effects_for(QUALITY_BUDGET.PRIORITY_AMBIENT)
+	return maxi(1, int(floor(float(cap) * OFF_FOCUS_LIGHT_SHARE))) if off_focus else cap
 
 # 一招通常由好几层组成。名额在第一层那里决定一次，同一次调用里后面的层跟着它：
 # 要么整招画，要么整招不画，不再出现「有预警圈没有爆炸」这种半截特效。
@@ -109,8 +139,10 @@ static func can_spawn_block() -> bool:
 
 static func _has_room(budget_class: int) -> bool:
 	if budget_class == BudgetClass.LIGHT:
-		return _gated_light < QUALITY_BUDGET.max_simultaneous_effects_for(QUALITY_BUDGET.PRIORITY_AMBIENT)
-	return _gated_skill < QUALITY_BUDGET.max_simultaneous_effects_for(QUALITY_BUDGET.PRIORITY_IMPORTANT)
+		if _gated_light >= light_cap(false):
+			return false
+		return not is_off_focus() or _gated_light_off < light_cap(true)
+	return _gated_skill <QUALITY_BUDGET.max_simultaneous_effects_for(QUALITY_BUDGET.PRIORITY_IMPORTANT)
 
 static func _admit(budget_class: int) -> bool:
 	if _effect_depth > 0 and _effect_decided:
@@ -141,6 +173,7 @@ static func spawn_block(script: Script, parent: Node, force := false) -> Node3D:
 	var gated := block as VFXBlockRoot
 	if gated != null:
 		gated._budget_class = budget_class
+		gated._budget_off_focus = budget_class == BudgetClass.LIGHT and is_off_focus()
 	parent.add_child(block)
 	return block
 
@@ -164,6 +197,8 @@ func _enter_tree() -> void:
 	_active_blocks += 1
 	if _budget_class == BudgetClass.LIGHT:
 		_gated_light += 1
+		if _budget_off_focus:
+			_gated_light_off += 1
 	elif _budget_class == BudgetClass.SKILL:
 		_gated_skill += 1
 
@@ -171,6 +206,8 @@ func _exit_tree() -> void:
 	_active_blocks = maxi(0, _active_blocks - 1)
 	if _budget_class == BudgetClass.LIGHT:
 		_gated_light = maxi(0, _gated_light - 1)
+		if _budget_off_focus:
+			_gated_light_off = maxi(0, _gated_light_off - 1)
 	elif _budget_class == BudgetClass.SKILL:
 		_gated_skill = maxi(0, _gated_skill - 1)
 

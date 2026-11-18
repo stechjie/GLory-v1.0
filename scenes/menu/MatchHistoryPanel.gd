@@ -251,9 +251,10 @@ func _list_row(index: int) -> Control:
 	if available:
 		var detail := ACTION_BUTTON.instantiate() as Button
 		detail.text = _text("详细战况", "Match details")
-		detail.custom_minimum_size = Vector2(145, 38)
+		detail.custom_minimum_size = Vector2(176, 50)
 		detail.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		Kit.style_plate(detail, true)
+		detail.add_theme_font_size_override("font_size", 18)
 		detail.pressed.connect(func() -> void:
 			SfxService.play(SfxService.CUE_UI_POPUP)
 			_open_settlement(item))

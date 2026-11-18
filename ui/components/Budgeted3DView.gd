@@ -29,14 +29,42 @@ static func create(parent: Control, layer_name: String, z: int, limit: Vector2i,
 	viewport.handle_input_locally = false
 	layer.add_child(viewport)
 	layer.texture = viewport.get_texture()
-	layer.resized.connect(_resize.bind(layer, viewport, limit, continuous))
+	var resize := _resize.bind(layer, viewport, limit, continuous)
+	layer.resized.connect(resize)
 	layer.visibility_changed.connect(_sync_visibility.bind(layer, viewport, continuous))
+	# 窗口等比缩放（canvas_items 拉伸）时逻辑尺寸不变、resized 不会发，要单独跟窗口。
+	layer.tree_entered.connect(func() -> void:
+		var window := layer.get_window()
+		if window != null and not window.size_changed.is_connected(resize):
+			window.size_changed.connect(resize)
+		resize.call())
+	layer.tree_exiting.connect(func() -> void:
+		var window := layer.get_window()
+		if window != null and window.size_changed.is_connected(resize):
+			window.size_changed.disconnect(resize))
 	parent.add_child(layer)
 	_resize(layer, viewport, limit, continuous)
 	return viewport
 
+# 出图倍数上限：面积按平方涨，4K 屏不再往上跟。
+const MAX_PIXEL_SCALE := 2.0
+
+## 一个逻辑像素合多少屏幕像素。layer.size 是 720 高画布上的逻辑尺寸，直接拿来出图的话
+## 1080p 全屏就是 1.5 倍拉伸，模型发糊。只在电脑上按真实像素出图；手机发热预算没实测，不动。
+static func pixel_scale(layer: Control) -> float:
+	if OS.has_feature("mobile") or not layer.is_inside_tree():
+		return 1.0
+	var window := layer.get_window()
+	if window == null or layer.get_viewport() != window:
+		return 1.0
+	var logical := layer.get_viewport_rect().size
+	if logical.x <= 0.0 or logical.y <= 0.0:
+		return 1.0
+	var physical := Vector2(window.size)
+	return clampf(minf(physical.x / logical.x, physical.y / logical.y), 1.0, MAX_PIXEL_SCALE)
+
 static func _resize(layer: Control, viewport: SubViewport, limit: Vector2i, continuous: bool) -> void:
-	var target := raster_size(layer.size, limit)
+	var target := raster_size(layer.size * pixel_scale(layer), limit)
 	if viewport.size != target:
 		viewport.size = target
 	_sync_visibility(layer, viewport, continuous)

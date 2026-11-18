@@ -310,7 +310,7 @@ func _check_lantern() -> void:
 	both_enemy.lane = 0
 	both_enemy.skill_ready = 0.0
 	var both_state := _state([both_player], [both_enemy], 0.0, 0)
-	BattleSimulator._tick_opening_lanterns(both_state)
+	BattleSimulator._tick_ready_lanterns(both_state)
 	_h.expect(StatusEffectService.has_status(both_player, "silence")
 		and StatusEffectService.has_status(both_enemy, "silence")
 		and int(both_player.hp) == 1000 and int(both_enemy.hp) == 1000,
@@ -331,7 +331,7 @@ func _check_lantern() -> void:
 	next_lane.lane = 1
 	next_lane.pos = Vector2(2000, 0)
 	var state := _state([player_lantern, player_ally], [enemy_lantern, enemy_ally, next_lane], 0.0, 0)
-	BattleSimulator._tick_opening_lanterns(state)
+	BattleSimulator._tick_ready_lanterns(state)
 	_h.expect(bool(enemy_lantern.alive) and is_equal_approx(float(enemy_lantern.skill_ready), 5.9)
 		and StatusEffectService.has_status(enemy_lantern, "silence")
 		and StatusEffectService.has_status(player_lantern, "silence")
@@ -349,7 +349,7 @@ func _check_lantern() -> void:
 	_h.expect(StatusEffectService.has_status(player_ally, "silence")
 		and is_equal_approx(StatusEffectService.attack_speed_multiplier(player_ally), 1.0),
 		"lantern_slow_independent", "A different silence may extend control but not Lantern's attack-speed penalty")
-	BattleSimulator._tick_opening_lanterns(state)
+	BattleSimulator._tick_ready_lanterns(state)
 	_h.expect(is_equal_approx(float(player_lantern.skill_ready), 5.9),
 		"lantern_opening_once", "Opening Lantern cast must not repeat")
 
@@ -369,7 +369,7 @@ func _check_lantern() -> void:
 	var four_target := _fighter("four_target", "enemy")
 	four_target.lane = 0
 	state = _state([four], [four_target], 0.0, 0)
-	BattleSimulator._tick_opening_lanterns(state)
+	BattleSimulator._tick_ready_lanterns(state)
 	_h.expect(int(four_target.hp) == 1000 and is_equal_approx(float(four_target.statuses.silence.remaining), 2.9)
 		and is_equal_approx(float(four.skill_ready), 5.9),
 		"lantern_star4_opening", "Fourth-star opening must deal no damage and use the 2.9-second silence and 5.9-second cooldown")

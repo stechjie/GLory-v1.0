@@ -38,8 +38,8 @@ var _speaker_hold_started := -1
 var _speaker_hold_opened := false
 # 11.05 摆放界面：「队友 / 所有人」用用户出的两张图（盾牌+队友 / 地球），不写字。
 # 备战和战斗均传 options.scope_art 使用同套图片；大厅保留文字键。
-const SCOPE_TEAM_ART := "res://assets/ui/voice/voice_scope_team.png"
-const SCOPE_ALL_ART := "res://assets/ui/voice/voice_scope_all.png"
+const SCOPE_TEAM_ART := "res://ui/voice_buttons/scope_team.png"
+const SCOPE_ALL_ART := "res://ui/voice_buttons/scope_all.png"
 const SCOPE_ALL_COLOR := Color(1.0, 0.56, 0.20)        # 对手也听得到 = 橙色（跟文字聊天「发给：全部」同色系）
 var _scope_art := false
 var _scope_shown := -1                                 # 当前画的是哪张（0 队友 / 1 所有人），切换时才弹
@@ -121,17 +121,10 @@ func refresh() -> void:
 		_on_members_pressed()
 	voice_button.text = ""
 	audience_button.text = ""
-	var talking := VoiceService.mode == VoiceService.Mode.TALK
-	_set_icon(voice_button, "mic_on" if talking else "mic_off",
-		_text("开麦", "Mic On") if talking else _text("闭麦", "Mic Off"), talking)
-	_set_icon(audience_button, "speaker_on" if VoiceService.speaker_enabled else "speaker_off",
-		_text("声音", "Sound") if VoiceService.speaker_enabled else _text("静音", "Muted"), VoiceService.speaker_enabled)
-	voice_button.tooltip_text = _text("关闭麦克风" if VoiceService.mode == VoiceService.Mode.TALK else "打开麦克风", "Toggle microphone")
-	audience_button.tooltip_text = _text("关闭扬声器" if VoiceService.speaker_enabled else "打开扬声器", "Toggle speaker")
-	audience_button.tooltip_text += _text("\n长按查看语音状态", "\nHold for voice status")
-	if not VoiceService.last_error().is_empty():
-		voice_button.tooltip_text += "\n" + VoiceService.last_error()
-		audience_button.tooltip_text += "\n" + VoiceService.last_error()
+	_set_icon(voice_button, "mic_on" if VoiceService.mode == VoiceService.Mode.TALK else "mic_off")
+	_set_icon(audience_button, "speaker_on" if VoiceService.speaker_enabled else "speaker_off")
+	voice_button.accessibility_name = _text("关闭麦克风" if VoiceService.mode == VoiceService.Mode.TALK else "打开麦克风", "Toggle microphone")
+	audience_button.accessibility_name = _text("关闭扬声器" if VoiceService.speaker_enabled else "打开扬声器", "Toggle speaker")
 	if _scope_art:
 		_refresh_scope_art()
 		return
@@ -141,57 +134,40 @@ func refresh() -> void:
 		members_button.text = _text("所有人", "All") if VoiceService.audience == VoiceService.Audience.ALL else _text("队友", "Team")
 	members_button.add_theme_color_override("font_color", ACTIVE_COLOR if VoiceService.open_to_room() else IDLE_COLOR)
 
-# 图标下面那行字的颜色：开 = 深棕，关 = 暗红（11.15 用户要求按钮下面有字）。浅色描边压在羊皮纸上。
-const CAPTION_ON := Color("4a2c14")
-const CAPTION_OFF := Color("a8321e")
-const CAPTION_OUTLINE := Color(1.0, 0.96, 0.84, 0.9)
-# 板子在图里占中间 504/627（VoiceButtonArt），字写在板子下沿那条空白上。
-const PLATE_INSET := (1.0 - 504.0 / 627.0) * 0.5
-
-func _set_icon(button: Button, key: String, caption_text: String = "", active: bool = true) -> void:
+func _set_icon(button: Button, key: String) -> void:
 	var art := button.get_node_or_null("VoiceIcon") as TextureRect
 	if art == null:
 		art = TextureRect.new()
 		art.name = "VoiceIcon"
 		art.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		# 240px 的图缩到几十像素显示，要用 mipmap，不然发糊起颗粒
+		# 256px 的图缩到几十像素显示，要用 mipmap，不然发糊起颗粒
 		art.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		button.add_child(art)
 		art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		# Full plate is in the sprite; the original Button keeps its hit box.
-		art.offset_left = 0
-		art.offset_right = 0
-		art.offset_top = 0
-		art.offset_bottom = 0
+		button.resized.connect(_fit_art.bind(button, art, ATLAS_PLATE))
+	_fit_art(button, art, ATLAS_PLATE)
 	if art.get_meta("voice_icon", "") != key:
 		art.texture = VoiceButtonArt.texture_for(key)
 		art.set_meta("voice_icon", key)
-	var caption := art.get_node_or_null("VoiceCaption") as Label
-	if caption == null:
-		caption = Label.new()
-		caption.name = "VoiceCaption"
-		caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		caption.clip_text = true
-		caption.add_theme_color_override("font_outline_color", CAPTION_OUTLINE)
-		caption.add_theme_constant_override("outline_size", 3)
-		art.add_child(caption)
-		var plate := 1.0 - PLATE_INSET * 2.0
-		caption.anchor_left = PLATE_INSET
-		caption.anchor_right = 1.0 - PLATE_INSET
-		caption.anchor_top = PLATE_INSET + plate * 0.64
-		caption.anchor_bottom = PLATE_INSET + plate * 0.90
-		for side in ["left", "top", "right", "bottom"]:
-			caption.set("offset_" + side, 0.0)
-	if caption.text != caption_text:
-		caption.text = caption_text
-	# 图是保持比例居中的正方形，字号跟着短边走（备战约 60px、战斗约 56px）
-	var plate_px := minf(art.size.x, art.size.y) * (1.0 - PLATE_INSET * 2.0)
-	caption.add_theme_font_size_override("font_size", clampi(roundi(plate_px * 0.21), 9, 15))
-	caption.add_theme_color_override("font_color", CAPTION_ON if active else CAPTION_OFF)
+
+# 11.15 用户定：图标下面不写字，图标本身放大。
+# 把图往外撑到「金框 = 按钮短边 × ICON_SCALE」，点击范围还是按钮本身（图不吃点击）。
+# plate = 按钮占图画布的比例：现在六张图都几乎撑满画布（ui/voice_buttons/）。
+const ICON_SCALE := 1.12
+const ATLAS_PLATE := 1.0
+
+func _fit_art(button: Button, art: TextureRect, plate: float) -> void:
+	if not is_instance_valid(button) or not is_instance_valid(art):
+		return
+	var side := minf(button.size.x, button.size.y)
+	var grow := side * (ICON_SCALE / plate - 1.0) * 0.5
+	art.offset_left = -grow
+	art.offset_right = grow
+	art.offset_top = -grow
+	art.offset_bottom = grow
 
 func _on_speaker_pressed() -> void:
 	if _speaker_hold_opened:
@@ -369,11 +345,14 @@ func _refresh_scope_art() -> void:
 		art = TextureRect.new()
 		art.name = "ScopeIcon"
 		art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		# 256px 的图缩到几十像素显示，要用 mipmap，不然发糊起颗粒
 		art.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		members_button.add_child(art)
 		art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		members_button.resized.connect(_fit_art.bind(members_button, art, 1.0))
+	_fit_art(members_button, art, 1.0)
 	if key != _scope_shown:
 		art.texture = load(SCOPE_ALL_ART if all else SCOPE_TEAM_ART) as Texture2D
 		if _scope_shown != -1 and art.is_inside_tree():
@@ -381,35 +360,17 @@ func _refresh_scope_art() -> void:
 			art.scale = Vector2(0.7, 0.7)
 			art.create_tween().tween_property(art, "scale", Vector2.ONE, 0.28) 				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 		_scope_shown = key
-	# 框里下沿那条空白写字（11.05 用户定）：中文「队友 / 全队」，英文「Team / All」。
-	var caption := art.get_node_or_null("ScopeCaption") as Label
-	if caption == null:
-		caption = Label.new()
-		caption.name = "ScopeCaption"
-		caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		caption.add_theme_font_size_override("font_size", 12)
-		# 11.15：底板换成羊皮纸后，原来的浅色字写在浅色底上看不见，改成深色字 + 浅色描边
-		caption.add_theme_color_override("font_outline_color", CAPTION_OUTLINE)
-		caption.add_theme_constant_override("outline_size", 3)
-		art.add_child(caption)
-		caption.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		caption.anchor_top = 0.64
-		caption.anchor_bottom = 0.90
-	caption.text = _text("全队", "All") if all else _text("队友", "Team")
-	caption.add_theme_color_override("font_color", Color("b4480e") if all else CAPTION_ON)
-	caption.add_theme_font_size_override("font_size", clampi(roundi(minf(art.size.x, art.size.y) * 0.21), 9, 15))
+	# 11.15 用户定：图下面不再写「队友 / 全队」，两张图本身就能区分。
 	# 开局前全房间本来就互通、没得选：图压暗，点了弹说明（_on_audience_pressed）。
 	art.modulate = Color(1, 1, 1, 0.55) if lobby_room else Color.WHITE
 	if lobby_room:
-		members_button.tooltip_text = _text("开局前全房间都听得到", "Everyone in the room hears you before the match")
+		members_button.accessibility_name = _text("开局前全房间都听得到", "Everyone in the room hears you before the match")
 	elif all:
-		members_button.tooltip_text = _text("现在：所有人（对手也听得到）
+		members_button.accessibility_name = _text("现在：所有人（对手也听得到）
 点一下改成只对队友", "Now: everyone (enemies too)
 Tap for team only")
 	else:
-		members_button.tooltip_text = _text("现在：只对队友
+		members_button.accessibility_name = _text("现在：只对队友
 点一下改成所有人", "Now: team only
 Tap for everyone")
 	if _scope_ring != null and is_instance_valid(_scope_ring):

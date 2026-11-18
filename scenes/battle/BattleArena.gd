@@ -33,6 +33,18 @@ const BATTLE_PVP_BACKGROUND_SCALE := 1.0
 # 保证左右两路完整可见。手机 20:9 画面与改动前逐像素一致。
 const BATTLE_REFERENCE_ARENA_SIZE := Vector2(1600.0, 720.0)
 const BATTLE_MIN_VISIBLE_ASPECT := 16.0 / 9.0
+# 11.16 满员拉远：第 21 回合满棋盘时，上排棋子头顶顶到屏幕边、压住 Team HP，下排踩上墙
+# （手机 20:9 和电脑 16:9 都有）。开战时量一次棋子在屏幕上的实际范围，装不下才把 3D 镜头
+# 拉远到刚好装下；棋子少的回合倍数是 1，画面不变。战斗中不再推拉。
+# 地面范围是背景图里的高度比例 —— 9 张战场背景地面都在 17%~83% 之间，这里各收一点。
+const BATTLE_FLOOR_TOP_FRAC := 0.19
+const BATTLE_FLOOR_BOTTOM_FRAC := 0.82
+# 头顶（含血条）不能高过这条线：顶部 Team HP 文字约占屏幕高度 5%。
+# 头压到远处的上墙没关系（站在墙前面），只要别出屏、别压 HUD。
+const BATTLE_HEAD_TOP_MARGIN_FRAC := 0.06
+# 血条贴在 HeadAnchor 上方一点，按屏幕高度再留一点。
+const BATTLE_HEAD_BAR_ALLOWANCE_FRAC := 0.015
+const BATTLE_CROWD_ZOOM_MAX := 1.3
 const BATTLE_VISUAL_SPACE_SCALE := 0.88
 const BATTLE_VISUAL_DOWN_SHIFT_RATIO := 0.1
 const BLUE_CRYSTAL_MODEL_PATH := "res://assets/models/battle_crystals/blue/Meshy_AI_Blue_Crystal_Spire_0717152101_texture_fbx/Meshy_AI_Blue_Crystal_Spire_0717152101_texture.fbx"
@@ -215,29 +227,6 @@ func _build() -> void:
 	_summary_lbl.visible = false
 	add_child(_summary_lbl)
 
-	# (8) Live "top ATK" leaderboard on the left-middle: top 5 units by attack,
-	# each name in its owner/team color, plus its dealt damage.
-	_top5_atk_lbl = RichTextLabel.new()
-	_top5_atk_lbl.bbcode_enabled = true
-	_top5_atk_lbl.fit_content = true
-	_top5_atk_lbl.scroll_active = false
-	_top5_atk_lbl.anchor_left = 0.0
-	_top5_atk_lbl.anchor_right = 0.0
-	_top5_atk_lbl.anchor_top = 0.5
-	_top5_atk_lbl.anchor_bottom = 0.5
-	_top5_atk_lbl.offset_left = 12
-	_top5_atk_lbl.offset_right = 232
-	_top5_atk_lbl.offset_top = -96
-	_top5_atk_lbl.offset_bottom = 96
-	_top5_atk_lbl.add_theme_font_size_override("normal_font_size", 15)
-	_top5_atk_lbl.add_theme_font_size_override("bold_font_size", 16)
-	_top5_atk_lbl.add_theme_color_override("default_color", Color(0.95, 0.95, 0.98))
-	_top5_atk_lbl.add_theme_constant_override("outline_size", 4)
-	_top5_atk_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.92))
-	_top5_atk_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_top5_atk_lbl.z_index = 90
-	add_child(_top5_atk_lbl)
-	SafeArea.track(_top5_atk_lbl)
 	if GameState.tutorial_mode:
 		_add_tutorial_team_portraits()
 
@@ -311,7 +300,7 @@ func _add_tutorial_team_portraits() -> void:
 			badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			row.add_child(badge)
 			var frame := TextureRect.new()
-			frame.texture = AvatarCatalog.frame_texture_for("")
+			AvatarCatalog.set_frame_texture(frame, AvatarCatalog.frame_texture_for(""))
 			frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 			frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 			frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -330,8 +319,10 @@ func _add_tutorial_team_portraits() -> void:
 			circle.set_corner_radius_all(40)
 			mask.add_theme_stylebox_override("panel", circle)
 			badge.add_child(mask)
+			# ★ 11.16 用户要求框在头像**上面**（内圈压住头像边缘）：把框挪到头像之后。
+			badge.move_child(frame, mask.get_index())
 			var portrait := TextureRect.new()
-			portrait.texture = AvatarCatalog.texture_for(avatar_id)
+			AvatarCatalog.set_avatar_texture(portrait, AvatarCatalog.texture_for(avatar_id))
 			portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 			portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 			portrait.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -408,7 +399,8 @@ func _fit_battlefield_2_5d() -> void:
 	var reference_cover := maxf(BATTLE_REFERENCE_ARENA_SIZE.x / _battlefield_2_5d_size.x,
 		BATTLE_REFERENCE_ARENA_SIZE.y / _battlefield_2_5d_size.y)
 	var reference_px_per_world := BATTLE_REFERENCE_ARENA_SIZE.y / BATTLE_CAMERA_SIZE
-	var px_per_world := arena_size.y / _battle_camera_base_size()
+	# 背景只跟屏幕比例走，不跟「满员拉远」走：拉远是为了让棋子相对墙变小。
+	var px_per_world := arena_size.y / _battle_camera_aspect_size()
 	var fit_scale := maxf(cover_scale, reference_cover * px_per_world / reference_px_per_world)
 	_sync_battle_camera_base_size()
 	if _battlefield_kind() == "pvp":
@@ -417,8 +409,13 @@ func _fit_battlefield_2_5d() -> void:
 	_battlefield_2_5d_root.position = (arena_size - _battlefield_2_5d_size * fit_scale) * 0.5
 
 
-# 战斗相机的「原始取景」大小（结算收镜头之前）。不低于 16:9 的可见宽度，见常量处说明。
+# 战斗相机的「原始取景」大小（结算收镜头之前）= 按屏幕比例的取景 × 满员拉远倍数。
 func _battle_camera_base_size() -> float:
+	return _battle_camera_aspect_size() * _battle_camera_crowd_zoom
+
+
+# 只按屏幕比例算的取景。不低于 16:9 的可见宽度，见常量处说明。背景缩放也按它算。
+func _battle_camera_aspect_size() -> float:
 	if _arena == null:
 		return BATTLE_CAMERA_SIZE
 	var arena_size := _arena.size
@@ -435,6 +432,76 @@ func _sync_battle_camera_base_size() -> void:
 	if _battle_camera_tightened:
 		return
 	_battle_3d_camera.size = _battle_camera_base_size()
+
+
+# 开战前调用一次（棋子模型已摆好、画面还没放出来）。正交相机缩放以画面中心为原点，
+# 所以每个点到中心的距离按 1/倍数 缩小，倍数可以逐点直接解出来。
+func _fit_battle_camera_to_formation() -> void:
+	_battle_camera_crowd_zoom = 1.0
+	_sync_battle_camera_base_size()
+	var zoom := battle_crowd_zoom_for(_formation_screen_extents(), _battle_floor_band_px(), _arena.size.y if _arena != null else 0.0)
+	if is_equal_approx(zoom, 1.0):
+		return
+	_battle_camera_crowd_zoom = zoom
+	_sync_battle_camera_base_size()
+	print("[BATTLE_CAMERA] crowd_zoom=%.3f" % zoom)
+
+
+# 所有棋子的脚底 / 头顶在 arena 像素坐标里的 y。没有棋子返回空。
+func _formation_screen_extents() -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	if _unit_actor_registry == null or _battle_3d_camera == null:
+		return out
+	for uid in _unit_actor_registry.ids():
+		var actor: Node3D = _unit_actor_registry.get_actor(str(uid))
+		if actor == null or not is_instance_valid(actor) or not actor.is_inside_tree():
+			continue
+		# 头顶用 HeadAnchor：整体包围盒会把脚下光圈、身上的羁绊光效一起算进去，偏高很多。
+		var origin := actor.global_position
+		var top := origin.y + 1.0
+		var head_anchor := actor.get_node_or_null("HeadAnchor") as Node3D
+		if head_anchor != null:
+			top = head_anchor.global_position.y
+		else:
+			var box := _node3d_bounds(actor)
+			if box.size != Vector3.ZERO:
+				top = (actor.global_transform * box).end.y
+		# 棋子原点就站在地面上（战场地面在世界 y=1，不是 0）。
+		var feet := _world_to_arena(origin)
+		var head := _world_to_arena(Vector3(origin.x, top, origin.z))
+		out.append(Vector2(feet.y, head.y))
+	return out
+
+
+# 地面在 arena 像素里的上下边（按背景图当前的摆放算）。没有背景时按屏幕高度比例兜底。
+func _battle_floor_band_px() -> Vector2:
+	if _arena == null:
+		return Vector2.ZERO
+	if _battlefield_2_5d_root == null or _battlefield_2_5d_size.y <= 0.0:
+		return Vector2(_arena.size.y * BATTLE_FLOOR_TOP_FRAC, _arena.size.y * BATTLE_FLOOR_BOTTOM_FRAC)
+	var y0 := _battlefield_2_5d_root.position.y
+	var h := _battlefield_2_5d_size.y * _battlefield_2_5d_root.scale.y
+	return Vector2(y0 + h * BATTLE_FLOOR_TOP_FRAC, y0 + h * BATTLE_FLOOR_BOTTOM_FRAC)
+
+
+# 纯函数，便于门禁直接验：extents 里每项是 (脚底 y, 头顶 y)，floor_band 是地面 (上边, 下边)。
+static func battle_crowd_zoom_for(extents: Array[Vector2], floor_band: Vector2, arena_h: float) -> float:
+	if extents.is_empty() or arena_h <= 0.0:
+		return 1.0
+	var c := arena_h * 0.5
+	var head_limit := arena_h * BATTLE_HEAD_TOP_MARGIN_FRAC
+	var bar := arena_h * BATTLE_HEAD_BAR_ALLOWANCE_FRAC
+	var zoom := 1.0
+	for e in extents:
+		var feet := e.x
+		var head := e.y - bar
+		if feet > c and floor_band.y > c:
+			zoom = maxf(zoom, (feet - c) / (floor_band.y - c))
+		elif feet < c and floor_band.x < c:
+			zoom = maxf(zoom, (c - feet) / (c - floor_band.x))
+		if head < c and head_limit < c:
+			zoom = maxf(zoom, (c - head) / (c - head_limit))
+	return clampf(zoom, 1.0, BATTLE_CROWD_ZOOM_MAX)
 
 
 func _add_fire_layer() -> void:
@@ -687,7 +754,8 @@ func _sync_battle_readability_static_geometry() -> void:
 	# 观战另一队时不再反转半场，画面与那位玩家自己的屏幕完全一致，所以切视角不需要
 	# 重算几何、也没有"切过去还是旧半场"的风险。_refresh_visuals() 每帧仍会调到这里，
 	# 尺寸一变照样刷新。
-	var signature := "%0.2f|%0.2f|%s" % [arena_size.x, arena_size.y, str(_arena_flip_y)]
+	# 相机取景也进签名：满员拉远会改 camera.size，半场底色要跟着重算。
+	var signature := "%0.2f|%0.2f|%s|%0.3f" % [arena_size.x, arena_size.y, str(_arena_flip_y), _battle_3d_camera.size]
 	if signature == _board_readability_static_signature:
 		return
 	_board_readability_static_signature = signature

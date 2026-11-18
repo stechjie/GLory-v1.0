@@ -119,7 +119,7 @@ func refresh(state:Dictionary=NetworkService.spectate_state,selected:int=Network
 	var profiles:Dictionary=state.get("seat_profiles",{})
 	for i in 6:
 		var profile:Dictionary=profiles.get(i,profiles.get(str(i),{}))
-		_portraits[i].texture=Catalog.texture_for(str(profile.get("avatar",Catalog.default_avatar())),true)
+		Catalog.set_avatar_texture(_portraits[i], Catalog.texture_for(str(profile.get("avatar",Catalog.default_avatar())),true))
 		var states:Array=state.get("slot_states",[])
 		_names[i].text=str(profile.get("player_name","AI" if i<states.size() and states[i]=="dummy" else "—"))
 	for team in 2:
@@ -147,7 +147,7 @@ func refresh(state:Dictionary=NetworkService.spectate_state,selected:int=Network
 			image.expand_mode=TextureRect.EXPAND_IGNORE_SIZE
 			image.stretch_mode=TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 			var identity:Dictionary=entry.get("identity",{})
-			image.texture=Catalog.texture_for(str(identity.get("avatar",Catalog.default_avatar())),true)
+			Catalog.set_avatar_texture(image, Catalog.texture_for(str(identity.get("avatar",Catalog.default_avatar())),true))
 			column.add_child(image)
 			Voice.attach_speaking_mic(image)
 			column.set_meta("entry",entry)

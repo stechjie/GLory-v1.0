@@ -1,7 +1,10 @@
 extends Control
+
+const MusicService := preload("res://ui/services/MusicService.gd")
 # Codex ("图鉴"). Opened from the main menu; never touches the prep screen.
 # Laid out as an open book: the left page picks an entry, the right page shows it.
-#   - Left page: category tabs, then a 4-across grid of portraits.
+#   - Left page: back button + title, one sliding row of category tabs, then a
+#     3-across grid of portraits. The book fills the whole screen (11.16).
 #   - Right page: framed character record, attributes, illustrated ability and four-star upgrade,
 #     stats below. Locked entries reveal nothing at all.
 # Data comes from CodexService; unlock state from PlayerProfile.
@@ -11,11 +14,28 @@ signal back_requested
 const BOOK_TEX := preload("res://assets/ui/codex/painted/book_spread_painted.png")
 const Kit := preload("res://ui/theme/ParchmentKit.gd")
 const SkillArt := preload("res://ui/components/CodexSkillArt.gd")
-# Same art the main menu paints, so the codex opens over a dimmed menu rather than
-# a black void. The menu itself is freed when the codex opens, so its background is
-# redrawn here instead of kept alive.
-const MENU_BG_TEX := preload("res://assets/ui/main_menu_v2/background.png")
-const GRID_COLUMNS := 4
+# ★ 11.16：图鉴书本铺满整屏，书里的按钮 / 图案 / 字体按书的放大比例一起放大。
+#   书本贴图（1568×1003）里的关键位置，单位都是**贴图像素**：
+#   - BOOK_VISIBLE：书皮外缘（不含伸出去的叶尖和底部书签），这一圈对齐屏幕四边；
+#   - 书脊在 BOOK_SPINE_X，左右两半各用一个 NinePatchRect 画：四角叶子 / 卷边和
+#     书脊两侧保持原比例，只拉伸页面中间 —— 手机屏比贴图宽得多，整张拉伸会把
+#     四角压扁；
+#   - PAGE_*：可写字的区域（羊皮纸再往里让开四角的金色卷边和书脊阴影）。
+#     右页以书脊为轴镜像左页。
+const BOOK_VISIBLE := Rect2(74.0, 79.0, 1422.0, 830.0)
+const BOOK_SPINE_X := 784.0
+const PATCH_OUTER := 210 # 外侧（含叶子和卷边）
+const PATCH_SPINE := 60  # 书脊一侧（含书脊阴影与书签）
+const PATCH_TOP := 200
+const PATCH_BOTTOM := 260
+const PAGE_OUTER_X := 176.0 # 左页内容区外沿
+const PAGE_INNER_X := 730.0 # 左页内容区靠书脊一侧
+const PAGE_TOP_Y := 141.0
+const PAGE_BOTTOM_Y := 817.0
+# 旧版（书本没铺满时）在 1600×720 下一页内容区的大小，放大比例以它为 1.0。
+# 宽度基准取 500 而不是当时的 591：左页从 4 列改 3 列，每格本来就更宽。
+const PAGE_REF_SIZE := Vector2(500.0, 467.0)
+const GRID_COLUMNS := 3
 # ★ 10.08 反馈第 2 条：分类按钮在中/英下大小不一 —— 因为按钮宽度随文字长度走
 #   （「神」vs「God」、「宝藏」vs「Treasures」）。钉一个统一的最小尺寸，
 #   配合 HFlowContainer 的等宽排布，两种语言下按钮块大小一致。
@@ -32,17 +52,21 @@ const GOOD := Color(0.36, 0.50, 0.29)
 const BAD := Color(0.59, 0.27, 0.18)
 const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 
-var _book: TextureRect
+var _book_left: NinePatchRect
+var _book_right: NinePatchRect
 var _left_page: Control
 var _right_page: Control
-var _tab_row: HFlowContainer
+var _left_col: VBoxContainer
+var _head: HBoxContainer
+var _tab_scroll: ScrollContainer
+var _tab_row: HBoxContainer
 var _title_label: Label
 var _count_label: Label
 var _grid: GridContainer
 var _detail: VBoxContainer
 var _detail_scroll: ScrollContainer
 var _back_btn: Button
-var _page_banner: Control
+var _back_aspect := 1.0
 
 var _category := "god"
 var _picked := ""
@@ -60,6 +84,8 @@ func _ready() -> void:
 	if not SafeArea.changed.is_connected(_layout):
 		SafeArea.changed.connect(_layout)
 	_refresh()
+	# 11.16：图鉴独立 BGM。返回主菜单时由 MainMenu 接回主菜单那首。
+	MusicService.play(MusicService.CODEX_MUSIC, true)
 
 func _exit_tree() -> void:
 	if PlayerProfile.codex_changed.is_connected(_refresh):
@@ -75,65 +101,65 @@ func _notification(what: int) -> void:
 
 func _build() -> void:
 	theme = Kit.theme()
-	var menu_bg := TextureRect.new()
-	menu_bg.texture = MENU_BG_TEX
-	menu_bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	menu_bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	menu_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	menu_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(menu_bg)
+	# 书本铺满后屏幕四边就是书皮；这层深色只在书皮圆角、书脊顶端那几个像素透出来。
+	var backdrop := ColorRect.new()
+	backdrop.color = Color(0.13, 0.08, 0.05)
+	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(backdrop)
 
-	# Dim overlay: the menu shows through, just darker so the book reads clearly.
-	var dim := ColorRect.new()
-	dim.color = Color(0.08, 0.06, 0.03, 0.30)
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(dim)
-
-	_book = TextureRect.new()
-	_book.texture = BOOK_TEX
-	_book.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	# _layout sizes and offsets the rect itself, so the texture maps 1:1 onto it.
-	_book.stretch_mode = TextureRect.STRETCH_SCALE
-	_book.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_book)
+	_book_left = _book_half(Rect2(0.0, 0.0, BOOK_SPINE_X, BOOK_TEX.get_height()), PATCH_OUTER, PATCH_SPINE)
+	_book_right = _book_half(
+		Rect2(BOOK_SPINE_X, 0.0, BOOK_TEX.get_width() - BOOK_SPINE_X, BOOK_TEX.get_height()),
+		PATCH_SPINE, PATCH_OUTER)
 
 	_left_page = Control.new()
 	_left_page.mouse_filter = Control.MOUSE_FILTER_PASS
 	add_child(_left_page)
 
-	var left_col := VBoxContainer.new()
-	left_col.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	left_col.add_theme_constant_override("separation", _sp(8))
-	_left_page.add_child(left_col)
+	_left_col = VBoxContainer.new()
+	_left_col.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_left_page.add_child(_left_col)
 
-	var head := HBoxContainer.new()
-	left_col.add_child(head)
+	# 页眉：返回键 + 分类标题 + 进度。原先顶上那条「图鉴」横幅和左上角返回键
+	# 都浮在书外面，书铺满后没地方放 —— 横幅去掉（标题已写明分类），返回键收进左页页眉。
+	_head = HBoxContainer.new()
+	_left_col.add_child(_head)
+	_back_btn = Kit.back_button(func(): back_requested.emit(), 56.0)
+	_back_btn.tooltip_text = tr("codex_back")
+	_back_btn.focus_mode = Control.FOCUS_ALL
+	_back_aspect = _back_btn.custom_minimum_size.x / maxf(1.0, _back_btn.custom_minimum_size.y)
+	_head.add_child(_back_btn)
 	_title_label = Label.new()
-	_title_label.add_theme_font_size_override("font_size", _fs(22))
 	_title_label.add_theme_color_override("font_color", INK)
 	_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	head.add_child(_title_label)
+	_title_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_title_label.clip_text = true
+	_title_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_head.add_child(_title_label)
 	_count_label = Label.new()
-	_count_label.add_theme_font_size_override("font_size", _fs(14))
 	_count_label.add_theme_color_override("font_color", INK_SOFT)
-	_count_label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
-	head.add_child(_count_label)
+	_count_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_head.add_child(_count_label)
 
-	_tab_row = HFlowContainer.new()
-	_tab_row.add_theme_constant_override("h_separation", _sp(4))
-	_tab_row.add_theme_constant_override("v_separation", _sp(4))
-	left_col.add_child(_tab_row)
+	# 分类有 14 个，按钮放大后排成多行会吃掉小半页 —— 改成一行，左右滑动
+	# （手指 / 鼠标拖都行），切换分类时把选中那个滚进视野。
+	var tab_scroll := TouchScrollContainer.new()
+	tab_scroll.drag_horizontal = true
+	tab_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	tab_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	_tab_scroll = tab_scroll
+	_left_col.add_child(_tab_scroll)
+	_tab_row = HBoxContainer.new()
+	_tab_scroll.add_child(_tab_row)
 
 	var scroll := TouchScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	left_col.add_child(scroll)
+	_left_col.add_child(scroll)
 
 	_grid = GridContainer.new()
 	_grid.columns = GRID_COLUMNS
-	_grid.add_theme_constant_override("h_separation", _sp(8))
-	_grid.add_theme_constant_override("v_separation", _sp(8))
 	_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(_grid)
 
@@ -150,46 +176,89 @@ func _build() -> void:
 
 	_detail = VBoxContainer.new()
 	_detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_detail.add_theme_constant_override("separation", _sp(10))
 	_detail.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_detail_scroll.add_child(_detail)
 
-	_page_banner = Kit.title_banner(tr("codex_title"), 70.0, 26)
-	add_child(_page_banner)
-	_back_btn = Kit.back_button(func(): back_requested.emit(), 56.0)
-	_back_btn.tooltip_text = tr("codex_back")
-	_back_btn.focus_mode = Control.FOCUS_ALL
-	add_child(_back_btn)
-
+	_apply_static_sizes()
 	_layout()
 
-# Keep the two writing areas inside the device safe area. Book art may stretch;
-# all text and portraits remain unscaled controls with readable minimum font sizes.
+# 书本的半边：一个 NinePatchRect 截贴图的左半或右半。四个 patch 边距以贴图像素计，
+# 画出来时边距按节点自身的 scale 缩放，所以四角始终保持原比例。
+func _book_half(region: Rect2, margin_left: int, margin_right: int) -> NinePatchRect:
+	var half := NinePatchRect.new()
+	half.texture = BOOK_TEX
+	half.region_rect = region
+	half.patch_margin_left = margin_left
+	half.patch_margin_right = margin_right
+	half.patch_margin_top = PATCH_TOP
+	half.patch_margin_bottom = PATCH_BOTTOM
+	half.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(half)
+	return half
+
+# 书皮外缘（BOOK_VISIBLE）对齐整个视口 —— 书画到刘海底下也没关系，
+# 但两页的内容区再和安全区取交集，文字和按钮不会钻进刘海。
 func _layout() -> void:
-	if _book == null or size.x <= 1.0 or size.y <= 1.0:
+	if _book_left == null or size.x <= 1.0 or size.y <= 1.0:
 		return
+	var view := Vector2(size.x, size.y)
+	# 四角按同一个比例缩放：取宽、高里先撑满的那个，另一个方向靠拉伸页面中间补齐。
+	var s := minf(view.x / BOOK_VISIBLE.size.x, view.y / BOOK_VISIBLE.size.y)
+	var tex_size := Vector2(BOOK_TEX.get_width(), BOOK_TEX.get_height())
+	var pad_left := BOOK_VISIBLE.position.x
+	var pad_right := tex_size.x - BOOK_VISIBLE.end.x
+	var pad_top := BOOK_VISIBLE.position.y
+	var pad_bottom := tex_size.y - BOOK_VISIBLE.end.y
+	var spine := view.x * 0.5
+	var local_h := pad_top + pad_bottom + view.y / s
+	_book_left.scale = Vector2(s, s)
+	_book_left.position = Vector2(-pad_left * s, -pad_top * s)
+	_book_left.size = Vector2(pad_left + spine / s, local_h)
+	_book_right.scale = Vector2(s, s)
+	_book_right.position = Vector2(spine, -pad_top * s)
+	_book_right.size = Vector2(pad_right + (view.x - spine) / s, local_h)
+
+	# 内容区：外沿和上下落在 patch 边距里（不被拉伸，按 s 换算），书脊一侧以屏幕中线为准。
+	var top := (PAGE_TOP_Y - pad_top) * s
+	var bottom := view.y - (BOOK_VISIBLE.end.y - PAGE_BOTTOM_Y) * s
+	var outer := (PAGE_OUTER_X - pad_left) * s
+	var inner := (BOOK_SPINE_X - PAGE_INNER_X) * s
 	var safe := SafeArea.rect()
-	var ui := clampf(minf(safe.size.x / 1600.0, safe.size.y / 720.0), 0.8, 1.5)
+	top = maxf(top, safe.position.y)
+	bottom = minf(bottom, safe.end.y)
+	var left_x0 := maxf(outer, safe.position.x)
+	var right_x1 := minf(view.x - outer, safe.end.x)
+	_left_page.position = Vector2(left_x0, top)
+	_left_page.size = Vector2(maxf(1.0, spine - inner - left_x0), maxf(1.0, bottom - top))
+	_right_page.position = Vector2(spine + inner, top)
+	_right_page.size = Vector2(maxf(1.0, right_x1 - spine - inner), maxf(1.0, bottom - top))
+
+	# 书里所有东西的放大比例：两页里较窄 / 较矮的那一边相对旧版内容区的倍数。
+	var page := Vector2(minf(_left_page.size.x, _right_page.size.x), _left_page.size.y)
+	var ui := clampf(minf(page.x / PAGE_REF_SIZE.x, page.y / PAGE_REF_SIZE.y), 0.8, 1.8)
 	var ui_changed := absf(ui - _ui) > 0.005
 	_ui = ui
-	var origin := safe.position + Vector2(_px(12), _px(66))
-	var book_size := safe.size - Vector2(_px(24), _px(72))
-	_book.position = origin
-	_book.size = book_size
-	_left_page.position = origin + book_size * Vector2(0.085, 0.14)
-	_left_page.size = book_size * Vector2(0.375, 0.72)
-	_right_page.position = origin + book_size * Vector2(0.535, 0.14)
-	_right_page.size = book_size * Vector2(0.375, 0.72)
-	if _back_btn != null:
-		_back_btn.position = safe.position + Vector2(_px(24), _px(12))
-		_back_btn.size = Vector2(_px(56), _px(56))
-	if _page_banner != null:
-		_page_banner.size = Vector2(_px(350), _px(70))
-		_page_banner.position = Vector2(safe.get_center().x - _page_banner.size.x * 0.5, safe.position.y)
 	if _detail_scroll != null:
 		_detail_scroll.offset_top = 0
-	if ui_changed and _grid != null and _grid.get_child_count() > 0:
-		_refresh()
+	if ui_changed:
+		_apply_static_sizes()
+		if _grid != null and _grid.get_child_count() > 0:
+			_refresh()
+
+# 只在 _build 里建一次的控件，放大比例变了要跟着改尺寸（其余的每次 _refresh 都重建）。
+func _apply_static_sizes() -> void:
+	if _left_col == null:
+		return
+	_left_col.add_theme_constant_override("separation", _sp(8))
+	_head.add_theme_constant_override("separation", _sp(10))
+	var back_side := _px(52)
+	_back_btn.custom_minimum_size = Vector2(back_side * _back_aspect, back_side)
+	_title_label.add_theme_font_size_override("font_size", _fs(22))
+	_count_label.add_theme_font_size_override("font_size", _fs(14))
+	_tab_row.add_theme_constant_override("separation", _sp(4))
+	_grid.add_theme_constant_override("h_separation", _sp(8))
+	_grid.add_theme_constant_override("v_separation", _sp(8))
+	_detail.add_theme_constant_override("separation", _sp(10))
 
 # --- refresh -------------------------------------------------------------
 
@@ -227,6 +296,9 @@ func _refresh() -> void:
 	_build_detail(chosen)
 
 func _build_tabs() -> void:
+	# 每次刷新都重建按钮（语言 / 放大比例可能变了），但别把用户滑到的位置弹回开头。
+	var keep_scroll := _tab_scroll.scroll_horizontal
+	var selected: Control = null
 	for child in _tab_row.get_children():
 		_tab_row.remove_child(child)
 		child.queue_free()
@@ -246,6 +318,12 @@ func _build_tabs() -> void:
 			_picked = ""
 			_refresh())
 		_tab_row.add_child(btn)
+		if key == _category:
+			selected = btn
+	_tab_scroll.custom_minimum_size.y = _px(44)
+	_tab_scroll.set_deferred("scroll_horizontal", keep_scroll)
+	if selected != null:
+		_tab_scroll.call_deferred("ensure_control_visible", selected)
 
 func _category_title() -> String:
 	var meta := {}
@@ -259,9 +337,9 @@ func _category_title() -> String:
 	return label
 
 func _is_reference_category() -> bool:
-	# 状态和元素都是**参考物料**：不是收集目标，计数栏写「N 种」而不是
-	# 「已发现 N/M」（10.01 第 11 条把「元素」并进这一档）。
-	return _category == "status" or _category == "element"
+	# 状态是**参考物料**：不是收集目标，计数栏写「N 种」而不是「已发现 N/M」。
+	# （「元素」分类页 11.18 已删，克制说明改成点徽章弹出。）
+	return _category == "status"
 
 # --- grid tiles ----------------------------------------------------------
 
@@ -442,14 +520,17 @@ func _build_badges(entry: Dictionary, unlocked: bool) -> Control:
 	if not race.is_empty():
 		row.add_child(_emblem_badge(
 			CodexService.RACE_LOGO_DIR + race + ".png", tr("codex_tab_%s" % race), race))
+	# ★ 11.18：元素 / 系徽章也能点开（或长按），弹出该元素的克制关系 ——
+	#   和种族徽章弹羁绊说明同一种手势、同一种弹窗。怪物的 series 与它战斗里的
+	#   element 是同一个值（pve_monsters.json 逐条一致），所以弹同一份克制说明。
 	var element := str(entry.get("element", ""))
 	if not element.is_empty():
 		row.add_child(_emblem_badge(_element_icon(element),
-			tr("codex_element_suffix") % tr("codex_elem_%s" % element)))
+			tr("codex_element_suffix") % tr("codex_elem_%s" % element), "", element))
 	var series := str(entry.get("series", ""))
 	if not series.is_empty():
 		row.add_child(_emblem_badge(_element_icon(series),
-			tr("codex_series_suffix") % tr("codex_elem_%s" % series)))
+			tr("codex_series_suffix") % tr("codex_elem_%s" % series), "", series))
 	if int(entry.get("tier", 0)) > 0:
 		row.add_child(_flat_badge(tr("codex_tier") % int(entry.get("tier", 0)), INK))
 	var category := str(entry.get("category", ""))
@@ -460,9 +541,6 @@ func _build_badges(entry: Dictionary, unlocked: bool) -> Control:
 		row.add_child(_flat_badge(
 			tr("codex_buff") if is_buff else tr("codex_debuff"),
 			GOOD if is_buff else BAD))
-	# 元素图鉴的角标是「属性」；状态那条走 buff / debuff（10.01 第 11 条）。
-	if bool(entry.get("attribute", false)):
-		row.add_child(_flat_badge(tr("codex_attr"), INK))
 	return row if row.get_child_count() > 0 else null
 
 # Emblem above, label beneath: the round art identifies the entry, the words only
@@ -470,8 +548,9 @@ func _build_badges(entry: Dictionary, unlocked: bool) -> Control:
 #
 # ★ 10.08 反馈第 2 条：棋子图鉴里的**种族图标**要能**长按**弹出该族的羁绊说明
 #   （文本取自备战里的那一份 —— SynergyPanel.format_synergy_effects，不在这里另抄）。
-#   race 参数只在种族徽章上传（元素 / 系列徽章传空），长按入口也就只装在种族上。
-func _emblem_badge(texture_path: String, label: String, race: String = "") -> Control:
+# ★ 11.18：**元素 / 系图标**同样能点开，弹出该元素的克制关系（element 参数）。
+#   race / element 都为空的徽章不装手势。
+func _emblem_badge(texture_path: String, label: String, race: String = "", element: String = "") -> Control:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", _sp(2))
 	var art := TextureRect.new()
@@ -483,7 +562,12 @@ func _emblem_badge(texture_path: String, label: String, race: String = "") -> Co
 	# 而且完全静默（没有任何报错，只是「按了没反应」）。
 	if not race.is_empty():
 		art.mouse_filter = Control.MOUSE_FILTER_STOP
-		_attach_synergy_bond_long_press(art, race)
+		art.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		_attach_bond_long_press(art, func(): _show_race_bond(race))
+	elif CodexService.ELEMENTS.has(element):
+		art.mouse_filter = Control.MOUSE_FILTER_STOP
+		art.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		_attach_bond_long_press(art, func(): _show_element_bond(element))
 	col.add_child(art)
 	var lbl := Label.new()
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -493,68 +577,89 @@ func _emblem_badge(texture_path: String, label: String, race: String = "") -> Co
 	col.add_child(lbl)
 	return col
 
-# 给种族徽章装「长按 0.7 秒弹羁绊说明」。
+# 给徽章装「轻点或长按 0.7 秒弹说明」，open_popup 是弹哪份说明。
 #
 # 手势状态挂在控件 meta 上（与 PrepDetailOverlay.attach_long_press 同一套约定，
 # 这里只做图鉴需要的那一小份：按下起表、移动超过 8px 取消、松手停表）：
 #   长按常驻说明由 DialogService 的模态接管，所以松手不需要再收掉 —— 不会
 #   像备战浮层那样出现「松手把刚弹出来的说明又关掉」。
-func _attach_synergy_bond_long_press(art: Control, race: String) -> void:
+#
+# ★ 11.18「羁绊说明要按两次才关掉」：手机上 Godot 默认把一次触摸**再模拟成一次
+#   鼠标点击**（emulate_mouse_from_touch），旧代码触摸抬起、鼠标抬起各弹一次，
+#   叠出两个一模一样的框 —— 关掉上面那个，下面还有一个。现在：
+#   ① 一次手势只认**先按下的那一路**（"touch" / "mouse"），另一路的按下 / 抬起都忽略；
+#   ② 弹窗本身再带固定 request_id（见 _show_race_bond / _show_element_bond），
+#      同一份说明已开着时 DialogService 不会再叠第二个 —— 双保险。
+func _attach_bond_long_press(art: Control, open_popup: Callable) -> void:
 	var timer := Timer.new()
 	timer.one_shot = true
 	timer.wait_time = 0.7
 	art.add_child(timer)
-	art.set_meta("race_long_press_timer", timer)
+	art.set_meta("bond_long_press_timer", timer)
+	art.set_meta("bond_press_kind", "")
 	timer.timeout.connect(func():
-		if bool(art.get_meta("race_long_press_cancelled", false)):
+		if bool(art.get_meta("bond_long_press_cancelled", false)):
 			return
-		art.set_meta("race_long_press_fired", true)
-		_show_race_bond(race)
+		art.set_meta("bond_long_press_fired", true)
+		open_popup.call()
 	)
+	var on_press := func(kind: String, pos: Vector2) -> void:
+		var active := str(art.get_meta("bond_press_kind", ""))
+		var since := Time.get_ticks_msec() - int(art.get_meta("bond_press_msec", 0))
+		# 另一路紧跟着到的按下 = 同一次手势的副本（触摸模拟出来的鼠标），不再重开。
+		# 只在 400ms 内认作副本：上一次的抬起若被列表拖动吃掉了（TouchScrollContainer
+		# 会标记已处理），标记会残留，过了这段时间就当新手势，徽章不会从此点不动。
+		if active != "" and active != kind and since < 400:
+			return
+		art.set_meta("bond_press_kind", kind)
+		art.set_meta("bond_press_msec", Time.get_ticks_msec())
+		art.set_meta("bond_long_press_start", pos)
+		art.set_meta("bond_long_press_cancelled", false)
+		art.set_meta("bond_long_press_fired", false)
+		timer.start()
+	var on_release := func(kind: String) -> void:
+		if str(art.get_meta("bond_press_kind", "")) != kind:
+			return # 不是这次手势开头那一路的抬起：忽略，否则会弹第二次
+		art.set_meta("bond_press_kind", "")
+		timer.stop()
+		# 轻点（没长按）也把说明摊开：手机用户不一定会想到要长按，
+		# 而这条说明本来就是「看一眼」的性质，两条路都通不算坏事。
+		if not bool(art.get_meta("bond_long_press_fired", false)) \
+				and not bool(art.get_meta("bond_long_press_cancelled", false)):
+			open_popup.call()
 	art.gui_input.connect(func(event: InputEvent) -> void:
 		if event is InputEventMouseButton:
 			var mb := event as InputEventMouseButton
 			if mb.button_index != MOUSE_BUTTON_LEFT:
 				return
 			if mb.pressed:
-				art.set_meta("race_long_press_start", mb.position)
-				art.set_meta("race_long_press_cancelled", false)
-				art.set_meta("race_long_press_fired", false)
-				timer.start()
+				on_press.call("mouse", mb.position)
 			else:
-				timer.stop()
-				# 轻点（没长按）也把说明摊开：手机用户不一定会想到要长按，
-				# 而这条说明本来就是「看一眼」的性质，两条路都通不算坏事。
-				if not bool(art.get_meta("race_long_press_fired", false)):
-					_show_race_bond(race)
+				on_release.call("mouse")
 			art.accept_event()
 		elif event is InputEventScreenTouch:
 			var touch := event as InputEventScreenTouch
 			if touch.pressed:
-				art.set_meta("race_long_press_start", touch.position)
-				art.set_meta("race_long_press_cancelled", false)
-				art.set_meta("race_long_press_fired", false)
-				timer.start()
+				on_press.call("touch", touch.position)
 			else:
-				timer.stop()
-				if not bool(art.get_meta("race_long_press_fired", false)):
-					_show_race_bond(race)
+				on_release.call("touch")
 			art.accept_event()
 		elif event is InputEventMouseMotion and timer.time_left > 0.0:
 			# 挪动超过 8px = 用户在滑列表，不是长按。
-			var start: Vector2 = art.get_meta("race_long_press_start", Vector2.ZERO)
+			var start: Vector2 = art.get_meta("bond_long_press_start", Vector2.ZERO)
 			if (event as InputEventMouseMotion).position.distance_to(start) > 8.0:
-				art.set_meta("race_long_press_cancelled", true)
+				art.set_meta("bond_long_press_cancelled", true)
 				timer.stop()
 		elif event is InputEventScreenDrag and timer.time_left > 0.0:
-			var start2: Vector2 = art.get_meta("race_long_press_start", Vector2.ZERO)
+			var start2: Vector2 = art.get_meta("bond_long_press_start", Vector2.ZERO)
 			if (event as InputEventScreenDrag).position.distance_to(start2) > 8.0:
-				art.set_meta("race_long_press_cancelled", true)
+				art.set_meta("bond_long_press_cancelled", true)
 				timer.stop()
 	)
 
 # 种族羁绊说明弹窗：正文**直接取备战里那份**（SynergyPanel.format_synergy_effects），
 # 不在图鉴里另抄一份 —— 两处文案以后要一起改的只有一处。
+# request_id 固定：同一族的说明已经开着时不会再叠一个（11.18「要按两次」）。
 func _show_race_bond(race: String) -> void:
 	if race.is_empty():
 		return
@@ -566,6 +671,24 @@ func _show_race_bond(race: String) -> void:
 		"body": body,
 		"confirm_text": tr("codex_bond_gotit"),
 		"owner": self,
+		"request_id": "codex_race_bond_%s" % race,
+	})
+
+# 元素克制说明弹窗（11.18）：正文就是原「元素」分类页里那份
+# codex_element_<id>_desc（倍率与 BattleSimShared._element_multiplier 一致，
+# tools/codex_element_check.gd 逐条核对）。
+func _show_element_bond(element: String) -> void:
+	if not CodexService.ELEMENTS.has(element):
+		return
+	var body := tr("codex_element_%s_desc" % element)
+	if body.is_empty() or body == "codex_element_%s_desc" % element:
+		return
+	DialogService.info({
+		"title": tr("codex_element_suffix") % tr("codex_elem_%s" % element),
+		"body": body,
+		"confirm_text": tr("codex_bond_gotit"),
+		"owner": self,
+		"request_id": "codex_element_bond_%s" % element,
 	})
 
 func _flat_badge(text: String, color: Color) -> Control:
@@ -753,11 +876,7 @@ func _build_state_line(entry: Dictionary, unlocked: bool) -> Control:
 	var lbl := Label.new()
 	lbl.add_theme_font_size_override("font_size", _fs(12))
 	lbl.add_theme_color_override("font_color", INK_SOFT)
-	if bool(entry.get("attribute", false)):
-		# 元素不能复用状态那条：「图标与战斗中显示的完全一致」讲的是战斗
-		# HUD 的减益图标，元素图标只在图鉴里出现，套上去就是文案≠实现。
-		lbl.text = tr("codex_element_reference")
-	elif not bool(entry.get("collectible", true)):
+	if not bool(entry.get("collectible", true)):
 		lbl.text = tr("codex_status_reference")
 	elif unlocked:
 		lbl.text = tr("codex_unlocked_state")
@@ -770,8 +889,11 @@ func _build_state_line(entry: Dictionary, unlocked: bool) -> Control:
 # Font size, pixel length and container separation at the current book scale.
 # Everything the pages draw goes through these, so the book and its contents grow
 # together and a resize never leaves one out of step with the other.
+#
+# 11.16：字号先按「旧版实际显示的大小」取（11、12、13 号以前都被 14 的下限托住），
+# 再乘放大比例 —— 否则放大后小字还卡在 14，大字却变大，字与字的比例就乱了。
 func _fs(base: float) -> int:
-	return maxi(14, int(round(base * _ui)))
+	return maxi(14, int(round(maxf(14.0, base) * _ui)))
 
 func _px(base: float) -> float:
 	return base * _ui

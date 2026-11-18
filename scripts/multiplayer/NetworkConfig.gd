@@ -267,7 +267,11 @@ const USE_DTLS := true
 # v46: teammate board view (2026-11-07). New @rpc methods _rpc_team_prep_board_submit / _request / _rpc_team_prep_board
 #      change the RPC table; the server relays a teammate's prep board to the same team only.
 #      Clients and the dedicated battle server must be updated together.
-const NETWORK_PROTOCOL_VERSION := 46
+# v47: battle rank rewards (2026-11-18). Replays carry lane_clear_ticks / slot_kill_gold_events;
+#      the battle server pays PvP damage top-3 150/100/50 and PvE/Boss lane-clear top-3 50/30/10
+#      after interest (scripts/economy/BattleRankRewards.gd); match_state carries rank_reward.
+#      Gold changes for every seat, so clients and the dedicated battle server must be updated together.
+const NETWORK_PROTOCOL_VERSION := 47
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false

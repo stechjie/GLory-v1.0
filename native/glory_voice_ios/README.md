@@ -1,5 +1,32 @@
 # iOS team voice
 
+This shared iOS framework also registers `GlorySignIn` and
+`GloryAppleBilling`. Sign in uses AuthenticationServices for Apple and the
+official GoogleSignIn iOS SDK, pinned to 10.1.0, for Google. Both pass the
+SHA-256 nonce supplied by `SignInBridge` to the provider and return only an
+in-memory ID token. Apple also returns its one-use authorization code for the
+account deletion/revocation flow. No SDK token or authorization code is logged.
+
+The iOS build must contain Sign in with Apple (`Default`) in both the
+provisioning profile and signed application entitlements. For Google, register
+an **iOS** OAuth client for the app bundle ID in the same Google Cloud project
+as the existing Web client, then supply its public client ID via
+`GOOGLE_IOS_CLIENT_ID` in `AccountConfig.gd`, the build option
+`--google-ios-client-id`, or `GLORY_GOOGLE_IOS_CLIENT_ID`. The packaging tool
+writes `GIDClientID`, `GIDServerClientID`, and the reversed iOS client ID URL
+scheme; missing or inconsistent configuration stops the build. The native
+adapter forwards Google callbacks from both UIApplicationDelegate and
+UISceneDelegate while preserving unrelated URL handlers.
+
+Only an explicit player action opens a system sign-in sheet. Google availability
+requires the configured iOS client, Web client, and callback scheme; no Google
+app installation is required. Polls consume terminal replies, abandoned proofs
+expire after 180 seconds, and late replies to timed-out requests are discarded.
+Google's SDK has no public cancel operation, so an abandoned Google sheet stays
+single-flight until the player closes it. The game owns session restoration;
+the adapter signs out the SDK after each result instead of restoring an SDK
+account at app launch.
+
 The iOS GDExtension registers the same `GloryVoice` singleton as Android and
 Windows. LiveKit Swift handles WebRTC capture, echo cancellation and playback.
 The bridge uses `AVAudioSession` for the native microphone authorization prompt;
@@ -11,12 +38,28 @@ Requires Xcode with the iPhoneOS SDK, Python 3 and SCons. On macOS:
 
 ```sh
 python3 -m pip install scons==4.11.1
-python3 native/glory_voice_ios/build.py --work-dir /absolute/path/to/ios-voice-build
+python3 native/glory_voice_ios/build.py --work-dir /Volumes/repository/github/GLory/build/ios-voice-work
 ```
 
 The script pins godot-cpp to the 4.5 stable commit and LiveKit Swift to 2.17.0,
 builds iPhoneOS arm64 with a minimum deployment target of iOS 15, and writes
 three frameworks plus `build-manifest.json` into `addons/glory_voice/bin/ios`.
+GoogleSignIn links statically into `GloryVoice`; its resource/privacy bundles
+and those of its dependencies are copied into that framework as export inputs.
+
+The production request/proof lifecycle can be tested on macOS without account
+credentials or an iPhone. From the Git root, after creating the project build
+directory above:
+
+```sh
+xcrun swiftc native/glory_voice_ios/GlorySignInRequests.swift native/glory_voice_ios/tests/GlorySignInRequestsTests.swift -o /Volumes/repository/github/GLory/build/ios-voice-work/signin-native-tests
+/Volumes/repository/github/GLory/build/ios-voice-work/signin-native-tests
+```
+
+These checks cover cancellation and late callbacks, single-flight requests,
+one-use and expired proofs, Apple request state and missing credentials, nonce
+format, and Google callback filtering. System sheet behavior and real account
+exchange still require an appropriately configured signed build on an iPhone.
 The manifest records source and binary hashes. No signing keys or server voice
 credentials are required to compile this component. The app export signs the
 embedded frameworks with its own distribution identity.

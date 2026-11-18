@@ -712,12 +712,12 @@ func _check_team_mercs_modal() -> void:
 	_h.expect(prep._team_mercs_open, "tm_business_state_desync_open",
 		"模态开着但 _team_mercs_open 是 false")
 
-	# --- 2. backdrop 是唯一的全屏 STOP，content 子树 STOP 数为 0 ---------------
+	# --- 2. backdrop 统一接收面板内外的点击 -------------------------------------
 	_h.expect(str(row.get("backdrop_filter", "")) == "STOP", "tm_backdrop_not_stop",
 		"栈顶 backdrop 不是 STOP，点击会漏到下面的备战页")
 	var content_stops := _tm_content_stop_count()
-	_h.expect(content_stops == 0, "tm_content_still_stops",
-		"content 子树里还有 %d 个 STOP 控件 —— 拦截应当只由 backdrop 负责" % content_stops)
+	_h.expect(content_stops == 0, "tm_content_hit_area",
+		"检阅台内容应放行点击给 backdrop，实测 %d 个 STOP 控件" % content_stops)
 	_h.expect(int(_snapshot()["invisible_stop"]) <= int(page_baseline["invisible_stop"]),
 		"tm_invisible_stop_grew",
 		"打开检阅台之后多出了不可见 STOP 控件")
@@ -739,6 +739,22 @@ func _check_team_mercs_modal() -> void:
 	_h.expect(prep._team_mercs_render_timer != null
 			and prep._team_mercs_render_timer.is_stopped(),
 		"tm_timer_still_running", "关闭后 30Hz 渲染计时器仍在跑")
+
+	# 真实点击展示区中央，验证内容本身也能关闭检阅台。
+	prep._toggle_team_mercs_picker()
+	await _settle(3)
+	var review := prep._team_mercs_overlay as Control
+	if _h.expect(is_instance_valid(review), "tm_inside_tap_setup", "检阅台成功重开"):
+		var center := review.get_global_transform_with_canvas() * (review.size * 0.5)
+		for pressed in [true, false]:
+			var event := InputEventMouseButton.new()
+			event.position = center
+			event.button_index = MOUSE_BUTTON_LEFT
+			event.pressed = pressed
+			get_viewport().push_input(event, true)
+		await _settle(4)
+		_h.expect(_tm_entries() == 0 and not prep._team_mercs_open, "tm_inside_tap_did_not_close",
+			"点击队伍佣兵展示区也应关闭检阅台")
 
 	# --- 4. 外部 close_all 也要同步业务状态 ------------------------------------
 	prep._toggle_team_mercs_picker()

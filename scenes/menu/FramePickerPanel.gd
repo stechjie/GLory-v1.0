@@ -86,7 +86,7 @@ func _cell(entry: Dictionary) -> Control:
 	preview.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	button.add_child(preview)
 	var art := TextureRect.new()
-	art.texture = Catalog.frame_texture_for("preset:%s" % id, false)
+	Catalog.set_frame_texture(art, Catalog.frame_texture_for("preset:%s" % id, false))
 	art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED

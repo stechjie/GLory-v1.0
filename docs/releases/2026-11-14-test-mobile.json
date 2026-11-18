@@ -1,0 +1,170 @@
+{
+  "date": "2026-11-14",
+  "completed_local_date": "2026-11-15",
+  "scope": "test",
+  "source_commit": "fcb69ef061060b25a182752b955e77ece2c2501a",
+  "release_policy": "committed upstream updates only; pending native login changes preserved",
+  "server": {
+    "status": "deployed",
+    "commit": "fcb69ef061060b25a182752b955e77ece2c2501a",
+    "project": "project-60c72d94-b558-4e4f-992",
+    "database_project": "tzkysvnpjmgzfbvazugi",
+    "release": "/home/nins17121/Glory/releases/1.0.2-20261114-fcb69ef0",
+    "protocol": 46,
+    "idle_checks": [
+      {
+        "battle_connections": 0,
+        "account_online": 0,
+        "room_count": 0,
+        "at": "2026-11-14T14:35:54.772161+00:00"
+      },
+      {
+        "battle_connections": 0,
+        "account_online": 0,
+        "room_count": 0,
+        "at": "2026-11-14T14:35:58.192738+00:00"
+      }
+    ],
+    "services": {
+      "glory-server": "active",
+      "glory-backend": "active",
+      "livekit": "active",
+      "caddy": "active"
+    },
+    "health": {
+      "status": "ok",
+      "environment": "prod",
+      "configured": true,
+      "missing_config": []
+    },
+    "schema_verified": true,
+    "old_pid": "53477",
+    "new_pid": "59555",
+    "backend_pid": "53449",
+    "updated_files": [],
+    "rollback_directory": "/home/nins17121/Glory/delivery/release-20261114-test",
+    "verified_at": "2026-11-14T14:36:05.553321+00:00",
+    "device_gameplay_tested": false
+  },
+  "android": {
+    "build": 68,
+    "build_started": true,
+    "built": true,
+    "uploaded": true,
+    "qr_updated": true,
+    "version": "1.0.2",
+    "bytes": 713400374,
+    "sha256": "044fa4aa259da551373e20900a9b2d061f67ce755c607cd1e64738f5551e60c8",
+    "source_commit": "fcb69ef061060b25a182752b955e77ece2c2501a",
+    "asset_inventory_sha256": "3d4609c5796b765b2037e209b7af1e7a0bed61db031676bde80cedcd892b36cb",
+    "signed": true,
+    "upload_started": true,
+    "upload_last_observed": {
+      "percent": 91,
+      "bytes_total": 713400374,
+      "observed_at": "2026-11-14T15:08:45.550566+00:00",
+      "status": "uploading"
+    },
+    "drive": {
+      "build": 68,
+      "version": "1.0.2",
+      "bytes": 713400374,
+      "sha256": "044fa4aa259da551373e20900a9b2d061f67ce755c607cd1e64738f5551e60c8",
+      "source_commit": "fcb69ef061060b25a182752b955e77ece2c2501a",
+      "asset_inventory_sha256": "3d4609c5796b765b2037e209b7af1e7a0bed61db031676bde80cedcd892b36cb",
+      "upload_complete": true,
+      "size_readback_verified": true,
+      "file_id": "1K22gXTauM3mkaXZLLqELox-vqvP5r9pb",
+      "account": "bytegamesg2025@gmail.com",
+      "parent": "1xjn5Hpa4AzSS8v7hgECEZstHb3dG6m11",
+      "url": "https://drive.google.com/file/d/1K22gXTauM3mkaXZLLqELox-vqvP5r9pb/view",
+      "verified_at": "2026-11-14T15:43:40.077069+00:00"
+    },
+    "full_drive_hash_verified": true,
+    "public_range_verified": true
+  },
+  "ios": {
+    "built": true,
+    "uploaded": true,
+    "internal_testing": true,
+    "external_testing": true,
+    "sequence": "build after Android Drive upload completes",
+    "planned_build": 104,
+    "build": 104,
+    "version": "1.0.2",
+    "bytes": 676908054,
+    "sha256": "2b4a2cc0f3ef5ee971df93e8e746ac6d947eec00f8e1299ec8dc17dd60d48ece",
+    "signed": true,
+    "source_commit": "fcb69ef061060b25a182752b955e77ece2c2501a",
+    "asset_inventory_sha256": "3d4609c5796b765b2037e209b7af1e7a0bed61db031676bde80cedcd892b36cb",
+    "upload_started": true,
+    "upload_started_at": "2026-11-14T15:53:27.451759+00:00",
+    "transporter_delivered": true,
+    "delivered_local": "2026-11-15 00:18 Asia/Shanghai",
+    "processed": true,
+    "external_review_submitted": true,
+    "external_group_id": "77fbf129-88aa-4489-98a0-658698cd4fcf",
+    "internal_group_id": "90dd8f53-b157-49c4-b899-8da72091b76a",
+    "public_url": "https://testflight.apple.com/join/W2p1ukJp",
+    "observed_at": "2026-11-14T16:34:38.329385+00:00",
+    "status": "testing",
+    "build_id": "5c0684b3-f6e7-4f28-8b86-9a73373af9db",
+    "internal_testers": 10,
+    "external_testers": 27,
+    "notes_saved": true,
+    "automatic_external_notification": true,
+    "qr_updated": true
+  },
+  "public_config": {
+    "ios": {
+      "ready": true,
+      "url": "https://testflight.apple.com/join/W2p1ukJp",
+      "version": "1.0.2 (104)",
+      "pending_version": ""
+    },
+    "android": {
+      "ready": true,
+      "mode": "apk",
+      "url": "https://test-api.gogoglory.com/beta/downloads/Glory-1.0.2-68-android.apk",
+      "version": "1.0.2 (68)",
+      "size_bytes": 713400374,
+      "size_label": "680.4 MiB"
+    }
+  },
+  "landing_page": "https://test-api.gogoglory.com/beta/",
+  "qr_url": "https://test-api.gogoglory.com/beta/invite-qr.png",
+  "qr_sha256": "dd3d8cdce298efe0060d783613d9ba5c4f5bb42a7c15b1f76743a8fc0927dab6",
+  "validation": {
+    "runtime_tests": 17,
+    "backend_passed": 53,
+    "backend_skipped": 16,
+    "server_cold_start": true,
+    "dtls_verified": true,
+    "voice_urls_verified": true,
+    "device_gameplay_tested": false,
+    "readonly_battle_probe": {
+      "account_logged_in": false,
+      "connected": true,
+      "connected_seconds": 30.001,
+      "dtls": true,
+      "error": "",
+      "host": "34.124.141.90",
+      "list_requested": true,
+      "max_pong_gap_seconds": 4.124,
+      "observed_pings": 9,
+      "observed_pongs": 9,
+      "passed": true,
+      "port": 8080,
+      "protocol": 46,
+      "public_room_count": 0,
+      "reason": "completed",
+      "transport_closed": true,
+      "unseated": true,
+      "user_data_dir": "/Users/luolijing/Library/Application Support/GloryLiveReadOnly-Nov14-Source"
+    },
+    "beta_site_tests": 7
+  },
+  "baseline_directory": "../build/patch-baselines/glory-20261114-test-refresh",
+  "evidence_directory": "../delivery/release-20261114-test",
+  "production_unchanged": true
+}

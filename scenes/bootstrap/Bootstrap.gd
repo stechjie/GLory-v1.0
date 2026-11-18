@@ -132,6 +132,7 @@ var _status_request: HTTPRequest
 var _choice_panel: VBoxContainer
 var _choice_guest: Button
 var _choice_google: Button
+var _choice_apple: Button
 var _choice_error: Label
 # 电脑版（Steam）的两个按钮，和「我在手机上玩过」的关联码那一块（docs/三方登录设计.md 第八节）。
 var _choice_steam: Button
@@ -732,6 +733,9 @@ func _build_choice_panel() -> void:
 	_choice_google = _choice_button(_tr_text("用 Google 登录", "Sign in with Google"), &"GloryGhost", 56)
 	_choice_google.pressed.connect(_on_choice_google)
 	_choice_panel.add_child(_choice_google)
+	_choice_apple = _choice_button(_tr_text("用 Apple 登录", "Sign in with Apple"), &"GloryGhost", 56)
+	_choice_apple.pressed.connect(_on_choice_apple)
+	_choice_panel.add_child(_choice_apple)
 	# 电脑版：Steam 就是身份，不出游客 / Google。
 	_choice_steam = _choice_button(_tr_text("用 Steam 进入游戏", "Enter with Steam"), &"GloryPrimary", 72)
 	_choice_steam.pressed.connect(_on_choice_steam)
@@ -784,9 +788,10 @@ func _sync_choice_panel() -> void:
 	var steam := AccountManager.is_steam_build()
 	_choice_guest.visible = not steam
 	_choice_google.visible = not steam and SignInBridge.google_available()
+	_choice_apple.visible = not steam and SignInBridge.apple_available()
 	_choice_steam.visible = steam and not _link_box.visible
 	_choice_phone.visible = steam and not _link_box.visible
-	for button in [_choice_guest, _choice_google, _choice_steam, _choice_phone]:
+	for button in [_choice_guest, _choice_google, _choice_apple, _choice_steam, _choice_phone]:
 		button.disabled = _choice_busy
 	if _link_box.visible:
 		var left := maxi(0, int(ceil(_link_expires_at - Time.get_unix_time_from_system())))
@@ -805,17 +810,25 @@ func _on_choice_guest() -> void:
 
 
 func _on_choice_google() -> void:
+	await _on_choice_provider("google")
+
+
+func _on_choice_apple() -> void:
+	await _on_choice_provider("apple")
+
+
+func _on_choice_provider(provider: String) -> void:
 	if _choice_busy:
 		return
 	_choice_busy = true
 	AccountManager.choice_error = ""
 	_sync_choice_panel()
-	var signed := await SignInBridge.sign_in_google(get_tree())
+	var signed := await SignInBridge.sign_in(get_tree(), provider)
 	if not is_inside_tree():
 		return
 	if bool(signed.get("ok", false)):
 		# 失败时 AccountManager 自己回到「等玩家选」并写好 choice_error，这里不用管结果。
-		await AccountManager.login_with_provider("google", str(signed.get("id_token", "")), str(signed.get("nonce", "")))
+		await AccountManager.login_with_provider(provider, str(signed.get("id_token", "")), str(signed.get("nonce", "")))
 	elif not bool(signed.get("cancelled", false)):
 		AccountManager.choice_error = str(signed.get("error", ""))
 	_choice_busy = false

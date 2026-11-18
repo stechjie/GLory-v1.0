@@ -20,6 +20,7 @@ extends Node
 const H := preload("res://tools/CheckHarness.gd")
 const BAG := preload("res://scenes/menu/BagScreen.gd")
 const PetService := preload("res://scripts/pets/PetService.gd")
+const CrispTexture := preload("res://scripts/ui/CrispTexture.gd")
 
 const SIZES := [Vector2i(1280, 720), Vector2i(1024, 600), Vector2i(960, 540)]
 const EPS := 0.5
@@ -41,8 +42,12 @@ func _ready() -> void:
 	h.expect(pet_ids.size() >= 2, "fixture_pets",
 		"宠物数据表至少要有 2 只才能测出战切换，实际 %d" % pet_ids.size())
 
-	for size in SIZES:
-		await _check_size(size, pet_ids)
+	var previous_locale := LocaleManager.get_locale()
+	for locale in ["zh", "en"]:
+		LocaleManager.set_locale(locale)
+		for size in SIZES:
+			await _check_size(size, pet_ids)
+	LocaleManager.set_locale(previous_locale)
 	h.finish(get_tree())
 
 
@@ -73,15 +78,20 @@ func _check_size(size: Vector2i, pet_ids: Array[String]) -> void:
 		shell.queue_free()
 		return
 
-	# 面板 = 滚动容器 → PanelContainer。
-	var scroll: Node = detail.get_parent()
-	var panel: Control = scroll.get_parent() if scroll != null else null
+	var scroll: ScrollContainer = bag.get("_pet_info_scroll")
+	var action: Button = bag.get("_pet_action")
+	var panel: Control = scroll.get_parent().get_parent()
 
 	for pet_id in pet_ids:
 		bag.set("_selected_pet", pet_id)
 		bag.call("_refresh_pet_selection")
 		await _settle()
-		var label := "%s@%s" % [pet_id, str(size)]
+		var label := "%s/%s@%s" % [LocaleManager.get_locale(), pet_id, str(size)]
+		var button_rect := action.get_global_rect()
+		h.expect(action.is_visible_in_tree() and action.disabled == (pet_id == pet_ids[0])
+			and button_rect.position.y >= scroll.get_global_rect().end.y
+			and panel.get_global_rect().encloses(button_rect),
+			"action_pinned", "%s 出战按钮须常驻滚动区下方并位于纸面内" % label)
 
 		# A 宠物栏完整落在屏幕内。
 		h.item()
@@ -118,12 +128,11 @@ func _check_size(size: Vector2i, pet_ids: Array[String]) -> void:
 			# 台上那张立绘必须**就是**当前选中的宠物（不是别的宠物遗留下来的）。
 			var icon_path := str(PetService.pet_by_id(pet_id).get("icon", ""))
 			if not icon_path.is_empty() and ResourceLoader.exists(icon_path):
-				var shown := _artwork_texture_path(stage.get_child(0))
+				var shown := _artwork_texture(stage.get_child(0))
+				var expected := CrispTexture.fit(load(icon_path), BAG.PET_DETAIL_PREVIEW, stage)
 				h.item()
-				h.expect(shown == icon_path, "artwork_matches_selection",
-					"%s 演示台上的立绘应属于 %s（%s），实际是 %s" % [
-						label, pet_id, icon_path,
-						shown if not shown.is_empty() else "<无贴图>"])
+				h.expect(shown != null and shown == expected, "artwork_matches_selection",
+					"%s 演示台上的立绘应属于 %s（%s）" % [label, pet_id, icon_path])
 		else:
 			h.fail("artwork_missing", "%s 演示台里应有一张立绘" % label)
 
@@ -163,19 +172,19 @@ func _check_size(size: Vector2i, pet_ids: Array[String]) -> void:
 
 # 演示台里那张立绘（PetPreview.build_illustration 返回的 frame）内部是一个
 # TextureRect；拿它的贴图路径来判断「台上到底摆的是谁」。
-func _artwork_texture_path(frame: Node) -> String:
+func _artwork_texture(frame: Node) -> Texture2D:
 	if frame == null:
-		return ""
+		return null
 	var stack: Array[Node] = [frame]
 	while not stack.is_empty():
 		var cur: Node = stack.pop_back()
 		if cur is TextureRect:
 			var tex := (cur as TextureRect).texture
 			if tex != null:
-				return tex.resource_path
+				return tex
 		for child in cur.get_children():
 			stack.append(child)
-	return ""
+	return null
 
 
 # 容器布局要几帧才收敛（立绘是 3D 预览回退时还要等 SubViewport 建好）。

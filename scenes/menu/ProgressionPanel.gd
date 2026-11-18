@@ -127,7 +127,7 @@ func _build() -> void:
 	section.add_child(section_hint)
 	_track_scroll = TouchScrollContainer.new()
 	_track_scroll.drag_horizontal = true
-	_track_scroll.custom_minimum_size.y = 195 if _compact else 242
+	_track_scroll.custom_minimum_size.y = 203 if _compact else 242
 	_track_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	_track_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	column.add_child(_track_scroll)
@@ -138,7 +138,7 @@ func _build() -> void:
 	detail_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	detail_panel.custom_minimum_size.y = 150 if _compact else 170
 	detail_panel.add_theme_stylebox_override("panel", Kit.box("panel",
-		Vector4(56, 28, 56, 20) if _compact else Vector4(60, 34, 60, 26)))
+		Vector4(56, 38, 56, 26) if _compact else Vector4(60, 44, 60, 32)))
 	column.add_child(detail_panel)
 	_detail = HBoxContainer.new()
 	_detail.add_theme_constant_override("separation", 24)
@@ -193,15 +193,15 @@ func _show_state(state: Dictionary) -> void:
 
 func _make_card(level: int) -> Button:
 	var card := Button.new()
-	card.custom_minimum_size = Vector2(176, 185 if _compact else 220)
+	card.custom_minimum_size = Vector2(176, 193 if _compact else 228)
 	card.text = ""
 	card.pressed.connect(_select_level.bind(level))
 	var body := VBoxContainer.new()
 	body.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	body.offset_left = 14
 	body.offset_right = -14
-	body.offset_top = 8
-	body.offset_bottom = -6
+	body.offset_top = 33
+	body.offset_bottom = -12
 	body.alignment = BoxContainer.ALIGNMENT_CENTER
 	body.add_theme_constant_override("separation", 3)
 	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -209,11 +209,15 @@ func _make_card(level: int) -> Button:
 	var number := _label("Lv %d" % level, 18 if _compact else 20, GOLD if level <= _current_level else MUTED)
 	number.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	body.add_child(number)
-	var art := _reward_art(_rewards.get(level, {}), 48 if _compact else 64)
+	var reward: Dictionary = _rewards.get(level, {})
+	var art := _reward_art(reward, 44 if _compact else 55)
 	art.mouse_behavior_recursive = Control.MOUSE_BEHAVIOR_DISABLED
 	art.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	body.add_child(art)
-	var name := _label(_summary(level), 15 if _compact else 16, CREAM)
+	var name_size := 15 if _compact else 16
+	if _english() and int(reward.get("diamond", 0)) > 0:
+		name_size = 13
+	var name := _label(_summary(level), name_size, CREAM)
 	name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	name.custom_minimum_size.y = 32 if _compact else 38
@@ -236,7 +240,7 @@ func _select_level(level: int) -> void:
 		var card: Button = _cards[index]
 		# 羊皮纸卡：选中染金、已获得原色、未解锁压暗
 		var tint := Color(1.0, 0.86, 0.56) if selected else (Color.WHITE if obtained else Color(0.8, 0.76, 0.7))
-		var pad := Vector4(10, 14, 10, 10)
+		var pad := Vector4(14, 33, 14, 12)
 		card.add_theme_stylebox_override("normal", Kit.box("card", pad, tint))
 		card.add_theme_stylebox_override("hover", Kit.box("card", pad, tint * Color(1.06, 1.05, 1.0)))
 		card.add_theme_stylebox_override("pressed", Kit.box("card", pad, tint * Color(0.92, 0.9, 0.86)))
@@ -282,21 +286,13 @@ func _render_detail(level: int) -> void:
 
 func _detail_reward_art(reward: Dictionary) -> Control:
 	var units: Array = reward.get("units", [])
+	var dimension := 100 if _compact else 130
 	if units.size() <= 1:
-		return _reward_art(reward, 100 if _compact else 130, true)
+		return _reward_art(reward, dimension, true)
 	var portraits := HBoxContainer.new()
 	portraits.add_theme_constant_override("separation", 12)
 	for unit_id in units:
-		var portrait := VBoxContainer.new()
-		portrait.add_theme_constant_override("separation", 4)
-		portraits.add_child(portrait)
-		var single_reward := {"units": [unit_id]}
-		portrait.add_child(_reward_art(single_reward, 82 if _compact else 98, true))
-		var definition := UnitCollection.unit_def(str(unit_id))
-		var name := str(definition.get("name_en", unit_id)) if _english() else str(definition.get("name", unit_id))
-		var caption := _label(name, 16, CREAM)
-		caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		portrait.add_child(caption)
+		portraits.add_child(_reward_art({"units": [unit_id]}, dimension, true))
 	return portraits
 
 
