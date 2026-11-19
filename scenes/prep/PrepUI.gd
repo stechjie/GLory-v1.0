@@ -1795,7 +1795,9 @@ func _build_chat_entry() -> void:
 	NetworkService.room_chat_log.mark_all_seen()
 
 func _build_chat_record_window() -> void:
-	var window := PanelContainer.new()
+	var window := preload("res://scenes/prep/PrepChatHistory.gd").new()
+	window.formation_cells = _board_hud.buttons + _board_hud.bench_buttons
+	window.clip_contents = true
 	window.name = "PrepChatHistory"
 	window.anchor_left = 1.0
 	window.anchor_right = 1.0
