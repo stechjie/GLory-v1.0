@@ -247,8 +247,8 @@ func _case_one_bubble_one_button() -> void:
 	for path in [CHAT_SCREEN, WORLD_PANEL, CHAT_INPUT_BAR]:
 		_h.expect(_read(path).contains("VoiceRecordButton"), "record_button_not_shared",
 			"%s 没用 VoiceRecordButton" % path)
-	_h.expect(_read(LOBBY).contains("on_voice"), "room_record_entry_missing",
-		"自定义房间仍应提供录音")
+	_h.expect(not _read(LOBBY).contains('"on_voice"'), "room_record_entry_present",
+		"自定义房间输入条不再提供录音")
 	var prep_src := _read(PREP_UI)
 	_h.expect(prep_src.contains('"on_phrase"') and not prep_src.contains('"on_voice"'),
 		"prep_phrase_entry_missing", "对局输入条使用快捷短语")

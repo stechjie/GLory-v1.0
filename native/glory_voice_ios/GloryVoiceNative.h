@@ -9,6 +9,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)setApplicationActive:(BOOL)active;
 - (BOOL)hasRecordPermission;
 - (void)requestRecordPermission;
+- (NSString *)recognizeSpeechFile:(NSString *)filename locale:(NSString *)locale;
+- (NSString *)getSpeechResult;
+- (void)cancelSpeechRecognition;
 - (NSString *)joinRoom:(NSString *)url token:(NSString *)token listenOnly:(BOOL)listenOnly;
 - (void)leaveRoom;
 - (NSString *)setMicrophoneEnabled:(BOOL)enabled;

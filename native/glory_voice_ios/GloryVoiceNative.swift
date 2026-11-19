@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import LiveKit
+import Speech
 
 // All public calls are marshalled onto the main queue by the Godot bridge.
 // Room delegate callbacks may arrive on WebRTC threads; marshal those too.
@@ -27,6 +28,61 @@ public final class GloryVoiceNative: NSObject, RoomDelegate {
     private var micError = ""
     private var connectionError = ""
     private var permissionPending = false
+    private var speechTask: SFSpeechRecognitionTask?
+    private var speechRecognizer: SFSpeechRecognizer?
+    private var speechGeneration = 0
+    private var speechResult: [String: Any] = ["state": "idle"]
+
+    @objc public func recognizeSpeechFile(_ filename: String, locale: String) -> String {
+        guard Bundle.main.object(forInfoDictionaryKey: "NSSpeechRecognitionUsageDescription") != nil else {
+            return "speech_usage_description_missing"
+        }
+        cancelSpeechRecognition()
+        let ticket = speechGeneration
+        speechResult = ["state": "pending"]
+        SFSpeechRecognizer.requestAuthorization { [weak self] status in
+            Task { @MainActor in
+                guard let self, ticket == self.speechGeneration else { return }
+                guard status == .authorized else {
+                    self.speechResult = ["state": "done", "error": "permission_denied"]
+                    return
+                }
+                guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: locale)), recognizer.isAvailable else {
+                    self.speechResult = ["state": "done", "error": "recognizer_unavailable"]
+                    return
+                }
+                self.speechRecognizer = recognizer
+                let request = SFSpeechURLRecognitionRequest(url: URL(fileURLWithPath: filename))
+                request.shouldReportPartialResults = false
+                if recognizer.supportsOnDeviceRecognition { request.requiresOnDeviceRecognition = true }
+                self.speechTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+                    Task { @MainActor in
+                        guard let self, ticket == self.speechGeneration else { return }
+                        if let result, result.isFinal {
+                            self.speechResult = ["state": "done", "text": result.bestTranscription.formattedString]
+                        } else if error != nil {
+                            self.speechResult = ["state": "done", "error": "recognition_failed"]
+                        }
+                    }
+                }
+            }
+        }
+        return ""
+    }
+
+    @objc public func getSpeechResult() -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: speechResult),
+              let json = String(data: data, encoding: .utf8) else { return "{}" }
+        return json
+    }
+
+    @objc public func cancelSpeechRecognition() {
+        speechGeneration += 1
+        speechTask?.cancel()
+        speechTask = nil
+        speechRecognizer = nil
+        speechResult = ["state": "idle"]
+    }
     private var volumes: [String: Double] = [:]
 
     // The game and WebRTC use separate engines but one AVAudioSession. Keep

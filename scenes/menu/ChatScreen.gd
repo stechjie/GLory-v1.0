@@ -79,6 +79,7 @@ var _tab_dm: Button
 var _dm_tab_dot: Label
 var _chats: Array = []
 var _open_code := ""
+var _voice_target_code := ""
 # 当前会话的消息。已确认的按 message_id 升序；发送中 / 发送失败的排在最后，按本地序号。
 var _messages: Array[Dictionary] = []
 var _local_seq := 0
@@ -370,6 +371,8 @@ func _conversation_panel() -> Control:
 
 	_voice_button = VoiceRecordButton.create(VoiceClipService.SCOPE_PRIVATE)
 	_voice_button.clip_ready.connect(_on_voice_clip_ready)
+	_voice_button.text_ready.connect(_on_voice_text_ready)
+	_voice_button.recording_started.connect(func() -> void: _voice_target_code = _open_code)
 	_voice_button.failed.connect(_on_voice_failed)
 	input_row.add_child(_voice_button)
 
@@ -1004,6 +1007,14 @@ func _voice_row(msg: Dictionary) -> Control:
 	row.alignment = BoxContainer.ALIGNMENT_END if mine else BoxContainer.ALIGNMENT_BEGIN
 	row.add_child(VoiceBubble.build(msg, mine))
 	return row
+
+
+func _on_voice_text_ready(text: String) -> void:
+	if not _input.editable or _open_code != _voice_target_code:
+		return
+	_input.text = (_input.text + text).left(_input.max_length)
+	_input.caret_column = _input.text.length()
+	_input.grab_focus()
 
 
 func _on_voice_clip_ready(clip: Dictionary) -> void:

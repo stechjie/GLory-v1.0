@@ -1643,16 +1643,13 @@ func _open_text_input() -> void:
 			"body": _room_text("联机对局中才能发送", "Available in online matches only")})
 		return
 	_set_phrase_panel_visible(false)
-	# 大厅只发全部（队伍还没定），所以不给范围按钮；语音同理，走同一个范围。
-	# 观战者：只有打字（不给语音留言），发到观战者频道。
+	# 房间输入条只提供打字；观战者发到观战频道，选手发到房间频道。
 	if _spectating():
 		ChatInputBar.new().present(self, func(text: String) -> String:
 				return NetworkService.spectate_send_text(text), {})
 		return
 	ChatInputBar.new().present(self, func(text: String) -> String:
-			return NetworkService.team_send_text(text),
-		{"on_voice": func(clip: Dictionary) -> String:
-			return NetworkService.team_send_voice(clip)})
+			return NetworkService.team_send_text(text))
 
 
 # 消息标签的字号（_build_chat_box 建标签用的也是它）。

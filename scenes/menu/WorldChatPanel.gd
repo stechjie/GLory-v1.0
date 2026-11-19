@@ -148,6 +148,7 @@ func _build() -> void:
 	# 对服务器来说语音和文字是同一张嘴，分两条 CD 等于把刷屏速度翻倍。
 	_voice_button = VoiceRecordButton.create(VoiceClipService.SCOPE_WORLD)
 	_voice_button.clip_ready.connect(_on_voice_clip_ready)
+	_voice_button.text_ready.connect(_on_voice_text_ready)
 	_voice_button.failed.connect(_set_notice)
 	row.add_child(_voice_button)
 
@@ -234,6 +235,14 @@ func _on_send_pressed() -> void:
 
 # 录音上传完了（VoiceRecordButton 已经把文件传到账号服务器，拿到了编号）：
 # 这里只把编号发成一条世界频道消息。秒数以服务器登记的为准，不采用本地算的那个。
+func _on_voice_text_ready(text: String) -> void:
+	if not _input.editable:
+		return
+	_input.text = (_input.text + text).left(_input.max_length)
+	_input.caret_column = _input.text.length()
+	_input.grab_focus()
+
+
 func _on_voice_clip_ready(clip: Dictionary) -> void:
 	if _sending or ChatService.kicked:
 		return

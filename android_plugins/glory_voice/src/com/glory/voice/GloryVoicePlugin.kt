@@ -62,6 +62,11 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 class GloryVoicePlugin(godot: Godot) : GodotPlugin(godot) {
 
+    private val speech by lazy { SpeechFileRecognizer(requireNotNull(activity).applicationContext) }
+    @UsedByGodot fun recognizeSpeechFile(filename: String, locale: String): String = speech.start(filename, locale)
+    @UsedByGodot fun getSpeechResult(): String = speech.status()
+    @UsedByGodot fun cancelSpeechRecognition() { speech.cancel() }
+
     companion object {
         private const val TAG = "GloryVoice"
         // 与 build.gradle.kts、addons/glory_voice/glory_voice_plugin.gd 一致（tools/voice_check 对账）。
@@ -293,6 +298,7 @@ class GloryVoicePlugin(godot: Godot) : GodotPlugin(godot) {
     }
 
     override fun onMainDestroy() {
+        speech.cancel()
         generation.incrementAndGet()
         teardown()
         main.cancel()

@@ -2,23 +2,37 @@ extends HBoxContainer
 
 # 「按住说话」按钮（docs/聊天系统设计.md「语音消息」，2026-10-11）。
 #
-# 按下去开始录，松开就发。三个渠道（私聊、世界频道、房间与对局内）共用这一个，
-# 区别只在 scope ——它决定服务器怎么记保留期，也决定这段语音能发到哪儿去。
+# 世界频道与私聊共用：按住录音，正常松手发语音；滑到上方取消或转文字再松手执行。
+# scope 决定服务器保留期。房间与对局输入条不再开放录音。
 #
 # 录到 30 秒会自己停，但**不自动发**：让玩家看一眼再松手决定（同微信）。
 # 松手时如果已经停了，照样发出去；想丢掉就把手指拖开再松（_cancelled）。
 
 signal clip_ready(clip: Dictionary)     # 上传成功：{"clip_id", "media", "seconds"}
+signal text_ready(text: String)
+signal recording_started()
 signal failed(message: String)          # 给调用方弹提示（太短、通话中、配额用完…）
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
+const Kit := preload("res://ui/theme/ParchmentKit.gd")
 
 var _scope := VoiceClipService.SCOPE_PRIVATE
 var _button: Button = null
 var _hint: Label = null
 var _busy := false
 var _cancelled := false
+var _held := false
+var _disabled := false
+var _overlay: CanvasLayer
+var _actions: HBoxContainer
+var _cancel_action: Button
+var _text_action: Button
+var _timer: Label
+var _gesture_origin := Vector2.ZERO
+var _selected_action := "send"
+var _seconds := 0.0
+const GESTURE_DISTANCE := 56.0
 
 # 按钮画麦克风图标而不是「按住说话」四个字（2026-10-12 用户要求：图标更好识别）。
 # 图标用运行时 load()，不 preload：服务器包不带导入过的贴图（同 VoiceControls 的注释）。
@@ -56,6 +70,7 @@ func _ready() -> void:
 	_hint.add_theme_color_override("font_color", Tokens.TEXT_SECONDARY)
 	_hint.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 	_hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_hint.hide()
 	add_child(_hint)
 
 	if not VoiceClipService.recording_tick.is_connected(_on_tick):
@@ -67,6 +82,8 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	if _busy:
+		VoiceClipService.cancel_transcription()
 	if VoiceClipService.recording_tick.is_connected(_on_tick):
 		VoiceClipService.recording_tick.disconnect(_on_tick)
 	if VoiceClipService.permission_denied.is_connected(_on_permission_denied):
@@ -83,6 +100,7 @@ func _on_permission_denied() -> void:
 
 
 func set_disabled(value: bool) -> void:
+	_disabled = value
 	if _button != null and is_instance_valid(_button):
 		_button.disabled = value or _busy
 
@@ -111,60 +129,215 @@ func _apply_mic_icon() -> void:
 
 
 func _on_down() -> void:
-	if _busy:
+	if _busy or _disabled:
 		return
 	_cancelled = false
 	var reason := VoiceClipService.start_recording()
 	if not reason.is_empty():
-		_hint.text = ""
 		failed.emit(reason)
 		return
-	# 授权弹窗会打断按住手势，允许后下一次按住才录音。
 	if not VoiceClipService.is_recording():
-		_hint.text = ""
 		return
-	_hint.text = _text("0″ 松开发送", "0″ release to send")
+	_held = true
+	recording_started.emit()
+	_show_actions()
+	_gesture_origin = _button.get_global_mouse_position()
+
+
+func _show_actions() -> void:
+	if _overlay == null:
+		_overlay = CanvasLayer.new()
+		_overlay.layer = 80
+		add_child(_overlay)
+		var col := VBoxContainer.new()
+		col.name = "RecordingActions"
+		col.theme = Kit.theme()
+		_overlay.add_child(col)
+		col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_timer = Label.new()
+		_timer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_timer.add_theme_color_override("font_color", Color("493018"))
+		col.add_child(_timer)
+		_actions = HBoxContainer.new()
+		_actions.add_theme_constant_override("separation", 22)
+		_actions.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		col.add_child(_actions)
+		for title in [_text("↖ 取消", "↖ Cancel"), _text("转文字 ↗", "To Text ↗")]:
+			# A plain wrapper preserves the tilt when HBoxContainer sorts its children.
+			var wing := Control.new()
+			wing.custom_minimum_size = Vector2(164, 56)
+			wing.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_actions.add_child(wing)
+			var action := ACTION_BUTTON.instantiate() as Button
+			action.text = title
+			action.custom_minimum_size = Vector2(164, 56)
+			action.add_theme_font_size_override("font_size", 18)
+			action.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			action.focus_mode = Control.FOCUS_NONE
+			wing.add_child(action)
+			action.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		_cancel_action = _actions.get_child(0).get_child(0)
+		_text_action = _actions.get_child(1).get_child(0)
+	var col := _overlay.get_child(0) as Control
+	var mic := _button.get_global_rect()
+	col.position = Vector2(clampf(mic.get_center().x - 175, 12,
+		get_viewport_rect().size.x - 362), maxf(12, mic.position.y - 124))
+	_gesture_origin = mic.get_center()
+	_selected_action = "send"
+	_seconds = 0.0
+	_overlay.show()
+	_style_action(_cancel_action, false, true)
+	_style_action(_text_action, false, false)
+	_update_recording_caption()
+	_tilt_actions.call_deferred()
+
+
+func _tilt_actions() -> void:
+	if not is_instance_valid(_cancel_action):
+		return
+	_cancel_action.pivot_offset = _cancel_action.size * 0.5
+	_text_action.pivot_offset = _text_action.size * 0.5
+	_cancel_action.rotation = -0.09
+	_text_action.rotation = 0.09
+
+
+func _style_action(action: Button, selected: bool, cancel: bool) -> void:
+	var fill := Color("edd5a7")
+	if selected:
+		fill = Color("dca88c") if cancel else Color("bdcb96")
+	var style := StyleBoxFlat.new()
+	style.bg_color = fill
+	style.border_color = Color("af7836") if not selected else Color("7e512a")
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(28)
+	style.set_content_margin_all(12)
+	style.shadow_color = Color(0.20, 0.12, 0.04, 0.25)
+	style.shadow_size = 5 if selected else 3
+	for state in ["normal", "hover", "pressed", "focus"]:
+		action.add_theme_stylebox_override(state, style)
+	action.add_theme_color_override("font_color", Color("493018"))
+	action.add_theme_color_override("font_outline_color", Color.TRANSPARENT)
+	action.add_theme_constant_override("outline_size", 0)
+
+
+# Direction and distance from the initial press, independent of the visual chips.
+func _gesture_choice(point: Vector2) -> String:
+	var delta := point - _gesture_origin
+	if delta.y > GESTURE_DISTANCE * 1.5:
+		return "cancel"
+	if delta.x <= -GESTURE_DISTANCE:
+		return "cancel"
+	if delta.x >= GESTURE_DISTANCE:
+		return "text"
+	if delta.y <= -GESTURE_DISTANCE:
+		return "text" if delta.x > 16 else "cancel"
+	return "send"
+
+
+func _update_recording_caption() -> void:
+	var caption := _text("松开发送", "Release to send")
+	if _selected_action == "cancel":
+		caption = _text("松开取消", "Release to cancel")
+	elif _selected_action == "text":
+		caption = _text("松开转文字", "Release for text")
+	_timer.text = "%d″ · %s" % [int(_seconds), caption]
+
+
+func _input(event: InputEvent) -> void:
+	if not _held:
+		return
+	if event is InputEventMouseMotion or event is InputEventScreenDrag:
+		_highlight_action(event.position)
+	elif event is InputEventScreenTouch and not event.pressed:
+		_release(event.position)
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+		_release(event.position)
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and _held:
+		_held = false
+		_cancelled = true
+		VoiceClipService.cancel_recording()
+		if _overlay != null:
+			_overlay.hide()
+
+
+func _highlight_action(point: Vector2) -> void:
+	_selected_action = _gesture_choice(point)
+	_style_action(_cancel_action, _selected_action == "cancel", true)
+	_style_action(_text_action, _selected_action == "text", false)
+	_update_recording_caption()
 
 
 func _on_up() -> void:
-	if _busy:
+	if _held:
+		_release(_button.get_global_mouse_position())
+
+
+func _release(point: Vector2) -> void:
+	if not _held or _busy:
 		return
-	# 权限弹窗仍在等待时，松手不触发发送。
-	if VoiceClipService.is_awaiting_permission():
-		return
-	if not VoiceClipService.is_recording() and VoiceClipService.recorded_seconds() <= 0.0:
-		# 录都没开起来（上面那条 failed 已经说过原因了）。
-		return
-	# 手指拖出按钮再松 = 不发。Godot 的 button_up 在按钮外也会来，所以这里自己判。
-	_cancelled = not _button.get_global_rect().has_point(_button.get_global_mouse_position())
+	_held = false
+	var choice := _gesture_choice(point)
+	var to_text := choice == "text"
+	_cancelled = choice == "cancel"
+	_overlay.hide()
 	if _cancelled:
 		VoiceClipService.cancel_recording()
-		_hint.text = _text("已取消", "Cancelled")
 		return
 	_busy = true
-	set_disabled(true)
-	_hint.text = _text("发送中…", "Sending…")
+	_button.disabled = true
+	if to_text:
+		_timer.text = _text("识别中…", "Recognizing…")
+		_overlay.show()
+		_actions.hide()
+		var result: Dictionary = await VoiceClipService.finish_and_transcribe()
+		if not is_inside_tree():
+			return
+		_overlay.hide()
+		_actions.show()
+		_busy = false
+		_button.disabled = _disabled
+		if bool(result.get("ok", false)):
+			text_ready.emit(str(result.get("text", "")))
+		else:
+			failed.emit(_recognition_error(str(result.get("error", ""))))
+		return
 	var clip: Dictionary = await VoiceClipService.finish_and_upload(_scope)
-	_busy = false
-	set_disabled(false)
 	if not is_inside_tree():
 		return
+	_busy = false
+	_button.disabled = _disabled
 	if bool(clip.get("ok", false)):
-		_hint.text = ""
 		clip_ready.emit(clip)
 	else:
-		_hint.text = ""
 		failed.emit(str(clip.get("error", _text("语音发送失败", "Voice message failed"))))
 
 
 func _on_tick(seconds: float, _level: float) -> void:
-	if _busy or _cancelled or _hint == null or not is_instance_valid(_hint):
-		return
-	if seconds >= VoiceClipService.MAX_SECONDS:
-		_hint.text = _text("%d″ 已到上限，松开发送" % int(VoiceClipService.MAX_SECONDS),
-			"%d″ limit reached, release to send" % int(VoiceClipService.MAX_SECONDS))
-		return
-	_hint.text = _text("%d″ 松开发送" % int(seconds), "%d″ release to send" % int(seconds))
+	if _held and _timer != null:
+		_seconds = seconds
+		_update_recording_caption()
+
+
+func _recognition_error(code: String) -> String:
+	match code:
+		"windows_model_missing":
+			return _text("本地语音识别组件不完整，请修复或重新安装游戏。", "Local speech files are missing. Repair or reinstall the game.")
+		"no_speech":
+			return _text("没有识别到语音，请按住麦克风重新说一次。", "No speech detected. Hold the microphone and try again.")
+		"timeout":
+			return _text("识别超时，请缩短录音后重试。", "Recognition timed out. Try a shorter recording.")
+		"android_13_required":
+			return _text("录音转文字需要 Android 13 或更高版本。", "Recorded speech recognition requires Android 13 or later.")
+		"unavailable", "plugin_update_required":
+			return _text("当前版本暂不支持转文字，请使用包含新版手机语音插件的安装包。", "Speech-to-text requires the updated mobile voice plugin.")
+		"permission_denied":
+			return _text("请在系统设置中允许语音识别。", "Allow speech recognition in system settings.")
+		"too_short":
+			return _text("说得太短了，按住多说一会儿。", "Hold and speak a little longer.")
+	return _text("未能识别，请检查系统语音识别服务及语言包后重试。", "Recognition failed. Check system speech services and language packs, then retry.")
 
 
 func _text(zh: String, en: String) -> String:

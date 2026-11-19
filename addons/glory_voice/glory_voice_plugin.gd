@@ -58,6 +58,10 @@ class GloryVoiceExport extends EditorExportPlugin:
 	func _get_name() -> String:
 		return "GloryVoice"
 
+	func _export_begin(features: PackedStringArray, _is_debug: bool, _path: String, _flags: int) -> void:
+		if features.has("iOS"):
+			add_ios_plist_content('<key>NSSpeechRecognitionUsageDescription</key><string>将您主动录制的聊天语音转换为文字，识别结果由您确认后发送。Convert recorded chat speech to a draft for you to review before sending.</string>')
+
 	func _supports_platform(platform: EditorExportPlatform) -> bool:
 		return platform is EditorExportPlatformAndroid or platform.get_os_name() == "iOS"
 

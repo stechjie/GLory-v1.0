@@ -1,6 +1,9 @@
 # A2 manifests hash exact on-disk bytes. These resource roots contain generated
 # text metadata beside binary assets; core.autocrlf must not rewrite either one.
 assets/** -text
+
+# Versioned speech runtime bytes must match runtime.json on every checkout.
+addons/glory_speech/bin/windows/** -text
 effects/vfx3d/vfxv2/** -text
 
 # Text sidecars and Godot/source formats must stay LF on every OS. This keeps

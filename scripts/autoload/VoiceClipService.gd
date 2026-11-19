@@ -54,6 +54,7 @@ const CAPTURE_BUFFER_SEC := 1.0
 const CACHE_LIMIT := 24
 
 var _recording := false
+var _speech_request: RefCounted
 var _samples := PackedFloat32Array()
 var _mic_player: AudioStreamPlayer = null
 var _capture: AudioEffectCapture = null
@@ -101,6 +102,8 @@ func recorded_seconds() -> float:
 
 # 开始录。返回空串 = 开了；否则是给玩家看的原因。
 func start_recording() -> String:
+	if _speech_request != null:
+		return _text("正在识别上一段语音，请稍候。", "Please wait for speech recognition to finish.")
 	if _recording:
 		return ""
 	if not input_enabled():
@@ -167,17 +170,38 @@ func _on_permission_result(permission: String, granted: bool) -> void:
 
 # 丢掉这次录音（玩家取消、或者切走了界面）。
 func cancel_recording() -> void:
-	if not _recording:
-		return
-	_stop_capture()
+	if _recording:
+		_stop_capture()
 	_samples = PackedFloat32Array()
+
+
+func finish_and_transcribe() -> Dictionary:
+	if not _recording and _samples.is_empty():
+		return {"ok": false, "error": "not_recording"}
+	if _recording:
+		_stop_capture()
+	var seconds := recorded_seconds()
+	var wav := build_wav(_samples, SAMPLE_RATE)
+	_samples = PackedFloat32Array()
+	if seconds < MIN_SECONDS:
+		return {"ok": false, "error": "too_short"}
+	_speech_request = preload("res://scripts/account/SpeechToText.gd").new()
+	var result: Dictionary = await _speech_request.recognize(self, wav)
+	_speech_request = null
+	return result
+
+
+func cancel_transcription() -> void:
+	if _speech_request != null:
+		_speech_request.cancel()
 
 
 # 停下来并上传。返回 {"ok": bool, "clip_id": String, "media": String, "seconds": float, "error": String}。
 func finish_and_upload(scope: String) -> Dictionary:
-	if not _recording:
+	if not _recording and _samples.is_empty():
 		return {"ok": false, "error": _text("没有在录音", "Not recording")}
-	_stop_capture()
+	if _recording:
+		_stop_capture()
 	var seconds := recorded_seconds()
 	if seconds < MIN_SECONDS:
 		_samples = PackedFloat32Array()

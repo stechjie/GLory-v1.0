@@ -71,7 +71,7 @@ window/ios/allow_high_refresh_rate=false
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/glory_billing/plugin.cfg", "res://addons/glory_signin/plugin.cfg", "res://addons/glory_voice/plugin.cfg")
+enabled=PackedStringArray("res://addons/glory_billing/plugin.cfg", "res://addons/glory_signin/plugin.cfg", "res://addons/glory_voice/plugin.cfg", "res://addons/glory_speech/plugin.cfg")
 
 [rendering]
 

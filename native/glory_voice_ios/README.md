@@ -1,5 +1,15 @@
 # iOS team voice
 
+Speech-to-text source support (2026-11-19): `recognizeSpeechFile`,
+`getSpeechResult` and `cancelSpeechRecognition` recognize the existing recorded
+WAV through `SFSpeechURLRecognitionRequest`. Requests prefer on-device recognition
+when supported and otherwise use Apple's system service. The export plugin adds
+`NSSpeechRecognitionUsageDescription`; authorization is requested only when the
+player chooses conversion. Results become an editable chat draft and are not sent.
+Rebuild this framework on macOS before shipping this feature. The Windows-side
+implementation and Android AAR build do not update the bundled iOS binary.
+Verify authorization, denial, Chinese/English results and cancellation on device.
+
 This shared iOS framework also registers `GlorySignIn` and
 `GloryAppleBilling`. Sign in uses AuthenticationServices for Apple and the
 official GoogleSignIn iOS SDK, pinned to 10.1.0, for Google. Both pass the

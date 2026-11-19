@@ -1,0 +1,28 @@
+{
+  "version": "b5454",
+  "archive_url": "https://github.com/ggml-org/whisper.cpp/releases/download/b5454/whisper-bin-x64.zip",
+  "archive_sha256": "6ba69e3482d7826214f90a6a9c84ca07782aec1e1d0c6a7c30c994fd5d816ccb",
+  "model_url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base-q5_1.bin",
+  "model_sha256": "422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898",
+  "files": {
+    "ggml-base-q5_1.bin": "422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898",
+    "ggml-base.dll": "bede0d6b2d387236ecd2b5dd676d51c8984b5b6e0ae461a12174e9c01345c5f0",
+    "ggml-cpu-alderlake.dll": "d8f5c56ea490394eeae8b271650f2647aecd039a542d6df9e0140726e62a4603",
+    "ggml-cpu-cannonlake.dll": "74127b40abd4f595d9db6af0fa313a02e18ff42fc228bfa05281e7c788dd4507",
+    "ggml-cpu-cascadelake.dll": "4b11c427b844eeac87529af9a8d94b35aad2024666beb2a35e59fe3077e4b81e",
+    "ggml-cpu-haswell.dll": "1306b1014c8118d27234d8ddc0e66ced1f8c8476bf85071595fd182ea9b7263b",
+    "ggml-cpu-icelake.dll": "2b4dc4c66e7d8fe2807283816e9cf3b7f7d0556f59df34069871e37eab8aed40",
+    "ggml-cpu-sandybridge.dll": "04edbdebc01a1d421062a960881a4f34d520d99693999518243f332406444c6e",
+    "ggml-cpu-skylakex.dll": "1774714cf93621406ff35344b54715619a83242ae3e331e44d98a3b35ce801be",
+    "ggml-cpu-sse42.dll": "f060318772c4c2dbac312bbfff6ea700b85dbc502bb38585a7186d06d549301a",
+    "ggml-cpu-x64.dll": "4b4b05caba40d4309b5d710ef74c59ba190516b8489f27bdb1ba11ae33c6e9d3",
+    "ggml.dll": "31fe18616d872af9b6134b47a6dff8072ae4ecbe5df0273f4f8dc36766c9db8e",
+    "LICENSE-model.txt": "b5d65a59060e68c4ff940e1eddfa6f94b2d68fdf58ed7f4dd57721c997e35e9d",
+    "LICENSE-whisper.txt": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+    "msvcp140.dll": "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9",
+    "vcruntime140_1.dll": "1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f",
+    "vcruntime140.dll": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066",
+    "whisper-cli.exe": "331dba46d6427105d2b802cdbc7eae916ea1c5abf9b0d3b5cfe460d8db8e4366",
+    "whisper.dll": "034396d75bb5720c1851674ff64a96192b58f6927b68d334ebd254ce6cad9674"
+  }
+}

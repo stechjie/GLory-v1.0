@@ -22,6 +22,9 @@ protected:
         ClassDB::bind_method(D_METHOD("setApplicationActive", "active"), &GloryVoiceIOS::setApplicationActive);
         ClassDB::bind_method(D_METHOD("hasRecordPermission"), &GloryVoiceIOS::hasRecordPermission);
         ClassDB::bind_method(D_METHOD("requestRecordPermission"), &GloryVoiceIOS::requestRecordPermission);
+        ClassDB::bind_method(D_METHOD("recognizeSpeechFile", "filename", "locale"), &GloryVoiceIOS::recognizeSpeechFile);
+        ClassDB::bind_method(D_METHOD("getSpeechResult"), &GloryVoiceIOS::getSpeechResult);
+        ClassDB::bind_method(D_METHOD("cancelSpeechRecognition"), &GloryVoiceIOS::cancelSpeechRecognition);
         ClassDB::bind_method(D_METHOD("joinRoom", "url", "token", "listen_only"), &GloryVoiceIOS::joinRoom);
         ClassDB::bind_method(D_METHOD("leaveRoom"), &GloryVoiceIOS::leaveRoom);
         ClassDB::bind_method(D_METHOD("setMicrophoneEnabled", "enabled"), &GloryVoiceIOS::setMicrophoneEnabled);
@@ -31,6 +34,18 @@ protected:
         ClassDB::bind_method(D_METHOD("getCapabilities"), &GloryVoiceIOS::getCapabilities);
     }
 public:
+    String recognizeSpeechFile(const String &filename, const String &locale) {
+        NSString *f = native_string(filename), *l = native_string(locale);
+        __block NSString *result;
+        on_main(^{ result = [[GloryVoiceNative shared] recognizeSpeechFile:f locale:l]; });
+        return String::utf8(result.UTF8String);
+    }
+    String getSpeechResult() {
+        __block NSString *result;
+        on_main(^{ result = [[GloryVoiceNative shared] getSpeechResult]; });
+        return String::utf8(result.UTF8String);
+    }
+    void cancelSpeechRecognition() { on_main(^{ [[GloryVoiceNative shared] cancelSpeechRecognition]; }); }
     bool prepareAudioResume() {
         __block bool ready = false;
         on_main(^{ ready = [[GloryVoiceNative shared] prepareAudioResume]; });

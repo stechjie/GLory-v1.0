@@ -373,3 +373,27 @@ glory_server_key*.pem
 # 本机嵌套的独立仓库（另一份工程副本、第三方插件源码），不属于项目
 /GLory-v1.0/
 /third_party/pixelfx/
+
+# Fixed offline speech dependencies: whitelist only runtime.json files.
+!/addons/glory_speech/bin/windows/
+/addons/glory_speech/bin/windows/*
+!/addons/glory_speech/bin/windows/ggml-base-q5_1.bin
+!/addons/glory_speech/bin/windows/ggml-base.dll
+!/addons/glory_speech/bin/windows/ggml-cpu-alderlake.dll
+!/addons/glory_speech/bin/windows/ggml-cpu-cannonlake.dll
+!/addons/glory_speech/bin/windows/ggml-cpu-cascadelake.dll
+!/addons/glory_speech/bin/windows/ggml-cpu-haswell.dll
+!/addons/glory_speech/bin/windows/ggml-cpu-icelake.dll
+!/addons/glory_speech/bin/windows/ggml-cpu-sandybridge.dll
+!/addons/glory_speech/bin/windows/ggml-cpu-skylakex.dll
+!/addons/glory_speech/bin/windows/ggml-cpu-sse42.dll
+!/addons/glory_speech/bin/windows/ggml-cpu-x64.dll
+!/addons/glory_speech/bin/windows/ggml.dll
+!/addons/glory_speech/bin/windows/LICENSE-model.txt
+!/addons/glory_speech/bin/windows/LICENSE-whisper.txt
+!/addons/glory_speech/bin/windows/msvcp140.dll
+!/addons/glory_speech/bin/windows/vcruntime140_1.dll
+!/addons/glory_speech/bin/windows/vcruntime140.dll
+!/addons/glory_speech/bin/windows/whisper-cli.exe
+!/addons/glory_speech/bin/windows/whisper.dll
+/build/whisper-setup/
