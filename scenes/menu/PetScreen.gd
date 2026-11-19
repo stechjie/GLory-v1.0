@@ -45,7 +45,7 @@ const PET_ART_SIZE := Vector2(160, 76)
 const PET_PAGE_ROWS := 2
 const RACE_CARD_SIZE := Vector2(174, 144)
 const RACE_LOGO_SIZE := Vector2(62, 62)
-const UNIT_TILE_SIZE := Vector2(112, 104)
+const UNIT_TILE_SIZE := Vector2(112, 122)
 const SKIN_CARD_SIZE := Vector2(300, 0)
 const SKIN_PREVIEW_SIZE := Vector2(276, 155)   # 预览图是实机画面截的 16:9
 
@@ -696,7 +696,7 @@ func _build_race_box() -> Control:
 	bond_btn.pressed.connect(func() -> void: _show_race_bond(_viewed_race))
 	roster_header.add_child(bond_btn)
 	_race_roster_scroll = ScrollContainer.new()
-	_race_roster_scroll.custom_minimum_size = Vector2(0, 122)
+	_race_roster_scroll.custom_minimum_size = Vector2(0, 140)
 	_race_roster_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	roster_col.add_child(_race_roster_scroll)
 	_race_roster_grid = GridContainer.new()
@@ -826,7 +826,7 @@ func _refresh_race_roster() -> void:
 	_race_roster_title.text = "%s · %d" % [
 		UnitDetailFormat.unit_race_name(_viewed_race), RacePick.unit_count(_viewed_race)]
 	_race_roster_grid.columns = 4 if get_viewport_rect().size.x < 1250.0 else 8
-	_race_roster_scroll.custom_minimum_size = Vector2(0, 224 if _race_roster_grid.columns == 4 else 122)
+	_race_roster_scroll.custom_minimum_size = Vector2(0, 264 if _race_roster_grid.columns == 4 else 140)
 	for child in _race_roster_grid.get_children():
 		child.queue_free()
 	for raw in DataRegistry.get_table("race_units").get("units", []):
@@ -843,7 +843,7 @@ func _build_unit_tile(unit: Dictionary) -> Control:
 		and not (race_of_unit == "human" and _shop_items.is_empty())
 	var tile := PanelContainer.new()
 	tile.custom_minimum_size = UNIT_TILE_SIZE
-	tile.add_theme_stylebox_override("panel", Kit.box("slot", Vector4(6, 6, 6, 6),
+	tile.add_theme_stylebox_override("panel", Kit.box("slot", Vector4(14, 16, 14, 14),
 		Color.WHITE if not missing else Color(0.72, 0.68, 0.62)))
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 1)
@@ -863,6 +863,8 @@ func _build_unit_tile(unit: Dictionary) -> Control:
 	icon.modulate = Color(0.72, 0.72, 0.72) if missing else Color.WHITE
 	col.add_child(icon)
 	var name_lbl := Label.new()
+	name_lbl.clip_text = true
+	name_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_lbl.add_theme_font_size_override("font_size", 14)
 	name_lbl.add_theme_color_override("font_color", Kit.INK)
