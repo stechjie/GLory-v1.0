@@ -4,7 +4,8 @@
 
   · 每抽 PRICE 钻石；
   · 出碎片的概率 SHARD_CHANCE_PERCENT，出了按 SHARD_WEIGHTS 给 1 / 2 / 3 片；
-  · 没出碎片给 MISS_COIN_MIN～MISS_COIN_MAX 游戏币（按 10 一档）；
+  · 没出碎片时三选一（trial.MISS_OUTCOMES）：只给 MISS_COIN_MIN～MISS_COIN_MAX 游戏币（按 10 一档）/
+    只给一张这张皮肤的体验卡（天数按 trial.DAY_WEIGHTS）/ 两样都给；
   · 第 PITY_LIMIT 抽碎片还不够 TARGET_SHARDS，直接补满 —— 一张皮肤最多 PRICE × PITY_LIMIT 钻石；
   · 集满当场发皮肤归属；已经有这张皮肤就不能再抽（不卖没用的碎片）。
 
@@ -16,7 +17,7 @@ import dataclasses
 import secrets
 import uuid
 
-from app import db, shop
+from app import db, shop, trial
 
 PRICE = 100
 TARGET_SHARDS = 10
@@ -52,6 +53,8 @@ class DrawReceipt:
     owned: bool
     wallet: shop.Wallet
     replayed: bool
+    # 没出碎片时可能附带的这张皮肤的体验卡天数（trial.py）；0 = 没有。
+    trial_days: int = 0
 
 
 def _roll_shards() -> int:
@@ -72,18 +75,20 @@ def _roll_coin() -> int:
     return MISS_COIN_MIN + MISS_COIN_STEP * secrets.randbelow(steps + 1)
 
 
-def outcome(shards: int, draws: int) -> tuple[int, int]:
-    """这一抽的结果 (碎片, 游戏币)。shards / draws 是抽之前的进度。
+def outcome(shards: int, draws: int) -> tuple[int, int, int]:
+    """这一抽的结果 (碎片, 游戏币, 体验卡天数)。shards / draws 是抽之前的进度。
 
     第 PITY_LIMIT 抽（之前已经抽了 PITY_LIMIT - 1 次）直接补满；补出来的片数可能是 1～10。
+    没出碎片时游戏币与体验卡至少给一样（trial.roll_miss）。
     """
     missing = TARGET_SHARDS - shards
     if draws >= PITY_LIMIT - 1:
-        return missing, 0
+        return missing, 0, 0
     gained = _roll_shards()
     if gained == 0:
-        return 0, _roll_coin()
-    return min(gained, missing), 0
+        give_coin, card_days = trial.roll_miss()
+        return 0, _roll_coin() if give_coin else 0, card_days
+    return min(gained, missing), 0, 0
 
 
 def _check_skin(skin_id: str) -> None:
@@ -115,15 +120,16 @@ async def draw(player_id: uuid.UUID, skin_id: str, client_draw_id: uuid.UUID) ->
             wallet = await shop._lock_wallet(conn, player_id)
             # 钱包行锁先把同一个玩家的请求排好队，再查防重复 id：重发的请求原样回上次的结果。
             existing = await conn.fetchrow(
-                "select draw_id, skin_id, shards_gained, coin_reward, shards_after, draws_after, unlocked"
-                " from skin_draws where player_id = $1 and client_draw_id = $2",
+                "select draw_id, skin_id, shards_gained, coin_reward, shards_after, draws_after, unlocked,"
+                " trial_days from skin_draws where player_id = $1 and client_draw_id = $2",
                 player_id, client_draw_id)
             if existing is not None:
                 owned = await shop._owns(conn, player_id, str(existing["skin_id"]))
                 return DrawReceipt(existing["draw_id"], str(existing["skin_id"]),
                                    int(existing["shards_gained"]), int(existing["coin_reward"]),
                                    int(existing["shards_after"]), int(existing["draws_after"]),
-                                   bool(existing["unlocked"]), owned, wallet, True)
+                                   bool(existing["unlocked"]), owned, wallet, True,
+                                   int(existing["trial_days"] or 0))
 
             if await shop._owns(conn, player_id, skin_id):
                 raise shop.ShopRejected("already_owned", "已经拥有这张棋盘皮肤")
@@ -133,7 +139,7 @@ async def draw(player_id: uuid.UUID, skin_id: str, client_draw_id: uuid.UUID) ->
             shards = int(row["shards"]) if row is not None else 0
             draws = int(row["draws"]) if row is not None else 0
 
-            gained, coin = outcome(shards, draws)
+            gained, coin, card_days = outcome(shards, draws)
             shards_after = shards + gained
             draws_after = draws + 1
             unlocked = shards_after >= TARGET_SHARDS
@@ -144,6 +150,9 @@ async def draw(player_id: uuid.UUID, skin_id: str, client_draw_id: uuid.UUID) ->
             after = await shop._apply(conn, player_id, wallet, debit, "skin_draw", draw_id)
             if coin:
                 after = await shop._apply(conn, player_id, after, {"coin": coin}, "skin_draw", draw_id)
+            if card_days:
+                await trial.add_cards(conn, player_id, skin_id, card_days, 1, "skin_draw",
+                                      draw_id=draw_id)
             if unlocked:
                 await shop._grant(conn, player_id, skin_id, "skin_draw", draw_id)
             await conn.execute(
@@ -153,9 +162,11 @@ async def draw(player_id: uuid.UUID, skin_id: str, client_draw_id: uuid.UUID) ->
                 player_id, skin_id, shards_after, draws_after)
             await conn.execute(
                 "insert into skin_draws (draw_id, player_id, client_draw_id, skin_id, shards_gained,"
-                " coin_reward, price_snapshot, shards_after, draws_after, unlocked)"
-                " values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+                " coin_reward, price_snapshot, shards_after, draws_after, unlocked,"
+                " trial_target, trial_days)"
+                " values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
                 draw_id, player_id, client_draw_id, skin_id, gained, coin, PRICE,
-                shards_after, draws_after, unlocked)
+                shards_after, draws_after, unlocked,
+                skin_id if card_days else None, card_days or None)
     return DrawReceipt(draw_id, skin_id, gained, coin, shards_after, draws_after,
-                       unlocked, unlocked, after, False)
+                       unlocked, unlocked, after, False, card_days)

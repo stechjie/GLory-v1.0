@@ -7,6 +7,8 @@ const CarrotEconomy := preload("res://scripts/economy/CarrotEconomy.gd")
 const AiHandover := preload("res://scripts/economy/AiHandover.gd")
 const UnitGrowth := preload("res://scripts/units/UnitGrowth.gd")
 const RacePick := preload("res://scripts/units/RacePick.gd")
+# 体验到期提醒：开局前查一次（ui/services/TrialExpiryGate.gd，2026-11-20）。
+const TrialExpiryGate := preload("res://ui/services/TrialExpiryGate.gd")
 
 signal public_token_request_check_requested(request_id: String)
 signal room_list_request_check_requested(request_id: String)
@@ -1311,8 +1313,10 @@ func _show_menu() -> void:
 	_menu = _instantiate_screen("res://scenes/menu/MainMenu.tscn")
 	_menu.team_host_requested.connect(_on_team_host_requested)
 	_menu.team_join_requested.connect(_on_team_join_requested)
-	_menu.team_room_create_requested.connect(_on_team_room_create_requested)
-	_menu.team_room_join_requested.connect(_on_team_room_join_requested)
+	# 开局入口先过体验到期提醒（_gate_trials）：到期后第一次开局前弹一次。
+	_menu.team_room_create_requested.connect(func() -> void: _gate_trials(_on_team_room_create_requested))
+	_menu.team_room_join_requested.connect(func(room_id: int) -> void:
+		_gate_trials(_on_team_room_join_requested.bind(room_id)))
 	_menu.team_room_spectate_requested.connect(_on_team_room_spectate_requested)
 	_menu.team_room_list_requested.connect(_on_team_room_list_requested)
 	_menu.public_token_generate_requested.connect(_on_public_token_generate_requested)
@@ -1322,8 +1326,8 @@ func _show_menu() -> void:
 	if not _menu.team_reconnect_requested.is_connected(_on_team_reconnect_requested):
 		_menu.team_reconnect_requested.connect(_on_team_reconnect_requested)
 	_menu.settings_requested.connect(_show_settings)
-	_menu.casual_requested.connect(_show_casual_queue)
-	_menu.ranked_requested.connect(_show_ranked_queue)
+	_menu.casual_requested.connect(func() -> void: _gate_trials(_show_casual_queue))
+	_menu.ranked_requested.connect(func() -> void: _gate_trials(_show_ranked_queue))
 	_menu.prep_requested.connect(_show_pet_screen)
 	_menu.codex_requested.connect(_show_codex_screen)
 	_menu.profile_requested.connect(_show_profile_screen)
@@ -1668,6 +1672,20 @@ func _show_diamond_store(after_purchase: Callable = Callable()) -> void:
 	add_child(_diamond_store)
 
 
+# 体验到期提醒（2026-11-20 用户定）：体验到期后，第一次开始任何游戏前弹一次。
+#   继续开局 / 去备战页种族页签改出战种族 / 什么都不做（玩家关掉了弹窗，下次开局前还会弹）。
+# 拉不到提醒一律放行（TrialExpiryGate 文件头）。教学局不受影响：新号没有体验，查一次就放行。
+func _gate_trials(next: Callable) -> void:
+	var verdict: String = await TrialExpiryGate.check(self)
+	if not is_inside_tree():
+		return
+	match verdict:
+		TrialExpiryGate.PROCEED:
+			next.call()
+		TrialExpiryGate.EDIT:
+			_show_pet_screen_races("")
+
+
 func _show_bag_screen() -> void:
 	_clear()
 	var screen := _instantiate_screen("res://scenes/menu/BagScreen.tscn")
@@ -1675,8 +1693,7 @@ func _show_bag_screen() -> void:
 		_show_menu()
 		return
 	screen.back_requested.connect(_show_menu)
-	# 头像换装在资料页，背包只展示（BagScreen 文件头写了为什么不在这儿再做一份）。
-	screen.profile_requested.connect(_show_profile_screen)
+	# 11-20 起背包只放物品（体验卡等），头像 / 宠物分别在资料页、备战页换（BagScreen 文件头）。
 	_page_back_route = _show_menu
 	add_child(screen)
 

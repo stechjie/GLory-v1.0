@@ -1,193 +1,169 @@
 extends Node
 
-# 10.12 反馈第 1 条（背包-宠物页）：选择宠物出战时
-#   ① 点击别的宠物 → 立绘异常往上覆盖
-#   ② 点击「松鼠」→ 页面下沉、宠物名字被遮盖一半
-#   ③ 点击「老虎」→ 整个宠物选择栏消失
+# 背包布局门禁。
 #
-# 根因（三处同一个）：详情文案长度不同 ⇒ 页面最小高度不同 ⇒ 排在页面末尾的宠物栏
-# 被顶出屏幕；演示台（原 CenterContainer）又把立绘框 480×376 当成自己的最小尺寸，
-# 空间被压小后立绘越界往上盖。
+# 2026-11-20 背包改版：去掉宠物 / 头像，分成 全部 / 道具 / 体验卡 / 礼物 / 活动（BagScreen 文件头）。
+# 原来这里钉的是宠物页的三处老问题（立绘越界、宠物栏被顶出屏幕、重影），宠物页没了，
+# 改成钉新背包的几何与交互（文件名 / 门禁 id 保留，免得跑门禁的脚本找不到它）：
 #
-# 本门禁用**几何判据**，与渲染无关（headless 即可）：
-#   A 每个宠物、每种窗口尺寸下，宠物栏都必须完整落在屏幕内（不被顶出去）
-#   B 立绘必须完全落在演示台矩形内（不越界覆盖上方标题 / 下方宠物栏）
-#   C 右侧档案面板的最小高度必须被地板值钉住（文案再长也不能撑高面板）
-#   D 面板本身也必须完整落在屏幕内
-# 尺寸覆盖三种：常见 16:9 / 较矮的 1024×600 / 更矮的 960×540 —— 矮屏是最容易复现
-# 用户那三张实拍的场景。
+#   A 页签、左侧格子面板、右侧详情面板都完整落在屏幕内
+#   B 格子不横向溢出左侧面板（窄屏少放几列，不把整页撑宽）
+#   C 「使用」「出售」两颗按钮在详情面板里、可见
+#   D 点选格子**不重建**格子（10.08 反馈第 6 条：重建会让安卓的模拟鼠标点到最后一个）
+#   E 目标已永久拥有的卡，「使用」按钮禁用
+#   F 道具 / 礼物 / 活动三页是空页，显示空提示、没有格子
+#
+# 几何判据，与渲染无关（headless 即可）。尺寸三种：常见 16:9 / 1024×600 / 960×540。
 
 const H := preload("res://tools/CheckHarness.gd")
 const BAG := preload("res://scenes/menu/BagScreen.gd")
-const PetService := preload("res://scripts/pets/PetService.gd")
-const CrispTexture := preload("res://scripts/ui/CrispTexture.gd")
 
 const SIZES := [Vector2i(1280, 720), Vector2i(1024, 600), Vector2i(960, 540)]
 const EPS := 0.5
-# 面板地板值（与 BagScreen.PET_DETAIL_MIN_HEIGHT 同口径）。这里写字面量而不是读常量：
-# 常量被改大时门禁要红 —— 读同一个常量会跟着一起漂。
-const DETAIL_FLOOR := 200.0
-# 面板最小高度的允许余量（边框 / 滚动条各留几像素）。
-const DETAIL_SLACK := 32.0
+const FIXTURE := {
+	"cards": [
+		{"target": "dark", "kind": "race", "days": 1, "count": 1, "sell_price": 100, "owned": false},
+		{"target": "dark", "kind": "race", "days": 3, "count": 2, "sell_price": 200, "owned": false},
+		{"target": "god", "kind": "race", "days": 7, "count": 1, "sell_price": 300, "owned": false},
+		{"target": "undead", "kind": "race", "days": 1, "count": 4, "sell_price": 100, "owned": false},
+		{"target": "pet_tiger", "kind": "pet", "days": 3, "count": 1, "sell_price": 200, "owned": false},
+		{"target": "pet_squirrel", "kind": "pet", "days": 7, "count": 1, "sell_price": 300, "owned": false},
+		{"target": "prep_skin_sakura", "kind": "prep_skin", "days": 1, "count": 1, "sell_price": 100, "owned": true},
+		{"target": "prep_skin_nightwisp", "kind": "prep_skin", "days": 7, "count": 3, "sell_price": 300, "owned": false},
+		{"target": "crimson", "kind": "race", "days": 3, "count": 1, "sell_price": 200, "owned": false},
+	],
+	"trials": [{"target": "dark", "kind": "race", "expires_at": "2099-01-01T00:00:00Z"}],
+	"server_now": "2026-11-20T10:00:00Z",
+}
 
 var h
 
 
 func _ready() -> void:
 	h = H.new("bag_pet_layout")
-
-	var pet_ids: Array[String] = []
-	for raw in PetService.all_pets():
-		pet_ids.append(str((raw as Dictionary).get("id", "")))
-	h.expect(pet_ids.size() >= 2, "fixture_pets",
-		"宠物数据表至少要有 2 只才能测出战切换，实际 %d" % pet_ids.size())
-
 	var previous_locale := LocaleManager.get_locale()
 	for locale in ["zh", "en"]:
 		LocaleManager.set_locale(locale)
 		for size in SIZES:
-			await _check_size(size, pet_ids)
+			await _check_size(size)
 	LocaleManager.set_locale(previous_locale)
 	h.finish(get_tree())
 
 
-func _check_size(size: Vector2i, pet_ids: Array[String]) -> void:
+func _check_size(size: Vector2i) -> void:
 	# 用固定尺寸的壳子把屏幕撑到目标大小：根视口在 headless 里不一定能被改尺寸。
 	var shell := Control.new()
 	shell.custom_minimum_size = Vector2(size)
 	shell.size = Vector2(size)
 	add_child(shell)
-
 	var bag: Control = BAG.new()
-	bag.set_meta("ui_capture_fixture", true)
-	bag.set("_loading", false)
-	bag.set("_owned_pets", pet_ids)
-	bag.set("_active_pet", pet_ids[0])
-	bag.set("_paid_content", {})
-	bag.set("_sold_content", {})
+	bag.set_meta("ui_capture_fixture", FIXTURE)
 	bag.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	shell.add_child(bag)
 	await _settle()
+	var label := "%s@%s" % [LocaleManager.get_locale(), str(size)]
+	var screen := shell.get_global_rect()
 
-	var roster: Control = bag.get("_pet_roster")
-	var stage: Control = bag.get("_pet_stage")
-	var detail: Control = bag.get("_pet_detail")
-	h.expect(roster != null and stage != null and detail != null, "nodes_present",
-		"%s 屏幕下 BagScreen 的关键节点应存在" % str(size))
-	if roster == null or stage == null or detail == null:
+	var tabs := bag.find_child("BagTabs", true, false) as Control
+	var collection := bag.find_child("BagCollection", true, false) as Control
+	var detail_panel := bag.find_child("BagDetailPanel", true, false) as Control
+	var grid := bag.find_child("BagGrid", true, false) as GridContainer
+	h.expect(tabs != null and collection != null and detail_panel != null and grid != null,
+		"nodes_present", "%s 背包的关键节点应存在" % label)
+	if tabs == null or collection == null or detail_panel == null or grid == null:
 		shell.queue_free()
 		return
 
-	var scroll: ScrollContainer = bag.get("_pet_info_scroll")
-	var action: Button = bag.get("_pet_action")
-	var panel: Control = scroll.get_parent().get_parent()
+	# A 三块都在屏幕里
+	for pair in [["tabs", tabs], ["collection", collection], ["detail", detail_panel]]:
+		var rect := (pair[1] as Control).get_global_rect()
+		h.item()
+		h.expect(rect.position.x >= screen.position.x - EPS and rect.end.x <= screen.end.x + EPS
+				and rect.position.y >= screen.position.y - EPS and rect.end.y <= screen.end.y + EPS,
+			"inside_screen", "%s %s 越出屏幕：%s screen=%s" % [label, pair[0], str(rect), str(screen)])
+	h.item()
+	h.expect(tabs.get_child_count() == 5, "five_tabs", "%s 应有 5 个页签，实际 %d" % [label, tabs.get_child_count()])
 
-	for pet_id in pet_ids:
-		bag.set("_selected_pet", pet_id)
-		bag.call("_refresh_pet_selection")
+	# B 格子不横向溢出左侧面板
+	h.item()
+	h.expect(grid.get_child_count() == FIXTURE["cards"].size(), "all_cards_shown",
+		"%s 「全部」应显示 %d 张卡，实际 %d" % [label, FIXTURE["cards"].size(), grid.get_child_count()])
+	var panel_rect := collection.get_global_rect()
+	for tile in grid.get_children():
+		var tr := (tile as Control).get_global_rect()
+		h.item()
+		h.expect(tr.end.x <= panel_rect.end.x + EPS and tr.position.x >= panel_rect.position.x - EPS,
+			"tile_inside_panel", "%s 格子越出左侧面板：tile=%s panel=%s" % [label, str(tr), str(panel_rect)])
+
+	# C 使用 / 出售按钮在详情面板里
+	_check_buttons(bag, detail_panel, label, false)
+
+	# D 点选不重建格子；E 已拥有的卡「使用」禁用
+	var before: Array[int] = []
+	for tile in grid.get_children():
+		before.append(tile.get_instance_id())
+	var owned_index := -1
+	for i in FIXTURE["cards"].size():
+		if bool(FIXTURE["cards"][i]["owned"]):
+			owned_index = i
+	var cards: Array = bag.get("_cards")
+	for i in cards.size():
+		var card: Dictionary = cards[i]
+		bag.call("_on_tile_input", _click(), "%s|%d" % [card["target"], int(card["days"])])
 		await _settle()
-		var label := "%s/%s@%s" % [LocaleManager.get_locale(), pet_id, str(size)]
-		var button_rect := action.get_global_rect()
-		h.expect(action.is_visible_in_tree() and action.disabled == (pet_id == pet_ids[0])
-			and button_rect.position.y >= scroll.get_global_rect().end.y
-			and panel.get_global_rect().encloses(button_rect),
-			"action_pinned", "%s 出战按钮须常驻滚动区下方并位于纸面内" % label)
+		_check_buttons(bag, detail_panel, "%s/%s-%dd" % [label, card["target"], int(card["days"])],
+			bool(card["owned"]))
+	var after: Array[int] = []
+	for tile in grid.get_children():
+		after.append(tile.get_instance_id())
+	h.item()
+	h.expect(before == after, "select_does_not_rebuild",
+		"%s 点选格子后格子被重建了（安卓会点错格子，见 BagScreen 文件头）" % label)
+	h.item()
+	h.expect(owned_index >= 0, "fixture_has_owned", "夹具里应有一张已拥有目标的卡")
 
-		# A 宠物栏完整落在屏幕内。
+	# F 空页
+	for tab_id in ["items", "gifts", "events"]:
+		bag.call("_select_tab", tab_id)
+		await _settle()
+		var empty := bag.find_child("BagEmpty", true, false) as Label
 		h.item()
-		if roster.visible:
-			var rr := roster.get_global_rect()
-			var sr := shell.get_global_rect()
-			h.expect(rr.end.y <= sr.end.y + EPS and rr.position.y >= sr.position.y - EPS,
-				"roster_inside_screen",
-				"%s 宠物栏越出屏幕：roster=%s shell=%s" % [label, str(rr), str(sr)])
-		else:
-			h.fail("roster_hidden", "%s 多只宠物时宠物栏不应隐藏" % label)
-
-		# B 演示台里**有且只有**当前选中宠物的那一张立绘。
-		#   ★ 10.12 第 1 条返修追加：原来只量 get_child(0)，于是「每点一只宠物就往
-		#   演示台**追加**一张立绘」的 bug 溜了过去 —— 新立绘铺满演示台盖住旧的，
-		#   旧的只从边上露一点，而 child(0) 仍然在台内 ⇒ 门禁恒绿。现在把**数量**
-		#   和**身份**都钉死。
-		h.item()
-		h.expect(stage.get_child_count() == 1, "stage_single_artwork",
-			"%s 演示台应只剩 1 张立绘（当前选中的那只），实际 %d 张（旧的没清掉 ⇒ 重影）" % [
-				label, stage.get_child_count()])
-		if stage.get_child_count() > 0:
-			var tr := stage.get_global_rect()
-			for i in stage.get_child_count():
-				var art_node := stage.get_child(i)
-				if not (art_node is Control):
-					continue
-				var ar := (art_node as Control).get_global_rect()
-				h.item()
-				h.expect(ar.position.y >= tr.position.y - EPS and ar.end.y <= tr.end.y + EPS
-						and ar.position.x >= tr.position.x - EPS and ar.end.x <= tr.end.x + EPS,
-					"artwork_inside_stage",
-					"%s 立绘越出演示台：art=%s stage=%s" % [label, str(ar), str(tr)])
-			# 台上那张立绘必须**就是**当前选中的宠物（不是别的宠物遗留下来的）。
-			var icon_path := str(PetService.pet_by_id(pet_id).get("icon", ""))
-			if not icon_path.is_empty() and ResourceLoader.exists(icon_path):
-				var shown := _artwork_texture(stage.get_child(0))
-				var expected := CrispTexture.fit(load(icon_path), BAG.PET_DETAIL_PREVIEW, stage)
-				h.item()
-				h.expect(shown != null and shown == expected, "artwork_matches_selection",
-					"%s 演示台上的立绘应属于 %s（%s）" % [label, pet_id, icon_path])
-		else:
-			h.fail("artwork_missing", "%s 演示台里应有一张立绘" % label)
-
-		# C 面板最小高度被地板值钉住（长文案不许再撑高面板）。
-		if panel != null:
-			h.item()
-			h.expect(panel.get_combined_minimum_size().y <= DETAIL_FLOOR + DETAIL_SLACK,
-				"panel_min_height_bounded",
-				"%s 面板最小高度 %s 超过地板值 %s（文案把面板撑高了）" % [
-					label, str(panel.get_combined_minimum_size()), str(DETAIL_FLOOR)])
-			# D 面板完整落在屏幕内。
-			h.item()
-			var pr := panel.get_global_rect()
-			var sr2 := shell.get_global_rect()
-			h.expect(pr.end.y <= sr2.end.y + EPS, "panel_inside_screen",
-				"%s 面板越出屏幕：panel=%s shell=%s" % [label, str(pr), str(sr2)])
-
-	# E ★ 10.12 第 1 条返修：模拟玩家「来回点不同宠物」的真实操作序列。
-	#   每一步之后演示台都必须只剩 1 张立绘 —— 这正是用户复测时看到重影的路径
-	#   （上面 A~D 是按顺序各点一次，单看 child(0) 抓不到累积）。
-	if pet_ids.size() >= 2:
-		var seq: Array[String] = [pet_ids[0], pet_ids[1], pet_ids[0]]
-		if pet_ids.size() >= 3:
-			seq.append(pet_ids[2])
-		seq.append(pet_ids[1])
-		for seq_pet in seq:
-			bag.set("_selected_pet", seq_pet)
-			bag.call("_refresh_pet_selection")
-			await _settle()
-			h.item()
-			h.expect(stage.get_child_count() == 1, "interleaved_single_artwork",
-				"%s 来回点宠物（%s）后演示台残留 %d 张立绘" % [
-					str(size), "->".join(seq), stage.get_child_count()])
-
+		h.expect(grid.get_child_count() == 0 and empty != null and empty.visible and not empty.text.is_empty(),
+			"empty_tab", "%s 「%s」页应是空页并显示提示" % [label, tab_id])
+	bag.call("_select_tab", "trials")
+	await _settle()
+	h.item()
+	h.expect(grid.get_child_count() == FIXTURE["cards"].size(), "trial_tab_lists_cards",
+		"%s 「体验卡」页应列出全部体验卡" % label)
 	shell.queue_free()
 
 
-# 演示台里那张立绘（PetPreview.build_illustration 返回的 frame）内部是一个
-# TextureRect；拿它的贴图路径来判断「台上到底摆的是谁」。
-func _artwork_texture(frame: Node) -> Texture2D:
-	if frame == null:
-		return null
-	var stack: Array[Node] = [frame]
-	while not stack.is_empty():
-		var cur: Node = stack.pop_back()
-		if cur is TextureRect:
-			var tex := (cur as TextureRect).texture
-			if tex != null:
-				return tex
-		for child in cur.get_children():
-			stack.append(child)
-	return null
+func _check_buttons(bag: Control, panel: Control, label: String, owned: bool) -> void:
+	var use := bag.find_child("BagUse", true, false) as Button
+	var sell := bag.find_child("BagSell", true, false) as Button
+	h.item()
+	h.expect(use != null and sell != null and use.is_visible_in_tree() and sell.is_visible_in_tree(),
+		"buttons_present", "%s 详情里应有「使用」「出售」" % label)
+	if use == null or sell == null:
+		return
+	var pr := panel.get_global_rect()
+	h.item()
+	h.expect(pr.encloses(use.get_global_rect()) and pr.encloses(sell.get_global_rect()),
+		"buttons_inside_panel", "%s 按钮越出详情面板：use=%s sell=%s panel=%s" % [
+			label, str(use.get_global_rect()), str(sell.get_global_rect()), str(pr)])
+	h.item()
+	h.expect(use.disabled == owned and not sell.disabled, "use_disabled_when_owned",
+		"%s 「使用」应%s" % [label, "禁用（目标已永久拥有）" if owned else "可点"])
 
 
-# 容器布局要几帧才收敛（立绘是 3D 预览回退时还要等 SubViewport 建好）。
+func _click() -> InputEventMouseButton:
+	var event := InputEventMouseButton.new()
+	event.button_index = MOUSE_BUTTON_LEFT
+	event.pressed = true
+	return event
+
+
+# 容器布局要几帧才收敛（宠物立绘是 3D 预览回退时还要等 SubViewport 建好）。
 func _settle() -> void:
 	for _i in 6:
 		await get_tree().process_frame

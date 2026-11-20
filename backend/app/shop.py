@@ -87,8 +87,9 @@ CURRENCIES = ("diamond", "coin")
 #
 # mail = 系统邮件的附件（backend/app/mail.py）。那一笔流水同时记 mail_id，指明是哪封。
 # iap / iap_test / refund = 充值正式单、测试单、退款扣回（backend/app/iap.py）。
+# trial_buy / trial_sell = 买种族体验卡、出售体验卡（backend/app/trial.py），order_id 记那一笔的 op_id。
 SOURCES = ("shop", "iap", "iap_test", "grant", "refund", "starter_pick", "match_reward", "mail",
-           "seven_day_login", "pet_draw", "level_reward", "skin_draw")
+           "seven_day_login", "pet_draw", "level_reward", "skin_draw", "trial_buy", "trial_sell")
 
 
 class ShopRejected(RuntimeError):
@@ -701,6 +702,9 @@ class Pets:
     owned: list[str]
     active: str
     needs_starter_pick: bool
+    # 正在体验的宠物 -> 到期时间（trial.py）。它们也在 owned 里（能设出战），
+    # 客户端靠这张表给它们挂「体验中」。
+    trials: dict[str, dt.datetime] = dataclasses.field(default_factory=dict)
 
 
 async def read_pets(player_id: uuid.UUID) -> Pets:
@@ -717,13 +721,21 @@ async def read_pets(player_id: uuid.UUID) -> Pets:
         )
         active = await conn.fetchval(
             "select showcase_pet from players where player_id = $1", player_id)
+        # 函数内 import：trial 在模块顶层 import 了 shop。
+        from app import trial
+        trials = {pet: expires for pet, expires in (await trial.active_trials_in(conn, player_id)).items()
+                  if is_pet(pet)}
 
     owned = [r["item_id"] for r in rows if is_pet(r["item_id"])]
+    # 三选一只看永久拥有的：体验中的宠物不算领过新手宠物。
+    needs_starter_pick = not owned
+    trials = {pet: expires for pet, expires in trials.items() if pet not in owned}
+    owned = owned + sorted(trials)
     active = str(active or "")
-    # 出战的那只被退款收回了（或者数据被手工改坏了）就当没选。
+    # 出战的那只被退款收回了 / 体验到期了（或者数据被手工改坏了）就当没选：退回第一只永久拥有的。
     if active not in owned:
         active = owned[0] if owned else ""
-    return Pets(owned=owned, active=active, needs_starter_pick=not owned)
+    return Pets(owned=owned, active=active, needs_starter_pick=needs_starter_pick, trials=trials)
 
 
 async def set_active_pet(player_id: uuid.UUID, pet_id: str) -> Pets:
@@ -736,7 +748,9 @@ async def set_active_pet(player_id: uuid.UUID, pet_id: str) -> Pets:
         raise ShopRejected("unknown_pet", "没有这只宠物")
     async with db.pool().acquire() as conn:
         async with conn.transaction():
-            if not await _owns(conn, player_id, pet_id):
+            from app import trial
+            # 正在体验的宠物也能设出战（到期后 read_pets / 出战名片自动退回永久拥有的那只）。
+            if not await trial.is_usable_in(conn, player_id, pet_id):
                 raise ShopRejected("not_owned", "你还没有这只宠物")
             await conn.execute(
                 "update players set showcase_pet = $2 where player_id = $1",

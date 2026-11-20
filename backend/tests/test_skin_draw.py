@@ -8,7 +8,7 @@ import uuid
 
 import pytest
 
-from app import shop, skin_draw
+from app import shop, skin_draw, trial
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 SKIN = "prep_skin_sakura"
@@ -22,6 +22,7 @@ class FakeConn:
         self.draws: dict[uuid.UUID, dict] = {}
         self.money_writes: list[dict] = []
         self.grants: list[str] = []
+        self.cards: list[tuple[str, int]] = []
 
     async def __aenter__(self):
         return self
@@ -45,7 +46,7 @@ class FakeConn:
             self.draws[args[2]] = {
                 "draw_id": args[0], "skin_id": args[3], "shards_gained": args[4],
                 "coin_reward": args[5], "shards_after": args[7], "draws_after": args[8],
-                "unlocked": args[9],
+                "unlocked": args[9], "trial_days": args[11],
             }
         else:
             raise AssertionError(sql)
@@ -89,6 +90,16 @@ def draw_db(monkeypatch):
     monkeypatch.setattr(shop, "_apply", apply)
     monkeypatch.setattr(shop, "_grant", grant)
     monkeypatch.setattr(shop, "_owns", owns)
+
+    # 047 体验卡：没出碎片默认「只给游戏币」，要测卡的用例自己改 roll_miss。
+    monkeypatch.setattr(trial, "roll_miss", lambda: (True, 0))
+
+    async def add_cards(c, _player, target, days, count, kind, **kw):
+        assert kind == "skin_draw" and count == 1 and kw.get("draw_id")
+        c.cards.append((target, days))
+        return 1
+
+    monkeypatch.setattr(trial, "add_cards", add_cards)
     return conn
 
 
@@ -170,13 +181,15 @@ def test_shard_roll_matches_published_table(monkeypatch):
 
 
 def test_never_more_than_ten_draws_with_real_randomness():
-    """真随机跑一万张：没有一张超过 PITY_LIMIT 抽，也没有一张超出 10 片。"""
+    """真随机跑一万张：没有一张超过 PITY_LIMIT 抽，也没有一张超出 10 片。
+    没出碎片时游戏币和体验卡至少给一样（047），出了碎片两样都不给。"""
     worst = 0
     for _ in range(10000):
         shards = draws = 0
         while shards < skin_draw.TARGET_SHARDS:
-            gained, coin = skin_draw.outcome(shards, draws)
-            assert (gained > 0) != (coin > 0)
+            gained, coin, card = skin_draw.outcome(shards, draws)
+            assert (gained > 0) != (coin > 0 or card > 0)
+            assert card in (0, *trial.DAYS)
             assert coin == 0 or skin_draw.MISS_COIN_MIN <= coin <= skin_draw.MISS_COIN_MAX
             shards += gained
             draws += 1
@@ -204,8 +217,34 @@ def test_odds_shown_to_players_match_the_server():
         percent = skin_draw.SHARD_CHANCE_PERCENT * weight // total
         assert "碎片 ×%d  %d%%" % (count, percent) in dialog
         assert "%d shard%s  %d%%" % (count, "" if count == 1 else "s", percent) in dialog
+    # 没出碎片（047）：三选一，各占总抽数的百分比 + 体验卡天数分布。
     miss = 100 - skin_draw.SHARD_CHANCE_PERCENT
-    assert "游戏币 %d～%d  %d%%" % (skin_draw.MISS_COIN_MIN, skin_draw.MISS_COIN_MAX, miss) in dialog
+    outcomes = dict(trial.MISS_OUTCOMES)
+    assert "游戏币 %d～%d  %d%%" % (
+        skin_draw.MISS_COIN_MIN, skin_draw.MISS_COIN_MAX, miss * outcomes["coin"] // 100) in dialog
+    assert "体验卡  %d%%" % (miss * outcomes["card"] // 100) in dialog
+    assert "游戏币 + 体验卡  %d%%" % (miss * outcomes["both"] // 100) in dialog
+    for days, weight in trial.DAY_WEIGHTS:
+        assert "%d天 %d%%" % (days, weight) in dialog
     assert "第 %d 抽" % skin_draw.PITY_LIMIT in dialog
     assert "PRICE := %d" % skin_draw.PRICE in dialog
     assert "TARGET := %d" % skin_draw.TARGET_SHARDS in dialog
+
+
+def test_miss_can_give_a_trial_card_for_this_skin(draw_db, monkeypatch):
+    """047：没出碎片时可以只给体验卡（不给游戏币），也可以两样都给；卡是这张皮肤的。"""
+    _rolls(monkeypatch, [75])            # 没出碎片；只给卡时不掷游戏币档位
+    monkeypatch.setattr(trial, "roll_miss", lambda: (False, 1))
+    player = uuid.uuid4()
+    card_only = asyncio.run(skin_draw.draw(player, SKIN, uuid.uuid4()))
+    assert card_only.shards_gained == 0 and card_only.coin_reward == 0 and card_only.trial_days == 1
+    assert draw_db.money_writes == [{"diamond_free": -50, "diamond_paid": -50}]
+
+    _rolls(monkeypatch, [75, 0])
+    monkeypatch.setattr(trial, "roll_miss", lambda: (True, 7))
+    draw_id = uuid.uuid4()
+    both = asyncio.run(skin_draw.draw(player, SKIN, draw_id))
+    assert both.coin_reward == 200 and both.trial_days == 7
+    assert draw_db.cards == [(SKIN, 1), (SKIN, 7)]
+    replay = asyncio.run(skin_draw.draw(player, SKIN, draw_id))
+    assert replay.replayed and replay.trial_days == 7 and len(draw_db.cards) == 2

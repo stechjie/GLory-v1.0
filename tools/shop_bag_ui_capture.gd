@@ -8,6 +8,7 @@ const SHOP := preload("res://scenes/menu/ShopScreen.gd")
 const DIAMOND_STORE := preload("res://scenes/menu/DiamondStoreDialog.gd")
 const PET_DRAW := preload("res://scenes/menu/PetDrawDialog.gd")
 const BAG := preload("res://scenes/menu/BagScreen.gd")
+const RACE_TRIAL := preload("res://ui/components/RaceTrialDialog.gd")
 const MAIL := preload("res://scenes/menu/MailScreen.tscn")
 const WINDOW := Vector2i(1280, 720)
 const OUT_DIR := "res://reports/shop_bag_ui"
@@ -32,10 +33,9 @@ func _ready() -> void:
 	await _capture_pet_draw()
 	await _capture_shop_event()
 	await _capture_shop_appearance()
-	await _capture_bag_pets()
-	await _capture_bag_pet_switch()
-	await _capture_bag_single_pet()
-	await _capture_bag_avatars()
+	await _capture_bag_trials()
+	await _capture_bag_empty_tab()
+	await _capture_race_trial_dialog()
 	await _capture_mail()
 	print("SHOP_BAG_UI_CAPTURE dir=%s" % OUT_DIR)
 	get_tree().quit(0)
@@ -148,61 +148,6 @@ func _fixture_shop_special(category: String) -> Control:
 	return shop
 
 
-func _capture_bag_pets() -> void:
-	var bag := _fixture_bag()
-	bag.set("_active_tab", "pets")
-	bag.set("_selected_pet", "pet_cat")
-	_show(bag)
-	await _settle_and_shot("bag_pets_1280")
-	_clear_screen()
-
-
-func _capture_bag_avatars() -> void:
-	var bag := _fixture_bag()
-	bag.set("_active_tab", "avatars")
-	bag.set("_selected_avatar", "preset:avatar_005")
-	_show(bag)
-	await _settle_and_shot("bag_avatars_1280")
-	_clear_screen()
-
-
-# ★ 10.12 第 1 条**返修**复现图：走玩家的真实操作路径。
-#   夹具直接设 `_selected_pet` 再进树只会走一次 `_render()`（本来就只画一张），
-#   完全绕开「点宠物卡片 → _refresh_pet_selection → 往演示台追加立绘」这条路径 ——
-#   这正是上一轮截图看起来没问题、玩家却看到「猫帽子后面还有蘑菇」的原因。
-#   这里先以「出战中宠物」进场，再依次点另外几只，最后停在猫身上。
-func _capture_bag_pet_switch() -> void:
-	var bag := BAG.new()
-	bag.set_meta("ui_capture_fixture", true)
-	bag.set("_loading", false)
-	bag.set("_owned_pets", ["pet_mushroom", "pet_cat", "pet_rabbit", "pet_tiger", "pet_squirrel"])
-	bag.set("_active_pet", "pet_mushroom")
-	bag.set("_paid_content", {})
-	bag.set("_sold_content", {})
-	bag.set("_active_tab", "pets")
-	bag.set("_selected_pet", "pet_mushroom")
-	_show(bag)
-	for _i in SETTLE_FRAMES:
-		await get_tree().process_frame
-	for pet_id in ["pet_rabbit", "pet_tiger", "pet_squirrel", "pet_cat"]:
-		bag.set("_selected_pet", pet_id)
-		bag.call("_refresh_pet_selection")
-		for _i in 6:
-			await get_tree().process_frame
-	await _settle_and_shot("bag_pet_switch_1280")
-	_clear_screen()
-
-
-func _capture_bag_single_pet() -> void:
-	var bag := _fixture_bag()
-	bag.set("_owned_pets", ["pet_cat"])
-	bag.set("_active_tab", "pets")
-	bag.set("_selected_pet", "pet_cat")
-	_show(bag)
-	await _settle_and_shot("bag_single_pet_1280")
-	_clear_screen()
-
-
 func _capture_mail() -> void:
 	MailService.apply_list([{
 		"id": 1, "title_zh": "分发宝石金币", "body_zh": "分发宝石金币",
@@ -216,16 +161,49 @@ func _capture_mail() -> void:
 	MailService.reset()
 
 
+# 背包接口 body 的固定一份（BagScreen._adopt 吃的就是它）：三种体验卡、三种天数，一张目标已永久拥有。
+const BAG_FIXTURE := {
+	"cards": [
+		{"target": "dark", "kind": "race", "days": 3, "count": 2, "sell_price": 200, "owned": false},
+		{"target": "dark", "kind": "race", "days": 7, "count": 1, "sell_price": 300, "owned": false},
+		{"target": "pet_tiger", "kind": "pet", "days": 1, "count": 1, "sell_price": 100, "owned": false},
+		{"target": "prep_skin_sakura", "kind": "prep_skin", "days": 7, "count": 1, "sell_price": 300, "owned": true},
+	],
+	"trials": [{"target": "dark", "kind": "race", "expires_at": "2026-11-23T10:00:00Z"}],
+	"server_now": "2026-11-20T10:00:00Z",
+}
+
+
 func _fixture_bag() -> Control:
 	var bag := BAG.new()
-	bag.set_meta("ui_capture_fixture", true)
-	bag.set("_loading", false)
-	bag.set("_owned_pets", ["pet_mushroom", "pet_cat", "pet_rabbit"])
-	bag.set("_active_pet", "pet_cat")
-	bag.set("_paid_content", {})
-	bag.set("_sold_content", {})
+	bag.set_meta("ui_capture_fixture", BAG_FIXTURE)
 	return bag
 
+
+func _capture_bag_trials() -> void:
+	_show(_fixture_bag())
+	await _settle_and_shot("bag_trials_1280")
+	_clear_screen()
+
+
+func _capture_bag_empty_tab() -> void:
+	var bag := _fixture_bag()
+	_show(bag)
+	bag.call("_select_tab", "gifts")
+	await _settle_and_shot("bag_empty_gifts_1280")
+	_clear_screen()
+
+
+func _capture_race_trial_dialog() -> void:
+	var dialog: Control = RACE_TRIAL.new()
+	dialog.call("configure", "dark")
+	dialog.set_meta("ui_capture_fixture", true)
+	_show(dialog)
+	dialog.set("_coin", 250)
+	dialog.set("_bought", [3])
+	dialog.call("_render_offer")
+	await _settle_and_shot("race_trial_dialog_1280")
+	_clear_screen()
 
 func _show(screen: Control) -> void:
 	_screen = screen

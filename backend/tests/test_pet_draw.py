@@ -6,7 +6,7 @@ import uuid
 
 import pytest
 
-from app import pet_draw, shop
+from app import pet_draw, shop, trial
 
 
 class FakeConn:
@@ -17,6 +17,7 @@ class FakeConn:
         self.draws: dict[uuid.UUID, dict] = {}
         self.money_writes: list[dict] = []
         self.grants: list[str] = []
+        self.cards: list[tuple[str, int]] = []
 
     async def __aenter__(self):
         return self
@@ -46,6 +47,7 @@ class FakeConn:
             self.draws[args[2]] = {
                 "draw_id": args[0], "pet_id": args[3],
                 "coin_reward": args[4], "misses_after": args[6],
+                "trial_target": args[7], "trial_days": args[8],
             }
         else:
             raise AssertionError(sql)
@@ -85,6 +87,16 @@ def draw_db(monkeypatch):
     monkeypatch.setattr(shop, "_lock_wallet", lock_wallet)
     monkeypatch.setattr(shop, "_apply", apply)
     monkeypatch.setattr(shop, "_grant", grant)
+
+    # 047 体验卡：没抽中默认「只给游戏币」，要测卡的用例自己改 roll_miss。
+    monkeypatch.setattr(trial, "roll_miss", lambda: (True, 0))
+
+    async def add_cards(c, _player, target, days, count, kind, **kw):
+        assert kind == "pet_draw" and count == 1 and kw.get("draw_id")
+        c.cards.append((target, days))
+        return 1
+
+    monkeypatch.setattr(trial, "add_cards", add_cards)
     return conn
 
 
@@ -147,3 +159,41 @@ def test_rejected_draw_never_charges(draw_db):
         asyncio.run(pet_draw.draw(player, uuid.uuid4()))
     assert complete.value.code == "pool_complete"
     assert draw_db.money_writes == []
+
+
+def test_miss_can_give_a_trial_card_for_an_unowned_pet(draw_db, monkeypatch):
+    """047：没抽中时三选一。只给卡 = 不给游戏币；两样都给 = 游戏币 + 卡；卡挑的是还没拥有的奖池宠物。"""
+    monkeypatch.setattr(pet_draw.secrets, "randbelow", lambda _: 1)
+    monkeypatch.setattr(pet_draw.secrets, "choice", lambda available: available[-1])
+    draw_db.owned = {"pet_squirrel"}
+    player = uuid.uuid4()
+
+    monkeypatch.setattr(trial, "roll_miss", lambda: (False, 3))
+    card_only = asyncio.run(pet_draw.draw(player, uuid.uuid4()))
+    assert card_only.pet_id == "" and card_only.coin_reward == 0
+    assert (card_only.trial_target, card_only.trial_days) == ("pet_tiger", 3)
+    assert draw_db.money_writes == [{"diamond_free": -50, "diamond_paid": -25}]
+
+    monkeypatch.setattr(trial, "roll_miss", lambda: (True, 7))
+    draw_id = uuid.uuid4()
+    both = asyncio.run(pet_draw.draw(player, draw_id))
+    assert both.coin_reward == 100 and (both.trial_target, both.trial_days) == ("pet_tiger", 7)
+    assert draw_db.cards == [("pet_tiger", 3), ("pet_tiger", 7)]
+
+    replay = asyncio.run(pet_draw.draw(player, draw_id))
+    assert replay.replayed and (replay.trial_target, replay.trial_days) == ("pet_tiger", 7)
+    assert len(draw_db.cards) == 2
+
+
+def test_trial_card_odds_shown_to_players_match_the_server():
+    """047：没抽中时的三选一与体验卡天数也要公示（同 test_iap 钉着的抽中概率）。改了 trial.py 两边一起改。"""
+    import pathlib
+    dialog = (pathlib.Path(__file__).resolve().parents[2] / "scenes" / "menu" / "PetDrawDialog.gd").read_text(
+        encoding="utf-8")
+    outcomes = dict(trial.MISS_OUTCOMES)
+    assert "只得 %d 金币 %d%%" % (pet_draw.MISS_COIN, outcomes["coin"]) in dialog
+    assert "只得宠物体验卡 %d%%" % outcomes["card"] in dialog
+    assert "两样都得 %d%%" % outcomes["both"] in dialog
+    for days, weight in trial.DAY_WEIGHTS:
+        assert "%d天 %d%%" % (days, weight) in dialog
+        assert "%dd %d%%" % (days, weight) in dialog

@@ -1,107 +1,90 @@
 extends Control
 
-# 背包界面（docs/商城系统设计.md）。入口：主菜单右上角「背包」。
+# 背包界面。入口：主菜单右上角「背包」。
 #
-# 三个分区：宠物 / 头像 / 头像框。显示玩家能用的东西，宠物可以直接「设为出战」。
+# 2026-11-20 改版（用户定）：
+#   · 去掉头像和宠物 —— 换宠物在备战页（PetScreen），换头像在资料页（ProfileScreen），
+#     这里不再各做一份（两处要同步的逻辑迟早不一致）。
+#   · 分页：全部 / 道具 / 体验卡 / 礼物 / 活动。现在只有体验卡；道具、礼物、活动暂时没有东西，显示空页。
 #
-# ## 🔴 「拥有」不等于「归属表里有」
+# 体验卡（规则在 backend/app/trial.py）：
+#   · 来源：宠物祈愿、樱花祈愿没抽中时附带；商城「棋子」页用游戏币买种族卡。
+#   · 卡放在背包里不计时，点「使用」才开始；同一目标再用一张，时间往后叠。
+#   · 已经永久拥有的目标，卡不能用，只能卖；任何卡都能卖（1/3/7 天 = 100/200/300 游戏币）。
+#   · 背包里的卡永不过期。
+#   · 正在体验的东西不在背包里列，剩余时间显示在用到它的地方（备战页的种族 / 皮肤 / 宠物卡上）。
+#     这里只在选中一张卡时顺带说一句「这个目标正在体验中，剩 X」。
 #
-# `GET /v1/me/entitlements` 只回**卖过的**内容。现有那 20 张头像和默认头像框
-# 不在服务端目录里，所以一条归属记录都没有 —— 但它们人人可用（免费）。
+# ## 🔴 选中不重建格子
 #
-# 所以这一页的头像分区是「目录里所有的免费头像 + 买过的付费头像」，
-# 不是「归属表里的那些」。照后者写会让每个玩家打开背包发现自己什么都没有。
-# 判定的唯一真相在服务端 shop.requires_entitlement()，客户端这边靠
-# 「目录里有没有」来推：付费内容一定在 /v1/shop 里，免费的一定不在。
-#
-# ## 换装为什么只做宠物
-#
-# 头像与头像框的选择器已经在资料页（ProfileScreen + AvatarPickerPanel），
-# 那里还带改名、签名、可见性一整套。在这里再做一份就是两处要同步的逻辑，
-# 而且玩家换头像的习惯入口本来就是资料页。这里只展示，点了跳过去。
+# 同旧版背包（10.08 反馈第 6 条）：选中只改卡框颜色、重画右侧详情。重建网格会把正在处理这次点击的
+# 格子 remove + queue_free，安卓的模拟鼠标事件随后命中一批还没布局的新格子，表现是「点第一个跳到最后一个」。
+# 只有数据变了（拉到新背包、用了 / 卖了一张）才走 _render()。
 
 signal back_requested
-signal profile_requested   # 头像那块点一下 -> 资料页（换装在那边）
 
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 const Theming := preload("res://ui/theme/GloryTheme.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
-# 11.11 羊皮纸风：储藏室背景 + 羊皮纸面板 / 格子（ui/theme/ParchmentKit.gd）。
 const Kit := preload("res://ui/theme/ParchmentKit.gd")
 const UiJuice := preload("res://ui/theme/UiJuice.gd")
-const SECTION_COLOR := Color("8a4b12")
-const BAD_COLOR := Color("a3271a")
-const PANEL_PAD := Vector4(66, 46, 60, 26)
-# 选中的格子染一点金，没选中的保持羊皮纸
-const PICK_TINT := Color(1.0, 0.86, 0.56)
-const PetPreview := preload("res://scripts/pets/PetPreview.gd")
-const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
-const PetService := preload("res://scripts/pets/PetService.gd")
-
-const PET_CARD := Vector2(116, 108)
-const PET_PREVIEW := Vector2(88, 62)
-const PET_DETAIL_PREVIEW := Vector2(480, 376)
-# 大图演示台的**地板高度**（10.12 第 1 条）。演示台本体是普通 Control，
-# 高度取「可用空间」与这个地板值的较大者；立绘在它内部按 KEEP_ASPECT 自适应。
-# 地板值必须够矮：矮屏（960×540）下页面总最小高度一旦超过窗口，末尾的宠物栏
-# 就会再次被顶出屏幕（门禁 bag_pet_layout 覆盖三种尺寸）。
-const PET_STAGE_MIN := Vector2(0, 140)
-# 右侧档案面板的地板高度。面板不再随文案变高，长文案在面板内部滚动。
-# 200 = 在 960×540 这种矮屏上也能给顶部页眉 / 页签 / 大图 / 宠物栏留出位置
-# （实测：240 时整页最小高度比 540 高出 28px，宠物栏会被顶出屏幕）。
-const PET_DETAIL_MIN_HEIGHT := 200.0
-const AVATAR_TILE := Vector2(126, 126)
-const DETAIL_WIDTH := 344.0
-const PET_COLUMNS := 3
-const AVATAR_COLUMNS := 8
-
-const TAB_PETS := "pets"
-const TAB_AVATARS := "avatars"
+const Card := preload("res://ui/components/TrialCardKit.gd")
+const SellDialog := preload("res://ui/components/TrialSellDialog.gd")
+const Currency := preload("res://scripts/account/Currency.gd")
 const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 
-var _busy := false
-var _loading := true
-var _owned_pets: Array = []
-var _active_pet := ""
-var _paid_content: Dictionary = {}   # 内容 id -> true，玩家买到的付费内容
-var _sold_content: Dictionary = {}   # 内容 id -> true，服务端目录里在卖的
-var _notice := ""
-var _notice_bad := false
-var _active_tab := TAB_PETS
-var _selected_pet := ""
-var _selected_avatar := ""
+const SECTION_COLOR := Color("8a4b12")
+const PICK_TINT := Color(1.0, 0.86, 0.56)
+const TILE := Vector2(126, 126)
+const DETAIL_WIDTH := 360.0
+const DETAIL_TILE := Vector2(150, 150)
+# 一行放几张按左边面板的宽度现算（矮 / 窄屏少放几张，不把整页撑出屏幕）。
+const MIN_COLUMNS := 2
 
-var _grid: GridContainer
-var _detail: VBoxContainer
-var _empty_label: Label
-var _notice_label: Label
+const TAB_ALL := "all"
+const TAB_ITEMS := "items"
+const TAB_TRIALS := "trials"
+const TAB_GIFTS := "gifts"
+const TAB_EVENTS := "events"
+const TABS := [
+	{"id": TAB_ALL, "zh": "全部", "en": "All"},
+	{"id": TAB_ITEMS, "zh": "道具", "en": "Items"},
+	{"id": TAB_TRIALS, "zh": "体验卡", "en": "Trials"},
+	{"id": TAB_GIFTS, "zh": "礼物", "en": "Gifts"},
+	{"id": TAB_EVENTS, "zh": "活动", "en": "Events"},
+]
+# 体验卡排在「全部」里的顺序：种族、宠物、棋盘皮肤。
+const KIND_ORDER := ["race", "pet", "prep_skin"]
+
+var _loading := true
+var _load_failed := false
+var _busy := false
+var _cards: Array = []          # 背包接口的 cards，排好序
+var _trials: Dictionary = {}    # 正在体验：target -> expires_at
+var _clock_offset := 0.0
+var _active_tab := TAB_ALL
+var _selected := ""             # "target|days"
+var _pending_use: Dictionary = {}   # "target|days" -> 操作号（断网重试同一笔）
+
 var _tab_buttons: Dictionary = {}
-var _pet_page: Control
-var _avatar_page: Control
-var _pet_roster: Control
-var _pet_stage: Control
-var _pet_grid: GridContainer
-var _pet_detail: VBoxContainer
-var _pet_info_scroll: ScrollContainer
-var _pet_action: Button
-var _pet_empty: Label
-var _avatar_grid: GridContainer
-var _avatar_detail: VBoxContainer
-var _avatar_empty: Label
-# 当前网格里每个瓦片 Control，按 id 建索引。选中的时候只改这几个的样式，
-# **不重建** —— 重建会踩掉正在处理这次点击的那个控件（见 _select_avatar 的注释）。
-var _avatar_tiles: Dictionary = {}   # value -> PanelContainer
-var _pet_tiles: Dictionary = {}      # pet_id -> PanelContainer
+var _grid: GridContainer
+var _grid_scroll: ScrollContainer
+var _empty_label: Label
+var _detail: VBoxContainer
+# 「出售」「使用」钉在详情面板底部、滚动区外面：矮屏上文案一长，按钮也不会被滚到看不见的地方。
+var _actions: HBoxContainer
+var _tiles: Dictionary = {}     # key -> PanelContainer
 
 
 func _ready() -> void:
 	theme = Kit.theme()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build()
-	_render()
-	# 开发截图场景会在进树前灌固定收藏；不发网络请求，保证视觉回归图稳定。
+	# 开发截图 / 布局门禁在进树前灌一份固定背包（背包接口的 body 形状），不发网络请求。
 	if has_meta("ui_capture_fixture"):
+		_adopt(get_meta("ui_capture_fixture") as Dictionary)
 		return
+	_render()
 	_reload()
 
 
@@ -109,179 +92,75 @@ func _ready() -> void:
 
 func _build() -> void:
 	Kit.backdrop(self, "inventory_storage")
-
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	for side in ["left", "right", "top", "bottom"]:
 		margin.add_theme_constant_override("margin_" + side, Tokens.PAD)
 	add_child(margin)
-	# 灵动岛 / 圆角那几条让出来；背景（bg、dim）照样铺满（ui/services/SafeArea.gd）。
+	# 灵动岛 / 圆角那几条让出来；背景照样铺满（ui/services/SafeArea.gd）。
 	SafeArea.track(margin)
 
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", Tokens.GAP_M)
 	margin.add_child(root)
-	var header := _header()
+	var header := Kit.header(_t("背包", "Bag"), func() -> void: back_requested.emit())
 	root.add_child(header)
-
-	_notice_label = Label.new()
-	_notice_label.name = "Notice"
-	_notice_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_notice_label.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
-	Kit.on_backdrop(_notice_label)
-	_notice_label.visible = false
-	root.add_child(_notice_label)
-
 	var tabs := _tab_bar()
 	root.add_child(tabs)
-	_pet_page = _build_pet_page()
-	root.add_child(_pet_page)
-	_avatar_page = HBoxContainer.new()
-	_avatar_page.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_avatar_page.add_theme_constant_override("separation", Tokens.GAP_M)
-	root.add_child(_avatar_page)
-	_avatar_page.add_child(_collection_panel())
-	_avatar_grid = _grid
-	_avatar_empty = _empty_label
-	_avatar_page.add_child(_detail_panel())
-	_avatar_detail = _detail
-	_avatar_page.hide()
-	UiJuice.pop_in([header, tabs, _pet_page, _avatar_page], 0.0, 0.06, 0.93)
 
-
-func _build_pet_page() -> Control:
-	var page := VBoxContainer.new()
+	var page := HBoxContainer.new()
+	page.name = "BagPage"
 	page.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	page.add_theme_constant_override("separation", Tokens.GAP_S)
-	var content := HBoxContainer.new()
-	content.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	content.add_theme_constant_override("separation", Tokens.GAP_L)
-	page.add_child(content)
-	var exhibit := VBoxContainer.new()
-	exhibit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	exhibit.add_theme_constant_override("separation", Tokens.GAP_S)
-	content.add_child(exhibit)
-	var caption := Label.new()
-	caption.text = _t("我的伙伴", "MY COMPANIONS")
-	caption.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
-	Kit.on_backdrop(caption)
-	exhibit.add_child(caption)
-	# ★ 10.12 第 1 条：这里**不能用 CenterContainer**。
-	#
-	# CenterContainer 会把子节点的最小尺寸当成自己的最小尺寸上报，而立绘框的最小尺寸
-	# 是 PET_DETAIL_PREVIEW（480×376）—— 于是「文案越长（松鼠 / 老虎）→ 右侧档案面板
-	# 越高 → content 行越高 → 整页最小高度越大」，最后把排在页面末尾的宠物栏
-	# 顶到屏幕外（用户实拍：点松鼠宠物名字被遮一半、点老虎整个选择栏消失）。
-	# 演示台改成普通 Control + clip_contents：它不参与子节点的最小尺寸计算，
-	# 立绘铺满它并按 KEEP_ASPECT_CENTERED 自适应缩放，永远不会越界盖住别的区域。
-	_pet_stage = Control.new()
-	_pet_stage.custom_minimum_size = PET_STAGE_MIN
-	_pet_stage.clip_contents = true
-	_pet_stage.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_pet_stage.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_pet_stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	exhibit.add_child(_pet_stage)
-	_pet_empty = Label.new()
-	_pet_empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	Kit.on_backdrop(_pet_empty)
-	exhibit.add_child(_pet_empty)
-	var information := PanelContainer.new()
-	information.custom_minimum_size.x = DETAIL_WIDTH
-	# ★ 10.12 第 1 条：面板高度**只由这个地板值决定**（原来是 240 + 内容撑高）。
-	# 以前文案一长，PanelContainer 的最小高度就跟着涨，最终把底部宠物栏挤出屏幕。
-	# 现在长文案在面板内部滚动，页面高度不再受文案长度影响。
-	information.custom_minimum_size.y = PET_DETAIL_MIN_HEIGHT
-	information.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	information.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(58, 54, 58, 42)))
-	content.add_child(information)
-	var info_column := VBoxContainer.new()
-	info_column.add_theme_constant_override("separation", Tokens.GAP_S)
-	information.add_child(info_column)
-	_pet_info_scroll = TouchScrollContainer.new()
-	_pet_info_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_pet_info_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_pet_info_scroll.clip_contents = true
-	info_column.add_child(_pet_info_scroll)
-	_pet_detail = VBoxContainer.new()
-	_pet_detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_pet_detail.add_theme_constant_override("separation", Tokens.GAP_M)
-	_pet_info_scroll.add_child(_pet_detail)
-	_pet_action = ACTION_BUTTON.instantiate()
-	_pet_action.custom_minimum_size = Vector2(0, Tokens.BUTTON_HEIGHT)
-	_pet_action.size_flags_horizontal = Control.SIZE_FILL
-	_pet_action.pressed.connect(func() -> void: _set_active(_selected_pet))
-	_pet_action.hide()
-	info_column.add_child(_pet_action)
-	_pet_roster = TouchScrollContainer.new()
-	_pet_roster.custom_minimum_size.y = 120
-	_pet_roster.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_pet_roster.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	page.add_child(_pet_roster)
-	_pet_grid = GridContainer.new()
-	_pet_grid.columns = 1
-	_pet_grid.add_theme_constant_override("h_separation", Tokens.GAP_S)
-	_pet_roster.add_child(_pet_grid)
-	_grid = _pet_grid
-	_detail = _pet_detail
-	_empty_label = _pet_empty
-	return page
+	page.add_theme_constant_override("separation", Tokens.GAP_M)
+	root.add_child(page)
+	page.add_child(_collection_panel())
+	page.add_child(_detail_panel())
+	UiJuice.pop_in([header, tabs, page], 0.0, 0.06, 0.93)
 
 
 func _tab_bar() -> Control:
-	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	var row := HBoxContainer.new()
+	row.name = "BagTabs"
 	row.add_theme_constant_override("separation", Tokens.GAP_M)
-	panel.add_child(row)
-	for entry in [
-		{"id": TAB_PETS, "zh": "宠物", "en": "Pets"},
-		{"id": TAB_AVATARS, "zh": "头像", "en": "Avatars"},
-	]:
+	for entry in TABS:
 		var tab_id := str(entry.id)
 		var button: Button = ACTION_BUTTON.instantiate()
+		button.name = "Tab_%s" % tab_id
 		button.text = _t(str(entry.zh), str(entry.en))
 		Kit.style_tab(button, 50.0, 20)
 		button.pressed.connect(func() -> void: _select_tab(tab_id))
 		row.add_child(button)
 		_tab_buttons[tab_id] = button
-	return panel
+	return row
 
 
 func _collection_panel() -> Control:
 	var panel := PanelContainer.new()
+	panel.name = "BagCollection"
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	# 头像格一行 8 个，边距用大面板默认值会把整页撑出屏幕：这块收窄
 	panel.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(34, 40, 34, 20)))
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", Tokens.GAP_S)
-	panel.add_child(col)
-
-	var head := MarginContainer.new()
-	head.custom_minimum_size.y = 34
-	head.add_theme_constant_override("margin_left", 40)
-	col.add_child(head)
-	var title := Label.new()
-	title.text = _t("我的收藏", "My Collection")
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title.add_theme_font_size_override("font_size", Tokens.FONT_BUTTON)
-	title.add_theme_color_override("font_color", SECTION_COLOR)
-	head.add_child(title)
-
 	var scroll := TouchScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	col.add_child(scroll)
+	panel.add_child(scroll)
+	_grid_scroll = scroll
+	scroll.resized.connect(_fit_columns)
 	var holder := VBoxContainer.new()
 	holder.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	holder.add_theme_constant_override("separation", Tokens.GAP_S)
 	scroll.add_child(holder)
 	_empty_label = Label.new()
+	_empty_label.name = "BagEmpty"
 	_empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_empty_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_empty_label.custom_minimum_size.y = 120
+	_empty_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_empty_label.add_theme_color_override("font_color", Kit.INK_SOFT)
 	holder.add_child(_empty_label)
 	_grid = GridContainer.new()
-	_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_grid.name = "BagGrid"
+	_grid.columns = MIN_COLUMNS
 	_grid.add_theme_constant_override("h_separation", Tokens.GAP_S)
 	_grid.add_theme_constant_override("v_separation", Tokens.GAP_S)
 	holder.add_child(_grid)
@@ -290,63 +169,96 @@ func _collection_panel() -> Control:
 
 func _detail_panel() -> Control:
 	var panel := PanelContainer.new()
+	panel.name = "BagDetailPanel"
 	panel.custom_minimum_size = Vector2(DETAIL_WIDTH, 0)
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	panel.add_theme_stylebox_override("panel", Kit.box("panel", PANEL_PAD))
+	panel.add_theme_stylebox_override("panel", Kit.box("panel", Vector4(56, 46, 56, 30)))
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", Tokens.GAP_S)
+	panel.add_child(column)
+	var scroll := TouchScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	column.add_child(scroll)
+	_actions = HBoxContainer.new()
+	_actions.name = "BagActions"
+	_actions.alignment = BoxContainer.ALIGNMENT_CENTER
+	_actions.add_theme_constant_override("separation", Tokens.GAP_M)
+	column.add_child(_actions)
 	_detail = VBoxContainer.new()
-	_detail.name = "CollectionDetail"
+	_detail.name = "BagDetail"
+	_detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_detail.add_theme_constant_override("separation", Tokens.GAP_S)
-	panel.add_child(_detail)
+	scroll.add_child(_detail)
 	return panel
 
 
-func _header() -> Control:
-	var profile: Button = ACTION_BUTTON.instantiate()
-	profile.text = _t("个人资料 →", "Profile →")
-	profile.custom_minimum_size = Vector2(150, Tokens.TOUCH_MIN)
-	Kit.style_plate(profile, false)
-	profile.pressed.connect(func() -> void: profile_requested.emit())
-	var row := Kit.header(_t("收藏背包", "Collection Bag"), func() -> void: back_requested.emit(), profile)
-	# 右侧那颗按钮比返回键宽：左边垫一块透明占位补齐，标题才在正中（不能去拉返回键本身，会变形）
-	var pad := Control.new()
-	pad.custom_minimum_size = Vector2(150 - (row.get_child(0) as Control).custom_minimum_size.x, 0)
-	pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(pad)
-	row.move_child(pad, 1)
-	return row
+func _fit_columns() -> void:
+	if _grid == null or _grid_scroll == null:
+		return
+	var gap := float(Tokens.GAP_S)
+	# 竖向滚动条出现时会占掉一条宽度，先让出来，免得列数在有无滚动条之间来回跳。
+	var width := _grid_scroll.size.x - 14.0
+	var columns := maxi(MIN_COLUMNS, int(floor((width + gap) / (TILE.x + gap))))
+	if columns != _grid.columns:
+		_grid.columns = columns
 
 
-# --- 拉数据 -------------------------------------------------------------------
+# --- 数据 ---------------------------------------------------------------------
 
 func _reload() -> void:
 	_loading = true
 	_render()
-	# 宠物走 PlayerProfile —— 它是归属缓存的唯一主人。直连 AccountManager 的话，
-	# 这里换了出战宠物、备战页还显示旧的（两处各自维护一份缓存）。
-	var pets_ok := await PlayerProfile.refresh_pets()
-	var owned: Dictionary = await AccountManager.fetch_entitlements()
-	# 目录只用来回答「这个内容是不是付费的」，见文件头那段。
-	var catalog: Dictionary = await AccountManager.fetch_shop()
+	var result: Dictionary = await AccountManager.fetch_bag()
 	if not is_inside_tree():
 		return
 	_loading = false
+	if int(result.get("code", 0)) / 100 != 2:
+		_load_failed = true
+		_render()
+		return
+	_load_failed = false
+	_adopt(result.get("body", {}))
 
-	# 拉失败也照样读缓存：PlayerProfile 失败时不动旧值，显示上次那份比显示空好。
-	_owned_pets = PlayerProfile.owned_pets.duplicate()
-	_active_pet = PlayerProfile.get_active()
-	if not pets_ok and not PlayerProfile.pets_loaded:
-		_set_notice(_t("宠物列表没拉到，稍后再试", "Could not load your pets — try again later"), true)
 
-	_paid_content.clear()
-	if int(owned.get("code", 0)) / 100 == 2:
-		for id in ((owned.get("body", {}) as Dictionary).get("items", []) as Array):
-			_paid_content[str(id)] = true
-
-	_sold_content.clear()
-	if int(catalog.get("code", 0)) / 100 == 2:
-		for raw in ((catalog.get("body", {}) as Dictionary).get("items", []) as Array):
-			_sold_content[str((raw as Dictionary).get("grants", ""))] = true
+func _adopt(body: Dictionary) -> void:
+	_loading = false
+	_clock_offset = Card.clock_offset(str(body.get("server_now", "")))
+	_trials = Card.trial_map(body.get("trials", []))
+	_cards.clear()
+	for raw in body.get("cards", []):
+		if raw is Dictionary and int(raw.get("count", 0)) > 0:
+			_cards.append(raw)
+	_cards.sort_custom(_card_before)
 	_render()
+
+
+static func _card_before(a: Dictionary, b: Dictionary) -> bool:
+	var ka := KIND_ORDER.find(str(a.get("kind", "")))
+	var kb := KIND_ORDER.find(str(b.get("kind", "")))
+	if ka != kb:
+		return ka < kb
+	if str(a.get("target", "")) != str(b.get("target", "")):
+		return str(a.get("target", "")) < str(b.get("target", ""))
+	return int(a.get("days", 0)) < int(b.get("days", 0))
+
+
+static func _key(card: Dictionary) -> String:
+	return "%s|%d" % [str(card.get("target", "")), int(card.get("days", 0))]
+
+
+func _visible_cards() -> Array:
+	# 现在只有体验卡：「全部」「体验卡」两页显示它们，其余三页是空的。
+	if _active_tab == TAB_ALL or _active_tab == TAB_TRIALS:
+		return _cards
+	return []
+
+
+func _card_by_key(key: String) -> Dictionary:
+	for card in _cards:
+		if _key(card) == key:
+			return card
+	return {}
 
 
 # --- 渲染 ---------------------------------------------------------------------
@@ -354,272 +266,167 @@ func _reload() -> void:
 func _render() -> void:
 	if _grid == null:
 		return
-	var pets := _active_tab == TAB_PETS
-	_pet_action.hide()
-	_pet_page.visible = pets
-	_avatar_page.visible = not pets
-	_grid = _pet_grid if pets else _avatar_grid
-	_detail = _pet_detail if pets else _avatar_detail
-	_empty_label = _pet_empty if pets else _avatar_empty
-	_pet_roster.visible = pets and _owned_pets.size() > 1
-	_clear_children(_pet_stage)
-	_notice_label.visible = not _notice.is_empty()
-	_notice_label.text = _notice
-	_notice_label.add_theme_color_override(
-		"font_color", Color("ffb3a3") if _notice_bad else Color("ffe08a"))
-
 	for tab_id in _tab_buttons:
-		var tab_button := _tab_buttons[tab_id] as Button
-		tab_button.set_pressed_no_signal(str(tab_id) == _active_tab)
-
+		(_tab_buttons[tab_id] as Button).set_pressed_no_signal(str(tab_id) == _active_tab)
 	_clear_children(_grid)
-	_clear_children(_detail)
-	var avatars := _usable_avatars() if not _loading else []
-
+	_tiles.clear()
 	if _loading:
-		_empty_label.text = _t("正在整理收藏…", "Organizing your collection…")
-		_empty_label.visible = true
-		_detail.add_child(_detail_hint(_t("正在读取你的物品", "Loading your items")))
+		_show_empty(_t("正在整理背包…", "Organizing your bag…"))
+		_render_detail_hint(_t("正在读取你的物品", "Loading your items"))
 		return
-
-	if _active_tab == TAB_PETS:
-		_grid.columns = maxi(1, _owned_pets.size())
-		if _owned_pets.is_empty():
-			_empty_label.text = _t("还没有宠物。去商店看看吧。", "No pets yet. Visit the Shop to find one.")
-			_empty_label.visible = true
-			_detail.add_child(_detail_hint(_t("获得宠物后，可以在这里设为出战", "Equip a pet here after you unlock one")))
-			return
-		_empty_label.visible = false
-		if _selected_pet.is_empty() or not _owned_pets.has(_selected_pet):
-			_selected_pet = _active_pet if _owned_pets.has(_active_pet) else str(_owned_pets[0])
-		if _owned_pets.size() > 1:
-			_pet_tiles.clear()
-			for pet_id in _owned_pets:
-				var card := _pet_card(str(pet_id))
-				_pet_tiles[str(pet_id)] = card
-				_grid.add_child(card)
-		_render_pet_detail(_selected_pet)
+	if _load_failed:
+		_show_empty(_t("背包没拉到，稍后再试", "Could not load your bag — try again later"))
+		_render_detail_retry()
 		return
-
-	_grid.columns = AVATAR_COLUMNS
-	if avatars.is_empty():
-		_empty_label.text = _t("没有可用的头像", "No avatars available")
-		_empty_label.visible = true
-		_detail.add_child(_detail_hint(_t("头像会显示在这里", "Your avatars will appear here")))
+	var cards := _visible_cards()
+	if cards.is_empty():
+		_show_empty(_empty_text())
+		_render_detail_hint(_t("选中一件物品查看详情", "Select an item to see details"))
 		return
 	_empty_label.visible = false
-	if _selected_avatar.is_empty() or not avatars.has(_selected_avatar):
-		_selected_avatar = str(avatars[0])
-	_avatar_tiles.clear()
-	for value in avatars:
-		var tile := _avatar_tile(str(value))
-		_avatar_tiles[str(value)] = tile
+	if _card_by_key(_selected).is_empty():
+		_selected = _key(cards[0])
+	for card in cards:
+		var key := _key(card)
+		var tile := Card.tile(card, TILE)
+		tile.name = "Card_%s_%d" % [str(card.get("target", "")), int(card.get("days", 0))]
+		tile.mouse_filter = Control.MOUSE_FILTER_STOP
+		tile.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		tile.gui_input.connect(_on_tile_input.bind(key))
+		_tiles[key] = tile
 		_grid.add_child(tile)
-	_render_avatar_detail(_selected_avatar)
+	_refresh_selection()
 
 
-func _pet_card(pet_id: String) -> Control:
-	var active := pet_id == _active_pet
-	var tile := PanelContainer.new()
-	tile.custom_minimum_size = PET_CARD
-	tile.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	_apply_pet_style(tile, pet_id, active)
-	tile.gui_input.connect(func(event: InputEvent) -> void:
-		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-			_select_pet(pet_id)
-		elif event is InputEventScreenTouch and event.pressed:
-			_select_pet(pet_id))
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 0)
-	tile.add_child(box)
-	box.add_child(_pet_preview_stage(pet_id, PET_PREVIEW, active))
-	var name_label := Label.new()
-	name_label.text = PetService.display_name(pet_id)
-	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	name_label.clip_text = true
-	name_label.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	name_label.add_theme_color_override("font_color", Kit.INK)
-	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.add_child(name_label)
-	return tile
+func _show_empty(text: String) -> void:
+	_empty_label.text = text
+	_empty_label.visible = true
 
 
-# 选中态只是**边框颜色**。把它单独抽出来，选中时只改颜色、不重建控件 ——
-# 重建会把正在处理这次点击的控件 remove_child + queue_free 掉。
-func _apply_pet_style(tile: PanelContainer, pet_id: String, active: bool) -> void:
-	var selected := pet_id == _selected_pet
-	tile.add_theme_stylebox_override("panel", Kit.box("slot", Vector4(10, 10, 10, 8),
-		PICK_TINT if selected else Color.WHITE))
+func _empty_text() -> String:
+	match _active_tab:
+		TAB_TRIALS:
+			return _t("还没有体验卡。宠物祈愿、樱花祈愿有机会获得，也可以在商城「棋子」页用游戏币购买种族体验卡。",
+				"No trial cards yet. Pet and Sakura draws can drop them, and race trials can be bought with coins on the Shop's Units page.")
+		TAB_ALL:
+			return _t("背包是空的", "Your bag is empty")
+	return _t("暂无物品", "Nothing here yet")
 
 
-func _apply_avatar_style(tile: PanelContainer, value: String) -> void:
-	tile.add_theme_stylebox_override(
-		"panel", Kit.box("slot", Vector4(8, 8, 8, 8),
-			PICK_TINT if value == _selected_avatar else Color.WHITE))
+func _on_tile_input(event: InputEvent, key: String) -> void:
+	var pressed := (event is InputEventMouseButton and event.pressed
+		and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT) \
+		or (event is InputEventScreenTouch and event.pressed)
+	if pressed and key != _selected:
+		_selected = key
+		_refresh_selection()
 
 
-# 玩家能用的头像：目录里没卖的（免费）+ 买到的付费的。见文件头那段。
-func _usable_avatars() -> Array:
-	var out: Array = []
-	for entry in AvatarCatalog.avatars():
-		var value := "preset:%s" % str((entry as Dictionary).get("id", ""))
-		if not _sold_content.get(value, false) or _paid_content.get(value, false):
-			out.append(value)
-	return out
+# 只重新上色 + 重画详情，不重建格子（见文件头）。
+func _refresh_selection() -> void:
+	for key in _tiles:
+		var tile = _tiles[key]
+		if tile is PanelContainer and is_instance_valid(tile):
+			var card := _card_by_key(str(key))
+			var tint: Color = Card.DAY_TINT.get(int(card.get("days", 1)), Color.WHITE)
+			(tile as PanelContainer).add_theme_stylebox_override("panel", Kit.box("slot",
+				Vector4(10, 10, 10, 10), tint * PICK_TINT if key == _selected else tint))
+	_render_detail(_card_by_key(_selected))
 
 
-func _avatar_tile(value: String) -> Control:
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size = AVATAR_TILE
-	panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	_apply_avatar_style(panel, value)
-	panel.gui_input.connect(func(event: InputEvent) -> void:
-		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-			_select_avatar(value)
-		elif event is InputEventScreenTouch and event.pressed:
-			_select_avatar(value))
-	var tex := AvatarCatalog.texture_for(value, true)
-	if tex == null:
-		panel.add_child(_detail_hint("?"))
-		return panel
-	var rect := TextureRect.new()
-	AvatarCatalog.set_avatar_texture(rect, tex)
-	rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	panel.add_child(rect)
-	return panel
+func _render_detail_hint(text: String) -> void:
+	_clear_children(_detail)
+	_clear_children(_actions)
+	var label := Label.new()
+	label.text = text
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.custom_minimum_size.y = 200
+	label.add_theme_color_override("font_color", Kit.INK_SOFT)
+	_detail.add_child(label)
 
 
-func _pet_preview_stage(pet_id: String, preview_size: Vector2, active: bool) -> Control:
-	var stage := Control.new()
-	stage.custom_minimum_size = Vector2(preview_size.x, preview_size.y + 8.0)
-	stage.mouse_filter = Control.MOUSE_FILTER_PASS
-	var well := PanelContainer.new()
-	well.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	well.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	well.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
-	stage.add_child(well)
-	var center := CenterContainer.new()
-	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	well.add_child(center)
-	var preview := PetPreview.build_illustration(pet_id, preview_size, false)
-	_ignore_mouse_tree(preview)
-	center.add_child(preview)
-	if active:
-		var badge := PanelContainer.new()
-		badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		badge.set_anchors_preset(Control.PRESET_CENTER_TOP)
-		badge.offset_left = -42
-		badge.offset_right = 42
-		badge.offset_top = 3
-		badge.offset_bottom = 37
-		badge.add_theme_stylebox_override("panel", Kit.box("plate_gold", Vector4(10, 11, 10, 7)))
-		stage.add_child(badge)
-		var caption := Label.new()
-		caption.text = _t("出战中", "EQUIPPED")
-		caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		caption.add_theme_font_size_override("font_size", 11)
-		caption.add_theme_color_override("font_color", SECTION_COLOR)
-		caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		badge.add_child(caption)
-	return stage
+func _render_detail_retry() -> void:
+	_render_detail_hint(_t("网络不太好", "Connection problem"))
+	_actions.add_child(_action(_t("重试", "Retry"), true, _reload))
 
 
-func _render_pet_detail(pet_id: String) -> void:
-	_pet_info_scroll.set_deferred("scroll_vertical", 0)
-	var active := pet_id == _active_pet
-	var artwork := PetPreview.build_illustration(pet_id, PET_DETAIL_PREVIEW, false)
-	_ignore_mouse_tree(artwork)
-	# ★ 10.12 第 1 条：立绘**铺满演示台**，尺寸由演示台说了算。
-	#   · 不清掉 custom_minimum_size 的话，Control 仍会把尺寸夹到 480×376，
-	#     演示台被压小以后立绘照样越界（这正是「图片异常往上覆盖」的来源）；
-	#   · 演示台是普通 Control（不是容器），锚点全铺即可跟着它缩放。
-	artwork.custom_minimum_size = Vector2.ZERO
-	artwork.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	# ★ 10.12 第 1 条**返修**（用户复测：「其他宠物的图片在后面对着 / 一直往上重叠」）：
-	#   挂新立绘前必须**先清空演示台**。演示台只有这一个写入点，而
-	#   `_render_pet_detail` 会被 `_refresh_pet_selection()`（点宠物卡片时）反复调用 ——
-	#   那里只清了右侧 `_pet_detail`（文案），**没清演示台**。于是每点一只宠物就往
-	#   演示台**追加**一张立绘：新立绘铺满演示台盖住旧的那张，但旧立绘的帽子 / 尾巴
-	#   会从新立绘四周露出来，正是用户截图里「猫的帽子后面还有蘑菇」的那种重影。
-	#   清空之后，演示台上永远只剩「当前选中的这一只」。
-	_clear_children(_pet_stage)
-	_pet_stage.add_child(artwork)
-	var eyebrow := Label.new()
-	eyebrow.text = _t("伙伴档案", "COMPANION PROFILE")
-	eyebrow.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	eyebrow.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	eyebrow.add_theme_color_override("font_color", SECTION_COLOR)
-	_detail.add_child(eyebrow)
-	var name_label := Label.new()
-	name_label.text = PetService.display_name(pet_id)
-	name_label.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
-	_detail.add_child(name_label)
-	var rule := HSeparator.new()
-	_detail.add_child(rule)
-	var effect := Label.new()
-	effect.text = PetService.effect_text(pet_id)
-	effect.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	effect.add_theme_font_size_override("font_size", Tokens.FONT_BODY)
-	effect.add_theme_color_override("font_color", Kit.INK)
-	_detail.add_child(effect)
-	var pet_detail := PetService.skill_detail_text(pet_id)
-	if not pet_detail.is_empty() and pet_detail != effect.text:
-		var detail_label := Label.new()
-		detail_label.text = pet_detail
-		detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		detail_label.add_theme_color_override("font_color", Kit.INK_SOFT)
-		_detail.add_child(detail_label)
-	var status := Label.new()
-	status.text = _t("✓ 当前出战宠物", "✓ Currently equipped") if active else _t("可设为出战", "Ready to equip")
-	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	status.add_theme_color_override("font_color", SECTION_COLOR if active else Kit.INK_SOFT)
-	_detail.add_child(status)
-	_pet_action.text = _t("出战中 ✓", "Equipped ✓") if active else _t("设为出战", "Set Active")
-	_pet_action.theme_type_variation = &"" if active else Theming.VARIATION_PRIMARY
-	_pet_action.disabled = active
-	_pet_action.show()
+func _render_detail(card: Dictionary) -> void:
+	if card.is_empty():
+		_render_detail_hint(_t("选中一件物品查看详情", "Select an item to see details"))
+		return
+	_clear_children(_detail)
+	_clear_children(_actions)
+	var kind := str(card.get("kind", ""))
+	var target := str(card.get("target", ""))
+	var days := int(card.get("days", 1))
+	var count := int(card.get("count", 1))
+	var owned := bool(card.get("owned", false))
+
+	_detail.add_child(_text(_t("体验卡 · %s", "TRIAL CARD · %s") % Card.kind_name(kind),
+		Tokens.FONT_CAPTION, SECTION_COLOR))
+	var tile_holder := CenterContainer.new()
+	var big := Card.tile(card, DETAIL_TILE)
+	big.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tile_holder.add_child(big)
+	_detail.add_child(tile_holder)
+	var title := _text(Card.card_title(kind, target, days), Tokens.FONT_BUTTON, Kit.INK)
+	title.name = "BagDetailTitle"
+	_detail.add_child(title)
+	_detail.add_child(_text(_t("拥有 %d 张", "You have %d") % count, Tokens.FONT_CAPTION, Kit.INK_SOFT))
+	_detail.add_child(HSeparator.new())
+	_detail.add_child(_text(_effect_text(kind, days), Tokens.FONT_BODY, Kit.INK))
+	if owned:
+		_detail.add_child(_text(_t("你已经永久拥有它了，这张卡不能使用，可以出售。",
+			"You already own this permanently. This card can't be used, but you can sell it."),
+			Tokens.FONT_CAPTION, Color("a3271a")))
+	elif _trials.has(target):
+		_detail.add_child(_text(_t("正在体验中 · %s。再用一张会往后叠加。", "Trial active · %s. Using another extends it.")
+			% Card.time_left(str(_trials[target]), _clock_offset), Tokens.FONT_CAPTION, SECTION_COLOR))
+	_detail.add_child(_text(_t("出售价格：%s 游戏币 / 张", "Sells for %s coins each")
+		% Currency.comma(int(card.get("sell_price", Card.PRICE.get(days, 0)))), Tokens.FONT_CAPTION, Kit.INK_SOFT))
+
+	var sell := _action(_t("出售", "Sell"), false, _open_sell.bind(card))
+	sell.name = "BagSell"
+	_actions.add_child(sell)
+	var use := _action(_t("已拥有", "Owned") if owned else _t("使用", "Use"), true, _use.bind(card))
+	use.name = "BagUse"
+	use.disabled = owned or _busy
+	_actions.add_child(use)
 
 
-func _render_avatar_detail(value: String) -> void:
-	var eyebrow := Label.new()
-	eyebrow.text = _t("头像预览", "AVATAR PREVIEW")
-	eyebrow.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	eyebrow.add_theme_color_override("font_color", SECTION_COLOR)
-	_detail.add_child(eyebrow)
-	var well := PanelContainer.new()
-	well.custom_minimum_size.y = 140
-	well.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	well.add_theme_stylebox_override("panel", Kit.box("slot", Vector4(14, 14, 14, 14)))
-	_detail.add_child(well)
-	var tex := AvatarCatalog.texture_for(value)
-	if tex != null:
-		var rect := TextureRect.new()
-		AvatarCatalog.set_avatar_texture(rect, tex)
-		rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		well.add_child(rect)
-	var name_label := Label.new()
-	name_label.text = AvatarCatalog.display_name(AvatarCatalog.id_from_value(value))
-	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	name_label.add_theme_font_size_override("font_size", Tokens.FONT_TITLE)
-	_detail.add_child(name_label)
-	var hint := Label.new()
-	hint.text = _t("头像的装备与个人资料保持同步", "Avatar selection is managed on your profile")
-	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hint.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
-	hint.add_theme_color_override("font_color", Kit.INK_SOFT)
-	_detail.add_child(hint)
-	var action: Button = ACTION_BUTTON.instantiate()
-	action.text = _t("前往个人资料更换", "Change in Profile")
-	action.theme_type_variation = Theming.VARIATION_PRIMARY
-	action.custom_minimum_size = Vector2(0, Tokens.BUTTON_HEIGHT)
-	action.pressed.connect(func() -> void: profile_requested.emit())
-	_detail.add_child(action)
+func _effect_text(kind: String, days: int) -> String:
+	match kind:
+		"race":
+			return _t("使用后 %d 天内可以带这一族出战（出战种族不满 4 个时自动带上，满了请到备战页更换）。",
+				"For %d days you can take this race into battle (added automatically if you have fewer than 4; otherwise swap it in Prep).") % days
+		"pet":
+			return _t("使用后 %d 天内可以把这只宠物设为出战（在备战页更换）。",
+				"For %d days you can set this pet as your active companion (in Prep).") % days
+		"prep_skin":
+			return _t("使用后 %d 天内可以使用这张棋盘皮肤（在备战页「棋盘皮肤」更换）。",
+				"For %d days you can use this board skin (change it in Prep → Board skins).") % days
+	return ""
+
+
+func _text(value: String, font_size: int, color: Color) -> Label:
+	var label := Label.new()
+	label.text = value
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", color)
+	return label
+
+
+func _action(text: String, primary: bool, cb: Callable) -> Button:
+	var b: Button = ACTION_BUTTON.instantiate()
+	b.text = text
+	b.custom_minimum_size = Vector2(130, Tokens.BUTTON_HEIGHT)
+	b.theme_type_variation = Theming.VARIATION_PRIMARY if primary else Theming.VARIATION_GHOST
+	b.pressed.connect(cb)
+	return b
 
 
 func _select_tab(tab_id: String) -> void:
@@ -629,61 +436,55 @@ func _select_tab(tab_id: String) -> void:
 	_render()
 
 
-func _select_pet(pet_id: String) -> void:
-	if _selected_pet == pet_id:
+# --- 使用 / 出售 --------------------------------------------------------------
+
+func _use(card: Dictionary) -> void:
+	if _busy or bool(card.get("owned", false)):
 		return
-	_selected_pet = pet_id
-	_refresh_pet_selection()
-
-
-func _select_avatar(value: String) -> void:
-	if _selected_avatar == value:
+	var key := _key(card)
+	var target := str(card.get("target", ""))
+	var kind := str(card.get("kind", ""))
+	var days := int(card.get("days", 1))
+	_busy = true
+	_render_detail(card)
+	if not _pending_use.has(key):
+		_pending_use[key] = AccountManager.new_client_order_id()
+	var result: Dictionary = await AccountManager.use_trial_card(str(_pending_use[key]), target, days)
+	if not is_inside_tree():
 		return
-	# ★ 10.08 反馈第 6 条：这里**不能**调 _render()。
-	#
-	# _render() 会 _clear_children(_grid)：把「正在处理这次点击」的那个瓦片
-	# remove_child + queue_free，再补一批新的。新控件本帧还没走到布局，全部堆在
-	# 第一个格子的位置上；而 Android 的 `emulate_mouse_from_touch` 会把同一次触摸
-	# 再投一路**模拟鼠标**事件 —— 它命中的是这批还没布局的新瓦片里**最上层的那一个**
-	# （子节点逆序命中 ⇒ 最后一个）。玩家看到的就是「点第一个，跳到最后一个」。
-	#
-	# 选中只改边框，没有任何理由重建列表：这里只重新上色 + 重画右侧详情。
-	_selected_avatar = value
-	_refresh_avatar_selection()
+	_busy = false
+	var code := int(result.get("code", 0))
+	if code / 100 != 2:
+		# 断网 / 5xx：留着操作号，再点是重试同一笔（服务器只用一张卡）。
+		if code != 0 and code < 500:
+			_pending_use.erase(key)
+		GloryToast.show_text(str(result.get("error", _t("使用失败", "Could not use it"))))
+		_render_detail(card)
+		return
+	_pending_use.erase(key)
+	var expires := str((result.get("body", {}) as Dictionary).get("expires_at", ""))
+	GloryToast.show_text(_t("%s体验已生效，%s", "%s trial is active — %s") % [
+		Card.target_name(kind, target), Card.time_left(expires, _clock_offset)])
+	# 各自的缓存主人拉一次，备战页 / 摆放界面马上认得这次体验。
+	if kind == "race":
+		PlayerProfile.refresh_races()
+	elif kind == "pet":
+		PlayerProfile.refresh_pets()
+	_reload()
 
 
-# 只更新选中态，不重建控件。网格内容变了（切页签 / 重新拉数据）才走 _render()。
-func _refresh_avatar_selection() -> void:
-	for key in _avatar_tiles:
-		var tile = _avatar_tiles[key]
-		if tile is PanelContainer and is_instance_valid(tile):
-			_apply_avatar_style(tile as PanelContainer, str(key))
-	_clear_children(_avatar_detail)
-	_render_avatar_detail(_selected_avatar)
+func _open_sell(card: Dictionary) -> void:
+	if _busy:
+		return
+	var dialog := SellDialog.new()
+	dialog.configure(card)
+	dialog.sold.connect(func(_body: Dictionary) -> void:
+		if is_inside_tree():
+			_reload())
+	ModalStack.push(dialog, {"id": SellDialog.MODAL_ID, "owner": self, "dismiss_on_backdrop": true})
 
 
-func _refresh_pet_selection() -> void:
-	# 宠物卡上只有**边框**跟选中态有关（「出战中」徽章跟的是 _active_pet，不是选中态），
-	# 所以选宠物同样只重新上色 + 重画详情，不重建卡片。
-	for key in _pet_tiles:
-		var tile = _pet_tiles[key]
-		if tile is PanelContainer and is_instance_valid(tile):
-			_apply_pet_style(tile as PanelContainer, str(key), str(key) == _active_pet)
-	_clear_children(_pet_detail)
-	_render_pet_detail(_selected_pet)
-
-
-
-func _detail_hint(text: String) -> Label:
-	var label := Label.new()
-	label.text = text
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	label.add_theme_color_override("font_color", Kit.INK_SOFT)
-	return label
-
+# --- 小工具 -------------------------------------------------------------------
 
 func _clear_children(parent: Node) -> void:
 	if parent == null:
@@ -693,42 +494,5 @@ func _clear_children(parent: Node) -> void:
 		child.queue_free()
 
 
-func _ignore_mouse_tree(node: Node) -> void:
-	if node is Control:
-		(node as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
-	for child in node.get_children():
-		_ignore_mouse_tree(child)
-
-
-# --- 换出战宠物 ---------------------------------------------------------------
-
-func _set_active(pet_id: String) -> void:
-	if _busy:
-		return
-	_busy = true
-	var ok := await PlayerProfile.set_active(pet_id)
-	_busy = false
-	if not is_inside_tree():
-		return
-	_owned_pets = PlayerProfile.owned_pets.duplicate()
-	_active_pet = PlayerProfile.get_active()
-	if ok:
-		_set_notice(_t("已换出战宠物", "Active pet changed"), false)
-	else:
-		_set_notice(_t("换不了，稍后再试", "Could not change pet — try again later"), true)
-	_render()
-
-
-# --- 小工具 -------------------------------------------------------------------
-
-func _set_notice(text: String, bad: bool) -> void:
-	_notice = text
-	_notice_bad = bad
-
-
-func _english() -> bool:
-	return LocaleManager.get_locale().begins_with("en")
-
-
 func _t(zh: String, en: String) -> String:
-	return en if _english() else zh
+	return en if LocaleManager.get_locale().begins_with("en") else zh

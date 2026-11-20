@@ -69,6 +69,9 @@ const PetPreview := preload("res://scripts/pets/PetPreview.gd")
 const PetService := preload("res://scripts/pets/PetService.gd")
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
 const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
+# 11-20 种族体验卡：棋子页「还差 X 游戏币」下面那颗按钮打开购买弹窗。
+const RaceTrialDialog := preload("res://ui/components/RaceTrialDialog.gd")
+const TrialCard := preload("res://ui/components/TrialCardKit.gd")
 const PetalTexture := preload("res://scenes/prep/effects/PrepPetalTexture.gd")
 const FxTextures := preload("res://scenes/prep/effects/PrepRefreshFxTextures.gd")
 # 棋子页（2026-10-10 赤律族上商城）：内容 id 前缀、哪一族在卖、集齐几个，和备战页共用这一份。
@@ -151,6 +154,8 @@ var _busy := false
 var _loading := true
 var _items: Array = []
 var _owned: Dictionary = {}     # 内容 id -> true
+# 正在体验的内容 id -> 到期时间（ISO）。**不进 _owned**：体验不是拥有，棋子页的「已解锁」只看 _owned。
+var _trials: Dictionary = {}
 var _diamond := 0
 var _coin := 0
 var _notice := ""
@@ -685,6 +690,7 @@ func _reload() -> void:
 		_owned.clear()
 		for id in ((owned.get("body", {}) as Dictionary).get("items", []) as Array):
 			_owned[str(id)] = true
+		_trials = TrialCard.trial_map((owned.get("body", {}) as Dictionary).get("trials", {}))
 	if int(pets.get("code", 0)) / 100 == 2:
 		_active_pet = str((pets.get("body", {}) as Dictionary).get("active", ""))
 	if int(login.get("code", 0)) / 100 == 2:
@@ -1810,8 +1816,22 @@ func _render_units() -> void:
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	margin.add_child(col)
 
-	var title := Kit.title_banner(_t("%s · 棋子收藏" % _race_title(race), "%s Units" % _race_title(race)), 60.0, 22)
-	col.add_child(title)
+	# 11-20：标题条换成种族按钮（暗族 / 灵族 / 赤律族…），只有一族在卖时也显示 ——
+	# 空出来的高度给「还差 X 游戏币」下面的体验卡按钮（1600×720 下这一页本来就只剩 ~430 高）。
+	var race_row := HBoxContainer.new()
+	race_row.name = "UnitRaceTabs"
+	race_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	race_row.add_theme_constant_override("separation", Tokens.GAP_S)
+	col.add_child(race_row)
+	for other in races:
+		var race_btn: Button = ACTION_BUTTON.instantiate()
+		race_btn.text = _race_title(other)
+		Kit.style_tab(race_btn, 44.0, 18)
+		race_btn.set_pressed_no_signal(other == race)
+		race_btn.pressed.connect(func() -> void:
+			_unit_race = other
+			_render())
+		race_row.add_child(race_btn)
 	var sub := Label.new()
 	sub.text = _t("集齐全部 %d 个棋子，解锁%s出战。" % [total, _race_title(race)],
 		"Collect all %d units to unlock %s for battle." % [total, _race_title(race)])
@@ -1819,22 +1839,6 @@ func _render_units() -> void:
 	sub.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
 	Kit.on_backdrop(sub)
 	col.add_child(sub)
-
-	# 以后不止一族在卖时，顶上多一排种族按钮。只有一族时不显示。
-	if races.size() > 1:
-		var race_row := HBoxContainer.new()
-		race_row.alignment = BoxContainer.ALIGNMENT_CENTER
-		race_row.add_theme_constant_override("separation", Tokens.GAP_S)
-		col.add_child(race_row)
-		for other in races:
-			var race_btn: Button = ACTION_BUTTON.instantiate()
-			race_btn.text = _race_title(other)
-			Kit.style_tab(race_btn, 44.0, 18)
-			race_btn.set_pressed_no_signal(other == race)
-			race_btn.pressed.connect(func() -> void:
-				_unit_race = other
-				_render())
-			race_row.add_child(race_btn)
 
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -1954,7 +1958,44 @@ func _race_emblem(race: String, owned_n: int, total: int, unlocked: bool, missin
 			"%s coins to go" % Currency.comma(missing_price))
 		status.add_theme_color_override("font_color", Tokens.SHOP_TEXT)
 	box.add_child(status)
+	# 11-20 种族体验卡：没解锁的种族，「还差 X 游戏币」下面一颗按钮，弹窗里买 1/3/7 天体验卡。
+	# 正在体验就多一行剩余时间（体验不是拥有：logo 和进度环照旧按棋子数亮）。
+	if not unlocked and not _loading:
+		if _trials.has(race):
+			var trial := Label.new()
+			trial.name = "RaceTrialLeft"
+			trial.text = _t("体验中 · %s", "On trial · %s") % TrialCard.time_left(str(_trials[race]))
+			trial.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			trial.add_theme_font_size_override("font_size", Tokens.FONT_CAPTION)
+			trial.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+			trial.add_theme_color_override("font_outline_color", Tokens.PREP_INK)
+			trial.add_theme_constant_override("outline_size", 3)
+			box.add_child(trial)
+		var try_btn: Button = ACTION_BUTTON.instantiate()
+		try_btn.name = "RaceTrialButton"
+		try_btn.text = _t("体验该种族", "Try this race")
+		try_btn.custom_minimum_size = Vector2(200, Tokens.TOUCH_MIN)
+		try_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		Kit.style_plate(try_btn, false)
+		try_btn.pressed.connect(_open_race_trial.bind(race))
+		box.add_child(try_btn)
 	return box
+
+
+func _open_race_trial(race: String) -> void:
+	var dialog := RaceTrialDialog.new()
+	dialog.configure(race)
+	dialog.wallet_changed.connect(func(coin: int) -> void:
+		if not is_inside_tree():
+			return
+		_coin = coin
+		_render())
+	dialog.trial_used.connect(func(used_race: String, expires_at: String) -> void:
+		if not is_inside_tree():
+			return
+		_trials[used_race] = expires_at
+		_render())
+	ModalStack.push(dialog, {"id": RaceTrialDialog.MODAL_ID, "owner": self, "dismiss_on_backdrop": true})
 
 
 func _unit_card(unit: Dictionary, item: Dictionary) -> Control:

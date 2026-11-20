@@ -355,6 +355,8 @@ KEPT_ON_DELETE = {
     "player_invites", "redeem_claims",               # 043/044：奖励邮件与领取回执，保留审计和一次性领取记录
     "voice_clips",                                  # 033：7/30 天独立过期清理，举报 hold 延长保留；隐私政策已披露
     "match_entries",                                # 035：战报/退场清除，陈旧准入由 service_control 定时清理
+    "player_trial_cards", "player_trials",          # 047：体验卡与体验（抽奖花钻石 / 买卡花游戏币得来的），同 skin_draw_progress
+    "trial_card_ops", "trial_race_purchases",       # 047：体验卡流水与每周购买记录，与钱包流水对账
 }
 
 

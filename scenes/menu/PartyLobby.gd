@@ -1340,8 +1340,12 @@ func _act() -> void:
 		if int(response.get("code", 0)) != 200:
 			_notice.text = _text("种族资料读取失败，请重试", "Could not load your races. Try again.")
 			return
-		var available := available_seedling_races(
-			(response.get("body", {}) as Dictionary).get("items", []))
+		# 体验中的种族也能选（体验卡，backend/app/trial.py）：items 是永久拥有，trials 是体验中。
+		var usable: Array = ((response.get("body", {}) as Dictionary).get("items", []) as Array).duplicate()
+		var trials: Variant = (response.get("body", {}) as Dictionary).get("trials", {})
+		if trials is Dictionary:
+			usable.append_array((trials as Dictionary).keys())
+		var available := available_seedling_races(usable)
 		if available.size() >= 4:
 			_open_seedling_race_picker(available)
 			return

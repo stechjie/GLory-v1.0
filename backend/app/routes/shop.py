@@ -10,6 +10,8 @@
     GET  /v1/me/pets/draw        抽宠奖池与保底
     POST /v1/me/pets/draw        钻石抽宠
 
+体验卡（背包、种族体验卡购买、到期提醒）在 routes/trial.py。
+
 出战名片（POST /v1/battle/card）在 routes/loadout.py，系统邮件在 routes/mail.py。
 
 ## 中英文两份都发，客户端自己选
@@ -26,6 +28,7 @@ Accept-Language 挑的话，同一份目录要按语言各缓存一份，而且�
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
 import uuid
 from typing import Annotated
@@ -33,7 +36,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
-from app import balance_version, client_version, db, players, shop, pet_draw, skin_draw
+from app import balance_version, client_version, db, players, shop, pet_draw, skin_draw, trial
 from app.jwt_verify import Claims
 from app.rate_limit import RateLimited, SlidingWindowLimiter
 from app.routes.me import current_claims
@@ -109,12 +112,17 @@ class WalletResponse(BaseModel):
 
 class EntitlementsResponse(BaseModel):
     items: list[str]
+    # 047：正在体验的内容 id -> 到期时间（ISO，UTC）。**不在 items 里** —— items 只是永久拥有，
+    # 商城的「已拥有 / 已解锁」只看 items；能不能出战的界面（备战页、组队选种族）把两边合起来看。
+    trials: dict[str, str] = {}
 
 
 class PetsResponse(BaseModel):
     owned: list[str]
     active: str
     needs_starter_pick: bool
+    # 047：owned 里哪几只是体验中的（-> 到期时间）。
+    trials: dict[str, str] = {}
 
 
 class OrderBody(BaseModel):
@@ -149,6 +157,9 @@ class PetDrawReceiptModel(BaseModel):
     draw_id: uuid.UUID
     pet_id: str
     coin_reward: int
+    # 047：没抽中时附带的体验卡（目标宠物、天数）；没有是 "" / 0。
+    trial_target: str = ""
+    trial_days: int = 0
     misses: int
     energy: int
     diamond: int
@@ -175,6 +186,8 @@ class SkinDrawReceiptModel(BaseModel):
     skin_id: str
     shards_gained: int
     coin_reward: int
+    # 047：没出碎片时附带的这张皮肤的体验卡天数；0 = 没有。
+    trial_days: int = 0
     shards: int
     draws: int
     unlocked: bool
@@ -242,6 +255,16 @@ def _receipt(r: shop.Receipt) -> ReceiptModel:
     )
 
 
+def _iso(value) -> str:
+    return value.astimezone(dt.timezone.utc).isoformat().replace("+00:00", "Z") if value else ""
+
+
+def _pets_response(pets: shop.Pets) -> PetsResponse:
+    return PetsResponse(owned=pets.owned, active=pets.active,
+                        needs_starter_pick=pets.needs_starter_pick,
+                        trials={pet: _iso(expires) for pet, expires in pets.trials.items()})
+
+
 def _check_rate(player_id: uuid.UUID) -> None:
     try:
         _order_limiter.check(str(player_id))
@@ -281,7 +304,11 @@ async def entitlements(
     claims: Annotated[Claims, Depends(current_claims)],
 ) -> EntitlementsResponse:
     me = await _me(claims)
-    return EntitlementsResponse(items=await shop.read_entitlements(me.player_id))
+    items = await shop.read_entitlements(me.player_id)
+    owned = set(items)
+    trials = {target: _iso(expires) for target, expires in
+              (await trial.active_trials(me.player_id)).items() if target not in owned}
+    return EntitlementsResponse(items=items, trials=trials)
 
 
 @router.post("/shop/orders", response_model=OrderResponse)
@@ -314,8 +341,7 @@ async def place_order(
 async def my_pets(claims: Annotated[Claims, Depends(current_claims)]) -> PetsResponse:
     me = await _me(claims)
     pets = await shop.read_pets(me.player_id)
-    return PetsResponse(
-        owned=pets.owned, active=pets.active, needs_starter_pick=pets.needs_starter_pick)
+    return _pets_response(pets)
 
 
 @router.get("/me/pets/draw", response_model=PetDrawStateModel)
@@ -346,6 +372,7 @@ async def draw_pet(
                  me.player_id, receipt.draw_id, receipt.pet_id, receipt.coin_reward)
     return PetDrawReceiptModel(draw_id=receipt.draw_id, pet_id=receipt.pet_id,
                                coin_reward=receipt.coin_reward, misses=receipt.energy,
+                               trial_target=receipt.trial_target, trial_days=receipt.trial_days,
                                energy=receipt.energy,
                                diamond=receipt.wallet.diamond, coin=receipt.wallet.coin,
                                replayed=receipt.replayed)
@@ -386,6 +413,7 @@ async def draw_skin_shard(
                  receipt.coin_reward, receipt.unlocked)
     return SkinDrawReceiptModel(draw_id=receipt.draw_id, skin_id=receipt.skin_id,
                                 shards_gained=receipt.shards_gained, coin_reward=receipt.coin_reward,
+                                trial_days=receipt.trial_days,
                                 shards=receipt.shards, draws=receipt.draws,
                                 unlocked=receipt.unlocked, owned=receipt.owned,
                                 diamond=receipt.wallet.diamond, coin=receipt.wallet.coin,
@@ -402,8 +430,7 @@ async def set_active_pet(
         pets = await shop.set_active_pet(me.player_id, body.pet_id)
     except shop.ShopRejected as exc:
         raise _reject(exc) from None
-    return PetsResponse(
-        owned=pets.owned, active=pets.active, needs_starter_pick=pets.needs_starter_pick)
+    return _pets_response(pets)
 
 
 @router.post("/me/pets/starter", response_model=OrderResponse)

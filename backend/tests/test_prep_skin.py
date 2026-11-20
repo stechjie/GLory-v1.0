@@ -27,7 +27,7 @@ from dataclasses import dataclass
 import pytest
 from fastapi.testclient import TestClient
 
-from app import client_version, db, loadout, players, shop
+from app import client_version, db, loadout, players, shop, trial
 from app.config import get_settings
 from app.jwt_verify import Claims, TokenError
 from app.main import app
@@ -75,7 +75,8 @@ class _Pool:
         return _A()
 
 
-def _wire(monkeypatch, stored: str | None, owned: list[str]) -> _FakeConn:
+def _wire(monkeypatch, stored: str | None, owned: list[str],
+          trials: list[str] | None = None) -> _FakeConn:
     conn = _FakeConn(stored)
     monkeypatch.setattr(db, "pool", lambda: _Pool(conn))
 
@@ -83,6 +84,18 @@ def _wire(monkeypatch, stored: str | None, owned: list[str]) -> _FakeConn:
         return list(owned)
 
     monkeypatch.setattr(shop, "read_entitlements", _owned)
+
+    # 047 体验卡：正在体验的内容也能出战（trial.read_usable = 永久拥有 ∪ 体验中）。
+    async def _trials(_pid):
+        return {t: None for t in (trials or [])}
+
+    monkeypatch.setattr(trial, "active_trials", _trials)
+
+    async def _pets(_pid):
+        pets = [c for c in [*owned, *(trials or [])] if shop.is_pet(c)]
+        return shop.Pets(owned=pets, active=pets[0] if pets else "", needs_starter_pick=not pets)
+
+    monkeypatch.setattr(shop, "read_pets", _pets)
     return conn
 
 

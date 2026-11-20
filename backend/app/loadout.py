@@ -51,7 +51,7 @@ import secrets
 import time
 import uuid
 
-from app import avatar_catalog, db, ranked, shop
+from app import avatar_catalog, db, ranked, shop, trial
 
 log = logging.getLogger("glory.loadout")
 
@@ -120,7 +120,7 @@ async def read_races(player_id: uuid.UUID) -> list[str] | None:
     async with db.pool().acquire() as conn:
         value = await conn.fetchval(
             "select selected_races from players where player_id = $1", player_id)
-    owned = set(await shop.read_entitlements(player_id))
+    owned = await trial.read_usable(player_id)
     return effective_prep_races(value, owned) or None
 
 
@@ -128,7 +128,7 @@ async def save_races(player_id: uuid.UUID, races: list[str]) -> list[str]:
     """存出战种族。**每一族都要有资格用** —— 今天所有族都免费，
     以后某一族放进商城卖，没买的人就存不进去。"""
     clean = clean_races(races)
-    owned = set(await shop.read_entitlements(player_id))
+    owned = await trial.read_usable(player_id)
     for race in clean:
         if shop.requires_entitlement(race) and race not in owned:
             raise LoadoutRejected("race_not_owned", "你还没有解锁这个种族")
@@ -169,7 +169,7 @@ def clean_prep_skin(value: object) -> str | None:
 async def _prep_skin_usable(player_id: uuid.UUID, skin: str) -> bool:
     if not shop.requires_entitlement(skin):
         return True
-    return skin in set(await shop.read_entitlements(player_id))
+    return skin in await trial.read_usable(player_id)
 
 
 async def read_prep_skin(player_id: uuid.UUID) -> str | None:
@@ -230,7 +230,7 @@ async def build_loadout(player_id: uuid.UUID) -> Loadout:
             "select score, games from player_ranked where player_id = $1", player_id)
     if row is None:
         raise LoadoutRejected("player_not_found", "该身份没有对应的玩家，请重新登录")
-    owned = set(await shop.read_entitlements(player_id))
+    owned = await trial.read_usable(player_id)
 
     def entitled(content_id: str) -> bool:
         return bool(content_id) and (
@@ -245,8 +245,9 @@ async def build_loadout(player_id: uuid.UUID) -> Loadout:
 
     pet = str(row["showcase_pet"] or "")
     # 宠物全部在商品目录里（新手三选一也是经归属表发的），所以这里一定会查归属。
+    # 体验到期 / 退款收回：退回 read_pets 给客户端看的那一只（第一只永久拥有的），两边对得上。
     if pet and not (shop.is_pet(pet) and entitled(pet)):
-        pet = ""
+        pet = (await shop.read_pets(player_id)).active
 
     # The displayed default and the signed battle card must use the same lineup.
     races = effective_prep_races(row["selected_races"], owned)
@@ -277,7 +278,7 @@ async def seedling_races(player_id: uuid.UUID, chosen: list[str] | None) -> list
     Prep keeps four permanent races; Seedling may choose any three unlocked races
     without changing that permanent selection.
     """
-    owned = set(await shop.read_entitlements(player_id))
+    owned = await trial.read_usable(player_id)
     available = [race for race in ("human", "god", "dark", "undead", "crimson")
                  if race in owned]
     return validate_seedling_races(available, chosen)

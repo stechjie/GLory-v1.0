@@ -39,7 +39,8 @@ from __future__ import annotations
 
 import logging
 
-from app import db, friends, iap, invites, presence, ranked, redeem, sanctions, service_control, shop, skin_draw
+from app import (db, friends, iap, invites, presence, ranked, redeem, sanctions, service_control, shop,
+                 skin_draw, trial)
 
 log = logging.getLogger("glory.schema")
 
@@ -73,11 +74,20 @@ _PREPARED: list[tuple[str, str]] = [
     # 兑换码（044）。挂了的症状是填码 500。
     ("redeem._FIND", redeem._FIND),
     ("redeem._TAKE", redeem._TAKE),
+    # 体验卡（047）。挂了的症状：背包打不开、出战校验（存种族 / 换皮肤 / 出战名片）一起 500 ——
+    # trial.read_usable 每次都要查 player_trials。
+    ("trial._ACTIVE", trial._ACTIVE),
 ]
 
 # 第二类：prepare 看不见的东西。只收「不是加列」的迁移，一条迁移一行。
 #   sql 回一行 = 在；回零行 = 缺。
 _PROBES: list[tuple[str, str, str]] = [
+    (
+        "047 祈愿回执放行「只给体验卡」",
+        "select 1 from pg_constraint where conname = 'pet_draws_outcome'"
+        " and exists (select 1 from pg_constraint where conname = 'skin_draws_outcome')",
+        "宠物抽取 / 樱花祈愿没抽中、掷到「只给体验卡」那一抽会被旧约束拒掉，整抽回滚（玩家看到抽奖失败）",
+    ),
     (
         "041 ranked_reward_receipts.coin supports 20 coins",
         "select 1 from pg_constraint"

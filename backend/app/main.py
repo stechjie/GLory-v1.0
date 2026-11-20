@@ -47,6 +47,7 @@ from app.routes import profile as profile_routes
 from app.routes import progression as progression_routes
 from app.routes import reports as report_routes
 from app.routes import shop as shop_routes
+from app.routes import trial as trial_routes
 from app.routes import steam_oidc as steam_oidc_routes
 from app.routes import seven_day_login as seven_day_login_routes
 from app.routes import invites as invite_routes
@@ -277,6 +278,7 @@ app.include_router(world_routes.router)
 app.include_router(report_routes.router)
 app.include_router(announcement_routes.router)
 app.include_router(shop_routes.router)
+app.include_router(trial_routes.router)
 # 充值（docs/充值系统设计.md）。每个平台的开关默认关，关着时建单回 503。
 app.include_router(iap_routes.router)
 app.include_router(iap_routes.notify_router)

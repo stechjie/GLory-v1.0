@@ -129,9 +129,11 @@ func _build() -> void:
 	_rules.add_theme_stylebox_override("panel", Kit.box("card", Vector4(44, 32, 44, 25)))
 	_rect(_rules, 461, 567, 678, 135)
 	_canvas.add_child(_rules)
+	# 11-20 体验卡：没抽中时三选一（backend/app/trial.py 的 MISS_OUTCOMES / DAY_WEIGHTS，
+	# backend/tests/test_pet_draw.py 钉着两边一致）。字号 16 -> 14：多了一行，规则框高度不变。
 	var rule_text := _label(_t(
-		"规则  ·  每抽消耗 75 钻石，普通抽中宠物概率 10%，第 10 抽必得未拥有宠物。\n未中宠物获得 100 金币；提前抽中继续积累能量，保底命中才清零。",
-		"Rules · 75 gems per draw. 10% pet chance; draw 10 guarantees an unowned pet.\nNo pet: 100 coins. Early pets keep energy; only the guarantee resets it."), 16)
+		"规则  ·  每抽消耗 75 钻石，普通抽中宠物概率 10%，第 10 抽必得未拥有宠物。提前抽中继续积累能量，保底命中才清零。\n未中宠物时：只得 100 金币 60% / 只得宠物体验卡 30% / 两样都得 10%；体验卡天数 1天 60%、3天 30%、7天 10%（卡放进背包）。",
+		"Rules · 75 gems per draw. 10% pet chance; draw 10 guarantees an unowned pet. Early pets keep energy; only the guarantee resets it.\nNo pet: 100 coins only 60% / pet trial card only 30% / both 10%; card length 1d 60%, 3d 30%, 7d 10% (cards go to your Bag)."), 14)
 	rule_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	rule_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	rule_text.add_theme_color_override("font_color", Tokens.SUMMON_DETAIL_INK)
@@ -287,7 +289,8 @@ func _commit_draw() -> void:
 	if not is_inside_tree():
 		return
 	_open_reveal()
-	_reveal.call("show_reward", pet_id, coin_reward, replayed)
+	_reveal.call("show_reward", pet_id, coin_reward, replayed,
+		str(receipt.get("trial_target", "")), int(receipt.get("trial_days", 0)))
 	_refresh_ui()
 	draw_finished.emit()
 

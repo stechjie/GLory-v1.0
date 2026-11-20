@@ -53,6 +53,9 @@ var player_id := ""
 # 服务端答复的缓存，不落盘。见文件头。
 var owned_pets: Array[String] = []
 var active_pet := ""
+# 正在体验的宠物 -> 到期时间（ISO，服务器答复）。它们也在 owned_pets 里（能设出战），
+# 备战页靠这张表给卡片挂「体验中」（backend/app/trial.py）。
+var pet_trials: Dictionary = {}
 # 有没有成功拉到过一次。**没拉到之前不许把空当成「他没有宠物」。**
 var pets_loaded := false
 # 出战种族，服务端答复的缓存（空 = 从没选过，或者还没拉到）。
@@ -616,6 +619,11 @@ func _adopt_pets(body: Dictionary) -> void:
 		if not id.is_empty() and not owned_pets.has(id):
 			owned_pets.append(id)
 	active_pet = str(body.get("active", ""))
+	pet_trials.clear()
+	var trials: Variant = body.get("trials", {})
+	if trials is Dictionary:
+		for key in trials:
+			pet_trials[str(key)] = str(trials[key])
 	needs_starter_pick = bool(body.get("needs_starter_pick", false))
 	pets_loaded = true
 	pets_changed.emit()

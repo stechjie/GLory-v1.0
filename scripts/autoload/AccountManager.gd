@@ -1365,6 +1365,48 @@ func draw_skin_shard(skin_id: String, client_draw_id: String) -> Dictionary:
 		{"client_draw_id": client_draw_id}, true)
 
 
+# --- 体验卡（backend/app/trial.py、routes/trial.py）---------------------------------
+#
+# 卡在背包里，玩家点「使用」才开始计时；同一目标再用一张，时长往后叠。
+# 购买 / 使用 / 出售都带 client_op_id（new_client_order_id 生成）：断网重发用**同一个**，
+# 服务器原样回上次的结果，不会扣两次钱、用两张卡。
+
+# {"cards": [{target, kind, days, count, sell_price, owned}], "trials": [{target, kind, expires_at}], "server_now"}
+func fetch_bag() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/me/bag", null, true)
+
+
+# 回 {target, days, count(剩几张), expires_at, coin_delta, diamond, coin, replayed}
+func use_trial_card(client_op_id: String, target: String, days: int) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/bag/use",
+		{"client_op_id": client_op_id, "target": target, "days": days}, true)
+
+
+func sell_trial_card(client_op_id: String, target: String, days: int, count: int) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/bag/sell",
+		{"client_op_id": client_op_id, "target": target, "days": days, "count": count}, true)
+
+
+# {"race", "prices": {"1": 100, "3": 200, "7": 300}, "bought": [天数], "owned", "resets_at", "trial_expires_at"}
+func fetch_race_trial(race: String) -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/shop/race-trial/%s" % race.uri_encode(), null, true)
+
+
+# 买到的卡进背包，不自动使用。同一种族同一天数每周一次（409，X-Glory-Reason: weekly_limit）。
+func buy_race_trial(client_op_id: String, race: String, days: int) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/shop/race-trial",
+		{"client_op_id": client_op_id, "race": race, "days": days}, true)
+
+
+# 到期了、还没提醒过的体验：{"items": [{target, kind, expires_at}]}
+func fetch_expired_trials() -> Dictionary:
+	return await _request(HTTPClient.METHOD_GET, "/v1/me/trials/expired", null, true)
+
+
+func ack_expired_trials(targets: Array) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/trials/expired/ack", {"targets": targets}, true)
+
+
 # 出战宠物。服务端会校验归属 —— 没有的宠物设不上去，回 403。
 func set_active_pet(pet_id: String) -> Dictionary:
 	return await _request(HTTPClient.METHOD_PUT, "/v1/me/pets/active", {"pet_id": pet_id}, true)

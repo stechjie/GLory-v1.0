@@ -30,6 +30,8 @@ const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
 const SynergyBond := preload("res://scenes/prep/panels/SynergyPanel.gd")
 # 要在商城集齐棋子才能出战的种族（2026-10-10 赤律族）。规则与商城棋子页同一份。
 const UnitCollection := preload("res://scripts/account/UnitCollection.gd")
+# 11-20 体验卡：体验中的种族 / 皮肤 / 宠物能出战，卡片上挂「体验中 · 剩 X」（backend/app/trial.py）。
+const TrialCard := preload("res://ui/components/TrialCardKit.gd")
 
 signal back_requested
 signal starter_picked   # 首次三选一选定后发出（用于「进主菜单前的强制关卡」）
@@ -96,6 +98,8 @@ var _race_notice_label: Label
 # 拉不到就都是空的 -> 哪一族都不锁（真正挡人的是服务端，见 UnitCollection.gd 顶部）。
 var _shop_items: Array = []
 var _owned_content: Dictionary = {}
+# 正在体验的内容 id -> 到期时间（ISO）。**不进 _owned_content**（那是永久拥有，种族进度按它数）。
+var _trial_content: Dictionary = {}
 var _unit_ownership_ready := false
 
 
@@ -155,6 +159,7 @@ var _skin_cards: Dictionary = {}   # skin id -> {"panel", "name", "button"}
 var _skin_ownership: int = SkinOwnership.NOT_LOADED
 var _skin_sold: Dictionary = {}    # 商城里卖的皮肤 id -> true
 var _skin_owned: Dictionary = {}   # 买过的内容 id -> true
+var _skin_trials: Dictionary = {}  # 正在体验的皮肤 id -> 到期时间（体验卡）
 var _skin_busy := false
 const ACTIVITY_SKINS := ["prep_skin_ice", "prep_skin_sakura", "prep_skin_nightwisp"]
 
@@ -602,6 +607,8 @@ func _build_card(pet_id: String, starter_mode: bool) -> Control:
 	if is_active:
 		name_lbl.text += "  ✓"
 	content.add_child(name_lbl)
+	if PlayerProfile.pet_trials.has(pet_id):
+		content.add_child(_trial_tag(str(PlayerProfile.pet_trials[pet_id])))
 
 	var effect_lbl := Label.new()
 	effect_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -794,6 +801,10 @@ func _refresh_race_card(race: String, forced: bool) -> void:
 			UnitCollection.total_count(race)]
 	if picked:
 		name_lbl.text += "  ✓"
+	# 体验中的种族：名字后面带剩余时间（永久拥有了就不带）。
+	if _trial_content.has(race) and not _owned_content.has(race):
+		name_lbl.text += "\n" + TrialCard.t("体验中 · %s", "Trial · %s") % TrialCard.time_left(
+			str(_trial_content[race]))
 	var panel: PanelContainer = parts["panel"]
 	# 种族卡：已集齐的羊皮纸、没集齐的压暗；选中出战的染金
 	panel.add_theme_stylebox_override("panel", Kit.box("slot", Vector4(10, 10, 10, 8),
@@ -883,9 +894,22 @@ func _build_unit_tile(unit: Dictionary) -> Control:
 func _race_has_products(race: String) -> bool:
 	return UnitCollection.race_requires_purchase(race, _shop_items)
 
-# 种族只有集齐全部棋子并收到服务端的种族归属后才能出战。
+# 种族只有集齐全部棋子并收到服务端的种族归属后才能出战；体验中的种族也能出战（体验卡）。
 func _race_complete(race: String) -> bool:
-	return _owned_content.has(race) or (race == "human" and _shop_items.is_empty())
+	return _owned_content.has(race) or _trial_content.has(race) \
+		or (race == "human" and _shop_items.is_empty())
+
+
+# 「体验中 · 剩 2天5小时」小字。宠物卡、种族卡、皮肤卡共用。
+func _trial_tag(expires_at: String) -> Label:
+	var tag := Label.new()
+	tag.name = "TrialTag"
+	tag.text = TrialCard.t("体验中 · %s", "Trial · %s") % TrialCard.time_left(expires_at)
+	tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	tag.add_theme_font_size_override("font_size", Tokens.FONT_MIN_READABLE)
+	tag.add_theme_color_override("font_color", Color("8a4b12"))
+	tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return tag
 
 
 func _available_race_count() -> int:
@@ -906,6 +930,7 @@ func _load_unit_ownership() -> void:
 	_owned_content.clear()
 	for id in ((owned.get("body", {}) as Dictionary).get("items", []) as Array):
 		_owned_content[str(id)] = true
+	_trial_content = TrialCard.trial_map((owned.get("body", {}) as Dictionary).get("trials", {}))
 	await PlayerProfile.refresh_races()
 	if not is_inside_tree():
 		return
@@ -1073,6 +1098,7 @@ func _load_skin_ownership() -> void:
 		_skin_owned.clear()
 		for id in ((owned.get("body", {}) as Dictionary).get("items", []) as Array):
 			_skin_owned[str(id)] = true
+		_skin_trials = TrialCard.trial_map((owned.get("body", {}) as Dictionary).get("trials", {}))
 		_refresh_skins()
 	var catalog: Dictionary = await AccountManager.fetch_shop()
 	if not is_inside_tree():
@@ -1088,7 +1114,7 @@ func _load_skin_ownership() -> void:
 
 
 func _skin_usable(skin_id: String) -> bool:
-	if skin_id == PrepSkin.DEFAULT_ID or _skin_owned.has(skin_id):
+	if skin_id == PrepSkin.DEFAULT_ID or _skin_owned.has(skin_id) or _skin_trials.has(skin_id):
 		return true
 	if skin_id in ACTIVITY_SKINS or _skin_sold.has(skin_id):
 		return false
@@ -1109,6 +1135,9 @@ func _refresh_skin_card(skin_id: String, is_active: bool) -> void:
 	name_lbl.text = PrepSkin.display_name(skin_id)
 	if is_active:
 		name_lbl.text += "  ✓"
+	if _skin_trials.has(skin_id) and not _skin_owned.has(skin_id):
+		name_lbl.text += "\n" + TrialCard.t("体验中 · %s", "Trial · %s") % TrialCard.time_left(
+			str(_skin_trials[skin_id]))
 	var panel: PanelContainer = parts["panel"]
 	panel.add_theme_stylebox_override("panel",
 		Kit.box("card", Vector4(16, 20, 16, 16), ACTIVE_TINT if is_active else Color.WHITE))

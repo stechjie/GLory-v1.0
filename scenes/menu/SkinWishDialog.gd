@@ -30,6 +30,7 @@ const MusicService := preload("res://ui/services/MusicService.gd")
 # 打开弹窗前在放的那首（关窗时接回去）。
 var _music_before := ""
 const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
+const TrialCard := preload("res://ui/components/TrialCardKit.gd")
 const PetalTexture := preload("res://scenes/prep/effects/PrepPetalTexture.gd")
 const FxTextures := preload("res://scenes/prep/effects/PrepRefreshFxTextures.gd")
 const ACTION_BUTTON := preload("res://ui/components/GloryActionButton.tscn")
@@ -479,9 +480,11 @@ func _build_cards() -> void:
 	var rule_title := _label(_t("概率公示", "Odds"), 22)
 	rule_title.add_theme_color_override("font_color", _th.accent)
 	rcol.add_child(rule_title)
+	# 11-20 体验卡：没出碎片（40%）时三选一，各占总抽数的比例 + 卡的天数分布
+	# （backend/app/trial.py 的 MISS_OUTCOMES / DAY_WEIGHTS）。多了几行，字号 17 -> 15。
 	var rule_text := _label(_t(
-		"每次祈愿消耗 100 钻石\n碎片 ×1  30%\n碎片 ×2  21%\n碎片 ×3  9%\n游戏币 200～300  40%（按 10 一档随机）\n\n第 10 抽碎片不足 10 片时直接补满；集满自动解锁，拥有后不能再祈愿。",
-		"100 gems per wish\n1 shard  30%\n2 shards  21%\n3 shards  9%\nCoins 200–300  40% (in steps of 10)\n\nDraw 10 tops you up to 10 shards. Unlocks automatically; no more wishes once owned."), 17)
+		"每次祈愿消耗 100 钻石\n碎片 ×1  30%\n碎片 ×2  21%\n碎片 ×3  9%\n没出碎片 40%，其中：\n  游戏币 200～300  24%（按 10 一档随机）\n  体验卡  12%\n  游戏币 + 体验卡  4%\n体验卡是这张皮肤的，天数 1天 60%、3天 30%、7天 10%，放进背包。\n\n第 10 抽碎片不足 10 片时直接补满；集满自动解锁，拥有后不能再祈愿。",
+		"100 gems per wish\n1 shard  30%\n2 shards  21%\n3 shards  9%\nNo shard 40%:\n  Coins 200–300  24% (in steps of 10)\n  Trial card  12%\n  Coins + trial card  4%\nCards are for this skin: 1d 60%, 3d 30%, 7d 10%; they go to your Bag.\n\nDraw 10 tops you up to 10 shards. Unlocks automatically; no more wishes once owned."), 15)
 	rule_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	rule_text.custom_minimum_size.x = 336
 	rule_text.add_theme_color_override("font_color", _th.muted)
@@ -692,6 +695,7 @@ func _commit_draw() -> void:
 	_diamond = int(receipt.get("diamond", _diamond))
 	var gained := int(receipt.get("shards_gained", 0))
 	var coin := int(receipt.get("coin_reward", 0))
+	var card_days := int(receipt.get("trial_days", 0))
 	var after := int(receipt.get("shards", before))
 	_draws = int(receipt.get("draws", _draws))
 	var unlocked := bool(receipt.get("unlocked", false))
@@ -705,7 +709,7 @@ func _commit_draw() -> void:
 	else:
 		_shards = after
 		_refresh_ui()
-		await _play_coin(coin, replayed)
+		await _play_coin(coin, replayed, card_days)
 	if not is_inside_tree():
 		return
 	_shards = after
@@ -775,20 +779,68 @@ func _kick_scroll() -> void:
 
 # 小档：没出碎片。原来只在卷轴前飘一个数字，玩家会以为这一抽什么都没有 ——
 # 改成和抽宠物一样弹一块结果板（照 PetDrawReveal.show_reward 的金币那一支做）。
-func _play_coin(coin: int, replayed: bool) -> void:
-	_notice.text = _t("这次没有碎片，获得 %d 游戏币", "No shard this time — %d coins") % coin
-	_show_coin_reward(coin, replayed)
+func _play_coin(coin: int, replayed: bool, card_days: int = 0) -> void:
+	if card_days > 0 and coin > 0:
+		_notice.text = _t("这次没有碎片，获得 %d 游戏币和一张体验卡", "No shard — %d coins and a trial card") % coin
+	elif card_days > 0:
+		_notice.text = _t("这次没有碎片，获得一张体验卡", "No shard — you got a trial card")
+	else:
+		_notice.text = _t("这次没有碎片，获得 %d 游戏币", "No shard this time — %d coins") % coin
+	_show_coin_reward(coin, replayed, card_days)
 	# 等玩家点确认再往下走：这期间 _busy 还是 true，祈愿按钮按不动，
 	# 不会出现上一抽的板子还在、下一抽的动画已经开始。
 	while _overlay != null and is_inside_tree():
 		await get_tree().process_frame
 
 
-func _show_coin_reward(coin: int, replayed: bool) -> void:
+func _show_coin_reward(coin: int, replayed: bool, card_days: int = 0) -> void:
 	var col := _open_overlay_card(Rect2(540, 150, 520, 0), 190.0)
 	var head := _label(_t("获得奖励", "Reward received"), 34)
 	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(head)
+	if card_days > 0:
+		_add_trial_reward(col, coin, card_days)
+	else:
+		_add_coin_stage(col)
+	if coin > 0:
+		var amount := _label(_t("获得 %d 游戏币", "Received %d coins") % coin, 28)
+		amount.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		amount.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+		col.add_child(amount)
+	if card_days > 0:
+		var card_line := _label(_t("获得 %s（已放入背包）", "Received %s (in your Bag)") % TrialCard.card_title(
+			"prep_skin", skin_id, card_days), 20)
+		card_line.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		card_line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		card_line.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
+		col.add_child(card_line)
+	_add_miss_footer(col, replayed)
+	SfxService.play(SfxService.CUE_UI_CURRENCY_GAIN)
+
+
+# 11-20：没出碎片时附带的这张皮肤的体验卡（图案就是皮肤自己的卷轴，卡框按天数染色）。
+func _add_trial_reward(col: Control, coin: int, card_days: int) -> void:
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 28)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(row)
+	if coin > 0:
+		var icon := TextureRect.new()
+		icon.texture = Currency.icon("coin")
+		icon.custom_minimum_size = Vector2(96, 96)
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(icon)
+	var tile := TrialCard.tile({"kind": "prep_skin", "target": skin_id, "days": card_days, "count": 1},
+		Vector2(140, 140))
+	tile.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(tile)
+
+
+func _add_coin_stage(col: Control) -> void:
 	# 金币从板子下沿飞上来：错开出发、带回弹和一点旋转（同抽宠物那块板）
 	var stage := Control.new()
 	stage.custom_minimum_size = Vector2(420, 170)
@@ -811,11 +863,9 @@ func _show_coin_reward(coin: int, replayed: bool) -> void:
 			fly.tween_property(icon, "position", Vector2(42 + i * 84, 40 + (i % 2) * 24), seconds) \
 				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 			fly.tween_property(icon, "rotation", -0.13 + 0.09 * i, seconds)
-	SfxService.play(SfxService.CUE_UI_CURRENCY_GAIN)
-	var amount := _label(_t("获得 %d 游戏币", "Received %d coins") % coin, 28)
-	amount.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	amount.add_theme_color_override("font_color", Tokens.GOLD_HOVER)
-	col.add_child(amount)
+
+
+func _add_miss_footer(col: Control, replayed: bool) -> void:
 	# 没中也在往保底走：把进度摆出来，玩家才知道这抽不是白花
 	var left := maxi(1, PITY - _draws)
 	var hint := _label(_t("%s %d / %d · 最多再祈愿 %d 次必定集齐",

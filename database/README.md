@@ -101,6 +101,7 @@ Supabase Dashboard → SQL Editor，按编号顺序逐个执行。
 | `043_invites.sql` | 邀请码：`player_invites`（被邀请人一辈子一行，码用的是 `players.friend_code`、表里只存 player_id）。被邀请人达到 `GLORY_INVITE_REWARD_LEVEL` 级时账号服务器在同一事务里给两边各发一封带钻石的邮件；邀请人拿满上限 / 已注销记在 `inviter_skipped`（客服要的）。上限、窗口刻意不进约束（在 .env）。🔴 **必须在更新账号服务器之前跑**。可重复执行。设计 2026-11-03 拍板，见文件头 |
 | `044_redeem_codes.sql` | 兑换码：`redeem_codes`（通用码与单次码同表；`max_uses` 这里建成必填，045 放开成可不限）、`redeem_claims`（码×人唯一、同 campaign 一人一条，campaign 由触发器从码上抄，码的 campaign 冻结）；附 `create_redeem_code()` / `create_redeem_batch()`（12 位、整批同一 campaign）/ `withdraw_redeem_code()` / `withdraw_redeem_campaign()`；`admin_requests.kind` 放行 `redeem_code`（建码走后台双人批）。🔴 **043 之后、更新账号服务器之前跑**；漏跑的话后台建码 500、启动自检报缺。可重复执行 |
 | `045_redeem_unlimited.sql` | 兑换码可以不限人数（2026-11-04 用户定）：`redeem_codes.max_uses` 允许 null，`create_redeem_code()` 的 `p_max_uses` 传 null = 不限；收口靠截止时间和撤回。批量单次码不受影响。🔴 **044 之后、更新账号服务器之前跑**（测试服已跑过 044，只跑这个）；漏跑的话批准不限人数的码会报错。可重复执行 |
+| `047_trial_cards.sql` | 体验卡：`player_trial_cards`（背包里的卡，同目标同天数叠一行）、`player_trials`（正在 / 已经到期的体验，到期提醒标记）、`trial_race_purchases`（每账号每种族每周 1/3/7 天各一次，北京时间周一重置）、`trial_card_ops`（获得 / 购买 / 使用 / 出售流水，永不裁剪，`client_op_id` 防重复）；`pet_draws` / `skin_draws` 加 `trial_target` / `trial_days` 两列并放宽结果约束（没抽中可以只给卡）。🔴 体验**不进** `player_entitlements`。🔴 **必须在更新账号服务器之前跑**，漏跑的话抽奖、背包、存种族 / 换皮肤 / 出战名片一起 500，启动自检会报缺。可重复执行。规则见 `backend/app/trial.py` |
 
 **真库测试**：`backend/tests/pg_harness.py` 能在本机 PostgreSQL 上把这里全部文件跑一遍再测（设 `GLORY_TEST_PG`，只许本机）。
 见 `docs/运营后台设计.md` 第七节。

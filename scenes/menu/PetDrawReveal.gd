@@ -8,6 +8,7 @@ const Currency := preload("res://scripts/account/Currency.gd")
 const PetPreview := preload("res://scripts/pets/PetPreview.gd")
 const PetService := preload("res://scripts/pets/PetService.gd")
 const SfxService := preload("res://ui/services/SfxService.gd")
+const TrialCard := preload("res://ui/components/TrialCardKit.gd")
 
 signal summon_requested
 signal dismissed
@@ -32,7 +33,9 @@ func _ready() -> void:
 	_panel.add_child(_content)
 
 
-func show_reward(pet_id: String, coin_reward: int, replayed: bool) -> void:
+# 没抽中时（11-20 起）三选一：只给金币 / 只给宠物体验卡 / 两样都给。trial_days = 0 表示没有卡。
+func show_reward(pet_id: String, coin_reward: int, replayed: bool,
+		trial_target: String = "", trial_days: int = 0) -> void:
 	_phase = "reward"
 	_clear()
 	var pet := not pet_id.is_empty()
@@ -46,6 +49,8 @@ func show_reward(pet_id: String, coin_reward: int, replayed: bool) -> void:
 		SfxService.play(SfxService.CUE_PET_DRAW_SUCCESS)
 		_add_label(_t("获得新宠物：%s" % PetService.display_name(pet_id),
 			"New pet: %s" % PetService.display_name(pet_id)), 24)
+	elif trial_days > 0:
+		_show_trial_reward(trial_target, trial_days, coin_reward)
 	else:
 		var coins := Control.new()
 		coins.custom_minimum_size = Vector2(390, 185)
@@ -69,6 +74,34 @@ func show_reward(pet_id: String, coin_reward: int, replayed: bool) -> void:
 	if replayed:
 		_add_label(_t("已恢复本次抽取，没有再次扣钻", "Draw restored without another charge"), 16)
 	_add_button(_t("确认", "Confirm"), _dismiss)
+
+
+# 体验卡（可能连同金币）。卡的图案就是那只宠物；卡框颜色按天数（TrialCardKit）。
+func _show_trial_reward(trial_target: String, trial_days: int, coin_reward: int) -> void:
+	var card := {"kind": "pet", "target": trial_target, "days": trial_days, "count": 1}
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 28)
+	row.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_content.add_child(row)
+	if coin_reward > 0:
+		var icon := TextureRect.new()
+		icon.texture = Currency.icon("coin")
+		icon.custom_minimum_size = Vector2(96, 96)
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		row.add_child(icon)
+	var tile := TrialCard.tile(card, Vector2(132, 132) if coin_reward > 0 else Vector2(170, 170))
+	tile.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(tile)
+	_pop(tile)
+	SfxService.play(SfxService.CUE_UI_CURRENCY_GAIN)
+	if coin_reward > 0:
+		_add_label(_t("获得 %d 金币" % coin_reward, "Received %d coins" % coin_reward), 22)
+	_add_label(_t("获得 %s（已放入背包）", "Received %s (in your Bag)") % TrialCard.card_title(
+		"pet", trial_target, trial_days), 20)
 
 
 func show_pet_info(pet_id: String, owned: bool, active: bool = false) -> void:
