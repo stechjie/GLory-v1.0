@@ -23,12 +23,15 @@ const MUTED := Color("664629")
 const Kit := preload("res://ui/theme/ParchmentKit.gd")
 const UnitDetailCard := preload("res://ui/components/UnitDetailCard.gd")
 const WIDTHS := [150.0, 310.0, 270.0, 210.0, 150.0, 170.0, 150.0]
+const BUBBLE_PADDING := Vector4(28, 18, 28, 18)
+const BUBBLE_TEXT_MAX_WIDTH := 360.0
 var data: Dictionary = {}
 # 对局历史里复用这个面板时（MatchHistoryPanel「详细战况」），「返回主菜单」换成这里的字，
 # 按下去照样发 return_menu_requested，由历史那边关掉弹窗。
 var close_text := ""
 var _bubble: PanelContainer
 var _bubble_label: Label
+var _bubble_revision := 0
 # 10.06 反馈第 5 条：面板上、下各有一排同样的按钮，两排都要能被 allow_return_retry 重新启用，
 # 所以用数组收集（原来是单个 _return_button）。
 var _return_buttons: Array = []
@@ -94,8 +97,10 @@ func _ready() -> void:
 	content.add_child(_button_row())
 	_bubble = PanelContainer.new()
 	_bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_bubble.add_theme_stylebox_override("panel", Kit.box("plate", Vector4(16, 6, 16, 6)))
+	_bubble.add_theme_stylebox_override("panel", Kit.box("plate", BUBBLE_PADDING))
 	_bubble_label = _label("", GOLD, 13)
+	_bubble_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bubble_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_bubble.add_child(_bubble_label)
 	add_child(_bubble)
 	_bubble.hide()
@@ -391,10 +396,38 @@ func _icon(path: String, caption: String, stars: int = 0, pixels: int = 48) -> V
 
 func _show_bubble(icon: Control, caption: String) -> void:
 	_bubble_label.text = caption
+	var font := _bubble_label.get_theme_font("font")
+	var font_size := _bubble_label.get_theme_font_size("font_size")
+	var available := maxf(1.0, size.x - BUBBLE_PADDING.x - BUBBLE_PADDING.z - 16.0)
+	_bubble_label.custom_minimum_size.x = minf(maxf(44, font.get_string_size(caption, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x), minf(BUBBLE_TEXT_MAX_WIDTH, available))
 	_bubble.reset_size()
 	_bubble.show()
+	_position_bubble(icon)
+	_bubble_revision += 1
+	_settle_bubble_size(icon, _bubble_revision)
+
+func _settle_bubble_size(icon: Control, revision: int) -> void:
+	# Wrapped text height settles after the container assigns the label's width.
+	await get_tree().process_frame
+	if revision != _bubble_revision or not _bubble.visible:
+		return
+	_bubble.reset_size()
+	await get_tree().process_frame
+	if revision == _bubble_revision:
+		_position_bubble(icon)
+
+func _position_bubble(icon: Control) -> void:
+	if not is_instance_valid(icon) or not _bubble.visible:
+		return
 	var rect := icon.get_global_rect()
-	_bubble.position = Vector2(clampf(rect.get_center().x - _bubble.size.x / 2, 4, size.x - _bubble.size.x - 4), maxf(4, rect.position.y - _bubble.size.y - 6))
+	var inverse := get_global_transform().affine_inverse()
+	var center := inverse * rect.get_center()
+	var top := inverse * rect.position
+	var bottom := inverse * rect.end
+	var y := top.y - _bubble.size.y - 6
+	if y < 4:
+		y = bottom.y + 6
+	_bubble.position = Vector2(clampf(center.x - _bubble.size.x / 2, 4, maxf(4, size.x - _bubble.size.x - 4)), clampf(y, 4, maxf(4, size.y - _bubble.size.y - 4)))
 
 func _stars_text(star: int) -> String:
 	var key := "settle_star_%d" % clampi(star, 0, 4)
