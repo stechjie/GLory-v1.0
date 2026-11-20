@@ -129,7 +129,9 @@ static func release_owner(owner: String) -> int:
 		_owners.erase(path)
 		_scenes.erase(path)
 		_runtime_resources.erase(path)
-		_requested.erase(path)
+		# ResourceLoader jobs cannot be cancelled by erasing our dictionary entry.
+		# Keep the in-flight reservation until harvest() drains it, otherwise the
+		# next acquire() starts a second scripted load despite MAX_IN_FLIGHT = 1.
 		_queue.erase(path)
 		freed += 1
 	return freed
@@ -228,7 +230,7 @@ static func harvest() -> int:
 		var st := ResourceLoader.load_threaded_get_status(path)
 		if st == ResourceLoader.THREAD_LOAD_LOADED:
 			var got := ResourceLoader.load_threaded_get(path) as PackedScene
-			if got != null:
+			if got != null and _owners.has(path):
 				_scenes[path] = got
 			_requested.erase(path)
 		elif st == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
