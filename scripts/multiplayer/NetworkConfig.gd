@@ -271,7 +271,11 @@ const USE_DTLS := true
 #      the battle server pays PvP damage top-3 150/100/50 and PvE/Boss lane-clear top-3 50/30/10
 #      after interest (scripts/economy/BattleRankRewards.gd); match_state carries rank_reward.
 #      Gold changes for every seat, so clients and the dedicated battle server must be updated together.
-const NETWORK_PROTOCOL_VERSION := 47
+# v48: custom-room AI difficulty per seat (2026-11-20). New @rpc _rpc_team_set_ai_level changes the RPC
+#      table; room_state / spectate_state carry seat_ai_levels; custom-room AI no longer derive their
+#      level from seated players' ranks (default = normal). Clients and the dedicated battle server
+#      must be updated together.
+const NETWORK_PROTOCOL_VERSION := 48
 
 # Local phone hosting is debug-only.
 const ALLOW_LOCAL_HOST_DEBUG := false

@@ -1,5 +1,20 @@
 # GLory 构建与资源交付约定
 
+## 🔴 跨平台改动规则（所有改动都适用，先读这一节）
+
+本游戏同一份代码要跑在 **Android、iOS、Windows / Steam、战斗服务器（无界面）** 上。2026-11-18 一次为 iOS 加 Apple 登录的改动，把 `SignInBridge.gd` 里的判断改成 `has_method()`，结果安卓的 Google 登录按钮消失，且门禁和 iOS 真机都没发现。以下规则用来防止同类问题：
+
+1. **动手前先列影响面**：改到的脚本会在哪些平台执行（尤其是 `scripts/account/*Bridge.gd`、`SpeechToText.gd`、`VoiceService`、`VoiceClipService`、`AccountManager`、启动页 / 资料页）。在回复和提交说明里写出来。
+2. **只为一个平台加功能时，不改其他平台在用的路径**。用 `OS.get_name()` / 特性标签分支，新增逻辑只进新分支；共享路径的写法（判断方式、调用顺序、返回值）保持原样，除非任务明确要求并说明对其他平台的影响。
+3. **对原生插件判断方法是否存在，一律用 `scripts/account/NativeBridge.gd` 的 `NativeBridge.supports(bridge, "方法名")`**，不要直接写 `bridge.has_method()`。安卓 JNISingleton 的 Kotlin 方法 `has_method()` 查不到，只能用 `has_java_method()`。
+4. **已知平台陷阱**（踩到新的就补一条）：
+   - 安卓插件单例：见第 3 条。
+   - 战斗服务器也加载账号脚本：账号相关脚本不 preload 导入资源（图片、场景等）、不加 `class_name`（见 `AccountConfig.gd` 顶部）。
+   - Windows / Steam 包里没有手机插件，手机包里没有 Steam：插件一律 `Engine.has_singleton()` 判断后再用，拿不到就隐藏对应按钮，不报错。
+   - 门禁里的 GDScript 替身对 `has_method()` 总是返回 true，**替身通过不代表安卓通过**。
+5. **验证要写清楚**：每个受影响的平台，写明「已实测 / 仅门禁或替身 / 未验证」。没有实测的平台必须明确写「未验证」，并提醒用户找有该设备的人验；不能写成「已完成」或默认没问题。
+6. **改动收尾自查**：搜索本次改动里新增的 `has_method(`、`OS.get_name()`、`Engine.get_singleton(`，逐个确认在其他平台上的行为。
+
 ## 授权与登录
 
 - 用户已授权代理在 GLory 任务范围内使用本机 `/Volumes/repository/github/GLory/auth.md`（主工作区的 `../auth.md`）中的账号和凭据。任何操作遇到登录、认证或权限需求时，先查阅该文件的对应条目；信息齐全时自行填写并提交，继续完成任务，不重复要求用户授权或填写密码。

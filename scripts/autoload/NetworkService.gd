@@ -18,6 +18,9 @@ var team_seat_profiles: Dictionary = {}
 var team_seat_pets: Dictionary = {}
 # slot -> 棋盘皮肤 id，只有 AI 座位（服务器随机、整局不变，_build_public_seat_ai_skins）。清路扫光用。
 var team_seat_ai_skins: Dictionary = {}
+# slot -> AI 难度 1~5（新手 / 简单 / 普通 / 困难 / 大师），只有自定义房间的 AI 座位（协议 48，_build_public_seat_ai_levels）。
+# 房主在大厅逐个选；局域网房主 / 离线自测时也由本机写这一份，prepare_local_bots 读它。
+var team_seat_ai_levels: Dictionary = {}
 # slot(int) -> actual carrots harvested in `team_carrot_harvest_round`.
 # This exposes the round result only, never another player's private balance.
 var team_carrot_harvest_gains: Dictionary = {}
@@ -324,6 +327,7 @@ enum SessionState { OFFLINE, JOINING, READY, FAILED, RECONNECTING }
 
 const BattleSim := preload("res://scripts/battle/BattleSimulator.gd")
 const LiveBotEconomy := preload("res://scripts/economy/LiveBotEconomy.gd")
+const BotProfile := preload("res://scripts/economy/ai/BotProfile.gd")
 var team_bot_states: Dictionary = {}
 var _local_bot_stones: Array = []
 const PrepDeadline := preload("res://scripts/rounds/PrepDeadline.gd")
@@ -2018,6 +2022,8 @@ func _team_toggle_slot_authoritative(slot: int) -> void:
 			team_ready[slot] = false
 			team_seat_pets.erase(slot)
 			team_seat_pets.erase(str(slot))
+			team_seat_ai_levels.erase(slot)
+			team_seat_ai_levels.erase(str(slot))
 		_:
 			return
 	_team_broadcast_lobby()
@@ -2062,6 +2068,62 @@ func _room_toggle_slot(room: Dictionary, slot: int) -> void:
 	room.ready = ready
 	_touch_room(room)
 	_broadcast_room_lobby(room)
+
+# --- 自定义房间：每个 AI 座位的难度（协议 48，2026-11-20）---------------------------
+# 房主在大厅点 AI 座位上的难度按钮，逐个座位切换 新手 → 简单 → 普通 → 困难 → 大师。
+# 没选过的 AI 座位是默认档（bot_profiles.json 的 default_level，普通）—— 用户定：自定义房间不再按段位自动算。
+# 档位存在 room.seat_ai_levels（RoomService.SEAT_SLOT_MAPS：换座跟着走、离座一起清），
+# 由 LiveBotEconomy.level_for_slot 读；匹配局不受影响（那边由账号服务器按段位签）。
+func team_set_ai_level(slot: int, level: int) -> void:
+	if not can_control_room() or slot < 0 or slot >= TEAM_SLOTS:
+		return
+	level = clampi(level, BotProfile.MIN_LEVEL, BotProfile.MAX_LEVEL)
+	if not is_host:
+		_rpc_team_set_ai_level.rpc_id(1, slot, level)
+		return
+	# 局域网房主：本机就是权威，prepare_local_bots 直接读这一份。
+	if slot < team_slot_states.size() and str(team_slot_states[slot]) == "dummy":
+		team_seat_ai_levels[slot] = level
+		team_lobby_changed.emit()
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_team_set_ai_level(slot: int, level: int) -> void:
+	if not _dedicated_server:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if not _rate_ok(sender, "toggle_slot"):
+		return
+	var room := _room_for_peer(sender)
+	if room.is_empty() or int((room.get("peer_slot", {}) as Dictionary).get(sender, -1)) != int(room.get("leader_slot", 0)):
+		return
+	if bool(room.get("matched", false)):
+		return
+	if not _phase_allows(room, PHASE_LOBBY_ONLY, "set_ai_level", sender):
+		return
+	_room_set_ai_level(room, slot, level)
+
+func _room_set_ai_level(room: Dictionary, slot: int, level: int) -> void:
+	var states: Array = room.get("slot_states", [])
+	if slot < 0 or slot >= TEAM_SLOTS or slot >= states.size() or str(states[slot]) != "dummy":
+		return
+	var levels: Dictionary = room.get("seat_ai_levels", {})
+	levels.erase(str(slot))
+	levels[slot] = clampi(level, BotProfile.MIN_LEVEL, BotProfile.MAX_LEVEL)
+	room["seat_ai_levels"] = levels
+	_touch_room(room)
+	_broadcast_room_lobby(room)
+
+# 下发给大厅显示的 AI 难度：{slot: 1~5}，只给自定义房间里的 AI 座位，值就是服务器实际会用的那一档。
+# 匹配局不发：那边的档位来自段位，不给客户端看。
+func _build_public_seat_ai_levels(room: Dictionary) -> Dictionary:
+	if bool(room.get("matched", false)):
+		return {}
+	var out := {}
+	var states: Array = room.get("slot_states", [])
+	for slot in states.size():
+		if str(states[slot]) == "dummy":
+			out[slot] = LiveBotEconomy.level_for_slot(room, slot)
+	return out
 
 func team_request_move(target_slot: int) -> void:
 	# A player asks to move into an empty slot. Host-authoritative.
@@ -2483,6 +2545,8 @@ func prepare_local_bots() -> void:
 	var room := {"bot_states": team_bot_states, "round_index": GameState.round_index,
 		"ruleset": "seedling" if GameState.FINAL_ROUND == 13 else "normal",
 		"shared_seed": shared_seed, "slot_states": GameState.team_slot_states,
+		# 每个 AI 座位的难度：局域网房主读大厅那份，离线自测读开局时抄进 GameState 的那份。
+		"seat_ai_levels": team_seat_ai_levels if team_active else GameState.team_seat_ai_levels,
 		"team_upgrade_stones": _local_bot_stones}
 	team_bot_states = LiveBotEconomy.prepare(room)
 
@@ -2581,6 +2645,7 @@ func _build_room_state(room: Dictionary, slot: int) -> Dictionary:
 		"seat_profiles": (room.get("seat_profiles", {}) as Dictionary).duplicate(true),
 		"seat_pets": _build_public_seat_pets(room),
 		"seat_ai_skins": _build_public_seat_ai_skins(room),
+		"seat_ai_levels": _build_public_seat_ai_levels(room),
 		"carrot_harvest_round": int(room.get("round_index", -1)),
 		"carrot_harvest_gains": _build_public_carrot_harvest_gains(room),
 		"ready": (room.get("ready", []) as Array).duplicate(),
@@ -3785,6 +3850,7 @@ func _build_spectate_state(room: Dictionary, sid: int) -> Dictionary:
 		"seat_profiles": (room.get("seat_profiles", {}) as Dictionary).duplicate(true),
 		"seat_pets": _build_public_seat_pets(room),
 		"seat_ai_skins": _build_public_seat_ai_skins(room),
+		"seat_ai_levels": _build_public_seat_ai_levels(room),
 		"ready":(room.get("ready", []) as Array).duplicate(),
 		"suspended": bool(room.get("suspended", false)),
 		"run_over": bool(room.get("run_over", false)),
@@ -3911,6 +3977,7 @@ func _rpc_spectate_state(envelope: Dictionary) -> void:
 	team_ready = (payload.get("ready", []) as Array).duplicate()
 	team_seat_profiles = (payload.get("seat_profiles", {}) as Dictionary).duplicate(true)
 	team_seat_ai_skins = (payload.get("seat_ai_skins", {}) as Dictionary).duplicate(true)
+	team_seat_ai_levels = (payload.get("seat_ai_levels", {}) as Dictionary).duplicate(true)
 	team_leader_slot = int(payload.get("leader_slot", 0))
 	server_round_index = int(payload.get("round_id", 0))
 	server_phase = str(payload.get("phase", ""))
@@ -6071,6 +6138,7 @@ func reset() -> void:
 	four_star_request_uid = ""
 	team_seat_profiles.clear()
 	team_seat_ai_skins.clear()
+	team_seat_ai_levels.clear()
 	team_seat_pets.clear()
 	team_carrot_harvest_gains.clear()
 	team_carrot_harvest_round = -1
@@ -7180,6 +7248,7 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 			GameState.team_hp = incoming_team_hp
 	team_seat_profiles = (payload.get("seat_profiles", {}) as Dictionary).duplicate(true)
 	team_seat_ai_skins = (payload.get("seat_ai_skins", {}) as Dictionary).duplicate(true)
+	team_seat_ai_levels = (payload.get("seat_ai_levels", {}) as Dictionary).duplicate(true)
 	# 观战列表（协议 44）：大厅左侧那一栏。只有公开身份，选手和观战者看到的是同一份。
 	team_room_spectators = {"spectators": (payload.get("spectators", []) as Array).duplicate(true),
 		"spectate_open": bool(payload.get("spectate_open", true)), "spectate_max": int(payload.get("spectate_max", 10))}
@@ -9265,9 +9334,16 @@ func _settlement_target(old: Dictionary) -> Dictionary:
 		target["leader_slot"] = int(old.get("initial_leader", old.get("leader_slot", 0)))
 		target["settlement_pending"] = {}
 		var initial: Array = old.get("initial_seats", old.get("slot_states", []))
+		# 回房间时 AI 座位照原样放回，房主给它们选的难度也一起带回（协议 48）。
+		var old_ai_levels: Dictionary = old.get("seat_ai_levels", {})
+		var kept_ai_levels := {}
 		for i in mini(6, initial.size()):
 			if str(initial[i]) == "dummy":
 				target.slot_states[i] = "dummy"
+				var kept_level: Variant = old_ai_levels.get(i, old_ai_levels.get(str(i)))
+				if kept_level != null:
+					kept_ai_levels[i] = int(kept_level)
+		target["seat_ai_levels"] = kept_ai_levels
 		for pid in old.get("peer_slot", {}):
 			if not _peer_connected(int(pid)):
 				continue

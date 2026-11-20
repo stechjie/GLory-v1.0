@@ -43,13 +43,21 @@ static func prepare(room: Dictionary) -> Dictionary:
 # 这个 AI 座位用哪一档（11-07 五档难度，都在服务器上定）：
 #   掉线托管（开局时是真人）→ handover_level（用户定：普通）
 #   匹配补位 → 名片签的这桌段位（room.ai_tier）
-#   自定义房间 → 在座真人段位的平均（没打过排位的算初誓）；一个真人都没有就用默认档
+#   自定义房间 / 离线自测（11-20 用户定）→ 房主在大厅给这个座位选的档位（room.seat_ai_levels）；
+#     没选过就是默认档（普通）。不再按在座真人段位自动算。
+#   匹配局但名片没签段位（理论上不该有）→ 在座真人段位的平均（没打过排位的算初誓）；一个真人都没有就用默认档
 static func level_for_slot(room: Dictionary, slot: int) -> int:
 	var initial: Array = room.get("initial_seats", [])
 	if slot < initial.size() and str(initial[slot]) == "player":
 		return Profile.handover_level()
 	if room.has("ai_tier"):
 		return Profile.level_for_tier(int(room.ai_tier))
+	if not bool(room.get("matched", false)):
+		var levels: Dictionary = room.get("seat_ai_levels", {})
+		var picked: Variant = levels.get(slot, levels.get(str(slot)))
+		if picked != null:
+			return clampi(int(picked), Profile.MIN_LEVEL, Profile.MAX_LEVEL)
+		return Profile.default_level()
 	var states: Array = room.get("slot_states", [])
 	var profiles: Dictionary = room.get("seat_profiles", {})
 	var total := 0

@@ -1,5 +1,8 @@
 extends RefCounted
 
+# Android plugin methods are invisible to has_method(); see NativeBridge.gd.
+const NativeBridge := preload("res://scripts/account/NativeBridge.gd")
+
 var cancelled := false
 var _windows: RefCounted
 
@@ -15,7 +18,7 @@ func _native_bridge() -> Object:
 func recognize(owner: Node, wav: PackedByteArray) -> Dictionary:
 	var bridge := _native_bridge()
 	# Native mobile implementations and test bridges keep their existing contract.
-	if OS.get_name() == "Windows" and (bridge == null or not bridge.has_method("recognizeSpeechFile")):
+	if OS.get_name() == "Windows" and (bridge == null or not NativeBridge.supports(bridge, "recognizeSpeechFile")):
 		_windows = preload("res://scripts/account/WindowsSpeechToText.gd").new()
 		if cancelled:
 			_windows.cancel()
@@ -23,7 +26,7 @@ func recognize(owner: Node, wav: PackedByteArray) -> Dictionary:
 	if bridge == null:
 		return {"ok": false, "error": "unavailable"}
 	for method in ["recognizeSpeechFile", "getSpeechResult", "cancelSpeechRecognition"]:
-		if not bridge.has_method(method):
+		if not NativeBridge.supports(bridge, method):
 			return {"ok": false, "error": "plugin_update_required"}
 	var filename := "user://speech_%d.wav" % Time.get_ticks_usec()
 	var file := FileAccess.open(filename, FileAccess.WRITE)

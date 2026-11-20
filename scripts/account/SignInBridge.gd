@@ -12,6 +12,8 @@ extends RefCounted
 # 🔴 身份证明是凭证（一小时内能拿它登录）：只在内存里转一手，不打印、不存盘。
 
 const AccountConfig := preload("res://scripts/account/AccountConfig.gd")
+# 判断插件方法一律走它：安卓插件的方法 has_method() 查不到（见 NativeBridge.gd）。
+const NativeBridge := preload("res://scripts/account/NativeBridge.gd")
 
 const SINGLETON := "GlorySignIn"
 const POLL_SEC := 0.2
@@ -32,12 +34,12 @@ static func _bridge() -> Object:
 
 static func google_available() -> bool:
 	var bridge := _bridge()
-	return bridge != null and bridge.has_method("isGoogleAvailable") and bool(bridge.call("isGoogleAvailable"))
+	return bridge != null and NativeBridge.supports(bridge, "isGoogleAvailable") and bool(bridge.call("isGoogleAvailable"))
 
 
 static func apple_available() -> bool:
 	var bridge := _bridge()
-	return bridge != null and bridge.has_method("isAppleAvailable") and bool(bridge.call("isAppleAvailable"))
+	return bridge != null and NativeBridge.supports(bridge, "isAppleAvailable") and bool(bridge.call("isAppleAvailable"))
 
 
 static func any_available() -> bool:
@@ -68,7 +70,7 @@ static func sign_in(tree: SceneTree, provider: String) -> Dictionary:
 	var name := "Apple" if provider == "apple" else "Google"
 	var bridge := _bridge()
 	var begin_method := "beginAppleSignIn" if provider == "apple" else "beginGoogleSignIn"
-	if bridge == null or not bridge.has_method(begin_method) or not bridge.has_method("pollSignIn"):
+	if bridge == null or not NativeBridge.supports(bridge, begin_method) or not NativeBridge.supports(bridge, "pollSignIn"):
 		return {"ok": false, "error": "这台设备不支持 %s 登录" % name}
 	var nonce := new_nonce()
 	var request_id: int
@@ -102,7 +104,7 @@ static func sign_in(tree: SceneTree, provider: String) -> Dictionary:
 				# 不记录原生错误原文：SDK 的错误可能包含授权回调参数。
 				var detail := str(result.get("error", result.get("state", "")))
 				return {"ok": false, "error": failure_text(detail) if provider == "google" else "Apple 登录失败，请稍后再试"}
-	if bridge.has_method("cancelSignIn"):
+	if NativeBridge.supports(bridge, "cancelSignIn"):
 		bridge.call("cancelSignIn", request_id)
 	return {"ok": false, "error": "%s 登录等待超时，请再试一次" % name}
 

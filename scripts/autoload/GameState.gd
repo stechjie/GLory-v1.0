@@ -99,6 +99,8 @@ var pending_battle_package: Dictionary = {}
 # 3v3 team mode (prototype)
 var team_mode := false
 var team_slot_states: Array = []
+# 离线自测：大厅里给每个 AI 座位选的难度（slot -> 1~5），开局时和 team_slot_states 一起抄进来。
+var team_seat_ai_levels: Dictionary = {}
 var team_hp := START_FORMATION_HP
 var enemy_team_hp := START_FORMATION_HP    # rival team's shared HP mirror (host-authoritative)
 var team_run_won := false                 # 本队是否赢下整局（平局时为 false）

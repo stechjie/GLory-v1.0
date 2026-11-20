@@ -4,7 +4,8 @@ extends RefCounted
 ## 档位从哪来（都在服务器上定，客户端改不了）：
 ##   * 匹配补位：账号服务器按这桌真人的平均段位定一档，签进名片的 ai 座位（ai_level）
 ##   * 掉线托管：handover_level（用户 11-07 定：普通档）
-##   * 其它没写档位的（自定义房间的 AI、预览推演）：default_level
+##   * 自定义房间 / 离线自测：房主在大厅给每个 AI 座位选（room.seat_ai_levels，协议 48），没选就是 default_level
+##   * 其它没写档位的（预览推演）：default_level
 ##
 ## 字段（每档一份）：
 ##   noise              决策打分的噪声（误判率），0 = 不犯错

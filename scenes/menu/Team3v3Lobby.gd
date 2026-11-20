@@ -17,6 +17,9 @@ const SLOT_SIZE := Vector2(184, 175)
 const SEAT_CIRCLE_CENTER := Vector2(197.0 / 400.0, 159.0 / 376.0) * SLOT_SIZE
 const SLOT_STATUS_SIZE := Vector2(122, 42)
 const SEAT_CIRCLE_STATUS_POS := SEAT_CIRCLE_CENTER - SLOT_STATUS_SIZE * 0.5
+# AI 座位圈里「假想敌」下面那颗难度按钮（协议 48）。落在状态字和铭牌之间，不碰右上角的 X。
+const AI_LEVEL_BTN_SIZE := Vector2(96, 30)
+const AI_LEVEL_BTN_POS := Vector2(SEAT_CIRCLE_CENTER.x - 48.0, SEAT_CIRCLE_CENTER.y + 22.0)
 # 10.01 反馈（第 4 条）：座位框换成玩家在大厅佩戴的头像框。
 #
 # 同一席位里的层次（后加的子节点在上面）：
@@ -46,6 +49,8 @@ const SLOT_PLATE_REGION := Rect2(105, 291, 185, 74)
 const SLOT_PLATE_POS := Vector2(48, 135)
 const SLOT_PLATE_SIZE := Vector2(86, 35)
 const AvatarCatalog := preload("res://scripts/account/AvatarCatalog.gd")
+# AI 五档难度的档位范围和默认档（data/ai/bot_profiles.json）。
+const BotProfile := preload("res://scripts/economy/ai/BotProfile.gd")
 const Tokens := preload("res://ui/theme/GloryTokens.gd")
 # 9.17 第二批：BGM 走常驻 MusicService，音效走 SfxService。
 const MusicService := preload("res://ui/services/MusicService.gd")
@@ -429,6 +434,10 @@ var _slot_name_lbls: Array = []
 var _slot_status_lbls: Array = []
 var _slot_x_btns: Array = []
 var _slot_ai_btns: Array = []
+# AI 座位上的难度按钮（人人看得到，房主点一下换一档；协议 48）。
+var _slot_level_btns: Array = []
+# 离线自测时每个 AI 座位的难度（slot -> 1~5）。联机时以服务器下发的 NetworkService.team_seat_ai_levels 为准。
+var _ai_levels: Dictionary = {}
 # 10.01 反馈（第 4 条）：每个席位多两个节点 —— 玩家的头像框，和抬到框上面的铭牌复本。
 var _slot_frames: Array = []
 var _slot_plates: Array = []
@@ -670,6 +679,7 @@ func _build() -> void:
 	_slot_status_lbls.resize(6)
 	_slot_x_btns.resize(6)
 	_slot_ai_btns.resize(6)
+	_slot_level_btns.resize(6)
 	_slot_avatars.resize(6)
 	_slot_frames.resize(6)
 	_slot_plates.resize(6)
@@ -794,6 +804,13 @@ func _build_slot(index: int) -> void:
 	var ai_btn := _add_ai_button(pos + Vector2(51, 133), Vector2(80, 40), _on_slot_ai.bind(index),
 		"", "btn_ai_%s" % SLOT_LABELS[index])
 	_slot_ai_btns[index] = ai_btn
+	# AI 难度（协议 48）：AI 座位上人人都看得到这一档；只有房主点得动（点一下换一档）。
+	var level_btn := _add_ai_button(pos + AI_LEVEL_BTN_POS, AI_LEVEL_BTN_SIZE, _on_slot_level.bind(index),
+		"", "btn_ai_level_%s" % SLOT_LABELS[index], 15)
+	# 非房主看到的是 disabled 状态：字色保持一致，不要变灰（灰字像「这个 AI 坏了」）。
+	level_btn.add_theme_color_override("font_disabled_color", Color(0.43, 0.26, 0.08))
+	level_btn.visible = false
+	_slot_level_btns[index] = level_btn
 
 func _on_slot_pressed(index: int) -> void:
 	# 观战者点空位 = 坐下（只在大厅阶段，服务器也只在大厅收入座）。
@@ -836,6 +853,38 @@ func _on_slot_ai(index: int) -> void:
 		return
 	_toggle_dummy(index)
 
+# AI 难度（协议 48）：新手 → 简单 → 普通 → 困难 → 大师 → 新手，房主逐个座位点。
+func _on_slot_level(index: int) -> void:
+	if not _is_host_seat() or str(_states()[index]) != "dummy":
+		return
+	var next := _ai_level_of(index) % BotProfile.MAX_LEVEL + 1
+	if _online():
+		NetworkService.team_set_ai_level(index, next)
+		return
+	_ai_levels[index] = next
+	_refresh()
+
+# 这个 AI 座位现在是哪一档。联机看服务器下发的（就是服务器实际会用的那一档），离线看本地选的；
+# 都没有就是默认档（普通）。
+func _ai_level_of(index: int) -> int:
+	var levels: Dictionary = NetworkService.team_seat_ai_levels if (_online() or _spectating()) else _ai_levels
+	var level: Variant = levels.get(index, levels.get(str(index)))
+	if level == null:
+		return BotProfile.default_level()
+	return clampi(int(level), BotProfile.MIN_LEVEL, BotProfile.MAX_LEVEL)
+
+func _ai_level_name(level: int) -> String:
+	match level:
+		1:
+			return _room_text("新手", "Beginner")
+		2:
+			return _room_text("简单", "Easy")
+		4:
+			return _room_text("困难", "Hard")
+		5:
+			return _room_text("大师", "Master")
+	return _room_text("普通", "Normal")
+
 func _on_slot_x(index: int) -> void:
 	if not _is_host_seat() or index == _my_slot():
 		return
@@ -873,6 +922,7 @@ func _toggle_dummy(index: int) -> void:
 	elif state == "dummy":
 		_slot_states[index] = "empty"
 		_slot_ready[index] = false
+		_ai_levels.erase(index)
 	_refresh()
 
 func _refresh() -> void:
@@ -950,6 +1000,13 @@ func _refresh() -> void:
 		x_btn.visible = is_host_seat and i != my_slot and state != "empty"
 		ai_btn.visible = is_host_seat and i != my_slot and (state == "empty" or state == "dummy")
 		ai_btn.text = "- AI" if state == "dummy" else "+ AI"
+		# AI 难度：所有人都看得到；只有房主能点（其他人看到的是同样样式的、点不动的按钮）。
+		var level_btn: Button = _slot_level_btns[i]
+		level_btn.visible = state == "dummy"
+		level_btn.disabled = not is_host_seat
+		if level_btn.visible:
+			level_btn.text = _ai_level_name(_ai_level_of(i))
+			level_btn.tooltip_text = _room_text("点击切换 AI 难度", "Tap to change AI difficulty") if is_host_seat else ""
 	if _start_status_lbl != null:
 		_start_status_lbl.text = _start_hint_text()
 		_start_status_lbl.tooltip_text = _start_status_lbl.text
@@ -1163,6 +1220,7 @@ func _on_start() -> void:
 		NetworkService.team_start()
 		return
 	GameState.team_slot_states = _slot_states.duplicate()
+	GameState.team_seat_ai_levels = _ai_levels.duplicate()
 	start_requested.emit()
 
 func _on_session_changed() -> void:
