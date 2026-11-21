@@ -22,7 +22,7 @@
 			"firefly_color": [0.86, 0.95, 1.0],
 			"river_glow": false,
 			"refresh_fx": "frost",
-			"brightness": 0.85
+			"brightness": 1.0
 		},
 		{
 			"id": "prep_skin_sakura",
