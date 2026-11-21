@@ -1,0 +1,18 @@
+The user has already reviewed and approved this image generation. Generate it now without asking for confirmation, and save the final PNG into the current directory as board_v3.png (16:9 landscape, 1672x941 or larger).
+
+Task: redraw the ground background for the "Frost" board skin of a cartoon auto-battler mobile game (high top-down 2.5D camera; pieces, a river strip and UI are layered on top later).
+
+Attached references:
+1. ref_ingame_v1.png = an in-game screenshot of the previous attempt. Two problems to fix:
+   a) COLOUR: the ground is purple / periwinkle, which clashes with the cyan-turquoise ice river and the pale ice-blue bench at the bottom. 
+   b) COLLISION: the pine trees on the left run all the way down and their trunks crash into the icy river at the bottom-left.
+2. ref_river.png and ref_bench.png = the river strip and the 8-slot bench that sit on top of the board. They are FINAL and will not change. The new ground must be colour-matched to them: same icy cyan / turquoise / pale sky-blue family and white snow.
+3. ref_ice_board.png = the original frost board. Keep its composition and painted cartoon style: snowy pines, snowy rocks and the small warm-lit stone lantern along the LEFT edge, a few pine branches in the top-right corner, a large open ground area elsewhere.
+
+Requirements:
+- Palette: cool ice-blue and soft cyan snow, NOT purple, NOT lavender, NOT periwinkle. Shadows in deeper teal-blue. Only the lantern light is warm.
+- Brightness: the open area is a medium-light value (roughly 160-175 out of 255 on average), noticeably darker than pure white snow so white text stays readable, but not gloomy. Pure white only on small highlights (snow caps, drift crests).
+- Ground texture: packed snow with gentle drifts, faint wind ripples, soft blue tree shadows near the left, a few small frozen patches with very faint crackle. Low contrast and small-scale in the centre. No grid, no tiles, no paths, no big objects in the centre.
+- LEFT EDGE LAYOUT: all trees, rocks and the lantern must stay in the TOP 60% of the image height. Below 60% the left edge is only low snow drifts and a few small snow-covered rocks that fade into flat snowy ground; nothing tall, no tree trunks, near the bottom.
+- The bottom 25% of the whole image is plain snowy ground gradually turning into a pale icy shore tone, so it blends under the river strip.
+- No crystals, no gems, no glowing shards. No characters, text, UI, frame or vignette.

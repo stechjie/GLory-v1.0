@@ -1,0 +1,17 @@
+Use your built-in image generation tool to create ONE new 2D game character illustration, then save the resulting PNG as `samples/pet_jellyfish_coral_v1.png` in the current directory. Do not write code to draw it; generate it with the image tool. Do not modify any other file.
+
+Attached images 1-3 (rabbit, tiger cub, mushroom sprite) are existing pet illustrations from my game. They are the style authority. Match them exactly in:
+- rendering: bold dark-brown outlines of even weight, clean cel-shaded colour blocks with 2-3 tones, crisp small highlights, big glossy anime eyes with star-like catchlights, small blush marks. NOT soft airbrush, NOT iridescent pastel gradient, NOT 3D render
+- character design language: a chibi creature in a 3/4 front pose, wearing a small themed cape or collar with gold trim, and holding one themed prop
+- level of detail and ornament density
+- square canvas, single character centred, fully transparent background, no ground shadow, no text
+
+Attached image 4 is the CHARACTER reference: my "bubble jellyfish". Keep its identity: round dome bell in pink-to-lavender-to-light-blue, cute face on the bell, short wavy frilly tentacles, a pink scallop shell with a coral sprig and seaweed on top of its head, a few bubbles around it. Redraw it in the style of images 1-3 rather than copying its soft rendering.
+
+Additions so it belongs with the other pets:
+- a short sea-blue cape/collar with champagne-gold trim, fastened with a pearl
+- one tentacle holds a small shell lantern (a spiral conch shell with a warm glowing pearl inside), in the same role as the lanterns the other pets carry
+- palette: sea blue #42B6E4, teal #80D8CD, shell pink #F6C5D9, coral pink #F394A7, pearl white #F9F0ED, lavender #B8A8EB, champagne gold #D4AA6C (gold low brightness)
+- strictly NO crystals, NO gems, NO diamond shapes
+
+When done, reply with only the saved file path and the pixel size.

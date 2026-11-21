@@ -10,6 +10,7 @@ const ActionButtonScene := preload("res://ui/components/GloryActionButton.tscn")
 const SfxService := preload("res://ui/services/SfxService.gd")
 const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
 const GameHelp := preload("res://scripts/account/GameHelp.gd")
+const ConfirmDialog := preload("res://ui/components/GloryConfirmDialog.gd")
 
 signal back_requested
 signal replay_tutorial_requested
@@ -339,12 +340,48 @@ func _build() -> void:
 		leave_btn.pressed.connect(func(): leave_match_requested.emit())
 		footer.add_child(leave_btn)
 
+	# 11.21：电脑版（Steam）以前只能关窗口 / Alt+F4 才能退。只在电脑上加：
+	# iOS 审核不允许 App 自己退出，安卓用系统返回 / 多任务，手机包保持原样。
+	# 只放主界面的设定：对局里退出走「退出对局」（先判负 / 扣分确认），房间里先回主界面。
+	if OS.has_feature("pc") and not in_match and not lobby_mode:
+		var quit_btn := ActionButtonScene.instantiate() as Button
+		quit_btn.name = "QuitGame"
+		quit_btn.text = tr("settings_quit_game")
+		quit_btn.theme_type_variation = Theming.VARIATION_DANGER
+		quit_btn.custom_minimum_size = Vector2(200, Tokens.TOUCH_MIN)
+		quit_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		quit_btn.pressed.connect(_confirm_quit_game)
+		footer.add_child(quit_btn)
+
 	var back_btn := Button.new()
 	back_btn.text = tr("settings_back")
 	back_btn.custom_minimum_size = Vector2(160, Tokens.TOUCH_MIN)
 	back_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	back_btn.pressed.connect(func(): back_requested.emit())
 	footer.add_child(back_btn)
+
+
+func _confirm_quit_game() -> void:
+	DialogService.confirm({
+		"request_id": "settings_quit_game",
+		"title": tr("settings_quit_game"),
+		"body": tr("settings_quit_game_body"),
+		"intent": ConfirmDialog.Intent.DANGER,
+		"confirm_text": tr("settings_quit_game"),
+		"owner": self,
+		"on_result": _on_quit_game_result,
+	})
+
+
+# DialogService 回调固定两个参数（少一个回调体根本不跑）。
+func _on_quit_game_result(result: String, _request_id: String) -> void:
+	if result != ConfirmDialog.RESULT_CONFIRMED:
+		return
+	var tree := get_tree()
+	# 和点窗口右上角 × 走同一条路：存档（SaveManager）、运营数据（AnalyticsService）
+	# 都在 WM_CLOSE_REQUEST 里落盘，直接 quit() 收不到这个通知。
+	tree.root.propagate_notification(NOTIFICATION_WM_CLOSE_REQUEST)
+	tree.quit()
 
 # V3 P1-09：状态不能只靠颜色。
 #
