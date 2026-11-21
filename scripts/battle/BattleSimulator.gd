@@ -849,6 +849,9 @@ static func _step_team(team_units: Array, opponents: Array, elapsed: float, stat
 			continue
 		if StatusEffectService.is_stunned(f):
 			continue
+		# 11.21 技能吟唱中（偷袭者突袭前的 0.5 秒）：原地不动、不普攻。
+		if StatusEffectService.has_status(f, "skill_chant"):
+			continue
 		# 9.28「打不到就换目标」：连续 N tick 出在射程外且没推进 → 解除锁定，并把
 		# 「这个 uid 够不到」记进**避让集合**，让下面的重选去换一个可达的目标。
 		# ★ 必须放在 `_select_attack_target` **之前** —— 它命中锁定就直接返回，
@@ -1354,6 +1357,10 @@ static func _apply_opening_unit_skills(player: Array, enemy: Array, event_log: A
 			var open_cd := opening_skill_cooldown(f)
 			if open_cd > 0.0:
 				f.skill_ready = maxf(float(f.get("skill_ready", 0.0)), open_cd)
+			# 11.21 偷袭者：没有冷却，但开战 opening_delay 秒后才能第一次用技能。
+			var open_delay := float(d.get("opening_delay", 0.0))
+			if open_delay > 0.0:
+				f.skill_ready = maxf(float(f.get("skill_ready", 0.0)), open_delay)
 			# 4 星天使：开场若干秒控制免疫（与冷却无关的另一件事）。
 			var immune_sec := float(d.get("control_immune_sec", 0.0))
 			if immune_sec > 0.0:
@@ -1472,6 +1479,20 @@ static func _tick_skills(casters: Array, opponents: Array, state: Dictionary) ->
 		# 上一次突袭的目标还活着就不再放，目标一死（不论被谁打死）立刻突袭下一个。
 		if sid == "blink_low_def_backline" and bool(d.get("recast_on_target_death", false)) and _blink_target_still_alive(caster, opponents):
 			continue
+		# 11.21 偷袭者吟唱（chant_sec）：每次突袭前先原地吟唱，吟唱期间不移动、不普攻
+		# （_step_team 看 skill_chant 状态），吟唱完才位移。吟唱开始时场上必须有可突袭的目标；
+		# 吟唱中被沉默 / 眩晕 / 恐惧不会取消，只是等控制结束后再出手。
+		if sid == "blink_low_def_backline" and float(d.get("chant_sec", 0.0)) > 0.0:
+			if not caster.has("blink_chant_until"):
+				if _lowest_def_backline(caster, opponents).is_empty():
+					continue
+				var chant_sec := float(d.get("chant_sec", 0.0))
+				caster["blink_chant_until"] = float(state.elapsed) + chant_sec
+				StatusEffectService.add_status(caster, "skill_chant", chant_sec, {})
+				continue
+			if float(state.elapsed) < float(caster.get("blink_chant_until", 0.0)) - 0.001:
+				continue
+			caster.erase("blink_chant_until")
 		var old_ready := float(caster.get("skill_ready", 0.0))
 		CrimsonRuneService.begin_action(caster, state)
 		DamageService.begin_stat_context(state, caster)

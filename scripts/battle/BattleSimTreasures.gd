@@ -897,11 +897,11 @@ static func _apply_undead_poison_heal(attacker: Dictionary, state: Dictionary, t
 
 
 # ---------------------------------------------------------------------------
-# 暗族 7：暗族棋子每次普攻，目标攻/防/攻速各 -3%，自己各 +3%。
-# 均按开战基础值计算，各自最多 15 层。
-const DARK_SAP_TARGET_PCT := 0.03
-const DARK_SAP_SELF_PCT := 0.03
-const DARK_SAP_MAX_STACKS := 15
+# 暗族 7：暗族棋子每次普攻，目标攻/防/攻速各 -3.3%，自己各 +3.3%。
+# 均按开战基础值计算，各自最多 10 层（2026-11-21 用户定：3% / 15 层 → 3.3% / 10 层）。
+const DARK_SAP_TARGET_PCT := 0.033
+const DARK_SAP_SELF_PCT := 0.033
+const DARK_SAP_MAX_STACKS := 10
 
 static func _apply_dark_sap(attacker: Dictionary, target: Dictionary, state: Dictionary) -> void:
 	if str(attacker.get("def", {}).get("race", "")) != "dark":

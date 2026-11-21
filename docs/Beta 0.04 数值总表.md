@@ -106,21 +106,21 @@ Boss 战斗实际值 = 基础值 x Boss 整体倍率 x Boss 成长。
 | ID | 技能参数 |
 |---|---|
 | god_priest | skill_cd 4.0，heal_pct 0.06，cleanse_chance 0.25，model `res://assets/models/units/god_priest_halo_animated/god_priest_animated.tscn`，idle/attack/run 动作已接入 |
-| god_priestess | skill_cd 6.0，atk_bonus 0.08，aspd_bonus 0.15，清除负面状态，model `res://assets/models/units/god_priestess_animated/god_priestess_animated.tscn` |
-| god_guard | start_shield_pct 0.20，taunt_radius 180.0：周围敌人优先攻击自己，model `res://assets/models/units/god_guard_crystalbound/god_guard_crystalbound_animated.tscn` |
-| god_aurora | true_damage_pct 0.18，model `res://assets/models/units/god_aurora_animated/god_aurora_animated.tscn` |
+| god_priestess | skill_cd 6.0，atk_bonus 0.11，aspd_bonus 0.15，清除负面状态，model `res://assets/models/units/god_priestess_animated/god_priestess_animated.tscn` |
+| god_guard | start_shield_pct 0.25，taunt_radius 180.0：周围敌人优先攻击自己，model `res://assets/models/units/god_guard_crystalbound/god_guard_crystalbound_animated.tscn` |
+| god_aurora | true_damage_pct 0.22，model `res://assets/models/units/god_aurora_animated/god_aurora_animated.tscn` |
 | god_angel | skill_cd 7.0，opening_cd 2.0，heal_pct 0.15，atk_bonus 0.10，aspd_bonus 0.15，清除负面状态，model `res://assets/models/units/god_angel_animated/god_angel_animated.tscn` |
 | god_arbiter | skill_cd 2.0，damage_atk_pct 2.2，def_stack_pct 0.06，max_stacks 5，model `res://assets/models/units/god_arbiter_animated/god_arbiter_animated.tscn` |
-| god_archangel | skill_cd 5.0，damage_reduction 0.50，duration 6.0，unique_on_board true，model `res://assets/models/units/god_archangel_animated/god_archangel_animated.tscn` |
+| god_archangel | skill_cd 5.0，damage_reduction 0.50，duration 6.0，heal_pct 0.15（庇护同时回复该友军最大生命，2026-11-21），unique_on_board true，model `res://assets/models/units/god_archangel_animated/god_archangel_animated.tscn` |
 | god_king | skill_cd 8.0，damage_atk_pct 1.6，max_hp_bonus_pct 0.08，damage_tick_count 5，damage_tick_interval 0.5，unique_on_board true，model `res://assets/models/units/god_king_animated/god_king_animated.tscn` |
 | dark_imp | attack_down 0.08，aspd_down 0.08，duration 4.0，max_stacks 2 |
 | dark_mage | skill_cd 4.0，silence_sec 1.2，damage_atk_pct 1.7，model `res://assets/models/units/dark_mage_violet_necromancer/dark_mage_animated.tscn`，idle/attack/run 动作已接入 |
 | dark_fear | skill_cd 6.0，fear_sec 2.3 |
-| dark_queen | stack_damage 0.06，max_stacks 5 |
-| dark_scythe | damage_atk_pct 2.5，无冷却、开场直接释放（skill_global true），目标死亡后立刻再放（recast_on_target_death true）〔2026-11-18 更新〕 |
+| dark_queen | stack_damage 0.15，max_stacks 4，attack_speed 1.2〔2026-11-21 更新〕 |
+| dark_scythe | damage_atk_pct 2.3，无冷却；开战 2 秒后可用（opening_delay 2.0），每次突袭前吟唱 0.5 秒（chant_sec 0.5，吟唱中不移动不普攻）；目标死亡后再次吟唱突袭（recast_on_target_death true，skill_global true）〔2026-11-21 更新〕 |
 | dark_suc | skill_cd 5.0，stun_sec 1.0，model `res://assets/models/units/dark_suc_animated/dark_suc_animated.tscn`，idle/attack/run 动作已接入；attack 从第 150 帧后开始播放 |
 | dark_doom | 连接最近非Boss敌人并策反为己方；双方共享受到的生命损失；连接目标或末日守卫死亡后清除连接，本回合不再释放；Boss免疫，unique_on_board true |
-| dark_dragon | pull_sec 1.0，damage_atk_pct 2.2，unique_on_board true |
+| dark_dragon | pull_sec 1.0，damage_atk_pct 1.5（4★ 3.0），unique_on_board true〔2026-11-21 更新〕 |
 | undead_small | 无技能，model `res://assets/models/units/undead_small_animated/undead_small_animated.tscn`，idle/attack/run 动作已接入 |
 | undead_poison | 攻击附带中毒 |
 | undead_parasite | 普攻击杀非 Boss 目标时召唤分身，clone_hp_pct 0.20，clone_atk_def_pct 0.50 |
@@ -129,7 +129,7 @@ Boss 战斗实际值 = 基础值 x Boss 整体倍率 x Boss 成长。
 | undead_bomb | damage_atk_pct 2.5 |
 | undead_titan | reflect_taken_damage_pct 0.12，armor_per_hit 2，max_stacks 10 |
 | undead_mother | death_threshold 5，tier1_or_merc_chance 0.50，tier2_chance 0.35，tier3_chance 0.10，boss_max_hp_damage 0.20，unique_on_board true |
-| human_militia | interrupt_chance 0.12，model `res://assets/models/units/human_militia_little_knight/human_militia_animated.tscn` |
+| human_militia | interrupt_chance 0.18，model `res://assets/models/units/human_militia_little_knight/human_militia_animated.tscn` |
 | human_merchant | 战后金币按星级，model `res://assets/models/units/human_merchant_green_cloak/human_merchant_animated.tscn` |
 | human_archer | every 4，combo_atk_pct 1.20，model `res://assets/models/units/human_archer.glb` |
 | human_swordsman | damage_atk_pct 1.5，stun_sec 1.0，model `res://assets/models/units/human_swordsman_animated/human_swordsman_animated.tscn` |

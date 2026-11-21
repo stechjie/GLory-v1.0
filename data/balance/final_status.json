@@ -134,11 +134,11 @@
       "cost": 30,
       "skill_id": "same_target_damage_stack",
       "skill_name_cn": "痛苦凝视",
-      "skill_cn_1to3": "痛苦凝视：持续攻击同一目标时，每层伤害+20%，最多4层；换目标重置。",
+      "skill_cn_1to3": "痛苦凝视：持续攻击同一目标时，每层伤害+15%，最多4层；换目标重置。",
       "skill_cn_4": "痛苦凝视：持续攻击同一目标时，每层伤害+35%，最多6层；换目标重置。",
-      "skill_en_1to3": "Agonizing Gaze: Consecutive attacks on the same target deal +20% damage per stack (max 4 stacks). Resets on target switch.",
-      "skill_raw_params": "max_stacks = 4\nstack_damage = 0.2",
-      "star4_changes": "max_stacks: 4 → 6\nstack_damage: 0.2 → 0.35",
+      "skill_en_1to3": "Agonizing Gaze: Consecutive attacks on the same target deal +15% damage per stack (max 4 stacks). Resets on target switch.",
+      "skill_raw_params": "max_stacks = 4\nstack_damage = 0.15",
+      "star4_changes": "max_stacks: 4 → 6\nstack_damage: 0.15 → 0.35",
       "stats": {
         "1": {
           "hp": 920,
@@ -174,11 +174,11 @@
       "cost": 30,
       "skill_id": "blink_low_def_backline",
       "skill_name_cn": "暗影突袭",
-      "skill_cn_1to3": "暗影突袭（无冷却）：开战立刻瞬移到低防后排敌人身边，造成自身攻击250%伤害；该目标死亡后立刻突袭下一个。",
-      "skill_cn_4": "暗影突袭（无冷却）：开战立刻瞬移到低防后排敌人身边，造成自身攻击500%伤害；该目标死亡后立刻突袭下一个。",
-      "skill_en_1to3": "Shadow Ambush (no cooldown): At battle start, blink to the lowest-DEF backline enemy and deal 250% ATK damage. When that target dies, immediately ambush the next one.",
-      "skill_raw_params": "damage_atk_pct = 2.5\nrecast_on_target_death = true\nskill_global = true",
-      "star4_changes": "damage_atk_pct: 2.5 → 5\ndef_down_pct: — → 0.25",
+      "skill_cn_1to3": "暗影突袭（无冷却）：开战2.0秒后可用；吟唱0.5秒后瞬移到低防后排敌人身边，造成自身攻击230%伤害；该目标死亡后再次吟唱并突袭下一个。",
+      "skill_cn_4": "暗影突袭（无冷却）：开战2.0秒后可用；吟唱0.5秒后瞬移到低防后排敌人身边，造成自身攻击460%伤害；该目标死亡后再次吟唱并突袭下一个。",
+      "skill_en_1to3": "Shadow Ambush (no cooldown): Usable 2.0s after battle start. Channel for 0.5s, then blink to the lowest-DEF backline enemy and deal 230% ATK damage. When that target dies, channel again and ambush the next one.",
+      "skill_raw_params": "chant_sec = 0.5\ndamage_atk_pct = 2.3\nopening_delay = 2\nrecast_on_target_death = true\nskill_global = true",
+      "star4_changes": "damage_atk_pct: 2.3 → 4.6\ndef_down_pct: — → 0.25",
       "stats": {
         "1": {
           "hp": 780,
@@ -294,11 +294,11 @@
       "cost": 50,
       "skill_id": "black_hole",
       "skill_name_cn": "黑洞",
-      "skill_cn_1to3": "黑洞（冷却8.0秒）：牵引周围敌人，眩晕1.0秒，并造成自身攻击160%伤害。",
-      "skill_cn_4": "黑洞（冷却8.0秒）：牵引周围敌人，眩晕2.0秒，并造成自身攻击320%伤害。",
-      "skill_en_1to3": "Black Hole (CD 8.0s): Pull surrounding enemies, stun for 1.0s, and deal 160% ATK damage.",
-      "skill_raw_params": "damage_atk_pct = 1.6\npull_sec = 1\nunique_on_board = true",
-      "star4_changes": "damage_atk_pct: 1.6 → 3.2\npull_sec: 1 → 2",
+      "skill_cn_1to3": "黑洞（冷却8.0秒）：牵引周围敌人，眩晕1.0秒，并造成自身攻击150%伤害。",
+      "skill_cn_4": "黑洞（冷却8.0秒）：牵引周围敌人，眩晕2.0秒，并造成自身攻击300%伤害。",
+      "skill_en_1to3": "Black Hole (CD 8.0s): Pull surrounding enemies, stun for 1.0s, and deal 150% ATK damage.",
+      "skill_raw_params": "damage_atk_pct = 1.5\npull_sec = 1\nunique_on_board = true",
+      "star4_changes": "damage_atk_pct: 1.5 → 3.\npull_sec: 1 → 2",
       "stats": {
         "1": {
           "hp": 1800,
@@ -325,8 +325,8 @@
           "mres": 41
         }
       },
-      "skill_damage_multiplier_1to3": 1.6,
-      "skill_damage_multiplier_4": 3.2
+      "skill_damage_multiplier_1to3": 1.5,
+      "skill_damage_multiplier_4": 3.0
     },
     "god_priest": {
       "name_cn": "神侍",
@@ -376,32 +376,32 @@
       "cost": 20,
       "skill_id": "nearest_ally_bless",
       "skill_name_cn": "神赐祝福",
-      "skill_cn_1to3": "神赐祝福（冷却6.0秒）：最近友军攻击+8%、攻速+15%，并清除负面状态（同一目标最多3层）。",
+      "skill_cn_1to3": "神赐祝福（冷却6.0秒）：最近友军攻击+11%、攻速+15%，并清除负面状态（同一目标最多3层）。",
       "skill_cn_4": "神赐祝福（冷却4.5秒）：最近友军攻击+32%、攻速+45%，并清除负面状态（同一目标最多3层）。",
-      "skill_en_1to3": "Divine Blessing (CD 6.0s): The nearest ally gains +8% ATK and +15% AS and is cleansed (up to 3 stacks per ally).",
-      "skill_raw_params": "aspd_bonus = 0.15\natk_bonus = 0.08\nskill_cd = 6",
-      "star4_changes": "aspd_bonus: 0.15 → 0.45\natk_bonus: 0.08 → 0.32\nskill_cd: 6 → 4.5",
+      "skill_en_1to3": "Divine Blessing (CD 6.0s): The nearest ally gains +11% ATK and +15% AS and is cleansed (up to 3 stacks per ally).",
+      "skill_raw_params": "aspd_bonus = 0.15\natk_bonus = 0.11\nskill_cd = 6",
+      "star4_changes": "aspd_bonus: 0.15 → 0.45\natk_bonus: 0.11 → 0.32\nskill_cd: 6 → 4.5",
       "stats": {
         "1": {
-          "hp": 600,
+          "hp": 700,
           "atk": 26,
           "defense": 4,
           "mres": 11
         },
         "2": {
-          "hp": 900,
+          "hp": 1050,
           "atk": 39,
           "defense": 6,
           "mres": 17
         },
         "3": {
-          "hp": 1800,
+          "hp": 2100,
           "atk": 78,
           "defense": 12,
           "mres": 33
         },
         "4": {
-          "hp": 2070,
+          "hp": 2415,
           "atk": 90,
           "defense": 14,
           "mres": 38
@@ -496,11 +496,11 @@
       "cost": 30,
       "skill_id": "true_damage_attack",
       "skill_name_cn": "圣枪裁决",
-      "skill_cn_1to3": "圣枪裁决：普通攻击额外造成自身攻击18%真实伤害。",
+      "skill_cn_1to3": "圣枪裁决：普通攻击额外造成自身攻击22%真实伤害。",
       "skill_cn_4": "圣枪裁决：普通攻击额外造成自身攻击45%真实伤害。",
-      "skill_en_1to3": "Holy Lance: Normal attacks deal bonus true damage equal to 18% ATK.",
-      "skill_raw_params": "true_damage_pct = 0.18",
-      "star4_changes": "third_hit_double: — → true\ntrue_damage_pct: 0.18 → 0.45",
+      "skill_en_1to3": "Holy Lance: Normal attacks deal bonus true damage equal to 22% ATK.",
+      "skill_raw_params": "true_damage_pct = 0.22",
+      "star4_changes": "third_hit_double: — → true\ntrue_damage_pct: 0.22 → 0.45",
       "stats": {
         "1": {
           "hp": 720,
@@ -536,11 +536,11 @@
       "cost": 30,
       "skill_id": "guardian_shield_taunt",
       "skill_name_cn": "守护嘲讽",
-      "skill_cn_1to3": "守护嘲讽：战斗开始获得最大生命20%护盾，并让周围敌人优先攻击自己。",
+      "skill_cn_1to3": "守护嘲讽：战斗开始获得最大生命25%护盾，并让周围敌人优先攻击自己。",
       "skill_cn_4": "守护嘲讽：战斗开始获得最大生命40%护盾，并让周围敌人优先攻击自己。",
-      "skill_en_1to3": "Guardian Taunt: Gain a shield equal to 20% max HP at battle start; force nearby enemies to target this unit.",
-      "skill_raw_params": "start_shield_pct = 0.2\ntaunt_radius = 180",
-      "star4_changes": "shield_control_immune: — → true\nstart_shield_pct: 0.2 → 0.4\ntaunt_radius: 180 → 240",
+      "skill_en_1to3": "Guardian Taunt: Gain a shield equal to 25% max HP at battle start; force nearby enemies to target this unit.",
+      "skill_raw_params": "start_shield_pct = 0.25\ntaunt_radius = 180",
+      "star4_changes": "shield_control_immune: — → true\nstart_shield_pct: 0.25 → 0.4\ntaunt_radius: 180 → 240",
       "stats": {
         "1": {
           "hp": 1520,
@@ -576,11 +576,11 @@
       "cost": 50,
       "skill_id": "random_ally_damage_reduction",
       "skill_name_cn": "天使庇护",
-      "skill_cn_1to3": "天使庇护（冷却5.0秒）：随机友军获得50%减伤，持续6.0秒。",
-      "skill_cn_4": "天使庇护（冷却4.0秒）：随机友军获得65%减伤，持续8.0秒。",
-      "skill_en_1to3": "Angel's Guard (CD 5.0s): Grant a random ally 50% damage reduction for 6.0s.",
-      "skill_raw_params": "damage_reduction = 0.5\nduration = 6\nskill_cd = 5\nunique_on_board = true",
-      "star4_changes": "damage_reduction: 0.5 → 0.65\nduration: 6 → 8\nskill_cd: 5 → 4",
+      "skill_cn_1to3": "天使庇护（冷却5.0秒）：随机友军获得50%减伤，持续6.0秒，并回复其15%最大生命。",
+      "skill_cn_4": "天使庇护（冷却4.0秒）：随机友军获得65%减伤，持续8.0秒，并回复其25%最大生命。",
+      "skill_en_1to3": "Angel's Guard (CD 5.0s): Grant a random ally 50% damage reduction for 6.0s and heal it for 15% max HP.",
+      "skill_raw_params": "damage_reduction = 0.5\nduration = 6\nheal_pct = 0.15\nskill_cd = 5\nunique_on_board = true",
+      "star4_changes": "damage_reduction: 0.5 → 0.65\nduration: 6 → 8\nheal_pct: 0.15 → 0.25\nskill_cd: 5 → 4",
       "stats": {
         "1": {
           "hp": 1700,
@@ -696,34 +696,34 @@
       "cost": 20,
       "skill_id": "attack_interrupt",
       "skill_name_cn": "缴械攻击",
-      "skill_cn_1to3": "缴械攻击：普通攻击有12%概率缴械目标（1 秒内无法普攻）。",
+      "skill_cn_1to3": "缴械攻击：普通攻击有18%概率缴械目标（1 秒内无法普攻）。",
       "skill_cn_4": "缴械攻击：普通攻击有20%概率眩晕目标0.5秒。",
-      "skill_en_1to3": "Disarm Strike: Normal attacks have a 12% chance to disarm the target (cannot use normal attacks for 1s).",
-      "skill_raw_params": "interrupt_chance = 0.12",
-      "star4_changes": "interrupt_chance: 0.12 → 0.2\nstun_sec: — → 0.5",
+      "skill_en_1to3": "Disarm Strike: Normal attacks have a 18% chance to disarm the target (cannot use normal attacks for 1s).",
+      "skill_raw_params": "interrupt_chance = 0.18",
+      "star4_changes": "interrupt_chance: 0.18 → 0.2\nstun_sec: — → 0.5",
       "stats": {
         "1": {
           "hp": 600,
           "atk": 35,
-          "defense": 5,
+          "defense": 8,
           "mres": 6
         },
         "2": {
           "hp": 900,
           "atk": 53,
-          "defense": 8,
+          "defense": 12,
           "mres": 9
         },
         "3": {
           "hp": 1800,
           "atk": 105,
-          "defense": 15,
+          "defense": 24,
           "mres": 18
         },
         "4": {
           "hp": 2070,
           "atk": 121,
-          "defense": 17,
+          "defense": 28,
           "mres": 21
         }
       }
@@ -1380,11 +1380,11 @@
       "cost": 30,
       "skill_id": "team_random_stack",
       "skill_name_cn": "战鼓",
-      "skill_cn_1to3": "战鼓共振：普攻命中时，友军攻击、攻速各+5%（最多15层，持续3.0秒）；1/3概率为友军回复5%最大生命。",
-      "skill_cn_4": "战鼓共振：普攻命中时，友军攻击、攻速各+8%（最多15层，持续3.0秒）；1/3概率为友军回复5%最大生命。",
-      "skill_en_1to3": "War Drum: Each basic hit gives allies +5% ATK and +5% AS (up to 15 stacks, 3.0s); 1-in-3 chance to heal allies for 5% max HP.",
-      "skill_raw_params": "heal_pct = 0.05\nmax_stacks = 15\nstack_duration = 3\nstack_pct = 0.05",
-      "star4_changes": "stack_pct: 0.05 → 0.08",
+      "skill_cn_1to3": "战鼓共振：普攻命中时，友军攻击、攻速各+4%（最多15层，持续3.0秒）；1/3概率为友军回复5%最大生命。",
+      "skill_cn_4": "战鼓共振：普攻命中时，友军攻击、攻速各+6%（最多15层，持续3.0秒）；1/3概率为友军回复5%最大生命。",
+      "skill_en_1to3": "War Drum: Each basic hit gives allies +4% ATK and +4% AS (up to 15 stacks, 3.0s); 1-in-3 chance to heal allies for 5% max HP.",
+      "skill_raw_params": "heal_pct = 0.05\nmax_stacks = 15\nstack_duration = 3\nstack_pct = 0.04",
+      "star4_changes": "stack_pct: 0.04 → 0.06",
       "stats": {
         "1": {
           "hp": 980,
@@ -1702,7 +1702,7 @@
       {
         "threshold": 7,
         "name_cn": "暗族·汲取",
-        "detail_cn": "暗族普攻命中即可叠层：目标攻击 / 防御 / 攻速各 -3%/层；自身各 +3%/层，最多 15 层。"
+        "detail_cn": "暗族普攻命中即可叠层：目标攻击 / 防御 / 攻速各 -3.3%/层；自身各 +3.3%/层，最多 10 层。"
       }
     ],
     "undead": [
@@ -1976,6 +1976,6 @@
       "effect_cn": "需要：生命丰碑 + 黄金祭坛 + 震荡余波 + 血契之刃 + 狂怒阵容。生命丰碑 ×1.20→×1.40；震荡余波眩晕 1→2 秒；血契之刃 ×1.25→×1.50；狂怒阵容上限 8→9。黄金祭坛使用不扣法阵 HP；选到胡牌手立即回复法阵 HP +2（上限 50）。\n表内字段：positive_effect_multiplier = 2"
     }
   },
-  "balance_version": "ff8b58bddf1abcaffb2f3f3bc2a9db349b9563866d35c1ca1bc625a911af8fdd",
-  "final_workbook_sha256": "baf47927bc7a09f200e6735fc182fa5810e3db7a8651d7d694cc43baaedbfb9b"
+  "balance_version": "2833bc1f8b72c4416ca76b228bb76c5f96d069f3110d674e325738a151a56bd3",
+  "final_workbook_sha256": "be0b6a52feb58fa8fdf9eec8dae4d2254c6cc9bed8a650384153ba40f78ddd03"
 }

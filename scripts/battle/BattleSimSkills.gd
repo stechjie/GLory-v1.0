@@ -163,6 +163,10 @@ static func _skill_archangel(caster: Dictionary, allies: Array, d: Dictionary) -
 	var target: Dictionary = alive[RngService.rng.randi() % alive.size()]
 	_mark_vfx_target(caster, target)
 	StatusEffectService.add_status(target, "damage_reduction", float(d.get("duration", 6.0)), {"pct": float(d.get("damage_reduction", 0.5))})
+	# 11.21 用户定：庇护的同时为该友军回复最大生命的 heal_pct（1~3 星 15%，4 星 25%）。
+	var heal_pct := float(d.get("heal_pct", 0.0))
+	if heal_pct > 0.0:
+		_heal_unit(target, maxi(1, int(round(float(target.get("max_hp", 1)) * heal_pct))))
 
 
 static func _split_damage(total: int, count: int) -> Array:

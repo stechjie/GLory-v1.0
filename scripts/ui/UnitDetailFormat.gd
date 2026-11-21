@@ -258,7 +258,7 @@ static func format_skill_template_cn(d: Dictionary) -> String:
 		"judgement_strike":
 			return "审判打击%s：对最近敌人造成攻击%s伤害，每次释放自身防御+%s（最多%d层）。" % [cd, pct(float(d.get("damage_atk_pct", 2.2))), pct(float(d.get("def_stack_pct", 0.06))), int(d.get("max_stacks", 5))]
 		"random_ally_damage_reduction":
-			return "天使庇护%s：随机友军获得%s减伤，持续%.1f秒。" % [cd, pct(float(d.get("damage_reduction", 0.50))), float(d.get("duration", 6.0))]
+			return "天使庇护%s：随机友军获得%s减伤，持续%.1f秒，并回复其%s最大生命。" % [cd, pct(float(d.get("damage_reduction", 0.50))), float(d.get("duration", 6.0)), pct(float(d.get("heal_pct", 0.0)))]
 		"global_divine_blast":
 			var tick_count := maxi(1, int(d.get("damage_tick_count", 5)))
 			var tick_duration := float(tick_count - 1) * maxf(0.0, float(d.get("damage_tick_interval", 0.5)))
@@ -273,7 +273,7 @@ static func format_skill_template_cn(d: Dictionary) -> String:
 			return "痛苦凝视：持续攻击同一目标时，每层伤害+%s，最多%d层；换目标重置。" % [pct(float(d.get("stack_damage", 0.06))), int(d.get("max_stacks", 5))]
 		"blink_low_def_backline":
 			if bool(d.get("recast_on_target_death", false)):
-				return "暗影突袭（无冷却）：开战立刻瞬移到低防后排敌人身边，造成自身攻击%s伤害；该目标死亡后立刻突袭下一个。" % [pct(float(d.get("damage_atk_pct", 2.0)))]
+				return "暗影突袭（无冷却）：开战%.1f秒后可用；吟唱%.1f秒后瞬移到低防后排敌人身边，造成自身攻击%s伤害；该目标死亡后再次吟唱并突袭下一个。" % [float(d.get("opening_delay", 0.0)), float(d.get("chant_sec", 0.0)), pct(float(d.get("damage_atk_pct", 2.0)))]
 			return "暗影突袭（冷却时间5.0秒）：瞬移到低防后排敌人身边，造成自身攻击%s伤害；击杀后刷新冷却。" % [pct(float(d.get("damage_atk_pct", 2.0)))]
 		"stun":
 			return "暗影击晕%s：眩晕最近敌人%.1f秒，并造成自身攻击%s伤害。" % [cd, float(d.get("stun_sec", 1.0)), pct(float(d.get("damage_atk_pct", 1.5)))]
@@ -455,7 +455,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"judgement_strike":
 			return "Judgement Strike%s: Deal %s ATK damage to the nearest enemy; each cast grants +%s DEF (up to %d stacks)." % [cd, pct(float(d.get("damage_atk_pct", 2.2))), pct(float(d.get("def_stack_pct", 0.06))), int(d.get("max_stacks", 5))]
 		"random_ally_damage_reduction":
-			return "Angel's Guard%s: Grant a random ally %s damage reduction for %.1fs." % [cd, pct(float(d.get("damage_reduction", 0.50))), float(d.get("duration", 6.0))]
+			return "Angel's Guard%s: Grant a random ally %s damage reduction for %.1fs and heal it for %s max HP." % [cd, pct(float(d.get("damage_reduction", 0.50))), float(d.get("duration", 6.0)), pct(float(d.get("heal_pct", 0.0)))]
 		"global_divine_blast":
 			var tick_count := maxi(1, int(d.get("damage_tick_count", 5)))
 			var tick_duration := float(tick_count - 1) * maxf(0.0, float(d.get("damage_tick_interval", 0.5)))
@@ -470,7 +470,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 			return "Agonizing Gaze: Consecutive attacks on the same target deal +%s damage per stack (max %d stacks). Resets on target switch." % [pct(float(d.get("stack_damage", 0.06))), int(d.get("max_stacks", 5))]
 		"blink_low_def_backline":
 			if bool(d.get("recast_on_target_death", false)):
-				return "Shadow Ambush (no cooldown): At battle start, blink to the lowest-DEF backline enemy and deal %s ATK damage. When that target dies, immediately ambush the next one." % [pct(float(d.get("damage_atk_pct", 2.0)))]
+				return "Shadow Ambush (no cooldown): Usable %.1fs after battle start. Channel for %.1fs, then blink to the lowest-DEF backline enemy and deal %s ATK damage. When that target dies, channel again and ambush the next one." % [float(d.get("opening_delay", 0.0)), float(d.get("chant_sec", 0.0)), pct(float(d.get("damage_atk_pct", 2.0)))]
 			return "Shadow Ambush%s: Blink to the lowest-DEF backline enemy and deal %s ATK damage. Cooldown resets on kill." % [cd, pct(float(d.get("damage_atk_pct", 2.0)))]
 		"stun":
 			return "Shadow Stun%s: Stun the nearest enemy for %.1fs and deal %s ATK damage." % [cd, float(d.get("stun_sec", 1.0)), pct(float(d.get("damage_atk_pct", 1.5)))]

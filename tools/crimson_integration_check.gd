@@ -403,7 +403,7 @@ func _check_catalog() -> void:
 	for unit: Dictionary in crimson:
 		by_id[str(unit.id)] = unit
 	_h.expect(is_equal_approx(float(by_id.crimson.block_chance), 0.20) and is_equal_approx(float(UnitFactory.apply_star_stats(by_id.crimson, 4).block_chance), 0.30), "guard_balance", "Guard block chance must be 20% / 30%")
-	_h.expect(is_equal_approx(float(by_id.drumer.stack_pct), 0.05) and is_equal_approx(float(UnitFactory.apply_star_stats(by_id.drumer, 4).stack_pct), 0.08) and int(by_id.drumer.max_stacks) == 15 and is_equal_approx(float(by_id.drumer.heal_pct), 0.05), "drummer_balance", "War Drum values are not 5% / 8%, 15 stacks, 5% heal")
+	_h.expect(is_equal_approx(float(by_id.drumer.stack_pct), 0.04) and is_equal_approx(float(UnitFactory.apply_star_stats(by_id.drumer, 4).stack_pct), 0.06) and int(by_id.drumer.max_stacks) == 15 and is_equal_approx(float(by_id.drumer.heal_pct), 0.05), "drummer_balance", "War Drum values are not 4% / 6%, 15 stacks, 5% heal")
 	var breaker_four: Dictionary = UnitFactory.apply_star_stats(by_id.armbreaker, 4)
 	_h.expect(is_equal_approx(float(by_id.armbreaker.break_chance), 1.0) and int(by_id.armbreaker.break_amount) == 2
 		and is_equal_approx(float(breaker_four.break_chance), 1.0) and int(breaker_four.break_amount) == 4,

@@ -302,6 +302,12 @@ func _refresh_battle_vfx(state_snapshot: Dictionary) -> void:
 		if bool(now.get("phoenix_used", false)) and bool(now.get("alive", false)) and not _phoenix_rise_played.has(id):
 			_phoenix_rise_played[id] = true
 			_play_unit_procedural("treasure_phoenix_rise", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO), _unit_target_context(now, now))
+		# 11.21 偷袭者吟唱起手：skill_chant 状态从无到有的那一帧，在施法者身上播聚气特效。
+		# 位移和斩击仍由下面的 skill_ready 上升沿（吟唱结束、真正突袭那一帧）触发。
+		if float(now.get("skill_chant_sec", 0.0)) > 0.0 and float(prev.get("skill_chant_sec", 0.0)) <= 0.0 and bool(now.get("alive", false)):
+			var chant_context := _unit_target_context(now, now)
+			chant_context["chant_sec"] = float(now.get("skill_chant_sec", 0.5))
+			_play_unit_procedural("blink_chant", now.get("world_foot", Vector3.ZERO), now.get("world_foot", Vector3.ZERO), chant_context)
 		if now_skill_ready > prev_skill_ready + 0.1 and _skill_ready_rise_is_cast(sid_now, now_skill_ready, battle_elapsed):
 			_play_skill_cast_vfx(now, prev, damage_events, current)
 		elif prev_skill_ready - now_skill_ready > REFRESH_MIN_DROP_SEC:
@@ -429,6 +435,10 @@ func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
 			u["attack_count"] = int(f.get("attack_count", 0))
 			u["range_px"] = float(f.get("range_px", 0.0))
 			u["skill_ready"] = float(f.get("skill_ready", 0.0))
+			# 11.21 偷袭者吟唱：模拟器挂 skill_chant 状态（0.5 秒），状态随帧过回放边界。
+			var chant_value: Variant = f.get("statuses", {})
+			var chant_status: Variant = (chant_value as Dictionary).get("skill_chant", {}) if typeof(chant_value) == TYPE_DICTIONARY else {}
+			u["skill_chant_sec"] = float((chant_status as Dictionary).get("remaining", 0.0)) if typeof(chant_status) == TYPE_DICTIONARY else 0.0
 			u["skill_id"] = str(f.get("def", {}).get("skill_id", ""))
 			# 种族只用于挑表现（赤律族的 unit_id 没有 god_/dark_ 这类前缀）。
 			u["race"] = str(f.get("def", {}).get("race", ""))

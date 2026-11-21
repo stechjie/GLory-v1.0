@@ -176,6 +176,8 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 		# 10.10：黑龙黑洞改为贴地引力漩涡 + 逐个被拉者的拖拽残影 / 牵引触须 / 眩晕锁环。
 		"black_hole":_hero_skill(skill_id,origin,target,context,true)
 		"blink_low_def_backline":_blink_slash(origin,target,context)
+		# 11.21：偷袭者突袭前的 0.5 秒吟唱（模拟器的 skill_chant 状态起手那一帧触发）。
+		"blink_chant":_blink_chant(origin,context)
 		# 9.24 #7：末日守卫「血之契约」改用专属血链（VFXDoomBloodLink3D）——暗红/黑紫
 		# 手绘绳体 + 两端结 + 断裂时从中段撕裂；旧路由走的是通用发光缎带
 		# （VFXPackBloodLink3D），没有重量、没有端点结。专属模块本就为它而写。
@@ -1272,6 +1274,43 @@ func _black_hole(origin:Vector3,context:Dictionary={})->void:
 			"dark_tint":DARK_INK_EDGE,"body_tint":Color(.72,.44,.66),"core_tint":Color(.88,.46,.74),
 			"flow_strength":.024,"opacity":.84,"delay":.30,
 			"seed":float(abs(int(pulled.x*53.0+pulled.z*37.0))%97)
+		})
+
+# 11.21 偷袭者吟唱：origin 是施法者脚下（world_foot）。三层，全部用偷袭者已有的三张贴图，
+# 时长跟模拟器的吟唱时间（context.chant_sec，缺省 0.5 秒）走：
+#   ① 脚下墨痕由小铺开 —— 告诉对手「它站定了，要动手了」；
+#   ② 身上的残影由大向内收拢 —— 聚气，和突袭后那道向外甩的残影方向相反；
+#   ③ 吟唱末尾肩头一记小十字寒光 —— 出手信号，紧接着就是 _blink_slash 的墨裂与位移。
+func _blink_chant(origin:Vector3,context:Dictionary={})->void:
+	var oh:=_uh(context,"origin_height")
+	var chant:=clampf(float(context.get("chant_sec",.5)),.2,1.5)
+	var seed:=float(abs(int(origin.x*37.0+origin.z*29.0))%97)
+	var pool:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+	if pool!=null:
+		pool.play_layer(SCYTHE_INK_TEAR_TEXTURE,{
+			"name":"BlinkChant_InkPool","position":_lvl_foot(origin,oh,LEVEL_LOW),
+			"size":Vector2(.92,.58),"duration":chant+.10,
+			"start_scale":.18,"peak_scale":.86,"end_scale":1.0,
+			"dark_tint":DARK_INK_EDGE,"body_tint":DARK_INK_BODY,"core_tint":DARK_INK_CORE,
+			"flow_strength":.030,"opacity":.80,"seed":seed
+		})
+	var gather:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+	if gather!=null:
+		gather.play_layer(SCYTHE_RECALL_TEXTURE,{
+			"name":"BlinkChant_Gather","position":_lvl_foot(origin,oh,LEVEL_BODY),
+			"size":Vector2(1.30,1.0),"duration":chant,
+			"start_scale":1.22,"peak_scale":.74,"end_scale":.34,
+			"dark_tint":DARK_EDGE,"body_tint":Color(.80,.52,.74),"core_tint":Color(.96,.60,.86),
+			"flow_strength":.028,"opacity":.86,"seed":seed+3.0
+		})
+	var glint:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+	if glint!=null:
+		glint.play_layer(SCYTHE_CROSS_SLASH_TEXTURE,{
+			"name":"BlinkChant_Glint","position":_lvl_foot(origin,oh,LEVEL_SHOULDER),
+			"size":Vector2(.62,.62),"duration":.24,
+			"start_scale":.20,"peak_scale":.90,"end_scale":1.06,
+			"dark_tint":DARK_EDGE,"body_tint":DARK_BODY,"core_tint":DARK_CORE,
+			"flow_strength":.018,"opacity":.92,"delay":maxf(0.0,chant-.16),"seed":seed+7.0
 		})
 
 func _blink_slash(origin:Vector3,target:Vector3,context:Dictionary={})->void:
