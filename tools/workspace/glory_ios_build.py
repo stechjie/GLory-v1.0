@@ -394,7 +394,9 @@ def write_preset(stage, method, profile, cert, version, number, signin=None):
                "application/code_sign_identity_release": cert["name"],
                "application/provisioning_profile_specifier_release": profile["UUID"],
                "application/short_version": version, "application/version": number,
-               "application/additional_plist_content": GAME_MODE_PLIST + "\n" + signin_plist(signin or google_signin_config(stage)),
+               "application/additional_plist_content": GAME_MODE_PLIST + "\n"
+                   + "<key>NSSpeechRecognitionUsageDescription</key><string>Convert chat voice messages you record into a text draft for you to review before sending.</string>\n"
+                   + signin_plist(signin or google_signin_config(stage)),
                "entitlements/additional": APPLE_SIGNIN_PLIST,
                "icons/icon_1024x1024": "res://app_icon.png",
                # Godot's template links camera/photo APIs even though gameplay never requests them.
@@ -543,7 +545,8 @@ def verify_ipa(ipa, directory, method, profile, cert, version, number, identity,
         raise RuntimeError("IPA 的 Bundle ID、营销版本或 build number 与本次配置不一致。")
     branding = verify_display_name(app, info)
     verify_game_mode_support(info)
-    for key in ("NSCameraUsageDescription", "NSPhotoLibraryUsageDescription", "NSMicrophoneUsageDescription"):
+    for key in ("NSCameraUsageDescription", "NSPhotoLibraryUsageDescription", "NSMicrophoneUsageDescription",
+                "NSSpeechRecognitionUsageDescription"):
         if not str(info.get(key, "")).strip():
             raise RuntimeError(f"IPA 的权限用途声明为空：{key}")
     voice = app / "Frameworks/GloryVoice.framework/GloryVoice"

@@ -314,6 +314,7 @@ class IOSBuildTests(unittest.TestCase):
                 ios.verify_game_mode_support(info)
                 self.assertIs(info["LSSupportsGameMode"], True)
                 self.assertIs(info["GCSupportsGameMode"], True)
+                self.assertTrue(info["NSSpeechRecognitionUsageDescription"].strip())
                 self.assertNotIn("UIBackgroundModes", info)
 
     def test_game_mode_validation_rejects_missing_disabled_or_string_flags(self):
@@ -333,6 +334,7 @@ class IOSBuildTests(unittest.TestCase):
         info = {"CFBundleIdentifier": ios.BUNDLE, "CFBundleShortVersionString": "0.0.4", "CFBundleVersion": "2",
                 "CFBundleDisplayName": ios.DISPLAY_NAME,
                 "CFBundleExecutable": "Fixture", "CFBundleSupportedPlatforms": ["iPhoneOS"], "NSMicrophoneUsageDescription": "Voice", "NSCameraUsageDescription": "No camera capture", "NSPhotoLibraryUsageDescription": "No photo library access",
+                "NSSpeechRecognitionUsageDescription": "Convert recorded chat speech into a draft.",
                 "LSSupportsGameMode": True, "GCSupportsGameMode": True}
         info.update(plistlib.loads(('<plist version="1.0"><dict>' + ios.signin_plist(self.signin) + '</dict></plist>').encode()))
         with zipfile.ZipFile(ipa, "w") as archive:
@@ -370,6 +372,20 @@ class IOSBuildTests(unittest.TestCase):
         self.assertTrue(result["apple_storekit"])
         self.assertTrue(result["game_mode_support"])
         self.assertTrue((destination / "signer-0").is_file())
+
+        missing_speech = self.root / "missing-speech-purpose.ipa"
+        with zipfile.ZipFile(ipa) as source, zipfile.ZipFile(missing_speech, "w") as target:
+            for name in source.namelist():
+                data = source.read(name)
+                if name == "Payload/Fixture.app/Info.plist":
+                    incomplete_info = plistlib.loads(data)
+                    del incomplete_info["NSSpeechRecognitionUsageDescription"]
+                    data = plistlib.dumps(incomplete_info)
+                target.writestr(name, data)
+        with mock.patch.object(ios, "capture", side_effect=tool):
+            with self.assertRaisesRegex(RuntimeError, "NSSpeechRecognitionUsageDescription"):
+                ios.verify_ipa(missing_speech, self.root / "missing-speech-verify", "ad-hoc",
+                               self.profile, cert, "0.0.4", "2", identity, {})
 
         # A signed-looking package without the native bridge must never pass.
         missing_voice = self.root / "missing-voice.ipa"
