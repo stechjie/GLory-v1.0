@@ -83,16 +83,21 @@ func _run() -> void:
 		"resize_budget", "resizing must preserve aspect and full-size high quality")
 	h.expect(ViewBudget.mobile_limit(2, true) == Vector2i.ZERO and ViewBudget.mobile_limit(1, false) == Vector2i.ZERO,
 		"high_desktop_reduced", "high quality and desktop resolution must remain unchanged")
-	var ios_medium := ViewBudget.battle_limit(1, true, true)
-	h.expect(ViewBudget.raster_size(Vector2(1600, 720), ios_medium) == Vector2i(1536, 691),
-		"ios_medium_battle_raster", "iOS medium battle models need a sharper bounded raster")
-	h.expect(ViewBudget.raster_size(Vector2(2048, 1536), ios_medium) == Vector2i(1152, 864),
-		"ios_tablet_battle_raster", "the same cap must preserve the tablet aspect ratio")
-	h.expect(ViewBudget.battle_limit(1, true, false) == ViewBudget.mobile_limit(1, true)
-		and ViewBudget.battle_limit(1, false, false) == Vector2i.ZERO
-		and ViewBudget.battle_limit(0, true, true) == ViewBudget.mobile_limit(0, true)
-		and ViewBudget.battle_limit(2, true, true) == Vector2i.ZERO,
-		"battle_resolution_scope", "Android, desktop, and iOS low and high presets keep their existing limits")
+	var mobile_medium := ViewBudget.battle_limit(1, true)
+	h.expect(ViewBudget.raster_size(Vector2(1600, 720), mobile_medium) == Vector2i(1536, 691),
+		"mobile_medium_battle_raster", "medium battle models need a sharper bounded raster on iOS and Android")
+	h.expect(ViewBudget.raster_size(Vector2(2048, 1536), mobile_medium) == Vector2i(1152, 864),
+		"tablet_battle_raster", "the same cap must preserve the tablet aspect ratio")
+	h.expect(ViewBudget.battle_limit(1, false) == Vector2i.ZERO
+		and ViewBudget.battle_limit(0, true) == ViewBudget.mobile_limit(0, true)
+		and ViewBudget.battle_limit(2, true) == Vector2i.ZERO,
+		"battle_resolution_scope", "desktop and the mobile low and high presets keep their existing limits")
+	h.expect(ViewBudget.prep_limit(1, true, false) == mobile_medium
+		and ViewBudget.prep_limit(1, true, true) == ViewBudget.mobile_limit(1, true)
+		and ViewBudget.prep_limit(0, true, false) == ViewBudget.mobile_limit(0, true)
+		and ViewBudget.prep_limit(2, true, false) == Vector2i.ZERO
+		and ViewBudget.prep_limit(1, false, false) == Vector2i.ZERO,
+		"prep_resolution_scope", "only Android medium preparation is raised; iOS, low, high and desktop are unchanged")
 	var old_fps := Engine.max_fps
 	FrameBudget.apply(true)
 	h.expect(Engine.max_fps == old_fps, "headless_fps_changed", "server/check processes must not inherit mobile waiting limits")

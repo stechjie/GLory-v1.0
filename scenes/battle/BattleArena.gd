@@ -867,7 +867,7 @@ func _fit_battle_3d_arena(arena: Node3D) -> void:
 
 func _setup_battle_3d_view(arena_wrap: Control) -> void:
 	var quality := VFXManager.get_quality_tier()
-	var limit := Budgeted3DView.battle_limit(quality, OS.has_feature("mobile"), OS.get_name() == "iOS")
+	var limit := Budgeted3DView.battle_limit(quality, OS.has_feature("mobile"))
 	_battle_3d_viewport = Budgeted3DView.create(arena_wrap, "UnitsLayer", 40, limit, true)
 	_battle_3d_viewport.add_to_group(&"perf_battle_viewport")
 	# Match preparation's high preset without increasing low/medium GPU cost.
