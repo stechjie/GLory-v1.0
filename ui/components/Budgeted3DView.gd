@@ -9,6 +9,13 @@ static func mobile_limit(tier: int, mobile: bool) -> Vector2i:
 		return Vector2i.ZERO
 	return Vector2i(960, 540) if tier == QUALITY.Tier.LOW else Vector2i(1280, 720)
 
+static func battle_limit(tier: int, mobile: bool, ios: bool) -> Vector2i:
+	# The iOS medium preset needs more samples for small model details and
+	# outlines. Keep a fixed cap so Retina displays don't multiply the 3D cost.
+	if mobile and ios and tier == QUALITY.Tier.MEDIUM:
+		return Vector2i(1536, 864)
+	return mobile_limit(tier, mobile)
+
 static func raster_size(display_size: Vector2, limit: Vector2i) -> Vector2i:
 	var display := display_size.max(Vector2(2.0, 2.0))
 	var ratio := 1.0

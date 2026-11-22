@@ -353,6 +353,13 @@ func _resource_engine_sample() -> Dictionary:
 		"tweens": get_tree().get_processed_tweens().size(),
 		"network": _resource_network_sample(),
 		"counter_scope": "engine rendering counters include passes and Canvas primitives; process/physics monitors are not a per-frame trace"}
+	var battle_view := get_tree().get_first_node_in_group(&"perf_battle_viewport") as SubViewport
+	if battle_view != null:
+		sample["battle_viewport"] = {
+			"width": battle_view.size.x,
+			"height": battle_view.size.y,
+			"update_mode": battle_view.render_target_update_mode,
+		}
 	return _resource_apply_monitor_availability(sample, OS.is_debug_build())
 
 

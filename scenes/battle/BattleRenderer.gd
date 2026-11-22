@@ -192,21 +192,26 @@ func _refresh_frenzy_hud() -> void:
 	if elapsed < BattleFrenzy.FRENZY_I_SEC:
 		var remaining := maxi(1, int(ceil(BattleFrenzy.FRENZY_I_SEC - elapsed)))
 		_frenzy_lbl.text = tr("battle_frenzy_warning") % remaining
-		_frenzy_lbl.add_theme_color_override("font_color", Color(1.0, 0.86, 0.34))
+		_set_frenzy_color_if_changed(Color(1.0, 0.86, 0.34))
 		return
 	match BattleFrenzy.stage_for_elapsed(elapsed):
 		1:
 			_frenzy_lbl.text = tr("battle_frenzy_i")
-			_frenzy_lbl.add_theme_color_override("font_color", Color(1.0, 0.78, 0.24))
+			_set_frenzy_color_if_changed(Color(1.0, 0.78, 0.24))
 		2:
 			_frenzy_lbl.text = tr("battle_frenzy_ii")
-			_frenzy_lbl.add_theme_color_override("font_color", Color(1.0, 0.52, 0.18))
+			_set_frenzy_color_if_changed(Color(1.0, 0.52, 0.18))
 		3:
 			_frenzy_lbl.text = tr("battle_frenzy_iii")
-			_frenzy_lbl.add_theme_color_override("font_color", Color(1.0, 0.30, 0.18))
+			_set_frenzy_color_if_changed(Color(1.0, 0.30, 0.18))
 		_:
 			_frenzy_lbl.text = tr("battle_sudden_death")
-			_frenzy_lbl.add_theme_color_override("font_color", Color(1.0, 0.18, 0.14))
+			_set_frenzy_color_if_changed(Color(1.0, 0.18, 0.14))
+
+
+func _set_frenzy_color_if_changed(color: Color) -> void:
+	if not _frenzy_lbl.has_theme_color_override("font_color") or _frenzy_lbl.get_theme_color("font_color") != color:
+		_frenzy_lbl.add_theme_color_override("font_color", color)
 
 # 伤害前三木牌榜（11-18）取代了原来的「攻击力前 5」文字榜，见 scenes/battle/BattleRankHud.gd。
 # _fighter_atk 留着：officetest 的单位面板还在用。
@@ -2179,25 +2184,34 @@ func _visual_id(f: Dictionary) -> String:
 func _refresh_damage_counter() -> void:
 	if not has_method("_ensure_combat_feedback"):
 		return
+	var hud: Control = call("_ensure_combat_feedback")
+	# The leaderboard owns its totals and is a child of this feedback layer.
+	# show_damage() does no bookkeeping when the single plate is disabled.
+	if not bool(hud.get("single_plate")):
+		hud.visible = true
+		return
 	var local_slot := NetworkService.team_local_slot if NetworkService.team_active else 0
-	var total := 0
+	var snapshot: Array = _state.get("presentation_slot_damage", [])
+	var has_snapshot := local_slot >= 0 and local_slot < snapshot.size()
+	var total := int(snapshot[local_slot]) if has_snapshot else 0
 	var found := false
 	var stats: Dictionary = _state.get("unit_stats", {})
 	for side in ["player", "enemy"]:
 		for fighter: Dictionary in _state.get(side, []):
-			if not bool(call("_is_local_owned_unit", str(fighter.get("uid", "")))):
+			# We already have the state dictionary; resolving its uid scans the
+			# whole roster again for every fighter.
+			if not bool(call("_owned_by_local_player", fighter)):
 				continue
 			found = true
+			if has_snapshot:
+				break
 			if str((stats.get(str(fighter.get("uid", "")), {}) as Dictionary).get("group", "")) != "boss":
 				total += _fighter_damage_dealt(fighter)
-	var snapshot: Array = _state.get("presentation_slot_damage", [])
-	if local_slot >= 0 and local_slot < snapshot.size():
-		total = int(snapshot[local_slot])
-	else:
+		if found and has_snapshot:
+			break
+	if not has_snapshot:
 		var elemental: Dictionary = _state.get("element_damage_by_slot", {})
 		total += int(elemental.get(local_slot, elemental.get(str(local_slot), 0)))
-	var hud: Control = call("_ensure_combat_feedback")
-	# PvP 左边是伤害前三榜（BattleRankHud），自己没棋子也要能看到别人排名。
-	hud.visible = found or not bool(hud.get("single_plate"))
+	hud.visible = found
 	if found:
 		hud.call("show_damage", total, not bool(_state.get("presentation_damage_silent", false)), GameState.round_index)
