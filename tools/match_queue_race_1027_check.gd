@@ -51,6 +51,7 @@ func _run() -> void:
 			h.expect(ModalStack.has(main.MATCH_QUEUE_MODAL_ID), "esc_keeps_queue", "Esc must not orphan a confirmed match")
 			if ModalStack.has(main.MATCH_QUEUE_MODAL_ID):
 				RealtimeService.message_received.emit({"t":"match","state":"ready"})
+				await get_tree().process_frame # Main enters after the WS dispatch has completed.
 				h.expect(main.entered == 1, "ready_after_esc", "The same client still receives the ready transition")
 			ModalStack.pop(main.MATCH_QUEUE_MODAL_ID)
 			main.free()

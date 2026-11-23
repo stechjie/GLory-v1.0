@@ -1522,6 +1522,7 @@ func save_prep_skin(skin_id: String) -> Dictionary:
 func fetch_battle_card() -> String:
 	var result: Dictionary = await _request(HTTPClient.METHOD_POST, "/v1/battle/card", {}, true)
 	if int(result.get("code", 0)) / 100 != 2:
+		print("[MATCH_ENTRY] battle card failed HTTP=%d" % int(result.get("code", 0)))
 		return ""
 	return str((result.get("body", {}) as Dictionary).get("card", ""))
 
