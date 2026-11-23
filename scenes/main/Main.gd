@@ -1580,7 +1580,9 @@ func _on_tutorial_races_opened(pet_screen: Control) -> void:
 	# 神族 1/8 的进度还在，让「返回」和那张卡一起露出来，玩家看得到要看的数。
 	var god := pet_screen.call("tutorial_god_target") as Control
 	if god != null and is_instance_valid(_tutorial_followup_guide):
-		_tutorial_followup_guide.call("set_extra_focus", god)
+		# 11.22 返回键挪到了左上角：跟神族卡合并成一个洞会从左上角一路亮到卡片，
+		# 改成单独第二个洞（同成长之路「返回 + 已获得的奖励」）。
+		_tutorial_followup_guide.call("set_second_focus", god)
 
 
 # 商城棋子页集齐一族后点「去备战」：打开备战页的种族页签、看那一族。

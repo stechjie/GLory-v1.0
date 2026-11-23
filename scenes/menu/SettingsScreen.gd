@@ -360,6 +360,18 @@ func _build() -> void:
 	back_btn.pressed.connect(func(): back_requested.emit())
 	footer.add_child(back_btn)
 
+	# 11.22：底部「返回」保留，左上角再放一颗圆形返回键（同其它整页界面的位置和样子）。
+	# 挂在页面本身、不进滚动内容：滚到哪都点得到。也不进 layout ——
+	# responsive_layout 门禁按「layout 的最后一个子节点 = 底部返回键」量可达性，那条不动。
+	# 最后添加 = 画在滚动层上面，输入先到它。
+	var top_back := Kit.back_button(func(): back_requested.emit())
+	top_back.name = "TopBack"
+	top_back.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	top_back.position = Vector2(Tokens.PAD, Tokens.PAD)
+	top_back.size = top_back.custom_minimum_size
+	add_child(top_back)
+	SafeArea.track(top_back)
+
 
 func _confirm_quit_game() -> void:
 	DialogService.confirm({

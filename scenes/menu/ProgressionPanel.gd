@@ -67,17 +67,15 @@ func _build() -> void:
 	var header := HBoxContainer.new()
 	header.custom_minimum_size.y = 50 if _compact else 58
 	column.add_child(header)
+	header.add_theme_constant_override("separation", 12)
+	# 11.22 全游戏统一：返回键在左上角、同一颗圆形返回图标（原来是标题栏右端的文字键）。
+	var close := Kit.back_button(func() -> void: dismissed.emit(), 50.0 if _compact else 58.0)
+	header.add_child(close)
+	_close_btn = close
 	var title_slot := HBoxContainer.new()
 	title_slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_slot.add_child(Kit.title_banner(_t("成长之路", "PATH OF GROWTH"), 62.0, 26))
 	header.add_child(title_slot)
-	var close := ACTION_BUTTON.instantiate() as Button
-	close.text = _t("返回", "Back")
-	close.custom_minimum_size = Vector2(150, 50 if _compact else 58)
-	Kit.style_plate(close, false)
-	close.pressed.connect(func() -> void: dismissed.emit())
-	header.add_child(close)
-	_close_btn = close
 	var hero := PanelContainer.new()
 	hero.custom_minimum_size.y = 145 if _compact else 175
 	hero.add_theme_stylebox_override("panel", Kit.box("panel",

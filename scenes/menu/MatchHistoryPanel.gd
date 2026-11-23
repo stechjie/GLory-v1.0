@@ -79,19 +79,17 @@ func _build() -> void:
 	column.add_theme_constant_override("separation", 12)
 	margin.add_child(column)
 	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 12)
 	column.add_child(header)
+	# 11.22 全游戏统一：返回键在左上角、同一颗圆形返回图标（原来是标题栏右端的文字键）。
+	var on_back := func() -> void:
+		SfxService.play(SfxService.CUE_UI_CONFIRM)
+		dismissed.emit()
+	header.add_child(Kit.back_button(on_back))
 	var title_slot := HBoxContainer.new()
 	title_slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_slot.add_child(Kit.title_banner(_text("对局历史", "Match History"), 62.0, 26))
 	header.add_child(title_slot)
-	var close := ACTION_BUTTON.instantiate() as Button
-	close.text = _text("返回", "Back")
-	close.custom_minimum_size = Vector2(130, Tokens.TOUCH_MIN)
-	Kit.style_plate(close, false)
-	close.pressed.connect(func() -> void:
-		SfxService.play(SfxService.CUE_UI_CONFIRM)
-		dismissed.emit())
-	header.add_child(close)
 	_summary = Label.new()
 	_summary.add_theme_font_size_override("font_size", 18)
 	Kit.on_backdrop(_summary)
