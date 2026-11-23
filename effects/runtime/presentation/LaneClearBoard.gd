@@ -199,7 +199,10 @@ class Ribbon extends Control:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	func set_rank(rank: int) -> void:
-		_rank = clampi(rank, 0, 2)
+		var next_rank := clampi(rank, 0, 2)
+		if _rank == next_rank:
+			return
+		_rank = next_rank
 		queue_redraw()
 
 	func _draw() -> void:

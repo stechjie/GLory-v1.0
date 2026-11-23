@@ -139,18 +139,25 @@ class FinalRuntimeTest(unittest.TestCase):
     def test_black_dragon_excel_percent_updates_both_star_groups(self) -> None:
         book = load_workbook(BOOK, read_only=False, data_only=True)
         try:
-            book["02_棋子技能"]["O11"] = 175
-            book["02_棋子技能"]["P11"] = 350
+            original = next(unit for unit in self.tables["data/units/race_units.json"]["units"]
+                            if unit["id"] == "dark_dragon")
+            original_base = original["damage_atk_pct"]
+            original_star4 = original["star4"]["damage_atk_pct"]
+            new_base_percent = 180 if original_base == 1.75 else 175
+            new_star4_percent = 360 if original_star4 == 3.5 else 350
+            book["02_棋子技能"]["O11"] = new_base_percent
+            book["02_棋子技能"]["P11"] = new_star4_percent
             tables = copy.deepcopy(self.tables)
             changes = overlay_excel_owned(book, tables)
             self.assertEqual(
-                [("damage_atk_pct", 1.6, 1.75), ("star4.damage_atk_pct", 3.2, 3.5)],
+                [("damage_atk_pct", original_base, new_base_percent / 100),
+                 ("star4.damage_atk_pct", original_star4, new_star4_percent / 100)],
                 [(change["field"], change["old"], change["new"]) for change in changes],
             )
             dragon = next(unit for unit in tables["data/units/race_units.json"]["units"]
                           if unit["id"] == "dark_dragon")
-            self.assertEqual(1.75, dragon["damage_atk_pct"])
-            self.assertEqual(3.5, dragon["star4"]["damage_atk_pct"])
+            self.assertEqual(new_base_percent / 100, dragon["damage_atk_pct"])
+            self.assertEqual(new_star4_percent / 100, dragon["star4"]["damage_atk_pct"])
             self.assertEqual(1, dragon["pull_sec"])
             self.assertEqual(2, dragon["star4"]["pull_sec"])
             source = (ROOT / "data/units/race_units.json").read_text(encoding="utf-8-sig")

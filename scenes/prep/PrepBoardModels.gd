@@ -984,7 +984,7 @@ func _on_prep_river_refresh_tick() -> void:
 
 func _setup_prep_river_background() -> void:
 	_prep_river_viewport = Budgeted3DView.create(self, "PrepRiverArenaLayer", -19,
-		Budgeted3DView.mobile_limit(VFXManager.get_quality_tier(), OS.has_feature("mobile")), false)
+		Budgeted3DView.prep_limit(VFXManager.get_quality_tier(), OS.has_feature("mobile"), OS.get_name() == "iOS"), false)
 	var container := _prep_river_viewport.get_parent()
 	# Only the high preset adds coverage samples; keep the mobile budgets and
 	# this viewport's 30 Hz refresh unchanged.

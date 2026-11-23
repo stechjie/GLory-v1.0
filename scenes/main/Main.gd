@@ -574,6 +574,14 @@ func _on_resume_completed(payload: Dictionary) -> void:
 	# 服务器权威数值覆盖本地
 	# 键名跟着状态信封走（E2）：round_index -> round_id、enemy_team_hp -> rival_team_hp。
 	# 快照现在还多带了连败与 PVE/Boss 计数（C5 缺的那几项）。
+	var recovered_settlement := str(payload.get("phase", "")) == NetworkService.ROOM_PREP \
+		and int(payload.get("round_id", GameState.round_index)) > GameState.round_index \
+		and payload.has("gold")
+	# 跨过结算进入下一轮：slot_gold 已包含漏收的战后收益。按余额恢复而非累加，
+	# 同回合重连仍保留本地买卖余额；重复快照在回合对齐后不会再次触发。
+	if recovered_settlement:
+		GameState.gold = maxi(0, int(payload.gold))
+		GameState.gold_spent_this_round = false
 	GameState.round_index = int(payload.get("battle_round", payload.get("round_id", GameState.round_index))) \
 		if PlaybackRecovery.needs_replay(payload) else int(payload.get("round_id", GameState.round_index))
 	GameState.team_hp = int(payload.get("team_hp", GameState.team_hp))
@@ -583,7 +591,7 @@ func _on_resume_completed(payload: Dictionary) -> void:
 	# 购买/出售都只改本地 GameState.gold，服务端 slot_gold 仅在战斗结算时更新一次，
 	# 等于"购买前"的金币。重连若用这份陈旧快照覆盖本地正确金币，金币会回退到购买前
 	# （BUG：商店购买阶段掉线重连后金币被重置）。因此未开启权威时保留本地金币不覆盖；
-	# 仅在经济账本权威开启、快照携带权威金币时才以服务端为准。
+	# 完全权威时以账本为准；非权威时仅上面的跨回合恢复采用战后余额。
 	if not _eco_state.is_empty() and bool(_eco_state.get("authoritative", false)):
 		GameState.gold = int(_eco_state.get("gold", GameState.gold))
 		GameState.gold_spent_this_round = bool(_eco_state.get("gold_spent_this_round", GameState.gold_spent_this_round))

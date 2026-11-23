@@ -1,0 +1,105 @@
+# Pre-optimization functions retained solely for an executable A/B regression.
+func _update_treasure_set_presentation() -> void:
+	var local_attack := false
+	var lane := _local_lane()
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if not (raw is Dictionary):
+				continue
+			var uid := str(raw.get("uid", ""))
+			if not local_attack and _is_local_owned_unit(uid) and _unit_has_treasure_set(uid, "attack"):
+				local_attack = true
+			_sync_defense_sigil(uid, raw)
+			if bool(raw.get("alive", false)) and not _set_defense_shown.has(uid) and _unit_has_treasure_set(uid, "defense"):
+				var model := _set_model_for(uid)
+				if model != null and _battle_3d_vfx_root != null and is_instance_valid(_battle_3d_vfx_root):
+					_set_defense_shown[uid] = true
+					var block := VFXBlockRoot.spawn_block(_TREASURE_SET_VFX, _battle_3d_vfx_root, true)
+					if block != null:
+						block.call("play_defense_shield", model, _set_unit_height(model), _set_vfx_strength(uid))
+	var pulse := 0.5 + 0.5 * sin(float(Time.get_ticks_msec()) * 0.014)
+	var still_marked: Dictionary = {}
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if not (raw is Dictionary):
+				continue
+			var uid := str(raw.get("uid", ""))
+			if not local_attack or lane == LANE_NONE or not bool(raw.get("alive", false)) \
+					or int(raw.get("lane", -1)) != lane or _is_own_or_ally_unit(uid):
+				continue
+			var definition: Dictionary = raw.get("def", {}) if raw.get("def", {}) is Dictionary else {}
+			if str(raw.get("id", "")).begins_with("boss_") or bool(definition.get("is_boss", false)):
+				continue
+			var bg := _set_hp_bg_for(raw)
+			if bg == null:
+				continue
+			var mark := bg.get_node_or_null("ExecuteMark") as ColorRect
+			if mark == null:
+				mark = ColorRect.new()
+				mark.name = "ExecuteMark"
+				mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				mark.color = SET_EXECUTE_MARK_COLOR
+				mark.size = Vector2(2.0, 15.0)
+				mark.z_index = 2
+				bg.add_child(mark)
+			var hp_max_width := float(bg.get_meta("hp_max_width")) if bg.has_meta("hp_max_width") else SET_HP_FILL_WIDTH
+			mark.position = Vector2(SET_HP_FILL_X_IN_BG + hp_max_width * SET_EXECUTE_PCT - 1.0, -2.0)
+			var low := float(raw.get("hp", 0)) <= float(maxi(1, int(raw.get("max_hp", 1)))) * SET_EXECUTE_PCT
+			bg.color = SET_HP_BG_COLOR.lerp(SET_EXECUTE_FLASH_COLOR, pulse) if low else SET_HP_BG_COLOR
+			still_marked[uid] = true
+	for uid in _set_execute_marked.keys():
+		if not still_marked.has(uid):
+			_clear_execute_mark(str(uid))
+	_set_execute_marked = still_marked
+
+
+# 常驻盾纹：活着、有防卫套、模型在 → 保证有一个；否则收掉。死亡时随单位淡出。
+
+func _sync_defense_sigil(uid: String, raw: Dictionary) -> void:
+	var existing = _set_defense_sigils.get(uid)
+	if existing != null and not is_instance_valid(existing):
+		_set_defense_sigils.erase(uid)
+		existing = null
+	var model: Node3D = null
+	if bool(raw.get("alive", false)) and _unit_has_treasure_set(uid, "defense"):
+		var found = _battle_3d_models.get(uid)
+		if found is Node3D and is_instance_valid(found) and (found as Node3D).is_inside_tree():
+			model = found as Node3D
+	if model == null:
+		if existing != null:
+			existing.call("stop")
+			_set_defense_sigils.erase(uid)
+		return
+	if existing != null or _battle_3d_vfx_root == null or not is_instance_valid(_battle_3d_vfx_root):
+		return
+	var sigil := _DEFENSE_SIGIL.new() as MeshInstance3D
+	_battle_3d_vfx_root.add_child(sigil)
+	sigil.call("setup", model, _set_unit_height(model) * SET_SIGIL_RADIUS_RATIO, _set_vfx_strength(uid))
+	_set_defense_sigils[uid] = sigil
+
+func _is_own_or_ally_unit(sim_uid: String) -> bool:
+	var unit := _state_unit_for(sim_uid)
+	if unit.is_empty():
+		return false
+	if NetworkService.team_active or GameState.team_mode:
+		var local_slot := NetworkService.team_local_slot if NetworkService.team_active else 0
+		var owner := int(unit.get("owner_slot", -1))
+		if local_slot < 0 or owner < 0:
+			return false
+		return GameConstants.team_of_slot(owner) == GameConstants.team_of_slot(local_slot)
+	return _is_local_owned_unit(sim_uid)
+
+
+# 9.18：该 sim_uid 对应单位是否四星。快照不存 star，所以直接扫 `_state` 双方表
+# （与 `_is_local_owned_unit` 同款兜底）。`GameConstants.MAX_STAR` 即 4。
+# 只用于四星技能音效门控 —— 宁可少响，也不在普攻上升沿误触。
+
+func _unit_has_treasure_set(uid: String, category: String) -> bool:
+	var unit := _state_unit_for(uid)
+	if unit.is_empty():
+		return false
+	if unit.has("treasure_sets"):
+		return category in (unit.get("treasure_sets", []) as Array)
+	if BattleSimShared._ignores_treasure(unit):
+		return false
+	return BattleSimShared._f_has_set(unit, category)

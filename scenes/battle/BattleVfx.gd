@@ -2339,7 +2339,10 @@ var _set_defense_sigils: Dictionary = {}  # uid -> SetDefenseSigil3D
 
 
 func _unit_has_treasure_set(uid: String, category: String) -> bool:
-	var unit := _state_unit_for(uid)
+	return _fighter_has_treasure_set(_state_unit_for(uid), category)
+
+
+func _fighter_has_treasure_set(unit: Dictionary, category: String) -> bool:
 	if unit.is_empty():
 		return false
 	if unit.has("treasure_sets"):
@@ -2455,18 +2458,32 @@ func _play_set_dodge(uid: String) -> void:
 	model.set_meta("lunge_tween", tween)
 
 
+# Scope this index to one refresh: replay frames replace raw dictionaries and a
+# conversion can change ownership. Last duplicate UID wins, exactly like
+# _state_unit_for's player-then-enemy scan; no previous-frame snapshot is cached.
+func _treasure_state_units_by_uid() -> Dictionary:
+	var units: Dictionary = {}
+	for side in ["player", "enemy"]:
+		for raw in _state.get(side, []):
+			if raw is Dictionary:
+				units[str(raw.get("uid", ""))] = raw
+	return units
+
+
 func _update_treasure_set_presentation() -> void:
 	var local_attack := false
 	var lane := _local_lane()
+	var units_by_uid := _treasure_state_units_by_uid()
 	for side in ["player", "enemy"]:
 		for raw in _state.get(side, []):
 			if not (raw is Dictionary):
 				continue
 			var uid := str(raw.get("uid", ""))
-			if not local_attack and _is_local_owned_unit(uid) and _unit_has_treasure_set(uid, "attack"):
+			var unit: Dictionary = units_by_uid[uid]
+			if not local_attack and _owned_by_local_player(unit) and _fighter_has_treasure_set(unit, "attack"):
 				local_attack = true
-			_sync_defense_sigil(uid, raw)
-			if bool(raw.get("alive", false)) and not _set_defense_shown.has(uid) and _unit_has_treasure_set(uid, "defense"):
+			_sync_defense_sigil_for_unit(uid, raw, unit)
+			if bool(raw.get("alive", false)) and not _set_defense_shown.has(uid) and _fighter_has_treasure_set(unit, "defense"):
 				var model := _set_model_for(uid)
 				if model != null and _battle_3d_vfx_root != null and is_instance_valid(_battle_3d_vfx_root):
 					_set_defense_shown[uid] = true
@@ -2481,7 +2498,7 @@ func _update_treasure_set_presentation() -> void:
 				continue
 			var uid := str(raw.get("uid", ""))
 			if not local_attack or lane == LANE_NONE or not bool(raw.get("alive", false)) \
-					or int(raw.get("lane", -1)) != lane or _is_own_or_ally_unit(uid):
+					or int(raw.get("lane", -1)) != lane or _owned_by_local_or_ally_player(units_by_uid[uid]):
 				continue
 			var definition: Dictionary = raw.get("def", {}) if raw.get("def", {}) is Dictionary else {}
 			if str(raw.get("id", "")).begins_with("boss_") or bool(definition.get("is_boss", false)):
@@ -2511,12 +2528,16 @@ func _update_treasure_set_presentation() -> void:
 
 # 常驻盾纹：活着、有防卫套、模型在 → 保证有一个；否则收掉。死亡时随单位淡出。
 func _sync_defense_sigil(uid: String, raw: Dictionary) -> void:
+	_sync_defense_sigil_for_unit(uid, raw, _state_unit_for(uid))
+
+
+func _sync_defense_sigil_for_unit(uid: String, raw: Dictionary, unit: Dictionary) -> void:
 	var existing = _set_defense_sigils.get(uid)
 	if existing != null and not is_instance_valid(existing):
 		_set_defense_sigils.erase(uid)
 		existing = null
 	var model: Node3D = null
-	if bool(raw.get("alive", false)) and _unit_has_treasure_set(uid, "defense"):
+	if bool(raw.get("alive", false)) and _fighter_has_treasure_set(unit, "defense"):
 		var found = _battle_3d_models.get(uid)
 		if found is Node3D and is_instance_valid(found) and (found as Node3D).is_inside_tree():
 			model = found as Node3D
@@ -3819,7 +3840,10 @@ func _state_unit_for(sim_uid: String) -> Dictionary:
 # ★ 人王相关的三处（阵亡音、战后奖励音、升级金光）**刻意不用本函数**：
 #   用户明确要求人王的音效与特效都保持只给自己看，见 `_local_living_human_king`。
 func _is_own_or_ally_unit(sim_uid: String) -> bool:
-	var unit := _state_unit_for(sim_uid)
+	return _owned_by_local_or_ally_player(_state_unit_for(sim_uid))
+
+
+func _owned_by_local_or_ally_player(unit: Dictionary) -> bool:
 	if unit.is_empty():
 		return false
 	if NetworkService.team_active or GameState.team_mode:
@@ -3828,7 +3852,7 @@ func _is_own_or_ally_unit(sim_uid: String) -> bool:
 		if local_slot < 0 or owner < 0:
 			return false
 		return GameConstants.team_of_slot(owner) == GameConstants.team_of_slot(local_slot)
-	return _is_local_owned_unit(sim_uid)
+	return _owned_by_local_player(unit)
 
 
 # 9.18：该 sim_uid 对应单位是否四星。快照不存 star，所以直接扫 `_state` 双方表

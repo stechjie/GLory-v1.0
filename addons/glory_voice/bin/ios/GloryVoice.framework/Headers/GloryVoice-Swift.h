@@ -379,6 +379,9 @@ SWIFT_CLASS_NAMED("GloryVoiceNative")
 @interface GloryVoiceNative : NSObject <RoomDelegate>
 SWIFT_CLASS_PROPERTY(@property (nonatomic, class, readonly, strong) GloryVoiceNative * _Nonnull shared;)
 + (GloryVoiceNative * _Nonnull)shared SWIFT_WARN_UNUSED_RESULT;
+- (NSString * _Nonnull)recognizeSpeechFile:(NSString * _Nonnull)filename locale:(NSString * _Nonnull)locale SWIFT_WARN_UNUSED_RESULT;
+- (NSString * _Nonnull)getSpeechResult SWIFT_WARN_UNUSED_RESULT;
+- (void)cancelSpeechRecognition;
 - (BOOL)prepareAudioResume SWIFT_WARN_UNUSED_RESULT;
 - (void)setApplicationActive:(BOOL)active;
 - (BOOL)hasRecordPermission SWIFT_WARN_UNUSED_RESULT;
