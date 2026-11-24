@@ -1,6 +1,8 @@
 extends Node
 
-# 门禁：观战席位（协议 44，scripts/multiplayer/SpectatorService.gd，2026-10-22 定稿）。
+# 门禁：观战席位（协议 44，scripts/multiplayer/SpectatorService.gd，2026-10-22 定稿；
+# 2026-11-06 修订：开局前同房间选手可起身观战、座位与观战席共用聊天；开局后仍隔离；
+# 房间列表只放开开局前的大厅）。2026-11-24 把用例对齐到 11-06 的规则，之前 5 条一直是红的。
 #
 # 每条断言对着一条和用户逐条定下的规则，失败时都**不报错**，只会悄悄开洞：
 #   * 观战者拿到私有字段（金币、账本、宝物候选、重连 token）—— 等于看选手底牌；
@@ -9,7 +11,8 @@ extends Node
 #   * 游客能发言 —— 没有账号就没有举报和封禁的抓手；
 #   * 观战者占座位、算在线人数 —— 只剩观战者的房间不转 suspended、永不回收；
 #   * 第 11 个观战者能进 / 房主关了观战旧人还在 / 被踢了还在列表里；
-#   * 选手能起身去观战（定了不可以）；观战者坐下后还留在观战席上（同一连接两份身份）；
+#   * 选手起身去看**别的**房间 / 开局后起身（定了不可以；11-06 只放开开局前同房间）；
+#     观战者坐下后还留在观战席上（同一连接两份身份）；
 #   * 掉线 / 僵尸 / 关房后观战映射不清 —— 观战位被死连接占满；
 #   * 备战区不合法就拒整份棋盘 —— 显示用的字段让人这回合交不了棋盘。
 #
@@ -116,17 +119,17 @@ func _run() -> void:
 # --- 夹具 ---------------------------------------------------------------------
 
 # 房主坐 0 号（红队第一个座位），另一个人坐 3 号（蓝队）。
-func _room(server: TestServer, state: String = "lobby") -> Dictionary:
+func _room(server: TestServer, state: String = "lobby", leader: int = LEADER, player_b: int = PLAYER_B) -> Dictionary:
 	var room: Dictionary = server._new_room()
 	var states: Array = room.slot_states
 	states[0] = "player"
 	states[3] = "player"
 	room.slot_states = states
-	room.peer_slot = {LEADER: 0, PLAYER_B: 3}
+	room.peer_slot = {leader: 0, player_b: 3}
 	room.leader_slot = 0
 	room.state = state
-	server._peer_room[LEADER] = int(room.id)
-	server._peer_room[PLAYER_B] = int(room.id)
+	server._peer_room[leader] = int(room.id)
+	server._peer_room[player_b] = int(room.id)
 	return room
 
 
@@ -193,8 +196,8 @@ func _case_spectator_state_is_public(server: TestServer) -> void:
 	for row in SpectatorService.public_list(room):
 		h.expect(not (row as Dictionary).has("peer") and not _all_text(row).contains("502"),
 			"peer_id_leaked", "观战列表里出现了连接号 peer_id")
-	h.expect(bool(payload.get("can_chat", false)) and int(payload.get("my_sid", -1)) >= 1,
-		"carded_cannot_chat", "带名片的观战者应当能发言、并拿到自己的观战编号")
+	h.expect(not bool(payload.get("can_chat", true)) and int(payload.get("my_sid", -1)) >= 1,
+		"carded_cannot_chat", "对局中（prep）观战者不能发言（2026-11-06 定），但要拿到自己的观战编号")
 	h.expect((payload.get("team_hp", []) as Array).size() == 2,
 		"team_hp_shape", "观战者没有「己方」，两队血量都要给")
 	SpectatorService.remove_peer(room, 502)
@@ -222,12 +225,31 @@ func _case_cap_ten(server: TestServer) -> void:
 func _case_seated_player_cannot_spectate(server: TestServer) -> void:
 	server.reset_capture()
 	var room := _room(server)
-	var other := _room(server)
+	# 另一间房要换一批人：_room 会把 _peer_room 指到新房，用同样的两个人等于把 PLAYER_B 搬了家。
+	var other := _room(server, "lobby", 200, 203)
 	server._spectate_join(PLAYER_B, int(other.id), "")
 	h.expect(SpectatorService.count(other) == 0 and server.last_fail(PLAYER_B) == "spectate_seated",
-		"seated_player_spectates", "坐着的选手不能起身去观战（2026-10-22 定）")
+		"seated_player_spectates", "坐着的选手不能去看别的房间（2026-10-22 定；11-06 放开的只是同房间）")
 	h.expect(int((room.peer_slot as Dictionary).get(PLAYER_B, -1)) == 3,
 		"seat_lost", "被拒的观战请求不能动他原来的座位")
+	# 2026-11-06：开局前、同一间房，选手可以起身到观战席；座位要空出来、身份只剩一份。
+	server.live[LEADER] = true
+	server.live[PLAYER_B] = true
+	server._spectate_join(PLAYER_B, int(room.id), "")
+	h.expect(SpectatorService.sid_of_peer(room, PLAYER_B) >= 1 and int(server._peer_spectate.get(PLAYER_B, 0)) == int(room.id),
+		"same_room_stand_up", "开局前同房间的选手起身观战：应当进观战席（2026-11-06 定）")
+	h.expect(not (room.peer_slot as Dictionary).has(PLAYER_B) and not server._peer_room.has(PLAYER_B),
+		"stand_up_keeps_seat", "起身观战后座位没空出来 —— 同一连接两份身份")
+	server._spectate_detach(PLAYER_B)
+	server.live.erase(LEADER)
+	server.live.erase(PLAYER_B)
+	# 开局后不行。
+	var running := _room(server, "prep", 300, 303)
+	server.live[300] = true
+	server._spectate_join(300, int(running.id), "")
+	h.expect(SpectatorService.count(running) == 0 and server.last_fail(300) == "spectate_seated",
+		"mid_game_stand_up", "开局后选手不能起身观战")
+	server.live.erase(300)
 
 
 func _case_kick_and_close(server: TestServer) -> void:
@@ -290,29 +312,50 @@ func _case_disconnect_and_zombie(server: TestServer) -> void:
 
 func _case_chat_isolation(server: TestServer) -> void:
 	server.reset_capture()
-	var room := _room(server, "prep")
+	# 2026-11-06：开局前（lobby）座位与观战席共用聊天；开局后观战者与选手隔离。
+	var room := _room(server)
+	server.live[LEADER] = true
+	server.live[PLAYER_B] = true
 	_join(server, room, 1001, "CARD:Talker")
 	_join(server, room, 1002)   # 游客
+	var lobby_payload: Dictionary = {}
+	for row in server.spectate_states:
+		if int(row[0]) == 1001:
+			lobby_payload = row[1]
+	h.expect(bool(lobby_payload.get("can_chat", false)), "carded_lobby_chat", "开局前带名片的观战者应当能发言")
 	server._spectate_chat(1002, -1, "hello from guest")
 	h.expect(server.chats.is_empty(), "guest_spoke", "游客发言被转发了（游客只能看，2026-10-22 定）")
-	server._spectate_chat(1001, -1, "hi spectators")
+	server._spectate_chat(1001, -1, "hi everyone")
 	var receivers := []
 	for row in server.chats:
 		receivers.append(int(row[0]))
 	receivers.sort()
-	h.expect(receivers == [1001, 1002], "spectator_chat_recipients",
-		"观战者的话只发给观战者（含自己），实际收件人 %s" % str(receivers))
-	h.expect(not receivers.has(LEADER) and not receivers.has(PLAYER_B),
-		"spectator_reached_player", "观战者的话传到了选手那里 —— 场外报信，延迟一回合就白做了")
+	h.expect(receivers == [LEADER, PLAYER_B, 1001, 1002], "spectator_chat_recipients",
+		"开局前观战者的话发给全房（选手 + 观战者，含自己），实际收件人 %s" % str(receivers))
 	server.chats.clear()
 	server._spectate_chat(1001, 9999, "")
 	h.expect(server.chats.is_empty(), "bad_phrase_forwarded", "不存在的快捷短语也被转发了")
-	# 选手 → 观战者：只有全体聊天。
+	# 选手 → 观战者：自定义房间开局前整间房共用聊天，队内 / 全体都传给观战席（2026-11-06 定）；
+	# 匹配房（非 custom）的队内聊天不传。
 	var team_only: Array = server.spectator_chat_recipients(room, true)
 	var all_chat: Array = server.spectator_chat_recipients(room, false)
-	h.expect(team_only.is_empty(), "team_chat_to_spectators", "队内聊天传给了观战者（定了只看全体聊天）")
+	team_only.sort()
+	h.expect(team_only == [1001, 1002], "team_chat_to_spectators", "自定义房开局前队内聊天也应传给观战席（11-06 共用聊天）")
+	room.mode = "ranked"
+	h.expect(server.spectator_chat_recipients(room, true).is_empty(), "matched_team_chat_to_spectators", "匹配房的队内聊天传给了观战者")
+	room.mode = "custom"
 	all_chat.sort()
-	h.expect(all_chat == [1001, 1002], "all_chat_missing", "选手的全体聊天观战者应当看得到")
+	h.expect(all_chat == [1001, 1002], "all_chat_missing", "开局前选手的全体聊天观战者应当看得到")
+	# 开局后：观战者说的话不转发，选手的全体聊天也不再传给观战者（场外报信，延迟一回合就白做了）。
+	room.state = "prep"
+	server.chats.clear()
+	server._spectate_chat(1001, -1, "psst")
+	h.expect(server.chats.is_empty(), "spectator_reached_player", "开局后观战者的话还在转发")
+	h.expect(server.spectator_chat_recipients(room, false).is_empty(),
+		"mid_game_all_chat_to_spectators", "开局后选手的全体聊天传给了观战者")
+	room.state = "lobby"
+	server.live.erase(LEADER)
+	server.live.erase(PLAYER_B)
 	# 三条选手聊天入口都必须接上观战收件人（代码形状，不是注释）。
 	var src := FileAccess.get_file_as_string("res://scripts/autoload/NetworkService.gd")
 	h.expect(src.count("chat_recipients(room, slot, team_only) + spectator_chat_recipients(room, team_only):") == 3,
@@ -409,8 +452,8 @@ func _case_room_list(server: TestServer) -> void:
 		by_id[int(row.id)] = row
 	h.expect(by_id.has(int(lobby.id)) and bool(by_id[int(lobby.id)].get("joinable", false)),
 		"lobby_not_joinable", "大厅里有空位的房间在列表里应是可加入的")
-	h.expect(by_id.has(int(running.id)) and not bool(by_id[int(running.id)].get("joinable", true)),
-		"running_not_spectatable", "已开局的房间要出现在列表里（只能观战）")
+	h.expect(not by_id.has(int(running.id)),
+		"running_not_spectatable", "已开局的房间不进观战列表（2026-11-06 定：只放开开局前的大厅）")
 	h.expect(not by_id.has(int(shut.id)), "closed_spectate_listed", "关了观战的已开局房间不该出现在观战列表里")
 
 
