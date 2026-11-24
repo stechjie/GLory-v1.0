@@ -45,7 +45,7 @@ static func _bridge() -> Object:
 static func platform() -> String:
 	var bridge := _bridge()
 	if bridge != null:
-		return "apple" if bridge.has_method("beginFinishTransaction") else "google"
+		return "apple" if bridge.has_method("beginFinishTransaction") else "google"  # platform-ok: 故意的——安卓 JNISingleton 查不到就落到 "google"，iOS 原生扩展查得到
 	return "steam" if SteamBridge.available() else ""
 
 

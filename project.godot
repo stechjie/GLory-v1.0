@@ -8,8 +8,6 @@
 
 config_version=5
 
-"ï»¿config_version"=5
-
 [application]
 
 config/name="Glory Beta 0.04"

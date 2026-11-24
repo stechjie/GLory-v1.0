@@ -7,92 +7,93 @@
     "4. 某条本次没命中会打印 STALE，说明问题可能已修好，应当删除该条。",
     "字段：check=检查名(或*) / code=失败码(或*) / match=消息子串(空=全匹配) / expires=到期日 / why=为什么暂时豁免、谁负责修",
     "初始条目登记于 2026-08-18，全部来自本机首次运行 asset_manifest_check 的真实结果。",
-    "2026-08-19 资源侧补齐 ACTION_SCENES 后，skel_check 新发现 4 个 rest pose 不一致；均显式归属 E2 并设置到期日。"
+    "2026-08-19 资源侧补齐 ACTION_SCENES 后，skel_check 新发现 4 个 rest pose 不一致；均显式归属 E2 并设置到期日。",
+    "2026-11-23 续期：全部条目原到期日 2026-09-30，过期后门禁一直带着 allowlist_expired 红项，新失败被淹没。此次把到期日统一延到 2026-12-31 并在 why 里注明；期间请逐条修掉或删掉，不要再整体续期。"
   ],
   "entries": [
     {
       "check": "asset_manifest",
       "code": "missing_asset",
       "match": "assets/models/arena/battle_scene.glb",
-      "expires": "2026-09-30",
-      "why": "死分支：BattleUI.gd:32 的 BATTLE_USE_3D_ARENA 为 false，BattleArena.gd:481 会提前 return，所以这个 load() 运行时永不执行。要么补上 3D 竞技场模型，要么连同常量一起删。属于 E1 范围。"
+      "expires": "2026-12-31",
+      "why": "【2026-11-23 续期，原到期 2026-09-30，问题未修】死分支：BattleUI.gd:32 的 BATTLE_USE_3D_ARENA 为 false，BattleArena.gd:481 会提前 return，所以这个 load() 运行时永不执行。要么补上 3D 竞技场模型，要么连同常量一起删。属于 E1 范围。"
     },
     {
       "check": "asset_manifest",
       "code": "missing_asset",
       "match": "battle_crystal_toon_before.gdshader",
-      "expires": "2026-09-30",
-      "why": "只被 tools/crystal_toon_shot.gd（水晶风格对照截图工具）引用，不进发布包。该工具的 before/after 对照功能目前是坏的。低优先级，随 A5 清理工具脚本时一并处理。"
+      "expires": "2026-12-31",
+      "why": "【2026-11-23 续期，原到期 2026-09-30，问题未修】只被 tools/crystal_toon_shot.gd（水晶风格对照截图工具）引用，不进发布包。该工具的 before/after 对照功能目前是坏的。低优先级，随 A5 清理工具脚本时一并处理。"
     },
     {
       "check": "asset_manifest",
       "code": "missing_asset",
       "match": "vfx_blank_shield_02.tscn",
-      "expires": "2026-09-30",
-      "why": "第三方 Binbun BattleFX 包内部损坏：battle_fx_scene_free.tscn 引用了包里不存在的 shield 场景。README 已记录过这条。属于 A5/C1（第三方资源治理）范围 —— 要么补包、要么把这个演示场景排除出资源根。"
+      "expires": "2026-12-31",
+      "why": "【2026-11-23 续期，原到期 2026-09-30，问题未修】第三方 Binbun BattleFX 包内部损坏：battle_fx_scene_free.tscn 引用了包里不存在的 shield 场景。README 已记录过这条。属于 A5/C1（第三方资源治理）范围 —— 要么补包、要么把这个演示场景排除出资源根。"
     },
     {
       "check": "*",
       "code": "dependency_query_failed",
       "match": "vfx_blank_shield_02.tscn",
-      "expires": "2026-09-30",
-      "why": "与上一条同源：文件不存在，get_dependencies 自然查不动。asset_manifest 和 dep_scan 都会报，所以 check 用 *。修好上一条这条会一起消失。"
+      "expires": "2026-12-31",
+      "why": "【2026-11-23 续期，原到期 2026-09-30，问题未修】与上一条同源：文件不存在，get_dependencies 自然查不动。asset_manifest 和 dep_scan 都会报，所以 check 用 *。修好上一条这条会一起消失。"
     },
     {
       "check": "skel_check",
       "code": "skeleton_mismatch",
       "match": "god_arbiter_animated",
-      "expires": "2026-09-30",
-      "why": "idle 83 根骨骼 vs attack 118 根。三个动作 FBX 不是同一套骨架，走不了 Godot 的 Import As: Animation Library，必须 Blender 重导出或 retarget。属于 E2（模型与贴图预算）范围。"
+      "expires": "2026-12-31",
+      "why": "【2026-11-23 续期，原到期 2026-09-30，问题未修】idle 83 根骨骼 vs attack 118 根。三个动作 FBX 不是同一套骨架，走不了 Godot 的 Import As: Animation Library，必须 Blender 重导出或 retarget。属于 E2（模型与贴图预算）范围。"
     },
     {
       "check": "skel_check",
       "code": "skeleton_mismatch",
       "match": "dark_doom_animated",
-      "expires": "2026-09-30",
-      "why": "idle 65 根骨骼 vs run 83 根，同上。E2 范围。"
+      "expires": "2026-12-31",
+      "why": "【2026-11-23 续期，原到期 2026-09-30，问题未修】idle 65 根骨骼 vs run 83 根，同上。E2 范围。"
     },
     {
       "check": "skel_check",
       "code": "skeleton_mismatch",
       "match": "abyss_beast_animated",
-      "expires": "2026-09-30",
-      "why": "骨骼名单与层级一致但 rest pose 不同，动画套上去会变形，需要 retarget。E2 范围。"
+      "expires": "2026-12-31",
+      "why": "【2026-11-23 续期，原到期 2026-09-30，问题未修】骨骼名单与层级一致但 rest pose 不同，动画套上去会变形，需要 retarget。E2 范围。"
     },
     {
       "check": "skel_check",
       "code": "skeleton_mismatch",
       "match": "human_king_animated",
-      "expires": "2026-09-30",
-      "why": "idle 与 run 的 rest pose 不同，动画直接复用会变形，需要 retarget。2026-08-19 扩大 ACTION_SCENES 覆盖后首次被门禁发现，归属 E2。"
+      "expires": "2026-12-31",
+      "why": "【2026-11-23 续期，原到期 2026-09-30，问题未修】idle 与 run 的 rest pose 不同，动画直接复用会变形，需要 retarget。2026-08-19 扩大 ACTION_SCENES 覆盖后首次被门禁发现，归属 E2。"
     },
     {
       "check": "skel_check",
       "code": "skeleton_mismatch",
       "match": "human_cleric_animated",
-      "expires": "2026-09-30",
-      "why": "idle 与 attack 的 rest pose 不同，动画直接复用会变形，需要 retarget。2026-08-19 扩大 ACTION_SCENES 覆盖后首次被门禁发现，归属 E2。"
+      "expires": "2026-12-31",
+      "why": "【2026-11-23 续期，原到期 2026-09-30，问题未修】idle 与 attack 的 rest pose 不同，动画直接复用会变形，需要 retarget。2026-08-19 扩大 ACTION_SCENES 覆盖后首次被门禁发现，归属 E2。"
     },
     {
       "check": "skel_check",
       "code": "skeleton_mismatch",
       "match": "human_archer_animated",
-      "expires": "2026-09-30",
-      "why": "idle 与 attack 的 rest pose 不同，动画直接复用会变形，需要 retarget。2026-08-19 扩大 ACTION_SCENES 覆盖后首次被门禁发现，归属 E2。"
+      "expires": "2026-12-31",
+      "why": "【2026-11-23 续期，原到期 2026-09-30，问题未修】idle 与 attack 的 rest pose 不同，动画直接复用会变形，需要 retarget。2026-08-19 扩大 ACTION_SCENES 覆盖后首次被门禁发现，归属 E2。"
     },
     {
       "check": "skel_check",
       "code": "skeleton_mismatch",
       "match": "dark_suc_animated",
-      "expires": "2026-09-30",
-      "why": "idle 与 run 的 rest pose 不同，动画直接复用会变形，需要 retarget。2026-08-19 扩大 ACTION_SCENES 覆盖后首次被门禁发现，归属 E2。"
+      "expires": "2026-12-31",
+      "why": "【2026-11-23 续期，原到期 2026-09-30，问题未修】idle 与 run 的 rest pose 不同，动画直接复用会变形，需要 retarget。2026-08-19 扩大 ACTION_SCENES 覆盖后首次被门禁发现，归属 E2。"
     },
     {
       "check": "sell_refund",
       "code": "refund_mismatch",
       "match": "",
-      "expires": "2026-09-30",
-      "why": "客户端退款按「棋子自身售价 x 星级 x 0.5」算，不看玩家身上的折扣宝物，也不按凑齐该星级实际用掉的份数；服务端账本按实付 cost_basis 的一半退。两边对不上 64/96 组。这不是漏洞——所有组合都是亏本卖出（已由本检查的 sell_for_profit / sell_free_reroll 两条硬断言守住），只是退款率高于名义的 50%（最高 83%）。要严格对齐需要给客户端棋子记 cost_basis，那会改存档格式并让三星退款翻倍，属于 docs/P1经济账本RFC.md 第 4.1 节待拍板的数值改动。**在这条修好之前不能翻 economy_ledger_authoritative** —— 一翻，玩家的退款金额会当场变化。"
+      "expires": "2026-12-31",
+      "why": "【2026-11-23 续期，原到期 2026-09-30，问题未修】客户端退款按「棋子自身售价 x 星级 x 0.5」算，不看玩家身上的折扣宝物，也不按凑齐该星级实际用掉的份数；服务端账本按实付 cost_basis 的一半退。两边对不上 64/96 组。这不是漏洞——所有组合都是亏本卖出（已由本检查的 sell_for_profit / sell_free_reroll 两条硬断言守住），只是退款率高于名义的 50%（最高 83%）。要严格对齐需要给客户端棋子记 cost_basis，那会改存档格式并让三星退款翻倍，属于 docs/P1经济账本RFC.md 第 4.1 节待拍板的数值改动。**在这条修好之前不能翻 economy_ledger_authoritative** —— 一翻，玩家的退款金额会当场变化。"
     }
   ]
 }

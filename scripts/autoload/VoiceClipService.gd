@@ -120,7 +120,7 @@ func start_recording() -> String:
 				return _text("这个版本无法请求麦克风权限", "Microphone permission is unavailable in this build")
 			var bridge := Engine.get_singleton(VoiceService.SINGLETON)
 			if not bridge.has_method("requestRecordPermission") or not bridge.has_method("hasRecordPermission") \
-					or not bridge.has_method("getStatus"):
+					or not bridge.has_method("getStatus"):  # platform-ok: 在 match OS.get_name() 的 "iOS" 分支里，安卓走下面的 "Android" 分支
 				return _text("这个版本无法请求麦克风权限", "Microphone permission is unavailable in this build")
 			if not bool(bridge.call("hasRecordPermission")):
 				_pending_permission = true
