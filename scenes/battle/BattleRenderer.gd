@@ -2179,7 +2179,12 @@ func _camera_distance_for_bounds(bounds: AABB, frame_fill: float, fov_deg: float
 	return maxf(1.2, needed / fill)
 
 func _visual_id(f: Dictionary) -> String:
-	return str(f.get("uid", "%s_%s" % [str(f.get("team", "")), str(f.get("id", ""))]))
+	# Dictionary.get evaluates its default even when uid exists. Keep the exact
+	# present-key semantics (including an empty/null uid), without formatting a
+	# discarded fallback for every unit lookup on every rendered frame.
+	if f.has("uid"):
+		return str(f["uid"])
+	return "%s_%s" % [str(f.get("team", "")), str(f.get("id", ""))]
 
 func _refresh_damage_counter() -> void:
 	if not has_method("_ensure_combat_feedback"):

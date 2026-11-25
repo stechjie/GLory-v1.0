@@ -1,5 +1,8 @@
 extends "res://scenes/battle/BattleRenderer.gd"
 
+# These defaults are read only; do not allocate throwaway dictionaries per unit.
+const _EMPTY_VFX_FIELDS: Dictionary = {}
+
 # Diagnostic receipt for the arrow-rain snapshot route. A created core node is
 # not proof that its pixels were visible; the isolated review scene checks that.
 signal skill_visual_submitted(source_uid: String, skill_id: String, target_count: int, core_node_created: bool)
@@ -425,10 +428,10 @@ func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
 			u["cast_pos"] = _unit_anchor_global_position(unit_node, "CastAnchor", base_pos)
 			u["hit_pos"] = _unit_anchor_global_position(unit_node, "HitAnchor", base_pos)
 			u["head_pos"] = _unit_anchor_global_position(unit_node, "HeadAnchor", base_pos)
-			u["world_foot"] = _unit_vfx_position(id, "FootAnchor", sim_pos, 0.08)
-			u["world_cast"] = _unit_vfx_position(id, "CastAnchor", sim_pos, 0.82)
-			u["world_hit"] = _unit_vfx_position(id, "HitAnchor", sim_pos, 0.72)
-			u["world_head"] = _unit_vfx_position(id, "HeadAnchor", sim_pos, 1.45)
+			u["world_foot"] = _unit_vfx_position_from_actor(model_node, "FootAnchor", sim_pos, 0.08)
+			u["world_cast"] = _unit_vfx_position_from_actor(model_node, "CastAnchor", sim_pos, 0.82)
+			u["world_hit"] = _unit_vfx_position_from_actor(model_node, "HitAnchor", sim_pos, 0.72)
+			u["world_head"] = _unit_vfx_position_from_actor(model_node, "HeadAnchor", sim_pos, 1.45)
 			u["model_node"] = model_node
 			u["team"] = str(f.get("team", ""))
 			u["owner_slot"] = int(f.get("owner_slot", -1))
@@ -436,25 +439,26 @@ func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
 			u["range_px"] = float(f.get("range_px", 0.0))
 			u["skill_ready"] = float(f.get("skill_ready", 0.0))
 			# 11.21 偷袭者吟唱：模拟器挂 skill_chant 状态（0.5 秒），状态随帧过回放边界。
-			var chant_value: Variant = f.get("statuses", {})
-			var chant_status: Variant = (chant_value as Dictionary).get("skill_chant", {}) if typeof(chant_value) == TYPE_DICTIONARY else {}
+			var chant_value: Variant = f.get("statuses", _EMPTY_VFX_FIELDS)
+			var chant_status: Variant = (chant_value as Dictionary).get("skill_chant", _EMPTY_VFX_FIELDS) if typeof(chant_value) == TYPE_DICTIONARY else _EMPTY_VFX_FIELDS
 			u["skill_chant_sec"] = float((chant_status as Dictionary).get("remaining", 0.0)) if typeof(chant_status) == TYPE_DICTIONARY else 0.0
-			u["skill_id"] = str(f.get("def", {}).get("skill_id", ""))
+			var definition: Variant = f.get("def", _EMPTY_VFX_FIELDS)
+			u["skill_id"] = str(definition.get("skill_id", ""))
 			# 种族只用于挑表现（赤律族的 unit_id 没有 god_/dark_ 这类前缀）。
-			u["race"] = str(f.get("def", {}).get("race", ""))
+			u["race"] = str(definition.get("race", ""))
 			# 数据里的射程格数（1 = 近战）。range_px 在实时模拟与回放里口径不同
 			# （32 vs 72），判近战/远程只能看这个。
-			u["attack_range"] = float(f.get("def", {}).get("range", 1.0))
+			u["attack_range"] = float(definition.get("range", 1.0))
 			# Replay rosters preserve the resolved def, but omit the opening-only
 			# taunt fields. Taunt lasts while the guardian lives, independent of shield.
 			u["taunt_active"] = bool(f.get("taunt_active", u["skill_id"] == "guardian_shield_taunt"))
-			u["taunt_radius"] = float(f.get("taunt_radius", f.get("def", {}).get("taunt_radius", 0.0)))
-			u["skill_every"] = int(f.get("def", {}).get("every", 0))
+			u["taunt_radius"] = float(f.get("taunt_radius", definition.get("taunt_radius", 0.0)))
+			u["skill_every"] = int(definition.get("every", 0))
 			u["unit_id"] = str(f.get("id", ""))
 			# 母灵处决打到 Boss 时是「重击」而不是吸魂。判据与模拟器 _is_boss_fighter 一致：
 			# Boss 数据表里没有 is_boss 字段，回合 Boss 只能靠 id 前缀认（11.12 以前这里只看字段，
 			# 真实 Boss 永远被当成普通棋子）。
-			u["is_boss"] = bool(f.get("def", {}).get("is_boss", false)) or str(f.get("id", "")).begins_with("boss_")
+			u["is_boss"] = bool(definition.get("is_boss", false)) or str(f.get("id", "")).begins_with("boss_")
 			u["skill_stacks"] = int(f.get("skill_stacks", 0))
 			# 人王的持久成长层数，只给天剑定尺寸用。3v3 回放的 roster 不带这个字段，读到 0。
 			u["king_stacks"] = int(f.get("king_growth_stacks", 0))
@@ -478,9 +482,19 @@ func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
 	return result
 
 func _unit_vfx_position(id: String, anchor_name: String, sim_pos: Vector2, fallback_y: float) -> Vector3:
-	var model_node: Node3D = _unit_actor_registry.get_actor(id)
+	return _unit_vfx_position_from_actor(_unit_actor_registry.get_actor(id), anchor_name, sim_pos, fallback_y)
+
+
+func _unit_vfx_position_from_actor(model_node: Node3D, anchor_name: String, sim_pos: Vector2, fallback_y: float) -> Vector3:
+	# The snapshot already resolved this actor. Reuse it only during this call;
+	# every frame still reads the current actor and animated anchor transforms.
 	if model_node != null and is_instance_valid(model_node):
-		var anchor := _unit_actor_registry.get_anchor(id, anchor_name)
+		var canonical := anchor_name
+		if canonical == "FeetAnchor":
+			canonical = "FootAnchor"
+		elif canonical == "BodyAnchor":
+			canonical = "HitAnchor"
+		var anchor := model_node.get_node_or_null(canonical)
 		if anchor is Node3D:
 			var anchor_global := (anchor as Node3D).global_position
 			if _battle_3d_vfx_root != null and is_instance_valid(_battle_3d_vfx_root):
