@@ -318,18 +318,19 @@
  // MARK: Motion
 --- a/drivers/apple_embedded/godot_view_controller.mm
 +++ b/drivers/apple_embedded/godot_view_controller.mm
-@@ -38,6 +38,10 @@
+@@ -38,6 +38,11 @@
  #import "drivers/apple_embedded/key_mapping_apple_embedded.h"
  #import "drivers/apple_embedded/os_apple_embedded.h"
  #include "servers/camera/camera_server.h"
 +#ifdef IOS_ENABLED
 +#import "platform/ios/godot_adaptive_container_ios.h"
++#include "platform/ios/godot_duo_geometry.h"
 +#include <cmath>
 +#endif
  
  #import <AVFoundation/AVFoundation.h>
  #import <GameController/GameController.h>
-@@ -49,13 +53,26 @@
+@@ -49,13 +54,26 @@
  @property(strong, nonatomic) GDTKeyboardInputView *keyboardView;
  
  @property(strong, nonatomic) UIView *godotLoadingOverlay;
@@ -356,7 +357,7 @@
  }
  
  - (void)pressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
-@@ -125,7 +142,19 @@
+@@ -125,10 +143,42 @@
  	GDTViewRenderer *renderer = [[GDTViewRenderer alloc] init];
  
  	self.renderer = renderer;
@@ -376,7 +377,30 @@
  
  	view.renderer = self.renderer;
  	view.delegate = self;
-@@ -185,7 +214,8 @@
++#ifdef IOS_ENABLED
++	if (@available(iOS 15.0, *)) {
++		UIKeyboardLayoutGuide *guide = self.view.keyboardLayoutGuide;
++		if (@available(iOS 17.0, *)) guide.usesBottomSafeArea = NO;
++		// Give UIKit an explicit layout dependency even though the game frame is
++		// manual. This hidden, zero-width view never constrains or scales the game.
++		UIView *tracker = [[UIView alloc] initWithFrame:CGRectZero];
++		tracker.translatesAutoresizingMaskIntoConstraints = NO;
++		tracker.hidden = YES;
++		tracker.userInteractionEnabled = NO;
++		tracker.accessibilityElementsHidden = YES;
++		[self.view addSubview:tracker];
++		[NSLayoutConstraint activateConstraints:@[
++			[tracker.leadingAnchor constraintEqualToAnchor:guide.leadingAnchor],
++			[tracker.topAnchor constraintEqualToAnchor:guide.topAnchor],
++			[tracker.bottomAnchor constraintEqualToAnchor:guide.bottomAnchor],
++			[tracker.widthAnchor constraintEqualToConstant:0]
++		]];
++	}
++#endif
+ }
+ 
+ - (instancetype)initWithNibName:(NSString *)nibNameOrNil bundle:(NSBundle *)nibBundleOrNil {
+@@ -185,7 +235,8 @@
  - (void)observeKeyboard {
  	print_verbose("Setting up keyboard input view.");
  	self.keyboardView = [GDTKeyboardInputView new];
@@ -386,7 +410,7 @@
  
  	print_verbose("Adding observer for keyboard show/hide.");
  	[[NSNotificationCenter defaultCenter]
-@@ -198,6 +228,11 @@
+@@ -198,6 +249,11 @@
  			   selector:@selector(keyboardHidden:)
  				   name:UIKeyboardDidHideNotification
  				 object:nil];
@@ -398,7 +422,7 @@
  }
  
  - (void)displayLoadingOverlay {
-@@ -379,14 +414,69 @@
+@@ -379,14 +435,85 @@
  	NSValue *value = info[UIKeyboardFrameEndUserInfoKey];
  
  	CGRect rawFrame = [value CGRectValue];
@@ -432,20 +456,35 @@
 +	if (!ds) return;
 +	UIView *game = self.godotView;
 +	CGFloat height = 0;
-+	if (self.gloryKeyboardFrameValid && self.keyboardView.isFirstResponder && game.window &&
-+			self.gloryKeyboardScreen == game.window.screen && !CGRectIsEmpty(game.bounds)) {
-+		CGRect local = [game convertRect:self.gloryKeyboardScreenFrame
-+				fromCoordinateSpace:self.gloryKeyboardScreen.coordinateSpace];
-+		CGRect covered = CGRectIntersection(game.bounds, local);
-+		CGFloat pixel = 1.0 / MAX(1.0, game.contentScaleFactor);
-+		// The engine exposes a bottom height, not a floating-keyboard rectangle.
-+		// Only describe a bottom-docked region that covers this game's full width.
-+		if (!CGRectIsNull(covered) && !CGRectIsEmpty(covered) &&
-+				CGRectGetMaxY(covered) >= CGRectGetMaxY(game.bounds) - pixel &&
-+				CGRectGetMinX(covered) <= CGRectGetMinX(game.bounds) + pixel &&
-+				CGRectGetMaxX(covered) >= CGRectGetMaxX(game.bounds) - pixel) {
-+			height = CGRectGetMaxY(game.bounds) - CGRectGetMinY(covered);
++	CGRect guideFrame = CGRectNull;
++	CGRect local = CGRectNull;
++	NSString *geometrySource = @"none";
++	if (self.keyboardView.isFirstResponder && game.window && !CGRectIsEmpty(game.bounds)) {
++		if (@available(iOS 15.0, *)) {
++			UIView *host = self.view;
++			geometrySource = @"layout_guide";
++			guideFrame = host.keyboardLayoutGuide.layoutFrame;
++			BOOL collapsedGuide = NO;
++			if (@available(iOS 17.0, *)) {
++				// usesBottomSafeArea=NO makes a dismissed/undocked guide empty.
++			} else {
++				const CGFloat pixel = 1.0 / MAX(1.0, game.contentScaleFactor);
++				collapsedGuide = CGRectGetMinY(guideFrame) >=
++						CGRectGetMaxY(host.bounds) - host.safeAreaInsets.bottom - pixel;
++			}
++			if (host.window == game.window && !collapsedGuide &&
++					!CGRectIsNull(guideFrame) && !CGRectIsInfinite(guideFrame) && !CGRectIsEmpty(guideFrame)) {
++				local = [game convertRect:guideFrame fromView:host];
++			}
++		} else if (self.gloryKeyboardFrameValid && self.gloryKeyboardScreen == game.window.screen) {
++			geometrySource = @"notification_fallback";
++			local = [game convertRect:self.gloryKeyboardScreenFrame
++					fromCoordinateSpace:self.gloryKeyboardScreen.coordinateSpace];
 +		}
++		const CGRect bounds = game.bounds;
++		height = GloryIOSGeometry::bottom_docked_height(
++				{bounds.origin.x, bounds.origin.y, bounds.size.width, bounds.size.height},
++				{local.origin.x, local.origin.y, local.size.width, local.size.height}, game.contentScaleFactor);
 +	}
 +	ds->virtual_keyboard_set_height(height);
 +	if ([[NSProcessInfo processInfo].environment[@"GLORY_IOS_GEOMETRY_LOG"] boolValue]) {
@@ -454,10 +493,11 @@
 +		NSInteger markedStart = marked ? [editor offsetFromPosition:editor.beginningOfDocument toPosition:marked.start] : -1;
 +		NSInteger markedLength = marked ? [editor offsetFromPosition:marked.start toPosition:marked.end] : 0;
 +		// Read-only QA evidence: identities and indices only, never user text.
-+		NSLog(@"[GLORY_DUO] keyboard editor=%p first=%d selected=%@ marked_start=%ld marked_length=%ld text_length=%lu obstruction_points=%g scale=%g",
++		NSLog(@"[GLORY_DUO] keyboard editor=%p first=%d selected=%@ marked_start=%ld marked_length=%ld text_length=%lu obstruction_points=%g scale=%g source=%@ guide=%@ local=%@",
 +				(__bridge void *)editor, editor.isFirstResponder, NSStringFromRange(editor.selectedRange),
 +				(long)markedStart, (long)markedLength, (unsigned long)editor.text.length,
-+				(double)height, (double)game.contentScaleFactor);
++				(double)height, (double)game.contentScaleFactor, geometrySource,
++				NSStringFromCGRect(guideFrame), NSStringFromCGRect(local));
 +	}
 +}
 +#endif
@@ -685,7 +725,7 @@
 +@end
 --- /dev/null
 +++ b/platform/ios/godot_duo_geometry.h
-@@ -0,0 +1,112 @@
+@@ -0,0 +1,123 @@
 +// GLory iOS adaptive geometry. Pure C++17; UIKit supplies all coordinates in points.
 +// No device identifiers, screen dimensions or duplicated reserved-region margins.
 +#pragma once
@@ -713,6 +753,17 @@
 +	const double x = std::max(a.x, b.x), y = std::max(a.y, b.y);
 +	const double r = std::min(a.right(), b.right()), d = std::min(a.bottom(), b.bottom());
 +	return r > x && d > y ? Rect{x, y, r - x, d - y} : Rect{};
++}
++
++// Height API can represent only a full-width obstruction touching this pane's
++// bottom. Coordinates are already converted from the live host keyboard guide.
++inline double bottom_docked_height(const Rect &bounds, const Rect &keyboard, double scale) {
++	if (bounds.empty() || keyboard.empty() || !std::isfinite(scale) || scale <= 0) return 0;
++	const Rect covered = intersection(bounds, keyboard);
++	const double pixel = 1.0 / std::max(1.0, scale);
++	if (covered.empty() || covered.bottom() < bounds.bottom() - pixel ||
++			covered.x > bounds.x + pixel || covered.right() < bounds.right() - pixel) return 0;
++	return bounds.bottom() - covered.y;
 +}
 +
 +inline Rect inward_pixels(const Rect &r, double scale) {

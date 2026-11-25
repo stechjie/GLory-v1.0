@@ -43,9 +43,19 @@ InputEventScreenTouch(pressed=false, canceled=true)，Godot 已将 canceled 标�
 GDScript 自定义拖拽处理仍须识别 canceled，只清理、不落子或提交。
 
 键盘保留同一个隐藏 UITextView，不重写正在编辑的文本、选区或 marked text。
-监听 Will/DidChangeFrame，按通知所属 UIScreen 的坐标空间转到当前 GodotView；
-随宿主几何变化重新计算与底边相交且覆盖该 pane 宽度的遮挡像素高度。
-隐藏后返回零。此高度接口不能表达浮动/分离键盘形状，不把浮动矩形伪造成全宽底部遮挡。
+iOS 15+ 从所属 root host 的 keyboardLayoutGuide.layoutFrame 读取当前布局坐标，
+再转到当前 GodotView，计算与底边相交且覆盖该 pane 宽度的遮挡像素高度。
+iOS 17+ 设置 usesBottomSafeArea=false；15/16 排除仅占 bottom safe area 的 collapsed guide，
+不把隐藏或浮动键盘误报成底部 padding。通知只触发更新并保留旧系统的屏幕坐标 fallback。
+一个 hidden、零宽、禁交互且不参与无障碍的 UIView 仅约束到 guide 的 top/bottom/leading，
+建立 UIKit 布局依赖；它不约束或缩放 game view。viewDidLayoutSubviews 读取已布局的 guide，
+不强制 layout、不使用延迟猜测时间，也不依靠只在通知时缓存的 CGRect。
+
+121 的真实模拟器证据 09/10 曾出现 Partial→Open 后通知缓存陈旧：公开高度 1487px，
+截图实际键盘高度 1053px；字段和合成态保持，但该高度不能判为正确。
+后续补丁以 live guide 消除此缓存来源，并增加独立几何回归；实际 UIKit 刷新结果须由
+新模板下的首次 Partial 聚焦→Open 稳定采样复核，不由单元测试代替。
+此高度接口不能表达浮动/分离键盘形状，不把浮动矩形伪造成全宽底部遮挡。
 WebKit 补偿不适用于本项目的原生 Godot 输入路径，没有加入 WKWebView 特例。
 
 ## 诊断
@@ -54,7 +64,8 @@ WebKit 补偿不适用于本项目的原生 Godot 输入路径，没有加入 WK
 [GLORY_DUO] geometry=<generation> bounds=... game=... safe=... scale=... division=... regions=<实际保留区域矩形列表>
 
 同一开关还输出 [GLORY_DUO] keyboard：editor 指针、firstResponder、选区索引、
-marked text 起点/长度、文本长度与局部遮挡高度；只读，不改变输入状态。
+marked text 起点/长度、文本长度与局部遮挡高度，以及 source/guide/local 坐标；
+只读，不改变输入状态。
 这些证据用于核对折叠前后的同一原生编辑器与未提交合成。
 
 不记录输入文本。字符串标记也用于产物门禁，配合模板 manifest 的补丁 SHA，
@@ -64,7 +75,7 @@ marked text 起点/长度、文本长度与局部遮挡高度；只读，不改�
 
 本轮原生模型测试已通过：
 
-- 20 项命名边界用例；
+- 30 项命名边界用例（20 项连续区域、10 项键盘局部遮挡）；
 - 500 组与独立像素网格穷举比较的最大面积检查及障碍输入反序检查；
 - 1000 组带小数坐标的 2x/3x 严格包含与无交叠检查。
 
@@ -98,5 +109,7 @@ HUD 和棋盘命中、拖拽取消、普通 iPhone 回归。实体 Duo 和实机
 - https://developer.apple.com/documentation/uikit/uiviewreservedregion.md
 - https://developer.apple.com/documentation/technologyoverviews/preparing-your-app-for-iphone-duo.md
 - https://developer.apple.com/documentation/uikit/uiresponder/keyboardwillchangeframenotification
+- https://developer.apple.com/documentation/uikit/uikeyboardlayoutguide
+- https://developer.apple.com/documentation/uikit/uilayoutguide/layoutframe
 - https://developer.apple.com/documentation/bundleresources/information-property-list/uirequiresfullscreenignoredstartingwithversion.md
 - https://docs.godotengine.org/en/stable/classes/class_inputeventscreentouch.html

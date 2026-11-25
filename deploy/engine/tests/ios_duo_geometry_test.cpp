@@ -51,6 +51,19 @@ int main() {
 	{ auto r=choose({0,0,100,60},{},{{100,0,10,60},{-10,0,10,60}},3); assert(r.width==100); ++named; }
 	{ auto r=choose({0,0,100,60},{},{{0,0,50,60},{50,0,50,60}},3); assert(r.empty()); ++named; }
 	{ auto r=choose({0,0,100,60},{},{{20,10,20,20},{60,25,30,10}},3); valid(r,{0,0,100,60},{{20,10,20,20},{60,25,30,10}},3); ++named; }
+	// Captured regression: Open keyboard really occupies y=600..951 pt (1053 px),
+	// while an old notification retained y=455.5 (1487 px). UIKit source selection
+	// is verified separately in the real simulator; these test the pane contract.
+	{ assert(near(bottom_docked_height({0,0,669,951},{0,600,669,351},3)*3,1053)); ++named; }
+	{ assert(bottom_docked_height({0,0,669,1366.0/3},{0,600,669,351},3)==0); ++named; }
+	{ assert(near(bottom_docked_height({0,0,669,1366.0/3},{0,600-1487.0/3,669,351},3),351)); ++named; }
+	{ assert(bottom_docked_height({0,0,669,951},{100,600,300,250},3)==0); ++named; }
+	{ assert(bottom_docked_height({0,0,669,951},{10,600,659,351},3)==0); ++named; }
+	{ assert(bottom_docked_height({0,0,669,951},{0,951,669,0},3)==0); ++named; }
+	{ assert(bottom_docked_height({0,0,0,0},{0,600,669,351},3)==0); ++named; }
+	{ assert(bottom_docked_height({0,0,669,951},{0,std::numeric_limits<double>::quiet_NaN(),669,351},3)==0); ++named; }
+	{ const Rect open{0,0,669,951}; assert(std::ceil(bottom_docked_height(open,{0,455.5,669,495.5},3)*3)==1487); assert(std::ceil(bottom_docked_height(open,{0,600,669,351},3)*3)==1053); ++named; }
+	{ assert(bottom_docked_height({0,0,669,951},{0,600,669,351},0)==0); ++named; }
 	std::mt19937 rng(0xD0272);
 	for(int attempt=0;attempt<500;++attempt) {
 		Rect b{0,0,12,10}; std::vector<Rect> obstacles;
