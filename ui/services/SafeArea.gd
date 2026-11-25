@@ -40,6 +40,7 @@ var _tracked: Array[WeakRef] = []
 var _ios_test_geometry: Variant = null  # 明确注入 iOS 几何策略；不伪装 OS / 插件。
 var _geometry_size := Vector2(-1, -1)
 var _window_pixels := Vector2(-1, -1)
+var _screen_scale := -1.0
 var _ios_safe_rect := Rect2()
 var _keyboard_height := 0.0  # 根视口逻辑单位，仅停靠键盘与当前 GodotView 的底部交集。
 
@@ -119,6 +120,28 @@ func _ios_pixel_size() -> Vector2:
 	if _ios_test_geometry != null:
 		return Vector2((_ios_test_geometry as Dictionary).get("window_size", DisplayServer.window_get_size()))
 	return Vector2(DisplayServer.window_get_size())
+
+
+# UIKit points -> current root viewport units. The Duo pane can be much narrower
+# than the 1600-unit canvas; point-sized controls must not shrink with that canvas.
+func ios_point_scale() -> Vector2:
+	if not uses_ios_layout():
+		return Vector2.ONE
+	return map_ios_point_scale(_ios_pixel_size(), _view_size(), _ios_screen_scale())
+
+
+func _ios_screen_scale() -> float:
+	if _ios_test_geometry != null:
+		return float((_ios_test_geometry as Dictionary).get("screen_scale", 1.0))
+	return DisplayServer.screen_get_scale()
+
+
+static func map_ios_point_scale(pixels: Vector2, view: Vector2, screen_scale: float) -> Vector2:
+	if not pixels.is_finite() or not view.is_finite() or not is_finite(screen_scale):
+		return Vector2.ONE
+	if pixels.x <= 0.0 or pixels.y <= 0.0 or view.x <= 0.0 or view.y <= 0.0 or screen_scale <= 0.0:
+		return Vector2.ONE
+	return view / pixels * screen_scale
 
 
 func _connect_ios_resize() -> void:
@@ -221,9 +244,11 @@ func _refresh() -> void:
 	if uses_ios_layout():
 		var view := _view_size()
 		var pixels := _ios_pixel_size()
-		geometry_changed = not view.is_equal_approx(_geometry_size) or not pixels.is_equal_approx(_window_pixels)
+		var screen_scale := _ios_screen_scale()
+		geometry_changed = not view.is_equal_approx(_geometry_size) or not pixels.is_equal_approx(_window_pixels) or not is_equal_approx(screen_scale, _screen_scale)
 		_geometry_size = view
 		_window_pixels = pixels
+		_screen_scale = screen_scale
 		var height := 0.0
 		if _ios_test_geometry != null:
 			height = float((_ios_test_geometry as Dictionary).get("keyboard_height", 0.0))

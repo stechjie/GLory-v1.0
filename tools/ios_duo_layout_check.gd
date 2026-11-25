@@ -99,6 +99,10 @@ func _geometry_checks() -> void:
 	var available := Geometry.ios_editing_rect(Rect2(20, 30, 1100, 800), Vector2(1200, 900), 300)
 	expect(available.is_equal_approx(Rect2(20, 30, 1100, 570)), "keyboard intersects lower edge without double safe-area deduction")
 	expect(not Geometry.ios_editing_rect(Rect2(20, 30, 1100, 800), Vector2(1200, 900), 900).has_area(), "fully covered editor stays empty")
+	var points := Geometry.map_ios_point_scale(Vector2(1366, 1905), Vector2(1600, 2231), 3.0)
+	expect((points * Vector2(1366, 1905) / Vector2(1600, 2231) / 3.0).is_equal_approx(Vector2.ONE), "point conversion uses current pane pixels, viewport and native scale")
+	expect(Geometry.map_ios_point_scale(Vector2.ZERO, view, 3.0) == Vector2.ONE, "unready point geometry has finite neutral fallback")
+	expect(Geometry.map_ios_point_scale(pixels, view, NAN) == Vector2.ONE, "invalid native screen scale has finite neutral fallback")
 
 func _chat_checks() -> void:
 	var chat := Chat.new()
@@ -157,8 +161,72 @@ func _bootstrap_checks() -> void:
 	await settle()
 	expect(boot._choice_panel.get_instance_id() == choice_id, "bootstrap resize keeps login choice instance")
 	expect((boot.get_node("SafeMargin") as Control).get_global_rect().is_equal_approx(SafeArea.rect()), "bootstrap content tracks safe area")
+	# Actual production login controls, without starting authentication. The old
+	# loading-only scene missed vertical division because its logical width stayed 1600.
+	boot._choice_panel.show()
+	boot._choice_guest.show()
+	boot._choice_google.show()
+	boot._choice_apple.show()
+	boot._choice_steam.hide()
+	boot._choice_phone.hide()
+	boot._progress.hide()
+	boot._status.text = "Choose how to sign in"
+	boot._detail.text = "New here? Just start.\nPlayed on another phone? Sign in with the account you linked to carry on."
+	var guest: Button = boot._choice_guest
+	var google: Button = boot._choice_google
+	var guest_id := guest.get_instance_id()
+	var root := get_tree().root
+	var original_size := root.size
+	var first_open_size := Vector2.ZERO
+	var first_open_font := 0
+	# Landscape Open -> vertical Partial -> Open. This is the shipping layout
+	# that the earlier portrait Open / horizontal Partial cases did not exercise.
+	for pixels in [Vector2i(2853, 2007), Vector2i(1366, 1905), Vector2i(2853, 2007)]:
+		root.size = pixels
+		await settle()
+		var geometry := snapshot(Rect2(Vector2.ZERO, Vector2(pixels)))
+		geometry.window_size = Vector2(pixels)
+		geometry.screen_scale = 3.0
+		SafeArea.set_test_ios_geometry(geometry)
+		await settle(8)
+		var units := SafeArea.ios_point_scale()
+		var guest_points := guest.size / units
+		var google_points := google.size / units
+		var font_points := float(guest.get_theme_font_size("font_size")) / units.y
+		expect(guest.get_instance_id() == guest_id and boot._choice_panel.get_instance_id() == choice_id, "point resize preserves login controls and signal connections")
+		expect(guest_points.y >= 48.0 - 0.01 and google_points.y >= 44.0 - 0.01, "wide and narrow panes keep physical button height minima")
+		expect(font_points >= 17.0 - 0.01 and font_points < 18.0, "button font remains 17 UIKit points with outward integer rounding")
+		expect(absf(guest_points.x - 320.0) < 1.0 and boot._ios_scroll.get_global_rect().grow(0.01).encloses(guest.get_global_rect()), "320-point button is inside the current scroll host")
+		expect(guest.scale == Vector2.ONE and guest.get_global_rect().size.is_equal_approx(guest.size), "visible button and hit rectangle use unscaled layout geometry")
+		if first_open_size == Vector2.ZERO:
+			first_open_size = guest.size
+			first_open_font = guest.get_theme_font_size("font_size")
+		print("IOS_BOOTSTRAP_POINTS ", JSON.stringify({"pixels": str(pixels), "viewport": str(get_viewport_rect().size), "guest_points": str(guest_points), "normal_points": str(google_points), "font_points": font_points}))
+	expect(guest.size.is_equal_approx(first_open_size) and guest.get_theme_font_size("font_size") == first_open_font, "reopening restores original dimensions without cumulative scaling")
+	var before_scale := int(counts.safe)
+	var scale_geometry := snapshot(Rect2(Vector2.ZERO, Vector2(root.size)))
+	scale_geometry.window_size = Vector2(root.size)
+	scale_geometry.screen_scale = 2.0
+	SafeArea.set_test_ios_geometry(scale_geometry)
+	expect(counts.safe == before_scale + 1, "screen scale change notifies layout even at identical pixel dimensions")
+	# A short pane needs scrolling, not smaller hit targets.
+	root.size = Vector2i(1366, 420)
+	await settle()
+	var short_geometry := snapshot(Rect2(Vector2.ZERO, Vector2(root.size)))
+	short_geometry.window_size = Vector2(root.size)
+	short_geometry.screen_scale = 3.0
+	SafeArea.set_test_ios_geometry(short_geometry)
+	await settle(8)
+	var bar := (boot._ios_scroll as ScrollContainer).get_v_scroll_bar()
+	expect(bar.max_value > bar.page and guest.size.y / SafeArea.ios_point_scale().y >= 48.0 - 0.01, "short pane scrolls while preserving tappable height")
+	boot._ios_scroll.ensure_control_visible(boot._choice_apple)
+	await settle()
+	expect(boot._ios_scroll.get_global_rect().grow(0.01).encloses(boot._choice_apple.get_global_rect()), "last login choice remains reachable by scrolling")
 	boot.queue_free()
 	await settle()
+	root.size = original_size
+	await settle()
+	SafeArea.set_test_ios_geometry(snapshot(Rect2(Vector2.ZERO, get_viewport_rect().size)))
 
 func _party_checks() -> void:
 	var party := Party.new()
