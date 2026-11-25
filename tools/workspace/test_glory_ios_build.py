@@ -11,6 +11,7 @@ from pathlib import Path
 import plistlib
 import struct
 import subprocess
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -74,6 +75,8 @@ class IOSBuildTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.signin = {"ios_client_id": "123-ios.apps.googleusercontent.com", "web_client_id": "123-web.apps.googleusercontent.com",
                        "reversed_client_id": "com.googleusercontent.apps.123-ios"}
+        self.toolchain = {"xcode_version": "27.2", "xcode_build": "27B52",
+                          "iphoneos_sdk_version": "27.2", "iphoneos_sdk_build": "24B8118"}
         self.now = dt.datetime(2026, 9, 13, tzinfo=dt.timezone.utc)
         self.profile = {
             "Name": "Fixture", "UUID": "11111111-2222-3333-4444-555555555555", "TeamIdentifier": [ios.TEAM],
@@ -82,6 +85,114 @@ class IOSBuildTests(unittest.TestCase):
             "Entitlements": {"application-identifier": f"{ios.TEAM}.{ios.BUNDLE}",
                              "com.apple.developer.team-identifier": ios.TEAM, "get-task-allow": False, ios.APPLE_SIGNIN_ENTITLEMENT: ["Default"]},
         }
+
+    def test_toolchain_gate_rejects_an_older_sdk_and_an_older_xcode(self):
+        sdk = ios.ios_toolchain
+        sdk.validate_toolchain(self.toolchain)
+        for key, value in (("iphoneos_sdk_version", "26.5"), ("iphoneos_sdk_version", "27.0"),
+                           ("xcode_version", "26.5"), ("xcode_version", "27.0"),
+                           ("xcode_version", "unknown"), ("iphoneos_sdk_build", None)):
+            with self.subTest(key=key, value=value), self.assertRaises(RuntimeError):
+                sdk.validate_toolchain(dict(self.toolchain, **{key: value}))
+
+    def test_sdk_proof_compares_binary_plist_and_selected_toolchain(self):
+        sdk = ios.ios_toolchain
+        info = {"DTSDKName": "iphoneos27.2", "DTSDKBuild": "24B8118",
+                "DTXcodeBuild": "27B52", "MinimumOSVersion": "15.0"}
+        output = "\n".join(["Load command 11", " cmd LC_BUILD_VERSION", " platform IOS", " minos 15.0", " sdk 27.2", ""])
+        build = sdk.parse_build_version(output)
+        proof = sdk.validate_app_metadata(info, build, self.toolchain)
+        self.assertEqual(proof["minimum_os_version"], "15.0")
+        self.assertTrue(proof["mach_o_sdk_verified"])
+        for key, value in (("DTSDKName", "iphoneos26.5"), ("DTSDKBuild", "OLD"),
+                           ("DTXcodeBuild", "OLD"), ("MinimumOSVersion", "27.2")):
+            with self.subTest(key=key), self.assertRaises(RuntimeError):
+                sdk.validate_app_metadata(dict(info, **{key: value}), build, self.toolchain)
+        for text in ("", output.replace("IOS", "IOSSIMULATOR"), output + output):
+            with self.subTest(text=text), self.assertRaises(RuntimeError):
+                sdk.parse_build_version(text)
+        for version in ("26.5", "27.0", "27.1"):
+            with self.subTest(version=version), self.assertRaises(RuntimeError):
+                sdk.validate_app_metadata(info, dict(build, sdk=version), self.toolchain)
+
+    def test_duo_window_policy_requires_string_version_scene_and_launch_screen(self):
+        valid = {"UIRequiresFullScreen": True, "UIRequiresFullScreenIgnoredStartingWithVersion": "27",
+                 "UILaunchStoryboardName": "Launch Screen",
+                 "UIApplicationSceneManifest": {"UISceneConfigurations": {"UIWindowSceneSessionRoleApplication": [{}]}}}
+        ios.verify_duo_window_support(valid)
+        for key, value in (("UIRequiresFullScreen", 1), ("UIRequiresFullScreen", False),
+                           ("UIRequiresFullScreenIgnoredStartingWithVersion", 27),
+                           ("UIRequiresFullScreenIgnoredStartingWithVersion", "28"),
+                           ("UILaunchStoryboardName", ""),
+                           ("UIApplicationSceneManifest", {})):
+            with self.subTest(key=key, value=value), self.assertRaises(RuntimeError):
+                ios.verify_duo_window_support(dict(valid, **{key: value}))
+
+    def test_worktree_build_uses_explicit_workspace_for_assets_signing_and_outputs(self):
+        workspace = (self.root / "isolated-workspace").resolve()
+        script = ("import glory_ios_build as i; import json; "
+                  "print(json.dumps([str(i.ROOT), str(i.shared.ROOT), str(i.DEFAULT_PROFILES['app-store'])]))")
+        env = dict(os.environ, GLORY_WORKSPACE=str(workspace))
+        output = subprocess.check_output([sys.executable, "-B", "-c", script],
+                                         cwd=Path(ios.__file__).parent, env=env, text=True)
+        roots = json.loads(output)
+        self.assertEqual(roots[:2], [str(workspace)] * 2)
+        self.assertTrue(Path(roots[2]).is_relative_to(workspace))
+
+    def test_duo_template_requires_exact_patch_and_sdk_provenance(self):
+        project = self.root / "duo-project"
+        patch_dir = project / "deploy/engine"
+        patch_dir.mkdir(parents=True)
+        audio = patch_dir / "godot-4.7-ios-audio-recovery.patch"
+        duo = patch_dir / "godot-4.7-ios-duo-layout.patch"
+        audio.write_bytes(b"audio")
+        duo.write_bytes(b"duo")
+        template = self.root / "duo-template"
+        template.mkdir()
+        (template / "ios.zip").write_bytes(b"archive")
+        manifest_path = template / "glory-engine.json"
+        manifest = {"patch_sha256": ios.shared.digest(audio),
+                    "ios_zip_sha256": ios.shared.digest(template / "ios.zip"),
+                    "patches": {duo.relative_to(project).as_posix(): ios.shared.digest(duo)},
+                    "toolchain": self.toolchain}
+        manifest_path.write_text(json.dumps(manifest))
+        ios.engine_template_info(project, template)
+        broken = copy.deepcopy(manifest)
+        broken["toolchain"]["iphoneos_sdk_version"] = "26.5"
+        manifest_path.write_text(json.dumps(broken))
+        with self.assertRaises(RuntimeError):
+            ios.engine_template_info(project, template)
+        manifest_path.write_text(json.dumps(manifest))
+        duo.write_bytes(b"new layout")
+        with self.assertRaisesRegex(RuntimeError, "Duo"):
+            ios.engine_template_info(project, template)
+
+    def test_default_template_prefers_duo_but_honors_explicit_override(self):
+        project = self.root / "template-selection-project"
+        project.mkdir()
+        (project / "project.godot").write_text('config/features=PackedStringArray("4.7")\n')
+        duo = self.root / "build/ios-duo-templates/4.7.stable"
+        audio = self.root / "build/ios-audio-templates/4.7.stable"
+        override = self.root / "explicit-templates"
+        for directory in (duo, audio, override):
+            directory.mkdir(parents=True)
+            (directory / "version.txt").write_text("4.7.stable\n")
+            with zipfile.ZipFile(directory / "ios.zip", "w") as archive:
+                archive.writestr("godot_apple_embedded.xcodeproj/project.pbxproj", "fixture")
+                archive.writestr("libgodot.ios.release.xcframework/ios-arm64/libgodot.a", b"fixture")
+        args = ios.arguments(["--project", str(project)])
+        def capture(command, **unused):
+            return b"4.7.stable.fixture\n" if command[-1] == "--version" else b"Xcode 27.2\nBuild version 27B52\n"
+        with mock.patch.object(ios, "ROOT", self.root), mock.patch.object(ios.sys, "platform", "darwin"), \
+             mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(ios, "capture", side_effect=capture), \
+             mock.patch.object(ios.ios_toolchain, "inspect_toolchain", return_value=self.toolchain), \
+             mock.patch.object(ios.shared, "find_executable", return_value="fixture-godot"), \
+             mock.patch.object(ios.shutil, "which", return_value="/usr/bin/rsync"):
+            self.assertEqual(ios.environment(args)["templates"], duo.resolve())
+            with mock.patch.dict(os.environ, {"GODOT_TEMPLATES": str(audio)}):
+                self.assertEqual(ios.environment(args)["templates"], audio.resolve())
+                args.templates = str(override)
+                self.assertEqual(ios.environment(args)["templates"], override.resolve())
 
     def test_profile_requires_matching_team_app_and_distribution_method(self):
         ios.validate_profile_data(self.profile, "ad-hoc", self.now)
@@ -314,6 +425,8 @@ class IOSBuildTests(unittest.TestCase):
                 ios.verify_game_mode_support(info)
                 self.assertIs(info["LSSupportsGameMode"], True)
                 self.assertIs(info["GCSupportsGameMode"], True)
+                self.assertEqual(info["UIRequiresFullScreenIgnoredStartingWithVersion"], "27")
+                self.assertNotIn("UIRequiresFullScreen", info)  # Already emitted once by Godot.
                 self.assertTrue(info["NSSpeechRecognitionUsageDescription"].strip())
                 self.assertNotIn("UIBackgroundModes", info)
 
@@ -330,12 +443,17 @@ class IOSBuildTests(unittest.TestCase):
         destination = self.root / "verify with spaces"
         leaf = b"public signing certificate fixture"
         cert = {"sha1": hashlib.sha1(leaf).hexdigest().upper()}
-        identity = {"build_number": "2", "signin": self.signin}
+        identity = {"build_number": "2", "signin": self.signin, "toolchain": self.toolchain}
         info = {"CFBundleIdentifier": ios.BUNDLE, "CFBundleShortVersionString": "0.0.4", "CFBundleVersion": "2",
                 "CFBundleDisplayName": ios.DISPLAY_NAME,
                 "CFBundleExecutable": "Fixture", "CFBundleSupportedPlatforms": ["iPhoneOS"], "NSMicrophoneUsageDescription": "Voice", "NSCameraUsageDescription": "No camera capture", "NSPhotoLibraryUsageDescription": "No photo library access",
                 "NSSpeechRecognitionUsageDescription": "Convert recorded chat speech into a draft.",
-                "LSSupportsGameMode": True, "GCSupportsGameMode": True}
+                "LSSupportsGameMode": True, "GCSupportsGameMode": True,
+                "DTSDKName": "iphoneos27.2", "DTSDKBuild": "24B8118", "DTXcodeBuild": "27B52",
+                "MinimumOSVersion": "15.0", "UIRequiresFullScreen": True,
+                "UIRequiresFullScreenIgnoredStartingWithVersion": "27",
+                "UILaunchStoryboardName": "Launch Screen",
+                "UIApplicationSceneManifest": {"UISceneConfigurations": {"UIWindowSceneSessionRoleApplication": [{}]}}}
         info.update(plistlib.loads(('<plist version="1.0"><dict>' + ios.signin_plist(self.signin) + '</dict></plist>').encode()))
         with zipfile.ZipFile(ipa, "w") as archive:
             for name, data in {"Info.plist": plistlib.dumps(info), "Fixture": b"arm64 fixture",
@@ -358,6 +476,8 @@ class IOSBuildTests(unittest.TestCase):
                 Path(prefix + "0").write_bytes(leaf)
             elif "--entitlements" in command:
                 return plistlib.dumps(self.profile["Entitlements"])
+            elif "vtool" in command:
+                return b"Load command 11\n      cmd LC_BUILD_VERSION\n platform IOS\n minos 15.0\n sdk 27.2\n"
             elif "lipo" in command:
                 return b"arm64\n"
             return b""
@@ -371,6 +491,23 @@ class IOSBuildTests(unittest.TestCase):
         self.assertTrue(result["codesign"])
         self.assertTrue(result["apple_storekit"])
         self.assertTrue(result["game_mode_support"])
+        self.assertFalse(result["duo_engine_layout"])  # Fixture above does not claim an engine patch.
+        claimed = dict(identity, engine_info={"patches": {"deploy/engine/godot-4.7-ios-duo-layout.patch": "fixture"}})
+        with mock.patch.object(ios, "capture", side_effect=tool), mock.patch.object(ios, "read_profile", return_value=self.profile):
+            executable = destination / "Payload/Fixture.app/Fixture"
+            original_data = executable.read_bytes()
+            # Skip extraction so this test can vary the actual linked marker.
+            def marker_tool(command, **kwargs):
+                if command[0] != "/usr/bin/ditto":
+                    return tool(command, **kwargs)
+                return b""
+            with mock.patch.object(ios, "capture", side_effect=marker_tool), mock.patch.object(ios, "pck_file", return_value=json.dumps(claimed).encode()):
+                executable.write_bytes(original_data + b" [GLORY_AUDIO_DRIVER] recovery=")
+                with self.assertRaisesRegex(RuntimeError, "Duo"):
+                    ios.verify_ipa(ipa, destination, "ad-hoc", self.profile, cert, "0.0.4", "2", claimed, {})
+                executable.write_bytes(executable.read_bytes() + b" [GLORY_DUO] geometry=")
+                proof = ios.verify_ipa(ipa, destination, "ad-hoc", self.profile, cert, "0.0.4", "2", claimed, {})
+                self.assertTrue(proof["duo_engine_layout"])
         self.assertTrue((destination / "signer-0").is_file())
 
         missing_speech = self.root / "missing-speech-purpose.ipa"

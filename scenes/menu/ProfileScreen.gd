@@ -127,6 +127,7 @@ var _data: Dictionary = {}
 var _busy := false
 
 var _body: VBoxContainer
+var _ios_scroll: ScrollContainer
 var _public_rows: VBoxContainer
 var _status: Label
 var _avatar_rect: TextureRect
@@ -173,10 +174,18 @@ func _ready() -> void:
 	theme = Kit.theme()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build()
+	if SafeArea.uses_ios_layout():
+		SafeArea.editing_changed.connect(_layout_ios)
+		get_viewport().gui_focus_changed.connect(_on_ios_focus_changed)
+		_layout_ios()
 	_load()
 
 
 func _exit_tree() -> void:
+	if SafeArea.editing_changed.is_connected(_layout_ios):
+		SafeArea.editing_changed.disconnect(_layout_ios)
+	if get_viewport().gui_focus_changed.is_connected(_on_ios_focus_changed):
+		get_viewport().gui_focus_changed.disconnect(_on_ios_focus_changed)
 	# 页面被关掉时把浮层一起收走，否则它会留在 ModalStack 上盖住主菜单。
 	if ModalStack.has(PICKER_MODAL_ID):
 		ModalStack.pop(PICKER_MODAL_ID)
@@ -203,6 +212,10 @@ func _build() -> void:
 	var scroll := TouchScrollContainer.new()
 	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	if SafeArea.uses_ios_layout():
+		_ios_scroll = scroll
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+		scroll.follow_focus = true
 	add_child(scroll)
 
 	var center := CenterContainer.new()
@@ -281,6 +294,22 @@ func _build() -> void:
 	Kit.on_backdrop(_status)
 	_body.add_child(_status)
 	UiJuice.pop_in(_body.get_children(), 0.0, 0.06, 0.93)
+
+
+func _on_ios_focus_changed(_focus: Control) -> void:
+	_layout_ios.call_deferred()
+
+
+func _layout_ios() -> void:
+	if _ios_scroll == null:
+		return
+	var available := SafeArea.editing_rect(self)
+	var view := get_viewport_rect().size
+	_ios_scroll.offset_left = available.position.x
+	_ios_scroll.offset_top = available.position.y
+	_ios_scroll.offset_right = available.end.x - view.x
+	_ios_scroll.offset_bottom = available.end.y - view.y
+	SafeArea.reveal_ios_focus.call_deferred(_ios_scroll)
 
 
 func _select_profile_tab(settings: bool) -> void:

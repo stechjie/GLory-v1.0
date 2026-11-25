@@ -273,6 +273,11 @@ func _build_banner(text: String) -> CanvasLayer:
 
 
 func _on_banner_input(event: InputEvent) -> void:
+	if SafeArea.uses_ios_layout():
+		if event is InputEventMouseButton and event.canceled:
+			return
+		if event is InputEventScreenTouch and event.canceled:
+			return
 	var released := (event is InputEventMouseButton and not (event as InputEventMouseButton).pressed) \
 		or (event is InputEventScreenTouch and not (event as InputEventScreenTouch).pressed)
 	if released:

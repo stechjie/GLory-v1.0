@@ -112,3 +112,34 @@ Google Play 正式／审核包使用 `./tools/build_aab.sh --server-environment 
 iOS 正式候选包也显式指定 `./tools/build_ipa.sh --method app-store --server-environment prod`。
 TestFlight 与后续 App Store 提审使用同一候选包；`--patch-config` 的 `backend_url`
 必须匹配所选环境，否则停止构建。构建记录的 `server_target` 保留环境与实际端点。
+
+## iOS 27 SDK 与 iPhone Duo
+
+构建统一要求 **Xcode 27.1 / iOS SDK 27.1 或更高版本**，当前验收工具链是 Xcode 27.2 (27B52)、iPhoneOS SDK 27.2 (24B8118)。这高于 Apple 从 2027 年 4 月起上传要求的 iOS 27 SDK，并覆盖 Duo 的 27.1 布局 API；最低部署版本继续是 **iOS 15.0**。
+
+`build_ipa.sh` 保留调用者显式设置的 `DEVELOPER_DIR`；也可传 `--developer-dir /Applications/Xcode.app/Contents/Developer`。工具链低于要求时，在签名、快照和打包之前失败。最终 IPA 从主程序 `LC_BUILD_VERSION` 读取真实 SDK，再与 `DTSDKName`、`DTSDKBuild`、`DTXcodeBuild` 及本次选定工具链交叉核验。不会通过改写 plist 版本号使旧二进制看起来合规。构建身份记录 `toolchain`，结果中的 `validation.apple_toolchain` 保存已验证 SDK、Xcode build 和最低系统版本。
+
+窗口配置保留旧系统的 `UIRequiresFullScreen=true`，添加字符串 `UIRequiresFullScreenIgnoredStartingWithVersion="27"`；最终包还必须具备 launch screen 与 scene lifecycle 配置。旧全屏键已经由 Godot 模板生成，额外 plist 内容只添加版本忽略键，避免重复键。配置校验只证明声明正确，Duo 开合布局、触控和输入仍需运行验证。
+
+引擎模板由 `build_ios_audio_template.py` 同时应用 `godot-4.7-ios-audio-recovery.patch` 和 `godot-4.7-ios-duo-layout.patch`，通过显式真实 SDK 路径编译 GL Compatibility arm64 库，不改画质和其他平台渲染器。模板 `glory-engine.json` 记录两个补丁的指纹与工具链；IPA 入口拒绝旧的未适配模板。模板构建默认输出到 `build/ios-duo-templates/4.7.stable`；IPA 入口按显式 `--templates`、`GODOT_TEMPLATES`、新 Duo 模板、旧音频模板、stock 模板的顺序查找，再校验补丁和 SDK 指纹。若源码来自无 Git 元数据的解压归档，manifest 明确记录 `source_commit_verification=source_archive_no_git_head`，不声称已读取不存在的 Git HEAD。
+
+隔离 worktree 构建须同时指定源工程与外层工作区。`GLORY_WORKSPACE` 决定资源、签名、锁、日志和产物根目录，`--project` 决定源码；不要把它指向源码自身：
+
+```bash
+GLORY_WORKSPACE=/Volumes/repository/github/GLory \
+  /path/to/worktree/tools/workspace/build_ipa.sh \
+  --project /path/to/worktree --check --method app-store \
+  --developer-dir /Applications/Xcode.app/Contents/Developer
+```
+
+实际构建仍通过同一入口，添加本次独立的 `--patch-config`、`--result-file`、`--server-environment prod` 和已决定的营销版本。不要复用已有客户端的 `base_id`。
+
+Apple 依据：[上传要求](https://developer.apple.com/news/?id=k1mtkt1k)、[Duo 准备](https://developer.apple.com/iphone-duo/prepare/)、[窗口兼容模式迁移](https://developer.apple.com/documentation/technotes/tn3192-migrating-your-app-from-the-deprecated-uirequiresfullscreen-key)。
+
+### 本地 Simulator QA app
+
+`build_ios_simulator_app.py` 从 canonical IPA 流程生成的 Xcode 工程创建独立 APFS 克隆，仅替换真实 Simulator 引擎与原生 frameworks。调用时指定 `--xcode-export`、`--work-dir`、`--engine-library`、`--native-frameworks`，可用 `--pck` 提供保留生产控件的 QA 资源包。输出固定为独立 bundle `com.superforge.glory.duoqa`，默认只并行 2 个 Xcode 任务，并只做本地 ad-hoc 签名；不会安装、上传或替换正式包。
+
+每次在 `--work-dir/runs/<时间戳>/` 保留 `inputs.json`、`xcodebuild.log`、`result.json` 和实际 app，成功后更新 `latest-result.json`。输入原工程、引擎、三份 native frameworks、PCK 与成品主程序均记录 SHA-256。验证 Simulator 的 arm64 平台、实际 SDK 与 Duo 实现标记。供应商依赖可保留其真实旧 SDK，主程序必须由当前 SDK 编译。
+
+Simulator app 是独立测试目标：QA PCK 或独立 bundle 下的结果不能替代正式账号登录、Apple 支付、物理 GPU 性能、实体 Duo 或 TestFlight 验收。实际运行需记录使用的 PCK 与场景范围。生产交付仍必须通过 `build_ipa.sh`。

@@ -1,0 +1,815 @@
+--- a/drivers/apple_embedded/display_server_apple_embedded.h
++++ b/drivers/apple_embedded/display_server_apple_embedded.h
+@@ -231,7 +231,11 @@
+ 	virtual void virtual_keyboard_show(const String &p_existing_text, const Rect2 &p_screen_rect, DisplayServerEnums::VirtualKeyboardType p_type, int p_max_length, int p_cursor_start, int p_cursor_end) override;
+ 	virtual void virtual_keyboard_hide() override;
+ 
++#ifdef IOS_ENABLED
++	void virtual_keyboard_set_height(double height);
++#else
+ 	void virtual_keyboard_set_height(int height);
++#endif
+ 	virtual int virtual_keyboard_get_height() const override;
+ 	virtual bool has_hardware_keyboard() const override;
+ 
+--- a/drivers/apple_embedded/display_server_apple_embedded.mm
++++ b/drivers/apple_embedded/display_server_apple_embedded.mm
+@@ -43,6 +43,13 @@
+ #import "drivers/apple_embedded/os_apple_embedded.h"
+ #import "drivers/apple_embedded/tts_apple_embedded.h"
+ #include "servers/display/native_menu.h"
++#ifdef IOS_ENABLED
++#import "platform/ios/godot_adaptive_container_ios.h"
++#include "platform/ios/godot_duo_geometry.h"
++static Size2i glory_ios_pixel_size(CGSize size, double scale) {
++	return Size2i((int)std::llround(size.width * scale), (int)std::llround(size.height * scale));
++}
++#endif
+ 
+ #import <GameController/GameController.h>
+ 
+@@ -302,7 +309,17 @@
+ }
+ 
+ void DisplayServerAppleEmbedded::touches_canceled(int p_idx) {
++#ifdef IOS_ENABLED
++	Ref<InputEventScreenTouch> ev;
++	ev.instantiate();
++	ev->set_index(p_idx);
++	ev->set_pressed(false);
++	ev->set_canceled(true);
++	ev->set_position(Vector2(-1, -1));
++	perform_event(ev);
++#else
+ 	touch_press(p_idx, -1, -1, false, false);
++#endif
+ }
+ 
+ // MARK: Keyboard
+@@ -480,6 +497,21 @@
+ }
+ 
+ Rect2i DisplayServerAppleEmbedded::get_display_safe_area() const {
++#ifdef IOS_ENABLED
++	GDTView *game = GDTAppDelegateService.viewController.godotView;
++	CGRect safe;
++	if ([game.superview isKindOfClass:[GDTAdaptiveContainerIOS class]]) {
++		safe = ((GDTAdaptiveContainerIOS *)game.superview).safeContentRect;
++	} else {
++		safe = UIEdgeInsetsInsetRect(game.bounds, game.safeAreaInsets);
++	}
++	const double scale = game.contentScaleFactor;
++	auto aligned = GloryIOSGeometry::inward_pixels({safe.origin.x, safe.origin.y,
++			safe.size.width, safe.size.height}, scale);
++	if (aligned.empty()) return Rect2i();
++	return Rect2i((int)std::llround(aligned.x * scale), (int)std::llround(aligned.y * scale),
++			(int)std::llround(aligned.width * scale), (int)std::llround(aligned.height * scale));
++#else
+ 	UIEdgeInsets insets = UIEdgeInsetsZero;
+ 	UIView *view = GDTAppDelegateService.viewController.godotView;
+ 	if ([view respondsToSelector:@selector(safeAreaInsets)]) {
+@@ -489,6 +521,7 @@
+ 	Size2i insets_position = Size2i(insets.left, insets.top) * scale;
+ 	Size2i insets_size = Size2i(insets.left + insets.right, insets.top + insets.bottom) * scale;
+ 	return Rect2i(screen_get_position() + insets_position, screen_get_size() - insets_size);
++#endif
+ }
+ 
+ int DisplayServerAppleEmbedded::get_screen_count() const {
+@@ -518,7 +551,11 @@
+ 		return Size2i();
+ 	}
+ 
++#ifdef IOS_ENABLED
++	return glory_ios_pixel_size(layer.bounds.size, screen_get_scale(p_screen));
++#else
+ 	return Size2i(layer.bounds.size.width, layer.bounds.size.height) * screen_get_scale(p_screen);
++#endif
+ }
+ 
+ Rect2i DisplayServerAppleEmbedded::screen_get_usable_rect(int p_screen) const {
+@@ -615,8 +652,12 @@
+ }
+ 
+ Size2i DisplayServerAppleEmbedded::window_get_size(DisplayServerEnums::WindowID p_window) const {
++#ifdef IOS_ENABLED
++	return glory_ios_pixel_size(GDTAppDelegateService.viewController.godotView.bounds.size, screen_get_max_scale());
++#else
+ 	CGRect viewBounds = GDTAppDelegateService.viewController.view.bounds;
+ 	return Size2i(viewBounds.size.width, viewBounds.size.height) * screen_get_max_scale();
++#endif
+ }
+ 
+ Size2i DisplayServerAppleEmbedded::window_get_size_with_decorations(DisplayServerEnums::WindowID p_window) const {
+@@ -698,11 +739,20 @@
+ }
+ 
+ bool DisplayServerAppleEmbedded::window_can_draw(DisplayServerEnums::WindowID p_window) const {
++#ifdef IOS_ENABLED
++	GDTView *game = GDTAppDelegateService.viewController.godotView;
++	return game.canRender && !CGRectIsEmpty(game.bounds);
++#else
+ 	return true;
++#endif
+ }
+ 
+ bool DisplayServerAppleEmbedded::can_any_window_draw() const {
++#ifdef IOS_ENABLED
++	return window_can_draw(DisplayServerEnums::MAIN_WINDOW_ID);
++#else
+ 	return true;
++#endif
+ }
+ 
+ bool DisplayServerAppleEmbedded::is_touchscreen_available() const {
+@@ -769,9 +819,15 @@
+ 	[GDTAppDelegateService.viewController.keyboardView resignFirstResponder];
+ }
+ 
++#ifdef IOS_ENABLED
++void DisplayServerAppleEmbedded::virtual_keyboard_set_height(double height) {
++	virtual_keyboard_height = MAX(0, (int)std::ceil(height * screen_get_max_scale()));
++}
++#else
+ void DisplayServerAppleEmbedded::virtual_keyboard_set_height(int height) {
+ 	virtual_keyboard_height = height * screen_get_max_scale();
+ }
++#endif
+ 
+ int DisplayServerAppleEmbedded::virtual_keyboard_get_height() const {
+ 	return virtual_keyboard_height;
+@@ -804,7 +860,11 @@
+ }
+ 
+ void DisplayServerAppleEmbedded::resize_window(CGSize viewSize) {
++#ifdef IOS_ENABLED
++	Size2i size = glory_ios_pixel_size(viewSize, screen_get_max_scale());
++#else
+ 	Size2i size = Size2i(viewSize.width, viewSize.height) * screen_get_max_scale();
++#endif
+ 
+ #if defined(RD_ENABLED)
+ 	if (rendering_context) {
+--- a/drivers/apple_embedded/godot_view_apple_embedded.h
++++ b/drivers/apple_embedded/godot_view_apple_embedded.h
+@@ -65,6 +65,9 @@
+ 
+ - (void)startRendering;
+ - (void)stopRendering;
++#ifdef IOS_ENABLED
++- (void)cancelActiveTouches;
++#endif
+ 
+ @end
+ 
+--- a/drivers/apple_embedded/godot_view_apple_embedded.mm
++++ b/drivers/apple_embedded/godot_view_apple_embedded.mm
+@@ -189,7 +189,11 @@
+ 		self.animationTimer = nil;
+ 	}
+ 
++#ifdef IOS_ENABLED
++	[self cancelActiveTouches];
++#else
+ 	[self clearTouches];
++#endif
+ }
+ 
+ - (void)startRendering {
+@@ -231,6 +235,17 @@
+ 		[self.displayLink setPaused:NO];
+ 	}
+ 
++#ifdef IOS_ENABLED
++	if (CGRectIsEmpty(self.bounds)) {
++		// Keep gameplay/network processing alive after setup, without drawing a
++		// zero-sized framebuffer. DisplayServer::can_any_window_draw returns false.
++		// Keep the existing GL context current for resource work during iteration;
++		// do not present the old drawable while the usable region is empty.
++		[self.renderingLayer startRenderDisplayLayer];
++		if (self.delegateDidFinishSetUp && self.renderer) [self.renderer renderOnView:self];
++		return;
++	}
++#endif
+ 	[self.renderingLayer startRenderDisplayLayer];
+ 
+ 	if (!self.renderer) {
+@@ -293,14 +308,61 @@
+ 
+ - (void)layoutRenderingLayer {
+ 	if (self.renderingLayer) {
++#ifdef IOS_ENABLED
++		const BOOL drawableChanged = !CGSizeEqualToSize(self.renderingLayer.bounds.size, self.bounds.size) ||
++				self.renderingLayer.contentsScale != self.contentScaleFactor;
++		[CATransaction begin];
++		[CATransaction setDisableActions:YES];
++		self.renderingLayer.frame = self.bounds;
++		self.renderingLayer.contentsScale = self.contentScaleFactor;
++		if (drawableChanged && !CGRectIsEmpty(self.bounds)) [self.renderingLayer layoutDisplayLayer];
++		[CATransaction commit];
++#else
+ 		self.renderingLayer.frame = self.bounds;
+ 		[self.renderingLayer layoutDisplayLayer];
++#endif
+ 
+ 		if (DisplayServerAppleEmbedded::get_singleton()) {
+ 			DisplayServerAppleEmbedded::get_singleton()->resize_window(self.bounds.size);
+ 		}
+ 	}
+ }
++
++#ifdef IOS_ENABLED
++- (void)didMoveToWindow {
++	[super didMoveToWindow];
++	if (self.window) {
++		const CGFloat scale = self.window.screen.scale;
++		if (scale > 0 && scale != self.contentScaleFactor) {
++			[self cancelActiveTouches];
++			self.contentScaleFactor = scale;
++			[self setNeedsLayout];
++		}
++	}
++}
++
++- (int)existingTouchIDForTouch:(UITouch *)touch {
++	for (int i = 0; i < max_touches; i++) {
++		if (godot_touches[i] == touch) return i;
++	}
++	return -1;
++}
++
++- (void)cancelActiveTouches {
++	// Clear every slot before callbacks: input may dispatch synchronously and
++	// reenter layout/stopRendering when event accumulation is disabled.
++	bool active[max_touches] = {};
++	for (int i = 0; i < max_touches; i++) {
++		active[i] = godot_touches[i] != nullptr;
++		godot_touches[i] = nullptr;
++	}
++	DisplayServerAppleEmbedded *ds = DisplayServerAppleEmbedded::get_singleton();
++	if (!ds) return;
++	for (int i = 0; i < max_touches; i++) {
++		if (active[i]) ds->touches_canceled(i);
++	}
++}
++#endif
+ 
+ // MARK: - Input
+ 
+@@ -355,6 +417,9 @@
+ 
+ - (void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event {
+ 	for (UITouch *touch in touches) {
++#ifdef IOS_ENABLED
++		if (!CGRectContainsPoint(self.bounds, [touch locationInView:self])) continue;
++#endif
+ 		int tid = [self getTouchIDForTouch:touch];
+ 		ERR_FAIL_COND(tid == -1);
+ 		CGPoint touchPoint = [touch locationInView:self];
+@@ -364,8 +429,13 @@
+ 
+ - (void)touchesMoved:(NSSet *)touches withEvent:(UIEvent *)event {
+ 	for (UITouch *touch in touches) {
++#ifdef IOS_ENABLED
++		int tid = [self existingTouchIDForTouch:touch];
++		if (tid == -1) continue;
++#else
+ 		int tid = [self getTouchIDForTouch:touch];
+ 		ERR_FAIL_COND(tid == -1);
++#endif
+ 		CGPoint touchPoint = [touch locationInView:self];
+ 		CGPoint prev_point = [touch previousLocationInView:self];
+ 		CGFloat alt = [touch altitudeAngle];
+@@ -376,8 +446,13 @@
+ 
+ - (void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)event {
+ 	for (UITouch *touch in touches) {
++#ifdef IOS_ENABLED
++		int tid = [self existingTouchIDForTouch:touch];
++		if (tid == -1) continue;
++#else
+ 		int tid = [self getTouchIDForTouch:touch];
+ 		ERR_FAIL_COND(tid == -1);
++#endif
+ 		[self removeTouch:touch];
+ 		CGPoint touchPoint = [touch locationInView:self];
+ 		DisplayServerAppleEmbedded::get_singleton()->touch_press(tid, touchPoint.x * self.contentScaleFactor, touchPoint.y * self.contentScaleFactor, false, false);
+@@ -386,11 +461,21 @@
+ 
+ - (void)touchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event {
+ 	for (UITouch *touch in touches) {
++#ifdef IOS_ENABLED
++		int tid = [self existingTouchIDForTouch:touch];
++		if (tid == -1) continue;
++#else
+ 		int tid = [self getTouchIDForTouch:touch];
+ 		ERR_FAIL_COND(tid == -1);
++#endif
++#ifdef IOS_ENABLED
++		[self removeTouch:touch];
++#endif
+ 		DisplayServerAppleEmbedded::get_singleton()->touches_canceled(tid);
+ 	}
++	#ifndef IOS_ENABLED
+ 	[self clearTouches];
++	#endif
+ }
+ 
+ // MARK: Motion
+--- a/drivers/apple_embedded/godot_view_controller.mm
++++ b/drivers/apple_embedded/godot_view_controller.mm
+@@ -38,6 +38,10 @@
+ #import "drivers/apple_embedded/key_mapping_apple_embedded.h"
+ #import "drivers/apple_embedded/os_apple_embedded.h"
+ #include "servers/camera/camera_server.h"
++#ifdef IOS_ENABLED
++#import "platform/ios/godot_adaptive_container_ios.h"
++#include <cmath>
++#endif
+ 
+ #import <AVFoundation/AVFoundation.h>
+ #import <GameController/GameController.h>
+@@ -49,13 +53,26 @@
+ @property(strong, nonatomic) GDTKeyboardInputView *keyboardView;
+ 
+ @property(strong, nonatomic) UIView *godotLoadingOverlay;
++#ifdef IOS_ENABLED
++@property(strong, nonatomic) GDTView *gloryGameView;
++@property(assign, nonatomic) CGRect gloryKeyboardScreenFrame;
++@property(strong, nonatomic) UIScreen *gloryKeyboardScreen;
++@property(assign, nonatomic) BOOL gloryKeyboardFrameValid;
++- (void)updateGloryKeyboardGeometry;
++#endif
+ 
+ @end
+ 
+ @implementation GDTViewController
+ 
+ - (GDTView *)godotView {
++#ifdef IOS_ENABLED
++	// Loading self.view may create an adaptive host; always re-read the child.
++	if (!self.gloryGameView) [self loadViewIfNeeded];
++	return self.gloryGameView;
++#else
+ 	return (GDTView *)self.view;
++#endif
+ }
+ 
+ - (void)pressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
+@@ -125,7 +142,19 @@
+ 	GDTViewRenderer *renderer = [[GDTViewRenderer alloc] init];
+ 
+ 	self.renderer = renderer;
++#ifdef IOS_ENABLED
++	self.gloryGameView = view;
++	if (@available(iOS 27.1, *)) {
++		GDTAdaptiveContainerIOS *container = [[GDTAdaptiveContainerIOS alloc] initWithGameView:view];
++		__weak GDTViewController *weakSelf = self;
++		container.geometryDidChange = ^{ [weakSelf updateGloryKeyboardGeometry]; };
++		self.view = container;
++	} else {
++		self.view = view;
++	}
++#else
+ 	self.view = view;
++#endif
+ 
+ 	view.renderer = self.renderer;
+ 	view.delegate = self;
+@@ -185,7 +214,8 @@
+ - (void)observeKeyboard {
+ 	print_verbose("Setting up keyboard input view.");
+ 	self.keyboardView = [GDTKeyboardInputView new];
+-	[self.view addSubview:self.keyboardView];
++	// Keep exactly one editor and its marked text/selection across geometry changes.
++	[self.godotView addSubview:self.keyboardView];
+ 
+ 	print_verbose("Adding observer for keyboard show/hide.");
+ 	[[NSNotificationCenter defaultCenter]
+@@ -198,6 +228,11 @@
+ 			   selector:@selector(keyboardHidden:)
+ 				   name:UIKeyboardDidHideNotification
+ 				 object:nil];
++#ifdef IOS_ENABLED
++	for (NSNotificationName name in @[ UIKeyboardWillChangeFrameNotification, UIKeyboardDidChangeFrameNotification ]) {
++		[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(keyboardOnScreen:) name:name object:nil];
++	}
++#endif
+ }
+ 
+ - (void)displayLoadingOverlay {
+@@ -379,14 +414,69 @@
+ 	NSValue *value = info[UIKeyboardFrameEndUserInfoKey];
+ 
+ 	CGRect rawFrame = [value CGRectValue];
++#ifdef IOS_ENABLED
++	UIScreen *screen = [notification.object isKindOfClass:[UIScreen class]] ? notification.object : self.godotView.window.screen;
++	if (screen && self.godotView.window.screen && screen != self.godotView.window.screen) return;
++	self.gloryKeyboardScreenFrame = rawFrame;
++	self.gloryKeyboardScreen = screen;
++	self.gloryKeyboardFrameValid = value != nil && std::isfinite(rawFrame.origin.x) &&
++			std::isfinite(rawFrame.origin.y) && std::isfinite(rawFrame.size.width) &&
++			std::isfinite(rawFrame.size.height) && rawFrame.size.width >= 0 && rawFrame.size.height >= 0;
++	[self updateGloryKeyboardGeometry];
++#else
+ 	CGRect keyboardFrame = [self.view convertRect:rawFrame fromView:nil];
+-
+ 	if (DisplayServerAppleEmbedded::get_singleton()) {
+ 		DisplayServerAppleEmbedded::get_singleton()->virtual_keyboard_set_height(keyboardFrame.size.height);
+ 	}
+-}
++#endif
++}
++
++#ifdef IOS_ENABLED
++- (void)viewDidLayoutSubviews {
++	[super viewDidLayoutSubviews];
++	[self updateGloryKeyboardGeometry];
++}
++
++- (void)updateGloryKeyboardGeometry {
++	DisplayServerAppleEmbedded *ds = DisplayServerAppleEmbedded::get_singleton();
++	if (!ds) return;
++	UIView *game = self.godotView;
++	CGFloat height = 0;
++	if (self.gloryKeyboardFrameValid && self.keyboardView.isFirstResponder && game.window &&
++			self.gloryKeyboardScreen == game.window.screen && !CGRectIsEmpty(game.bounds)) {
++		CGRect local = [game convertRect:self.gloryKeyboardScreenFrame
++				fromCoordinateSpace:self.gloryKeyboardScreen.coordinateSpace];
++		CGRect covered = CGRectIntersection(game.bounds, local);
++		CGFloat pixel = 1.0 / MAX(1.0, game.contentScaleFactor);
++		// The engine exposes a bottom height, not a floating-keyboard rectangle.
++		// Only describe a bottom-docked region that covers this game's full width.
++		if (!CGRectIsNull(covered) && !CGRectIsEmpty(covered) &&
++				CGRectGetMaxY(covered) >= CGRectGetMaxY(game.bounds) - pixel &&
++				CGRectGetMinX(covered) <= CGRectGetMinX(game.bounds) + pixel &&
++				CGRectGetMaxX(covered) >= CGRectGetMaxX(game.bounds) - pixel) {
++			height = CGRectGetMaxY(game.bounds) - CGRectGetMinY(covered);
++		}
++	}
++	ds->virtual_keyboard_set_height(height);
++	if ([[NSProcessInfo processInfo].environment[@"GLORY_IOS_GEOMETRY_LOG"] boolValue]) {
++		GDTKeyboardInputView *editor = self.keyboardView;
++		UITextRange *marked = editor.markedTextRange;
++		NSInteger markedStart = marked ? [editor offsetFromPosition:editor.beginningOfDocument toPosition:marked.start] : -1;
++		NSInteger markedLength = marked ? [editor offsetFromPosition:marked.start toPosition:marked.end] : 0;
++		// Read-only QA evidence: identities and indices only, never user text.
++		NSLog(@"[GLORY_DUO] keyboard editor=%p first=%d selected=%@ marked_start=%ld marked_length=%ld text_length=%lu obstruction_points=%g scale=%g",
++				(__bridge void *)editor, editor.isFirstResponder, NSStringFromRange(editor.selectedRange),
++				(long)markedStart, (long)markedLength, (unsigned long)editor.text.length,
++				(double)height, (double)game.contentScaleFactor);
++	}
++}
++#endif
+ 
+ - (void)keyboardHidden:(NSNotification *)notification {
++#ifdef IOS_ENABLED
++	self.gloryKeyboardFrameValid = NO;
++	self.gloryKeyboardScreen = nil;
++#endif
+ 	if (DisplayServerAppleEmbedded::get_singleton()) {
+ 		DisplayServerAppleEmbedded::get_singleton()->virtual_keyboard_set_height(0);
+ 	}
+--- a/platform/ios/SCsub
++++ b/platform/ios/SCsub
+@@ -12,6 +12,7 @@
+     "display_layer_ios.mm",
+     "display_server_ios.mm",
+     "godot_view_ios.mm",
++    "godot_adaptive_container_ios.mm",
+     "main_ios.mm",
+     "os_ios.mm",
+ ]
+--- a/platform/ios/detect.py
++++ b/platform/ios/detect.py
+@@ -31,6 +31,7 @@
+         (("APPLE_SDK_PATH", "IOS_SDK_PATH"), "Path to the iOS SDK", ""),
+         (("apple_target_triple", "ios_triple"), "Triple for the corresponding target Apple platform toolchain", ""),
+         BoolVariable(("simulator", "ios_simulator"), "Build for Simulator", False),
++        ("ios_min_version", "Minimum iOS deployment version", "15.0"),
+         BoolVariable("generate_bundle", "Generate an APP bundle after building iOS/macOS binaries", False),
+     ]
+ 
+@@ -103,14 +104,14 @@
+ 
+     if env["simulator"]:
+         env["APPLE_PLATFORM"] = "iossimulator"
+-        env.Append(ASFLAGS=["-mios-simulator-version-min=14.0"])
+-        env.Append(CCFLAGS=["-mios-simulator-version-min=14.0"])
++        env.Append(ASFLAGS=[f"-mios-simulator-version-min={env['ios_min_version']}"])
++        env.Append(CCFLAGS=[f"-mios-simulator-version-min={env['ios_min_version']}"])
+         env.Append(CPPDEFINES=["IOS_SIMULATOR"])
+         env.extra_suffix = ".simulator" + env.extra_suffix
+     else:
+         env["APPLE_PLATFORM"] = "ios"
+-        env.Append(ASFLAGS=["-miphoneos-version-min=14.0"])
+-        env.Append(CCFLAGS=["-miphoneos-version-min=14.0"])
++        env.Append(ASFLAGS=[f"-miphoneos-version-min={env['ios_min_version']}"])
++        env.Append(CCFLAGS=[f"-miphoneos-version-min={env['ios_min_version']}"])
+     detect_darwin_sdk_path(env["APPLE_PLATFORM"], env)
+ 
+     env.Append(CCFLAGS=["-ffp-contract=off"])
+--- a/platform/ios/display_server_ios.mm
++++ b/platform/ios/display_server_ios.mm
+@@ -29,6 +29,9 @@
+ /**************************************************************************/
+ 
+ #import "display_server_ios.h"
++#import "drivers/apple_embedded/app_delegate_service.h"
++#import "drivers/apple_embedded/godot_view_controller.h"
++#import "drivers/apple_embedded/godot_view_apple_embedded.h"
+ 
+ #import "device_metrics.h"
+ 
+@@ -118,6 +121,8 @@
+ 	int screen_count = get_screen_count();
+ 	ERR_FAIL_INDEX_V(p_screen, screen_count, 1.0f);
+ 
++	GDTView *game = GDTAppDelegateService.viewController.godotView;
++	if (game && game.contentScaleFactor > 0) return game.contentScaleFactor;
+ 	return [UIScreen mainScreen].scale;
+ }
+ 
+--- /dev/null
++++ b/platform/ios/godot_adaptive_container_ios.h
+@@ -0,0 +1,13 @@
++// GLory's iOS 27.1+ host. The same child view owns rendering and touch coordinates.
++#pragma once
++#import <UIKit/UIKit.h>
++@class GDTView;
++
++@interface GDTAdaptiveContainerIOS : UIView
++@property(nonatomic, readonly, strong) GDTView *gameView;
++// Points in gameView's local coordinate system, already clipped and pixel-aligned.
++@property(nonatomic, readonly) CGRect safeContentRect;
++@property(nonatomic, readonly) NSUInteger geometryGeneration;
++@property(nonatomic, copy) void (^geometryDidChange)(void);
++- (instancetype)initWithGameView:(GDTView *)gameView;
++@end
+--- /dev/null
++++ b/platform/ios/godot_adaptive_container_ios.mm
+@@ -0,0 +1,134 @@
++#import "godot_adaptive_container_ios.h"
++#include "godot_duo_geometry.h"
++#import "drivers/apple_embedded/godot_view_apple_embedded.h"
++
++using GloryRect = GloryIOSGeometry::Rect;
++static GloryRect glory_rect(CGRect r) { return {r.origin.x, r.origin.y, r.size.width, r.size.height}; }
++static CGRect glory_cgrect(GloryRect r) {
++	return r.empty() ? CGRectZero : CGRectMake(r.x, r.y, r.width, r.height);
++}
++
++@interface GDTAdaptiveContainerIOS () {
++	std::vector<GloryRect> _regions;
++	BOOL _hasDivision;
++	BOOL _hasGeometry;
++	GloryRect _previousPane;
++}
++@property(nonatomic, readwrite, strong) GDTView *gameView;
++@property(nonatomic, readwrite) CGRect safeContentRect;
++@property(nonatomic, readwrite) NSUInteger geometryGeneration;
++@end
++
++@implementation GDTAdaptiveContainerIOS
++
++- (instancetype)initWithGameView:(GDTView *)gameView {
++	self = [super initWithFrame:CGRectZero];
++	if (self) {
++		self.gameView = gameView;
++		self.backgroundColor = UIColor.blackColor;
++		self.clipsToBounds = YES;
++		gameView.clipsToBounds = YES;
++		[self addSubview:gameView];
++		[self setNeedsUpdateConstraints];
++	}
++	return self;
++}
++
++- (void)didMoveToWindow {
++	[super didMoveToWindow];
++	[self setNeedsUpdateConstraints];
++	[self setNeedsLayout];
++}
++
++- (void)safeAreaInsetsDidChange {
++	[super safeAreaInsetsDidChange];
++	[self setNeedsUpdateConstraints];
++	[self setNeedsLayout];
++}
++
++- (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
++	[super traitCollectionDidChange:previousTraitCollection];
++	[self setNeedsUpdateConstraints];
++	[self setNeedsLayout];
++}
++
++- (void)captureReservedRegions {
++	_regions.clear();
++	_hasDivision = NO;
++#if defined(__IPHONE_OS_VERSION_MAX_ALLOWED) && __IPHONE_OS_VERSION_MAX_ALLOWED >= 270100
++	if (@available(iOS 27.1, *)) {
++		NSArray<UIViewReservedRegion *> *divisions =
++				[self reservedRegionsOfKind:[UIViewReservedRegionKind divisionRegionKind]];
++		NSArray<UIViewReservedRegion *> *occlusions =
++				[self reservedRegionsOfKind:[UIViewReservedRegionKind occlusionRegionKind]];
++		for (UIViewReservedRegion *region in divisions) {
++			if (!region.isActive) continue;
++			GloryRect frame = glory_rect(region.frame);
++			_regions.push_back(frame);
++			if (!GloryIOSGeometry::intersection(glory_rect(self.bounds), frame).empty()) {
++				_hasDivision = YES;
++			}
++		}
++		for (UIViewReservedRegion *region in occlusions) {
++			if (region.isActive) _regions.push_back(glory_rect(region.frame));
++		}
++	}
++#endif
++}
++
++- (void)updateConstraints {
++	// UIKit tracks these public region queries, including changes with unchanged bounds.
++	[self captureReservedRegions];
++	[self setNeedsLayout];
++	[super updateConstraints];
++}
++
++- (void)layoutSubviews {
++	[super layoutSubviews];
++	[self captureReservedRegions];
++	CGFloat scale = self.traitCollection.displayScale;
++	if (!std::isfinite(scale) || scale <= 0) scale = self.window.screen.scale;
++	if (!std::isfinite(scale) || scale <= 0) return; // Not attached / not ready.
++
++	const UIEdgeInsets edge = self.safeAreaInsets;
++	const GloryRect bounds = glory_rect(self.bounds);
++	const GloryRect usable = GloryIOSGeometry::choose(bounds,
++			{edge.top, edge.right, edge.bottom, edge.left}, _regions, scale, _previousPane);
++	// Ordinary devices and fully open poses retain edge-to-edge backgrounds. The
++	// UI consumes safeContentRect. A live fold confines the entire game to one pane.
++	const GloryRect canvas = usable.empty() ? GloryRect{} :
++			(_hasDivision ? usable : GloryIOSGeometry::inward_pixels(bounds, scale));
++	const CGRect gameFrame = glory_cgrect(canvas);
++	const CGRect safeLocal = usable.empty() ? CGRectZero :
++			CGRectMake(usable.x - canvas.x, usable.y - canvas.y, usable.width, usable.height);
++	const BOOL changed = !_hasGeometry || !CGRectEqualToRect(self.gameView.frame, gameFrame) ||
++			!CGRectEqualToRect(self.safeContentRect, safeLocal) || self.gameView.contentScaleFactor != scale;
++	if (!changed) return;
++	if (_hasGeometry) [self.gameView cancelActiveTouches];
++	self.safeContentRect = safeLocal; // Publish geometry before the engine resize callback.
++	self.geometryGeneration += 1;
++	_previousPane = _hasDivision ? usable : GloryRect{};
++	_hasGeometry = YES;
++	[CATransaction begin];
++	[CATransaction setDisableActions:YES];
++	self.gameView.contentScaleFactor = scale;
++	self.gameView.frame = gameFrame;
++	self.gameView.userInteractionEnabled = !canvas.empty();
++	// Do not hide/recreate the view or change the first responder during a fold.
++	[self.gameView setNeedsLayout];
++	[self.gameView layoutIfNeeded];
++	[CATransaction commit];
++	if (self.geometryDidChange) self.geometryDidChange();
++	// No user text is logged; opt-in diagnostics link real poses to measured geometry.
++	if ([[NSProcessInfo processInfo].environment[@"GLORY_IOS_GEOMETRY_LOG"] boolValue]) {
++		NSMutableArray<NSString *> *reservedFrames = [NSMutableArray array];
++		for (const GloryRect &region : _regions) {
++			[reservedFrames addObject:NSStringFromCGRect(glory_cgrect(region))];
++		}
++		NSLog(@"[GLORY_DUO] geometry=%lu bounds=%@ game=%@ safe=%@ scale=%g division=%d regions=%@",
++				(unsigned long)self.geometryGeneration, NSStringFromCGRect(self.bounds),
++				NSStringFromCGRect(gameFrame), NSStringFromCGRect(safeLocal), (double)scale,
++				_hasDivision, [reservedFrames componentsJoinedByString:@";"]);
++	}
++}
++@end
+--- /dev/null
++++ b/platform/ios/godot_duo_geometry.h
+@@ -0,0 +1,112 @@
++// GLory iOS adaptive geometry. Pure C++17; UIKit supplies all coordinates in points.
++// No device identifiers, screen dimensions or duplicated reserved-region margins.
++#pragma once
++
++#include <algorithm>
++#include <cmath>
++#include <vector>
++
++namespace GloryIOSGeometry {
++struct Rect {
++	double x = 0, y = 0, width = 0, height = 0;
++	double right() const { return x + width; }
++	double bottom() const { return y + height; }
++	bool finite() const {
++		return std::isfinite(x) && std::isfinite(y) && std::isfinite(width) &&
++				std::isfinite(height) && std::isfinite(right()) && std::isfinite(bottom());
++	}
++	bool empty() const { return !finite() || width <= 0 || height <= 0; }
++	double area() const { return empty() ? 0 : width * height; }
++};
++struct Insets { double top = 0, right = 0, bottom = 0, left = 0; };
++
++inline Rect intersection(const Rect &a, const Rect &b) {
++	if (a.empty() || b.empty()) return {};
++	const double x = std::max(a.x, b.x), y = std::max(a.y, b.y);
++	const double r = std::min(a.right(), b.right()), d = std::min(a.bottom(), b.bottom());
++	return r > x && d > y ? Rect{x, y, r - x, d - y} : Rect{};
++}
++
++inline Rect inward_pixels(const Rect &r, double scale) {
++	if (r.empty() || !std::isfinite(scale) || scale <= 0) return {};
++	const double x = std::ceil(r.x * scale) / scale;
++	const double y = std::ceil(r.y * scale) / scale;
++	const double right = std::floor(r.right() * scale) / scale;
++	const double bottom = std::floor(r.bottom() * scale) / scale;
++	return right > x && bottom > y ? Rect{x, y, right - x, bottom - y} : Rect{};
++}
++
++inline bool contains_center(const Rect &r, const Rect &previous) {
++	if (r.empty() || previous.empty()) return false;
++	const double x = previous.x + previous.width * 0.5;
++	const double y = previous.y + previous.height * 0.5;
++	return x >= r.x && x < r.right() && y >= r.y && y < r.bottom();
++}
++
++// Largest rectangular usable region. Enumerate horizontal boundaries and merge
++// blocked vertical intervals: O(n^3 log n), with no exponential rectangle growth.
++// Equal-size choices retain the previous pane; otherwise prefer the larger pane.
++inline Rect choose(const Rect &bounds, const Insets &insets,
++		const std::vector<Rect> &reserved, double scale, const Rect &previous = {}) {
++	if (bounds.empty() || !std::isfinite(scale) || scale <= 0 ||
++			!std::isfinite(insets.top) || !std::isfinite(insets.right) ||
++			!std::isfinite(insets.bottom) || !std::isfinite(insets.left)) return {};
++	const double x = bounds.x + std::max(0.0, insets.left);
++	const double y = bounds.y + std::max(0.0, insets.top);
++	Rect safe{x, y, bounds.right() - std::max(0.0, insets.right) - x,
++		bounds.bottom() - std::max(0.0, insets.bottom) - y};
++	safe = inward_pixels(intersection(safe, bounds), scale);
++	if (safe.empty()) return {};
++	std::vector<Rect> obstacles;
++	std::vector<double> edges{safe.x, safe.right()};
++	for (const Rect &region : reserved) {
++		// An invalid active region is unknown availability, not permission to draw.
++		if (!region.finite() || region.width < 0 || region.height < 0) return {};
++		const Rect clipped = intersection(safe, region);
++		if (clipped.empty()) continue;
++		obstacles.push_back(clipped);
++		edges.push_back(clipped.x);
++		edges.push_back(clipped.right());
++	}
++	if (obstacles.empty()) return safe;
++	std::sort(edges.begin(), edges.end());
++	edges.erase(std::unique(edges.begin(), edges.end()), edges.end());
++	Rect best;
++	auto consider = [&](Rect candidate) {
++		candidate = inward_pixels(candidate, scale);
++		if (candidate.empty()) return;
++		for (const Rect &blocked : obstacles) {
++			if (!intersection(candidate, blocked).empty()) return;
++		}
++		const double candidate_area = candidate.area(), best_area = best.area();
++		if (candidate_area > best_area ||
++				(candidate_area == best_area && contains_center(candidate, previous) &&
++						!contains_center(best, previous))) {
++			best = candidate;
++		}
++	};
++	for (size_t left = 0; left + 1 < edges.size(); ++left) {
++		for (size_t right = left + 1; right < edges.size(); ++right) {
++			const double x0 = edges[left], x1 = edges[right];
++			std::vector<std::pair<double, double>> blocked_y;
++			for (const Rect &obstacle : obstacles) {
++				if (obstacle.x < x1 && obstacle.right() > x0) {
++					blocked_y.emplace_back(obstacle.y, obstacle.bottom());
++				}
++			}
++			std::sort(blocked_y.begin(), blocked_y.end());
++			double cursor = safe.y;
++			for (const auto &interval : blocked_y) {
++				if (interval.first > cursor) {
++					consider({x0, cursor, x1 - x0, interval.first - cursor});
++				}
++				cursor = std::max(cursor, interval.second);
++			}
++			if (cursor < safe.bottom()) {
++				consider({x0, cursor, x1 - x0, safe.bottom() - cursor});
++			}
++		}
++	}
++	return best;
++}
++} // namespace GloryIOSGeometry
+--- a/platform_methods.py
++++ b/platform_methods.py
+@@ -311,10 +311,10 @@
+         target_suffix = "macosx10.9"
+ 
+     elif apple_platform == "ios":
+-        target_suffix = "ios14.0"  # iOS 14.0 needed for SwiftUI lifecycle
++        target_suffix = "ios" + env.get("ios_min_version", "15.0")
+ 
+     elif apple_platform == "iossimulator":
+-        target_suffix = "ios14.0-simulator"  # iOS 14.0 needed for SwiftUI lifecycle
++        target_suffix = "ios" + env.get("ios_min_version", "15.0") + "-simulator"
+ 
+     elif apple_platform == "visionos":
+         target_suffix = "xros26.0"

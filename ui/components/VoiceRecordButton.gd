@@ -23,6 +23,8 @@ var _hint: Label = null
 var _busy := false
 var _cancelled := false
 var _held := false
+var _ios_touch_index := -1
+var _ios_touch_origin := Vector2.ZERO
 var _disabled := false
 var _overlay: CanvasLayer
 var _actions: HBoxContainer
@@ -51,6 +53,8 @@ static func create(scope: String) -> Control:
 
 
 func _ready() -> void:
+	if SafeArea.uses_ios_layout():
+		SafeArea.changed.connect(_cancel_ios_gesture)
 	add_theme_constant_override("separation", Tokens.GAP_S)
 	# 容器居中：这个 HBox 里是「麦克风按钮 + 计时提示」两颗。计时提示平时是空的，
 	# 一旦它出现/消失，如果不给容器定住对齐方式，按钮会跟着横向抖动、贴左。
@@ -82,6 +86,8 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	if SafeArea.changed.is_connected(_cancel_ios_gesture):
+		SafeArea.changed.disconnect(_cancel_ios_gesture)
 	if _busy:
 		VoiceClipService.cancel_transcription()
 	if VoiceClipService.recording_tick.is_connected(_on_tick):
@@ -141,7 +147,7 @@ func _on_down() -> void:
 	_held = true
 	recording_started.emit()
 	_show_actions()
-	_gesture_origin = _button.get_global_mouse_position()
+	_gesture_origin = _ios_touch_origin if SafeArea.uses_ios_layout() and _ios_touch_index >= 0 else _button.get_global_mouse_position()
 
 
 func _show_actions() -> void:
@@ -244,6 +250,8 @@ func _update_recording_caption() -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if SafeArea.uses_ios_layout() and _handle_ios_input(event):
+		return
 	if not _held:
 		return
 	if event is InputEventMouseMotion or event is InputEventScreenDrag:
@@ -254,7 +262,48 @@ func _input(event: InputEvent) -> void:
 		_release(event.position)
 
 
+# 真实 iOS 触摸只由开始录音的手指结束；模拟鼠标和其他手指不能代替它提交。
+# 用同一处理函数接受门禁输入，不伪造 OS，也不调用录音/上传服务来测试分发。
+func _handle_ios_input(event: InputEvent) -> bool:
+	if event is InputEventScreenTouch:
+		if event.pressed:
+			if not _held and is_instance_valid(_button) and not _button.disabled and is_visible_in_tree() and _button.get_global_rect().has_point(event.position):
+				_ios_touch_index = event.index
+				_ios_touch_origin = event.position
+			return true
+		if event.index != _ios_touch_index:
+			return true
+		if event.canceled:
+			_cancel_ios_gesture()
+		else:
+			if _held:
+				_release(event.position)
+			_ios_touch_index = -1
+		return true
+	if event is InputEventScreenDrag:
+		if _held and event.index == _ios_touch_index:
+			_highlight_action(event.position)
+		return true
+	if _ios_touch_index >= 0 and (event is InputEventMouseButton or event is InputEventMouseMotion):
+		return true
+	return false
+
+
+func _cancel_ios_gesture() -> void:
+	_ios_touch_index = -1
+	if not _held:
+		return
+	_held = false
+	_cancelled = true
+	VoiceClipService.cancel_recording()
+	if _overlay != null:
+		_overlay.hide()
+
+
 func _notification(what: int) -> void:
+	if SafeArea.uses_ios_layout() and what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		_cancel_ios_gesture()
+		return
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and _held:
 		_held = false
 		_cancelled = true
@@ -271,6 +320,8 @@ func _highlight_action(point: Vector2) -> void:
 
 
 func _on_up() -> void:
+	if SafeArea.uses_ios_layout() and _ios_touch_index >= 0:
+		return
 	if _held:
 		_release(_button.get_global_mouse_position())
 
