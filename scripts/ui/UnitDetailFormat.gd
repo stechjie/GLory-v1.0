@@ -638,6 +638,11 @@ static func skill_cd_text(d: Dictionary) -> String:
 		var implicit_cd := float(IMPLICIT_SKILL_CD[sid])
 		return " (CD %.1fs)" % implicit_cd if is_en() else "（冷却%.1f秒）" % implicit_cd
 	if d.has("skill_cd"):
+		# 11.24：首次释放时间与冷却不同的（first_cast_sec），在冷却后面注明。
+		if d.has("first_cast_sec") and not is_equal_approx(float(d.get("first_cast_sec", 0.0)), float(d.get("skill_cd", 0.0))):
+			if is_en():
+				return " (CD %.1fs, first cast at %.1fs)" % [float(d.get("skill_cd", 0.0)), float(d.get("first_cast_sec", 0.0))]
+			return "（冷却%.1f秒，开战%.1f秒首次释放）" % [float(d.get("skill_cd", 0.0)), float(d.get("first_cast_sec", 0.0))]
 		if is_en():
 			return " (CD %.1fs)" % float(d.get("skill_cd", 0.0))
 		return "（冷却%.1f秒）" % float(d.get("skill_cd", 0.0))

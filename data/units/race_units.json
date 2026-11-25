@@ -413,7 +413,7 @@
                       "skill_global":  true,
                       "recast_on_target_death":  true,
                       "opening_delay":  2.0,
-                      "chant_sec":  0.5,
+                      "chant_sec":  0.9,
                       "model":  "res://assets/models/units/dark_refined/dark_scythe/dark_scythe_refined.tscn",
                       "model_visual_scale":  1,
                       "model_base_yaw":  180,

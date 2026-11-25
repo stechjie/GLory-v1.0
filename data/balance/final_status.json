@@ -174,10 +174,10 @@
       "cost": 30,
       "skill_id": "blink_low_def_backline",
       "skill_name_cn": "暗影突袭",
-      "skill_cn_1to3": "暗影突袭（无冷却）：开战2.0秒后可用；吟唱0.5秒后瞬移到低防后排敌人身边，造成自身攻击230%伤害；该目标死亡后再次吟唱并突袭下一个。",
-      "skill_cn_4": "暗影突袭（无冷却）：开战2.0秒后可用；吟唱0.5秒后瞬移到低防后排敌人身边，造成自身攻击460%伤害；该目标死亡后再次吟唱并突袭下一个。",
-      "skill_en_1to3": "Shadow Ambush (no cooldown): Usable 2.0s after battle start. Channel for 0.5s, then blink to the lowest-DEF backline enemy and deal 230% ATK damage. When that target dies, channel again and ambush the next one.",
-      "skill_raw_params": "chant_sec = 0.5\ndamage_atk_pct = 2.3\nopening_delay = 2\nrecast_on_target_death = true\nskill_global = true",
+      "skill_cn_1to3": "暗影突袭（无冷却）：开战2.0秒后可用；吟唱0.9秒后瞬移到低防后排敌人身边，造成自身攻击230%伤害；该目标死亡后再次吟唱并突袭下一个。",
+      "skill_cn_4": "暗影突袭（无冷却）：开战2.0秒后可用；吟唱0.9秒后瞬移到低防后排敌人身边，造成自身攻击460%伤害；该目标死亡后再次吟唱并突袭下一个。",
+      "skill_en_1to3": "Shadow Ambush (no cooldown): Usable 2.0s after battle start. Channel for 0.9s, then blink to the lowest-DEF backline enemy and deal 230% ATK damage. When that target dies, channel again and ambush the next one.",
+      "skill_raw_params": "chant_sec = 0.9\ndamage_atk_pct = 2.3\nopening_delay = 2\nrecast_on_target_death = true\nskill_global = true",
       "star4_changes": "damage_atk_pct: 2.3 → 4.6\ndef_down_pct: — → 0.25",
       "stats": {
         "1": {
@@ -1976,6 +1976,6 @@
       "effect_cn": "需要：生命丰碑 + 黄金祭坛 + 震荡余波 + 血契之刃 + 狂怒阵容。生命丰碑 ×1.20→×1.40；震荡余波眩晕 1→2 秒；血契之刃 ×1.25→×1.50；狂怒阵容上限 8→9。黄金祭坛使用不扣法阵 HP；选到胡牌手立即回复法阵 HP +2（上限 50）。\n表内字段：positive_effect_multiplier = 2"
     }
   },
-  "balance_version": "2833bc1f8b72c4416ca76b228bb76c5f96d069f3110d674e325738a151a56bd3",
-  "final_workbook_sha256": "be0b6a52feb58fa8fdf9eec8dae4d2254c6cc9bed8a650384153ba40f78ddd03"
+  "balance_version": "812d620d182be2af3f34bb8cda677400657c17b9ba030855b3942a0759a56406",
+  "final_workbook_sha256": "2b45a4e5c0d27a327934d4747ddd76df76464620782d7ee094fdf49b28ac94c9"
 }

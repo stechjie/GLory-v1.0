@@ -155,6 +155,10 @@ static func prepare_team_state(forced_team: int = -1) -> Dictionary:
 	# 教学的 prepare_tutorial_state 不会有这两个键，那边棋子的 lane 恒为 -1，分账自动跳过。
 	state["ally_slots"] = ally_slots.duplicate()
 	state["rival_slots"] = rival_slots.duplicate()
+	# 11.24 PVP 开场保护（含决赛，决赛在这里也是 kind == "pvp"）：头 2 秒所有人受伤 -50%。
+	# 打怪 / Boss 回合不开。结算见 DamageService.pvp_opening_guard_multiplier。
+	if kind == "pvp":
+		state["pvp_opening_guard"] = true
 	# (Formation Heal in 3v3) Total post-battle team HP regen per side, from each
 	# owner's treasures. Host-authoritative so every client applies the same amount.
 	state.team_heal_ally = _team_formation_heal_total(ally_ctx)

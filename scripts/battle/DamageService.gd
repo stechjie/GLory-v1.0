@@ -1,4 +1,4 @@
-﻿class_name DamageService
+class_name DamageService
 extends RefCounted
 
 const MIN_HP_DAMAGE := 1
@@ -424,6 +424,27 @@ static func skill_hit_lands(target: Dictionary) -> bool:
 	return landed
 
 
+# 11.24 用户定：PVP 开场保护。对战（含决赛）开打后的头 PVP_OPENING_GUARD_SEC 秒，
+# 所有棋子 / 佣兵 / 法阵友军受到的伤害（普攻、技能、真伤、持续伤害）降低 PVP_OPENING_GUARD_PCT，
+# 避免一开场就被秒。打怪和 Boss 回合没有这层保护；小怪、Boss 本身也永远不受保护。
+# 与其他减伤相乘，在护盾之前结算。
+const PVP_OPENING_GUARD_SEC := 2.0
+const PVP_OPENING_GUARD_PCT := 0.5
+
+static func pvp_opening_guard_multiplier(target: Dictionary) -> float:
+	# 开关由真实对战的开场流程打开（BattleSimulator.prepare_team_state，kind == "pvp" 时写
+	# state.pvp_opening_guard）。不直接看 kind：教学的脚本对局和各检查脚本手搭的
+	# {"kind": "pvp"} 状态不走那条流程，不应被这层保护改掉伤害。
+	if not bool(_stat_state.get("pvp_opening_guard", false)):
+		return 1.0
+	if current_battle_elapsed() >= PVP_OPENING_GUARD_SEC - 0.001:
+		return 1.0
+	var d: Dictionary = target.get("def", {})
+	if bool(d.get("is_boss", false)) or str(target.get("id", "")).begins_with("boss_") or d.has("series"):
+		return 1.0
+	return 1.0 - PVP_OPENING_GUARD_PCT
+
+
 # skip_dodge is reserved for a multi-pulse hit that already rolled its one dodge
 # check when the cast landed. Invulnerability, defense, shields and damage-taken
 # modifiers are still evaluated independently for every pulse.
@@ -454,6 +475,9 @@ static func apply_damage(target: Dictionary, amount: int, ignore_defense: bool =
 		var resist := effective_magic_resist(target) if is_magic_hit(magic) else effective_defense(target)
 		remaining = int(ceil(float(remaining) * (1.0 - damage_reduction(resist))))
 	remaining = maxi(MIN_HP_DAMAGE, int(ceil(float(remaining) * status_damage_taken_multiplier(target))))
+	var opening_guard := pvp_opening_guard_multiplier(target)
+	if opening_guard < 1.0:
+		remaining = maxi(MIN_HP_DAMAGE, int(ceil(float(remaining) * opening_guard)))
 	if int(target.get("shield", 0)) > 0:
 		var absorbed := mini(int(target.shield), remaining)
 		target.shield = int(target.shield) - absorbed

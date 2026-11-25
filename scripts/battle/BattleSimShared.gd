@@ -841,6 +841,10 @@ static func opening_skill_cooldown(fighter: Dictionary) -> float:
 		return 0.0
 	var d: Dictionary = fighter.get("def", {})
 	var sid := str(d.get("skill_id", ""))
+	# 11.24 用户定：数据里写了 first_cast_sec 的，开场等这么久就放第一发，之后才按 skill_cd 走
+	# （目前是几只佣兵：冷却 8~10 秒但第 3~6 秒就要出手）。没写的照旧等满一次冷却。
+	if d.has("first_cast_sec"):
+		return maxf(0.0, float(d.get("first_cast_sec", 0.0)))
 	var default_cd := float(ACTIVE_SKILL_DEFAULT_CD[sid])
 	if sid == "shell_guard":
 		return default_cd

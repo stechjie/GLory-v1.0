@@ -17,8 +17,8 @@ func _ready() -> void:
 	if not _h.expect(not unit_def.is_empty() and bool(unit_def.get("recast_on_target_death", false))
 			and bool(unit_def.get("skill_global", false)) and not unit_def.has("skill_cd")
 			and is_equal_approx(float(unit_def.get("opening_delay", 0.0)), 2.0)
-			and is_equal_approx(float(unit_def.get("chant_sec", 0.0)), 0.5),
-			"scythe_data", "偷袭者数据必须是无冷却、开场 2 秒后可用、吟唱 0.5 秒"):
+			and is_equal_approx(float(unit_def.get("chant_sec", 0.0)), 0.9),
+			"scythe_data", "偷袭者数据必须是无冷却、开场 2 秒后可用、吟唱 0.9 秒"):
 		_h.finish(get_tree())
 		return
 	# 11.16 的「主动技能开场先走满一次冷却」不适用于偷袭者（它走自己的 opening_delay）。
@@ -26,6 +26,7 @@ func _ready() -> void:
 		and not BattleSimShared.has_active_cooldown_skill({"id": "dark_scythe", "def": unit_def}),
 		"scythe_no_opening_wait", "偷袭者不走通用的开场冷却，也不显示冷却条")
 
+	var chant := float(unit_def.get("chant_sec", 0.0))
 	var old_team_mode := GameState.team_mode
 	GameState.team_mode = false
 	var scythe := _fighter("scythe", "player", 1000, Vector2(100, 900))
@@ -58,7 +59,7 @@ func _ready() -> void:
 		and int(soft.hp) == 100000 and Vector2(scythe.pos) == start_pos,
 		"scythe_chant_start", "2 秒时开始吟唱；吟唱开始时不位移、不造成伤害")
 	var cast_time := _tick_until(state, scythe, func(): return int(soft.hp) < 100000)
-	_h.expect(cast_time >= chant_start + 0.39 and cast_time <= chant_start + 0.61
+	_h.expect(cast_time >= chant_start + chant - 0.11 and cast_time <= chant_start + chant + 0.11
 		and str(scythe.get("blink_target_uid", "")) == "enemy_soft"
 		and Vector2(scythe.pos).distance_to(Vector2(soft.pos)) < 60.0 and not scythe.has("blink_chant_until"),
 		"scythe_cast_after_chant", "吟唱 0.5 秒后才突袭低防目标（目标在射程外也照样突袭）")
@@ -78,7 +79,7 @@ func _ready() -> void:
 	soft.hp = 0
 	var rechant := _tick_until(state, scythe, func(): return scythe.has("blink_chant_until"))
 	var recast := _tick_until(state, scythe, func(): return int(tank.hp) < tank_hp)
-	_h.expect(recast >= rechant + 0.39 and recast <= rechant + 0.61 and str(scythe.get("blink_target_uid", "")) == "enemy_tank",
+	_h.expect(recast >= rechant + chant - 0.11 and recast <= rechant + chant + 0.11 and str(scythe.get("blink_target_uid", "")) == "enemy_tank",
 		"scythe_recast_on_target_death", "目标死亡后再次吟唱 0.5 秒并突袭下一个目标")
 
 	# 突袭本身打死目标：同样再吟唱一次接下一个。
@@ -90,7 +91,7 @@ func _ready() -> void:
 	state.enemy = [weak, last]
 	var kill_time := _tick_until(state, scythe, func(): return not bool(weak.alive))
 	var chain_time := _tick_until(state, scythe, func(): return str(scythe.get("blink_target_uid", "")) == "enemy_last")
-	_h.expect(kill_time > 0.0 and chain_time >= kill_time + 0.39 and chain_time <= kill_time + 0.75,
+	_h.expect(kill_time > 0.0 and chain_time >= kill_time + chant - 0.11 and chain_time <= kill_time + chant + 0.25,
 		"scythe_chain_on_kill", "突袭击杀后再吟唱一次，接着突袭下一个目标")
 
 	# 场上没有可突袭的目标时不空吟唱。

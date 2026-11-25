@@ -117,7 +117,7 @@ Boss 战斗实际值 = 基础值 x Boss 整体倍率 x Boss 成长。
 | dark_mage | skill_cd 4.0，silence_sec 1.2，damage_atk_pct 1.7，model `res://assets/models/units/dark_mage_violet_necromancer/dark_mage_animated.tscn`，idle/attack/run 动作已接入 |
 | dark_fear | skill_cd 6.0，fear_sec 2.3 |
 | dark_queen | stack_damage 0.15，max_stacks 4，attack_speed 1.2〔2026-11-21 更新〕 |
-| dark_scythe | damage_atk_pct 2.3，无冷却；开战 2 秒后可用（opening_delay 2.0），每次突袭前吟唱 0.5 秒（chant_sec 0.5，吟唱中不移动不普攻）；目标死亡后再次吟唱突袭（recast_on_target_death true，skill_global true）〔2026-11-21 更新〕 |
+| dark_scythe | damage_atk_pct 2.3，无冷却；开战 2 秒后可用（opening_delay 2.0），每次突袭前吟唱 0.9 秒（chant_sec 0.9，吟唱中不移动不普攻）；目标死亡后再次吟唱突袭（recast_on_target_death true，skill_global true）〔2026-11-21 更新〕 |
 | dark_suc | skill_cd 5.0，stun_sec 1.0，model `res://assets/models/units/dark_suc_animated/dark_suc_animated.tscn`，idle/attack/run 动作已接入；attack 从第 150 帧后开始播放 |
 | dark_doom | 连接最近非Boss敌人并策反为己方；双方共享受到的生命损失；连接目标或末日守卫死亡后清除连接，本回合不再释放；Boss免疫，unique_on_board true |
 | dark_dragon | pull_sec 1.0，damage_atk_pct 1.5（4★ 3.0），unique_on_board true〔2026-11-21 更新〕 |
