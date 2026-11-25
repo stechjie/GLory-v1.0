@@ -563,7 +563,9 @@ func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 		GameState.spend_gold(cost)
 		GameState.board_slots[board_index] = incoming
 		GameState.shop_sold[shop_index] = true
-		_shadow_report_buy(shop_index, incoming)
+		var copy_plan := _plan_pet_first_buy_copy(offer)
+		_shadow_report_buy(shop_index, incoming, copy_plan)
+		_apply_pet_first_buy_copy(copy_plan)
 	elif PrepRules.can_merge_cells(target, incoming):
 		if GameState.gold < cost:
 			show_message(tr("ui_not_enough_gold"))
@@ -574,8 +576,10 @@ func _buy_or_merge_shop_to_board(shop_index: int, board_index: int) -> void:
 			return
 		GameState.spend_gold(cost)
 		GameState.shop_sold[shop_index] = true
-		_shadow_report_buy(shop_index, incoming)
+		var copy_plan := _plan_pet_first_buy_copy(offer)
+		_shadow_report_buy(shop_index, incoming, copy_plan)
 		_shadow_report_merge()
+		_apply_pet_first_buy_copy(copy_plan)
 	else:
 		return
 	# 9.17：到这里才确定买成了 —— 金币已扣、格子已写、`_shadow_report_buy` 已报。
@@ -617,7 +621,9 @@ func _buy_or_merge_shop_to_bench(shop_index: int, bench_index: int) -> void:
 		GameState.spend_gold(cost)
 		GameState.bench_slots[bench_index] = incoming
 		GameState.shop_sold[shop_index] = true
-		_shadow_report_buy(shop_index, incoming)
+		var copy_plan := _plan_pet_first_buy_copy(offer)
+		_shadow_report_buy(shop_index, incoming, copy_plan)
+		_apply_pet_first_buy_copy(copy_plan)
 	elif PrepRules.can_merge_cells(target, incoming):
 		if GameState.gold < cost:
 			show_message(tr("ui_not_enough_gold"))
@@ -628,8 +634,10 @@ func _buy_or_merge_shop_to_bench(shop_index: int, bench_index: int) -> void:
 			return
 		GameState.spend_gold(cost)
 		GameState.shop_sold[shop_index] = true
-		_shadow_report_buy(shop_index, incoming)
+		var copy_plan := _plan_pet_first_buy_copy(offer)
+		_shadow_report_buy(shop_index, incoming, copy_plan)
 		_shadow_report_merge()
+		_apply_pet_first_buy_copy(copy_plan)
 	else:
 		return
 	# 9.17：买成的那一声，与 `_buy_or_merge_shop_to_board` 同一口径（备战席这条路）。
@@ -973,6 +981,74 @@ func _first_empty_board_slot() -> int:
 		if GameState.board_slots[i] == null:
 			return i
 	return -1
+
+
+# --- 猴子：每回合买的第一个棋子免费多一张 ------------------------------------------
+# 用户 11-25 定的规则：
+#   * 只看本回合第一笔从商店买棋子（含倒计时到点系统替玩家买的那一笔，PrepScreen._auto_deploy_at_deadline）；
+#     第一笔没触发就不补。
+#   * 复制品 = 一次不扣钱的正常购买：1 星、参与合成、触发购买时的一切效果。
+#   * 去向：① 棋盘上能合成 → ② 待命区能合成 → ③ 待命区空位 → ④ 按出售规则直接卖掉
+#     （原价 × 0.5，_sell_refund_for_cell）。复制品不会自动上场：待命区满了就卖，哪怕棋盘还有人口空位。
+#   * 教学不触发：新玩家打教学时还没有宠物；老玩家从设置里「重新体验教学」时出战宠物还在，屏蔽掉免得打乱教学步骤。
+# 服务器账本在同一笔 buy 里做同样的事（EconomyLedger._pet_first_buy_copy）；AI 托管见 BotPlayer._pet_first_buy_copy。
+#
+# 分两步、中间夹着上报：先 _plan 定去向（只改 first_buy_round，不动棋盘）→ 随 buy 报给服务器 →
+# 报这笔购买自己的合成 → 再 _apply 落地。分开是因为 _last_merge_uids 只有一份：
+# 购买本身的合成要先报掉，复制品的合成才能写进去；而复制品的合成又必须排在 buy 之后
+# （服务器先在那一笔里收下复制品，才认得它的 uid）。
+func _plan_pet_first_buy_copy(offer: Dictionary) -> Dictionary:
+	if GameState.tutorial_mode or offer.is_empty():
+		return {}
+	var first := GameState.first_buy_round != GameState.round_index
+	GameState.first_buy_round = GameState.round_index
+	if not first or not PetService.copies_first_buy(PlayerProfile.get_active()):
+		return {}
+	var copy := {"id": offer.id, "uid": GameState.mint_piece_uid(), "star": 1, "def": offer.duplicate(true)}
+	var board_target := PrepRules.first_merge_target(GameState.board_slots, copy)
+	if board_target >= 0:
+		return {"cell": copy, "where": "board_merge", "index": board_target}
+	var bench_target := PrepRules.first_merge_target(GameState.bench_slots, copy)
+	if bench_target >= 0:
+		return {"cell": copy, "where": "bench_merge", "index": bench_target}
+	var bench_slot := PrepRules.first_empty_bench_slot()
+	if bench_slot >= 0:
+		return {"cell": copy, "where": "bench", "index": bench_slot}
+	return {"cell": copy, "where": "sell", "index": -1, "refund": _sell_refund_for_cell(copy)}
+
+
+func _apply_pet_first_buy_copy(plan: Dictionary) -> void:
+	if plan.is_empty():
+		return
+	var copy: Dictionary = plan.cell
+	var index := int(plan.get("index", -1))
+	var where := str(plan.get("where", ""))
+	var unit_name := DataRegistry.unit_display_name(copy.get("def", {}), LocaleManager.get_locale() == "en")
+	if where == "board_merge" or where == "bench_merge":
+		var slots: Array = GameState.board_slots if where == "board_merge" else GameState.bench_slots
+		var target: Variant = slots[index] if index >= 0 and index < slots.size() else null
+		var merged := false
+		if typeof(target) == TYPE_DICTIONARY:
+			merged = _merge_copies_into_cell(target, copy,
+				[index] if where == "board_merge" else [], [index] if where == "bench_merge" else [])
+		if merged:
+			_shadow_report_merge()
+			show_message(tr("pet_monkey_copy_toast") % unit_name)
+			return
+		# 走不到：去向是同一帧里刚算的。真走到了就退回待命区空位，别让复制品凭空消失
+		# （服务器那边已经按「留下」记了这一枚）。
+		where = "bench"
+		index = PrepRules.first_empty_bench_slot()
+	if where == "bench" and index >= 0 and GameState.bench_slots[index] == null:
+		GameState.bench_slots[index] = copy
+		show_message(tr("pet_monkey_copy_toast") % unit_name)
+		return
+	var refund := int(plan.get("refund", _sell_refund_for_cell(copy)))
+	GameState.gold += refund
+	GameState.prep_income_total += maxi(0, refund)
+	show_message(tr("pet_monkey_copy_sold_toast") % [unit_name, refund])
+
+
 # 上一次成功合成参与的 uid，供影子记账把同一笔合成也报给服务端账本
 # （EconomyLedger._merge 按 uid 收，keeper 留 target 那一枚）。
 var _last_merge_uids: Array = []
@@ -1154,12 +1230,25 @@ func _shadow_report(action: String, payload: Dictionary) -> void:
 	NetworkService.request_economy(action, payload)
 
 
-func _shadow_report_buy(shop_index: int, cell: Dictionary) -> void:
-	_shadow_report("buy", {
+func _shadow_report_buy(shop_index: int, cell: Dictionary, copy_plan: Dictionary = {}) -> void:
+	var payload := {
 		"shop_index": shop_index,
 		"offer_id": GameState.shop_offer_id,
 		"uid": str(cell.get("uid", "")),
-	})
+	}
+	_add_pet_copy_to_buy(payload, copy_plan)
+	_shadow_report("buy", payload)
+
+
+# 猴子的复制品随这一笔 buy 一起报（EconomyLedger._pet_first_buy_copy 在同一笔里处理）。
+# 只报 uid 和「留下 / 卖掉」，资格和金额服务器自己算。倒计时自动上阵那一笔（PrepScreen）也走这里。
+func _add_pet_copy_to_buy(payload: Dictionary, copy_plan: Dictionary) -> void:
+	if copy_plan.is_empty():
+		return
+	payload["pet_copy"] = {
+		"uid": str((copy_plan.get("cell", {}) as Dictionary).get("uid", "")),
+		"sold": str(copy_plan.get("where", "")) == "sell",
+	}
 
 
 func _shadow_report_merge() -> void:

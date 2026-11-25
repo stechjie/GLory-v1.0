@@ -55,6 +55,17 @@
 			"model_scale": 1.0,
 			"model_y": 0.0,
 			"icon": "res://assets/ui/pets/pet_tiger_illustration.png"
+		},
+		{
+			"id": "pet_monkey",
+			"name": "猴子",
+			"name_en": "Monkey",
+			"effect": "first_buy_copy",
+			"value": 1.0,
+			"model": "res://assets/models/pets/pet_monkey/pet_monkey_animated.tscn",
+			"model_scale": 1.0,
+			"model_y": 0.0,
+			"icon": "res://assets/ui/pets/pet_monkey_illustration.png"
 		}
 	]
 }

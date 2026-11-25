@@ -33,6 +33,12 @@ var _serial := 0
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	# 专服（--server）也会加载全部 autoload，但那里没有画面、没有玩家、没有麦克风。
+	# 和 SafeArea / AnnouncementService / IssueReport 同一套判法：只认 --server，
+	# 不认 --headless，因为 tools/ 的门禁都是 headless 跑的、还要靠这些服务。
+	if "--server" in OS.get_cmdline_args() or "--dedicated-server" in OS.get_cmdline_args():
+		set_process(false)
+		return
 
 
 func _process(_delta: float) -> void:

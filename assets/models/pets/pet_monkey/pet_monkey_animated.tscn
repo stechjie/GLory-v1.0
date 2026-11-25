@@ -1,0 +1,14 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/pets/FbxPetAnimated.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://assets/models/pets/pet_monkey/pet_monkey.fbx" id="2_model"]
+[ext_resource type="Material" path="res://assets/models/pets/pet_monkey/pet_monkey_body_material.tres" id="3_material"]
+
+[node name="PetMonkeyAnimated" type="Node3D"]
+script = ExtResource("1_script")
+idle_scene = ExtResource("2_model")
+attack_scene = ExtResource("2_model")
+run_scene = ExtResource("2_model")
+body_material = ExtResource("3_material")
+
+[node name="ModelRoot" type="Node3D" parent="."]

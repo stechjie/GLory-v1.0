@@ -6,6 +6,9 @@ extends RefCounted
 #   self_hp_pct   —— 己方棋子开局最大生命 ×(1+value)   （蘑菇）
 #   self_atk_pct  —— 己方棋子开局攻击   ×(1+value)     （兔子）
 #   interest_pct  —— 金币利息率 +value                  （猫）
+#   carrot_harvest_capacity_pct —— 萝卜采集和营地容量 +value（松鼠）
+#   tier1_upgrade_growth —— 每次升星，一阶棋子成长 +value  （老虎）
+#   first_buy_copy —— 每回合买的第一个棋子免费多一张 1 星（猴子；value 固定 1.0 = 100%，只用于文案）
 # 新增效果类型时：在此加一个对应查询助手 + 在其挂钩点接入即可，宠物本身不用碰代码。
 
 static func all_pets() -> Array:
@@ -96,6 +99,12 @@ static func carrot_bonus_rate(pet_id: String) -> float:
 static func tier1_growth_rate(pet_id: String) -> float:
 	var e := effect_of(pet_id)
 	return float(e.get("value", 0.0)) if str(e.get("effect", "")) == "tier1_upgrade_growth" else 0.0
+
+# 猴子：每回合买的第一个棋子免费多复制一张（1 星）。不看 value —— 复制是确定的，没有概率；
+# 改数值表的「加成」不会变成「几成概率复制」。规则与挂钩点见 EconomyLedger._pet_first_buy_copy
+# （服务器账本）、PrepBoardController._plan_pet_first_buy_copy（客户端）、BotPlayer._pet_first_buy_copy（AI 托管）。
+static func copies_first_buy(pet_id: String) -> bool:
+	return str(effect_of(pet_id).get("effect", "")) == "first_buy_copy"
 
 # 蘑菇：开局最大生命乘数（1.0 = 无加成）。
 static func opening_hp_mult(pet_id: String) -> float:

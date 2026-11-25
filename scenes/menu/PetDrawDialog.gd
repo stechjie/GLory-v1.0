@@ -18,6 +18,10 @@ const Kit := preload("res://ui/theme/ParchmentKit.gd")
 const EGG_DIR := "res://assets/ui/parchment_kit/"
 const EGG_RECT := Rect2(712, 168, 176, 211)
 const NEST_RECT := Rect2(640, 318, 320, 151)
+# 左栏的奖池宠物卡（11-25 起三只）。
+const POOL_PETS := ["pet_squirrel", "pet_tiger", "pet_monkey"]
+const PET_CARD_SIZE := Vector2(260, 158)
+const PET_ART_SIZE := Vector2(210, 113)
 
 signal draw_finished
 
@@ -118,8 +122,10 @@ func _build() -> void:
 	_canvas.add_child(_summon)
 	_plate(_canvas, Rect2(80, 159, 355, 44),
 		_t("召唤伙伴 · 点击查看技能", "Companions · tap for skills"), 16)
-	_pet_card("pet_squirrel", 80, 210)
-	_pet_card("pet_tiger", 80, 391)
+	# 奖池里的宠物，顺序与 backend/app/pet_draw.py 的 PET_IDS 一致（backend/tests/test_pet_draw.py 钉着）。
+	# 11-25 加了猴子：三张卡竖排在左栏，卡高 170 -> 158、间距 11 -> 10，最后一张底边对齐规则框底（702）。
+	for i in POOL_PETS.size():
+		_pet_card(str(POOL_PETS[i]), 80, 208 + i * (PET_CARD_SIZE.y + 10))
 	_plate(_canvas, Rect2(1205, 176, 245, 44), _t("森林能量", "Forest energy"), 17)
 	_energy_label = _label("", 18)
 	_energy_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -153,16 +159,16 @@ func _build() -> void:
 
 
 func _pet_card(pet_id: String, x: float, y: float) -> void:
-	var card := _button("", Vector2(260, 170))
+	var card := _button("", PET_CARD_SIZE)
 	card.name = "Card_%s" % pet_id
-	_rect(card, x, y, 260, 170)
+	_rect(card, x, y, PET_CARD_SIZE.x, PET_CARD_SIZE.y)
 	card.accessibility_name = _t("查看%s介绍", "View %s details") % PetService.display_name(pet_id)
 	card.pressed.connect(_show_pet_info.bind(pet_id))
 	_canvas.add_child(card)
-	var art := PetPreview.build_illustration(pet_id, Vector2(210, 125))
-	_rect(art, 25, 2, 210, 125)
+	var art := PetPreview.build_illustration(pet_id, PET_ART_SIZE)
+	_rect(art, 25, 2, PET_ART_SIZE.x, PET_ART_SIZE.y)
 	card.add_child(art)
-	_plate(card, Rect2(7, 123, 246, 42), PetService.display_name(pet_id), 17)
+	_plate(card, Rect2(7, PET_ART_SIZE.y - 2, 246, 42), PetService.display_name(pet_id), 17)
 	var owned_plate := Kit.gold_badge(_t("已拥有", "Owned"))
 	owned_plate.position = Vector2(14, 19)
 	card.add_child(owned_plate)
