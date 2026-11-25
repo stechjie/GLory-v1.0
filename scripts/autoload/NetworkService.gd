@@ -2530,6 +2530,21 @@ func _valid_timeout_buy(room: Dictionary, slot: int, action: String, payload: Di
 			return int(payload.get("shop_index", -1)) == i
 	return false
 
+# 倒计时自动上阵之后的那一笔合成（11-25，猴子）。
+#
+# 出战宠物是猴子时，超时自动买的那一枚会带一张同名一星复制品（EconomyLedger._pet_first_buy_copy），
+# 客户端当场把两枚合成二星并报 merge。这时房间已经进了战斗阶段，普通 merge 会被 bad_phase 拒掉，
+# 账本就停在两枚一星、和客户端交上来的二星对不上。只放行「这个座位本回合做过超时自动购买、
+# 还没交棋盘」时的 merge；合成本身照常由 EconomyLedger._merge 校验（uid、同名同星、份数）。
+func _valid_timeout_merge(room: Dictionary, slot: int, action: String) -> bool:
+	if action != "merge":
+		return false
+	if str(room.get("state", "")) != ROOM_BATTLE or not bool(room.get("prep_timed_out", false)):
+		return false
+	if room.get("boards", {}).has(slot):
+		return false
+	return room.get("timeout_buys", {}).has(slot)
+
 func prepare_local_bots() -> void:
 	if GameState.tutorial_mode or (team_active and not is_host):
 		return
@@ -2719,6 +2734,9 @@ func _build_economy_state(room: Dictionary, slot: int) -> Dictionary:
 		"ai_handover_round": int(prep.get("ai_handover_round", -1)),
 		"ai_handover_seq": int(prep.get("ai_handover_seq", 0)),
 		"gamble_used": bool(prep.get("gamble_used", false)),
+		# 猴子的「本回合已经买过棋子」（回合号）。重连 / AI 托管交回时客户端按它对齐，
+		# 免得一回合复制两次（_apply_carrot_state / AiHandover.apply）。
+		"first_buy_round": int(prep.get("first_buy_round", -1)),
 	}
 
 func _build_public_seat_pets(room: Dictionary) -> Dictionary:
@@ -7757,6 +7775,8 @@ func _economy_ctx(room: Dictionary, slot: int, action: String) -> Dictionary:
 		"team_stones": _room_team_stones(room, slot),
 		"carrot_bonus_rate": PetService.carrot_bonus_rate(_room_seat_pet(room, slot)),
 		"tiger_growth_rate": PetService.tier1_growth_rate(_room_seat_pet(room, slot)),
+		# 猴子：每回合第一笔买棋子免费多一张（EconomyLedger._pet_first_buy_copy）。
+		"pet_first_buy_copy": PetService.copies_first_buy(_room_seat_pet(room, slot)),
 	}
 	match action:
 		"shop_refresh":
@@ -7816,7 +7836,8 @@ func _room_apply_economy(room: Dictionary, slot: int, action: String, payload: D
 		return _economy_reject(room, slot, "unknown_action")
 	# 经济操作只在备战阶段有效。战斗/结算阶段还能买卖，等于让人在结算跑的同时改棋盘。
 	var timeout_buy := _valid_timeout_buy(room, slot, action, payload)
-	if str(room.get("state", ROOM_LOBBY)) != ROOM_PREP and not timeout_buy:
+	var timeout_merge := _valid_timeout_merge(room, slot, action)
+	if str(room.get("state", ROOM_LOBBY)) != ROOM_PREP and not timeout_buy and not timeout_merge:
 		return _economy_reject(room, slot, "bad_phase")
 	if action == "merge" and (payload.get("uids", []) as Array).size() > MAX_MERGE_UIDS:
 		return _economy_reject(room, slot, "bad_request")
@@ -7956,6 +7977,9 @@ func _apply_carrot_state(state: Dictionary) -> void:
 	GameState.last_harvest_round = int(state.get("last_harvest_round", GameState.last_harvest_round))
 	last_carrot_harvest_gain = maxi(0, int(state.get("last_harvest_gain", 0)))
 	GameState.stone_draw_used_round = int(state.get("stone_draw_used_round", GameState.stone_draw_used_round))
+	# 猴子：服务器和本地谁记着「本回合买过」都算买过（取大）—— 回合号只增不减，
+	# 取大不会把新回合误判成买过，也不会让掉线前 / AI 托管时已经复制过的回合再复制一次。
+	GameState.first_buy_round = maxi(GameState.first_buy_round, int(state.get("first_buy_round", -1)))
 	GameState.stone_draw_count = maxi(0, int(state.get("stone_draw_count", GameState.stone_draw_count)))
 	GameState.free_stone_claimed = bool(state.get("free_stone_claimed", GameState.free_stone_claimed))
 	GameState.four_star_upgrade_count = maxi(0, int(state.get("four_star_upgrade_count", GameState.four_star_upgrade_count)))

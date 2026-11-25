@@ -150,7 +150,7 @@ def build():
             "name_cn": text(r[1]), "requires_cn": text(r[2]),
             "effect_cn": text(r[4]),
         }
-    expected = {"units": 40, "pets": 5, "synergies": 5,
+    expected = {"units": 40, "pets": 6, "synergies": 5,
                 "treasures": 25, "linkages": 11}
     for key, count in expected.items():
         if len(out[key]) != count:

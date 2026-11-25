@@ -121,7 +121,7 @@ def test_miss_replay_and_tenth_draw(draw_db, monkeypatch):
     assert win.pet_id == "pet_squirrel" and win.energy == 0
     assert win.coin_reward == 0 and draw_db.grants == ["pet_squirrel"]
     state = asyncio.run(pet_draw.state(player))
-    assert state.available == ["pet_tiger"]
+    assert state.available == ["pet_tiger", "pet_monkey"]
 
 
 def test_early_pet_keeps_energy_and_never_repeats_owned_pet(draw_db, monkeypatch):
@@ -136,14 +136,18 @@ def test_early_pet_keeps_energy_and_never_repeats_owned_pet(draw_db, monkeypatch
 
     second = asyncio.run(pet_draw.draw(player, uuid.uuid4()))
     assert second.pet_id == "pet_tiger" and second.energy == 5
-    assert draw_db.grants == ["pet_squirrel", "pet_tiger"]
+
+    # 11-25 奖池加了猴子：第三抽抽到它，之后奖池才算抽完。
+    third = asyncio.run(pet_draw.draw(player, uuid.uuid4()))
+    assert third.pet_id == "pet_monkey" and third.energy == 6
+    assert draw_db.grants == ["pet_squirrel", "pet_tiger", "pet_monkey"]
 
     charged_count = len(draw_db.money_writes)
     with pytest.raises(shop.ShopRejected) as complete:
         asyncio.run(pet_draw.draw(player, uuid.uuid4()))
     assert complete.value.code == "pool_complete"
     assert len(draw_db.money_writes) == charged_count
-    assert draw_db.misses == 5
+    assert draw_db.misses == 6
 
 
 def test_rejected_draw_never_charges(draw_db):
@@ -171,17 +175,18 @@ def test_miss_can_give_a_trial_card_for_an_unowned_pet(draw_db, monkeypatch):
     monkeypatch.setattr(trial, "roll_miss", lambda: (False, 3))
     card_only = asyncio.run(pet_draw.draw(player, uuid.uuid4()))
     assert card_only.pet_id == "" and card_only.coin_reward == 0
-    assert (card_only.trial_target, card_only.trial_days) == ("pet_tiger", 3)
+    # 没拥有的奖池宠物是 [老虎, 猴子]，假 choice 取最后一个。
+    assert (card_only.trial_target, card_only.trial_days) == ("pet_monkey", 3)
     assert draw_db.money_writes == [{"diamond_free": -50, "diamond_paid": -25}]
 
     monkeypatch.setattr(trial, "roll_miss", lambda: (True, 7))
     draw_id = uuid.uuid4()
     both = asyncio.run(pet_draw.draw(player, draw_id))
-    assert both.coin_reward == 100 and (both.trial_target, both.trial_days) == ("pet_tiger", 7)
-    assert draw_db.cards == [("pet_tiger", 3), ("pet_tiger", 7)]
+    assert both.coin_reward == 100 and (both.trial_target, both.trial_days) == ("pet_monkey", 7)
+    assert draw_db.cards == [("pet_monkey", 3), ("pet_monkey", 7)]
 
     replay = asyncio.run(pet_draw.draw(player, draw_id))
-    assert replay.replayed and (replay.trial_target, replay.trial_days) == ("pet_tiger", 7)
+    assert replay.replayed and (replay.trial_target, replay.trial_days) == ("pet_monkey", 7)
     assert len(draw_db.cards) == 2
 
 
@@ -197,3 +202,14 @@ def test_trial_card_odds_shown_to_players_match_the_server():
     for days, weight in trial.DAY_WEIGHTS:
         assert "%d天 %d%%" % (days, weight) in dialog
         assert "%dd %d%%" % (days, weight) in dialog
+
+
+def test_summon_dialog_lists_every_pool_pet():
+    """11-25：召唤界面左栏的宠物卡（PetDrawDialog.POOL_PETS）要和服务器奖池一致，加宠物时两边一起改。"""
+    import pathlib
+    import re
+    dialog = (pathlib.Path(__file__).resolve().parents[2] / "scenes" / "menu" / "PetDrawDialog.gd").read_text(
+        encoding="utf-8")
+    listed = re.search(r"const POOL_PETS := \[([^\]]*)\]", dialog)
+    assert listed, "PetDrawDialog.gd 里找不到 POOL_PETS"
+    assert tuple(re.findall(r'"([^"]+)"', listed.group(1))) == pet_draw.PET_IDS

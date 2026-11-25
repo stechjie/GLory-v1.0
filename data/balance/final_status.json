@@ -1663,6 +1663,16 @@
       "scope_cn": "自己的一阶棋子；升星永久叠层",
       "starter": false,
       "summary_cn": "每次升星：一阶棋子生命、攻击、防御 +5%（无限累计）"
+    },
+    "pet_monkey": {
+      "name_cn": "猴子",
+      "name_en": "Monkey",
+      "effect_type": "首购复制",
+      "value_percent": "100%",
+      "detail_cn": "每回合从商店买的第一个棋子 100% 免费多复制 1 枚（1 星，不花钱），和正常买到的一样能参与升星；复制品先和同名棋子合成，其次放进备战区空位，备战区满了就按出售价直接卖掉（不会自动上场）。倒计时到点时系统自动买的那一枚也算。",
+      "scope_cn": "自己；每回合第一次从商店买棋子（含倒计时自动买）",
+      "starter": false,
+      "summary_cn": "每回合第一个买的棋子：100% 免费多复制 1 枚"
     }
   },
   "synergies": {
@@ -1976,6 +1986,6 @@
       "effect_cn": "需要：生命丰碑 + 黄金祭坛 + 震荡余波 + 血契之刃 + 狂怒阵容。生命丰碑 ×1.20→×1.40；震荡余波眩晕 1→2 秒；血契之刃 ×1.25→×1.50；狂怒阵容上限 8→9。黄金祭坛使用不扣法阵 HP；选到胡牌手立即回复法阵 HP +2（上限 50）。\n表内字段：positive_effect_multiplier = 2"
     }
   },
-  "balance_version": "2833bc1f8b72c4416ca76b228bb76c5f96d069f3110d674e325738a151a56bd3",
-  "final_workbook_sha256": "be0b6a52feb58fa8fdf9eec8dae4d2254c6cc9bed8a650384153ba40f78ddd03"
+  "balance_version": "ff6fc58f1e0f39ef853ea7f35cd6b0eaa65dd619013d0f53354e78dbc1566444",
+  "final_workbook_sha256": "add6a5cb1a07760a4b5c95df0173cceaec649a246cacb075be724ef401e5a7f8"
 }

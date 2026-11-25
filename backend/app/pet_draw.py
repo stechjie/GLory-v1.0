@@ -10,7 +10,7 @@ from app import db, shop, trial
 PRICE = 75
 MISS_COIN = 100
 PITY_LIMIT = 10
-PET_IDS = ("pet_squirrel", "pet_tiger")
+PET_IDS = ("pet_squirrel", "pet_tiger", "pet_monkey")
 
 
 @dataclasses.dataclass(frozen=True)

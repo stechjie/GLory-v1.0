@@ -9,6 +9,8 @@ extends Node3D
 # its idle model, so the tiger vanished whenever it ran (10-07, the carrot camp
 # loops the run clip). Measured by skinning both meshes at rest pose; every other
 # pet's pair already matches and keeps 1.0.
+# 11-25: the tiger moved to the new Frostfang model on scripts/pets/FbxPetAnimated.gd
+# (one rig for idle / pounce / walk), so no pet on this script uses a value other than 1.0 now.
 @export var run_model_scale := 1.0
 # GLB 自带的是标准 PBR 材质，会吃场景灯光、和另外三只宠物的卡通风格对不上。
 # 开着时按每个面片原来的颜色贴图换成 BA 风格着色（ba_toon + 屏幕像素宽描边 ba_outline）。

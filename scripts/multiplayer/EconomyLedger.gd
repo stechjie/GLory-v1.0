@@ -56,6 +56,10 @@ static func new_prep(start_gold: int) -> Dictionary:
 		"altar_uses": 0,
 		"gold_spent_this_round": false,
 		"gamble_used": false,
+		# 本回合第一次从商店买棋子发生在哪一回合（猴子用，见 _pet_first_buy_copy）。
+		# 记回合号而不是布尔：不依赖 reset_round 的调用时机，AI 托管（LiveBotEconomy）
+		# 和客户端（GameState.first_buy_round）都按同一个数对齐。
+		"first_buy_round": -1,
 	}
 
 # 每回合重置的部分。金币和 roster **不重置** —— 那是跨回合累积的。
@@ -215,7 +219,52 @@ static func _buy(prep: Dictionary, payload: Dictionary, ctx: Dictionary) -> Dict
 	prep["shop"] = shop
 	var uid := _add_unit(prep, str((unit_def as Dictionary).get("id", "")), 1, cost, "unit",
 		str(payload.get("uid", "")))
-	return {"ok": true, "result": {"uid": uid, "unit_id": str((unit_def as Dictionary).get("id", "")), "cost": cost}}
+	# 买棋子一定花了钱。显式记上：猴子的复制品没位置直接卖掉时，这一笔的净变化可能 >= 0，
+	# apply() 只按净变化判断「本回合花过钱」，会漏掉，复利宝藏的「本回合没花钱」加成就白拿了。
+	prep["gold_spent_this_round"] = true
+	var result := {"uid": uid, "unit_id": str((unit_def as Dictionary).get("id", "")), "cost": cost}
+	var copy := _pet_first_buy_copy(prep, unit_def, payload, ctx)
+	if not copy.is_empty():
+		result["pet_copy"] = copy
+	return {"ok": true, "result": result}
+
+# 猴子（出战宠物效果 first_buy_copy，用户 11-25 定）：每回合买的第一个棋子免费多一张 1 星。
+#
+# 当作一次正常购买，只是不扣钱：参与合成、触发购买时的效果；客户端按「① 棋盘上能合成 →
+# ② 待命区能合成 → ③ 待命区空位 → ④ 按出售规则直接卖掉」安排它（不会自动上场）。
+# 放在「买」这一笔里而不是单独一个动作：
+#   * 要么一起成、要么一起不成，断线重试走同一份回执（E4 幂等），不会重复给；
+#   * 倒计时到点、系统替玩家买的那一笔（战斗阶段放行的 timeout_deploy buy）也自然带上它。
+#
+# 账本不知道棋子摆在哪一格，所以「留下还是没位置卖掉」由客户端在 payload.pet_copy.sold 里说；
+# 资格（出战宠物是不是猴子、这是不是本回合第一笔）和金额都在这里算 —— 客户端就算改了，
+# 也只能在「留一枚卖出值半价的棋子」和「直接拿那半价」之间选，刷不出钱。
+# 复制品的 cost_basis 记**棋子原价**（base_unit_cost，不是 0，也不是带折扣的实付价）：
+# 卖出退一半与客户端 _sell_refund_for_cell（原价 × 0.5）一致，合成后相加也不会把这枚算成白给的。
+#
+# 返回 {} = 这一笔不复制；否则 {uid, unit_id, sold, refund, cost_basis}（uid 在 sold 时为空）。
+static func _pet_first_buy_copy(prep: Dictionary, unit_def: Dictionary, payload: Dictionary,
+		ctx: Dictionary) -> Dictionary:
+	var round_index := int(ctx.get("round_index", 0))
+	var first := int(prep.get("first_buy_round", -1)) != round_index
+	prep["first_buy_round"] = round_index
+	if not first or not bool(ctx.get("pet_first_buy_copy", false)):
+		return {}
+	var unit_id := str(unit_def.get("id", ""))
+	var basis := base_unit_cost(unit_def)
+	var request: Dictionary = {}
+	if typeof(payload.get("pet_copy")) == TYPE_DICTIONARY:
+		request = payload["pet_copy"]
+	# 名单满了也只能卖：账本里放不下第二枚（与 _buy 的 roster_full 同一个上限）。
+	if bool(request.get("sold", false)) or _roster_size(prep) >= int(ctx.get("roster_cap", 64)):
+		var refund := sell_refund(basis)
+		prep["gold"] = int(prep.get("gold", 0)) + refund
+		return {"uid": "", "unit_id": unit_id, "sold": true, "refund": refund, "cost_basis": basis}
+	var preferred := str(request.get("uid", ""))
+	if preferred.length() > MAX_UID_LENGTH:
+		preferred = ""
+	var copy_uid := _add_unit(prep, unit_id, 1, basis, "unit", preferred)
+	return {"uid": copy_uid, "unit_id": unit_id, "sold": false, "refund": 0, "cost_basis": basis}
 
 static func _hire_merc(prep: Dictionary, payload: Dictionary, ctx: Dictionary) -> Dictionary:
 	var mercs: Array = ctx.get("merc_table", [])
