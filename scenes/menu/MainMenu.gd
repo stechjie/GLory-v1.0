@@ -13,6 +13,10 @@ signal public_token_generate_requested
 signal public_token_resume_requested(token_id: String)
 signal team_offline_requested   # 不联网，本地单人 vs AI 自测
 signal team_reconnect_requested # 手动重连回上一场对局
+signal pending_match_reconnect_requested(mode: String, match_uid: String)
+
+var _pending_match_return: Dictionary = {}
+var _pending_match_player := ""
 signal casual_requested         # 「休闲」按钮：进匹配队列（协议 32，docs/排位系统设计.md 第五节）
 signal ranked_requested         # 「排位」按钮：进排位队列。窗口 / 信誉分的闸在服务器那边
 signal prep_requested           # 「备战」按钮：进入备战界面（暂时只有宠物系统）
@@ -965,6 +969,9 @@ func _emit_offline() -> void:
 	team_offline_requested.emit()
 
 func _emit_reconnect() -> void:
+	if not _pending_match_return.is_empty() and _pending_match_player == AccountManager.player_id:
+		pending_match_reconnect_requested.emit(str(_pending_match_return.mode), str(_pending_match_return.match_uid))
+		return
 	if SaveManager.load_resumable_reconnect().is_empty():
 		_apply_saved_match_status("clear", "")
 		return
@@ -996,9 +1003,13 @@ func _apply_saved_match_status(status: String, checked_token: String) -> void:
 	var rc := SaveManager.load_resumable_reconnect()
 	var can_return := not rc.is_empty() and not checked_token.is_empty() \
 		and str(rc.get("token", "")) == checked_token and status in ["lobby", "active"]
+	var pending_return := rc.is_empty() and not _pending_match_return.is_empty() \
+		and _pending_match_player == AccountManager.player_id
 	for child in get_children():
 		if child is Button and child.pressed.is_connected(_emit_reconnect):
-			child.visible = can_return
+			child.visible = can_return or pending_return
+			if pending_return:
+				child.text = _menu_text("重新连接", "Reconnect")
 			if can_return:
 				child.text = _menu_text("返回房间", "Back to Room") if status == "lobby" else _menu_text("游戏重连", "Reconnect")
 
@@ -1006,14 +1017,39 @@ func _refresh_saved_match() -> void:
 	while is_inside_tree():
 		var rc := SaveManager.load_resumable_reconnect()
 		if rc.is_empty():
+			var player := AccountManager.player_id
+			var result: Dictionary = await _query_pending_match()
+			if not is_inside_tree():
+				return
+			_pending_match_return = pending_match_from_response(result) if player == AccountManager.player_id else {}
+			_pending_match_player = player
 			_apply_saved_match_status("clear", "")
-			return
-		var token := str(rc.get("token", ""))
-		var status := await NetworkService.check_saved_match()
-		if not is_inside_tree():
-			return
-		_apply_saved_match_status(status, token)
+		else:
+			_pending_match_return = {}
+			var token := str(rc.get("token", ""))
+			var status := await NetworkService.check_saved_match()
+			if not is_inside_tree():
+				return
+			_apply_saved_match_status(status, token)
 		await get_tree().create_timer(3.0).timeout
+
+
+func _query_pending_match() -> Dictionary:
+	if not AccountManager.is_logged_in():
+		return {}
+	return await AccountManager.fetch_match_state()
+
+
+static func pending_match_from_response(result: Dictionary) -> Dictionary:
+	if int(result.get("code", 0)) != 200:
+		return {}
+	var state: Dictionary = (result.get("body", {}) as Dictionary).get("state", {})
+	var mode := str(state.get("mode", ""))
+	var uid := str(state.get("match_uid", ""))
+	if str(state.get("state", "")) != "ready" or uid.length() != 32 \
+			or (not mode.begins_with("ranked") and not mode.begins_with("casual")):
+		return {}
+	return {"mode": mode, "match_uid": uid}
 
 func _emit_prep() -> void:
 	prep_requested.emit()

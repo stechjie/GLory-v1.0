@@ -1,0 +1,27 @@
+#!/bin/sh
+# 提交前的两道门卫：跨平台陷阱（tools/platform_lint.py）、UTF-8 BOM（tools/bom_lint.py）。
+#
+# 启用（每台机器做一次，在仓库根目录）：
+#   git config core.hooksPath tools/git-hooks
+# Git for Windows 自带 sh，这个文件在 Windows / macOS / Linux 上都能跑。
+#
+# 临时跳过（只在确实需要时）：git commit --no-verify
+
+root="$(git rev-parse --show-toplevel)" || exit 2
+
+if command -v python3 >/dev/null 2>&1; then
+    py=python3
+elif command -v python >/dev/null 2>&1; then
+    py=python
+elif command -v py >/dev/null 2>&1; then
+    py="py -3"
+else
+    echo "pre-commit: 找不到 Python，无法运行 tools/platform_lint.py。" >&2
+    echo "pre-commit: 装好 Python 3 再提交，或临时用 git commit --no-verify。" >&2
+    exit 1
+fi
+
+status=0
+$py "$root/tools/platform_lint.py" --staged || status=1
+$py "$root/tools/bom_lint.py" --staged || status=1
+exit $status

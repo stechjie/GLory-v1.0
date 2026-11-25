@@ -119,12 +119,12 @@ static func cancel_ticket(handle: int) -> void:
 	if handle <= 0:
 		return
 	var steam := _steam()
-	if steam != null and steam.has_method("cancelAuthTicket"):
+	if steam != null and steam.has_method("cancelAuthTicket"):  # platform-ok: GodotSteam 是 GDExtension，只在 Windows/Steam 包里，不是安卓 JNISingleton
 		steam.call("cancelAuthTicket", handle)
 
 
 static func _logged_on_text(steam: Object) -> String:
-	return str(bool(steam.call("loggedOn"))) if steam.has_method("loggedOn") else "unknown"
+	return str(bool(steam.call("loggedOn"))) if steam.has_method("loggedOn") else "unknown"  # platform-ok: 同上，GDExtension
 
 
 class _TicketWaiter extends RefCounted:

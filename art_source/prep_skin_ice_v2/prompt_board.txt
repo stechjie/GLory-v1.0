@@ -1,0 +1,16 @@
+The user has already reviewed and approved this image generation. Generate it now without asking for confirmation, and save the final PNG into the current directory as board_v2.png (16:9 landscape, at least 1672x941).
+
+Task: redraw the background ground texture for a "Frost / snow" board skin of a cartoon auto-battler mobile game. The board is seen from a high top-down 2.5D camera; game pieces and UI are drawn on top of it later.
+
+Reference images attached:
+- ref_ice_board.png = the CURRENT frost board. Keep its composition: snowy pine trees, snow-covered rocks and a small warm stone lantern along the LEFT edge, a few pine branches poking in at the top-right corner, and a large open ground area filling the rest. Keep its art style (painted cartoon game art, soft cel shading).
+- ref_sakura_board.png and ref_default_board.png = other skins of the SAME slot. Match how they treat the ground: a visible mid-tone ground texture with gentle patches, clumps and soft tree shadows, so the open area never reads as an empty flat colour.
+
+The problem to fix: in the current frost board the open area is an almost uniform near-white snow field (average brightness about 197/255). White unit names and white UI text become unreadable on it and it looks empty.
+
+Requirements for the new version:
+- The open play area must be MID-TONE, around the brightness of the sakura ground: packed snow in soft blue-grey and periwinkle, with darker cool-blue shadow areas, faint wind ripples, small snow drifts, a few scattered frozen puddle patches with subtle crackle lines, and soft shadows of the pine trees falling onto the ground near the left. Brightest pure white only on small highlights (snow caps on trees, rocks, drift crests).
+- Keep detail LOW-CONTRAST and small-scale in the centre so pieces placed there stay readable. No large objects, paths, grid lines, tiles, or anything that looks like board cells in the centre.
+- No crystals, no gems, no glowing ice shards anywhere. Plain snow, ice and frost only.
+- Keep the bottom 20% plain ground too (a separate river image is layered on top of it).
+- No characters, no text, no UI, no logo, no frame, no vignette border.

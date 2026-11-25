@@ -31,7 +31,10 @@ param(
     # **留空 = 自动查找**（见 Resolve-Godot）。
     [string]$Godot = "",
     [switch]$SkipSmoke,
-    [switch]$NoPause
+    [switch]$NoPause,
+    # 工作区有未提交改动时默认拒绝打包：打出来的包对不上任何一个 commit，真机出问题没法复现。
+    # 只给测试服临时放行用；正式服的包必须在干净工作区打。
+    [switch]$AllowDirty
 )
 $ErrorActionPreference = "Stop"
 $src   = $Src
@@ -112,6 +115,15 @@ function Fail($msg) {
 
 try {
     Write-Host "[1/6] 检查项目目录..." -ForegroundColor Cyan
+    if (-not $AllowDirty) {
+        $dirtyLines = @()
+        try { $dirtyLines = @(& git -C $src status --porcelain 2>$null | Where-Object { $_ }) } catch { $dirtyLines = @() }
+        if ($dirtyLines.Count -gt 0) {
+            Write-Host ("   未提交的改动 " + $dirtyLines.Count + " 项，前 10 项：") -ForegroundColor Yellow
+            $dirtyLines | Select-Object -First 10 | ForEach-Object { Write-Host ("     " + $_) -ForegroundColor Yellow }
+            throw "工作区不干净。先 git commit（或 stash）再打包；只打测试服包可加 -AllowDirty 临时放行。"
+        }
+    }
     if (-not (Test-Path $src)) { throw "找不到项目目录: $src" }
     if (-not (Test-Path "$src\scenes\server\ServerMain.tscn")) {
         throw "缺少专服入口场景 scenes/server/ServerMain.tscn（没有它服务器会去加载 UI 主场景然后静默挂住）"

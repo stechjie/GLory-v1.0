@@ -252,16 +252,13 @@ func _build() -> void:
 	col.add_child(_build_race_box())
 	col.add_child(_build_skin_box())
 
-	# 返回按钮（右上角）。最后添加 = 输入拾取时在最上层，不会被内容列挡住。
+	# 返回按钮（左上角，11.22 全游戏统一：整页界面的返回键都在左上角、同一颗圆形返回图标）。
+	# 最后添加 = 输入拾取时在最上层，不会被内容列挡住。
 	# 仅在非首次（已选过初始宠物）时显示；首次强制三选一时隐藏，逼玩家先选。
-	_back_btn = Button.new()
-	_back_btn.text = "← " + tr("pet_back")
-	_back_btn.custom_minimum_size = Vector2(120, 46)
-	_back_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	_back_btn.position = Vector2(_back_btn.position.x - 140, 20)
-	_style_prep_button(_back_btn)
-	_back_btn.custom_minimum_size = Vector2(130, 48)
-	_back_btn.pressed.connect(func(): back_requested.emit())
+	_back_btn = Kit.back_button(func(): back_requested.emit())
+	_back_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	_back_btn.position = Vector2(Tokens.PAD, Tokens.PAD)
+	_back_btn.size = _back_btn.custom_minimum_size
 	add_child(_back_btn)
 	SafeArea.track(_back_btn)
 

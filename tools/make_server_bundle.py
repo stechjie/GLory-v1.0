@@ -264,6 +264,8 @@ def main() -> None:
     parser.add_argument("--skip-smoke", action="store_true")
     parser.add_argument("--smoke-seconds", type=float, default=8.0)
     parser.add_argument("--smoke-network-wrapper-json")
+    parser.add_argument("--allow-dirty", action="store_true",
+                        help="工作区有未提交改动时仍然打包（默认拒绝；只给测试服临时用）")
     args = parser.parse_args()
     source = args.source.resolve()
     if not args.skip_smoke and (not args.godot or not args.godot.is_file()):
@@ -281,6 +283,10 @@ def main() -> None:
     source_hash = tree_hash(files)
     git_sha = run(["git", "-C", str(source), "rev-parse", "HEAD"]).stdout.decode().strip()
     git_dirty = bool(run(["git", "-C", str(source), "status", "--porcelain", "--untracked-files=normal"]).stdout)
+    if git_dirty and not args.allow_dirty:
+        porcelain = run(["git", "-C", str(source), "status", "--porcelain"]).stdout.decode("utf-8", "replace").splitlines()
+        raise ValueError("工作区不干净（%d 项未提交，如 %s）。打出的包对不上任何 commit；先提交再打，或只打测试服包时加 --allow-dirty。"
+                         % (len(porcelain), "; ".join(porcelain[:5])))
     match = re.search(rb"NETWORK_PROTOCOL_VERSION\s*:?=\s*(\d+)", files["scripts/multiplayer/NetworkConfig.gd"])
     if not match:
         raise ValueError("Cannot determine network protocol from source")

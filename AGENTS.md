@@ -2,6 +2,33 @@
 
 ## 🔴 跨平台改动规则（所有改动都适用，先读这一节）
 
+### 每次改代码必须先填的两张表（AI 代理和人都适用）
+
+**动手改之前**，在回复里先填「平台影响表」。填不出来某一格，就先去读相关代码，不许先改再说：
+
+| 平台 | 这次改的代码会在这个平台运行吗 | 运行时走哪条路径（哪个分支 / 哪个插件） | 这次改动会不会让它变化 |
+|---|---|---|---|
+| Android | | | |
+| iOS | | | |
+| Windows / Steam | | | |
+| 战斗服务器（无界面） | | | |
+
+**改完之后**，在回复和提交说明里填「验证表」。每格只能写三选一：`已实测` / `仅门禁或替身` / `未验证`。不许写「已完成」「应该没问题」「不影响」：
+
+| 平台 | 验证状态 | 怎么验的 / 谁要去验 |
+|---|---|---|
+| Android | | |
+| iOS | | |
+| Windows / Steam | | |
+| 战斗服务器（无界面） | | |
+
+- AI 代理没有真机，所以 Android / iOS 这两行几乎总是 `仅门禁或替身` 或 `未验证`，必须明确写出来并提醒用户找有设备的人验。
+- 自动门卫：`tools/platform_lint.py` 会在 `git commit` 时拦下 `scripts/account/`、`AccountManager`、`VoiceService`、`VoiceClipService` 里直接写的 `.has_method(`（见第 3 条），并列出改动文件里所有 `OS.get_name()` / `Engine.get_singleton()` 等平台分叉点，提醒对照上表。每台机器启用一次：`git config core.hooksPath tools/git-hooks`。确认只在 iOS/桌面分支执行的 `has_method()`，行尾写 `# platform-ok: 原因` 放行。
+- 踩到新的平台陷阱：在第 4 条补一行，并评估能否加进 `platform_lint.py` 变成自动检查。
+- 改动说明写进 `docs/changelog/YYYY-MM.md`（当月文件，没有就新建），**不要写回项目根 README.md**。README 只放简介、目录、运行和打包方式。
+- 提交前钩子还会跑 `tools/bom_lint.py`：`.godot/.tscn/.tres/.cfg/.gd/.json/.md/.py` 不许带 UTF-8 BOM（`.ps1` 例外）。PowerShell 写文件用 `[IO.File]::WriteAllText($p, $s, (New-Object Text.UTF8Encoding($false)))`，不要用 `-Encoding utf8`。
+
+
 本游戏同一份代码要跑在 **Android、iOS、Windows / Steam、战斗服务器（无界面）** 上。2026-11-18 一次为 iOS 加 Apple 登录的改动，把 `SignInBridge.gd` 里的判断改成 `has_method()`，结果安卓的 Google 登录按钮消失，且门禁和 iOS 真机都没发现。以下规则用来防止同类问题：
 
 1. **动手前先列影响面**：改到的脚本会在哪些平台执行（尤其是 `scripts/account/*Bridge.gd`、`SpeechToText.gd`、`VoiceService`、`VoiceClipService`、`AccountManager`、启动页 / 资料页）。在回复和提交说明里写出来。

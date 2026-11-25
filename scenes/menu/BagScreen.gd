@@ -314,9 +314,13 @@ func _empty_text() -> String:
 
 
 func _on_tile_input(event: InputEvent, key: String) -> void:
-	var pressed := (event is InputEventMouseButton and event.pressed
-		and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT) \
-		or (event is InputEventScreenTouch and event.pressed)
+	# event 是 InputEvent，直接读 event.pressed 是无类型的值，`:=` 推不出类型 —— 先转型再读。
+	var pressed := false
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		pressed = mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT
+	elif event is InputEventScreenTouch:
+		pressed = (event as InputEventScreenTouch).pressed
 	if pressed and key != _selected:
 		_selected = key
 		_refresh_selection()

@@ -2,12 +2,18 @@ extends Node
 const Harness := preload("res://tools/CheckHarness.gd")
 const Warmup := preload("res://scripts/assets/BattleRenderWarmup.gd")
 const Block := preload("res://effects/vfx3d/VFXBlockRoot.gd")
+const BattleScreenScript := preload("res://scenes/battle/BattleScreen.gd")
+const ViewBudget := preload("res://ui/components/Budgeted3DView.gd")
 
 func _ready() -> void:
 	_run.call_deferred()
 
 func _run() -> void:
 	var h := Harness.new("battle_render_warmup")
+	await _check_initial_replay_wait_render(h)
+	if "--initial-replay-wait-only" in OS.get_cmdline_user_args():
+		h.finish(get_tree())
+		return
 	var replay := {"roster": {
 		"a": {"id": "human_archer", "def": {"range": 4.0, "skill_id": "every_fourth_combo"}},
 		"b": {"id": "god_archangel", "def": {"range": 4.0, "skill_id": "random_ally_damage_reduction"}},
@@ -65,6 +71,57 @@ func _run() -> void:
 	await get_tree().process_frame
 	h.expect(Block.active_block_count() == blocks_before, "effect_budget_released", "All temporary effects leave the production effect budget")
 	h.finish(get_tree())
+
+
+func _check_initial_replay_wait_render(h: RefCounted) -> void:
+	var screen := BattleScreenScript.new()
+	var host := Control.new()
+	host.size = Vector2(160, 72)
+	add_child(host)
+	var viewport := ViewBudget.create(host, "InitialReplayWait", 0, Vector2i.ZERO, true)
+	screen._battle_3d_viewport = viewport
+	for platform in ["Android", "Windows", "macOS", "Linux"]:
+		screen._hold_initial_replay_wait_render(platform)
+		h.expect(viewport.render_target_update_mode == SubViewport.UPDATE_ALWAYS,
+			"initial_wait_platform_%s" % platform, "non-iOS platforms retain their existing render cadence")
+	screen._hold_initial_replay_wait_render("iOS")
+	h.expect(viewport.render_target_update_mode == SubViewport.UPDATE_ONCE,
+		"initial_wait_once", "the initial empty iOS wait draws once rather than every frame")
+	screen._start_replay({})
+	h.expect(viewport.render_target_update_mode == SubViewport.UPDATE_ONCE,
+		"invalid_replay_keeps_wait", "an invalid replay cannot release the wait into preparation")
+	# Simulate UPDATE_ONCE being consumed even with a headless renderer.
+	viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	screen._resume_initial_replay_wait_render()
+	h.expect(viewport.render_target_update_mode == SubViewport.UPDATE_ALWAYS and screen._initial_replay_wait_viewport == null,
+		"initial_wait_resume", "preparation restores continuous draws and clears the held viewport")
+	screen._resume_initial_replay_wait_render()
+	h.expect(viewport.render_target_update_mode == SubViewport.UPDATE_ALWAYS,
+		"initial_wait_resume_idempotent", "repeated replay/prepare entry does not change a released viewport")
+	for condition in ["replay", "settlement", "populated_state"]:
+		screen._replay_mode = condition == "replay"
+		screen._finished = condition == "settlement"
+		screen._state = {"player": []} if condition == "populated_state" else {}
+		screen._hold_initial_replay_wait_render("iOS")
+		h.expect(viewport.render_target_update_mode == SubViewport.UPDATE_ALWAYS,
+			"initial_wait_excludes_%s" % condition, "existing replay, settlement and populated scenes cannot enter the initial hold")
+	screen._replay_mode = false
+	screen._finished = false
+	screen._state = {}
+	screen._hold_initial_replay_wait_render("iOS")
+	host.hide()
+	screen._resume_initial_replay_wait_render()
+	h.expect(viewport.render_target_update_mode == SubViewport.UPDATE_DISABLED,
+		"initial_wait_hidden_resume", "releasing a held hidden layer must not wake its rendering")
+	host.show()
+	h.expect(viewport.render_target_update_mode == SubViewport.UPDATE_ALWAYS,
+		"initial_wait_reveal", "revealing the released layer restores the normal viewport lifecycle")
+	screen._hold_initial_replay_wait_render("iOS")
+	host.free()
+	screen._resume_initial_replay_wait_render()
+	h.expect(screen._initial_replay_wait_viewport == null,
+		"initial_wait_freed_viewport", "scene cancellation clears a freed viewport without accessing it")
+	screen.free()
 
 func _material_signatures(materials: Dictionary) -> Array[String]:
 	var result: Array[String] = []

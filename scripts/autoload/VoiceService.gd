@@ -135,7 +135,7 @@ func _bridge_has_method(method: StringName) -> bool:
 		return false
 	if _bridge.has_method("has_java_method"):
 		return bool(_bridge.call("has_java_method", method))
-	return _bridge.has_method(method)
+	return _bridge.has_method(method)  # platform-ok: 上面已先探测 has_java_method，这里是 iOS/桌面的兜底，与 NativeBridge.supports 同写法
 
 
 func is_supported() -> bool:

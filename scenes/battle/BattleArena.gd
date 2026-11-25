@@ -866,8 +866,10 @@ func _fit_battle_3d_arena(arena: Node3D) -> void:
 	arena.position += Vector3(-center.x, BATTLE_ARENA_GROUND_Y - fitted_bounds.position.y, -center.z)
 
 func _setup_battle_3d_view(arena_wrap: Control) -> void:
-	_battle_3d_viewport = Budgeted3DView.create(arena_wrap, "UnitsLayer", 40,
-		Budgeted3DView.mobile_limit(VFXManager.get_quality_tier(), OS.has_feature("mobile")), true)
+	var quality := VFXManager.get_quality_tier()
+	var limit := Budgeted3DView.battle_limit(quality, OS.has_feature("mobile"))
+	_battle_3d_viewport = Budgeted3DView.create(arena_wrap, "UnitsLayer", 40, limit, true)
+	_battle_3d_viewport.add_to_group(&"perf_battle_viewport")
 	# Match preparation's high preset without increasing low/medium GPU cost.
 	_battle_3d_viewport.msaa_3d = Viewport.MSAA_2X \
 		if VFXManager.get_quality_tier() == VFXQualityBudget.Tier.HIGH else Viewport.MSAA_DISABLED

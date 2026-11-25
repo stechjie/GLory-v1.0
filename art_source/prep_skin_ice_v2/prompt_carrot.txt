@@ -1,0 +1,14 @@
+The user has already reviewed and approved this image generation. Generate it now without asking for confirmation, and save the final PNG into the current directory as carrot_v2.png. It must have a TRANSPARENT background (real alpha channel). Portrait, roughly 1214x1295 aspect.
+
+Task: draw the "carrot" centrepiece prop for the "Frost / snow" board skin of a cartoon auto-battler mobile game. This is a big carrot the player defends; it sits on the board seen from a slightly high front 3/4 view.
+
+Reference images attached:
+- ref_default_carrot.png, ref_sakura_carrot.png, ref_nightwisp_carrot.png = this same prop in other skins. Match their art style exactly: bold dark outlines, cel-shaded colour blocks, a chunky ORANGE carrot with green leafy top, standing upright on a small mound of rocks/ground with themed decoration around the base. Match their size, proportions and framing inside the canvas (carrot centred, base near the bottom, same empty margin).
+- ref_ice_carrot.png = the current frost version. It is the problem: the whole carrot is turned into transparent blue ice, so it reads as a vase, not a carrot. Use it only for the frost colour mood.
+
+Requirements:
+- The carrot itself stays a normal warm ORANGE carrot with its green leaves, clearly readable as a carrot.
+- Make it wintry: a soft cap of snow resting on top of the leaves and on the shoulders of the carrot, a few small icicles hanging from the leaf edges, a light frost rim on the orange skin.
+- The base: a mound of snow-covered grey rocks and snowdrifts, maybe a little sprig of pine or holly. No crystals, no gems, no glowing ice shards.
+- Do not make it wider than the reference carrots.
+- Transparent background, no shadow blob outside the base, no text.

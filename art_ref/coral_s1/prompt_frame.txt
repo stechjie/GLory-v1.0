@@ -1,0 +1,19 @@
+Use your built-in image generation tool to create ONE new 2D game UI asset, then save the resulting PNG as `samples/avatar_frame_coral_v1.png` in the current directory. Do not write code to draw it; generate it with the image tool. Do not modify any other file.
+
+Attached images 1-3 (sakura, emerald, frost) are existing avatar frames from my game. They are the style and structure authority. Match them exactly in:
+- object: a circular metal ring avatar frame, front view, with FOUR ornament anchor points at top, bottom, left and right, and theme decorations wrapped around the ring
+- the centre of the ring is completely empty and transparent (the player's avatar shows through)
+- square canvas, ring fills the canvas with a small margin
+- rendering: bold dark outlines, clean cel-shaded colour blocks with 2-3 tones, small crisp highlights, hand-painted cartoon game UI. NOT soft airbrush, NOT pastel sticker style, NOT 3D render
+- fully transparent background outside the ring too, no text
+
+Attached image 4 is only a SUBJECT and PALETTE reference (ocean coral motifs). Do not copy its soft thin-line rendering or its thin wreath structure.
+
+New theme: OCEAN CORAL.
+- ring: soft champagne gold metal, low brightness, with a sea-blue wave band running along it
+- the four anchor points: instead of the diamond gems used in the existing frames, use a pale pink scallop shell at the top, and round white pearls set in small gold mounts at left, right and bottom
+- wrapped decorations: pink coral branches, small curling white-blue waves, a starfish, a little seaweed, a few tiny pearls
+- palette: sea blue #42B6E4, deep blue #2367AF, teal #80D8CD, shell pink #F6C5D9, coral pink #F394A7, pearl white #F9F0ED, champagne gold #D4AA6C
+- strictly NO crystals, NO gems, NO diamond or rhombus shapes, NO snowflakes, NO flowers
+
+When done, reply with only the saved file path and the pixel size.

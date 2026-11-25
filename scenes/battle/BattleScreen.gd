@@ -123,6 +123,9 @@ var _view_toggle_btn: Button
 # 这个状态下允许继续切镜头看另一队的战斗 —— 打完之后切过去只推回放，
 # 不再走任何结算/返回逻辑（_finish_replay 只允许跑一次）。
 var _settlement_waiting := false
+# Only the first empty-board network wait may retain a single 3D frame. Keep the
+# exact viewport so a later/reused battle cannot accidentally inherit the hold.
+var _initial_replay_wait_viewport: SubViewport
 # 补看另一队时的播放游标是否已经到末帧（到了就停住，不再推进、也不触发结算）。
 var _spectate_done := false
 # B8: on-screen frame-rate readout (player-facing only, like PrepScreen).
@@ -165,6 +168,7 @@ func _ready() -> void:
 		if not is_inside_tree():
 			return
 		_show_team_waiting()
+		_hold_initial_replay_wait_render(OS.get_name())
 		_start_battle_music()   # start BGM immediately, before the host's board-wait
 		_battle_setup_ready = true
 		if not NetworkService.team_active:
@@ -404,10 +408,37 @@ func _process(delta: float) -> void:
 	_refresh_visuals()
 
 # --- B2: replay playback ----------------------------------------------------
+func _hold_initial_replay_wait_render(platform: String) -> void:
+	# Other platforms retain their existing cadence. This entry precedes roster
+	# creation; preparation/intro, spectating and settlement never enter this hold.
+	if platform != "iOS" or _replay_mode or _finished or not _state.is_empty():
+		return
+	if not is_instance_valid(_battle_3d_viewport) or is_instance_valid(_initial_replay_wait_viewport):
+		return
+	if _battle_3d_viewport.render_target_update_mode != SubViewport.UPDATE_ALWAYS:
+		return
+	_initial_replay_wait_viewport = _battle_3d_viewport
+	_initial_replay_wait_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+
+
+func _resume_initial_replay_wait_render() -> void:
+	var held := _initial_replay_wait_viewport
+	_initial_replay_wait_viewport = null
+	if not is_instance_valid(held):
+		return
+	var layer := held.get_parent() as CanvasItem
+	# Budgeted3DView already disables hidden layers and restores them on reveal.
+	if layer == null or layer.is_visible_in_tree():
+		held.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+
+
 func _start_replay(replay: Dictionary) -> void:
 	if not _valid_team_replay(replay):
 		_show_team_waiting()
 		return
+	# Render warmup below waits for actual draws, so release before any asset or
+	# model preparation; never infer rendering cadence from _battle_setup_ready.
+	_resume_initial_replay_wait_render()
 	_battle_setup_ready = false
 	_playback_deadline_msec = 0
 	_sim_accumulator = 0.0

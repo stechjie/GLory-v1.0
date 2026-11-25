@@ -164,6 +164,9 @@ var _reconnect_cancel_button: Button
 var _exit_dialog_from_reconnect := false
 # 排队时选的模式（casual / ranked），匹配成功入座时交给 NetworkService 记下。
 var _match_queue_mode := ""
+var _matched_connect_active := false
+var _matched_connect_attempts := 0
+var _matched_connect_generation := 0
 var _reconnect_cancel_navigation_check_hook := Callable()
 var _public_token_request_id := ""
 var _public_token_waiting_for_session := false
@@ -574,6 +577,14 @@ func _on_resume_completed(payload: Dictionary) -> void:
 	# 服务器权威数值覆盖本地
 	# 键名跟着状态信封走（E2）：round_index -> round_id、enemy_team_hp -> rival_team_hp。
 	# 快照现在还多带了连败与 PVE/Boss 计数（C5 缺的那几项）。
+	var recovered_settlement := str(payload.get("phase", "")) == NetworkService.ROOM_PREP \
+		and int(payload.get("round_id", GameState.round_index)) > GameState.round_index \
+		and payload.has("gold")
+	# 跨过结算进入下一轮：slot_gold 已包含漏收的战后收益。按余额恢复而非累加，
+	# 同回合重连仍保留本地买卖余额；重复快照在回合对齐后不会再次触发。
+	if recovered_settlement:
+		GameState.gold = maxi(0, int(payload.gold))
+		GameState.gold_spent_this_round = false
 	GameState.round_index = int(payload.get("battle_round", payload.get("round_id", GameState.round_index))) \
 		if PlaybackRecovery.needs_replay(payload) else int(payload.get("round_id", GameState.round_index))
 	GameState.team_hp = int(payload.get("team_hp", GameState.team_hp))
@@ -583,7 +594,7 @@ func _on_resume_completed(payload: Dictionary) -> void:
 	# 购买/出售都只改本地 GameState.gold，服务端 slot_gold 仅在战斗结算时更新一次，
 	# 等于"购买前"的金币。重连若用这份陈旧快照覆盖本地正确金币，金币会回退到购买前
 	# （BUG：商店购买阶段掉线重连后金币被重置）。因此未开启权威时保留本地金币不覆盖；
-	# 仅在经济账本权威开启、快照携带权威金币时才以服务端为准。
+	# 完全权威时以账本为准；非权威时仅上面的跨回合恢复采用战后余额。
 	if not _eco_state.is_empty() and bool(_eco_state.get("authoritative", false)):
 		GameState.gold = int(_eco_state.get("gold", GameState.gold))
 		GameState.gold_spent_this_round = bool(_eco_state.get("gold_spent_this_round", GameState.gold_spent_this_round))
@@ -892,6 +903,10 @@ func _return_to_login(reason := "") -> void:
 
 
 func _clear() -> void:
+	if _matched_connect_active:
+		_matched_connect_active = false
+		_matched_connect_generation += 1
+		_disconnect_matched_handlers()
 	ClientFrameBudget.apply(false)
 	_resume_replay_generation += 1
 	_resume_replay_pending.clear()
@@ -1311,6 +1326,7 @@ func _show_menu() -> void:
 	# 重连改为手动：主菜单的"游戏重连"按钮（有本地凭证才显示）才连回上一场，
 	# 不再一进菜单就偷偷自动连（那会把玩家拽进夹生半状态、按不动开始）。
 	_menu = _instantiate_screen("res://scenes/menu/MainMenu.tscn")
+	_menu.pending_match_reconnect_requested.connect(_on_pending_match_reconnect)
 	_menu.team_host_requested.connect(_on_team_host_requested)
 	_menu.team_join_requested.connect(_on_team_join_requested)
 	# 开局入口先过体验到期提醒（_gate_trials）：到期后第一次开局前弹一次。
@@ -1580,7 +1596,9 @@ func _on_tutorial_races_opened(pet_screen: Control) -> void:
 	# 神族 1/8 的进度还在，让「返回」和那张卡一起露出来，玩家看得到要看的数。
 	var god := pet_screen.call("tutorial_god_target") as Control
 	if god != null and is_instance_valid(_tutorial_followup_guide):
-		_tutorial_followup_guide.call("set_extra_focus", god)
+		# 11.22 返回键挪到了左上角：跟神族卡合并成一个洞会从左上角一路亮到卡片，
+		# 改成单独第二个洞（同成长之路「返回 + 已获得的奖励」）。
+		_tutorial_followup_guide.call("set_second_focus", god)
 
 
 # 商城棋子页集齐一族后点「去备战」：打开备战页的种族页签、看那一族。
@@ -2595,7 +2613,7 @@ func _show_match_queue(mode: String, party_queue: bool = false, party_host: bool
 	_match_queue_mode = mode
 	var panel := MatchQueuePanel.new() as Control
 	panel.call("configure", mode, party_queue, party_host)
-	panel.connect("match_ready", _on_match_ready)
+	panel.connect("match_ready", _on_match_ready, CONNECT_DEFERRED)
 	panel.connect("dismissed", _on_match_queue_dismissed)
 	ModalStack.push(panel, {
 		"id": MATCH_QUEUE_MODAL_ID,
@@ -2610,24 +2628,67 @@ func _show_match_queue(mode: String, party_queue: bool = false, party_host: bool
 
 
 func _on_match_ready() -> void:
+	if _matched_connect_active:
+		return
+	_show_matched_entering()
+	if is_instance_valid(_matched_entering_hint):
+		_matched_entering_hint.text = "正在连接对战服务器…" if LocaleManager.get_locale() != "en" else "Connecting to the battle server…"
+	_matched_connect_active = true
+	_matched_connect_attempts = 0
+	_attempt_matched_connect()
+
+
+func _attempt_matched_connect() -> void:
+	_matched_connect_attempts += 1
+	_matched_connect_generation += 1
+	var generation := _matched_connect_generation
+	print("[MATCH_ENTRY] connect attempt=%d mode=%s" % [_matched_connect_attempts, _match_queue_mode])
 	ModalStack.pop(MATCH_QUEUE_MODAL_ID)
 	for child in get_children():
 		if child.has_method("stop_party_voice"):
 			child.call("stop_party_voice")
 	var target_port := NetworkService.DEFAULT_PORT
+	_disconnect_matched_handlers()
+	get_tree().create_timer(30.0).timeout.connect(func() -> void:
+		if _matched_connect_active and generation == _matched_connect_generation:
+			_fail_matched_connect("match_entry_timeout"))
 	if NetworkService.team_active and NetworkService.remote_port != target_port:
 		NetworkService.disconnect_session()
 	elif NetworkService.team_active 			and NetworkService.state == NetworkService.SessionState.READY 			and NetworkService.team_local_slot < 0:
-		NetworkService.team_request_join_matched("ranked" if _match_queue_mode.begins_with("ranked") else "casual")
 		_watch_matched_lobby()
+		_request_matched_seat()
 		return
 	if NetworkService.team_active and NetworkService.team_local_slot >= 0:
 		NetworkService.disconnect_session()
-	if not NetworkService.team_join(NetworkService.DEFAULT_HOST, target_port):
+	NetworkService.session_changed.connect(_on_matched_session_changed)
+	if not _connect_matched_transport():
 		_fail_matched_connect(NetworkService.last_error)
 		return
-	if not NetworkService.session_changed.is_connected(_on_matched_session_changed):
-		NetworkService.session_changed.connect(_on_matched_session_changed)
+
+
+func _request_matched_seat() -> void:
+	NetworkService.team_request_join_matched("ranked" if _match_queue_mode.begins_with("ranked") else "casual")
+
+
+func _connect_matched_transport() -> bool:
+	return NetworkService.team_join(NetworkService.DEFAULT_HOST, NetworkService.DEFAULT_PORT)
+
+
+func _on_pending_match_reconnect(mode: String, match_uid: String) -> void:
+	if _matched_connect_active:
+		return
+	var player := AccountManager.player_id
+	var menu := _menu
+	var result: Dictionary = await AccountManager.fetch_match_state()
+	if not is_inside_tree() or player != AccountManager.player_id or not is_instance_valid(menu) or _menu != menu:
+		return
+	var state: Dictionary = (result.get("body", {}) as Dictionary).get("state", {})
+	if int(result.get("code", 0)) == 200 and str(state.get("state", "")) == "ready" \
+			and str(state.get("match_uid", "")) == match_uid and str(state.get("mode", "")) == mode:
+		_match_queue_mode = mode
+		_on_match_ready()
+	elif is_instance_valid(_menu):
+		_menu.show_connection_error("暂时无法恢复原匹配，请稍后重试。" if LocaleManager.get_locale() != "en" else "Cannot restore that match right now. Please retry shortly.")
 
 
 # 匹配成功之后连不上战斗服务器。
@@ -2641,6 +2702,18 @@ func _on_match_ready() -> void:
 # 闩会正确落下、轮询停掉 —— 连接失败就变成**卡在一个队伍房间已经不存在的界面上**。
 # 所以这一处是那个修复的配套，不是顺手改的。
 func _fail_matched_connect(message: String) -> void:
+	print("[MATCH_ENTRY] failed attempt=%d reason=%s" % [_matched_connect_attempts, message])
+	_disconnect_matched_handlers()
+	_matched_connect_generation += 1
+	var generation := _matched_connect_generation
+	if _matched_connect_active and _matched_connect_attempts < 3:
+		get_tree().create_timer(1.0).timeout.connect(func() -> void:
+			if _matched_connect_active and generation == _matched_connect_generation:
+				_attempt_matched_connect())
+		return
+	_matched_connect_active = false
+	if message == "match_entry_timeout":
+		message = "连接对局超时，请点击重新连接重试。" if LocaleManager.get_locale() != "en" else "Match connection timed out. Please use Reconnect to retry."
 	if not is_instance_valid(_menu):
 		_show_menu()
 	if is_instance_valid(_menu) and _menu.has_method("show_connection_error"):
@@ -2651,8 +2724,9 @@ func _on_matched_session_changed() -> void:
 	match NetworkService.state:
 		NetworkService.SessionState.READY:
 			_disconnect_matched_handlers()
-			NetworkService.team_request_join_matched("ranked" if _match_queue_mode.begins_with("ranked") else "casual")
 			_watch_matched_lobby()
+			print("[MATCH_ENTRY] connected; requesting matched seat")
+			_request_matched_seat()
 		NetworkService.SessionState.FAILED, NetworkService.SessionState.OFFLINE:
 			_disconnect_matched_handlers()
 			_fail_matched_connect(NetworkService.last_error)
@@ -2666,6 +2740,9 @@ func _watch_matched_lobby() -> void:
 func _on_matched_lobby_changed() -> void:
 	if NetworkService.team_local_slot < 0:
 		return
+	_matched_connect_active = false
+	_matched_connect_generation += 1
+	print("[MATCH_ENTRY] seated slot=%d" % NetworkService.team_local_slot)
 	_disconnect_matched_handlers()
 	# 10.10 bug 第 7 条：匹配成功**不再进自定义房间**（3v3 大厅）。
 	# 原先这里显示 Team3v3Lobby（与自定义房间同款界面，座位一个个填满），

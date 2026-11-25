@@ -1,0 +1,17 @@
+Use your built-in image generation tool to create ONE new 2D game UI asset, then save the resulting PNG as `samples/shop_button_coral_v1.png` in the current directory. Do not write code to draw it; generate it with the image tool. Do not modify any other file.
+
+The three attached images are the SAME asset slot from three existing themes of my game (sakura, ice, night-wisp). They are the style and structure authority. Match them exactly in:
+- object: a horizontal rolled scroll / log button seen from the front, two stacked rolls, a round emblem medallion in the centre, ornate end caps on the left and right
+- framing, proportions and aspect ratio (about 3.3 : 1, wide), object fills the canvas with a small margin
+- rendering: bold dark outlines, clean cel-shaded colour blocks with 2-3 tones, small crisp highlights, hand-painted cartoon game UI. NOT soft airbrush, NOT glossy jelly/glass, NOT 3D render
+- fully transparent background, no shadow on the ground, no text, no letters
+
+New theme: OCEAN CORAL.
+- scroll body: sea blue to teal, painted with gentle wave / water-ripple grain instead of wood grain
+- end caps and medallion rim: soft champagne gold, low brightness, not shiny yellow
+- centre medallion: a pale pink scallop shell with one white pearl
+- decorations in place of the flowers/vines: small pink-coral branches, a few white pearls, one small starfish, a tiny strand of seaweed
+- palette: sea blue #42B6E4, deep blue #2367AF, teal #80D8CD, shell pink #F6C5D9, coral pink #F394A7, pearl white #F9F0ED, champagne gold #D4AA6C
+- strictly NO crystals, NO gems, NO diamond shapes, NO snowflakes, NO flowers
+
+When done, reply with only the saved file path and the pixel size.
