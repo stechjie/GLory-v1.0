@@ -466,10 +466,16 @@ static func _copies(bot: Dictionary, id: String) -> int:
 # 「本回合买过」和账本是同一个标记（first_buy_round，LiveBotEconomy 接手 / 交回时对齐），
 # 玩家掉线前本回合已经买过的，AI 不会再复制一次。
 # 复制品的 cost_basis 记棋子原价（同 EconomyLedger._pet_first_buy_copy）。返回 {} = 不复制。
+# 11-26：复制是概率（PetService.first_buy_copy_rate），一回合只判一次。AI **自己不掷**：
+# 这个座位这一回合中没中由服务器掷好，LiveBotEconomy.prepare 放进 bot.pet_copy_ok_round
+# （== 当前回合才算中）。和玩家掉线前看到的是同一个结果，托管不会换来一次重掷；
+# 没人给这个字段（本机离线自测的 AI）就是不复制。
 static func _pet_first_buy_copy(bot: Dictionary, offer: Dictionary, round_index: int) -> Dictionary:
 	var first := int(bot.get("first_buy_round", -1)) != round_index
 	bot["first_buy_round"] = round_index
 	if not first or not PetService.copies_first_buy(str(bot.get("pet_id", ""))):
+		return {}
+	if int(bot.get("pet_copy_ok_round", -1)) != round_index:
 		return {}
 	var copy := {"id": str(offer.get("id", "")), "star": 1, "def": offer,
 		"cost_basis": EconomyLedger.base_unit_cost(offer)}

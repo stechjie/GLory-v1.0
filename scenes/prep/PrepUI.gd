@@ -685,21 +685,23 @@ var _sky_background: TextureRect
 # （Bootstrap._fetch_loadout）。冷启动后立刻排/进一场排位或组队对局时，摆放界面可能
 # 在皮肤回来之前就建好了 —— 那一整局都会是默认青草地（就是测试员报的这条）。
 # PrepScreen 会监听 PlayerProfile.prep_skin_changed，皮肤一到就把这些图换过来。
+# 11-26 起看队友棋盘 / 换回自己的也走这里（show_view_skin）：一律按 PrepSkin 此刻**显示**的那张
+# （PrepSkin.shown_id）贴 —— 看着队友时自己的皮肤晚到，画面照样是队友的。
 func reapply_prep_skin() -> void:
 	if is_instance_valid(_sky_background):
-		_sky_background.texture = PrepWidgets.cached_texture(PrepSkin.path("board"))
+		_sky_background.texture = PrepWidgets.skin_texture(PrepSkin.path("board"))
 		_sky_background.self_modulate = PrepSkin.tint()
-		PrepSunDappleScript.apply(_sky_background, PrepSkin.active_id == PrepSkin.DEFAULT_ID)
+		PrepSunDappleScript.apply(_sky_background, PrepSkin.shown_id() == PrepSkin.DEFAULT_ID)
 		var lawn_fx := _sky_background.get_node_or_null("PrepLawnFx") as CanvasItem
 		if lawn_fx != null:
-			lawn_fx.visible = PrepSkin.active_id == PrepSkin.DEFAULT_ID
+			lawn_fx.visible = PrepSkin.shown_id() == PrepSkin.DEFAULT_ID
 		var night_fx := _sky_background.get_node_or_null("PrepNightFx") as CanvasItem
 		if night_fx != null:
-			night_fx.visible = PrepSkin.active_id == PrepNightFxScript.SKIN_ID
-		PrepSakuraFxScript.apply_shade(_sky_background, PrepSkin.active_id == PrepSakuraFxScript.SKIN_ID)
+			night_fx.visible = PrepSkin.shown_id() == PrepNightFxScript.SKIN_ID
+		PrepSakuraFxScript.apply_shade(_sky_background, PrepSkin.shown_id() == PrepSakuraFxScript.SKIN_ID)
 		var sakura_fx := _sky_background.get_node_or_null("PrepSakuraFx") as CanvasItem
 		if sakura_fx != null:
-			sakura_fx.visible = PrepSkin.active_id == PrepSakuraFxScript.SKIN_ID
+			sakura_fx.visible = PrepSkin.shown_id() == PrepSakuraFxScript.SKIN_ID
 	_swap_prep_skin_plane("PrepBaseLayer", "board")
 	_swap_prep_skin_plane("PrepRiverBottomLayer", "river")
 	# 河面画得比默认高的皮肤要整体往下游挪（PrepSkin.river_drop）。只换图不挪位置的话，
@@ -808,7 +810,7 @@ func _build(staged: bool = false) -> void:
 	# （存成成员：皮肤晚到时要能把它换掉，见 reapply_prep_skin。）
 	_sky_background = TextureRect.new()
 	_sky_background.name = "PrepFullscreenBackground"
-	_sky_background.texture = PrepWidgets.cached_texture(PrepSkin.path("board"))
+	_sky_background.texture = PrepWidgets.skin_texture(PrepSkin.path("board"))
 	_sky_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_sky_background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	_sky_background.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -819,20 +821,20 @@ func _build(staged: bool = false) -> void:
 	_sky_background.self_modulate = PrepSkin.tint()
 	add_child(_sky_background)
 	# 11.12：草地上的光斑跟着风一明一暗（默认青草地皮肤才开）
-	PrepSunDappleScript.apply(_sky_background, PrepSkin.active_id == PrepSkin.DEFAULT_ID)
+	PrepSunDappleScript.apply(_sky_background, PrepSkin.shown_id() == PrepSkin.DEFAULT_ID)
 	# 符文石的光 + 树旁的光蝴蝶（只在默认青草地）
 	var lawn_fx := preload("res://scenes/prep/PrepLawnFx.gd").new()
 	_sky_background.add_child(lawn_fx)
-	lawn_fx.visible = PrepSkin.active_id == PrepSkin.DEFAULT_ID
+	lawn_fx.visible = PrepSkin.shown_id() == PrepSkin.DEFAULT_ID
 	# 11.16：夜荧光皮肤自己的一套（星星灯 / 石灯笼 / 荧光蛾 / 蘑菇孢子 / 游走的荧光团）
 	var night_fx := PrepNightFxScript.new()
 	_sky_background.add_child(night_fx)
-	night_fx.visible = PrepSkin.active_id == PrepNightFxScript.SKIN_ID
+	night_fx.visible = PrepSkin.shown_id() == PrepNightFxScript.SKIN_ID
 	# 11.16：樱花皮肤的一套（树影摇晃 / 石灯笼 / 蝴蝶 / 花吹雪）
-	PrepSakuraFxScript.apply_shade(_sky_background, PrepSkin.active_id == PrepSakuraFxScript.SKIN_ID)
+	PrepSakuraFxScript.apply_shade(_sky_background, PrepSkin.shown_id() == PrepSakuraFxScript.SKIN_ID)
 	var sakura_fx := PrepSakuraFxScript.new()
 	_sky_background.add_child(sakura_fx)
-	sakura_fx.visible = PrepSkin.active_id == PrepSakuraFxScript.SKIN_ID
+	sakura_fx.visible = PrepSkin.shown_id() == PrepSakuraFxScript.SKIN_ID
 	if staged:
 		StartupTrace.mark("tutorial_background_built")
 		await get_tree().process_frame
@@ -2810,8 +2812,10 @@ func enter_teammate_view(slot: int) -> void:
 	if GameState.tutorial_mode or not NetworkService.team_active or not teammate:
 		return
 	if viewing_teammate():
-		exit_teammate_view()
+		exit_teammate_view(false)   # 直接从一个队友切到另一个：不先换回自己的皮肤再换走
 	teammate_view_slot = slot
+	# 11-26：棋盘换成这位队友的皮肤（AI 队友是它这一局的随机皮肤），见 show_view_skin。
+	show_view_skin(PrepSkin.seat_skin(NetworkService.team_seat_profiles, NetworkService.team_seat_ai_skins, slot))
 	_board_hud.board_source = shown_board
 	_board_hud.bench_source = shown_bench
 	if not NetworkService.team_prep_boards_changed.is_connected(_on_teammate_board_changed):
@@ -2844,12 +2848,15 @@ func enter_teammate_view(slot: int) -> void:
 	_apply_teammate_board()
 
 
-func exit_teammate_view() -> void:
+# restore_skin = false 只给 enter_teammate_view 用：马上要切到另一个队友，皮肤由它接着换。
+func exit_teammate_view(restore_skin: bool = true) -> void:
 	if not viewing_teammate():
 		return
 	teammate_view_slot = -1
 	teammate_view_board = []
 	teammate_view_bench = []
+	if restore_skin:
+		show_view_skin("")
 	if NetworkService.team_prep_boards_changed.is_connected(_on_teammate_board_changed):
 		NetworkService.team_prep_boards_changed.disconnect(_on_teammate_board_changed)
 	for node in [_teammate_banner, _teammate_shield]:
@@ -2888,6 +2895,110 @@ func _apply_teammate_board() -> void:
 	_board_hud.refresh_board()
 	_board_hud.refresh_bench()
 	_synergy.show_teammate_board(teammate_view_board)
+
+
+# --- 看别人的棋盘时用他的棋盘皮肤（2026-11-26）---------------------------------------
+#
+# 用户 11-26：看队友棋盘、观战时，棋盘显示**那个人**的皮肤（AI 队友是它这一局的随机皮肤），
+# 直接换、不做过渡；被看的人那边什么都不提示。皮肤 id 从座位资料来（PrepSkin.seat_skin），
+# 换皮肤 = 设好 PrepSkin.view_id 再走一遍皮肤晚到用的 reapply_prep_skin。
+# 观战是建界面之前就设好（PrepScreen._ready_spectator），不走这里。
+#
+# 一套皮肤的图有 40~50MB（底图 2560×1440、无损导入），在主线程同步读的话，低端安卓点「查看棋盘」
+# 会顿一下。所以先在后台线程把那套图读好，全部到齐再一次换上：读的这一小会儿棋子已经是队友的，
+# 地面还是原来那张。换回自己的也走同一条路（自己那套 3D 层的图可能已经被放掉了）。
+# 别人皮肤的图不进 PrepWidgets 的进程级缓存（PrepWidgets.skin_texture），换回来就释放。
+# 离开摆放界面时 PrepScreen._exit_tree 调 drop_view_skin 收尾。
+
+var _view_skin_serial := 0                    # 每要一次 +1：读完时已经不是最新那次要的，就不换
+var _view_skin_want := ""                     # 正在等后台读取的那一次要换成谁（"" = 自己的）
+var _view_skin_want_serial := -1
+var _view_skin_pending: Array[String] = []    # 已经发出、还没取回的后台读取
+var _view_skin_loaded: Array[Resource] = []   # 取回来的图先拿在手里，换上之前别被释放
+
+
+# skin_id = 要显示谁的皮肤；空串 = 换回自己的。
+func show_view_skin(skin_id: String) -> void:
+	_view_skin_serial += 1   # 之前还在读的那次（如果有）作废
+	var look := skin_id if not skin_id.is_empty() else PrepSkin.active_id
+	if look == PrepSkin.shown_id():
+		# 画面上已经是这张（比如队友和自己用同一张）：只记下现在显示的是谁的，不用重贴。
+		PrepSkin.view_id = skin_id
+		return
+	if not is_inside_tree():
+		_apply_view_skin(skin_id)
+		return
+	var wait := false
+	for path in _view_skin_paths(look):
+		if path in _view_skin_pending:
+			wait = true
+		elif not ResourceLoader.has_cached(path) and ResourceLoader.exists(path):
+			if ResourceLoader.load_threaded_request(path) == OK:
+				_view_skin_pending.append(path)
+				wait = true
+	if not wait:
+		_apply_view_skin(skin_id)   # 图都在内存里：当场换
+		return
+	_view_skin_want = skin_id
+	_view_skin_want_serial = _view_skin_serial
+	if not get_tree().process_frame.is_connected(_poll_view_skin):
+		get_tree().process_frame.connect(_poll_view_skin)
+
+
+# 离开摆放界面（PrepScreen._exit_tree）：还在后台读的要取回来 —— 不取的话那几张图会一直挂在
+# ResourceLoader 里；再把 PrepSkin.view_id 清回空串，下一个画面用的是自己的皮肤。
+# 取回还没读完的会等它读完：只有「刚点查看棋盘 / 刚点回来，回合就开打了」才会碰上。
+func drop_view_skin() -> void:
+	_view_skin_serial += 1
+	_stop_view_skin_poll()
+	for path in _view_skin_pending:
+		var _discard: Resource = ResourceLoader.load_threaded_get(path)
+	_view_skin_pending.clear()
+	_view_skin_loaded.clear()
+	_view_skin_want_serial = -1
+	PrepSkin.view_id = ""
+
+
+func _apply_view_skin(skin_id: String) -> void:
+	PrepSkin.view_id = skin_id
+	reapply_prep_skin()
+
+
+# 换一张皮肤要读的东西：六张图（PrepSkin.SLOTS），用 pulse 波光的皮肤再加那个 shader。
+func _view_skin_paths(skin_id: String) -> Array[String]:
+	var out: Array[String] = []
+	for path in PrepSkin.paths_for(skin_id):
+		out.append(str(path))
+	if PrepSkin.river_glow_style_for(skin_id) == "pulse":
+		out.append(PREP_RIVER_NET_PULSE_SHADER)
+	return out
+
+
+func _poll_view_skin() -> void:
+	for path in _view_skin_pending.duplicate():
+		var status := ResourceLoader.load_threaded_get_status(path)
+		if status == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+			continue
+		_view_skin_pending.erase(path)
+		# 读失败的也要取一次（拿到 null），把这条读取从 ResourceLoader 里清掉；
+		# 换上时 reapply_prep_skin 拿不到图就保持原来那张，和皮肤晚到那条路一样。
+		if status == ResourceLoader.THREAD_LOAD_LOADED or status == ResourceLoader.THREAD_LOAD_FAILED:
+			var res: Resource = ResourceLoader.load_threaded_get(path)
+			if res != null:
+				_view_skin_loaded.append(res)
+	if not _view_skin_pending.is_empty():
+		return
+	_stop_view_skin_poll()
+	if _view_skin_want_serial == _view_skin_serial:
+		_apply_view_skin(_view_skin_want)
+	_view_skin_want_serial = -1
+	_view_skin_loaded.clear()
+
+
+func _stop_view_skin_poll() -> void:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree != null and tree.process_frame.is_connected(_poll_view_skin):
+		tree.process_frame.disconnect(_poll_view_skin)
 
 
 # 卡片上的「举报」。卡片先收起（举报面板是另一层，叠着看不清下面写了什么），

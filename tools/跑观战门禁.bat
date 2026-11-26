@@ -1,8 +1,4 @@
 @echo off
 cd /d "%~dp0.."
-echo Running spectator gates (3 checks) via tools\run_gates.ps1 ...
-echo.
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\run_gates.ps1 -Names spectator_check,spectator_lobby_check,spectator_match_check
-echo.
-echo Done. Summary: reports\checks\summary.json
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\run_gates.ps1 -Names audio_0921_check,audio_0922_check,ui_feedback_check,voice_music_check,boss_battle_bgm_check,spectator_check
 pause

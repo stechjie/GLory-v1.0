@@ -60,6 +60,12 @@ static func new_prep(start_gold: int) -> Dictionary:
 		# 记回合号而不是布尔：不依赖 reset_round 的调用时机，AI 托管（LiveBotEconomy）
 		# 和客户端（GameState.first_buy_round）都按同一个数对齐。
 		"first_buy_round": -1,
+		# 猴子的复制成功率是概率（11-26）。服务器每回合给座位掷一次，结果记在这两个回合号上：
+		#   pet_copy_roll_round = 已经掷过的回合；pet_copy_ok_round = 掷中的回合（没中就停在旧值）。
+		# 同样记回合号：重连、AI 托管、超时自动买问到的都是同一个结果，不会重掷。
+		# 只由 NetworkService._room_pet_copy_ok_round 读写，账本自己不碰。
+		"pet_copy_roll_round": -1,
+		"pet_copy_ok_round": -1,
 	}
 
 # 每回合重置的部分。金币和 roster **不重置** —— 那是跨回合累积的。
@@ -229,6 +235,10 @@ static func _buy(prep: Dictionary, payload: Dictionary, ctx: Dictionary) -> Dict
 	return {"ok": true, "result": result}
 
 # 猴子（出战宠物效果 first_buy_copy，用户 11-25 定）：每回合买的第一个棋子免费多一张 1 星。
+# 11-26 起不是必中：成功率按打完的 PvP 回合数涨（25% 起，每个 +25%，PetService.first_buy_copy_rate），
+# 一回合只判一次，没中这回合就没有了。**骰子不在这里掷** —— 调用方把「这个座位这一回合中没中」
+# 放进 ctx.pet_first_buy_copy（服务器：NetworkService._room_pet_copy_ok_round，回合内只掷一次，
+# 同一个结果也随 room_state 发给客户端）。
 #
 # 当作一次正常购买，只是不扣钱：参与合成、触发购买时的效果；客户端按「① 棋盘上能合成 →
 # ② 待命区能合成 → ③ 待命区空位 → ④ 按出售规则直接卖掉」安排它（不会自动上场）。
@@ -237,8 +247,10 @@ static func _buy(prep: Dictionary, payload: Dictionary, ctx: Dictionary) -> Dict
 #   * 倒计时到点、系统替玩家买的那一笔（战斗阶段放行的 timeout_deploy buy）也自然带上它。
 #
 # 账本不知道棋子摆在哪一格，所以「留下还是没位置卖掉」由客户端在 payload.pet_copy.sold 里说；
-# 资格（出战宠物是不是猴子、这是不是本回合第一笔）和金额都在这里算 —— 客户端就算改了，
+# 资格（出战宠物是不是猴子、这一回合中没中、这是不是本回合第一笔）和金额都在这里算 —— 客户端就算改了，
 # 也只能在「留一枚卖出值半价的棋子」和「直接拿那半价」之间选，刷不出钱。
+# 客户端这一笔**没带** payload.pet_copy = 它自己没拿复制品（比如它那边认为本回合已经买过），
+# 账本跟着不给：影子期客户端的棋盘才是真相，账本凭空多记一枚只会让两边对不上。
 # 复制品的 cost_basis 记**棋子原价**（base_unit_cost，不是 0，也不是带折扣的实付价）：
 # 卖出退一半与客户端 _sell_refund_for_cell（原价 × 0.5）一致，合成后相加也不会把这枚算成白给的。
 #
@@ -250,11 +262,11 @@ static func _pet_first_buy_copy(prep: Dictionary, unit_def: Dictionary, payload:
 	prep["first_buy_round"] = round_index
 	if not first or not bool(ctx.get("pet_first_buy_copy", false)):
 		return {}
+	if typeof(payload.get("pet_copy")) != TYPE_DICTIONARY:
+		return {}
+	var request: Dictionary = payload["pet_copy"]
 	var unit_id := str(unit_def.get("id", ""))
 	var basis := base_unit_cost(unit_def)
-	var request: Dictionary = {}
-	if typeof(payload.get("pet_copy")) == TYPE_DICTIONARY:
-		request = payload["pet_copy"]
 	# 名单满了也只能卖：账本里放不下第二枚（与 _buy 的 roster_full 同一个上限）。
 	if bool(request.get("sold", false)) or _roster_size(prep) >= int(ctx.get("roster_cap", 64)):
 		var refund := sell_refund(basis)

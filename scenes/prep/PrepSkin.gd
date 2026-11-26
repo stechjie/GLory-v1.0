@@ -8,8 +8,10 @@ extends RefCounted
 # 文件名就是下面 SLOTS 的键（board.png、river.png …），外加卡片用的 preview.png。
 # 缺哪张就沿用默认那张，所以加皮肤只放图、改配置，不改代码。
 #
-# **只有自己看得见**：游戏里没有看别人摆放界面的功能（观战在战斗画面），
-# 所以皮肤不进出战名片，战斗服务器也不知道它。
+# **谁的棋盘就用谁的皮肤**（11-26）：自己的摆放界面用自己的（active_id）；看队友棋盘、观战某个座位时，
+# 整块棋盘换成那个人的（view_id，见下）。别人的皮肤 id 来自出战名片（11-18 起皮肤进名片，
+# 战斗服务器放进 seat_profiles[slot].prep_skin 随房间状态下发；AI 是服务器随机的 seat_ai_skins），
+# 见 seat_skin()。
 #
 # 这里只给路径、不 load：战斗服务器包不带导入资源，专服上解析到的脚本
 # 一旦 preload 贴图，冷启动就失败。
@@ -46,15 +48,41 @@ const RIVER_GLOW_STYLES := ["slide", "pulse"]
 # 当前用哪张。游戏里只有 PlayerProfile 写它（账号服务器上存的那张）；皮肤预览场景会临时改。
 static var active_id := DEFAULT_ID
 
+# 摆放界面此刻显示的是**别人**的棋盘时，显示他的皮肤（11-26 用户要的：看队友棋盘、观战）。
+# 空串 = 显示自己的（active_id）。只有摆放界面写它（PrepUI.show_view_skin / PrepScreen._ready_spectator），
+# 离开那个画面必须清回空串（PrepScreen._exit_tree；PrepScreen._ready 开头再兜底清一次）。
+#
+# 摆放界面取图和各项参数一律按「显示中的那张」（shown_id）。不跟着它走的只有 refresh_fx() ——
+# 那是自己商店刷新、战斗里自己那一路清场扫光的「动作」，永远是自己的皮肤。
+static var view_id := ""
+
 # 服务器上的皮肤本进程内**成功拉回来过至少一次**。冷启动时 Bootstrap 是异步拉的，
 # 而排位/组队对局可能在它回来之前就建好了摆放界面（那时 active_id 还是默认）。
 # PrepScreen._ready 用它判断「要不要进对局时再拉一次」（见 10.12 反馈第 7 条）。
 static var loaded := false
 
 
-# 当前皮肤这个槽位该用哪张图。
+# 摆放界面此刻显示的是哪张：在看别人的棋盘就是他的，否则是自己的。
+static func shown_id() -> String:
+	return view_id if not view_id.is_empty() else active_id
+
+
+# 某个座位的棋盘皮肤 id（看队友棋盘、观战用）。profiles / ai_skins 传 NetworkService.team_seat_profiles /
+# team_seat_ai_skins：真人用出战名片带来的（seat_profiles[slot].prep_skin，默认皮肤不带这个字段；
+# 掉线被 AI 接手的真人也还是这张），真 AI 用服务器随机、整局不变的那张。都没有（默认皮肤、
+# 还没上 11-18 那版的战斗服务器）= 默认。和 BattleVfx._seat_refresh_fx 同一个口径。
+# 键可能是整数也可能是字符串（服务器进程重启后从 JSON 恢复的房间是字符串），两种都认。
+static func seat_skin(profiles: Dictionary, ai_skins: Dictionary, slot: int) -> String:
+	var profile: Variant = profiles.get(slot, profiles.get(str(slot), {}))
+	var skin := str((profile as Dictionary).get("prep_skin", "")) if profile is Dictionary else ""
+	if skin.is_empty():
+		skin = str(ai_skins.get(slot, ai_skins.get(str(slot), "")))
+	return skin if not skin.is_empty() else DEFAULT_ID
+
+
+# 摆放界面此刻显示的那张皮肤，这个槽位该用哪张图。
 static func path(slot: String) -> String:
-	return path_for(active_id, slot)
+	return path_for(shown_id(), slot)
 
 
 # 某张皮肤这个槽位该用哪张图。皮肤没给这张、或者这个包里根本没有这张皮肤，就用默认那张。
@@ -66,11 +94,16 @@ static func path_for(skin_id: String, slot: String) -> String:
 	return own if ResourceLoader.exists(own) else fallback
 
 
-# 当前皮肤的全部图（进摆放界面前预热用）。
+# 当前显示的那张皮肤的全部图（进摆放界面前预热用）。
 static func active_paths() -> Array:
+	return paths_for(shown_id())
+
+
+# 某张皮肤的全部图（看别人的棋盘前在后台先读好，PrepUI.show_view_skin）。
+static func paths_for(skin_id: String) -> Array:
 	var out: Array = []
 	for slot in SLOTS:
-		out.append(path(slot))
+		out.append(path_for(skin_id, slot))
 	return out
 
 
@@ -82,7 +115,7 @@ static func preview_path(skin_id: String) -> String:
 
 
 static func firefly_color() -> Color:
-	var raw: Variant = entry(active_id).get("firefly_color", null)
+	var raw: Variant = entry(shown_id()).get("firefly_color", null)
 	if raw is Array and (raw as Array).size() == 3:
 		return Color(float(raw[0]), float(raw[1]), float(raw[2]))
 	return FIREFLY_DEFAULT
@@ -97,7 +130,7 @@ static func firefly_color() -> Color:
 # 河面星光和石台四周光点的颜色。默认是青蓝（各自的默认色由调用方给），
 # 粉色的樱花皮肤上青蓝很突兀，在目录里写 sparkle_color = [r, g, b] 换掉。
 static func sparkle_color(fallback: Color) -> Color:
-	var raw: Variant = entry(active_id).get("sparkle_color", null)
+	var raw: Variant = entry(shown_id()).get("sparkle_color", null)
 	if raw is Array and (raw as Array).size() == 3:
 		return Color(float(raw[0]), float(raw[1]), float(raw[2]))
 	return fallback
@@ -107,7 +140,7 @@ static func sparkle_color(fallback: Color) -> Color:
 # 11-18 实渲量过：冰雪、樱花一半以上的画面接近白，棋子名字和白字压在上面看不清，各压到 0.85。
 # 只压这三张垫底的图；棋子、萝卜、按钮、特效不动。
 static func brightness() -> float:
-	return clampf(float(entry(active_id).get("brightness", 1.0)), 0.5, 1.0)
+	return clampf(float(entry(shown_id()).get("brightness", 1.0)), 0.5, 1.0)
 
 
 # 上面那个倍数做成的染色（贴图材质的 albedo_color / 2D 底图的 self_modulate 直接用）。
@@ -117,25 +150,31 @@ static func tint() -> Color:
 
 
 static func river_drop() -> float:
-	return clampf(float(entry(active_id).get("river_drop", 0.0)), 0.0, 0.25)
+	return clampf(float(entry(shown_id()).get("river_drop", 0.0)), 0.0, 0.25)
 
 
 static func river_glow() -> bool:
-	return bool(entry(active_id).get("river_glow", true))
+	return bool(entry(shown_id()).get("river_glow", true))
 
 
 # 流动波光怎么动："slide" 把高光图横着滑（默认）/ "pulse" 图不动、明暗波顺着水面的网纹走。
 # 河面上自己画了发光网纹、岸边装饰又很亮的皮肤（夜荧光）用 pulse，不然装饰物会拖着重影漂。
 static func river_glow_style() -> String:
-	var kind := str(entry(active_id).get("river_glow_style", RIVER_GLOW_STYLES[0]))
+	return river_glow_style_for(shown_id())
+
+
+static func river_glow_style_for(skin_id: String) -> String:
+	var kind := str(entry(skin_id).get("river_glow_style", RIVER_GLOW_STYLES[0]))
 	return kind if kind in RIVER_GLOW_STYLES else RIVER_GLOW_STYLES[0]
 
 
 static func ambient() -> String:
-	var kind := str(entry(active_id).get("ambient", AMBIENT_KINDS[0]))
+	var kind := str(entry(shown_id()).get("ambient", AMBIENT_KINDS[0]))
 	return kind if kind in AMBIENT_KINDS else AMBIENT_KINDS[0]
 
 
+# 自己商店刷新、战斗里自己那一路清场用的特效：永远是**自己的**皮肤，不跟 view_id 走（看别人棋盘时商店是收起的）。
+# 只是「显示」的地方（刷新键中间那个图案）用 refresh_fx_for(shown_id())。
 static func refresh_fx() -> String:
 	return refresh_fx_for(active_id)
 

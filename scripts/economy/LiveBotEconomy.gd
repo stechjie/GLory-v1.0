@@ -30,6 +30,9 @@ static func prepare(room: Dictionary) -> Dictionary:
 		NetworkService._bot_choose_pending_treasures(room, slot, bots[slot])
 		bots[slot]["final_round"] = 13 if str(room.get("ruleset", "normal")) == "seedling" else 21
 		bots[slot]["carrot_bonus_rate"] = PetService.carrot_bonus_rate(pet)
+		# 猴子：这个座位这一回合复制中没中，用服务器掷的那一个结果（玩家掉线前看到的也是它），
+		# AI 自己不掷（BotPlayer._pet_first_buy_copy）。离线自测的本机房间不掷，恒为 -1。
+		bots[slot]["pet_copy_ok_round"] = NetworkService._room_pet_copy_ok_round(room, slot)
 		bots[slot]["stones"] = NetworkService._room_team_stones(room, slot)
 		bots[slot]["team_discount"] = NetworkService._room_team_has_clearance_sale(room, slot)
 		bots[slot]["ai_level"] = level_for_slot(room, slot)

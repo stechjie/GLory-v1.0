@@ -328,15 +328,18 @@ func _structure_client() -> void:
 	_h.expect(_has_live_code(chat, "RoomInvite.is_expired("),
 		"chat_expiry_call", "点「立即参与」必须过 RoomInvite.is_expired 这一关")
 
-	# Team3v3Lobby：点好友名发邀请 + 亮一下 + 走限流。
+	# Team3v3Lobby：好友卡片上点「邀请」发邀请 + 亮一下 + 走限流。
+	# （11-26 起点好友名是弹好友卡片，不再一点就发 —— 见 lobby_row_opens_card。）
 	_h.expect(_has_live_code(lobby, "RoomInvite.send_blocked_reason"),
 		"lobby_rate", "大厅发邀请前必须过 send_blocked_reason（要求 4）")
 	_h.expect(_has_live_code(lobby, "RoomInvite.make_payload"),
 		"lobby_payload", "大厅邀请必须带 make_payload 造的 payload")
 	_h.expect(_has_live_code(lobby, "_flash_row("),
 		"lobby_flash", "点击成功要亮一下（要求 1）")
-	_h.expect(_has_live_code(lobby, "gui_input.connect"),
-		"lobby_clickable", "朋友列表每一行必须可点（点击好友 ID 即邀请）")
+	_h.expect(_has_live_code(lobby, "row.pressed.connect(_open_friend_card.bind(code, row))"),
+		"lobby_row_opens_card", "朋友列表每一行必须可点，点了弹好友卡片（11-26：不再一点就邀请）")
+	_h.expect(_has_live_code(lobby, "_on_invite_friend(code, button, _friend_room_id(_friend_entry(code)))"),
+		"lobby_card_invites", "好友卡片上的「邀请」必须走 _on_invite_friend（限流 / 去重 / 同房间判断都在那里）")
 
 	# Main：把信号接到已有的加入路径。
 	_h.expect(_has_live_code(main, "join_room_requested.connect"),
@@ -379,7 +382,7 @@ func _structure_client() -> void:
 	# 点击反馈的顺序（要求 1）：必须**先亮一下、再判限流**。
 	# 反过来的话，「同一房间已经邀请过」时点了什么都不发生 —— 玩家以为没点到，
 	# 而那正是实测「点击没有亮一下」的原因。
-	var flash_at := lobby.find("_flash_row(row)")
+	var flash_at := lobby.find("_flash_row(button)")
 	var check_at := lobby.find("send_blocked_reason")
 	_h.expect(flash_at >= 0 and check_at >= 0 and flash_at < check_at, "lobby_flash_first",
 		"必须先 _flash_row 再 send_blocked_reason，实测 flash@%d check@%d" % [flash_at, check_at])

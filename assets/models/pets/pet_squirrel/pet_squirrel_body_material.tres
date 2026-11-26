@@ -1,0 +1,24 @@
+[gd_resource type="ShaderMaterial" load_steps=5 format=3]
+
+[ext_resource type="Shader" path="res://shaders/ba_toon.gdshader" id="1_toon"]
+[ext_resource type="Texture2D" path="res://assets/models/pets/pet_squirrel/pet_squirrel_albedo.jpg" id="2_albedo"]
+[ext_resource type="Shader" path="res://shaders/ba_outline.gdshader" id="3_outline"]
+
+; 松鼠（11-26 换成 Glory_Squirrel 新模型）的身体材质。颜色贴图取自 Glory_Squirrel.blend 里打包的那张（FBX 只存了文件名）。
+; 与 pet_cat_body_material.tres 同一套参数：BA 卡通着色（ba_toon）+ 屏幕像素宽描边（ba_outline）。
+; FBX 导入时丢掉了内嵌贴图（.import 的 fbx/embedded_image_handling=0），颜色只来自这张 albedo。
+
+[sub_resource type="ShaderMaterial" id="Outline"]
+render_priority = -1
+shader = ExtResource("3_outline")
+shader_parameter/albedo_texture = ExtResource("2_albedo")
+shader_parameter/albedo_color = Color(1, 1, 1, 1)
+shader_parameter/outline_tint = Color(0.3, 0.28, 0.32, 1)
+shader_parameter/outline_px = 2.0
+
+[resource]
+resource_name = "pet_squirrel_body_material"
+next_pass = SubResource("Outline")
+shader = ExtResource("1_toon")
+shader_parameter/albedo_color = Color(1, 1, 1, 1)
+shader_parameter/albedo_texture = ExtResource("2_albedo")

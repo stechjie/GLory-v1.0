@@ -23,6 +23,14 @@ extends Node
 #     皮肤改用它自己那张当波光源。只换显隐不换图的话，樱花会顶着草地那条青蓝流光
 #     （实测就是这样，玩家反馈"河流怪怪的"）。
 #   E 接线本身：PrepScreen 必须真连了信号（连不上时 B 会红——由 B 覆盖）
+#
+# 11-26 加（用户：看队友棋盘、观战时显示**那个人**的皮肤，直接换）：
+#   H 座位 → 皮肤 id（PrepSkin.seat_skin）：名片优先、AI 用随机那张、整数 / 字符串键都认、都没有 = 默认
+#   I 看别人的棋盘（PrepUI.show_view_skin）：各层换成他的；自己的 active_id / 刷新特效不动；
+#     别人的底图不进进程级缓存；看着别人时自己的皮肤晚到，画面不被顶回来；换回来是自己（新）的那张
+#   J 自己的皮肤关了波光（冰雪）也要把波光层建好藏起来，看樱花队友时才显示得出来；
+#     离开摆放界面 view_id 必须清回空串（不然下一回合自己的棋盘顶着队友的皮肤）
+#   K 观战：摆放界面用被观战那个座位的皮肤，不是观战者自己的；离开时同样清掉
 
 const H := preload("res://tools/CheckHarness.gd")
 const PrepSkinC := preload("res://scenes/prep/PrepSkin.gd")
@@ -30,6 +38,8 @@ const PREP := preload("res://scenes/prep/PrepScreen.tscn")
 const PrepBoardC := preload("res://scenes/prep/PrepBoardModels.gd")
 const ICE := "prep_skin_ice"
 const SELF_GLOW := "prep_skin_sakura"   # 自带河面图、且没关波光的皮肤
+const NIGHT := "prep_skin_nightwisp"    # I / K 用：前面几段没当过「自己的」，检查它不进进程级缓存
+const PrepWidgetsC := preload("res://scenes/prep/PrepWidgets.gd")
 const DEFAULT := "prep_skin_default"
 const ICE_FIREFLY := Color(0.86, 0.95, 1.0)
 
@@ -51,12 +61,17 @@ func _ready() -> void:
 	await _section_arrive(prep)
 	await _section_self_glow(prep)
 	await _section_revert(prep)
+	_section_seat_skin()
+	await _section_view(prep)
 
 	# 收尾：断开信号依赖、还原静态状态
 	prep.queue_free()
 	await _settle(null, 3)
+	await _section_glow_built_and_exit()
+	await _section_spectator()
 	PrepSkinC.active_id = saved
 	PrepSkinC.loaded = saved_loaded
+	PrepSkinC.view_id = ""
 	h.finish(get_tree())
 
 
@@ -152,7 +167,123 @@ func _section_revert(prep: Control) -> void:
 			"revert_river_z", "换回草地后河面应回到原位，实为 %.3f" % _layer_z(prep, "PrepRiverBottomLayer"))
 
 
+# H：座位 → 皮肤 id。和 BattleVfx._seat_refresh_fx 同一个口径。
+func _section_seat_skin() -> void:
+	h.expect(PrepSkinC.seat_skin({1: {"prep_skin": ICE}}, {}, 1) == ICE, "seat_skin_profile_int_key",
+		"名片上带了皮肤（整数键）应取名片上的")
+	h.expect(PrepSkinC.seat_skin({"1": {"prep_skin": ICE}}, {}, 1) == ICE, "seat_skin_profile_str_key",
+		"服务器重启后从 JSON 恢复的房间键是字符串，也要认")
+	h.expect(PrepSkinC.seat_skin({2: {"player_name": "AI"}}, {"2": SELF_GLOW}, 2) == SELF_GLOW, "seat_skin_ai",
+		"AI 座位用服务器随机的那张（seat_ai_skins）")
+	h.expect(PrepSkinC.seat_skin({4: {"prep_skin": ICE}}, {4: SELF_GLOW}, 4) == ICE, "seat_skin_profile_first",
+		"名片上有就用名片上的（同 BattleVfx._seat_refresh_fx）")
+	h.expect(PrepSkinC.seat_skin({5: {"player_name": "x"}}, {}, 5) == DEFAULT, "seat_skin_default",
+		"默认皮肤的名片不带 prep_skin：应是默认")
+	h.expect(PrepSkinC.seat_skin({}, {}, 0) == DEFAULT, "seat_skin_missing",
+		"座位资料里什么都没有（旧服务器）：应是默认")
+
+
+# I：看别人的棋盘（PrepUI.show_view_skin）。这时自己是草地。
+func _section_view(prep: Control) -> void:
+	var other := NIGHT if PrepSkinC.has_skin(NIGHT) else ICE
+	PrepSkinC.active_id = DEFAULT
+	prep.call("show_view_skin", other)
+	var applied: bool = await _wait_view_id(other)
+	h.expect(applied, "view_applied", "show_view_skin(%s) 之后应换上（后台读完就换），等了 600 帧还没换" % other)
+	h.expect(_path_of_slot(prep, "PrepFullscreenBackground") == _own(other, "board"), "view_bg2d_other",
+		"看别人的棋盘时 2D 垫底应是他的皮肤，实为 %s" % _path_of_slot(prep, "PrepFullscreenBackground"))
+	h.expect(_plane_path(prep, "PrepRiverBottomLayer") == _own(other, "river"), "view_river_other",
+		"看别人的棋盘时河流应是他的皮肤")
+	h.expect(_plane_path(prep, "PrepStandbyBgLayer") == _own(other, "bench"), "view_bench_other",
+		"看别人的棋盘时待命区应是他的皮肤")
+	h.expect(PrepSkinC.active_id == DEFAULT, "view_keeps_own_skin",
+		"看别人的棋盘不能改自己的皮肤（active_id），实为 %s" % PrepSkinC.active_id)
+	h.expect(PrepSkinC.refresh_fx() == PrepSkinC.refresh_fx_for(DEFAULT), "view_keeps_own_refresh_fx",
+		"自己的刷新 / 清场特效永远按自己的皮肤，不跟 view_id 走")
+	h.expect(not PrepWidgetsC._texture_cache.has(_own(other, "board")), "view_not_cached",
+		"别人的底图不能进 PrepWidgets 的进程级缓存（那个缓存从来不清，会一直占着内存）")
+	# 看着别人的时候，自己的皮肤晚到（冷启动刚拉回来）：画面还得是别人的
+	PrepSkinC.active_id = ICE
+	PlayerProfile.prep_skin_changed.emit()
+	await _settle(prep, 6)
+	h.expect(_path_of_slot(prep, "PrepFullscreenBackground") == _own(other, "board"), "view_survives_own_arrival",
+		"看别人的棋盘时自己的皮肤晚到，画面不能被顶回自己的")
+	# 回到自己的棋盘：是自己**现在**的皮肤（刚到的冰雪）
+	prep.call("show_view_skin", "")
+	applied = await _wait_view_id("")
+	h.expect(applied, "view_back_applied", "show_view_skin(\"\") 之后应换回自己的")
+	h.expect(_path_of_slot(prep, "PrepFullscreenBackground") == _own(ICE, "board"), "view_back_bg2d_own",
+		"换回自己的棋盘后 2D 垫底应是自己（冰雪）的，实为 %s" % _path_of_slot(prep, "PrepFullscreenBackground"))
+	h.expect(_plane_path(prep, "PrepStandbyBgLayer") == _own(ICE, "bench"), "view_back_bench_own",
+		"换回自己的棋盘后待命区应是自己（冰雪）的")
+	PrepSkinC.active_id = DEFAULT
+	PlayerProfile.prep_skin_changed.emit()
+	await _settle(prep, 6)
+
+
+# J：自己冰雪（关了波光）建的摆放界面，波光层也要建好藏着；看樱花队友时显示出来。
+#    然后在「看着队友」的状态下直接离开摆放界面：view_id 要清回空串。
+func _section_glow_built_and_exit() -> void:
+	PrepSkinC.active_id = ICE
+	var prep: Control = PREP.instantiate()
+	add_child(prep)
+	await _settle(prep, 14)
+	var flow := prep.find_child("PrepRiverFlowBottom", true, false)
+	h.expect(is_instance_valid(flow), "glow_layer_built_when_off",
+		"自己是冰雪（river_glow=false）也要把波光层建好，不然换成要波光的皮肤时找不到这层")
+	if is_instance_valid(flow):
+		h.expect(not (flow as Node3D).visible, "glow_layer_hidden_when_off", "冰雪下波光层应藏起来")
+	if PrepSkinC.has_skin(SELF_GLOW):
+		prep.call("show_view_skin", SELF_GLOW)
+		var applied: bool = await _wait_view_id(SELF_GLOW)
+		if is_instance_valid(flow):
+			h.expect(applied and (flow as Node3D).visible, "view_glow_on",
+				"自己冰雪、看 %s 的棋盘：波光层应显示" % SELF_GLOW)
+	prep.queue_free()
+	await _settle(null, 3)
+	h.expect(PrepSkinC.view_id == "", "view_cleared_on_exit",
+		"看着队友棋盘时离开摆放界面，view_id 应清回空串，实为 %s" % PrepSkinC.view_id)
+	PrepSkinC.active_id = DEFAULT
+
+
+# K：观战某个座位，摆放界面用那个座位的皮肤（座位资料用字符串键，同服务器重启后的样子）。
+func _section_spectator() -> void:
+	var other := NIGHT if PrepSkinC.has_skin(NIGHT) else ICE
+	PrepSkinC.active_id = DEFAULT
+	var saved_profiles: Dictionary = NetworkService.team_seat_profiles
+	var saved_ai_skins: Dictionary = NetworkService.team_seat_ai_skins
+	var saved_slot: int = NetworkService.spectate_view_slot
+	NetworkService.team_seat_profiles = {"3": {"player_name": "seat3", "prep_skin": other}}
+	NetworkService.team_seat_ai_skins = {}
+	NetworkService.spectate_view_slot = 3
+	var spec: Control = PREP.instantiate()
+	spec.set("spectator_view", true)
+	add_child(spec)
+	await _settle(spec, 14)
+	h.expect(_path_of_slot(spec, "PrepFullscreenBackground") == _own(other, "board"), "spectate_bg2d_seat_skin",
+		"观战的摆放界面应用被观战座位的皮肤（%s），实为 %s" % [other, _path_of_slot(spec, "PrepFullscreenBackground")])
+	h.expect(_plane_path(spec, "PrepStandbyBgLayer") == _own(other, "bench"), "spectate_bench_seat_skin",
+		"观战的待命区应是被观战座位的皮肤")
+	spec.queue_free()
+	await _settle(null, 3)
+	h.expect(PrepSkinC.view_id == "", "spectate_cleared_on_exit",
+		"离开观战的摆放界面，view_id 应清回空串，实为 %s" % PrepSkinC.view_id)
+	NetworkService.team_seat_profiles = saved_profiles
+	NetworkService.team_seat_ai_skins = saved_ai_skins
+	NetworkService.spectate_view_slot = saved_slot
+
+
 # --- 工具 -------------------------------------------------------------------
+
+# 等 show_view_skin 换上（后台读图要几帧）。换上了返回 true。
+func _wait_view_id(want: String) -> bool:
+	for _i in 600:
+		if PrepSkinC.view_id == want:
+			await _settle(null, 2)   # 换上那一帧之后再看节点
+			return true
+		await get_tree().process_frame
+	return false
+
 
 func _def(slot: String) -> String:
 	return str(PrepSkinC.SLOTS.get(slot, ""))

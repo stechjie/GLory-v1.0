@@ -20,6 +20,7 @@ extends RefCounted
 
 const CAPTION_WIDTH := 112.0
 const CAPTION_HEIGHT := 42.0
+const PrepSkin := preload("res://scenes/prep/PrepSkin.gd")
 
 
 # --- 文本与本地化 -------------------------------------------------------------
@@ -57,6 +58,18 @@ static func cached_texture(path: String) -> Texture2D:
 	if tex != null:
 		_texture_cache[path] = tex
 	return tex
+
+
+# 棋盘皮肤的图（11-26）。显示自己的皮肤时照旧进上面的进程级缓存；显示**别人**的皮肤
+# （看队友棋盘、观战，PrepSkin.view_id 不为空）时不进 —— 那个缓存从来不清，
+# 看一次队友的皮肤，2560×1440 的无损底图就会一直占着内存到退出游戏。
+# 不进缓存的图只由用它的节点拿着，换回自己的皮肤、离开摆放界面就释放。
+static func skin_texture(path: String) -> Texture2D:
+	if PrepSkin.view_id.is_empty():
+		return cached_texture(path)
+	if path.is_empty() or not ResourceLoader.exists(path):
+		return null
+	return load(path) as Texture2D
 
 
 # --- 样式 ---------------------------------------------------------------------

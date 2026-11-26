@@ -121,9 +121,12 @@ class Parties:
         return {
             "t": "party", "state": "room", "id": room.id, "mode": room.mode,
             "host_code": room.profiles[room.host]["friend_code"],
+            # 11-26：每个成员带上自己的出战宠物（"pet"），排位 / 休闲房间的宠物区
+            # 按人显示、模型下面写名字。新字段，旧客户端不认就忽略。
             "members": [
                 {**room.profiles[pid], "ready": pid == room.host or pid in room.ready,
-                 "host": pid == room.host, "seat": self.seat_of(room, pid)}
+                 "host": pid == room.host, "seat": self.seat_of(room, pid),
+                 "pet": room.active_pets.get(pid, "")}
                 for pid in room.members
             ],
             "pets": room.pets.copy(),
@@ -384,6 +387,35 @@ class Parties:
         room.pets = self._with_host_pet(pet_ids, room.active_pets.get(room.host, ""))
         room.version += 1
         return room
+
+    def set_member_pet(self, player: uuid.UUID, pet_id: str) -> Room | None:
+        """成员换了出战宠物（PUT /v1/me/pets/active 成功之后调）。不在队伍里返回 None。
+
+        11-26：房间里的宠物区按人显示「各自的出战宠物」，进队之后再换宠物也要让队友看到。
+        原来 active_pets 只在建房 / 入队时记一次。
+
+        展示列表 room.pets 只为旧客户端维护（新客户端不再读它）：换的是房主时照旧
+        补上房主的新宠物，规则同 _with_host_pet。
+
+        不在这里拦「排队中」：出战宠物已经在 shop 那边改掉了，这里只负责把队伍里的
+        记录同步过来；排队中能不能换由路由在改之前先判（room_locked_for_pet）。
+        """
+        room = self.of(player)
+        if room is None:
+            return None
+        self._touch_present(room, player)
+        if room.active_pets.get(player, "") == pet_id:
+            return room
+        room.active_pets[player] = pet_id
+        if player == room.host:
+            room.pets = self._with_host_pet(room.pets, pet_id)
+        room.version += 1
+        return room
+
+    def room_locked_for_pet(self, player: uuid.UUID) -> bool:
+        """排队 / 匹配中不许换出战宠物（11-26）：队伍已经锁定，换了队友那边看到的会对不上。"""
+        room = self.of(player)
+        return room is not None and room.queued
 
     def set_ready(self, player: uuid.UUID, ready: bool,
                   seedling_races: list[str] | None = None) -> Room:

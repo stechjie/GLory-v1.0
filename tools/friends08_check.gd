@@ -68,7 +68,15 @@ func _ready() -> void:
 	var lobby = LobbyProbe.new()
 	add_child(lobby)
 	lobby._render_online_friends(entries)
-	h.expect(lobby._friends_box.get_child_count() == 1 and lobby._friends_box.get_child(0).text.begins_with("Online"), "lobby_online", "房间仅显示在线好友")
+	# 11-26：房间朋友列表显示**全部**好友（在线排前、离线排后），每行带状态字。
+	var rows: Array = lobby._friends_box.get_children()
+	h.expect(rows.size() == 2 and rows[0].name == "FriendRow_ABCDEFGH" and rows[1].name == "FriendRow_BCDEFGHJ",
+		"lobby_all_friends", "房间显示全部好友，在线的排在离线前面")
+	var online_status: Label = rows[0].find_child("Status", true, false) if rows.size() > 0 else null
+	var offline_status: Label = rows[1].find_child("Status", true, false) if rows.size() > 1 else null
+	h.expect(online_status != null and online_status.text == lobby._room_text("在线", "Online")
+			and offline_status != null and offline_status.text == lobby._room_text("离线", "Offline"),
+		"lobby_status_text", "每行都写明在线 / 离线")
 	var profile = ProfileProbe.new()
 	profile._mode = profile.Mode.PUBLIC
 	add_child(profile)

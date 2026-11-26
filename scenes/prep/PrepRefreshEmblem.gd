@@ -40,9 +40,10 @@ func _ready() -> void:
 	sync()
 
 
-## 按当前皮肤选图案。
+## 按当前皮肤选图案。这只是显示：跟摆放界面此刻显示的那张皮肤走（观战时是被看的那个人的，11-26）。
+## 点刷新演的特效（PrepShopRefreshBurn）仍按自己的皮肤，见 PrepSkin.refresh_fx。
 func sync() -> void:
-	set_kind(PrepSkin.refresh_fx())
+	set_kind(PrepSkin.refresh_fx_for(PrepSkin.shown_id()))
 
 
 func set_kind(new_kind: String) -> void:

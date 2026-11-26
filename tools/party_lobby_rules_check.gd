@@ -33,7 +33,7 @@ func _ready() -> void:
 	_case_queue_canceled_wired()
 	_case_mode_notice_to_members()
 	_case_party_invite_reaches_chat()
-	_case_host_pet_forced()
+	_case_member_pets()
 	_case_startable_sizes()
 	_case_friend_buckets()
 	_h.finish(get_tree())
@@ -151,21 +151,30 @@ func _case_member_can_invite() -> void:
 		"seat_slot_moves_not_invites",
 		"10-08：点空位 = 换到那个位置（同自定义房间），不能再拉出邀请抽屉")
 	# ★★ 10.19 用户改口径：「让玩家自己按邀请，有时候只是想看看那个人的 profile」。
-	#    ⇒ 点好友那一行 / 头像 = 看资料；邀请只走行内的「邀请」按钮；
-	#    右侧快捷头像栏点一下 = 打开好友抽屉（不再一点就邀请）。
+	#    ⇒ 点好友那一行 / 头像不能直接邀请；右侧快捷头像栏点一下 = 打开好友抽屉。
 	#    10.19 换皮后头像不再是单独的按钮，画在整行点击区上面（MOUSE_FILTER_IGNORE），点头像就是点行。
-	_h.expect(src.contains("row_tap.pressed.connect(_view_member_profile.bind(code))")
+	# ★★ 11-26 与自定义房间统一：点好友行 = 弹好友卡片（LobbyPopover），卡片上
+	#    [查看资料] [邀请] [私聊] 同一排；行尾不再单放「邀请」键。
+	_h.expect(src.contains("row.pressed.connect(_open_friend_card.bind(code, row))")
 			and not src.contains("row_tap.pressed.connect(func() -> void: _invite(code))")
 			and not src.contains("avatar.pressed.connect(func() -> void: _invite(code))"),
-		"friend_row_opens_profile",
-		"10.19：点好友行 / 头像是看资料，不能直接邀请")
-	_h.expect(src.contains("invite.pressed.connect(func() -> void: _invite(code))"),
-		"friend_invite_button_invites",
-		"10.19：邀请只走好友行里的「邀请」按钮")
-	_h.expect(src.contains("quick.pressed.connect(_toggle_friends_drawer)")
-			and not src.contains("quick.pressed.connect(func() -> void: _invite(code))"),
-		"friend_rail_opens_drawer",
-		"10.19：快捷头像栏点一下是打开好友抽屉，不能直接邀请")
+		"friend_row_opens_card",
+		"11-26：点好友行 / 头像是弹好友卡片，不能直接邀请")
+	var card := _slice_func(src, "_open_friend_card")
+	_h.expect(card.contains("LobbyPopover.open_friend_card(")
+			and card.contains("_view_member_profile(code)")
+			and card.contains("_invite_from_card(code, button)")
+			and card.contains("LobbyPopover.open_private_chat(self, code)"),
+		"friend_card_actions",
+		"11-26：好友卡片要接上 查看资料 / 邀请 / 私聊 三个动作")
+	_h.expect(not src.contains("invite.pressed.connect(func() -> void: _invite(code))"),
+		"friend_row_no_inline_invite",
+		"11-26：行尾的「邀请」键已拿掉，邀请只在好友卡片上")
+	# 11-26（第二轮）：朋友列表改成一直摆在右边（同自定义房间），快捷头像栏和抽屉都拿掉了。
+	_h.expect(not src.contains("_friend_rail") and not src.contains("_toggle_friends_drawer")
+			and not src.contains("quick.pressed.connect("),
+		"friend_rail_gone",
+		"11-26：快捷头像栏 / 好友抽屉已拿掉，邀请只有「点好友行 → 卡片」这一条路")
 	# 10-08：按键尺寸照自定义房间（Team3v3Lobby），钉住几颗主要的，免得以后又各改各的。
 	var custom := _read("res://scenes/menu/Team3v3Lobby.gd")
 	_h.expect(custom.contains("const VOICE_BTN_SIZE := Vector2(78, 60)")
@@ -417,114 +426,118 @@ func _case_party_invite_reaches_chat() -> void:
 			"组队邀请正文读 party_display_text（缺 body 时退回本地文案，不显示空白）")
 
 
-# ★★ 10.09：排位房里**房主的出战宠物必须显示**（勾选锁死 = 无法取消，且暗色），
-# 并且**只有它的脚步声能被听见**。
+# ★★ 11-26（用户改口径，替掉 10.09 那套「房主勾选展示宠物」）：
+#   · 房间里走动的宠物 = **每个成员当前的出战宠物**，一人一只，脚下写玩家名字；
+#   · 「宠物」键 = 直接换**自己的**出战宠物，谁都能点；
+#   · 排队中不能换；只听得到自己那只的脚步声。
 #
 # 判据分两层：
-#   1. 客户端（这里）：`_render_pets` 把「就是房主那只」的行锁死 + 打勾；
-#      `_toggle_pet` 再兜一道；`_apply` 把 `_audible_pet()`（= 房主宠物，缺则退回自己）
-#      传给宠物舞台。
-#   2. 服务端行为：`backend/tests/test_party_room_stdlib.py` 直接驱动 `app/party.py`
-#      验 `_with_host_pet` 强制入列、`PUT /pets` 不能把它踢掉、快照带 `host_pet`。
-func _case_host_pet_forced() -> void:
+#   1. 客户端（这里）：member_pet_of / pet_switch_locked 两个纯静态合同直接喂数据；
+#      真 new 一个房间界面调 _stage_members()；再钉接线（_apply → _sync_stage、
+#      面板点一行 → PlayerProfile.set_active）。
+#   2. 服务端行为：`backend/tests/test_party_room_stdlib.py`（成员条目带 pet、换宠物后
+#      快照跟着变）与 `backend/tests/test_shop.py`（排队中换宠物 409、换完推房间快照）。
+func _case_member_pets() -> void:
 	var src := _read(LOBBY_SRC)
-	# 数据来源：快照里的 host_pet；快照缺它（旧服务端 / 未部署）时房主用自己已知的出战宠物兜底。
-	_h.expect(src.contains("func _host_pet() -> String:"),
-		"host_pet_helper", "要有 _host_pet() 读取快照里的房主出战宠物")
-	var host_body := _slice_func(src, "_host_pet")
-	_h.expect(host_body.contains("_room.get(\"host_pet\", \"\")"),
-		"host_pet_from_room", "_host_pet() 要真的从房间快照取 host_pet")
-	_h.expect(host_body.contains("host_pet_of(") and host_body.contains("PlayerProfile.active_pet"),
-		"host_pet_self_fallback",
-		"快照没带 host_pet 时房主要用自己的出战宠物兜底（否则真机上那行不锁不暗）")
-	# 行为：host_pet_of 的兜底合同（纯静态 ⇒ 直接喂数据驱动，不必实例化界面）。
-	_h.expect(LOBBY.host_pet_of("pet_fox", false, "pet_cat") == "pet_fox",
-		"host_pet_prefers_room", "快照带 host_pet 时以快照为准（房主/队员看到的同一只）")
-	_h.expect(LOBBY.host_pet_of("", true, "pet_cat") == "pet_cat",
-		"host_pet_self_fallback_behavior", "快照缺 host_pet 且自己是房主 ⇒ 用自己出战宠物兜底")
-	_h.expect(LOBBY.host_pet_of("", false, "pet_cat") == "",
-		"host_pet_member_no_fallback", "队员拿不到快照 host_pet 时只能留空（不冒充房主）")
-	# 行为：真 new 一个房间界面、真调一次 _host_pet() —— 静态合同绿但接线断了照样白搭。
+	# 行为：某个成员该出哪只。
+	_h.expect(LOBBY.member_pet_of({"pet": "pet_fox"}, false, "pet_cat", "pet_dog") == "pet_fox",
+		"member_pet_from_snapshot", "队友的宠物以房间快照里他那一条的 pet 为准")
+	_h.expect(LOBBY.member_pet_of({"pet": "pet_fox"}, true, "pet_cat", "") == "pet_cat",
+		"own_pet_from_profile", "自己那只用本机的出战宠物（换了马上就对，不等快照）")
+	_h.expect(LOBBY.member_pet_of({"pet": "pet_fox"}, true, "", "") == "pet_fox",
+		"own_pet_falls_back_to_snapshot", "本机还没拿到宠物数据时，自己那只退回快照里的")
+	_h.expect(LOBBY.member_pet_of({"host": true}, false, "pet_cat", "pet_dog") == "pet_dog",
+		"old_server_host_pet", "旧账号服务器（成员条目没有 pet）：房主那只用快照的 host_pet")
+	_h.expect(LOBBY.member_pet_of({"host": false}, false, "pet_cat", "pet_dog") == "",
+		"old_server_member_no_pet", "旧账号服务器：其他队友不出宠物（不拿别人的宠物冒充）")
+	_h.expect(LOBBY.member_pet_of({}, false, "pet_cat", "") == "",
+		"member_without_pet_empty", "没有宠物的成员留空（舞台那边不出模型）")
+	# 行为：面板上的行什么时候点不动。
+	_h.expect(not LOBBY.pet_switch_locked(false, false, false),
+		"pet_switch_open", "连着队伍、没在排队、没在等上一次回包 ⇒ 能换")
+	_h.expect(LOBBY.pet_switch_locked(false, true, false),
+		"pet_switch_locked_in_queue", "排队中不能换出战宠物")
+	_h.expect(LOBBY.pet_switch_locked(true, false, false),
+		"pet_switch_locked_local_only", "队伍服务没连上时不能换")
+	_h.expect(LOBBY.pet_switch_locked(false, false, true),
+		"pet_switch_locked_while_pending", "上一次还没回包时不能再点第二只")
+	# 行为：真 new 一个房间界面、真调 _stage_members()。
 	var lobby := LOBBY.new()
 	var self_code := str(AccountManager.profile.get("friend_code", ""))
+	if self_code.is_empty():
+		self_code = "SELF0001"
+	var saved_profile: Dictionary = AccountManager.profile
 	var saved_active := str(PlayerProfile.active_pet)
+	AccountManager.profile = {"friend_code": self_code, "player_name": "我"}
+	PlayerProfile.active_pet = "pet_probe_self"
 	lobby._preview = ""
-	lobby._room = {"host_code": self_code, "host_pet": "", "pets": []}
-	PlayerProfile.active_pet = "pet_probe_host"
-	_h.expect(lobby._host_pet() == "pet_probe_host",
-		"host_pet_runtime_fallback",
-		"快照缺 host_pet 且自己是房主 ⇒ 运行期 _host_pet() 用自己的出战宠物兜底")
-	lobby._room["host_pet"] = "pet_probe_room"
-	_h.expect(lobby._host_pet() == "pet_probe_room",
-		"host_pet_runtime_prefers_room", "快照带 host_pet ⇒ 运行期以快照为准")
-	lobby._room = {"host_code": "%s-other" % self_code, "host_pet": "", "pets": []}
-	_h.expect(lobby._host_pet() == "",
-		"host_pet_runtime_member", "自己不是房主且快照没带 ⇒ 运行期 _host_pet() 为空")
+	lobby._room = {"host_code": "MATE0002", "host_pet": "pet_probe_host", "members": [
+		{"friend_code": "MATE0002", "player_name": "队友", "host": true, "pet": "pet_probe_mate"},
+		{"friend_code": self_code, "player_name": "我", "host": false, "pet": "pet_probe_stale"},
+		{"friend_code": "MATE0003", "player_name": "新人", "host": false},
+	]}
+	var staged: Array = lobby._stage_members()
+	_h.expect(staged.size() == 3, "stage_one_entry_per_member", "一个成员一条（实得 %d）" % staged.size())
+	if staged.size() == 3:
+		_h.expect(str(staged[0].key) == "MATE0002" and str(staged[0].pet) == "pet_probe_mate"
+				and not bool(staged[0].audible),
+			"stage_mate_pet", "队友：出他自己的出战宠物，脚步声不响")
+		_h.expect(str(staged[1].key) == self_code and str(staged[1].pet) == "pet_probe_self"
+				and bool(staged[1].audible),
+			"stage_own_pet", "自己：出本机的出战宠物（不是快照里那只旧的），只有这只有脚步声")
+		_h.expect(str(staged[2].pet) == "",
+			"stage_no_pet_member", "没有 pet 的队友留空")
+		_h.expect(not str(staged[0].name).is_empty() and not str(staged[0].name).contains("#"),
+			"stage_name_plain", "模型脚下写的是玩家名字，不带 #好友码")
+	AccountManager.profile = saved_profile
 	PlayerProfile.active_pet = saved_active
 	lobby.free()
-	# 发声那只 = 房主宠物（缺则退回自己，免得整屋静音）。
-	var audible_body := _slice_func(src, "_audible_pet")
-	_h.expect(not audible_body.is_empty(), "audible_pet_helper", "读不到 _audible_pet()")
-	_h.expect(audible_body.contains("PlayerProfile.active_pet"),
-		"audible_pet_fallback",
-		"快照缺 host_pet 时要退回自己的出战宠物（否则整屋静音）")
-	# 展示：那行锁定 + 暗色（disabled 样式）+ 始终打勾。断言钉在 _render_pets 函数体内。
+	# 接线：_apply / 本地兜底 / 自己换宠物，都要把成员表交给舞台。
+	var sync_body := _slice_func(src, "_sync_stage")
+	_h.expect(sync_body.contains("_stage.configure_party_members(_stage_members()"),
+		"stage_gets_members", "宠物舞台要按「一个成员一只」重建（configure_party_members）")
+	_h.expect(not src.contains("configure_party_display("),
+		"old_display_list_gone", "旧的「展示宠物列表」那条路不能留着（两套一起跑会各出各的）")
+	var apply_body := _slice_func(src, "_apply")
+	_h.expect(apply_body.contains("_sync_stage()"), "apply_syncs_stage",
+		"房间快照一来就要重排场上的宠物（有人进出 / 队友换了宠物）")
+	var local_body := _slice_func(src, "_on_local_pets_changed")
+	_h.expect(local_body.contains("_sync_stage()") and local_body.contains("_render_pets()"),
+		"own_switch_repaints", "自己换了出战宠物：面板和场上那只马上跟着变")
+	# 接线：面板点一行 = 换自己的出战宠物（走背包里换出战的同一个接口）。
 	var render_body := _slice_func(src, "_render_pets")
-	_h.expect(not render_body.is_empty(), "render_pets_present", "读不到 _render_pets")
-	_h.expect(render_body.contains("pet_row_locked(pet_id, host_pet)"),
-		"host_pet_row_identified",
-		"锁定判据必须走纯静态 pet_row_locked（= 就是房主那只出战宠物）")
-	_h.expect(render_body.contains("choice.disabled = locked or"),
-		"host_pet_row_locked",
-		"房主出战宠物那行必须 disabled —— 点不动 = 无法取消勾选 + 走暗色样式")
-	_h.expect(render_body.contains("\"✓  \" if checked else \"○  \""),
-		"host_pet_row_checked", "锁定的那行始终打勾（不能显示成未选）")
-	_h.expect(render_body.contains("if not locked:"),
-		"locked_row_not_toggleable", "锁定那行不能再接 _toggle_pet（双保险）")
-	# 第二道闸：_toggle_pet 拒绝取消房主出战宠物。
-	var toggle_body := _slice_func(src, "_toggle_pet")
-	_h.expect(not toggle_body.is_empty(), "toggle_pet_present", "读不到 _toggle_pet")
-	_h.expect(toggle_body.contains("pet_row_locked(pet_id, _host_pet())"),
-		"toggle_pet_guards_host_pet", "_toggle_pet 必须拒绝取消房主的出战宠物")
-	# 行为：pet_row_locked 的合同（纯静态 ⇒ 直接喂 id 驱动，不必实例化整个界面）。
-	_h.expect(LOBBY.pet_row_locked("pet_fox", "pet_fox"),
-		"locked_row_not_locked", "房主出战宠物自己那行应当锁定")
-	_h.expect(not LOBBY.pet_row_locked("pet_cat", "pet_fox"),
-		"other_row_locked", "非房主出战宠物的行不该锁定（仍可勾选/取消）")
-	_h.expect(not LOBBY.pet_row_locked("pet_cat", ""),
-		"empty_host_pet_locks_all", "房主没设出战宠物（空串）时不该锁任何行")
-	# 发声接线：舞台既拿到展示列表（含房主出战宠物），也拿到发声宠物 id。
-	_h.expect(src.contains("configure_party_display(_display_pet_ids()"),
-		"stage_gets_display_pets",
-		"宠物舞台要按「含房主出战宠物」的展示列表重建（_display_pet_ids）")
-	_h.expect(src.contains("_audible_pet())"),
-		"stage_gets_audible", "宠物舞台要收到发声宠物 id（_audible_pet()）")
-	# 行为：with_host_pet 把房主出战宠物强制放进展示列表（去重 / 挤末位 / 封顶 5）。
-	_h.expect(LOBBY.with_host_pet(["a", "b"], "b") == ["a", "b"],
-		"display_keeps_existing_host_pet", "房主宠物已在列表里 ⇒ 原样保留")
-	_h.expect(LOBBY.with_host_pet(["a", "b"], "z") == ["a", "b", "z"],
-		"display_appends_missing_host_pet", "房主宠物不在列表 ⇒ 必须补上（强制显示）")
-	_h.expect(LOBBY.with_host_pet(["a", "b", "c", "d", "e"], "z") == ["a", "b", "c", "d", "z"],
-		"display_trims_to_cap", "补房主宠物后封顶 5（挤掉末位，不超上限）")
-	_h.expect(LOBBY.with_host_pet(["a", "a", "b"], "b") == ["a", "b"],
-		"display_dedupes", "展示列表要去重")
-	_h.expect(LOBBY.with_host_pet([], "z") == ["z"],
-		"display_from_empty", "空列表也要补出房主宠物")
-	_h.expect(LOBBY.with_host_pet(["a", "b"], "") == ["a", "b"],
-		"display_no_host_pet_noop", "房主没设出战宠物时不动列表")
-	_h.expect(LOBBY.with_host_pet(["a", "b", "c", "d", "e", "f"], "b") == ["a", "b", "c", "d", "e"],
-		"display_caps_existing", "房主宠物已在列、但列表超 5 ⇒ 仍要封顶 5")
-	# 服务端：快照带 host_pet；房主宠物强制入列（create 与 PUT /pets 都要）。
+	_h.expect(render_body.contains("choice.pressed.connect(_switch_pet.bind(pet_id))"),
+		"pet_row_switches", "面板上点一只 = 换成出战宠物")
+	_h.expect(render_body.contains("choice.disabled = locked"),
+		"pet_row_lock_wired", "排队中 / 没连上 / 等回包时整列点不动")
+	var switch_body := _slice_func(src, "_switch_pet")
+	_h.expect(switch_body.contains("await PlayerProfile.set_active(pet_id)"),
+		"switch_uses_profile_api", "换出战宠物走 PlayerProfile.set_active（和背包同一个接口）")
+	_h.expect(switch_body.contains("pet_switch_locked("),
+		"switch_second_gate", "_switch_pet 自己再判一次锁（面板那行禁用是第一道）")
+	_h.expect(not src.contains("set_party_pets"),
+		"display_pets_api_unused", "「展示宠物」取消了，客户端不该再调 set_party_pets")
+	# 「宠物」键：谁都看得到，排队中禁用（不是藏起来 —— 藏了玩家会以为功能没了）。
+	_h.expect(apply_body.contains("_pet_toggle.disabled = bool(_room.get(\"queued\", false))")
+			and not apply_body.contains("_pet_toggle.visible = host"),
+		"pet_button_for_everyone", "「宠物」键不再只给房主；排队中禁用")
+	# 服务端：成员条目带 pet；换宠物同步进房间并广播；排队中拒绝。
 	var party_src := FileAccess.get_file_as_string("res://backend/app/party.py")
-	if _h.expect(not party_src.is_empty(), "be_party_readable_1009", "读不到 backend/app/party.py"):
+	if _h.expect(not party_src.is_empty(), "be_party_readable_1126", "读不到 backend/app/party.py"):
+		_h.expect(party_src.contains("\"pet\": room.active_pets.get(pid, \"\")"),
+			"be_snapshot_member_pet", "房间快照的每个成员条目必须带 pet（他的出战宠物）")
 		_h.expect(party_src.contains("\"host_pet\": room.active_pets.get(room.host, \"\")"),
-			"be_snapshot_host_pet", "快照必须带 host_pet（房主的出战宠物）")
-		_h.expect(party_src.contains("def _with_host_pet(pet_ids: list[str], host_pet: str)"),
-			"be_with_host_pet", "要有 _with_host_pet 把房主宠物强制放进展示列表")
-		_h.expect(party_src.contains("room.pets = self._with_host_pet(pet_ids"),
-			"be_pets_forces_host_pet", "PUT /pets 也要强制含房主出战宠物（不能取消）")
-		_h.expect(party_src.contains("pets=self._with_host_pet(pets, active_pet)"),
-			"be_create_forces_host_pet", "建房时展示列表也要含房主出战宠物")
+			"be_snapshot_host_pet", "快照仍带 host_pet（旧客户端还在读它）")
+		_h.expect(party_src.contains("def set_member_pet(self, player: uuid.UUID, pet_id: str)"),
+			"be_set_member_pet", "要有 set_member_pet：成员换了出战宠物，房间里那份跟着换")
+		_h.expect(party_src.contains("def room_locked_for_pet(self, player: uuid.UUID) -> bool:"),
+			"be_room_locked_for_pet", "要有 room_locked_for_pet：排队中不许换")
+	var shop_src := FileAccess.get_file_as_string("res://backend/app/routes/shop.py")
+	if _h.expect(not shop_src.is_empty(), "be_shop_readable_1126", "读不到 backend/app/routes/shop.py"):
+		_h.expect(shop_src.contains("party.current().room_locked_for_pet(me.player_id)"),
+			"be_switch_rejects_in_queue", "换出战宠物的接口：排队中要拒绝")
+		_h.expect(shop_src.contains("party.current().set_member_pet(me.player_id, pets.active)"),
+			"be_switch_updates_room", "换出战宠物成功后要同步进队伍房间（队友才看得到）")
 	var route_src := FileAccess.get_file_as_string("res://backend/app/routes/party.py")
 	if _h.expect(not route_src.is_empty(), "be_route_readable_1009", "读不到 backend/app/routes/party.py"):
 		_h.expect(route_src.contains("pets_state.active"),
@@ -640,24 +653,40 @@ func _case_friend_buckets() -> void:
 		"内容签名必须带 in_match —— 否则数据变了列表不重建（10.10 的签名去重是按内容跳过的）")
 	var row := _slice_func(src, "_render_friends")
 	if _h.expect(not row.is_empty(), "friend_render_found", "切不出 PartyLobby._render_friends"):
-		_h.expect(row.contains("_text(\"对局中\", \"In match\")") and row.contains("not can_invite"),
-			"in_match_button_disabled", "对局中那一档的按钮要写「对局中」且禁用")
-		_h.expect(row.contains("if can_invite and quick_count < 3"),
-			"quick_rail_only_invitable", "右下角快捷栏只收可邀请的好友（对局中/离线的都不该上）")
+		_h.expect(row.contains("_friend_list.add_child(_friend_row(friend, bucket))"),
+			"friend_rows_built_per_bucket", "三档里的每个好友都要出一行（11-26 起列表一直摆着，离线的也列）")
+	# 11-26：「对局中写『对局中』并禁用」从行尾键搬到了好友卡片的邀请键上。
+	var invite_state := _slice_func(src, "_friend_invite_state")
+	if _h.expect(not invite_state.is_empty(), "friend_invite_state_found", "切不出 PartyLobby._friend_invite_state"):
+		_h.expect(invite_state.contains("FRIEND_IN_MATCH:")
+				and invite_state.contains("return {\"text\": _text(\"对局中\", \"In match\"), \"enabled\": false}"),
+			"in_match_button_disabled", "对局中那一档，卡片上的邀请键要写「对局中」且禁用")
+		_h.expect(invite_state.contains("return {\"text\": _text(\"离线\", \"Offline\"), \"enabled\": false}"),
+			"offline_button_disabled", "离线那一档，卡片上的邀请键要写「离线」且禁用")
+		_h.expect(invite_state.contains("members.size() >= 3"),
+			"full_party_button_disabled", "队伍满 3 人时卡片上的邀请键要禁用")
 
 	# 第 9 条：自定义房间的好友列表。
+	# ★★ 11-26 用户改口径：列表显示**全部**好友（在线 / 对局中 / 离线），
+	#    _can_invite_online_friend 从「列表过滤」改成「卡片上的邀请键能不能点」。判据本身不变。
 	var t3: Node = TEAM3V3.new()
 	_h.expect(t3._can_invite_online_friend({"online": true, "in_match": false}),
-		"t3_online_invitable", "在线且不在对局中 -> 显示")
+		"t3_online_invitable", "在线且不在对局中 -> 能邀请")
 	_h.expect(not t3._can_invite_online_friend({"online": true, "in_match": true}),
-		"t3_in_match_hidden", "在线但在对局中 -> 不显示")
+		"t3_in_match_hidden", "在线但在对局中 -> 不能邀请")
 	_h.expect(not t3._can_invite_online_friend({"online": false, "in_match": false}),
-		"t3_offline_hidden", "不在线 -> 不显示")
+		"t3_offline_hidden", "不在线 -> 不能邀请")
 	_h.expect(not t3._can_invite_online_friend({"online": false, "in_match": true}),
-		"t3_offline_after_match_hidden", "离开对局但对局未结束（离线 + in_match）-> 不显示")
+		"t3_offline_after_match_hidden", "离开对局但对局未结束（离线 + in_match）-> 不能邀请")
 	_h.expect(not t3._can_invite_online_friend("nonsense"),
 		"t3_non_dict_hidden", "非字典项直接跳过（后端列表混进脏数据也不能崩）")
-	# ★ 10.11 第 6 条 i：**已经在本房间里**的好友既不显示、也不该被邀请
+	# 三档与排位房同口径。
+	_h.expect(t3._friend_bucket({"online": false, "in_match": true}) == t3.FRIEND_OFFLINE
+			and t3._friend_bucket({"online": true, "in_match": true}) == t3.FRIEND_IN_MATCH
+			and t3._friend_bucket({"online": true, "in_match": false}) == t3.FRIEND_INVITABLE
+			and t3._friend_bucket({}) == t3.FRIEND_OFFLINE,
+		"t3_buckets", "自定义房间的三档判据要与排位房一致")
+	# ★ 10.11 第 6 条 i：**已经在本房间里**的好友不该被邀请
 	#   （对他在点邀请没有意义 —— 邀请消息指向的就是他已经在的那个房）。
 	#   自定义房间的成员只存在于战斗服务器上，账号服务器不知道 ⇒ 只能客户端判。
 	var saved_room := int(NetworkService.team_room_id)
@@ -665,15 +694,18 @@ func _case_friend_buckets() -> void:
 	var t3r: Node = TEAM3V3.new()
 	_h.expect(not t3r._can_invite_online_friend(
 			{"online": true, "in_match": false, "room_id": 4242}), "t3_same_room_hidden",
-		"已经在本房间的好友 → 不显示（第 6 条 i：点了既不发消息也不弹窗）")
+		"已经在本房间的好友 → 不能邀请（第 6 条 i：点了既不发消息也不弹窗）")
+	_h.expect(not bool(t3r._friend_invite_state(
+			{"friend_code": "ABCD2345", "online": true, "in_match": false, "room_id": 4242}).get("enabled", true)),
+		"t3_same_room_card_disabled", "已经在本房间的好友 → 卡片上的邀请键禁用")
 	_h.expect(t3r._can_invite_online_friend(
 			{"online": true, "in_match": false, "room_id": 99}), "t3_other_room_shown",
-		"在别的房间的好友 → 照常显示（第 6 条 j：别的房间的邀请要能发出去）")
+		"在别的房间的好友 → 能邀请（第 6 条 j：别的房间的邀请要能发出去）")
 	_h.expect(t3r._can_invite_online_friend(
 			{"online": true, "in_match": false, "room_id": null}), "t3_null_room_shown",
 		"room_id 为 null（后端「房间不可见」）时既不能崩、也不能误判成同房间")
 	_h.expect(t3r._can_invite_online_friend({"online": true, "in_match": false}),
-		"t3_missing_room_shown", "没有 room_id 字段（旧后端）→ 照常显示，不能误判")
+		"t3_missing_room_shown", "没有 room_id 字段（旧后端）→ 能邀请，不能误判")
 	t3r.free()
 	NetworkService.team_room_id = saved_room
 	t3.free()
@@ -681,5 +713,10 @@ func _case_friend_buckets() -> void:
 	var t3_src := _read(TEAM3V3_SRC)
 	var render := _slice_func(t3_src, "_render_online_friends")
 	if _h.expect(not render.is_empty(), "t3_render_found", "切不出 Team3v3Lobby._render_online_friends"):
-		_h.expect(render.contains("_can_invite_online_friend(entry)"),
-			"t3_filter_wired", "渲染必须经过 _can_invite_online_friend —— 定义了不接线等于没做")
+		_h.expect(render.contains("for bucket in [FRIEND_INVITABLE, FRIEND_IN_MATCH, FRIEND_OFFLINE]")
+				and not render.contains("_can_invite_online_friend(entry)"),
+			"t3_all_friends_bucketed", "11-26：列表按三档列出全部好友，不再按「能不能邀请」过滤")
+	var invite_state := _slice_func(t3_src, "_friend_invite_state")
+	if _h.expect(not invite_state.is_empty(), "t3_invite_state_found", "切不出 Team3v3Lobby._friend_invite_state"):
+		_h.expect(invite_state.contains("_can_invite_online_friend(entry)"),
+			"t3_filter_wired", "卡片上的邀请键必须经过 _can_invite_online_friend —— 定义了不接线等于没做")

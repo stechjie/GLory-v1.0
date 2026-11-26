@@ -48,7 +48,9 @@ const PET_PAGE_ROWS := 2
 const RACE_CARD_SIZE := Vector2(174, 144)
 const RACE_LOGO_SIZE := Vector2(62, 62)
 const UNIT_TILE_SIZE := Vector2(112, 122)
-const SKIN_CARD_SIZE := Vector2(300, 0)
+const SKIN_CARD_SIZE := Vector2(340, 0)
+# 卡框（card.png）的金边 + 角上叶子比旧留白 16/20 宽，预览图会顶到框上；留白加到压在金边内侧。
+const SKIN_CARD_PAD := Vector4(30, 36, 30, 24)
 const SKIN_PREVIEW_SIZE := Vector2(276, 155)   # 预览图是实机画面截的 16:9
 
 # 宠物技能浮框（10.15 第 3 点）。宽度固定、高度按文案量（见 _fit_pet_tip）：
@@ -1029,13 +1031,7 @@ func _build_skin_box() -> Control:
 	_skin_box.alignment = BoxContainer.ALIGNMENT_CENTER
 	_skin_box.add_theme_constant_override("separation", 18)
 	_skin_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-	var hint := Label.new()
-	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hint.add_theme_font_size_override("font_size", 18)
-	Kit.on_backdrop(hint)
-	hint.text = tr("skin_tab_hint")
-	_skin_box.add_child(hint)
+	# 11.26：去掉卡片上方那行「对局里摆放界面的样子，只有你自己看得见。」说明文字。
 
 	var cards := HFlowContainer.new()
 	cards.alignment = FlowContainer.ALIGNMENT_CENTER
@@ -1052,7 +1048,7 @@ func _build_skin_card(skin_id: String) -> Control:
 	var card := PanelContainer.new()
 	card.custom_minimum_size = SKIN_CARD_SIZE
 	card.add_theme_stylebox_override("panel",
-		Kit.box("card", Vector4(16, 20, 16, 16)))
+		Kit.box("card", SKIN_CARD_PAD))
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 10)
 	card.add_child(content)
@@ -1137,7 +1133,7 @@ func _refresh_skin_card(skin_id: String, is_active: bool) -> void:
 			str(_skin_trials[skin_id]))
 	var panel: PanelContainer = parts["panel"]
 	panel.add_theme_stylebox_override("panel",
-		Kit.box("card", Vector4(16, 20, 16, 16), ACTIVE_TINT if is_active else Color.WHITE))
+		Kit.box("card", SKIN_CARD_PAD, ACTIVE_TINT if is_active else Color.WHITE))
 	var btn: Button = parts["button"]
 	var loading := _skin_ownership in [SkinOwnership.NOT_LOADED, SkinOwnership.LOADING]
 	if is_active:

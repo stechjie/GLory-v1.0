@@ -24,36 +24,50 @@ const AVATARS := preload("res://scripts/account/AvatarCatalog.gd")
 const RANKS := preload("res://scenes/menu/RankedTiers.gd")
 const PROFILE_DISC := preload("res://assets/ui/shop/headframes/frame_default.png")
 const ACTION := preload("res://ui/components/GloryActionButton.tscn")
-const BUTTON_PRIMARY := preload("res://assets/ui/party_lobby/party_button_primary.png")
 const BUTTON_SECONDARY := preload("res://assets/ui/party_lobby/party_button_secondary.png")
 const BUTTON_MODE_IDLE := preload("res://assets/ui/party_lobby/party_button_mode_idle.png")
 const BUTTON_MODE_ACTIVE := preload("res://assets/ui/party_lobby/party_button_mode_active.png")
-# 10.19 聊天框 / 好友抽屉换皮（assets/ui/social）。九宫格边距按原图像素写，运行时按贴图实际宽度换算 ——
-# 导入时若设了 size_limit，大图会被缩小，写死像素就会错位。
-const SOCIAL_CHAT_FRAME := preload("res://assets/ui/social/chat_panel_frame.png")
-const SOCIAL_FRIEND_FRAME := preload("res://assets/ui/social/friend_panel_frame.png")
-const SOCIAL_FRIEND_ROW := preload("res://assets/ui/social/friend_list_row.png")
-const SOCIAL_ICONS := preload("res://assets/ui/social/icon_buttons_strip.png")
-const CHAT_FRAME_SRC_W := 1536.0
-const CHAT_FRAME_MARGINS := [92.0, 142.0, 92.0, 92.0]     # 左 上 右 下（原图像素）；上边距含标题木条
-const CHAT_FRAME_SCALE := 0.45                            # 屏幕像素 / 原图像素
-const PHRASE_FRAME_SCALE := 0.3                           # 快捷短语面板用同一张框，缩小些
-const FRIEND_FRAME_SRC_W := 1024.0
-const FRIEND_FRAME_MARGINS := [132.0, 220.0, 132.0, 100.0] # 上边距含顶饰与标题木条
-const FRIEND_FRAME_SCALE := 419.0 / 1024.0                # 抽屉宽 419 = 原图宽
-const FRIEND_ROW_SRC_W := 1024.0
-const FRIEND_ROW_SIZE := Vector2(330, 75)                 # 原图 1024×232 等比
-const FRIEND_ROW_SOCKET := Vector2(114, 117)               # 头像孔圆心（原图像素，孔是透明的）
-const FRIEND_ROW_SOCKET_R := 76.0
-# icon_buttons_strip 一排四格：关闭 / 收起 / 展开 / 发送。
-const ICON_CLOSE := 0
-const ICON_UP := 1
-const ICON_DOWN := 2
-const ICON_SEND := 3
-const ICON_BTN_SIZE := Vector2(48, 48)
-const BUBBLE_ME := Color("fcd86e")
-const BUBBLE_MATE := Color("fceed6")
-const BUBBLE_EDGE := Color("7d4a1c")
+# 11-26：聊天框、麦克风 / 听筒、开始键、好友列表的底图、位置、尺寸**照自定义房间**（Team3v3Lobby）。
+# 两个房间的设计稿都是 1672×941，下面这些数和那边一个一个对着抄的 —— 改那边记得改这边
+# （门禁 party_room_1126_check 会把两边的数对一遍）。
+const TEX_CHAT := preload("res://assets/ui/room_parchment/chat.png")
+const TEX_START := preload("res://assets/ui/room_parchment/start.png")
+const TEX_FRIENDS_WIDE := preload("res://assets/ui/room_parchment/friends_wide.png")
+const CHAT_NO_BADGE := preload("res://scenes/menu/chat_no_badge.gdshader")
+const ChatInputBar := preload("res://ui/components/ChatInputBar.gd")
+const CHAT_POS := Vector2(80, 704)             # 聊天框（TEX_CHAT）
+const CHAT_SIZE := Vector2(430, 210)
+const CHAT_TEXT_X := 143.0                     # 纸面内可写字的范围（避开四个卷角）
+const CHAT_TEXT_W := 309.0
+const CHAT_FIRST_LINE_Y := 757.0
+const CHAT_LINES := 3                          # 不滚动时看得到几行
+const CHAT_LINE_H := 26.0
+const CHAT_ENTRY_Y := 836.0                    # 底下那一行：左「＋ 快捷短语」右「＋ 打字」
+const CHAT_ENTRY_SPLIT := 154.0
+const CHAT_FONT := 19
+const VOICE_MIC_POS := Vector2(522, 779)       # 聊天框右缘外 12，垂直对齐聊天框中线
+const VOICE_SPEAKER_POS := Vector2(608, 779)
+const VOICE_STATUS_POS := Vector2(522, 843)
+const ACTION_POS := Vector2(1300, 760)         # 开始匹配（TEX_START）
+const ACTION_SIZE := Vector2(270, 130)
+const NOTICE_POS := Vector2(1245, 668)         # 提示写在开始键正上方
+const NOTICE_SIZE := Vector2(380, 88)
+const FRIENDS_PANEL_POS := Vector2(1255, 180)  # 朋友列表（TEX_FRIENDS_WIDE）
+const FRIENDS_PANEL_SIZE := Vector2(345, 400)
+const FRIENDS_TITLE_POS := Vector2(1317, 228)
+const FRIENDS_TITLE_SIZE := Vector2(220, 35)
+const FRIENDS_LIST_POS := Vector2(1295, 273)
+const FRIENDS_LIST_SIZE := Vector2(264, 266)
+const FRIEND_ROW_H := 54.0
+const FRIEND_ONLINE_COLOR := Color("2f7d45")
+const FRIEND_BUSY_COLOR := Color("a0661c")
+const FRIEND_OFFLINE_COLOR := Color("8c7a66")
+const PARCH_SECTION := Color("8a4b12")
+# 宠物走动的范围（设计稿坐标）。右边收到 1222，不走进朋友列表底下。
+const PET_AREA_POS := Vector2(372, 315)
+const PET_AREA_SIZE := Vector2(850, 355)
+const PETS_DRAWER_POS := Vector2(1257, 104)
+const PETS_DRAWER_SIZE := Vector2(343, 394)
 const CHOICE_DIALOG := preload("res://scenes/menu/PartyChoiceDialog.gd")
 const RacePick := preload("res://scripts/units/RacePick.gd")
 const MODE_MODAL_ID := "party_lobby_mode_picker"
@@ -64,6 +78,9 @@ const MUTED := Color("bbc5b9")
 const GREEN := Color("9cdbba")
 const DARK := Color("101b1c")
 const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
+# 11-26：好友卡片 / 私聊叠层，与自定义房间共用（ui/components/LobbyPopover.gd）。
+const LobbyPopover := preload("res://ui/components/LobbyPopover.gd")
+const FRIEND_CARD_MODAL_ID := "party_friend_card"
 # 头像上的「正在说话」小麦克风（10-08，所有用到语音的地方共用 VoiceControls 里那两个函数）。
 const VoiceControls := preload("res://ui/components/VoiceControls.gd")
 const VoiceButtonArt := preload("res://ui/components/VoiceButtonArt.gd")
@@ -94,19 +111,15 @@ const FRIENDS_REFRESH_SEC := 5.0
 # 几个人能开始匹配，以房间快照里服务器下发的 startable_sizes 为准（10-15：开关在账号服务器
 # .env 的 GLORY_PARTY_FULL_TEAM_ONLY，翻它不用出新包）。这里只是没有那个键的老服务器的口径。
 const STARTABLE_SIZES := [1, 3]
-# 排位房展示宠物的上限（与服务端 party.MAX_PETS 一致）：房主的出战宠物必占一席。
-const MAX_DISPLAY_PETS := 5
 # 10-08 用户要求：**所有按键大小照自定义房间**（Team3v3Lobby）走，图案不变。
 # 两个房间的设计稿都是 1672×941，尺寸一比一照搬；括号里是 Team3v3Lobby 的出处。
 const BACK_SIZE := Vector2(143, 83)            # 返回（_build 里 TEX_BACK 那颗）
-const ACTION_SIZE := Vector2(420, 133)         # 主要操作保留足够的触控面积
 const VOICE_BTN_SIZE := Vector2(78, 60)        # 语音按钮（VOICE_BTN_SIZE）
 const TOP_BTN_SIZE := Vector2(140, 62)         # 右上角「设定」（原静音 MUTE_BTN_SIZE）；休闲 / 排位、宠物也按它
 # 10.11 第 2 条：右上角「设定」推上 ModalStack 的 id。刻意与自定义房间的
 # `"lobby_settings"` 分开 —— 两个房间理论上不会同时在树里，但共用同一个 id 时，
 # 若其中一个被提前释放而 ModalStack 里的条目还在，另一个就会永远打不开设置页。
 const LOBBY_SETTINGS_MODAL_ID := "party_lobby_settings"
-const PHRASE_ENTRY_SIZE := Vector2(150, 36)    # 「＋ 快捷短语」入口（10.19 起放进聊天框标题木条，高度随木条）
 const PHRASE_PANEL_W := 380.0                  # 快捷短语面板宽；高按短语行数算
 const PHRASE_PANEL_TOP := 48.0                 # 标题木条以下才排按钮
 const PHRASE_BTN_SIZE := Vector2(162, 40)      # PHRASE_BTN_SIZE，两列
@@ -116,14 +129,6 @@ const KICK_BTN_SIZE := Vector2(38, 38)         # 座位上的「×」
 # 席位头像框的基准盒（154×154，既有值）。只当「反推内孔」的基准用 —— 框真正画多大
 # 由 `_seat_hole_target()` 反推，见 `_render_seats`。
 const SEAT_FRAME_SIZE := Vector2(154, 154)
-# 10.19：收起状态从 190 加高到 270（底边不动，往上长），能看到最近 3 条，不再只有一行。
-const CHAT_POS := Vector2(37, 644)
-const CHAT_SIZE := Vector2(430, 270)           # 聊天框宽 430（TEX_CHAT）
-const CHAT_COLLAPSED_LINES := 3                # 收起时显示最近几条
-const CHAT_EXPANDED_H := 437.0
-const CHAT_LIST_TOP := 102.0                   # 羊皮纸页头和卷角以下
-const CHAT_LIST_SIDE_PADDING := 54.0
-const CHAT_INPUT_FROM_BOTTOM := 76.0           # 输入框顶到面板底（底边框约 26）
 # 长按扬声器看语音面板（同 VoiceControls 的 700 毫秒）。
 const SPEAKER_HOLD_MSEC := 700
 # 「开始匹配」能按时的明暗脉动（同自定义房间的开始键，Team3v3Lobby._update_start_pulse）。
@@ -141,6 +146,10 @@ var _friends_busy := false
 # 10.10：好友列表的「内容签名」。数据没变就不重建列表 —— 否则 presence 推送 /
 # 5 秒轮询会把玩家正在拖动的滚动条连同滚动位置一起重置（真机表现为「滚动条消失」）。
 var _friends_sig := ""
+# 好友卡片此刻对着谁（好友码，空 = 没开）、卡片上的邀请键、邀请是否正在发。
+var _card_code := ""
+var _card_invite_btn: Button = null
+var _card_inviting := false
 var _local_only := true
 var _load_error := ""
 var _loading_room := false
@@ -163,23 +172,32 @@ var _match_found := false
 # 而 Main 要等连上战斗服务器、进了对局大厅才收掉本界面。这几秒里本界面不能再轮询 / 复查房间 ——
 # 查到「房间没了」就会退回主界面，把正在进对局的人拉出来。
 var _match_ready := false
+# 画面分三块，都按同一个比例缩放（设计稿 1672×941）：
+#   _canvas  中间那块（模式牌、三个席位），永远居中 —— 宠物舞台也是按居中算的，两者要对得上；
+#   _left    贴屏幕左边（返回、聊天框、麦克风 / 听筒），让开刘海；
+#   _right   贴屏幕右边（宠物、设定、朋友列表、开始匹配），让开刘海。
+# 16:9 的屏上三块正好拼成原来那一整张；更宽的屏上左右两块跟着贴边（同自定义房间）。
 var _canvas: Control
+var _left: Control
+var _right: Control
+# 盖在最上面的一层（语音面板）。
+var _overlay: Control
+var _layout_sig := ""
 var _stage: Control
 var _seat_layer: Control
+var _friends_group: Control
+var _friends_panel: TextureRect
 var _friend_list: VBoxContainer
 var _pet_list: VBoxContainer
-var _friend_rail: VBoxContainer
-var _friends_drawer: Panel
 var _pets_drawer: Panel
-var _friends_toggle: Button
 var _pet_toggle: Button
-var _chat_panel: Panel
-var _chat_toggle: Button
-var _chat_expanded := false
+# 正在等服务器回「换出战宠物」：这期间整列点不动，免得连点两只。
+var _pet_switching := false
+var _chat_group: Control
 var _chat_list: VBoxContainer
 var _chat_scroll: ScrollContainer
-var _chat_input: LineEdit
-var _send_button: Button
+var _chat_sig := ""
+var _type_button: Button
 var _mode_button: Button
 var _mode_hint: Label
 var _action: Button
@@ -247,6 +265,8 @@ func _ready() -> void:
 	MUSIC_SERVICE.end_match()
 	MUSIC_SERVICE.play_group(MUSIC_SERVICE.MENU_GROUP, true)
 	get_viewport().size_changed.connect(_layout)
+	if not SafeArea.changed.is_connected(_layout):
+		SafeArea.changed.connect(_layout)
 	_layout()
 	if not RealtimeService.message_received.is_connected(_on_realtime):
 		RealtimeService.message_received.connect(_on_realtime)
@@ -257,8 +277,8 @@ func _ready() -> void:
 			_action.disabled = true
 			_mode_button.disabled = false
 			_notice.text = _text("点击青苗，开始第一次教学", "Choose Seedling for your first lesson")
-			for control in [_friends_toggle, _pet_toggle, _chat_panel, _chat_toggle,
-					_voice_mic, _voice_speaker]:
+			for control in [_friends_group, _pet_toggle, _chat_group,
+					_voice_mic, _voice_speaker, _voice_status]:
 				if control != null:
 					control.visible = false
 		_friends = [
@@ -286,6 +306,8 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	MUSIC_SERVICE.clear_talk_probe()
+	if SafeArea.changed.is_connected(_layout):
+		SafeArea.changed.disconnect(_layout)
 	if RealtimeService.message_received.is_connected(_on_realtime):
 		RealtimeService.message_received.disconnect(_on_realtime)
 	if AccountManager.profile_changed.is_connected(_on_local_profile_changed):
@@ -309,15 +331,14 @@ func _build() -> void:
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(shade)
 	_stage = PET_STAGE.new() as Control
-	_stage.configure_party_display([], Vector2(385, 315), Vector2(920, 355))
+	_stage.configure_party_members([], PET_AREA_POS, PET_AREA_SIZE)
 	add_child(_stage)
-	_canvas = Control.new()
-	_canvas.custom_minimum_size = REF
-	_canvas.size = REF
-	_canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_canvas)
+	_canvas = _make_group("Center")
+	_left = _make_group("LeftEdge")
+	_right = _make_group("RightEdge")
+	_overlay = _make_group("Overlay")
 
-	var back := _button(_canvas, "‹  " + _text("返回", "Back"), Vector2(43, 30), BACK_SIZE)
+	var back := _button(_left, "‹  " + _text("返回", "Back"), Vector2(43, 30), BACK_SIZE)
 	_style_paper_button(back, false)
 	back.pressed.connect(_leave)
 	_mode_button = _button(_canvas, "", Vector2(621, 27), Vector2(430, 94))
@@ -327,94 +348,51 @@ func _build() -> void:
 	_mode_hint.add_theme_color_override("font_outline_color", Color("1c2b23"))
 	_mode_hint.add_theme_constant_override("outline_size", 3)
 	_update_mode_display(_initial_mode)
-	_pet_toggle = _button(_canvas, _text("宠物", "PETS"), Vector2(1325, 38), TOP_BTN_SIZE)
+	# 11-26：「宠物」键改成**换自己的出战宠物**（原来是房主勾选「展示哪几只」），所以队员也看得到。
+	_pet_toggle = _button(_right, _text("宠物", "PETS"), Vector2(1325, 38), TOP_BTN_SIZE)
 	_style_paper_button(_pet_toggle, false)
+	_pet_toggle.name = "PetButton"
 	_pet_toggle.pressed.connect(_toggle_pets_drawer)
 	# 10.11 第 2 条：右上角那颗键从「静音 / 已静音」改成「设定」（同自定义房间
 	# Team3v3Lobby._build_settings_button）。位置 / 尺寸 / 纸纹样式全部照旧，只换文案与动作 ——
 	# 静音没丢：设置页里的「背景音乐」就是同一个开关，还多控了音效与画质。
-	_settings_button = _button(_canvas, _text("设定", "Settings"), Vector2(1475, 38), TOP_BTN_SIZE)
+	_settings_button = _button(_right, _text("设定", "Settings"), Vector2(1475, 38), TOP_BTN_SIZE)
 	_style_paper_button(_settings_button, false)
 	_settings_button.name = "SettingsButton"
 	_settings_button.pressed.connect(_open_settings)
 
-	# 10.19：聊天框换成木框九宫格（标题在顶部深色木条里），收起 / 发送换成图标键（48×48 触控区）。
-	_chat_panel = _frame_panel(_canvas, CHAT_POS, CHAT_SIZE, SOCIAL_CHAT_FRAME,
-		CHAT_FRAME_SRC_W, CHAT_FRAME_MARGINS, CHAT_FRAME_SCALE)
-	_title_label(_chat_panel, _text("队内聊天", "PARTY CHAT"), Vector2(54, 49), Vector2(137, 34), 18)
-	_chat_toggle = _social_icon_button(_chat_panel, Vector2(CHAT_SIZE.x - 90, 43), ICON_UP)
-	_chat_toggle.pressed.connect(_toggle_chat)
-	_chat_scroll = TouchScrollContainer.new()
-	_chat_scroll.position = Vector2(CHAT_LIST_SIDE_PADDING, CHAT_LIST_TOP)
-	_chat_scroll.size = Vector2(CHAT_SIZE.x - CHAT_LIST_SIDE_PADDING * 2.0, CHAT_SIZE.y - CHAT_INPUT_FROM_BOTTOM - CHAT_LIST_TOP - 4.0)
-	_chat_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_chat_panel.add_child(_chat_scroll)
-	_chat_list = VBoxContainer.new()
-	_chat_list.custom_minimum_size.x = _chat_scroll.size.x - 8.0
-	_chat_list.add_theme_constant_override("separation", 6)
-	_chat_scroll.add_child(_chat_list)
-	_chat_input = LineEdit.new()
-	_chat_input.placeholder_text = _text("给队友发消息…", "Message your team…")
-	_chat_input.position = Vector2(49, CHAT_SIZE.y - CHAT_INPUT_FROM_BOTTOM)
-	_chat_input.size = Vector2(CHAT_SIZE.x - 146, 40)
-	_style_chat_input(_chat_input)
-	_chat_input.text_submitted.connect(func(_t: String) -> void: _send_chat())
-	_chat_panel.add_child(_chat_input)
-	_send_button = _social_icon_button(_chat_panel,
-		Vector2(CHAT_SIZE.x - 91, CHAT_SIZE.y - CHAT_INPUT_FROM_BOTTOM - 4), ICON_SEND)
-	_send_button.pressed.connect(_send_chat)
-	# 10-08：快捷短语（同自定义房间的「＋ 快捷短语」）。点哪句发哪句，走同一个队内聊天接口。
-	# 10.19：入口挪进标题木条，高度随木条缩到 36。
-	_phrase_button = _button(_chat_panel, _text("＋ 快捷短语", "＋ Quick chat"), Vector2(188, 47), PHRASE_ENTRY_SIZE)
-	_style_paper_button(_phrase_button, false)
-	_phrase_button.add_theme_font_size_override("font_size", 16)
-	_phrase_button.pressed.connect(_toggle_phrase_panel)
+	_build_chat()
 
 	_seat_layer = Control.new()
 	_seat_layer.position = Vector2(377, 179)
 	_seat_layer.size = Vector2(922, 237)
 	_seat_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_canvas.add_child(_seat_layer)
-	# 提示放在开始键上方，预留三行英文高度，避开聊天框和底部语音状态。
-	_notice = _label(_canvas, "", Vector2(566, 668), Vector2(600, 80), 18, CREAM)
+
+	_build_friends()
+
+	# 提示写在开始键正上方，贴着开始键往上长（最多三行）。
+	_notice = _label(_right, "", NOTICE_POS, NOTICE_SIZE, 18, CREAM)
 	_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_notice.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_notice.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 	_notice.max_lines_visible = 3
 	_notice.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_notice.clip_text = true
+	_notice.add_theme_color_override("font_outline_color", Color("1c2b23"))
+	_notice.add_theme_constant_override("outline_size", 4)
 	_notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_action = _button(_canvas, _text("开始匹配", "START MATCH"), Vector2(656, 756), ACTION_SIZE)
+	# 11-26：开始键换成自定义房间那块木牌（TEX_START），位置 / 大小也照那边（右下角）。
+	_action = _button(_right, _text("开始匹配", "START MATCH"), ACTION_POS, ACTION_SIZE)
+	_action.name = "StartButton"
 	_action.pressed.connect(_act)
 
-	_friends_toggle = _button(_canvas, _text("好友", "FRIENDS"), Vector2(1481, 166), Vector2(159, TOP_BTN_SIZE.y))
-	_style_paper_button(_friends_toggle, false)
-	_friends_toggle.pressed.connect(_toggle_friends_drawer)
-	_friend_rail = VBoxContainer.new()
-	_friend_rail.position = Vector2(1520, 248)
-	_friend_rail.size = Vector2(104, 354)
-	_friend_rail.add_theme_constant_override("separation", 12)
-	_canvas.add_child(_friend_rail)
-
-	# 10.19：好友抽屉换成木框九宫格（顶饰 + 标题木条），关闭键换图标键。
-	_friends_drawer = _frame_panel(_canvas, Vector2(1221, 157), Vector2(419, 567), SOCIAL_FRIEND_FRAME,
-		FRIEND_FRAME_SRC_W, FRIEND_FRAME_MARGINS, FRIEND_FRAME_SCALE)
-	_title_label(_friends_drawer, _text("在线好友", "FRIENDS ONLINE"), Vector2(48, 49), Vector2(270, 36), 22)
-	var close_friends := _social_icon_button(_friends_drawer, Vector2(330, 43), ICON_CLOSE)
-	close_friends.pressed.connect(_toggle_friends_drawer)
-	var friends_scroll := TouchScrollContainer.new()
-	friends_scroll.position = Vector2(45, 94)
-	friends_scroll.size = Vector2(344, 433)
-	friends_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_friends_drawer.add_child(friends_scroll)
-	_friend_list = VBoxContainer.new()
-	_friend_list.custom_minimum_size.x = FRIEND_ROW_SIZE.x
-	_friend_list.add_theme_constant_override("separation", 8)
-	friends_scroll.add_child(_friend_list)
-	_friends_drawer.visible = false
-
-	_pets_drawer = _paper_panel(_canvas, Vector2(1203, 123), Vector2(343, 394), 0.97)
-	_label(_pets_drawer, _text("展示宠物", "DISPLAY PETS"), Vector2(21, 15), Vector2(241, 38), 25, Color("425331"))
+	# 换出战宠物的小面板：盖在朋友列表上面，选完自己点 × 收起。
+	_pets_drawer = _paper_panel(_right, PETS_DRAWER_POS, PETS_DRAWER_SIZE, 0.97)
+	_pets_drawer.name = "PetsDrawer"
+	# 面板要吃掉点击：它底下就是朋友列表，漏下去会点到好友。
+	_pets_drawer.mouse_filter = Control.MOUSE_FILTER_STOP
+	_label(_pets_drawer, _text("出战宠物", "ACTIVE PET"), Vector2(21, 15), Vector2(241, 38), 25, Color("425331"))
 	var close_pets := _button(_pets_drawer, "×", Vector2(286, 14), Vector2(38, 37))
 	_style_paper_button(close_pets, false)
 	close_pets.pressed.connect(_toggle_pets_drawer)
@@ -431,11 +409,11 @@ func _build() -> void:
 
 	# 10.07 第 9 条：房间语音改为两个图标按钮 —— 麦克风 + 扬声器（房间里只有队友，
 	# 不做听众选择）。原先是一个「语音 · 关闭/收听/开麦」循环切换的文字按钮。
-	# 10-08：尺寸照自定义房间（78×60，间隔 8），放在聊天框右边。
+	# 11-26：位置照自定义房间 —— 聊天框外右侧，垂直对齐聊天框中线（尺寸 78×60 本来就一样）。
 	# 长按扬声器打开语音面板（谁在说话、单独不听某人），同自定义房间。
-	_voice_mic = _icon_button(_canvas, Vector2(485, 812), VOICE_BTN_SIZE)
+	_voice_mic = _icon_button(_left, VOICE_MIC_POS, VOICE_BTN_SIZE)
 	_voice_mic.pressed.connect(_toggle_voice_mic)
-	_voice_speaker = _icon_button(_canvas, Vector2(571, 812), VOICE_BTN_SIZE)
+	_voice_speaker = _icon_button(_left, VOICE_SPEAKER_POS, VOICE_BTN_SIZE)
 	_voice_speaker.pressed.connect(_toggle_voice_speaker)
 	_voice_speaker.button_down.connect(func() -> void:
 		_speaker_hold_started = Time.get_ticks_msec()
@@ -452,7 +430,7 @@ func _build() -> void:
 	add_child(_party_voice)
 	_refresh_voice_icons()
 	# 10-08：语音出错的原因写在两个语音按钮下面。手机上没有悬停提示，原来只写进 tooltip 等于没写。
-	_voice_status = _label(_canvas, "", Vector2(485, 876), Vector2(164, 58), 13, Color("ffe0a8"))
+	_voice_status = _label(_left, "", VOICE_STATUS_POS, Vector2(164, 58), 13, Color("ffe0a8"))
 	_voice_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_voice_status.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_voice_status.add_theme_color_override("font_outline_color", Color("2c1b11"))
@@ -464,11 +442,141 @@ func _build() -> void:
 	add_child(speaking_timer)
 
 
+# 一块按设计稿（1672×941）摆东西的透明板。自己不吃点击，只有上面的控件吃。
+func _make_group(group_name: String) -> Control:
+	var group := Control.new()
+	group.name = group_name
+	group.size = REF
+	group.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(group)
+	return group
+
+
+# 11-26：聊天框照自定义房间 —— 同一张羊皮纸（TEX_CHAT）、同一个位置和大小；
+# 消息直接写在纸面上（往上拖能翻以前的），底下一行左「＋ 快捷短语」右「＋ 打字」。
+# 原来那种「框里一个输入框 + 发送键 + 展开 / 收起」拿掉了：打字改成点「＋ 打字」弹输入条
+# （ChatInputBar，贴屏幕顶，手机键盘弹出来不会盖住），和自定义房间、对局里是同一个。
+func _build_chat() -> void:
+	_chat_group = Control.new()
+	_chat_group.name = "ChatBox"
+	_chat_group.size = REF
+	_chat_group.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_left.add_child(_chat_group)
+	var paper := TextureRect.new()
+	paper.texture = TEX_CHAT
+	# 这张图左上角自带一个「聊天」角标，自定义房间用这个着色器把它抹掉，这里一样。
+	var paper_material := ShaderMaterial.new()
+	paper_material.shader = CHAT_NO_BADGE
+	paper.material = paper_material
+	paper.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	paper.stretch_mode = TextureRect.STRETCH_SCALE
+	paper.position = CHAT_POS
+	paper.size = CHAT_SIZE
+	paper.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_chat_group.add_child(paper)
+	_chat_scroll = TouchScrollContainer.new()
+	_chat_scroll.name = "ChatScroll"
+	_chat_scroll.position = Vector2(CHAT_TEXT_X, CHAT_FIRST_LINE_Y)
+	_chat_scroll.size = Vector2(CHAT_TEXT_W, CHAT_LINE_H * float(CHAT_LINES))
+	_chat_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_chat_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	_chat_group.add_child(_chat_scroll)
+	_chat_list = VBoxContainer.new()
+	_chat_list.custom_minimum_size.x = CHAT_TEXT_W
+	_chat_list.add_theme_constant_override("separation", 0)
+	_chat_scroll.add_child(_chat_list)
+	_phrase_button = _chat_entry(_text("＋ 快捷短语", "＋ Quick chat"),
+		Vector2(CHAT_TEXT_X, CHAT_ENTRY_Y), Vector2(CHAT_ENTRY_SPLIT, 40))
+	_phrase_button.name = "PhraseEntry"
+	_phrase_button.pressed.connect(_toggle_phrase_panel)
+	_type_button = _chat_entry(_text("＋ 打字", "＋ Type"),
+		Vector2(CHAT_TEXT_X + CHAT_ENTRY_SPLIT, CHAT_ENTRY_Y),
+		Vector2(CHAT_TEXT_W - CHAT_ENTRY_SPLIT, 40))
+	_type_button.name = "TypeEntry"
+	_type_button.pressed.connect(_open_text_input)
+
+
+# 聊天框底下那两个入口：没有底板，就是写在纸上的黑字（同自定义房间）。
+func _chat_entry(value: String, pos: Vector2, dimensions: Vector2) -> Button:
+	var entry := _button(_chat_group, value, pos, dimensions)
+	var empty := StyleBoxEmpty.new()
+	for state in ["normal", "hover", "pressed", "hover_pressed", "disabled", "focus"]:
+		entry.add_theme_stylebox_override(state, empty)
+	entry.focus_mode = Control.FOCUS_NONE
+	entry.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	entry.add_theme_font_size_override("font_size", 20)
+	entry.add_theme_color_override("font_color", Tokens.CHAT_INK)
+	entry.add_theme_color_override("font_hover_color", Color("5a3410"))
+	entry.add_theme_color_override("font_pressed_color", Color("5a3410"))
+	entry.add_theme_color_override("font_focus_color", Tokens.CHAT_INK)
+	entry.add_theme_color_override("font_disabled_color", Color(Tokens.CHAT_INK, 0.4))
+	return entry
+
+
+func _set_chat_enabled(enabled: bool) -> void:
+	_phrase_button.disabled = not enabled
+	_type_button.disabled = not enabled
+	if not enabled:
+		_close_phrase_panel()
+
+
+# 11-26：朋友列表照自定义房间 —— 一直摆在右边的那块宽羊皮纸（TEX_FRIENDS_WIDE），
+# 列出全部好友（可邀请 → 对局中 → 离线），点一行弹好友卡片。
+# 原来的「好友 N 在线」键 + 三个快捷头像 + 点开才出来的抽屉都拿掉了。
+func _build_friends() -> void:
+	_friends_group = Control.new()
+	_friends_group.name = "Friends"
+	_friends_group.size = REF
+	_friends_group.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_right.add_child(_friends_group)
+	_friends_panel = TextureRect.new()
+	_friends_panel.name = "FriendsPanel"
+	_friends_panel.texture = TEX_FRIENDS_WIDE
+	_friends_panel.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_friends_panel.stretch_mode = TextureRect.STRETCH_SCALE
+	_friends_panel.position = FRIENDS_PANEL_POS
+	_friends_panel.size = FRIENDS_PANEL_SIZE
+	_friends_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_friends_group.add_child(_friends_panel)
+	var title := _label(_friends_group, _text("朋友列表", "Friends"), FRIENDS_TITLE_POS,
+		FRIENDS_TITLE_SIZE, 24, PARCH_SECTION)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	var friends_scroll := TouchScrollContainer.new()
+	friends_scroll.name = "FriendsScroll"
+	friends_scroll.position = FRIENDS_LIST_POS
+	friends_scroll.size = FRIENDS_LIST_SIZE
+	friends_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_friends_group.add_child(friends_scroll)
+	_friend_list = VBoxContainer.new()
+	_friend_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_friend_list.add_theme_constant_override("separation", 4)
+	friends_scroll.add_child(_friend_list)
+
+
 func _layout() -> void:
 	var viewport_size := get_viewport_rect().size
+	if viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
+		return
+	# 比例和中间那块的位置按整个屏幕算（宠物舞台 MainMenuPet 也是这么算的，两边要对得上）；
+	# 左右两块贴安全区的边：iPhone 横屏的灵动岛 / 圆角让出来，更宽的屏上跟着贴边。
 	var factor := minf(viewport_size.x / REF.x, viewport_size.y / REF.y)
-	_canvas.scale = Vector2.ONE * factor
-	_canvas.position = (viewport_size - REF * factor) * 0.5
+	var origin := (viewport_size - REF * factor) * 0.5
+	var safe := SafeArea.rect()
+	var left_x := safe.position.x
+	var right_x := safe.end.x - REF.x * factor
+	# 好友卡片按打开那一刻的锚点摆，画面一变就收起。
+	# ⚠️ 只在**真的变了**时收：安全区信号可能重复发，无条件收的话卡片会自己消失。
+	var sig := "%.4f|%.1f|%.1f|%.1f|%.1f" % [factor, origin.x, origin.y, left_x, right_x]
+	if sig != _layout_sig and ModalStack.has(FRIEND_CARD_MODAL_ID):
+		ModalStack.pop(FRIEND_CARD_MODAL_ID)
+	_layout_sig = sig
+	for group in [_canvas, _left, _right, _overlay]:
+		(group as Control).scale = Vector2.ONE * factor
+	_canvas.position = origin
+	_overlay.position = origin
+	_left.position = Vector2(left_x, origin.y)
+	_right.position = Vector2(right_x, origin.y)
 
 
 func _on_local_profile_changed(_profile: Dictionary) -> void:
@@ -476,9 +584,14 @@ func _on_local_profile_changed(_profile: Dictionary) -> void:
 		_show_local_identity()
 
 
+# 自己的宠物数据变了（换了出战宠物、买了新的、试用到期）：面板和场上那只都跟着变。
+# 场上「我的那只」直接读本机的出战宠物，不等服务器那份房间快照回来 —— 点了马上就换。
 func _on_local_pets_changed() -> void:
 	if _local_only:
 		_show_local_identity()
+		return
+	_render_pets()
+	_sync_stage()
 
 
 func _show_local_identity() -> void:
@@ -487,31 +600,25 @@ func _show_local_identity() -> void:
 	var name := str(profile.get("player_name", AccountManager.player_name))
 	if name.is_empty():
 		name = _text("我", "Me")
-	var selected: Array = []
-	for pet_id in PlayerProfile.owned_pets:
-		if selected.size() >= 5:
-			break
-		selected.append(pet_id)
 	_room = {"state": "room", "mode": _initial_mode, "host_code": code,
 		"members": [{"friend_code": code, "player_name": name,
 			"avatar": str(profile.get("avatar", AVATARS.default_avatar())),
 			"avatar_frame": str(profile.get("avatar_frame", AVATARS.default_frame())),
-			"tier": -1, "host": true, "ready": true}],
-		"pets": with_host_pet(selected, str(PlayerProfile.active_pet)),
-		"host_pet": str(PlayerProfile.active_pet),
+			"tier": -1, "host": true, "ready": true,
+			"pet": str(PlayerProfile.active_pet)}],
+		"pets": [], "host_pet": str(PlayerProfile.active_pet),
 		"messages": [], "queued": false}
 	_render_seats()
 	_render_pets()
-	_stage.configure_party_display(_display_pet_ids(), Vector2(385, 315), Vector2(920, 355),
-		_audible_pet())
+	_render_friends()
+	_render_chat()
+	_sync_stage()
 	_mode_button.disabled = true
 	_update_mode_display(_initial_mode)
-	_pet_toggle.visible = false
+	# 队伍服务没连上时不让换宠物：换了队友也看不到，等连上再说。
+	_pet_toggle.disabled = true
 	_pets_drawer.visible = false
-	_chat_input.editable = false
-	_chat_input.placeholder_text = _text("队伍服务未连接", "Party service unavailable")
-	_send_button.disabled = true
-	_phrase_button.disabled = true
+	_set_chat_enabled(false)
 	if _voice_mic != null:
 		_voice_mic.disabled = true
 	if _voice_speaker != null:
@@ -528,25 +635,24 @@ func _apply(next: Dictionary) -> void:
 	_local_only = false
 	_load_error = ""
 	_room = next
-	_chat_input.editable = true
-	_chat_input.placeholder_text = _text("给队友发消息…", "Message your team…")
-	_send_button.disabled = false
-	_phrase_button.disabled = false
+	_set_chat_enabled(true)
 	if _voice_speaker != null:
 		_voice_speaker.disabled = _local_only
 	_refresh_voice_icons()
 	var host := _is_host()
 	var mode := str(_room.get("mode", _initial_mode))
-	_pet_toggle.visible = host and not bool(_room.get("queued", false))
-	if not _pet_toggle.visible:
+	# 11-26：谁都能换自己的出战宠物；排队中锁住（服务器也会拒，见 routes/shop.py）——
+	# 排上了就按那一刻的宠物进对局，不能让「房间里看到的」和「带进去的」对不上。
+	_pet_toggle.disabled = bool(_room.get("queued", false))
+	if _pet_toggle.disabled:
 		_pets_drawer.visible = false
 	_mode_button.disabled = not host or bool(_room.get("queued", false))
 	_update_mode_display(mode)
 	_render_seats()
 	_render_chat()
 	_render_pets()
-	_stage.configure_party_display(_display_pet_ids(), Vector2(385, 315), Vector2(920, 355),
-		_audible_pet())
+	_render_friends()
+	_sync_stage()
 	if _preview == "":
 		_party_voice.configure(_room)
 	var members: Array = _room.get("members", [])
@@ -744,79 +850,112 @@ func _friend_state_text(bucket: int) -> String:
 
 func _render_friends() -> void:
 	var room_count := (_room.get("members", []) as Array).size()
-	var online_count := 0
-	for raw in _friends:
-		var friend: Dictionary = raw
-		if bool(friend.get("online", false)):
-			online_count += 1
-	_friends_toggle.text = _text("好友  %d 在线" % online_count, "FRIENDS  %d" % online_count)
 	# ★★ 10.10 修「拖动时滚动条消失」：数据没变就**不重建**。原来 presence 推送与
 	# 5 秒轮询都无条件 _clear_children + 重设尺寸，玩家正往下拖时列表整个被换掉，
 	# 滚动位置被 clamp、滚动条随内容高度瞬时归零 —— 看起来就是「滚动条突然没了」。
 	var sig := _friends_signature(room_count)
 	if sig == _friends_sig and _friend_list.get_child_count() > 0:
+		_refresh_friend_card()
 		return
 	_friends_sig = sig
 	_clear_children(_friend_list)
-	_clear_children(_friend_rail)
-	# 94 = 标题木条以下，40 = 底边框；每行 75 + 间隔 8。
-	var drawer_height := minf(567.0, maxf(250.0, 134.0 + float(_friends.size()) * 83.0))
-	_friends_drawer.custom_minimum_size.y = drawer_height
-	_friends_drawer.size.y = drawer_height
-	(_friend_list.get_parent() as ScrollContainer).size.y = drawer_height - 134.0
-	var quick_count := 0
 	# 10.11 第 3 条：按「可邀请 → 对局中 → 离线」分档（同一档内保持服务端给的顺序）。
-	# 判据只有一处（_friend_bucket），列表与右下角快捷栏共用 —— 两份一定会分叉。
+	# 判据只有一处（_friend_bucket）。
 	for bucket in [FRIEND_INVITABLE, FRIEND_IN_MATCH, FRIEND_OFFLINE]:
 		for raw in _friends:
+			if not raw is Dictionary:
+				continue
 			var friend: Dictionary = raw
 			if _friend_bucket(friend) != bucket:
 				continue
-			var in_match: bool = bucket == FRIEND_IN_MATCH
-			var can_invite: bool = bucket == FRIEND_INVITABLE
-			var row := Control.new()
-			row.custom_minimum_size = FRIEND_ROW_SIZE
-			row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			_friend_list.add_child(row)
-			var code := str(friend.get("friend_code", ""))
-			# 10.19：点好友这一行（含头像）= 看对方资料；邀请只走右边的「邀请」按钮。
-			# 原来（10-08）点整行就直接邀请 —— 玩家有时只想看看对方资料，一点就把邀请发出去了。
-			# 离线 / 对局中的好友资料照样能看，只有「邀请」按钮按档位禁用。
-			var row_tap := _button(row, "", Vector2.ZERO, FRIEND_ROW_SIZE)
-			row_tap.flat = true
-			row_tap.focus_mode = Control.FOCUS_NONE
-			row_tap.disabled = _local_only
-			row_tap.pressed.connect(_view_member_profile.bind(code))
-			_friend_row_art(row, friend, can_invite or in_match)
-			var name := _label(row, str(friend.get("player_name", "")), Vector2(72, 10), Vector2(156, 30), 19,
-				Color("31412e") if can_invite or in_match else Color("8b8d7b"))
-			name.clip_text = true
-			_label(row, _friend_state_text(bucket), Vector2(72, 40), Vector2(150, 24), 15,
-				Color("438663") if can_invite else Color("8b8d7b"))
-			# 对局中的好友按钮直接写「对局中」并禁用（10.11 第 3 条）；
-			# 离线的仍旧是「邀请」但禁用 —— 与原来一致，免得玩家以为离线的人也能拉进来。
-			var invite := _button(row, _text("邀请", "Invite") if can_invite else \
-				(_text("对局中", "In match") if in_match else _text("邀请", "Invite")), Vector2(232, 18), Vector2(86, 40))
-			_style_paper_button(invite, true)
-			invite.disabled = _local_only or not can_invite or room_count >= 3
-			invite.pressed.connect(func() -> void: _invite(code))
-			# 10.19：右侧快捷头像栏点一下 = 打开好友抽屉，在抽屉里再选看资料还是邀请；
-			# 不再一点就邀请（同上，避免误发）。
-			if can_invite and quick_count < 3:
-				var quick := _friend_avatar(_friend_rail, friend, Vector2.ZERO, 72)
-				quick.pressed.connect(_toggle_friends_drawer)
-				quick_count += 1
+			_friend_list.add_child(_friend_row(friend, bucket))
 	if _friends.is_empty():
 		# 10.19：空状态告诉玩家下一步。暂无站内「加好友」入口，先只写提示。
 		var empty := _label(_friend_list, _text("还没有好友\n加好友后，就能在这里邀请组队",
 			"No friends yet\nAdd friends to invite them here"),
-			Vector2.ZERO, Vector2(FRIEND_ROW_SIZE.x, 100), 17, Color("6b5a3e"))
-		empty.custom_minimum_size = Vector2(FRIEND_ROW_SIZE.x, 100)
+			Vector2.ZERO, Vector2(FRIENDS_LIST_SIZE.x - 12.0, 110), 16, FRIEND_OFFLINE_COLOR)
+		empty.custom_minimum_size = Vector2(FRIENDS_LIST_SIZE.x - 12.0, 110)
 		empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		empty.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	elif online_count == 0:
-		_label(_friend_rail, _text("暂无在线好友", "No one online"), Vector2.ZERO, Vector2(105, 50), 16, CREAM)
+	_refresh_friend_card()
+
+
+# 一行好友：头像、昵称、状态字，有未读私聊时末尾一颗红点。点一下 = 弹好友卡片。
+# 样子和自定义房间那一行一样（Team3v3Lobby._online_friend_row）：羊皮纸小底板，高 54。
+#
+# 行是 GloryActionButton 的实例。必须是按钮类：TouchScrollContainer 在手指拖动超过阈值时
+# 会取消 BaseButton 的这次按压，拖着滚列表不会误弹卡片。
+func _friend_row(friend: Dictionary, bucket: int) -> Button:
+	var code := str(friend.get("friend_code", ""))
+	var row := ACTION.instantiate() as Button
+	row.name = "FriendRow_%s" % code
+	row.text = ""
+	row.custom_minimum_size = Vector2(0, maxf(Tokens.TOUCH_MIN, FRIEND_ROW_H))
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.focus_mode = Control.FOCUS_NONE
+	row.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	row.disabled = _local_only
+	Kit.style_plate(row, false)
+	var line := HBoxContainer.new()
+	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	line.add_theme_constant_override("separation", 6)
+	row.add_child(line)
+	line.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	line.offset_left = 16.0
+	line.offset_right = -18.0
+	var avatar := TextureRect.new()
+	avatar.custom_minimum_size = Vector2.ONE * 36.0
+	AVATARS.set_avatar_texture(avatar, AVATARS.texture_for(str(friend.get("avatar", AVATARS.default_avatar())), true))
+	avatar.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	avatar.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	avatar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 离线的头像压暗一点：一眼分得出谁在线（颜色之外再给一层明暗，不只靠颜色表达）。
+	avatar.modulate = Color(1, 1, 1, 0.55) if bucket == FRIEND_OFFLINE else Color.WHITE
+	line.add_child(avatar)
+	var name := Label.new()
+	name.text = AccountManager.display_name(str(friend.get("player_name", "")), code, false)
+	name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	name.clip_text = true
+	name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	name.add_theme_color_override("font_color", FRIEND_OFFLINE_COLOR if bucket == FRIEND_OFFLINE else Kit.INK)
+	name.add_theme_font_size_override("font_size", 17)
+	name.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	line.add_child(name)
+	var status := Label.new()
+	status.name = "Status"
+	status.text = _friend_state_text(bucket)
+	status.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	status.add_theme_color_override("font_color", _friend_state_color(bucket))
+	status.add_theme_font_size_override("font_size", 14)
+	status.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	line.add_child(status)
+	if ChatService.has_unread(code):
+		# 有未读私聊：行尾一颗红点（同 FriendsScreen 私聊键上的红点）。
+		var unread := Label.new()
+		unread.name = "UnreadDot"
+		unread.text = "●"
+		unread.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		unread.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
+		unread.add_theme_font_size_override("font_size", 14)
+		unread.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		line.add_child(unread)
+	# ★ 11-26 与自定义房间统一：点好友这一行 = 弹好友卡片（LobbyPopover.open_friend_card），
+	#   卡片上 [查看资料] [邀请] [私聊] 排在同一排。离线 / 对局中的好友卡片照样能开
+	#   （看资料、私聊），只有卡片上的「邀请」按档位禁用。
+	row.pressed.connect(_open_friend_card.bind(code, row))
+	return row
+
+
+func _friend_state_color(bucket: int) -> Color:
+	match bucket:
+		FRIEND_IN_MATCH:
+			return FRIEND_BUSY_COLOR
+		FRIEND_OFFLINE:
+			return FRIEND_OFFLINE_COLOR
+	return FRIEND_ONLINE_COLOR
 
 
 # 好友列表的内容签名：把参与渲染的字段按顺序拼起来（含房间人数与本地预览开关，
@@ -830,98 +969,258 @@ func _friends_signature(room_count: int) -> String:
 		var f: Dictionary = raw
 		# in_match 必须进签名（10.11 第 3 条）：它一翻，行要换档、按钮文案要换 ——
 		# 漏了它就会「数据变了但列表不重建」，而 10.10 加的签名去重是**按内容**跳过的。
-		parts.append("%s|%s|%s|%s|%s" % [
+		# 11-26：未读私聊也进签名 —— 行尾那颗红点要跟着出 / 消。
+		parts.append("%s|%s|%s|%s|%s|%s" % [
 			str(f.get("friend_code", "")), str(f.get("online", false)),
 			str(f.get("in_match", false)),
-			str(f.get("player_name", "")), str(f.get("avatar", ""))])
+			str(f.get("player_name", "")), str(f.get("avatar", "")),
+			str(ChatService.has_unread(str(f.get("friend_code", ""))))])
 	return ";;".join(parts)
 
 
+# ── 好友卡片（11-26，与自定义房间 Team3v3Lobby 同一套 LobbyPopover）──────────────
+#
+# 卡片长在朋友列表**左边**、与被点的那一行垂直对齐；[查看资料] [邀请] [私聊] 同一排。
+# 朋友列表在 _right 里（整块按 _layout 的 factor 缩放），所以换算系数就是 _right.scale.x。
+func _open_friend_card(code: String, row: Control) -> void:
+	if _preview != "" or row == null or not is_instance_valid(row) or not row.is_inside_tree():
+		return
+	var friend := _friend_entry(code)
+	if friend.is_empty():
+		return
+	var row_rect := row.get_global_rect()
+	var left := minf(row_rect.position.x, _friends_panel.get_global_rect().position.x)
+	var anchor := Rect2(Vector2(left, row_rect.position.y), Vector2(row_rect.end.x - left, row_rect.size.y))
+	var bucket := _friend_bucket(friend)
+	_card_code = code
+	_card_invite_btn = LobbyPopover.open_friend_card(self, FRIEND_CARD_MODAL_ID, anchor, _right.scale.x,
+		friend, _friend_state_text(bucket), _friend_state_color(bucket),
+		_friend_invite_state(friend), {
+			"profile": func() -> void: _view_member_profile(code),
+			"invite": func(button: Button) -> void: _invite_from_card(code, button),
+			"chat": func() -> void: LobbyPopover.open_private_chat(self, code),
+		})
+	if _card_invite_btn == null:
+		_card_code = ""
+
+
+func _friend_entry(code: String) -> Dictionary:
+	for raw in _friends:
+		if raw is Dictionary and str((raw as Dictionary).get("friend_code", "")) == code:
+			return raw
+	return {}
+
+
+# 卡片上「邀请」键的字和能不能点：对局中 / 离线按 10.11 第 3 条的口径写明原因；
+# 已经在队里的、队伍满了（3 人）的、本地预览的都不能点。
+func _friend_invite_state(friend: Dictionary) -> Dictionary:
+	match _friend_bucket(friend):
+		FRIEND_IN_MATCH:
+			return {"text": _text("对局中", "In match"), "enabled": false}
+		FRIEND_OFFLINE:
+			return {"text": _text("离线", "Offline"), "enabled": false}
+	var code := str(friend.get("friend_code", ""))
+	var members: Array = _room.get("members", [])
+	for raw in members:
+		if raw is Dictionary and str((raw as Dictionary).get("friend_code", "")) == code:
+			return {"text": _text("已在队伍", "In party"), "enabled": false}
+	if _card_inviting:
+		return {"text": _text("发送中…", "Sending…"), "enabled": false}
+	if _local_only or members.size() >= 3:
+		return {"text": _text("邀请", "Invite"), "enabled": false}
+	return {"text": _text("邀请", "Invite"), "enabled": true}
+
+
+# 列表数据（5 秒轮询 / 上线推送）或房间人数变了，卡片还开着的话邀请键跟着变；
+# 好友从列表里消失（被删）就收起卡片。
+func _refresh_friend_card() -> void:
+	if _card_code.is_empty():
+		return
+	if not ModalStack.has(FRIEND_CARD_MODAL_ID) or not is_instance_valid(_card_invite_btn):
+		_card_code = ""
+		_card_invite_btn = null
+		return
+	var friend := _friend_entry(_card_code)
+	if friend.is_empty():
+		ModalStack.pop(FRIEND_CARD_MODAL_ID)
+		_card_code = ""
+		_card_invite_btn = null
+		return
+	if _card_invite_btn.text == _text("已邀请", "Invited"):
+		return
+	var state := _friend_invite_state(friend)
+	LobbyPopover.set_card_invite(_card_invite_btn, str(state.text), bool(state.enabled))
+
+
+# 卡片上点「邀请」：走原来的 _invite（同一把 _busy 闸、同一条 sticky 提示），
+# 成功后键改成「已邀请」，失败恢复成能点。
+func _invite_from_card(code: String, button: Button) -> void:
+	if _card_inviting:
+		return
+	_card_inviting = true
+	LobbyPopover.set_card_invite(button, _text("发送中…", "Sending…"), false)
+	var ok := await _invite(code)
+	_card_inviting = false
+	if not is_inside_tree():
+		return
+	if ok:
+		LobbyPopover.set_card_invite(button, _text("已邀请", "Invited"), false)
+	else:
+		var friend := _friend_entry(code)
+		var state := _friend_invite_state(friend) if not friend.is_empty() else {"text": _text("邀请", "Invite"), "enabled": false}
+		LobbyPopover.set_card_invite(button, str(state.text), bool(state.enabled))
+
+
+# ── 出战宠物（11-26）─────────────────────────────────────────────────────────
+#
+# 用户定的规则：
+#   · 房间里走动的宠物 = **每个成员当前的出战宠物**，一人一只，模型脚下写玩家名字；
+#   · 「宠物」键 = 直接换**自己的**出战宠物（就是背包里换出战的那个接口，换了哪儿都生效）；
+#   · 排队中不能换；只听得到自己那只的脚步声。
+# 原来那套「房主勾选展示哪几只（最多 5 只）、房主的出战宠物必须在里头」整个拿掉了。
 func _render_pets() -> void:
 	_clear_children(_pet_list)
-	var selected: Array = _room.get("pets", [])
 	var owned: Array = PlayerProfile.owned_pets
 	if _preview != "":
 		owned = ["pet_cat", "pet_rabbit", "pet_mushroom"]
-	var host_pet := _host_pet()
+	var active := _my_pet()
+	var locked := pet_switch_locked(_local_only, bool(_room.get("queued", false)), _pet_switching)
 	for raw in owned:
 		var pet_id := str(raw)
-		# 10.09：房主的出战宠物必须展示 —— 始终打勾、勾选锁死（点不动）、走暗色
-		# （复用 Button 的 disabled 样式）。其余行照旧可勾可选。
-		var locked := pet_row_locked(pet_id, host_pet)
-		var checked := selected.has(pet_id) or locked
+		var current := pet_id == active
 		var choice := ACTION.instantiate() as Button
-		choice.text = ("✓  " if checked else "○  ") + _pet_name(pet_id)
+		var title := ("✓  " if current else "○  ") + _pet_name(pet_id)
+		if _preview == "" and PlayerProfile.pet_trials.has(pet_id):
+			title += _text("（试用）", " (trial)")
+		choice.text = title
 		choice.custom_minimum_size = Vector2(295, 50)
-		_style_paper_button(choice, checked)
-		choice.disabled = locked or _local_only or not _is_host() or bool(_room.get("queued", false))
-		if not locked:
-			choice.pressed.connect(func() -> void: _toggle_pet(pet_id))
+		_style_paper_button(choice, current)
+		choice.disabled = locked
+		if not current:
+			choice.pressed.connect(_switch_pet.bind(pet_id))
 		_pet_list.add_child(choice)
 	if owned.is_empty():
 		var hint := Label.new()
-		hint.text = _text("当前没有可展示的宠物", "No pets to display")
+		hint.text = _text("还没有宠物", "No pets yet")
 		hint.add_theme_color_override("font_color", Color("657057"))
 		_pet_list.add_child(hint)
-	_render_friends()
 
 
+# 面板上的行什么时候点不动。纯静态（入参即全部依赖）⇒ 门禁可以直接喂数据。
+static func pet_switch_locked(local_only: bool, queued: bool, switching: bool) -> bool:
+	return local_only or queued or switching
+
+
+# 我现在的出战宠物。真实房间里读本机那份（换了马上就对）；预览里读假房间。
+func _my_pet() -> String:
+	if _preview != "":
+		return str(_my_member().get("pet", ""))
+	return str(PlayerProfile.active_pet)
+
+
+# 点面板上的一只：换成自己的出战宠物。
+func _switch_pet(pet_id: String) -> void:
+	if pet_switch_locked(_local_only, bool(_room.get("queued", false)), _pet_switching):
+		return
+	if _preview != "":
+		var mine := _my_member()
+		mine["pet"] = pet_id
+		_apply(_room)
+		return
+	_pet_switching = true
+	_render_pets()
+	# PlayerProfile.set_active 成功后自己会发 pets_changed（_on_local_pets_changed 重画面板和场上那只）；
+	# 服务器同时把新的房间快照推给全队，队友那边跟着换。
+	var ok: bool = await PlayerProfile.set_active(pet_id)
+	_pet_switching = false
+	if not is_inside_tree():
+		return
+	if not ok:
+		_notice.text = _text("没换成，请稍后再试", "Couldn't switch pet — try again")
+	_render_pets()
+	_sync_stage()
+
+
+# 场上该出哪些宠物：一个成员一只。
+func _stage_members() -> Array:
+	var out: Array = []
+	var me := _my_code()
+	var own_pet := "" if _preview != "" else str(PlayerProfile.active_pet)
+	var host_pet := str(_room.get("host_pet", ""))
+	for raw in _room.get("members", []):
+		if not raw is Dictionary:
+			continue
+		var member: Dictionary = raw
+		var code := str(member.get("friend_code", ""))
+		var mine := not me.is_empty() and code == me
+		out.append({
+			"key": code,
+			"pet": member_pet_of(member, mine, own_pet, host_pet),
+			"name": AccountManager.display_name(str(member.get("player_name", "")), code, false),
+			# 只听自己那只的脚步声（用户定）：三只一起响太吵，也分不清谁是谁。
+			"audible": mine,
+		})
+	return out
+
+
+# 某个成员该出哪只宠物。纯静态（入参即全部依赖）⇒ 门禁可以直接喂数据。
+#   · 是我自己：用本机的出战宠物（换了马上就对，不等服务器的快照回来）；
+#   · 别人：用房间快照里他那一条的 pet；
+#   · 账号服务器还是旧版（成员条目里没有 pet）：只有房主那只认得出来（快照的 host_pet），
+#     其他队友先不出宠物 —— 宁可少一只，也不拿别人的宠物冒充。
+static func member_pet_of(member: Dictionary, is_me: bool, own_active_pet: String,
+		room_host_pet: String) -> String:
+	if is_me and not own_active_pet.is_empty():
+		return own_active_pet
+	var pet := str(member.get("pet", ""))
+	if not pet.is_empty():
+		return pet
+	if bool(member.get("host", false)):
+		return room_host_pet
+	return ""
+
+
+func _sync_stage() -> void:
+	_stage.configure_party_members(_stage_members(), PET_AREA_POS, PET_AREA_SIZE)
+
+
+# 消息直接写在聊天框的纸面上，一条一行「名字：内容」（长的自动换行），最新的在最底下。
+# 内容没变就不重建 —— 房间快照 7 秒来一次，每次都重建的话，玩家往上翻着看就被拽回底部。
 func _render_chat() -> void:
-	_clear_children(_chat_list)
 	var messages: Array = _room.get("messages", [])
+	var sig := "%d:%d" % [messages.size(), messages.hash()]
+	if sig == _chat_sig and _chat_list.get_child_count() > 0:
+		return
+	_chat_sig = sig
+	_clear_children(_chat_list)
 	if messages.is_empty():
-		var hint := Label.new()
-		hint.text = _text("还没有消息，点「快捷短语」打个招呼", "No messages yet — try Quick chat")
-		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		hint.add_theme_color_override("font_color", Color("8a7656"))
-		hint.add_theme_font_size_override("font_size", 16)
+		var hint := _chat_line(_text("还没有人说话", "No messages yet"))
+		hint.add_theme_color_override("font_color", Color(Tokens.CHAT_INK, 0.55))
 		_chat_list.add_child(hint)
 		return
-	var mine := _my_code()
-	var first := 0 if _chat_expanded else maxi(0, messages.size() - CHAT_COLLAPSED_LINES)
-	for index in range(first, messages.size()):
-		var raw: Variant = messages[index]
+	for raw in messages:
+		if not raw is Dictionary:
+			continue
 		var message: Dictionary = raw
-		var code := str(message.get("code", ""))
-		_chat_list.add_child(_chat_bubble(message, mine != "" and code == mine))
-	call_deferred("_scroll_chat_bottom")
+		_chat_list.add_child(_chat_line("%s：%s" % [str(message.get("name", "")), str(message.get("text", ""))]))
+	_scroll_chat_bottom.call_deferred()
 
 
-# 10.19：一条消息一个气泡。自己的发言用金色底，队友用奶油底；名字单独着色。
-# 文字用 add_text 写进去，不走 BBCode —— 玩家打的「[」不能被当成标记解析。
-func _chat_bubble(message: Dictionary, mine: bool) -> Control:
-	var bubble := PanelContainer.new()
-	bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var style := StyleBoxFlat.new()
-	style.bg_color = BUBBLE_ME if mine else BUBBLE_MATE
-	style.border_color = BUBBLE_EDGE
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(10)
-	style.content_margin_left = 10
-	style.content_margin_right = 10
-	style.content_margin_top = 4
-	style.content_margin_bottom = 4
-	bubble.add_theme_stylebox_override("panel", style)
-	var body := RichTextLabel.new()
-	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	body.fit_content = true
-	body.scroll_active = false
-	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	body.custom_minimum_size.x = _chat_list.custom_minimum_size.x - 24
-	body.add_theme_font_size_override("normal_font_size", 17)
-	body.add_theme_color_override("default_color", Color("3b2a1c"))
-	body.push_color(Color("8a4b14") if mine else Color("2f6b4a"))
-	body.add_text(str(message.get("name", "")) + "：")
-	body.pop()
-	body.add_text(str(message.get("text", "")))
-	bubble.add_child(body)
-	return bubble
+# 用 Label（不是 RichTextLabel）：玩家打的「[」不能被当成标记解析。
+func _chat_line(value: String) -> Label:
+	var line := Label.new()
+	line.text = value
+	line.custom_minimum_size.x = CHAT_TEXT_W
+	line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	line.add_theme_font_size_override("font_size", CHAT_FONT)
+	line.add_theme_color_override("font_color", Tokens.CHAT_INK)
+	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return line
 
 
 func _scroll_chat_bottom() -> void:
-	# 10.19：气泡里的 RichTextLabel（fit_content）要等排版过一帧才有真实高度；
-	# 只 call_deferred 一次时滚动条最大值还是旧的，换行的长消息会把最新一条挤到可视区外。
+	# 自动换行的 Label 要等排版过一帧才有真实高度；只等一次时滚动条最大值还是旧的，
+	# 换行的长消息会把最新一条挤到可视区外。
 	await get_tree().process_frame
 	await get_tree().process_frame
 	if is_instance_valid(_chat_scroll):
@@ -1245,12 +1544,13 @@ func _change_mode(mode: String) -> void:
 	_run(AccountManager.set_party_mode.bind(mode))
 
 
-func _invite(code: String) -> void:
+# 11-26：返回「这次邀请发出去了没有」，好友卡片据此把键改成「已邀请」。
+func _invite(code: String) -> bool:
 	if _local_only:
-		return
+		return false
 	if _preview != "":
 		_notice.text = _text("已发送邀请", "Invitation sent")
-		return
+		return true
 	# ★★ 10.07h 第 9(2) 条返工（用户真机反馈「邀请后，聊天里没有邀请的消息」）：
 	#
 	# 邀请成功后，服务端会**同时落一条私聊消息**（routes/party.py 的 chat.send，
@@ -1269,51 +1569,49 @@ func _invite(code: String) -> void:
 	# `_busy` 与 `_run()` 同一把闸：邀请是「发出去就别连点第二次」的动作
 	# （服务端还有一道 _invite_limiter，但本地先拦住能省一次 429 提示）。
 	if _busy:
-		return
+		return false
 	_busy = true
 	var result: Dictionary = await AccountManager.invite_to_party(code)
 	_busy = false
 	if not is_inside_tree():
-		return
+		return false
 	if int(result.get("code", 0)) != 200:
 		_notice.text = str(result.get("error", _text("邀请失败", "Invitation failed")))
-		return
+		return false
 	_show_sticky_notice(_text("已发送邀请", "Invitation sent"))
 	# 不 await：这只是刷新会话列表/红点，别让房间界面等网络。
 	ChatService.refresh_unread()
+	return true
 
 
-func _toggle_pet(pet_id: String) -> void:
+# 「＋ 打字」：弹输入条（贴屏幕顶，手机键盘不会盖住它；同自定义房间 / 对局里）。
+func _open_text_input() -> void:
 	if _local_only:
 		return
-	# 10.09：房主的出战宠物不能被取消展示（UI 那行已锁死，这里是第二道闸）。
-	if pet_row_locked(pet_id, _host_pet()):
-		return
-	var chosen: Array = (_room.get("pets", []) as Array).duplicate()
-	if chosen.has(pet_id):
-		chosen.erase(pet_id)
-	elif chosen.size() < 5:
-		chosen.append(pet_id)
-	else:
-		_notice.text = _text("最多展示 5 只宠物", "Display up to 5 pets")
-		return
-	if _preview != "":
-		_room["pets"] = chosen
-		_apply(_room)
-		return
-	_run(AccountManager.set_party_pets.bind(chosen))
+	_close_phrase_panel()
+	ChatInputBar.new().present(self, func(text: String) -> String:
+			return _submit_chat(text))
 
 
-func _send_chat() -> void:
+# 输入条点「发送」。返回空串 = 发出去了（输入条收起）；非空 = 原因，输入条留着把它写给玩家看。
+func _submit_chat(text: String) -> String:
+	var message := text.strip_edges()
+	if message.is_empty():
+		return ""
 	if _local_only:
-		return
-	var message := _chat_input.text.strip_edges()
-	if message.is_empty() or _busy:
-		return
-	_chat_input.clear()
+		return _text("队伍服务未连接", "Party service unavailable")
+	if _busy:
+		# _run 忙的时候会直接丢掉这次请求；这里先说出来，免得字打了半天一点没反应。
+		return _text("上一个操作还没完成，请再点一次发送", "Still busy — tap send again")
+	_send_text(message)
+	return ""
+
+
+# 快捷短语和打字共用：发一条队内消息。
+func _send_text(message: String) -> void:
 	if _preview != "":
 		var log: Array = _room.get("messages", [])
-		log.append({"code": _my_code(), "name": "我", "text": message})
+		log.append({"code": _my_code(), "name": _text("我", "Me"), "text": message})
 		_room["messages"] = log
 		_render_chat()
 		return
@@ -1433,58 +1731,6 @@ func _startable_sizes() -> Array:
 	return out
 
 
-# 10.09：房主的出战宠物（服务端快照带 host_pet）。它**必须**出现在展示列表里，
-# 那行的勾选锁死（点不动 + 暗色），并且排位里只有它的脚步声能被听见。
-func _host_pet() -> String:
-	return host_pet_of(str(_room.get("host_pet", "")), _is_host(),
-		str(PlayerProfile.active_pet))
-
-
-# 排位里该发声的那只 = 房主的出战宠物。万一快照没带（旧服务端 / 房主没设置出战宠物）
-# 就退回自己的出战宠物，免得整屋静音。
-func _audible_pet() -> String:
-	var host_pet := _host_pet()
-	return host_pet if not host_pet.is_empty() else str(PlayerProfile.active_pet)
-
-
-# 舞台上该展示的宠物列表：房间选中的那批，但**房主的出战宠物必须在里头**
-# （旧服务端没把它塞进 room.pets 时由客户端补，规则与服务端 `_with_host_pet` 一致）。
-func _display_pet_ids() -> Array:
-	return with_host_pet(_room.get("pets", []), _host_pet())
-
-
-# ★ 10.09 真机复测的兜底：线上后端若还没带上 host_pet（旧版本 / 未部署），
-#   `_room.get("host_pet")` 是空串 ⇒ 房主那行既不锁也不暗（真机 bug）。
-#   但只要「房主就是本机玩家」，他的出战宠物客户端本来就知道（PlayerProfile.active_pet），
-#   所以房主这一侧照样锁得死。纯静态（入参即全部依赖）⇒ 门禁可直接喂数据驱动。
-static func host_pet_of(room_host_pet: String, is_host: bool, own_active_pet: String) -> String:
-	if room_host_pet != "":
-		return room_host_pet
-	if is_host:
-		return own_active_pet
-	return ""
-
-
-# 10.09：某一行的勾选是否该锁死 —— 房主的出战宠物必须展示、不能取消（点不动 + 暗色）。
-# 纯静态（入参即全部依赖）⇒ 门禁可以直接喂 id 驱动验证，不必实例化整个房间界面。
-static func pet_row_locked(pet_id: String, host_pet: String) -> bool:
-	return not host_pet.is_empty() and pet_id == host_pet
-
-
-# 10.09：展示列表必须含房主的出战宠物 —— 去重、缺则挤掉末位补上、封顶 MAX_DISPLAY_PETS。
-# 与服务端 `Party._with_host_pet` **同一规则**（纯静态 ⇒ 门禁可直接喂数据驱动）。
-static func with_host_pet(pet_ids: Array, host_pet: String) -> Array:
-	var out: Array = []
-	for raw in pet_ids:
-		var pet_id := str(raw)
-		if pet_id != "" and not out.has(pet_id):
-			out.append(pet_id)
-	if host_pet != "" and not out.has(host_pet):
-		out = out.slice(0, MAX_DISPLAY_PETS - 1)
-		out.append(host_pet)
-	return out.slice(0, MAX_DISPLAY_PETS)
-
-
 # 「房主更换了休闲/排位模式」提示到时自动清掉，别一直挂在通知栏上。
 # 显示一条「过几秒自动消失」的提示，并把它记成 sticky —— `_apply()` 收尾会把它
 # 补回 `_notice`，不会被「按房主/队员身份重写 _notice」那一步冲掉（见 _apply 末尾）。
@@ -1532,15 +1778,17 @@ func _preview_room() -> Dictionary:
 			"host_code": "TUTORIAL", "members": [{"friend_code": "TUTORIAL",
 			"player_name": str(AccountManager.profile.get("player_name", "Player")),
 			"avatar": AVATARS.default_avatar(), "avatar_frame": AVATARS.default_frame(),
-			"tier": 0, "host": true, "ready": true}], "pets": [],
+			"tier": 0, "host": true, "ready": true, "pet": ""}], "pets": [],
 			"host_pet": "", "messages": [], "queued": false}
 	return {"state": "room", "id": "preview", "mode": "ranked", "host_code": "ABCD1234",
 		"members": [
 			{"friend_code": "ABCD1234", "player_name": "星河", "avatar": AVATARS.default_avatar(),
-			 "avatar_frame": AVATARS.default_frame(), "tier": 3, "host": true, "ready": true},
+			 "avatar_frame": AVATARS.default_frame(), "tier": 3, "host": true, "ready": true,
+			 "pet": "pet_cat"},
 			{"friend_code": "EFGH5678", "player_name": "风铃", "avatar": AVATARS.default_avatar(),
-			 "avatar_frame": AVATARS.default_frame(), "tier": 2, "host": false, "ready": _preview == "host"},
-		], "pets": ["pet_cat", "pet_rabbit", "pet_mushroom"], "host_pet": "pet_cat", "messages": [
+			 "avatar_frame": AVATARS.default_frame(), "tier": 2, "host": false, "ready": _preview == "host",
+			 "pet": "pet_rabbit"},
+		], "pets": [], "host_pet": "pet_cat", "messages": [
 			{"name": "星河", "text": "等你准备，我们就去排位。"},
 			{"name": "风铃", "text": "好，宠物都在这里呢！"}], "queued": false}
 
@@ -1669,9 +1917,8 @@ func _toggle_phrase_panel() -> void:
 	# 高 = 标题木条 + 行数 × 行距 + 底边框。
 	var panel_size := Vector2(PHRASE_PANEL_W,
 		PHRASE_PANEL_TOP + ceilf(phrase_count / 2.0) * PHRASE_BTN_STEP.y + 22.0)
-	_phrase_panel = _frame_panel(_canvas,
-		Vector2(_chat_panel.position.x, _chat_panel.position.y - panel_size.y - 8.0), panel_size,
-		SOCIAL_CHAT_FRAME, CHAT_FRAME_SRC_W, CHAT_FRAME_MARGINS, PHRASE_FRAME_SCALE)
+	_phrase_panel = _frame_panel(_left,
+		Vector2(CHAT_POS.x, CHAT_POS.y - panel_size.y - 8.0), panel_size, "card")
 	_phrase_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	_title_label(_phrase_panel, _text("快捷短语", "QUICK CHAT"), Vector2(22, 13), Vector2(200, 27), 16)
 	var index := 0
@@ -1697,13 +1944,7 @@ func _send_phrase(text: String) -> void:
 	_close_phrase_panel()
 	if _local_only:
 		return
-	if _preview != "":
-		var log: Array = _room.get("messages", [])
-		log.append({"code": _my_code(), "name": "我", "text": text})
-		_room["messages"] = log
-		_render_chat()
-		return
-	_run(AccountManager.send_party_chat.bind(text))
+	_send_text(text)
 
 
 # 点队友的位置：看他的资料（同自定义房间 Team3v3Lobby._view_seat_profile）。
@@ -1769,12 +2010,15 @@ func _open_voice_panel() -> void:
 		var entry: Dictionary = raw
 		if str(entry.get("friend_code", "")) != me:
 			others.append(entry)
-	_voice_backdrop = _button(_canvas, "", Vector2.ZERO, REF)
+	# 底下那层透明挡板铺满整个屏幕（点面板外面 = 收起）；面板放在最上面那一层。
+	_voice_backdrop = _button(self, "", Vector2.ZERO, Vector2.ZERO)
+	_voice_backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	move_child(_overlay, -1)
 	_voice_backdrop.flat = true
 	_voice_backdrop.focus_mode = Control.FOCUS_NONE
 	_voice_backdrop.pressed.connect(_close_voice_panel)
 	var height := 124.0 + 56.0 * float(maxi(1, others.size()))
-	_voice_panel = _paper_panel(_canvas, Vector2((REF.x - 380.0) * 0.5, 250), Vector2(380, height), 0.97)
+	_voice_panel = _paper_panel(_overlay, Vector2((REF.x - 380.0) * 0.5, 250), Vector2(380, height), 0.97)
 	_voice_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	_label(_voice_panel, _text("队伍语音", "PARTY VOICE"), Vector2(20, 14), Vector2(280, 36), 24, Color("425331"))
 	var close := _button(_voice_panel, "×", Vector2(326, 14), Vector2(38, 38))
@@ -1843,51 +2087,25 @@ func _voice_state_text() -> String:
 	return _text("已连接 · 只听", "Connected · listening")
 
 
-func _toggle_friends_drawer() -> void:
-	_pets_drawer.visible = false
-	_friends_drawer.visible = not _friends_drawer.visible
-	_friend_rail.visible = not _friends_drawer.visible
-	_friends_toggle.visible = not _friends_drawer.visible
-	# 刚点开就该是新的，不用等下一个轮询周期。原来这个函数只翻 visible ——
-	# 配上「只在 _ready() 里拉一次」，抽屉里看到的就是进房那一刻的快照。
-	if _friends_drawer.visible and _preview == "":
-		_load_friends()
-
-
 func _toggle_pets_drawer() -> void:
-	_friends_drawer.visible = false
-	_friend_rail.visible = true
-	_friends_toggle.visible = true
+	if _pet_toggle.disabled:
+		_pets_drawer.visible = false
+		return
 	_pets_drawer.visible = not _pets_drawer.visible
+	if _pets_drawer.visible:
+		# 面板盖在朋友列表上：开着的好友卡片先收掉，免得悬在一块看不见的行旁边。
+		if ModalStack.has(FRIEND_CARD_MODAL_ID):
+			ModalStack.pop(FRIEND_CARD_MODAL_ID)
+		_render_pets()
 
 
-func _toggle_chat() -> void:
-	_chat_expanded = not _chat_expanded
-	_chat_panel.position.y = CHAT_POS.y + CHAT_SIZE.y - CHAT_EXPANDED_H if _chat_expanded else CHAT_POS.y
-	_chat_panel.size.y = CHAT_EXPANDED_H if _chat_expanded else CHAT_SIZE.y
-	var input_y := _chat_panel.size.y - CHAT_INPUT_FROM_BOTTOM
-	_chat_scroll.size.y = input_y - CHAT_LIST_TOP - 4.0
-	_chat_input.position.y = input_y
-	_chat_toggle.icon = _social_icon(ICON_DOWN if _chat_expanded else ICON_UP)
-	# 只有「发送」跟着输入框走；标题木条上的「短语」「收起」不动。
-	_send_button.position.y = input_y - 4.0
-	_close_phrase_panel()
-	_render_chat()
-
-
-# 10.19：木框九宫格面板。外层仍是 Panel（空底），子节点照旧往上加；
-# 底图是缩放后的 NinePatchRect —— 九宫格边距按贴图原尺寸画，靠节点 scale 把边框缩到屏幕尺寸，
-# 面板改高（聊天框展开、好友抽屉随人数变高）时跟着 resized 重算。
-func _frame_panel(parent: Control, pos: Vector2, dimensions: Vector2, texture: Texture2D,
-		src_width: float, margins: Array, display_scale: float) -> Panel:
-	# 11.11：聊天框 / 好友抽屉 / 快捷短语统一换成羊皮纸面板。原来的参数（木框图 + 原图边距）
-	# 留着不改调用方，这里只认「是哪一种框」：快捷短语面板小，用卡片那张（四角小一号）。
+# 羊皮纸面板（11.11 起）。piece：小面板用 "card"（四角小一号），大的用 "panel"。
+func _frame_panel(parent: Control, pos: Vector2, dimensions: Vector2, piece: String) -> Panel:
 	var panel := Panel.new()
 	panel.position = pos
 	panel.size = dimensions
 	panel.custom_minimum_size = dimensions
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var piece := "card" if display_scale <= PHRASE_FRAME_SCALE else "panel"
 	panel.add_theme_stylebox_override("panel", Kit.box(piece, Vector4.ZERO))
 	parent.add_child(panel)
 	return panel
@@ -1901,77 +2119,6 @@ func _title_label(parent: Control, value: String, pos: Vector2, dimensions: Vect
 	label.add_theme_color_override("font_outline_color", Kit.INK_OUTLINE)
 	label.add_theme_constant_override("outline_size", 3)
 	return label
-
-
-func _social_icon(index: int) -> AtlasTexture:
-	var cell := float(SOCIAL_ICONS.get_width()) / 4.0
-	var atlas := AtlasTexture.new()
-	atlas.atlas = SOCIAL_ICONS
-	atlas.region = Rect2(cell * float(index), 0.0, cell, float(SOCIAL_ICONS.get_height()))
-	return atlas
-
-
-# 木框图标键（关闭 / 收起 / 展开 / 发送）：触控区 48×48，图标铺满，按下 / 禁用靠图标调色。
-func _social_icon_button(parent: Control, pos: Vector2, index: int) -> Button:
-	var button := _button(parent, "", pos, ICON_BTN_SIZE)
-	var empty := StyleBoxEmpty.new()
-	empty.set_content_margin_all(2)
-	for state in ["normal", "hover", "pressed", "hover_pressed", "disabled", "focus"]:
-		button.add_theme_stylebox_override(state, empty)
-	button.icon = _social_icon(index)
-	button.expand_icon = true
-	button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	button.add_theme_color_override("icon_hover_color", Color(1.12, 1.08, 0.96))
-	button.add_theme_color_override("icon_pressed_color", Color(0.80, 0.76, 0.70))
-	button.add_theme_color_override("icon_hover_pressed_color", Color(0.80, 0.76, 0.70))
-	button.add_theme_color_override("icon_disabled_color", Color(0.62, 0.62, 0.60, 0.7))
-	return button
-
-
-# 好友行的底板 + 头像：头像先画、底板压在上面 —— 底板的头像孔是透明的，金圈正好盖住头像边缘。
-func _friend_row_art(row: Control, entry: Dictionary, active: bool) -> void:
-	var k := FRIEND_ROW_SIZE.x / FRIEND_ROW_SRC_W
-	var center := FRIEND_ROW_SOCKET * k
-	var radius := FRIEND_ROW_SOCKET_R * k
-	var mask := Panel.new()
-	mask.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	mask.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
-	var circle := StyleBoxFlat.new()
-	circle.bg_color = Color.WHITE
-	circle.set_corner_radius_all(int(radius))
-	mask.add_theme_stylebox_override("panel", circle)
-	row.add_child(mask)
-	mask.position = center - Vector2(radius, radius)
-	mask.size = Vector2(radius, radius) * 2.0
-	var portrait := TextureRect.new()
-	AVATARS.set_avatar_texture(portrait, AVATARS.texture_for(str(entry.get("avatar", "")), true))
-	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	if not active:
-		portrait.modulate = Color(0.62, 0.62, 0.62)
-	mask.add_child(portrait)
-	portrait.position = Vector2.ZERO
-	portrait.size = mask.size
-	var plate := TextureRect.new()
-	plate.texture = SOCIAL_FRIEND_ROW
-	plate.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	plate.stretch_mode = TextureRect.STRETCH_SCALE
-	plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(plate)
-	plate.position = Vector2.ZERO
-	plate.size = FRIEND_ROW_SIZE
-	var dot := Panel.new()
-	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var dot_style := StyleBoxFlat.new()
-	dot_style.bg_color = Color("4fc980") if bool(entry.get("online", false)) else Color("999b8e")
-	dot_style.border_color = Color.WHITE
-	dot_style.set_border_width_all(2)
-	dot_style.set_corner_radius_all(8)
-	dot.add_theme_stylebox_override("panel", dot_style)
-	row.add_child(dot)
-	dot.size = Vector2(15, 15)
-	dot.position = center + Vector2(radius, radius) * 0.62 - dot.size * 0.5
 
 
 func _paper_panel(parent: Control, pos: Vector2, dimensions: Vector2, opacity: float) -> Panel:
@@ -1988,53 +2135,6 @@ func _paper_panel(parent: Control, pos: Vector2, dimensions: Vector2, opacity: f
 	panel.add_theme_stylebox_override("panel", style)
 	parent.add_child(panel)
 	return panel
-
-
-func _friend_avatar(parent: Control, entry: Dictionary, pos: Vector2, diameter: int) -> Button:
-	var button := Button.new()
-	button.position = pos
-	button.size = Vector2(diameter, diameter)
-	button.custom_minimum_size = button.size
-	button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	button.tooltip_text = str(entry.get("player_name", ""))
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.98, 0.95, 0.83, 0.96)
-	style.border_color = GOLD
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(diameter / 2)
-	for state in ["normal", "hover", "pressed", "disabled", "focus"]:
-		button.add_theme_stylebox_override(state, style)
-	parent.add_child(button)
-	var mask := Panel.new()
-	mask.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	mask.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
-	var circle := StyleBoxFlat.new()
-	circle.bg_color = Color.WHITE
-	circle.set_corner_radius_all(diameter / 2)
-	mask.add_theme_stylebox_override("panel", circle)
-	button.add_child(mask)
-	mask.position = Vector2(8, 8)
-	mask.size = Vector2(diameter - 16, diameter - 16)
-	var portrait := TextureRect.new()
-	AVATARS.set_avatar_texture(portrait, AVATARS.texture_for(str(entry.get("avatar", "")), true))
-	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	mask.add_child(portrait)
-	portrait.position = Vector2.ZERO
-	portrait.size = mask.size
-	var dot := Panel.new()
-	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var dot_style := StyleBoxFlat.new()
-	dot_style.bg_color = Color("4fc980") if bool(entry.get("online", false)) else Color("999b8e")
-	dot_style.border_color = Color.WHITE
-	dot_style.set_border_width_all(2)
-	dot_style.set_corner_radius_all(10)
-	dot.add_theme_stylebox_override("panel", dot_style)
-	button.add_child(dot)
-	dot.position = Vector2(diameter - 22, diameter - 22)
-	dot.size = Vector2(17, 17)
-	return button
 
 
 func _style_paper_button(button: Button, selected: bool) -> void:
@@ -2072,9 +2172,7 @@ func _button_plate(texture: Texture2D, tint: Color) -> StyleBoxTexture:
 	# 11.11：旧的四张木牌按钮图换成羊皮纸部件 —— 主操作金色卷轴、次操作羊皮纸卷轴、
 	# 模式页签用卷轴页签（选中金色）。调用方传进来的还是旧常量，只在这里换图。
 	var piece := "button"
-	if texture == BUTTON_PRIMARY:
-		piece = "button_gold"
-	elif texture == BUTTON_MODE_IDLE:
+	if texture == BUTTON_MODE_IDLE:
 		piece = "tab"
 	elif texture == BUTTON_MODE_ACTIVE:
 		piece = "tab_active"
@@ -2082,13 +2180,6 @@ func _button_plate(texture: Texture2D, tint: Color) -> StyleBoxTexture:
 	style.texture = Kit.tex(piece)
 	style.modulate_color = tint
 	return style
-
-
-func _style_chat_input(input: LineEdit) -> void:
-	input.add_theme_stylebox_override("normal", Kit.box("plate", Vector4(16, 4, 16, 4), Color(0.93, 0.9, 0.84)))
-	input.add_theme_stylebox_override("focus", Kit.box("plate", Vector4(16, 4, 16, 4)))
-	input.add_theme_color_override("font_color", Kit.INK)
-	input.add_theme_color_override("font_placeholder_color", Color(Kit.INK_SOFT, 0.7))
 
 
 func _style_empty_seat(button: Button) -> void:
@@ -2218,25 +2309,29 @@ func _style_mode(button: Button, selected: bool) -> void:
 	button.add_theme_font_size_override("font_size", 24)
 
 
+# 11-26：开始键用自定义房间那块木牌（TEX_START），整张拉满 270×130。
 func _style_action() -> void:
-	var normal := _button_plate(BUTTON_PRIMARY, Color.WHITE)
+	var normal := _action_plate(Color.WHITE)
 	_action.add_theme_stylebox_override("normal", normal)
 	_action.add_theme_stylebox_override("focus", normal)
-	_action.add_theme_stylebox_override("hover", _button_plate(BUTTON_PRIMARY,
-		Color(1.10, 1.08, 1.02)))
-	_action.add_theme_stylebox_override("pressed", _button_plate(BUTTON_PRIMARY,
-		Color(0.85, 0.83, 0.80)))
-	_action.add_theme_stylebox_override("hover_pressed", _button_plate(BUTTON_PRIMARY,
-		Color(0.85, 0.83, 0.80)))
-	_action.add_theme_stylebox_override("disabled", _button_plate(BUTTON_PRIMARY,
-		Color(0.65, 0.66, 0.63, 0.73)))
+	_action.add_theme_stylebox_override("hover", _action_plate(Color(1.10, 1.08, 1.02)))
+	_action.add_theme_stylebox_override("pressed", _action_plate(Color(0.85, 0.83, 0.80)))
+	_action.add_theme_stylebox_override("hover_pressed", _action_plate(Color(0.85, 0.83, 0.80)))
+	_action.add_theme_stylebox_override("disabled", _action_plate(Color(0.65, 0.66, 0.63, 0.73)))
 	_action.add_theme_color_override("font_color", Kit.INK_ON_GOLD)
 	_action.add_theme_color_override("font_hover_color", Kit.INK_ON_GOLD)
 	_action.add_theme_color_override("font_pressed_color", Kit.INK_ON_GOLD)
 	_action.add_theme_color_override("font_disabled_color", Color(0.42, 0.35, 0.27, 0.8))
 	_action.add_theme_color_override("font_outline_color", Kit.INK_OUTLINE)
-	_action.add_theme_constant_override("outline_size", 3)
-	_action.add_theme_font_size_override("font_size", 28)
+	_action.add_theme_constant_override("outline_size", 2)
+	_action.add_theme_font_size_override("font_size", 26)
+
+
+func _action_plate(tint: Color) -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	style.texture = TEX_START
+	style.modulate_color = tint
+	return style
 
 
 func _clear_children(parent: Node) -> void:

@@ -20,6 +20,11 @@ const SEAT_CIRCLE_STATUS_POS := SEAT_CIRCLE_CENTER - SLOT_STATUS_SIZE * 0.5
 # AI 座位圈里「假想敌」下面那颗难度按钮（协议 48）。落在状态字和铭牌之间，不碰右上角的 X。
 const AI_LEVEL_BTN_SIZE := Vector2(96, 30)
 const AI_LEVEL_BTN_POS := Vector2(SEAT_CIRCLE_CENTER.x - 48.0, SEAT_CIRCLE_CENTER.y + 22.0)
+# 11-26：点难度键弹出的五档列表（LobbyPopover.open_choice_list）。宽度是参考像素。
+const AI_LEVEL_MODAL_ID := "lobby_ai_level"
+const AI_LEVEL_LIST_W := 140.0
+# 房间里的小弹层：AI 难度列表、好友卡片、私聊叠层（排位房共用）。
+const LobbyPopover := preload("res://ui/components/LobbyPopover.gd")
 # 10.01 反馈（第 4 条）：座位框换成玩家在大厅佩戴的头像框。
 #
 # 同一席位里的层次（后加的子节点在上面）：
@@ -67,6 +72,43 @@ const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.
 var _slot_avatars: Array[TextureRect] = []
 var _friends_box: VBoxContainer
 var _friends_loading := false
+# ── 朋友列表（11-26 改版）────────────────────────────────────────────────
+#
+# 用户 11-26 定的三件事：
+#   1. 面板宽 +50%（230 → 345），列表显示**全部好友**和状态（在线 / 对局中 / 离线），
+#      排序同排位房：可邀请 → 对局中 → 离线。这推翻了 10.11 第 9 条「只列在线且不在对局中的」。
+#   2. 点一行**不再直接邀请**，弹出一张横条卡片：头像 / 名字 / 状态 和
+#      [查看资料] [邀请] [私聊] 排在同一排（LobbyPopover.open_friend_card）。
+#   3. 私聊 = 在房间上面叠一层完整私聊界面（LobbyPopover.open_private_chat）。
+#
+# 面板底图换成 friends_wide.png：原图 427×850 横向三切（四角原样、中间拉长）到 733×850，
+# 正好是 345×400 的比例 —— 直接把原图拉宽 1.5 倍，四角的叶子和卷边会被压扁。
+const TEX_FRIENDS_WIDE := preload("res://assets/ui/room_parchment/friends_wide.png")
+# 右缘从 1570 挪到 1600、左缘往左长到 1255：右上座位（C）的名牌右缘在 1209，两边留 46。
+const FRIENDS_PANEL_POS := Vector2(1255, 180)
+const FRIENDS_PANEL_SIZE := Vector2(345, 400)
+const FRIENDS_TITLE_POS := Vector2(1317, 228)
+const FRIENDS_TITLE_SIZE := Vector2(220, 35)
+# 列表区 = 底图金框内侧再缩 8（金框内缘在原图 x≈68，按 0.47 缩到 32）。
+const FRIENDS_LIST_POS := Vector2(1295, 273)
+const FRIENDS_LIST_SIZE := Vector2(264, 266)
+const FRIEND_ROW_H := 54.0        # 参考像素；真正的行高按 _layout_scale 换算，且不低于 TOUCH_MIN
+const FRIEND_CARD_MODAL_ID := "lobby_friend_card"
+# 三档（同 PartyLobby._friend_bucket）。
+const FRIEND_INVITABLE := 0
+const FRIEND_IN_MATCH := 1
+const FRIEND_OFFLINE := 2
+const FRIEND_ONLINE_COLOR := Color("2f7d45")     # 同 FriendsScreen.ONLINE_COLOR
+const FRIEND_BUSY_COLOR := Color("a0661c")
+const FRIEND_OFFLINE_COLOR := Color("8c7a66")    # 同 FriendsScreen.OFFLINE_COLOR
+const ACTION := preload("res://ui/components/GloryActionButton.tscn")
+var _friends_panel: TextureRect
+# 最近一次拉到的全部好友，和渲染它用的内容签名（数据没变就不重建，见 _friends_signature）。
+var _friends: Array = []
+var _friends_sig := ""
+# 好友卡片此刻对着谁（好友码，空 = 没开）和卡片上的邀请键。列表刷新时据此更新键的字。
+var _card_code := ""
+var _card_invite_btn: Button = null
 # 邀请限流状态（要求 4）。只活在本场房间的内存里（界面每次进房重建，初始值自然从零开始）。
 # 服务端还会再判一次（权威），这里只是本地先拦一道：反馈即时、省一次往返。
 #
@@ -76,6 +118,9 @@ var _friends_loading := false
 var _invite_last_sec := 0
 # (房间号:好友码) -> true。同一房间对同一位好友只发一次邀请消息。
 var _invited_pairs: Dictionary = {}
+# (房间号:好友码) -> true。正在发、还没回来的邀请：这段时间卡片上的键是「发送中…」，
+# 防止列表刷新把键重新点亮、玩家又点一次。
+var _invite_inflight: Dictionary = {}
 
 # 好友上线 / 换房间的推送。只当**失效信号**用，不拿 payload 里的字段打补丁 ——
 # 三个界面各写一份增量合并就有三份和拉回来的数据分叉的机会，而分叉的症状是
@@ -96,27 +141,97 @@ func _reload_online_friends() -> void:
 	if int(result.get("code", 0)) >= 200 and int(result.get("code", 0)) < 300:
 		_render_online_friends((result.get("body", {}) as Dictionary).get("friends", []))
 
+
+# 11-26：列**全部**好友，按 可邀请 → 对局中 → 离线 分档（同一档内保持服务端给的顺序）。
+#
+# ★ 数据没变就不重建（同 PartyLobby 10.10 修「拖动时滚动条消失」）：5 秒轮询和 presence
+#   推送都会走到这里，原来每次都整表重建 —— 只列在线好友时表短还看不出来，现在离线的也列，
+#   玩家往下拖着看时整表被换掉，滚动位置会被打回去。
 func _render_online_friends(friends: Array) -> void:
+	_friends = friends
+	var sig := _friends_signature()
+	if sig == _friends_sig and _friends_box.get_child_count() > 0:
+		_refresh_friend_card()
+		return
+	_friends_sig = sig
 	for child in _friends_box.get_children():
 		_friends_box.remove_child(child)
 		child.queue_free()
-	for entry in friends:
-		if not _can_invite_online_friend(entry):
+	if friends.is_empty():
+		var empty := Label.new()
+		empty.text = _room_text("还没有好友\n到「朋友」里加好友后\n就能在这里邀请", "No friends yet.\nAdd friends to invite\nthem here.")
+		empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		empty.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		empty.add_theme_color_override("font_color", FRIEND_OFFLINE_COLOR)
+		empty.add_theme_font_size_override("font_size", maxi(13, roundi(17.0 * _layout_scale)))
+		_friends_box.add_child(empty)
+		_refresh_friend_card()
+		return
+	for bucket in [FRIEND_INVITABLE, FRIEND_IN_MATCH, FRIEND_OFFLINE]:
+		for entry in friends:
+			if not entry is Dictionary or _friend_bucket(entry) != bucket:
+				continue
+			_friends_box.add_child(_online_friend_row(entry as Dictionary))
+	_refresh_friend_card()
+
+
+# 列表的内容签名：参与渲染的字段按顺序拼起来。签名不变 ⇒ 重建结果完全一致 ⇒ 跳过。
+# 本房间号也在里面（决定「在本房间」那行字），缩放也在（行高、字号按它换算）。
+func _friends_signature() -> String:
+	var parts := PackedStringArray()
+	parts.append("room=%d" % int(NetworkService.team_room_id))
+	parts.append("scale=%.3f" % _layout_scale)
+	parts.append("en=%s" % str(_room_en()))
+	for raw in _friends:
+		if not raw is Dictionary:
 			continue
-		_friends_box.add_child(_online_friend_row(entry as Dictionary))
+		var f: Dictionary = raw
+		var code := str(f.get("friend_code", ""))
+		parts.append("%s|%s|%s|%s|%s|%d|%s" % [code, str(f.get("player_name", "")),
+			str(f.get("avatar", "")), str(f.get("online", false)), str(f.get("in_match", false)),
+			_friend_room_id(f), str(ChatService.has_unread(code))])
+	return "\n".join(parts)
 
 
-# 10.11 第 9 条的唯一判据：**只收「在线且不在对局中」的好友**。
-# 不显示的三类：① 不在线；② 在线但在对局里（in_match）；③ 离开了、但对局还没结束
-# —— ③ 在后端同样被标成 in_match（客户端 NetworkService.is_in_match 在还留着
-# 「这一局已开打」的重连凭证时也算在对局中），所以这里一条判据就够。
+func _friend_bucket(entry: Dictionary) -> int:
+	if not bool(entry.get("online", false)):
+		return FRIEND_OFFLINE
+	return FRIEND_IN_MATCH if bool(entry.get("in_match", false)) else FRIEND_INVITABLE
+
+
+# 行上和卡片上的状态字。「在本房间」是可邀请那一档里的特例（10.11 第 6 条 i：邀请他没有意义）。
+func _friend_status_text(entry: Dictionary) -> String:
+	match _friend_bucket(entry):
+		FRIEND_OFFLINE:
+			return _room_text("离线", "Offline")
+		FRIEND_IN_MATCH:
+			return _room_text("对局中", "In match")
+	if not _can_invite_online_friend(entry):
+		return _room_text("在本房间", "In this room")
+	return _room_text("在线", "Online")
+
+
+func _friend_status_color(entry: Dictionary) -> Color:
+	match _friend_bucket(entry):
+		FRIEND_OFFLINE:
+			return FRIEND_OFFLINE_COLOR
+		FRIEND_IN_MATCH:
+			return FRIEND_BUSY_COLOR
+	return FRIEND_ONLINE_COLOR
+
+
+# 10.11 第 9 条的判据，11-26 起从「列表过滤」改成「邀请键能不能点」：
+# **只有「在线且不在对局中」的好友能邀请**。不能邀请的三类：① 不在线；② 在线但在对局里
+# （in_match）；③ 离开了、但对局还没结束 —— ③ 在后端同样被标成 in_match（客户端
+# NetworkService.is_in_match 在还留着「这一局已开打」的重连凭证时也算在对局中），
+# 所以这里一条判据就够。
 #
-# ★ 10.11 第 6 条 i 追加第四类：**已经在本房间里**的好友。对他在点邀请没有意义
+# ★ 10.11 第 6 条 i 追加第四类：**已经在本房间里**的好友。对他点邀请没有意义
 #   （邀请消息指向的就是他已经在的那个房），用户口径是「点击邀请既不发消息也不弹窗」。
 #   后端帮不上忙 —— 自定义房间的成员在战斗服务器上，账号服务器不知道，只能客户端判。
 #
-# 抽成独立函数（无其他依赖）是为了让门禁能**直接调它**验合同，
-# 而不是去 grep _render_online_friends 里那一行 if。
+# 抽成独立函数（无其他依赖）是为了让门禁能**直接调它**验合同。
 func _can_invite_online_friend(entry: Variant) -> bool:
 	if not entry is Dictionary:
 		return false
@@ -144,48 +259,162 @@ func _friend_room_id(entry: Dictionary) -> int:
 	return 0
 
 
-# 一行在线好友（要求 2）：显示在线好友的昵称（10.06 起不再显示 #好友码），**点一下即邀请**。
+func _friend_entry(code: String) -> Dictionary:
+	for raw in _friends:
+		if raw is Dictionary and str((raw as Dictionary).get("friend_code", "")) == code:
+			return raw
+	return {}
+
+
+# 卡片上「邀请」键此刻的字和能不能点。判据只有这一处：开卡片、列表刷新时更新卡片都走它。
+# 离线自测（没联机）时键照样能点，点了由 _on_invite_friend 提示「联机对局中才能邀请」——
+# 一颗灰掉又不说原因的键比一句提示更让人困惑。
+func _friend_invite_state(entry: Dictionary) -> Dictionary:
+	var code := str(entry.get("friend_code", ""))
+	var invite_text := _room_text("邀请", "Invite")
+	if _spectating():
+		return {"text": invite_text, "enabled": false}
+	match _friend_bucket(entry):
+		FRIEND_OFFLINE:
+			return {"text": _room_text("离线", "Offline"), "enabled": false}
+		FRIEND_IN_MATCH:
+			return {"text": _room_text("对局中", "In match"), "enabled": false}
+	if not _can_invite_online_friend(entry):
+		return {"text": _room_text("已在房间", "In room"), "enabled": false}
+	var key := "%d:%s" % [int(NetworkService.team_room_id), code]
+	if _invite_inflight.has(key):
+		return {"text": _room_text("发送中…", "Sending…"), "enabled": false}
+	if _invited_pairs.has(key):
+		return {"text": _room_text("已邀请", "Invited"), "enabled": false}
+	return {"text": invite_text, "enabled": true}
+
+
+# 一行好友：头像、昵称（10.06 起不显示 #好友码）、状态字，有未读私聊时末尾一颗红点。
+# 点一下 = 弹好友卡片（11-26 起；原来点一下就直接发邀请）。
 #
-# ⚠️ 行用 Label + gui_input，**刻意不用 Button.new()**：
-# 门禁 procedural_ui_ratchet_check 对 Team3v3Lobby.gd 的 Button.new() 基线是
-# **恰好 3**，棘轮只许降不许涨，多一个就 count_increased 红。所以这里改走
-# 手工点击区（同 _add_hit 的思路；但 _add_hit 走 _placed 布局、由 _layout 定位，
-# 而这一行挂在滚动容器里，由容器排版，不能混用）。
+# 行是 GloryActionButton 的实例（不写自绘按钮：procedural_ui_ratchet 对本文件只许降）。
+# 必须是按钮类：TouchScrollContainer 在手指拖动超过阈值时会取消 BaseButton 的这次按压，
+# 拖着滚列表不会误弹卡片。原来那种「Label + gui_input 按下即触发」，手一按上去拖动，
+# 邀请就已经发出去了。
 func _online_friend_row(entry: Dictionary) -> Control:
-	var row := HBoxContainer.new()
-	row.custom_minimum_size = Vector2(0, 40)
-	row.add_theme_constant_override("separation", 6)
+	var k := _layout_scale
+	var code := str(entry.get("friend_code", ""))
+	var bucket := _friend_bucket(entry)
+	var row := ACTION.instantiate() as Button
+	row.name = "FriendRow_%s" % code
+	row.text = ""
+	row.custom_minimum_size = Vector2(0, roundf(maxf(Tokens.TOUCH_MIN, FRIEND_ROW_H * k)))
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.focus_mode = Control.FOCUS_NONE
+	row.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	# 羊皮纸小底板（同房间里其他小键）：列表行用的 list_row 卷边在 48 高的行上太重。
+	Kit.style_plate(row, false)
+	var line := HBoxContainer.new()
+	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	line.add_theme_constant_override("separation", maxi(4, roundi(6.0 * k)))
+	row.add_child(line)
+	line.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	line.offset_left = roundf(16.0 * k)
+	line.offset_right = -roundf(18.0 * k)
 	var avatar := TextureRect.new()
-	avatar.custom_minimum_size = Vector2(36, 36)
+	avatar.custom_minimum_size = Vector2.ONE * roundf(36.0 * k)
 	AvatarCatalog.set_avatar_texture(avatar, AvatarCatalog.texture_for(str(entry.get("avatar", AvatarCatalog.default_avatar())), true))
 	avatar.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	avatar.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	avatar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(avatar)
+	# 离线的头像压暗一点：一眼分得出谁在线（颜色之外再给一层明暗，不只靠颜色表达）。
+	avatar.modulate = Color(1, 1, 1, 0.55) if bucket == FRIEND_OFFLINE else Color.WHITE
+	line.add_child(avatar)
 	var label := Label.new()
-	label.text = AccountManager.display_name(str(entry.get("player_name", "")), str(entry.get("friend_code", "")), false)
+	label.text = AccountManager.display_name(str(entry.get("player_name", "")), code, false)
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.clip_text = true
 	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	label.tooltip_text = label.text
-	label.add_theme_color_override("font_color", Tokens.PARCHMENT_EDGE)
-	label.add_theme_font_size_override("font_size", 15)
+	label.add_theme_color_override("font_color", FRIEND_OFFLINE_COLOR if bucket == FRIEND_OFFLINE else Kit.INK)
+	label.add_theme_font_size_override("font_size", maxi(13, roundi(17.0 * k)))
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(label)
-	row.mouse_filter = Control.MOUSE_FILTER_STOP
-	row.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	row.gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-			_on_invite_friend(str(entry.get("friend_code", "")), row, _friend_room_id(entry)))
+	line.add_child(label)
+	var status := Label.new()
+	status.name = "Status"
+	status.text = _friend_status_text(entry)
+	status.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	status.add_theme_color_override("font_color", _friend_status_color(entry))
+	status.add_theme_font_size_override("font_size", maxi(12, roundi(14.0 * k)))
+	status.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	line.add_child(status)
+	if ChatService.has_unread(code):
+		var dot := Label.new()
+		dot.name = "UnreadDot"
+		dot.text = "●"
+		dot.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		dot.add_theme_color_override("font_color", Tokens.UNREAD_DOT)
+		dot.add_theme_font_size_override("font_size", maxi(12, roundi(14.0 * k)))
+		dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		line.add_child(dot)
+	row.pressed.connect(_open_friend_card.bind(code, row))
 	return row
 
 
-# 点好友名 → 发一条房间邀请（要求 2/4）。这一下**只发消息**，不改自己的房间状态；
+# 点好友行 → 卡片。卡片长在**面板左边**、与这一行垂直对齐（锚点的左缘取面板左缘，
+# 不取行的左缘 —— 否则卡片会压住面板的金框）。
+func _open_friend_card(code: String, row: Control) -> void:
+	var entry := _friend_entry(code)
+	if entry.is_empty() or row == null or not is_instance_valid(row) or not row.is_inside_tree():
+		return
+	var row_rect := row.get_global_rect()
+	var left := row_rect.position.x
+	if _friends_panel != null and is_instance_valid(_friends_panel):
+		left = minf(left, _friends_panel.get_global_rect().position.x)
+	var anchor := Rect2(Vector2(left, row_rect.position.y), Vector2(row_rect.end.x - left, row_rect.size.y))
+	_card_code = code
+	_card_invite_btn = LobbyPopover.open_friend_card(self, FRIEND_CARD_MODAL_ID, anchor, _layout_scale,
+		entry, _friend_status_text(entry), _friend_status_color(entry), _friend_invite_state(entry), {
+			"profile": func() -> void: _view_player_profile(_friend_entry(code)),
+			"invite": func(button: Button) -> void: _on_invite_friend(code, button, _friend_room_id(_friend_entry(code))),
+			"chat": func() -> void: LobbyPopover.open_private_chat(self, code),
+		})
+	if _card_invite_btn == null:
+		_card_code = ""
+
+
+# 列表数据更新（5 秒轮询 / 上线推送）后，卡片如果还开着，邀请键跟着变
+# （好友刚进了对局 / 刚下线 / 刚进了本房间）；好友从列表里消失了（被删）就收起卡片。
+func _refresh_friend_card() -> void:
+	if _card_code.is_empty():
+		return
+	if not ModalStack.has(FRIEND_CARD_MODAL_ID) or not is_instance_valid(_card_invite_btn):
+		_card_code = ""
+		_card_invite_btn = null
+		return
+	var entry := _friend_entry(_card_code)
+	if entry.is_empty():
+		ModalStack.pop(FRIEND_CARD_MODAL_ID)
+		_card_code = ""
+		_card_invite_btn = null
+		return
+	var state := _friend_invite_state(entry)
+	LobbyPopover.set_card_invite(_card_invite_btn, str(state.text), bool(state.enabled))
+
+
+# 窗口尺寸 / 安全区变了：弹层是按打开那一刻的锚点位置摆的，直接收起，不去追着挪。
+func _close_popovers() -> void:
+	for id in [AI_LEVEL_MODAL_ID, FRIEND_CARD_MODAL_ID]:
+		if ModalStack.has(id):
+			ModalStack.pop(id)
+	_ai_level_menu_slot = -1
+	_card_code = ""
+	_card_invite_btn = null
+
+
+# 卡片上点「邀请」→ 发一条房间邀请（要求 2/4）。这一下**只发消息**，不改自己的房间状态；
 # 对方收不收得到、点不点「立即参与」都是对方的事。
 #
-# `friend_room` = 这一行渲染时好友所在的房间号（0 = 不知道 / 不在房间）。用它判第 6 条 i。
-func _on_invite_friend(code: String, row: Control, friend_room: int = 0) -> void:
+# `button` = 卡片上那颗邀请键（11-26 前是列表里那一行）：先亮一下，发成功后改成「已邀请」。
+# `friend_room` = 好友此刻所在的房间号（0 = 不知道 / 不在房间）。用它判第 6 条 i。
+func _on_invite_friend(code: String, button: Control, friend_room: int = 0) -> void:
 	if not _online():
 		GloryToastScript.show_text(_room_text("联机对局中才能邀请", "Invite is available in online rooms"))
 		return
@@ -193,8 +422,8 @@ func _on_invite_friend(code: String, row: Control, friend_room: int = 0) -> void
 	if room_id <= 0:
 		return
 	# ★ 10.11 第 6 条 i：好友**已经在本房间**时，这一下既不发邀请消息、也不弹气泡。
-	#   列表那一步（_can_invite_online_friend）已经拦掉了他，这里是第二道闸 ——
-	#   行是上一帧建的、好友这一帧刚进房时列表还没刷新，点下去仍会走到这里。
+	#   卡片那一步（_friend_invite_state）已经把键灰掉了，这里是第二道闸 ——
+	#   卡片是上一次刷新时开的、好友这一刻刚进房时键还没更新，点下去仍会走到这里。
 	if friend_room > 0 and friend_room == room_id:
 		return
 	var now := int(Time.get_unix_time_from_system())
@@ -203,20 +432,25 @@ func _on_invite_friend(code: String, row: Control, friend_room: int = 0) -> void
 	# 放在判限流之后的话，「同一房间已经邀请过」时玩家点了什么都不发生，
 	# 看起来跟没点到一模一样（这就是实测「点击没有亮一下」的原因）。
 	# 而且这一下不能等网络：弱网下那要好几秒，玩家会以为没点到而连点。
-	_flash_row(row)
+	_flash_row(button)
 	var blocked := RoomInvite.send_blocked_reason(now, _invite_last_sec, _invited_pairs.has(key))
 	if blocked == "duplicate":
-		# 同一房间已经邀请过这位好友：**静默返回**。
-		# 不再弹「已经邀请过了」—— 亮一下已经说明「点到了」，再弹一句只会打扰；
-		# 而对方那边多出来的重复，由服务端去重 + 显示层收敛一起兜掉。
+		# 同一房间已经邀请过这位好友：不再发，键改成「已邀请」（11-26 起卡片上能直接看到）。
+		# 对方那边多出来的重复，由服务端去重 + 显示层收敛一起兜掉。
+		LobbyPopover.set_card_invite(button, _room_text("已邀请", "Invited"), false)
 		return
 	if blocked == "rate_limited":
 		# 5 秒发送冷却（第 6 条 c）：这条要说，否则玩家不知道为什么要等。
 		GloryToastScript.show_text(RoomInvite.send_blocked_text("rate_limited"))
 		return
+	if _invite_inflight.has(key):
+		return
+	_invite_inflight[key] = true
+	LobbyPopover.set_card_invite(button, _room_text("发送中…", "Sending…"), false)
 	var result: Dictionary = await AccountManager.send_chat_message(
 		code, RoomInvite.local_text(), ChatService.new_client_msg_id(),
 		RoomInvite.KIND, RoomInvite.make_payload(room_id))
+	_invite_inflight.erase(key)
 	if not is_inside_tree():
 		return
 	var status := int(result.get("code", 0))
@@ -224,15 +458,18 @@ func _on_invite_friend(code: String, row: Control, friend_room: int = 0) -> void
 		# 成功才记账：失败（网络）时不留痕，玩家可以立刻重试。
 		_invited_pairs[key] = true
 		_invite_last_sec = now
+		LobbyPopover.set_card_invite(button, _room_text("已邀请", "Invited"), false)
 	elif status == 409:
-		# 服务端去重兜底（invite_duplicate → 409）：与本地「已经邀请过」同义，也静默。
-		pass
+		# 服务端去重兜底（invite_duplicate → 409）：与本地「已经邀请过」同义，也不再发。
+		_invited_pairs[key] = true
+		LobbyPopover.set_card_invite(button, _room_text("已邀请", "Invited"), false)
 	else:
+		LobbyPopover.set_card_invite(button, _room_text("邀请", "Invite"), true)
 		GloryToastScript.show_text(str(result.get("error",
 			_room_text("邀请发送失败", "Failed to send invite"))))
 
 
-# 「亮一下」（要求 1）。用 modulate 把整行烧到接近过曝再落回常态 ——
+# 「亮一下」（要求 1）。用 modulate 把整颗键烧到接近过曝再落回常态 ——
 # 不换字体颜色：字体色是主题定的，这里只是瞬时高亮，不该留下状态。
 #
 # 0.28 秒 / 1.6 倍太弱（深色羊皮纸字乘 1.6 仍然偏暗、时间又短），实测肉眼看不出来；
@@ -389,7 +626,6 @@ const TEX_SLOT := preload("res://assets/ui/room_parchment/slot.png")
 # 若以后换掉 profile_avatar.png，MainMenu 的注释里那句「换了那张框图就要重新量」
 # 同样适用 —— 席位的圆盘内孔与头像直径也是按那张量出来的。
 const TEX_PROFILE_AVATAR := preload("res://assets/ui/main_menu_live/profile_avatar.png")
-const TEX_FRIENDS := preload("res://assets/ui/room_parchment/friends.png")
 const TEX_CHAT := preload("res://assets/ui/room_parchment/chat.png")
 const TEX_START := preload("res://assets/ui/room_parchment/start.png")
 const TEX_VS := preload("res://assets/ui/room_parchment/vs.png")
@@ -434,10 +670,12 @@ var _slot_name_lbls: Array = []
 var _slot_status_lbls: Array = []
 var _slot_x_btns: Array = []
 var _slot_ai_btns: Array = []
-# AI 座位上的难度按钮（人人看得到，房主点一下换一档；协议 48）。
+# AI 座位上的难度按钮（人人看得到，房主点开选一档；协议 48）。
 var _slot_level_btns: Array = []
 # 离线自测时每个 AI 座位的难度（slot -> 1~5）。联机时以服务器下发的 NetworkService.team_seat_ai_levels 为准。
 var _ai_levels: Dictionary = {}
+# 难度列表此刻是给哪个座位开的（-1 = 没开）。座位状态一变就收起，见 _sync_ai_level_menu。
+var _ai_level_menu_slot := -1
 # 10.01 反馈（第 4 条）：每个席位多两个节点 —— 玩家的头像框，和抬到框上面的铭牌复本。
 var _slot_frames: Array = []
 var _slot_plates: Array = []
@@ -466,6 +704,8 @@ var _screen_bands: Array[Dictionary] = []
 var _debug_layer: Control
 var _debug_on := DEBUG_LAYOUT
 var _layout_scale := 1.0
+# 上一次 _layout 用的安全区（与 _layout_scale / _layout_origin 一起判「画面变没变」）。
+var _layout_safe := Rect2()
 var _layout_origin := Vector2.ZERO
 
 func _ready() -> void:
@@ -658,17 +898,20 @@ func _build() -> void:
 	_add_room_title_line(_room_text("自定义房间", "CUSTOM GAME"), 53, 28, 22, PARCH_SECTION)
 	_room_id_lbl = _add_room_title_line("", 83, 24, 16, PARCH_INK)
 	_start_status_lbl = _add_room_title_line("", 106, 24, 15, PARCH_INK)
-	# 右侧朋友列表：锚定屏幕右边（edge="right"）
-	_add_texture(TEX_FRIENDS, Vector2(1340, 180), Vector2(230, 400), "right")
-	_add_label(_room_text("朋友列表", "Friends"), Vector2(1374, 228), Vector2(162, 35), 24,
+	# 右侧朋友列表：锚定屏幕右边（edge="right"）。11-26 起宽 345（原 230），见 FRIENDS_PANEL_POS。
+	_friends_panel = _add_texture(TEX_FRIENDS_WIDE, FRIENDS_PANEL_POS, FRIENDS_PANEL_SIZE, "right")
+	_friends_panel.name = "FriendsPanel"
+	_add_label(_room_text("朋友列表", "Friends"), FRIENDS_TITLE_POS, FRIENDS_TITLE_SIZE, 24,
 		PARCH_SECTION, "right", false)
 	var friends_scroll := TouchScrollContainer.new()
+	friends_scroll.name = "FriendsScroll"
 	friends_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	add_child(friends_scroll)
 	# 给头像和滚动条留出内边距，避免贴到卷边。
-	_track(friends_scroll, Vector2(1384, 273), Vector2(151, 266), 0, "right")
+	_track(friends_scroll, FRIENDS_LIST_POS, FRIENDS_LIST_SIZE, 0, "right")
 	_friends_box = VBoxContainer.new()
 	_friends_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_friends_box.add_theme_constant_override("separation", 4)
 	friends_scroll.add_child(_friends_box)
 	_add_texture(TEX_CHAT, Vector2(80, 704), Vector2(430, 210), "left")
 	_build_chat_box()
@@ -853,16 +1096,54 @@ func _on_slot_ai(index: int) -> void:
 		return
 	_toggle_dummy(index)
 
-# AI 难度（协议 48）：新手 → 简单 → 普通 → 困难 → 大师 → 新手，房主逐个座位点。
+# AI 难度（协议 48）。
+#
+# ★ 11-26 用户要求：点难度键**直接弹出五档列表**选（新手 / 简单 / 普通 / 困难 / 大师，
+#   当前档打 ✓），不再「点一下换一档」。上排座位往下展开，下排往上展开 ——
+#   下排往下会盖住聊天框和右边的语音键。点列表外面或按返回就收起。
+#   发给服务器的还是 team_set_ai_level(座位, 档位)：协议 48 本来就能直接设任意一档，
+#   **服务器不用改**。
 func _on_slot_level(index: int) -> void:
 	if not _is_host_seat() or str(_states()[index]) != "dummy":
 		return
-	var next := _ai_level_of(index) % BotProfile.MAX_LEVEL + 1
-	if _online():
-		NetworkService.team_set_ai_level(index, next)
+	var level_btn: Button = _slot_level_btns[index]
+	var current := _ai_level_of(index)
+	var items: Array = []
+	for level in range(BotProfile.MIN_LEVEL, BotProfile.MAX_LEVEL + 1):
+		items.append({"text": _ai_level_name(level), "value": level, "selected": level == current})
+	var pushed := LobbyPopover.open_choice_list(self, AI_LEVEL_MODAL_ID, level_btn.get_global_rect(),
+		_layout_scale, items, _set_slot_level.bind(index), index >= 3, AI_LEVEL_LIST_W)
+	if not pushed.is_empty():
+		_ai_level_menu_slot = index
+
+
+# 列表里点了某一档（LobbyPopover 先关列表再调这里）。座位在列表开着的时候可能已经变了
+# （AI 被撤掉、换了房主），所以这里再判一次，不信打开列表那一刻的状态。
+func _set_slot_level(level: int, index: int) -> void:
+	_ai_level_menu_slot = -1
+	if not _is_host_seat() or index < 0 or index >= _states().size() or str(_states()[index]) != "dummy":
 		return
-	_ai_levels[index] = next
+	level = clampi(level, BotProfile.MIN_LEVEL, BotProfile.MAX_LEVEL)
+	if level == _ai_level_of(index):
+		return
+	if _online():
+		NetworkService.team_set_ai_level(index, level)
+		return
+	_ai_levels[index] = level
 	_refresh()
+
+
+# 列表开着时，那个座位不再是「房主能调的 AI」了（AI 被撤、有人坐进来、房主交接、转成观战）
+# ⇒ 收起。每次 _refresh 都过一遍；列表已经被点外面关掉的话只清标记。
+func _sync_ai_level_menu(states: Array, is_host_seat: bool) -> void:
+	if _ai_level_menu_slot < 0:
+		return
+	if not ModalStack.has(AI_LEVEL_MODAL_ID):
+		_ai_level_menu_slot = -1
+		return
+	if not is_host_seat or _ai_level_menu_slot >= states.size() or str(states[_ai_level_menu_slot]) != "dummy":
+		ModalStack.pop(AI_LEVEL_MODAL_ID)
+		_ai_level_menu_slot = -1
 
 # 这个 AI 座位现在是哪一档。联机看服务器下发的（就是服务器实际会用的那一档），离线看本地选的；
 # 都没有就是默认档（普通）。
@@ -1006,7 +1287,7 @@ func _refresh() -> void:
 		level_btn.disabled = not is_host_seat
 		if level_btn.visible:
 			level_btn.text = _ai_level_name(_ai_level_of(i))
-			level_btn.tooltip_text = _room_text("点击切换 AI 难度", "Tap to change AI difficulty") if is_host_seat else ""
+			level_btn.tooltip_text = _room_text("点击选择 AI 难度", "Tap to choose AI difficulty") if is_host_seat else ""
 	if _start_status_lbl != null:
 		_start_status_lbl.text = _start_hint_text()
 		_start_status_lbl.tooltip_text = _start_status_lbl.text
@@ -1043,6 +1324,7 @@ func _refresh() -> void:
 		_host_hint_lbl.tooltip_text = _room_text("等待玩家返回，或点击其头像右上角 X 请出该玩家。", "Wait for the player, or use X beside their portrait to remove them.") if not _start_block_reason(true).is_empty() else ""
 	if _selftest_btn != null:
 		_selftest_btn.visible = selftest_available() and not _online()
+	_sync_ai_level_menu(states, is_host_seat)
 	_refresh_spectators()
 
 
@@ -1238,8 +1520,15 @@ func _layout() -> void:
 	var safe := SafeArea.rect()
 	var scale := minf(safe.size.x / REF_SIZE.x, safe.size.y / REF_SIZE.y)
 	var origin := safe.position + (safe.size - REF_SIZE * scale) * 0.5
+	# 弹层（AI 难度列表、好友卡片）按打开那一刻的锚点摆，画面尺寸 / 安全区变了就收起。
+	# ⚠️ 只在**真的变了**时收：_on_session_changed 每来一次房间快照（有人准备、换座、
+	# 调 AI）都会调本函数，无条件收起的话，别人一按准备，房主手上的列表就没了。
+	var scale_changed := not is_equal_approx(scale, _layout_scale)
+	if scale_changed or not origin.is_equal_approx(_layout_origin) or not safe.is_equal_approx(_layout_safe):
+		_close_popovers()
 	_layout_scale = scale
 	_layout_origin = origin
+	_layout_safe = safe
 	for band in _screen_bands:
 		var rect := band.node as Control
 		var height := float(band.height) * scale
@@ -1253,6 +1542,10 @@ func _layout() -> void:
 			label.add_theme_font_size_override("font_size", _record_font_size())
 	if _debug_layer != null:
 		_debug_layer.queue_redraw()
+	# 朋友列表的行高、字号按缩放换算（行在滚动容器里，由容器排版，不走 _placed）。
+	# 还没拉到过数据（签名为空）时不画 —— 否则进房那一下会先闪一句「还没有好友」。
+	if scale_changed and _friends_box != null and not _friends_sig.is_empty():
+		_render_online_friends(_friends)
 
 # 给 _refresh() 用：按**上一次** _layout() 记下的比例与原点，把单条记录落到节点上。
 # 屏幕尺寸没变时这是精确的；屏幕尺寸变了的话紧接着就有一次 _layout() 兜底
@@ -1501,14 +1794,20 @@ func _build_chat_box() -> void:
 	_render_record()
 
 # 语音按钮 + 队友按钮（docs/聊天系统设计.md 第九节）。行为都在 VoiceControls 里（大厅 / 备战期 / 战斗界面共用）。
-# 放在聊天框正上方：语音 x 180~330、队友 x 336~426，y 650~696。左边是石柱装饰，
-# 右边从 x=447 起是敌方席位 1。短语面板打开时会盖住它们（面板 z=40），面板本来就是临时的。
+#
+# ★ 11-26 用户要求：麦克风、听筒**移到聊天窗外右侧**（原来在聊天框正上方 y=636）。
+#   聊天框是 (80,704) 430×210，右缘 x=510；两颗键接在右缘外 12 处，垂直对齐聊天框中线
+#   （704+105-30 = 779）。排位房（PartyLobby）早就是「聊天框右边」这个摆法，两边一致了。
+#   与聊天框一起 edge="left"：宽屏下跟着聊天框贴左，不会跟它拉开。
+#   下排左边那个席位的名牌底到 y≈754、「+AI」底到 y≈712，两颗键从 y=779 起，不重叠
+#   （16:9 / 4:3 都按宽度缩放，参考坐标不变；更宽的屏幕席位往中间收，只会更松）。
+#   长按听筒打开的语音面板是 ModalStack 弹层，与按键位置无关。
 const VoiceControls := preload("res://ui/components/VoiceControls.gd")
-const VOICE_BTN_POS := Vector2(180, 636)
+const VOICE_BTN_POS := Vector2(522, 779)
 const VOICE_BTN_SIZE := Vector2(78, 60)
-const VOICE_AUDIENCE_POS := Vector2(266, 636)
+const VOICE_AUDIENCE_POS := Vector2(608, 779)
 const VOICE_AUDIENCE_SIZE := VOICE_BTN_SIZE
-const VOICE_MEMBERS_POS := Vector2(352, 636)
+const VOICE_MEMBERS_POS := Vector2(694, 779)
 const VOICE_MEMBERS_SIZE := VOICE_BTN_SIZE
 # 10.11 第 5 条：VOICE_MEMBERS_POS 目前**没有调用点** —— 自定义房间不再摆放「全房间」那颗键
 # （见 _build_voice_button）。尺寸仍传给 VoiceControls.build()，留着是为了收回去时只改一行。
@@ -1905,9 +2204,9 @@ func _draw_debug_layout() -> void:
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 13, black)
 
 	# 4) edge=left / edge=right 锚定边（这两列贴安全区的左右边，不跟画布走）
-	#    左列最宽的是聊天框(147+432)、右列最靠左的是房主提示(1285)
+	#    左列最靠右的是聊天框右侧的听筒键(608+78，11-26 起)、右列最靠左的是房主提示(1285)
 	var safe := SafeArea.rect()
-	var left_edge_x := safe.position.x + 579.0 * scale
+	var left_edge_x := safe.position.x + 686.0 * scale
 	var right_edge_x := safe.end.x - (REF_SIZE.x - 1285.0) * scale
 	_debug_layer.draw_line(Vector2(left_edge_x, 0.0), Vector2(left_edge_x, viewport_size.y), black, 2.0)
 	_debug_layer.draw_line(Vector2(right_edge_x, 0.0), Vector2(right_edge_x, viewport_size.y), black, 2.0)
@@ -1942,7 +2241,7 @@ func _draw_debug_layout() -> void:
 # 观战者在大厅里看到的是同一个房间界面：座位、准备状态照常显示；点空位 = 坐下；
 # 右下角的开始 / 准备键换成「观战中」，不能按。
 #
-# 位置是用户在截图上圈的那块：返回键下方、语音键（y=636）上方。
+# 位置是用户在截图上圈的那块：返回键下方、聊天框上方（语音键原来在 y=636，11-26 移到聊天框右侧）。
 
 const SpectatorListPanel := preload("res://ui/components/SpectatorListPanel.gd")
 const SPECTATOR_PANEL_POS := Vector2(88, 140)

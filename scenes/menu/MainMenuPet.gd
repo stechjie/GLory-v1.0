@@ -20,6 +20,8 @@ const REF_SIZE := Vector2(1672.0, 941.0)   # 与 MainMenu 同一套参考画布
 # 出战宠物（PlayerProfile.active_pet），排位听**房主的**出战宠物（由 PartyLobby 经
 # configure_party_display 传 audible_id 进来）。其余宠物仍各自持有独立播放器
 # （结构不变），只是 _play_footstep 按 entry.audible 静音。
+# 11-26 再改：排位 / 休闲房间改成按成员显示（configure_party_members），
+# 脚步声只听**自己那只**出战宠物；configure_party_display 留着但房间不再用它。
 const SfxService := preload("res://ui/services/SfxService.gd")
 const Presentation := preload("res://effects/runtime/presentation/PresentationSettings.gd")
 # 包围盒用 PetPreview.aabb_of：蒙皮宠物要按绑定量，见那边 mesh_box_in 的说明。
@@ -85,6 +87,23 @@ var _use_external_pets := false
 var _external_audible_id := ""
 var _area_pos := AREA_POS
 var _area_size := AREA_SIZE
+# ── 11-26 排位 / 休闲房间：每个成员一只出战宠物，脚下写名字 ──────────────────
+#
+# 用户 11-26 定：房间里显示**每个玩家正在用的出战宠物**（不再是房主挑的展示列表），
+# 模型下方写玩家名字；照旧满场乱走，名字跟着走；脚步声只听**自己那只**。
+#
+# _members: [{"key": 好友码, "pet": 宠物 id, "name": 显示名, "audible": bool}]
+# 同一只宠物可以出现多次（两个人都带猫），所以按 key 认，不按宠物 id 认。
+var _use_members := false
+var _members: Array = []
+# 名字是 3D 文字（Label3D），和宠物在同一个视口里一起出图 —— 视口 30Hz 出图，
+# 用 2D 标签叠在上面的话，标签每帧走、模型隔帧画，名字会和模型错开一帧地抖。
+const NAME_FONT_SIZE := 64           # 字形贴图的像素高度（越大越清楚；实际大小由 NAME_WORLD_HEIGHT 定）
+const NAME_WORLD_HEIGHT := 0.21      # 名字字高（世界单位）；1 世界单位 ≈ 参考画布 99 像素
+const NAME_DROP := 0.07              # 名字顶边在脚底（地面 y=0）往下多少
+const NAME_MARGIN := 1.0             # 带名字时左右多留的身位：名字比宠物宽，贴边会被视口裁掉
+const NAME_COLOR := Color(1.0, 0.97, 0.86)
+const NAME_OUTLINE_COLOR := Color(0.13, 0.09, 0.05, 0.95)
 # 10.10：宠物 3D 走位半宽（世界单位）。随展示区域宽高比自适应 —— 见 _compute_ground_half_x。
 var _ground_half_x := GROUND_HALF_X
 
@@ -102,6 +121,130 @@ func configure_party_display(ids: Array, area_pos: Vector2, area_size: Vector2,
 		if changed:
 			_rebuild_pets()
 		_layout_area()
+
+# 11-26：按成员显示（见上面 _members 的说明）。
+# 只动变了的那一只：有人进队 / 换宠物时其余宠物不重置位置 —— 整体重建会让全场宠物瞬间回到起点。
+func configure_party_members(members: Array, area_pos: Vector2, area_size: Vector2) -> void:
+	_use_external_pets = true
+	_use_members = true
+	_members = normalize_members(members)
+	_area_pos = area_pos
+	_area_size = area_size
+	_ground_half_x = _compute_ground_half_x(area_size)
+	if is_inside_tree():
+		_sync_members()
+		_layout_area()
+
+
+# 成员表清洗：没有宠物 / 没有 key 的不出，同一个 key 只认第一条，最多 MAX_PETS 只。
+# 纯静态 ⇒ 门禁可以不实例化 3D 舞台直接喂数据。
+static func normalize_members(members: Array) -> Array:
+	var out: Array = []
+	var seen := {}
+	for raw in members:
+		if not raw is Dictionary:
+			continue
+		var member: Dictionary = raw
+		var key := str(member.get("key", ""))
+		var pet := str(member.get("pet", ""))
+		if key.is_empty() or pet.is_empty() or seen.has(key):
+			continue
+		seen[key] = true
+		out.append({"key": key, "pet": pet, "name": str(member.get("name", "")),
+			"audible": bool(member.get("audible", false))})
+		if out.size() >= MAX_PETS:
+			break
+	return out
+
+
+# 现有的宠物里哪些要收掉（走了的、换了宠物的）、哪些成员要新出。纯静态，理由同上。
+# current: [{"key", "id"}]（_pets 里的条目）；members: normalize_members 的结果。
+# 返回 {"remove": [key...], "spawn": [key...]}。
+static func plan_member_sync(current: Array, members: Array) -> Dictionary:
+	var wanted := {}
+	for member in members:
+		wanted[str(member.key)] = str(member.pet)
+	var alive := {}
+	var remove: Array = []
+	for entry in current:
+		var key := str(entry.get("key", ""))
+		if wanted.has(key) and str(wanted[key]) == str(entry.get("id", "")):
+			alive[key] = true
+		else:
+			remove.append(key)
+	var spawn: Array = []
+	for member in members:
+		if not alive.has(str(member.key)):
+			spawn.append(str(member.key))
+	return {"remove": remove, "spawn": spawn}
+
+
+func _sync_members() -> void:
+	if _stage == null:
+		return
+	var plan := plan_member_sync(_pets, _members)
+	var by_key := {}
+	for member in _members:
+		by_key[str(member.key)] = member
+	var kept: Array[Dictionary] = []
+	for entry in _pets:
+		var key := str(entry.get("key", ""))
+		if (plan.remove as Array).has(key):
+			_free_entry(entry)
+			continue
+		# 还在、宠物没换：只更新名字和发不发声（改名、换了谁是「自己」）。
+		var member: Dictionary = by_key[key]
+		entry.audible = bool(member.audible)
+		var label := entry.get("label", null) as Label3D
+		if label != null and is_instance_valid(label):
+			label.text = str(member.name)
+		kept.append(entry)
+	_pets = kept
+	for i in range(_members.size()):
+		var member: Dictionary = _members[i]
+		if (plan.spawn as Array).has(str(member.key)):
+			_spawn_pet(str(member.pet), i, _members.size(), member)
+
+
+func _free_entry(entry: Dictionary) -> void:
+	for node in [entry.get("node", null), entry.get("label", null)]:
+		if node != null and is_instance_valid(node):
+			node.queue_free()
+
+
+func _make_name_label(text: String) -> Label3D:
+	var label := Label3D.new()
+	label.name = "OwnerName"
+	label.text = text
+	label.font_size = NAME_FONT_SIZE
+	label.pixel_size = NAME_WORLD_HEIGHT / float(NAME_FONT_SIZE)
+	label.outline_size = 18
+	label.modulate = NAME_COLOR
+	label.outline_modulate = NAME_OUTLINE_COLOR
+	# 永远正对相机、不受光照、不被模型挡住（另一只宠物走到前面时名字照样看得见）。
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.shaded = false
+	label.double_sided = true
+	label.no_depth_test = true
+	label.render_priority = 10
+	label.outline_render_priority = 9
+	# 原点在名字顶边正中：名字从脚底往下挂。
+	label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	return label
+
+
+# 名字跟着宠物走。名字是舞台的直接子节点（不是宠物的子节点）：宠物节点带缩放和朝向，
+# 挂在它下面名字会跟着缩成一个点、跟着转身。
+func _follow_names() -> void:
+	for entry in _pets:
+		var label := entry.get("label", null) as Label3D
+		var node := entry.get("node", null) as Node3D
+		if label == null or node == null or not is_instance_valid(label) or not is_instance_valid(node):
+			continue
+		label.position = Vector3(node.position.x, -NAME_DROP, node.position.z)
+
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE   # 绝对不能吃掉点击
@@ -257,17 +400,19 @@ func _audible_pet_id() -> String:
 
 func _rebuild_pets() -> void:
 	for item in _pets:
-		var node := item.node as Node3D
-		if is_instance_valid(node):
-			node.queue_free()
+		_free_entry(item)
 	_pets.clear()
 	if _stage == null:
+		return
+	if _use_members:
+		for i in range(_members.size()):
+			_spawn_pet(str(_members[i].pet), i, _members.size(), _members[i])
 		return
 	var ids: Array = _external_pet_ids.duplicate() if _use_external_pets else PlayerProfile.owned_pets.duplicate()
 	for i in range(min(ids.size(), MAX_PETS)):
 		_spawn_pet(str(ids[i]), i, min(ids.size(), MAX_PETS))
 
-func _spawn_pet(pet_id: String, index: int, total: int) -> void:
+func _spawn_pet(pet_id: String, index: int, total: int, member: Dictionary = {}) -> void:
 	var path := PetService.model_path(pet_id)
 	if path.is_empty():
 		return
@@ -320,9 +465,19 @@ func _spawn_pet(pet_id: String, index: int, total: int) -> void:
 	# 其余照常走、但静音。spawn 时判定一次；大厅里 active_pet 变化会经 pets_changed
 	# 触发 _rebuild_pets 重建。
 	var audible := pet_is_audible(pet_id, _audible_pet_id())
+	# 11-26 按成员显示：发不发声由成员表说了算（只听自己那只）；两个人带同一只宠物时
+	# 按宠物 id 判会两只一起响。
+	var label: Label3D = null
+	if not member.is_empty():
+		audible = bool(member.get("audible", false))
+		label = _make_name_label(str(member.get("name", "")))
+		_stage.add_child(label)
+		label.position = Vector3(node.position.x, -NAME_DROP, node.position.z)
 
 	var entry := {
 		"id": pet_id,
+		"key": str(member.get("key", "")),
+		"label": label,
 		"node": node,
 		"shadow": shadow,
 		"state": "idle",
@@ -370,6 +525,8 @@ func _process(delta: float) -> void:
 	for entry in _pets:
 		_step_pet(entry, delta)
 	_separate_pets(delta)
+	if _use_members:
+		_follow_names()
 
 func _step_pet(entry: Dictionary, delta: float) -> void:
 	var node := entry.node as Node3D
@@ -444,7 +601,9 @@ func _clamp_to_ground(node: Node3D) -> void:
 func _compute_ground_half_x(area_size: Vector2) -> float:
 	var ratio := area_size.x / maxf(1.0, area_size.y)
 	var visible := CAMERA_ORTHO_SIZE * 0.5 * ratio
-	return minf(GROUND_HALF_X, maxf(1.0, visible - GROUND_MARGIN))
+	# 11-26：脚下带名字时多留一点（名字比宠物宽）。
+	var margin := NAME_MARGIN if _use_members else GROUND_MARGIN
+	return minf(GROUND_HALF_X, maxf(1.0, visible - margin))
 
 # 靠太近就互相推开，避免两只叠在一起
 func _separate_pets(delta: float) -> void:

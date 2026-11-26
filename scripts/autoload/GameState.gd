@@ -49,6 +49,14 @@ var stone_draw_used_round := -1
 # 猴子「每回合买的第一个棋子多复制一张」靠它判断是不是第一笔（PrepBoardController._plan_pet_first_buy_copy）；
 # 服务器账本同名字段（EconomyLedger）在重连 / AI 托管交回时取大对齐，存档也带着它。
 var first_buy_round := -1
+# 猴子的复制是概率（11-26：25% 起，每打完一个 PvP 回合 +25%，PetService.first_buy_copy_rate），
+# 一回合只判一次。两个回合号记这一次的结果：
+#   pet_copy_roll_round —— 本机已经掷过的回合（只有单机 / 本机当房主时本机才掷）；
+#   pet_copy_ok_round   —— 掷中的回合（== round_index 表示这一回合第一笔购买会复制）。
+# 联机时本机不掷，pet_copy_ok_round 跟战斗服务器 room_state 里那份走（NetworkService 取大对齐）。
+# 存档带着它们：读档、重连都不会让同一回合重掷一次。
+var pet_copy_roll_round := -1
+var pet_copy_ok_round := -1
 var stone_draw_count := 0
 var free_stone_claimed := false
 var four_star_upgrade_count := 0
@@ -139,6 +147,8 @@ func reset_run() -> void:
 	tiger_starup_count = 0
 	stone_draw_used_round = -1
 	first_buy_round = -1
+	pet_copy_roll_round = -1
+	pet_copy_ok_round = -1
 	stone_draw_count = 0
 	free_stone_claimed = false
 	four_star_upgrade_count = 0

@@ -17,6 +17,8 @@ func _ready() -> void:
 	_check_starters()
 	_check_tiger_ledger()
 	_check_tiger_battle()
+	_check_monkey_rate()
+	_check_monkey_server_roll()
 	_check_monkey_ledger()
 	_check_monkey_bot()
 	await _check_models()
@@ -83,7 +85,86 @@ func _check_tiger_battle() -> void:
 	var f3 := Battle._fighter_from_cell(tier1, 0, "player", false, PetService.tier1_growth_rate("pet_cat"))
 	_h.expect(int(f3.max_hp) == 100, "tiger_other_pet", "stacks must do nothing when the owner's pet is not the tiger")
 
+# 猴子（11-26）：复制成功率 25% 起，每打完一个 PvP 回合 +25%，最高 100%。
+# PvP 回合读 round_schedule.json：21 回合赛程在 6 / 12 / 18（/ 21），13 回合赛程在 6 / 11。
+func _check_monkey_rate() -> void:
+	var normal := {1: 0.25, 6: 0.25, 7: 0.5, 12: 0.5, 13: 0.75, 18: 0.75, 19: 1.0, 21: 1.0}
+	for round_index in normal:
+		var rate := PetService.first_buy_copy_rate("pet_monkey", int(round_index), 21)
+		_h.expect(is_equal_approx(rate, float(normal[round_index])), "monkey_rate_21_r%d" % int(round_index),
+			"21-round match, round %d: expected %.2f, got %.2f" % [int(round_index), float(normal[round_index]), rate])
+	var seedling := {1: 0.25, 6: 0.25, 7: 0.5, 11: 0.5, 12: 0.75, 13: 0.75}
+	for round_index in seedling:
+		var rate := PetService.first_buy_copy_rate("pet_monkey", int(round_index), 13)
+		_h.expect(is_equal_approx(rate, float(seedling[round_index])), "monkey_rate_13_r%d" % int(round_index),
+			"13-round match, round %d: expected %.2f, got %.2f" % [int(round_index), float(seedling[round_index]), rate])
+	_h.expect(PetService.first_buy_copy_rate("pet_tiger", 19, 21) == 0.0
+			and PetService.first_buy_copy_rate("", 19, 21) == 0.0,
+		"monkey_rate_needs_monkey", "other pets (or no pet) never copy")
+	_h.expect(RoundService.pvp_rounds_before(6, 21) == 0 and RoundService.pvp_rounds_before(7, 21) == 1
+			and RoundService.pvp_rounds_before(12, 13) == 2,
+		"monkey_rate_counts_finished_pvp", "the rate rises only after a PvP round has been played")
+
+
+# 掷骰在战斗服务器：一回合一个座位只掷一次，记在座位账本上，谁问都是同一个结果。
+func _check_monkey_server_roll() -> void:
+	var room := {"state": NetworkService.ROOM_PREP, "round_index": 19, "ruleset": "normal",
+		"seat_pets": {0: "pet_monkey", 1: "pet_tiger"}, "prep": {}}
+	_h.expect(NetworkService._room_pet_copy_ok_round(room, 0) == 19,
+		"monkey_roll_certain_late", "from round 19 the rate is 100%, so the roll always succeeds")
+	_h.expect(NetworkService._room_pet_copy_ok_round(room, 1) == -1
+			and NetworkService._room_pet_copy_ok_round(room, -1) == -1,
+		"monkey_roll_needs_monkey", "a seat without the monkey (or a spectator) never gets a copy")
+	var preps: Dictionary = room.prep
+	var monkey_seat: Dictionary = preps.get(0, {})
+	_h.expect(int(monkey_seat.get("pet_copy_roll_round", -1)) == 19 and not preps.has(1),
+		"monkey_roll_recorded", "the roll is written to the monkey seat's ledger and nowhere else")
+
+	var lobby := {"state": NetworkService.ROOM_LOBBY, "round_index": 19, "ruleset": "normal",
+		"seat_pets": {0: "pet_monkey"}, "prep": {}}
+	var lobby_preps: Dictionary = lobby.prep
+	_h.expect(NetworkService._room_pet_copy_ok_round(lobby, 0) == -1 and lobby_preps.is_empty(),
+		"monkey_roll_not_in_lobby", "nothing is rolled before the match starts (seats can still change hands)")
+
+	# 这一回合已经掷过、没中：再问多少次都还是没中（重连 / AI 托管 / 超时自动买不会换来重掷）。
+	var missed := Ledger.new_prep(100)
+	missed["pet_copy_roll_round"] = 19
+	var fixed := {"state": NetworkService.ROOM_PREP, "round_index": 19, "ruleset": "normal",
+		"seat_pets": {0: "pet_monkey"}, "prep": {0: missed}}
+	var rerolled := false
+	for i in 20:
+		if NetworkService._room_pet_copy_ok_round(fixed, 0) == 19:
+			rerolled = true
+	_h.expect(not rerolled, "monkey_roll_once_per_round", "a missed roll must not be re-rolled within the round")
+	fixed.state = NetworkService.ROOM_BATTLE
+	_h.expect(NetworkService._room_pet_copy_ok_round(fixed, 0) == -1,
+		"monkey_roll_same_in_battle", "the timeout auto-buy (battle phase) sees the same result")
+	fixed.state = NetworkService.ROOM_PREP
+	fixed.round_index = 20
+	_h.expect(NetworkService._room_pet_copy_ok_round(fixed, 0) == 20,
+		"monkey_roll_new_round", "a new round gets a new roll")
+
+	# 第 1 回合 25%：400 个座位各掷一次，期望 100 个中（标准差约 8.7），放宽到 50–150。
+	var hits := 0
+	for i in 400:
+		var early := {"state": NetworkService.ROOM_PREP, "round_index": 1, "ruleset": "normal",
+			"seat_pets": {0: "pet_monkey"}, "prep": {}}
+		if NetworkService._room_pet_copy_ok_round(early, 0) == 1:
+			hits += 1
+	_h.note("猴子第 1 回合 400 次掷骰中了 %d 次（期望约 100）" % hits)
+	_h.expect(hits >= 50 and hits <= 150, "monkey_roll_rate_25",
+		"round 1 should succeed about 25%% of the time, got %d / 400" % hits)
+
+	# 账本买棋子、AI 托管拿到的是同一个结果。
+	var ctx := NetworkService._economy_ctx(room, 0, "buy")
+	_h.expect(bool(ctx.get("pet_first_buy_copy", false)), "monkey_roll_reaches_ledger",
+		"the ledger context carries this round's result for the monkey seat")
+	_h.expect(not bool(NetworkService._economy_ctx(fixed, 1, "buy").get("pet_first_buy_copy", true)),
+		"monkey_roll_ledger_needs_monkey", "the ledger context is false for a seat without the monkey")
+
+
 # 猴子（11-25）：每回合买的第一个棋子免费多一张 1 星，和这一笔 buy 在同一张回执里。
+# ctx.pet_first_buy_copy = 这个座位这一回合中了（出战宠物是猴子、服务器这一回合掷中）。
 func _check_monkey_ledger() -> void:
 	_h.expect(PetService.copies_first_buy("pet_monkey") and not PetService.copies_first_buy("pet_tiger"),
 		"monkey_effect", "only the monkey copies the first purchase")
@@ -120,9 +201,23 @@ func _check_monkey_ledger() -> void:
 	var plain := ctx.duplicate()
 	plain.round_index = 5
 	plain.pet_first_buy_copy = false
-	var no_pet := Ledger.apply(prep, "buy", {"shop_index": 3, "offer_id": "o1", "uid": "m7"}, plain)
-	_h.expect(bool(no_pet.ok) and not (no_pet.result as Dictionary).has("pet_copy"),
-		"monkey_needs_pet", "no copy without the monkey")
+	# 客户端自己报了复制品也没用：这一回合没中（或不是猴子）就是没有。
+	var no_pet := Ledger.apply(prep, "buy", {"shop_index": 3, "offer_id": "o1", "uid": "m7",
+		"pet_copy": {"uid": "m8", "sold": false}}, plain)
+	_h.expect(bool(no_pet.ok) and not (no_pet.result as Dictionary).has("pet_copy")
+			and not prep.roster.has("m8") and int(prep.gold) == 65,
+		"monkey_needs_roll", "no copy when this round's roll missed (or without the monkey), whatever the client claims")
+	# 反过来：这一回合中了，但客户端这一笔没带复制品（它自己没拿）—— 账本跟着不给。
+	var quiet := Ledger.new_prep(100)
+	quiet.shop = {"offer_id": "o3", "offers": [unit, other], "sold": [false, false]}
+	var silent := Ledger.apply(quiet, "buy", {"shop_index": 0, "offer_id": "o3", "uid": "q1"}, ctx)
+	_h.expect(bool(silent.ok) and not (silent.result as Dictionary).has("pet_copy")
+			and quiet.roster.size() == 1 and int(quiet.gold) == 90,
+		"monkey_follows_client", "a buy that reports no copy adds none to the ledger")
+	var late := Ledger.apply(quiet, "buy", {"shop_index": 1, "offer_id": "o3", "uid": "q2",
+		"pet_copy": {"uid": "q3", "sold": false}}, ctx)
+	_h.expect(bool(late.ok) and not (late.result as Dictionary).has("pet_copy") and quiet.roster.size() == 2,
+		"monkey_no_second_chance", "the round's one chance is spent on the first purchase")
 	var full := Ledger.new_prep(100)
 	full.shop = {"offer_id": "o2", "offers": [unit], "sold": [false]}
 	var cramped := {"round_index": 1, "pet_first_buy_copy": true, "roster_cap": 1, "owned_treasures": []}
@@ -134,21 +229,35 @@ func _check_monkey_ledger() -> void:
 
 func _check_monkey_bot() -> void:
 	var offer := {"id": "test_unit", "cost": 10, "tier": 1}
+	# bot.pet_copy_ok_round = 服务器这一回合掷中的回合号（LiveBotEconomy.prepare 放进来），AI 自己不掷。
 	var bot := {"roster": [{"id": "test_unit", "star": 1, "def": offer, "cost_basis": 10}],
-		"pet_id": "pet_monkey", "gold": 0, "treasures": [], "first_buy_round": -1}
+		"pet_id": "pet_monkey", "gold": 0, "treasures": [], "first_buy_round": -1, "pet_copy_ok_round": 5}
 	var copy := Bot._pet_first_buy_copy(bot, offer, 5)
 	_h.expect(not copy.is_empty() and (bot.roster as Array).size() == 2 and int(copy.cost_basis) == 10,
 		"monkey_bot_copy", "an AI-run seat with the monkey copies its first purchase")
 	_h.expect(Bot._pet_first_buy_copy(bot, offer, 5).is_empty(),
 		"monkey_bot_once", "the AI copies only once per round")
-	var seeded := {"roster": [], "pet_id": "pet_monkey", "gold": 0, "treasures": [], "first_buy_round": 9}
+	var unlucky := {"roster": [], "pet_id": "pet_monkey", "gold": 0, "treasures": [],
+		"first_buy_round": -1, "pet_copy_ok_round": 3}
+	_h.expect(Bot._pet_first_buy_copy(unlucky, offer, 4).is_empty() and int(unlucky.first_buy_round) == 4,
+		"monkey_bot_needs_roll", "the AI does not copy in a round whose roll missed, and the chance is spent")
+	unlucky.pet_copy_ok_round = 4
+	_h.expect(Bot._pet_first_buy_copy(unlucky, offer, 4).is_empty(),
+		"monkey_bot_no_second_chance", "a later purchase in the same round is never copied")
+	var unseeded := {"roster": [], "pet_id": "pet_monkey", "gold": 0, "treasures": [], "first_buy_round": -1}
+	_h.expect(Bot._pet_first_buy_copy(unseeded, offer, 4).is_empty(),
+		"monkey_bot_never_rolls", "without a server result the AI does not roll for itself")
+	var seeded := {"roster": [], "pet_id": "pet_monkey", "gold": 0, "treasures": [],
+		"first_buy_round": 9, "pet_copy_ok_round": 9}
 	_h.expect(Bot._pet_first_buy_copy(seeded, offer, 9).is_empty(),
 		"monkey_bot_after_player_buy", "a player who bought before disconnecting is not copied again by the AI")
-	var no_pet := {"roster": [], "pet_id": "", "gold": 0, "treasures": [], "first_buy_round": -1}
+	var no_pet := {"roster": [], "pet_id": "", "gold": 0, "treasures": [], "first_buy_round": -1,
+		"pet_copy_ok_round": 1}
 	_h.expect(Bot._pet_first_buy_copy(no_pet, offer, 1).is_empty(),
 		"monkey_bot_needs_pet", "fill-in AI seats have no pet effect")
 	var cap := Handover.board_cap([]) + Bot.BENCH_CAP
-	var crowded := {"roster": [], "pet_id": "pet_monkey", "gold": 0, "treasures": [], "first_buy_round": -1}
+	var crowded := {"roster": [], "pet_id": "pet_monkey", "gold": 0, "treasures": [], "first_buy_round": -1,
+		"pet_copy_ok_round": 2}
 	for i in cap:
 		(crowded.roster as Array).append({"id": "filler_%d" % i, "star": 1, "def": offer, "cost_basis": 10})
 	var extra := Bot._pet_first_buy_copy(crowded, offer, 2)

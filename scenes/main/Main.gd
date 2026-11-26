@@ -1740,6 +1740,8 @@ func _show_friends_screen() -> void:
 	screen.profile_requested.connect(_show_public_profile)
 	# 一键加入好友所在的房间。走已有的加入流程，不新造路径。
 	screen.join_room_requested.connect(_join_room_by_id)
+	# 11-26：好友那一行的「加入」现在发的是申请，好友同意了才走上面那条加入流程。
+	screen.join_request_requested.connect(_request_join_friend_room)
 	# 好友在对局里：观战（协议 44）。同「加入」先回主菜单，连接中 / 失败提示挂在主菜单上。
 	screen.spectate_room_requested.connect(func(room_id: int) -> void:
 		_show_menu()
@@ -1907,6 +1909,10 @@ func _install_realtime() -> void:
 		_on_service_state(RealtimeService.service_state)
 	if not RealtimeService.message_received.is_connected(_on_party_realtime):
 		RealtimeService.message_received.connect(_on_party_realtime)
+	# 11-26：好友界面「加入」的申请 / 回复 / 撤回。单独接一条，不塞进 _on_party_realtime ——
+	# 那个函数开头有「对局中一律不弹」的早退，而这里对局中收到申请要**回一声拒绝**，不能装没看见。
+	if not RealtimeService.message_received.is_connected(_on_join_request_realtime):
+		RealtimeService.message_received.connect(_on_join_request_realtime)
 	# 10.07 第 6 条：自定义房间邀请是**一条带 kind 的私聊**（见 RoomInvite 文件头），
 	# 所以它从 dm_received 进来，不是 RealtimeService 的原始推送。
 	if not ChatService.dm_received.is_connected(_on_dm_received):
@@ -1959,6 +1965,180 @@ func _friend_name_of(code: String) -> String:
 		if entry is Dictionary and str((entry as Dictionary).get("friend_code", "")) == code:
 			return str((entry as Dictionary).get("player_name", code))
 	return code
+
+
+# ── 好友界面「加入」要好友同意（11-26）────────────────────────────────────────
+#
+# 用户定的范围：
+#   · 只管好友界面那颗「加入」。被邀请的人点邀请上的「加入」照旧直接进；
+#     房间列表 / 输房间号加入也不变。
+#   · 同意的人是**被点的那位好友**（不一定是房主）。
+# 流程（账号服务器只负责转推送，backend/app/routes/join_requests.py）：
+#   申请人点「加入」 → 好友那边弹问询框（同意 / 拒绝，30 秒不理自动作废）
+#   → 同意：申请人走 _join_room_by_id（原来那条加入流程）；拒绝 / 超时：一句提示。
+# 这只是界面上的问询，不是进房闸门 —— 进房走战斗服务器，那边不认这张申请。
+const JOIN_REQUEST_DIALOG_ID := "room_join_request"
+const JOIN_REQUEST_TTL_SEC := 30.0
+# 我发出去、还在等回复的那张：{"id", "code", "name", "room_id"}。空 = 没有。
+var _join_request_out: Dictionary = {}
+# 别人发给我、问询框还开着的那张（同上四个键）。空 = 没有。
+var _join_request_in: Dictionary = {}
+
+
+func _join_request_text(zh: String, en: String) -> String:
+	return en if LocaleManager.get_locale().begins_with("en") else zh
+
+
+func _join_request_toast(text: String) -> void:
+	preload("res://ui/components/GloryToast.gd").show_text(text)
+
+
+# 账号服务器回的状态码该怎么办。纯静态（入参即全部依赖）⇒ 门禁可以直接喂数据。
+#   "sent"    申请发出去了，等对方回
+#   "direct"  服务器还是旧版、没有这个接口（404 / 405）：照旧直接加入，功能不能因为没部署就断掉
+#   "failed"  别的都算没发出去（好友不在线、点太快、断网…）
+static func join_request_outcome(status: int) -> String:
+	if status == 200:
+		return "sent"
+	if status == 404 or status == 405:
+		return "direct"
+	return "failed"
+
+
+# 好友界面点了「加入」。on_failed：申请没发出去时调它，让那颗键恢复成能点。
+func _request_join_friend_room(code: String, friend_name: String, room_id: int,
+		on_failed: Callable = Callable()) -> void:
+	if room_id <= 0:
+		return
+	var result: Dictionary = await AccountManager.request_room_join(code, room_id)
+	if not is_inside_tree():
+		return
+	var shown_name := AccountManager.display_name(friend_name, code, false)
+	match join_request_outcome(int(result.get("code", 0))):
+		"direct":
+			if on_failed.is_valid():
+				on_failed.call()
+			_join_room_by_id(room_id)
+		"sent":
+			var body: Dictionary = {}
+			if result.get("body") is Dictionary:
+				body = result.get("body")
+			var request_id := str(body.get("request_id", ""))
+			_join_request_out = {"id": request_id, "code": code, "name": shown_name, "room_id": room_id}
+			_join_request_toast(_join_request_text(
+				"已向 %s 发出申请，等对方同意" % shown_name,
+				"Asked %s — waiting for a reply" % shown_name))
+			# 多等 2 秒再判超时：让服务器那边先过期，对方卡着点同意的那一下不会被这边抢先判掉。
+			var ttl := float(body.get("expires_sec", JOIN_REQUEST_TTL_SEC))
+			get_tree().create_timer(ttl + 2.0).timeout.connect(_on_join_request_timeout.bind(request_id))
+		_:
+			if on_failed.is_valid():
+				on_failed.call()
+			_join_request_toast(str(result.get("error",
+				_join_request_text("申请没发出去，请稍后再试", "Couldn't send the request — try again"))))
+
+
+func _on_join_request_timeout(request_id: String) -> void:
+	if str(_join_request_out.get("id", "")) != request_id:
+		return   # 已经回过了（或者又发了一张新的）
+	var shown_name := str(_join_request_out.get("name", ""))
+	_join_request_out = {}
+	_join_request_toast(_join_request_text("%s 没有回应" % shown_name, "%s didn't reply" % shown_name))
+
+
+func _on_join_request_realtime(payload: Dictionary) -> void:
+	match str(payload.get("t", "")):
+		"room_join_request":
+			_on_join_request_received(payload)
+		"room_join_reply":
+			_on_join_request_replied(payload)
+		"room_join_cancel":
+			# 对方撤回了 / 改去申请别人了：问询框收掉。先清账再关框 ——
+			# 关框会触发 on_result（当成「关掉了」），账还在的话会多回一条拒绝。
+			var cancelled := str(payload.get("request_id", ""))
+			if not _join_request_in.is_empty() and str(_join_request_in.get("id", "")) == cancelled:
+				_join_request_in = {}
+				DialogService.close(JOIN_REQUEST_DIALOG_ID)
+
+
+# 我现在能不能回应「想进我房间」的申请：得还在那个房间的大厅里。
+# 对局已经开打、或者我已经离开那个房间 ⇒ 不弹框，直接替玩家回拒绝（对方马上知道，不用干等 30 秒）。
+func _can_answer_join_request(room_id: int) -> bool:
+	if _invite_popup_suppressed():
+		return false
+	return NetworkService.team_active and int(NetworkService.team_room_id) == room_id
+
+
+# 有好友想进我的房间：弹问询框。
+func _on_join_request_received(payload: Dictionary) -> void:
+	var request_id := str(payload.get("request_id", ""))
+	if request_id.is_empty():
+		return
+	var room_id := int(payload.get("room_id", 0))
+	if not _can_answer_join_request(room_id):
+		AccountManager.reply_room_join(request_id, false)
+		return
+	if not _join_request_in.is_empty():
+		# 上一位的问询框还开着：这一张先不理（对方 30 秒后收到「没有回应」，可以再点一次）。
+		# 不替玩家回拒绝 —— 他并没有拒绝这个人。
+		return
+	var code := str(payload.get("from_code", ""))
+	var shown_name := AccountManager.display_name(str(payload.get("from_name", "")), code, false)
+	_join_request_in = {"id": request_id, "code": code, "name": shown_name, "room_id": room_id}
+	SfxService.play(SfxService.CUE_CHAT_ALERT)
+	DialogService.confirm({
+		"request_id": JOIN_REQUEST_DIALOG_ID,
+		"title": _join_request_text("加入申请", "Join request"),
+		"body": _join_request_text("%s 想加入你的房间" % shown_name, "%s wants to join your room" % shown_name),
+		"confirm_text": _join_request_text("同意", "Accept"),
+		"cancel_text": _join_request_text("拒绝", "Decline"),
+		"owner": self,
+		"on_result": _on_join_request_answered,
+	})
+	# 到点没人理：框自己收掉（服务器那边同时作废，这时再点同意也没用）。
+	var ttl := float(payload.get("expires_sec", JOIN_REQUEST_TTL_SEC))
+	get_tree().create_timer(ttl).timeout.connect(_on_join_request_prompt_expired.bind(request_id))
+
+
+func _on_join_request_prompt_expired(request_id: String) -> void:
+	if str(_join_request_in.get("id", "")) != request_id:
+		return
+	_join_request_in = {}
+	DialogService.close(JOIN_REQUEST_DIALOG_ID)
+
+
+# 问询框有结果了：同意 = 点了「同意」；其余（拒绝、被关掉）都算拒绝。
+func _on_join_request_answered(result: String, _request_id: String) -> void:
+	if _join_request_in.is_empty():
+		return   # 超时 / 对方撤回时框是我们自己关的，账已经清了，不用回
+	var request_id := str(_join_request_in.get("id", ""))
+	_join_request_in = {}
+	var accept := result == ConfirmDialog.RESULT_CONFIRMED
+	var reply: Dictionary = await AccountManager.reply_room_join(request_id, accept)
+	if accept and is_inside_tree() and int(reply.get("code", 0)) / 100 != 2:
+		_join_request_toast(str(reply.get("error",
+			_join_request_text("这条申请已经过期", "That request has expired"))))
+
+
+# 好友回了我的申请。
+func _on_join_request_replied(payload: Dictionary) -> void:
+	if _join_request_out.is_empty():
+		return
+	if str(_join_request_out.get("id", "")) != str(payload.get("request_id", "")):
+		return   # 不是我现在等的那张（超时过了 / 又发了新的）
+	var shown_name := str(_join_request_out.get("name", ""))
+	# 房间号用我自己记下的那个，不用推送里带回来的。
+	var room_id := int(_join_request_out.get("room_id", 0))
+	_join_request_out = {}
+	if not bool(payload.get("accept", false)):
+		_join_request_toast(_join_request_text(
+			"%s 没有同意你加入" % shown_name, "%s declined your request" % shown_name))
+		return
+	if _invite_popup_suppressed():
+		return   # 等回复这会儿我自己已经进了对局：不把人从对局里拽出来
+	_join_request_toast(_join_request_text(
+		"%s 同意了，正在加入…" % shown_name, "%s accepted — joining…" % shown_name))
+	_join_room_by_id(room_id)
 
 
 func _on_party_realtime(payload: Dictionary) -> void:

@@ -26,6 +26,11 @@ signal profile_requested(friend_code: String)
 # 一键加入好友所在的房间。Main 会先回主菜单再走已有的加入流程（那里才有
 # 「连接中」与失败提示），见 Main._join_room_by_id 的注释。
 signal join_room_requested(room_id: int)
+# 11-26 用户定：好友这一行的「加入」不能一按就进，要**那位好友同意**才进。
+# 所以这颗键现在发的是「申请」：Main 把申请交给账号服务器转给好友，好友同意后
+# Main 再走 _join_room_by_id（就是上面 join_room_requested 原来接的那条路）。
+# on_failed：申请没发出去（好友刚下线、点太快…）时 Main 调它，把键恢复成能点。
+signal join_request_requested(friend_code: String, friend_name: String, room_id: int, on_failed: Callable)
 # 观战好友正在打的那一局（协议 44，2026-10-22）。走 Main 的观战流程，同「加入」一样先回主菜单。
 signal spectate_room_requested(room_id: int)
 # 私聊。带好友码 —— Main 用它开 ChatScreen 并定位到这个人。
@@ -51,7 +56,21 @@ const DEFAULT_FRAME_TEX := preload("res://assets/ui/shop/headframes/frame_defaul
 const REFRESH_SEC := 5.0
 # 在线状态推送的事件名。必须和 backend/app/presence.py 的 PRESENCE_EVENT 一致。
 const PRESENCE_PUSH := "presence"
+# 加入申请的回复推送（backend/app/routes/join_requests.py）。
+const JOIN_REPLY_PUSH := "room_join_reply"
+# 申请发出去后键锁多久。比服务器的 30 秒多 2 秒：让服务器那边先过期，免得这边刚解锁、
+# 玩家再点一次，上一张其实还没作废。
+const JOIN_ASK_MSEC := 32000
 const TouchScrollContainer := preload("res://ui/components/TouchScrollContainer.gd")
+# 「⋯」菜单（删除好友 / 拉黑）。与自定义房间的 AI 难度列表同一个组件。
+const LobbyPopover := preload("res://ui/components/LobbyPopover.gd")
+const MORE_MENU_MODAL_ID := "friends_more_menu"
+# 参考像素（本页没有整体缩放，k 恒为 1）。行里的按钮是 48 高、19 号字，菜单项要明显更大、更容易点中。
+const MORE_MENU_W := 200.0
+const MORE_MENU_ITEM_H := 64.0
+const MORE_MENU_FONT := 22
+# 菜单开着时，选中那张好友卡片四周留亮的余量（其余整屏压暗，见 _spotlight_rect）。
+const SPOTLIGHT_PAD := 6.0
 
 enum Tab { FRIENDS, REQUESTS, ADD }
 
@@ -66,10 +85,17 @@ var _notice := ""
 var _notice_bad := false
 
 var _list_box: VBoxContainer
+# 包着 _list_box 的滚动框。暗幕的洞要裁到它的可见区域里（见 _spotlight_rect）。
+var _list_scroll: Control
+# 「⋯」菜单开着时到点的重建先记下来，关菜单时补一次（见 _render 开头）。
+var _render_deferred := false
 var _notice_label: Label
 var _tab_buttons: Dictionary = {}
 var _code_input: LineEdit
 var _refresh_timer: Timer
+# 好友码 -> 这张加入申请到什么时候（Time.get_ticks_msec）为止算「等对方回复中」。
+# 列表 5 秒重建一次，所以状态记在这里而不是记在按钮上。
+var _join_asked: Dictionary = {}
 # 切页签 / 首次拉到数据时让卡片依次弹入；5 秒一次的后台刷新不弹（会一直闪）。
 var _animate_rows := true
 
@@ -88,6 +114,11 @@ func _ready() -> void:
 	# 推送只覆盖上线，**下线没有事件可挂**（见 PartyLobby.FRIENDS_REFRESH_SEC 的说明）。
 	if not RealtimeService.message_received.is_connected(_on_presence_push):
 		RealtimeService.message_received.connect(_on_presence_push)
+	# 「⋯」菜单关掉时补刷列表；窗口尺寸一变就收起菜单（暗幕的洞对不上了）。
+	if not ModalStack.modal_closed.is_connected(_on_modal_closed):
+		ModalStack.modal_closed.connect(_on_modal_closed)
+	if not get_viewport().size_changed.is_connected(_on_viewport_resized):
+		get_viewport().size_changed.connect(_on_viewport_resized)
 	await _reload(true)
 
 
@@ -95,8 +126,30 @@ func _ready() -> void:
 # （好友 / 申请 / 黑名单 / 最近一起玩过），只给其中一行打补丁就会和另外三份
 # 不同步。并发由 _reload 自己的 _busy 挡。
 func _on_presence_push(payload: Dictionary) -> void:
-	if str(payload.get("t", "")) == PRESENCE_PUSH:
+	var kind := str(payload.get("t", ""))
+	if kind == JOIN_REPLY_PUSH:
+		# 好友回了（同意 / 拒绝）：这一行的键恢复。同意的话 Main 会带玩家进房，这个界面随后就没了。
+		_join_asked.erase(str(payload.get("from_code", "")))
+		_render()
+		return
+	if kind == PRESENCE_PUSH:
 		await _reload(false)
+
+
+# 这位好友的加入申请是不是还在等回复。纯静态（入参即全部依赖）⇒ 门禁可以直接喂数据。
+static func join_request_waiting(asked: Dictionary, code: String, now_msec: int) -> bool:
+	return asked.has(code) and now_msec < int(asked[code])
+
+
+func _ask_to_join(code: String, friend_name: String, room_id: int) -> void:
+	if join_request_waiting(_join_asked, code, Time.get_ticks_msec()):
+		return
+	_join_asked[code] = Time.get_ticks_msec() + JOIN_ASK_MSEC
+	_render()
+	join_request_requested.emit(code, friend_name, room_id, func() -> void:
+		_join_asked.erase(code)
+		if is_inside_tree():
+			_render())
 
 
 func _exit_tree() -> void:
@@ -109,6 +162,12 @@ func _exit_tree() -> void:
 	# ChatService 是 autoload，活得比这个界面久 —— 连接必须显式断开。
 	if ChatService.unread_changed.is_connected(_on_chat_unread_changed):
 		ChatService.unread_changed.disconnect(_on_chat_unread_changed)
+	# ModalStack 是 autoload、视口也活得比这个界面久 —— 同样显式断开。
+	if ModalStack.modal_closed.is_connected(_on_modal_closed):
+		ModalStack.modal_closed.disconnect(_on_modal_closed)
+	var viewport := get_viewport()
+	if viewport != null and viewport.size_changed.is_connected(_on_viewport_resized):
+		viewport.size_changed.disconnect(_on_viewport_resized)
 
 
 # 私聊红点跟着 ChatService 走（状态只有一份）。私聊按钮只在「好友」页签上。
@@ -162,6 +221,7 @@ func _build() -> void:
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	content.add_child(scroll)
+	_list_scroll = scroll
 
 	_list_box = VBoxContainer.new()
 	_list_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -294,6 +354,13 @@ func _render() -> void:
 	#   等玩家打完字、焦点离开，下一个 5 秒周期自然会重建。
 	if _is_editing_code():
 		return
+	# ★ 11-26：「⋯」菜单开着时不重建。菜单开着时整屏压暗、只留选中那一行亮着，而洞是按
+	#   打开那一刻的位置挖的；好友按「在线在前」排序，这时有人上线、列表一重排，亮着的就成了
+	#   别人那一行 —— 正好和「看清是对谁操作、防误删」相反。定时刷新、上线推送、加入回复、
+	#   私聊红点都从这里过，所以只拦这一处；关菜单时 _on_modal_closed 补一次。
+	if ModalStack.has(MORE_MENU_MODAL_ID):
+		_render_deferred = true
+		return
 	for child in _list_box.get_children():
 		child.queue_free()
 	for tab_id in _tab_buttons:
@@ -391,10 +458,14 @@ func _friend_row(entry: Dictionary) -> Control:
 	elif room_id > 0:
 		var join := ACTION_BUTTON.instantiate() as Button
 		join.name = "join"
-		join.text = _text("加入", "Join")
+		# 11-26：点「加入」= 向这位好友发申请，他同意了才进（见 join_request_requested）。
+		# 申请发出去之后这颗键写「已申请」并点不动，直到对方回复或 30 秒过去。
+		var waiting := join_request_waiting(_join_asked, code, Time.get_ticks_msec())
+		join.text = _text("已申请", "Asked") if waiting else _text("加入", "Join")
+		join.disabled = waiting
 		join.custom_minimum_size = Vector2(92, Tokens.TOUCH_MIN)
 		_style_primary_button(join)
-		join.pressed.connect(func() -> void: join_room_requested.emit(room_id))
+		join.pressed.connect(_ask_to_join.bind(code, str(entry.get("player_name", "")), room_id))
 		row.add_child(join)
 
 	# 私聊。实例化组件而不是 Button.new()（见 ACTION_BUTTON 的注释）。
@@ -414,18 +485,67 @@ func _friend_row(entry: Dictionary) -> Control:
 	more.custom_minimum_size = Vector2(56, Tokens.TOUCH_MIN)
 	_style_quiet_button(more)
 	row.add_child(more)
-	var menu := PopupMenu.new()
-	menu.add_item(_text("删除好友", "Remove friend"), 0)
-	menu.add_item(_text("拉黑", "Block"), 1)
-	menu.id_pressed.connect(func(id: int) -> void:
-		if id == 0:
-			_confirm_remove(entry)
-		else:
-			_confirm_block(entry))
-	more.add_child(menu)
-	more.pressed.connect(func() -> void:
-		menu.popup(Rect2i(Vector2i(more.get_screen_position()), Vector2i(170, 1))))
+	more.pressed.connect(_open_more_menu.bind(more, entry))
 	return row
+
+
+# 11-26 用户反馈：原来的 PopupMenu 是引擎默认样式（没套羊皮纸主题），两项字小、行矮，
+# 手机上很难点准。改用 LobbyPopover.open_choice_list：羊皮纸底板、每项 64 高（> TOUCH_MIN），
+# 走 ModalStack —— 点外面 / 按返回键就收起，页面切走时按 owner 自动收掉。
+# 挂在页面（self）上而不是这颗键上：列表每 5 秒重建一次，挂在键上会被刷新连带关掉。
+# 同日第二条：菜单开着时除了选中那一行，其余整屏压暗（spotlight），玩家看得清是对谁操作。
+func _open_more_menu(anchor: Button, entry: Dictionary) -> void:
+	if not is_instance_valid(anchor) or not anchor.is_inside_tree():
+		return
+	var rect := anchor.get_global_rect()
+	# 键在屏幕下半截就往上展开，免得被屏幕底边夹回来、盖住这颗键。
+	var open_up := rect.get_center().y > get_viewport_rect().size.y * 0.5
+	var items: Array = [
+		{"text": _text("删除好友", "Remove friend"), "value": "remove"},
+		{"text": _text("拉黑", "Block"), "value": "block"},
+	]
+	LobbyPopover.open_choice_list(self, MORE_MENU_MODAL_ID, rect, 1.0, items,
+		_on_more_menu_pick.bind(entry), open_up, MORE_MENU_W, MORE_MENU_FONT, MORE_MENU_ITEM_H,
+		_spotlight_rect(anchor))
+
+
+# 暗幕要留亮的那一块：「⋯」所在的整张好友卡片（_wrap_card 的羊皮纸条，四角叶子都在框内），
+# 四周多留 SPOTLIGHT_PAD，再裁到列表滚动框的可见区域里 —— 滚到一半的卡片，
+# 露在列表框外面的那截照样压暗。找不到卡片时只留这颗键亮着（不该发生，兜底）。
+func _spotlight_rect(anchor: Control) -> Rect2:
+	var card: Control = anchor
+	var node := anchor.get_parent()
+	while node != null and node != _list_box:
+		if node is PanelContainer:
+			card = node as Control
+			break
+		node = node.get_parent()
+	var hole := card.get_global_rect().grow(SPOTLIGHT_PAD)
+	if _list_scroll != null and is_instance_valid(_list_scroll):
+		hole = hole.intersection(_list_scroll.get_global_rect().grow(SPOTLIGHT_PAD))
+	return hole
+
+
+func _on_modal_closed(id: String, _reason: String) -> void:
+	if id != MORE_MENU_MODAL_ID or not _render_deferred:
+		return
+	_render_deferred = false
+	if is_inside_tree():
+		_render()
+
+
+# 改窗口大小（Windows）/ 转屏：暗幕的洞是按打开那一刻的位置挖的，尺寸一变就对不上，直接收起菜单。
+func _on_viewport_resized() -> void:
+	if ModalStack.has(MORE_MENU_MODAL_ID):
+		ModalStack.pop(MORE_MENU_MODAL_ID)
+
+
+# LobbyPopover 先关菜单再调这里；两条都还要再过一道确认框（_confirm_remove / _confirm_block）。
+func _on_more_menu_pick(action: Variant, entry: Dictionary) -> void:
+	if str(action) == "remove":
+		_confirm_remove(entry)
+	elif str(action) == "block":
+		_confirm_block(entry)
 
 
 func _avatar_stage(entry: Dictionary, code: String) -> Control:

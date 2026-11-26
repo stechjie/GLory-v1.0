@@ -27,6 +27,12 @@ extends RefCounted
 # 都会再调一次 `play(menu_music)`，若不判等就会每次返回都从 0 秒重头播 ——
 # 那是比「没有 BGM」更明显的一个 bug。
 #
+# ## 换曲一律从头（11.26）
+#
+# 11.16 曾让「回到同一首」接着上次的位置放；11.26 用户要求每次界面换音乐都从 0 秒开始。
+# 现在只有「同一首不重启」这一条例外；手机切后台再回来的续播（_on_application_resumed）
+# 不算换曲，照旧接着放。
+#
 # ## 循环标志
 #
 # BGM 一律 `loop = true`（这一点与 SfxService 相反，那边一律关）。
@@ -109,8 +115,9 @@ static var _talk_probe: Callable = Callable()
 static var _application_suspended := false
 static var _resume_position := 0.0
 static var _resume_path := ""
-# 11.16：「回到同一首歌时接着放，不从头」。
-# path -> 上次离开这首时放到的秒数。只在 play(path, true) 时才会被用上。
+# 11.16 曾做「回到同一首歌时接着放，不从头」；11.26 用户要求改回**换曲一律从头放**。
+# resume 参数保留（调用方不用改），但不再生效；下面的位置记录只剩 shutdown 清理用。
+# path -> 上次离开这首时放到的秒数（11.26 起不再被读取）。
 static var _positions: Dictionary = {}
 # 组的第一条路径 -> 这个组上次挑中的那首（play_group(resume=true) 回到同一首用）。
 static var _group_last: Dictionary = {}
@@ -142,8 +149,9 @@ static func is_installed() -> bool:
 
 # 播一首 BGM。**同一首重复调用是 no-op**（见文件头「同一首歌不重启」）。
 #
-# resume = true：这首以前放过的话，从上次离开时的位置接着放（11.16）。
-# 默认 false = 从头放，与原行为一致。
+# resume：11.16 加的「从上次离开的位置接着放」，11.26 起**不再生效** —— 用户要求
+# 「每次打开界面换音乐就从头开始」。参数留着是为了不动十几个调用点；
+# 真正的规则只剩两条：曲目没变 → 不动；曲目变了 → 从 0 秒放。
 static func play(path: String, resume := false) -> void:
 	if path.is_empty():
 		return
@@ -157,9 +165,9 @@ static func play(path: String, resume := false) -> void:
 	var stream := _stream_for(path)
 	if stream == null:
 		return
-	_remember_position()
 	_path = path
-	_pending_start = _resume_offset(path, stream) if resume else 0.0
+	# 11.26：换曲一律从头。resume 不再参与（见函数头注释）。
+	_pending_start = 0.0
 	# 先停再换：保证 _sync() 走「没在放 → play(起点)」那一支，起点才生效。
 	if is_instance_valid(_player):
 		_player.stop()
@@ -171,8 +179,8 @@ static func play(path: String, resume := false) -> void:
 #
 # * 正在放的已经是这组里的一首 → 什么都不做，接着放（不换歌、不从头）。
 #   这条保证「房间 → 主菜单 → 玩家资料」一路不断、不重来。
-# * resume = true 且这组以前挑过一首 → 回到那一首、从离开的位置接着放
-#   （从商城 / 备战 / 图鉴回主菜单）。
+# * resume = true 且这组以前挑过一首 → 回到那一首（从商城 / 备战 / 图鉴回主菜单）。
+#   11.26 起也是**从头放**：回同一首不接着放，只保证不换成另一首。
 # * 否则随机挑一首，从头放。打完一局回来的那次走这里（begin_match 清掉了记录）。
 static func play_group(paths: Array, resume := false) -> void:
 	if paths.is_empty():
@@ -199,7 +207,7 @@ static func enter_overlay(path: String) -> String:
 	return previous
 
 
-# 弹窗关掉：如果还在放弹窗那首，就接回原来那首、从原来的位置接着放。
+# 弹窗关掉：如果还在放弹窗那首，就接回原来那首（11.26 起从头放，不接位置）。
 # 已经被别的页面换掉了（比如弹窗随整页一起被清掉、主菜单已经起了自己的歌）就不动。
 static func leave_overlay(path: String, previous: String) -> void:
 	if _path != path:

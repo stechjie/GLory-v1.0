@@ -215,13 +215,15 @@ var _shop_background: TextureRect
 
 
 
+# 皮肤换了（晚到 / 看队友棋盘 / 换回自己的）：按 PrepSkin 此刻显示的那张重贴。
+# 别人的皮肤不进进程级缓存，见 PrepWidgets.skin_texture。
 func reapply_skin() -> void:
 	if is_instance_valid(_shop_button_art):
-		_shop_button_art.texture = PrepWidgets.cached_texture(PrepSkin.path("shop_button"))
+		_shop_button_art.texture = PrepWidgets.skin_texture(PrepSkin.path("shop_button"))
 		if is_instance_valid(_shop_scroll_glint):
 			_shop_scroll_glint.set_art_texture(_shop_button_art.texture)
 	if is_instance_valid(_shop_background):
-		_shop_background.texture = PrepWidgets.cached_texture(PrepSkin.path("shop_panel"))
+		_shop_background.texture = PrepWidgets.skin_texture(PrepSkin.path("shop_panel"))
 	if is_instance_valid(refresh_emblem):
 		refresh_emblem.sync()
 
@@ -249,9 +251,11 @@ func build_button_and_purse(body: HBoxContainer, center_host: Control, center: C
 	SafeArea.track(closed_controls)
 
 	# 底部「商店」按钮：点击打开/关闭商店弹窗（弹窗打开时被弹窗盖住）。保留 shop_closed.png 贴图框、图自带文字。
-	var shop_open_btn := PrepWidgets.make_framed_text_button("", PrepSkin.path("shop_button"), SHOP_BTN_SIZE, 18, toggle_picker)
+	# 图在下面用 skin_texture 贴（观战看的是别人的皮肤时不进进程级缓存，见 PrepWidgets.skin_texture）。
+	var shop_open_btn := PrepWidgets.make_framed_text_button("", "", SHOP_BTN_SIZE, 18, toggle_picker)
 	open_button = shop_open_btn
 	_shop_button_art = shop_open_btn.get_child(0) as TextureRect
+	_shop_button_art.texture = PrepWidgets.skin_texture(PrepSkin.path("shop_button"))
 	shop_open_btn.anchor_left = 0.5
 	shop_open_btn.anchor_top = 1.0
 	shop_open_btn.anchor_right = 0.5
@@ -388,7 +392,7 @@ func build_popup(body: HBoxContainer, center_host: Control) -> void:
 	shop_background.offset_right = SHOP_BG_SIZE.x * 0.5 + SHOP_BG_OFFSET.x
 	shop_background.offset_top = -SHOP_BG_SIZE.y * 0.5 + SHOP_BG_OFFSET.y
 	shop_background.offset_bottom = SHOP_BG_SIZE.y * 0.5 + SHOP_BG_OFFSET.y
-	var shop_background_source := PrepWidgets.cached_texture(PrepSkin.path("shop_panel"))  # 随棋盘皮肤换
+	var shop_background_source := PrepWidgets.skin_texture(PrepSkin.path("shop_panel"))  # 随棋盘皮肤换（观战时是被看的那个人的）
 	shop_background.texture = shop_background_source
 	shop_background_host.add_child(shop_background)
 	var shop_layout := Control.new()

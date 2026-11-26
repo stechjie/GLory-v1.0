@@ -321,6 +321,52 @@ class PartyHostPetTests(unittest.TestCase):
         self.assertEqual(self.parties.snapshot(room)["host_pet"], "pet_owl",
                          "交接后 host_pet 要跟着新队长走")
 
+    # ---- 11-26：每个成员带出战宠物，换宠物同步给队伍 ---------------------
+    def test_snapshot_members_carry_own_pet(self):
+        room = self.parties.create(self.host, card(1), "casual", [], "pet_fox")
+        guest = player(2)
+        self.parties.invite(self.host, guest)
+        self.parties.join(guest, room.id, card(2), "pet_owl")
+        pets = {m["friend_code"]: m["pet"] for m in self.parties.snapshot(room)["members"]}
+        self.assertEqual(pets, {card(1)["friend_code"]: "pet_fox", card(2)["friend_code"]: "pet_owl"},
+                         "快照里每个成员要带自己的出战宠物")
+
+    def test_set_member_pet_updates_snapshot_and_version(self):
+        room = self.parties.create(self.host, card(1), "casual", [], "pet_fox")
+        guest = player(2)
+        self.parties.invite(self.host, guest)
+        self.parties.join(guest, room.id, card(2), "pet_owl")
+        before = room.version
+        self.assertIs(self.parties.set_member_pet(guest, "pet_cat"), room)
+        member = next(m for m in self.parties.snapshot(room)["members"]
+                      if m["friend_code"] == card(2)["friend_code"])
+        self.assertEqual(member["pet"], "pet_cat", "换了出战宠物，快照要跟着变")
+        self.assertGreater(room.version, before, "变了就要升版本号，客户端才会重画")
+        self.assertEqual(self.parties.snapshot(room)["host_pet"], "pet_fox", "队员换宠物不影响房主那只")
+
+    def test_set_member_pet_same_pet_is_noop(self):
+        room = self.parties.create(self.host, card(1), "casual", [], "pet_fox")
+        before = room.version
+        self.parties.set_member_pet(self.host, "pet_fox")
+        self.assertEqual(room.version, before, "没变就不升版本号（不白推一次）")
+
+    def test_host_changing_pet_keeps_old_clients_display_list(self):
+        room = self.parties.create(self.host, card(1), "casual", ["pet_cat"], "pet_fox")
+        self.parties.set_member_pet(self.host, "pet_owl")
+        self.assertEqual(self.parties.snapshot(room)["host_pet"], "pet_owl")
+        self.assertIn("pet_owl", room.pets, "旧客户端还读展示列表：房主的新宠物要在里面")
+
+    def test_set_member_pet_outside_party_returns_none(self):
+        self.assertIsNone(self.parties.set_member_pet(player(9), "pet_cat"),
+                          "不在队伍里换宠物，不该报错也不该建房")
+
+    def test_pet_change_locked_only_while_queued(self):
+        room = self.parties.create(self.host, card(1), "casual", [], "pet_fox")
+        self.assertFalse(self.parties.room_locked_for_pet(self.host))
+        self.assertFalse(self.parties.room_locked_for_pet(player(9)), "不在队伍里不锁")
+        room.queued = True
+        self.assertTrue(self.parties.room_locked_for_pet(self.host), "排队中不许换出战宠物")
+
     def test_kick_clears_active_pet(self):
         room = self.parties.create(self.host, card(1), "casual", [], "pet_fox")
         guest = player(2)

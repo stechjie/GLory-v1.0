@@ -1525,9 +1525,13 @@ func _add_prep_art_layers(world: Node3D) -> void:
 	_add_prep_texture_plane(world, "PrepRiverBottomLayer", PrepSkin.path("river"), 0.002, 2, river_z_offset())
 	# 11.12：水在流（只画水的像素，石头和岸线不动）。默认青草地皮肤才显示，见 _add_prep_river_water。
 	_add_prep_river_water(world)
-	# 流动波光是照草地河道画的，皮肤可以关掉它（data/prep_skins.json 的 river_glow）。
-	if PrepSkin.river_glow():
-		_add_prep_river_flow(world)
+	# 流动波光：皮肤可以关掉它（data/prep_skins.json 的 river_glow）。
+	# 11-26：关了也照样建、只是藏起来。看队友棋盘 / 皮肤晚到时会换成要波光的皮肤，
+	# 当初没建的话 reapply_prep_skin 找不到这层，那张皮肤就没有波光了（自己冰雪、队友樱花就是这样）。
+	_add_prep_river_flow(world)
+	var river_flow := world.get_node_or_null("PrepRiverFlowBottom") as Node3D
+	if river_flow != null:
+		river_flow.visible = PrepSkin.river_glow()
 	# 主战场 4×4：每格一张站位图（3D 地面 quad）。发光环仍由代码画在上层。
 	_add_prep_cell_marks(world)
 	# 棋盘正中「上阵数 / 上限」贴地图案（10.05 第 2 条返工）。放在站位图**之后**建，
@@ -1896,7 +1900,7 @@ func refresh_prep_river_water() -> void:
 	var quad := find_child("PrepRiverWaterMotion", true, false) as MeshInstance3D
 	if quad == null:
 		return
-	var on := PrepSkin.active_id == PrepSkin.DEFAULT_ID
+	var on := PrepSkin.shown_id() == PrepSkin.DEFAULT_ID
 	quad.visible = on
 	if on:
 		var tex := ResourceLoader.load(PrepSkin.path("river")) as Texture2D
@@ -1947,7 +1951,7 @@ func _apply_river_glow_material(mat: ShaderMaterial) -> void:
 		#（= 夜荧光那套），再套这张皮肤自己的。
 		for key in RIVER_PULSE_KEYS:
 			mat.set_shader_parameter(key, null)
-		var own: Dictionary = RIVER_PULSE_PARAMS.get(PrepSkin.active_id, {})
+		var own: Dictionary = RIVER_PULSE_PARAMS.get(PrepSkin.shown_id(), {})
 		for key in own:
 			mat.set_shader_parameter(key, own[key])
 		return

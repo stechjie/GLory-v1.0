@@ -61,6 +61,9 @@ func _ready() -> void:
 	if spectator_view:
 		await _ready_spectator()
 		return
+	# 11-26：自己的摆放界面一律从自己的皮肤开始建。上一页看队友棋盘时设的 view_id 正常在
+	# _exit_tree 里就清了，这里再兜底一次 —— 漏清的话这一整回合自己的棋盘都会顶着队友的皮肤。
+	PrepSkin.view_id = ""
 	# 回合采集是备战入口的幂等结算点。动画和面板重建不会再次发放。
 	#
 	# 「谁负责发放」必须与本作其余萝卜动作用**同一条判据**：只有「联机且不是房主」
@@ -187,6 +190,11 @@ func _ready() -> void:
 # 那几样是纯显示；其余每一行都会改 GameState、写盘或者发网络请求。
 func _ready_spectator() -> void:
 	_board_hud.setup_cell_styles()
+	# 11-26：棋盘用被观战那个人的皮肤（AI 是它这一局的随机皮肤），不是观战者自己的。
+	# 观战换座位会整页重建（Main._spectate_show_prep），所以建之前设一次就够；离开时 _exit_tree 清掉。
+	# 观战时 team_seat_profiles / team_seat_ai_skins 由观战状态喂（NetworkService 收观战入场那段）。
+	PrepSkin.view_id = PrepSkin.seat_skin(NetworkService.team_seat_profiles, NetworkService.team_seat_ai_skins,
+		NetworkService.spectate_view_slot)
 	await _build(startup_staged)
 	if not is_inside_tree():
 		return
@@ -253,6 +261,8 @@ func _exit_tree() -> void:
 	AsyncActionController.clear_for_owner(self, "prep_scene_exit")
 	if NetworkService.team_prep_boards_changed.is_connected(_on_teammate_board_changed):
 		NetworkService.team_prep_boards_changed.disconnect(_on_teammate_board_changed)
+	# 11-26：看队友棋盘 / 观战时设的「显示别人的皮肤」清回自己的，后台还没读完的皮肤图取回来（PrepUI.drop_view_skin）。
+	drop_view_skin()
 	# 聊天入口建在 PrepUI 层，但生命周期钩子只有这一层有。
 	_teardown_chat_entry()
 	_close_battle_loading_overlay()

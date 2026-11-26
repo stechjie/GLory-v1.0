@@ -25,10 +25,28 @@ static func is_pvp_schedule_round(round_index: int) -> bool:
 	return _array_has_round(schedule.get("pvp_rounds", []), round_index)
 
 static func active_schedule() -> Dictionary:
+	return schedule_for(GameState.FINAL_ROUND)
+
+# 指定赛程（21 / 13 回合）的那一份表。战斗服务器一个进程里开着很多房间，只能按房间的赛程问，
+# 不能读 GameState.FINAL_ROUND（那是本机这一局的）。
+static func schedule_for(final_round: int) -> Dictionary:
 	var all_rounds: Dictionary = DataRegistry.get_table("rounds")
-	if GameState.FINAL_ROUND == 13:
+	if final_round == 13:
 		return all_rounds.get("seedling", {}) as Dictionary
 	return all_rounds
+
+# 赛程表里排在 round_index **之前**的 PvP 回合有几个（第 6 回合是 PvP ⇒ 第 7 回合起算 1 个）。
+# 只按赛程表数，不看那一回合有没有匹配到真人对手。猴子的复制成功率按它涨
+# （PetService.first_buy_copy_rate）。
+static func pvp_rounds_before(round_index: int, final_round: int) -> int:
+	var pvp_rounds: Variant = schedule_for(final_round).get("pvp_rounds", [])
+	if typeof(pvp_rounds) != TYPE_ARRAY:
+		return 0
+	var count := 0
+	for value in pvp_rounds:
+		if int(value) < int(round_index):
+			count += 1
+	return count
 
 static func treasure_pick_count(round_index: int) -> int:
 	var schedule := active_schedule()

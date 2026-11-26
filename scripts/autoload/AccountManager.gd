@@ -967,6 +967,19 @@ func invite_to_party(code: String) -> Dictionary:
 	return await _request(HTTPClient.METHOD_POST, "/v1/party/invite",
 		{"friend_code": normalize_friend_code(code)}, true)
 
+# 好友界面「加入」要好友同意（11-26，backend/app/routes/join_requests.py）。
+# 回 404 / 405 = 账号服务器还是旧版、没有这个接口，调用方（Main）退回老的直接加入。
+func request_room_join(code: String, room_id: int) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST, "/v1/me/join-requests",
+		{"friend_code": normalize_friend_code(code), "room_id": room_id}, true)
+
+func reply_room_join(request_id: String, accept: bool) -> Dictionary:
+	return await _request(HTTPClient.METHOD_POST,
+		"/v1/me/join-requests/%s/reply" % request_id.uri_encode(), {"accept": accept}, true)
+
+func cancel_room_join() -> Dictionary:
+	return await _request(HTTPClient.METHOD_DELETE, "/v1/me/join-requests", null, true)
+
 func join_party(party_id: String) -> Dictionary:
 	return await _request(HTTPClient.METHOD_POST, "/v1/party/join", {"party_id": party_id}, true)
 

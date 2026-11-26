@@ -36,7 +36,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
-from app import balance_version, client_version, db, players, shop, pet_draw, skin_draw, trial
+from app import balance_version, client_version, db, party, players, shop, pet_draw, skin_draw, trial
 from app.jwt_verify import Claims
 from app.rate_limit import RateLimited, SlidingWindowLimiter
 from app.routes.me import current_claims
@@ -426,10 +426,18 @@ async def set_active_pet(
     claims: Annotated[Claims, Depends(current_claims)],
 ) -> PetsResponse:
     me = await _me(claims)
+    # 11-26：排位 / 休闲队伍排队中不许换（队伍已锁定，换了队友看到的对不上）。
+    # 先判再改 —— 改完再拒的话，出战宠物已经变了。
+    if party.current().room_locked_for_pet(me.player_id):
+        raise HTTPException(status_code=409, detail="排队中不能更换出战宠物，请先取消匹配")
     try:
         pets = await shop.set_active_pet(me.player_id, body.pet_id)
     except shop.ShopRejected as exc:
         raise _reject(exc) from None
+    # 在队伍里的话同步给队友（房间里的宠物区按人显示出战宠物）。
+    room = party.current().set_member_pet(me.player_id, pets.active)
+    if room is not None:
+        await party.current().broadcast(room)
     return _pets_response(pets)
 
 

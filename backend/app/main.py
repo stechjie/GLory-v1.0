@@ -51,6 +51,7 @@ from app.routes import trial as trial_routes
 from app.routes import steam_oidc as steam_oidc_routes
 from app.routes import seven_day_login as seven_day_login_routes
 from app.routes import invites as invite_routes
+from app.routes import join_requests as join_request_routes
 from app.routes import redeem as redeem_routes
 from app.routes import voice_clips as voice_clip_routes
 from app.routes import world as world_routes
@@ -271,6 +272,7 @@ app.include_router(me_routes.router)
 app.include_router(profile_routes.router)
 app.include_router(progression_routes.router)
 app.include_router(friends_routes.router)
+app.include_router(join_request_routes.router)
 app.include_router(presence_routes.router)
 app.include_router(chat_routes.router)
 app.include_router(voice_clip_routes.router)

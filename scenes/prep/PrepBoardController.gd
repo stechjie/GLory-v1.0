@@ -983,10 +983,13 @@ func _first_empty_board_slot() -> int:
 	return -1
 
 
-# --- 猴子：每回合买的第一个棋子免费多一张 ------------------------------------------
-# 用户 11-25 定的规则：
+# --- 猴子：每回合买的第一个棋子有几率免费多一张 --------------------------------------
+# 用户 11-25 定的规则（11-26 改成概率）：
 #   * 只看本回合第一笔从商店买棋子（含倒计时到点系统替玩家买的那一笔，PrepScreen._auto_deploy_at_deadline）；
 #     第一笔没触发就不补。
+#   * 11-26：不是必中。成功率 25% 起，每打完一个 PvP 回合 +25%，最高 100%
+#     （PetService.first_buy_copy_rate）。一回合只判一次：没中这回合就没有了，也不提示；
+#     中了才提示「猴子复制成功」。中没中见 _pet_copy_roll_ok（联机由服务器掷，本机不掷）。
 #   * 复制品 = 一次不扣钱的正常购买：1 星、参与合成、触发购买时的一切效果。
 #   * 去向：① 棋盘上能合成 → ② 待命区能合成 → ③ 待命区空位 → ④ 按出售规则直接卖掉
 #     （原价 × 0.5，_sell_refund_for_cell）。复制品不会自动上场：待命区满了就卖，哪怕棋盘还有人口空位。
@@ -1002,7 +1005,7 @@ func _plan_pet_first_buy_copy(offer: Dictionary) -> Dictionary:
 		return {}
 	var first := GameState.first_buy_round != GameState.round_index
 	GameState.first_buy_round = GameState.round_index
-	if not first or not PetService.copies_first_buy(PlayerProfile.get_active()):
+	if not first or not _pet_copy_roll_ok():
 		return {}
 	var copy := {"id": offer.id, "uid": GameState.mint_piece_uid(), "star": 1, "def": offer.duplicate(true)}
 	var board_target := PrepRules.first_merge_target(GameState.board_slots, copy)
@@ -1015,6 +1018,25 @@ func _plan_pet_first_buy_copy(offer: Dictionary) -> Dictionary:
 	if bench_slot >= 0:
 		return {"cell": copy, "where": "bench", "index": bench_slot}
 	return {"cell": copy, "where": "sell", "index": -1, "refund": _sell_refund_for_cell(copy)}
+
+
+# 这一回合猴子中没中。一回合只有一个结果，问几次都一样；出战宠物不是猴子时恒为 false。
+#   * 联机（连着战斗服务器）：服务器按出战名片上的宠物和这一回合的成功率掷好，随 room_state 发下来
+#     （GameState.pet_copy_ok_round），本机不掷、也不看本机缓存的出战宠物（刚重开重连时缓存可能还是空的）。
+#     能走到「买」说明这一回合的 room_state 已经到了（server_prep_confirmed），结果一定在手上。
+#     本机也掷的话，两边各有各的结果，服务器账本和本机棋盘会对不上。
+#   * 单机 / 本机当房主：本机掷一次，结果记进 GameState（存档带着），读档不会重掷。
+func _pet_copy_roll_ok() -> bool:
+	if NetworkService.team_active and not NetworkService.is_host:
+		return GameState.pet_copy_ok_round == GameState.round_index
+	var pet := PlayerProfile.get_active()
+	if not PetService.copies_first_buy(pet):
+		return false
+	if GameState.pet_copy_roll_round != GameState.round_index:
+		GameState.pet_copy_roll_round = GameState.round_index
+		if randf() < PetService.first_buy_copy_rate(pet, GameState.round_index, GameState.FINAL_ROUND):
+			GameState.pet_copy_ok_round = GameState.round_index
+	return GameState.pet_copy_ok_round == GameState.round_index
 
 
 func _apply_pet_first_buy_copy(plan: Dictionary) -> void:
@@ -1033,7 +1055,7 @@ func _apply_pet_first_buy_copy(plan: Dictionary) -> void:
 				[index] if where == "board_merge" else [], [index] if where == "bench_merge" else [])
 		if merged:
 			_shadow_report_merge()
-			show_message(tr("pet_monkey_copy_toast") % unit_name)
+			show_message(tr("pet_monkey_copy_toast"))
 			return
 		# 走不到：去向是同一帧里刚算的。真走到了就退回待命区空位，别让复制品凭空消失
 		# （服务器那边已经按「留下」记了这一枚）。
@@ -1041,7 +1063,7 @@ func _apply_pet_first_buy_copy(plan: Dictionary) -> void:
 		index = PrepRules.first_empty_bench_slot()
 	if where == "bench" and index >= 0 and GameState.bench_slots[index] == null:
 		GameState.bench_slots[index] = copy
-		show_message(tr("pet_monkey_copy_toast") % unit_name)
+		show_message(tr("pet_monkey_copy_toast"))
 		return
 	var refund := int(plan.get("refund", _sell_refund_for_cell(copy)))
 	GameState.gold += refund

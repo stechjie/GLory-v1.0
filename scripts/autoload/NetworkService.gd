@@ -2532,7 +2532,7 @@ func _valid_timeout_buy(room: Dictionary, slot: int, action: String, payload: Di
 
 # 倒计时自动上阵之后的那一笔合成（11-25，猴子）。
 #
-# 出战宠物是猴子时，超时自动买的那一枚会带一张同名一星复制品（EconomyLedger._pet_first_buy_copy），
+# 出战宠物是猴子、这一回合又掷中时，超时自动买的那一枚会带一张同名一星复制品（EconomyLedger._pet_first_buy_copy），
 # 客户端当场把两枚合成二星并报 merge。这时房间已经进了战斗阶段，普通 merge 会被 bad_phase 拒掉，
 # 账本就停在两枚一星、和客户端交上来的二星对不上。只放行「这个座位本回合做过超时自动购买、
 # 还没交棋盘」时的 merge；合成本身照常由 EconomyLedger._merge 校验（uid、同名同星、份数）。
@@ -2689,6 +2689,9 @@ func _build_room_state(room: Dictionary, slot: int) -> Dictionary:
 		"team_clearance_sale": _room_team_has_clearance_sale(room, slot),
 		"treasure_offer": ((room.get("treasure_offer", {}) as Dictionary).get(slot, {}) as Dictionary).duplicate(true),
 		"altar_uses": int((room.get("altar_uses", {}) as Dictionary).get(slot, 0)),
+		# 猴子这一回合复制中没中（服务器掷，_room_pet_copy_ok_round）。值是「掷中的回合号」。
+		# 不放进下面的 economy：那一份受账本开关控制，而这个结果客户端每回合都要用。
+		"pet_copy_ok_round": _room_pet_copy_ok_round(room, slot),
 		"run_over": bool(room.get("run_over", false)),
 		# --- 经济账本（P1）---
 		# 影子期就下发：客户端可以拿它对账、也让重连的人立刻看到权威商店，
@@ -7031,6 +7034,10 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 	team_carrot_harvest_round = int(payload.get("carrot_harvest_round", -1))
 	_apply_carrot_state((payload.get("economy", {}) as Dictionary))
 	_apply_server_shop((payload.get("economy", {}) as Dictionary))
+	# 猴子：这一回合复制中没中由服务器掷好发下来（_room_pet_copy_ok_round），客户端买第一个棋子时
+	# 直接用（PrepBoardController._pet_copy_roll_ok），自己不掷。值是「掷中的回合号」，只增不减：
+	# 迟到的旧包盖不掉这一回合已经收到的结果，新对局开始时 GameState.reset_run() 清回 -1。
+	GameState.pet_copy_ok_round = maxi(GameState.pet_copy_ok_round, int(payload.get("pet_copy_ok_round", -1)))
 
 	team_active = true
 	GameState.FINAL_ROUND = int(payload.get("final_round", 21))
@@ -7702,6 +7709,29 @@ func _room_owned_for_ledger(room: Dictionary, slot: int) -> Array:
 func _crypto_unit_float() -> float:
 	return float(_crypto.generate_random_bytes(4).decode_u32(0)) / 4294967296.0
 
+# 猴子：这个座位这一回合「第一个买的棋子」复制中没中（成功率见 PetService.first_buy_copy_rate）。
+# 返回**掷中的回合号**：等于当前回合 = 这回合中了；否则（-1 或更早的回合）= 没中 / 不是猴子 / 还没开局。
+#
+# 回合内第一次问到时掷一次，记在座位账本上（pet_copy_roll_round / pet_copy_ok_round），之后谁问都是
+# 同一个结果：随 room_state 发给客户端（_build_room_state）、账本买棋子（_economy_ctx）、
+# AI 托管（LiveBotEconomy.prepare）、倒计时到点的自动买。重连、托管交接都不会重掷。
+#   * 用 Crypto 取随机数：randf() 的种子可预测，而这是白给一枚棋子。
+#   * 只在对局进行中掷：大厅里座位还会换人（座位账本跟着人走，RoomService.SEAT_SLOT_MAPS）。
+#   * 不看账本开关（economy_ledger_enabled / carrot_economy_enabled）：关掉账本时客户端照样要这个结果。
+func _room_pet_copy_ok_round(room: Dictionary, slot: int) -> int:
+	if slot < 0 or str(room.get("state", "")) not in [ROOM_PREP, ROOM_BATTLE, ROOM_RESULT]:
+		return -1
+	var pet := _room_seat_pet(room, slot)
+	if not PetService.copies_first_buy(pet):
+		return -1
+	var prep := _room_prep(room, slot)
+	var round_index := int(room.get("round_index", 1))
+	if int(prep.get("pet_copy_roll_round", -1)) != round_index:
+		prep["pet_copy_roll_round"] = round_index
+		if _crypto_unit_float() < PetService.first_buy_copy_rate(pet, round_index, _room_final_round(room)):
+			prep["pet_copy_ok_round"] = round_index
+	return int(prep.get("pet_copy_ok_round", -1))
+
 # --- 出战种族（RacePick，协议 28）----------------------------------------------
 
 # 收下一个座位的出战种族。返回 false = 这份选择不合法，**不存**（取的时候回落默认）。
@@ -7775,8 +7805,9 @@ func _economy_ctx(room: Dictionary, slot: int, action: String) -> Dictionary:
 		"team_stones": _room_team_stones(room, slot),
 		"carrot_bonus_rate": PetService.carrot_bonus_rate(_room_seat_pet(room, slot)),
 		"tiger_growth_rate": PetService.tier1_growth_rate(_room_seat_pet(room, slot)),
-		# 猴子：每回合第一笔买棋子免费多一张（EconomyLedger._pet_first_buy_copy）。
-		"pet_first_buy_copy": PetService.copies_first_buy(_room_seat_pet(room, slot)),
+		# 猴子：这个座位这一回合第一笔买棋子带不带复制品（EconomyLedger._pet_first_buy_copy）。
+		# 11-26 起是概率：出战宠物是猴子、且这一回合掷中了才为真（_room_pet_copy_ok_round）。
+		"pet_first_buy_copy": _room_pet_copy_ok_round(room, slot) == int(room.get("round_index", 1)),
 	}
 	match action:
 		"shop_refresh":

@@ -30,17 +30,14 @@ func _capture() -> void:
 		print("PARTY_CAPTURE ", path, " result=", result,
 			" size=", image.get_size())
 		if role == "host":
-			lobby.call("_toggle_friends_drawer")
+			# 11-26：朋友列表一直摆在右边、聊天框不再展开，所以只多拍一张「换出战宠物」面板。
+			lobby.call("_toggle_pets_drawer")
 			for frame in range(5):
 				await process_frame
-			var friends_image := root.get_texture().get_image()
-			var friends_path := "%s/party_lobby_friends.png" % OUT_DIR
-			print("PARTY_CAPTURE ", friends_path, " result=", friends_image.save_png(friends_path))
-			lobby.call("_toggle_friends_drawer")
-			lobby.call("_toggle_chat")
-			lobby.call("_toggle_pets_drawer")
-			print("PARTY_CONTROLS chat_expanded=", lobby.get("_chat_expanded"),
-				" pets_open=", (lobby.get("_pets_drawer") as Panel).visible)
+			var pets_image := root.get_texture().get_image()
+			var pets_path := "%s/party_lobby_pets.png" % OUT_DIR
+			print("PARTY_CAPTURE ", pets_path, " result=", pets_image.save_png(pets_path))
+			print("PARTY_CONTROLS pets_open=", (lobby.get("_pets_drawer") as Panel).visible)
 		else:
 			print("PARTY_CONTROLS guest_pet_button=", (lobby.get("_pet_toggle") as Button).visible)
 		root.remove_child(lobby)

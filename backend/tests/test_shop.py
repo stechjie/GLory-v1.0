@@ -994,6 +994,90 @@ def test_wallet_response_does_not_leak_the_paid_free_split(wired) -> None:
 
 
 
+# --- 11-26：换出战宠物要同步给排位 / 休闲队伍 -----------------------------------
+
+
+def _isolate_http(monkeypatch: pytest.MonkeyPatch) -> None:
+    """登录会话 / 服务开关 / 生命周期都换成桩（同 test_loadout 的 wired）：
+    本文件的 wired 只够测「不需要真的进到路由体」的用例，这几条要进去。"""
+    from http_fixture_support import isolate_http_services
+    isolate_http_services(monkeypatch, app)
+
+
+def _party_with(monkeypatch: pytest.MonkeyPatch, *, queued: bool):
+    """造一支只有 PLAYER_A 的队伍，并把广播记下来。返回 (parties, room, sent)。"""
+    from app import party as party_mod
+
+    _isolate_http(monkeypatch)
+    parties = party_mod.Parties()
+    room = parties.create(PLAYER_A, {"friend_code": "AAAA2222", "player_name": "阿甲",
+                                     "avatar": "", "avatar_frame": "", "tier": 0},
+                          "casual", [], "pet_old")
+    room.queued = queued
+    sent: list = []
+
+    async def _broadcast(target) -> None:
+        sent.append(parties.snapshot(target))
+
+    monkeypatch.setattr(parties, "broadcast", _broadcast)
+    monkeypatch.setattr(party_mod, "current", lambda: parties)
+    return parties, room, sent
+
+
+def test_set_active_pet_syncs_party_members(wired, monkeypatch: pytest.MonkeyPatch) -> None:
+    """在队伍里换出战宠物：队伍快照里自己那一条的 pet 跟着变，并推给队友。
+    房间里的宠物区按人显示出战宠物 —— 不同步的话队友看到的还是进队那一刻的那只。"""
+    parties, room, sent = _party_with(monkeypatch, queued=False)
+
+    async def _set(player_id, pet_id):
+        return shop.Pets(owned=["pet_old", pet_id], active=pet_id, needs_starter_pick=False)
+
+    monkeypatch.setattr(shop, "set_active_pet", _set)
+    with TestClient(app) as client:
+        r = client.put("/v1/me/pets/active", json={"pet_id": "pet_new"}, headers=_auth())
+    assert r.status_code == 200, r.text
+    assert r.json()["active"] == "pet_new"
+    assert room.active_pets[PLAYER_A] == "pet_new"
+    assert len(sent) == 1 and sent[0]["members"][0]["pet"] == "pet_new"
+    assert sent[0]["host_pet"] == "pet_new"
+
+
+def test_set_active_pet_rejected_while_party_queued(wired, monkeypatch: pytest.MonkeyPatch) -> None:
+    """排队中不许换：队伍已锁定。必须在改库**之前**拒 —— 改完再拒的话宠物已经换了。"""
+    parties, room, sent = _party_with(monkeypatch, queued=True)
+    called: list = []
+
+    async def _set(player_id, pet_id):
+        called.append(pet_id)
+        return shop.Pets(owned=[pet_id], active=pet_id, needs_starter_pick=False)
+
+    monkeypatch.setattr(shop, "set_active_pet", _set)
+    with TestClient(app) as client:
+        r = client.put("/v1/me/pets/active", json={"pet_id": "pet_new"}, headers=_auth())
+    assert r.status_code == 409, r.text
+    assert "排队中" in r.json()["detail"], "409 必须是「排队中不能换」这一条，不是别的 409"
+    assert called == [], "排队中被拒时不能已经把出战宠物改掉"
+    assert room.active_pets[PLAYER_A] == "pet_old" and sent == []
+
+
+def test_set_active_pet_outside_party_is_unchanged(wired, monkeypatch: pytest.MonkeyPatch) -> None:
+    """不在队伍里：和以前一样，只改自己的出战宠物，不推任何队伍消息。"""
+    from app import party as party_mod
+
+    _isolate_http(monkeypatch)
+    parties = party_mod.Parties()
+    monkeypatch.setattr(party_mod, "current", lambda: parties)
+
+    async def _set(player_id, pet_id):
+        return shop.Pets(owned=[pet_id], active=pet_id, needs_starter_pick=False)
+
+    monkeypatch.setattr(shop, "set_active_pet", _set)
+    with TestClient(app) as client:
+        r = client.put("/v1/me/pets/active", json={"pet_id": "pet_new"}, headers=_auth())
+    assert r.status_code == 200, r.text
+    assert parties.of(PLAYER_A) is None
+
+
 def test_receipt_reports_what_the_purchase_unlocked() -> None:
     """买到最后一个棋子时，客户端靠回执里的 unlocked 弹「去备战」。"""
     assert "unlocked" in shop_routes.ReceiptModel.model_fields
