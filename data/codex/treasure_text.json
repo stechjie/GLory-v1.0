@@ -306,8 +306,8 @@
    "name_en": "4 Control",
    "requires_text": "任意 4 件控制宝藏",
    "requires_text_en": "Any 4 Control treasures",
-   "effect": "普通棋子用普攻打出最后一击击杀敌人时，该棋子技能冷却立刻刷新（技能击杀不算）。",
-   "effect_en": "When a normal unit lands the killing blow with a basic attack, its skill cooldown resets immediately (skill kills don't count)."
+   "effect": "普通棋子施加的控制和减益持续时间 +35%（含中毒、流血、灼烧）；被其眩晕、沉默、缴械或恐惧的敌人在控制期间受到的治疗 -30%；普攻打出最后一击击杀敌人时，该棋子技能冷却立刻刷新（技能击杀不算）。",
+   "effect_en": "Controls and debuffs applied by your normal units last 35% longer (including poison, bleed and burn). Enemies they stun, silence, disarm or fear receive 30% less healing while controlled. When a normal unit lands the killing blow with a basic attack, its skill cooldown resets immediately (skill kills don't count)."
   },
   "set_attack": {
    "name": "4攻击",

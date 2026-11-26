@@ -60,6 +60,14 @@ static func add_status(fighter: Dictionary, kind: String, duration: float, param
 						next[key] = float(next[key]) * (1.0 + dark_bonus)
 			else:
 				adjusted_duration *= 1.0 + dark_bonus
+	# 11.26 用户定：控制 4 件套 —— 持有者的普通棋子给敌人施加的控制和减益持续时间 +35%
+	# （中毒 / 流血 / 灼烧这类持续伤害同样延长，见 _control_set_extends）；
+	# 被它控制住（眩晕 / 沉默 / 缴械 / 恐惧）的敌人在控制期间受到的治疗 -30%（见 control_set_antiheal）。
+	if _control_set_extends(kind) and not source.is_empty() and str(source.get("team", "")) != str(fighter.get("team", "")) \
+			and _source_has_control_set(source):
+		adjusted_duration *= 1.0 + CONTROL_SET_DURATION_BONUS
+		if _is_control_status(kind):
+			next["ctrl_set_antiheal"] = CONTROL_SET_ANTIHEAL_PCT
 	adjusted_duration = _duration_after_control_reduction(fighter, kind, adjusted_duration)
 	if _is_boss(fighter) and _is_negative_status(kind):
 		next = _boss_reduced_params(kind, next)
@@ -96,6 +104,9 @@ static func add_status(fighter: Dictionary, kind: String, duration: float, param
 		_note_crimson_self_status(source, fighter, kind)
 		return
 	next["remaining"] = maxf(float(existing.get("remaining", 0.0)), adjusted_duration)
+	# 控制套的减疗标记跟着这段控制走：别的来源刷新同一个控制时不把它冲掉。
+	if existing.has("ctrl_set_antiheal") and float(existing.get("remaining", 0.0)) > 0.0 and not next.has("ctrl_set_antiheal"):
+		next["ctrl_set_antiheal"] = float(existing.get("ctrl_set_antiheal", 0.0))
 	if kind == "silence":
 		# Keep Lantern's attack-speed penalty on its own timer if another
 		# silence refreshes the control duration.
@@ -197,6 +208,40 @@ static func _poison_status_from_stacks(stacks: Array) -> Dictionary:
 	status["stacks"] = stacks
 	status["antiheal_pct"] = maxf(float(first.get("antiheal_pct", 0.0)), float(second.get("antiheal_pct", 0.0)))
 	return status
+
+
+# ---------------------------------------------------------------------------
+# 控制 4 件套（11.26 用户定）。击杀清冷却仍在 BattleSimTreasures._control_set_refresh_on_kill。
+const CONTROL_SET_DURATION_BONUS := 0.35
+const CONTROL_SET_ANTIHEAL_PCT := 0.30
+
+static func _control_set_extends(kind: String) -> bool:
+	# 11.26 用户追加：中毒 / 流血 / 灼烧也延长。bleed_nonlethal 是血契之刃给自己挂的，不在此列。
+	return kind in ["slow", "attack_down", "damage_down", "silence", "stun", "fear", "interrupt", "defense_down", "defense_flat_down", "heal_reduction", "ice_vulnerable", "ice_affected", "poison", "bleed", "burn"]
+
+# 佣兵 / 法阵友军不吃宝藏（与 BattleSimShared._ignores_treasure 同口径）。
+static func _source_has_control_set(source: Dictionary) -> bool:
+	if source.is_empty() or bool(source.get("is_mercenary", false)) or bool(source.get("is_formation_ally", false)):
+		return false
+	var owned: Array = []
+	if source.has("owner_treasures"):
+		owned = source.get("owner_treasures", [])
+	elif str(source.get("team", "")) == "player":
+		owned = GameState.owned_treasures
+	return not owned.is_empty() and TreasureService.has_set_in(owned, "control")
+
+# 目标身上由控制套施加、还在生效的控制里最强的减疗比例；没有则 0。
+static func control_set_antiheal(fighter: Dictionary) -> float:
+	if not fighter.has("statuses") or typeof(fighter.statuses) != TYPE_DICTIONARY:
+		return 0.0
+	var best := 0.0
+	for kind in ["stun", "silence", "interrupt", "fear"]:
+		if not fighter.statuses.has(kind):
+			continue
+		var status: Dictionary = fighter.statuses[kind]
+		if float(status.get("remaining", 0.0)) > 0.0:
+			best = maxf(best, float(status.get("ctrl_set_antiheal", 0.0)))
+	return clampf(best, 0.0, 1.0)
 
 
 static func _status_source_fighter() -> Dictionary:

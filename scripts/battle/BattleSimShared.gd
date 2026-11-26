@@ -1697,6 +1697,10 @@ static func _heal_unit(unit: Dictionary, amount: int) -> void:
 	var final_amount := maxi(0, int(round(float(amount) * BattleFrenzy.healing_multiplier(DamageService.current_battle_elapsed()))))
 	if unit.statuses.has("heal_reduction"):
 		final_amount = maxi(0, int(round(float(final_amount) * maxf(0.0, 1.0 - float(unit.statuses.heal_reduction.get("pct", 0.0))))))
+	# 11.26 控制 4 件套：被套装持有者控制住的单位，控制期间受到的治疗 -30%。
+	var control_antiheal := StatusEffectService.control_set_antiheal(unit)
+	if control_antiheal > 0.0:
+		final_amount = maxi(0, int(round(float(final_amount) * (1.0 - control_antiheal))))
 	if StatusEffectService.has_status(unit, "poison"):
 		var poison_antiheal := float(unit.statuses.poison.get("antiheal_pct", 0.0))
 		var opposite := "enemy" if str(unit.get("team", "")) == "player" else "player"
