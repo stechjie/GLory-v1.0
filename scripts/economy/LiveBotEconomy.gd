@@ -130,6 +130,8 @@ static func _seed_from_human(bot: Dictionary, room: Dictionary, slot: int, round
 	bot["stone_draw_used_round"] = int(prep.get("stone_draw_used_round", -1))
 	bot["free_stone_claimed"] = bool(prep.get("free_stone_claimed", false))
 	bot["gamble_used_round"] = round_index if bool(prep.get("gamble_used", false)) else -1
+	# 猴子：玩家掉线前本回合已经买过棋子，AI 接手后这一回合就不再复制（BotPlayer._pet_first_buy_copy）。
+	bot["first_buy_round"] = int(prep.get("first_buy_round", -1))
 	bot["gold_spent_this_round"] = bool(prep.get("gold_spent_this_round", false))
 	bot["skip_reset_spending_round"] = round_index
 	var streaks: Array = room.get("team_loss_streak", [0, 0])
@@ -216,6 +218,7 @@ static func mirror(room: Dictionary, slot: int, bot: Dictionary) -> void:
 		"stone_draw_used_round": int(bot.get("stone_draw_used_round", -1)),
 		"free_stone_claimed": bool(bot.get("free_stone_claimed", false)),
 		"gamble_used": int(bot.get("gamble_used_round", -1)) == int(bot.round),
+		"first_buy_round": int(bot.get("first_buy_round", -1)),
 		"gold_spent_this_round": bool(bot.get("gold_spent_this_round", false))}, true)
 	# 站位一起写进账本：`slot` 是这一枚在棋盘上的格子下标，玩家收回座位时按它落位。
 	var slots: Dictionary = Bot.board_slots(bot)

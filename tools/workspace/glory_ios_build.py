@@ -20,8 +20,9 @@ import zipfile
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import glory_build as shared
+import ios_toolchain
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = shared.ROOT
 TEAM = "D5ANXXK2R2"
 BUNDLE = "com.superforge.glory"
 DISPLAY_NAME = "GLory: Auto Chess & Team PvP"
@@ -41,6 +42,8 @@ GAME_MODE_PLIST = (
     "<key>LSSupportsGameMode</key><true/>\n"
     "<key>GCSupportsGameMode</key><true/>"
 )
+# Keep the existing iPad policy below iOS 27, with continuous resizing on 27+.
+DUO_WINDOW_PLIST = "<key>UIRequiresFullScreenIgnoredStartingWithVersion</key><string>27</string>"
 APPLE_SIGNIN_ENTITLEMENT = "com.apple.developer.applesignin"
 APPLE_SIGNIN_PLIST = "<key>com.apple.developer.applesignin</key><array><string>Default</string></array>"
 
@@ -241,6 +244,12 @@ def engine_template_info(project, templates):
         engine_info = json.loads(manifest.read_text())
         if engine_info.get("patch_sha256") != shared.digest(engine_patch) or engine_info.get("ios_zip_sha256") != shared.digest(templates / "ios.zip"):
             raise RuntimeError("iOS 引擎模板与音频修复补丁/模板指纹不一致，请重新构建模板。")
+        duo_patch = project / "deploy/engine/godot-4.7-ios-duo-layout.patch"
+        if duo_patch.is_file():
+            key = duo_patch.relative_to(project).as_posix()
+            if engine_info.get("patches", {}).get(key) != shared.digest(duo_patch):
+                raise RuntimeError("iOS 引擎模板与 Duo 布局补丁指纹不一致，请重新构建模板。")
+            ios_toolchain.validate_toolchain(engine_info.get("toolchain", {}))
     return engine_info
 
 
@@ -248,12 +257,12 @@ def environment(args):
     if sys.platform != "darwin":
         raise RuntimeError("iOS IPA 构建需要 macOS 和完整 Xcode。")
     child = dict(os.environ)
+    if getattr(args, "developer_dir", None):
+        child["DEVELOPER_DIR"] = str(args.developer_dir.expanduser().resolve())
     if not child.get("DEVELOPER_DIR") and Path("/Applications/Xcode.app/Contents/Developer").is_dir():
         child["DEVELOPER_DIR"] = "/Applications/Xcode.app/Contents/Developer"
     xcode = capture(["xcrun", "xcodebuild", "-version"], env=child).decode().strip()
-    sdk = capture(["xcrun", "--sdk", "iphoneos", "--show-sdk-path"], env=child).decode().strip()
-    if not Path(sdk).is_dir():
-        raise RuntimeError("Xcode 缺少 iPhoneOS SDK。")
+    toolchain = ios_toolchain.inspect_toolchain(child)
     godot = shared.find_executable([args.godot, os.environ.get("GODOT_BIN"),
         ROOT / "glory-ios-dev/tools/godot/Godot.app", ROOT / "tools/godot/Godot.app",
         "/Applications/Godot.app", "godot", "godot4"])
@@ -265,6 +274,7 @@ def environment(args):
         raise RuntimeError(f"无法识别 Godot 版本：{version}")
     template_version = f"{match[1]}{'.' + match[2] if match[2] else ''}.{match[3]}"
     templates = shared.first_dir([args.templates, os.environ.get("GODOT_TEMPLATES"),
+        ROOT / "build/ios-duo-templates" / template_version,
         ROOT / "build/ios-audio-templates" / template_version,
         Path.home() / "Library/Application Support/Godot/export_templates" / template_version], "ios.zip")
     if not templates:
@@ -283,7 +293,7 @@ def environment(args):
     if not shutil.which("rsync"):
         raise RuntimeError("缺少 rsync。")
     return {"child": child, "godot": godot, "version": version, "templates": templates, "engine_info": engine_info,
-            "template_version": template_version, "xcode": xcode}
+            "template_version": template_version, "xcode": xcode, "toolchain": toolchain}
 
 
 def run(command, log, env):
@@ -394,7 +404,7 @@ def write_preset(stage, method, profile, cert, version, number, signin=None):
                "application/code_sign_identity_release": cert["name"],
                "application/provisioning_profile_specifier_release": profile["UUID"],
                "application/short_version": version, "application/version": number,
-               "application/additional_plist_content": GAME_MODE_PLIST + "\n"
+               "application/additional_plist_content": GAME_MODE_PLIST + "\n" + DUO_WINDOW_PLIST + "\n"
                    + "<key>NSSpeechRecognitionUsageDescription</key><string>Convert chat voice messages you record into a text draft for you to review before sending.</string>\n"
                    + signin_plist(signin or google_signin_config(stage)),
                "entitlements/additional": APPLE_SIGNIN_PLIST,
@@ -514,6 +524,17 @@ def verify_game_mode_support(info):
             raise RuntimeError(f"IPA 缺少启用的 Game Mode 声明：{key}")
 
 
+def verify_duo_window_support(info):
+    # The legacy key is emitted by the Godot template; do not add a duplicate.
+    if info.get("UIRequiresFullScreen") is not True or info.get("UIRequiresFullScreenIgnoredStartingWithVersion") != "27":
+        raise RuntimeError("IPA 缺少 iOS 27 动态窗口策略（旧全屏布尔值 true + 忽略版本字符串 27）。")
+    if not info.get("UILaunchStoryboardName") and not isinstance(info.get("UILaunchScreen"), dict):
+        raise RuntimeError("IPA 缺少 iOS 27 要求的 launch screen 配置。")
+    scenes = info.get("UIApplicationSceneManifest", {}).get("UISceneConfigurations", {})
+    if not scenes.get("UIWindowSceneSessionRoleApplication"):
+        raise RuntimeError("IPA 缺少 iOS 27 scene lifecycle 配置。")
+
+
 def verify_display_name(app, info):
     if info.get("CFBundleDisplayName") != DISPLAY_NAME:
         raise RuntimeError(f"IPA 桌面名称必须与商店一致：{DISPLAY_NAME}；实际为 {info.get('CFBundleDisplayName')!r}。")
@@ -545,6 +566,7 @@ def verify_ipa(ipa, directory, method, profile, cert, version, number, identity,
         raise RuntimeError("IPA 的 Bundle ID、营销版本或 build number 与本次配置不一致。")
     branding = verify_display_name(app, info)
     verify_game_mode_support(info)
+    verify_duo_window_support(info)
     for key in ("NSCameraUsageDescription", "NSPhotoLibraryUsageDescription", "NSMicrophoneUsageDescription",
                 "NSSpeechRecognitionUsageDescription"):
         if not str(info.get(key, "")).strip():
@@ -576,8 +598,19 @@ def verify_ipa(ipa, directory, method, profile, cert, version, number, identity,
     if hashlib.sha1(Path(str(prefix) + "0").read_bytes()).hexdigest().upper() != cert["sha1"]:
         raise RuntimeError("IPA 实际签名证书与选定发布证书不一致。")
     executable = app / info["CFBundleExecutable"]
-    if identity.get("engine_info") and b"[GLORY_AUDIO_DRIVER] recovery=" not in executable.read_bytes():
+    toolchain = identity.get("toolchain")
+    if not toolchain:
+        raise RuntimeError("IPA 构建身份缺少实际 Apple 工具链信息。")
+    sdk_checks = ios_toolchain.validate_app_metadata(
+        info, ios_toolchain.parse_build_version(capture(
+            ["xcrun", "vtool", "-show-build", executable], env=env).decode()), toolchain)
+    engine_bytes = executable.read_bytes()
+    if identity.get("engine_info") and b"[GLORY_AUDIO_DRIVER] recovery=" not in engine_bytes:
         raise RuntimeError("IPA 主程序没有包含 iOS 音频驱动恢复补丁。")
+    duo_engine = any(name.endswith("/godot-4.7-ios-duo-layout.patch")
+                     for name in identity.get("engine_info", {}).get("patches", {}))
+    if duo_engine and b"[GLORY_DUO] geometry=" not in engine_bytes:
+        raise RuntimeError("IPA 主程序没有包含已记录的 Duo 布局实现。")
     arch = capture(["xcrun", "lipo", "-archs", executable], env=env).decode().split()
     if arch != ["arm64"] or "iPhoneOS" not in info.get("CFBundleSupportedPlatforms", []):
         raise RuntimeError("IPA 主程序不是 iPhoneOS arm64 真机程序。")
@@ -587,7 +620,9 @@ def verify_ipa(ipa, directory, method, profile, cert, version, number, identity,
     return {"zip_crc": True, "codesign": True, "arm64": True, "embedded_profile_uuid": actual["UUID"],
             "allowed_device_udids": actual.get("ProvisionedDevices", []), "pck_identity": True,
             "apple_storekit": True, "apple_signin": True, "google_signin": True,
-            "google_signin_privacy_manifest": True, "game_mode_support": True, **branding}
+            "google_signin_privacy_manifest": True, "game_mode_support": True,
+            "duo_window_policy": True, "duo_engine_layout": duo_engine,
+            "apple_toolchain": sdk_checks, **branding}
 
 
 def publish(ipa, outdir, summary):
@@ -623,6 +658,7 @@ def arguments(argv=None):
     parser.add_argument("--project", type=Path, default=ROOT / "GLory-v1.0")
     parser.add_argument("--assets", type=Path, default=ROOT / "res")
     parser.add_argument("--godot", help="Godot.app 或它的可执行文件")
+    parser.add_argument("--developer-dir", type=Path, help="指定本次 Xcode Contents/Developer；要求 iOS SDK >= 27.1")
     parser.add_argument("--templates", help="与 Godot 匹配的 iOS 模板目录")
     parser.add_argument("--keychain", type=Path, default=DEFAULT_KEYCHAIN)
     parser.add_argument("--patch-config", type=Path, help="更新器基础包配置 JSON")
@@ -708,6 +744,7 @@ def main(argv=None):
                         "dirty_files": len(dirty.splitlines()) if dirty else 0,
                         "build_utc": dt.datetime.now(dt.timezone.utc).isoformat(), "godot_version": env["version"],
                         "engine_info": env.get("engine_info", {}),
+                        "toolchain": env["toolchain"],
                         "server_target": server_target,
                         "signin": signin,
                         "package_id": BUNDLE, "export_preset": PRESET, "version": version, "build_number": number,

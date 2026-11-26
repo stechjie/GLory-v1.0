@@ -185,6 +185,16 @@
 			"name_en": "Tiger"
 		},
 		{
+			"id": "draw_pet_monkey",
+			"kind": "pet",
+			"grants": "pet_monkey",
+			"currency": "diamond",
+			"price": 75,
+			"enabled": false,
+			"name": "猴子",
+			"name_en": "Monkey"
+		},
+		{
 			"id": "shop_frame_pink_sakura",
 			"kind": "avatar_frame",
 			"grants": "preset:avatar_frame_shop_06",

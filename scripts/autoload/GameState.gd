@@ -45,6 +45,10 @@ var last_harvest_round := -1
 # 加成本身记在每枚棋子上（UnitGrowth.tiger_stacks）。联机时跟服务器账本那份走（_apply_carrot_state）。
 var tiger_starup_count := 0
 var stone_draw_used_round := -1
+# 本回合第一次从商店买棋子发生在哪一回合（== round_index 表示本回合买过了）。
+# 猴子「每回合买的第一个棋子多复制一张」靠它判断是不是第一笔（PrepBoardController._plan_pet_first_buy_copy）；
+# 服务器账本同名字段（EconomyLedger）在重连 / AI 托管交回时取大对齐，存档也带着它。
+var first_buy_round := -1
 var stone_draw_count := 0
 var free_stone_claimed := false
 var four_star_upgrade_count := 0
@@ -134,6 +138,7 @@ func reset_run() -> void:
 	last_harvest_round = -1
 	tiger_starup_count = 0
 	stone_draw_used_round = -1
+	first_buy_round = -1
 	stone_draw_count = 0
 	free_stone_claimed = false
 	four_star_upgrade_count = 0

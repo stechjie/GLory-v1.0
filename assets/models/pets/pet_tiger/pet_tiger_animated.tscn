@@ -1,13 +1,16 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=6 format=3]
 
-[ext_resource type="Script" path="res://scripts/pets/ImportedPetAnimated.gd" id="1_script"]
-[ext_resource type="PackedScene" path="res://assets/models/pets/pet_tiger/pet_tiger_idle.glb" id="2_idle"]
-[ext_resource type="PackedScene" path="res://assets/models/pets/pet_tiger/pet_tiger_walk.glb" id="3_run"]
+[ext_resource type="Script" path="res://scripts/pets/FbxPetAnimated.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://assets/models/pets/pet_tiger/pet_tiger_idle.fbx" id="2_idle"]
+[ext_resource type="PackedScene" path="res://assets/models/pets/pet_tiger/pet_tiger_attack.fbx" id="3_attack"]
+[ext_resource type="PackedScene" path="res://assets/models/pets/pet_tiger/pet_tiger_run.fbx" id="4_run"]
+[ext_resource type="Material" path="res://assets/models/pets/pet_tiger/pet_tiger_body_material.tres" id="5_material"]
 
 [node name="PetTigerAnimated" type="Node3D"]
 script = ExtResource("1_script")
-idle_model = ExtResource("2_idle")
-run_model = ExtResource("3_run")
-run_model_scale = 488.0
+idle_scene = ExtResource("2_idle")
+attack_scene = ExtResource("3_attack")
+run_scene = ExtResource("4_run")
+body_material = ExtResource("5_material")
 
 [node name="ModelRoot" type="Node3D" parent="."]

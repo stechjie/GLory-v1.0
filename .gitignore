@@ -322,15 +322,21 @@ glory_server_key*.pem
 /delivery/
 /_说明.txt
 
-# Two authored rare pets ship with the game; the older pet art stays in the external art bundle.
+# Three authored rare pets (diamond draw pool) ship with the game; the older pet art stays in the external art bundle.
 !/assets/models/pets/
 /assets/models/pets/*
 !/assets/models/pets/pet_squirrel/
 !/assets/models/pets/pet_tiger/
+# 11.25 猴子：第三只抽卡宠物，模型与立绘随代码走（同松鼠 / 白虎）。
+!/assets/models/pets/pet_monkey/
 !/assets/ui/pets/
 /assets/ui/pets/*
 !/assets/ui/pets/pet_squirrel_illustration.png
 !/assets/ui/pets/pet_tiger_illustration.png
+!/assets/ui/pets/pet_monkey_illustration.png
+# 猴子立绘 1254px，.import 里设了 size_limit=1024；不带 .import 的机器会按默认「无损 + 不限尺寸」导入，
+# 多算一张 texture_import_budget 的大图，所以 .import 一起进 git（同 treasure_cards/emblems）。
+!/assets/ui/pets/pet_monkey_illustration.png.import
 
 # October 2026 result screen and selectable avatar art.
 !/assets/ui/game_over/

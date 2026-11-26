@@ -287,6 +287,7 @@ func _write_now() -> void:
 		"last_harvest_round": GameState.last_harvest_round,
 		"tiger_starup_count": GameState.tiger_starup_count,
 		"stone_draw_used_round": GameState.stone_draw_used_round,
+		"first_buy_round": GameState.first_buy_round,
 		"stone_draw_count": GameState.stone_draw_count,
 		"free_stone_claimed": GameState.free_stone_claimed,
 		"four_star_upgrade_count": GameState.four_star_upgrade_count,
@@ -341,6 +342,9 @@ func load_run() -> bool:
 	GameState.last_harvest_round = int(parsed.get("last_harvest_round", GameState.round_index))
 	GameState.tiger_starup_count = maxi(0, int(parsed.get("tiger_starup_count", 0)))
 	GameState.stone_draw_used_round = int(parsed.get("stone_draw_used_round", -1))
+	# 老存档没有这一项：按「本回合已经买过」处理（同 gold_spent_this_round 的保守口径），
+	# 读档那一回合不会凭空多出一张猴子复制品。
+	GameState.first_buy_round = int(parsed.get("first_buy_round", GameState.round_index))
 	GameState.stone_draw_count = maxi(0, int(parsed.get("stone_draw_count", 0)))
 	GameState.free_stone_claimed = bool(parsed.get("free_stone_claimed", false))
 	GameState.four_star_upgrade_count = maxi(0, int(parsed.get("four_star_upgrade_count", 0)))

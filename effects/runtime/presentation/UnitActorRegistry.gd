@@ -39,7 +39,8 @@ func unregister_if_holds(uid: String, actor: Node3D) -> bool:
 
 func get_actor(uid: String) -> Node3D:
 	var value = _actors.get(uid)
-	if value is Node3D and is_instance_valid(value):
+	# A freed Object must be rejected before a GDScript type test touches it.
+	if is_instance_valid(value) and value is Node3D:
 		return value as Node3D
 	_actors.erase(uid)
 	return null

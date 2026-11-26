@@ -311,8 +311,14 @@ func _auto_deploy_at_deadline() -> void:
 		GameState.spend_gold(int(result.cost))
 		var cell: Dictionary = GameState.board_slots[int(result.cell_index)]
 		cell["uid"] = GameState.mint_piece_uid()
-		_shadow_report("buy", {"shop_index": int(result.shop_index), "offer_id": GameState.shop_offer_id,
-			"uid": str(cell.uid), "timeout_deploy": true})
+		# 猴子：到点替玩家买的这一枚也算本回合第一笔（用户 11-25 定）。复制品随这笔 buy 一起报，
+		# 它和棋盘上这一枚同名一星，会当场合成二星（服务器放行这笔 merge，见 NetworkService._valid_timeout_merge）。
+		var copy_plan := _plan_pet_first_buy_copy(GameState.shop_offers[int(result.shop_index)])
+		var payload := {"shop_index": int(result.shop_index), "offer_id": GameState.shop_offer_id,
+			"uid": str(cell.uid), "timeout_deploy": true}
+		_add_pet_copy_to_buy(payload, copy_plan)
+		_shadow_report("buy", payload)
+		_apply_pet_first_buy_copy(copy_plan)
 	RaceRelationService.reconcile_board(GameState.board_slots, GameState.bench_slots, false, true)
 	SaveManager.save_run()
 	_refresh_all()

@@ -247,6 +247,8 @@ func _ready() -> void:
 	MUSIC_SERVICE.end_match()
 	MUSIC_SERVICE.play_group(MUSIC_SERVICE.MENU_GROUP, true)
 	get_viewport().size_changed.connect(_layout)
+	if SafeArea.uses_ios_layout():
+		SafeArea.changed.connect(_layout)
 	_layout()
 	if not RealtimeService.message_received.is_connected(_on_realtime):
 		RealtimeService.message_received.connect(_on_realtime)
@@ -285,6 +287,8 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	if SafeArea.changed.is_connected(_layout):
+		SafeArea.changed.disconnect(_layout)
 	MUSIC_SERVICE.clear_talk_probe()
 	if RealtimeService.message_received.is_connected(_on_realtime):
 		RealtimeService.message_received.disconnect(_on_realtime)
@@ -465,6 +469,12 @@ func _build() -> void:
 
 
 func _layout() -> void:
+	if SafeArea.uses_ios_layout():
+		var safe := SafeArea.rect()
+		var factor := minf(safe.size.x / REF.x, safe.size.y / REF.y)
+		_canvas.scale = Vector2.ONE * factor
+		_canvas.position = safe.position + (safe.size - REF * factor) * 0.5
+		return
 	var viewport_size := get_viewport_rect().size
 	var factor := minf(viewport_size.x / REF.x, viewport_size.y / REF.y)
 	_canvas.scale = Vector2.ONE * factor

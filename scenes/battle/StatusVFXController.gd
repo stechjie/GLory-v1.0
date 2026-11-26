@@ -1,5 +1,8 @@
 extends Node3D
 
+# Read-only defaults: absent statuses must not allocate a Dictionary per icon.
+const _EMPTY_STATUS_FIELDS: Dictionary = {}
+
 const DIVINE_PULSE := preload("res://effects/vfx3d/modules/VFXDivinePulseInvulnerability3D.gd")
 var _divine_pulse: Node3D
 
@@ -119,17 +122,17 @@ func update_from_fighter(fighter: Dictionary) -> void:
 	# BREAK 期间必须保持可见，否则 shield 归零的同一帧精灵就被隐藏，
 	# 破盾演出一帧都放不出来 —— 那等于没做。
 	_set_effect_visible("shield", shield_now > 0 or _shield_phase == ShieldPhase.BREAK)
-	var statuses: Dictionary = fighter.get("statuses", {})
+	var statuses: Dictionary = fighter.get("statuses", _EMPTY_STATUS_FIELDS)
 	# Iterate the fixed definitions without allocating per-fighter dictionaries,
 	# key arrays or an unused remaining-duration map on every rendered frame.
 	for kind in EFFECTS:
 		if kind == "shield":
 			continue
-		var status: Dictionary = statuses.get(kind, {})
+		var status: Dictionary = statuses.get(kind, _EMPTY_STATUS_FIELDS)
 		# Blood Pact's nonlethal self-bleed is stored separately so an enemy bleed
 		# can remain lethal and keep its own attribution. Both share one icon.
 		if kind == "bleed" and float(status.get("remaining", 0.0)) <= 0.0:
-			status = statuses.get("bleed_nonlethal", {})
+			status = statuses.get("bleed_nonlethal", _EMPTY_STATUS_FIELDS)
 		_set_effect_visible(kind, float(status.get("remaining", 0.0)) > 0.0)
 	# Poison remains one gameplay status with two independently timed stacks.
 	# Reuse its existing texture for a second head icon only while both are live.
@@ -152,7 +155,7 @@ func _sync_divine_pulse(fighter: Dictionary) -> void:
 
 
 static func active_poison_layers(statuses: Dictionary) -> int:
-	var poison: Dictionary = statuses.get("poison", {})
+	var poison: Dictionary = statuses.get("poison", _EMPTY_STATUS_FIELDS)
 	if poison.has("stacks"):
 		var active := 0
 		for raw_stack in poison.get("stacks", []):

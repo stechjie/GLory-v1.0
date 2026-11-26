@@ -7,7 +7,8 @@ func _ready() -> void:
 		push_error("final status: DataRegistry did not load")
 		get_tree().quit(1)
 		return
-	if table.get("units", {}).size() != 40 or table.get("pets", {}).size() != 5:
+	# 11-25 宠物 5 -> 6（猴子）。
+	if table.get("units", {}).size() != 40 or table.get("pets", {}).size() != 6:
 		push_error("final status: wrong unit or pet count")
 		get_tree().quit(1)
 		return
@@ -47,6 +48,11 @@ func _ready() -> void:
 		return
 	if not PetService.skill_detail_text("pet_tiger").contains("无限累计"):
 		push_error("final status: pet detail is not connected")
+		get_tree().quit(1)
+		return
+	if not PetService.effect_text("pet_monkey").contains("复制") \
+			or not PetService.skill_detail_text("pet_monkey").contains("备战区"):
+		push_error("final status: monkey pet text is not connected")
 		get_tree().quit(1)
 		return
 	var altar_cost := TreasureService.golden_altar_hp_cost()

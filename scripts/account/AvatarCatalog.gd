@@ -280,7 +280,11 @@ static func _put_texture(node: Control, texture: Texture2D) -> void:
 static func _refit_crisp(node: Control) -> void:
 	if not is_instance_valid(node) or not node.is_inside_tree():
 		return
-	var source := node.get_meta(&"crisp_source", null) as Texture2D
+	# set_meta(key, null) 等于删掉这个 key（set_avatar_texture(node, null) 清头像时就是这样），
+	# 而 get_meta 的默认值给 null 不算「有默认值」，key 不在就直接报错。所以先问 has_meta。
+	if not node.has_meta(&"crisp_source"):
+		return
+	var source := node.get_meta(&"crisp_source") as Texture2D
 	if source == null or node.size.x < 2.0 or node.size.y < 2.0:
 		return
 	# 懒加载：这个脚本服务器也会解析，别让它多依赖一个 UI 脚本。

@@ -23,6 +23,8 @@ static func apply(state: Dictionary) -> bool:
 	GameState.bench_slots = slots["bench"]
 	GameState.mercenary_slots = slots["mercs"]
 	GameState.gold = int(state.get("gold", GameState.gold))
+	# 猴子：AI 托管期间本回合已经买过（复制过）就不再给。取大见 NetworkService._apply_carrot_state。
+	GameState.first_buy_round = maxi(GameState.first_buy_round, int(state.get("first_buy_round", -1)))
 	return true
 
 

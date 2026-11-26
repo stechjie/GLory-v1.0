@@ -325,12 +325,14 @@ static func _buy_from_shop(bot: Dictionary, shop: Dictionary, round_index: int,
 		bot.gold = int(bot.gold) - best_cost
 		bot.gold_spent_this_round = true
 		(bot.roster as Array).append({"id": str(offer.get("id", "")), "star": 1, "def": offer, "cost_basis": best_cost})
+		var copy := _pet_first_buy_copy(bot, offer, round_index)
 		# 卖掉的那一格只打 sold 标记、**不清空** offer：账本里的商店要原样
 		# 留给回来的玩家（客户端按 sold 格置灰，和真人买过之后一模一样）。
 		if best < sold.size():
 			sold[best] = true
 			shop["sold"] = sold
 		_merge(bot)
+		_sell_copy_without_room(bot, copy)
 		_trim_roster(bot, p, horizon)
 
 
@@ -456,6 +458,39 @@ static func _copies(bot: Dictionary, id: String) -> int:
 		if str(u.id) == id:
 			n += 1
 	return n
+
+
+# 猴子（宠物效果 first_buy_copy，用户 11-25 定）：每回合买的第一个棋子免费多一张 1 星。
+# AI 托管真人座位时照样生效。bot.pet_id 只来自真人的出战名片（LiveBotEconomy.prepare 读 seat_pets），
+# 匹配补位的 AI 宠物只是展示，没有效果 —— 与松鼠一致。
+# 「本回合买过」和账本是同一个标记（first_buy_round，LiveBotEconomy 接手 / 交回时对齐），
+# 玩家掉线前本回合已经买过的，AI 不会再复制一次。
+# 复制品的 cost_basis 记棋子原价（同 EconomyLedger._pet_first_buy_copy）。返回 {} = 不复制。
+static func _pet_first_buy_copy(bot: Dictionary, offer: Dictionary, round_index: int) -> Dictionary:
+	var first := int(bot.get("first_buy_round", -1)) != round_index
+	bot["first_buy_round"] = round_index
+	if not first or not PetService.copies_first_buy(str(bot.get("pet_id", ""))):
+		return {}
+	var copy := {"id": str(offer.get("id", "")), "star": 1, "def": offer,
+		"cost_basis": EconomyLedger.base_unit_cost(offer)}
+	(bot.roster as Array).append(copy)
+	return copy
+
+
+# 复制品合成之后还多出来、而名单已经超过上限：卖掉的是**复制品自己**（规则：没空位直接卖），
+# 不交给 _trim_roster 去挑「最不值钱的那个」。AI 的棋盘和备战席不分开记，上限按两者之和算
+# （与 _trim_roster 同一个数）。用 is_same 认那一份字典：合成时同名同星的几枚内容可能一模一样。
+static func _sell_copy_without_room(bot: Dictionary, copy: Dictionary) -> void:
+	if copy.is_empty():
+		return
+	var roster: Array = bot.roster
+	if roster.size() <= Handover.board_cap(bot.treasures) + BENCH_CAP:
+		return
+	for i in roster.size():
+		if is_same(roster[i], copy):
+			roster.remove_at(i)
+			bot.gold = int(bot.gold) + EconomyLedger.sell_refund(int(copy.cost_basis))
+			return
 
 
 static func _merge(bot: Dictionary) -> void:
