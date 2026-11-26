@@ -478,10 +478,10 @@ static func stamp_team_round_damages(replay_a: Dictionary, replay_b: Dictionary)
 	var b_draw := a_draw if kind == "pvp" else bool(rb.get("is_draw", false))
 	var a_wins := bool(ra.get("player_wins", false))
 	var b_wins := (not a_wins) if kind == "pvp" else bool(rb.get("player_wins", false))
-	if not a_wins and not a_draw:
-		heal_a *= 2
-	if not b_wins and not b_draw:
-		heal_b *= 2
+	# 11.26 用户定：法阵回春每位持有人 胜 / 平 +2、败 +3（原 +1 / +2）。
+	# team_heal_ally / team_heal_rival 记的是持有人数，这里换算成回血量。
+	heal_a *= FORMATION_HEAL_LOSS if (not a_wins and not a_draw) else FORMATION_HEAL_WIN
+	heal_b *= FORMATION_HEAL_LOSS if (not b_wins and not b_draw) else FORMATION_HEAL_WIN
 	var res_a: Dictionary = replay_a.get("result", {})
 	res_a["team_damage_self"] = dmg_a
 	res_a["team_damage_rival"] = dmg_b
@@ -501,6 +501,10 @@ static func _team_replay_self_damage(replay: Dictionary) -> int:
 		return 0
 	return maxi(1, int(r.get("enemy_alive", 1)))
 
+const FORMATION_HEAL_WIN := 2
+const FORMATION_HEAL_LOSS := 3
+
+# 返回持有法阵回春的人数；回血量在 stamp_team_round_damages 里按胜负换算。
 static func _team_formation_heal_total(ctx_list: Array) -> int:
 	var total := 0
 	for ctx in ctx_list:

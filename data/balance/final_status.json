@@ -1781,7 +1781,7 @@
     "def_iron_wall": {
       "name_cn": "铁壁之护",
       "category_cn": "防御",
-      "effect_cn": "开战时防御 +10（绝对值，不随星级缩放 → 对本来就高防的棋子收益递减）",
+      "effect_cn": "开战时防御 +15、魔法防御 +20（绝对值，不随星级缩放）",
       "hu_pai_text_cn": "—（不在胡牌手 5 件内）"
     },
     "def_life_monument": {
@@ -1793,7 +1793,7 @@
     "def_formation_heal": {
       "name_cn": "法阵回春",
       "category_cn": "防御",
-      "effect_cn": "胜利或平局：法阵 HP +1；失败：法阵 HP +2；不超过初始上限 50",
+      "effect_cn": "胜利或平局：法阵 HP +2；失败：法阵 HP +3；不超过初始上限 50",
       "hu_pai_text_cn": "—（胡牌手现需黄金祭坛）"
     },
     "def_soul_counter": {
@@ -1829,7 +1829,7 @@
     "ctrl_interrupt_chain": {
       "name_cn": "打断锁链",
       "category_cn": "控制",
-      "effect_cn": "25% 概率缴械目标 1.5 秒",
+      "effect_cn": "25% 概率缴械目标 2.0 秒",
       "hu_pai_text_cn": "—"
     },
     "ctrl_time_compress": {
@@ -1986,6 +1986,6 @@
       "effect_cn": "需要：生命丰碑 + 黄金祭坛 + 震荡余波 + 血契之刃 + 狂怒阵容。生命丰碑 ×1.20→×1.40；震荡余波眩晕 1→2 秒；血契之刃 ×1.25→×1.50；狂怒阵容上限 8→9。黄金祭坛使用不扣法阵 HP；选到胡牌手立即回复法阵 HP +2（上限 50）。\n表内字段：positive_effect_multiplier = 2"
     }
   },
-  "balance_version": "0021002f7d1c738372ce7f1619204f771cb8482fdffde7a9289bc56d4ceb0aa4",
-  "final_workbook_sha256": "a1e36d59b2c3f118d494fca89590f706af2a653c0962b407d290bf2357816866"
+  "balance_version": "aaac00f706bacf789ab580cdb4371468ae51b02a73edab5a60d63c1287b197a8",
+  "final_workbook_sha256": "b64799c09ae8dc20eaaca12cfba1b44587e230abf38787a3a1ac6d39050d227b"
 }

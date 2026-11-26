@@ -200,7 +200,8 @@ static func _apply_attack_treasure_effects(attacker: Dictionary, target: Diction
 		_set_treasure_cd(attacker, "ctrl_corrosive_needle", float(state.elapsed), 5.0)
 	if _f_has_treasure(attacker, "ctrl_interrupt_chain") and _treasure_ready(attacker, "ctrl_interrupt_chain", float(state.elapsed)):
 		if RngService.rng.randf() < 0.25:
-			StatusEffectService.interrupt(target, 1.5)
+			# 11.26 用户定：缴械 1.5 → 2 秒。
+			StatusEffectService.interrupt(target, 2.0)
 			if _f_has_linkage(attacker, "link_paralysis_shackles"):
 				_apply_attribute_effect("ice", attacker, target)
 				StatusEffectService.add_status(target, "ice_vulnerable", 4.0, {"pct": 0.25})
@@ -219,7 +220,12 @@ static func _apply_opening_treasures(player: Array, event_log: Array[String]) ->
 		if _ignores_treasure(f):
 			continue
 		if _f_has_treasure(f, "def_iron_wall"):
-			f.defense = int(f.get("defense", 0)) + 10
+			# 11.26 用户定：防御 +10 → 防御 +15、魔抗 +20。
+			# 没填魔抗的单位平时按防御当魔抗算（DamageService.effective_magic_resist），
+			# 所以先按加成前的防御取底，再各加各的。
+			var wall_mres_base := int(f.get("mres", 0)) if f.has("mres") else int(f.get("defense", 0))
+			f.defense = int(f.get("defense", 0)) + 15
+			f.mres = wall_mres_base + 20
 		# 11.01：生命丰碑、血契、宠物与防御套 / 金钱套同进开场加法池（_add_open_pct），
 		# 闪避按 1-(1-a)(1-b) 叠加。
 		if _f_has_treasure(f, "def_life_monument"):
