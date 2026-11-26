@@ -94,8 +94,8 @@ func _check_flags() -> void:
 	_expect(not f7.has("god_invulnerable_opening") and not f7.has("human_last_stand") and not f7.has("dark_debuff_duration"),
 		"flags_old_removed", "旧 7 档 flag 已删除")
 	var f2 := SynergyService.flags_from_counts({"god": 0, "dark": 2, "undead": 2, "human": 0})
-	_expect(is_equal_approx(float(f2.dark_debuff_strength), 0.30) and is_equal_approx(float(f2.undead_poison_antiheal), 0.30),
-		"flags_2", "暗2 与灵2 均为 30%")
+	_expect(is_equal_approx(float(f2.dark_debuff_strength), 0.30) and is_equal_approx(float(f2.undead_poison_antiheal), 0.40),
+		"flags_2", "暗2 为 30%、灵2 为 40%")
 	_expect(not f7.has("undead_death_clone_threshold"), "flags_clone_removed", "30 次死亡克隆已移除")
 
 
@@ -181,7 +181,7 @@ func _check_god_pulse() -> void:
 		if now and not was:
 			windows.append(snappedf(float(st.elapsed) - 0.1, 0.1))
 		was = now
-	_expect(windows == [1.0, 6.0, 11.0, 16.0], "god_pulse_timing", "无敌开始时刻 %s" % str(windows))
+	_expect(windows == [3.0, 8.0, 13.0], "god_pulse_timing", "无敌开始时刻 %s" % str(windows))
 	_expect(not StatusEffectService.has_status(merc, "invulnerable"), "god_pulse_no_merc", "佣兵不吃")
 	# 无敌期间：普攻/技能伤害为 0，中毒照吃
 	var g2 := _unit("g2", "god", "player", 0, syn, 100, 5000)

@@ -40,7 +40,7 @@ static func flags_from_counts(counts: Dictionary) -> Dictionary:
 		"counts": counts,
 		"god_death_cleanse": god > 0,
 		"god_lifesteal": 0.20 if god >= 3 else 0.0,
-		# 神7（9.24 改）：开场 1 秒后起每 5 秒全队无敌 1 秒（只免普攻与技能，DoT 照吃）。
+		# 神7（9.24 改，11.26 调）：开战第 3 秒起每 5 秒全队无敌 1.25 秒（只免普攻与技能，DoT 照吃）。
 		# 旧的「开场无敌 1.5 秒」(god_invulnerable_opening) 已删除。
 		"god_divine_pulse": god >= 7,
 		"dark_death_stack_enabled": dark > 0,
@@ -54,7 +54,8 @@ static func flags_from_counts(counts: Dictionary) -> Dictionary:
 		# 旧的「克隆/母灵阈值 ×0.75」已删除，undead_threshold_mul 恒为 1.0。
 		"undead_poison_heal": 0.15 if undead >= 7 else 0.0,
 		"undead_threshold_mul": 1.0,
-		"undead_poison_antiheal": 0.30 if undead >= 2 else 0.0,
+		# 11.26 用户定：灵 2 剧毒抑疗 30% → 40%。
+		"undead_poison_antiheal": 0.40 if undead >= 2 else 0.0,
 		"human_shield": human >= 2,
 		# 人7（9.24 改）：己方棋盘每死 1 个，活着的全部 +1 档（每档 +20%，见 BattleSimTreasures._owner_human_rally）。
 		# 旧的「只剩最后 1 个时属性翻倍」已删除。

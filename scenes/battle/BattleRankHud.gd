@@ -115,6 +115,15 @@ func finish(has_voice: bool) -> void:
 	_finished = true
 	if _purse == null:
 		return
+	# 11.26：Boss 局不发击杀金，以前钱袋整场是 0，没进清路前三的人会以为「赢了 Boss 没钱」。
+	# 战斗结束把 Boss 奖励（赢：固定奖励；输：按打掉的血量比例补偿）也飞进钱袋。
+	# 金额和 EconomyService.settle_post_battle_breakdown 的 "boss" 分支同一对函数、同一批输入，只是显示。
+	var boss_gold := _boss_reward()
+	if boss_gold > 0:
+		var english := LocaleManager.get_locale().begins_with("en")
+		var boss_won := bool((_own.get("result", {}) as Dictionary).get("player_wins", false))
+		var boss_reason := ("Boss defeated" if english else "击败 Boss") if boss_won else ("Boss damage reward" if english else "Boss 伤害补偿")
+		_purse.fly_in(_feedback.global_position + _feedback.size * Vector2(0.5, 0.35), boss_gold, boss_reason)
 	var rewards := BattleRankRewards.rewards_for_kind(_kind)
 	var reward_rank := BattleRankRewards.rank_of(ranking, _local_slot)
 	if reward_rank < 0 or reward_rank >= rewards.size():
@@ -127,6 +136,19 @@ func finish(has_voice: bool) -> void:
 	if anchor == null:
 		anchor = _purse.global_position
 	_purse.fly_in(anchor, int(rewards[reward_rank]), _reason_text(reward_rank))
+
+
+## Boss 局结算会到账的 Boss 奖励 / 补偿；别的局型是 0。
+func _boss_reward() -> int:
+	if _kind != "boss":
+		return 0
+	var result_value: Variant = _own.get("result", {})
+	if not result_value is Dictionary:
+		return 0
+	var result: Dictionary = result_value
+	if bool(result.get("player_wins", false)):
+		return EconomyService.boss_win_reward(_round)
+	return EconomyService.boss_loss_reward(_round, int(result.get("enemy_hp_current", 0)), maxi(1, int(result.get("enemy_hp_max", 1))))
 
 
 func _reason_text(rank: int) -> String:

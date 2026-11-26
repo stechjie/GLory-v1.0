@@ -83,7 +83,8 @@ func _check_opening_ready_times() -> void:
 	_h.expect(is_equal_approx(float(charge.skill_ready), 7.0), "gold_charge_7", "黄金重骑开场应等 7 秒")
 	_h.expect(is_equal_approx(float(shell.skill_ready), 6.0), "shell_guard_fixed_6", "甲壳守卫固定 6 秒")
 	_h.expect(is_equal_approx(float(steel.skill_ready), 3.0), "first_cast_sec_used", "写了 first_cast_sec 的开场应按它首发（3 秒），而不是等满 8 秒冷却")
-	var expected_first := {"merc_sagittarius_rain": 3.5, "merc_gemini_assassin": 5.0, "merc_taurus_charge": 6.0, "merc_capricorn_steel": 3.0, "merc_aquarius_time": 6.0, "merc_virgo_heal": 6.0}
+	# 11.26：对齐用户当天直接改在 mercenaries.json 里的首发时间（猎人 3.5→5、刺客 5→3、重骑 / 修女 6→5）。
+	var expected_first := {"merc_sagittarius_rain": 5.0, "merc_gemini_assassin": 3.0, "merc_taurus_charge": 5.0, "merc_capricorn_steel": 3.0, "merc_aquarius_time": 6.0, "merc_virgo_heal": 5.0}
 	for m: Dictionary in _all_dicts(DataRegistry.get_table("mercenaries")):
 		var mid := str(m.get("id", ""))
 		if expected_first.has(mid) and m.has("skill_id"):

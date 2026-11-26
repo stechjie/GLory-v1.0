@@ -442,6 +442,9 @@ func _collect_vfx_units(state_snapshot: Dictionary) -> Dictionary:
 			var chant_value: Variant = f.get("statuses", _EMPTY_VFX_FIELDS)
 			var chant_status: Variant = (chant_value as Dictionary).get("skill_chant", _EMPTY_VFX_FIELDS) if typeof(chant_value) == TYPE_DICTIONARY else _EMPTY_VFX_FIELDS
 			u["skill_chant_sec"] = float((chant_status as Dictionary).get("remaining", 0.0)) if typeof(chant_status) == TYPE_DICTIONARY else 0.0
+			# 11.26 死侍开场誓约特效：身上带着临时加防 / 加魔抗的友军 = 吃到光环的人。
+			# 只读状态表，不给模拟加字段（状态随帧过回放边界）。
+			u["guard_aura"] = typeof(chant_value) == TYPE_DICTIONARY and ((chant_value as Dictionary).has("defense_flat_up") or (chant_value as Dictionary).has("mres_flat_up"))
 			var definition: Variant = f.get("def", _EMPTY_VFX_FIELDS)
 			u["skill_id"] = str(definition.get("skill_id", ""))
 			# 种族只用于挑表现（赤律族的 unit_id 没有 god_/dark_ 这类前缀）。
@@ -1119,6 +1122,24 @@ func _nearby_team_world_positions(unit: Dictionary, current: Dictionary, sim_rad
 			result.append(candidate.get("world_foot", Vector3.ZERO))
 	return result
 
+# 死侍光环实际罩到的友军脚下位置：同队、同一块棋盘（owner_slot）、身上有光环给的临时防御 / 魔抗。
+# 光环最多罩周围 8 格，所以封顶 8 个；不含死侍自己。
+func _death_servant_aura_positions(unit:Dictionary,current:Dictionary)->Array:
+	var result:Array=[]
+	var self_id:=str(unit.get("id",""))
+	for id:String in current.keys():
+		if id==self_id:
+			continue
+		var candidate:Dictionary=current[id]
+		if not bool(candidate.get("alive",false)) or not bool(candidate.get("guard_aura",false)):
+			continue
+		if str(candidate.get("team",""))!=str(unit.get("team","")) or int(candidate.get("owner_slot",-1))!=int(unit.get("owner_slot",-1)):
+			continue
+		result.append(candidate.get("world_foot",Vector3.ZERO))
+		if result.size()>=8:
+			break
+	return result
+
 func _living_team_world_positions(unit:Dictionary,current:Dictionary)->Array:
 	var result:Array=[]
 	for id:String in current.keys():
@@ -1205,8 +1226,15 @@ func _play_opening_unit_vfx(current:Dictionary)->void:
 			_start_guardian_unit_vfx(unit)
 		elif sid=="left_neighbor_sacrifice":
 			var target:=_exact_skill_target(unit,current)
+			# 11.26 用户要「明显的技能特效」：以前只在绑到人时拉一条细血线，光环完全没表现。
+			# 现在无论有没有绑到人都播誓约法阵（光环照样生效），吃到光环的友军各亮一枚护盾徽记，
+			# 绑到人时再加血链。绑定音仍然只在绑到人时响（见下）。
+			var oath_target:Dictionary=target if not target.is_empty() else unit
+			var oath_context:=_unit_target_context(unit,oath_target)
+			oath_context["bound"]=not target.is_empty()
+			oath_context["targets"]=_death_servant_aura_positions(unit,current)
+			_play_unit_procedural(sid,unit.get("world_foot",Vector3.ZERO),oath_target.get("world_foot",Vector3.ZERO),oath_context)
 			if not target.is_empty():
-				_play_unit_procedural(sid,unit.get("world_foot",Vector3.ZERO),target.get("world_foot",Vector3.ZERO),_unit_target_context(unit,target))
 				# 9.20：死侍（`human_death_servant`）「左邻替死」的**绑定音**。
 				# 用户口径：在**开始绑定棋子时**响，**没绑到人就不响** —— 所以挂在
 				# 这条「目标已解析出来」的分支里，而不是无条件播。

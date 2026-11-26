@@ -318,7 +318,7 @@ static func _race_entries(race: String) -> Array:
 			return [
 				{"threshold": 1, "name": "神族特性·净化", "detail": "友方单位死亡时，随机一名存活友军清除所有负面状态。"},
 				{"threshold": 3, "name": "神3·吸血", "detail": "神族单位造成伤害时回复实际伤害 20% 生命。"},
-				{"threshold": 7, "name": "神7·神佑", "detail": "开战 1 秒后起，每 5 秒全队无敌 1 秒（只免普攻与技能伤害，中毒/流血照常受伤）。"},
+				{"threshold": 7, "name": "神7·神佑", "detail": "开战第 3 秒起，每 5 秒全队无敌 1.25 秒（只免普攻与技能伤害，中毒/流血照常受伤）。"},
 			]
 		"dark":
 			return [
@@ -330,7 +330,7 @@ static func _race_entries(race: String) -> Array:
 		"undead":
 			return [
 				{"threshold": 1, "name": "灵族特性·双毒", "detail": "灵族施加的中毒最多叠加2层，分别计时和造成伤害；两层时目标头顶显示两枚毒标记。"},
-				{"threshold": 2, "name": "灵族·剧毒抑疗", "detail": "目标中毒期间，其治疗与吸血获得的生命减少 30%。"},
+				{"threshold": 2, "name": "灵族·剧毒抑疗", "detail": "目标中毒期间，其治疗与吸血获得的生命减少 40%。"},
 				{"threshold": 4, "name": "灵族·剧毒", "detail": "灵族中毒伤害翻倍。"},
 				{"threshold": 7, "name": "灵族·噬毒", "detail": "灵族单位攻击已中毒的敌人时，每次回复自身 15% 最大生命。"},
 			]
@@ -345,7 +345,7 @@ static func _race_entries(race: String) -> Array:
 				{"threshold": 1, "name": "赤律特性·战律符文", "detail": "赤律棋子每次给自身施加增益或减益时获得1层战律符文（每次行动最多1层，整场最多9层）。3层：暴击率+30%；6层：再加攻速+60%；9层：再加暴击伤害+90%。赤律4共鸣与赤律7赤潮也可叠加符文。"},
 				{"threshold": 2, "name": "赤律2·绵延", "detail": "赤律族施加的增益和减益持续时间 +20%；沉默、冰霜等控制额外增加最多 0.5 秒。"},
 				{"threshold": 4, "name": "赤律4·共鸣", "detail": "每次成功施加增益、减益或控制，施加者获得一层共鸣：攻击和攻速 +5%，持续 4 秒，最多 10 层；新增层数刷新持续时间。"},
-				{"threshold": 7, "name": "赤律7·赤潮", "detail": "开战第 2 秒起每 5 秒，赤律族全体技能剩余冷却 -1 秒、清除负面状态、回复 6% 最大生命，并永久获得 1 层攻击和攻速 +10%、暴击率 +10 个百分点，整场最多 5 层。"},
+				{"threshold": 7, "name": "赤律7·赤潮", "detail": "开战第 2 秒起每 5 秒，赤律族全体技能剩余冷却 -1 秒、清除负面状态、回复 8% 最大生命，并永久获得 1 层攻击和攻速 +10%、暴击率 +10 个百分点，整场最多 5 层。"},
 			]
 	return []
 
@@ -358,7 +358,7 @@ static func _race_entries_en(race: String) -> Array:
 			return [
 				{"threshold": 1, "name": "God Trait: Cleanse", "detail": "When a friendly unit dies, one random surviving ally removes all debuffs."},
 				{"threshold": 3, "name": "God 3: Lifesteal", "detail": "God units heal for 20% of the actual damage they deal with basic attacks."},
-				{"threshold": 7, "name": "God 7: Divine Pulse", "detail": "Starting 1s into battle and every 5s thereafter, your team’s normal units gain 1s of invulnerability against attacks and skills. Poison, bleed, and burn still deal damage."},
+				{"threshold": 7, "name": "God 7: Divine Pulse", "detail": "Starting 3s into battle and every 5s thereafter, your team’s normal units gain 1.25s of invulnerability against attacks and skills. Poison, bleed, and burn still deal damage."},
 			]
 		"dark":
 			return [
@@ -370,7 +370,7 @@ static func _race_entries_en(race: String) -> Array:
 		"undead":
 			return [
 				{"threshold": 1, "name": "Undead Trait: Double Poison", "detail": "Poison applied by Undead units stacks twice. Each stack ticks and expires separately; two poison marks appear above the target at two stacks."},
-				{"threshold": 2, "name": "Undead: Venom Suppression", "detail": "While poisoned, the target receives 30% less HP from healing and lifesteal."},
+				{"threshold": 2, "name": "Undead: Venom Suppression", "detail": "While poisoned, the target receives 40% less HP from healing and lifesteal."},
 				{"threshold": 4, "name": "Undead: Poison", "detail": "Undead poison deals double damage."},
 				{"threshold": 7, "name": "Undead: Venom Feast", "detail": "When Undead units hit a poisoned enemy, they restore 15% of their max HP per hit."},
 			]
@@ -385,7 +385,7 @@ static func _race_entries_en(race: String) -> Array:
 				{"threshold": 1, "name": "Crimson Trait: Battle Runes", "detail": "When a Crimson unit applies a buff or debuff to itself, it gains one rune (at most one per action and nine per battle). At 3 runes: +30 percentage points Crit; at 6: another +60% Attack Speed; at 9: another +90 percentage points Crit Damage. Crimson 4 Resonance and Crimson 7 Red Tide also grant runes."},
 				{"threshold": 2, "name": "Crimson 2: Lingering Effects", "detail": "Crimson buffs and debuffs last 20% longer. Control effects gain at most 0.5 additional seconds."},
 				{"threshold": 4, "name": "Crimson 4: Resonance", "detail": "Applying a buff, debuff, or control grants the caster +5% ATK and attack speed for 4s, up to 10 stacks. New stacks refresh the duration."},
-				{"threshold": 7, "name": "Crimson 7: Red Tide", "detail": "From 2s into battle, every 5s Crimson units reduce remaining skill cooldown by 1s, cleanse debuffs, heal 6% max HP, and permanently gain one stack of +10% ATK, +10% attack speed, and +10 percentage points crit chance, up to 5 stacks per battle."},
+				{"threshold": 7, "name": "Crimson 7: Red Tide", "detail": "From 2s into battle, every 5s Crimson units reduce remaining skill cooldown by 1s, cleanse debuffs, heal 8% max HP, and permanently gain one stack of +10% ATK, +10% attack speed, and +10 percentage points crit chance, up to 5 stacks per battle."},
 			]
 	return []
 

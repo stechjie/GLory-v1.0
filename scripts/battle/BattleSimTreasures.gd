@@ -855,11 +855,12 @@ static func _apply_human_rally_step(state: Dictionary, f: Dictionary) -> void:
 
 
 # ---------------------------------------------------------------------------
-# 神族 7（9.24 改）：第 1 秒起每 5 秒，全队（不含佣兵 / 法阵友军）无敌 1 秒。
+# 神族 7（9.24 改，11.26 调）：第 3 秒起每 5 秒，全队（不含佣兵 / 法阵友军）无敌 1.25 秒。
 # 只免普攻与技能伤害；中毒 / 流血 / 灼烧照吃（invulnerable 带 dot_pass，见 DamageService）。
-const GOD_PULSE_FIRST_TICK := 10    # 1.0 秒
+# 11.26 用户定：首次 1.0 → 3.0 秒，无敌 1.0 → 1.25 秒。
+const GOD_PULSE_FIRST_TICK := 30    # 3.0 秒
 const GOD_PULSE_PERIOD_TICKS := 50  # 5.0 秒
-const GOD_PULSE_DURATION := 1.0
+const GOD_PULSE_DURATION := 1.25
 
 static func _apply_god_divine_pulse(state: Dictionary, alive: Array) -> void:
 	var tick := int(round(float(state.elapsed) / TICK_SEC))
