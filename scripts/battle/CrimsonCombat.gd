@@ -49,7 +49,8 @@ static func pulse(state: Dictionary) -> void:
 		fighter.crimson_pulse_stacks = mini(5, int(fighter.get("crimson_pulse_stacks", 0)) + 1)
 		CrimsonRuneService.note_self_effect(fighter, state)
 		DamageService.begin_stat_context(state, fighter)
-		_heal_unit(fighter, maxi(1, int(round(float(fighter.get("max_hp", 1)) * 0.06))))
+		# 11.26 用户定：赤 7 脉冲回血 6% → 8%。
+		_heal_unit(fighter, maxi(1, int(round(float(fighter.get("max_hp", 1)) * 0.08))))
 		DamageService.clear_stat_context()
 		CrimsonRuneService.end_action(fighter)
 

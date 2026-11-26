@@ -65,8 +65,10 @@ func _check_opening_ready_times() -> void:
 	var ally := _unit("ally_soul_chain", {"skill_id": "soul_chain", "skill_cd": 9.0, "opening_cd": 2.5, "skill_global": true})
 	var charge := _unit("merc_taurus_charge", {"skill_id": "gold_charge"})
 	var shell := _unit("merc_cancer_shell", {"skill_id": "shell_guard", "skill_cd": 99.0})
+	# 11.24：数据里写了 first_cast_sec 的按它首发，不等满冷却。
+	var steel := _unit("merc_capricorn_steel", {"skill_id": "steel_order", "skill_cd": 8.0, "first_cast_sec": 3.0})
 	var boss := _unit("boss_test", {"skill_id": "stun", "skill_cd": 5.0, "is_boss": true}, "enemy")
-	var player := [angel, king, imp, doom, ally, charge, shell]
+	var player := [angel, king, imp, doom, ally, charge, shell, steel]
 	var enemy := [boss]
 	var state := {"player": player, "enemy": enemy, "elapsed": 0.0, "player_syn": {}, "enemy_syn": {},
 		"kind": "pvp", "visual_events": [], "unit_stats": {}, "log": []}
@@ -80,6 +82,13 @@ func _check_opening_ready_times() -> void:
 	_h.expect(is_equal_approx(float(ally.skill_ready), 9.0), "formation_ally_full_cd", "法阵友军开场应等满 9 秒")
 	_h.expect(is_equal_approx(float(charge.skill_ready), 7.0), "gold_charge_7", "黄金重骑开场应等 7 秒")
 	_h.expect(is_equal_approx(float(shell.skill_ready), 6.0), "shell_guard_fixed_6", "甲壳守卫固定 6 秒")
+	_h.expect(is_equal_approx(float(steel.skill_ready), 3.0), "first_cast_sec_used", "写了 first_cast_sec 的开场应按它首发（3 秒），而不是等满 8 秒冷却")
+	# 11.26：对齐用户当天直接改在 mercenaries.json 里的首发时间（猎人 3.5→5、刺客 5→3、重骑 / 修女 6→5）。
+	var expected_first := {"merc_sagittarius_rain": 5.0, "merc_gemini_assassin": 3.0, "merc_taurus_charge": 5.0, "merc_capricorn_steel": 3.0, "merc_aquarius_time": 6.0, "merc_virgo_heal": 5.0}
+	for m: Dictionary in _all_dicts(DataRegistry.get_table("mercenaries")):
+		var mid := str(m.get("id", ""))
+		if expected_first.has(mid) and m.has("skill_id"):
+			_h.expect(is_equal_approx(BattleSimShared.opening_skill_cooldown({"id": mid, "def": m}), float(expected_first[mid])), "merc_first_cast_" + mid, "%s 首次释放时间应为 %s 秒" % [mid, str(expected_first[mid])])
 	_h.expect(is_zero_approx(float(boss.skill_ready)), "boss_untouched", "Boss 技能不加开场冷却")
 	_h.expect(BattleSimShared.has_active_cooldown_skill(angel) and not BattleSimShared.has_active_cooldown_skill(imp)
 		and not BattleSimShared.has_active_cooldown_skill(boss) and not BattleSimShared.has_active_cooldown_skill(doom),

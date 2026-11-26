@@ -62,6 +62,9 @@ var _error: Label
 var _scope_button: Button = null
 var _voice_button: Control = null
 var _phrase_grid: GridContainer
+var _ios_scroll: ScrollContainer
+var _ios_content: VBoxContainer
+var _ios_layout_pending := false
 
 
 func present(owner: Object, on_submit: Callable, options: Dictionary = {}) -> void:
@@ -107,7 +110,19 @@ func _ready() -> void:
 
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", Tokens.GAP_S)
-	add_child(col)
+	if SafeArea.uses_ios_layout():
+		_ios_content = col
+		_ios_scroll = ScrollContainer.new()
+		_ios_scroll.follow_focus = true
+		_ios_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+		add_child(_ios_scroll)
+		_ios_scroll.add_child(col)
+		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		col.minimum_size_changed.connect(_queue_ios_layout)
+		SafeArea.editing_changed.connect(_queue_ios_layout)
+		set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	else:
+		add_child(col)
 
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", Tokens.GAP_S)
@@ -162,8 +177,35 @@ func _ready() -> void:
 	if _on_phrase.is_valid():
 		_build_quick_phrases(col)
 
+	if _ios_scroll != null:
+		_input.focus_entered.connect(_queue_ios_layout)
+		_input.focus_exited.connect(_queue_ios_layout)
+		_queue_ios_layout()
 	# 拿到焦点才会弹出系统键盘。延一帧：ModalStack 可能把挂树推迟到了本帧末。
 	_input.grab_focus.call_deferred()
+
+
+func _queue_ios_layout() -> void:
+	if _ios_layout_pending or not is_inside_tree():
+		return
+	_ios_layout_pending = true
+	_layout_ios.call_deferred()
+
+
+func _layout_ios() -> void:
+	_ios_layout_pending = false
+	if _ios_scroll == null or not is_inside_tree():
+		return
+	var available := SafeArea.editing_rect(self)
+	var pad := minf(Tokens.PAD, available.size.x * 0.05)
+	var width := minf(BAR_WIDTH, maxf(0.0, available.size.x - pad * 2.0))
+	var top := minf(TOP_MARGIN, available.size.y * 0.05)
+	var frame_size := get_theme_stylebox("panel").get_minimum_size()
+	var natural_height := _ios_content.get_combined_minimum_size().y + frame_size.y
+	var height := minf(natural_height, maxf(0.0, available.size.y - top * 2.0))
+	position = Vector2(available.position.x + (available.size.x - width) * 0.5, available.position.y + top)
+	size = Vector2(width, height)
+	SafeArea.reveal_ios_focus.call_deferred(_ios_scroll)
 
 
 func _build_quick_phrases(parent: Control) -> void:

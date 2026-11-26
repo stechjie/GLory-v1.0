@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/qa/battle_hotpath_benchmark.gd" id="1"]
+
+[node name="BattleHotpathBenchmark" type="Node"]
+script = ExtResource("1")

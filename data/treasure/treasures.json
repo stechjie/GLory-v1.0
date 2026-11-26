@@ -15,7 +15,7 @@
                       ],
     "sets":  {
                  "defense":  "normal units hp+30% def+30 dodge+15",
-                 "control":  "basic-attack last hit refreshes the killer's skill cooldown",
+                 "control":  "controls and debuffs applied last +35% (incl. poison/bleed/burn); controlled enemies receive -30% healing; basic-attack last hit refreshes the killer's skill cooldown",
                  "attack":  "basic attack executes non-boss target at or below 10% hp (ignores invulnerable)",
                  "money":  "+10% atk and hp per 1000 gold at battle start, capped at +100%",
                  "element":  "20% attack proc, radius 180, enemies take 10% max hp"

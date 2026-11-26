@@ -146,18 +146,114 @@ var _link_expires_at := 0.0
 var _link_serial := 0
 # 系统登录弹窗开着、或者正在拿身份证明换登录 —— 期间按钮不能再点。
 var _choice_busy := false
+var _ios_scroll: ScrollContainer
 
 
 func _ready() -> void:
 	theme = Theming.get_theme()
+	if SafeArea.uses_ios_layout():
+		_setup_ios_layout()
 	_retry_button.pressed.connect(retry)
 	_exit_button.pressed.connect(exit_app)
 	_build_choice_panel()
+	if SafeArea.uses_ios_layout():
+		_layout_ios()  # Choices are created after the initial scroll host layout.
 	_apply_locale()
 	_set_phase(Phase.FIRST_FRAME, _tr_text("正在启动 Glory", "Starting Glory"),
 		_tr_text("正在显示轻量启动画面", "Presenting the lightweight startup screen"), 0.0)
 	set_process(true)
 	call_deferred("_after_first_frame")
+
+
+# 仅 iOS 添加一次滚动宿主；开合期间保留所有登录、重试和输入节点。
+func _setup_ios_layout() -> void:
+	var margin := get_node("SafeMargin") as MarginContainer
+	var center := margin.get_node("Center") as Control
+	_ios_scroll = ScrollContainer.new()
+	_ios_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_ios_scroll.follow_focus = true
+	margin.add_child(_ios_scroll)
+	var stack := VBoxContainer.new()
+	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stack.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	stack.add_theme_constant_override("separation", 0)
+	_ios_scroll.add_child(stack)
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	stack.add_child(spacer)
+	center.reparent(stack)  # 保留场景 owner 与 %Title 等唯一节点引用。
+	SafeArea.editing_changed.connect(_layout_ios)
+	get_viewport().gui_focus_changed.connect(_on_ios_focus_changed)
+	_layout_ios()
+
+
+func _on_ios_focus_changed(_focus: Control) -> void:
+	_layout_ios.call_deferred()
+
+
+func _layout_ios() -> void:
+	if _ios_scroll == null:
+		return
+	var margin := get_node("SafeMargin") as MarginContainer
+	var available := SafeArea.editing_rect(self)
+	var view := get_viewport_rect().size
+	margin.offset_left = available.position.x
+	margin.offset_top = available.position.y
+	margin.offset_right = available.end.x - view.x
+	margin.offset_bottom = available.end.y - view.y
+	var units := SafeArea.ios_point_scale()
+	var pad_x := mini(ceili(16.0 * units.x), floori(available.size.x * 0.05))
+	var pad_y := mini(ceili(12.0 * units.y), floori(available.size.y * 0.05))
+	margin.add_theme_constant_override("margin_left", pad_x)
+	margin.add_theme_constant_override("margin_right", pad_x)
+	margin.add_theme_constant_override("margin_top", pad_y)
+	margin.add_theme_constant_override("margin_bottom", pad_y)
+	var content := _progress.get_parent() as VBoxContainer
+	var width := minf(420.0 * units.x, maxf(0.0, available.size.x - pad_x * 2.0))
+	content.custom_minimum_size.x = width
+	content.add_theme_constant_override("separation", ceili(8.0 * units.y))
+	_progress.custom_minimum_size = Vector2(width, ceili(6.0 * units.y))
+	_apply_ios_point_metrics(units, width)
+	SafeArea.reveal_ios_focus.call_deferred(_ios_scroll)
+
+
+# Explicit point targets, recomputed from the current pane; never multiply the
+# previous size or scale a Container transform. Layout and hit rectangles agree.
+func _apply_ios_point_metrics(units: Vector2, width: float) -> void:
+	(%Title as Label).add_theme_font_size_override("font_size", ceili(28.0 * units.y))
+	(%Subtitle as Label).add_theme_font_size_override("font_size", ceili(14.0 * units.y))
+	_status.add_theme_font_size_override("font_size", ceili(20.0 * units.y))
+	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_detail.add_theme_font_size_override("font_size", ceili(14.0 * units.y))
+	_error_text.add_theme_font_size_override("font_size", ceili(14.0 * units.y))
+	for label in [_status, _detail]:
+		label.add_theme_constant_override("outline_size", ceili(2.0 * units.y))
+	_error_panel.add_theme_constant_override("separation", ceili(8.0 * units.y))
+	var actions := _retry_button.get_parent() as HBoxContainer
+	var action_gap := ceili(12.0 * units.x)
+	actions.add_theme_constant_override("separation", action_gap)
+	var action_width := minf(150.0 * units.x, maxf(0.0, (width - action_gap) * 0.5))
+	for button in [_retry_button, _exit_button]:
+		_set_ios_button_metrics(button, units, action_width, 44.0)
+	if _choice_panel == null:
+		return
+	_choice_panel.add_theme_constant_override("separation", ceili(8.0 * units.y))
+	_link_box.add_theme_constant_override("separation", ceili(8.0 * units.y))
+	_link_code.add_theme_font_size_override("font_size", ceili(32.0 * units.y))
+	_link_hint.add_theme_font_size_override("font_size", ceili(14.0 * units.y))
+	_link_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_choice_error.add_theme_font_size_override("font_size", ceili(14.0 * units.y))
+	var button_width := minf(320.0 * units.x, width)
+	for node in _choice_panel.find_children("*", "Button", true, false):
+		var button := node as Button
+		var height := 48.0 if button == _choice_guest or button == _choice_steam else 44.0
+		_set_ios_button_metrics(button, units, button_width, height)
+
+
+func _set_ios_button_metrics(button: Button, units: Vector2, width: float, height: float) -> void:
+	button.custom_minimum_size = Vector2(width, ceili(height * units.y))
+	button.add_theme_font_size_override("font_size", ceili(17.0 * units.y))
+	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 
 func _process(delta: float) -> void:

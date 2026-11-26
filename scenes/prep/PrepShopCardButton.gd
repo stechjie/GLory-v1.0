@@ -50,6 +50,8 @@ func _input(event: InputEvent) -> void:
 			return
 		position_in_view = event.position
 		released = not event.pressed
+		if SafeArea.uses_ios_layout():
+			canceled = event.canceled
 	elif event is InputEventMouseMotion:
 		if _tap_pointer >= 0:
 			return

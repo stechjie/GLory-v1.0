@@ -554,15 +554,15 @@ func effect_text(tid: String) -> String:
 	if not approved.is_empty():
 		return approved
 	match tid:
-		"def_iron_wall":        return "开战时我方普通棋子 DEF +10。"
+		"def_iron_wall":        return "开战时我方普通棋子防御 +15、魔法防御 +20。"
 		"def_life_monument":    return "开战时我方普通棋子最大生命 +20%，当前生命同步提高；胡牌手激活后改为 +40%。"
-		"def_formation_heal":   return "胜利或平局后我方法阵 HP +1，失败后 +2，不超过初始上限。"
+		"def_formation_heal":   return "胜利或平局后我方法阵 HP +2，失败后 +3，不超过初始上限。"
 		"def_soul_counter":     return "我方普通棋子死亡时，对击杀者造成其最大生命 35% 真实伤害。"
 		"def_lifesteal_emblem": return "我方普通棋子造成伤害后，回复实际伤害 20% 的生命。"
 		"def_phantom_step":     return "开战时我方普通棋子闪避 +20%。"
 		"ctrl_shockwave":       return "我方普通棋子攻击时触发，对当前目标眩晕 1 秒，冷却 5 秒；胡牌手激活后眩晕 2 秒。"
 		"ctrl_corrosive_needle":return "我方普通棋子每第 4 次攻击使目标失血 3 秒，冷却 5 秒；普攻已失血目标时伤害 +%d%%。" % int(round(TreasureService.corrosive_needle_bleed_bonus() * 100.0))
-		"ctrl_interrupt_chain": return "我方普通棋子攻击时 25% 概率缴械目标 1.5 秒，冷却 3 秒。"
+		"ctrl_interrupt_chain": return "我方普通棋子攻击时 25% 概率缴械目标 2 秒，冷却 3 秒。"
 		"ctrl_time_compress":   return "我方普通棋子技能冷却缩短 25%，首次与后续冷却均乘以 0.75。"
 		"ctrl_binding_weight":  return "我方普通棋子攻击时使目标移动 -25%、攻速 -20%、造成伤害 -20%，持续 2 秒，冷却 5 秒。"
 		"atk_blood_pact":       return "开战时我方普通棋子 ATK x1.25，但自身永久失血；胡牌手激活后改为 ATK x1.50。"
@@ -586,15 +586,15 @@ func effect_text(tid: String) -> String:
 # 原 _treasure_effect_text_en（PrepDetails.gd）
 func effect_text_en(tid: String) -> String:
 	match tid:
-		"def_iron_wall":        return "At battle start, friendly normal units gain DEF +10."
+		"def_iron_wall":        return "At battle start, friendly normal units gain DEF +15 and Magic Resist +20."
 		"def_life_monument":    return "At battle start, friendly normal units gain max HP +20% (current HP increases too). With Hu Pai Master: +40%."
-		"def_formation_heal":   return "After a win or draw, restore 1 Formation HP; after a loss, restore 2, up to the starting cap."
+		"def_formation_heal":   return "After a win or draw, restore 2 Formation HP; after a loss, restore 3, up to the starting cap."
 		"def_soul_counter":     return "When a friendly normal unit dies, deal 35% of the killer's max HP as true damage."
 		"def_lifesteal_emblem": return "Friendly normal units restore 20% of actual damage dealt as HP."
 		"def_phantom_step":     return "At battle start, friendly normal units gain Dodge +20%."
 		"ctrl_shockwave":       return "On attack, stun the current target for 1s (CD 5s). With Hu Pai Master: stun 2s."
 		"ctrl_corrosive_needle":return CodexService.treasure_effect_en(tid)
-		"ctrl_interrupt_chain": return "25% chance to disarm the target for 1.5s on attack (CD 3s)."
+		"ctrl_interrupt_chain": return "25% chance to disarm the target for 2s on attack (CD 3s)."
 		"ctrl_time_compress":   return "Friendly normal units' skill cooldowns are reduced by 25% (multiplied by 0.75)."
 		"ctrl_binding_weight":  return "On attack, reduce target movement by 25%, AS by 20%, and outgoing damage by 20% for 2s (CD 5s)."
 		"atk_blood_pact":       return "At battle start, friendly normal units gain ATK ×1.25 but permanently bleed. With Hu Pai Master: ATK ×1.50."

@@ -103,6 +103,12 @@ const QUEEN_PAIN_BREAK_TEXTURE:="res://assets/vfx/skills/dark_queen_pain/queen_p
 const SCYTHE_INK_TEAR_TEXTURE:="res://assets/vfx/skills/dark_scythe_blink/scythe_ink_tear.png"
 const SCYTHE_CROSS_SLASH_TEXTURE:="res://assets/vfx/skills/dark_scythe_blink/scythe_cross_slash.png"
 const SCYTHE_RECALL_TEXTURE:="res://assets/vfx/skills/dark_scythe_blink/scythe_recall_afterimage.png"
+const SERVANT_OATH_CRACK_TEXTURE:="res://assets/vfx/skills/human_death_servant/human_death_servant_oath_crack.png"
+const SERVANT_GUARD_SIGILS_TEXTURE:="res://assets/vfx/skills/human_death_servant/human_death_servant_guard_sigils.png"
+const SERVANT_SACRIFICE_BURST_TEXTURE:="res://assets/vfx/skills/human_death_servant/human_death_servant_sacrifice_burst.png"
+const SERVANT_DARK:=Color(.30,.09,.09)
+const SERVANT_BODY:=Color(1.0,.92,.90)
+const SERVANT_CORE:=Color(1.0,.44,.36)
 const SUC_HOOK_SLASH_TEXTURE:="res://assets/vfx/skills/dark_suc_stun/suc_hook_slash.png"
 const SUC_HOOK_IMPACT_TEXTURE:="res://assets/vfx/skills/dark_suc_stun/suc_hook_impact.png"
 const SUC_BIND_KNOT_TEXTURE:="res://assets/vfx/skills/dark_suc_stun/suc_bind_knot.png"
@@ -202,7 +208,7 @@ func play_skill(skill_id:String,origin:Vector3,target:Vector3,context:Dictionary
 			_treasure_skill(skill_id,origin,target,context)
 		"poison_reflect_armor_stack":_titan_parry(origin,context)
 		"parasite_on_kill":_summon(target)
-		"left_neighbor_sacrifice":_tracked_link(origin,target,context,_blood_profile(.76,2.0))
+		"left_neighbor_sacrifice":_death_servant_oath(origin,target,context)
 		"attack_interrupt":_interrupt_hit(target)
 		"bubble_dream":_bubble_dream(origin,target,context)
 		"bubble_dream_heal":_bubble_dream_heal(target,context)
@@ -1311,6 +1317,73 @@ func _blink_chant(origin:Vector3,context:Dictionary={})->void:
 			"start_scale":.20,"peak_scale":.90,"end_scale":1.06,
 			"dark_tint":DARK_EDGE,"body_tint":DARK_BODY,"core_tint":DARK_CORE,
 			"flow_strength":.018,"opacity":.92,"delay":maxf(0.0,chant-.16),"seed":seed+7.0
+		})
+
+# 11.26 死侍开场「誓约」：origin 是死侍脚下，target 是被绑定棋子脚下（没绑到人时 = origin，
+# context.bound = false），context.targets 是吃到光环的友军脚下位置。全部用死侍已有的贴图，
+# 贴图自带暗红配色，这里不改色。以前只有一条细血线，光环完全没表现。
+#   ① 死侍脚下一大片誓约裂纹法阵铺开，罩住周围一圈格子 —— 「光环范围在这」；
+#   ② 死侍身上一圈盾牌徽记由小撑开 —— 「是它放的」；
+#   ③ 每个吃到光环的友军：脚下小法阵 + 身上一枚盾徽，逐个错开亮起 —— 「谁被加了防御 / 魔抗」；
+#   ④ 绑到人时：原有的血线保留，被绑者身上再炸一记血誓印记 —— 「替死绑的是它」。
+func _death_servant_oath(origin:Vector3,target:Vector3,context:Dictionary={})->void:
+	var th:=_uh(context)
+	var oh:=_uh(context,"origin_height")
+	var seed:=float(abs(int(origin.x*43.0+origin.z*31.0))%97)
+	var field:=_block_forced(VFX_PAINTED) as VFXBossTextureLayer3D
+	if field!=null:
+		last_spawned=field
+		field.play_layer(SERVANT_OATH_CRACK_TEXTURE,{
+			"name":"ServantOath_Field","position":_lvl_foot(origin,oh,LEVEL_FOOT,0.0),"ground":true,
+			"size":Vector2(3.0,3.0),"duration":2.2,
+			"start_scale":.12,"peak_scale":.92,"end_scale":1.0,
+			"dark_tint":SERVANT_DARK,"body_tint":SERVANT_BODY,"core_tint":SERVANT_CORE,
+			"flow_strength":.016,"opacity":.82,"seed":seed
+		})
+	var crown:=_block_forced(VFX_PAINTED) as VFXBossTextureLayer3D
+	if crown!=null:
+		crown.play_layer(SERVANT_GUARD_SIGILS_TEXTURE,{
+			"name":"ServantOath_Crown","position":_lvl_foot(origin,oh,LEVEL_BODY),
+			"size":Vector2(1.9,1.9),"duration":1.5,
+			"start_scale":.20,"peak_scale":.94,"end_scale":1.08,
+			"dark_tint":SERVANT_DARK,"body_tint":SERVANT_BODY,"core_tint":SERVANT_CORE,
+			"flow_strength":.014,"opacity":.94,"delay":.12,"seed":seed+3.0
+		})
+	var allies:Array=_capped_targets(context.get("targets",[]))
+	for i in range(allies.size()):
+		if not allies[i] is Vector3:
+			continue
+		var at:Vector3=allies[i]
+		var delay:=.34+.07*float(i)
+		var mark:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+		if mark!=null:
+			mark.play_layer(SERVANT_OATH_CRACK_TEXTURE,{
+				"name":"ServantOath_AllyMark","position":_lvl_foot(at,th,LEVEL_FOOT,0.0),"ground":true,
+				"size":Vector2(.96,.96),"duration":1.5,
+				"start_scale":.16,"peak_scale":.88,"end_scale":.98,
+				"dark_tint":SERVANT_DARK,"body_tint":SERVANT_BODY,"core_tint":SERVANT_CORE,
+				"flow_strength":.012,"opacity":.80,"delay":delay,"seed":seed+11.0+float(i)
+			})
+		var shield:=_block(VFX_PAINTED) as VFXBossTextureLayer3D
+		if shield!=null:
+			shield.play_layer(SERVANT_GUARD_SIGILS_TEXTURE,{
+				"name":"ServantOath_AllyShield","position":_lvl_foot(at,th,LEVEL_BODY),
+				"size":Vector2(.92,.92),"duration":1.2,
+				"start_scale":.30,"peak_scale":.90,"end_scale":.70,
+				"dark_tint":SERVANT_DARK,"body_tint":SERVANT_BODY,"core_tint":SERVANT_CORE,
+				"flow_strength":.010,"opacity":.90,"delay":delay+.08,"seed":seed+23.0+float(i)
+			})
+	if not bool(context.get("bound",true)):
+		return
+	_tracked_link(origin,target,context,_blood_profile(.76,2.0))
+	var oath:=_block_forced(VFX_PAINTED) as VFXBossTextureLayer3D
+	if oath!=null:
+		oath.play_layer(SERVANT_SACRIFICE_BURST_TEXTURE,{
+			"name":"ServantOath_BoundSeal","position":_lvl_foot(target,th,LEVEL_BODY),
+			"size":Vector2(1.24,1.24),"duration":1.1,
+			"start_scale":.14,"peak_scale":.92,"end_scale":1.06,
+			"dark_tint":SERVANT_DARK,"body_tint":SERVANT_BODY,"core_tint":SERVANT_CORE,
+			"flow_strength":.022,"opacity":.92,"delay":.50,"seed":seed+41.0
 		})
 
 func _blink_slash(origin:Vector3,target:Vector3,context:Dictionary={})->void:

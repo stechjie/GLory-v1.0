@@ -152,8 +152,15 @@ func _check_hud(replays: Array, kind: String) -> void:
 	var purse: Control = feedback.get_node_or_null("BattlePurse")
 	var kill := 0 if kind == "boss" else EconomyService.kill_gold_for_slot(replays[0].get("result", {}), 0)
 	var reward := int(Rules.rewards_by_slot(kind, replays).get(0, 0))
-	_h.expect(purse != null and int(purse.call("total")) == kill + reward, "%s_purse_total" % kind,
-		"purse must end at own kill gold %d + rank reward %d, got %s" % [kill, reward, str(purse.call("total")) if purse != null else "none"])
+	# 11.26：Boss 局钱袋结束时还要加上 Boss 奖励 / 补偿（和结算同一对函数），不能再停在 0。
+	var boss_gold := 0
+	if kind == "boss":
+		var boss_result: Dictionary = replays[0].get("result", {})
+		boss_gold = EconomyService.boss_win_reward(3) if bool(boss_result.get("player_wins", false)) \
+			else EconomyService.boss_loss_reward(3, int(boss_result.get("enemy_hp_current", 0)), maxi(1, int(boss_result.get("enemy_hp_max", 1))))
+		_h.expect(boss_gold > 0, "boss_purse_has_boss_gold", "this fixture must yield a boss reward so the purse case is not vacuous")
+	_h.expect(purse != null and int(purse.call("total")) == kill + reward + boss_gold, "%s_purse_total" % kind,
+		"purse must end at own kill gold %d + rank reward %d + boss gold %d, got %s" % [kill, reward, boss_gold, str(purse.call("total")) if purse != null else "none"])
 	if kind == "pvp":
 		_h.expect(feedback.get_node_or_null("DamageLeaderboard") != null and not bool(feedback.get("single_plate")),
 			"pvp_board_replaces_plate", "PvP must show the damage board and hide the single plate")

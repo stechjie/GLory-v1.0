@@ -432,7 +432,7 @@ func _settlement_preview(result: Dictionary) -> String:
 	if consolation_gold > 0:
 		lines.append(tr("settle_consolation") % [GameState.loss_streak + 1, consolation_gold])
 	if GameState.owned_treasures.has("def_formation_heal"):
-		var formation_heal := 1 if win or bool(result.get("is_draw", false)) else 2
+		var formation_heal := BattleSim.FORMATION_HEAL_WIN if win or bool(result.get("is_draw", false)) else BattleSim.FORMATION_HEAL_LOSS
 		lines.append(tr("settle_formation_heal") % formation_heal)
 	if GameState.owned_treasures.has("money_golden_altar") and GameState.golden_altar_uses == 0:
 		lines.append(tr("settle_altar_heal"))

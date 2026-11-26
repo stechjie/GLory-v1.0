@@ -157,7 +157,8 @@ func _probe_defense() -> void:
 		var a: Dictionary = u3[i]
 		var b: Dictionary = u4[i]
 		var hp_ratio := float(b.max_hp) / float(maxi(1, int(a.max_hp)))
-		var expected_def := int(round(float(a.defense) * 1.30)) + 10
+		# 11.26：铁壁之护 防御 +10 → +15。
+		var expected_def := int(round(float(a.defense) * 1.30)) + 15
 		var dodge_delta := float(b.get("dodge", 0.0)) - float(a.get("dodge", 0.0))
 		print("[defense] %s  hp %d -> %d (x%.3f)  def %d -> %d (expect %d)  dodge +%.2f" % [
 			str(a.uid), int(a.max_hp), int(b.max_hp), hp_ratio, int(a.defense), int(b.defense), expected_def, dodge_delta])

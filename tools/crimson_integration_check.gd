@@ -602,7 +602,7 @@ func _check_combat() -> void:
 	guard.skill_ready = 9.0
 	state = _state([guard], [], 2.0)
 	CrimsonCombat.pulse(state)
-	_h.expect(int(guard.hp) == 560 and float(guard.skill_ready) == 8.0 and int(guard.get("crimson_pulse_stacks", 0)) == 1, "pulse", "Crimson 7 pulse failed")
+	_h.expect(int(guard.hp) == 580 and float(guard.skill_ready) == 8.0 and int(guard.get("crimson_pulse_stacks", 0)) == 1, "pulse", "Crimson 7 pulse failed")
 	_h.expect(is_equal_approx(StatusEffectService.attack_multiplier(guard), 1.10) and is_equal_approx(StatusEffectService.attack_speed_multiplier(guard), 1.10), "pulse_first_stack", "First Crimson 7 stack did not raise attack and speed")
 	CrimsonCombat.tick_fighter(guard, 6.0)
 	_h.expect(int(guard.get("crimson_pulse_stacks", 0)) == 1, "pulse_permanent", "Crimson 7 stack expired before battle end")

@@ -22,12 +22,16 @@ const UnitVisualResolverScript := preload("res://effects/runtime/presentation/Un
 const QualityBudgetScript := preload("res://effects/vfx3d/core/VFXQualityBudget.gd")
 const Fixture := preload("res://scripts/qa/FixedBattleFixture.gd")
 
-const TOOL_VERSION := 1
+const TOOL_VERSION := 3
 const DEFAULT_SEED := 20260807
 const DEFAULT_ROUNDS: Array[int] = [1, 2]
 const DEFAULT_LOCALE := "en"
 const MIN_PERF_SAMPLES := 30
 const ROUND_TIMEOUT_SEC := 180.0
+const SLOW_SIMULATOR_PREPARE_MSEC := 180000
+# Software rendering can exceed six minutes even after all real warmup jobs complete.
+# This opt-in diagnostic limit does not change production playback or quality.
+const SLOW_SIMULATOR_ROUND_TIMEOUT_SEC := 900.0
 const SCREENSHOT_LABELS: Array[String] = ["start", "mid", "end"]
 
 # The lineup and match-state setup live in scripts/qa/FixedBattleFixture.gd so the
@@ -89,6 +93,8 @@ var _residue_samples: Array[Dictionary] = []
 # B4: the stress run needs to force a device tier rather than inherit MEDIUM.
 var _quality_tier := ""
 var _prep_warmup_sec := 0.0
+var _allow_slow_simulator_preparation := false
+var _round_timeout_sec := ROUND_TIMEOUT_SEC
 
 
 func _ready() -> void:
@@ -98,6 +104,13 @@ func _ready() -> void:
 	if not _ensure_dir(_out_dir):
 		get_tree().quit(1)
 		return
+	if _allow_slow_simulator_preparation:
+		if OS.get_name() != "iOS" or RenderingServer.get_video_adapter_name() != "Apple Software Renderer":
+			_record_failure("slow_simulator_preparation_unavailable",
+				"Explicit diagnostic mode requires iOS with Apple Software Renderer")
+			_finish_all()
+			return
+		_round_timeout_sec = SLOW_SIMULATOR_ROUND_TIMEOUT_SEC
 	DataRegistry.load_all()
 	LocaleManager.set_locale(_locale)
 	if not _quality_tier.is_empty():
@@ -129,8 +142,8 @@ func _process(delta: float) -> void:
 				_round_finishing = false
 				_start_next_round()
 		return
-	if Time.get_ticks_msec() - _round_started_msec > int(ROUND_TIMEOUT_SEC * 1000.0):
-		_record_failure("round_timeout", "Round exceeded %.0f seconds" % ROUND_TIMEOUT_SEC)
+	if Time.get_ticks_msec() - _round_started_msec > int(_round_timeout_sec * 1000.0):
+		_record_failure("round_timeout", "Round exceeded %.0f seconds" % _round_timeout_sec)
 		_abort_current_round()
 		return
 	if not _setup_seen:
@@ -330,7 +343,8 @@ func _start_next_round() -> void:
 		"tool_version": TOOL_VERSION,
 		"round": round_index,
 		"seed": _seed,
-		"quality_tier": _quality_tier if not _quality_tier.is_empty() else "MEDIUM",
+		"quality_tier": str(QualityBudgetScript.Tier.find_key(QualityBudgetScript.tier)),
+		"quality_tier_forced": not _quality_tier.is_empty(),
 		"locale": _locale,
 		"kind": str(_replay.get("kind", "")),
 		"roster_count": roster.size(),
@@ -395,8 +409,41 @@ func _start_next_round() -> void:
 	_hook_presentation_director()
 	add_child(_screen)
 	_round_started_msec = Time.get_ticks_msec()
+	if _allow_slow_simulator_preparation and not _apply_slow_simulator_preparation():
+		_abort_current_round()
+		return
 	print("[D0BASELINE] round=%d roster=%d frames=%d events=%d replay_sha=%s" % [
 		round_index, roster.size(), frames.size(), int(event_summary.get("event_count", 0)), replay_1_sha])
+
+
+func _apply_slow_simulator_preparation() -> bool:
+	# QA opt-in only, after _ready() reaches its first asynchronous wait. The
+	# production scene, draw jobs, assets and actual playback remain unchanged.
+	# Warmup captures its wall cutoff on entry: reject a late injection rather
+	# than claiming a larger preparation budget that it never received.
+	if not is_instance_valid(_screen):
+		_record_failure("slow_simulator_preparation_no_screen", "BattleScreen exited before the diagnostic budget could be applied")
+		return false
+	var preparation: Dictionary = _screen.get("battle_preparation_report") as Dictionary
+	var old_deadline := int(_screen.get("_battle_prepare_deadline_msec"))
+	var mono_msec := int(_screen.get("_mono_msec"))
+	if old_deadline <= 0 or preparation.has("models") or preparation.has("effects") or bool(_screen.get("_battle_setup_ready")):
+		_record_failure("slow_simulator_preparation_too_late", "Preparation did not yield before render warmup; deadline was not changed")
+		return false
+	var new_deadline := mono_msec + SLOW_SIMULATOR_PREPARE_MSEC
+	var policy := {"diagnostic_only": true,
+		"scope": "Apple Software Renderer observation only; not production preparation acceptance or device performance",
+		"os": OS.get_name(), "video_adapter": RenderingServer.get_video_adapter_name(),
+		"applied_before_render_warmup": true, "mono_msec_at_apply": mono_msec,
+		"production_deadline_msec": old_deadline, "diagnostic_deadline_msec": new_deadline,
+		"diagnostic_prepare_budget_msec": SLOW_SIMULATOR_PREPARE_MSEC,
+		"render_warmup_own_cap_msec": BattleRenderWarmup.MAX_TOTAL_MSEC,
+		"round_wall_timeout_sec": _round_timeout_sec}
+	_screen.set("_battle_prepare_deadline_msec", new_deadline)
+	preparation["diagnostic_policy"] = policy.duplicate(true)
+	_current_summary["diagnostic_policy"] = policy
+	_write_json(_round_dir.path_join("diagnostic_policy.json"), policy)
+	return true
 
 
 # BattleRenderer marks every encountered unit in the account-level codex. Seed the
@@ -411,10 +458,27 @@ func _prime_profile_seen(roster: Dictionary) -> void:
 			PlayerProfile.codex_seen.append(unit_id)
 
 
-func _on_battle_finished(_result: Dictionary) -> void:
+func _on_battle_finished(result: Dictionary) -> void:
 	if _round_finishing:
 		return
 	_round_finishing = true
+	# The signal also carries preparation failures. Preserve its actual result
+	# before freeing the screen; the simulated replay result is a separate fact.
+	_current_summary["battle_finished_result"] = result.duplicate(true)
+	_current_summary["setup_ready_observed"] = _setup_seen
+	_current_summary["setup_ready_at_finish"] = is_instance_valid(_screen) and bool(_screen.get("_battle_setup_ready"))
+	_current_summary["playback_complete_observed"] = _playback_complete_seen
+	_current_summary["completion_elapsed_ms"] = Time.get_ticks_msec() - _round_started_msec
+	var preparation: Dictionary = _current_summary.get("preparation", {}).duplicate(true)
+	if is_instance_valid(_screen):
+		preparation.merge(_screen.get("battle_preparation_report") as Dictionary, true)
+	_current_summary["preparation"] = preparation
+	_write_json(_round_dir.path_join("preparation.json"), preparation)
+	_write_json(_round_dir.path_join("battle_finished_result.json"), result)
+	var runtime_error := str(result.get("error", ""))
+	if not runtime_error.is_empty():
+		_record_failure(runtime_error, "BattleScreen emitted battle_finished(error); setup_ready=%s, replay_frame=%d" % [
+			str(_current_summary["setup_ready_at_finish"]), int(_screen.get("_replay_frame")) if is_instance_valid(_screen) else -1])
 	if _capture_screenshots and not _has_screenshot("end"):
 		_capture_screenshot("end", int(_screen.get("_replay_frame")))
 	_finish_current_round()
@@ -468,11 +532,14 @@ func _finish_all() -> void:
 	var manifest := {
 		"tool": "battle_presentation_baseline",
 		"tool_version": TOOL_VERSION,
+		"diagnostic_only": _allow_slow_simulator_preparation,
+		"round_wall_timeout_sec": _round_timeout_sec,
 		"generated_utc": Time.get_datetime_string_from_system(true, false),
 		"project_path": ProjectSettings.globalize_path("res://"),
 		"project_version": str(ProjectSettings.get_setting("application/config/version", "")),
 		"git_commit": _git_commit,
 		"godot": Engine.get_version_info(),
+		"monitor_availability": _monitor_availability(),
 		"os": OS.get_name(),
 		"processor": OS.get_processor_name(),
 		"video_adapter": RenderingServer.get_video_adapter_name(),
@@ -738,10 +805,10 @@ func _record_performance_sample(delta: float, replay_frame: int) -> void:
 		"video_mb": video_mb,
 		"texture_mb": texture_mb,
 		"buffer_mb": buffer_mb,
-		"static_mb": static_mb,
+		"static_mb": static_mb if OS.is_debug_build() else null,
 		"objects": objects,
 		"nodes": nodes,
-		"orphans": orphans,
+		"orphans": orphans if OS.is_debug_build() else null,
 		"draw_calls": draw_calls,
 		"tweens": tweens,
 	})
@@ -749,7 +816,7 @@ func _record_performance_sample(delta: float, replay_frame: int) -> void:
 
 func _performance_summary() -> Dictionary:
 	if _perf_deltas_ms.is_empty():
-		return {"sample_count": 0, "average_fps": 0.0, "one_percent_low_fps": 0.0}
+		return {"sample_count": 0, "average_fps": 0.0, "one_percent_low_fps": 0.0, "monitor_availability": _monitor_availability()}
 	var total_ms := 0.0
 	for value in _perf_deltas_ms:
 		total_ms += value
@@ -792,9 +859,12 @@ func _performance_summary() -> Dictionary:
 		mem_delta = {
 			"video_mb": float(last.get("video_mb", 0.0)) - float(first.get("video_mb", 0.0)),
 			"texture_mb": float(last.get("texture_mb", 0.0)) - float(first.get("texture_mb", 0.0)),
-			"static_mb": float(last.get("static_mb", 0.0)) - float(first.get("static_mb", 0.0)),
+			"static_mb": float(last.get("static_mb", 0.0)) - float(first.get("static_mb", 0.0)) if OS.is_debug_build() else null,
 		}
+	if not OS.is_debug_build():
+		mem_delta["static_mb"] = null
 	return {
+		"monitor_availability": _monitor_availability(),
 		"sample_count": _perf_deltas_ms.size(),
 		"average_fps": average_fps,
 		"one_percent_low_fps": one_percent_low,
@@ -811,10 +881,10 @@ func _performance_summary() -> Dictionary:
 		"peak_video_mb": _peak_video_mb,
 		"peak_texture_mb": _peak_texture_mb,
 		"peak_buffer_mb": _peak_buffer_mb,
-		"peak_static_mb": _peak_static_mb,
+		"peak_static_mb": _peak_static_mb if OS.is_debug_build() else null,
 		"peak_objects": _peak_objects,
 		"peak_nodes": _peak_nodes,
-		"peak_orphans": _peak_orphans,
+		"peak_orphans": _peak_orphans if OS.is_debug_build() else null,
 		"peak_draw_calls": _peak_draw_calls,
 		"peak_tweens": _peak_tweens,
 		# 粒子按 PARTICLE_SAMPLE_EVERY 帧抽样，所以是"抽样峰值"而不是绝对峰值。
@@ -912,6 +982,14 @@ func _viewport_metadata() -> Dictionary:
 	}
 
 
+func _monitor_availability() -> Dictionary:
+	# These Godot 4.7 monitors return placeholder zero in a release template.
+	# Null in JSON/CSV means unavailable; it must not be read as a measured zero.
+	return {"debug_build": OS.is_debug_build(), "static_mb": OS.is_debug_build(),
+		"orphans": OS.is_debug_build(),
+		"unavailable_reason": "MEMORY_STATIC and orphan count require DEBUG_ENABLED" if not OS.is_debug_build() else ""}
+
+
 func _monitor_mb(monitor: int) -> float:
 	return float(Performance.get_monitor(monitor)) / 1048576.0
 
@@ -973,7 +1051,7 @@ func _sample_residue() -> void:
 	_residue_samples.append({
 		"before_round": _current_round(),
 		"nodes": int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)),
-		"orphans": int(Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)),
+		"orphans": int(Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)) if OS.is_debug_build() else null,
 		"objects": int(Performance.get_monitor(Performance.OBJECT_COUNT)),
 		"tweens": get_tree().get_processed_tweens().size(),
 	})
@@ -987,7 +1065,7 @@ func _check_cross_battle_residue() -> void:
 	# A small drift is normal (autoloads warm caches on the first battle); a
 	# presentation leak looks like tens or hundreds of nodes surviving each round.
 	var node_growth := int(last.get("nodes", 0)) - int(first.get("nodes", 0))
-	var orphan_growth := int(last.get("orphans", 0)) - int(first.get("orphans", 0))
+	var orphan_growth := int(last.get("orphans", 0)) - int(first.get("orphans", 0)) if OS.is_debug_build() else 0
 	if node_growth > 200:
 		_record_failure("cross_battle_node_growth",
 			"node count between rounds grew by %d" % node_growth)
@@ -1128,6 +1206,8 @@ func _summary_markdown(manifest: Dictionary) -> String:
 
 
 func _csv_cell(value: Variant) -> String:
+	if value == null:
+		return "" # Unavailable monitor; see manifest.monitor_availability.
 	var text := str(value)
 	if text.contains(",") or text.contains("\"") or text.contains("\n"):
 		return "\"%s\"" % text.replace("\"", "\"\"")
@@ -1181,6 +1261,10 @@ func _parse_arguments() -> void:
 				for i in mini(ids.size(), 12):
 					(lanes[i / 4] as Array).append(ids[i].strip_edges())
 				Fixture.lineup_b_override = lanes
+			"--allow-slow-simulator-preparation":
+				_allow_slow_simulator_preparation = true
+				index += 1
+				continue
 			"--no-screenshots":
 				_capture_screenshots = false
 				index += 1

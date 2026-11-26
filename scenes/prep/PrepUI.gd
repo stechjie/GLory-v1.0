@@ -2212,6 +2212,8 @@ func _close_carrot_camp() -> void:
 	_report_carrot_camp_state()
 
 func _on_carrot_dimmer_input(event: InputEvent) -> void:
+	if SafeArea.uses_ios_layout() and event is InputEventMouseButton and event.canceled:
+		return  # UIKit 布局中断不是关闭营地的点击。
 	var mouse_release: bool = event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed
 	var touch_release: bool = event is InputEventScreenTouch and event.index == 0 and not event.pressed \
 		and not event.canceled and not bool(ProjectSettings.get_setting("input_devices/pointing/emulate_mouse_from_touch", true))

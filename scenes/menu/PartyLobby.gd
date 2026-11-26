@@ -265,6 +265,7 @@ func _ready() -> void:
 	MUSIC_SERVICE.end_match()
 	MUSIC_SERVICE.play_group(MUSIC_SERVICE.MENU_GROUP, true)
 	get_viewport().size_changed.connect(_layout)
+	# 安全区一变就重排：左右两块贴安全区边（所有平台）；iOS 整页还按安全区缩放（11-25 Duo 适配）。
 	if not SafeArea.changed.is_connected(_layout):
 		SafeArea.changed.connect(_layout)
 	_layout()
@@ -555,13 +556,17 @@ func _build_friends() -> void:
 
 
 func _layout() -> void:
-	var viewport_size := get_viewport_rect().size
-	if viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
+	# 排版区域：iOS（含 iPhone Duo 分屏 / 折叠）整页只在安全区里排（11-25 iOS 适配，原来只摆 _canvas 就 return，
+	# 合并 11-26 四块拆分后左右两块和浮层会漏摆，所以并成一条路）；其它平台按整个屏幕算。
+	var area := Rect2(Vector2.ZERO, get_viewport_rect().size)
+	if SafeArea.uses_ios_layout():
+		area = SafeArea.rect()
+	if area.size.x <= 0.0 or area.size.y <= 0.0:
 		return
 	# 比例和中间那块的位置按整个屏幕算（宠物舞台 MainMenuPet 也是这么算的，两边要对得上）；
 	# 左右两块贴安全区的边：iPhone 横屏的灵动岛 / 圆角让出来，更宽的屏上跟着贴边。
-	var factor := minf(viewport_size.x / REF.x, viewport_size.y / REF.y)
-	var origin := (viewport_size - REF * factor) * 0.5
+	var factor := minf(area.size.x / REF.x, area.size.y / REF.y)
+	var origin := area.position + (area.size - REF * factor) * 0.5
 	var safe := SafeArea.rect()
 	var left_x := safe.position.x
 	var right_x := safe.end.x - REF.x * factor

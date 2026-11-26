@@ -2,14 +2,14 @@
   "ios": {
     "ready": true,
     "url": "https://testflight.apple.com/join/W2p1ukJp",
-    "version": "1.0.2 (116)"
+    "version": "1.0.2 (120)"
   },
   "android": {
     "ready": true,
     "mode": "apk",
-    "url": "https://test-api.gogoglory.com/beta/downloads/Glory-1.0.2-75-android.apk",
-    "version": "1.0.2 (75)",
-    "size_bytes": 740418233,
-    "size_label": "706.1 MiB"
+    "url": "https://test-api.gogoglory.com/beta/downloads/Glory-1.0.2-78-android.apk",
+    "version": "1.0.2 (78)",
+    "size_bytes": 726547825,
+    "size_label": "692.9 MiB"
   }
 }

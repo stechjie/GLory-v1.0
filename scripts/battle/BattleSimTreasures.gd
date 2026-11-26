@@ -200,7 +200,8 @@ static func _apply_attack_treasure_effects(attacker: Dictionary, target: Diction
 		_set_treasure_cd(attacker, "ctrl_corrosive_needle", float(state.elapsed), 5.0)
 	if _f_has_treasure(attacker, "ctrl_interrupt_chain") and _treasure_ready(attacker, "ctrl_interrupt_chain", float(state.elapsed)):
 		if RngService.rng.randf() < 0.25:
-			StatusEffectService.interrupt(target, 1.5)
+			# 11.26 用户定：缴械 1.5 → 2 秒。
+			StatusEffectService.interrupt(target, 2.0)
 			if _f_has_linkage(attacker, "link_paralysis_shackles"):
 				_apply_attribute_effect("ice", attacker, target)
 				StatusEffectService.add_status(target, "ice_vulnerable", 4.0, {"pct": 0.25})
@@ -219,7 +220,12 @@ static func _apply_opening_treasures(player: Array, event_log: Array[String]) ->
 		if _ignores_treasure(f):
 			continue
 		if _f_has_treasure(f, "def_iron_wall"):
-			f.defense = int(f.get("defense", 0)) + 10
+			# 11.26 用户定：防御 +10 → 防御 +15、魔抗 +20。
+			# 没填魔抗的单位平时按防御当魔抗算（DamageService.effective_magic_resist），
+			# 所以先按加成前的防御取底，再各加各的。
+			var wall_mres_base := int(f.get("mres", 0)) if f.has("mres") else int(f.get("defense", 0))
+			f.defense = int(f.get("defense", 0)) + 15
+			f.mres = wall_mres_base + 20
 		# 11.01：生命丰碑、血契、宠物与防御套 / 金钱套同进开场加法池（_add_open_pct），
 		# 闪避按 1-(1-a)(1-b) 叠加。
 		if _f_has_treasure(f, "def_life_monument"):
@@ -855,11 +861,12 @@ static func _apply_human_rally_step(state: Dictionary, f: Dictionary) -> void:
 
 
 # ---------------------------------------------------------------------------
-# 神族 7（9.24 改）：第 1 秒起每 5 秒，全队（不含佣兵 / 法阵友军）无敌 1 秒。
+# 神族 7（9.24 改，11.26 调）：第 3 秒起每 5 秒，全队（不含佣兵 / 法阵友军）无敌 1.25 秒。
 # 只免普攻与技能伤害；中毒 / 流血 / 灼烧照吃（invulnerable 带 dot_pass，见 DamageService）。
-const GOD_PULSE_FIRST_TICK := 10    # 1.0 秒
+# 11.26 用户定：首次 1.0 → 3.0 秒，无敌 1.0 → 1.25 秒。
+const GOD_PULSE_FIRST_TICK := 30    # 3.0 秒
 const GOD_PULSE_PERIOD_TICKS := 50  # 5.0 秒
-const GOD_PULSE_DURATION := 1.0
+const GOD_PULSE_DURATION := 1.25
 
 static func _apply_god_divine_pulse(state: Dictionary, alive: Array) -> void:
 	var tick := int(round(float(state.elapsed) / TICK_SEC))
