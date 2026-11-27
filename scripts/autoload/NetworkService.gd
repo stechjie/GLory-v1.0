@@ -629,6 +629,7 @@ var _pong_gap_logged := false             # 心跳静默告警去重（属于 Tr
 # --- 服务器权威回合同步（客户端） ---
 var server_round_index := 0               # 服务器广播的权威回合号（0=未知）
 var server_phase := ""                    # 服务器广播的房间阶段
+var last_seat_room_state: Dictionary = {}
 var _last_team_submission: Dictionary = {} # 最后一次提交的棋盘（被拒后校准重交用）
 var _resync_resubmitted_round := 0        # 防重交循环：每回合只自动补交一次
 # --- 断线重连（服务器） ---
@@ -4120,6 +4121,28 @@ func shop_refresh_error_text(reason: String) -> String:
 		return unknown_outcome_text()
 	return "商店刷新失败：%s" % reason
 
+func _server_board_balance() -> Dictionary:
+	# RESULT announces the next round before simulation has necessarily settled.
+	# Only an actual prep or board-collection snapshot can seed that round's gold.
+	if is_host or spectating or server_phase not in [ROOM_PREP, ROOM_BATTLE]:
+		return {}
+	if int(last_seat_room_state.get("round_id", -1)) != server_round_index:
+		return {}
+	var economy: Dictionary = last_seat_room_state.get("economy", {})
+	var balance: Dictionary = economy if bool(economy.get("authoritative", false)) else last_seat_room_state
+	if not balance.has("gold"):
+		return {}
+	return {"gold": int(balance.gold), "gold_spent_this_round": bool(economy.get("gold_spent_this_round", false))}
+
+
+func _align_round_from_room_state(balance: Dictionary) -> void:
+	if balance.is_empty() or server_round_index <= GameState.round_index:
+		return
+	GameState.gold = int(balance.gold)
+	GameState.gold_spent_this_round = bool(balance.gold_spent_this_round)
+	GameState.round_index = server_round_index
+
+
 func team_begin_round() -> void:
 	team_asset_prefetch = {}
 	team_boards = {}
@@ -4130,9 +4153,8 @@ func team_begin_round() -> void:
 	# 权威回合对齐：本地回合号落后服务器（重连/漏包后遗症）时，提交棋盘会被
 	# wrong_round 拒收、整轮卡死。进新回合是安全的对齐时机（不会打断战斗播放）。
 	# 只升不降：结算阶段客户端可以合法领先服务器一轮（见 _room_begin_next_prep 惰性推进）。
-	if not is_host and server_round_index > GameState.round_index:
-		_net_log("round aligned to server: %d -> %d" % [GameState.round_index, server_round_index])
-		GameState.round_index = server_round_index
+	if server_round_index > GameState.round_index:
+		_align_round_from_room_state(_server_board_balance())
 	# Enter per-round prep: real players must re-ready this round; dummies stay ready.
 	team_round_active = true
 	if is_host:
@@ -4681,20 +4703,35 @@ func clear_last_team_submission() -> void:
 	_last_team_submission = {}
 
 
-func team_submit_board(snapshot: Dictionary) -> void:
+func team_submit_board(snapshot: Dictionary) -> bool:
 	if not team_active or team_local_slot < 0:
-		return
-	# 提交前校准：快照回合号落后服务器权威值就重盖戳，否则会被 wrong_round 静默拒收
-	if not is_host and server_round_index > int(snapshot.get("round", 0)):
+		return false
+	# A cached board can outlive a battle while the client is suspended. Restamp
+	# its round and economic fields together; same-round purchases stay local.
+	var submitted_round := int(snapshot.get("round", 0))
+	if not is_host and server_round_index > 0 and submitted_round != server_round_index:
+		var balance := _server_board_balance()
+		if balance.is_empty():
+			return false
+		_align_round_from_room_state(balance)
 		snapshot = snapshot.duplicate(true)
 		snapshot.round = server_round_index
-		GameState.round_index = maxi(GameState.round_index, server_round_index)
-	_last_team_submission = snapshot
+		if submitted_round < server_round_index and GameState.round_index == server_round_index:
+			snapshot.gold = GameState.gold
+			snapshot.gold_spent_this_round = GameState.gold_spent_this_round
+		else:
+			# A future board's wallet does not belong to the server's earlier round.
+			snapshot.gold = balance.gold
+			snapshot.gold_spent_this_round = balance.gold_spent_this_round
 	if is_host:
+		_last_team_submission = snapshot
 		_team_boards_collecting[team_local_slot] = snapshot
 		_team_try_finalize_boards()
-	else:
-		_rpc_team_submit_board.rpc_id(1, team_local_slot, snapshot)
+		return true
+	if rpc_id(1, &"_rpc_team_submit_board", team_local_slot, snapshot) != OK:
+		return false
+	_last_team_submission = snapshot
+	return true
 
 func _team_try_finalize_boards() -> void:
 	if not is_host:
@@ -4833,12 +4870,12 @@ func _rpc_team_boards(boards: Dictionary, seed: int) -> void:
 @rpc("authority", "call_remote", "reliable")
 func _rpc_board_rejected(reason: String) -> void:
 	_net_log("board rejected by server: %s (authoritative round=%d)" % [reason, server_round_index])
-	if _last_team_submission.is_empty() or _resync_resubmitted_round == server_round_index:
+	if not reason.begins_with("wrong_round") or _last_team_submission.is_empty() or _resync_resubmitted_round == server_round_index:
 		return
-	_resync_resubmitted_round = server_round_index
-	var snap: Dictionary = _last_team_submission.duplicate(true)
-	snap.round = server_round_index
-	team_submit_board(snap)
+	if server_round_index <= 0 or int(_last_team_submission.get("round", 0)) == server_round_index:
+		return
+	if team_submit_board(_last_team_submission):
+		_resync_resubmitted_round = server_round_index
 
 # 看门狗代交 / 重连补交时复用上一轮缓存棋盘（C6）。
 # 旧实现直接 `boards[i] = last_board[i]`：那份快照带的是**上一轮**的 round 与 gold，
@@ -4852,6 +4889,8 @@ func _restamp_cached_board(room: Dictionary, slot: int, cached: Variant) -> Dict
 		return {}
 	var round_index := int(room.get("round_index", 1))
 	var snap: Dictionary = (cached as Dictionary).duplicate(true)
+	if int(snap.get("round", 0)) < round_index:
+		snap["gold_spent_this_round"] = bool(_room_prep(room, slot).get("gold_spent_this_round", false))
 	snap["round"] = round_index
 	# 金币以服务端记录为准，不用快照里那份上一轮的。
 	var slot_gold: Array = room.get("slot_gold", [])
@@ -4865,9 +4904,9 @@ func _restamp_cached_board(room: Dictionary, slot: int, cached: Variant) -> Dict
 		var restamped: Dictionary = validation.get("snapshot", {})
 		_room_clamp_growth(room, slot, restamped)
 		return restamped
-	_net_log("cached board restamp failed room=%d slot=%d reason=%s (using raw cache)" % [
+	_net_log("cached board validation failed room=%d slot=%d reason=%s (retaining cached lineup with current round and balance)" % [
 		int(room.get("id", 0)), slot, str(validation.get("reason", ""))])
-	return cached as Dictionary
+	return snap
 
 func _room_try_finalize_boards(room: Dictionary) -> void:
 	# 守卫收进函数内部。此前安全完全靠 5 个调用点各自先判 ROOM_BATTLE——漏一个就会
@@ -5985,6 +6024,7 @@ func reset() -> void:
 	_last_pong_at = 0.0
 	server_round_index = 0
 	server_phase = ""
+	last_seat_room_state = {}
 	_last_team_submission = {}
 	_resync_resubmitted_round = 0
 	_clear_pending_ready()
@@ -7029,6 +7069,7 @@ func _rpc_room_state(envelope: Dictionary) -> void:
 	var was_public_resuming := _public_resume_pending
 	_public_resume_pending = false
 	_match_state.mark_applied(epoch, seq)
+	last_seat_room_state = payload
 	team_seat_pets = (payload.get("seat_pets", {}) as Dictionary).duplicate(true)
 	team_carrot_harvest_gains = (payload.get("carrot_harvest_gains", {}) as Dictionary).duplicate(true)
 	team_carrot_harvest_round = int(payload.get("carrot_harvest_round", -1))
@@ -9097,6 +9138,7 @@ func _rpc_settlement_room_switch() -> void:
 		team_room_id, int(latest_match_state.get("completed_round", 0))])
 	latest_match_state = {}
 	server_phase = ""
+	last_seat_room_state = {}
 	room_chat_log.clear()
 	_match_state.reset_applied()
 	_clear_pending_ready("settlement room switch")

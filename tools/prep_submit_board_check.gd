@@ -190,6 +190,69 @@ func _exercise() -> void:
 	await _settle()
 	h.expect(int(((room2.get("boards", {}) as Dictionary).get(3, {}) as Dictionary).get("gold", -1)) == gold_before,
 		"battle_rejects_duplicate", "BATTLE 阶段重复提交被拒（一回合一份）")
+	await _check_background_resubmission(b, room2)
+
+
+func _check_background_resubmission(client: Node, room: Dictionary) -> void:
+	var slot := 3
+	var old_board := _snap(100)
+	old_board.gold_spent_this_round = true
+	room.state = server.ROOM_PREP
+	room.round_index = 2
+	room.slot_gold[slot] = 145
+	var recovered: Dictionary = server._build_room_state(room, slot)
+	var cached: Dictionary = server._restamp_cached_board(room, slot, old_board)
+	h.expect(cached.round == 2 and cached.gold == 145 and not cached.gold_spent_this_round,
+		"offline_board_balance", "看门狗代交应采用本轮余额和消费标记")
+	client.team_local_slot = slot
+	client.server_phase = server.ROOM_RESULT
+	client.server_round_index = 2
+	GameState.round_index = 1
+	GameState.gold = 100
+	GameState.gold_spent_this_round = true
+	client.team_begin_round()
+	h.expect(GameState.round_index == 1 and GameState.gold == 100,
+		"pending_result", "RESULT 通知中的下一轮号不能提前跳过结算")
+	client.server_phase = server.ROOM_PREP
+	client.last_seat_room_state = recovered
+	client.team_submit_board(old_board)
+	await _settle()
+	h.expect(GameState.round_index == 2 and GameState.gold == 145 and not GameState.gold_spent_this_round,
+		"cross_round_submit", "跨回合交棋盘时同步战后余额")
+	var accepted: Dictionary = room.boards[slot]
+	h.expect(accepted.round == 2 and accepted.gold == 145 and not accepted.gold_spent_this_round,
+		"server_received_balance", "服务端下次结算从纠正后的余额开始")
+	# A rejection for an older submission arrives after the player spent 40.
+	GameState.gold = 105
+	GameState.gold_spent_this_round = true
+	client._last_team_submission = old_board
+	client._rpc_board_rejected("wrong_round:1")
+	await _settle()
+	accepted = room.boards[slot]
+	h.expect(accepted.round == 2 and accepted.gold == 105 and accepted.gold_spent_this_round,
+		"retry_after_purchase", "重交缓存棋盘时保留本轮已完成的购买")
+	client.server_round_index = 3
+	recovered.round_id = 3
+	recovered.economy = {"authoritative": true, "gold": 160, "gold_spent_this_round": true}
+	client.team_begin_round()
+	h.expect(GameState.round_index == 3 and GameState.gold == 160 and GameState.gold_spent_this_round,
+		"ledger_round_alignment", "权威模式跨轮校准采用账本余额与消费标记")
+	room.round_index = 3
+	var future_board := _snap(250)
+	future_board.round = 4
+	client._last_team_submission = future_board
+	GameState.round_index = 4
+	GameState.gold = 250
+	client.last_seat_room_state = {}
+	client._rpc_board_rejected("wrong_round:4")
+	h.expect(client._resync_resubmitted_round != 3, "retry_without_snapshot",
+		"缺少校准快照时保留本轮重交机会")
+	client.last_seat_room_state = recovered
+	client._rpc_board_rejected("wrong_round:4")
+	await _settle()
+	accepted = room.boards[slot]
+	h.expect(accepted.round == 3 and accepted.gold == 160 and accepted.gold_spent_this_round,
+		"ahead_of_server", "客户端超前时重交服务端当轮余额，避免用未来收益覆盖旧轮")
 
 
 func _snap(gold: int) -> Dictionary:

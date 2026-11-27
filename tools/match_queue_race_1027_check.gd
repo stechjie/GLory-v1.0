@@ -29,6 +29,8 @@ class QueueProbe extends "res://scenes/menu/MatchQueuePanel.gd":
 			await release
 		return response
 	func _request_match_state() -> Dictionary:
+		if pause:
+			await release
 		return response
 
 var h := Harness.new("match_queue_race_1027")
@@ -40,6 +42,8 @@ func _run() -> void:
 	NetworkService.set_process(false)
 	for locale in ["zh", "en"]:
 		LocaleManager.set_locale(locale)
+		_countdown_updates()
+		_delayed_confirmations()
 		for mode in ["casual", "casual_normal", "ranked", "ranked_normal"]:
 			var main := MainProbe.new()
 			add_child(main)
@@ -79,6 +83,92 @@ func _run() -> void:
 		h.expect(q._state == "ready" and counts[0] == 1, "terminal_ready", "Late HTTP replies cannot undo ready or start a second connection")
 		q.free()
 	h.finish(get_tree())
+
+func _countdown_updates() -> void:
+	var q := _queue()
+	q.configure("ranked")
+	q._apply({"state": "queued"})
+	q._queue_started_msec = Time.get_ticks_msec() - 7100
+	q._process(0.0)
+	var waiting := q._detail.text
+	q._on_realtime_message({"t": "match", "state": "queued", "position": 1})
+	h.expect(waiting.ends_with("\n8...") and q._detail.text == waiting, "queue_clock_no_flash",
+		"Repeated queued snapshots must preserve elapsed wait time immediately")
+	q.pause = true
+	q.response = {"code": 200, "body": {"state": {"state": "queued"}}}
+	q._poll()
+	var seats := [{"team": 0, "seat": 0, "name": "P1", "accepted": false}]
+	var found := {"t": "match", "state": "found", "match_uid": "A", "accept_sec": 6, "seats": seats}
+	q._on_realtime_message(found)
+	q.release.emit()
+	h.expect(q._state == "found", "old_queue_poll_during_confirmation",
+		"A delayed queued poll must not flash the panel back from match confirmation")
+	var chip := q._roster.get_child(0).get_child(0)
+	var before := q._title.text
+	found.accept_sec = 28
+	q._apply(found)
+	h.expect(before.ends_with("6") and q._title.text == before, "confirmation_clock_no_rewind",
+		"Older responses must not extend the same match's countdown")
+	seats[0].accepted = true
+	found.accept_sec = 2
+	q._apply(found)
+	h.expect(q._title.text.ends_with("2") and q._roster.get_child(0).get_child(0) == chip and
+		chip.get_node("ConfirmTick").visible, "confirmation_updates_in_place",
+		"A shorter deadline and confirmation mark must update without recreating portraits")
+	found.match_uid = "B"
+	found.accept_sec = 30
+	q._apply(found)
+	h.expect(q._title.text.ends_with("30"), "new_match_fresh_deadline",
+		"A new match has its own full confirmation window")
+	q.free()
+
+func _delayed_confirmations() -> void:
+	var q := _queue()
+	var seats := [{"team": 0, "seat": 0, "me": true, "accepted": false},
+		{"team": 0, "seat": 1, "name": "P2", "accepted": false}]
+	var found := {"state": "found", "match_uid": "A", "seats": seats, "accept_sec": 12}
+	q._apply(found)
+	q.pause = true
+	var response := found.duplicate(true)
+	response.accepted = true
+	response.seats[0].accepted = true
+	q.response = {"code": 200, "body": {"state": response}}
+	q._on_accept()
+	seats[1].accepted = true
+	q._apply(found)
+	q.release.emit()
+	q._apply({"state": "found", "match_uid": "A", "seats": []})
+	var row := q._roster.get_child(0)
+	h.expect(q._accepted and q._accept_btn.disabled and q._roster.visible and
+		row.get_child(0).get_node("ConfirmTick").visible and row.get_child(1).get_node("ConfirmTick").visible,
+		"late_or_sparse_accept_preserves_marks", "Same-match snapshots can only add confirmations")
+	q._apply({"state": "found", "match_uid": "B"})
+	h.expect(not q._accepted and not q._roster.visible, "new_table_clears_roster",
+		"A new match starts with its own confirmations even if its first snapshot lacks seats")
+	q.free()
+	for destination in ["queued", "found"]:
+		for reply in ["found", "ready"]:
+			q = _queue()
+			q._apply({"state": "found", "match_uid": "A"})
+			q.pause = true
+			q.response = {"code": 200, "body": {"state": {"state": reply, "match_uid": "A", "accepted": true}}}
+			q._on_accept()
+			q._apply({"state": destination, "match_uid": "B", "accept_sec": 29})
+			q.release.emit()
+			h.expect(q._state == destination and not q._accepted and not q._leave_btn.disabled,
+				"old_table_accept_after_" + destination + "_" + reply,
+				"An old acceptance response cannot re-open or start a dissolved table")
+			q.free()
+	q = _queue()
+	q._apply({"state": "found", "match_uid": "A"})
+	q.pause = true
+	q.response = {"code": 200, "body": {"state": {"state": "ready", "match_uid": "A"}}}
+	q._on_accept()
+	q._apply({"state": "found", "match_uid": "A", "accept_sec": 1})
+	q.release.emit()
+	h.expect(q._state == "ready", "current_assignment_wins",
+		"The final allocation for the current match still enters after intermediate updates")
+	q.free()
 
 func _queue() -> QueueProbe:
 	var q := QueueProbe.new()

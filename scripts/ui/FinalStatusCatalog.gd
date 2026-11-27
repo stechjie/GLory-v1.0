@@ -43,4 +43,5 @@ static func _display_text(value: Variant) -> String:
 	var debug_start := result.find("\n表内字段")
 	if debug_start >= 0:
 		result = result.substr(0, debug_start)
+	result = result.trim_suffix("（写在普攻里，不是羁绊，任何人族棋子都吃）")
 	return result.replace("代码里没有上限", "无层数上限").replace("（计入 bonus_gold）", "")
