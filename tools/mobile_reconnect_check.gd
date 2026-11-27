@@ -1,5 +1,6 @@
 extends "res://tools/replay_transport_check.gd"
 const MobilePeer := preload("res://tools/mobile_reconnect_peer.gd")
+const MainProbe := preload("res://tools/resume_battle_gold_check.gd").MainProbe
 
 func endpoint(label: String, peer: ENetMultiplayerPeer) -> Node:
 	var branch := Node.new()
@@ -97,16 +98,48 @@ func exercise_resume() -> void:
 	await wait_reply(fresh, 2, 3)
 	h.expect(room.state == server.ROOM_LOBBY and bool(room.ready[0]),
 		"lobby_resume_keeps_ready", "Lobby reconnect preserves explicit readiness without starting a game")
+	await check_missed_round_reward(room, fresh)
 	room.state = server.ROOM_RESULT
+	room.round_index = 21
+	room.battle_id = "%d:21:1" % int(room.id)
 	room.run_over = true
 	room.last_match_state = {0: {"completed_round": 21, "run_over": true, "gold": 321}}
 	fresh._rpc_resume_request.rpc_id(1, "mobile_test_token")
-	await wait_reply(fresh, 2, 4)
-	h.expect(fresh.room_snapshots.size() == 4, "finished_room_resume", "Finished room accepts its retained seat credential")
-	if fresh.room_snapshots.size() == 4:
-		var payload: Dictionary = fresh.room_snapshots[3].get("payload", {})
+	await wait_reply(fresh, 2, 5)
+	h.expect(fresh.room_snapshots.size() == 5, "finished_room_resume", "Finished room accepts its retained seat credential")
+	if fresh.room_snapshots.size() == 5:
+		var payload: Dictionary = fresh.room_snapshots[4].get("payload", {})
 		h.expect(payload.get("completed_settlement", {}).get("gold", 0) == 321,
 			"finished_authority", "Recovery snapshot includes exact authoritative final settlement")
+
+func check_missed_round_reward(room: Dictionary, fresh: Node) -> void:
+	# The returning phone missed the result broadcast and there is no replay to view.
+	# Use the actual per-seat settlement and the snapshot delivered over the socket.
+	room.round_index = 8
+	room.state = server.ROOM_RESULT
+	room.battle_id = "%d:8:1" % int(room.id)
+	room.boards = {0: {"gold": 100, "round": 8}}
+	room.slot_gold[0] = 100
+	server._room_prep(room, 0)["gold"] = 100
+	var replay := {"kind": "pve", "result": {"player_wins": true}}
+	room.last_match_state = server._room_build_match_states(room, replay, replay.duplicate(true))
+	var settled_gold := int(room.last_match_state[0].gold)
+	h.expect(settled_gold > 100, "missed_round_earned", "The server credits the battle before the phone returns")
+	fresh._rpc_resume_request.rpc_id(1, "mobile_test_token")
+	await wait_reply(fresh, 2, 4)
+	if not h.expect(fresh.room_snapshots.size() == 4, "missed_result_snapshot", "Returning seat receives its RESULT snapshot"):
+		return
+	var payload: Dictionary = fresh.room_snapshots[3].payload
+	h.expect(payload.phase == "result" and not payload.replay_available and int(payload.gold) == settled_gold,
+		"settled_balance_on_wire", "The individual recovered balance matches the server settlement")
+	var main := MainProbe.new()
+	add_child(main)
+	GameState.round_index = 8
+	GameState.gold = 100
+	main._on_resume_completed(payload)
+	h.expect(GameState.round_index == 9 and GameState.gold == settled_gold,
+		"missed_result_credited", "Returning to preparation restores the gold from the missed battle")
+	main.free()
 
 func wait_reply(client: Node, errors: int, snapshots: int) -> void:
 	var deadline := Time.get_ticks_msec() + 3000

@@ -18,7 +18,7 @@ extends Node
 #   C 它不挡输入：mouse_filter == IGNORE；且字号够大、有描边（能看清）
 #   D 只在 3 / 2 / 1 三秒显示，文案 "N!"；4 秒与 0 秒都不显示
 #   E 准备按钮文字带「（N s）」后缀，且这个 N 真的来自倒计时
-#   F 时长：PVE 35s、PVP/最终 50s
+#   F 时长：普通和排位 PVE 45s、PVP/最终 60s，青苗每回合 60s
 #   H **离线自测不装倒计时**（用户 10.12 追加口径：「离线自测还是保持原来的无倒计时」）
 #     —— 判据是「节点不存在 + meta 没被写 + 按钮没有后缀」，外加一个反向对照
 #     （offline_selftest 关掉后必须重新装上），否则本段会因为接线整体坏掉而假绿。
@@ -71,6 +71,7 @@ func _ready() -> void:
 	_section_offline_selftest_wiring()
 	await _section_offline_selftest_no_auto_deploy()
 	await _section_online_client_countdown_visible()
+	await _section_ranked_clock()
 
 	_prep.queue_free()
 	await get_tree().process_frame
@@ -204,15 +205,14 @@ func _section_durations() -> void:
 			pvp = r
 		elif not (kind in ["pvp", "final"]) and pve == 0:
 			pve = r
-	h.expect(pve > 0 and is_equal_approx(Deadline.duration(pve), 35.0), "pve_duration",
-		"PVE（含 boss）回合时长应为 35 秒，第 %d 回合实测 %s" % [pve, str(Deadline.duration(pve))])
-	h.expect(pvp > 0 and is_equal_approx(Deadline.duration(pvp), 50.0), "pvp_duration",
-		"PVP 回合时长应为 50 秒，第 %d 回合实测 %s" % [pvp, str(Deadline.duration(pvp))])
+	h.expect(pve > 0 and is_equal_approx(Deadline.duration(pve), 45.0), "pve_duration",
+		"PVE（含 boss）回合时长应为 45 秒，第 %d 回合实测 %s" % [pve, str(Deadline.duration(pve))])
+	h.expect(pvp > 0 and is_equal_approx(Deadline.duration(pvp), 60.0), "pvp_duration",
+		"PVP 回合时长应为 60 秒，第 %d 回合实测 %s" % [pvp, str(Deadline.duration(pvp))])
 	for round_index in range(1, 14):
-		var expected := 80.0 if round_index in [5, 9, 13] else 60.0
-		h.expect(is_equal_approx(Deadline.duration(round_index, "seedling"), expected),
+		h.expect(is_equal_approx(Deadline.duration(round_index, "seedling"), 60.0),
 			"seedling_duration_%d" % round_index,
-			"青苗第 %d 回合备战应为 %.0f 秒" % [round_index, expected])
+			"青苗第 %d 回合备战应为 60 秒" % round_index)
 
 
 # --- H 离线自测不装倒计时（用户 10.12 追加口径）--------------------------------
@@ -364,7 +364,7 @@ func _section_online_client_countdown_visible() -> void:
 		"联机客机的备战界面没有挂 PrepCountdown —— 倒计时整条不在")
 	var secs := int(bare.get_meta("prep_countdown_seconds", -1))
 	h.expect(secs >= 30, "client_countdown_frozen",
-		"联机客机 + 服务端没给 prep 信息时倒计时整块停了（prep_countdown_seconds=%d，本地时钟本该给约 35）—— 这正是「自定义房间没有倒计时」" % secs)
+		"联机客机 + 服务端没给 prep 信息时倒计时整块停了（prep_countdown_seconds=%d）" % secs)
 	var lbl: Variant = bare.get("_start_battle_label")
 	if lbl != null:
 		bare.call("_refresh_start_button_label")
@@ -373,7 +373,7 @@ func _section_online_client_countdown_visible() -> void:
 	bare.queue_free()
 	await get_tree().process_frame
 
-	# ② 服务端给了 prep_seconds_left：必须以服务端为准，不能被本地时钟（约 35）盖掉。
+	# ② 服务端给了 prep_seconds_left：必须以服务端为准，不能被本地时钟盖掉。
 	var served := await _client_prep(20.0)
 	var secs2 := int(served.get_meta("prep_countdown_seconds", -1))
 	h.expect(secs2 == 19 or secs2 == 20, "client_ignores_server_clock",
@@ -443,3 +443,45 @@ func _client_prep(server_seconds: float) -> Control:
 	NetworkService.set("_prep_deadline_local",
 		Time.get_ticks_msec() / 1000.0 + server_seconds if served else -1.0)
 	return await _fresh_prep()
+
+
+func _section_ranked_clock() -> void:
+	var old_mode := NetworkService.match_mode
+	NetworkService.match_mode = "ranked"
+	var prep := await _client_prep(20.0)
+	var cd := prep.find_child("PrepCountdown", true, false)
+	var cue := prep.find_child("FinalSeconds", true, false) as Label
+	var button_label := prep.get("_start_battle_label") as Label
+	if h.expect(cd != null and cue != null and button_label != null, "ranked_clock_missing", "排位备战缺少倒计时"):
+		cd.set_process(false)
+		for tick in [[2.4, 3], [3.1, 3], [1.6, 2], [2.2, 2], [0.9, 1]]:
+			NetworkService.set("_prep_deadline_local", NetworkService._now() + float(tick[0]))
+			cd.call("_process", 0.0)
+			var digit := int(tick[1])
+			h.expect(button_label.text.ends_with("(%d s)" % digit)
+					and cue.visible and cue.text == "%d!" % digit,
+					"ranked_clock_jump", "服务端剩余 %s 时按钮和中央提示应显示 %d" % [tick[0], digit])
+			await get_tree().process_frame
+			h.expect(is_equal_approx(cue.modulate.a, 1.0) and cue.scale.is_equal_approx(Vector2.ONE),
+					"ranked_clock_flash", "换秒期间排位最后三秒应保持稳定、清晰")
+		h.expect(not bool(cd.get("_expired")), "ranked_expired_early", "显示剩余 1 秒时不应提早上阵")
+		var old_piece: Variant = GameState.board_slots[0]
+		GameState.board_slots[0] = _piece()
+		NetworkService.set("_prep_deadline_local", NetworkService._now())
+		cd.call("_process", 0.0)
+		GameState.board_slots[0] = old_piece
+		h.expect(bool(cd.get("_expired")) and not cue.visible, "ranked_expiry", "服务端到点时应结束倒计时")
+	prep.queue_free()
+	await get_tree().process_frame
+	# Main reconstructs PrepScreen after recovery, including when the room was suspended.
+	var resumed := await _client_prep(20.0)
+	h.expect(int(resumed.get_meta("prep_countdown_seconds", -1)) >= 19,
+			"ranked_clock_resume", "重连后的备战界面应显示服务器新下发的剩余时间")
+	resumed.queue_free()
+	await get_tree().process_frame
+	NetworkService.match_mode = old_mode
+	NetworkService.team_active = false
+	NetworkService.server_phase = ""
+	NetworkService.server_round_index = 0
+	NetworkService.set("_prep_deadline_local", -1.0)
+	GameState.team_mode = false

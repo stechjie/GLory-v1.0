@@ -4,6 +4,7 @@ const Deadline := preload("res://scripts/rounds/PrepDeadline.gd")
 var _screen: Control
 var _deadline := 0.0
 var _last_second := -1
+var _last_server_round := -1
 var _expired := false
 var _cue: Label
 var _pulse: Tween
@@ -39,6 +40,7 @@ func _process(_delta: float) -> void:
 		_cue.hide()
 		return
 	var left := _deadline - Time.get_ticks_msec() / 1000.0
+	var ranked_server_round := -1
 	if NetworkService.team_active and not NetworkService.is_host:
 		# ★★ 10.12 第 6 条**返修**（用户口径：「第 6 点只不生效于离线自测房间，其他房间
 		#    对局要生效」）：联机客机这里**只把服务端倒计时当优先来源**，绝不因为
@@ -58,7 +60,14 @@ func _process(_delta: float) -> void:
 			var server_left := NetworkService.prep_seconds_left()
 			if server_left >= 0.0:
 				left = server_left
+				if NetworkService.match_mode.begins_with("ranked"):
+					ranked_server_round = NetworkService.server_round_index
 	var second := maxi(0, int(ceil(left)))
+	# Latency can move the estimated deadline across a second boundary. Clamp only
+	# the displayed digit; a new prep screen after reconnect adopts the server clock.
+	if ranked_server_round >= 0 and ranked_server_round == _last_server_round:
+		second = mini(second, _last_second)
+	_last_server_round = ranked_server_round
 	if second != _last_second:
 		_last_second = second
 		_screen.set_meta("prep_countdown_seconds", second)
@@ -82,6 +91,10 @@ func _show_cue(second: int) -> void:
 	if _pulse != null and _pulse.is_valid():
 		_pulse.kill()
 	_cue.text = "%d!" % second
+	if NetworkService.match_mode.begins_with("ranked"):
+		_cue.scale = Vector2.ONE
+		_cue.modulate.a = 1.0
+		return
 	_cue.scale = Vector2.ONE * 1.25
 	_cue.modulate.a = 0.86
 	_pulse = create_tween().set_parallel(true)
