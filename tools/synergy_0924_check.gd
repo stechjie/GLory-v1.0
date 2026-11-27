@@ -244,8 +244,8 @@ func _check_dark_sap() -> void:
 	for i in 30:
 		BattleSimulator._perform_attack(d, t, st)
 	DamageService.clear_stat_context()
-	_expect(int(t.dark_sap_taken) == 15 and int(t.atk) == 110 and int(d.atk) == 145 and is_equal_approx(float(d.attack_speed), 1.45),
-		"dark_sap_cap", "15 层封顶：目标 atk %d（应 110），自己 atk %d（应 145），自己攻速 %.2f" % [int(t.atk), int(d.atk), float(d.attack_speed)])
+	_expect(int(t.dark_sap_taken) == 10 and int(t.atk) == 140 and int(d.atk) == 130 and is_equal_approx(float(d.get("aspd_bonus_pct", 0.0)), 0.30),
+		"dark_sap_cap", "10 层封顶：目标 atk %d（应 140），自己 atk %d（应 130），自己攻速加成 %.2f（应 0.30；攻速走百分比池）" % [int(t.atk), int(d.atk), float(d.get("aspd_bonus_pct", 0.0))])
 
 
 # --- 4 攻击 / 4 控制 --------------------------------------------------------------

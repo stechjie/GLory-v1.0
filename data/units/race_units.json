@@ -392,7 +392,7 @@
                       "model_in_place_actions": ["idle"],
                       "star4":  {
                           "def_down_pct":  0.25,
-                          "damage_atk_pct":  4.6
+                          "damage_atk_pct":  4.2
                       },
                       "name":  "偷袭者",
                       "race":  "dark",
@@ -400,7 +400,7 @@
                       "tier":  2,
                       "cost":  30,
                       "hp":  780,
-                      "atk":  88,
+                      "atk":  80,
                       "def":  6,
                       "mres":  6,
                       "attack_speed":  1.35,
@@ -409,7 +409,7 @@
                       "crit":  0.12,
                       "crit_dmg":  1.6,
                       "skill_id":  "blink_low_def_backline",
-                      "damage_atk_pct":  2.3,
+                      "damage_atk_pct":  2.1,
                       "skill_global":  true,
                       "recast_on_target_death":  true,
                       "opening_delay":  2.0,

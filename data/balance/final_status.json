@@ -174,33 +174,33 @@
       "cost": 30,
       "skill_id": "blink_low_def_backline",
       "skill_name_cn": "暗影突袭",
-      "skill_cn_1to3": "暗影突袭（无冷却）：开战2.0秒后可用；吟唱0.9秒后瞬移到低防后排敌人身边，造成自身攻击230%伤害；该目标死亡后再次吟唱并突袭下一个。",
-      "skill_cn_4": "暗影突袭（无冷却）：开战2.0秒后可用；吟唱0.9秒后瞬移到低防后排敌人身边，造成自身攻击460%伤害；该目标死亡后再次吟唱并突袭下一个。",
-      "skill_en_1to3": "Shadow Ambush (no cooldown): Usable 2.0s after battle start. Channel for 0.9s, then blink to the lowest-DEF backline enemy and deal 230% ATK damage. When that target dies, channel again and ambush the next one.",
-      "skill_raw_params": "chant_sec = 0.9\ndamage_atk_pct = 2.3\nopening_delay = 2\nrecast_on_target_death = true\nskill_global = true",
-      "star4_changes": "damage_atk_pct: 2.3 → 4.6\ndef_down_pct: — → 0.25",
+      "skill_cn_1to3": "暗影突袭（无冷却）：开战2.0秒后可用；吟唱0.9秒后瞬移到低防后排敌人身边，造成自身攻击210%伤害；该目标死亡后再次吟唱并突袭下一个。",
+      "skill_cn_4": "暗影突袭（无冷却）：开战2.0秒后可用；吟唱0.9秒后瞬移到低防后排敌人身边，造成自身攻击420%伤害；该目标死亡后再次吟唱并突袭下一个。",
+      "skill_en_1to3": "Shadow Ambush (no cooldown): Usable 2.0s after battle start. Channel for 0.9s, then blink to the lowest-DEF backline enemy and deal 210% ATK damage. When that target dies, channel again and ambush the next one.",
+      "skill_raw_params": "chant_sec = 0.9\ndamage_atk_pct = 2.1\nopening_delay = 2\nrecast_on_target_death = true\nskill_global = true",
+      "star4_changes": "damage_atk_pct: 2.1 → 4.2\ndef_down_pct: — → 0.25",
       "stats": {
         "1": {
           "hp": 780,
-          "atk": 88,
+          "atk": 80,
           "defense": 6,
           "mres": 6
         },
         "2": {
           "hp": 1170,
-          "atk": 132,
+          "atk": 120,
           "defense": 9,
           "mres": 9
         },
         "3": {
           "hp": 2340,
-          "atk": 264,
+          "atk": 240,
           "defense": 18,
           "mres": 18
         },
         "4": {
           "hp": 2691,
-          "atk": 304,
+          "atk": 276,
           "defense": 21,
           "mres": 21
         }
@@ -1712,7 +1712,7 @@
       {
         "threshold": 7,
         "name_cn": "暗族·汲取",
-        "detail_cn": "暗族普攻命中即可叠层：目标攻击 / 防御 / 攻速各 -3.3%/层；自身各 +3.3%/层，最多 10 层。"
+        "detail_cn": "暗族普攻命中即可叠层：目标攻击 / 防御 / 攻速各 -3%/层；自身各 +3%/层，最多 10 层。"
       }
     ],
     "undead": [
@@ -1986,6 +1986,6 @@
       "effect_cn": "需要：生命丰碑 + 黄金祭坛 + 震荡余波 + 血契之刃 + 狂怒阵容。生命丰碑 ×1.20→×1.40；震荡余波眩晕 1→2 秒；血契之刃 ×1.25→×1.50；狂怒阵容上限 8→9。黄金祭坛使用不扣法阵 HP；选到胡牌手立即回复法阵 HP +2（上限 50）。\n表内字段：positive_effect_multiplier = 2"
     }
   },
-  "balance_version": "ff06710e6ae33708501a8cbbf4e803527f1a6b2ebcb62f86e964f30c166d36dc",
-  "final_workbook_sha256": "ad89bcfc7c822b2568a2886b68d1d70a4f41f2e3ad913a22ef91dea8ae5083fd"
+  "balance_version": "c6443b64b927eef9c3b66320ae0ad699963a9cb65a719d81ac579fc4ec96868c",
+  "final_workbook_sha256": "2b5e0f28be2cde2125d3e7b0592ed2950a14f43db9c9725be9de1962ada8a97a"
 }

@@ -71,7 +71,7 @@ func _case_table_shape() -> void:
 	_assert_monotonic(CarrotEconomy.FARM_PRODUCTION, "FARM_PRODUCTION")
 	_assert_monotonic(CarrotEconomy.HARVEST_TECH_PRODUCTION, "HARVEST_TECH_PRODUCTION")
 	_assert_monotonic(CarrotEconomy.HARVEST_TECH_PRICES, "HARVEST_TECH_PRICES")
-	var expected_production := [3, 6, 9, 13, 25, 35, 45, 55, 105]
+	var expected_production := [3, 6, 9, 13, 25, 40, 55, 70, 145]
 	for i in TECH_LEVELS_TO_CHECK.size():
 		var level := int(TECH_LEVELS_TO_CHECK[i])
 		_h.expect(CarrotEconomy.production_for_tech(level) == int(expected_production[i]),

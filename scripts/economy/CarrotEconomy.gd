@@ -4,14 +4,15 @@ extends RefCounted
 ## No GameState, NetworkService or UI access belongs in this file.
 
 const BASE_PRODUCTION := 3
-# Index 0 is the player-facing Lv.1.  The first four outputs preserve the
-# original progression; Lv.5 onward follows the approved new milestones.
-const HARVEST_TECH_PRODUCTION := [3, 6, 9, 13, 25, 35, 45]
+# Index 0 is the player-facing Lv.1.
+# 2026-11-27 用户定：前 5 级 3 / 6 / 9 / 13 / 25 不变，5 级之后每升一级 +15
+# （原来是 35 / 45，之后每级 +10）。
+const HARVEST_TECH_PRODUCTION := [3, 6, 9, 13, 25, 40, 55]
 # Price to buy the next level from the matching zero-based level.  After the
 # listed milestones, collection remains upgradeable at a flat 1600G.
 const HARVEST_TECH_PRICES := [100, 200, 400, 800, 1600, 1600, 1600]
 const HARVEST_TECH_REPEAT_PRICE := 1600
-const HARVEST_TECH_REPEAT_PRODUCTION := 10
+const HARVEST_TECH_REPEAT_PRODUCTION := 15
 const FARM_THRESHOLDS := [0, 9, 20, 35, 55, 75]
 const FARM_CAPACITIES := [12, 24, 40, 60, 90, 150]
 const FARM_INCOME := [0, 10, 25, 45, 70, 100]
@@ -22,7 +23,7 @@ const FARM_INCOME := [0, 10, 25, 45, 70, 100]
 # 要 50 回合才能装满，而一局只有 21 回合。容量成了纯装饰。
 #
 # 加上之后各级的装满耗时收敛到 4~10 回合，容量上限重新变成一个有意义的
-# 「该花萝卜了」的信号。数值取值参考：装满耗时 ≈ 容量 / (基础 3 + 本表)。
+# 「该花萝卜了」的信号。数值取值参考：装满耗时 ≈ 容量 / (基础产量 + 本表)。
 const FARM_PRODUCTION := [0, 2, 4, 6, 8, 12]
 # Lv.7 onward continues procedurally rather than ending in a hidden table cap.
 # Threshold increments are +35, +45, +55...; capacity increments are +70,
