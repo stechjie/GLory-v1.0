@@ -330,6 +330,13 @@ static func _hire_merc_carrot(prep: Dictionary, payload: Dictionary, ctx: Dictio
 	var cost := int(selected.get("carrot_cost", -1))
 	if cost < 0:
 		return {"ok": false, "error": "missing_carrot_cost"}
+	# 11.28：同种佣兵第 4 只起加价（CarrotEconomy.merc_hire_cost）。按账本里现有的同种佣兵数算。
+	var same_owned := 0
+	for owned_value in (prep.get("roster", {}) as Dictionary).values():
+		var owned_row: Dictionary = owned_value
+		if str(owned_row.get("kind", "")) == "merc" and str(owned_row.get("unit_id", "")) == merc_id:
+			same_owned += 1
+	cost = CarrotEconomy.merc_hire_cost(cost, same_owned)
 	var merc_slot := int(payload.get("merc_slot", -1))
 	var merc_cap := int(ctx.get("merc_cap", 8))
 	if merc_slot < 0 or merc_slot >= merc_cap:

@@ -80,5 +80,6 @@ func _check_repeated_twin() -> void:
 	for clone in state.enemy:
 		_h.expect(not uids.has(clone.uid), "twin_repeated_uid", "Repeated cast without deaths reused %s" % clone.uid)
 		uids[clone.uid] = true
-		_h.expect(clone.hp == 300 and clone.atk == 40, "twin_attributes", "Identity fix changed twin combat attributes")
+		# 11.28：分身生命按本体**当前**生命的 30% 算（以前按最大生命）。
+		_h.expect(clone.hp == int(round(float(caster.hp) * 0.30)) and clone.atk == 40, "twin_attributes", "Identity fix changed twin combat attributes")
 		_h.expect(not BattleSimTreasures._is_board_piece(clone), "twin_board_class", "Twin must remain excluded from board-piece death rally")

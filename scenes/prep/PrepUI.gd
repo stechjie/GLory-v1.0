@@ -3153,7 +3153,7 @@ func _mercenary_purchase_reason(index: int) -> String:
 	# 9.25：教学也用萝卜雇佣兵（与正式局一致），并且从「召唤佣兵」那一步起才开放。
 	if GameState.tutorial_mode and not TutorialMode.allows_carrot_action("hire_merc"):
 		return TutorialMode.follow_arrow_hint()
-	if GameState.carrots < int(mercenary.get("carrot_cost", 0)):
+	if GameState.carrots < PrepRules.mercenary_hire_cost(mercenary):
 		return "Not enough carrots" if LocaleManager.get_locale().begins_with("en") else "萝卜不足"
 	return ""
 
@@ -3197,7 +3197,10 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 	card.text = ""
 	card.drag_enabled = false
 	# 9.25：教学与正式局一样按萝卜标价。
-	var price_text := ("Carrots %d" if LocaleManager.get_locale().begins_with("en") else "萝卜 %d") % int(mercenary.get("carrot_cost", 0))
+	# 11.28：卡面价格是「现在雇这只要多少」——同种第 4 只起加价（PrepRules.mercenary_hire_cost）。
+	var hire_cost := PrepRules.mercenary_hire_cost(mercenary)
+	var hire_surcharge_pct := PrepRules.mercenary_hire_surcharge_pct(mercenary)
+	var price_text := ("Carrots %d" if LocaleManager.get_locale().begins_with("en") else "萝卜 %d") % hire_cost
 	# 10.16 bug 文档第 2 条：拖拽预览与卡面 name_label（下面 2620 行）必须同一口径 ——
 	# 卡面走 PrepWidgets.unit_name，这里原来直读 mercenary.name，英文界面下冒中文。
 	card.set_meta("drag_preview_text", "%s\n%s" % [PrepWidgets.unit_name(mercenary), price_text])
@@ -3249,10 +3252,32 @@ func _create_mercenary_purchase_card(mercenary: Dictionary, index: int) -> DragB
 	price_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	price_row.add_child(price_icon)
 	var price_number := Label.new()
-	price_number.text = str(int(mercenary.get("carrot_cost", 0)))
+	price_number.text = str(hire_cost)
 	price_number.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_style_merc_text(price_number, false, 800, 25, Vector2(52, 28))
 	price_row.add_child(price_number)
+	# 11.28：加价中的卡在头像右上角挂一块「+50%」小牌，让玩家知道价格为什么变了。
+	if hire_surcharge_pct > 0:
+		var surcharge_plate := PanelContainer.new()
+		surcharge_plate.name = "MercenarySurcharge"
+		surcharge_plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var surcharge_style := StyleBoxFlat.new()
+		surcharge_style.bg_color = Color(0.72, 0.2, 0.1, 0.94)
+		surcharge_style.border_color = Color("f5d08a")
+		surcharge_style.set_border_width_all(2)
+		surcharge_style.set_corner_radius_all(10)
+		surcharge_plate.add_theme_stylebox_override("panel", surcharge_style)
+		surcharge_plate.position = Vector2(128, 16)
+		surcharge_plate.size = Vector2(72, 28)
+		card.add_child(surcharge_plate)
+		var surcharge_label := Label.new()
+		surcharge_label.text = "+%d%%" % hire_surcharge_pct
+		surcharge_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		surcharge_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		surcharge_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_style_merc_text(surcharge_label, false, 800, 18, Vector2(64, 22))
+		surcharge_label.add_theme_color_override("font_color", Color("fff3d6"))
+		surcharge_plate.add_child(surcharge_label)
 	# 买不了（萝卜不足 / 佣兵已满 / 教学未到）：头像压暗，头像下沿一条半透明牌子写原因，价格变红
 	if not can_purchase:
 		portrait.modulate = Color(0.42, 0.42, 0.46)

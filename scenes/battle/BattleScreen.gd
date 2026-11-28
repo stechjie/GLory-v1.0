@@ -1027,6 +1027,9 @@ func _load_replay_roster(replay: Dictionary) -> void:
 		# `phoenix_used` 永远是假，「死灵气息」在真实对局里一次都不会出现。
 		if r.has("phoenix_used"):
 			f["phoenix_used"] = bool(r.get("phoenix_used", false))
+		# 11.28：镜像刺客分身的血条按本体最大生命画（BattleRenderer._sync_health_segments 读）。
+		if r.has("hp_bar_max"):
+			f["hp_bar_max"] = int(r.get("hp_bar_max", 0))
 		# 10.31：套装标记（BattleSimulator._replay_capture_roster）。回放单位一律带上这个键，
 		# 没有就是空表 —— BattleVfx._unit_has_treasure_set 靠「有没有键」区分回放单位和本地模拟单位，
 		# 否则回放里的队友 / 敌方棋子会落回「读本地玩家宝藏」那条兜底。

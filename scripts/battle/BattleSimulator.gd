@@ -559,6 +559,10 @@ static func _replay_capture_roster(state: Dictionary, roster: Dictionary) -> voi
 		# 不影响玩法身份。表现层（BattleRenderer）靠它给复活体罩「死灵气息」。
 		if f.has("phoenix_used"):
 			roster[uid]["phoenix_used"] = bool(f.get("phoenix_used", false))
+		# 11.28：镜像刺客分身的「血条满格值」（见 BattleSimSkills._skill_twin_strike）。只在分身上有，
+		# 同样不在 SIMULATION_ROSTER_FIELDS 白名单里，不改玩法身份；老服务器不带这个键时血条照旧。
+		if f.has("hp_bar_max"):
+			roster[uid]["hp_bar_max"] = int(f.get("hp_bar_max", 0))
 		# 10.31：攻击 / 防卫 4 件套的持有标记，给前端做斩杀线、开局护罩、闪避残光。
 		# 同凤凰的做法只在有套装时带键；roster 只有白名单字段进 simulation_sha256，不改玩法身份。
 		var sets: Array = []
@@ -1279,6 +1283,11 @@ static func _perform_attack(attacker: Dictionary, target: Dictionary, state: Dic
 		else:
 			attacker.linked_target_uid = str(target.get("uid", ""))
 			attacker.skill_stacks = 1
+		# 11.28 用户定：痛苦凝视叠到 aspd_down_at_stacks 层（4 层）起，每次普攻给目标挂减攻速。
+		# 用现成的 slow 状态（不减移速），每一击刷新；换目标后层数归 1，旧目标身上的自然到期。
+		var gaze_aspd_down := float(d.get("aspd_down_pct", 0.0))
+		if gaze_aspd_down > 0.0 and int(attacker.skill_stacks) >= int(d.get("aspd_down_at_stacks", 4)) and bool(target.get("alive", false)):
+			StatusEffectService.add_status(target, "slow", float(d.get("aspd_down_sec", 2.0)), {"attack_speed_pct": gaze_aspd_down, "move_pct": 0.0})
 	# 9.30 修复：羁绊文案是「**神族单位**造成伤害时回复实际伤害 20% 生命」
 	# （SynergyPanel.gd:154 神3·吸血），但这里原来只取了队伍羁绊 `syn` 就直接
 	# 给**任何攻击者**回血 ⇒ 队伍凑够 3 神后，非神族棋子（含佣兵）普攻也吸血

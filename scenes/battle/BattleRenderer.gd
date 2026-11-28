@@ -427,7 +427,8 @@ const SHIELD_DRAIN_SEC := 0.12
 static func _sync_health_segments(hp: ColorRect, fighter: Dictionary, delta := 0.0) -> void:
 	var health := clampf(float(fighter.get("hp", 0)), 0.0, maxf(1.0, float(fighter.get("max_hp", 1))))
 	var shield_value := maxf(0.0, float(fighter.get("shield", 0))) if health > 0.0 else 0.0
-	var maximum := maxf(1.0, float(fighter.get("max_hp", 1)))
+	# 11.28：hp_bar_max 只有镜像刺客的分身带（= 本体最大生命），让三成血的分身血条只有三成。
+	var maximum := maxf(maxf(1.0, float(fighter.get("max_hp", 1))), float(fighter.get("hp_bar_max", 0)))
 	var hp_ratio := health / maximum
 	var has_shield := shield_value > 0.0
 	var shown_shield := shield_value
@@ -458,7 +459,9 @@ static func _sync_health_segments(hp: ColorRect, fighter: Dictionary, delta := 0
 		background.size.x = HP_FILL_WIDTH + 6.0
 		# BattleVfx's execute marker uses this same HP scale, including the small
 		# minimum visible blue segment. The gameplay threshold is untouched.
-		background.set_meta("hp_max_width", health_width / hp_ratio if hp_ratio > 0.0 else HP_FILL_WIDTH)
+		# 斩杀线按**真实**最大生命算（分身的 hp_bar_max 只是把血条画短，不改斩杀阈值）。
+		var real_ratio := health / maxf(1.0, float(fighter.get("max_hp", 1)))
+		background.set_meta("hp_max_width", health_width / real_ratio if hp_ratio > 0.0 and real_ratio > 0.0 else HP_FILL_WIDTH)
 	var shield := hp.get_meta("shield_fill") as ColorRect if hp.has_meta("shield_fill") else null
 	if is_instance_valid(shield):
 		shield.position = hp.position + Vector2(health_width, 0.0)

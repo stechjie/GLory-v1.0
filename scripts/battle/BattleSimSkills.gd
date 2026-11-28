@@ -486,9 +486,14 @@ static func _skill_twin_strike(caster: Dictionary, state: Dictionary, d: Diction
 	var inherited_money_multiplier := maxf(1.0, float(caster.get("money_set_multiplier", 1.0)))
 	var inherited_money_hp_multiplier := maxf(1.0, float(caster.get("money_set_hp_multiplier", inherited_money_multiplier)))
 	clone.uid = "%s_twin_%d" % [str(caster.uid), summon_index]
-	clone.hp = maxi(1, int(round(float(caster.max_hp) / inherited_money_hp_multiplier * float(d.get("clone_hp_pct", 0.30)))))
+	# 11.28 用户定：分身生命 = 放技能那一刻本体**当前**生命的 clone_hp_pct（本体只剩 800 就是 240），
+	# 不再按本体最大生命算。金钱套那一份照旧剥掉。
+	clone.hp = maxi(1, int(round(float(caster.hp) / inherited_money_hp_multiplier * float(d.get("clone_hp_pct", 0.30)))))
 	clone.max_hp = clone.hp
 	clone.atk = maxi(1, int(round(float(caster.atk) / inherited_money_multiplier * float(d.get("clone_atk_pct", 0.40)))))
+	# 11.28 用户定：分身的血条不要一出来就是满格。只给表现层用的「血条满格值」= 本体最大生命
+	# （同样剥掉金钱套），血条长度 = 分身生命 ÷ 本体最大生命。模拟一律不读这个键。
+	clone["hp_bar_max"] = maxi(int(clone.max_hp), int(round(float(caster.max_hp) / inherited_money_hp_multiplier)))
 	clone.statuses = {}
 	clone.erase("money_set_multiplier")
 	clone.erase("money_set_hp_multiplier")

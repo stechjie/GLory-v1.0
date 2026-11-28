@@ -167,7 +167,7 @@
                             "move_speed":  3.6,
                             "skill_id":  "twin_strike",
                             "skill_cd":  10.0,
-                            "first_cast_sec":  3.0,
+                            "first_cast_sec":  5.0,
                             "clone_hp_pct":  0.30,
                             "clone_atk_pct":  0.60,
                             "crit":  0.20,

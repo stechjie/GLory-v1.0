@@ -81,9 +81,9 @@ func _case_table_shape() -> void:
 			"tech_price_curve", "采集 Lv.%d 升级价格 %d 不符合 100/200/400/800/1600 固定曲线"
 				% [level + 1, CarrotEconomy.tech_price(level)])
 	var expected_farm := [
-		{"level": 6, "threshold": 110, "capacity": 220, "production": 14, "income": 110},
-		{"level": 7, "threshold": 155, "capacity": 300, "production": 16, "income": 120},
-		{"level": 8, "threshold": 210, "capacity": 390, "production": 18, "income": 130},
+		{"level": 6, "threshold": 110, "capacity": 220, "production": 16, "income": 120},
+		{"level": 7, "threshold": 155, "capacity": 300, "production": 20, "income": 145},
+		{"level": 8, "threshold": 210, "capacity": 390, "production": 24, "income": 170},
 	]
 	for row_value in expected_farm:
 		var row: Dictionary = row_value

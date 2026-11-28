@@ -266,7 +266,7 @@ func _hire_mercenary_to_slot(index: int, mercenary_index: int) -> void:
 	# 于是玩家在「抽升级石」界面上也会看到上一笔雇佣留下的佣兵错误码。
 	# 房主/单机本来就有这道门（`show_message("萝卜不足")` 在下面），
 	# 客机补上之后三条路径口径一致：买不了就当场说清楚，不发无谓的请求。
-	var gate_cost := int(m.get("carrot_cost", -1))
+	var gate_cost := PrepRules.mercenary_hire_cost(m)  # 11.28：同种第 4 只起加价
 	if gate_cost < 0 or GameState.carrots < gate_cost:
 		show_message("萝卜不足")
 		SfxService.play(SfxService.CUE_UI_REJECT)
@@ -280,7 +280,7 @@ func _hire_mercenary_to_slot(index: int, mercenary_index: int) -> void:
 			"merc_slot": mercenary_index,
 		})
 		return
-	var carrot_cost := int(m.get("carrot_cost", -1))
+	var carrot_cost := PrepRules.mercenary_hire_cost(m)
 	# 9.25：教学与正式局一样用萝卜雇佣兵（原先教学扣金币，教的是一套正式局用不上的规则）。
 	# 花掉的萝卜照常计入营地成长，教学里就能看到营地升级。
 	if carrot_cost < 0 or GameState.carrots < carrot_cost:

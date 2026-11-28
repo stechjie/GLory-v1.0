@@ -635,13 +635,19 @@ static func _hire_mercs(bot: Dictionary) -> void:
 	while owned.size() < GameState.MERCENARY_SLOTS:
 		# 雇得起的里面最贵（最强）的一只。
 		var pick: Dictionary = {}
+		var carrots := -1
 		for m in table:
-			var c := int(m.get("carrot_cost", -1))
+			# 11.28：同种第 4 只起加价（CarrotRules.merc_hire_cost），按现价比。
+			var same := 0
+			for owned_merc in owned:
+				if str((owned_merc as Dictionary).get("id", "")) == str(m.get("id", "")):
+					same += 1
+			var c := CarrotRules.merc_hire_cost(int(m.get("carrot_cost", -1)), same)
 			if c >= 0 and c <= int(bot.carrots):
 				pick = m
+				carrots = c
 		if pick.is_empty():
 			break
-		var carrots := int(pick.get("carrot_cost", 0))
 		bot.carrots = int(bot.carrots) - carrots
 		bot.carrot_spent = int(bot.carrot_spent) + carrots
 		owned.append({"id": str(pick.get("id", "")), "star": 1, "def": (pick as Dictionary).duplicate(true),

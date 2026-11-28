@@ -103,25 +103,25 @@
         "1": {
           "hp": 1080,
           "atk": 55,
-          "defense": 7,
+          "defense": 10,
           "mres": 13
         },
         "2": {
           "hp": 1620,
           "atk": 83,
-          "defense": 11,
+          "defense": 15,
           "mres": 20
         },
         "3": {
           "hp": 3240,
           "atk": 165,
-          "defense": 21,
+          "defense": 30,
           "mres": 39
         },
         "4": {
           "hp": 3726,
           "atk": 190,
-          "defense": 24,
+          "defense": 35,
           "mres": 45
         }
       }
@@ -134,10 +134,10 @@
       "cost": 30,
       "skill_id": "same_target_damage_stack",
       "skill_name_cn": "痛苦凝视",
-      "skill_cn_1to3": "痛苦凝视：持续攻击同一目标时，每层伤害+15%，最多4层；换目标重置。",
-      "skill_cn_4": "痛苦凝视：持续攻击同一目标时，每层伤害+35%，最多6层；换目标重置。",
-      "skill_en_1to3": "Agonizing Gaze: Consecutive attacks on the same target deal +15% damage per stack (max 4 stacks). Resets on target switch.",
-      "skill_raw_params": "max_stacks = 4\nstack_damage = 0.15",
+      "skill_cn_1to3": "痛苦凝视：持续攻击同一目标时，每层伤害+15%，最多4层；换目标重置。叠到4层后，每次普攻使目标攻速-20%，持续2.0秒。",
+      "skill_cn_4": "痛苦凝视：持续攻击同一目标时，每层伤害+35%，最多6层；换目标重置。叠到4层后，每次普攻使目标攻速-20%，持续2.0秒。",
+      "skill_en_1to3": "Agonizing Gaze: Consecutive attacks on the same target deal +15% damage per stack (max 4 stacks). Resets on target switch. At 4 stacks, each basic attack reduces the target's attack speed by 20% for 2.0s.",
+      "skill_raw_params": "aspd_down_at_stacks = 4\naspd_down_pct = 0.2\naspd_down_sec = 2\nmax_stacks = 4\nstack_damage = 0.15",
       "star4_changes": "max_stacks: 4 → 6\nstack_damage: 0.15 → 0.35",
       "stats": {
         "1": {
@@ -1986,6 +1986,6 @@
       "effect_cn": "需要：生命丰碑 + 黄金祭坛 + 震荡余波 + 血契之刃 + 狂怒阵容。生命丰碑 ×1.20→×1.40；震荡余波眩晕 1→2 秒；血契之刃 ×1.25→×1.50；狂怒阵容上限 8→9。黄金祭坛使用不扣法阵 HP；选到胡牌手立即回复法阵 HP +2（上限 50）。\n表内字段：positive_effect_multiplier = 2"
     }
   },
-  "balance_version": "c6443b64b927eef9c3b66320ae0ad699963a9cb65a719d81ac579fc4ec96868c",
-  "final_workbook_sha256": "2b5e0f28be2cde2125d3e7b0592ed2950a14f43db9c9725be9de1962ada8a97a"
+  "balance_version": "0573dc73a7fb35e35727a14e96b5f0c136446fbec56af4dbd36315ed053eca6b",
+  "final_workbook_sha256": "a6d8f675904556671a6dea09dd40f61dd2c0164a034020283845e7e5f7f34516"
 }

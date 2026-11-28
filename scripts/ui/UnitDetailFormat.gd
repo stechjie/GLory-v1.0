@@ -367,7 +367,7 @@ static func format_skill_template_cn(d: Dictionary) -> String:
 		"holy_song":
 			return "圣歌%s：治疗全体友军最大生命%s，并从带控制类负面状态的存活友军中随机净化1名。" % [cd, pct(float(d.get("heal_pct", 0.15)))]
 		"twin_strike":
-			return "镜像突袭%s：召唤自身镜像，镜像生命%s、攻击%s。" % [cd, pct(float(d.get("clone_hp_pct", 0.30))), pct(float(d.get("clone_atk_pct", 0.40)))]
+			return "镜像突袭%s：召唤自身镜像，镜像生命为本体当前生命的%s、攻击%s。" % [cd, pct(float(d.get("clone_hp_pct", 0.30))), pct(float(d.get("clone_atk_pct", 0.40)))]
 		"king_aura":
 			return "王者光环：每2秒强化周围友军，攻速+%s、暴击+%s，持续2.2秒。" % [pct(float(d.get("ally_aspd_bonus", 0.25))), pct(float(d.get("ally_crit_bonus", 0.15)))]
 		"arrow_rain":
@@ -552,7 +552,7 @@ static func format_skill_detail_en(d: Dictionary) -> String:
 		"holy_song":
 			return "Holy Song%s: Heal all allies for %s max HP, then cleanse one random living ally with a crowd-control debuff." % [cd, pct(float(d.get("heal_pct", 0.15)))]
 		"twin_strike":
-			return "Mirror Ambush%s: Summon a mirror clone with %s HP and %s ATK." % [cd, pct(float(d.get("clone_hp_pct", 0.30))), pct(float(d.get("clone_atk_pct", 0.40)))]
+			return "Mirror Ambush%s: Summon a mirror clone with %s of this unit's current HP and %s ATK." % [cd, pct(float(d.get("clone_hp_pct", 0.30))), pct(float(d.get("clone_atk_pct", 0.40)))]
 		"king_aura":
 			return "King's Aura: Every 2s, buff nearby allies — AS +%s, Crit +%s for 2.2s." % [pct(float(d.get("ally_aspd_bonus", 0.25))), pct(float(d.get("ally_crit_bonus", 0.15)))]
 		"arrow_rain":

@@ -112,7 +112,9 @@ static func _hire_greedy(bot: Dictionary) -> void:
 	while owned.size() < GameState.MERCENARY_SLOTS:
 		var pick: Dictionary = {}
 		for m in table:
-			var c := int(m.get("carrot_cost", -1))
+			# 11.28：同种第 4 只起加价 —— 买不买得起按现价判；表按原价从低到高排，
+			# 所以挑到的仍是「买得起的里面最强的一个」。
+			var c := _hire_cost(bot, m)
 			if c >= 0 and c <= int(bot.carrots):
 				pick = m
 		if pick.is_empty():
@@ -186,9 +188,19 @@ static func _merc_table() -> Array:
 	return table
 
 
+# 11.28：AI 现在雇这只要多少萝卜（同种第 4 只起加价，和真人同一条规则）。
+static func _hire_cost(bot: Dictionary, merc: Dictionary) -> int:
+	var same := 0
+	var merc_id := str(merc.get("id", ""))
+	for owned in bot.mercs:
+		if str((owned as Dictionary).get("id", "")) == merc_id:
+			same += 1
+	return CarrotRules.merc_hire_cost(int(merc.get("carrot_cost", -1)), same)
+
+
 static func _hire(bot: Dictionary, merc: Dictionary) -> void:
-	var carrots := int(merc.get("carrot_cost", 0))
-	if carrots > int(bot.carrots):
+	var carrots := _hire_cost(bot, merc)
+	if carrots < 0 or carrots > int(bot.carrots):
 		return
 	bot.carrots = int(bot.carrots) - carrots
 	bot.carrot_spent = int(bot.carrot_spent) + carrots

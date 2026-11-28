@@ -22,6 +22,7 @@ extends RefCounted
 # 全静态、不持状态。
 
 const CheckMaxStar := preload("res://scripts/core/GameConstants.gd")
+const CarrotEconomyRules := preload("res://scripts/economy/CarrotEconomy.gd")
 
 
 # --- 上场限制 -----------------------------------------------------------------
@@ -201,8 +202,27 @@ static func can_hire_mercenary(index: int) -> bool:
 	# 更早雇会把抽升级石要用的萝卜花掉。
 	if GameState.tutorial_mode and not TutorialMode.allows_carrot_action("hire_merc"):
 		return false
-	var carrot_cost := int(merc.get("carrot_cost", -1))
+	var carrot_cost := mercenary_hire_cost(merc)
 	return carrot_cost >= 0 and GameState.carrots >= carrot_cost
+
+
+# 11.28：现在雇这只佣兵要多少萝卜。同种第 4 只起加价，按自己佣兵席上现有的同种数量算。
+# 卡面价格、「萝卜不足」判定、单机 / 房主扣费都读这里；服务器账本用同一条规则（CarrotEconomy.merc_hire_cost）。
+static func mercenary_hire_cost(merc: Dictionary) -> int:
+	return CarrotEconomyRules.merc_hire_cost(int(merc.get("carrot_cost", -1)), owned_mercenary_count(str(merc.get("id", ""))))
+
+
+# 现在雇这只的加价百分比（0 = 原价），给卡面的「+50%」小牌用。
+static func mercenary_hire_surcharge_pct(merc: Dictionary) -> int:
+	return CarrotEconomyRules.merc_hire_surcharge_pct(owned_mercenary_count(str(merc.get("id", ""))))
+
+
+static func owned_mercenary_count(merc_id: String) -> int:
+	var count := 0
+	for slot in GameState.mercenary_slots:
+		if typeof(slot) == TYPE_DICTIONARY and str((slot as Dictionary).get("id", "")) == merc_id:
+			count += 1
+	return count
 
 
 # --- 回合 ---------------------------------------------------------------------

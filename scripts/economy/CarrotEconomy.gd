@@ -27,13 +27,15 @@ const FARM_INCOME := [0, 10, 25, 45, 70, 100]
 const FARM_PRODUCTION := [0, 2, 4, 6, 8, 12]
 # Lv.7 onward continues procedurally rather than ending in a hidden table cap.
 # Threshold increments are +35, +45, +55...; capacity increments are +70,
-# +80, +90...; each level grants +2 production and +10G camp income.
+# +80, +90...; each level grants +4 production; camp income is +20G at Lv.7, then +25G per level.
 const FARM_REPEAT_THRESHOLD_FIRST_INCREMENT := 35
 const FARM_REPEAT_THRESHOLD_INCREMENT_STEP := 10
 const FARM_REPEAT_CAPACITY_FIRST_INCREMENT := 70
 const FARM_REPEAT_CAPACITY_INCREMENT_STEP := 10
-const FARM_REPEAT_PRODUCTION_INCREMENT := 2
-const FARM_REPEAT_INCOME_INCREMENT := 10
+const FARM_REPEAT_PRODUCTION_INCREMENT := 4  # 2026-11-28 用户定：6 级之后每级 +4（原 +2）
+# 2026-11-28 用户定：6 级 100 不变，7 级 +20 = 120，之后每级 +25（原来 7 级起每级 +10）。
+const FARM_REPEAT_INCOME_FIRST_INCREMENT := 20
+const FARM_REPEAT_INCOME_INCREMENT := 25
 const STONE_FIRST_COST := 50
 const STONE_COST_INCREMENT := 20
 # Backward-compatible name for the first draw. All transactions must call
@@ -43,6 +45,23 @@ const STONE_DRAW_PER_ROUND := 1
 const STONE_TYPES := ["sky", "land", "ren"]
 const FOUR_STAR_COST_VERSION := 2
 const FOUR_STAR_GOLD := {1: 500, 2: 800, 3: 1100}
+
+# 2026-11-28 用户定：同种佣兵前 3 只原价，第 4 只 +50% 萝卜、第 5 只 +100%，以此类推（每只再 +50%）。
+# 「第几只」按手上现有的同种佣兵数算（卖掉 / 没了就降回去）。向上取整。
+# 客户端卡面、单机扣费、服务器账本、电脑对手都必须走 merc_hire_cost()，不要各自读 carrot_cost。
+const MERC_REPEAT_FREE_COUNT := 3
+const MERC_REPEAT_SURCHARGE_STEP := 0.5
+
+## base_cost：佣兵表里的 carrot_cost；same_owned：已经拥有的同种佣兵数。base_cost < 0 原样返回。
+static func merc_hire_cost(base_cost: int, same_owned: int) -> int:
+	if base_cost < 0:
+		return base_cost
+	var extra := maxi(0, maxi(0, same_owned) + 1 - MERC_REPEAT_FREE_COUNT)
+	return int(ceil(float(base_cost) * (1.0 + MERC_REPEAT_SURCHARGE_STEP * float(extra)) - 0.0001))
+
+## 加价百分比（0 = 原价，50 = +50%），给界面标注用。
+static func merc_hire_surcharge_pct(same_owned: int) -> int:
+	return int(round(MERC_REPEAT_SURCHARGE_STEP * 100.0)) * maxi(0, maxi(0, same_owned) + 1 - MERC_REPEAT_FREE_COUNT)
 
 static func four_star_gold(tier: int) -> int:
 	return int(FOUR_STAR_GOLD.get(tier, -1))
@@ -115,7 +134,8 @@ static func farm_income_for_level(level: int) -> int:
 	var safe_level := maxi(0, level)
 	if safe_level < FARM_INCOME.size():
 		return int(FARM_INCOME[safe_level])
-	return int(FARM_INCOME.back()) + (safe_level - (FARM_INCOME.size() - 1)) * FARM_REPEAT_INCOME_INCREMENT
+	var repeat_levels := safe_level - (FARM_INCOME.size() - 1)
+	return int(FARM_INCOME.back()) + FARM_REPEAT_INCOME_FIRST_INCREMENT + (repeat_levels - 1) * FARM_REPEAT_INCOME_INCREMENT
 
 static func farm_production_for_level(level: int) -> int:
 	var safe_level := maxi(0, level)
