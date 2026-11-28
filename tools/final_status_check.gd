@@ -73,6 +73,10 @@ func _ready() -> void:
 		push_error("final status: undead heal reduction is missing")
 		get_tree().quit(1)
 		return
+	if FinalStatusCatalog.synergy_cn("human", 1).get("detail_cn", "") != "人族单位每第 3 次普攻必定暴击":
+		push_error("final status: incorrect player-facing human triple crit description")
+		get_tree().quit(1)
+		return
 	if not FinalStatusCatalog.linkage_effect_cn("link_phoenix").contains("40%"):
 		push_error("final status: phoenix text is missing")
 		get_tree().quit(1)

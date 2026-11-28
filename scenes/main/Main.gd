@@ -546,7 +546,9 @@ func _on_resume_completed(payload: Dictionary) -> void:
 		_apply_team_match_state_payload(completed)
 		_show_game_over()
 		return
-	if str(payload.get("replay_error", "")).is_empty() and PlaybackRecovery.needs_replay(payload):
+	var phase := str(payload.get("phase", ""))
+	var needs_replay := PlaybackRecovery.needs_replay(payload)
+	if str(payload.get("replay_error", "")).is_empty() and needs_replay:
 		var resolved := PlaybackRecovery.resolve_resume(payload, NetworkService.latest_match_state)
 		if resolved.is_empty():
 			_begin_resume_identity_wait(payload)
@@ -577,16 +579,18 @@ func _on_resume_completed(payload: Dictionary) -> void:
 	# 服务器权威数值覆盖本地
 	# 键名跟着状态信封走（E2）：round_index -> round_id、enemy_team_hp -> rival_team_hp。
 	# 快照现在还多带了连败与 PVE/Boss 计数（C5 缺的那几项）。
-	var recovered_settlement := str(payload.get("phase", "")) == NetworkService.ROOM_PREP \
-		and int(payload.get("round_id", GameState.round_index)) > GameState.round_index \
-		and payload.has("gold")
-	# 跨过结算进入下一轮：slot_gold 已包含漏收的战后收益。按余额恢复而非累加，
-	# 同回合重连仍保留本地买卖余额；重复快照在回合对齐后不会再次触发。
-	if recovered_settlement:
+	var resumed_round := int(payload.get("round_id", GameState.round_index))
+	if needs_replay:
+		resumed_round = int(payload.get("battle_round", resumed_round))
+	# PREP/BATTLE carry the last completed balance. RESULT also carries it once
+	# published without a replay (e.g. after a server restart). While replay or
+	# simulation is pending, the current result is applied by the playback path.
+	var balance_ready := phase in [NetworkService.ROOM_PREP, NetworkService.ROOM_BATTLE] \
+		or (phase == NetworkService.ROOM_RESULT and not needs_replay)
+	if balance_ready and resumed_round > GameState.round_index and payload.has("gold"):
 		GameState.gold = maxi(0, int(payload.gold))
 		GameState.gold_spent_this_round = false
-	GameState.round_index = int(payload.get("battle_round", payload.get("round_id", GameState.round_index))) \
-		if PlaybackRecovery.needs_replay(payload) else int(payload.get("round_id", GameState.round_index))
+	GameState.round_index = resumed_round
 	GameState.team_hp = int(payload.get("team_hp", GameState.team_hp))
 	GameState.enemy_team_hp = int(payload.get("rival_team_hp", GameState.enemy_team_hp))
 	GameState.team_clearance_sale_active = bool(payload.get("team_clearance_sale", false))
@@ -637,10 +641,10 @@ func _on_resume_completed(payload: Dictionary) -> void:
 	if GameState.shop_offers.is_empty() or GameState.shop_offers[0].is_empty():
 		GameState.clear_shop()
 	# else：保留 GameState.shop_offers，PrepScreen._ready 检测到非空就不会再摇店。
-	if str(payload.get("phase", "prep")) == NetworkService.ROOM_LOBBY:
+	if phase == NetworkService.ROOM_LOBBY:
 		_show_team3v3_lobby()
 		return
-	if PlaybackRecovery.needs_replay(payload):
+	if needs_replay:
 		_begin_resume_replay(payload)
 		return
 	_show_prep()
@@ -4717,6 +4721,15 @@ func _on_network_match_state_received(state_payload: Dictionary) -> void:
 		_shown_abandonment_battle = terminal_id
 		_apply_team_match_state_payload(state_payload)
 		_show_game_over()
+		return
+	# A server may resend the last result after the seat has entered a later
+	# round. ACK its retry without overwriting purchases or rolling the round back.
+	var completed_round := int(state_payload.get("completed_round", -1))
+	if GameState.team_mode and completed_round > 0 and completed_round < GameState.round_index \
+			and not bool(state_payload.get("run_over", false)):
+		var battle_id := str(state_payload.get("battle_id", ""))
+		if NetworkService.server_phase == NetworkService.ROOM_RESULT and battle_id == NetworkService.current_battle_id:
+			NetworkService.send_result_ack(battle_id)
 		return
 	if not _resume_replay_pending.is_empty():
 		return

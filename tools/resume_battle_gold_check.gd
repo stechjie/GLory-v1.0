@@ -4,12 +4,15 @@ const Harness := preload("res://tools/CheckHarness.gd")
 
 class MainProbe extends "res://scenes/main/Main.gd":
 	var shown := 0
+	var replays := 0
 	func _ready() -> void:
 		set_process(false)
 	func _team_run_state_is_fresh() -> bool:
 		return false
 	func _show_prep() -> void:
 		shown += 1
+	func _begin_resume_replay(_payload: Dictionary) -> void:
+		replays += 1
 
 func _ready() -> void:
 	call_deferred("run")
@@ -50,5 +53,30 @@ func run() -> void:
 	main._on_resume_completed(snapshot)
 	h.expect(GameState.gold == 72 and GameState.gold_spent_this_round,
 		"authoritative_ledger", "Fully authoritative ledger recovery keeps its original priority")
+	# RESULT reports the next prep round even while its worker is still running.
+	var result := {"phase": "result", "round_id": 10, "battle_round": 9, "battle_id": "42:9:1",
+		"gold": 160, "replay_pending": true, "replay_available": false}
+	main._on_resume_completed(result)
+	h.expect(GameState.round_index == 9 and GameState.gold == 72 and main.replays == 1,
+		"pending_result", "Unpublished results must not release the next round balance")
+	# After a server restart the seat's published settlement survives but its replay does not.
+	result.replay_pending = false
+	main._on_resume_completed(result)
+	h.expect(GameState.round_index == 10 and GameState.gold == 160 and not GameState.gold_spent_this_round,
+		"result_without_replay", "Restore the published balance when returning directly to preparation")
+	GameState.gold = 175
+	GameState.gold_spent_this_round = true
+	var late_result := {"completed_round": 9, "round_index": 10, "gold": 160, "battle_id": "42:9:1"}
+	main._on_network_match_state_received(late_result)
+	h.expect(GameState.gold == 175 and GameState.gold_spent_this_round,
+		"delayed_result_after_sale", "A late settlement cannot revert same-round transactions")
+	main._on_network_match_state_received({"completed_round": 7, "round_index": 8, "gold": 95})
+	h.expect(GameState.round_index == 10 and GameState.gold == 175,
+		"older_result_after_resume", "Old results cannot roll back a seat that recovered several rounds")
+	var battle := {"phase": "battle", "round_id": 12, "battle_round": 12, "battle_id": "42:12:1",
+		"gold": 355, "replay_pending": true}
+	main._on_resume_completed(battle)
+	h.expect(GameState.round_index == 12 and GameState.gold == 355 and main.replays == 2,
+		"later_battle", "A later battle starts with the balance from the previous settled rounds")
 	main.queue_free()
 	h.finish(get_tree())

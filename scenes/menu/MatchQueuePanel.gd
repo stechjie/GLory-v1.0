@@ -54,10 +54,15 @@ var _queue_ban_deadline := -1
 var _party_host := false
 var _tutorial_ai := false
 var _state := "idle"
-var _accept_deadline := 0.0
+var _accept_deadline_msec := 0
+var _confirm_match_uid := ""
+var _confirm_generation := 0
+var _clock_second := -1
 var _poll_timer := 0.0
 var _queue_started_msec := 0
 var _busy := false
+var _polling := false
+var _state_revision := 0
 var _finished := false
 var _accepted := false
 
@@ -67,6 +72,9 @@ var _accept_btn: Button
 var _leave_btn: Button
 # 10.10 bug 第 6 条：确认阶段的两队头像条（两行三列，同对局内左上角的排法）。
 var _roster: VBoxContainer
+var _roster_identities: Array[Dictionary] = []
+var _roster_chips: Array[Control] = []
+var _confirmed_seats := {}
 
 
 func configure(mode: String, party_queue: bool = false, party_host: bool = false) -> void:
@@ -182,8 +190,14 @@ func _build() -> void:
 
 func _join() -> void:
 	_set_detail(_text("正在进入队列…", "Joining queue…"))
+	var revision := _state_revision
 	var result: Dictionary = await AccountManager.join_match_queue(_mode)
 	if not is_inside_tree() or _finished:
+		return
+	if revision != _state_revision:
+		# idle 没有周期轮询。如果入队时恰好收到 idle 推送，主动核对一次。
+		if _state == "idle":
+			_poll()
 		return
 	if int(result.get("code", 0)) != 200:
 		# 窗口外 / 信誉分不够 / 被禁赛 / 未登录 / 服务器不在：说清楚，然后让玩家退出去。
@@ -217,17 +231,35 @@ func _on_accept() -> void:
 	# 10.10 bug 第 6 条：不再写「已确认，等其他人…」—— 确认后自己那颗头像会打√
 	# （服务端 found 消息带 seats），这里只把提示清掉，避免和头像重复。
 	_set_detail("")
+	var generation := _confirm_generation
+	var revision := _state_revision
 	var result: Dictionary = await _request_accept()
 	_busy = false
 	if not is_inside_tree() or _finished:
 		return
+	_accept_btn.disabled = _accepted
+	_leave_btn.disabled = false
+	if _state != "found":
+		return
 	if int(result.get("code", 0)) != 200:
 		# The server may have accepted despite a lost response; keep polling.
-		_accept_btn.disabled = _accepted
-		_leave_btn.disabled = false
-		_set_detail(str(result.get("error", _text("确认失败，请重试", "Accept failed; please retry"))))
+		if generation == _confirm_generation and not _accepted:
+			_set_detail(str(result.get("error", _text("确认失败，请重试", "Accept failed; please retry"))))
 		return
-	_apply((result.get("body", {}) as Dictionary).get("state", {}))
+	var status: Dictionary = (result.get("body", {}) as Dictionary).get("state", {})
+	var reply_uid := str(status.get("match_uid", ""))
+	var next := str(status.get("state", ""))
+	# 原桌被拆散后，只有指名当前新桌的最终分配才可沿用。
+	if generation != _confirm_generation and not (next == "ready" and
+			not reply_uid.is_empty() and reply_uid == _confirm_match_uid):
+		return
+	if not reply_uid.is_empty() and not _confirm_match_uid.is_empty() and reply_uid != _confirm_match_uid:
+		_poll()
+		return
+	if revision != _state_revision and next not in ["found", "ready"]:
+		_poll()
+		return
+	_apply(status)
 
 
 func _on_leave() -> void:
@@ -317,14 +349,9 @@ func _process(delta: float) -> void:
 			_set_detail(message)
 		if Time.get_ticks_msec() >= _queue_ban_deadline:
 			_queue_ban_deadline = -1
-	if _state == "queued" and not _busy:
-		var elapsed := maxi(1, int((Time.get_ticks_msec() - _queue_started_msec) / 1000) + 1)
-		_set_detail(_text("预计等待时间50s", "Estimated wait: 50s") + "\n%d..." % elapsed)
-	if _state == "found" and _accept_deadline > 0.0:
-		var left := maxi(0, int(ceil(_accept_deadline - Time.get_ticks_msec() / 1000.0)))
-		# 10.10 bug 第 6 条：标题改成「匹配成功。确认倒计时：N」。
-		_title.text = _text("匹配成功。确认倒计时：%d", "Match found. Confirming in %d") % left
-		if _tutorial_ai and left == 0:
+	if (_state == "queued" and not _busy) or _state == "found":
+		_refresh_clock()
+		if _tutorial_ai and _state == "found" and _clock_second == 0:
 			_apply({"state": "idle", "reason": "declined"})
 	if _tutorial_ai:
 		return
@@ -339,13 +366,29 @@ func _process(delta: float) -> void:
 	_poll()
 
 
+func _refresh_clock() -> void:
+	var now := Time.get_ticks_msec()
+	if _state == "queued":
+		var elapsed := int((now - _queue_started_msec) / 1000) + 1
+		if elapsed != _clock_second:
+			_clock_second = elapsed
+			_set_detail(_text("预计等待时间50s", "Estimated wait: 50s") + "\n%d..." % elapsed)
+	else:
+		var left := ceili(maxi(0, _accept_deadline_msec - now) / 1000.0)
+		if left != _clock_second:
+			_clock_second = left
+			_title.text = _text("匹配成功。确认倒计时：%d", "Match found. Confirming in %d") % left
+
+
 func _poll() -> void:
-	if _busy:
+	if _busy or _polling:
 		return
-	_busy = true
+	_polling = true
+	var revision := _state_revision
 	var result: Dictionary = await _request_match_state()
-	_busy = false
-	if not is_inside_tree() or int(result.get("code", 0)) != 200:
+	_polling = false
+	# 轮询期间的新推送和玩家操作优先，旧的 queued 快照不能盖住已出现的确认面板。
+	if not is_inside_tree() or _busy or revision != _state_revision or int(result.get("code", 0)) != 200:
 		return
 	_apply((result.get("body", {}) as Dictionary).get("state", {}))
 
@@ -378,12 +421,14 @@ func _tutorial_ai_seats(player_accepted: bool) -> Array:
 func _apply(state: Dictionary) -> void:
 	if _finished:
 		return
+	_state_revision += 1
 	var next := str(state.get("state", "idle"))
 	# 上一个状态要在覆盖之前记下来：下面 found 分支的音效只能在**刚进入** found
 	# 时响。原来是无条件 play，而 _poll() 每 3 秒就会带着同一个 found 再走一遍
 	# _apply —— 于是那 30 秒确认窗口里弹窗音效会响十次。
 	var previous := _state
 	if previous != next:
+		_clock_second = -1
 		print("[MATCH_QUEUE] mode=%s %s -> %s match=%s" % [_mode, previous, next, str(state.get("match_uid", ""))])
 	_state = next
 	# 找到对局 / 进场后沙漏收起，只在等待时转
@@ -395,26 +440,34 @@ func _apply(state: Dictionary) -> void:
 			_title.text = _text("匹配中…", "Searching…")
 			if previous != "queued":
 				_queue_started_msec = Time.get_ticks_msec()
-			_set_detail(_text("预计等待时间50s", "Estimated wait: 50s") + "\n1...")
+			_refresh_clock()
 			_accept_btn.visible = false
 			_accept_btn.disabled = false
 			_roster.visible = false
 			_leave_btn.text = _text("取消排队", "Leave Queue")
 		"found":
-			if previous != "found":
+			var match_uid := str(state.get("match_uid", ""))
+			var new_match := previous != "found" or (not match_uid.is_empty() and
+				not _confirm_match_uid.is_empty() and match_uid != _confirm_match_uid)
+			if new_match:
+				_confirm_generation += 1
+				_confirmed_seats.clear()
+				_accepted = false
+				_roster.visible = false
 				SfxService.play(SfxService.CUE_UI_POPUP)
-			# 倒计时只是显示，真正的时限在服务器（见文件头第 2 条）。
-			_accept_deadline = Time.get_ticks_msec() / 1000.0 + minf(
-				ACCEPT_SEC, float(state.get("accept_sec", ACCEPT_SEC)))
-			_title.text = _text("匹配成功。确认倒计时：%d", "Match found. Confirming in %d") % int(
-				ceil(minf(ACCEPT_SEC, float(state.get("accept_sec", ACCEPT_SEC)))))
+			if new_match or not match_uid.is_empty():
+				_confirm_match_uid = match_uid
+			# 推送和轮询可能交错抵达。同一桌的旧快照不能延长确认窗口。
+			var remaining := clampf(float(state.get("accept_sec", ACCEPT_SEC)), 0.0, ACCEPT_SEC)
+			var deadline := Time.get_ticks_msec() + roundi(remaining * 1000.0)
+			_accept_deadline_msec = deadline if new_match else mini(_accept_deadline_msec, deadline)
+			_refresh_clock()
 			# 10.10 bug 第 6 条：删掉「已确认 N/6，等其他人…」，换成**两队头像 + √** ——
 			# 谁确认了直接看头像上有没有√，比一行计数更清楚，也不会和轮询重画打架。
+			# 同桌已确认只能在拆桌时撤销。较早的推送/回包仍可能带 false。
+			_accepted = _accepted or bool(state.get("accepted", false))
 			_render_roster(state.get("seats", []))
-			# 「我按了没」由服务器说（协议里原来没有这一位）。
-			var accepted := bool(state.get("accepted", false))
-			_accepted = accepted
-			if accepted:
+			if _accepted:
 				_set_detail("")
 				# 按钮留在原位但禁用：直接隐藏会让布局跳一下，而玩家刚按完正盯着它。
 				_accept_btn.visible = true
@@ -499,24 +552,45 @@ const SEAT_DISC := 60.0
 const TICK := "√"
 
 
-# 把 seats 画成「红队一行、蓝队一行」。空 / 老协议（没有 seats）就整条收起来。
+# 把 seats 画成「红队一行、蓝队一行」。缺名单的旧快照保留同桌已经画出的头像。
 func _render_roster(seats: Variant) -> void:
 	if not (seats is Array) or (seats as Array).is_empty():
-		_roster.visible = false
-		return
+		if not _roster.visible:
+			return
+		seats = _roster_identities
 	_roster.visible = true
-	_clear_children(_roster)
-	var rows: Array = [HBoxContainer.new(), HBoxContainer.new()]
-	for row in rows:
-		var line: HBoxContainer = row
-		line.alignment = BoxContainer.ALIGNMENT_CENTER
-		line.add_theme_constant_override("separation", Tokens.GAP_S)
-		_roster.add_child(line)
+	var identities: Array[Dictionary] = []
+	var accepted: Array[bool] = []
 	for seat in seats:
 		if not (seat is Dictionary):
 			continue
-		var team := clampi(int((seat as Dictionary).get("team", 0)), 0, 1)
-		(rows[team] as HBoxContainer).add_child(_seat_chip(seat))
+		var identity := (seat as Dictionary).duplicate()
+		identity.erase("accepted")
+		var slot := Vector2i(int(seat.get("team", 0)), int(seat.get("seat", identities.size())))
+		if bool(seat.get("accepted", false)) or (bool(seat.get("me", false)) and _accepted):
+			_confirmed_seats[slot] = true
+		identities.append(identity)
+		accepted.append(_confirmed_seats.has(slot))
+	if identities != _roster_identities:
+		_roster_identities = identities
+		_roster_chips.clear()
+		_clear_children(_roster)
+		for team in 2:
+			var row := HBoxContainer.new()
+			row.alignment = BoxContainer.ALIGNMENT_CENTER
+			row.add_theme_constant_override("separation", Tokens.GAP_S)
+			_roster.add_child(row)
+		for identity in identities:
+			var team := clampi(int(identity.get("team", 0)), 0, 1)
+			var chip := _seat_chip(identity)
+			_roster.get_child(team).add_child(chip)
+			_roster_chips.append(chip)
+	for i in _roster_chips.size():
+		var chip := _roster_chips[i]
+		chip.get_node("ConfirmTick").visible = accepted[i]
+		var alpha := 1.0 if accepted[i] else 0.32
+		chip.get_node("Frame").modulate.a = alpha
+		chip.get_node("Mask").modulate.a = alpha
 
 
 # 画一格头像。头像做圆裁剪；11.16 起框画在头像**上面**（默认框也是空心框了）。
@@ -527,7 +601,6 @@ func _render_roster(seats: Variant) -> void:
 #   所以必须「框在下 + 头像圆裁剪在上 + 内孔对齐头像圆」—— 与 PartyLobby /
 #   Team3v3Lobby 的席位头像同一套（frame_drawn_size / frame_box_origin）。
 func _seat_chip(seat: Dictionary) -> Control:
-	var accepted := bool(seat.get("accepted", false))
 	var frame_value := str(seat.get("avatar_frame", ""))
 	var frame_id := AVATARS.id_from_value(frame_value)
 	var center := Vector2(SEAT_CHIP, SEAT_CHIP) * 0.5
@@ -538,6 +611,7 @@ func _seat_chip(seat: Dictionary) -> Control:
 
 	# ① 框（在下面）：内孔圆心压在头像圆心上，尺寸由内孔反推。
 	var frame := TextureRect.new()
+	frame.name = "Frame"
 	AVATARS.set_frame_texture(frame, AVATARS.frame_texture_for(frame_value))
 	frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
@@ -554,6 +628,7 @@ func _seat_chip(seat: Dictionary) -> Control:
 
 	# ② 头像（在上面）：圆裁剪，直径 == 内孔目标。
 	var mask := Panel.new()
+	mask.name = "Mask"
 	mask.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
 	mask.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var circle := StyleBoxFlat.new()
@@ -577,21 +652,18 @@ func _seat_chip(seat: Dictionary) -> Control:
 	portrait.size = mask.size
 	mask.add_child(portrait)
 
-	if accepted:
-		var tick := Label.new()
-		tick.text = TICK
-		tick.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		tick.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		tick.add_theme_font_size_override("font_size", 30)
-		tick.add_theme_color_override("font_color", Color("7ce6a0"))
-		tick.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
-		tick.add_theme_constant_override("outline_size", 8)
-		tick.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		tick.size = Vector2(SEAT_CHIP, SEAT_CHIP)
-		box.add_child(tick)
-	else:
-		frame.modulate.a = 0.32
-		mask.modulate.a = 0.32
+	var tick := Label.new()
+	tick.name = "ConfirmTick"
+	tick.text = TICK
+	tick.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	tick.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	tick.add_theme_font_size_override("font_size", 30)
+	tick.add_theme_color_override("font_color", Color("7ce6a0"))
+	tick.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	tick.add_theme_constant_override("outline_size", 8)
+	tick.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tick.size = Vector2(SEAT_CHIP, SEAT_CHIP)
+	box.add_child(tick)
 	var seat_name := str(seat.get("name", seat.get("player_name", ""))).strip_edges()
 	if seat_name.is_empty() and bool(seat.get("me", false)):
 		seat_name = str(AccountManager.profile.get("player_name", "")).strip_edges()
